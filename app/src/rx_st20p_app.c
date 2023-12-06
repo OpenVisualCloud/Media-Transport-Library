@@ -31,6 +31,10 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
            frame->pkts_recv[MTL_SESSION_PORT_R], frame->pkts_total);
   }
 
+  if (frame->interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+  }
+
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {

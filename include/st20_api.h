@@ -499,6 +499,8 @@ struct st22_tx_frame_meta {
   uint32_t height;
   /** Frame resolution fps, set by lib */
   enum st_fps fps;
+  /** Second field type indicate, for interlaced mode */
+  bool second_field;
   /** codestream_size for next_frame_idx, set by user */
   size_t codestream_size;
   /** Timestamp format, user can customize it if ST22_TX_FLAG_USER_PACING */
@@ -513,6 +515,8 @@ struct st22_tx_frame_meta {
  * Frame meta data of st2110-22(video) rx streaming
  */
 struct st22_rx_frame_meta {
+  /** Second field type indicate, for interlaced mode */
+  bool second_field;
   /** Frame timestamp format */
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
@@ -572,7 +576,8 @@ MTL_PACK(struct st22_rfc9134_rtp_hdr {
   struct st_rfc3550_rtp_hdr base;
   /** F counter high part */
   uint8_t f_counter_hi : 3;
-  /** Interlaced information */
+  /** Interlaced information, 0b00: progressively, 0b10: first field, 0b11: second field.
+   */
   uint8_t interlaced : 2;
   /** Last */
   uint8_t last_packet : 1;
@@ -975,6 +980,8 @@ struct st20_tx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type defined in RFC3550 */
@@ -990,13 +997,6 @@ struct st20_tx_ops {
   /** Optional. Flags to control session behaviors. See ST20_TX_FLAG_* for possible value
    */
   uint32_t flags;
-  /** Optional.
-   * interlace or not, false(default): non-interlaced: true: interlaced.
-   * Ex for format 1080i50, please refer to below parameter configurations:
-   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
-   * and filled each frame(field) with 540 lines.
-   */
-  bool interlaced;
 
   /**
    * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
@@ -1121,6 +1121,8 @@ struct st22_tx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type define in RFC3550 */
@@ -1292,6 +1294,8 @@ struct st20_rx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type define in RFC3550 */
@@ -1312,13 +1316,6 @@ struct st20_rx_ops {
   /** Optional. Flags to control session behaviors. See ST20_RX_FLAG_* for possible value
    */
   uint32_t flags;
-  /** Optional.
-   * interlace or not, false(default): non-interlaced: true: interlaced.
-   * Ex for format 1080i50, please refer to below parameter configurations:
-   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
-   * and each frame(field) received has 540 lines data.
-   */
-  bool interlaced;
 
   /**
    * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
@@ -1443,6 +1440,8 @@ struct st22_rx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
   /** Mandatory. 7 bits payload type define in RFC3550 */

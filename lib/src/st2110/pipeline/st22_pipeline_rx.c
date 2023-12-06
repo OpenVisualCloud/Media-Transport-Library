@@ -100,6 +100,9 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   /* set dst timestamp to same as src? */
   framebuff->dst.timestamp = meta->timestamp;
 
+  /* if second field */
+  framebuff->dst.second_field = framebuff->src.second_field = meta->second_field;
+
   framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
   for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
        s_port++) {
@@ -251,6 +254,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
   ops_rx.fps = ops->fps;
+  ops_rx.interlaced = ops->interlaced;
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
   ops_rx.type = ST22_TYPE_FRAME_LEVEL;
@@ -272,6 +276,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
     frames[i].src.fmt = ctx->decode_impl->req.req.input_fmt;
     frames[i].src.buffer_size = ops_rx.framebuff_max_size;
     frames[i].src.data_size = ops_rx.framebuff_max_size;
+    frames[i].src.interlaced = ops->interlaced;
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
     frames[i].src.priv = &frames[i];
@@ -321,6 +326,7 @@ static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx
     frames[i].stat = ST22P_RX_FRAME_FREE;
     frames[i].idx = i;
     frames[i].dst.fmt = ops->output_fmt;
+    frames[i].dst.interlaced = ops->interlaced;
     frames[i].dst.buffer_size = dst_size;
     frames[i].dst.data_size = dst_size;
     frames[i].dst.width = ops->width;

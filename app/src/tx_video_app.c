@@ -298,6 +298,7 @@ static void* app_tx_video_pcap_thread(void* arg) {
     }
     udp_data_len = 0;
     packet = (uint8_t*)pcap_next(s->st20_pcap, &hdr);
+    dbg("%s(%d), packet %p\n", __func__, idx, packet);
     if (packet) {
       eth_hdr = (struct ether_header*)packet;
       if (ntohs(eth_hdr->ether_type) == ETHERTYPE_IP) {
@@ -306,6 +307,7 @@ static void* app_tx_video_pcap_thread(void* arg) {
           udp_hdr =
               (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
+          dbg("%s(%d), packet %p udp_data_len %u\n", __func__, idx, packet, udp_data_len);
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
                          sizeof(struct udphdr),
@@ -324,7 +326,12 @@ static void* app_tx_video_pcap_thread(void* arg) {
     }
 
     struct st_rfc3550_rtp_hdr* hdr = (struct st_rfc3550_rtp_hdr*)usrptr;
-    if (hdr->payload_type != s->payload_type) udp_data_len = 0;
+    if (hdr->payload_type != s->payload_type) {
+      udp_data_len = 0;
+      err("%s(%d), expect payload_type %u but pcap is %u, please correct the "
+          "payload_type in json\n",
+          __func__, idx, s->payload_type, hdr->payload_type);
+    }
 
     st20_tx_put_mbuf(s->handle, mbuf, udp_data_len);
 

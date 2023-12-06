@@ -20,6 +20,11 @@ static int encode_frame(struct st22_encoder_session* s,
                         struct st22_encode_frame_meta* frame) {
   size_t codestream_size = s->req.max_codestream_size;
 
+  if (frame->src->interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx,
+        frame->src->second_field ? "second" : "first");
+  }
+
   /* call the real encode here, sample just copy and sleep */
   memcpy(frame->dst->addr[0], frame->src->addr[0], codestream_size);
   st_usleep(10 * 1000);
@@ -84,8 +89,9 @@ static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session 
     }
 
     ctx->encoder_sessions[i] = session;
-    info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
-         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
+    info("%s(%d), input fmt: %s, output fmt: %s, scan: %s\n", __func__, i,
+         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt),
+         req->interlaced ? "interlaced" : "progressive");
     info("%s(%d), max_codestream_size %" PRIu64 "\n", __func__, i,
          session->req.max_codestream_size);
     return session;
@@ -129,6 +135,11 @@ static int encoder_frame_available(void* priv) {
 static int decode_frame(struct st22_decoder_session* s,
                         struct st22_decode_frame_meta* frame) {
   size_t codestream_size = frame->src->data_size;
+
+  if (frame->src->interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx,
+        frame->src->second_field ? "second" : "first");
+  }
 
   /* call the real decode here, sample just copy and sleep */
   memcpy(frame->dst->addr[0], frame->src->addr[0], codestream_size);
@@ -190,8 +201,9 @@ static st22_decode_priv decoder_create_session(void* priv, st22p_decode_session 
     }
 
     ctx->decoder_sessions[i] = session;
-    info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, i,
-         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt));
+    info("%s(%d), input fmt: %s, output fmt: %s, scan: %s\n", __func__, i,
+         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt),
+         req->interlaced ? "interlaced" : "progressive");
     return session;
   }
 

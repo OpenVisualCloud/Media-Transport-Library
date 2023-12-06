@@ -481,7 +481,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
-  if (ctx->ops.interlaced) { /* init second_field but user still can customize also */
+  if (ctx->ops.interlaced) { /* init second_field but user still can customize */
     frame->second_field = ctx->second_field;
     ctx->second_field = ctx->second_field ? false : true;
   }
@@ -527,6 +527,10 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     framebuff->user_meta_data_size = frame->user_meta_size;
   }
 
+  if (ctx->ops.interlaced) { /* update second_field */
+    framebuff->dst.second_field = framebuff->src.second_field = frame->second_field;
+  }
+
   if (ctx->internal_converter) { /* convert internal */
     ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
@@ -563,6 +567,10 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
     return -EIO;
+  }
+
+  if (ctx->ops.interlaced) { /* update second_field */
+    framebuff->dst.second_field = framebuff->src.second_field = frame->second_field;
   }
 
   uint8_t planes = st_frame_fmt_planes(framebuff->src.fmt);

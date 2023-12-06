@@ -734,6 +734,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   meta->fpt = fpt_delta;
   meta->timestamp_last_pkt = mtl_ptp_read_time(rv_get_impl(s));
   meta->second_field = slot->second_field;
+  if (ops->interlaced) {
+    if (slot->second_field)
+      s->stat_interlace_second_field++;
+    else
+      s->stat_interlace_first_field++;
+  }
   meta->frame_total_size = s->st20_frame_size;
   meta->uframe_total_size = s->st20_uframe_size;
   meta->frame_recv_size = rv_slot_get_frame_size(slot);
@@ -804,6 +810,13 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_ops* ops = &s->ops;
   struct st22_rx_frame_meta* meta = &slot->st22_meta;
 
+  meta->second_field = slot->second_field;
+  if (ops->interlaced) {
+    if (slot->second_field)
+      s->stat_interlace_second_field++;
+    else
+      s->stat_interlace_first_field++;
+  }
   meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
   meta->timestamp = slot->tmstamp;
   meta->frame_total_size = rv_slot_get_frame_size(slot);
@@ -1370,15 +1383,17 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       line1_offset, line1_length);
 
   if (payload_type != ops->payload_type) {
-    s->stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->base.ssrc);
-    dbg("%s(%d,%d): expect ssrc %u actual %u\n", __func__, s->idx, s_port, ops->ssrc,
-        ssrc);
+    dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+        ops->ssrc);
     if (ssrc != ops->ssrc) {
-      s->stat_pkts_wrong_hdr_dropped++;
+      s->stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -1623,14 +1638,17 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   int pkt_idx = -1;
 
   if (payload_type != ops->payload_type) {
-    dbg("%s, payload_type mismatch %d %d\n", __func__, payload_type, ops->payload_type);
-    s->stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
-      s->stat_pkts_wrong_hdr_dropped++;
+      dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+          ops->ssrc);
+      s->stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -1733,12 +1751,16 @@ static int rv_parse_st22_boxes(struct st_rx_video_session_impl* s, void* boxes,
   }
 
   if ((jpvs_len + colr_len) > 512) {
-    info("%s(%d): err jpvs_len %u colr_len %u\n", __func__, s->idx, jpvs_len, colr_len);
+    err("%s(%d): err jpvs_len %u colr_len %u\n", __func__, s->idx, jpvs_len, colr_len);
     return -EIO;
   }
 
   slot->st22_box_hdr_length = jpvs_len + colr_len;
   dbg("%s(%d): st22_box_hdr_length %u\n", __func__, s->idx, slot->st22_box_hdr_length);
+
+  if (slot->st22_box_hdr_length) {
+    s->stat_st22_boxes++;
+  }
 
 #if 0
   uint8_t* buf = boxes - slot->st22_box_hdr_length;
@@ -1773,20 +1795,39 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   int ret;
 
   if (payload_type != ops->payload_type) {
-    s->stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->base.ssrc);
     if (ssrc != ops->ssrc) {
-      s->stat_pkts_wrong_hdr_dropped++;
+      dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+          ops->ssrc);
+      s->stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
 
-  if (rtp->kmode) {
-    s->stat_pkts_wrong_hdr_dropped++;
+  if (rtp->kmode) { /* only pacKetization mode now */
+    s->stat_pkts_wrong_kmod_dropped++;
     return -EINVAL;
+  }
+
+  /* check interlace */
+  if (s->ops.interlaced) {
+    if (!(rtp->interlaced & 0x2)) {
+      s->stat_pkts_wrong_interlace_dropped++;
+      return -EINVAL;
+    }
+  } else {
+    if (rtp->interlaced) {
+      s->stat_pkts_wrong_interlace_dropped++;
+      dbg("%s(%d,%d), rtp interlaced 0x%x set for progressive\n", __func__, s->idx,
+          s_port, rtp->interlaced);
+      return -EINVAL;
+    }
   }
 
   /* find the target slot by tmstamp */
@@ -1803,6 +1844,8 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   }
   uint8_t* bitmap = slot->frame_bitmap;
 
+  slot->second_field = (rtp->interlaced == 0x3) ? true : false;
+
   dbg("%s(%d,%d), seq_id %d kmode %u trans_order %u\n", __func__, s->idx, s_port, seq_id,
       rtp->kmode, rtp->trans_order);
   dbg("%s(%d,%d), seq_id %d p_counter %u sep_counter %u\n", __func__, s->idx, s_port,
@@ -1810,7 +1853,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
 
   if (slot->seq_id_got) {
     if (!rtp->base.marker && (payload_length != slot->st22_payload_length)) {
-      s->stat_pkts_wrong_hdr_dropped++;
+      s->stat_pkts_wrong_len_dropped++;
       return -EIO;
     }
     /* check if the same pks got already */
@@ -1934,13 +1977,17 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   struct rte_mbuf* mbuf_next = mbuf->next;
 
   if (payload_type != ops->payload_type) {
-    s->stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->base.ssrc);
     if (ssrc != ops->ssrc) {
-      s->stat_pkts_wrong_hdr_dropped++;
+      dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+          ops->ssrc);
+      s->stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -2394,13 +2441,13 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
 
   if (payload_type != ops->payload_type) {
     dbg("%s, payload_type mismatch %d %d\n", __func__, payload_type, ops->payload_type);
-    s->stat_pkts_wrong_hdr_dropped++;
+    s->stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->base.ssrc);
     if (ssrc != ops->ssrc) {
-      s->stat_pkts_wrong_hdr_dropped++;
+      s->stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -2915,7 +2962,6 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->stat_pkts_no_slot = 0;
   s->stat_pkts_offset_dropped = 0;
   s->stat_pkts_redundant_dropped = 0;
-  s->stat_pkts_wrong_hdr_dropped = 0;
   s->stat_pkts_wrong_len_dropped = 0;
   s->stat_pkts_received = 0;
   s->stat_pkts_retransmit = 0;
@@ -3179,10 +3225,20 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_pkts_redundant_dropped);
     s->stat_pkts_redundant_dropped = 0;
   }
-  if (s->stat_pkts_wrong_hdr_dropped) {
-    notice("RX_VIDEO_SESSION(%d,%d): wrong hdr dropped pkts %d\n", m_idx, idx,
-           s->stat_pkts_wrong_hdr_dropped);
-    s->stat_pkts_wrong_hdr_dropped = 0;
+  if (s->stat_pkts_wrong_pt_dropped) {
+    notice("RX_VIDEO_SESSION(%d,%d): wrong hdr payload type dropped pkts %d\n", m_idx,
+           idx, s->stat_pkts_wrong_pt_dropped);
+    s->stat_pkts_wrong_pt_dropped = 0;
+  }
+  if (s->stat_pkts_wrong_ssrc_dropped) {
+    notice("RX_VIDEO_SESSION(%d,%d): wrong hdr ssrc dropped pkts %d\n", m_idx, idx,
+           s->stat_pkts_wrong_ssrc_dropped);
+    s->stat_pkts_wrong_ssrc_dropped = 0;
+  }
+  if (s->stat_pkts_wrong_interlace_dropped) {
+    notice("RX_VIDEO_SESSION(%d,%d): wrong hdr interlace dropped pkts %d\n", m_idx, idx,
+           s->stat_pkts_wrong_interlace_dropped);
+    s->stat_pkts_wrong_interlace_dropped = 0;
   }
   if (s->stat_pkts_wrong_len_dropped) {
     notice("RX_VIDEO_SESSION(%d,%d): wrong len dropped pkts %d\n", m_idx, idx,
@@ -3269,6 +3325,17 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d): retransmit pkts %d\n", m_idx, idx,
            s->stat_pkts_retransmit);
     s->stat_pkts_retransmit = 0;
+  }
+  if (s->ops.interlaced) {
+    notice("RX_VIDEO_SESSION(%d,%d): interlace first field %u second field %u\n", m_idx,
+           idx, s->stat_interlace_first_field, s->stat_interlace_second_field);
+    s->stat_interlace_first_field = 0;
+    s->stat_interlace_second_field = 0;
+  }
+  if (s->stat_st22_boxes) {
+    notice("RX_VIDEO_SESSION(%d,%d): st22 video support boxes received %u \n", m_idx, idx,
+           s->stat_st22_boxes);
+    s->stat_st22_boxes = 0;
   }
   if (s->ebu) rv_ebu_stat(s);
 }
@@ -4194,6 +4261,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.width = ops->width;
   st20_ops.height = ops->height;
   st20_ops.fps = ops->fps;
+  st20_ops.interlaced = ops->interlaced;
   st20_ops.fmt = ST20_FMT_YUV_422_10BIT;
   st20_ops.payload_type = ops->payload_type;
   st20_ops.ssrc = ops->ssrc;

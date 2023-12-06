@@ -390,6 +390,9 @@ struct st_tx_video_session_impl {
   uint32_t stat_max_notify_frame_us;
   uint32_t stat_unrecoverable_error;
   uint32_t stat_recoverable_error;
+  /* interlace */
+  uint32_t stat_interlace_first_field;
+  uint32_t stat_interlace_second_field;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -703,7 +706,10 @@ struct st_rx_video_session_impl {
   int stat_pkts_offset_dropped;
   int stat_pkts_out_of_order;
   int stat_pkts_redundant_dropped;
-  int stat_pkts_wrong_hdr_dropped;
+  int stat_pkts_wrong_pt_dropped;
+  int stat_pkts_wrong_ssrc_dropped;
+  int stat_pkts_wrong_kmod_dropped; /* for st22 */
+  int stat_pkts_wrong_interlace_dropped;
   int stat_pkts_wrong_len_dropped;
   int stat_pkts_received;
   int stat_pkts_retransmit;
@@ -730,6 +736,11 @@ struct st_rx_video_session_impl {
   uint32_t stat_slot_query_ext_fail;
   uint64_t stat_bytes_received;
   uint32_t stat_max_notify_frame_us;
+  /* for interlace */
+  uint32_t stat_interlace_first_field;
+  uint32_t stat_interlace_second_field;
+  /* for st22 */
+  uint32_t stat_st22_boxes;
 };
 
 struct st_rx_video_sessions_mgr {
@@ -946,7 +957,8 @@ struct st_rx_audio_session_impl {
 
   /* status */
   int st30_stat_pkts_dropped;
-  int st30_stat_pkts_wrong_hdr_dropped;
+  int st30_stat_pkts_wrong_pt_dropped;
+  int st30_stat_pkts_wrong_ssrc_dropped;
   int st30_stat_pkts_len_mismatch_dropped;
   int st30_stat_pkts_received;
   int st30_stat_frames_dropped;
@@ -1089,7 +1101,8 @@ struct st_rx_ancillary_session_impl {
   /* status */
   rte_atomic32_t st40_stat_frames_received;
   int st40_stat_pkts_dropped;
-  int st40_stat_pkts_wrong_hdr_dropped;
+  int st40_stat_pkts_wrong_pt_dropped;
+  int st40_stat_pkts_wrong_ssrc_dropped;
   int st40_stat_pkts_received;
   uint64_t st40_stat_last_time;
   uint32_t stat_max_notify_rtp_us;

@@ -48,6 +48,10 @@ static void app_tx_st22p_build_frame(struct st_app_tx_st22p_session* s,
   /* point to next frame */
   s->st22p_frame_cursor += s->st22p_frame_size;
 
+  if (frame->interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+  }
+
   app_tx_st22p_display_frame(s, frame);
 }
 
@@ -239,6 +243,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   ops.width = st22p ? st22p->info.width : 1920;
   ops.height = st22p ? st22p->info.height : 1080;
   ops.fps = st22p ? st22p->info.fps : ST_FPS_P59_94;
+  ops.interlaced = st22p ? st22p->info.interlaced : false;
   ops.input_fmt = st22p ? st22p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ops.pack_type = st22p ? st22p->info.pack_type : ST22_PACK_CODESTREAM;
   ops.codec = st22p ? st22p->info.codec : ST22_CODEC_JPEGXS;
@@ -246,6 +251,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   ops.quality = st22p ? st22p->info.quality : ST22_QUALITY_MODE_SPEED;
   ops.codec_thread_cnt = st22p ? st22p->info.codec_thread_count : 0;
   ops.codestream_size = ops.width * ops.height * 3 / 8;
+  if (ops.interlaced) ops.codestream_size /= 2; /* the size is for each field */
   ops.framebuff_cnt = 2;
   ops.notify_frame_available = app_tx_st22p_frame_available;
   if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_TX_FLAG_ENABLE_RTCP;

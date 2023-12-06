@@ -396,13 +396,17 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr);
 
   if (payload_type != ops->payload_type) {
-    s->st30_stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->st30_stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
-      s->st30_stat_pkts_wrong_hdr_dropped++;
+      dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+          ops->ssrc);
+      s->st30_stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -498,13 +502,17 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   uint8_t payload_type = rtp->payload_type;
 
   if (payload_type != ops->payload_type) {
-    s->st30_stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->st30_stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
-      s->st30_stat_pkts_wrong_hdr_dropped++;
+      dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+          ops->ssrc);
+      s->st30_stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -763,7 +771,6 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->latest_seq_id = -1;
   s->st30_stat_pkts_received = 0;
   s->st30_stat_pkts_dropped = 0;
-  s->st30_stat_pkts_wrong_hdr_dropped = 0;
   s->st30_stat_frames_dropped = 0;
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = mt_get_monotonic_time();
@@ -826,10 +833,15 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
     s->st30_stat_frames_dropped = 0;
     s->st30_stat_pkts_dropped = 0;
   }
-  if (s->st30_stat_pkts_wrong_hdr_dropped) {
-    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr dropped pkts %d\n", m_idx, idx,
-           s->st30_stat_pkts_wrong_hdr_dropped);
-    s->st30_stat_pkts_wrong_hdr_dropped = 0;
+  if (s->st30_stat_pkts_wrong_pt_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr payload_type dropped pkts %d\n", m_idx,
+           idx, s->st30_stat_pkts_wrong_pt_dropped);
+    s->st30_stat_pkts_wrong_pt_dropped = 0;
+  }
+  if (s->st30_stat_pkts_wrong_ssrc_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): wrong hdr ssrc dropped pkts %d\n", m_idx, idx,
+           s->st30_stat_pkts_wrong_ssrc_dropped);
+    s->st30_stat_pkts_wrong_ssrc_dropped = 0;
   }
   if (s->st30_stat_pkts_len_mismatch_dropped) {
     notice("RX_AUDIO_SESSION(%d,%d): pkt len mismatch dropped pkts %d\n", m_idx, idx,

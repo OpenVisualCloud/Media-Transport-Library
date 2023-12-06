@@ -181,6 +181,7 @@ typedef struct st_json_st22p_info {
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
+  bool interlaced;
   enum st_plugin_device device;
   enum st22_codec codec;
   enum st22_pack_type pack_type;
