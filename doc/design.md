@@ -380,11 +380,19 @@ The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use t
 
 ### 6.12 SIMD for color space convert
 
-IMTL has many built-in SIMD converter, detail code can be found from [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c). The API is public at [st_convert_api.h](../include/st_convert_api.h). Detail guide can be find from [convert guide](./convert.md)
-
 IMTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the IMTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c).
 The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [convert guide](./convert.md).
 
-### 6.13 Sample code
+### 6.13 Ecosystem
+
+The IMTL provides comprehensive documentation that includes reference code, demonstrating the seamless integration with popular media frameworks. Currently, IMTL supports the following plugins and SDKs:
+
+FFMPEG plugin: Enhance your FFMPEG-based applications by incorporating IMTL to accelerate media processing. Detail please refer to [ffmpeg_plugin_guide](../ecosystem/ffmpeg_plugin/).
+
+OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software) using the IMTL plugin for optimized performance. Please refer to [obs_plugin_guide](../ecosystem/obs_mtl/).
+
+Intel® Media SDK: Leverage IMTL's robust capabilities within Intel® Media SDK projects to unlock advanced media functionalities on Intel platforms. Detail please refer to [Intel®_Media_SDK_guide](../ecosystem/msdk/).
+
+### 6.14 Sample code
 
 In addition to the built-in RxTxApp, IMTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, detail can be found at [fwd](../app/sample/fwd/).
