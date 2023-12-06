@@ -24,6 +24,7 @@ If you find value in our project, please consider giving it a star. Your support
 * Multi-process handling, allowing for up to 8 NICs per process.
 * Virtualization support by SR-IOV.
 * Built-in PTP protocol with hardware timestamp offload.
+* FFMPEG plugin, OBS(Open Broadcaster Software) plugin, and Intel® Media SDK support.
 
 #### 1.1.1 ST2110 features
 
