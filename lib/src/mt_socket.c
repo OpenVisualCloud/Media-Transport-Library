@@ -196,48 +196,6 @@ int mt_socket_get_numa(const char* if_name) {
   return numa_node;
 }
 
-int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
-  int ret;
-  char cmd[128];
-  uint8_t ip[MTL_IP_ADDR_LEN];
-  const char* if_name = mt_kernel_if_name(impl, port);
-
-  if (!mt_drv_use_kernel_ctl(impl, port)) {
-    err("%s(%d), not kernel based pmd\n", __func__, port);
-    return -EIO;
-  }
-
-  mt_u32_to_ip(group, ip);
-  snprintf(cmd, sizeof(cmd), "ip addr add %u.%u.%u.%u/24 dev %s autojoin", ip[0], ip[1],
-           ip[2], ip[3], if_name);
-  ret = mt_run_cmd(cmd, NULL, 0);
-  if (ret < 0) return ret;
-
-  info("%s, succ, %s\n", __func__, cmd);
-  return 0;
-}
-
-int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
-  int ret;
-  char cmd[128];
-  uint8_t ip[MTL_IP_ADDR_LEN];
-  const char* if_name = mt_kernel_if_name(impl, port);
-
-  if (!mt_drv_use_kernel_ctl(impl, port)) {
-    err("%s(%d), not kernel based pmd\n", __func__, port);
-    return -EIO;
-  }
-
-  mt_u32_to_ip(group, ip);
-  snprintf(cmd, sizeof(cmd), "ip addr del %u.%u.%u.%u/24 dev %s autojoin", ip[0], ip[1],
-           ip[2], ip[3], if_name);
-  ret = mt_run_cmd(cmd, NULL, 0);
-  if (ret < 0) return ret;
-
-  info("%s, succ, %s\n", __func__, cmd);
-  return 0;
-}
-
 static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr* ea,
                           const char* if_name) {
   struct arpreq arp;
@@ -593,7 +551,8 @@ int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_
   return -ENOTSUP;
 }
 
-int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
+int mt_socket_leave_mcast(struct mtl_main_impl* impl, enum mtl_port port,
+                          uint32_t group) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(group);

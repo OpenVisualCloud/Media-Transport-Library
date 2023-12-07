@@ -228,7 +228,10 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 
     memset(&flow, 0, sizeof(flow));
     rte_memcpy(flow.dip_addr, s->ops.sip_addr[i], MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    if (mt_is_multicast_ip(flow.dip_addr))
+      rte_memcpy(flow.sip_addr, s->ops.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
+    else
+      rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st40_dst_port[i];
     if (mt_has_cni_rx(impl, port)) flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
 
@@ -255,12 +258,14 @@ static int rx_ancillary_session_init_hw(struct mtl_main_impl* impl,
 static int rx_ancillary_session_uinit_mcast(struct mtl_main_impl* impl,
                                             struct st_rx_ancillary_session_impl* s) {
   struct st40_rx_ops* ops = &s->ops;
+  enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (mt_is_multicast_ip(ops->sip_addr[i]))
-      mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
-                     mt_ip_to_u32(ops->mcast_sip_addr[i]),
-                     mt_port_logic2phy(s->port_maps, i));
+    if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
+    port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_drv_use_kernel_ctl(impl, port)) continue;
+    mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
+                   mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
 
   return 0;
@@ -270,17 +275,18 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
                                            struct st_rx_ancillary_session_impl* s) {
   struct st40_rx_ops* ops = &s->ops;
   int ret;
+  enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
-
-    if (ops->flags & ST40_RX_FLAG_DATA_PATH_ONLY) {
+    port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_drv_use_kernel_ctl(impl, port)) continue;
+    if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
     ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]),
-                        mt_ip_to_u32(ops->mcast_sip_addr[i]),
-                        mt_port_logic2phy(s->port_maps, i));
+                        mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
     if (ret < 0) return ret;
   }
 

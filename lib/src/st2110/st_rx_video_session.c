@@ -2642,7 +2642,10 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
                            &bps);
     flow.bytes_per_sec = bps / 8;
     rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
-    rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    if (mt_is_multicast_ip(flow.dip_addr))
+      rte_memcpy(flow.sip_addr, ops->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
+    else
+      rte_memcpy(flow.sip_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     flow.dst_port = s->st20_dst_port[i];
     if (rv_is_hdr_split(s)) {
       flow.flags |= MT_RXQ_FLOW_F_HDR_SPLIT;
@@ -2679,12 +2682,14 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
 static int rv_uinit_mcast(struct mtl_main_impl* impl,
                           struct st_rx_video_session_impl* s) {
   struct st20_rx_ops* ops = &s->ops;
+  enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (mt_is_multicast_ip(ops->sip_addr[i]))
-      mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
-                     mt_ip_to_u32(ops->mcast_sip_addr[i]),
-                     mt_port_logic2phy(s->port_maps, i));
+    if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
+    port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_drv_use_kernel_ctl(impl, port)) continue;
+    mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
+                   mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
 
   return 0;
@@ -2698,6 +2703,7 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_drv_use_kernel_ctl(impl, port)) continue;
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;

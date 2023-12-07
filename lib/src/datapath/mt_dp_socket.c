@@ -478,13 +478,26 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reus
   }
 
   if (mt_is_multicast_ip(flow->dip_addr)) {
-    struct ip_mreq mreq;
-    memset(&mreq, 0, sizeof(mreq));
-    /* multicast addr */
-    memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-    /* local nic src ip */
-    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-    ret = setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+    uint32_t source = *(uint32_t*)flow->sip_addr;
+    if (source == 0) {
+      struct ip_mreq mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      /* multicast addr */
+      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+      /* local interface ip */
+      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+      ret = setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+    } else {
+      struct ip_mreq_source mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      /* multicast addr */
+      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+      /* local interface ip */
+      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+      /* source addr */
+      memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
+      ret = setsockopt(fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
+    }
     if (ret < 0) {
       err("%s(%d,%d), join multicast fail %d\n", __func__, port, fd, ret);
       return ret;
@@ -710,6 +723,43 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
   return entry;
 }
 
+static int rx_socket_leave_mcast(struct mt_rx_socket_entry* entry) {
+  int ret;
+  int fd = entry->fd;
+  enum mtl_port port = entry->port;
+  struct mtl_main_impl* impl = entry->parent;
+  struct mt_rxq_flow* flow = &entry->flow;
+
+  if (!mt_is_multicast_ip(flow->dip_addr)) return 0;
+
+  uint32_t source = *(uint32_t*)flow->sip_addr;
+  if (source == 0) {
+    struct ip_mreq mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    /* multicast addr */
+    memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+    /* local interface ip */
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    ret = setsockopt(fd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+  } else {
+    struct ip_mreq_source mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    /* multicast addr */
+    memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+    /* local interface ip */
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    /* source addr */
+    memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
+    ret = setsockopt(fd, IPPROTO_IP, IP_DROP_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
+  }
+  if (ret < 0) {
+    err("%s(%d,%d), leave multicast fail %d\n", __func__, port, fd, ret);
+    return ret;
+  }
+  info("%s(%d,%d), leave multicast succ\n", __func__, port, fd);
+  return 0;
+}
+
 int mt_rx_socket_put(struct mt_rx_socket_entry* entry) {
   int fd = entry->fd;
   enum mtl_port port = entry->port;
@@ -743,6 +793,7 @@ int mt_rx_socket_put(struct mt_rx_socket_entry* entry) {
   }
   /* close fd */
   if (entry->fd >= 0) {
+    rx_socket_leave_mcast(entry);
     close(entry->fd);
     entry->fd = -1;
   }
