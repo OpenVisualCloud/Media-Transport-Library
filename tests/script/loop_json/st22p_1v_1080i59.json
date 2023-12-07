@@ -25,7 +25,7 @@
                     "width": 1920,
                     "height": 1080,
                     "fps": "p59",
-                    "interlaced": "true",
+                    "interlaced": true,
                     "codec": "JPEG-XS",
                     "device": "AUTO",
                     "quality": "speed",
@@ -53,14 +53,14 @@
                     "width": 1920,
                     "height": 1080,
                     "fps": "p59",
-                    "interlaced": "true",
+                    "interlaced": true,
                     "codec": "JPEG-XS",
                     "device": "AUTO",
                     "pack_type": "codestream",
                     "output_format": "YUV422RFC4175PG2BE10",
                     "codec_thread_count" : 2,
                     "display": false,
-                    "measure_latency": true,
+                    "measure_latency": true
                 }
             ]
         }
