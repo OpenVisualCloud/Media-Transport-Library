@@ -657,37 +657,40 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sou
 
   mt_pthread_mutex_lock(&mcast->group_mutex);
   /* find existing group */
-  bool gfound = false;
+  bool found = false;
+  bool gdelete = false;
   struct mt_mcast_group_entry* group;
   TAILQ_FOREACH(group, &mcast->group_list, entries) {
     if (group->group_ip == group_addr) {
-      gfound = true;
+      found = true;
       break;
     }
   }
 
-  if (!gfound) {
+  if (!found) {
     mt_pthread_mutex_unlock(&mcast->group_mutex);
     warn("%s(%d), group ip not found, nothing to delete\n", __func__, port);
     return 0;
   }
 
   /* delete source */
-  bool sfound = false;
+  bool sdelete = false;
   if (source_addr != 0) {
+    found = false;
     struct mt_mcast_src_entry* src;
     TAILQ_FOREACH(src, &group->src_list, entries) {
       if (src->src_ip == source_addr) {
-        sfound = true;
+        found = true;
         break;
       }
     }
-    if (sfound) {
+    if (found) {
       src->src_ref_cnt--;
       if (src->src_ref_cnt == 0) {
         info("%s(%d), delete source %x\n", __func__, port, source_addr);
         TAILQ_REMOVE(&group->src_list, src, entries);
         mt_rte_free(src);
+        sdelete = true;
       }
     }
   }
@@ -697,6 +700,7 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sou
     info("%s(%d), delete group %x\n", __func__, port, group_addr);
     TAILQ_REMOVE(&mcast->group_list, group, entries);
     mt_rte_free(group);
+    gdelete = true;
 
     mcast->group_num--;
 
@@ -710,7 +714,7 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sou
   mt_pthread_mutex_unlock(&mcast->group_mutex);
 
   /* send leave report */
-  if (gfound || sfound) {
+  if (gdelete || sdelete) {
     int ret = mcast_membership_report_on_action(impl, port, group_addr, source_addr,
                                                 MCAST_LEAVE);
     if (ret < 0) {
