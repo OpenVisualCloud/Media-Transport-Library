@@ -2,5 +2,5 @@
 # Copyright 2022 Intel Corporation
 
 sources += files(
-	'st20_redundant_rx.c',
+	'st20_redundant_combined_rx.c',
 )

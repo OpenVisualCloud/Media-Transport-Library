@@ -74,7 +74,7 @@ static void* app_rx_st20r_frame_thread(void* arg) {
 
     dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     app_rx_st20r_consume_frame(s, framebuff->frame, framebuff->size);
-    st20r_rx_put_frame(s->st20r_handle, framebuff->frame);
+    st20rc_rx_put_frame(s->st20r_handle, framebuff->frame);
     /* point to next */
     st_pthread_mutex_lock(&s->st20_wake_mutex);
     framebuff->frame = NULL;
@@ -164,7 +164,7 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
 
   /* incomplete frame */
   if (!st_is_frame_complete(meta->status)) {
-    st20r_rx_put_frame(s->st20r_handle, frame);
+    st20rc_rx_put_frame(s->st20r_handle, frame);
     return 0;
   }
 
@@ -190,7 +190,7 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
 
   if (s->st20_dst_fd < 0 && s->display == NULL) {
     /* free the queue directly as no read thread is running */
-    st20r_rx_put_frame(s->st20r_handle, frame);
+    st20rc_rx_put_frame(s->st20r_handle, frame);
     return 0;
   }
 
@@ -198,7 +198,7 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
   ret = app_rx_st20r_enqueue_frame(s, frame, meta->frame_total_size);
   if (ret < 0) {
     /* free the queue */
-    st20r_rx_put_frame(s->st20r_handle, frame);
+    st20rc_rx_put_frame(s->st20r_handle, frame);
     st_pthread_mutex_unlock(&s->st20_wake_mutex);
     return ret;
   }
@@ -230,8 +230,8 @@ static int app_rx_st20r_uinit(struct st_app_rx_video_session* s) {
   st_pthread_cond_destroy(&s->st20_wake_cond);
 
   if (s->st20r_handle) {
-    ret = st20r_rx_free(s->st20r_handle);
-    if (ret < 0) err("%s(%d), st20r_rx_free fail %d\n", __func__, idx, ret);
+    ret = st20rc_rx_free(s->st20r_handle);
+    if (ret < 0) err("%s(%d), st20rc_rx_free fail %d\n", __func__, idx, ret);
     s->st20r_handle = NULL;
   }
   app_rx_st20r_close_source(s);
@@ -246,9 +246,9 @@ static int app_rx_st20r_uinit(struct st_app_rx_video_session* s) {
 static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t* video,
                              struct st_app_rx_video_session* s) {
   int idx = s->idx, ret;
-  struct st20r_rx_ops ops;
+  struct st20rc_rx_ops ops;
   char name[32];
-  st20r_rx_handle st20r_handle;
+  st20rc_rx_handle st20r_handle;
   memset(&ops, 0, sizeof(ops));
 
   snprintf(name, 32, "app_rx_st20r_%d", idx);
@@ -281,7 +281,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
     ops.udp_port[MTL_SESSION_PORT_R] = video ? video->base.udp_port : (10000 + s->idx);
   }
   ops.pacing = ST21_PACING_NARROW;
-  ops.flags = ST20R_RX_FLAG_DMA_OFFLOAD;
+  ops.flags = ST20RC_RX_FLAG_DMA_OFFLOAD;
   ops.width = video ? st_app_get_width(video->info.video_format) : 1920;
   ops.height = video ? st_app_get_height(video->info.video_format) : 1080;
   ops.fps = video ? st_app_get_fps(video->info.video_format) : ST_FPS_P59_94;
@@ -290,7 +290,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   ops.payload_type = video ? video->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.notify_frame_ready = app_rx_st20r_frame_ready;
   ops.framebuff_cnt = s->framebuff_cnt;
-  if (ctx->enable_hdr_split) ops.flags |= ST20R_RX_FLAG_HDR_SPLIT;
+  if (ctx->enable_hdr_split) ops.flags |= ST20RC_RX_FLAG_HDR_SPLIT;
 
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);
@@ -335,15 +335,15 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
 
   s->measure_latency = video ? video->measure_latency : true;
 
-  st20r_handle = st20r_rx_create(ctx->st, &ops);
+  st20r_handle = st20rc_rx_create(ctx->st, &ops);
   if (!st20r_handle) {
-    err("%s(%d), st20r_rx_create fail\n", __func__, idx);
+    err("%s(%d), st20rc_rx_create fail\n", __func__, idx);
     app_rx_st20r_uinit(s);
     return -EIO;
   }
   s->st20r_handle = st20r_handle;
 
-  s->st20_frame_size = st20r_rx_get_framebuffer_size(st20r_handle);
+  s->st20_frame_size = st20rc_rx_get_framebuffer_size(st20r_handle);
 
   ret = app_rx_st20r_open_source(s);
   if (ret < 0) {
@@ -400,7 +400,7 @@ static int app_rx_st20r_result(struct st_app_rx_video_session* s) {
 
 static int app_rx_st20r_pcap(struct st_app_rx_video_session* s) {
   if (s->pcapng_max_pkts)
-    st20r_rx_pcapng_dump(s->st20r_handle, s->pcapng_max_pkts, false, NULL);
+    st20rc_rx_pcapng_dump(s->st20r_handle, s->pcapng_max_pkts, false, NULL);
   return 0;
 }
 

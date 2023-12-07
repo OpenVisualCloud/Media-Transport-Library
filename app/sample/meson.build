@@ -18,7 +18,6 @@ rx_st20p_tx_st20p_downsample_merge_fwd_sources = files('fwd/rx_st20p_tx_st20p_do
 
 # misc
 video_tx_split_sample_sources = files('tx_video_split_sample.c', 'sample_util.c')
-redundant_rx_st20_sample_sources = files('rx_st20_redundant_sample.c', 'sample_util.c')
 
 # ext frame
 pipeline_tx_st20_ext_frame_sample_sources = files('ext_frame/tx_st20_pipeline_ext_frame_sample.c', 'sample_util.c')
@@ -40,3 +39,7 @@ video_tx_slice_sample_sources = files('low_level/tx_slice_video_sample.c', 'samp
 
 # dma
 dma_sample_sources = files('dma/dma_sample.c', 'sample_util.c')
+
+# experimental
+redundant_rx_st20_combined_sample_sources = files('experimental/rx_st20_redundant_combined_sample.c',
+    'sample_util.c')

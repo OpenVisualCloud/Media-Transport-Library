@@ -21,4 +21,4 @@ sources += files(
 )
 
 subdir('pipeline')
-subdir('redundant')
+subdir('experimental')
