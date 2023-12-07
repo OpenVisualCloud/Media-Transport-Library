@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
     ops_rx.framebuff_cnt = app[i]->framebuff_cnt;
     ops_rx.payload_type = ctx.payload_type;
     ops_rx.notify_frame_ready = rx_video_frame_ready;
-    if (ctx.hdr_split) ops_rx.flags |= ST20R_RX_FLAG_HDR_SPLIT;
+    if (ctx.hdr_split) ops_rx.flags |= ST20RC_RX_FLAG_HDR_SPLIT;
 
     rx_handle[i] = st20rc_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {

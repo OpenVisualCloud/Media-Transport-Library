@@ -154,15 +154,15 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx* ctx,
   snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s", ops->port[port]);
   ops_rx.udp_port[MTL_SESSION_PORT_P] = ops->udp_port[port];
 
-  if (ops->flags & ST20R_RX_FLAG_DATA_PATH_ONLY)
+  if (ops->flags & ST20RC_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST20_RX_FLAG_DATA_PATH_ONLY;
   /* always enable incomplete frame */
   ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   /* disable migrate since it may migrate the two sessions into one sch */
   ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
-  if (ops->flags & ST20R_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
-  if (ops->flags & ST20R_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
-  if (ops->flags & ST20R_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST20RC_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  if (ops->flags & ST20RC_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
+  if (ops->flags & ST20RC_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
 
   ops_rx.pacing = ops->pacing;
   ops_rx.width = ops->width;
@@ -280,7 +280,7 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops) {
   if (ops->name) {
     snprintf(ctx->ops_name, sizeof(ctx->ops_name), "%s", ops->name);
   } else {
-    snprintf(ctx->ops_name, sizeof(ctx->ops_name), "ST20R_RX_%d", idx);
+    snprintf(ctx->ops_name, sizeof(ctx->ops_name), "ST20RC_RX_%d", idx);
   }
   ctx->ops = *ops;
 

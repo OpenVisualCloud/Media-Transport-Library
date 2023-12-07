@@ -27,32 +27,32 @@ typedef struct st20rc_rx_ctx* st20rc_rx_handle;
  * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
-#define ST20R_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
+#define ST20RC_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 /**
  * Flag bit in flags of struct st20rc_rx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
-#define ST20R_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
+#define ST20RC_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 
 /**
  * Flag bit in flags of struct st20rc_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */
-#define ST20R_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
+#define ST20RC_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 /**
  * Flag bit in flags of struct st20rc_rx_ops.
  * If set, lib will try to allocate DMA memory copy offload from
  * dma_dev_port(mtl_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
-#define ST20R_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
+#define ST20RC_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
 /**
  * Flag bit in flags of struct st20rc_rx_ops.
  * Only ST20_PACKING_BPM stream can enable this offload as software limit
  * Try to enable header split offload feature.
  */
-#define ST20R_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
+#define ST20RC_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
 
 /**
  * The structure describing how to create a rx st2110-20(redundant) session.
@@ -94,7 +94,7 @@ struct st20rc_rx_ops {
   /** Optional. source filter IP address of multicast */
   uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
 
-  /** flags, value in ST20R_RX_FLAG_* */
+  /** flags, value in ST20RC_RX_FLAG_* */
   uint32_t flags;
   /**
    * the ST20_TYPE_FRAME_LEVEL frame buffer count requested,
