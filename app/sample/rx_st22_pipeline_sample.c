@@ -167,6 +167,7 @@ int main(int argc, char** argv) {
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
     ops_rx.fps = ctx.fps;
+    ops_rx.interlaced = ctx.interlaced;
     ops_rx.output_fmt = ctx.output_fmt;
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
     ops_rx.codec = ctx.st22p_codec;

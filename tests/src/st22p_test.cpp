@@ -717,6 +717,7 @@ struct st22p_rx_digest_test_para {
   bool rtcp;
   bool tx_ext;
   bool rx_ext;
+  bool interlace;
   uint32_t ssrc;
 };
 
@@ -735,6 +736,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->rtcp = false;
   para->tx_ext = false;
   para->rx_ext = false;
+  para->interlace = false;
   para->ssrc = 0;
 }
 
@@ -828,6 +830,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.width = width[i];
     ops_tx.height = height[i];
     ops_tx.fps = fps[i];
+    ops_tx.interlaced = para->interlace;
     ops_tx.input_fmt = fmt[i];
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
     ops_tx.codec = codec[i];
@@ -852,12 +855,14 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
 
     test_ctx_tx[i]->frame_size =
-        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, false);
+        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, ops_tx.interlaced);
 
     ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
 
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
+
+    EXPECT_EQ(test_ctx_tx[i]->frame_size, st22p_tx_frame_size(tx_handle[i]));
 
     /* init ext frames, only for no convert */
     if (para->tx_ext) {
@@ -1003,6 +1008,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.width = width[i];
     ops_rx.height = height[i];
     ops_rx.fps = fps[i];
+    ops_rx.interlaced = para->interlace;
     ops_rx.output_fmt = fmt[i];
     ops_rx.pack_type = ST22_PACK_CODESTREAM;
     ops_rx.codec = codec[i];
@@ -1028,10 +1034,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
 
     test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, false);
+        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
 
     rx_handle[i] = st22p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
+
+    EXPECT_EQ(test_ctx_rx[i]->frame_size, st22p_rx_frame_size(rx_handle[i]));
 
     test_ctx_rx[i]->handle = rx_handle[i];
 
@@ -1136,6 +1144,22 @@ TEST(St22p, digest_st22_1080p_s1) {
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
   para.level = ST_TEST_LEVEL_ALL;
+
+  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+}
+
+TEST(St22p, digest_st22_1080i) {
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  enum st_frame_fmt fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
+  enum st22_codec codec[1] = {ST22_CODEC_JPEGXS};
+  int compress_ratio[1] = {10};
+
+  struct st22p_rx_digest_test_para para;
+  test_st22p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_MANDATORY;
+  para.interlace = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

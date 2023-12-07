@@ -95,13 +95,17 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   MTL_MAY_UNUSED(s_port);
 
   if (payload_type != ops->payload_type) {
-    s->st40_stat_pkts_wrong_hdr_dropped++;
+    dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
+        payload_type, ops->payload_type);
+    s->st40_stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
   }
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
-      s->st40_stat_pkts_wrong_hdr_dropped++;
+      dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
+          ops->ssrc);
+      s->st40_stat_pkts_wrong_ssrc_dropped++;
       return -EINVAL;
     }
   }
@@ -349,7 +353,6 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->latest_seq_id = -1;
   s->st40_stat_pkts_received = 0;
   s->st40_stat_pkts_dropped = 0;
-  s->st40_stat_pkts_wrong_hdr_dropped = 0;
   s->st40_stat_last_time = mt_get_monotonic_time();
   rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
@@ -397,10 +400,15 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     notice("RX_ANC_SESSION(%d): st40 dropped pkts %d\n", idx, s->st40_stat_pkts_dropped);
     s->st40_stat_pkts_dropped = 0;
   }
-  if (s->st40_stat_pkts_wrong_hdr_dropped) {
-    notice("RX_ANC_SESSION(%d): wrong hdr dropped pkts %d\n", idx,
-           s->st40_stat_pkts_wrong_hdr_dropped);
-    s->st40_stat_pkts_wrong_hdr_dropped = 0;
+  if (s->st40_stat_pkts_wrong_pt_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,
+           s->st40_stat_pkts_wrong_pt_dropped);
+    s->st40_stat_pkts_wrong_pt_dropped = 0;
+  }
+  if (s->st40_stat_pkts_wrong_ssrc_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr ssrc dropped pkts %d\n", idx,
+           s->st40_stat_pkts_wrong_ssrc_dropped);
+    s->st40_stat_pkts_wrong_ssrc_dropped = 0;
   }
   if (s->time_measure) {
     notice("RX_ANC_SESSION(%d): notify rtp max %uus\n", idx, s->stat_max_notify_rtp_us);

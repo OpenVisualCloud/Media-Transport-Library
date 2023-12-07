@@ -229,6 +229,7 @@ int main(int argc, char** argv) {
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;
     ops_tx.fps = ctx.fps;
+    ops_tx.interlaced = ctx.interlaced;
     ops_tx.input_fmt = ctx.input_fmt;
     ops_tx.pack_type = ST22_PACK_CODESTREAM;
     ops_tx.codec = ctx.st22p_codec;
@@ -236,6 +237,7 @@ int main(int argc, char** argv) {
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.codec_thread_cnt = 2;
     ops_tx.codestream_size = ops_tx.width * ops_tx.height * bpp / 8;
+    if (ops_tx.interlaced) ops_tx.codestream_size /= 2;
     ops_tx.framebuff_cnt = ctx.framebuff_cnt;
     ops_tx.notify_frame_available = tx_st22p_frame_available;
 

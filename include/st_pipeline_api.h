@@ -551,6 +551,8 @@ struct st22_encoder_create_req {
   uint32_t height;
   /** Session resolution fps, set by lib */
   enum st_fps fps;
+  /** Interlaced or not, set by lib */
+  bool interlaced;
   /** Session input frame format, set by lib */
   enum st_frame_fmt input_fmt;
   /** Session output frame format, set by lib */
@@ -606,6 +608,8 @@ struct st22_decoder_create_req {
   uint32_t height;
   /** Session resolution fps, set by lib */
   enum st_fps fps;
+  /** Interlaced or not, set by lib */
+  bool interlaced;
   /** Session input frame format, set by lib */
   enum st_frame_fmt input_fmt;
   /** Session output frame format, set by lib */
@@ -640,9 +644,9 @@ struct st22_decoder_dev {
 
 /** The structure info for st22 decode frame meta. */
 struct st22_decode_frame_meta {
-  /** Encode source frame */
+  /** Decode source frame */
   struct st_frame* src;
-  /** Encode dst frame */
+  /** Decode dst frame */
   struct st_frame* dst;
   /** priv pointer for lib, do not touch this */
   void* priv;
@@ -745,6 +749,8 @@ struct st20p_tx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session input frame format */
   enum st_frame_fmt input_fmt;
   /** Mandatory. Session transport pacing type */
@@ -780,13 +786,7 @@ struct st20p_tx_ops {
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
-  /** Optional.
-   * interlace or not, false(default): non-interlaced: true: interlaced.
-   * Ex for format 1080i50, please refer to below parameter configurations:
-   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
-   * and filled each frame(field) with 540 lines.
-   */
-  bool interlaced;
+
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
 
@@ -838,6 +838,8 @@ struct st20p_rx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session transport frame format */
   enum st20_fmt transport_fmt;
   /** Mandatory. Session output frame format */
@@ -864,13 +866,6 @@ struct st20p_rx_ops {
    */
   int (*notify_frame_available)(void* priv);
 
-  /** Optional.
-   * interlace or not, false(default): non-interlaced: true: interlaced.
-   * Ex for format 1080i50, please refer to below parameter configurations:
-   *   interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50
-   * and each frame(field) received has 540 lines data.
-   */
-  bool interlaced;
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
   /** Optional. Array of external frames */
@@ -903,6 +898,8 @@ struct st22p_tx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session input frame format */
   enum st_frame_fmt input_fmt;
   /** Mandatory. packetization modes define in RFC9134 */
@@ -913,7 +910,8 @@ struct st22p_tx_ops {
   enum st_plugin_device device;
   /** Mandatory. speed or quality mode */
   enum st22_quality_mode quality;
-  /** Mandatory. codestream size, calculate as compress ratio */
+  /** Mandatory. codestream size, calculate as compress ratio. For interlaced, it's the
+   * expected codestream size for each field */
   size_t codestream_size;
   /**
    *  Mandatory. the frame buffer count requested for one st22 pipeline tx session,
@@ -969,6 +967,8 @@ struct st22p_rx_ops {
   uint32_t height;
   /** Mandatory. Session resolution fps */
   enum st_fps fps;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
   /** Mandatory. Session output frame format */
   enum st_frame_fmt output_fmt;
   /** Mandatory. packetization modes define in RFC9134 */
@@ -992,7 +992,8 @@ struct st22p_rx_ops {
   uint32_t flags;
   /** Optional. thread count for codec, leave to zero if not know */
   uint32_t codec_thread_cnt;
-  /** Optional. max codestream size, lib will use output frame size if not set */
+  /** Optional. max codestream size, lib will use output frame size if not set. For
+   * interlaced, it's the expected codestream size for each field */
   size_t max_codestream_size;
   /** Optional for ST22P_RX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_rx_rtcp_ops* rtcp;

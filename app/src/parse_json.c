@@ -1166,6 +1166,13 @@ static int parse_st22p_fps(json_object* st22p_obj, st_json_st22p_session_t* st22
   return ST_JSON_SUCCESS;
 }
 
+static int parse_st22p_interlace(json_object* st22p_obj, st_json_st22p_session_t* st22p) {
+  json_object* obj = st_json_object_object_get(st22p_obj, "interlaced");
+  if (!obj) return ST_JSON_SUCCESS;
+  st22p->info.interlaced = json_object_get_boolean(obj);
+  return ST_JSON_SUCCESS;
+}
+
 static int parse_st22p_pack_type(json_object* st22p_obj, st_json_st22p_session_t* st22p) {
   const char* pack_type =
       json_object_get_string(st_json_object_object_get(st22p_obj, "pack_type"));
@@ -1312,6 +1319,10 @@ static int st_json_parse_tx_st22p(int idx, json_object* st22p_obj,
   ret = parse_st22p_fps(st22p_obj, st22p);
   if (ret < 0) return ret;
 
+  /* parse interlace */
+  ret = parse_st22p_interlace(st22p_obj, st22p);
+  if (ret < 0) return ret;
+
   /* parse pack_type */
   ret = parse_st22p_pack_type(st22p_obj, st22p);
   if (ret < 0) return ret;
@@ -1380,6 +1391,10 @@ static int st_json_parse_rx_st22p(int idx, json_object* st22p_obj,
 
   /* parse fps */
   ret = parse_st22p_fps(st22p_obj, st22p);
+  if (ret < 0) return ret;
+
+  /* parse interlace */
+  ret = parse_st22p_interlace(st22p_obj, st22p);
   if (ret < 0) return ret;
 
   /* parse pack_type */

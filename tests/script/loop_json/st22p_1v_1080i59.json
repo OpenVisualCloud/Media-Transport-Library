@@ -9,7 +9,7 @@
             "ip": "192.168.17.102"
         }
     ],
-	"tx_sessions": [
+    "tx_sessions": [
         {
             "dip": [
                 "local:1"
@@ -17,18 +17,22 @@
             "interface": [
                 0
             ],
-            "video": [
+            "st22p": [
                 {
                     "replicas": 1,
-                    "type": "rtp",
-                    "pacing": "gap",
-                    "packing": "BPM",
-                    "start_port": 20000,
-                    "payload_type": 112,
-                    "tr_offset": "default",
-                    "video_format": "i1080p59",
-                    "pg_format": "YUV_422_10bit",
-                    "video_url": "./test_st22.pcap"
+                    "start_port": 50000,
+                    "payload_type": 114,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "interlaced": "true",
+                    "codec": "JPEG-XS",
+                    "device": "AUTO",
+                    "quality": "speed",
+                    "pack_type": "codestream",
+                    "input_format": "YUV422RFC4175PG2BE10",
+                    "codec_thread_count" : 2,
+                    "st22p_url": "./test.yuv"
                 }
             ]
         }
@@ -44,17 +48,19 @@
             "st22p": [
                 {
                     "replicas": 1,
-                    "start_port": 20000,
-                    "payload_type": 112,
+                    "start_port": 50000,
+                    "payload_type": 114,
                     "width": 1920,
                     "height": 1080,
                     "fps": "p59",
+                    "interlaced": "true",
                     "codec": "JPEG-XS",
                     "device": "AUTO",
                     "pack_type": "codestream",
                     "output_format": "YUV422RFC4175PG2BE10",
                     "codec_thread_count" : 2,
-                    "display": false
+                    "display": false,
+                    "measure_latency": true,
                 }
             ]
         }

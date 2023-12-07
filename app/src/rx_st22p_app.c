@@ -18,6 +18,10 @@ static void app_rx_st22p_consume_frame(struct st_app_rx_st22p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
 
+  if (frame->interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+  }
+
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
       if (frame->fmt == ST_FRAME_FMT_UYVY)
@@ -171,6 +175,7 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.width = st22p ? st22p->info.width : 1920;
   ops.height = st22p ? st22p->info.height : 1080;
   ops.fps = st22p ? st22p->info.fps : ST_FPS_P59_94;
+  ops.interlaced = st22p ? st22p->info.interlaced : false;
   ops.output_fmt = st22p ? st22p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ops.port.payload_type = st22p ? st22p->base.payload_type : ST_APP_PAYLOAD_TYPE_ST22;
   ops.pack_type = st22p ? st22p->info.pack_type : ST22_PACK_CODESTREAM;

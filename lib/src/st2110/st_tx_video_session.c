@@ -235,7 +235,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
             i);
         return -ENOMEM;
       }
-      if (st22_info) { /* copy boxes */
+      if (st22_info && s->st22_box_hdr_length) { /* copy boxes */
         mtl_memcpy(frame, &st22_info->st22_boxes, s->st22_box_hdr_length);
       }
       frame_info->iova = rte_mem_virt2iova(frame);
@@ -604,8 +604,10 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   if (interlaced) {
     if (second_field) { /* align to odd epoch */
       if (!(epochs & 0x1)) epochs++;
+      s->stat_interlace_second_field++;
     } else { /* align to even epoch */
       if (epochs & 0x1) epochs++;
+      s->stat_interlace_first_field++;
     }
   }
 
@@ -687,6 +689,9 @@ static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
   meta->height = ops->height;
   meta->fps = ops->fps;
   meta->codestream_size = s->st22_codestream_size;
+  if (ops->interlaced) { /* init second_field but user still can customize also */
+    meta->second_field = s->second_field;
+  }
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
@@ -1393,6 +1398,14 @@ static int tv_build_st22(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   rtp->f_counter_lo = f_counter;
   rtp->f_counter_hi = f_counter >> 2;
 
+  if (s->ops.interlaced) {
+    struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
+    if (frame_info->tx_st22_meta.second_field)
+      rtp->interlaced = 0x3;
+    else
+      rtp->interlaced = 0x2;
+  }
+
   /* update mbuf */
   mt_mbuf_init_ipv4(pkt);
 
@@ -1458,6 +1471,14 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   rtp->sep_counter_hi = sep_counter >> 5;
   rtp->f_counter_lo = f_counter;
   rtp->f_counter_hi = f_counter >> 2;
+
+  if (s->ops.interlaced) {
+    struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
+    if (frame_info->tx_st22_meta.second_field)
+      rtp->interlaced = 0x3;
+    else
+      rtp->interlaced = 0x2;
+  }
 
   /* update mbuf */
   mt_mbuf_init_ipv4(pkt);
@@ -2160,7 +2181,8 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
 
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
-      tv_sync_pacing(impl, s, false, required_tai, false);
+      bool second_field = frame->tx_st22_meta.second_field;
+      tv_sync_pacing(impl, s, false, required_tai, second_field);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
         pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
       }
@@ -2168,6 +2190,10 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tx_st22_meta.timestamp = pacing->cur_epoch_time;
       frame->tx_st22_meta.epoch = pacing->cur_epochs;
+      /* init to next field */
+      if (ops->interlaced) {
+        s->second_field = second_field ? false : true;
+      }
       dbg("%s(%d), next_frame_idx %d(%d pkts) start\n", __func__, idx, next_frame_idx,
           s->st20_total_pkts);
       dbg("%s(%d), codestream_size %" PRId64 "(%d st22 pkts) time_stamp %u\n", __func__,
@@ -2892,6 +2918,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
     s->st20_fb_size = s->st20_frame_size;
+    info("%s(%d), st22 max codestream size %" PRId64 ", box len %u\n", __func__, idx,
+         s->st22_codestream_size, s->st22_box_hdr_length);
   } else {
     s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
     s->st20_fb_size = s->st20_linesize * height;
@@ -3193,6 +3221,12 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     err("TX_VIDEO_SESSION(%d,%d): unrecoverable_error %u \n", m_idx, idx,
         s->stat_unrecoverable_error);
     /* not reset unrecoverable_error */
+  }
+  if (s->ops.interlaced) {
+    notice("TX_VIDEO_SESSION(%d,%d): interlace first field %u second field %u\n", m_idx,
+           idx, s->stat_interlace_first_field, s->stat_interlace_second_field);
+    s->stat_interlace_first_field = 0;
+    s->stat_interlace_second_field = 0;
   }
 
   /* check frame busy stat */
@@ -4252,6 +4286,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   st20_ops.width = ops->width;
   st20_ops.height = ops->height;
   st20_ops.fps = ops->fps;
+  st20_ops.interlaced = ops->interlaced;
   st20_ops.fmt = ST20_FMT_YUV_422_10BIT;
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
   st20_ops.payload_type = ops->payload_type;

@@ -62,6 +62,10 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
   /* point to next frame */
   s->st20p_frame_cursor += s->st20p_frame_size;
 
+  if (frame->interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+  }
+
   app_tx_st20p_display_frame(s, frame);
 }
 

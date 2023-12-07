@@ -24,11 +24,11 @@
                     "pacing": "gap",
                     "packing": "BPM",
                     "start_port": 20000,
-                    "payload_type": 112,
+                    "payload_type": 101,
                     "tr_offset": "default",
                     "video_format": "i1080p59",
                     "pg_format": "YUV_422_10bit",
-                    "video_url": "./test_st22.pcap"
+                    "video_url": "./test_st22_interlaced.pcap"
                 }
             ]
         }
@@ -45,10 +45,11 @@
                 {
                     "replicas": 1,
                     "start_port": 20000,
-                    "payload_type": 112,
+                    "payload_type": 101,
                     "width": 1920,
                     "height": 1080,
                     "fps": "p59",
+                    "interlaced": "true",
                     "codec": "JPEG-XS",
                     "device": "AUTO",
                     "pack_type": "codestream",

@@ -63,6 +63,8 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   framebuff->stat = ST22P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
+
+  meta->second_field = framebuff->src.second_field;
   if (ctx->ops.flags & (ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = framebuff->src.tfmt;
     meta->timestamp = framebuff->src.timestamp;
@@ -257,6 +259,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
   ops_tx.fps = ops->fps;
+  ops_tx.interlaced = ops->interlaced;
   ops_tx.payload_type = ops->port.payload_type;
   ops_tx.ssrc = ops->port.ssrc;
   ops_tx.type = ST22_TYPE_FRAME_LEVEL;
@@ -281,6 +284,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].dst.addr[0] = st22_tx_get_fb_addr(transport, i);
     frames[i].dst.fmt = ctx->encode_impl->req.req.output_fmt;
+    frames[i].dst.interlaced = ops->interlaced;
     frames[i].dst.buffer_size = ops_tx.framebuff_max_size;
     frames[i].dst.data_size = ops_tx.framebuff_max_size;
     frames[i].dst.width = ops->width;
@@ -332,6 +336,7 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
     frames[i].stat = ST22P_TX_FRAME_FREE;
     frames[i].idx = i;
     frames[i].src.fmt = ops->input_fmt;
+    frames[i].src.interlaced = ops->interlaced;
     frames[i].src.buffer_size = src_size;
     frames[i].src.data_size = src_size;
     frames[i].src.width = ops->width;
@@ -434,6 +439,10 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
+  if (ctx->ops.interlaced) { /* init second_field but user still can customize */
+    framebuff->dst.second_field = framebuff->src.second_field = ctx->second_field;
+    ctx->second_field = ctx->second_field ? false : true;
+  }
   return &framebuff->src;
 }
 
@@ -457,6 +466,10 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   if (ctx->ext_frame) {
     err("%s(%d), EXT_FRAME enabled, use st22p_tx_put_ext_frame instead\n", __func__, idx);
     return -EIO;
+  }
+
+  if (ctx->ops.interlaced) { /* update second_field */
+    framebuff->dst.second_field = framebuff->src.second_field = frame->second_field;
   }
 
   framebuff->stat = ST22P_TX_FRAME_READY;
@@ -507,6 +520,10 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
     return ret;
   }
 
+  if (ctx->ops.interlaced) { /* update second_field */
+    framebuff->dst.second_field = framebuff->src.second_field = frame->second_field;
+  }
+
   framebuff->stat = ST22P_TX_FRAME_READY;
   st22_encode_notify_frame_ready(ctx->encode_impl);
 
@@ -535,7 +552,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, false);
+  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
   if (!src_size) {
     err("%s(%d), get source size fail\n", __func__, idx);
     return NULL;
