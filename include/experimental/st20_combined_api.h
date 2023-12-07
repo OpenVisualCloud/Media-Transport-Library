@@ -3,52 +3,52 @@
  */
 
 /**
- * @file st20_redundant_api.h
+ * @file st20_redundant_combined.h
  *
- * Interfaces for st2110-20 redundant transport.
+ * Interfaces for st2110-20 combined redundant transport, experimental feature only.
  *
  */
 
-#include "st20_api.h"
+#include "../st20_api.h"
 
-#ifndef _ST20_REDUNDANT_API_HEAD_H_
+#ifndef _ST20_COMBINED_API_HEAD_H_
 /** Marco for re-include protect */
-#define _ST20_REDUNDANT_API_HEAD_H_
+#define _ST20_COMBINED_API_HEAD_H_
 
 #if defined(__cplusplus)
 extern "C" {
 #endif
 
 /** Handle to rx st2110-22 pipeline session of lib */
-typedef struct st20r_rx_ctx* st20r_rx_handle;
+typedef struct st20rc_rx_ctx* st20rc_rx_handle;
 
 /**
- * Flag bit in flags of struct st20r_rx_ops, for non MTL_PMD_DPDK_USER.
+ * Flag bit in flags of struct st20rc_rx_ops, for non MTL_PMD_DPDK_USER.
  * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
  * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
  */
 #define ST20R_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
 /**
- * Flag bit in flags of struct st20r_rx_ops.
+ * Flag bit in flags of struct st20rc_rx_ops.
  * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
  */
 #define ST20R_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
 
 /**
- * Flag bit in flags of struct st20r_rx_ops.
+ * Flag bit in flags of struct st20rc_rx_ops.
  * If set, lib will pass the incomplete frame to app also.
  * User can check st_frame_status data for the frame integrity
  */
 #define ST20R_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
 /**
- * Flag bit in flags of struct st20r_rx_ops.
+ * Flag bit in flags of struct st20rc_rx_ops.
  * If set, lib will try to allocate DMA memory copy offload from
  * dma_dev_port(mtl_init_params) list.
  * Pls note it could fallback to CPU if no DMA device is available.
  */
 #define ST20R_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
 /**
- * Flag bit in flags of struct st20r_rx_ops.
+ * Flag bit in flags of struct st20rc_rx_ops.
  * Only ST20_PACKING_BPM stream can enable this offload as software limit
  * Try to enable header split offload feature.
  */
@@ -58,7 +58,7 @@ typedef struct st20r_rx_ctx* st20r_rx_handle;
  * The structure describing how to create a rx st2110-20(redundant) session.
  * Frame based.
  */
-struct st20r_rx_ops {
+struct st20rc_rx_ops {
   /** name */
   const char* name;
   /** private data to the callback function */
@@ -106,9 +106,9 @@ struct st20r_rx_ops {
    * frame: point to the address of the frame buf.
    * meta: point to the meta data.
    * return:
-   *   - 0: if app consume the frame successful. App should call st20r_rx_put_frame
+   *   - 0: if app consume the frame successful. App should call st20rc_rx_put_frame
    * to return the frame when it finish the handling
-   *   < 0: the error code if app can't handle, lib will call st20r_rx_put_frame then.
+   *   < 0: the error code if app can't handle, lib will call st20rc_rx_put_frame then.
    * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
@@ -134,7 +134,7 @@ struct st20r_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20(redundant) session.
  */
-st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops);
+st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops);
 
 /**
  * Free the rx st2110-20(redundant) session.
@@ -145,7 +145,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20r_rx_free(st20r_rx_handle handle);
+int st20rc_rx_free(st20rc_rx_handle handle);
 
 /**
  * Put back the received buff get from notify_frame_ready.
@@ -158,7 +158,7 @@ int st20r_rx_free(st20r_rx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20r_rx_put_frame(st20r_rx_handle handle, void* frame);
+int st20rc_rx_put_frame(st20rc_rx_handle handle, void* frame);
 
 /**
  * Get the framebuffer size for the rx st2110-20(redundant) session.
@@ -168,7 +168,7 @@ int st20r_rx_put_frame(st20r_rx_handle handle, void* frame);
  * @return
  *   - size.
  */
-size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle);
+size_t st20rc_rx_get_framebuffer_size(st20rc_rx_handle handle);
 
 /**
  * Get the framebuffer count for the rx st2110-20(redundant) session.
@@ -178,7 +178,7 @@ size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle);
  * @return
  *   - count.
  */
-int st20r_rx_get_framebuffer_count(st20r_rx_handle handle);
+int st20rc_rx_get_framebuffer_count(st20rc_rx_handle handle);
 
 /**
  * Dump st2110-20(redundant) packets to pcapng file.
@@ -196,8 +196,8 @@ int st20r_rx_get_framebuffer_count(st20r_rx_handle handle);
  *   - 0: Success, rx st2110-20(redundant) session pcapng dump succ.
  *   - <0: Error code of the rx st2110-20(redundant) session pcapng dump.
  */
-int st20r_rx_pcapng_dump(st20r_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                         struct st_pcap_dump_meta* meta);
+int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                          struct st_pcap_dump_meta* meta);
 
 #if defined(__cplusplus)
 }

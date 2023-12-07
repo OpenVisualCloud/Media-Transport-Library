@@ -9,8 +9,8 @@
 #include <SDL2/SDL_ttf.h>
 #endif
 #include <errno.h>
+#include <mtl/experimental/st20_combined_api.h>
 #include <mtl/st20_api.h>
-#include <mtl/st20_redundant_api.h>
 #include <mtl/st30_api.h>
 #include <mtl/st40_api.h>
 #include <mtl/st_pipeline_api.h>
@@ -226,7 +226,7 @@ struct st_app_rx_video_session {
   int idx;
   mtl_handle st;
   st20_rx_handle handle;
-  st20r_rx_handle st20r_handle; /* for st20r */
+  st20rc_rx_handle st20r_handle; /* for st20r */
   int framebuff_cnt;
   int st20_frame_size;
   bool slice;

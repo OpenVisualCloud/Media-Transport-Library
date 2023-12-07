@@ -1,14 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2022 Intel Corporation
+ *
+ * st2110-20 combined redundant transport, experimental feature only.
  */
 
-#include "sample_util.h"
+#include "../sample_util.h"
 
-struct st20r_sample_ctx {
+struct st20rc_sample_ctx {
   int idx;
   int fb_rec;
   int stat_fb_rec;
-  st20r_rx_handle handle;
+  st20rc_rx_handle handle;
 
   bool stop;
   pthread_t app_thread;
@@ -21,7 +23,7 @@ struct st20r_sample_ctx {
   struct st_rx_frame* framebuffs;
 };
 
-static int rx_video_enqueue_frame(struct st20r_sample_ctx* s, void* frame, size_t size) {
+static int rx_video_enqueue_frame(struct st20rc_sample_ctx* s, void* frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
@@ -41,13 +43,13 @@ static int rx_video_enqueue_frame(struct st20r_sample_ctx* s, void* frame, size_
 
 static int rx_video_frame_ready(void* priv, void* frame,
                                 struct st20_rx_frame_meta* meta) {
-  struct st20r_sample_ctx* s = (struct st20r_sample_ctx*)priv;
+  struct st20rc_sample_ctx* s = (struct st20rc_sample_ctx*)priv;
 
   if (!s->handle) return -EIO;
 
   /* incomplete frame */
   if (!st_is_frame_complete(meta->status)) {
-    st20r_rx_put_frame(s->handle, frame);
+    st20rc_rx_put_frame(s->handle, frame);
     return 0;
   }
 
@@ -56,7 +58,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
   if (ret < 0) {
     err("%s(%d), frame %p dropped\n", __func__, s->idx, frame);
     /* free the queue */
-    st20r_rx_put_frame(s->handle, frame);
+    st20rc_rx_put_frame(s->handle, frame);
     st_pthread_mutex_unlock(&s->wake_mutex);
     return ret;
   }
@@ -66,7 +68,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static void rx_video_consume_frame(struct st20r_sample_ctx* s, void* frame,
+static void rx_video_consume_frame(struct st20rc_sample_ctx* s, void* frame,
                                    size_t frame_size) {
   MTL_MAY_UNUSED(frame);
   MTL_MAY_UNUSED(frame_size);
@@ -78,7 +80,7 @@ static void rx_video_consume_frame(struct st20r_sample_ctx* s, void* frame,
 }
 
 static void* rx_video_frame_thread(void* arg) {
-  struct st20r_sample_ctx* s = arg;
+  struct st20rc_sample_ctx* s = arg;
   int idx = s->idx;
   int consumer_idx;
   struct st_rx_frame* framebuff;
@@ -98,7 +100,7 @@ static void* rx_video_frame_thread(void* arg) {
 
     dbg("%s(%d), frame idx %d\n", __func__, idx, consumer_idx);
     rx_video_consume_frame(s, framebuff->frame, framebuff->size);
-    st20r_rx_put_frame(s->handle, framebuff->frame);
+    st20rc_rx_put_frame(s->handle, framebuff->frame);
     /* point to next */
     st_pthread_mutex_lock(&s->wake_mutex);
     framebuff->frame = NULL;
@@ -128,20 +130,20 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  st20r_rx_handle rx_handle[session_num];
-  struct st20r_sample_ctx* app[session_num];
+  st20rc_rx_handle rx_handle[session_num];
+  struct st20rc_sample_ctx* app[session_num];
   uint64_t sart_time_ns;
   int loop = 0;
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct st20r_sample_ctx*)malloc(sizeof(struct st20r_sample_ctx));
+    app[i] = (struct st20rc_sample_ctx*)malloc(sizeof(struct st20rc_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
-    memset(app[i], 0, sizeof(struct st20r_sample_ctx));
+    memset(app[i], 0, sizeof(struct st20rc_sample_ctx));
     app[i]->idx = i;
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
@@ -159,9 +161,9 @@ int main(int argc, char** argv) {
     app[i]->framebuff_producer_idx = 0;
     app[i]->framebuff_consumer_idx = 0;
 
-    struct st20r_rx_ops ops_rx;
+    struct st20rc_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
-    ops_rx.name = "st20r_test";
+    ops_rx.name = "st20rc_test";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 2;
     memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
@@ -184,7 +186,7 @@ int main(int argc, char** argv) {
     ops_rx.notify_frame_ready = rx_video_frame_ready;
     if (ctx.hdr_split) ops_rx.flags |= ST20R_RX_FLAG_HDR_SPLIT;
 
-    rx_handle[i] = st20r_rx_create(ctx.st, &ops_rx);
+    rx_handle[i] = st20rc_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {
       err("%s(%d), rx create fail\n", __func__, i);
       ret = -EIO;
@@ -245,7 +247,7 @@ error:
   // release session
   for (int i = 0; i < session_num; i++) {
     if (!app[i]) continue;
-    if (app[i]->handle) st20r_rx_free(app[i]->handle);
+    if (app[i]->handle) st20rc_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
     if (app[i]->framebuffs) free(app[i]->framebuffs);

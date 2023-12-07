@@ -1,14 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2022 Intel Corporation
+ *
+ * st2110-20 combined redundant transport, experimental feature only.
  */
 
-#include "st20_redundant_rx.h"
+#include "st20_redundant_combined_rx.h"
 
 #include "../../mt_log.h"
 #include "../st_rx_video_session.h"
 
-static int rx_st20r_frame_pop(struct st20r_rx_ctx* ctx, void* frame) {
-  struct st20r_rx_frame* rx_frame;
+static int rx_st20rc_frame_pop(struct st20rc_rx_ctx* ctx, void* frame) {
+  struct st20rc_rx_frame* rx_frame;
 
   for (int i = 0; i < ctx->frames_cnt; i++) {
     rx_frame = &ctx->frames[i];
@@ -22,10 +24,10 @@ static int rx_st20r_frame_pop(struct st20r_rx_ctx* ctx, void* frame) {
   return -EIO;
 }
 
-static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame,
-                               enum mtl_session_port port,
-                               struct st20_rx_frame_meta* meta) {
-  struct st20r_rx_frame* rx_frame;
+static int rx_st20rc_frame_push(struct st20rc_rx_ctx* ctx, void* frame,
+                                enum mtl_session_port port,
+                                struct st20_rx_frame_meta* meta) {
+  struct st20rc_rx_frame* rx_frame;
   int ret;
 
   for (int i = 0; i < ctx->frames_cnt; i++) {
@@ -49,10 +51,10 @@ static int rx_st20r_frame_push(struct st20r_rx_ctx* ctx, void* frame,
   return -EIO;
 }
 
-static int rx_st20r_frame_ready(void* priv, void* frame,
-                                struct st20_rx_frame_meta* meta) {
-  struct st20r_rx_transport* transport = priv;
-  struct st20r_rx_ctx* ctx = transport->parent;
+static int rx_st20rc_frame_ready(void* priv, void* frame,
+                                 struct st20_rx_frame_meta* meta) {
+  struct st20rc_rx_transport* transport = priv;
+  struct st20rc_rx_ctx* ctx = transport->parent;
   int idx = ctx->idx;
   enum mtl_session_port port = transport->port;
   int ret = -EIO;
@@ -69,7 +71,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
     ctx->cur_frame_complete = false;
     if (st_is_frame_complete(meta->status)) {
       /* full frame get */
-      ret = rx_st20r_frame_push(ctx, frame, port, meta);
+      ret = rx_st20rc_frame_push(ctx, frame, port, meta);
       if (ret >= 0) {
         ctx->cur_frame_complete = true;
         dbg("%s(%d), push frame %p at port %d\n", __func__, idx, frame, port);
@@ -81,7 +83,7 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
     if (st_is_frame_complete(meta->status)) {
       if (!ctx->cur_frame_complete) {
         /* full frame get at r session */
-        ret = rx_st20r_frame_push(ctx, frame, port, meta);
+        ret = rx_st20rc_frame_push(ctx, frame, port, meta);
         if (ret >= 0) {
           ctx->cur_frame_complete = true;
           info("%s(%d), push frame %p at r_port %d\n", __func__, idx, frame, port);
@@ -100,8 +102,8 @@ static int rx_st20r_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static int rx_st20r_notify_event(void* priv, enum st_event event, void* args) {
-  struct st20r_rx_ctx* ctx = priv;
+static int rx_st20rc_notify_event(void* priv, enum st_event event, void* args) {
+  struct st20rc_rx_ctx* ctx = priv;
 
   if (ctx->ops.notify_event) {
     ctx->ops.notify_event(ctx->ops.priv, event, args);
@@ -110,7 +112,7 @@ static int rx_st20r_notify_event(void* priv, enum st_event event, void* args) {
   return 0;
 }
 
-static int rx_st20r_free_transport(struct st20r_rx_transport* transport) {
+static int rx_st20rc_free_transport(struct st20rc_rx_transport* transport) {
   if (transport->handle) {
     st20_rx_free(transport->handle);
     transport->handle = NULL;
@@ -120,11 +122,12 @@ static int rx_st20r_free_transport(struct st20r_rx_transport* transport) {
   return 0;
 }
 
-static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_ops* ops,
-                                     enum mtl_session_port port) {
+static int rx_st20rc_create_transport(struct st20rc_rx_ctx* ctx,
+                                      struct st20rc_rx_ops* ops,
+                                      enum mtl_session_port port) {
   int idx = ctx->idx;
   struct mtl_main_impl* impl = ctx->impl;
-  struct st20r_rx_transport* transport;
+  struct st20rc_rx_transport* transport;
   struct st20_rx_ops ops_rx;
 
   if (ctx->transport[port]) {
@@ -171,9 +174,9 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   ops_rx.ssrc = ops->ssrc;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
-  ops_rx.notify_frame_ready = rx_st20r_frame_ready;
+  ops_rx.notify_frame_ready = rx_st20rc_frame_ready;
   if (port == MTL_SESSION_PORT_P) /* only register vsync to p port now */
-    ops_rx.notify_event = rx_st20r_notify_event;
+    ops_rx.notify_event = rx_st20rc_notify_event;
 
   mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
   if (port == MTL_SESSION_PORT_R) {
@@ -181,7 +184,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
     int sch_idx = st20_rx_get_sch_idx(ctx->transport[MTL_SESSION_PORT_P]->handle);
     if (sch_idx < 0) {
       err("%s(%d), st20_rx_get_sch_idx fail \n", __func__, idx);
-      rx_st20r_free_transport(transport);
+      rx_st20rc_free_transport(transport);
       return -EIO;
     }
     sch_mask &= ~(MTL_BIT64(sch_idx));
@@ -190,7 +193,7 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   transport->handle = st20_rx_create_with_mask(impl, &ops_rx, sch_mask);
   if (!transport->handle) {
     err("%s(%d), transport create fail on port %d\n", __func__, idx, port);
-    rx_st20r_free_transport(transport);
+    rx_st20rc_free_transport(transport);
     return -EIO;
   }
 
@@ -200,8 +203,8 @@ static int rx_st20r_create_transport(struct st20r_rx_ctx* ctx, struct st20r_rx_o
   return 0;
 }
 
-int st20r_rx_free(st20r_rx_handle handle) {
-  struct st20r_rx_ctx* ctx = handle;
+int st20rc_rx_free(st20rc_rx_handle handle) {
+  struct st20rc_rx_ctx* ctx = handle;
 
   if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -212,7 +215,7 @@ int st20r_rx_free(st20r_rx_handle handle) {
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (ctx->transport[i]) {
-      rx_st20r_free_transport(ctx->transport[i]);
+      rx_st20rc_free_transport(ctx->transport[i]);
       ctx->transport[i] = NULL;
     }
   }
@@ -227,9 +230,9 @@ int st20r_rx_free(st20r_rx_handle handle) {
   return 0;
 }
 
-st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
+st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops) {
   struct mtl_main_impl* impl = mt;
-  struct st20r_rx_ctx* ctx;
+  struct st20rc_rx_ctx* ctx;
   int ret;
   int idx = 0; /* todo */
   int num_port = ops->num_port;
@@ -264,7 +267,7 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
                                       mt_socket_id(impl, MTL_PORT_P));
   if (!ctx->frames) {
     err("%s, ctx frames malloc fail\n", __func__);
-    st20r_rx_free(ctx);
+    st20rc_rx_free(ctx);
     return NULL;
   }
 
@@ -283,10 +286,10 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
 
   /* crete transport handle */
   for (int i = 0; i < num_port; i++) {
-    ret = rx_st20r_create_transport(ctx, ops, i);
+    ret = rx_st20rc_create_transport(ctx, ops, i);
     if (ret < 0) {
       err("%s(%d), create transport fail\n", __func__, idx);
-      st20r_rx_free(ctx);
+      st20rc_rx_free(ctx);
       return NULL;
     }
   }
@@ -295,19 +298,19 @@ st20r_rx_handle st20r_rx_create(mtl_handle mt, struct st20r_rx_ops* ops) {
   return ctx;
 }
 
-int st20r_rx_put_frame(st20r_rx_handle handle, void* frame) {
-  struct st20r_rx_ctx* ctx = handle;
+int st20rc_rx_put_frame(st20rc_rx_handle handle, void* frame) {
+  struct st20rc_rx_ctx* ctx = handle;
 
   if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
   }
 
-  return rx_st20r_frame_pop(ctx, frame);
+  return rx_st20rc_frame_pop(ctx, frame);
 }
 
-size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle) {
-  struct st20r_rx_ctx* ctx = handle;
+size_t st20rc_rx_get_framebuffer_size(st20rc_rx_handle handle) {
+  struct st20rc_rx_ctx* ctx = handle;
 
   if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -317,8 +320,8 @@ size_t st20r_rx_get_framebuffer_size(st20r_rx_handle handle) {
   return st20_rx_get_framebuffer_size(ctx->transport[MTL_SESSION_PORT_P]->handle);
 }
 
-int st20r_rx_get_framebuffer_count(st20r_rx_handle handle) {
-  struct st20r_rx_ctx* ctx = handle;
+int st20rc_rx_get_framebuffer_count(st20rc_rx_handle handle) {
+  struct st20rc_rx_ctx* ctx = handle;
 
   if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -328,9 +331,9 @@ int st20r_rx_get_framebuffer_count(st20r_rx_handle handle) {
   return st20_rx_get_framebuffer_count(ctx->transport[MTL_SESSION_PORT_P]->handle);
 }
 
-int st20r_rx_pcapng_dump(st20r_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                         struct st_pcap_dump_meta* meta) {
-  struct st20r_rx_ctx* ctx = handle;
+int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                          struct st_pcap_dump_meta* meta) {
+  struct st20rc_rx_ctx* ctx = handle;
   int ret = 0;
 
   if (ctx->type != MT_HANDLE_RX_VIDEO_R) {
