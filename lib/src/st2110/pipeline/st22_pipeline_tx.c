@@ -692,3 +692,15 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle) {
 
   return ctx->src_size;
 }
+
+int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st22p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st22_tx_update_destination(ctx->transport, dst);
+}

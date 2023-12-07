@@ -439,6 +439,7 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
+    memcpy(ops->mcast_sip_addr[i], src->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }

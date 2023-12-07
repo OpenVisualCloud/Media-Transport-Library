@@ -930,3 +930,15 @@ int st20p_rx_reset_port_stats(st20p_rx_handle handle, enum mtl_session_port port
 
   return st20_rx_reset_port_stats(ctx->transport, port);
 }
+
+int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src) {
+  struct st20p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st20_rx_update_source(ctx->transport, src);
+}
