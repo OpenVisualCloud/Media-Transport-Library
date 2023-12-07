@@ -44,7 +44,7 @@ config | max-sessions | comment
 
 Intel® Memory Latency Checker (Intel® MLC) <https://www.intel.com/content/www/us/en/download/736633/intel-memory-latency-checker-intel-mlc.html> is a tool used to measure memory latencies and b/w, and how they change with increasing load on the system.
 
-The performance of IMTL is bound by memory throughput, with dependencies on DDR bandwidth and Last Level Cache (LLC). Should you experience issues related to core density, it is recommended to run `Intel® Memory Latency Checker (Intel® MLC)` to diagnose any memory system bottlenecks, such as unpopulated DDR DIMM slots.
+The performance of IMTL is bound by memory throughput, with dependencies on DDR bandwidth and Last Level Cache (LLC). If you experience issues related to core density, it is recommended to run `Intel® Memory Latency Checker (Intel® MLC)` to diagnose any memory system bottlenecks, such as unpopulated DDR DIMM slots.
 
 Below is the output from Intel® MLC Bandwidths on our reference setup:
 
