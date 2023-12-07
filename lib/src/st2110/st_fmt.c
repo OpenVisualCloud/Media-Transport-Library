@@ -555,6 +555,15 @@ int st_frame_sanity_check(struct st_frame* frame) {
           frame->data_size, frame->buffer_size);
       return -EINVAL;
     }
+
+    /* check data size is enough */
+    size_t least_sz =
+        st_frame_size(frame->fmt, frame->width, frame->height, frame->interlaced);
+    if (frame->data_size < least_sz) {
+      err("%s, frame data size %" PRIu64 " small then frame least_sz %" PRIu64 "\n",
+          __func__, frame->data_size, least_sz);
+      return -EINVAL;
+    }
   }
 
   return 0;
