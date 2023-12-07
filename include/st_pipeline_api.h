@@ -1312,6 +1312,19 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx);
 size_t st22p_tx_frame_size(st22p_tx_handle handle);
 
 /**
+ * Online update the destination info for the tx st2110-22(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(pipeline) session.
+ * @param dst
+ *   The pointer to the tx st2110-22(pipeline) destination info.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
  * Create one rx st2110-22 pipeline session.
  *
  * @param mt
@@ -1416,6 +1429,19 @@ int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets, bool
  *   - <0: Error code.
  */
 int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
+
+/**
+ * Online update the source info for the rx st2110-22(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(pipeline) session.
+ * @param src
+ *   The pointer to the rx st2110-22(pipeline) source info.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src);
 
 /**
  * Create one tx st2110-20 pipeline session.
@@ -1548,6 +1574,19 @@ int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
  *   - <0: Error code.
  */
 int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port);
+
+/**
+ * Online update the destination info for the tx st2110-20(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(pipeline) session.
+ * @param dst
+ *   The pointer to the tx st2110-20(pipeline) destination info.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
  * Create one rx st2110-20 pipeline session.
@@ -1694,6 +1733,19 @@ int st20p_rx_get_port_stats(st20p_rx_handle handle, enum mtl_session_port port,
  *   - <0: Error code.
  */
 int st20p_rx_reset_port_stats(st20p_rx_handle handle, enum mtl_session_port port);
+
+/**
+ * Online update the source info for the rx st2110-20(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(pipeline) session.
+ * @param src
+ *   The pointer to the rx st2110-20(pipeline) source info.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src);
 
 /**
  * Convert color format from source frame to destination frame.

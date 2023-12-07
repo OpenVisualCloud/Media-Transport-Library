@@ -131,9 +131,9 @@ MTL_PACK(struct st_rfc3550_rtp_hdr {
  */
 struct st_tx_dest_info {
   /** destination IP address of sender */
-  uint8_t dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t dip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
 };
 
 /**
@@ -142,9 +142,11 @@ struct st_tx_dest_info {
  */
 struct st_rx_source_info {
   /** source IP address of sender */
-  uint8_t sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
+  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   /** UDP port number */
-  uint16_t udp_port[MTL_PORT_MAX];
+  uint16_t udp_port[MTL_SESSION_PORT_MAX];
+  /** Optional. source filter IP address of multicast */
+  uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
 };
 
 /**

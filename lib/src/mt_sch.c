@@ -379,8 +379,8 @@ static int sch_stat(void* priv) {
 
   if (!mt_sch_is_active(sch)) return 0;
 
-  notice("SCH(%d:%s): tasklets %d max idx %d\n", idx, sch->name, num_tasklet,
-         sch->max_tasklet_idx);
+  notice("SCH(%d:%s): tasklets %d max idx %d, lcore %u\n", idx, sch->name, num_tasklet,
+         sch->max_tasklet_idx, sch->lcore);
   if (mt_user_tasklet_time_measure(sch->parent)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];

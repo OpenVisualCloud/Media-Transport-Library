@@ -336,7 +336,8 @@ Enabling redundancy is straightforward with the setup parameters in the `st**_tx
 
 In iMTL, each field is treated as an individual frame, with fields being transmitted separately over the network, to avoid the need for new APIs specifically for fields. It is the application’s responsibility to recombine the fields into a full frame.
 
-For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50`. It is important to note that the height parameter should reflect the full frame height of 1080, not half height. However, keep in mind that the buffer for each field (or frame) will only contain data for 540 lines.
+For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, width: 1920, height: 1080, fps: ST_FPS_P50`. It is important to note that the height parameter should reflect the full frame height of 1080, not half height, FPS is fields per second.
+However, keep in mind that the buffer for each field (or frame) will only contain data for 540 lines.
 
 For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st20_tx_frame_meta`. Similarly, for reception (RX), applications can determine the field order with the `second_field` flag present in the `struct st20_rx_frame_meta`.
 In the case of pipeline mode, the bool `second_field` within the `struct st_frame` also communicates field information between the application and IMTL.
@@ -383,7 +384,26 @@ The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use t
 IMTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the IMTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c).
 The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [convert guide](./convert.md).
 
-### 6.13 Ecosystem
+### 6.13 Runtime update source and destination
+
+To offer significant flexibility in switch/forward scenarios, it is advantageous for a session to be able to dynamically change the source or destination address at runtime, thereby obviating the need for applications to recreate a session. The IMTL API below provides the capability to reconfigure the target address during runtime:
+
+```bash
+  st20_tx_update_destination
+  st20_rx_update_source
+  st22_tx_update_destination
+  st22_rx_update_source
+  st30_tx_update_destination
+  st30_rx_update_source
+  st40_tx_update_destination
+  st40_rx_update_source
+  st20p_tx_update_destination
+  st20p_rx_update_source
+  st22p_tx_update_destination
+  st22p_rx_update_source
+```
+
+### 6.14 Ecosystem
 
 The IMTL provides comprehensive documentation that includes reference code, demonstrating the seamless integration with popular media frameworks. Currently, IMTL supports the following plugins and SDKs:
 
@@ -393,6 +413,6 @@ OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software
 
 Intel® Media SDK: Leverage IMTL's robust capabilities within Intel® Media SDK projects to unlock advanced media functionalities on Intel platforms. Detail please refer to [Intel®_Media_SDK_guide](../ecosystem/msdk/).
 
-### 6.14 Sample code
+### 6.15 Sample code
 
 In addition to the built-in RxTxApp, IMTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, detail can be found at [fwd](../app/sample/fwd/).
