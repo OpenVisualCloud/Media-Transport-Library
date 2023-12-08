@@ -530,6 +530,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_TIMING_PARSER:
         ctx->enable_timing_parser = true;
+        p->flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
         break;
       case ST_ARG_RX_MONO_POOL:
         p->flags |= MTL_FLAG_RX_MONO_POOL;

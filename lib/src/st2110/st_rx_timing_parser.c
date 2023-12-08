@@ -172,6 +172,8 @@ static void rv_tp_stat_init(struct st_rx_video_tp* tp) {
 void rv_tp_stat(struct st_rx_video_session_impl* s) {
   int idx = s->idx;
   struct st_rx_video_tp* tp = s->tp;
+  if (!tp) return;
+
   struct st_rv_tp_stat* stat = &tp->stat;
   struct st_rv_tp_slot* stat_slot = &stat->slot;
 
