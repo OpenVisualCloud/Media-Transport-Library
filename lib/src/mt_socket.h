@@ -21,10 +21,6 @@ int mt_socket_set_if_up(const char* if_name);
 
 int mt_socket_get_numa(const char* if_name);
 
-int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group);
-
-int mt_socket_drop_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group);
-
 int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
                       uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
                       int timeout_ms);

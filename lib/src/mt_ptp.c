@@ -1252,7 +1252,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   inet_pton(AF_INET, "224.0.1.129", ptp->mcast_group_addr);
 
-  if (mt_has_cni(impl, port) && !mt_drv_kernel_based(impl, port)) {
+  if (mt_has_cni(impl, port) && !mt_drv_mcast_in_dp(impl, port)) {
     /* join mcast only if cni path, no cni use socket which has mcast in the data path */
     ret = mt_mcast_join(impl, mt_ip_to_u32(ptp->mcast_group_addr), 0, port);
     if (ret < 0) {
@@ -1319,7 +1319,7 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
 
   if (!ptp->active) return 0;
 
-  if (mt_has_cni(impl, port) && !mt_drv_kernel_based(impl, port)) {
+  if (mt_has_cni(impl, port) && !mt_drv_mcast_in_dp(impl, port)) {
     mt_mcast_l2_leave(impl, &ptp_l2_multicast_eaddr, port);
     mt_mcast_leave(impl, mt_ip_to_u32(ptp->mcast_group_addr), 0, port);
   }

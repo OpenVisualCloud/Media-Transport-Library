@@ -1095,6 +1095,7 @@ struct mt_rx_xdp_entry {
   struct mt_rx_flow_rsp* flow_rsp;
   bool skip_udp_port_check;
   bool skip_all_check;
+  int mcast_fd;
 };
 
 struct mt_flow_impl {

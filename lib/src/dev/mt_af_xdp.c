@@ -1062,6 +1062,41 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
       entry->skip_all_check = false;
   }
 
+  /* join multicast group, will drop automatically when socket fd closed */
+  int mcast_fd = -1;
+  if (mt_is_multicast_ip(flow->dip_addr)) {
+    int ret;
+    mcast_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (mcast_fd < 0) {
+      err("%s(%d,%u), create multicast socket fail\n", __func__, port, q);
+      mt_rx_xdp_put(entry);
+      return NULL;
+    }
+    uint32_t source = *(uint32_t*)flow->sip_addr;
+    if (source == 0) {
+      struct ip_mreq mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+      ret = setsockopt(mcast_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+    } else {
+      struct ip_mreq_source mreq;
+      memset(&mreq, 0, sizeof(mreq));
+      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+      memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
+      ret =
+          setsockopt(mcast_fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
+    }
+    if (ret < 0) {
+      err("%s(%d), join multicast fail %d\n", __func__, port, ret);
+      mt_rx_xdp_put(entry);
+      return NULL;
+    }
+    info("%s(%d), join multicast succ\n", __func__, port);
+  }
+  entry->mcast_fd = mcast_fd;
+
   uint8_t* ip = flow->dip_addr;
   info("%s(%d,%u), ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0], ip[1], ip[2],
        ip[3], flow->dst_port);
@@ -1075,6 +1110,10 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
   uint8_t* ip = flow->dip_addr;
   struct mt_xdp_queue* xq = entry->xq;
   struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
+
+  if (entry->mcast_fd > 0) {
+    close(entry->mcast_fd);
+  }
 
   if (entry->flow_rsp) {
     mt_rx_flow_free(impl, port, entry->flow_rsp);
