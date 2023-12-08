@@ -391,7 +391,7 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
   req.req.quality = ops->quality;
   req.req.framebuff_cnt = ops->framebuff_cnt;
   req.req.codec_thread_cnt = ops->codec_thread_cnt;
-
+  req.req.interlaced = ops->interlaced;
   req.priv = ctx;
   req.get_frame = tx_st22p_encode_get_frame;
   req.put_frame = tx_st22p_encode_put_frame;
