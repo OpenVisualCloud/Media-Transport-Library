@@ -1,7 +1,7 @@
 {
-    "shared_tx_queues": "true",
-    "shared_rx_queues": "true",
-    "tx_no_chain": "true",
+    "shared_tx_queues": true,
+    "shared_rx_queues": true,
+    "tx_no_chain": true,
     "rss_mode": "none",
     "interfaces": [
         {

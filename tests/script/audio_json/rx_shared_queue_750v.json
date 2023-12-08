@@ -1,5 +1,5 @@
 {
-    "shared_rx_queues": "true",
+    "shared_rx_queues": true,
     "rss_mode": "none",
     "max_rx_audio_sessions_per_sch": "1000",
     "interfaces": [

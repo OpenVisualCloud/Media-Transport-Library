@@ -2,10 +2,10 @@
 # Copyright 2023 Intel Corporation
 
 # global-owner
-* @jianxind @ricmli
+* @frankdjx @ricmli
 
 # lib owner
-/lib/ @jianxind @ricmli
+/lib/ @frankdjx @ricmli
 
 # app owner
-/app/ @jianxind @ricmli
+/app/ @frankdjx @ricmli

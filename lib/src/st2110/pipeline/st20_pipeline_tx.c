@@ -422,6 +422,7 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   req.req.width = ops->width;
   req.req.height = ops->height;
   req.req.fps = ops->fps;
+  req.req.interlaced = ops->interlaced;
   req.req.input_fmt = ops->input_fmt;
   req.req.output_fmt = st_frame_fmt_from_transport(ops->transport_fmt);
   req.req.framebuff_cnt = ops->framebuff_cnt;

@@ -604,6 +604,7 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
   req.req.input_fmt = st_frame_fmt_from_transport(ops->transport_fmt);
   req.req.output_fmt = ops->output_fmt;
   req.req.framebuff_cnt = ops->framebuff_cnt;
+  req.req.interlaced = ops->interlaced;
   req.priv = ctx;
   req.get_frame = rx_st20p_convert_get_frame;
   req.put_frame = rx_st20p_convert_put_frame;

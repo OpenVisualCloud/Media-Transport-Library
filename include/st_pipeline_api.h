@@ -665,6 +665,8 @@ struct st20_converter_create_req {
   uint32_t height;
   /** Session resolution fps, set by lib */
   enum st_fps fps;
+  /** interlace or not, false: non-interlaced: true: interlaced, set by lib */
+  bool interlaced;
   /** Session input frame format, set by lib */
   enum st_frame_fmt input_fmt;
   /** Session output frame format, set by lib */

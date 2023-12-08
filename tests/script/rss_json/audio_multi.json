@@ -1,6 +1,6 @@
 {
     "rss_mode": "l3_l4",
-    "tx_no_chain": "true",
+    "tx_no_chain": true,
     "interfaces": [
         {
             "name": "0000:af:01.0",
