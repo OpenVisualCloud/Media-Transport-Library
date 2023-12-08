@@ -1,5 +1,8 @@
-# First stage: build environment
-FROM ubuntu:22.04 AS build-env
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 Intel Corporation
+
+# Build stage, ubuntu 22.04
+FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 as builder
 
 LABEL maintainer="ming3.li@intel.com"
 
@@ -18,8 +21,8 @@ RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git 
 RUN git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git && \
     cd Media-Transport-Library/manager && meson setup build && meson compile -C build
 
-# Second stage: runtime environment
-FROM ubuntu:22.04
+# Runtime stage, ubuntu 22.04
+FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37
 
 # Install runtime dependencies
 RUN apt-get update -y && \
@@ -27,9 +30,9 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the necessary binaries and libraries from the build-env
-COPY --from=build-env /usr/local /usr/local
-COPY --from=build-env /Media-Transport-Library/manager/build /app
+# Copy the necessary binaries and libraries from the builder
+COPY --from=builder /usr/local /usr/local
+COPY --from=builder /Media-Transport-Library/manager/build /app
 
 WORKDIR /app
 
