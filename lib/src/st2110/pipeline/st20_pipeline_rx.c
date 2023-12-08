@@ -393,6 +393,8 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ops->flags & ST20P_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
   if (ops->flags & ST20P_RX_FLAG_DISABLE_MIGRATE)
     ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
+  if (ops->flags & ST20P_RX_FLAG_ENABLE_TIMING_PARSER)
+    ops_rx.flags |= ST20_RX_FLAG_ENABLE_TIMING_PARSER;
   if (ops->flags & ST20P_RX_FLAG_PKT_CONVERT) {
     uint64_t pkt_cvt_output_cap =
         ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_Y210 | ST_FMT_CAP_UYVY;

@@ -540,6 +540,11 @@ enum st22_quality_mode {
  * Always disable MIGRATE for this session.
  */
 #define ST20P_RX_FLAG_DISABLE_MIGRATE (MTL_BIT32(20))
+/**
+ * Flag bit in flags of struct st20p_rx_ops.
+ * Enable the timing analyze
+ */
+#define ST20P_RX_FLAG_ENABLE_TIMING_PARSER (MTL_BIT32(21))
 
 /** The structure info for st plugin encode session create request. */
 struct st22_encoder_create_req {

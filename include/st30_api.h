@@ -72,6 +72,11 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * If enable the rtcp.
  */
 #define ST30_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
+/**
+ * Flag bit in flags of struct st30_rx_ops.
+ * Enable the timing analyze
+ */
+#define ST30_RX_FLAG_ENABLE_TIMING_PARSER (MTL_BIT32(16))
 
 /** default time in the fifo between packet builder and pacing */
 #define ST30_TX_FIFO_DEFAULT_TIME_MS (10)

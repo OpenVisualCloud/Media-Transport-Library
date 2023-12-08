@@ -501,14 +501,14 @@ struct st_rx_session_priv {
   enum mtl_session_port s_port;
 };
 
-enum st_rv_ebu_compliant {
-  ST_RV_EBU_COMPLIANT_FAILED = 0,
-  ST_RV_EBU_COMPLIANT_WIDE,
-  ST_RV_EBU_COMPLIANT_NARROW,
-  ST_RV_EBU_COMPLIANT_MAX,
+enum st_rx_tp_compliant {
+  ST_RX_TP_COMPLIANT_FAILED = 0,
+  ST_RX_TP_COMPLIANT_WIDE,
+  ST_RX_TP_COMPLIANT_NARROW,
+  ST_RX_TP_COMPLIANT_MAX,
 };
 
-struct st_rv_ebu_slot {
+struct st_rv_tp_slot {
   /* epoch of current slot */
   uint64_t cur_epochs;
   /* result(packet) cnt in current slot */
@@ -546,12 +546,12 @@ struct st_rv_ebu_slot {
   int64_t ipt_sum;
   float ipt_avg;
 
-  enum st_rv_ebu_compliant compliant;
+  enum st_rx_tp_compliant compliant;
 };
 
-struct st_rv_ebu_stat {
+struct st_rv_tp_stat {
   /* for the status */
-  struct st_rv_ebu_slot slot;
+  struct st_rv_tp_slot slot;
   uint32_t stat_frame_cnt;
 
   int32_t stat_fpt_min;
@@ -566,10 +566,10 @@ struct st_rv_ebu_stat {
   int32_t stat_rtp_ts_delta_min;
   int32_t stat_rtp_ts_delta_max;
   float stat_rtp_ts_delta_sum;
-  uint32_t stat_compliant_result[ST_RV_EBU_COMPLIANT_MAX];
+  uint32_t stat_compliant_result[ST_RX_TP_COMPLIANT_MAX];
 };
 
-struct st_rx_video_ebu {
+struct st_rx_video_tp {
   /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
   double trs;
   /* in ns, tr offset time of each frame */
@@ -581,12 +581,12 @@ struct st_rx_video_ebu {
   uint32_t vrx_full_wide_pass;
   int32_t rtp_offset_max_pass;
 
-  /* ebu timing info for each slot */
-  struct st_rv_ebu_slot slots[ST_VIDEO_RX_REC_NUM_OFO];
+  /* timing info for each slot */
+  struct st_rv_tp_slot slots[ST_VIDEO_RX_REC_NUM_OFO];
   uint32_t pre_rtp_tmstamp;
 
   /* for the status */
-  struct st_rv_ebu_stat stat;
+  struct st_rv_tp_stat stat;
 };
 
 struct st_rx_video_session_impl {
@@ -695,9 +695,9 @@ struct st_rx_video_session_impl {
   int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                      enum mtl_session_port s_port, bool ctrl_thread);
 
-  /* if enable the ebu parser for the st2110-21 timing */
-  bool enable_ebu;
-  struct st_rx_video_ebu* ebu;
+  /* if enable the parser for the st2110-21 timing */
+  bool enable_timing_parser;
+  struct st_rx_video_tp* tp;
 
   /* status */
   int stat_pkts_idx_dropped;
@@ -882,42 +882,36 @@ struct st_audio_transmitter_impl {
   int inflight_cnt[MTL_PORT_MAX];          /* for stats */
 };
 
-struct st_rx_audio_ebu_info {
-  double frame_time;          /* time of the frame in nanoseconds */
-  double frame_time_sampling; /* time of the frame in sampling */
-  int dropped_results;        /* number of results to drop at the beginning */
-
-  /* Pass Criteria */
-  int32_t dpvr_max_pass_narrow;
-  int32_t dpvr_max_pass_wide;
-  float dpvr_avg_pass_wide;
-  int32_t tsdf_max_pass;
+struct st_ra_tp_slot {
+  uint32_t pkt_cnt;
+  int32_t dpvr_min;
+  int32_t dpvr_max;
+  int64_t dpvr_sum;
+  enum st_rx_tp_compliant compliant;
 };
 
-struct st_rx_audio_ebu_stat {
-  uint32_t pkt_num;
-  bool compliant;
+struct st_ra_tp_stat {
+  uint32_t stat_compliant_result[ST_RX_TP_COMPLIANT_MAX];
+  struct st_ra_tp_slot slot;
+  int32_t dpvr_first;
+};
 
+struct st_rx_audio_tp {
+  /* time of the frame in nanoseconds */
+  double frame_time;
+  /* time of the frame in sampling */
+  double frame_time_sampling;
+  /* Pass Criteria*/
   /* Delta Packet vs RTP */
-  int64_t dpvr_max;
-  int64_t dpvr_min;
-  uint32_t dpvr_cnt;
-  uint64_t dpvr_sum;
-  float dpvr_avg;
-  int64_t dpvr_first;
-
+  int32_t dpvr_max_pass_narrow; /* in us */
+  int32_t dpvr_max_pass_wide;   /* in us */
   /* Maximum Timestamped Delay Factor */
-  int64_t tsdf_max;
-};
+  int32_t tsdf_max_pass; /* in us */
 
-struct st_rx_audio_ebu_result {
-  int ebu_result_num;
-  int dpvr_pass_narrow;
-  int dpvr_pass_wide;
-  int dpvr_fail;
-  int tsdf_pass;
-  int tsdf_fail;
-  int compliance;
+  /* timing info for each frame */
+  struct st_ra_tp_slot slot;
+  /* for the status */
+  struct st_ra_tp_stat stat;
 };
 
 struct st_rx_audio_session_impl {
@@ -928,6 +922,7 @@ struct st_rx_audio_session_impl {
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_audio_session_handle_impl* st30_handle;
   bool time_measure;
+  bool enable_timing_parser;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
@@ -955,6 +950,8 @@ struct st_rx_audio_session_impl {
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
+  struct st_rx_audio_tp* tp;
+
   /* status */
   int st30_stat_pkts_dropped;
   int st30_stat_pkts_wrong_pt_dropped;
@@ -966,10 +963,6 @@ struct st_rx_audio_session_impl {
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
   uint32_t stat_max_notify_frame_us;
-
-  struct st_rx_audio_ebu_info ebu_info;
-  struct st_rx_audio_ebu_stat ebu;
-  struct st_rx_audio_ebu_result ebu_result;
 };
 
 struct st_rx_audio_sessions_mgr {

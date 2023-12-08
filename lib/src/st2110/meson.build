@@ -17,7 +17,7 @@ sources += files(
   'st_avx512_vbmi.c',
   'st_convert.c',
   'st_fmt.c',
-  'st_rx_ebu.c',
+  'st_rx_timing_parser.c',
 )
 
 subdir('pipeline')

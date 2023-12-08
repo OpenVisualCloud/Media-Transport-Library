@@ -9,181 +9,11 @@
 #include "../datapath/mt_queue.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
-
-static inline double ra_ebu_pass_rate(struct st_rx_audio_ebu_result* ebu_result,
-                                      int pass) {
-  return (double)pass * 100 / ebu_result->ebu_result_num;
-}
+#include "st_rx_timing_parser.h"
 
 static inline uint16_t rx_audio_queue_id(struct st_rx_audio_session_impl* s,
                                          enum mtl_session_port s_port) {
   return mt_rxq_queue_id(s->rxq[s_port]);
-}
-
-static void rx_audio_session_ebu_result(struct st_rx_audio_session_impl* s) {
-  int idx = s->idx;
-  struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
-  struct st_rx_audio_ebu_result* ebu_result = &s->ebu_result;
-
-  ebu_result->ebu_result_num -= ebu_info->dropped_results;
-  if (ebu_result->ebu_result_num < 0) {
-    err("%s, ebu result not enough\n", __func__);
-    return;
-  }
-
-  critical("st30(%d), [ --- Total %d ---  Compliance Rate %.2f%% ]\n", idx,
-           ebu_result->ebu_result_num,
-           ra_ebu_pass_rate(ebu_result, ebu_result->compliance));
-  critical(
-      "st30(%d), [ Delta Packet vs RTP Pass Rate]\t| Narrow %.2f%% | Wide %.2f%% | Fail "
-      "%.2f%% |\n",
-      idx, ra_ebu_pass_rate(ebu_result, ebu_result->dpvr_pass_narrow),
-      ra_ebu_pass_rate(ebu_result, ebu_result->dpvr_pass_wide),
-      ra_ebu_pass_rate(ebu_result, ebu_result->dpvr_fail));
-  critical(
-      "st30(%d), [ Maximum Timestamped Delay Factor Pass Rate]\t| Pass %.2f%% | Fail "
-      "%.2f%% |\n",
-      idx, ra_ebu_pass_rate(ebu_result, ebu_result->tsdf_pass),
-      ra_ebu_pass_rate(ebu_result, ebu_result->tsdf_fail));
-}
-
-static void ra_ebu_clear_result(struct st_rx_audio_ebu_stat* ebu) {
-  memset(ebu, 0, sizeof(*ebu));
-
-  ebu->dpvr_max = INT_MIN;
-  ebu->dpvr_min = INT_MAX;
-  ebu->tsdf_max = INT_MIN;
-
-  ebu->compliant = true;
-}
-
-static inline float ra_ebu_calculate_avg(uint32_t cnt, int64_t sum) {
-  return cnt ? ((float)sum / cnt) : -1.0f;
-}
-
-static char* ra_ebu_dpvr_result(struct st_rx_audio_session_impl* s) {
-  struct st_rx_audio_ebu_stat* ebu = &s->ebu;
-  struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
-  struct st_rx_audio_ebu_result* ebu_result = &s->ebu_result;
-
-  if (ebu->dpvr_max >= 0 && ebu->dpvr_max < ebu_info->dpvr_max_pass_narrow) {
-    ebu_result->dpvr_pass_narrow++;
-    return ST_EBU_PASS_NARROW;
-  }
-
-  if (ebu->dpvr_max >= 0 && ebu->dpvr_max < ebu_info->dpvr_max_pass_wide &&
-      ebu->dpvr_avg >= 0 && ebu->dpvr_avg < ebu_info->dpvr_avg_pass_wide) {
-    ebu_result->dpvr_pass_wide++;
-    return ST_EBU_PASS_WIDE;
-  }
-
-  ebu_result->dpvr_fail++;
-  ebu->compliant = false;
-  return ST_EBU_FAIL;
-}
-
-static char* ra_ebu_tsdf_result(struct st_rx_audio_session_impl* s) {
-  struct st_rx_audio_ebu_stat* ebu = &s->ebu;
-  struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
-  struct st_rx_audio_ebu_result* ebu_result = &s->ebu_result;
-
-  if (ebu->tsdf_max < ebu_info->tsdf_max_pass) {
-    ebu_result->tsdf_pass++;
-    return ST_EBU_PASS;
-  }
-  ebu_result->tsdf_fail++;
-  ebu->compliant = false;
-  return ST_EBU_FAIL;
-}
-
-static void ra_ebu_result(struct st_rx_audio_session_impl* s) {
-  struct st_rx_audio_ebu_stat* ebu = &s->ebu;
-  struct st_rx_audio_ebu_result* ebu_result = &s->ebu_result;
-  int idx = s->idx;
-
-  /* Maximum Timestamped Delay Factor */
-  int64_t tsdf = (ebu->dpvr_max - ebu->dpvr_first) - (ebu->dpvr_min - ebu->dpvr_first);
-  ebu->tsdf_max = RTE_MAX(tsdf, ebu->tsdf_max);
-  ebu->dpvr_first = 0;
-
-  ebu->dpvr_avg = ra_ebu_calculate_avg(ebu->dpvr_cnt, ebu->dpvr_sum);
-  /* print every 5 results */
-  if (ebu_result->ebu_result_num % 5 == 0) {
-    info("%s(%d), Delta Packet vs RTP AVG %.2f (us) MIN %" PRId64 " (us) MAX %" PRId64
-         " (us) test %s!\n",
-         __func__, idx, ebu->dpvr_avg, ebu->dpvr_min, ebu->dpvr_max,
-         ra_ebu_dpvr_result(s));
-    info("%s(%d), Maximum Timestamped Delay Factor %" PRIu64 " (us) test %s!\n\n",
-         __func__, idx, ebu->tsdf_max, ra_ebu_tsdf_result(s));
-  } else {
-    ra_ebu_dpvr_result(s);
-    ra_ebu_tsdf_result(s);
-  }
-
-  if (ebu->compliant) ebu_result->compliance++;
-}
-
-static void ra_ebu_on_packet(struct st_rx_audio_session_impl* s, uint32_t rtp_tmstamp,
-                             uint64_t pkt_tmstamp) {
-  struct st_rx_audio_ebu_stat* ebu = &s->ebu;
-  struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
-  struct st_rx_audio_ebu_result* ebu_result = &s->ebu_result;
-
-  uint64_t epochs = (double)pkt_tmstamp / ebu_info->frame_time;
-  uint64_t epoch_tmstamp = (double)epochs * ebu_info->frame_time;
-  double fpt_delta = (double)pkt_tmstamp - epoch_tmstamp;
-  uint64_t tmstamp64 = epochs * ebu_info->frame_time_sampling;
-  uint32_t tmstamp32 = tmstamp64;
-  double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
-  double diff_rtp_ts_ns =
-      diff_rtp_ts * ebu_info->frame_time / ebu_info->frame_time_sampling;
-  double latency = fpt_delta - diff_rtp_ts_ns;
-  double dpvr = latency / 1000;
-
-  ebu->pkt_num++;
-
-  if (ebu->pkt_num % 1000 == 0) {
-    ebu_result->ebu_result_num++;
-    /* every second (for 1ms/packet) */
-    if (ebu_result->ebu_result_num > ebu_info->dropped_results) ra_ebu_result(s);
-    ra_ebu_clear_result(ebu);
-  }
-
-  /* calculate Delta Packet vs RTP */
-  ebu->dpvr_sum += dpvr;
-  ebu->dpvr_min = RTE_MIN(dpvr, ebu->dpvr_min);
-  ebu->dpvr_max = RTE_MAX(dpvr, ebu->dpvr_max);
-  ebu->dpvr_cnt++;
-
-  if (!ebu->dpvr_first) ebu->dpvr_first = dpvr;
-}
-
-static int ra_ebu_init(struct st_rx_audio_session_impl* s) {
-  int idx = s->idx;
-  struct st_rx_audio_ebu_info* ebu_info = &s->ebu_info;
-  struct st30_rx_ops* ops = &s->ops;
-
-  ra_ebu_clear_result(&s->ebu);
-
-  int sampling = (ops->sampling == ST30_SAMPLING_48K) ? 48 : 96;
-  ebu_info->frame_time = (double)1000000000.0 * 1 / 1000; /* 1ms, in ns */
-  ebu_info->frame_time_sampling = (double)(sampling * 1000) * 1 / 1000;
-
-  ebu_info->dpvr_max_pass_narrow = 3 * ebu_info->frame_time / 1000; /* in us */
-  ebu_info->dpvr_max_pass_wide = 20 * ebu_info->frame_time / 1000;  /* in us */
-  ebu_info->dpvr_avg_pass_wide = 2.5 * ebu_info->frame_time / 1000; /* in us */
-  ebu_info->tsdf_max_pass = 17 * ebu_info->frame_time / 1000;       /* in us */
-
-  ebu_info->dropped_results = 10; /* we drop first 10 results */
-
-  info("%s[%02d], Delta Packet vs RTP Pass Criteria(narrow) min %d (us) max %d (us)\n",
-       __func__, idx, 0, ebu_info->dpvr_max_pass_narrow);
-  info("%s[%02d], Delta Packet vs RTP Pass Criteria(wide) max %d (us) avg %.2f (us)\n",
-       __func__, idx, ebu_info->dpvr_max_pass_wide, ebu_info->dpvr_avg_pass_wide);
-  info("%s[%02d], Maximum Timestamped Delay Factor Pass Criteria %d (us)\n", __func__,
-       idx, ebu_info->tsdf_max_pass);
-
-  return 0;
 }
 
 /* call rx_audio_session_put always if get successfully */
@@ -382,8 +212,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
                                              struct rte_mbuf* mbuf,
                                              enum mtl_session_port s_port) {
   struct st30_rx_ops* ops = &s->ops;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = mt_if(impl, port);
   size_t hdr_offset =
       sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
@@ -437,6 +265,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       s->st30_stat_pkts_dropped++;
       return -EIO;
     }
+    if (s->enable_timing_parser) ra_tp_slot_init(&s->tp->slot);
   }
   uint32_t offset = s->st30_pkt_idx * s->pkt_len;
   if ((offset + s->pkt_len) > s->st30_frame_size) {
@@ -450,14 +279,17 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->st30_stat_pkts_received++;
   s->st30_pkt_idx++;
 
-  if (mt_user_ebu_active(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
-    ra_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port));
+  if (s->enable_timing_parser) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+    ra_tp_on_packet(s, &s->tp->slot, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
   }
 
   // notify frame done
   if (s->frame_recv_size >= s->st30_frame_size) {
     struct st30_rx_frame_meta* meta = &s->meta;
     uint64_t tsc_start = 0;
+
+    if (s->enable_timing_parser) ra_tp_slot_parse_result(s, &s->tp->slot);
 
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = tmstamp;
@@ -490,15 +322,14 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
                                            struct rte_mbuf* mbuf,
                                            enum mtl_session_port s_port) {
   struct st30_rx_ops* ops = &s->ops;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = mt_if(impl, port);
   size_t hdr_offset =
       sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(s_port);
 
   uint16_t seq_id = ntohs(rtp->seq_number);
-  uint32_t tmstamp = ntohl(rtp->tmstamp);
   uint8_t payload_type = rtp->payload_type;
 
   if (payload_type != ops->payload_type) {
@@ -539,10 +370,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   ops->notify_rtp_ready(ops->priv);
   s->st30_stat_pkts_received++;
-
-  if (mt_user_ebu_active(impl) && inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP) {
-    ra_ebu_on_packet(s, tmstamp, mt_mbuf_hw_time_stamp(impl, mbuf, port));
-  }
 
   return 0;
 }
@@ -783,10 +610,15 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = mt_get_monotonic_time();
 
-  if (mt_user_ebu_active(impl)) {
-    ret = ra_ebu_init(s);
+  if (s->ops.flags & ST30_RX_FLAG_ENABLE_TIMING_PARSER) {
+    info("%s(%d), enable the timing analyze\n", __func__, idx);
+    s->enable_timing_parser = true;
+  }
+
+  if (s->enable_timing_parser) {
+    ret = ra_tp_init(impl, s);
     if (ret < 0) {
-      err("%s(%d), ra_ebu_init fail %d\n", __func__, idx, ret);
+      err("%s(%d), ra_tp_init fail %d\n", __func__, idx, ret);
       return -EIO;
     }
   }
@@ -861,14 +693,17 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
            s->stat_max_notify_frame_us);
     s->stat_max_notify_frame_us = 0;
   }
+
+  if (s->enable_timing_parser) ra_tp_stat(s);
 }
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_sessions_mgr* mgr,
                                    struct st_rx_audio_session_impl* s) {
   s->attached = false;
-  if (mt_user_ebu_active(impl)) rx_audio_session_ebu_result(s);
   rx_audio_session_stat(mgr, s);
+
+  ra_tp_uinit(s);
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(s);
   rx_audio_session_uinit_hw(s);
