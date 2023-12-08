@@ -20,19 +20,19 @@ docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_pro
 
 Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfio driver mode for VFs.
 
-For legacy way of running multiple containers without MTL Manager, please add the following arguments to the docker run command:
+## 3. Run and login into the docker container
+
+### 3.1 Run MTL Manager
+
+Before running any IMTL container, please refer to [MTL Manager](../manager/README.md) to run the Manager daemon server.
+
+For legacy way of running multiple containers without MTL Manager, please add the following arguments to the docker run commands in below sections:
 
 ```bash
   -v /tmp/kahawai_lcore.lock:/tmp/kahawai_lcore.lock \
   -v /dev/null:/dev/null \
   --ipc=host \
 ```
-
-## 3. Run and login into the docker container
-
-### 3.1 Run MTL Manager
-
-Before running any IMTL container, please refer to [MTL Manager](../manager/README.md) to run the Manager daemon server.
 
 ### 3.2 Run the docker container
 
