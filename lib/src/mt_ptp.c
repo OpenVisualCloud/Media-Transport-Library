@@ -19,7 +19,7 @@
 #define MT_PTP_CHECK_RX_TIME_STAMP (0)
 #define MT_PTP_PRINT_ERR_RESULT (0)
 
-#define MT_PTP_EBU_SYNC_MS (10)
+#define MT_PTP_TP_SYNC_MS (10)
 
 #define MT_PTP_DEFAULT_KP 5e-10 /* to be tuned */
 #define MT_PTP_DEFAULT_KI 1e-10 /* to be tuned */
@@ -1070,7 +1070,7 @@ static void ptp_sync_from_user_handler(void* param) {
   struct mt_ptp_impl* ptp = param;
 
   ptp_sync_from_user(ptp->impl, ptp);
-  rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+  rte_eal_alarm_set(MT_PTP_TP_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
 }
 
 #ifdef WINDOWSENV
@@ -1233,11 +1233,11 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp_coefficient_result_reset(ptp);
 
   if (!mt_user_ptp_service(impl)) {
-    if (mt_user_ebu_active(impl)) {
+    if (mt_if_has_offload_timestamp(impl, port)) {
       ptp->no_timesync = true;
-      info("%s(%d), ptp running for ebu without time sync\n", __func__, port);
+      info("%s(%d), ptp sync from user for hw offload timestamp\n", __func__, port);
       ptp_sync_from_user(impl, ptp);
-      rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+      rte_eal_alarm_set(MT_PTP_TP_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
       ptp->connected = true;
       ptp->locked = true;
       ptp->active = true;
@@ -1397,7 +1397,6 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
 
 static int ptp_stat(void* priv) {
   struct mt_ptp_impl* ptp = priv;
-  struct mtl_main_impl* impl = ptp->impl;
   enum mtl_port port = ptp->port;
   char date_time[64];
   struct timespec spec;
@@ -1411,19 +1410,7 @@ static int ptp_stat(void* priv) {
   strftime(date_time, sizeof(date_time), "%Y-%m-%d %H:%M:%S", &t);
   notice("PTP(%d): time %" PRIu64 ", %s\n", port, ns, date_time);
 
-  if (!ptp->active) {
-    if (mt_user_ebu_active(impl)) {
-      notice("PTP(%d): raw ptp %" PRIu64 "\n", port, ptp_get_raw_time(ptp));
-      if (ptp->stat_delta_cnt) {
-        notice("PTP(%d): delta avr %" PRId64 ", min %" PRId64 ", max %" PRId64
-               ", cnt %d, expect %d\n",
-               port, ptp->stat_delta_sum / ptp->stat_delta_cnt, ptp->stat_delta_min,
-               ptp->stat_delta_max, ptp->stat_delta_cnt, ptp->expect_result_avg);
-      }
-      ptp_stat_clear(ptp);
-    }
-    return 0;
-  }
+  if (!ptp->active) return 0;
 
   if (ptp->stat_delta_cnt) {
     if (ptp->phc2sys_active) {
@@ -1514,13 +1501,21 @@ uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return ptp_get_raw_time(mt_get_ptp(impl, port));
 }
 
-uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
-                               enum mtl_port port) {
+static uint64_t mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
+                                   enum mtl_port port) {
   struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
   uint64_t time_stamp =
       *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
   time_stamp += ptp->ptp_delta;
   return ptp_correct_ts(ptp, time_stamp);
+}
+
+uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
+                            enum mtl_port port) {
+  if (mt_if_has_offload_timestamp(impl, port))
+    return mbuf_hw_time_stamp(impl, mbuf, port);
+  else
+    return mtl_ptp_read_time(impl);
 }
 
 int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeout_ms) {

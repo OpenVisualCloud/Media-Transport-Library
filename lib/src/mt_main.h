@@ -1397,9 +1397,9 @@ static inline bool mt_user_quota_active(struct mtl_main_impl* impl) {
     return false;
 }
 
-/* if user enable ebu feature */
-static inline bool mt_user_ebu_active(struct mtl_main_impl* impl) {
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_VIDEO_EBU)
+/* if user enable hw offload timestamp */
+static inline bool mt_user_hw_timestamp(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_ENABLE_HW_TIMESTAMP)
     return true;
   else
     return false;
@@ -1577,6 +1577,14 @@ static inline bool mt_user_tasklet_sleep(struct mtl_main_impl* impl) {
 
 static inline bool mt_if_has_timesync(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_if(impl, port)->feature & MT_IF_FEATURE_TIMESYNC)
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_if_has_offload_timestamp(struct mtl_main_impl* impl,
+                                               enum mtl_port port) {
+  if (mt_if(impl, port)->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
     return true;
   else
     return false;
@@ -1838,8 +1846,8 @@ struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
                                 enum rte_pcapng_direction direction);
 #endif
 
-uint64_t mt_mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
-                               enum mtl_port port);
+uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
+                            enum mtl_port port);
 
 static inline uint64_t mt_get_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
   return mt_if(impl, port)->ptp_get_time_fn(impl, port);

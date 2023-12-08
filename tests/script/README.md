@@ -39,10 +39,10 @@ Use the random IP for json config file, run:
 ./loop_test.sh
 ```
 
-Run below cmd for the software ebu test with loop mode.
+Run below cmd for the software timing parser test with loop mode.
 
 ```bash
-./loop_ebu_test.sh
+./loop_TP_test.sh
 ```
 
 ## 3. AFXDP loop test

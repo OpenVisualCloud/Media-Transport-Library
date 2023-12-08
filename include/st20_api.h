@@ -190,6 +190,11 @@ extern "C" {
  * Always disable MIGRATE for this session.
  */
 #define ST20_RX_FLAG_DISABLE_MIGRATE (MTL_BIT32(20))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Enable the timing analyze
+ */
+#define ST20_RX_FLAG_ENABLE_TIMING_PARSER (MTL_BIT32(21))
 
 /**
  * Flag bit in flags of struct st22_rx_ops, for non MTL_PMD_DPDK_USER.

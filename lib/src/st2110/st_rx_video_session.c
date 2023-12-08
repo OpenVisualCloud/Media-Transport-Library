@@ -12,7 +12,7 @@
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
 #include "st_fmt.h"
-#include "st_rx_ebu.h"
+#include "st_rx_timing_parser.h"
 
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
 static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
@@ -712,10 +712,10 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_ops* ops = &s->ops;
   struct st20_rx_frame_meta* meta = &slot->meta;
 
-  if (s->ebu) {
-    /* todo: share the ebu data to st20_rx_frame_meta */
-    struct st_rv_ebu_slot* ebu_slot = &s->ebu->slots[slot->idx];
-    rv_ebu_slot_parse_result(s, ebu_slot);
+  if (s->enable_timing_parser) {
+    /* todo: share the timing data to st20_rx_frame_meta */
+    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx];
+    rv_tp_slot_parse_result(s, tp_slot);
   }
 
   dbg("%s(%d), start\n", __func__, s->idx);
@@ -991,7 +991,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   s->slot_idx = slot_idx;
 
-  if (s->ebu) rv_ebu_slot_init(&s->ebu->slots[slot_idx]);
+  if (s->enable_timing_parser) rv_tp_slot_init(&s->tp->slots[slot_idx]);
 
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
@@ -1280,7 +1280,7 @@ static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session
 #if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0) /* dpdk 23.11 uses internal time */
     struct mt_interface* inf = mt_if(impl, port);
     if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
-      timestamp_ns = mt_mbuf_hw_time_stamp(impl, mbuf[i], port);
+      timestamp_ns = mt_mbuf_time_stamp(impl, mbuf[i], port);
     else
       timestamp_cycle = rte_get_tsc_cycles();
 #endif
@@ -1520,20 +1520,16 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   bool need_copy = true;
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
 
-  /* if ebu */
-  if (s->ebu) {
+  /* if enable_timing_parser */
+  if (s->enable_timing_parser) {
     struct mtl_main_impl* impl = rv_get_impl(s);
     enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-    struct mt_interface* inf = mt_if(impl, port);
-    if (mt_ptp_is_connected(impl, port)) {
-      uint64_t pkt_ns;
-      if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
-        pkt_ns = mt_mbuf_hw_time_stamp(impl, mbuf, port);
-      else
-        pkt_ns = mt_ptp_internal_time(impl, port);
-      struct st_rv_ebu_slot* ebu_slot = &s->ebu->slots[slot->idx];
-      rv_ebu_on_packet(s, ebu_slot, tmstamp, pkt_ns, pkt_idx);
-    }
+
+    uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
+    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx];
+    dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
+        tmstamp, pkt_ns, pkt_idx);
+    rv_tp_on_packet(s, tp_slot, tmstamp, pkt_ns, pkt_idx);
   }
 
   if (s->st20_uframe_size) {
@@ -2246,7 +2242,7 @@ static int rv_uinit_st22(struct st_rx_video_session_impl* s) {
 }
 
 static int rv_uinit_sw(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
-  rv_ebu_uinit(s);
+  rv_tp_uinit(s);
   rv_uinit_pkt_lcore(impl, s);
   rv_free_dma(impl, s);
   rv_uinit_slot(s);
@@ -2360,8 +2356,8 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     s->slot_max = ST_VIDEO_RX_REC_NUM_OFO;
   }
 
-  if (s->enable_ebu) {
-    ret = rv_ebu_init(impl, s);
+  if (s->enable_timing_parser) {
+    ret = rv_tp_init(impl, s);
     if (ret < 0) {
       err("%s(%d), ebu init fail %d\n", __func__, idx, ret);
       rv_uinit_sw(impl, s);
@@ -2995,10 +2991,10 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->dma_busy_score = 0;
   s->st22_expect_frame_size = 0;
   s->burst_loss_cnt = 0;
-  if (mt_user_ebu_active(impl))
-    s->enable_ebu = true;
-  else
-    s->enable_ebu = false;
+  if (s->ops.flags & ST20_RX_FLAG_ENABLE_TIMING_PARSER) {
+    info("%s(%d), enable the timing analyze\n", __func__, idx);
+    s->enable_timing_parser = true;
+  }
 
   ret = rv_init_hw(impl, s);
   if (ret < 0) {
@@ -3007,7 +3003,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   if (st20_is_frame_type(ops->type) && (!st22_ops) &&
-      ((ops->flags & ST20_RX_FLAG_AUTO_DETECT) || s->enable_ebu)) {
+      ((ops->flags & ST20_RX_FLAG_AUTO_DETECT) || s->enable_timing_parser)) {
     /* init sw after detected */
     ret = rv_detector_init(s);
     if (ret < 0) {
@@ -3345,7 +3341,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_st22_boxes);
     s->stat_st22_boxes = 0;
   }
-  if (s->ebu) rv_ebu_stat(s);
+  if (s->enable_timing_parser) rv_tp_stat(s);
 }
 
 static int rvs_ctl_tasklet_start(void* priv) {

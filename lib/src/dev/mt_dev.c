@@ -1763,7 +1763,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
 #if RTE_VERSION >= RTE_VERSION_NUM(21, 11, 0, 0)
     /* DPDK 21.11 support start time sync before rte_eth_dev_start */
-    if ((mt_user_ptp_service(impl) || mt_user_ebu_active(impl)) &&
+    if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
         (port_type == MT_PORT_PF)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
@@ -1798,7 +1798,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
       }
     }
     /* try to start time sync after rte_eth_dev_start */
-    if ((mt_user_ptp_service(impl) || mt_user_ebu_active(impl)) &&
+    if ((mt_user_ptp_service(impl) || mt_user_hw_timestamp(impl)) &&
         (port_type == MT_PORT_PF) && !(inf->feature & MT_IF_FEATURE_TIMESYNC)) {
       ret = dev_start_timesync(inf);
       if (ret >= 0) inf->feature |= MT_IF_FEATURE_TIMESYNC;
@@ -2192,7 +2192,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     }
 #endif
 
-    if (mt_user_ebu_active(impl) &&
+    if (mt_user_hw_timestamp(impl) &&
 #if RTE_VERSION >= RTE_VERSION_NUM(22, 3, 0, 0)
         (dev_info->rx_offload_capa & RTE_ETH_RX_OFFLOAD_TIMESTAMP)
 #else

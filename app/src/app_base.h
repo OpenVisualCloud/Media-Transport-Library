@@ -507,6 +507,7 @@ struct st_app_context {
   bool enable_hdr_split;
   bool tx_copy_once;
   bool app_thread;
+  bool enable_timing_parser;
 
   bool ptp_systime_sync;
   int ptp_sync_cnt;

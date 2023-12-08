@@ -11,8 +11,8 @@
 
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
 
-#define ST_RV_EBU_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
-#define ST_RV_EBU_TSC_SYNC_NS (ST_RV_EBU_TSC_SYNC_MS * 1000 * 1000)
+#define ST_RV_TP_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
+#define ST_RV_TP_TSC_SYNC_NS (ST_RV_TP_TSC_SYNC_MS * 1000 * 1000)
 
 #define ST_RX_VIDEO_PREFIX "RV_"
 

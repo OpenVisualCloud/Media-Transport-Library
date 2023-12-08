@@ -384,9 +384,10 @@ enum st21_tx_pacing_way {
 #define MTL_FLAG_CNI_THREAD (MTL_BIT64(32))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Enable video rx ebu check
+ * Enable HW offload timestamp for all RX packets target the compliance analyze. Only can
+ * work for PF on E810 now.
  */
-#define MTL_FLAG_RX_VIDEO_EBU (MTL_BIT64(33))
+#define MTL_FLAG_ENABLE_HW_TIMESTAMP (MTL_BIT64(33))
 /**
  * Flag bit in flags of struct mtl_init_params, debug usage only.
  * Enable NIC promiscuous mode for RX
