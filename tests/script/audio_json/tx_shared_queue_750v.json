@@ -1,6 +1,6 @@
 {
-    "shared_tx_queues": "true",
-    "tx_no_chain": "true",
+    "shared_tx_queues": true,
+    "tx_no_chain": true,
     "max_tx_audio_sessions_per_sch": "250",
     "interfaces": [
         {

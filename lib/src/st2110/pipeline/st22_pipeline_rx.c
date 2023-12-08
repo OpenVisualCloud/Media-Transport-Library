@@ -380,6 +380,7 @@ static int rx_st22p_get_decoder(struct mtl_main_impl* impl, struct st22p_rx_ctx*
   req.req.input_fmt = ctx->codestream_fmt;
   req.req.framebuff_cnt = ops->framebuff_cnt;
   req.req.codec_thread_cnt = ops->codec_thread_cnt;
+  req.req.interlaced = ops->interlaced;
   req.priv = ctx;
   req.get_frame = rx_st22p_decode_get_frame;
   req.put_frame = rx_st22p_decode_put_frame;
