@@ -5,13 +5,17 @@ services:
     image: mtl:latest
     devices:
       - "/dev/vfio:/dev/vfio" # or add /dev/vfio/vfio and /dev/vfio/<specific_device>
-    ipc: host
     volumes:
-      - "/tmp/kahawai_lcore.lock:/tmp/kahawai_lcore.lock"
-      - "/dev/null:/dev/null"
+      - "/var/run/imtl:/var/run/imtl" # For connection with MTL Manager
+    # For kernel / AF_XDP backend
+    # network_mode: host
     cap_add:
       - SYS_NICE
       - IPC_LOCK
-      - NET_ADMIN
-      - SYS_TIME
-      - NET_RAW
+
+      # For kernel / AF_XDP backend
+      # - NET_ADMIN
+      # - NET_RAW
+      
+      # For Adjtime
+      # - SYS_TIME
