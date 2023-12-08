@@ -544,21 +544,6 @@ int mt_socket_get_numa(const char* if_name) {
   return 0;
 }
 
-int mt_socket_join_mcast(struct mtl_main_impl* impl, enum mtl_port port, uint32_t group) {
-  MTL_MAY_UNUSED(impl);
-  MTL_MAY_UNUSED(port);
-  MTL_MAY_UNUSED(group);
-  return -ENOTSUP;
-}
-
-int mt_socket_leave_mcast(struct mtl_main_impl* impl, enum mtl_port port,
-                          uint32_t group) {
-  MTL_MAY_UNUSED(impl);
-  MTL_MAY_UNUSED(port);
-  MTL_MAY_UNUSED(group);
-  return -ENOTSUP;
-}
-
 int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
                       uint8_t dip[MTL_IP_ADDR_LEN], struct rte_ether_addr* ea,
                       int timeout_ms) {
