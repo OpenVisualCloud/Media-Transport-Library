@@ -13,21 +13,21 @@
 #define ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO (111)
 #define ST_RANCRTP_PAYLOAD_TYPE_ANCILLARY (113)
 
-#define ST_EBU_CINST_DRAIN_FACTOR (1.1f) /* Drain factor */
+#define ST_TP_CINST_DRAIN_FACTOR (1.1f) /* Drain factor */
 
-#define ST_EBU_LATENCY_MAX_US (1000)                         /* Latency in us */
-#define ST_EBU_LATENCY_MAX_NS (1000 * ST_EBU_LATENCY_MAX_US) /* Latency in ns */
+#define ST_TP_LATENCY_MAX_US (1000)                        /* Latency in us */
+#define ST_TP_LATENCY_MAX_NS (1000 * ST_TP_LATENCY_MAX_US) /* Latency in ns */
 
-#define ST_EBU_RTP_OFFSET_MIN (-1) /* MIN RTP Offset */
+#define ST_TP_RTP_OFFSET_MIN (-1) /* MIN RTP Offset */
 
-#define ST_EBU_RTP_WRAP_AROUND (0x100000000)
+#define ST_TP_RTP_WRAP_AROUND (0x100000000)
 
-#define ST_EBU_PASS_NARROW "PASSED NARROW"
-#define ST_EBU_PASS_WIDE "FAILED with WIDE"
+#define ST_TP_PASS_NARROW "PASSED NARROW"
+#define ST_TP_PASS_WIDE "FAILED with WIDE"
 /* Extend WA WIDE as no hw rx time */
-#define ST_EBU_PASS_WIDE_WA "FAILED with WIDE WA error"
-#define ST_EBU_PASS "PASSED"
-#define ST_EBU_FAIL "FAILED"
+#define ST_TP_PASS_WIDE_WA "FAILED with WIDE WA error"
+#define ST_TP_PASS "PASSED"
+#define ST_TP_FAIL "FAILED"
 
 /* total size: 54 */
 struct st_rfc3550_hdr {

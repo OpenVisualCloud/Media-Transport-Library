@@ -1526,10 +1526,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
 
     uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
-    struct st_rv_tp_slot* ebu_slot = &s->tp->slots[slot->idx];
+    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx];
     dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
         tmstamp, pkt_ns, pkt_idx);
-    rv_tp_on_packet(s, ebu_slot, tmstamp, pkt_ns, pkt_idx);
+    rv_tp_on_packet(s, tp_slot, tmstamp, pkt_ns, pkt_idx);
   }
 
   if (s->st20_uframe_size) {

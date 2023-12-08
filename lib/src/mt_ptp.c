@@ -19,7 +19,7 @@
 #define MT_PTP_CHECK_RX_TIME_STAMP (0)
 #define MT_PTP_PRINT_ERR_RESULT (0)
 
-#define MT_PTP_EBU_SYNC_MS (10)
+#define MT_PTP_TP_SYNC_MS (10)
 
 #define MT_PTP_DEFAULT_KP 5e-10 /* to be tuned */
 #define MT_PTP_DEFAULT_KI 1e-10 /* to be tuned */
@@ -1070,7 +1070,7 @@ static void ptp_sync_from_user_handler(void* param) {
   struct mt_ptp_impl* ptp = param;
 
   ptp_sync_from_user(ptp->impl, ptp);
-  rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+  rte_eal_alarm_set(MT_PTP_TP_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
 }
 
 #ifdef WINDOWSENV
@@ -1237,7 +1237,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
       ptp->no_timesync = true;
       info("%s(%d), ptp sync from user for hw offload timestamp\n", __func__, port);
       ptp_sync_from_user(impl, ptp);
-      rte_eal_alarm_set(MT_PTP_EBU_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
+      rte_eal_alarm_set(MT_PTP_TP_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
       ptp->connected = true;
       ptp->locked = true;
       ptp->active = true;

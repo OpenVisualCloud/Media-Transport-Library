@@ -51,8 +51,7 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, struct st_rv_tp_slot* s
   slot->vrx_drained_prev = drained;
 
   /* Calculate C-inst */
-  int exp_cin_pkts =
-      ((pkt_time - slot->first_pkt_time) / trs) * ST_EBU_CINST_DRAIN_FACTOR;
+  int exp_cin_pkts = ((pkt_time - slot->first_pkt_time) / trs) * ST_TP_CINST_DRAIN_FACTOR;
   int cinst = RTE_MAX(0, pkt_idx - exp_cin_pkts);
   slot->cinst_sum += cinst;
   slot->cinst_min = RTE_MIN(cinst, slot->cinst_min);
@@ -81,11 +80,11 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_session_impl* 
   if ((slot->rtp_ts_delta < sampling) || (slot->rtp_ts_delta > (sampling + 1)))
     return ST_RX_TP_COMPLIANT_FAILED;
   /* rtp offset check */
-  if ((slot->rtp_offset < ST_EBU_RTP_OFFSET_MIN) ||
+  if ((slot->rtp_offset < ST_TP_RTP_OFFSET_MIN) ||
       (slot->rtp_offset > tp->rtp_offset_max_pass))
     return ST_RX_TP_COMPLIANT_FAILED;
   /* latency check */
-  if ((slot->latency < 0) || (slot->latency > ST_EBU_LATENCY_MAX_NS))
+  if ((slot->latency < 0) || (slot->latency > ST_TP_LATENCY_MAX_NS))
     return ST_RX_TP_COMPLIANT_FAILED;
   /* vrx check */
   if ((slot->vrx_min < 0) || (slot->vrx_max > tp->vrx_full_wide_pass))

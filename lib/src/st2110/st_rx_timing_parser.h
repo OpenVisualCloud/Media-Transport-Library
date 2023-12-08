@@ -2,8 +2,8 @@
  * Copyright(c) 2023 Intel Corporation
  */
 
-#ifndef _ST_LIB_RX_EBU_HEAD_H_
-#define _ST_LIB_RX_EBU_HEAD_H_
+#ifndef _ST_LIB_RX_TP_HEAD_H_
+#define _ST_LIB_RX_TP_HEAD_H_
 
 #include "st_main.h"
 
