@@ -30,12 +30,7 @@ USER $IMTL_USER
 
 WORKDIR /home/$IMTL_USER/
 
-# Clone and build the xdp-tools project
-RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git && \
-    cd xdp-tools && ./configure && make && sudo make install && \
-    cd lib/libbpf/src && sudo make install
-
-# Clone and build DPDK and IMTL
+# Clone and build DPDK before bpf and xdp
 RUN git clone https://github.com/OpenVisualCloud/$MTL_REPO.git && \
     git clone https://github.com/DPDK/$DPDK_REPO.git && \
     cd $DPDK_REPO && \
@@ -46,7 +41,16 @@ RUN git clone https://github.com/OpenVisualCloud/$MTL_REPO.git && \
     git am ../$MTL_REPO/patches/dpdk/$DPDK_VER/*.patch && \
     meson setup build && \
     ninja -C build && \
-    sudo ninja -C build install && \
-    cd ../$MTL_REPO && ./build.sh
+    sudo ninja -C build install
+
+# Clone and build the xdp-tools project
+RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git && \
+    cd xdp-tools && ./configure && make && sudo make install && \
+    cd lib/libbpf/src && sudo make install
+
+# Build IMTL
+RUN cd $MTL_REPO && ./build.sh
+
+WORKDIR /home/$IMTL_USER/$MTL_REPO
 
 CMD ["/bin/bash"]

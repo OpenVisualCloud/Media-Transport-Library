@@ -121,7 +121,6 @@ sudo -s
 ## 4. Run RxTXApp
 
 ```bash
-cd Media-Transport-Library/
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
 # Edit and Run the loop json file
