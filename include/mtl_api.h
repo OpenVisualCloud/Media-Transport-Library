@@ -989,7 +989,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
 void* mtl_memcpy(void* dest, const void* src, size_t n);
 
 /**
- * Read current cache time from ptp source.
+ * Read cached time from ptp source.
  *
  * @param mt
  *   The handle to the MTL transport device context.
