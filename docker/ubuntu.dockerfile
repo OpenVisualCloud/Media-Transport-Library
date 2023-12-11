@@ -16,7 +16,7 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 RUN apt-get update -y && \
     apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev && \
     apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev && \
-    apt-get install -y sudo vim htop gdb && \
+    apt-get install -y sudo vim htop libcap2-bin && \
     pip install pyelftools ninja && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -49,7 +49,8 @@ RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git 
     cd lib/libbpf/src && sudo make install
 
 # Build IMTL
-RUN cd $MTL_REPO && ./build.sh
+RUN cd $MTL_REPO && ./build.sh && \
+    sudo setcap 'cap_net_admin+ep cap_net_raw+ep' ./build/app/RxTxApp
 
 WORKDIR /home/$IMTL_USER/$MTL_REPO
 
