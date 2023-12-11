@@ -38,7 +38,7 @@ For legacy way of running multiple containers without MTL Manager, please add th
 
 #### 3.2.1 Run with docker command
 
-For DPDK backend, pass the VFIO devices:
+For DPDK PMD backend, pass the VFIO devices:
 
 ```bash
 docker run -it \
@@ -49,7 +49,7 @@ docker run -it \
   mtl:latest
 ```
 
-For kernel / AF_XDP backend (new dockerfile WIP), pass the host network interfaces:
+For AF_XDP backend, pass the host network interfaces:
 
 ```bash
 docker run -it \
@@ -58,7 +58,9 @@ docker run -it \
   --cap-add SYS_NICE \
   --cap-add NET_ADMIN \
   --cap-add NET_RAW \
+  --cap-add CAP_BPF \
   -v /var/run/imtl:/var/run/imtl \
+  --ulimit memlock=-1 \
   mtl:latest
 ```
 
@@ -66,12 +68,15 @@ Explanation of `docker run` arguments:
 
 | Argument | Description |
 | --- | --- |
+| `--net host` | For AF_XDP backend to access NICs |
 | `-v /var/run/imtl:/var/run/imtl` | For connection with MTL Manager |
-| `--device /dev/vfio` | Access the VFIO device |
-| `--cap-add SYS_NICE` | For set_mempolicy |
-| `--cap-add IPC_LOCK` | For DMA mapping |
+| `--device /dev/vfio` | For DPDK eal to access the VFIO devices |
+| `--ulimit memlock=-1` | For AF_XDP backend to create UMEM |
+| `--cap-add SYS_NICE` | For DPDK eal to set NUMA memory policy |
+| `--cap-add IPC_LOCK` | For DPDK PMD to do DMA mapping |
 | `--cap-add NET_ADMIN` | For kernel NIC configuration |
-| `--cap-add NET_RAW` | For AF_XDP socket |
+| `--cap-add NET_RAW` | For AF_XDP backend to create socket |
+| `--cap-add CAP_BPF` | For AF_XDP backend to update xsks_map |
 | `--cap-add SYS_TIME` | For systime adjustment if `--phc2sys` enabled |
 
 #### 3.2.2 Specify VFIO devices for container
@@ -110,20 +115,12 @@ docker-compose run imtl
 # docker compose run imtl
 ```
 
-### 3.3 Switch to the root user inside a Docker container
-
-On the docker bash shell:
-
-```bash
-sudo -s
-```
-
 ## 4. Run RxTXApp
 
 ```bash
-cd Media-Transport-Library/
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
-# Edit and Run the loop json file
+# Edit and Run the loop json file.
+# For DPDK PMD backend, need to run with sudo.
 ./build/app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
 ```
