@@ -67,6 +67,45 @@ Applications can also leverage the efficient tasklet framework. An important not
     mtl_sch_free
 ```
 
+### 2.6 Runtime session
+
+The session creation and release APIs can be invoked at any time, even while the MTL instance is running.
+
+The standard inital flow is like below:
+```bash
+  /* init mtl instance */
+  mtl_init
+  /* create sessions before starting mtl instance */
+  st20p_tx_create
+  st20p_rx_create
+  st30_tx_create
+  st30_rx_create
+  ...
+  /* start mtl instance */
+  mtl_start
+  ...
+```
+
+IMTL also supports session creation after the MTL instance has started; therefore, the following workflow operates correctly as well.
+```bash
+  /* init mtl instance */
+  mtl_init
+  /* start mtl instance */
+  mtl_start
+  /* create sessions after mtl instance started */
+  st20p_tx_create
+  st20p_rx_create
+  st30_tx_create
+  st30_rx_create
+  ...
+  /* free sessions before stoping mtl instance */
+  st20p_tx_free
+  st20p_rx_free
+  st30_tx_free
+  st30_rx_free
+  ...
+```
+
 ## 3. Memory management
 
 ### 3.1 Huge Page
@@ -142,6 +181,13 @@ The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Code ple
 
 RSS mode: Not all NICs support Flow Director. For those that don't, we employs Receive Side Scaling (RSS) to enable the efficient distribution of network receive processing across multiple queues. This is based on a hash calculated from fields in packet headers, such as source and destination IP addresses, and port numbers.
 Code please refer to [mt_shared_rss.c](../lib/src/datapath/mt_shared_rss.c) for detail.
+
+#### 4.2.3 Queues resource allocated
+
+The `mtl_init_params` structure offers two configuration options: `tx_queues_cnt` and `rx_queues_cnt`, which specify the number of transmit and receive queues, respectively, that IMTL should use for an instance.
+The number of queues typically depends on the anticipated number of sessions to be created, with each video session usually requiring one dedicated queue for packet transmission and reception over the network.
+
+If the requested number of queues exceeds the maximum allowed by the hardware resources, then only the maximum permissible number of queues will be created.
 
 ### 4.3 ST2110 TX
 
@@ -225,6 +271,11 @@ This project includes a built-in support for the PTP client protocol, which is a
 To enable this feature in the RxTxApp sample application, use the `--ptp` argument. The control for the built-in PTP feature is the `MTL_FLAG_PTP_ENABLE` flag in the `mtl_init_params` structure.
 
 Note: Currently, the VF (Virtual Function) does not support the hardware timesync feature. Therefore, for VF deployment, the timestamp of the transmitted (TX) and received (RX) packets is read from the CPU TSC (TimeStamp Counter) instead. In this case, it is not possible to obtain a stable delta in the PTP adjustment, and the maximum accuracy achieved will be up to 1us.
+
+Applications can set a `ptp_sync_notify` callback within `mtl_init_params` to receive notifications whenever IMTL's built-in Precision Time Protocol (PTP) synchronizes with a PTP grandmaster. This feature is typically utilized to align the MTL's built-in PTP time with the local system time.
+
+Additionally, IMTL exports two APIs: `mtl_ptp_read_time` and `mtl_ptp_read_time_raw`, which enable applications to retrieve the current built-in PTP time. The primary difference is that `mtl_ptp_read_time_raw` accesses the NIC's memory-mapped I/O (MMIO) registers directly, providing the most accurate time at the expense of increased CPU usage due to the MMIO read operation.
+In contrast, `mtl_ptp_read_time` returns the cached software time, avoiding hardware overhead.
 
 #### 5.4.2 Customized PTP time source by Application
 
