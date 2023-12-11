@@ -106,7 +106,7 @@ docker run -it \
   mtl:latest
 ```
 
-### 3.2.3 Run with docker-compose
+#### 3.2.3 Run with docker-compose
 
 Edit the `docker-compose.yml` file to specify the configuration.
 
