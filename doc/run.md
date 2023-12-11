@@ -87,7 +87,8 @@ For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet
 
 ## 3. DPDK PMD setup
 
-DPDK utilizes the Linux kernel's VFIO module to enable direct NIC (Network Interface Card) hardware access from user space with the assistance of an IOMMU (Input/Output Memory Management Unit). To use DPDK's Poll Mode Drivers (PMDs), NICs must be bound to the `vfio-pci` driver. Before manipulating VFIO devices, it's necessary to configure user permissions and system rules to allow the current user to access VFIO interfaces.
+DPDK utilizes the Linux kernel's VFIO module to enable direct NIC hardware access from user space with the assistance of an IOMMU (Input/Output Memory Management Unit).
+To use DPDK's Poll Mode Drivers (PMDs), NICs must be bound to the `vfio-pci` driver. Before manipulating VFIO devices, it's necessary to configure user permissions and system rules to allow the current user to access VFIO devices.
 
 ### 3.1 Allow current user to access /dev/vfio/* devices
 
