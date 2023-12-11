@@ -47,7 +47,8 @@ RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git 
     cd lib/libbpf/src && sudo make install
 
 # Build IMTL
-RUN cd $MTL_REPO && ./build.sh
+RUN cd $MTL_REPO && ./build.sh && \
+    sudo setcap 'cap_net_admin+ep cap_net_raw+ep' ./build/app/RxTxApp
 
 # Drop the sudo permission
 RUN sudo deluser imtl sudo
