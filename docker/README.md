@@ -38,7 +38,7 @@ For legacy way of running multiple containers without MTL Manager, please add th
 
 #### 3.2.1 Run with docker command
 
-For DPDK backend, pass the VFIO devices:
+For DPDK PMD backend, pass the VFIO devices:
 
 ```bash
 docker run -it \
@@ -120,6 +120,7 @@ docker-compose run imtl
 ```bash
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
-# Edit and Run the loop json file
+# Edit and Run the loop json file.
+# For DPDK PMD backend, need to run with sudo.
 ./build/app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
 ```
