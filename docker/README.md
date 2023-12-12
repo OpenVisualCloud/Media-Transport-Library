@@ -2,7 +2,11 @@
 
 Docker guide for Intel® Media Transport Library.
 
-## 1. Build Docker image
+## 1. DPDK NIC PMD and env setup on host
+
+Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfio(2110) user group and vfio driver mode for VFs.
+
+## 2. Build Docker image
 
 ```bash
 docker build -t mtl:latest -f ubuntu.dockerfile ./
@@ -15,10 +19,6 @@ http_proxy=http://proxy.xxx.com:xxx
 https_proxy=https://proxy.xxx.com:xxx
 docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ./
 ```
-
-## 2. DPDK NIC PMD and env setup on host
-
-Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfio driver mode for VFs.
 
 ## 3. Run and login into the docker container
 
@@ -46,6 +46,7 @@ docker run -it \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
   -v /var/run/imtl:/var/run/imtl \
+  --ulimit memlock=-1 \
   mtl:latest
 ```
 
@@ -71,7 +72,7 @@ Explanation of `docker run` arguments:
 | `--net host` | For AF_XDP backend to access NICs |
 | `-v /var/run/imtl:/var/run/imtl` | For connection with MTL Manager |
 | `--device /dev/vfio` | For DPDK eal to access the VFIO devices |
-| `--ulimit memlock=-1` | For AF_XDP backend to create UMEM |
+| `--ulimit memlock=-1` | For DPDK PMD to do DMA remapping or AF_XDP backend to create UMEM |
 | `--cap-add SYS_NICE` | For DPDK eal to set NUMA memory policy |
 | `--cap-add IPC_LOCK` | For DPDK PMD to do DMA mapping |
 | `--cap-add NET_ADMIN` | For kernel NIC configuration |
@@ -101,10 +102,11 @@ docker run -it \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
   -v /var/run/imtl:/var/run/imtl \
+  --ulimit memlock=-1 \
   mtl:latest
 ```
 
-### 3.2.3 Run with docker-compose
+#### 3.2.3 Run with docker-compose
 
 Edit the `docker-compose.yml` file to specify the configuration.
 
@@ -121,6 +123,5 @@ docker-compose run imtl
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
 # Edit and Run the loop json file.
-# For DPDK PMD backend, need to run with sudo.
 ./build/app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
 ```

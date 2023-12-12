@@ -81,24 +81,59 @@ Some operating systems, including CentOS stream and RHEL 9, has a small limit to
 
 Reboot the system to let the settings take effect.
 
-## 2. NIC driver setup
+## 2. Kernel mode NIC driver setup
 
 For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the DPDK site <http://doc.dpdk.org/guides/nics/overview.html>.
 
-## 3. Create DPDK PMD
+## 3. DPDK PMD setup
+
+DPDK utilizes the Linux kernel's VFIO module to enable direct NIC hardware access from user space with the assistance of an IOMMU (Input/Output Memory Management Unit).
+To use DPDK's Poll Mode Drivers (PMDs), NICs must be bound to the `vfio-pci` driver. Before manipulating VFIO devices, it's necessary to configure user permissions and system rules to allow the current user to access VFIO devices.
+
+### 3.1 Allow current user to access /dev/vfio/* devices
+
+This section guides you through creating a dedicated group, granting the appropriate permissions, and setting up udev rules to maintain these settings across system reboots and devices re-creations.
+
+Add a new group named `vfio` with GID `2110` to control the VFIO devices, and add your current user to that group. If GID `2110` is in use, consider using a different one.
+
+```bash
+getent group 2110 || sudo groupadd -g 2110 vfio
+sudo usermod -aG vfio $USER
+```
+
+Re-login and check the group successfully added using `groups`.
+
+Create or edit a udev rules file, for example, /etc/udev/rules.d/10-vfio.rules, with your preferred text editor. For instance, using vim:
+
+```bash
+sudo vim /etc/udev/rules.d/10-vfio.rules
+```
+
+Add the following line to set the group ownership to vfio and enable read/write access for the group to any VFIO devices that appear:
+
+```bash
+SUBSYSTEM=="vfio", GROUP="vfio", MODE="0660"
+```
+
+Then reload the udev rules with:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+### 3.2 Bind NICs to DPDK PMD
 
 Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
 
-### 3.1 Create DPDK PMD
-
-For the Intel® E810 Series Ethernet Adapter, which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to section `### 3.1.1` to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
+For the Intel® E810 Series Ethernet Adapter, which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to [Create Intel E810 VFs and bind to DPDK PMD](#321-create-intel-e810-vfs-and-bind-to-dpdk-pmd) to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
 
 For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
 
 If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel.
 Please refer to [kernel tx config](../tests/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/script/kernel_socket_json/rx.json) for how to config the kernel transport in json config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
 
-#### 3.1.1 Create Intel® E810 VFs PMD
+#### 3.2.1 Create Intel® E810 VFs and bind to DPDK PMD
 
 Get Device to Bus info mapping
 
@@ -139,21 +174,13 @@ If the creation of VF BDFs fails, you can check the kernel dmesg log to find pos
 sudo dmesg
 ```
 
-#### 3.1.2 Bind PF DPDK PMD
+#### 3.2.2 Bind PF to DPDK PMD
 
 If your Network Interface Card (NIC) is not from the Intel® E810 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
 
 ```bash
 cd $imtl_source_code
 sudo ./script/nicctl.sh bind_pmd 0000:32:00.0
-```
-
-### 3.2 Grant /dev/vfio/* access to current user
-
-If you are not running the sample application from the root user, you can execute the following command to add VFIO device permissions for the current user:
-
-```bash
-sudo chown -R $USER:$USER /dev/vfio/
 ```
 
 ## 4. Setup Hugepage

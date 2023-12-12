@@ -6,12 +6,6 @@ FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7c
 
 LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
 
-ENV MTL_REPO=Media-Transport-Library
-ENV DPDK_REPO=dpdk
-ENV DPDK_VER=23.11
-ENV IMTL_USER=imtl
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
-
 # Install dependencies and debug tools
 RUN apt-get update -y && \
     apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev && \
@@ -21,19 +15,23 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Add user: imtl
-RUN adduser $IMTL_USER && \
-    usermod -G sudo $IMTL_USER && \
+# Add user: imtl with group vfio(2110)
+RUN groupadd -g 2110 vfio && \
+    useradd -m -G vfio,sudo imtl && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-USER $IMTL_USER
+USER imtl
 
-WORKDIR /home/$IMTL_USER/
+WORKDIR /home/imtl/
+
+ENV MTL_REPO=Media-Transport-Library
+ENV DPDK_VER=23.11
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 # Clone and build DPDK before bpf and xdp
 RUN git clone https://github.com/OpenVisualCloud/$MTL_REPO.git && \
-    git clone https://github.com/DPDK/$DPDK_REPO.git && \
-    cd $DPDK_REPO && \
+    git clone https://github.com/DPDK/dpdk.git && \
+    cd dpdk && \
     git checkout v$DPDK_VER && \
     git switch -c v$DPDK_VER && \
     git config --global user.email "you@example.com" && \
@@ -52,6 +50,9 @@ RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git 
 RUN cd $MTL_REPO && ./build.sh && \
     sudo setcap 'cap_net_admin+ep cap_net_raw+ep' ./build/app/RxTxApp
 
-WORKDIR /home/$IMTL_USER/$MTL_REPO
+# Drop the sudo permission
+RUN sudo deluser imtl sudo
+
+WORKDIR /home/imtl/$MTL_REPO
 
 CMD ["/bin/bash"]
