@@ -14,15 +14,13 @@ ls -l /sys/kernel/iommu_groups/
 
 The steps to enable IOMMU in your BIOS/UEFI may vary depending on the manufacturer and model of your motherboard. Here are general steps that should guide you:
 
-```bash
-    1. Restart your computer. During the boot process, you'll need to press a specific key to enter the BIOS/UEFI setup. This key varies depending on your system's manufacturer. It's often one of the function keys (like F2, F10, F12), the ESC key, or the DEL key.
+1. Restart your computer. During the boot process, you'll need to press a specific key to enter the BIOS/UEFI setup. This key varies depending on your system's manufacturer. It's often one of the function keys (like F2, F10, F12), the ESC key, or the DEL key.
 
-    2. Navigate to the advanced settings. Once you're in the BIOS/UEFI setup menu, look for a section with a name like "Advanced", "Advanced Options", or "Advanced Settings".
+2. Navigate to the advanced settings. Once you're in the BIOS/UEFI setup menu, look for a section with a name like "Advanced", "Advanced Options", or "Advanced Settings".
 
-    3. Look for IOMMU setting. Within the advanced settings, look for an option related to IOMMU. It might be listed under CPU Configuration or Chipset Configuration, depending on your system. For Intel systems, it's typically labeled as "VT-d" (Virtualization Technology for Directed I/O). Once you've located the appropriate option, change the setting to "Enabled".
+3. Look for IOMMU setting. Within the advanced settings, look for an option related to IOMMU. It might be listed under CPU Configuration or Chipset Configuration, depending on your system. For Intel systems, it's typically labeled as "VT-d" (Virtualization Technology for Directed I/O). Once you've located the appropriate option, change the setting to "Enabled".
 
-    4. Save your changes and exit. There will typically be an option to "Save & Exit" or "Save Changes and Reset". Select this to save your changes and restart the computer.
-```
+4. Save your changes and exit. There will typically be an option to "Save & Exit" or "Save Changes and Reset". Select this to save your changes and restart the computer.
 
 ### 1.2 Enable IOMMU in kernel
 
@@ -101,7 +99,12 @@ getent group 2110 || sudo groupadd -g 2110 vfio
 sudo usermod -aG vfio $USER
 ```
 
-Re-login and check the group successfully added using `groups`.
+Re-login and check the group `vfio` successfully added using the command `groups`.
+
+```bash
+groups
+xxx sudo docker libvirt vfio
+```
 
 Create or edit a udev rules file, for example, /etc/udev/rules.d/10-vfio.rules, with your preferred text editor. For instance, using vim:
 
@@ -166,6 +169,24 @@ Bind 0000:af:01.3(enp175s0f0v3) to vfio-pci success
 Bind 0000:af:01.4(enp175s0f0v4) to vfio-pci success
 Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
 Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
+```
+
+And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section `### 3.1 Allow current user to access /dev/vfio/* devices`, use the `ls -l /dev/vfio/*` command and below is sample output:
+
+```bash
+ls -l /dev/vfio/*
+crw-rw---- 1 root  vfio  235,   0 12月 12 09:34 /dev/vfio/162
+crw-rw---- 1 root  vfio  235,   2 12月 12 09:34 /dev/vfio/163
+crw-rw---- 1 root  vfio  235,   3 12月 12 09:34 /dev/vfio/164
+crw-rw---- 1 root  vfio  235,   4 12月 12 09:34 /dev/vfio/165
+crw-rw---- 1 root  vfio  235,   5 12月 12 09:34 /dev/vfio/166
+crw-rw---- 1 root  vfio  235,   6 12月 12 09:34 /dev/vfio/167
+crw-rw---- 1 root  vfio  235,   1 12月 12 09:35 /dev/vfio/168
+crw-rw---- 1 root  vfio  235,   7 12月 12 09:35 /dev/vfio/169
+crw-rw---- 1 root  vfio  235,   8 12月 12 09:35 /dev/vfio/170
+crw-rw---- 1 root  vfio  235,   9 12月 12 09:35 /dev/vfio/171
+crw-rw---- 1 root  vfio  235,  10 12月 12 09:35 /dev/vfio/172
+crw-rw---- 1 root  vfio  235,  11 12月 12 09:35 /dev/vfio/173
 ```
 
 If the creation of VF BDFs fails, you can check the kernel dmesg log to find possible reasons for the failure. The dmesg log contains valuable information that can help identify any issues or errors related to the VF creation process. Please review the dmesg log for any relevant messages or error codes that can provide insights into why the creation of VF BDFs was unsuccessful.

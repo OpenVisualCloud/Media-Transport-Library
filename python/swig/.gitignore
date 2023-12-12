@@ -1,0 +1,7 @@
+# generated file
+*.c
+*.so
+pymtl.py
+build
+dist
+pymtl.egg-info
