@@ -421,7 +421,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     err("%s, mt_dev_eal_init fail %d\n", __func__, ret);
     return NULL;
   }
-  info("st version: %s, dpdk version: %s\n", mtl_version(), rte_version());
+  info("MTL version: %s, dpdk version: %s\n", mtl_version(), rte_version());
 
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];
@@ -1353,3 +1353,32 @@ int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t 
 void mtl_sleep_us(unsigned int us) { return mt_sleep_us(us); }
 
 void mtl_delay_us(unsigned int us) { return mt_delay_us(us); }
+
+int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip) {
+  int ret = inet_pton(AF_INET, ip, p->sip_addr[port]);
+  if (ret == 1) return 0;
+  err("%s, fail to inet_pton for %s\n", __func__, ip);
+  return -EIO;
+}
+
+int mtl_para_gateway_set(struct mtl_init_params* p, enum mtl_port port, char* gateway) {
+  int ret = inet_pton(AF_INET, gateway, p->gateway[port]);
+  if (ret == 1) return 0;
+  err("%s, fail to inet_pton for %s\n", __func__, gateway);
+  return -EIO;
+}
+
+int mtl_para_netmask_set(struct mtl_init_params* p, enum mtl_port port, char* netmask) {
+  int ret = inet_pton(AF_INET, netmask, p->netmask[port]);
+  if (ret == 1) return 0;
+  err("%s, fail to inet_pton for %s\n", __func__, netmask);
+  return -EIO;
+}
+
+int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name) {
+  return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
+}
+
+int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name) {
+  return snprintf(p->dma_dev_port[port], MTL_PORT_MAX_LEN, "%s", name);
+}

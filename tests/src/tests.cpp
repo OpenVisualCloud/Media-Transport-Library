@@ -394,7 +394,7 @@ static void test_ctx_uinit(struct st_tests_context* ctx) {
 
 TEST(Misc, version) {
   auto version_display = mtl_version();
-  info("st version: %s\n", version_display);
+  info("MTL version: %s\n", version_display);
 
   uint32_t version_no =
       MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST);
