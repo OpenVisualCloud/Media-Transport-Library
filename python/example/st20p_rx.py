@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-import time
-
 import pymtl as mtl
 
 # Init para
@@ -34,7 +32,7 @@ mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, "239.168.85.20")
 mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, 20000)
 rx_port.payload_type = 112
 rx_para.port = rx_port
-# create
+# create st20p_rx session
 st20p_rx = mtl.st20p_rx_create(mtl_handle, rx_para)
 
 # loop until ctrl-c
@@ -49,9 +47,10 @@ try:
 except KeyboardInterrupt:
     print("KeyboardInterrupt")
 
+# Free st20p_rx session
 mtl.st20p_rx_free(st20p_rx)
 
 # Free MTL instance
 mtl.mtl_uninit(mtl_handle)
 
-print("Everythin fine, bye")
+print("Everything fine, bye")
