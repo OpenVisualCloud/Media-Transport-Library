@@ -171,22 +171,14 @@ Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
 Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 ```
 
-And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section `### 3.1 Allow current user to access /dev/vfio/* devices`, use the `ls -l /dev/vfio/*` command and below is sample output:
+And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section `### 3.1 Allow current user to access /dev/vfio/* devices`, use the `ls -lg /dev/vfio/*` command and below is sample output:
 
 ```bash
-ls -l /dev/vfio/*
-crw-rw---- 1 root  vfio  235,   0 12月 12 09:34 /dev/vfio/162
-crw-rw---- 1 root  vfio  235,   2 12月 12 09:34 /dev/vfio/163
-crw-rw---- 1 root  vfio  235,   3 12月 12 09:34 /dev/vfio/164
-crw-rw---- 1 root  vfio  235,   4 12月 12 09:34 /dev/vfio/165
-crw-rw---- 1 root  vfio  235,   5 12月 12 09:34 /dev/vfio/166
-crw-rw---- 1 root  vfio  235,   6 12月 12 09:34 /dev/vfio/167
-crw-rw---- 1 root  vfio  235,   1 12月 12 09:35 /dev/vfio/168
-crw-rw---- 1 root  vfio  235,   7 12月 12 09:35 /dev/vfio/169
-crw-rw---- 1 root  vfio  235,   8 12月 12 09:35 /dev/vfio/170
-crw-rw---- 1 root  vfio  235,   9 12月 12 09:35 /dev/vfio/171
-crw-rw---- 1 root  vfio  235,  10 12月 12 09:35 /dev/vfio/172
-crw-rw---- 1 root  vfio  235,  11 12月 12 09:35 /dev/vfio/173
+ls -lg /dev/vfio/*
+crw-rw---- 1 vfio  235,   0 12月 12 09:34 /dev/vfio/162
+crw-rw---- 1 vfio  235,   2 12月 12 09:34 /dev/vfio/163
+crw-rw---- 1 vfio  235,   3 12月 12 09:34 /dev/vfio/164
+crw-rw---- 1 vfio  235,   4 12月 12 09:34 /dev/vfio/165
 ```
 
 If the creation of VF BDFs fails, you can check the kernel dmesg log to find possible reasons for the failure. The dmesg log contains valuable information that can help identify any issues or errors related to the VF creation process. Please review the dmesg log for any relevant messages or error codes that can provide insights into why the creation of VF BDFs was unsuccessful.

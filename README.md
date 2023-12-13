@@ -128,11 +128,27 @@ If you do not want the main branch automatically synced to the upstream, please 
 
 We use the super-linter action for style checks.
 
+#### 7.2.1 C/C++
+
 For C/C++ coding, you can run the following command to quickly fix the style:
 
 ```bash
 ./format-coding.sh
 ```
+
+#### 7.2.2 Python
+
+For Python, `black` formatter is used.
+
+```bash
+sudo pip install black
+```
+
+```bash
+black python/
+```
+
+#### 7.2.3 Others
 
 For other languages, please check with the following example command inside the Docker container:
 
