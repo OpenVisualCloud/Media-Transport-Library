@@ -1942,6 +1942,20 @@ static inline uint32_t st_frame_data_height(struct st_frame* frame) {
   return h;
 }
 
+int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char* name);
+int st_rxp_para_sip_set(struct st_rx_port* p, enum mtl_port port, char* ip);
+static inline void st_rxp_para_udp_port_set(struct st_rx_port* p, enum mtl_port port,
+                                            uint16_t udp_port) {
+  p->udp_port[port] = udp_port;
+}
+
+static inline mtl_cpuva_t st_frame_addr(struct st_frame* frame, uint8_t plane) {
+  return (mtl_cpuva_t)frame->addr[plane];
+}
+static inline mtl_iova_t st_frame_iova(struct st_frame* frame, uint8_t plane) {
+  return frame->iova[plane];
+}
+
 #if defined(__cplusplus)
 }
 #endif

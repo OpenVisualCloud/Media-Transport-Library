@@ -119,6 +119,11 @@ typedef struct mtl_dma_lender_dev* mtl_udma_handle;
 typedef uint64_t mtl_iova_t;
 
 /**
+ * CPU virtual address type.
+ */
+typedef uint64_t mtl_cpuva_t;
+
+/**
  * Handle to dma mem
  */
 typedef struct mtl_dma_mem* mtl_dma_mem_handle;

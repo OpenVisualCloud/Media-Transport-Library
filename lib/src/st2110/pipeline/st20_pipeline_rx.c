@@ -726,8 +726,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   }
 
   if (!ops->notify_frame_available) {
-    err("%s, pls set notify_frame_available\n", __func__);
-    return NULL;
+    warn("%s, pls set notify_frame_available\n", __func__);
   }
 
   if (ops->flags & ST20P_RX_FLAG_EXT_FRAME) {

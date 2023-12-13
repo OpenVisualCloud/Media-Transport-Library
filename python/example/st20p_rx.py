@@ -17,12 +17,39 @@ mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
 # Create MTL instance
 mtl_handle = mtl.mtl_init(init_para)
 
+# Create st20p rx session
+rx_para = mtl.st20p_rx_ops()
+rx_para.name = "st20p_rx_python"
+rx_para.width = 1920
+rx_para.height = 1080
+rx_para.fps = mtl.ST_FPS_P59_94
+rx_para.framebuff_cnt = 3
+rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
+rx_para.output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR10LE
+# rx port
+rx_port = mtl.st_rx_port()
+mtl.st_rxp_para_port_set(rx_port, mtl.MTL_SESSION_PORT_P, "0000:af:01.0")
+rx_port.num_port = 1
+mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, "239.168.85.20")
+mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, 20000)
+rx_port.payload_type = 112
+rx_para.port = rx_port
+# create
+st20p_rx = mtl.st20p_rx_create(mtl_handle, rx_para)
+
 # loop until ctrl-c
 try:
     while True:
-        time.sleep(1)
+        frame = mtl.st20p_rx_get_frame(st20p_rx)
+        if frame:
+            # print(f"frame addr: {hex(mtl.st_frame_addr(frame, 0))}")
+            # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
+            # print(f"pkts_total: {frame.pkts_total}")
+            mtl.st20p_rx_put_frame(st20p_rx, frame)
 except KeyboardInterrupt:
     print("KeyboardInterrupt")
+
+mtl.st20p_rx_free(st20p_rx)
 
 # Free MTL instance
 mtl.mtl_uninit(mtl_handle)
