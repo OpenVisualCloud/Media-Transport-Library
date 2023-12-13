@@ -284,173 +284,140 @@ enum st21_tx_pacing_way {
   ST21_TX_PACING_WAY_MAX,
 };
 
-/**
- * Flag bit in flags of struct mtl_init_params.
- * If set, lib will call numa_bind to bind app thread and memory to NIC socket also.
- */
-#define MTL_FLAG_BIND_NUMA (MTL_BIT64(0))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable built-in PTP implementation, only for PF now.
- * If not enable, it will use system time as the PTP source.
- */
-#define MTL_FLAG_PTP_ENABLE (MTL_BIT64(1))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Separated lcore for RX video(st2110-20/st2110-22) session.
- */
-#define MTL_FLAG_RX_SEPARATE_VIDEO_LCORE (MTL_BIT64(2))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable migrate mode for tx video session if current LCORE is too busy to handle the
- * tx video tasklet, the busy session may be migrated to a new LCORE.
- * If not enable, tx video will always use static mapping based on quota.
- */
-#define MTL_FLAG_TX_VIDEO_MIGRATE (MTL_BIT64(3))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable migrate mode for rx video session if current LCORE is too busy to handle the
- * rx video tasklet, the busy session may be migrated to a new LCORE.
- * If not enable, rx video will always use static mapping based on quota.
- */
-#define MTL_FLAG_RX_VIDEO_MIGRATE (MTL_BIT64(4))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Run the tasklet inside one thread instead of a pinned lcore.
- */
-#define MTL_FLAG_TASKLET_THREAD (MTL_BIT64(5))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable the tasklet sleep if routine report task done.
- */
-#define MTL_FLAG_TASKLET_SLEEP (MTL_BIT64(6))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Set the supported SIMD bitwidth of rx/tx burst to 512 bit(AVX512).
- */
-#define MTL_FLAG_RXTX_SIMD_512 (MTL_BIT64(7))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Use PI controller for built-in PTP implementation, only for PF now.
- */
-#define MTL_FLAG_PTP_PI (MTL_BIT64(9))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable background lcore mode for MTL_TRANSPORT_UDP.
- */
-#define MTL_FLAG_UDP_LCORE (MTL_BIT64(10))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable random source port for MTL_TRANSPORT_ST2110 tx.
- */
-#define MTL_FLAG_RANDOM_SRC_PORT (MTL_BIT64(11))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable multiple source port for MTL_TRANSPORT_ST2110 20 tx.
- */
-#define MTL_FLAG_MULTI_SRC_PORT (MTL_BIT64(12))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable shared queue for tx.
- */
-#define MTL_FLAG_SHARED_TX_QUEUE (MTL_BIT64(13))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable shared queue for rx.
- */
-#define MTL_FLAG_SHARED_RX_QUEUE (MTL_BIT64(14))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable built-in PHC2SYS implementation.
- * CAP_SYS_TIME is needed.
- */
-#define MTL_FLAG_PHC2SYS_ENABLE (MTL_BIT64(15))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Enable virtio_user as exception path.
- * CAP_NET_ADMIN is needed.
- */
-#define MTL_FLAG_VIRTIO_USER (MTL_BIT64(16))
-/**
- * Flag bit in flags of struct mtl_init_params.
- * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
- */
-#define MTL_FLAG_DEV_AUTO_START_STOP (MTL_BIT64(17))
+/** MTL init flag */
+enum mtl_init_flag {
+  /** lib will call numa_bind to bind app thread and memory to NIC socket also.*/
+  MTL_FLAG_BIND_NUMA = (MTL_BIT64(0)),
+  /** Enable built-in PTP implementation */
+  MTL_FLAG_PTP_ENABLE = (MTL_BIT64(1)),
+  /** Separated lcore for RX video(st2110-20/st2110-22) sessions. */
+  MTL_FLAG_RX_SEPARATE_VIDEO_LCORE = (MTL_BIT64(2)),
+  /**
+   * Enable migrate mode for rx video session if current LCORE is too busy to handle the
+   * rx video tasklet, the busy session may be migrated to a new LCORE.
+   * If not enable, rx video will always use static mapping based on quota.
+   */
+  MTL_FLAG_TX_VIDEO_MIGRATE = (MTL_BIT64(3)),
+  /**
+   * Enable migrate mode for rx video session if current LCORE is too busy to handle the
+   * rx video tasklet, the busy session may be migrated to a new LCORE.
+   * If not enable, rx video will always use static mapping based on quota.
+   */
+  MTL_FLAG_RX_VIDEO_MIGRATE = (MTL_BIT64(4)),
+  /**
+   * Run the tasklet inside one thread instead of a pinned lcore.
+   */
+  MTL_FLAG_TASKLET_THREAD = (MTL_BIT64(5)),
+  /**
+   * Enable the tasklet sleep if routine report task done.
+   */
+  MTL_FLAG_TASKLET_SLEEP = (MTL_BIT64(6)),
+  /**
+   * Set the supported SIMD bitwidth of rx/tx burst to 512 bit(AVX512).
+   */
+  MTL_FLAG_RXTX_SIMD_512 = (MTL_BIT64(7)),
+  /**
+   * Use PI controller for built-in PTP implementation, only for PF now.
+   */
+  MTL_FLAG_PTP_PI = (MTL_BIT64(9)),
+  /**
+   * Enable background lcore mode for MTL_TRANSPORT_UDP.
+   */
+  MTL_FLAG_UDP_LCORE = (MTL_BIT64(10)),
+  /**
 
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * dedicate thread for cni message
- */
-#define MTL_FLAG_CNI_THREAD (MTL_BIT64(32))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Enable HW offload timestamp for all RX packets target the compliance analyze. Only can
- * work for PF on E810 now.
- */
-#define MTL_FLAG_ENABLE_HW_TIMESTAMP (MTL_BIT64(33))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Enable NIC promiscuous mode for RX
- */
-#define MTL_FLAG_NIC_RX_PROMISCUOUS (MTL_BIT64(34))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * use unicast address for ptp PTP_DELAY_REQ message
- */
-#define MTL_FLAG_PTP_UNICAST_ADDR (MTL_BIT64(35))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Mono memory pool for all rx queue(sessions)
- */
-#define MTL_FLAG_RX_MONO_POOL (MTL_BIT64(36))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Enable tasklet time measurement, report status if tasklet run time longer than
- * tasklet_time_thresh_us in mtl_init_params.
- */
-#define MTL_FLAG_TASKLET_TIME_MEASURE (MTL_BIT64(38))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Disable the zero copy for af_xdp tx video session
- */
-#define MTL_FLAG_AF_XDP_ZC_DISABLE (MTL_BIT64(39))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Mono memory pool for all tx queue(session)
- */
-#define MTL_FLAG_TX_MONO_POOL (MTL_BIT64(40))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Disable system rx queues, pls use mcast or manual TX mac.
- */
-#define MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES (MTL_BIT64(41))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Force to get ptp time from tsc source.
- */
-#define MTL_FLAG_PTP_SOURCE_TSC (MTL_BIT64(42))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Disable TX chain mbuf, use same mbuf for header and payload.
- * Will do memcpy from framebuffer to packet payload.
- */
-#define MTL_FLAG_TX_NO_CHAIN (MTL_BIT64(43))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Disable the pkt check for TX burst API.
- */
-#define MTL_FLAG_TX_NO_BURST_CHK (MTL_BIT64(44))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * Use CNI based queue for RX.
- */
-#define MTL_FLAG_RX_USE_CNI (MTL_BIT64(45))
-/**
- * Flag bit in flags of struct mtl_init_params, debug usage only.
- * To exclusively use port only for flow, the application must ensure that all RX streams
- * have unique UDP port numbers.
- */
-#define MTL_FLAG_RX_UDP_PORT_ONLY (MTL_BIT64(46))
+   * Enable random source port for MTL_TRANSPORT_ST2110 tx.
+   */
+  MTL_FLAG_RANDOM_SRC_PORT = (MTL_BIT64(11)),
+  /**
+   * Enable multiple source port for MTL_TRANSPORT_ST2110 20 tx.
+   */
+  MTL_FLAG_MULTI_SRC_PORT = (MTL_BIT64(12)),
+  /**
+   * Enable shared queue for tx.
+   */
+  MTL_FLAG_SHARED_TX_QUEUE = (MTL_BIT64(13)),
+  /**
+   * Enable shared queue for rx.
+   */
+  MTL_FLAG_SHARED_RX_QUEUE = (MTL_BIT64(14)),
+  /**
+   * Enable built-in PHC2SYS implementation.
+   * CAP_SYS_TIME is needed.
+   */
+  MTL_FLAG_PHC2SYS_ENABLE = (MTL_BIT64(15)),
+  /**
+   * Enable virtio_user as exception path.
+   * CAP_NET_ADMIN is needed.
+   */
+  MTL_FLAG_VIRTIO_USER = (MTL_BIT64(16)),
+  /**
+   * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
+   */
+  MTL_FLAG_DEV_AUTO_START_STOP = (MTL_BIT64(17)),
+
+  /**
+   * dedicate thread for cni message
+   */
+  MTL_FLAG_CNI_THREAD = (MTL_BIT64(32)),
+  /**
+   * Enable HW offload timestamp for all RX packets target the compliance analyze. Only
+   * can work for PF on E810 now.
+   */
+  MTL_FLAG_ENABLE_HW_TIMESTAMP = (MTL_BIT64(33)),
+  /**
+   * Enable NIC promiscuous mode for RX
+   */
+  MTL_FLAG_NIC_RX_PROMISCUOUS = (MTL_BIT64(34)),
+  /**
+   * use unicast address for ptp PTP_DELAY_REQ message
+   */
+  MTL_FLAG_PTP_UNICAST_ADDR = (MTL_BIT64(35)),
+  /**
+   * Mono memory pool for all rx queue(sessions)
+   */
+  MTL_FLAG_RX_MONO_POOL = (MTL_BIT64(36)),
+  /**
+   * Enable tasklet time measurement, report status if tasklet run time longer than
+   * tasklet_time_thresh_us in mtl_init_params.
+   */
+  MTL_FLAG_TASKLET_TIME_MEASURE = (MTL_BIT64(38)),
+  /**
+   * Disable the zero copy for af_xdp tx video session
+   */
+  MTL_FLAG_AF_XDP_ZC_DISABLE = (MTL_BIT64(39)),
+  /**
+   * Mono memory pool for all tx queue(session)
+   */
+  MTL_FLAG_TX_MONO_POOL = (MTL_BIT64(40)),
+  /**
+   * Disable system rx queues, pls use mcast or manual TX mac.
+   */
+  MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES = (MTL_BIT64(41)),
+  /**
+
+   * Force to get ptp time from tsc source.
+   */
+  MTL_FLAG_PTP_SOURCE_TSC = (MTL_BIT64(42)),
+  /**
+   * Disable TX chain mbuf, use same mbuf for header and payload.
+   * Will do memcpy from framebuffer to packet payload.
+   */
+  MTL_FLAG_TX_NO_CHAIN = (MTL_BIT64(43)),
+  /**
+   * Disable the pkt check for TX burst API.
+   */
+  MTL_FLAG_TX_NO_BURST_CHK = (MTL_BIT64(44)),
+  /**
+   * Use CNI based queue for RX.
+   */
+  MTL_FLAG_RX_USE_CNI = (MTL_BIT64(45)),
+  /**
+   * To exclusively use port only for flow, the application must ensure that all RX
+   * streams have unique UDP port numbers.
+   */
+  MTL_FLAG_RX_UDP_PORT_ONLY = (MTL_BIT64(46)),
+};
 
 /**
  * The structure describing how to init af_xdp interface.
@@ -754,6 +721,25 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
  *   - <0: Error code if fail.
  */
 int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
+
+int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
+int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip);
+int mtl_para_gateway_set(struct mtl_init_params* p, enum mtl_port port, char* gateway);
+int mtl_para_netmask_set(struct mtl_init_params* p, enum mtl_port port, char* netmask);
+int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
+
+static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params* p,
+                                              enum mtl_port port, uint16_t cnt) {
+  p->tx_queues_cnt[port] = cnt;
+}
+static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params* p,
+                                              enum mtl_port port, uint16_t cnt) {
+  p->rx_queues_cnt[port] = cnt;
+}
+static inline void mtl_para_pmd_set(struct mtl_init_params* p, enum mtl_port port,
+                                    enum mtl_pmd_type pmd) {
+  p->pmd[port] = pmd;
+}
 
 /**
  * Inline function returning primary port pointer from mtl_init_params

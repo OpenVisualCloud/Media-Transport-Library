@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-import _pymtl as pymtl
+import pymtl as mtl
 
-print(f"mtl_version: {pymtl.mtl_version()}")
+print(f"mtl_version: {mtl.mtl_version()}")

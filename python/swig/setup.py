@@ -3,7 +3,7 @@
 
 from setuptools import Extension, setup
 
-mtl_module = Extension(
+pymtl_module = Extension(
     "_pymtl",
     sources=["pymtl_wrap.c"],
     # include_dirs=['/path/to/include'],
@@ -14,5 +14,7 @@ mtl_module = Extension(
 setup(
     name="pymtl",
     version="0.1",
-    ext_modules=[mtl_module],
+    description="Python bindings for libmtl using SWIG",
+    ext_modules=[pymtl_module],
+    py_modules=["pymtl"],
 )

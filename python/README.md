@@ -25,10 +25,10 @@ sudo make install
 
 ```bash
 cd $imtl_source_code/python/swig/
-swig -python -I/usr/local/include pymtl.i
+swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
 ```
 
-If you encounter the error `mtl.i:15: Error: Unable to find 'mtl/mtl_api.h'`, this is typically due to an incorrect include path. Use the following command to locate the correct path for `mtl_api.h`:
+If you encounter the error `pymtl.i:15: Error: Unable to find 'mtl/mtl_api.h'`, this is typically due to an incorrect include path. Use the following command to locate the correct path for `mtl_api.h`:
 
 ```bash
 find /usr/ -name mtl_api.h
@@ -52,11 +52,12 @@ Checking the log to see the path installed.
 
 ```bash
 creating /usr/local/lib/python3.10/dist-packages/pymtl-0.1-py3.10-linux-x86_64.egg
+Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-packages
 ```
 
 ## 3. Run python example code
 
 ```bash
 cd $imtl_source_code/python/example/
-python3 ../example/sample.py
+python3 version.py
 ```

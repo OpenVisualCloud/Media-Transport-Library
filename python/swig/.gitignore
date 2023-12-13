@@ -1,6 +1,7 @@
 # generated file
 *.c
 *.so
+__pycache__
 pymtl.py
 build
 dist
