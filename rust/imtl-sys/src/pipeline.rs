@@ -1,0 +1,1 @@
+include!(concat!(env!("OUT_DIR"), "/mtl_pipeline_bindings.rs"));
