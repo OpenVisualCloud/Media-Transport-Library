@@ -138,14 +138,16 @@ For C/C++ coding, you can run the following command to quickly fix the style:
 
 #### 7.2.2 Python
 
-For Python, `black` formatter is used.
+For Python, `black` and `isort` formatter is used.
 
 ```bash
 sudo pip install black
+sudo pip install isort
 ```
 
 ```bash
 black python/
+isort python/
 ```
 
 #### 7.2.3 Others
