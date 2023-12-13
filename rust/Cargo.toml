@@ -1,0 +1,18 @@
+[package]
+name = "imtl-rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "imtl"
+path = "src/imtl/lib.rs"
+
+[dependencies]
+
+[dependencies.imtl-sys]
+path = "imtl-sys"
+version = "^0.1.0"
+
+[features]
+convert = ["imtl-sys/convert"]
+pipeline = ["imtl-sys/pipeline"]
