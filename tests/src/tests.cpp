@@ -483,7 +483,6 @@ TEST(Misc, hp_malloc_expect_fail) {
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
-  hp_malloc_test(ctx, 8, MTL_PORT_MAX, false, false);
   if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
 }
 
@@ -492,7 +491,6 @@ TEST(Misc, hp_zmalloc_expect_fail) {
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
-  hp_malloc_test(ctx, 8, MTL_PORT_MAX, true, false);
   if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
 }
 

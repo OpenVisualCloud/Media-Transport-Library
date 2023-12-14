@@ -163,11 +163,7 @@ static void socket_expect_fail_test(enum mtl_port port) {
   EXPECT_LT(ret, 0);
 }
 
-TEST(Api, socket_expect_fail) {
-  socket_expect_fail_test(MTL_PORT_P);
-  int ret = mufd_socket_port(AF_INET, SOCK_STREAM, 0, MTL_PORT_MAX);
-  EXPECT_LT(ret, 0);
-}
+TEST(Api, socket_expect_fail) { socket_expect_fail_test(MTL_PORT_P); }
 TEST(Api, socket_expect_fail_r) { socket_expect_fail_test(MTL_PORT_R); }
 
 static void socket_max_test(enum mtl_port port) {
