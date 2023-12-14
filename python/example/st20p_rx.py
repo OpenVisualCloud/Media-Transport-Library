@@ -10,7 +10,7 @@ import pymtl as mtl
 
 def yuv422p10le_to_yuv422(ptr, width, height):
     y_size = width * height
-    u_size = v_size = width * height // 2
+    u_size = width * height // 2
 
     frame = np.frombuffer(ptr, dtype=np.uint16)
 
