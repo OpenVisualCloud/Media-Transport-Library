@@ -331,220 +331,199 @@ enum st22_quality_mode {
   ST22_QUALITY_MODE_MAX,
 };
 
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * P TX destination mac assigned by user
- */
-#define ST22P_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * R TX destination mac assigned by user
- */
-#define ST22P_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * Disable ST22 boxes
- */
-#define ST22P_TX_FLAG_DISABLE_BOXES (MTL_BIT32(2))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * User control the frame pacing by pass a timestamp in st_frame,
- * lib will wait until timestamp is reached for each frame.
- */
-#define ST22P_TX_FLAG_USER_PACING (MTL_BIT32(3))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
- */
-#define ST22P_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
- */
-#define ST22P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * If enable the rtcp.
- */
-#define ST22P_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
- * performance since the object enqueue/dequeue will be acted one by one.
- */
-#define ST22P_TX_FLAG_DISABLE_BULK (MTL_BIT32(7))
-/**
- * Flag bit in flags of struct st22p_tx_ops.
- * Lib uses user dynamic allocated memory for frames.
- * The external frames are provided by calling
- * st22p_tx_put_ext_frame.
- */
-#define ST22P_TX_FLAG_EXT_FRAME (MTL_BIT32(8))
+/** Bit define for flags of struct st22p_tx_ops. */
+enum st22p_tx_flag {
+  /**
+   * P TX destination mac assigned by user
+   */
+  ST22P_TX_FLAG_USER_P_MAC = (MTL_BIT32(0)),
+  /**
+   * R TX destination mac assigned by user
+   */
+  ST22P_TX_FLAG_USER_R_MAC = (MTL_BIT32(1)),
+  /**
+   * Disable ST22 boxes
+   */
+  ST22P_TX_FLAG_DISABLE_BOXES = (MTL_BIT32(2)),
+  /**
+   * User control the frame pacing by pass a timestamp in st_frame,
+   * lib will wait until timestamp is reached for each frame.
+   */
+  ST22P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
+  /**
+   * If enabled, lib will assign the rtp timestamp to the value in
+   * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+   */
+  ST22P_TX_FLAG_USER_TIMESTAMP = (MTL_BIT32(4)),
+  /**
+   * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+   */
+  ST22P_TX_FLAG_ENABLE_VSYNC = (MTL_BIT32(5)),
+  /**
+   * If enable the rtcp.
+   */
+  ST22P_TX_FLAG_ENABLE_RTCP = (MTL_BIT32(6)),
+  /**
+   * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
+   * performance since the object enqueue/dequeue will be acted one by one.
+   */
+  ST22P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(7)),
+  /**
+   * Lib uses user dynamic allocated memory for frames.
+   * The external frames are provided by calling
+   * st22p_tx_put_ext_frame.
+   */
+  ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
+};
 
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * P TX destination mac assigned by user
- */
-#define ST20P_TX_FLAG_USER_P_MAC (MTL_BIT32(0))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * R TX destination mac assigned by user
- */
-#define ST20P_TX_FLAG_USER_R_MAC (MTL_BIT32(1))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * Lib uses user dynamic allocated memory for frames.
- * The external frames are provided by calling
- * st20p_tx_put_ext_frame.
- */
-#define ST20P_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * User control the frame pacing by pass a timestamp in st_frame,
- * lib will wait until timestamp is reached for each frame.
- */
-#define ST20P_TX_FLAG_USER_PACING (MTL_BIT32(3))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
- */
-#define ST20P_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
- */
-#define ST20P_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * If disable the static RL pad interval profiling.
- */
-#define ST20P_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * If enable the rtcp.
- */
-#define ST20P_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * Set this flag to set rtp timestamp at the time of the first packet egresses from the
- * sender.
- */
-#define ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * Set this flag to set rtp timestamp at the time of the epoch.
- */
-#define ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH (MTL_BIT32(9))
-/**
- * Flag bit in flags of struct st20p_tx_ops.
- * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
- * performance since the object enqueue/dequeue will be acted one by one.
- */
-#define ST20P_TX_FLAG_DISABLE_BULK (MTL_BIT32(10))
+/** Bit define for flags of struct st20p_tx_ops. */
+enum st20p_tx_flag {
+  /**
+   * P TX destination mac assigned by user
+   */
+  ST20P_TX_FLAG_USER_P_MAC = (MTL_BIT32(0)),
+  /**
+   * R TX destination mac assigned by user
+   */
+  ST20P_TX_FLAG_USER_R_MAC = (MTL_BIT32(1)),
+  /**
+   * Lib uses user dynamic allocated memory for frames.
+   * The external frames are provided by calling
+   * st20p_tx_put_ext_frame.
+   */
+  ST20P_TX_FLAG_EXT_FRAME = (MTL_BIT32(2)),
+  /**
+   * User control the frame pacing by pass a timestamp in st_frame,
+   * lib will wait until timestamp is reached for each frame.
+   */
+  ST20P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
+  /**
+   * If enabled, lib will assign the rtp timestamp to the value in
+   * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+   */
+  ST20P_TX_FLAG_USER_TIMESTAMP = (MTL_BIT32(4)),
+  /**
+   * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+   */
+  ST20P_TX_FLAG_ENABLE_VSYNC = (MTL_BIT32(5)),
+  /**
+   * If disable the static RL pad interval profiling.
+   */
+  ST20P_TX_FLAG_DISABLE_STATIC_PAD_P = (MTL_BIT32(6)),
+  /**
+   * If enable the rtcp.
+   */
+  ST20P_TX_FLAG_ENABLE_RTCP = (MTL_BIT32(7)),
+  /**
+   * Set this flag to set rtp timestamp at the time of the first packet egresses from the
+   * sender.
+   */
+  ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT = (MTL_BIT32(8)),
+  /**
+   * Set this flag to set rtp timestamp at the time of the epoch.
+   */
+  ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH = (MTL_BIT32(9)),
+  /**
+   * Set this flag to the bulk operation on all internal buffer rings. It may degrade the
+   * performance since the object enqueue/dequeue will be acted one by one.
+   */
+  ST20P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(10)),
+};
 
-/**
- * Flag bit in flags of struct st22p_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
- * Use st22p_rx_get_queue_meta to get the queue meta(queue number etc) info.
- */
-#define ST22P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
-/**
- * Flag bit in flags of struct st22p_rx_ops.
- * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
- */
-#define ST22P_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
-/**
- * Flag bit in flags of struct st22p_rx_ops.
- * If enable the rtcp.
- */
-#define ST22P_RX_FLAG_ENABLE_RTCP (MTL_BIT32(2))
-/**
- * Flag bit in flags of struct st22p_rx_ops.
- * If enabled, simulate random packet loss, test usage only.
- */
-#define ST22P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
-/**
- * Flag bit in flags of struct st22p_rx_ops.
- * Enable the dynamic external frame mode, and user must provide a query
- * callback(query_ext_frame in st22p_rx_ops) to let MTL can get the frame when needed.
- */
-#define ST22P_RX_FLAG_EXT_FRAME (MTL_BIT32(4))
+/** Bit define for flags of struct st22p_rx_ops. */
+enum st22p_rx_flag {
+  /**
+   * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
+   * Use st22p_rx_get_queue_meta to get the queue meta(queue number etc) info.
+   */
+  ST22P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
+  /**
+   * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+   */
+  ST22P_RX_FLAG_ENABLE_VSYNC = (MTL_BIT32(1)),
+  /**
+   * If enable the rtcp.
+   */
+  ST22P_RX_FLAG_ENABLE_RTCP = (MTL_BIT32(2)),
+  /**
+   * Flag bit in flags of struct st22p_rx_ops.
+   * If enabled, simulate random packet loss, test usage only.
+   */
+  ST22P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(3)),
+  /**
+   * Enable the dynamic external frame mode, and user must provide a query
+   * callback(query_ext_frame in st22p_rx_ops) to let MTL can get the frame when needed.
+   */
+  ST22P_RX_FLAG_EXT_FRAME = (MTL_BIT32(4)),
 
-/**
- * Flag bit in flags of struct st22p_rx_ops.
- * If set, lib will pass the incomplete frame to app also.
- * User can check st_frame_status data for the frame integrity
- */
-#define ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
+  /**
+   * If set, lib will pass the incomplete frame to app also.
+   * User can check st_frame_status data for the frame integrity
+   */
+  ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME = (MTL_BIT32(16)),
+};
 
-/**
- * Flag bit in flags of struct st20p_rx_ops, for non MTL_PMD_DPDK_USER.
- * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
- * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
- */
-#define ST20P_RX_FLAG_DATA_PATH_ONLY (MTL_BIT32(0))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
- */
-#define ST20P_RX_FLAG_ENABLE_VSYNC (MTL_BIT32(1))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * Enable the dynamic external frame mode, and user must provide a query
- * callback(query_ext_frame in st20p_rx_ops) to let MTL can get the frame when needed.
- * Note to enable ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME also for non-converter mode.
- */
-#define ST20P_RX_FLAG_EXT_FRAME (MTL_BIT32(2))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * Only used for internal convert mode and limited formats:
- * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
- * Perform the color format conversion on each packet.
- */
-#define ST20P_RX_FLAG_PKT_CONVERT (MTL_BIT32(3))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * If enable the rtcp.
- */
-#define ST20P_RX_FLAG_ENABLE_RTCP (MTL_BIT32(4))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * If enabled, simulate random packet loss, test usage only.
- */
-#define ST20P_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(5))
+/** Bit define for flags of struct st20p_rx_ops. */
+enum st20p_rx_flag {
+  /**
+   * for non MTL_PMD_DPDK_USER.
+   * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
+   * Use st20p_rx_get_queue_meta to get the queue meta(queue number etc) info.
+   */
+  ST20P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
+  /**
+   * If enabled, lib will pass ST_EVENT_VSYNC by the notify_event on every epoch start.
+   */
+  ST20P_RX_FLAG_ENABLE_VSYNC = (MTL_BIT32(1)),
+  /**
+   * Enable the dynamic external frame mode, and user must provide a query
+   * callback(query_ext_frame in st20p_rx_ops) to let MTL can get the frame when needed.
+   * Note to enable ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME also for non-converter mode.
+   */
+  ST20P_RX_FLAG_EXT_FRAME = (MTL_BIT32(2)),
+  /**
+   * Only used for internal convert mode and limited formats:
+   * ST_FRAME_FMT_YUV422PLANAR10LE, ST_FRAME_FMT_Y210, ST_FRAME_FMT_UYVY
+   * Perform the color format conversion on each packet.
+   */
+  ST20P_RX_FLAG_PKT_CONVERT = (MTL_BIT32(3)),
+  /**
+   * If enable the rtcp.
+   */
+  ST20P_RX_FLAG_ENABLE_RTCP = (MTL_BIT32(4)),
+  /**
+   * Flag bit in flags of struct st20p_rx_ops.
+   * If enabled, simulate random packet loss, test usage only.
+   */
+  ST20P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(5)),
 
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * If set, lib will pass the incomplete frame to app also.
- * User can check st_frame_status data for the frame integrity
- */
-#define ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME (MTL_BIT32(16))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * If set, lib will try to allocate DMA memory copy offload from
- * dma_dev_port(mtl_init_params) list.
- * Pls note it could fallback to CPU if no DMA device is available.
- */
-#define ST20P_RX_FLAG_DMA_OFFLOAD (MTL_BIT32(17))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * Only ST20_PACKING_BPM stream can enable this offload as software limit
- * Try to enable header split offload feature.
- */
-#define ST20P_RX_FLAG_HDR_SPLIT (MTL_BIT32(19))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * Only for MTL_FLAG_RX_VIDEO_MIGRATE is enabled.
- * Always disable MIGRATE for this session.
- */
-#define ST20P_RX_FLAG_DISABLE_MIGRATE (MTL_BIT32(20))
-/**
- * Flag bit in flags of struct st20p_rx_ops.
- * Enable the timing analyze
- */
-#define ST20P_RX_FLAG_ENABLE_TIMING_PARSER (MTL_BIT32(21))
+  /**
+   * If set, lib will pass the incomplete frame to app also.
+   * User can check st_frame_status data for the frame integrity
+   */
+  ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME = (MTL_BIT32(16)),
+  /**
+   * If set, lib will try to allocate DMA memory copy offload from
+   * dma_dev_port(mtl_init_params) list.
+   * Pls note it could fallback to CPU if no DMA device is available.
+   */
+  ST20P_RX_FLAG_DMA_OFFLOAD = (MTL_BIT32(17)),
+  /**
+   * Flag bit in flags of struct st20p_rx_ops.
+   * Only ST20_PACKING_BPM stream can enable this offload as software limit
+   * Try to enable header split offload feature.
+   */
+  ST20P_RX_FLAG_HDR_SPLIT = (MTL_BIT32(19)),
+  /**
+   * Only for MTL_FLAG_RX_VIDEO_MIGRATE is enabled.
+   * Always disable MIGRATE for this session.
+   */
+  ST20P_RX_FLAG_DISABLE_MIGRATE = (MTL_BIT32(20)),
+  /**
+   * Enable the timing analyze
+   */
+  ST20P_RX_FLAG_ENABLE_TIMING_PARSER = (MTL_BIT32(21)),
+};
 
 /** The structure info for st plugin encode session create request. */
 struct st22_encoder_create_req {
@@ -1942,16 +1921,21 @@ static inline uint32_t st_frame_data_height(struct st_frame* frame) {
   return h;
 }
 
+/** Helper to set the port for struct st_rx_port */
 int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char* name);
+/** Helper to set the sip for struct st_rx_port */
 int st_rxp_para_sip_set(struct st_rx_port* p, enum mtl_port port, char* ip);
+/** Helper to set the udp port number for struct st_rx_port */
 static inline void st_rxp_para_udp_port_set(struct st_rx_port* p, enum mtl_port port,
                                             uint16_t udp_port) {
   p->udp_port[port] = udp_port;
 }
 
+/** Helper to get the frame addr from struct st_frame */
 static inline mtl_cpuva_t st_frame_addr(struct st_frame* frame, uint8_t plane) {
   return (mtl_cpuva_t)frame->addr[plane];
 }
+/** Helper to get the frame iova from struct st_frame */
 static inline mtl_iova_t st_frame_iova(struct st_frame* frame, uint8_t plane) {
   return frame->iova[plane];
 }
