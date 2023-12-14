@@ -556,6 +556,7 @@ struct st22_rx_frame_meta {
  */
 #define ST20_RETRANSMIT (0x1 << 14)
 
+#ifndef __MTL_PYTHON_BUILD__
 /**
  * A structure describing a st2110-20(video) rfc4175 rtp header, size: 20
  */
@@ -934,6 +935,7 @@ MTL_PACK(struct st20_rfc4175_422_8_pg2_le {
   uint8_t Cr00; /**< 8 bit Red */
   uint8_t Y01;  /**< 8 bit Y1 */
 });
+#endif
 
 /** External framebuffer */
 struct st20_ext_frame {

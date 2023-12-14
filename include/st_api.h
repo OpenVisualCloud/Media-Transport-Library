@@ -77,6 +77,7 @@ enum st_frame_status {
   ST_FRAME_STATUS_MAX,
 };
 
+#ifndef __MTL_PYTHON_BUILD__
 /**
  * A structure describing rfc3550 rtp header, size: 12
  */
@@ -123,6 +124,7 @@ MTL_PACK(struct st_rfc3550_rtp_hdr {
   /** synchronization source */
   uint32_t ssrc;
 });
+#endif
 #endif
 
 /**

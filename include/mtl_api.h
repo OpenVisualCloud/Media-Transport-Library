@@ -119,6 +119,11 @@ typedef struct mtl_dma_lender_dev* mtl_udma_handle;
 typedef uint64_t mtl_iova_t;
 
 /**
+ * CPU virtual address type.
+ */
+typedef uint64_t mtl_cpuva_t;
+
+/**
  * Handle to dma mem
  */
 typedef struct mtl_dma_mem* mtl_dma_mem_handle;
@@ -722,20 +727,27 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
  */
 int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
 
+/** Helper to set the port for struct mtl_init_params */
 int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
+/** Helper to set the sip for struct mtl_init_params */
 int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip);
+/** Helper to set the gateway for struct mtl_init_params */
 int mtl_para_gateway_set(struct mtl_init_params* p, enum mtl_port port, char* gateway);
+/** Helper to set the netmask for struct mtl_init_params */
 int mtl_para_netmask_set(struct mtl_init_params* p, enum mtl_port port, char* netmask);
+/** Helper to set the dma dev port for struct mtl_init_params */
 int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
-
+/** Helper to set the tx queues number for struct mtl_init_params */
 static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params* p,
                                               enum mtl_port port, uint16_t cnt) {
   p->tx_queues_cnt[port] = cnt;
 }
+/** Helper to set the rx queues number for struct mtl_init_params */
 static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params* p,
                                               enum mtl_port port, uint16_t cnt) {
   p->rx_queues_cnt[port] = cnt;
 }
+/** Helper to set the PMD type for struct mtl_init_params */
 static inline void mtl_para_pmd_set(struct mtl_init_params* p, enum mtl_port port,
                                     enum mtl_pmd_type pmd) {
   p->pmd[port] = pmd;

@@ -13,9 +13,17 @@
 
 %{
 #include <mtl/mtl_api.h>
+#include <mtl/st_api.h>
+#include <mtl/st20_api.h>
+#include <mtl/st_pipeline_api.h>
 %}
 
 %define __MTL_LIB_BUILD__
 %enddef
+%define __MTL_PYTHON_BUILD__
+%enddef
 
 %include <mtl/mtl_api.h>
+%include <mtl/st_api.h>
+%include <mtl/st20_api.h>
+%include <mtl/st_pipeline_api.h>
