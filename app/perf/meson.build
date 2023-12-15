@@ -12,4 +12,5 @@ perf_rfc4175_422be10_to_y210_sources = files('rfc4175_422be10_to_y210.c', '../sa
 perf_y210_to_rfc4175_422be10_sources = files('y210_to_rfc4175_422be10.c', '../sample/sample_util.c')
 perf_rfc4175_422be12_to_le_sources = files('rfc4175_422be12_to_le.c', '../sample/sample_util.c')
 perf_rfc4175_422be12_to_p12le_sources = files('rfc4175_422be12_to_p12le.c', '../sample/sample_util.c')
+perf_rfc4175_422be10_to_p8_sources = files('rfc4175_422be10_to_p8.c', '../sample/sample_util.c')
 perf_dma_sources = files('perf_dma.c', '../sample/sample_util.c')

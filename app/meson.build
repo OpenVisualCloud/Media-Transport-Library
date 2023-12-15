@@ -197,6 +197,13 @@ executable('PerfRfc4175422be12ToP12Le', perf_rfc4175_422be12_to_p12le_sources,
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
 )
 
+executable('PerfRfc4175422be10ToP8', perf_rfc4175_422be10_to_p8_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
+)
+
 # Pipeline video samples app
 executable('TxSt20PipelineSample', pipeline_tx_st20_sample_sources,
   c_args : app_c_args,
