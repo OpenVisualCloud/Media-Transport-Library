@@ -175,7 +175,7 @@ int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   mtl_register_message_t* reg_msg = &msg.body.register_msg;
   reg_msg->pid = htonl(u_info->pid);
   reg_msg->uid = htonl(getuid());
-  strncpy(reg_msg->hostname, u_info->hostname, sizeof(reg_msg->hostname));
+  snprintf(reg_msg->hostname, sizeof(reg_msg->hostname), "%s", u_info->hostname);
 
   /* manager will load xdp program for afxdp interfaces */
   uint16_t num_xdp_if = 0;
