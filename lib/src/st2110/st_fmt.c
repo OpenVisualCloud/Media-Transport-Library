@@ -1061,6 +1061,48 @@ void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova
   }
 }
 
+struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
+                                 uint32_t h, bool interlaced) {
+  struct mtl_main_impl* impl = mt;
+  int soc_id = mt_socket_id(impl, MTL_PORT_P);
+  struct st_frame* frame = mt_rte_zmalloc_socket(sizeof(*frame), soc_id);
+  if (!frame) {
+    err("%s, frame malloc fail\n", __func__);
+    return NULL;
+  }
+  frame->fmt = fmt;
+  frame->interlaced = interlaced;
+  frame->width = w;
+  frame->height = h;
+  frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC | ST_FRAME_FLAG_RTE_MALLOC;
+
+  size_t data_sz = st_frame_size(fmt, w, h, interlaced);
+  void* data = mt_rte_zmalloc_socket(data_sz, soc_id);
+  if (!data) {
+    err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
+    st_frame_free(frame);
+    return NULL;
+  }
+  frame->buffer_size = data_sz;
+  frame->data_size = data_sz;
+  /* init plane */
+  st_frame_init_plane_single_src(frame, data, mtl_hp_virt2iova(impl, data));
+  return frame;
+}
+
+int st_frame_free(struct st_frame* frame) {
+  uint32_t reqiured_flags = ST_FRAME_FLAG_SINGLE_MALLOC | ST_FRAME_FLAG_RTE_MALLOC;
+  if (reqiured_flags != (frame->flags & reqiured_flags)) {
+    err("%s, frame %p is not created by st_frame_create\n", __func__, frame);
+    return -EINVAL;
+  }
+  if (frame->addr[0]) {
+    mt_rte_free(frame->addr[0]);
+  }
+  mt_rte_free(frame);
+  return 0;
+}
+
 /* the reference rl pad interval table for CVL NIC */
 struct cvl_pad_table {
   enum st20_fmt fmt;
