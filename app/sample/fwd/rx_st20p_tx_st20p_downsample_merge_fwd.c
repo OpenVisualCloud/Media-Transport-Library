@@ -59,7 +59,7 @@ static void* tx_st20p_fwd_thread(void* args) {
   struct merge_fwd_sample_ctx* s = args;
   st20p_tx_handle tx_handle = s->tx_handle;
   struct st_frame* frame;
-  struct st_frame down_frame; /* empty temp frame*/
+  struct st_frame down_frame = {0}; /* empty temp frame*/
 
   /* in case when timestamp mismatch */
   struct st_frame* rx_restore_frame = NULL;

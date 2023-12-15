@@ -92,7 +92,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
   int fd = t->fd, ret;
   uint16_t gso_sz = entry->gso_sz;
   struct iovec iovs[nb_pkts];
-  int gso_cnt = 0;
+  uint16_t gso_cnt = 0;
   struct msghdr* msg = &t->msg;
   ssize_t write;
   struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;

@@ -162,8 +162,9 @@ enum mtl_port {
   MTL_PORT_5,     /**< port index: 5 */
   MTL_PORT_6,     /**< port index: 6 */
   MTL_PORT_7,     /**< port index: 7 */
-  MTL_PORT_MAX,   /**< max value of this enum */
 };
+
+#define MTL_PORT_MAX (MTL_PORT_7 + 1)
 
 /**
  * Session port logical type
@@ -171,8 +172,9 @@ enum mtl_port {
 enum mtl_session_port {
   MTL_SESSION_PORT_P = 0, /**< primary session(logical) port */
   MTL_SESSION_PORT_R,     /**< redundant session(logical) port */
-  MTL_SESSION_PORT_MAX,   /**< max value of this enum */
 };
+
+#define MTL_SESSION_PORT_MAX (MTL_SESSION_PORT_R + 1)
 
 /**
  * Log level type to MTL context
