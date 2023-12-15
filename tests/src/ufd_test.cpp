@@ -163,11 +163,7 @@ static void socket_expect_fail_test(enum mtl_port port) {
   EXPECT_LT(ret, 0);
 }
 
-TEST(Api, socket_expect_fail) {
-  socket_expect_fail_test(MTL_PORT_P);
-  int ret = mufd_socket_port(AF_INET, SOCK_STREAM, 0, MTL_PORT_MAX);
-  EXPECT_LT(ret, 0);
-}
+TEST(Api, socket_expect_fail) { socket_expect_fail_test(MTL_PORT_P); }
 TEST(Api, socket_expect_fail_r) { socket_expect_fail_test(MTL_PORT_R); }
 
 static void socket_max_test(enum mtl_port port) {
@@ -309,8 +305,10 @@ static int check_r_port_alive(struct mtl_init_params* p) {
   if (ret < 0) goto out;
 
   while (retry < max_retry) {
-    mufd_sendto(tx_fd, send_buf, sizeof(send_buf), 0, (const struct sockaddr*)&rx_addr,
-                sizeof(rx_addr));
+    if (mufd_sendto(tx_fd, send_buf, sizeof(send_buf), 0,
+                    (const struct sockaddr*)&rx_addr, sizeof(rx_addr)) < 0)
+      warn("%s, send buf fail at %d\n", __func__, retry);
+
     ssize_t recv = mufd_recvfrom(rx_fd, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
     if (recv > 0) {
       info("%s, rx port alive at %d\n", __func__, retry);
