@@ -72,6 +72,7 @@ jobs:
         with:
           repository: 'xdp-project/xdp-tools'
           path: xdp-tools
+          submodules: recursive
 
       - name: Build and install xdp-tools
         run: |
