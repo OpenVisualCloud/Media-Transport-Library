@@ -305,9 +305,9 @@ static int check_r_port_alive(struct mtl_init_params* p) {
   if (ret < 0) goto out;
 
   while (retry < max_retry) {
-    ssize_t send = mufd_sendto(tx_fd, send_buf, sizeof(send_buf), 0,
-                               (const struct sockaddr*)&rx_addr, sizeof(rx_addr));
-    if (send != payload_len) warn("%s, send buf fail at %d\n", __func__, retry);
+    if (mufd_sendto(tx_fd, send_buf, sizeof(send_buf), 0,
+                    (const struct sockaddr*)&rx_addr, sizeof(rx_addr)) < 0)
+      warn("%s, send buf fail at %d\n", __func__, retry);
 
     ssize_t recv = mufd_recvfrom(rx_fd, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
     if (recv > 0) {
