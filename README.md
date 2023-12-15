@@ -25,6 +25,7 @@ If you find value in our project, please consider giving it a star. Your support
 * Virtualization support by SR-IOV.
 * Built-in PTP protocol with hardware timestamp offload.
 * FFMPEG plugin, OBS(Open Broadcaster Software) plugin, and Intel® Media SDK support.
+* In addition to the native C/C++ API, it also offers bindings for [Python](python/README.md) and [Rust](rust/README.md).
 
 #### 1.1.1 ST2110 features
 

@@ -211,18 +211,21 @@ enum st_frame_fmt {
 /** ST format cap of ST_FRAME_FMT_H264_CBR_CODESTREAM, used in the st22_plugin caps */
 #define ST_FMT_CAP_H264_CBR_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H264_CBR_CODESTREAM))
 
-/**
- * Flag bit in flags of struct st_frame.
- * Frame has external buffer attached.
- */
-#define ST_FRAME_FLAG_EXT_BUF (MTL_BIT32(0))
+/** Flag bit in flags of struct st_frame. */
+enum st_frame_flag {
+  /** Frame has external buffer attached. */
+  ST_FRAME_FLAG_EXT_BUF = (MTL_BIT32(0)),
+  /** Frame planes data by single malloc */
+  ST_FRAME_FLAG_SINGLE_MALLOC = (MTL_BIT32(1)),
+  /** Frame planes data by rte_malloc */
+  ST_FRAME_FLAG_RTE_MALLOC = (MTL_BIT32(2)),
+};
 
 /** Max planes number for one frame */
 #define ST_MAX_PLANES (4)
 
 /** The structure info for external frame */
-struct st_ext_frame {
-  /** Each plane's virtual address of external frame */
+struct st_ext_frame { /** Each plane's virtual address of external frame */
   void* addr[ST_MAX_PLANES];
   /** Each plane's IOVA of external frame */
   mtl_iova_t iova[ST_MAX_PLANES];
@@ -1939,6 +1942,12 @@ static inline mtl_cpuva_t st_frame_addr(struct st_frame* frame, uint8_t plane) {
 static inline mtl_iova_t st_frame_iova(struct st_frame* frame, uint8_t plane) {
   return frame->iova[plane];
 }
+
+/** request to create a plained memory by rte malloc to hold the frame buffer */
+struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
+                                 uint32_t h, bool interlaced);
+/** free the frame created by st_frame_create */
+int st_frame_free(struct st_frame* frame);
 
 #if defined(__cplusplus)
 }

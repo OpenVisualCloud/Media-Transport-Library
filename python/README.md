@@ -2,6 +2,8 @@
 
 IMTL leverage SWIG, found at <https://github.com/swig/swig/tree/master>, to transform C APIs into a binding layer that Python can utilize.
 
+Before using the Python binding, please ensure that IMTL is [built](../doc/build.md) and the NIC is [set up](../doc/run.md) correctly.
+
 ## 1. Build and install swig
 
 Following the build and installation guide from the SWIG GitHub repository at <https://github.com/swig/swig/tree/master>.
@@ -58,6 +60,8 @@ Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-p
 ## 3. Run python example code
 
 ```bash
-cd $imtl_source_code/python/example/
-python3 version.py
+cd $imtl_source_code/
+python3 python/example/version.py
+# Customize the port and IP in the code before using
+python3 python/example/st20p_rx.py
 ```

@@ -75,3 +75,4 @@ assets/
 *.gz
 *.tar
 mtl_system_status_*
+*.pyc

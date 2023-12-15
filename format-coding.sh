@@ -9,4 +9,7 @@
 set -e
 
 echo "clang-format check"
-find . -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' -exec clang-format --verbose -i {} \;
+find . -path ./build -prune -o -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' ! -name 'pymtl_wrap.c' -exec clang-format --verbose -i {} +
+
+black python/
+isort python/
