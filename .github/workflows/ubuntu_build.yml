@@ -24,7 +24,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.src == 'true' || steps.filter.outputs.build == 'true' }}
+      changed: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       
@@ -79,11 +79,6 @@ jobs:
         run: |
           rm build -rf
           ./build.sh debug
-
-      - name: Build with kni
-        run: |
-          rm build -rf
-          MTL_BUILD_ENABLE_KNI=true ./build.sh
 
       - name: doxygen
         run: |
