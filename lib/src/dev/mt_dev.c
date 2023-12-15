@@ -1859,7 +1859,7 @@ int mt_dev_create(struct mtl_main_impl* impl) {
 
   /* create system sch */
   impl->main_sch = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
-  if (ret < 0) {
+  if (!impl->main_sch) {
     err("%s, get sch fail\n", __func__);
     goto err_exit;
   }
