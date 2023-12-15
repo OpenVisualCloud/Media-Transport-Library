@@ -175,12 +175,13 @@ static inline int st20_rfc4175_422be10_to_v210_dma(
 }
 
 /**
- * Convert rfc4175_422be10 to rfc4175_422le8 with the max optimized SIMD level.
+ * Convert rfc4175_422be10 to rfc4175_422le8(packed UYVY) with the max optimized SIMD
+ * level.
  *
  * @param pg_10
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_8
- *   Point to pg(rfc4175_422le8) data.
+ *   Point to pg(rfc4175_422le8) packed UYVY data.
  * @param w
  *   The st2110-20(video) width.
  * @param h
@@ -196,9 +197,9 @@ static inline int st20_rfc4175_422be10_to_422le8(struct st20_rfc4175_422_10_pg2_
 }
 
 /**
- * Convert rfc4175_422be10 to rfc4175_422le8 with max SIMD level and DMA helper.
- * Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus pls
- * only applied with 4k/8k.
+ * Convert rfc4175_422be10 to rfc4175_422le8(packed UYVY) with max SIMD level and DMA
+ * helper. Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus
+ * pls only applied with 4k/8k.
  *
  * @param udma
  *   Point to dma engine.
@@ -207,7 +208,7 @@ static inline int st20_rfc4175_422be10_to_422le8(struct st20_rfc4175_422_10_pg2_
  * @param pg_10_iova
  *   The mtl_iova_t address of the pg_10 buffer.
  * @param pg_8
- *   Point to pg(rfc4175_422le8) data.
+ *   Point to pg(rfc4175_422le8) packed UYVY data.
  * @param w
  *   The st2110-20(video) width.
  * @param h
@@ -221,6 +222,31 @@ static inline int st20_rfc4175_422be10_to_422le8_dma(
     struct st20_rfc4175_422_8_pg2_le* pg_8, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_422le8_simd_dma(udma, pg_10, pg_10_iova, pg_8, w, h,
                                                  MTL_SIMD_LEVEL_MAX);
+}
+
+/**
+ * Convert rfc4175_422be10 to yuv422p8 with the max optimized SIMD level.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param y
+ *   Point to Y(yuv422p8) vector.
+ * @param b
+ *   Point to b(yuv422p8) vector.
+ * @param r
+ *   Point to r(yuv422p8) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be10_to_yuv422p8(struct st20_rfc4175_422_10_pg2_be* pg,
+                                                   uint8_t* y, uint8_t* b, uint8_t* r,
+                                                   uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be10_to_yuv422p8_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
 /**

@@ -9,6 +9,19 @@ import numpy as np
 import pymtl as mtl
 
 
+def ptr_to_yuv422p8(ptr, width, height):
+    y_size = width * height
+    u_size = width * height // 2
+
+    frame = np.frombuffer(ptr, dtype=np.uint8)
+
+    y = frame[:y_size].reshape((height, width))
+    u = frame[y_size : y_size + u_size].reshape((height, width // 2))
+    v = frame[y_size + u_size :].reshape((height, width // 2))
+
+    return y, u, v
+
+
 def yuv422p10le_to_yuv422(ptr, width, height):
     y_size = width * height
     u_size = width * height // 2
@@ -60,6 +73,20 @@ def display_yuv422(y, u, v):
 
 def destroy():
     cv2.destroyAllWindows()
+
+
+def frame_display_yuv422p8(frame, display_scale_factor):
+    # Pack frame pointer from frame addr
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr(frame, 0))
+    width = frame.width
+    height = frame.height
+
+    # Convert to yuv422 planar 8
+    y, u, v = ptr_to_yuv422p8(ptr, width, height)
+    # Downscale
+    y_scale, u_scale, v_scale = downscale_yuv422(y, u, v, display_scale_factor)
+    # Convert to RGB and display
+    display_yuv422(y_scale, u_scale, v_scale)
 
 
 def frame_display_yuv422p10le(frame, display_scale_factor):

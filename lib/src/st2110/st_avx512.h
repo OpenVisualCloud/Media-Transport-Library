@@ -111,4 +111,8 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_dma(
     struct mtl_dma_lender_dev* dma, struct st20_rfc4175_422_12_pg2_be* pg_be,
     mtl_iova_t pg_be_iova, uint16_t* y, uint16_t* b, uint16_t* r, uint32_t w, uint32_t h);
 
+int st20_rfc4175_422be10_to_yuv422p8_avx512(struct st20_rfc4175_422_10_pg2_be* pg_10,
+                                            uint8_t* y, uint8_t* b, uint8_t* r,
+                                            uint32_t w, uint32_t h);
+
 #endif

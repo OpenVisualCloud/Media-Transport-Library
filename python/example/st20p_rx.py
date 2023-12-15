@@ -10,8 +10,9 @@ import pymtl as mtl
 def main():
     display = TRUE
     display_scale_factor = 2
-    # mtl.ST_FRAME_FMT_YUV422PLANAR10LE or mtl.ST_FRAME_FMT_UYVY or mtl.ST_FRAME_FMT_YUV422RFC4175PG2BE10
-    output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR10LE
+    # ST_FRAME_FMT_YUV422PLANAR10LE, mtl.ST_FRAME_FMT_UYVY
+    # or ST_FRAME_FMT_YUV422RFC4175PG2BE10, ST_FRAME_FMT_YUV422PLANAR8
+    output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
 
     # Init para
     init_para = mtl.mtl_init_params()
@@ -58,6 +59,8 @@ def main():
                         cv2_util.frame_display_yuv422p10le(frame, display_scale_factor)
                     elif output_fmt == mtl.ST_FRAME_FMT_UYVY:
                         cv2_util.frame_display_uyvy(frame, display_scale_factor)
+                    elif output_fmt == mtl.ST_FRAME_FMT_YUV422PLANAR8:
+                        cv2_util.frame_display_yuv422p8(frame, display_scale_factor)
                     elif output_fmt == mtl.ST_FRAME_FMT_YUV422RFC4175PG2BE10:
                         cv2_util.frame_display_rfc4175be10(
                             mtl_handle, frame, display_scale_factor
