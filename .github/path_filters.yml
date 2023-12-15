@@ -14,28 +14,60 @@ build: &build
   - meson_options.txt
   - VERSION
 
-workflow_windows: &workflow_windows
+windows_gtest: &windows_gtest
   - .github/workflows/windows_build_with_gtest.yml
+  - *src
+  - *build
 
-workflow_linux: &workflow_linux
+linux_gtest: &linux_gtest
   - .github/workflows/ubuntu_build_with_gtest.yml
   - '.github/workflows/upl*'
+  - *src
+  - *build
 
 api: &api
   - 'include/**'
 
 ffmpeg_plugin: &ffmpeg_plugin
+  - *api
   - 'ecosystem/ffmpeg_plugin/**'
   - .github/workflows/ffmpeg_plugin.yml
 
 librist: &librist
-  - 'ecosystem/librist/**'
+  - *api
+  - "ecosystem/librist/**"
   - .github/workflows/rist.yml
 
 obs_plugin: &obs_plugin
+  - *api
   - 'ecosystem/obs_mtl/**'
   - .github/workflows/obs.yml
 
 dpdk_patches: &dpdk_patches
   - 'patches/dpdk/**'
   - .github/workflows/dpdk_patches_build.yml
+
+centos_build: &centos_build
+  - .github/workflows/centos_build.yml
+  - *src
+  - *build
+
+ubuntu_build: &ubuntu_build
+  - .github/workflows/ubuntu_build.yml
+  - *src
+  - *build
+
+clang_build: &clang_build
+  - .github/workflows/clang_build.yml
+  - *src
+  - *build
+
+msys2_build: &msys2_build
+  - .github/workflows/msys2_build.yml
+  - *src
+  - *build
+
+afxdp_build: &afxdp_build
+  - .github/workflows/afxdp_build.yml
+  - *src
+  - *build

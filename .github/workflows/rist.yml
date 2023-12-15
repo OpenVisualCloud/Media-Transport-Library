@@ -24,7 +24,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.api == 'true' || steps.filter.outputs.librist == 'true' }}
+      changed: ${{ steps.filter.outputs.librist == 'true' }}
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       
