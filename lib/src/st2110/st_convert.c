@@ -84,6 +84,33 @@ static int convert_rfc4175_422be10_to_422le8(struct st_frame* src, struct st_fra
   return ret;
 }
 
+static int convert_rfc4175_422be10_to_yuv422p8(struct st_frame* src,
+                                               struct st_frame* dst) {
+  int ret = 0;
+  struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
+  uint8_t* y = NULL;
+  uint8_t* b = NULL;
+  uint8_t* r = NULL;
+  uint32_t h = st_frame_data_height(dst);
+
+  if (!has_lines_padding(src, dst)) {
+    be10 = src->addr[0];
+    y = dst->addr[0];
+    b = dst->addr[1];
+    r = dst->addr[2];
+    ret = st20_rfc4175_422be10_to_yuv422p8(be10, y, b, r, dst->width, h);
+  } else {
+    for (uint32_t line = 0; line < h; line++) {
+      be10 = src->addr[0] + src->linesize[0] * line;
+      y = dst->addr[0] + dst->linesize[0] * line;
+      b = dst->addr[1] + dst->linesize[1] * line;
+      r = dst->addr[2] + dst->linesize[2] * line;
+      ret = st20_rfc4175_422be10_to_yuv422p8(be10, y, b, r, dst->width, 1);
+    }
+  }
+  return ret;
+}
+
 static int convert_rfc4175_422be10_to_v210(struct st_frame* src, struct st_frame* dst) {
   int ret = 0;
   struct st20_rfc4175_422_10_pg2_be* be10 = NULL;
@@ -471,6 +498,11 @@ static const struct st_frame_converter converters[] = {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
         .dst_fmt = ST_FRAME_FMT_UYVY,
         .convert_func = convert_rfc4175_422be10_to_422le8,
+    },
+    {
+        .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
+        .dst_fmt = ST_FRAME_FMT_YUV422PLANAR8,
+        .convert_func = convert_rfc4175_422be10_to_yuv422p8,
     },
     {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
@@ -1167,6 +1199,45 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(mtl_udma_handle udma,
 
   /* the last option */
   return st20_rfc4175_422be10_to_422le8_scalar(pg_10, pg_8, w, h);
+}
+
+static int st20_rfc4175_422be10_to_yuv422p8_scalar(struct st20_rfc4175_422_10_pg2_be* pg,
+                                                   uint8_t* y, uint8_t* b, uint8_t* r,
+                                                   uint32_t w, uint32_t h) {
+  uint32_t cnt = w * h / 2; /* two pgs in one convert */
+
+  for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
+    *b++ = pg->Cb00;
+    *y++ = (pg->Y00 << 2) | (pg->Y00_ >> 2);
+    *r++ = (pg->Cr00 << 4) | (pg->Cr00_ >> 2);
+    *y++ = (pg->Y01 << 6) | (pg->Y01_ >> 2);
+    pg++;
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be10_to_yuv422p8_simd(struct st20_rfc4175_422_10_pg2_be* pg,
+                                          uint8_t* y, uint8_t* b, uint8_t* r, uint32_t w,
+                                          uint32_t h, enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MTL_MAY_UNUSED(cpu_level);
+  MTL_MAY_UNUSED(level);
+  MTL_MAY_UNUSED(ret);
+
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be10_to_yuv422p8_avx512(pg, y, b, r, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
+  /* the last option */
+  return st20_rfc4175_422be10_to_yuv422p8_scalar(pg, y, b, r, w, h);
 }
 
 int st20_rfc4175_422le10_to_v210_scalar(uint8_t* pg_le, uint8_t* pg_v210, uint32_t w,

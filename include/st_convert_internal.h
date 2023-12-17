@@ -188,13 +188,13 @@ int st20_rfc4175_422be10_to_v210_simd_dma(mtl_udma_handle udma,
                                           enum mtl_simd_level level);
 
 /**
- * Convert rfc4175_422be10 to rfc4175_422le8 with required SIMD level.
+ * Convert rfc4175_422be10 to rfc4175_422le8(packed UYVY) with required SIMD level.
  * Note the level may downgrade to the SIMD which system really support.
  *
  * @param pg_10
  *   Point to pg(rfc4175_422be10) data.
  * @param pg_8
- *   Point to pg(rfc4175_422le8) data.
+ *   Point to pg(rfc4175_422le8) packed UYVY data data.
  * @param w
  *   The st2110-20(video) width.
  * @param h
@@ -211,9 +211,9 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
                                         enum mtl_simd_level level);
 
 /**
- * Convert rfc4175_422be10 to rfc4175_422le8 with required SIMD level and DMA helper.
- * Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus pls
- * only applied with 4k/8k.
+ * Convert rfc4175_422be10 to rfc4175_422le8 packed UYVY with required SIMD level and DMA
+ * helper. Profiling shows gain with 4k/8k solution due to LLC cache miss migration, thus
+ * pls only applied with 4k/8k.
  *
  * @param udma
  *   Point to dma engine.
@@ -222,7 +222,7 @@ int st20_rfc4175_422be10_to_422le8_simd(struct st20_rfc4175_422_10_pg2_be* pg_10
  * @param pg_10_iova
  *   The mtl_iova_t address of the pg_10 buffer.
  * @param pg_8
- *   Point to pg(rfc4175_422le8) data.
+ *   Point to pg(rfc4175_422le8) packed UYVY data.
  * @param w
  *   The st2110-20(video) width.
  * @param h
@@ -239,6 +239,32 @@ int st20_rfc4175_422be10_to_422le8_simd_dma(mtl_udma_handle udma,
                                             struct st20_rfc4175_422_8_pg2_le* pg_8,
                                             uint32_t w, uint32_t h,
                                             enum mtl_simd_level level);
+
+/**
+ * Convert rfc4175_422be10 to yuv422p8 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param y
+ *   Point to Y(yuv422p8) vector.
+ * @param b
+ *   Point to b(yuv422p8) vector.
+ * @param r
+ *   Point to r(yuv422p8) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422be10_to_yuv422p8_simd(struct st20_rfc4175_422_10_pg2_be* pg,
+                                          uint8_t* y, uint8_t* b, uint8_t* r, uint32_t w,
+                                          uint32_t h, enum mtl_simd_level level);
 
 /**
  * Convert rfc4175_422be12 to yuv422p12le with required SIMD level.
