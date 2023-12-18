@@ -25,7 +25,7 @@ int st_app_player_uinit(struct st_app_context* ctx) {
 }
 
 int st_app_player_init(struct st_app_context* ctx) {
-  int res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS);
+  int res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
   if (res) {
     warn("%s, SDL_Init fail: %s\n", __func__, SDL_GetError());
     st_app_player_uinit(ctx);
@@ -90,14 +90,11 @@ static int create_display_context(struct st_display* d) {
 static void* display_thread_func(void* arg) {
   struct st_display* d = arg;
 
-#ifdef WINDOWSENV
-  SDL_Event event;
   int ret = create_display_context(d);
   if (ret < 0) {
     err("%s, create display context fail: %d\n", __func__, ret);
     return NULL;
   }
-#endif
 
   while (!d->display_thread_stop) {
     st_pthread_mutex_lock(&d->display_wake_mutex);
@@ -138,6 +135,7 @@ static void* display_thread_func(void* arg) {
 
     SDL_RenderPresent(d->renderer);
 #ifdef WINDOWSENV
+    SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) d->display_thread_stop = true;
     }
@@ -214,15 +212,6 @@ int st_app_init_display(struct st_display* d, char* name, int width, int height,
   d->msg_rect.h = MSG_HEIGHT;
   d->msg_rect.x = MSG_WIDTH_MARGIN;
   d->msg_rect.y = SCREEN_HEIGHT - MSG_HEIGHT - MSG_HEIGHT_MARGIN;
-
-#ifndef WINDOWSENV
-  ret = create_display_context(d);
-  if (ret < 0) {
-    err("%s, create display context fail: %d\n", __func__, ret);
-    st_app_uinit_display(d);
-    return ret;
-  }
-#endif
 
   st_pthread_mutex_init(&d->display_wake_mutex, NULL);
   st_pthread_mutex_init(&d->display_frame_mutex, NULL);
