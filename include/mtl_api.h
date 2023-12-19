@@ -755,6 +755,11 @@ static inline void mtl_para_pmd_set(struct mtl_init_params* p, enum mtl_port por
   p->pmd[port] = pmd;
 }
 
+/** Helper to get the port from struct mtl_init_params */
+static inline char* mtl_para_port_get(struct mtl_init_params* p, enum mtl_port port) {
+  return p->port[port];
+}
+
 /**
  * Inline function returning primary port pointer from mtl_init_params
  * @param p
@@ -762,7 +767,9 @@ static inline void mtl_para_pmd_set(struct mtl_init_params* p, enum mtl_port por
  * @return
  *     Primary port name pointer
  */
-static inline char* mtl_p_port(struct mtl_init_params* p) { return p->port[MTL_PORT_P]; }
+static inline char* mtl_p_port(struct mtl_init_params* p) {
+  return mtl_para_port_get(p, MTL_PORT_P);
+}
 
 /**
  * Inline function returning redundant port pointer from mtl_init_params
@@ -771,7 +778,9 @@ static inline char* mtl_p_port(struct mtl_init_params* p) { return p->port[MTL_P
  * @return
  *     Redundant port name pointer
  */
-static inline char* mtl_r_port(struct mtl_init_params* p) { return p->port[MTL_PORT_R]; }
+static inline char* mtl_r_port(struct mtl_init_params* p) {
+  return mtl_para_port_get(p, MTL_PORT_R);
+}
 
 /**
  * Inline helper function returning primary port source IP address pointer
@@ -1457,6 +1466,18 @@ int mtl_thread_setname(pthread_t tid, const char* name);
 static inline size_t mtl_size_page_align(size_t sz, size_t pg_sz) {
   if (sz % pg_sz) sz += pg_sz - (sz % pg_sz);
   return sz;
+}
+
+/** Helper struct to perform mtl_memcpy with mtl_cpuva_t */
+struct mtl_memcpy_ops {
+  mtl_cpuva_t dst;
+  mtl_cpuva_t src;
+  size_t sz;
+};
+/** Helper function to perform mtl_memcpy with mtl_cpuva_t */
+static inline int mtl_memcpy_action(struct mtl_memcpy_ops* ops) {
+  mtl_memcpy((void*)ops->dst, (const void*)ops->src, ops->sz);
+  return 0;
 }
 
 #if defined(__cplusplus)
