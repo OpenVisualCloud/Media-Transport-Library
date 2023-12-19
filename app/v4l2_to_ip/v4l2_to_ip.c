@@ -797,7 +797,8 @@ static int video_get_format(struct device* dev) {
     dev->num_planes = 1;
 
     dev->plane_fmt[0].bytesperline = v_fmt.fmt.pix.bytesperline;
-    dev->plane_fmt[0].sizeimage = v_fmt.fmt.pix.bytesperline ? v_fmt.fmt.pix.sizeimage : 0;
+    dev->plane_fmt[0].sizeimage =
+        v_fmt.fmt.pix.bytesperline ? v_fmt.fmt.pix.sizeimage : 0;
   }
 
   return 0;
@@ -1790,7 +1791,7 @@ int main(int argc, char* argv[]) {
   }
 
   /* Get the video format. */
-  if(!video_get_format(&(st_v4l2_tx->dev))) {
+  if (!video_get_format(&(st_v4l2_tx->dev))) {
     video_close(&(st_v4l2_tx->dev));
     free(st_v4l2_tx);
     return -EIO;
