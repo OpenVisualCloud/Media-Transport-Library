@@ -636,8 +636,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   }
 
   if (!ops->notify_frame_available) {
-    err("%s, pls set notify_frame_available\n", __func__);
-    return NULL;
+    warn("%s, pls set notify_frame_available\n", __func__);
   }
 
   src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);

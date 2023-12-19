@@ -3,6 +3,7 @@
 # opencv2 utils
 
 import ctypes
+import sys
 
 import cv2
 import numpy as np
@@ -67,7 +68,7 @@ def display_yuv422(y, u, v):
 
     yuv = cv2.merge([y, u, v])
     display_img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
-    cv2.imshow("st20p_rx_python", display_img)
+    cv2.imshow(sys.argv[0], display_img)
     cv2.waitKey(1)
 
 
@@ -77,7 +78,9 @@ def destroy():
 
 def frame_display_yuv422p8(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr(frame, 0))
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
+        mtl.st_frame_addr_cpuva(frame, 0)
+    )
     width = frame.width
     height = frame.height
 
@@ -91,7 +94,9 @@ def frame_display_yuv422p8(frame, display_scale_factor):
 
 def frame_display_yuv422p10le(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr(frame, 0))
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
+        mtl.st_frame_addr_cpuva(frame, 0)
+    )
     width = frame.width
     height = frame.height
 
@@ -106,7 +111,9 @@ def frame_display_yuv422p10le(frame, display_scale_factor):
 
 def frame_display_uyvy(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr(frame, 0))
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
+        mtl.st_frame_addr_cpuva(frame, 0)
+    )
     width = frame.width
     height = frame.height
     downscaled_width = width // display_scale_factor
@@ -122,14 +129,27 @@ def frame_display_uyvy(frame, display_scale_factor):
 
 
 def frame_display_rfc4175be10(mtl_handle, frame, display_scale_factor):
-    yuv422p10le_frame = mtl.st_frame_create(
+    yuv422p8_frame = mtl.st_frame_create(
         mtl_handle,
-        mtl.ST_FRAME_FMT_YUV422PLANAR10LE,
+        mtl.ST_FRAME_FMT_YUV422PLANAR8,
         frame.width,
         frame.height,
         frame.interlaced,
     )
-    if yuv422p10le_frame:
-        mtl.st_frame_convert(frame, yuv422p10le_frame)
-        frame_display_yuv422p10le(yuv422p10le_frame, display_scale_factor)
-        mtl.st_frame_free(yuv422p10le_frame)
+    if yuv422p8_frame:
+        mtl.st_frame_convert(frame, yuv422p8_frame)
+        frame_display_yuv422p8(yuv422p8_frame, display_scale_factor)
+        mtl.st_frame_free(yuv422p8_frame)
+
+
+def frame_display(mtl_handle, frame, display_scale_factor):
+    if frame.fmt == mtl.ST_FRAME_FMT_YUV422PLANAR10LE:
+        frame_display_yuv422p10le(frame, display_scale_factor)
+    elif frame.fmt == mtl.ST_FRAME_FMT_UYVY:
+        frame_display_uyvy(frame, display_scale_factor)
+    elif frame.fmt == mtl.ST_FRAME_FMT_YUV422PLANAR8:
+        frame_display_yuv422p8(frame, display_scale_factor)
+    elif frame.fmt == mtl.ST_FRAME_FMT_YUV422RFC4175PG2BE10:
+        frame_display_rfc4175be10(mtl_handle, frame, display_scale_factor)
+    else:
+        print(f"Unknown fmt: {mtl.st_frame_fmt_name(frame.fmt)}")
