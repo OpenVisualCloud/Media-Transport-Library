@@ -57,6 +57,8 @@ def main():
     mtl.st_txp_para_udp_port_set(tx_port, mtl.MTL_SESSION_PORT_P, 20000)
     tx_port.payload_type = 112
     tx_para.port = tx_port
+    # enable block get mode
+    tx_para.flags = mtl.ST20P_TX_FLAG_BLOCK_GET
     # create st20p_tx session
     st20p_tx = mtl.st20p_tx_create(mtl_handle, tx_para)
     if not st20p_tx:
@@ -92,6 +94,8 @@ def main():
                 else:
                     print(f"Fail to read {hex(frame_sz)} from {yuv_file_path}")
                 mtl.st20p_tx_put_frame(st20p_tx, frame)
+            else:
+                print("st20p_tx_get_frame get fail")
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt")

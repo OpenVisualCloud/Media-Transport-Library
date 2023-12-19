@@ -50,6 +50,8 @@ def main():
     mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, 20000)
     rx_port.payload_type = 112
     rx_para.port = rx_port
+    # enable block get mode
+    rx_para.flags = mtl.ST20P_RX_FLAG_BLOCK_GET
     # create st20p_rx session
     st20p_rx = mtl.st20p_rx_create(mtl_handle, rx_para)
     if not st20p_rx:

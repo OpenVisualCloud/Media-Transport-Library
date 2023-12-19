@@ -43,6 +43,11 @@ struct st22p_tx_ctx {
   struct st22p_tx_frame* framebuffs;
   pthread_mutex_t lock; /* protect framebuffs */
 
+  /* for ST22P_TX_FLAG_BLOCK_GET */
+  bool block_get;
+  pthread_cond_t block_wake_cond;
+  pthread_mutex_t block_wake_mutex;
+
   struct st22_encode_session_impl* encode_impl;
   bool ready;
   bool ext_frame;

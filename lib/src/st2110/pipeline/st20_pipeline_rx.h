@@ -44,6 +44,11 @@ struct st20p_rx_ctx {
   struct st20p_rx_frame* framebuffs;
   pthread_mutex_t lock;
 
+  /* for ST20P_RX_FLAG_BLOCK_GET */
+  bool block_get;
+  pthread_cond_t block_wake_cond;
+  pthread_mutex_t block_wake_mutex;
+
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;
   bool ready;

@@ -22,6 +22,24 @@ static uint16_t tx_st22p_next_idx(struct st22p_tx_ctx* ctx, uint16_t idx) {
   return next_idx;
 }
 
+static void tx_st22p_block_wake(struct st22p_tx_ctx* ctx) {
+  /* notify block */
+  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  mt_pthread_cond_signal(&ctx->block_wake_cond);
+  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+}
+
+static void tx_st22p_notify_frame_available(struct st22p_tx_ctx* ctx) {
+  if (ctx->ops.notify_frame_available) { /* notify app */
+    ctx->ops.notify_frame_available(ctx->ops.priv);
+  }
+
+  if (ctx->block_get) {
+    /* notify block */
+    tx_st22p_block_wake(ctx);
+  }
+}
+
 static struct st22p_tx_frame* tx_st22p_next_available(
     struct st22p_tx_ctx* ctx, uint16_t idx_start, enum st22p_tx_frame_status desired) {
   uint16_t idx = idx_start;
@@ -106,9 +124,7 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
     ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
   }
 
-  if (ctx->ops.notify_frame_available) { /* notify app */
-    ctx->ops.notify_frame_available(ctx->ops.priv);
-  }
+  tx_st22p_notify_frame_available(ctx);
 
   return ret;
 }
@@ -184,9 +200,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
          __func__, idx, encode_idx, result, data_size, ST22_ENCODE_MIN_FRAME_SZ,
          max_size);
     framebuff->stat = ST22P_TX_FRAME_FREE;
-    if (ctx->ops.notify_frame_available) { /* notify app */
-      ctx->ops.notify_frame_available(ctx->ops.priv);
-    }
+    tx_st22p_notify_frame_available(ctx);
     rte_atomic32_inc(&ctx->stat_encode_fail);
   } else {
     framebuff->stat = ST22P_TX_FRAME_ENCODED;
@@ -412,6 +426,22 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
   return 0;
 }
 
+static void st22p_tx_get_block_timeout(void* param) {
+  struct st22p_tx_ctx* ctx = param;
+  warn("%s(%d), timeout\n", __func__, ctx->idx);
+  tx_st22p_block_wake(ctx);
+}
+
+static int st22p_tx_get_block_wait(struct st22p_tx_ctx* ctx) {
+  rte_eal_alarm_set(US_PER_S, st22p_tx_get_block_timeout, ctx);
+  /* wait on the block cond */
+  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  mt_pthread_cond_wait(&ctx->block_wake_cond, &ctx->block_wake_mutex);
+  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  rte_eal_alarm_cancel(st22p_tx_get_block_timeout, ctx);
+  return 0;
+}
+
 struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
@@ -430,7 +460,16 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    return NULL;
+    if (ctx->block_get) {
+      st22p_tx_get_block_wait(ctx);
+      /* get again */
+      mt_pthread_mutex_lock(&ctx->lock);
+      framebuff =
+          tx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_TX_FRAME_FREE);
+      mt_pthread_mutex_unlock(&ctx->lock);
+    }
+
+    if (!framebuff) return NULL;
   }
 
   framebuff->stat = ST22P_TX_FRAME_IN_USER;
@@ -547,11 +586,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  if (!ops->notify_frame_available) {
-    err("%s, pls set notify_frame_available\n", __func__);
-    return NULL;
-  }
-
   src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
   if (!src_size) {
     err("%s(%d), get source size fail\n", __func__, idx);
@@ -582,6 +616,10 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
+
+  mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
+  mt_pthread_cond_init(&ctx->block_wake_cond, NULL);
+  if (ops->flags & ST22P_TX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */
   if (ops->name) {
@@ -622,9 +660,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
          ctx->ext_frame ? "true" : "false");
   st22p_tx_idx++;
 
-  if (ctx->ops.notify_frame_available) { /* notify app */
-    ctx->ops.notify_frame_available(ctx->ops.priv);
-  }
+  if (!ctx->block_get) tx_st22p_notify_frame_available(ctx);
 
   return ctx;
 }
@@ -652,6 +688,8 @@ int st22p_tx_free(st22p_tx_handle handle) {
   tx_st22p_uinit_src_fbs(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
+  mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
+  mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
   mt_rte_free(ctx);
 
