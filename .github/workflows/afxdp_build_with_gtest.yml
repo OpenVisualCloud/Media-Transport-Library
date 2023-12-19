@@ -1,4 +1,4 @@
-name: gtest
+name: afxdp_gtest
 
 on:
   # allow manually trigger
@@ -20,12 +20,9 @@ env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 23.11
-  TEST_PF_PORT_P: 0000:af:00.0
-  TEST_PF_PORT_R: 0000:af:00.0
-  TEST_PORT_P: 0000:af:01.0
-  TEST_PORT_R: 0000:af:01.1
-  TEST_DMA_PORT_P: 0000:80:04.0
-  TEST_DMA_PORT_R: 0000:80:04.1
+  TEST_PORT_P: native_af_xdp:enp24s0f0
+  TEST_PORT_R: native_af_xdp:enp24s0f1
+  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 permissions:
   contents: read
@@ -48,7 +45,7 @@ jobs:
   Build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [Linux, self-hosted, XDP]
     timeout-minutes: 60
 
     steps:
@@ -67,9 +64,17 @@ jobs:
           ref: v${{  env.DPDK_VERSION  }}
           path: dpdk
 
+      - name: Checkout xdp-tools
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: 'xdp-project/xdp-tools'
+          path: xdp-tools
+          submodules: recursive
+
       - name: Install the build dependency
         run: |
           sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+          sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev
 
       - name: Install the python package
         run: pip install pyelftools==0.29 ninja==1.11.1
@@ -87,6 +92,12 @@ jobs:
           cd build
           sudo ninja install
 
+      - name: Build and install xdp-tools
+        run: |
+          cd xdp-tools && ./configure
+          make && sudo make install
+          cd lib/libbpf/src && sudo make install
+
       - name: Build
         run: |
           ./build.sh
@@ -95,7 +106,7 @@ jobs:
   Test:
     needs: [changes, Build]
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [Linux, self-hosted, XDP]
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
@@ -107,12 +118,6 @@ jobs:
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
-
-      - name: Binding network adapter
-        run: |
-          sudo ./script/nicctl.sh create_vf ${{  env.TEST_PF_PORT_P  }} || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
 
       - name: Run ufd test case
         run: |
