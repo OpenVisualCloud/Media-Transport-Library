@@ -30,37 +30,68 @@ pub enum MtlIovaMode {
 
 bitflags! {
     pub struct MtlFlags: u64 {
-        const MTL_FLAG_BIND_NUMA                = 1 << 0;
-        const MTL_FLAG_PTP_ENABLE               = 1 << 1;
-        const MTL_FLAG_RX_SEPARATE_VIDEO_LCORE  = 1 << 2;
-        const MTL_FLAG_TX_VIDEO_MIGRATE         = 1 << 3;
-        const MTL_FLAG_RX_VIDEO_MIGRATE         = 1 << 4;
-        const MTL_FLAG_TASKLET_THREAD           = 1 << 5;
-        const MTL_FLAG_TASKLET_SLEEP            = 1 << 6;
-        const MTL_FLAG_RXTX_SIMD_512            = 1 << 7;
-        const MTL_FLAG_PTP_PI                   = 1 << 9;
-        const MTL_FLAG_UDP_LCORE                = 1 << 10;
-        const MTL_FLAG_RANDOM_SRC_PORT          = 1 << 11;
-        const MTL_FLAG_MULTI_SRC_PORT           = 1 << 12;
-        const MTL_FLAG_SHARED_TX_QUEUE          = 1 << 13;
-        const MTL_FLAG_SHARED_RX_QUEUE          = 1 << 14;
-        const MTL_FLAG_PHC2SYS_ENABLE           = 1 << 15;
-        const MTL_FLAG_VIRTIO_USER              = 1 << 16;
-        const MTL_FLAG_DEV_AUTO_START_STOP      = 1 << 17;
-        const MTL_FLAG_CNI_THREAD               = 1 << 32;
-        const MTL_FLAG_ENABLE_HW_TIMESTAMP      = 1 << 33;
-        const MTL_FLAG_NIC_RX_PROMISCUOUS       = 1 << 34;
-        const MTL_FLAG_PTP_UNICAST_ADDR         = 1 << 35;
-        const MTL_FLAG_RX_MONO_POOL             = 1 << 36;
-        const MTL_FLAG_TASKLET_TIME_MEASURE     = 1 << 38;
-        const MTL_FLAG_AF_XDP_ZC_DISABLE        = 1 << 39;
-        const MTL_FLAG_TX_MONO_POOL             = 1 << 40;
-        const MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES = 1 << 41;
-        const MTL_FLAG_PTP_SOURCE_TSC           = 1 << 42;
-        const MTL_FLAG_TX_NO_CHAIN              = 1 << 43;
-        const MTL_FLAG_TX_NO_BURST_CHK          = 1 << 44;
-        const MTL_FLAG_RX_USE_CNI               = 1 << 45;
-        const MTL_FLAG_RX_UDP_PORT_ONLY         = 1 << 46;
+        const MTL_FLAG_BIND_NUMA                =
+            sys::mtl_init_flag_MTL_FLAG_BIND_NUMA;
+        const MTL_FLAG_PTP_ENABLE               =
+            sys::mtl_init_flag_MTL_FLAG_PTP_ENABLE;
+        const MTL_FLAG_RX_SEPARATE_VIDEO_LCORE  =
+            sys::mtl_init_flag_MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        const MTL_FLAG_TX_VIDEO_MIGRATE         =
+            sys::mtl_init_flag_MTL_FLAG_TX_VIDEO_MIGRATE;
+        const MTL_FLAG_RX_VIDEO_MIGRATE         =
+            sys::mtl_init_flag_MTL_FLAG_RX_VIDEO_MIGRATE;
+        const MTL_FLAG_TASKLET_THREAD           =
+            sys::mtl_init_flag_MTL_FLAG_TASKLET_THREAD;
+        const MTL_FLAG_TASKLET_SLEEP            =
+            sys::mtl_init_flag_MTL_FLAG_TASKLET_SLEEP;
+        const MTL_FLAG_RXTX_SIMD_512            =
+            sys::mtl_init_flag_MTL_FLAG_RXTX_SIMD_512;
+        const MTL_FLAG_PTP_PI                   =
+            sys::mtl_init_flag_MTL_FLAG_PTP_PI;
+        const MTL_FLAG_UDP_LCORE                =
+            sys::mtl_init_flag_MTL_FLAG_UDP_LCORE;
+        const MTL_FLAG_RANDOM_SRC_PORT          =
+            sys::mtl_init_flag_MTL_FLAG_RANDOM_SRC_PORT;
+        const MTL_FLAG_MULTI_SRC_PORT           =
+            sys::mtl_init_flag_MTL_FLAG_MULTI_SRC_PORT;
+        const MTL_FLAG_SHARED_TX_QUEUE          =
+            sys::mtl_init_flag_MTL_FLAG_SHARED_TX_QUEUE;
+        const MTL_FLAG_SHARED_RX_QUEUE          =
+            sys::mtl_init_flag_MTL_FLAG_SHARED_RX_QUEUE;
+        const MTL_FLAG_PHC2SYS_ENABLE           =
+            sys::mtl_init_flag_MTL_FLAG_PHC2SYS_ENABLE;
+        const MTL_FLAG_VIRTIO_USER              =
+            sys::mtl_init_flag_MTL_FLAG_VIRTIO_USER;
+        const MTL_FLAG_DEV_AUTO_START_STOP      =
+            sys::mtl_init_flag_MTL_FLAG_DEV_AUTO_START_STOP;
+        const MTL_FLAG_CNI_THREAD               =
+            sys::mtl_init_flag_MTL_FLAG_CNI_THREAD;
+        const MTL_FLAG_ENABLE_HW_TIMESTAMP      =
+            sys::mtl_init_flag_MTL_FLAG_ENABLE_HW_TIMESTAMP;
+        const MTL_FLAG_NIC_RX_PROMISCUOUS       =
+            sys::mtl_init_flag_MTL_FLAG_NIC_RX_PROMISCUOUS;
+        const MTL_FLAG_PTP_UNICAST_ADDR         =
+            sys::mtl_init_flag_MTL_FLAG_PTP_UNICAST_ADDR;
+        const MTL_FLAG_RX_MONO_POOL             =
+            sys::mtl_init_flag_MTL_FLAG_RX_MONO_POOL;
+        const MTL_FLAG_TASKLET_TIME_MEASURE     =
+            sys::mtl_init_flag_MTL_FLAG_TASKLET_TIME_MEASURE;
+        const MTL_FLAG_AF_XDP_ZC_DISABLE        =
+            sys::mtl_init_flag_MTL_FLAG_AF_XDP_ZC_DISABLE;
+        const MTL_FLAG_TX_MONO_POOL             =
+            sys::mtl_init_flag_MTL_FLAG_TX_MONO_POOL;
+        const MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES =
+            sys::mtl_init_flag_MTL_FLAG_DISABLE_SYSTEM_RX_QUEUES;
+        const MTL_FLAG_PTP_SOURCE_TSC           =
+            sys::mtl_init_flag_MTL_FLAG_PTP_SOURCE_TSC;
+        const MTL_FLAG_TX_NO_CHAIN              =
+            sys::mtl_init_flag_MTL_FLAG_TX_NO_CHAIN;
+        const MTL_FLAG_TX_NO_BURST_CHK          =
+            sys::mtl_init_flag_MTL_FLAG_TX_NO_BURST_CHK;
+        const MTL_FLAG_RX_USE_CNI               =
+            sys::mtl_init_flag_MTL_FLAG_RX_USE_CNI;
+        const MTL_FLAG_RX_UDP_PORT_ONLY         =
+            sys::mtl_init_flag_MTL_FLAG_RX_UDP_PORT_ONLY;
     }
 }
 
