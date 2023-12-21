@@ -1,13 +1,17 @@
 use std::net::Ipv4Addr;
 
-#[derive(Copy, Clone)]
-pub enum MtlNetProto {
+use derive_builder::Builder;
+
+#[derive(Copy, Clone, Debug, Default)]
+pub enum NetProto {
+    #[default]
     Static = 0,
     Dhcp,
 }
 
-#[derive(Copy, Clone)]
-pub enum MtlPmdType {
+#[derive(Copy, Clone, Debug, Default)]
+pub enum PmdType {
+    #[default]
     DpdkPmd = 0,
     DpdkAfXdp,
     DpdkAfPacket,
@@ -15,57 +19,39 @@ pub enum MtlPmdType {
     AfXdp,
 }
 
-pub struct MtlNetDev {
+#[derive(Clone, Default, Builder, Debug)]
+#[builder(setter(into))]
+pub struct NetDev {
     port: String,
-    net_proto: MtlNetProto,
-    pmd: MtlPmdType,
-    sip_addr: Option<Ipv4Addr>,
+    net_proto: NetProto,
+    pmd: PmdType,
+    #[builder(default)]
+    ip: Option<Ipv4Addr>,
+    #[builder(default)]
     netmask: Option<Ipv4Addr>,
+    #[builder(default)]
     gateway: Option<Ipv4Addr>,
     tx_queues_cnt: u16,
     rx_queues_cnt: u16,
+    #[builder(default)]
     xdp_start_queue: u8,
 }
 
-impl MtlNetDev {
-    pub fn new(
-        port: String,
-        net_proto: MtlNetProto,
-        pmd: MtlPmdType,
-        sip_addr: Option<Ipv4Addr>,
-        netmask: Option<Ipv4Addr>,
-        gateway: Option<Ipv4Addr>,
-        tx_queues_cnt: u16,
-        rx_queues_cnt: u16,
-        xdp_start_queue: u8,
-    ) -> MtlNetDev {
-        MtlNetDev {
-            port: port,
-            net_proto: net_proto,
-            pmd: pmd,
-            sip_addr: sip_addr,
-            netmask: netmask,
-            gateway: gateway,
-            tx_queues_cnt: tx_queues_cnt,
-            rx_queues_cnt: rx_queues_cnt,
-            xdp_start_queue: xdp_start_queue,
-        }
-    }
-
+impl NetDev {
     pub fn get_port(&self) -> &str {
         &self.port
     }
 
-    pub fn get_net_proto(&self) -> MtlNetProto {
+    pub fn get_net_proto(&self) -> NetProto {
         self.net_proto
     }
 
-    pub fn get_pmd(&self) -> MtlPmdType {
+    pub fn get_pmd(&self) -> PmdType {
         self.pmd
     }
 
-    pub fn get_sip_addr(&self) -> Option<Ipv4Addr> {
-        self.sip_addr
+    pub fn get_ip(&self) -> Option<Ipv4Addr> {
+        self.ip
     }
 
     pub fn get_netmask(&self) -> Option<Ipv4Addr> {

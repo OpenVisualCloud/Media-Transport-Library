@@ -1,35 +1,39 @@
 use bitflags::bitflags;
+use derive_builder::Builder;
 use std::mem::MaybeUninit;
-use std::ptr::null_mut;
 
-use crate::netdev::MtlNetDev;
+use crate::netdev::NetDev;
 use crate::sys;
 
-#[derive(Copy, Clone)]
-pub enum MtlLogLevel {
+#[derive(Copy, Clone, Debug, Default)]
+pub enum LogLevel {
     Debug = 0,
     Info,
     Notice,
     Warning,
+    #[default]
     Error,
 }
 
-#[derive(Copy, Clone)]
-pub enum MtlRssMode {
+#[derive(Copy, Clone, Debug, Default)]
+pub enum RssMode {
+    #[default]
     None = 0,
     L3,
     L3L4,
 }
 
-#[derive(Copy, Clone)]
-pub enum MtlIovaMode {
+#[derive(Copy, Clone, Debug, Default)]
+pub enum IovaMode {
+    #[default]
     Auto = 0,
     Va,
     Pa,
 }
 
 bitflags! {
-    pub struct MtlFlags: u64 {
+    #[derive(Copy, Clone, Debug, Default)]
+    pub struct Flags: u64 {
         const MTL_FLAG_BIND_NUMA                =
             sys::mtl_init_flag_MTL_FLAG_BIND_NUMA;
         const MTL_FLAG_PTP_ENABLE               =
@@ -95,58 +99,34 @@ bitflags! {
     }
 }
 
-pub struct MtlInitParams {
-    net_devs: Vec<MtlNetDev>,
-    dma_devs: Vec<String>,
-    lcores: Option<String>,
-    log_level: MtlLogLevel,
-    rss_mode: MtlRssMode,
-    iova_mode: MtlIovaMode,
-    flags: MtlFlags,
-}
-
-impl MtlInitParams {
-    pub fn new() -> MtlInitParams {
-        MtlInitParams {
-            net_devs: Vec::new(),
-            dma_devs: Vec::new(),
-            lcores: None,
-            log_level: MtlLogLevel::Info,
-            rss_mode: MtlRssMode::None,
-            iova_mode: MtlIovaMode::Auto,
-            flags: MtlFlags::empty(),
-        }
-    }
-    pub fn add_netdev(&mut self, netdev: MtlNetDev) {
-        self.net_devs.push(netdev);
-    }
-    pub fn add_dma_dev(&mut self, dma_dev: String) {
-        self.dma_devs.push(dma_dev);
-    }
-    pub fn set_lcores(&mut self, lcores: String) {
-        self.lcores = Some(lcores);
-    }
-    pub fn set_log_level(&mut self, log_level: MtlLogLevel) {
-        self.log_level = log_level;
-    }
-    pub fn set_rss_mode(&mut self, rss_mode: MtlRssMode) {
-        self.rss_mode = rss_mode;
-    }
-    pub fn set_iova_mode(&mut self, iova_mode: MtlIovaMode) {
-        self.iova_mode = iova_mode;
-    }
-    pub fn set_flags(&mut self, flags: MtlFlags) {
-        self.flags = flags;
-    }
-}
-
+#[derive(Default, Builder, Debug)]
+#[builder(setter(into))]
 pub struct Mtl {
-    handle: sys::mtl_handle,
+    #[builder(default)]
+    handle: Option<sys::mtl_handle>,
+
+    net_devs: Vec<NetDev>, /* Mandatory */
+    #[builder(default)]
+    dma_devs: Vec<String>,
+    #[builder(default)]
+    lcores: Option<String>,
+    #[builder(default)]
+    log_level: LogLevel,
+    #[builder(default)]
+    rss_mode: RssMode,
+    #[builder(default)]
+    iova_mode: IovaMode,
+    #[builder(default)]
+    flags: Flags,
 }
 
 impl Mtl {
-    pub fn new(params: &MtlInitParams) -> Result<Mtl, &'static str> {
-        let num_ports = params.net_devs.len();
+    pub fn init(mut self) -> Result<Self, &'static str> {
+        if self.handle.is_some() {
+            return Err("MTL is already initialized");
+        }
+
+        let num_ports = self.net_devs.len();
         if num_ports > 8 || num_ports == 0 {
             return Err("Invalid number of netdevs");
         }
@@ -161,7 +141,7 @@ impl Mtl {
         unsafe {
             let c_param = &mut *c_param.as_mut_ptr();
             c_param.num_ports = num_ports as _;
-            for (i, net_dev) in params.net_devs.iter().enumerate() {
+            for (i, net_dev) in self.net_devs.iter().enumerate() {
                 let port_bytes: Vec<i8> = net_dev
                     .get_port()
                     .as_bytes()
@@ -175,7 +155,7 @@ impl Mtl {
 
                 c_param.pmd[i] = net_dev.get_pmd() as _;
                 c_param.net_proto[i] = net_dev.get_net_proto() as _;
-                if let Some(ip) = net_dev.get_sip_addr() {
+                if let Some(ip) = net_dev.get_ip() {
                     c_param.sip_addr[i] = ip.octets();
                 }
                 if let Some(ip) = net_dev.get_netmask() {
@@ -185,7 +165,7 @@ impl Mtl {
                     c_param.gateway[i] = ip.octets();
                 }
             }
-            for (i, dma_dev) in params.dma_devs.iter().enumerate() {
+            for (i, dma_dev) in self.dma_devs.iter().enumerate() {
                 let port_bytes: Vec<i8> = dma_dev
                     .as_bytes()
                     .iter()
@@ -198,30 +178,33 @@ impl Mtl {
                 c_param.num_dma_dev_port += 1;
             }
 
-            c_param.log_level = params.log_level as _;
-            c_param.rss_mode = params.rss_mode as _;
-            c_param.iova_mode = params.iova_mode as _;
-            if let Some(lcores) = &params.lcores {
+            c_param.log_level = self.log_level as _;
+            c_param.rss_mode = self.rss_mode as _;
+            c_param.iova_mode = self.iova_mode as _;
+            if let Some(lcores) = &self.lcores {
                 c_param.lcores = lcores.as_ptr() as _;
             }
-            c_param.flags = params.flags.bits();
+            c_param.flags = self.flags.bits();
         }
 
         let mut c_param = unsafe { c_param.assume_init() };
 
         let handle = unsafe { sys::mtl_init(&mut c_param as *mut _) };
-        if handle == null_mut() {
+        if handle == std::ptr::null_mut() {
             Err("Failed to initialize MTL")
         } else {
-            Ok(Mtl { handle })
+            self.handle = Some(handle);
+            Ok(self)
         }
     }
 }
 
 impl Drop for Mtl {
     fn drop(&mut self) {
-        unsafe {
-            sys::mtl_uninit(self.handle);
+        if let Some(handle) = self.handle {
+            unsafe {
+                sys::mtl_uninit(handle);
+            }
         }
     }
 }
