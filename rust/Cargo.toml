@@ -1,6 +1,6 @@
 [package]
 name = "imtl-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [lib]
@@ -8,6 +8,7 @@ name = "imtl"
 path = "src/imtl/lib.rs"
 
 [dependencies]
+derive_builder = "0.12.0"
 
 [dependencies.imtl-sys]
 path = "imtl-sys"
