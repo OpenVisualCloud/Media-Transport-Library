@@ -18,6 +18,7 @@ sources = files(
   'mt_rtcp.c',
   'mt_flow.c',
   'mt_instance.c',
+  'mt_log.c',
 )
 
 if is_windows

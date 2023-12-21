@@ -155,7 +155,7 @@ static void mtl_input_defaults(obs_data_t* settings) {
   obs_data_set_default_int(settings, "t_fmt", ST20_FMT_YUV_420_10BIT);
   obs_data_set_default_int(settings, "v_fmt", VIDEO_FORMAT_UYVY);
   obs_data_set_default_int(settings, "framebuffer_cnt", 3);
-  obs_data_set_default_int(settings, "log_level", MTL_LOG_LEVEL_ERROR);
+  obs_data_set_default_int(settings, "log_level", MTL_LOG_LEVEL_ERR);
 }
 
 /**
@@ -263,7 +263,7 @@ static obs_properties_t* mtl_input_properties(void* vptr) {
   obs_property_t* log_level_list =
       obs_properties_add_list(props, "log_level", obs_module_text("LogLevel"),
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-  obs_property_list_add_int(log_level_list, "ERROR", MTL_LOG_LEVEL_ERROR);
+  obs_property_list_add_int(log_level_list, "ERROR", MTL_LOG_LEVEL_ERR);
   obs_property_list_add_int(log_level_list, "INFO", MTL_LOG_LEVEL_INFO);
   obs_property_list_add_int(log_level_list, "NOTICE", MTL_LOG_LEVEL_NOTICE);
   obs_property_list_add_int(log_level_list, "WARNING", MTL_LOG_LEVEL_WARNING);

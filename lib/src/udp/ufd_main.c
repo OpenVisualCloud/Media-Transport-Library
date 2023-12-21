@@ -260,7 +260,7 @@ static int ufd_parse_json(struct mufd_init_params* init, const char* filename) {
       else if (!strcmp(str, "warning"))
         p->log_level = MTL_LOG_LEVEL_WARNING;
       else if (!strcmp(str, "error"))
-        p->log_level = MTL_LOG_LEVEL_ERROR;
+        p->log_level = MTL_LOG_LEVEL_ERR;
       else
         err("%s, unknow log level %s\n", __func__, str);
     }

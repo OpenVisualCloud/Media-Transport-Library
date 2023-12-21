@@ -4,6 +4,7 @@
 
 * dpdk: upgrade dpdk version to 23.11.
 * st22: add interlaced support.
+* log: add custom log printer, see mtl_set_log_printer.
 
 ## Changelog for 23.12
 

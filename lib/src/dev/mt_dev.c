@@ -428,12 +428,16 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argv[argc] = "notice";
   } else if (p->log_level == MTL_LOG_LEVEL_WARNING) {
     argv[argc] = "warning";
-  } else if (p->log_level == MTL_LOG_LEVEL_ERROR) {
+  } else if (p->log_level == MTL_LOG_LEVEL_ERR) {
     argv[argc] = "error";
+  } else if (p->log_level == MTL_LOG_LEVEL_CRIT) {
+    argv[argc] = "crit";
   } else {
-    argv[argc] = "info";
+    err("%s, unknown log level %d\n", __func__, p->log_level);
+    return -EINVAL;
   }
   argc++;
+  mt_set_log_global_level(p->log_level);
 
   if (p->flags & MTL_FLAG_RXTX_SIMD_512) {
     argv[argc] = "--force-max-simd-bitwidth=512";

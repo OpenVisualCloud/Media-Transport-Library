@@ -62,7 +62,7 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
         else if (!strcmp(optarg, "warning"))
           p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = MTL_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         break;
@@ -129,7 +129,7 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
   memset(p, 0x0, sizeof(*p));
 
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
-  p->log_level = MTL_LOG_LEVEL_ERROR;
+  p->log_level = MTL_LOG_LEVEL_ERR;
   p->tx_queues_cnt[MTL_PORT_P] = 16;
   p->tx_queues_cnt[MTL_PORT_R] = 16;
   p->rx_queues_cnt[MTL_PORT_P] = 16;

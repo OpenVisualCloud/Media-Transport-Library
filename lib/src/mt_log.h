@@ -2,21 +2,34 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include <rte_log.h>
-
 #ifndef _MT_LIB_LOG_HEAD_H_
 #define _MT_LIB_LOG_HEAD_H_
 
-extern void (*g_mt_log_prefix_format)(char* buf, size_t sz);
+#include <rte_log.h>
+
+#include "mtl_api.h"
 
 /* log define */
 #define RTE_LOGTYPE_MT (RTE_LOGTYPE_USER1)
 
-#define MT_LOG(l, t, format, ...)                        \
-  do {                                                   \
-    char __prefix[64];                                   \
-    g_mt_log_prefix_format(__prefix, sizeof(__prefix));  \
-    RTE_LOG(l, t, "%s" format, __prefix, ##__VA_ARGS__); \
+int mt_set_log_global_level(enum mtl_log_level level);
+enum mtl_log_level mt_get_log_global_level(void);
+
+mtl_log_prefix_formatter_t mt_get_log_prefix_formatter(void);
+mtl_log_printer_t mt_get_log_printer(void);
+
+#define MT_LOG(l, t, format, ...)                                              \
+  do {                                                                         \
+    if (MTL_LOG_LEVEL_##l >= mt_get_log_global_level()) {                      \
+      char __prefix[64];                                                       \
+      mtl_log_prefix_formatter_t formatter = mt_get_log_prefix_formatter();    \
+      mtl_log_printer_t printer = mt_get_log_printer();                        \
+      formatter(__prefix, sizeof(__prefix));                                   \
+      if (printer)                                                             \
+        printer(MTL_LOG_LEVEL_##l, "MTL: %s" format, __prefix, ##__VA_ARGS__); \
+      else                                                                     \
+        RTE_LOG(l, t, "MT: %s" format, __prefix, ##__VA_ARGS__);               \
+    }                                                                          \
   } while (0)
 
 /* Debug-level messages */

@@ -148,7 +148,7 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         else if (!strcmp(optarg, "warning"))
           p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = MTL_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         break;
@@ -353,7 +353,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
-  p->log_level = MTL_LOG_LEVEL_ERROR;
+  p->log_level = MTL_LOG_LEVEL_ERR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
   p->tx_queues_cnt[MTL_PORT_P] = 16;
@@ -525,7 +525,7 @@ TEST(Misc, log_level) {
   enum mtl_log_level orig_level = mtl_get_log_level(handle);
   ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_INFO);
   EXPECT_GE(ret, 0);
-  ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_ERROR);
+  ret = mtl_set_log_level(handle, MTL_LOG_LEVEL_ERR);
   EXPECT_GE(ret, 0);
   ret = mtl_set_log_level(handle, orig_level);
   EXPECT_GE(ret, 0);

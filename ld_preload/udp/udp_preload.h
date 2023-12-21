@@ -50,9 +50,9 @@ enum mtl_log_level upl_get_log_level(void);
   do {                                                                                  \
     if (upl_get_log_level() <= MTL_LOG_LEVEL_WARNING) printf("UPL: Warn: "__VA_ARGS__); \
   } while (0)
-#define err(...)                                                                       \
-  do {                                                                                 \
-    if (upl_get_log_level() <= MTL_LOG_LEVEL_ERROR) printf("UPL: Error: "__VA_ARGS__); \
+#define err(...)                                                                     \
+  do {                                                                               \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_ERR) printf("UPL: Error: "__VA_ARGS__); \
   } while (0)
 
 /* On error, -1 is returned, and errno is set appropriately. */

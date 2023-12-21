@@ -180,13 +180,30 @@ enum mtl_session_port {
  * Log level type to MTL context
  */
 enum mtl_log_level {
-  MTL_LOG_LEVEL_DEBUG = 0, /**< debug log level */
-  MTL_LOG_LEVEL_INFO,      /**< info log level */
-  MTL_LOG_LEVEL_NOTICE,    /**< notice log level */
-  MTL_LOG_LEVEL_WARNING,   /**< warning log level */
-  MTL_LOG_LEVEL_ERROR,     /**< error log level */
-  MTL_LOG_LEVEL_MAX,       /**< max value of this enum */
+  /** debug log level */
+  MTL_LOG_LEVEL_DEBUG = 0,
+  /** info log level */
+  MTL_LOG_LEVEL_INFO,
+  /** notice log level */
+  MTL_LOG_LEVEL_NOTICE,
+  /** warning log level */
+  MTL_LOG_LEVEL_WARNING,
+  /** error log level */
+  MTL_LOG_LEVEL_ERR,
+  /** critical log level */
+  MTL_LOG_LEVEL_CRIT,
+  /** max value of this enum */
+  MTL_LOG_LEVEL_MAX,
 };
+
+/* keep compatibility for MTL_LOG_LEVEL_ERR */
+#define MTL_LOG_LEVEL_ERROR (MTL_LOG_LEVEL_ERR)
+
+/* log formatter */
+typedef void (*mtl_log_prefix_formatter_t)(char* buf, size_t buf_sz);
+
+/* log printer, similar to printf */
+typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char* format, ...);
 
 /**
  * Poll mode driver type
@@ -905,13 +922,53 @@ enum mtl_log_level mtl_get_log_level(mtl_handle mt);
  *     strftime(buf, sz, "%Y-%m-%d %H:%M:%S, ", &tm);
  *   }
  *
- * @param log_prefix_format_func
- *   The log level define.
+ * @param f
+ *   The log formatter func.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t buf_sz));
+int mtl_set_log_prefix_formatter(mtl_log_prefix_formatter_t f);
+
+/**
+ * Set up a custom log printer for the user. By default, MTL uses `RTE_LOG` for outputting
+ * logs. However, applications can register a customized log printer using this function.
+ * Whenever MTL needs to log anything, the registered log callback will be invoked.
+ *
+ * A example printer is like below:
+ * static void log_user_printer(enum mtl_log_level level, const char* format, ...) {
+ *   MTL_MAY_UNUSED(level);
+ *   va_list args;
+ *
+ *   // Init variadic argument list
+ *   va_start(args, format);
+ *   // Use vprintf to pass the variadic arguments to printf
+ *   vprintf(format, args);
+ *   // End variadic argument list
+ *   va_end(args);
+ * }
+ *
+ * @param mtl_log_printer_t
+ *   The user log printer.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_set_log_printer(mtl_log_printer_t f);
+
+/**
+ * Change the stream that will be used by the logging system.
+ *
+ * The FILE* f argument represents the stream to be used for logging.
+ * If f is NULL, the default output is used. This can be done at any time.
+ *
+ * @param f
+ *   Pointer to the FILE stream.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int mtl_openlog_stream(FILE* f);
 
 /**
  * Enable or disable sleep mode for sch.
@@ -1426,20 +1483,6 @@ static inline bool mtl_pmd_is_af_xdp(enum mtl_pmd_type pmd) {
  */
 int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                   uint8_t netmask[MTL_IP_ADDR_LEN]);
-
-/**
- * Change the stream that will be used by the logging system.
- *
- * The FILE* f argument represents the stream to be used for logging.
- * If f is NULL, the default output is used. This can be done at any time.
- *
- * @param f
- *   Pointer to the FILE stream.
- * @return
- *   - 0: Success.
- *   - <0: Error code.
- */
-int mtl_openlog_stream(FILE* f);
 
 /**
  * Set thread names.
