@@ -23,6 +23,7 @@ env:
   TEST_PORT_P: native_af_xdp:enp24s0f0
   TEST_PORT_R: native_af_xdp:enp24s0f1
   PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
+  LD_LIBRARY_PATH: /usr/local/lib:/usr/lib64
 
 permissions:
   contents: read
