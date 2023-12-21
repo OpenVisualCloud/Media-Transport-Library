@@ -768,50 +768,37 @@ static void video_close(struct device* dev) {
 static void video_log_status(struct device* dev) { ioctl(dev->fd, VIDIOC_LOG_STATUS); }
 
 static int video_get_format(struct device* dev) {
-  struct v4l2_format fmt;
+  struct v4l2_format v_fmt;
   unsigned int i;
   int ret;
 
-  memset(&fmt, 0, sizeof fmt);
-  fmt.type = dev->type;
+  memset(&v_fmt, 0, sizeof v_fmt);
+  v_fmt.type = dev->type;
 
-  ret = ioctl(dev->fd, VIDIOC_G_FMT, &fmt);
+  ret = ioctl(dev->fd, VIDIOC_G_FMT, &v_fmt);
   if (ret < 0) {
-    printf("Unable to get format: %s (%d).\n", strerror(errno), errno);
     return ret;
   }
 
   if (video_is_mplane(dev)) {
-    dev->width = fmt.fmt.pix_mp.width;
-    dev->height = fmt.fmt.pix_mp.height;
-    dev->num_planes = fmt.fmt.pix_mp.num_planes;
+    dev->width = v_fmt.fmt.pix_mp.width;
+    dev->height = v_fmt.fmt.pix_mp.height;
+    dev->num_planes = v_fmt.fmt.pix_mp.num_planes;
 
-    printf("Video format: %s (%08x) %ux%u field %s, %u planes: \n",
-           v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
-           fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
-           v4l2_field_name(fmt.fmt.pix_mp.field), fmt.fmt.pix_mp.num_planes);
-
-    for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
-      dev->plane_fmt[i].bytesperline = fmt.fmt.pix_mp.plane_fmt[i].bytesperline;
-      dev->plane_fmt[i].sizeimage = fmt.fmt.pix_mp.plane_fmt[i].bytesperline
-                                        ? fmt.fmt.pix_mp.plane_fmt[i].sizeimage
+    for (i = 0; i < v_fmt.fmt.pix_mp.num_planes; i++) {
+      dev->plane_fmt[i].bytesperline = v_fmt.fmt.pix_mp.plane_fmt[i].bytesperline;
+      dev->plane_fmt[i].sizeimage = v_fmt.fmt.pix_mp.plane_fmt[i].bytesperline
+                                        ? v_fmt.fmt.pix_mp.plane_fmt[i].sizeimage
                                         : 0;
-
-      printf(" * Stride %u, buffer size %u\n", fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
-             fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
     }
   } else {
-    dev->width = fmt.fmt.pix.width;
-    dev->height = fmt.fmt.pix.height;
+    dev->width = v_fmt.fmt.pix.width;
+    dev->height = v_fmt.fmt.pix.height;
     dev->num_planes = 1;
 
-    dev->plane_fmt[0].bytesperline = fmt.fmt.pix.bytesperline;
-    dev->plane_fmt[0].sizeimage = fmt.fmt.pix.bytesperline ? fmt.fmt.pix.sizeimage : 0;
-
-    printf("Video format: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
-           v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
-           fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
-           v4l2_field_name(fmt.fmt.pix_mp.field), fmt.fmt.pix.sizeimage);
+    dev->plane_fmt[0].bytesperline = v_fmt.fmt.pix.bytesperline;
+    dev->plane_fmt[0].sizeimage =
+        v_fmt.fmt.pix.bytesperline ? v_fmt.fmt.pix.sizeimage : 0;
   }
 
   return 0;
@@ -1804,7 +1791,11 @@ int main(int argc, char* argv[]) {
   }
 
   /* Get the video format. */
-  video_get_format(&(st_v4l2_tx->dev));
+  if (!video_get_format(&(st_v4l2_tx->dev))) {
+    video_close(&(st_v4l2_tx->dev));
+    free(st_v4l2_tx);
+    return -EIO;
+  }
 
   if (!video_is_mplane(&(st_v4l2_tx->dev))) {
     video_close(&(st_v4l2_tx->dev));
