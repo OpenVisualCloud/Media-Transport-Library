@@ -13,6 +13,9 @@ path = "src/imtl/lib.rs"
 path = "imtl-sys"
 version = "^0.1.0"
 
+[dependencies.bitflags]
+version = "2.4.1"
+
 [features]
 convert = ["imtl-sys/convert"]
 pipeline = ["imtl-sys/pipeline"]

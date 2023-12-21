@@ -1934,8 +1934,22 @@ static inline void st_rxp_para_udp_port_set(struct st_rx_port* p, enum mtl_port 
   p->udp_port[port] = udp_port;
 }
 
+/** Helper to set the port for struct st_tx_port */
+int st_txp_para_port_set(struct st_tx_port* p, enum mtl_session_port port, char* name);
+/** Helper to set the dip for struct st_tx_port */
+int st_txp_para_dip_set(struct st_tx_port* p, enum mtl_port port, char* ip);
+/** Helper to set the udp port number for struct st_tx_port */
+static inline void st_txp_para_udp_port_set(struct st_tx_port* p, enum mtl_port port,
+                                            uint16_t udp_port) {
+  p->udp_port[port] = udp_port;
+}
+
 /** Helper to get the frame addr from struct st_frame */
-static inline mtl_cpuva_t st_frame_addr(struct st_frame* frame, uint8_t plane) {
+static inline void* st_frame_addr(struct st_frame* frame, uint8_t plane) {
+  return frame->addr[plane];
+}
+/** Helper to get the frame addr(mtl_cpuva_t) from struct st_frame */
+static inline mtl_cpuva_t st_frame_addr_cpuva(struct st_frame* frame, uint8_t plane) {
   return (mtl_cpuva_t)frame->addr[plane];
 }
 /** Helper to get the frame iova from struct st_frame */
