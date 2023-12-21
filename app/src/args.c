@@ -78,6 +78,7 @@ enum st_args_cmd {
   ST_ARG_LOG_LEVEL,
   ST_ARG_LOG_FILE,
   ST_ARG_LOG_TIME_MS,
+  ST_ARG_LOG_PRINTER,
   ST_ARG_NB_TX_DESC,
   ST_ARG_NB_RX_DESC,
   ST_ARG_DMA_DEV,
@@ -192,6 +193,7 @@ static struct option st_app_args_options[] = {
     {"log_level", required_argument, 0, ST_ARG_LOG_LEVEL},
     {"log_file", required_argument, 0, ST_ARG_LOG_FILE},
     {"log_time_ms", no_argument, 0, ST_ARG_LOG_TIME_MS},
+    {"log_printer", no_argument, 0, ST_ARG_LOG_PRINTER},
     {"ptp", no_argument, 0, ST_ARG_LIB_PTP},
     {"phc2sys", no_argument, 0, ST_ARG_LIB_PHC2SYS},
     {"ptp_sync_sys", no_argument, 0, ST_ARG_LIB_PTP_SYNC_SYS},
@@ -350,6 +352,18 @@ static void log_prefix_time_ms(char* buf, size_t sz) {
   localtime_r(&ts.tv_sec, &tm);
   strftime(time_s_buf, sizeof(time_s_buf), "%Y-%m-%d %H:%M:%S", &tm);
   snprintf(buf, sz, "%s.%u, ", time_s_buf, (uint32_t)(ts.tv_nsec / NS_PER_MS));
+}
+
+static void log_user_printer(enum mtl_log_level level, const char* format, ...) {
+  MTL_MAY_UNUSED(level);
+  va_list args;
+
+  /* Init variadic argument list */
+  va_start(args, format);
+  /* Use vprintf to pass the variadic arguments to printf */
+  vprintf(format, args);
+  /* End variadic argument list */
+  va_end(args);
 }
 
 int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
@@ -597,7 +611,7 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         else if (!strcmp(optarg, "warning"))
           p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = MTL_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         app_set_log_level(p->log_level);
@@ -607,6 +621,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_LOG_TIME_MS:
         mtl_set_log_prefix_formatter(log_prefix_time_ms);
+        break;
+      case ST_ARG_LOG_PRINTER:
+        mtl_set_log_printer(log_user_printer);
         break;
       case ST_ARG_NB_TX_DESC:
         p->nb_tx_desc = atoi(optarg);

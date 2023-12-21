@@ -232,7 +232,7 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         else if (!strcmp(optarg, "warning"))
           p->log_level = MTL_LOG_LEVEL_WARNING;
         else if (!strcmp(optarg, "error"))
-          p->log_level = MTL_LOG_LEVEL_ERROR;
+          p->log_level = MTL_LOG_LEVEL_ERR;
         else
           err("%s, unknow log level %s\n", __func__, optarg);
         break;

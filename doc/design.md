@@ -467,3 +467,44 @@ Intel® Media SDK: Leverage IMTL's robust capabilities within Intel® Media SDK 
 ### 6.15 Sample code
 
 In addition to the built-in RxTxApp, IMTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, detail can be found at [fwd](../app/sample/fwd/).
+
+## 7. Misc
+
+### 7.1 Logging
+
+By default, MTL uses the DPDK `RTE_LOG` for outputting logs.
+
+Log levels are governed by the `enum mtl_log_level` definition. During the initialization stage, the log level can be customized using the `enum mtl_log_level log_level;` field within the `struct mtl_init_params`. Additionally, the log level can be altered at runtime using the `mtl_set_log_level` and `mtl_get_log_level` APIs.
+
+To save the `RTE_LOG` output to a file, please use the `mtl_openlog_stream` API with a pointer to a `FILE*` as an argument.
+
+MTL logging includes a timestamp prefix with each output to indicate the timing with second-level accuracy. If millisecond-level accuracy is required, use the `mtl_set_log_prefix_formatter` function to define a custom prefix. Below is an example of a user-defined prefix formatter that includes milliseconds:
+
+```bash
+static void log_prefix_time_ms(char* buf, size_t sz) {
+  struct timespec ts;
+  struct tm tm;
+  char time_s_buf[64];
+
+  clock_gettime(CLOCK_REALTIME, &ts);
+  localtime_r(&ts.tv_sec, &tm);
+  strftime(time_s_buf, sizeof(time_s_buf), "%Y-%m-%d %H:%M:%S", &tm);
+  snprintf(buf, sz, "%s.%u, ", time_s_buf, (uint32_t)(ts.tv_nsec / NS_PER_MS));
+}
+```
+
+Applications can register a custom log printer by utilizing the `mtl_set_log_printer` API. This ensures that whenever MTL requires logging, the specified callback function is executed. Below is an example of a callback implementation; note that a variadic argument list is passed using `va_list`, and `vprintf` is utilized to handle the logging:
+
+```bash
+static void log_user_printer(enum mtl_log_level level, const char* format, ...) {
+  MTL_MAY_UNUSED(level);
+  va_list args;
+
+  /* Init variadic argument list */
+  va_start(args, format);
+  /* Use vprintf to pass the variadic arguments to printf */
+  vprintf(format, args);
+  /* End variadic argument list */
+  va_end(args);
+}
+```

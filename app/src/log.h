@@ -34,9 +34,9 @@ enum mtl_log_level app_get_log_level(void);
   do {                                                                     \
     if (app_get_log_level() <= MTL_LOG_LEVEL_WARNING) printf(__VA_ARGS__); \
   } while (0)
-#define err(...)                                                         \
-  do {                                                                   \
-    if (app_get_log_level() <= MTL_LOG_LEVEL_ERROR) printf(__VA_ARGS__); \
+#define err(...)                                                       \
+  do {                                                                 \
+    if (app_get_log_level() <= MTL_LOG_LEVEL_ERR) printf(__VA_ARGS__); \
   } while (0)
 #define critical(...)    \
   do {                   \

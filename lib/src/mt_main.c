@@ -24,18 +24,6 @@
 #include "st2110/pipeline/st_plugin.h"
 #include "udp/udp_rxq.h"
 
-static void log_default_prefix(char* buf, size_t sz) {
-  time_t now;
-  struct tm tm;
-
-  time(&now);
-  localtime_r(&now, &tm);
-  strftime(buf, sz, "%Y-%m-%d %H:%M:%S, ", &tm);
-}
-
-/* default log prefix format */
-void (*g_mt_log_prefix_format)(char* buf, size_t sz) = log_default_prefix;
-
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
   int i;
@@ -727,57 +715,6 @@ int mtl_abort(mtl_handle mt) {
   return 0;
 }
 
-int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
-  struct mtl_main_impl* impl = mt;
-  uint32_t rte_level;
-
-  if (impl->type != MT_HANDLE_MAIN) {
-    err("%s, invalid type %d\n", __func__, impl->type);
-    return -EIO;
-  }
-
-  dbg("%s, set log level %d\n", __func__, level);
-  if (level == mtl_get_log_level(mt)) return 0;
-
-  switch (level) {
-    case MTL_LOG_LEVEL_DEBUG:
-      rte_level = RTE_LOG_DEBUG;
-      break;
-    case MTL_LOG_LEVEL_INFO:
-      rte_level = RTE_LOG_INFO;
-      break;
-    case MTL_LOG_LEVEL_NOTICE:
-      rte_level = RTE_LOG_NOTICE;
-      break;
-    case MTL_LOG_LEVEL_WARNING:
-      rte_level = RTE_LOG_WARNING;
-      break;
-    case MTL_LOG_LEVEL_ERROR:
-      rte_level = RTE_LOG_ERR;
-      break;
-    default:
-      err("%s, invalid level %d\n", __func__, level);
-      return -EINVAL;
-  }
-
-  rte_log_set_global_level(rte_level);
-
-  info("%s, set log level %d succ\n", __func__, level);
-  mt_get_user_params(impl)->log_level = level;
-  return 0;
-}
-
-enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
-  struct mtl_main_impl* impl = mt;
-
-  if (impl->type != MT_HANDLE_MAIN) {
-    err("%s, invalid type %d\n", __func__, impl->type);
-    return -EIO;
-  }
-
-  return mt_get_user_params(impl)->log_level;
-}
-
 void* mtl_memcpy(void* dest, const void* src, size_t n) {
   return rte_memcpy(dest, src, n);
 }
@@ -1309,8 +1246,6 @@ const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
   return mt_simd_level_names[level];
 }
 
-int mtl_openlog_stream(FILE* f) { return rte_openlog_stream(f); }
-
 bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
   struct mtl_main_impl* impl = mt;
 
@@ -1337,17 +1272,6 @@ int mtl_thread_setname(pthread_t tid, const char* name) {
 #else
   return rte_thread_setname(tid, name);
 #endif
-}
-
-int mtl_set_log_prefix_formatter(void (*log_prefix_formatter)(char* buf, size_t buf_sz)) {
-  if (log_prefix_formatter) {
-    info("%s, new formatter %p\n", __func__, log_prefix_formatter);
-    g_mt_log_prefix_format = log_prefix_formatter;
-  } else {
-    info("%s, switch to default as user prefix is null\n", __func__);
-    g_mt_log_prefix_format = log_default_prefix;
-  }
-  return 0;
 }
 
 void mtl_sleep_us(unsigned int us) { return mt_sleep_us(us); }
