@@ -45,6 +45,7 @@ docker run -it \
   --device /dev/vfio \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
+  --cap-add NET_ADMIN \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
   mtl:latest
@@ -101,6 +102,7 @@ docker run -it \
   --device /dev/vfio/312 \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
+  --cap-add NET_ADMIN \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
   mtl:latest
