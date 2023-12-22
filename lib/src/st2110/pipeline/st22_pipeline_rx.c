@@ -581,9 +581,9 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), codestream fmt %s, output fmt: %s, ext frame: %s\n", __func__, idx,
+  notice("%s(%d), codestream fmt %s, output fmt: %s, flags 0x%x\n", __func__, idx,
          st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->output_fmt),
-         ctx->ext_frame ? "true" : "false");
+         ops->flags);
   st22p_rx_idx++;
 
   if (!ctx->block_get) rx_st22p_notify_frame_available(ctx);

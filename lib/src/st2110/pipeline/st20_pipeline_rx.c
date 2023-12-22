@@ -841,9 +841,9 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), transport fmt %s, output fmt %s, dynamic_ext_frame %s\n", __func__, idx,
+  notice("%s(%d), transport fmt %s, output fmt %s, flags 0x%x\n", __func__, idx,
          st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt),
-         ctx->dynamic_ext_frame ? "true" : "false");
+         ops->flags);
   st20p_rx_idx++;
 
   if (!ctx->block_get) rx_st20p_notify_frame_available(ctx);

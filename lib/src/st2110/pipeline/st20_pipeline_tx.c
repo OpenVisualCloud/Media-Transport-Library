@@ -471,10 +471,12 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
 }
 
 static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
+  dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  dbg("%s(%d), end\n", __func__, ctx->idx);
   return 0;
 }
 
@@ -691,7 +693,9 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
-  if (ops->flags & ST20P_TX_FLAG_BLOCK_GET) ctx->block_get = true;
+  if (ops->flags & ST20P_TX_FLAG_BLOCK_GET) {
+    ctx->block_get = true;
+  }
 
   /* copy ops */
   if (ops->name) {
@@ -729,8 +733,9 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), transport fmt %s, input fmt: %s\n", __func__, idx,
-         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->input_fmt));
+  notice("%s(%d), transport fmt %s, input fmt: %s, flags 0x%x\n", __func__, idx,
+         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->input_fmt),
+         ops->flags);
   st20p_tx_idx++;
 
   /* notify app can get frame */
