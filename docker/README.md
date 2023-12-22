@@ -9,7 +9,7 @@ Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfi
 ## 2. Build Docker image
 
 ```bash
-docker build -t mtl:latest -f ubuntu.dockerfile ./
+docker build -t mtl:latest -f ubuntu.dockerfile ../
 ```
 
 Refer to below build command if you are in a proxy env.
@@ -17,7 +17,7 @@ Refer to below build command if you are in a proxy env.
 ```bash
 http_proxy=http://proxy.xxx.com:xxx
 https_proxy=https://proxy.xxx.com:xxx
-docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ./
+docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 ```
 
 ## 3. Run and login into the docker container
