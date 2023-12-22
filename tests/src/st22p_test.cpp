@@ -1208,7 +1208,6 @@ TEST(St22p, digest_st22_s2) {
   para.sessions = 2;
   para.user_timestamp = true;
   para.ssrc = 778899;
-  para.block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
@@ -1224,6 +1223,7 @@ TEST(St22p, digest_st22_1080p_fail_interval) {
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
   para.fail_interval = 3;
+  para.block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
