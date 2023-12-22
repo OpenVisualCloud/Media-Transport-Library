@@ -1151,7 +1151,6 @@ TEST(St20p, digest_1080i_s2) {
   para.interlace = true;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.ssrc = 54321;
-  para.block_get = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1330,6 +1329,7 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   para.sessions = 2;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
+  para.block_get = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
