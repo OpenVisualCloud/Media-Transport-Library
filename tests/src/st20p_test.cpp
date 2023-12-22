@@ -1329,7 +1329,7 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   para.sessions = 2;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
-  para.block_get = true;
+  para.block_get = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1348,7 +1348,7 @@ TEST(St20p, rx_ext_digest_1080p_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
   para.check_fps = false;
-  para.block_get = true;
+  para.block_get = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1410,7 +1410,7 @@ TEST(St20p, ext_digest_1080p_convert_s2) {
   para.rx_ext = true;
   para.check_fps = false;
   para.user_timestamp = true;
-  para.block_get = true;
+  para.block_get = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1514,7 +1514,7 @@ TEST(St20p, digest_user_meta_s2) {
   para.user_meta = true;
   para.check_fps = false;
   para.packing = ST20_PACKING_GPM;
-  para.block_get = true;
+  para.block_get = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
