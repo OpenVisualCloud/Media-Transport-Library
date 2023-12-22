@@ -426,19 +426,11 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
   return 0;
 }
 
-static void st22p_tx_get_block_timeout(void* param) {
-  struct st22p_tx_ctx* ctx = param;
-  warn("%s(%d), timeout\n", __func__, ctx->idx);
-  tx_st22p_block_wake(ctx);
-}
-
 static int st22p_tx_get_block_wait(struct st22p_tx_ctx* ctx) {
-  rte_eal_alarm_set(US_PER_S, st22p_tx_get_block_timeout, ctx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_wait(&ctx->block_wake_cond, &ctx->block_wake_mutex);
+  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  rte_eal_alarm_cancel(st22p_tx_get_block_timeout, ctx);
   return 0;
 }
 
