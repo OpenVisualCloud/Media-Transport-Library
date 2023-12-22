@@ -27,6 +27,24 @@ static inline struct st_frame* tx_st20p_user_frame(struct st20p_tx_ctx* ctx,
   return ctx->derive ? &framebuff->dst : &framebuff->src;
 }
 
+static void tx_st20p_block_wake(struct st20p_tx_ctx* ctx) {
+  /* notify block */
+  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  mt_pthread_cond_signal(&ctx->block_wake_cond);
+  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+}
+
+static void tx_st20p_notify_frame_available(struct st20p_tx_ctx* ctx) {
+  if (ctx->ops.notify_frame_available) { /* notify app */
+    ctx->ops.notify_frame_available(ctx->ops.priv);
+  }
+
+  if (ctx->block_get) {
+    /* notify block */
+    tx_st20p_block_wake(ctx);
+  }
+}
+
 static struct st20p_tx_frame* tx_st20p_next_available(
     struct st20p_tx_ctx* ctx, uint16_t idx_start, enum st20p_tx_frame_status desired) {
   uint16_t idx = idx_start;
@@ -113,9 +131,8 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
   }
 
-  if (ctx->ops.notify_frame_available) { /* notify app can get frame */
-    ctx->ops.notify_frame_available(ctx->ops.priv);
-  }
+  /* notify app can get frame */
+  tx_st20p_notify_frame_available(ctx);
 
   return ret;
 }
@@ -183,9 +200,8 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, convert_idx,
         result, data_size);
     framebuff->stat = ST20P_TX_FRAME_FREE;
-    if (ctx->ops.notify_frame_available) { /* notify app */
-      ctx->ops.notify_frame_available(ctx->ops.priv);
-    }
+    /* notify app can get frame */
+    tx_st20p_notify_frame_available(ctx);
     rte_atomic32_inc(&ctx->stat_convert_fail);
   } else {
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
@@ -454,6 +470,16 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   return 0;
 }
 
+static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
+  dbg("%s(%d), start\n", __func__, ctx->idx);
+  /* wait on the block cond */
+  mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
+  mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
+  dbg("%s(%d), end\n", __func__, ctx->idx);
+  return 0;
+}
+
 struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
@@ -469,6 +495,14 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
+  if (!framebuff && ctx->block_get) { /* wait here */
+    mt_pthread_mutex_unlock(&ctx->lock);
+    st20p_tx_get_block_wait(ctx);
+    /* get again */
+    mt_pthread_mutex_lock(&ctx->lock);
+    framebuff =
+        tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
+  }
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
@@ -635,10 +669,6 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
-  if (!ops->notify_frame_available) {
-    warn("%s, pls set notify_frame_available\n", __func__);
-  }
-
   src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
   if (!src_size) {
     err("%s(%d), get src size fail\n", __func__, idx);
@@ -660,6 +690,12 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
+
+  mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&ctx->block_wake_cond);
+  if (ops->flags & ST20P_TX_FLAG_BLOCK_GET) {
+    ctx->block_get = true;
+  }
 
   /* copy ops */
   if (ops->name) {
@@ -697,13 +733,13 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), transport fmt %s, input fmt: %s\n", __func__, idx,
-         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->input_fmt));
+  notice("%s(%d), transport fmt %s, input fmt: %s, flags 0x%x\n", __func__, idx,
+         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->input_fmt),
+         ops->flags);
   st20p_tx_idx++;
 
-  if (ctx->ops.notify_frame_available) { /* notify app */
-    ctx->ops.notify_frame_available(ctx->ops.priv);
-  }
+  /* notify app can get frame */
+  if (!ctx->block_get) tx_st20p_notify_frame_available(ctx);
 
   return ctx;
 }
@@ -736,6 +772,8 @@ int st20p_tx_free(st20p_tx_handle handle) {
   tx_st20p_uinit_src_fbs(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
+  mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
+  mt_pthread_cond_destroy(&ctx->block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
   mt_rte_free(ctx);
 

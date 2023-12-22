@@ -598,9 +598,11 @@ static void test_st22p_tx_frame_thread(void* args) {
   while (!s->stop) {
     frame = st22p_tx_get_frame((st22p_tx_handle)handle);
     if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
+      if (!s->block_get) {
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+      }
       continue;
     }
     if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
@@ -647,9 +649,11 @@ static void test_st22p_rx_frame_thread(void* args) {
   while (!s->stop) {
     frame = st22p_rx_get_frame((st22p_rx_handle)handle);
     if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
+      if (!s->block_get) {
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+      }
       continue;
     }
 
@@ -719,6 +723,7 @@ struct st22p_rx_digest_test_para {
   bool rx_ext;
   bool interlace;
   uint32_t ssrc;
+  bool block_get;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -738,6 +743,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->rx_ext = false;
   para->interlace = false;
   para->ssrc = 0;
+  para->block_get = false;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -815,6 +821,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->height = height[i];
     test_ctx_tx[i]->fmt = fmt[i];
     test_ctx_tx[i]->user_timestamp = para->user_timestamp;
+    test_ctx_tx[i]->block_get = para->block_get;
 
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st22p_test";
@@ -837,7 +844,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.device = ST_PLUGIN_DEVICE_TEST;
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.notify_frame_available = test_st22p_tx_frame_available;
+    if (para->block_get)
+      ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+    else
+      ops_tx.notify_frame_available = test_st22p_tx_frame_available;
     ops_tx.notify_event = test_ctx_notify_event;
     ops_tx.notify_frame_done = test_st22p_tx_frame_done;
     if (para->user_timestamp) ops_tx.flags |= ST22P_TX_FLAG_USER_TIMESTAMP;
@@ -948,6 +958,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->height = height[i];
     test_ctx_rx[i]->fmt = fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
+    test_ctx_rx[i]->block_get = para->block_get;
     /* copy sha */
     memcpy(test_ctx_rx[i]->shas, test_ctx_tx[i]->shas,
            ST22_TEST_SHA_HIST_NUM * SHA256_DIGEST_LENGTH);
@@ -1014,7 +1025,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.codec = codec[i];
     ops_rx.device = ST_PLUGIN_DEVICE_TEST;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.notify_frame_available = test_st22p_rx_frame_available;
+    if (para->block_get)
+      ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
+    else
+      ops_rx.notify_frame_available = test_st22p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->vsync) ops_rx.flags |= ST22P_RX_FLAG_ENABLE_VSYNC;
     if (para->rx_ext) {
@@ -1160,6 +1174,7 @@ TEST(St22p, digest_st22_1080i) {
   test_st22p_init_rx_digest_para(&para);
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.interlace = true;
+  para.block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
@@ -1208,6 +1223,7 @@ TEST(St22p, digest_st22_1080p_fail_interval) {
   struct st22p_rx_digest_test_para para;
   test_st22p_init_rx_digest_para(&para);
   para.fail_interval = 3;
+  para.block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

@@ -5,6 +5,7 @@
 * dpdk: upgrade dpdk version to 23.11.
 * st22: add interlaced support.
 * log: add custom log printer, see mtl_set_log_printer.
+* pipeline: add block get mode support, see `ST20P_TX_FLAG_BLOCK_GET`/`ST20P_RX_FLAG_BLOCK_GET`/`ST22P_TX_FLAG_BLOCK_GET`/`ST22P_RX_FLAG_BLOCK_GET`.
 
 ## Changelog for 23.12
 

@@ -377,6 +377,9 @@ enum st22p_tx_flag {
    * st22p_tx_put_ext_frame.
    */
   ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
+  /** Enable the st22p_tx_get_frame block behavier to wait until a frame becomes
+   available or timeout(1s) */
+  ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
 /** Bit define for flags of struct st20p_tx_ops. */
@@ -431,6 +434,9 @@ enum st20p_tx_flag {
    * performance since the object enqueue/dequeue will be acted one by one.
    */
   ST20P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(10)),
+  /** Enable the st20p_tx_get_frame block behavier to wait until a frame becomes
+     available or timeout(1s) */
+  ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
 /** Bit define for flags of struct st22p_rx_ops. */
@@ -459,6 +465,9 @@ enum st22p_rx_flag {
    */
   ST22P_RX_FLAG_EXT_FRAME = (MTL_BIT32(4)),
 
+  /** Enable the st22p_rx_get_frame block behavier to wait until a frame becomes
+     available or timeout(1s) */
+  ST22P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
   /**
    * If set, lib will pass the incomplete frame to app also.
    * User can check st_frame_status data for the frame integrity
@@ -500,6 +509,9 @@ enum st20p_rx_flag {
    */
   ST20P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(5)),
 
+  /** Enable the st20p_rx_get_frame block behavier to wait until a frame becomes
+     available or timeout(1s) */
+  ST20P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
   /**
    * If set, lib will pass the incomplete frame to app also.
    * User can check st_frame_status data for the frame integrity

@@ -128,6 +128,34 @@ static inline int mt_pthread_cond_destroy(pthread_cond_t* cond) {
   return pthread_cond_destroy(cond);
 }
 
+static inline int mt_pthread_cond_wait_init(pthread_cond_t* cond) {
+#if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
+  pthread_condattr_t attr;
+  pthread_condattr_init(&attr);
+  pthread_condattr_setclock(&attr, MT_THREAD_TIMEDWAIT_CLOCK_ID);
+  return mt_pthread_cond_init(cond, &attr);
+#else
+  return mt_pthread_cond_init(cond, NULL);
+#endif
+}
+
+static inline void timespec_add_ns(struct timespec* time, uint64_t ns) {
+  time->tv_nsec += ns;
+  while (time->tv_nsec >= 1000000000L) {
+    time->tv_nsec -= 1000000000L;
+    time->tv_sec++;
+  }
+}
+
+static inline int mt_pthread_cond_timedwait_ns(pthread_cond_t* cond,
+                                               pthread_mutex_t* mutex,
+                                               uint64_t timedwait_ns) {
+  struct timespec time;
+  clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
+  timespec_add_ns(&time, timedwait_ns);
+  return mt_pthread_cond_timedwait(cond, mutex, &time);
+}
+
 static inline int mt_pthread_cond_signal(pthread_cond_t* cond) {
   return pthread_cond_signal(cond);
 }

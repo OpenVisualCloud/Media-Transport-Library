@@ -398,14 +398,7 @@ struct mur_client* mur_client_get(struct mur_client_create* create) {
 
   /* lcore related */
   mt_pthread_mutex_init(&c->lcore_wake_mutex, NULL);
-#if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
-  pthread_condattr_t attr;
-  pthread_condattr_init(&attr);
-  pthread_condattr_setclock(&attr, MT_THREAD_TIMEDWAIT_CLOCK_ID);
-  mt_pthread_cond_init(&c->lcore_wake_cond, &attr);
-#else
-  mt_pthread_cond_init(&c->lcore_wake_cond, NULL);
-#endif
+  mt_pthread_cond_wait_init(&c->lcore_wake_cond);
   c->wake_thresh_count = create->wake_thresh_count;
   c->wake_timeout_us = create->wake_timeout_us;
   c->wake_tsc_last = mt_get_tsc(impl);
@@ -516,13 +509,8 @@ int mur_client_timedwait(struct mur_client* c, unsigned int timedwait_us,
 
   c->stat_timedwait++;
   mt_pthread_mutex_lock(&c->lcore_wake_mutex);
-
-  struct timespec time;
-  clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
-  uint64_t ns = mt_timespec_to_ns(&time);
-  ns += (uint64_t)timedwait_us * NS_PER_US;
-  mt_ns_to_timespec(ns, &time);
-  ret = mt_pthread_cond_timedwait(&c->lcore_wake_cond, &c->lcore_wake_mutex, &time);
+  ret = mt_pthread_cond_timedwait_ns(&c->lcore_wake_cond, &c->lcore_wake_mutex,
+                                     timedwait_us * NS_PER_US);
   dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);
   mt_pthread_mutex_unlock(&c->lcore_wake_mutex);
 

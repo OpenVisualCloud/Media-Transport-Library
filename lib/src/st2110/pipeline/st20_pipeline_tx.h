@@ -54,6 +54,11 @@ struct st20p_tx_ctx {
 
   bool second_field;
 
+  /* for ST20P_TX_FLAG_BLOCK_GET */
+  bool block_get;
+  pthread_cond_t block_wake_cond;
+  pthread_mutex_t block_wake_mutex;
+
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;
 };

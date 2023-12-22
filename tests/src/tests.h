@@ -224,6 +224,7 @@ class tests_context {
   double frame_time = 0; /* in ns */
   uint64_t ptp_time_first_frame = 0;
   bool user_meta = false;
+  bool block_get = false;
 };
 
 #define TEST_USER_META_MAGIC ST_PLUGIN_MAGIC('U', 'S', 'M', 'T')

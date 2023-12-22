@@ -42,6 +42,11 @@ struct st22p_rx_ctx {
   struct st22p_rx_frame* framebuffs;
   pthread_mutex_t lock;
 
+  /* for ST22P_RX_FLAG_BLOCK_GET */
+  bool block_get;
+  pthread_cond_t block_wake_cond;
+  pthread_mutex_t block_wake_mutex;
+
   struct st22_decode_session_impl* decode_impl;
   bool ready;
   bool ext_frame;

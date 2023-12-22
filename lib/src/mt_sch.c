@@ -70,13 +70,10 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sc
   if (sleep_us < mt_sch_zero_sleep_thresh_us(impl)) {
     mt_sleep_ms(0);
   } else {
-    struct timespec abs_time;
-    clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &abs_time);
-    abs_time.tv_sec += 1; /* timeout 1s */
-
     rte_eal_alarm_set(sleep_us, sch_sleep_alarm_handler, sch);
     mt_pthread_mutex_lock(&sch->sleep_wake_mutex);
-    mt_pthread_cond_timedwait(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, &abs_time);
+    /* timeout 1s */
+    mt_pthread_cond_timedwait_ns(&sch->sleep_wake_cond, &sch->sleep_wake_mutex, NS_PER_S);
     mt_pthread_mutex_unlock(&sch->sleep_wake_mutex);
   }
   uint64_t end = mt_get_tsc(impl);
@@ -840,14 +837,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 
     /* sleep info init */
     sch->allow_sleep = mt_user_tasklet_sleep(impl);
-#if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
-    pthread_condattr_t attr;
-    pthread_condattr_init(&attr);
-    pthread_condattr_setclock(&attr, MT_THREAD_TIMEDWAIT_CLOCK_ID);
-    mt_pthread_cond_init(&sch->sleep_wake_cond, &attr);
-#else
-    mt_pthread_cond_init(&sch->sleep_wake_cond, NULL);
-#endif
+    mt_pthread_cond_wait_init(&sch->sleep_wake_cond);
     mt_pthread_mutex_init(&sch->sleep_wake_mutex, NULL);
 
     sch->stat_sleep_ns_min = -1;

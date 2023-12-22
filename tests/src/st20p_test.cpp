@@ -354,9 +354,11 @@ static void test_st20p_tx_frame_thread(void* args) {
   while (!s->stop) {
     frame = st20p_tx_get_frame((st20p_tx_handle)handle);
     if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
+      if (!s->block_get) {
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+      }
       continue;
     }
     if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
@@ -431,9 +433,11 @@ static void test_st20p_rx_frame_thread(void* args) {
   while (!s->stop) {
     frame = st20p_rx_get_frame((st20p_rx_handle)handle);
     if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
+      if (!s->block_get) {
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+      }
       continue;
     }
 
@@ -501,9 +505,11 @@ static void test_internal_st20p_rx_frame_thread(void* args) {
   while (!s->stop) {
     frame = st20p_rx_get_frame((st20p_rx_handle)handle);
     if (!frame) { /* no frame */
-      lck.lock();
-      if (!s->stop) s->cv.wait(lck);
-      lck.unlock();
+      if (!s->block_get) {
+        lck.lock();
+        if (!s->stop) s->cv.wait(lck);
+        lck.unlock();
+      }
       continue;
     }
 
@@ -610,6 +616,7 @@ struct st20p_rx_digest_test_para {
   enum st20_packing packing;
   enum st21_pacing pacing;
   uint32_t ssrc;
+  bool block_get;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -636,6 +643,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->packing = ST20_PACKING_BPM;
   para->pacing = ST21_PACING_NARROW;
   para->ssrc = 0;
+  para->block_get = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -721,6 +729,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_tx[i]->fmt = tx_fmt[i];
     test_ctx_tx[i]->user_timestamp = para->user_timestamp;
     test_ctx_tx[i]->user_meta = para->user_meta;
+    test_ctx_tx[i]->block_get = para->block_get;
 
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20p_test";
@@ -744,7 +753,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.transport_linesize = 0;
     ops_tx.device = para->device;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
-    ops_tx.notify_frame_available = test_st20p_tx_frame_available;
+    if (para->block_get)
+      ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+    else
+      ops_tx.notify_frame_available = test_st20p_tx_frame_available;
     ops_tx.notify_event = test_ctx_notify_event;
     ops_tx.notify_frame_done = test_st20p_tx_frame_done;
     if (para->tx_ext) {
@@ -889,6 +901,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->fmt = rx_fmt[i];
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->user_meta = para->user_meta;
+    test_ctx_rx[i]->block_get = para->block_get;
     test_ctx_rx[i]->frame_size =
         st_frame_size(rx_fmt[i], width[i], height[i], para->interlace);
     /* copy sha */
@@ -961,7 +974,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.transport_linesize = 0;
     ops_rx.device = para->device;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    ops_rx.notify_frame_available = test_st20p_rx_frame_available;
+    if (para->block_get)
+      ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
+    else
+      ops_rx.notify_frame_available = test_st20p_rx_frame_available;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->rx_ext) {
       if (para->rx_dedicated_ext) {
@@ -1135,6 +1151,7 @@ TEST(St20p, digest_1080i_s2) {
   para.interlace = true;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.ssrc = 54321;
+  para.block_get = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1313,6 +1330,7 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   para.sessions = 2;
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
+  para.block_get = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1392,6 +1410,7 @@ TEST(St20p, ext_digest_1080p_convert_s2) {
   para.rx_ext = true;
   para.check_fps = false;
   para.user_timestamp = true;
+  para.block_get = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1495,6 +1514,7 @@ TEST(St20p, digest_user_meta_s2) {
   para.user_meta = true;
   para.check_fps = false;
   para.packing = ST20_PACKING_GPM;
+  para.block_get = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
