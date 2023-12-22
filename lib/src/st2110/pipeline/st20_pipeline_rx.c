@@ -654,12 +654,12 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
 }
 
 static int st20p_rx_get_block_wait(struct st20p_rx_ctx* ctx) {
-  info("%s(%d), start\n", __func__, ctx->idx);
+  dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
-  info("%s(%d), end\n", __func__, ctx->idx);
+  dbg("%s(%d), end\n", __func__, ctx->idx);
   return 0;
 }
 
