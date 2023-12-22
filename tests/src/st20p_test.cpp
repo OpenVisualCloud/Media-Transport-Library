@@ -1514,7 +1514,7 @@ TEST(St20p, digest_user_meta_s2) {
   para.user_meta = true;
   para.check_fps = false;
   para.packing = ST20_PACKING_GPM;
-  para.block_get = false;
+  para.block_get = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
