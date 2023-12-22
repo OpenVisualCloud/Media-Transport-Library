@@ -687,35 +687,35 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   if (ctx->internal_converter) { /* convert internal */
     framebuff =
         rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
+    if (!framebuff && ctx->block_get) { /* wait here */
+      mt_pthread_mutex_unlock(&ctx->lock);
+      st20p_rx_get_block_wait(ctx);
+      /* get again */
+      mt_pthread_mutex_lock(&ctx->lock);
+      framebuff =
+          rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_RX_FRAME_READY);
+    }
     /* not any ready frame */
     if (!framebuff) {
       mt_pthread_mutex_unlock(&ctx->lock);
-      if (ctx->block_get) {
-        st20p_rx_get_block_wait(ctx);
-        /* get again */
-        mt_pthread_mutex_lock(&ctx->lock);
-        framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                            ST20P_RX_FRAME_READY);
-        mt_pthread_mutex_unlock(&ctx->lock);
-      }
-      if (!framebuff) return NULL;
+      return NULL;
     }
     ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
   } else {
     framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
                                         ST20P_RX_FRAME_CONVERTED);
+    if (!framebuff && ctx->block_get) { /* wait here */
+      mt_pthread_mutex_unlock(&ctx->lock);
+      st20p_rx_get_block_wait(ctx);
+      /* get again */
+      mt_pthread_mutex_lock(&ctx->lock);
+      framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
+                                          ST20P_RX_FRAME_CONVERTED);
+    }
     /* not any converted frame */
     if (!framebuff) {
       mt_pthread_mutex_unlock(&ctx->lock);
-      if (ctx->block_get) {
-        st20p_rx_get_block_wait(ctx);
-        /* get again */
-        mt_pthread_mutex_lock(&ctx->lock);
-        framebuff = rx_st20p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                            ST20P_RX_FRAME_CONVERTED);
-        mt_pthread_mutex_unlock(&ctx->lock);
-      }
-      if (!framebuff) return NULL;
+      return NULL;
     }
   }
 

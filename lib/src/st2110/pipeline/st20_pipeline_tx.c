@@ -501,19 +501,18 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
+  if (!framebuff && ctx->block_get) { /* wait here */
+    mt_pthread_mutex_unlock(&ctx->lock);
+    st20p_tx_get_block_wait(ctx);
+    /* get again */
+    mt_pthread_mutex_lock(&ctx->lock);
+    framebuff =
+        tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
+  }
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    if (ctx->block_get) {
-      st20p_tx_get_block_wait(ctx);
-      /* get again */
-      mt_pthread_mutex_lock(&ctx->lock);
-      framebuff =
-          tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
-      mt_pthread_mutex_unlock(&ctx->lock);
-    }
-
-    if (!framebuff) return NULL;
+    return NULL;
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_USER;

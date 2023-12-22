@@ -445,18 +445,18 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
+  if (!framebuff && ctx->block_get) {
+    mt_pthread_mutex_unlock(&ctx->lock);
+    st22p_rx_get_block_wait(ctx);
+    /* get again */
+    mt_pthread_mutex_lock(&ctx->lock);
+    framebuff =
+        rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
+  }
   /* not any decoded frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    if (ctx->block_get) {
-      st22p_rx_get_block_wait(ctx);
-      /* get again */
-      mt_pthread_mutex_lock(&ctx->lock);
-      framebuff = rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                          ST22P_RX_FRAME_DECODED);
-      mt_pthread_mutex_unlock(&ctx->lock);
-    }
-    if (!framebuff) return NULL;
+    return NULL;
   }
 
   framebuff->stat = ST22P_RX_FRAME_IN_USER;
