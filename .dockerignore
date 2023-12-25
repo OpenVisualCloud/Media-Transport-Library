@@ -1,0 +1,14 @@
+.dockerignore
+.git/
+.gitignore
+.github/
+.clang-format
+.vscode/
+.cache/
+
+CODEOWNERS
+LICENSE
+README.md
+doc
+
+build/

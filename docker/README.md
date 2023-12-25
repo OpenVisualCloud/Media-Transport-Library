@@ -9,7 +9,7 @@ Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfi
 ## 2. Build Docker image
 
 ```bash
-docker build -t mtl:latest -f ubuntu.dockerfile ./
+docker build -t mtl:latest -f ubuntu.dockerfile ../
 ```
 
 Refer to below build command if you are in a proxy env.
@@ -17,7 +17,7 @@ Refer to below build command if you are in a proxy env.
 ```bash
 http_proxy=http://proxy.xxx.com:xxx
 https_proxy=https://proxy.xxx.com:xxx
-docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ./
+docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 ```
 
 ## 3. Run and login into the docker container
@@ -45,6 +45,7 @@ docker run -it \
   --device /dev/vfio \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
+  --cap-add NET_ADMIN \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
   mtl:latest
@@ -101,6 +102,7 @@ docker run -it \
   --device /dev/vfio/312 \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
+  --cap-add NET_ADMIN \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
   mtl:latest
@@ -123,5 +125,5 @@ docker-compose run imtl
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
 # Edit and Run the loop json file.
-./build/app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
+./app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
 ```
