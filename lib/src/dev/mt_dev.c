@@ -1938,6 +1938,12 @@ int mt_dev_get_socket_id(const char* port) {
 int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   int ret;
 
+  if (p->memzone_max) {
+    rte_memzone_max_set(p->memzone_max);
+    info("%s, user preferred memzone_max %u, now %" PRIu64 "\n", __func__, p->memzone_max,
+         rte_memzone_max_get());
+  }
+
   ret = dev_eal_init(p, kport_info);
   if (ret < 0) {
     err("%s, dev_eal_init fail %d\n", __func__, ret);

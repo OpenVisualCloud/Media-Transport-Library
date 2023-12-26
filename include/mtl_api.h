@@ -610,6 +610,8 @@ struct mtl_init_params {
    * some NICs may need this to avoid mbuf split.
    */
   uint16_t rx_pool_data_size;
+  /** Optional. the maximum number of memzones in DPDK, leave zero to use default 2560 */
+  uint32_t memzone_max;
 
   /** Optional. The number of tasklets for each lcore, 0 means determined by lib */
   uint32_t tasklets_nb_per_sch;
