@@ -4,6 +4,7 @@
 
 #include <getopt.h>
 #include <inttypes.h>
+#include <stdarg.h>
 
 #include "app_base.h"
 #define DEBUG
