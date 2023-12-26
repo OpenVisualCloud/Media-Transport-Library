@@ -1938,11 +1938,13 @@ int mt_dev_get_socket_id(const char* port) {
 int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info) {
   int ret;
 
+#if RTE_VERSION >= RTE_VERSION_NUM(23, 7, 0, 0) /* introduce from 23.07 */
   if (p->memzone_max) {
     rte_memzone_max_set(p->memzone_max);
     info("%s, user preferred memzone_max %u, now %" PRIu64 "\n", __func__, p->memzone_max,
          rte_memzone_max_get());
   }
+#endif
 
   ret = dev_eal_init(p, kport_info);
   if (ret < 0) {
