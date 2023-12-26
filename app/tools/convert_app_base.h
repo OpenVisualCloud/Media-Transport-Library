@@ -9,6 +9,7 @@
 #endif
 #include <errno.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +61,7 @@ struct conv_app_context {
   enum cvt_frame_fmt fmt_out;
   char file_in[MAX_FILE_NAME_LEN];
   char file_out[MAX_FILE_NAME_LEN];
+  bool frame2field;
 };
 
 static inline void* conv_app_zmalloc(size_t sz) {

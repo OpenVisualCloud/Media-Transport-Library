@@ -13,8 +13,10 @@ def main():
     display_scale_factor = 2
     # ST_FRAME_FMT_YUV422PLANAR10LE or ST_FRAME_FMT_YUV422RFC4175PG2BE10
     input_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR10LE
-    # yuv422p10le_1080p.yuv or yuv422rfc4175be10_1080p.yuv
+    # yuv422p10le_1080p.yuv, yuv422rfc4175be10_1080p.yuv
+    # yuv422p10le_1080i.yuv, yuv422rfc4175be10_1080i.yuv
     yuv_file_path = "yuv422p10le_1080p.yuv"
+    interlaced = False
 
     yuv_file = open(yuv_file_path, "rb")
     if not yuv_file:
@@ -42,6 +44,7 @@ def main():
     tx_para.width = 1920
     tx_para.height = 1080
     tx_para.fps = mtl.ST_FPS_P59_94
+    tx_para.interlaced = interlaced
     tx_para.framebuff_cnt = 3
     tx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     tx_para.input_fmt = input_fmt

@@ -1975,6 +1975,13 @@ struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t 
 /** free the frame created by st_frame_create */
 int st_frame_free(struct st_frame* frame);
 
+/** merge two fields to one full frame */
+int st_field_merge(const struct st_frame* first, const struct st_frame* second,
+                   struct st_frame* frame);
+/** split one full frame to two fields */
+int st_field_split(const struct st_frame* frame, struct st_frame* first,
+                   struct st_frame* second);
+
 #if defined(__cplusplus)
 }
 #endif

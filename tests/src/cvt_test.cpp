@@ -4212,3 +4212,42 @@ TEST(Cvt, st_frame_convert_rotate_mix_padding) {
   frame_free(&dst);
   frame_free(&new_src);
 }
+
+static void test_field_to_frame(mtl_handle mt, uint32_t width, uint32_t height,
+                                enum st_frame_fmt fmt) {
+  struct st_frame* frame = st_frame_create(mt, fmt, width, height, false);
+  struct st_frame* first = st_frame_create(mt, fmt, width, height, true);
+  struct st_frame* second = st_frame_create(mt, fmt, width, height, true);
+  struct st_frame* back = st_frame_create(mt, fmt, width, height, false);
+  int ret;
+
+  if (!frame || !first || !second || !back) {
+    EXPECT_EQ(0, 1);
+    if (frame) st_frame_free(frame);
+    if (first) st_frame_free(first);
+    if (second) st_frame_free(second);
+    if (back) st_frame_free(back);
+    return;
+  }
+  second->second_field = true;
+  st_test_rand_data((uint8_t*)frame->addr[0], frame->buffer_size, 0);
+
+  ret = st_field_split(frame, first, second);
+  EXPECT_GE(ret, 0);
+  ret = st_field_merge(first, second, back);
+  EXPECT_GE(ret, 0);
+
+  /* check the result */
+  EXPECT_EQ(0, memcmp(frame->addr[0], back->addr[0], frame->buffer_size));
+
+  st_frame_free(frame);
+  st_frame_free(first);
+  st_frame_free(second);
+  st_frame_free(back);
+}
+
+TEST(Cvt, field_to_frame) {
+  struct st_tests_context* ctx = st_test_ctx();
+  test_field_to_frame(ctx->handle, 1920, 1080, ST_FRAME_FMT_YUV422RFC4175PG2BE10);
+  test_field_to_frame(ctx->handle, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE);
+}

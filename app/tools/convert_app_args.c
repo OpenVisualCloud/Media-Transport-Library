@@ -5,7 +5,7 @@
 #include <getopt.h>
 
 #include "convert_app_base.h"
-//#define DEBUG
+// #define DEBUG
 #include "log.h"
 
 enum conv_args_cmd {
@@ -17,6 +17,7 @@ enum conv_args_cmd {
   CONV_ARG_H,
   CONV_ARG_FILE_IN,
   CONV_ARG_FILE_OUT,
+  CONV_ARG_FRAME2FIELD,
   CONV_ARG_HELP,
 };
 
@@ -28,6 +29,7 @@ static struct option conv_app_args_options[] = {
     {"i", required_argument, 0, CONV_ARG_FILE_IN},
     {"o", required_argument, 0, CONV_ARG_FILE_OUT},
     {"help", no_argument, 0, CONV_ARG_HELP},
+    {"frame2field", no_argument, 0, CONV_ARG_FRAME2FIELD},
     {0, 0, 0, 0}};
 
 static void conv_app_print_app() {
@@ -39,6 +41,7 @@ static void conv_app_print_app() {
   printf(" --height      : source height\n");
   printf(" --in_pix_fmt  : yuv422p10le, v210, yuv422rfc4175be10\n");
   printf(" --out_pix_fmt : yuv422p10le, v210, yuv422rfc4175be10\n");
+  printf(" --frame2field : convert frame to field\n");
   printf(" --i           : input file\n");
   printf(" --o           : output file\n");
   printf("\n");
@@ -119,6 +122,9 @@ int conv_app_parse_args(struct conv_app_context* ctx, int argc, char** argv) {
         break;
       case CONV_ARG_FILE_OUT:
         snprintf(ctx->file_out, sizeof(ctx->file_out), "%s", optarg);
+        break;
+      case CONV_ARG_FRAME2FIELD:
+        ctx->frame2field = true;
         break;
       case CONV_ARG_HELP:
         conv_app_print_app();
