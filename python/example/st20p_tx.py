@@ -28,7 +28,11 @@ def main():
     mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, "0000:af:01.1")
     init_para.num_ports = 1
     mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, "192.168.108.101")
-    init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
+    init_para.flags = (
+        mtl.MTL_FLAG_BIND_NUMA
+        | mtl.MTL_FLAG_DEV_AUTO_START_STOP
+        | mtl.MTL_FLAG_PTP_ENABLE
+    )
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
 
