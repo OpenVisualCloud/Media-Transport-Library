@@ -1361,6 +1361,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       rte_pktmbuf_mtod_offset(mbuf, struct st20_rfc4175_rtp_hdr*, hdr_offset);
   void* payload = &rtp[1];
   uint16_t line1_number = ntohs(rtp->row_number); /* 0 to 1079 for 1080p */
+  bool second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
+  if (second_field) line1_number &= ~ST20_SECOND_FIELD;
   uint16_t line1_offset = ntohs(rtp->row_offset); /* [0, 480, 960, 1440] for 1080p */
   struct st20_rfc4175_extra_rtp_hdr* extra_rtp = NULL;
   if (line1_offset & ST20_SRD_OFFSET_CONTINUATION) {
@@ -1394,6 +1396,13 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         ops->ssrc);
     if (ssrc != ops->ssrc) {
       s->stat_pkts_wrong_ssrc_dropped++;
+      return -EINVAL;
+    }
+  }
+  /* check interlace */
+  if (!s->ops.interlaced) {
+    if (second_field) {
+      s->stat_pkts_wrong_interlace_dropped++;
       return -EINVAL;
     }
   }
@@ -1434,8 +1443,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   }
 
   uint8_t* bitmap = slot->frame_bitmap;
-  slot->second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
-  line1_number &= ~ST20_SECOND_FIELD;
+  slot->second_field = second_field;
 
   /* calculate offset */
   uint32_t offset;

@@ -595,6 +595,95 @@ int st_frame_convert(struct st_frame* src, struct st_frame* dst) {
   return converter.convert_func(src, dst);
 }
 
+static int field_frame_check(const struct st_frame* field, const struct st_frame* frame) {
+  if (!field->interlaced) {
+    err("%s, field is not field\n", __func__);
+    return -EINVAL;
+  }
+  if (field->width != frame->width || field->height != frame->height) {
+    err("%s, width/height mismatch, field: %u x %u, frame: %u x %u\n", __func__,
+        field->width, field->height, frame->width, frame->height);
+    return -EINVAL;
+  }
+  if (field->fmt != frame->fmt) {
+    err("%s, fmt mismatch, field: %d, frame: %d\n", __func__, field->fmt, frame->fmt);
+    return -EINVAL;
+  }
+  return 0;
+}
+
+static int fields_frame_match(const struct st_frame* first, const struct st_frame* second,
+                              const struct st_frame* frame) {
+  int ret = field_frame_check(first, frame);
+  if (ret < 0) {
+    err("%s, first field check fail %d\n", __func__, ret);
+    return -EINVAL;
+  }
+  if (first->second_field) {
+    err("%s, first is second field\n", __func__);
+    return -EINVAL;
+  }
+  ret = field_frame_check(second, frame);
+  if (ret < 0) {
+    err("%s, second field check fail %d\n", __func__, ret);
+    return -EINVAL;
+  }
+  if (!second->second_field) {
+    err("%s, second is first field\n", __func__);
+    return -EINVAL;
+  }
+  return 0;
+}
+
+int st_field_merge(const struct st_frame* first, const struct st_frame* second,
+                   struct st_frame* frame) {
+  int ret = fields_frame_match(first, second, frame);
+  if (ret < 0) return ret;
+
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  for (uint32_t line = 0; line < frame->height; line += 2) {
+    for (uint8_t plane = 0; plane < planes; plane++) {
+      size_t linesize = st_frame_least_linesize(frame->fmt, frame->width, plane);
+      uint32_t field_line = line / 2;
+      /* first line */
+      void* f_addr = frame->addr[plane] + frame->linesize[plane] * line;
+      void* src = first->addr[plane] + first->linesize[plane] * field_line;
+      mtl_memcpy(f_addr, src, linesize);
+      /* second line */
+      f_addr = frame->addr[plane] + frame->linesize[plane] * (line + 1);
+      src = second->addr[plane] + second->linesize[plane] * field_line;
+      mtl_memcpy(f_addr, src, linesize);
+    }
+  }
+
+  return 0;
+}
+
+/** split one full frame to two fields */
+int st_field_split(const struct st_frame* frame, struct st_frame* first,
+                   struct st_frame* second) {
+  int ret = fields_frame_match(first, second, frame);
+  if (ret < 0) return ret;
+
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  for (uint32_t line = 0; line < frame->height; line += 2) {
+    for (uint8_t plane = 0; plane < planes; plane++) {
+      size_t linesize = st_frame_least_linesize(frame->fmt, frame->width, plane);
+      uint32_t field_line = line / 2;
+      /* first line */
+      void* f_addr = frame->addr[plane] + frame->linesize[plane] * line;
+      void* src = first->addr[plane] + first->linesize[plane] * field_line;
+      mtl_memcpy(src, f_addr, linesize);
+      /* second line */
+      f_addr = frame->addr[plane] + frame->linesize[plane] * (line + 1);
+      src = second->addr[plane] + second->linesize[plane] * field_line;
+      mtl_memcpy(src, f_addr, linesize);
+    }
+  }
+
+  return 0;
+}
+
 int st_frame_get_converter(enum st_frame_fmt src_fmt, enum st_frame_fmt dst_fmt,
                            struct st_frame_converter* converter) {
   for (int i = 0; i < MTL_ARRAY_SIZE(converters); i++) {

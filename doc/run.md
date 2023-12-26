@@ -278,6 +278,22 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
+#### 5.1.8 Interlaced support
+
+ConvApp offers a `frame2field` option to convert a progressive YUV file into an interlaced file. The interlaced YUV file stores the first field followed by the second field, repeating this sequence.
+
+For yuv422p10le:
+
+```bash
+./build/app/ConvApp --in_pix_fmt yuv422p10le --width 1920 --height 1080 --i yuv422p10le_1080p.yuv --o yuv422p10le_1080i.yuv --frame2field
+```
+
+For yuv422rfc4175be10:
+
+```bash
+./build/app/ConvApp --in_pix_fmt yuv422rfc4175be10 --width 1920 --height 1080 --i yuv422rfc4175be10_1080p.yuv --o yuv422rfc4175be10_1080i.yuv --frame2field
+```
+
 ### 5.2 Run RxTxApp with json config
 
 Before running samples the JSON configuration files must be modified. The "name" tag in "interfaces" must be updated to VF BDF, e.g 0000:af:01.0.  No other changes are required to run samples.

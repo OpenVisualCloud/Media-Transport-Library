@@ -7,12 +7,63 @@ import cv2_util
 import pymtl as mtl
 
 
+def interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
+    first = None
+    # loop until ctrl-c
+    try:
+        while True:
+            field = mtl.st20p_rx_get_frame(st20p_rx)
+            if not field:
+                continue
+            if field.second_field:
+                if first:  # first field get also
+                    # print("Both field get")
+                    cv2_util.field_display(
+                        mtl_handle, first, field, display_scale_factor
+                    )
+                    mtl.st20p_rx_put_frame(st20p_rx, first)
+                    first = None
+
+                # put field
+                mtl.st20p_rx_put_frame(st20p_rx, field)
+            else:  # first field
+                if first:
+                    mtl.st20p_rx_put_frame(st20p_rx, first)
+                    first = None
+                first = field
+
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt")
+        if first:
+            mtl.st20p_rx_put_frame(st20p_rx, first)
+            first = None
+
+
+def frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
+    # loop until ctrl-c
+    try:
+        while True:
+            frame = mtl.st20p_rx_get_frame(st20p_rx)
+            if frame:
+                # print(f"frame addr: {hex(mtl.st_frame_addr_cpuva(frame, 0))}")
+                # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
+                # print(f"pkts_total: {frame.pkts_total}")
+                if display:
+                    cv2_util.frame_display(mtl_handle, frame, display_scale_factor)
+                # return the frame
+                mtl.st20p_rx_put_frame(st20p_rx, frame)
+
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt")
+
+
 def main():
     display = True
     display_scale_factor = 2
     # ST_FRAME_FMT_YUV422PLANAR10LE, mtl.ST_FRAME_FMT_UYVY
     # or ST_FRAME_FMT_YUV422RFC4175PG2BE10, ST_FRAME_FMT_YUV422PLANAR8
     output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
+    interlaced = False
 
     # Init para
     init_para = mtl.mtl_init_params()
@@ -35,6 +86,7 @@ def main():
     rx_para.width = 1920
     rx_para.height = 1080
     rx_para.fps = mtl.ST_FPS_P59_94
+    rx_para.interlaced = interlaced
     rx_para.framebuff_cnt = 3
     rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     rx_para.output_fmt = output_fmt
@@ -58,21 +110,10 @@ def main():
         print("st20p_rx_create fail")
         sys.exit(1)
 
-    # loop until ctrl-c
-    try:
-        while True:
-            frame = mtl.st20p_rx_get_frame(st20p_rx)
-            if frame:
-                # print(f"frame addr: {hex(mtl.st_frame_addr_cpuva(frame, 0))}")
-                # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
-                # print(f"pkts_total: {frame.pkts_total}")
-                if display:
-                    cv2_util.frame_display(mtl_handle, frame, display_scale_factor)
-                # return the frame
-                mtl.st20p_rx_put_frame(st20p_rx, frame)
-
-    except KeyboardInterrupt:
-        print("KeyboardInterrupt")
+    if interlaced:
+        interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor)
+    else:
+        frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor)
 
     cv2_util.destroy()
 

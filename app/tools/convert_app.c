@@ -318,6 +318,90 @@ out:
   return ret;
 }
 
+static int frame2field(struct conv_app_context* ctx) {
+  enum cvt_frame_fmt fmt = ctx->fmt_in;
+  uint32_t w = ctx->w;
+  uint32_t h = ctx->h;
+  size_t frame_size = st_frame_size(fmt_cvt2frame(fmt), w, h, false);
+  size_t line_size = frame_size / h;
+  FILE *fp_in = NULL, *fp_out = NULL;
+  void* buf_in = NULL;
+  int ret = -EIO;
+
+  if (!frame_size) return -EIO;
+
+  fp_in = st_fopen(ctx->file_in, "rb");
+  if (!fp_in) {
+    err("%s, open %s fail\n", __func__, ctx->file_in);
+    ret = -EIO;
+    goto out;
+  }
+  fp_out = st_fopen(ctx->file_out, "wb");
+  if (!fp_out) {
+    err("%s, open %s fail\n", __func__, ctx->file_out);
+    ret = -EIO;
+    goto out;
+  }
+
+  buf_in = conv_app_zmalloc(frame_size);
+  if (!buf_in) {
+    ret = -EIO;
+    goto out;
+  }
+
+  // get the frame num
+  fseek(fp_in, 0, SEEK_END);
+  long size = ftell(fp_in);
+  int frame_num = size / frame_size;
+  if (frame_num < 0) {
+    err("%s, err size %ld\n", __func__, size);
+    ret = -EIO;
+    goto out;
+  }
+  info("%s, file size:%ld, %d frames(%ux%u), in %s(%d) out %s\n", __func__, size,
+       frame_num, w, h, ctx->file_in, fmt, ctx->file_out);
+
+  fseek(fp_in, 0, SEEK_SET);
+  for (int i = 0; i < frame_num; i++) {
+    int ret = fread(buf_in, 1, frame_size, fp_in);
+    if (ret < frame_size) {
+      err("%s, fread fail %d\n", __func__, ret);
+      ret = -EIO;
+      goto out;
+    }
+
+    void* frame = buf_in;
+    /* write the first field */
+    for (uint32_t line = 0; line < h; line += 2) {
+      fwrite(frame, 1, line_size, fp_out);
+      frame += line_size * 2;
+    }
+    frame = buf_in + line_size;
+    /* write the second field */
+    for (uint32_t line = 0; line < h; line += 2) {
+      fwrite(frame, 1, line_size, fp_out);
+      frame += line_size * 2;
+    }
+  }
+  ret = 0;
+
+out:
+  if (fp_in) {
+    fclose(fp_in);
+    fp_in = NULL;
+  }
+  if (fp_out) {
+    fclose(fp_out);
+    fp_out = NULL;
+  }
+  if (buf_in) {
+    free(buf_in);
+    buf_in = NULL;
+  }
+
+  return ret;
+}
+
 int main(int argc, char** argv) {
   int ret = -EIO;
   struct conv_app_context* ctx;
@@ -337,8 +421,8 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  if ((ctx->fmt_in == CVT_FRAME_FMT_MAX) || (ctx->fmt_out == CVT_FRAME_FMT_MAX)) {
-    err("%s, invalid fmt in %d out %d\n", __func__, ctx->fmt_in, ctx->fmt_out);
+  if (ctx->fmt_in == CVT_FRAME_FMT_MAX) {
+    err("%s, invalid fmt in %d\n", __func__, ctx->fmt_in);
     conv_app_free(ctx);
     return -EIO;
   }
@@ -354,7 +438,16 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  convert(ctx);
+  if (ctx->frame2field) {
+    frame2field(ctx);
+  } else {
+    if (ctx->fmt_out == CVT_FRAME_FMT_MAX) {
+      err("%s, invalid fmt out %d\n", __func__, ctx->fmt_out);
+      conv_app_free(ctx);
+      return -EIO;
+    }
+    convert(ctx);
+  }
 
   /* free */
   conv_app_free(ctx);

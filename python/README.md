@@ -4,9 +4,23 @@ IMTL leverage SWIG, found at <https://github.com/swig/swig/tree/master>, to tran
 
 Before using the Python binding, please ensure that IMTL is [built](../doc/build.md) and the NIC is [set up](../doc/run.md) correctly.
 
-## 1. Build and install swig
+## 1. Installation of SWIG Dependency
 
-Following the build and installation guide from the SWIG GitHub repository at <https://github.com/swig/swig/tree/master>.
+It is recommended to install the SWIG dependency from your operating system's software repository.
+
+For Ubuntu:
+
+```bash
+sudo apt-get install swig
+```
+
+For Centos:
+
+```bash
+sudo yum install swig
+```
+
+If you encounter issues installing SWIG through your operating system's package manager, follow the build and installation guide from the SWIG GitHub repository at <https://github.com/swig/swig/tree/master>.
 
 Below are the example steps to build the `v4.1.1` release. Replace the tag with a newer one if there is a more recent release of SWIG available:
 
@@ -14,7 +28,6 @@ Below are the example steps to build the `v4.1.1` release. Replace the tag with 
 git clone https://github.com/swig/swig.git
 cd swig/
 git checkout v4.1.1
-git log
 ./autogen.sh
 ./configure
 make
@@ -59,9 +72,24 @@ Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-p
 
 ## 3. Run python example code
 
+Install `opencv-python` dependency:
+
+```bash
+sudo pip3 install opencv-python
+```
+
+Run example: st20p_rx.py
+
 ```bash
 cd $imtl_source_code/
-python3 python/example/version.py
-# Customize the port and IP in the code before using
+# Customize the port, IP and display option in the code before using
 python3 python/example/st20p_rx.py
+```
+
+Run example: st20p_tx.py
+
+```bash
+cd $imtl_source_code/
+# Customize the port, IP and display option in the code before using
+python3 python/example/st20p_tx.py
 ```
