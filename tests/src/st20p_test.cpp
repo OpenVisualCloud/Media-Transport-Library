@@ -769,7 +769,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
     if (para->rtcp) {
       ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
-      ops_tx_rtcp.rtcp_buffer_size = 512;
+      ops_tx_rtcp.rtcp_buffer_size = 1024;
       ops_tx.rtcp = &ops_tx_rtcp;
     }
 
@@ -996,10 +996,11 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
     if (para->rtcp) {
       ops_rx.flags |= ST20P_RX_FLAG_ENABLE_RTCP | ST20P_RX_FLAG_SIMULATE_PKT_LOSS;
-      ops_rx_rtcp.nack_interval_us = 100;
+      ops_rx_rtcp.nack_interval_us = 250;
+      ops_rx_rtcp.seq_bitmap_size = 64;
       ops_rx_rtcp.seq_skip_window = 0;
-      ops_rx_rtcp.burst_loss_max = 4;
-      ops_rx_rtcp.sim_loss_rate = 0.0001;
+      ops_rx_rtcp.burst_loss_max = 1;
+      ops_rx_rtcp.sim_loss_rate = 0.1;
       ops_rx.rtcp = &ops_rx_rtcp;
     }
 
@@ -1086,6 +1087,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       st_test_free(test_ctx_tx[i]->ext_fb_malloc);
       st_test_free(test_ctx_tx[i]->p_ext_frames);
     }
+    test_ctx_rx[i]->fb_send = test_ctx_tx[i]->fb_send;
     delete test_ctx_tx[i];
   }
   for (int i = 0; i < sessions; i++) {
@@ -1111,6 +1113,10 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
                     test_ctx_rx[i]->ext_fb_iova_map_sz);
       st_test_free(test_ctx_rx[i]->ext_fb_malloc);
       st_test_free(test_ctx_rx[i]->p_ext_frames);
+    }
+    if (para->rtcp) {
+      info("%s, session %d rx/tx fb ratio %f\n", __func__, i,
+           (double)test_ctx_rx[i]->fb_rec / test_ctx_rx[i]->fb_send);
     }
     delete test_ctx_rx[i];
   }
