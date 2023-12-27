@@ -24,9 +24,11 @@ sudo yum install virt-manager
 
 ### 1.4 Install latest ICE driver with patches
 
-please refer to the driver update section in [Intel® E810 Series Ethernet Adapter driver guide](e810.md)
+Please refer to the driver update section in [Intel® E810 Series Ethernet Adapter driver guide](e810.md).
 
 ### 1.5 Create VFs
+
+You can also refer to [Run Guide](run.md).
 
 ```bash
 # root
@@ -74,7 +76,7 @@ After running `virt-install` command, the viewer will pop up and you can normall
 * Configure ptp4l daemon
     a. you can use any PF port with PHC support to sync time
 
-    b. `ethtool -T ens801f2` check "PTP Hardware Clock: " is not 0
+    b. `ethtool -T ens801f2` check "PTP Hardware Clock: x" is the phc device in /dev/ptpx
 
     c. (optional) manully run ptp4l
 
@@ -114,6 +116,16 @@ edit vm0
         <ioapic driver='qemu'/>
         ...
     </features>
+    ```
+
+* Add memtune hard_limit if you passthrough more than 2 PFs/VFs to the VM, the size should be "2 * memory + 1GB"
+
+    ```xml
+    <memory unit='KiB'>8388608</memory>
+    <currentMemory unit='KiB'>8388608</currentMemory>
+    <memtune>
+        <hard_limit unit='KiB'>17825792</hard_limit>
+    </memtune>
     ```
 
 ## 2. VM setup
