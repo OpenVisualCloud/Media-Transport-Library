@@ -75,21 +75,44 @@ Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-p
 Install `opencv-python` dependency:
 
 ```bash
+# for yuv display
 sudo pip3 install opencv-python
+# PyAv for video decode/encode
+sudo pip3 install av
 ```
 
-Run example: st20p_rx.py
+### 3.1 st20p_rx.py
+
+Execute the `st20p_rx.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream and display it.
 
 ```bash
-cd $imtl_source_code/
 # Customize the port, IP and display option in the code before using
 python3 python/example/st20p_rx.py
 ```
 
-Run example: st20p_tx.py
+### 3.2 st20p_tx.py
+
+Run the `st20p_tx.py`, which reads YUV video data from a file and transmits it over the network as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream.
 
 ```bash
-cd $imtl_source_code/
 # Customize the port, IP and display option in the code before using
 python3 python/example/st20p_tx.py
+```
+
+### 3.3 st20p_rx_encode.py
+
+Run the `st20p_rx_encode.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream and encode it to a `.mp4` encoder file.
+
+```bash
+# Customize the port, IP and display option in the code before using
+python3 python/example/st20p_rx_encode.py
+```
+
+### 3.4 st20p_tx_decode.py
+
+Use `st20p_tx_decode.py` to decode YUV video from an encoded file `jellyfish-3-mbps-hd-hevc-10bit.mkv` and transmit it as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream across the network.
+
+```bash
+# Customize the port, IP and display option in the code before using
+python3 python/example/st20p_tx_decode.py
 ```
