@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 Intel Corporation
+
+import ctypes
+import sys
+from datetime import datetime
+
+import av
+import numpy as np
+import pymtl as mtl
+
+
+def main():
+    width = 1920
+    height = 1080
+    mtl_output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
+    av_pixel_input_format = "yuv422p"
+
+    current_datetime = datetime.now()
+    output_file = current_datetime.strftime("%Y_%m_%d_%H_%M_%S") + "_output.mp4"
+
+    # Init para
+    init_para = mtl.mtl_init_params()
+    mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, "0000:af:01.0")
+    init_para.num_ports = 1
+    mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, "192.168.108.102")
+    init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
+    mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
+    mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
+
+    # Create MTL instance
+    mtl_handle = mtl.mtl_init(init_para)
+    if not mtl_handle:
+        print("mtl_init fail")
+        sys.exit(1)
+
+    # Create st20p rx session
+    rx_para = mtl.st20p_rx_ops()
+    rx_para.name = "st20p_rx_python"
+    rx_para.width = width
+    rx_para.height = height
+    rx_para.fps = mtl.ST_FPS_P59_94
+    rx_para.framebuff_cnt = 3
+    rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
+    rx_para.output_fmt = mtl_output_fmt
+    # rx port
+    rx_port = mtl.st_rx_port()
+    mtl.st_rxp_para_port_set(
+        rx_port,
+        mtl.MTL_SESSION_PORT_P,
+        mtl.mtl_para_port_get(init_para, mtl.MTL_SESSION_PORT_P),
+    )
+    rx_port.num_port = 1
+    mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, "239.168.85.20")
+    mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, 20000)
+    rx_port.payload_type = 112
+    rx_para.port = rx_port
+    # enable block get mode
+    rx_para.flags = mtl.ST20P_RX_FLAG_BLOCK_GET
+    # create st20p_rx session
+    st20p_rx = mtl.st20p_rx_create(mtl_handle, rx_para)
+    if not st20p_rx:
+        print("st20p_rx_create fail")
+        sys.exit(1)
+
+    # create h264_stream
+    h264 = av.open(output_file, mode="w")
+    h264_stream = h264.add_stream("libx264", rate=60)
+    h264_stream.width = width
+    h264_stream.height = height
+    h264_stream.pix_fmt = "yuv420p"  # h264 use yuv420p
+
+    # loop until ctrl-c
+    try:
+        while True:
+            frame = mtl.st20p_rx_get_frame(st20p_rx)
+            if not frame:
+                continue
+
+            video_frame = av.VideoFrame(width, height, av_pixel_input_format)
+            for plane in range(mtl.st_frame_fmt_planes(frame.fmt)):
+                p_size = mtl.st_frame_plane_size(frame, plane)
+                # print(f"plane: {plane} size: {p_size}")
+                ptr = (ctypes.c_ubyte * p_size).from_address(
+                    mtl.st_frame_addr_cpuva(frame, plane)
+                )
+                y = np.ctypeslib.as_array(ptr, (p_size,))
+                video_frame.planes[plane].update(y)
+
+            for packet in h264_stream.encode(video_frame):
+                h264.mux(packet)
+
+            # return the frame
+            mtl.st20p_rx_put_frame(st20p_rx, frame)
+
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt")
+
+    # write eof stream packet
+    for packet in h264_stream.encode():
+        h264.mux(packet)
+
+    # Free st20p_rx session
+    mtl.st20p_rx_free(st20p_rx)
+
+    # Free MTL instance
+    mtl.mtl_uninit(mtl_handle)
+
+    print(f"Everything fine with {output_file}, bye")
+
+
+if __name__ == "__main__":
+    main()

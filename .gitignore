@@ -76,3 +76,4 @@ assets/
 *.tar
 mtl_system_status_*
 *.pyc
+*.mp4

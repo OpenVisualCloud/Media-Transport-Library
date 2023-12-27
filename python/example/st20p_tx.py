@@ -16,6 +16,8 @@ def main():
     # yuv422p10le_1080p.yuv, yuv422rfc4175be10_1080p.yuv
     # yuv422p10le_1080i.yuv, yuv422rfc4175be10_1080i.yuv
     yuv_file_path = "yuv422p10le_1080p.yuv"
+    width = 1920
+    height = 1080
     interlaced = False
 
     yuv_file = open(yuv_file_path, "rb")
@@ -45,8 +47,8 @@ def main():
     # Create st20p tx session
     tx_para = mtl.st20p_tx_ops()
     tx_para.name = "st20p_tx_python"
-    tx_para.width = 1920
-    tx_para.height = 1080
+    tx_para.width = width
+    tx_para.height = height
     tx_para.fps = mtl.ST_FPS_P59_94
     tx_para.interlaced = interlaced
     tx_para.framebuff_cnt = 3
