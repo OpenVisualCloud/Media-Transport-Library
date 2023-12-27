@@ -48,6 +48,18 @@ RHEL 9 doesn't provide `json-c-devel libpcap-devel gtest-devel` package as defau
 sudo yum install cmake flex bison
 ```
 
+#### 1.1.4 Arch Linux
+
+```bash
+sudo pacman -Syu --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl
+```
+
+Install below SDL2 packages if you want the display support for RxTxApp.
+
+```bash
+sudo pacman -Syu --needed  sdl2 sdl2_ttf
+```
+
 ### 1.2 Build dependency from source code
 
 It's true that not all operating systems, including RHEL 9, come with all the libraries required for every software package. If you're trying to install a software that has dependencies not provided by default on your OS, you might need to install these dependencies manually. Skip these part if your setup has all dependencies resolved.

@@ -461,8 +461,6 @@ You need to repeat below steps to create Virtual Functions (VF), bind the VF to 
 ```bash
 # replace "0000:a1:00.0" with the port on your setup
 sudo ./script/nicctl.sh create_vf 0000:a1:00.0
-# add VFIO device permissions for current user
-sudo chown -R $USER:$USER /dev/vfio/
 # setup hugepages, the number(2048) is dependent on the workloads you wish to execute.
 sudo sysctl -w vm.nr_hugepages=2048
 ```
@@ -525,7 +523,7 @@ ST: st_init, mbuf_pool create fail
 
 ### 8.5 No access to vfio device
 
-If you encounter the following error message, please grant the current user access to the dev:
+If you encounter the following error message, please check section 3.1 to create a group vfio and add the current user to the group:
 
 ```bash
 EAL: Cannot open /dev/vfio/147: Permission denied
@@ -631,6 +629,8 @@ find / -name librte_dmadev.so.23
 ```bash
 # Note to change the path as the find result
 export LD_LIBRARY_PATH=/usr/local/lib64/
+# Or use ldconfig to update the cache
+sudo ldconfig
 ```
 
 ### 8.15 Fail to init lcore
