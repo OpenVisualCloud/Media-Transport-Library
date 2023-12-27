@@ -7,9 +7,9 @@
 
 #include "../mt_main.h"
 
-/* default desc nb for tx and rx */
-#define MT_DEV_RX_DESC (4096 / 2)
-#define MT_DEV_TX_DESC (4096 / 8)
+/* default to 4096 for 4k */
+#define MT_DEV_RX_DESC (4096)
+#define MT_DEV_TX_DESC (4096)
 
 #define MT_EAL_MAX_ARGS (32)
 
