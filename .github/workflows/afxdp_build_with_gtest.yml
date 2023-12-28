@@ -87,11 +87,6 @@ jobs:
         run: |
           ./build.sh
           sudo ldconfig
-      
-      - name: Build XDP prog
-        run: |
-          cd tools/ebpf
-          make
 
   Test:
     needs: [changes, Build]
@@ -112,20 +107,11 @@ jobs:
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
-          sudo killall -SIGINT MtlManager || true
-
-      - name: Run MTL Manager at background
-        run: |
-          sudo MTL_XDP_PROG_PATH=${{  github.workspace  }}/tools/ebpf/xsk.xdp.o ./build/manager/MtlManager  &
 
       - name: Run st2110 test case
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=St*:-St22_?x.*
 
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
           sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
-
-      - name: Kill MTL Manager
-        run: |
-          sudo killall -SIGINT MtlManager || true
