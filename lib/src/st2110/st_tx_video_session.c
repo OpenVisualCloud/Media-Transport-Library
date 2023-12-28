@@ -1878,6 +1878,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
       s->stat_exceed_frame_time++;
+      rte_atomic32_inc(&s->cbs_build_timeout);
       dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
@@ -2331,6 +2332,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
       s->stat_exceed_frame_time++;
+      rte_atomic32_inc(&s->cbs_build_timeout);
       dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
@@ -3078,12 +3080,18 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
 
 void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s) {
   s->cpu_busy_score = 0;
+  rte_atomic32_set(&s->cbs_build_timeout, 0);
 }
 
 void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
                                    struct st_tx_video_session_impl* s) {
   uint64_t avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
-  s->cpu_busy_score = (double)avg_ns_per_loop / s->pacing.trs * 100.0;
+  s->cpu_busy_score = (double)avg_ns_per_loop / s->bulk / s->pacing.trs * 100.0;
+  if (rte_atomic32_read(&s->cbs_build_timeout) > 10) {
+    s->cpu_busy_score = 100.0; /* mark as busy */
+    rte_atomic32_set(&s->cbs_build_timeout, 0);
+  }
+
   s->stat_cpu_busy_score = s->cpu_busy_score;
 }
 

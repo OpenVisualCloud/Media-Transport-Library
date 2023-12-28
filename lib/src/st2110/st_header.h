@@ -345,6 +345,7 @@ struct st_tx_video_session_impl {
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;
+  rte_atomic32_t cbs_build_timeout;
 
   /* info for st22 */
   struct st22_tx_video_info* st22_info;

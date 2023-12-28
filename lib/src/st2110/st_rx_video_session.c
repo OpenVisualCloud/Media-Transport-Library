@@ -3128,7 +3128,8 @@ void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s) {
 void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
                                    struct st_rx_video_session_impl* s) {
   uint64_t avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
-  s->cpu_busy_score = (double)avg_ns_per_loop / s->trs * 100.0;
+  /* aussme one taskelt can bulk 3 pkts */
+  s->cpu_busy_score = (double)avg_ns_per_loop / 3 / s->trs * 100.0;
   dbg("%s(%d), avg_ns_per_loop %" PRIu64 ", trs %f, busy %f\n", __func__, s->idx,
       avg_ns_per_loop, s->trs, s->cpu_busy_score);
   s->stat_cpu_busy_score = s->cpu_busy_score;
