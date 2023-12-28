@@ -61,17 +61,9 @@ jobs:
           ref: v${{  env.DPDK_VERSION  }}
           path: dpdk
 
-      - name: Checkout xdp-tools
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          repository: 'xdp-project/xdp-tools'
-          path: xdp-tools
-          submodules: recursive
-
       - name: Install the build dependency
         run: |
           sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev
-          sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev linux-tools-common libbpf-dev
 
       - name: Install the python package
         run: pip install pyelftools==0.29 ninja==1.11.1
@@ -84,15 +76,10 @@ jobs:
       - name: Build dpdk
         run: |
           cd dpdk
-          meson build
+          meson setup build -Ddisable_libs='bpf' -Ddisable_drivers='af_xdp'
           ninja -C build
           cd build
           sudo ninja install
-
-      - name: Build and install xdp-tools
-        run: |
-          cd xdp-tools && ./configure
-          make && sudo make install
 
       - name: Build
         env:
