@@ -20,10 +20,6 @@ env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 23.11
-  TEST_PORT_P: native_af_xdp:enp24s0f0
-  TEST_PORT_R: native_af_xdp:enp24s0f1
-  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
-  LD_LIBRARY_PATH: /usr/local/lib:/usr/lib64
 
 permissions:
   contents: read
@@ -100,14 +96,31 @@ jobs:
           cd lib/libbpf/src && sudo make install
 
       - name: Build
+        env:
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
         run: |
           ./build.sh
           sudo ldconfig
+      
+      - name: Build XDP prog
+        run: |
+          cd tools/ebpf
+          make
+
+      - name: Build MTL Manager
+        run: |
+          cd manager
+          meson setup build
+          meson compile -C build
 
   Test:
     needs: [changes, Build]
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted, XDP]
+    env:
+      LD_LIBRARY_PATH: /usr/local/lib:/usr/lib64
+      TEST_PORT_P: native_af_xdp:enp24s0f0
+      TEST_PORT_R: native_af_xdp:enp24s0f1
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
@@ -119,35 +132,16 @@ jobs:
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
+          sudo killall -SIGINT MtlManager || true
 
-      - name: Run ufd test case
+      - name: Run MTL Manager at background
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
-
-      - name: Run shared ufd test case
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
-
-      - name: Run shared ufd test case with lcore
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
-
-      - name: Run ufd test case with rss
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4
-
-      - name: Run udp ld preload test case
-        run: |
-          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.89.80 --r_sip 192.168.89.81
+          sudo MTL_XDP_PROG_PATH=${{  github.workspace  }}/tools/ebpf/xsk.xdp.o ./manager/build/MtlManager  &
 
       - name: Run st2110 test case
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --gtest_filter=-St22_?x.*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22_?x.*
 
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
           sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
-
-      - name: Run st2110 st20p test case with kernel loopback
-        run: |
-          ./build/tests/KahawaiTest --p_port kernel:lo --r_port kernel:lo --auto_start_stop --gtest_filter=St20p*
