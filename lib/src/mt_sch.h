@@ -61,6 +61,10 @@ static inline void mt_sch_set_cpu_busy(struct mtl_sch_impl* sch, bool busy) {
   sch->cpu_busy = busy;
 }
 
+static inline uint64_t mt_sch_avg_ns_loop(struct mtl_sch_impl* sch) {
+  return sch->avg_ns_per_loop;
+}
+
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
                      enum mt_lcore_type type);

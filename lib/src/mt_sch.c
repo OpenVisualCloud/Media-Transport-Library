@@ -108,6 +108,8 @@ static int sch_tasklet_func(void* args) {
   struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = mt_user_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
+  uint64_t loop_cal_start_ns;
+  uint64_t loop_cnt = 0;
 
   num_tasklet = sch->max_tasklet_idx;
   info("%s(%d), start with %d tasklets\n", __func__, idx, num_tasklet);
@@ -125,6 +127,7 @@ static int sch_tasklet_func(void* args) {
   }
 
   sch->sleep_ratio_start_ns = mt_get_tsc(impl);
+  loop_cal_start_ns = mt_get_tsc(impl);
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
@@ -152,6 +155,15 @@ static int sch_tasklet_func(void* args) {
     }
     if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
       sch_tasklet_sleep(impl, sch);
+    }
+
+    loop_cnt++;
+    /* cal avg_ns_per_loop per 5s */
+    uint64_t delta_loop_ns = mt_get_tsc(impl) - loop_cal_start_ns;
+    if (delta_loop_ns > ((uint64_t)NS_PER_S * 5)) {
+      sch->avg_ns_per_loop = delta_loop_ns / loop_cnt;
+      loop_cnt = 0;
+      loop_cal_start_ns = mt_get_tsc(impl);
     }
   }
 
@@ -376,8 +388,8 @@ static int sch_stat(void* priv) {
 
   if (!mt_sch_is_active(sch)) return 0;
 
-  notice("SCH(%d:%s): tasklets %d max idx %d, lcore %u\n", idx, sch->name, num_tasklet,
-         sch->max_tasklet_idx, sch->lcore);
+  notice("SCH(%d:%s): tasklets %d, lcore %u, avg loop %" PRIu64 " ns\n", idx, sch->name,
+         num_tasklet, sch->lcore, mt_sch_avg_ns_loop(sch));
   if (mt_user_tasklet_time_measure(sch->parent)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];

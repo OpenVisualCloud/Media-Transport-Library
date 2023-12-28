@@ -67,7 +67,8 @@ static inline void rx_video_session_put(struct st_rx_video_sessions_mgr* mgr, in
 st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
                                         struct st20_rx_ops* ops, mt_sch_mask_t sch_mask);
 
-void rx_video_session_cal_cpu_busy(struct st_rx_video_session_impl* s);
+void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
+                                   struct st_rx_video_session_impl* s);
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s);
 
 static inline bool rx_video_session_is_cpu_busy(struct st_rx_video_session_impl* s) {

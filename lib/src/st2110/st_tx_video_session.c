@@ -3054,12 +3054,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
 
-  s->pri_nic_burst_cnt = 0;
-  s->pri_nic_inflight_cnt = 0;
-  rte_atomic32_set(&s->nic_burst_cnt, 0);
-  rte_atomic32_set(&s->nic_inflight_cnt, 0);
-  s->cpu_busy_score = 0;
-
   for (int i = 0; i < num_port; i++) {
     s->inflight[i][0] = NULL;
     s->inflight_cnt[i] = 0;
@@ -3083,23 +3077,14 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
 }
 
 void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s) {
-  rte_atomic32_set(&s->nic_burst_cnt, 0);
-  rte_atomic32_set(&s->nic_inflight_cnt, 0);
   s->cpu_busy_score = 0;
 }
 
-void tx_video_session_cal_cpu_busy(struct st_tx_video_session_impl* s) {
-  float nic_burst_cnt = rte_atomic32_read(&s->nic_burst_cnt);
-  float nic_inflight_cnt = rte_atomic32_read(&s->nic_inflight_cnt);
-  float cpu_busy_score = 0;
-
-  tx_video_session_clear_cpu_busy(s);
-
-  if (nic_burst_cnt) {
-    cpu_busy_score = 100.0 * nic_inflight_cnt / nic_burst_cnt;
-    cpu_busy_score = 100.0 - cpu_busy_score;
-  }
-  s->cpu_busy_score = cpu_busy_score;
+void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
+                                   struct st_tx_video_session_impl* s) {
+  uint64_t avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
+  s->cpu_busy_score = (double)avg_ns_per_loop / s->pacing.trs * 100.0;
+  s->stat_cpu_busy_score = s->cpu_busy_score;
 }
 
 static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
@@ -3119,7 +3104,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
          idx,
          (double)s->stat_bytes_tx[MTL_SESSION_PORT_P] * 8 / time_sec / MTL_STAT_M_UNIT,
          (double)s->stat_bytes_tx[MTL_SESSION_PORT_R] * 8 / time_sec / MTL_STAT_M_UNIT,
-         s->cpu_busy_score);
+         s->stat_cpu_busy_score);
   s->stat_last_time = cur_time_ns;
   s->stat_pkts_build = 0;
   s->stat_pkts_burst = 0;

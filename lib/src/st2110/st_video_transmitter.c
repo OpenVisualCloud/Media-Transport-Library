@@ -63,17 +63,6 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   s->stat_pkts_burst += tx;
-  /* update nic status */
-  s->pri_nic_burst_cnt++;
-  if (s->pri_nic_burst_cnt > ST_VIDEO_STAT_UPDATE_INTERVAL) {
-    rte_atomic32_add(&s->nic_burst_cnt, s->pri_nic_burst_cnt);
-    s->pri_nic_burst_cnt = 0;
-    rte_atomic32_add(&s->nic_inflight_cnt, s->pri_nic_inflight_cnt);
-    s->pri_nic_inflight_cnt = 0;
-  }
-  if (tx < nb_pkts) {
-    s->pri_nic_inflight_cnt++;
-  }
   if (!tx) {
     if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
     return video_trs_burst_fail(impl, s, s_port, nb_pkts);
@@ -163,8 +152,6 @@ static int video_burst_packet(struct mtl_main_impl* impl,
   if (tx < bulk) {
     unsigned int i;
     unsigned int remaining = bulk - tx;
-
-    s->pri_nic_inflight_cnt++;
 
     if (!use_two) {
       s->trs_inflight_num[s_port] = remaining;
@@ -434,7 +421,6 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
         s->trs_inflight_idx[s_port] = 0;
         s->trs_inflight_cnt[s_port]++;
         for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
-        s->pri_nic_inflight_cnt++;
         s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
@@ -626,7 +612,6 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
       s->trs_inflight_idx[s_port] = 0;
       s->trs_inflight_cnt[s_port]++;
       for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
-      s->pri_nic_inflight_cnt++;
       s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
       return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                               : MTL_TASKLET_ALL_DONE;

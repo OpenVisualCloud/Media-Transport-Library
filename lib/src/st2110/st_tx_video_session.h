@@ -60,7 +60,8 @@ static inline void tx_video_session_put(struct st_tx_video_sessions_mgr* mgr, in
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
-void tx_video_session_cal_cpu_busy(struct st_tx_video_session_impl* s);
+void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
+                                   struct st_tx_video_session_impl* s);
 void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s);
 
 static inline bool tx_video_session_is_cpu_busy(struct st_tx_video_session_impl* s) {
