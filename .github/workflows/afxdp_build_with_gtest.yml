@@ -76,7 +76,7 @@ jobs:
       - name: Build dpdk
         run: |
           cd dpdk
-          meson setup build -Ddisable_libs='bpf' -Ddisable_drivers='af_xdp'
+          meson setup build -Ddisable_libs='bpf' -Ddisable_drivers='net/af_xdp'
           ninja -C build
           cd build
           sudo ninja install
@@ -92,12 +92,6 @@ jobs:
         run: |
           cd tools/ebpf
           make
-
-      - name: Build MTL Manager
-        run: |
-          cd manager
-          meson setup build
-          meson compile -C build
 
   Test:
     needs: [changes, Build]
@@ -122,7 +116,7 @@ jobs:
 
       - name: Run MTL Manager at background
         run: |
-          sudo MTL_XDP_PROG_PATH=${{  github.workspace  }}/tools/ebpf/xsk.xdp.o ./manager/build/MtlManager  &
+          sudo MTL_XDP_PROG_PATH=${{  github.workspace  }}/tools/ebpf/xsk.xdp.o ./build/manager/MtlManager  &
 
       - name: Run st2110 test case
         run: |
@@ -131,3 +125,7 @@ jobs:
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
           sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
+
+      - name: Kill MTL Manager
+        run: |
+          sudo killall -SIGINT MtlManager || true
