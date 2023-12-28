@@ -373,7 +373,7 @@ static void* admin_thread(void* arg) {
 int mt_admin_init(struct mtl_main_impl* impl) {
   struct mt_admin* admin = mt_get_admin(impl);
 
-  admin->period_us = 5 * US_PER_S; /* 5s */
+  admin->period_us = 6 * US_PER_S; /* 6s */
   mt_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
   mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
   rte_atomic32_set(&admin->admin_stop, 0);
