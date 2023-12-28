@@ -71,7 +71,7 @@ jobs:
       - name: Install the build dependency
         run: |
           sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev
-          sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev
+          sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev linux-tools-common
 
       - name: Install the python package
         run: pip install pyelftools==0.29 ninja==1.11.1
