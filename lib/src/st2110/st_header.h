@@ -740,6 +740,11 @@ struct st_rx_video_session_impl {
   uint32_t stat_st22_boxes;
   /* for stat display */
   double stat_cpu_busy_score;
+  /* for time measure */
+  uint64_t stat_max_time_ns;
+  uint64_t stat_sum_time_ns;
+  uint64_t stat_time_cnt;
+  uint64_t stat_min_time_ns;
 };
 
 struct st_rx_video_sessions_mgr {
@@ -748,8 +753,6 @@ struct st_rx_video_sessions_mgr {
   int max_idx; /* max session index */
   /* pkt rx task */
   struct mt_sch_tasklet_impl* pkt_rx_tasklet;
-  /* control task */
-  struct mt_sch_tasklet_impl* ctl_tasklet;
 
   struct st_rx_video_session_impl* sessions[ST_SCH_MAX_RX_VIDEO_SESSIONS];
   /* protect session, spin(fast) lock as it call from tasklet aslo */
