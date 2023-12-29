@@ -190,14 +190,22 @@ static int rx_ancillary_session_tasklet(struct st_rx_ancillary_session_impl* s) 
 
 static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_rx_ancillary_sessions_mgr* mgr = priv;
+  struct mtl_main_impl* impl = mgr->parent;
   struct st_rx_ancillary_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
+  uint64_t tsc_s = 0;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
+    if (s->time_measure) tsc_s = mt_get_tsc(impl);
 
     pending += rx_ancillary_session_tasklet(s);
+
+    if (s->time_measure) {
+      uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
+      mt_stat_u64_update(&s->stat_time, delta_ns);
+    }
     rx_ancillary_session_put(mgr, sidx);
   }
 
@@ -361,6 +369,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->st40_stat_pkts_dropped = 0;
   s->st40_stat_last_time = mt_get_monotonic_time();
   rte_atomic32_set(&s->st40_stat_frames_received, 0);
+  mt_stat_u64_init(&s->stat_time);
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
@@ -417,7 +426,18 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     s->st40_stat_pkts_wrong_ssrc_dropped = 0;
   }
   if (s->time_measure) {
-    notice("RX_ANC_SESSION(%d): notify rtp max %uus\n", idx, s->stat_max_notify_rtp_us);
+    struct mt_stat_u64* stat_time = &s->stat_time;
+    if (stat_time->cnt) {
+      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+      notice("RX_ANC_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
+             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+             (float)stat_time->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_time);
+
+    if (s->stat_max_notify_rtp_us > 8) {
+      notice("RX_ANC_SESSION(%d): notify rtp max %uus\n", idx, s->stat_max_notify_rtp_us);
+    }
     s->stat_max_notify_rtp_us = 0;
   }
 }

@@ -1023,10 +1023,12 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_ancillary_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
+  uint64_t tsc_s = 0;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
+    if (s->time_measure) tsc_s = mt_get_tsc(impl);
 
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST40_TYPE_FRAME_LEVEL)
@@ -1034,6 +1036,10 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
     else
       pending += tx_ancillary_session_tasklet_rtp(impl, mgr, s);
 
+    if (s->time_measure) {
+      uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
+      mt_stat_u64_update(&s->stat_time, delta_ns);
+    }
     tx_ancillary_session_put(mgr, sidx);
   }
 
@@ -1368,6 +1374,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->st40_frame_idx = 0;
   rte_atomic32_set(&s->st40_stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
+  mt_stat_u64_init(&s->stat_time);
 
   for (int i = 0; i < num_port; i++) {
     s->inflight[i] = NULL;
@@ -1445,8 +1452,19 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
     s->stat_error_user_timestamp = 0;
   }
   if (s->time_measure) {
-    notice("TX_ANC_SESSION(%d): get next frame max %uus, notify done max %uus\n", idx,
-           s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    struct mt_stat_u64* stat_time = &s->stat_time;
+    if (stat_time->cnt) {
+      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+      notice("TX_ANC_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
+             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+             (float)stat_time->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_time);
+
+    if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+      notice("TX_ANC_SESSION(%d): get next frame max %uus, notify done max %uus\n", idx,
+             s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    }
     s->stat_max_next_frame_us = 0;
     s->stat_max_notify_frame_us = 0;
   }

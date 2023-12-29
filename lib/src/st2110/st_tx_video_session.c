@@ -2346,15 +2346,16 @@ static int tvs_tasklet_handler(void* priv) {
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_video_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
+  uint64_t tsc_s = 0;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
-
     if (!s->active) goto exit;
 
-    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(s);
+    if (s->time_measure) tsc_s = mt_get_tsc(impl);
 
+    if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(s);
     /* check vsync if it has vsync enabled */
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_VSYNC) tv_poll_vsync(impl, s);
 
@@ -2365,6 +2366,11 @@ static int tvs_tasklet_handler(void* priv) {
       pending = tv_tasklet_frame(impl, s);
     else
       pending = tv_tasklet_rtp(impl, s);
+
+    if (s->time_measure) {
+      uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
+      mt_stat_u64_update(&s->stat_time, delta_ns);
+    }
 
   exit:
     tx_video_session_put(mgr, sidx);
@@ -3055,6 +3061,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->stat_trans_troffset_mismatch = 0;
   rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
+  mt_stat_u64_init(&s->stat_time);
 
   for (int i = 0; i < num_port; i++) {
     s->inflight[i][0] = NULL;
@@ -3122,8 +3129,8 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   s->stat_bytes_tx[MTL_SESSION_PORT_R] = 0;
 
   if (s->stat_pkts_dummy) {
-    notice("TX_VIDEO_SESSION(%d,%d): dummy pkts %u, burst %u\n", m_idx, idx,
-           s->stat_pkts_dummy, s->stat_pkts_burst_dummy);
+    dbg("TX_VIDEO_SESSION(%d,%d): dummy pkts %u, burst %u\n", m_idx, idx,
+        s->stat_pkts_dummy, s->stat_pkts_burst_dummy);
     s->stat_pkts_dummy = 0;
     s->stat_pkts_burst_dummy = 0;
   }
@@ -3199,12 +3206,6 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     s->stat_user_meta_cnt = 0;
     s->stat_user_meta_pkt_cnt = 0;
   }
-  if (s->time_measure) {
-    notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
-           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
-    s->stat_max_next_frame_us = 0;
-    s->stat_max_notify_frame_us = 0;
-  }
   if (s->stat_recoverable_error) {
     notice("TX_VIDEO_SESSION(%d,%d): recoverable_error %u \n", m_idx, idx,
            s->stat_recoverable_error);
@@ -3235,6 +3236,24 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
       notice("TX_VIDEO_SESSION(%d,%d:%s): %d frames are in trans, total %u\n", m_idx, idx,
              s->ops_name, frames_in_trans, framebuff_cnt);
     }
+  }
+
+  if (s->time_measure) {
+    struct mt_stat_u64* stat_time = &s->stat_time;
+    if (stat_time->cnt) {
+      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+      notice("TX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
+             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+             (float)stat_time->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_time);
+
+    if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+      notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
+             m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    }
+    s->stat_max_next_frame_us = 0;
+    s->stat_max_notify_frame_us = 0;
   }
 }
 

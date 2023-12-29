@@ -392,6 +392,8 @@ struct st_tx_video_session_impl {
   uint32_t stat_interlace_second_field;
   /* for display */
   double stat_cpu_busy_score;
+  /* for tasklet session time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -740,11 +742,8 @@ struct st_rx_video_session_impl {
   uint32_t stat_st22_boxes;
   /* for stat display */
   double stat_cpu_busy_score;
-  /* for time measure */
-  uint64_t stat_max_time_ns;
-  uint64_t stat_sum_time_ns;
-  uint64_t stat_time_cnt;
-  uint64_t stat_min_time_ns;
+  /* for tasklet session time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_rx_video_sessions_mgr {
@@ -845,14 +844,15 @@ struct st_tx_audio_session_impl {
   uint32_t stat_max_notify_frame_us;
   uint32_t stat_unrecoverable_error;
   uint32_t stat_recoverable_error;
+  /* for tasklet session time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_tx_audio_sessions_mgr {
   struct mtl_main_impl* parent;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
-  struct mt_sch_tasklet_impl* tasklet_build;
-  struct mt_sch_tasklet_impl* tasklet_trans;
+  struct mt_sch_tasklet_impl* tasklet;
 
   /* all audio sessions share same ring/queue */
   struct rte_ring* ring[MTL_PORT_MAX];
@@ -965,6 +965,8 @@ struct st_rx_audio_session_impl {
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
   uint32_t stat_max_notify_frame_us;
+  /* for tasklet session time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_rx_audio_sessions_mgr {
@@ -1049,6 +1051,8 @@ struct st_tx_ancillary_session_impl {
   uint64_t stat_last_time;
   uint32_t stat_max_next_frame_us;
   uint32_t stat_max_notify_frame_us;
+  /* for tasklet session time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_tx_ancillary_sessions_mgr {
@@ -1101,6 +1105,8 @@ struct st_rx_ancillary_session_impl {
   int st40_stat_pkts_received;
   uint64_t st40_stat_last_time;
   uint32_t stat_max_notify_rtp_us;
+  /* for tasklet session time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct st_rx_ancillary_sessions_mgr {

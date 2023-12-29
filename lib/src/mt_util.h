@@ -274,4 +274,18 @@ int mt_sysfs_write_uint32(const char* path, uint32_t value);
 
 uint32_t mt_softrss(uint32_t* input_tuple, uint32_t input_len);
 
+static inline void mt_stat_u64_init(struct mt_stat_u64* stat) {
+  stat->max = 0;
+  stat->min = (uint64_t)-1;
+  stat->sum = 0;
+  stat->cnt = 0;
+}
+
+static inline void mt_stat_u64_update(struct mt_stat_u64* stat, uint64_t new) {
+  stat->max = RTE_MAX(stat->max, new);
+  stat->min = RTE_MIN(stat->min, new);
+  stat->sum += new;
+  stat->cnt++;
+}
+
 #endif

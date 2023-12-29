@@ -146,11 +146,8 @@ static int sch_tasklet_func(void* args) {
       if (time_measure) tsc_s = mt_get_tsc(impl);
       pending += ops->handler(ops->priv);
       if (time_measure) {
-        uint32_t delta_ns = mt_get_tsc(impl) - tsc_s;
-        tasklet->stat_max_time_ns = RTE_MAX(tasklet->stat_max_time_ns, delta_ns);
-        tasklet->stat_min_time_ns = RTE_MIN(tasklet->stat_min_time_ns, delta_ns);
-        tasklet->stat_sum_time_ns += delta_ns;
-        tasklet->stat_time_cnt++;
+        uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
+        mt_stat_u64_update(&tasklet->stat_time, delta_ns);
       }
     }
     if (sch->allow_sleep && (pending == MTL_TASKLET_ALL_DONE)) {
@@ -372,19 +369,11 @@ static bool sch_is_capable(struct mtl_sch_impl* sch, int quota_mbs,
     return true;
 }
 
-static void sch_tasklet_stat_clear(struct mt_sch_tasklet_impl* tasklet) {
-  tasklet->stat_max_time_ns = 0;
-  tasklet->stat_min_time_ns = (uint64_t)-1;
-  tasklet->stat_sum_time_ns = 0;
-  tasklet->stat_time_cnt = 0;
-}
-
 static int sch_stat(void* priv) {
   struct mtl_sch_impl* sch = priv;
   int num_tasklet = sch->max_tasklet_idx;
   struct mt_sch_tasklet_impl* tasklet;
   int idx = sch->idx;
-  uint64_t avg_ns;
 
   if (!mt_sch_is_active(sch)) return 0;
 
@@ -396,14 +385,14 @@ static int sch_stat(void* priv) {
       if (!tasklet) continue;
 
       dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
-      if (tasklet->stat_time_cnt) {
-        avg_ns = tasklet->stat_sum_time_ns / tasklet->stat_time_cnt;
+      struct mt_stat_u64* stat_time = &tasklet->stat_time;
+      if (stat_time->cnt) {
+        uint64_t avg_ns = stat_time->sum / stat_time->cnt;
         notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
                tasklet->name, (float)avg_ns / NS_PER_US,
-               (float)tasklet->stat_max_time_ns / NS_PER_US,
-               (float)tasklet->stat_min_time_ns / NS_PER_US);
-        sch_tasklet_stat_clear(tasklet);
+               (float)stat_time->max / NS_PER_US, (float)stat_time->min / NS_PER_US);
       }
+      mt_stat_u64_init(stat_time);
     }
   }
 
@@ -802,7 +791,7 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     snprintf(tasklet->name, ST_MAX_NAME_LEN - 1, "%s", tasklet_ops->name);
     tasklet->sch = sch;
     tasklet->idx = i;
-    sch_tasklet_stat_clear(tasklet);
+    mt_stat_u64_init(&tasklet->stat_time);
 
     sch->tasklet[i] = tasklet;
     sch->max_tasklet_idx = RTE_MAX(sch->max_tasklet_idx, i + 1);
