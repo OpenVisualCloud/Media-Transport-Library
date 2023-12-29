@@ -73,7 +73,7 @@ void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s);
 
 static inline bool rx_video_session_is_cpu_busy(struct st_rx_video_session_impl* s) {
   if (s->dma_dev && (s->dma_busy_score > 90)) return true;
-
+  if (s->imiss_busy_score > 95.0) return true;
   if (s->cpu_busy_score > 95.0) return true;
 
   return false;

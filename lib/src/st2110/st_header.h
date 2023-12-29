@@ -677,7 +677,9 @@ struct st_rx_video_session_impl {
   /* the cpu resource to handle rx, 0: full, 100: cpu is very busy */
   double cpu_busy_score;
   double dma_busy_score;
+  double imiss_busy_score;
   rte_atomic32_t dma_previous_busy_cnt;
+  rte_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
   uint16_t burst_loss_max;

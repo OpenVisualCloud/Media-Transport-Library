@@ -797,6 +797,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     }
 #endif
 
+    rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
       rv_notify_frame_ready(s, slot->frame->addr, meta);
@@ -863,6 +864,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     }
 #endif
 
+    rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
       st22_notify_frame_ready(s, slot->frame->addr, meta);
@@ -3121,8 +3123,10 @@ static int rvs_ctl_tasklet_handler(void* priv) {
 
 void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s) {
   rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
+  rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
   s->cpu_busy_score = 0;
   s->dma_busy_score = 0;
+  s->imiss_busy_score = 0;
 }
 
 void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
@@ -3134,17 +3138,41 @@ void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
       avg_ns_per_loop, s->trs, s->cpu_busy_score);
   s->stat_cpu_busy_score = s->cpu_busy_score;
 
+  /* update imiss busy */
+  int incomplete_frame_cnt = rte_atomic32_read(&s->cbs_incomplete_frame_cnt);
+  rte_atomic32_set(&s->cbs_incomplete_frame_cnt, 0);
+  if ((incomplete_frame_cnt > 0) && (s->cpu_busy_score > 8.0)) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
+    struct mtl_port_status stats;
+    memset(&stats, 0, sizeof(stats));
+    mtl_get_port_stats(s->impl, port, &stats);
+    if (stats.rx_hw_dropped_packets) {
+      dbg("%s(%d,%d), incomplete %d and hw_dropped_pkts %" PRIu64 "\n", __func__,
+          sch->idx, s->idx, incomplete_frame_cnt, stats.rx_hw_dropped_packets);
+      s->imiss_busy_score += 40.0;
+    }
+    mtl_reset_port_stats(s->impl, port);
+    if (s->imiss_busy_score > 95.0) {
+      notice("%s(%d,%d), imiss busy, incomplete %d and hw_dropped_pkts %" PRIu64 "\n",
+             __func__, sch->idx, s->idx, incomplete_frame_cnt,
+             stats.rx_hw_dropped_packets);
+    }
+  } else {
+    s->imiss_busy_score = 0;
+  }
+
   /* update dma busy */
   int dma_previous_busy_cnt = rte_atomic32_read(&s->dma_previous_busy_cnt);
   rte_atomic32_set(&s->dma_previous_busy_cnt, 0);
-  float dma_busy_score = s->dma_busy_score;
   if (dma_previous_busy_cnt) {
-    dma_busy_score += 40.0;
-    if (dma_busy_score > 100.0) dma_busy_score = 100.0;
+    s->dma_busy_score += 40.0;
+    if (s->dma_busy_score > 100.0) {
+      notice("%s(%d,%d), dma busy, cnt %d\n", __func__, sch->idx, s->idx,
+             dma_previous_busy_cnt);
+    }
   } else {
-    dma_busy_score = 0;
+    s->dma_busy_score = 0;
   }
-  s->dma_busy_score = dma_busy_score;
 }
 
 static int rv_migrate_dma(struct mtl_main_impl* impl,
