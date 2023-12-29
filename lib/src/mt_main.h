@@ -451,10 +451,8 @@ struct mt_sch_tasklet_impl {
   bool request_exit;
   bool ack_exit;
 
-  uint64_t stat_max_time_ns;
-  uint64_t stat_sum_time_ns;
-  uint64_t stat_time_cnt;
-  uint64_t stat_min_time_ns;
+  /* for time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 enum mt_sch_type {

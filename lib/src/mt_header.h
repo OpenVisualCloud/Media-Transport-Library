@@ -42,4 +42,11 @@ struct mt_udp_hdr {
   struct rte_udp_hdr udp;   /* size: 8 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
+struct mt_stat_u64 {
+  uint64_t max;
+  uint64_t min;
+  uint64_t cnt;
+  uint64_t sum;
+};
+
 #endif

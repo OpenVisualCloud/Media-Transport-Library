@@ -997,17 +997,18 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_audio_sessions_tasklet_build(void* priv) {
+static int tx_audio_sessions_tasklet(void* priv) {
   struct st_tx_audio_sessions_mgr* mgr = priv;
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_audio_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
+  uint64_t tsc_s = 0;
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_audio_session_try_get(mgr, sidx);
     if (!s) continue;
-
     if (!s->active) goto exit;
+    if (s->time_measure) tsc_s = mt_get_tsc(impl);
 
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST30_TYPE_FRAME_LEVEL)
@@ -1015,29 +1016,14 @@ static int tx_audio_sessions_tasklet_build(void* priv) {
     else
       pending += tx_audio_session_tasklet_rtp(impl, s);
 
-  exit:
-    tx_audio_session_put(mgr, sidx);
-  }
-
-  return pending;
-}
-
-static int tx_audio_sessions_tasklet_trans(void* priv) {
-  struct st_tx_audio_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
-  struct st_tx_audio_session_impl* s;
-  int pending = MTL_TASKLET_ALL_DONE;
-
-  for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
-    s = tx_audio_session_try_get(mgr, sidx);
-    if (!s) continue;
-
-    if (!s->active) goto exit;
-
     for (int port = 0; port < s->ops.num_port; port++) {
       pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
     }
 
+    if (s->time_measure) {
+      uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
+      mt_stat_u64_update(&s->stat_time, delta_ns);
+    }
   exit:
     tx_audio_session_put(mgr, sidx);
   }
@@ -1463,6 +1449,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_frame_size = ops->framebuff_size;
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
+  mt_stat_u64_init(&s->stat_time);
 
   s->st30_rtp_time_app = 0xFFFFFFFF;
   s->st30_rtp_time = 0xFFFFFFFF;
@@ -1600,12 +1587,6 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
            s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
-  if (s->time_measure) {
-    notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
-           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
-    s->stat_max_next_frame_us = 0;
-    s->stat_max_notify_frame_us = 0;
-  }
   if (s->stat_recoverable_error) {
     notice("TX_AUDIO_SESSION(%d,%d): recoverable_error %u \n", m_idx, idx,
            s->stat_recoverable_error);
@@ -1615,6 +1596,23 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
     err("TX_AUDIO_SESSION(%d,%d): unrecoverable_error %u \n", m_idx, idx,
         s->stat_unrecoverable_error);
     /* not reset unrecoverable_error */
+  }
+  if (s->time_measure) {
+    struct mt_stat_u64* stat_time = &s->stat_time;
+    if (stat_time->cnt) {
+      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+      notice("TX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
+             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+             (float)stat_time->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_time);
+
+    if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+      notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
+             m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    }
+    s->stat_max_next_frame_us = 0;
+    s->stat_max_notify_frame_us = 0;
   }
 }
 
@@ -1679,26 +1677,13 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl* impl,
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = mgr;
-  ops.name = "tx_audio_sessions_build";
+  ops.name = "tx_audio_sessions";
   ops.start = tx_audio_sessions_tasklet_start;
-  ops.handler = tx_audio_sessions_tasklet_build;
+  ops.handler = tx_audio_sessions_tasklet;
 
-  mgr->tasklet_build = mtl_sch_register_tasklet(sch, &ops);
-  if (!mgr->tasklet_build) {
-    err("%s(%d), tasklet_build register fail\n", __func__, idx);
-    return -EIO;
-  }
-
-  memset(&ops, 0x0, sizeof(ops));
-  ops.priv = mgr;
-  ops.name = "tx_audio_sessions_trans";
-  ops.handler = tx_audio_sessions_tasklet_trans;
-
-  mgr->tasklet_trans = mtl_sch_register_tasklet(sch, &ops);
-  if (!mgr->tasklet_trans) {
-    mtl_sch_unregister_tasklet(mgr->tasklet_build);
-    mgr->tasklet_build = NULL;
-    err("%s(%d), tasklet_trans register fail\n", __func__, idx);
+  mgr->tasklet = mtl_sch_register_tasklet(sch, &ops);
+  if (!mgr->tasklet) {
+    err("%s(%d), tasklet register fail\n", __func__, idx);
     return -EIO;
   }
 
@@ -1787,13 +1772,9 @@ static int tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr* mgr) {
 
   mt_stat_unregister(mgr->parent, st_tx_audio_sessions_stat, mgr);
 
-  if (mgr->tasklet_build) {
-    mtl_sch_unregister_tasklet(mgr->tasklet_build);
-    mgr->tasklet_build = NULL;
-  }
-  if (mgr->tasklet_trans) {
-    mtl_sch_unregister_tasklet(mgr->tasklet_trans);
-    mgr->tasklet_trans = NULL;
+  if (mgr->tasklet) {
+    mtl_sch_unregister_tasklet(mgr->tasklet);
+    mgr->tasklet = NULL;
   }
 
   for (int i = 0; i < ST_SCH_MAX_TX_AUDIO_SESSIONS; i++) {
