@@ -451,10 +451,10 @@ struct mt_sch_tasklet_impl {
   bool request_exit;
   bool ack_exit;
 
-  uint32_t stat_max_time_us;
-  uint64_t stat_sum_time_us;
+  uint64_t stat_max_time_ns;
+  uint64_t stat_sum_time_ns;
   uint64_t stat_time_cnt;
-  uint32_t stat_min_time_us;
+  uint64_t stat_min_time_ns;
 };
 
 enum mt_sch_type {
@@ -530,6 +530,8 @@ struct mtl_sch_impl {
   bool allow_sleep;
   pthread_cond_t sleep_wake_cond;
   pthread_mutex_t sleep_wake_mutex;
+
+  uint64_t avg_ns_per_loop;
 
   /* the sch sleep ratio */
   float sleep_ratio_score;

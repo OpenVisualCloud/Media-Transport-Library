@@ -29,7 +29,7 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
     for (int j = 0; j < tx_mgr->max_idx; j++) {
       tx_s = tx_video_session_get(tx_mgr, j);
       if (tx_s) {
-        tx_video_session_cal_cpu_busy(tx_s);
+        tx_video_session_cal_cpu_busy(sch, tx_s);
         tx_video_session_put(tx_mgr, j);
       }
     }
@@ -39,7 +39,7 @@ static int admin_cal_cpu_busy(struct mtl_main_impl* impl) {
     for (int j = 0; j < rx_mgr->max_idx; j++) {
       rx_s = rx_video_session_get(rx_mgr, j);
       if (rx_s) {
-        rx_video_session_cal_cpu_busy(rx_s);
+        rx_video_session_cal_cpu_busy(sch, rx_s);
         rx_video_session_put(rx_mgr, j);
       }
     }
@@ -373,7 +373,7 @@ static void* admin_thread(void* arg) {
 int mt_admin_init(struct mtl_main_impl* impl) {
   struct mt_admin* admin = mt_get_admin(impl);
 
-  admin->period_us = 5 * US_PER_S; /* 5s */
+  admin->period_us = 6 * US_PER_S; /* 6s */
   mt_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
   mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
   rte_atomic32_set(&admin->admin_stop, 0);

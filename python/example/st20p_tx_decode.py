@@ -9,10 +9,10 @@ import numpy as np
 import pymtl as mtl
 
 
-def process_frame(mtl_handle, st20p_tx, frame):
+def process_frame(mtl_handle, st20p_tx, frame, av_pixel_output_format):
     # print(f"{frame.format.name}");
-    # convert to yuv422p10le from yuv420p10le
-    yuv_frame = frame.reformat(format="yuv422p10le")
+    # convert to av_pixel_output_format
+    yuv_frame = frame.reformat(format=av_pixel_output_format)
     tx_frame = mtl.st20p_tx_get_frame(st20p_tx)
     if not tx_frame:
         print("st20p_tx_get_frame fail, skip this video frame")
@@ -55,7 +55,8 @@ def main():
     input_file_path = "jellyfish-3-mbps-hd-hevc-10bit.mkv"
     width, height = get_video_resolution(input_file_path)
     print(f"input_file_path: {input_file_path}, width: {width}, height: {height}")
-    input_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR10LE
+    mtl_input_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR10LE
+    av_pixel_output_format = "yuv422p10le"
 
     # Init para
     init_para = mtl.mtl_init_params()
@@ -84,7 +85,7 @@ def main():
     tx_para.fps = mtl.ST_FPS_P59_94
     tx_para.framebuff_cnt = 3
     tx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
-    tx_para.input_fmt = input_fmt
+    tx_para.input_fmt = mtl_input_fmt
     # tx port
     tx_port = mtl.st_tx_port()
     mtl.st_txp_para_port_set(
@@ -113,7 +114,7 @@ def main():
         stream = next(s for s in container.streams if s.type == "video")
         while True:
             for frame in container.decode(stream):
-                process_frame(mtl_handle, st20p_tx, frame)
+                process_frame(mtl_handle, st20p_tx, frame, av_pixel_output_format)
 
             # seek to the first frame
             print("Finish play, seek to first frame")
@@ -124,8 +125,6 @@ def main():
 
     finally:
         container.close()
-
-    print("Everything fine, bye")
 
     # Free st20p_tx session
     mtl.st20p_tx_free(st20p_tx)

@@ -344,11 +344,8 @@ struct st_tx_video_session_impl {
   struct rte_mbuf* pad[MTL_SESSION_PORT_MAX][ST20_PKT_TYPE_MAX];
 
   /* the cpu resource to handle tx, 0: full, 100: cpu is very busy */
-  float cpu_busy_score;
-  int pri_nic_burst_cnt; /* sync to atomic if this reach a threshold */
-  int pri_nic_inflight_cnt;
-  rte_atomic32_t nic_burst_cnt;
-  rte_atomic32_t nic_inflight_cnt;
+  double cpu_busy_score;
+  rte_atomic32_t cbs_build_timeout;
 
   /* info for st22 */
   struct st22_tx_video_info* st22_info;
@@ -393,6 +390,8 @@ struct st_tx_video_session_impl {
   /* interlace */
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
+  /* for display */
+  double stat_cpu_busy_score;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -629,6 +628,8 @@ struct st_rx_video_session_impl {
   struct st20_pgroup st20_pg;
   double frame_time;          /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
+  /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double trs;
 
   size_t st20_uframe_size; /* size per user frame */
   struct st20_rx_uframe_pg_meta pg_meta;
@@ -674,14 +675,10 @@ struct st_rx_video_session_impl {
   rte_atomic32_t pkt_lcore_stopped;
 
   /* the cpu resource to handle rx, 0: full, 100: cpu is very busy */
-  float cpu_busy_score;
-  float dma_busy_score;
-  int pri_nic_burst_cnt; /* sync to atomic if this reach a threshold */
-  int pri_nic_inflight_cnt;
-  rte_atomic32_t nic_burst_cnt;
-  rte_atomic32_t nic_inflight_cnt;
+  double cpu_busy_score;
+  double dma_busy_score;
+  double imiss_busy_score;
   rte_atomic32_t dma_previous_busy_cnt;
-  rte_atomic32_t cbs_frame_slot_cnt;
   rte_atomic32_t cbs_incomplete_frame_cnt;
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
@@ -741,6 +738,8 @@ struct st_rx_video_session_impl {
   uint32_t stat_interlace_second_field;
   /* for st22 */
   uint32_t stat_st22_boxes;
+  /* for stat display */
+  double stat_cpu_busy_score;
 };
 
 struct st_rx_video_sessions_mgr {
