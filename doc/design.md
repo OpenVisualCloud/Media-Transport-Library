@@ -415,6 +415,8 @@ It's important to be mindful that the RTCP retransmission method used by IMTL fo
 
 It can be enabled by `ST**_TX_FLAG_ENABLE_RTCP` and `ST**_RX_FLAG_ENABLE_RTCP`, and the configuration for RTCP can be customized by `struct st_tx_rtcp_ops` and `struct st_rx_rtcp_ops`.
 
+For more details, please refer to [RTCP doc](rtcp.md).
+
 ### 6.9 External frame
 
 By default, the frame buffer is allocated by IMTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves—especially applications that utilize GPU-based memory for additional video frame processing. IMTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
