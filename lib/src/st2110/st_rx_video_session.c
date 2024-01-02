@@ -2822,16 +2822,16 @@ static int rv_init_rtcp(struct mtl_main_impl* impl, struct st_rx_video_sessions_
     if (ret < 0) return ret;
     char name[MT_RTCP_MAX_NAME_LEN];
     snprintf(name, sizeof(name), ST_RX_VIDEO_PREFIX "M%dS%dP%d", mgr_idx, idx, i);
+    if (!ops->rtcp.nack_interval_us)
+      ops->rtcp.nack_interval_us = 250; /* default 250 us */
+    if (!ops->rtcp.seq_bitmap_size) ops->rtcp.seq_bitmap_size = 64;
     struct mt_rtcp_rx_ops rtcp_ops = {
         .port = port,
         .name = name,
         .udp_hdr = &uhdr,
-        .nacks_send_interval = (ops->rtcp && ops->rtcp->nack_interval_us)
-                                   ? ops->rtcp->nack_interval_us * NS_PER_US
-                                   : 250 * NS_PER_US,
-        .seq_bitmap_size =
-            (ops->rtcp && ops->rtcp->seq_bitmap_size) ? ops->rtcp->seq_bitmap_size : 64,
-        .seq_skip_window = (ops->rtcp) ? ops->rtcp->seq_skip_window : 4,
+        .nacks_send_interval = ops->rtcp.nack_interval_us * NS_PER_US,
+        .seq_bitmap_size = ops->rtcp.seq_bitmap_size,
+        .seq_skip_window = ops->rtcp.seq_skip_window, /* this can be 0 */
     };
     s->rtcp_rx[i] = mt_rtcp_rx_create(impl, &rtcp_ops);
     if (!s->rtcp_rx[i]) {
@@ -2953,13 +2953,11 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
 
   /* init simulated packet loss for test usage */
   if (s->ops.flags & ST20_RX_FLAG_SIMULATE_PKT_LOSS) {
-    uint16_t burst_loss_max = 32;
-    float sim_loss_rate = 0.0001;
-    if (ops->rtcp) {
-      if (ops->rtcp->burst_loss_max) burst_loss_max = ops->rtcp->burst_loss_max;
-      if (ops->rtcp->sim_loss_rate > 0.0 && ops->rtcp->sim_loss_rate < 1.0)
-        sim_loss_rate = ops->rtcp->sim_loss_rate;
-    }
+    uint16_t burst_loss_max = 1;
+    float sim_loss_rate = 0.1;
+    if (ops->rtcp.burst_loss_max) burst_loss_max = ops->rtcp.burst_loss_max;
+    if (ops->rtcp.sim_loss_rate > 0.0 && ops->rtcp.sim_loss_rate < 1.0)
+      sim_loss_rate = ops->rtcp.sim_loss_rate;
     s->burst_loss_max = burst_loss_max;
     s->sim_loss_rate = sim_loss_rate;
     info("%s(%d), simulated packet loss max burst %u rate %f\n", __func__, idx,

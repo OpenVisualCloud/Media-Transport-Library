@@ -856,12 +856,9 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_tx.flags |= ST22P_TX_FLAG_EXT_FRAME;
     }
 
-    struct st_tx_rtcp_ops ops_tx_rtcp;
-    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
     if (para->rtcp) {
       ops_tx.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
-      ops_tx_rtcp.rtcp_buffer_size = 512;
-      ops_tx.rtcp = &ops_tx_rtcp;
+      ops_tx.rtcp.buffer_size = 512;
     }
 
     test_ctx_tx[i]->frame_size =
@@ -1036,15 +1033,12 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.query_ext_frame = test_st22p_rx_query_ext_frame;
     }
 
-    struct st_rx_rtcp_ops ops_rx_rtcp;
-    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
     if (para->rtcp) {
       ops_rx.flags |= ST22P_RX_FLAG_ENABLE_RTCP | ST22P_RX_FLAG_SIMULATE_PKT_LOSS;
-      ops_rx_rtcp.nack_interval_us = 100;
-      ops_rx_rtcp.seq_skip_window = 0;
-      ops_rx_rtcp.burst_loss_max = 4;
-      ops_rx_rtcp.sim_loss_rate = 0.0001;
-      ops_rx.rtcp = &ops_rx_rtcp;
+      ops_rx.rtcp.nack_interval_us = 100;
+      ops_rx.rtcp.seq_skip_window = 0;
+      ops_rx.rtcp.burst_loss_max = 4;
+      ops_rx.rtcp.sim_loss_rate = 0.0001;
     }
 
     test_ctx_rx[i]->frame_size =

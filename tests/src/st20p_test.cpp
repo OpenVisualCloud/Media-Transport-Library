@@ -765,12 +765,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->user_timestamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
     if (para->vsync) ops_tx.flags |= ST20P_TX_FLAG_ENABLE_VSYNC;
 
-    struct st_tx_rtcp_ops ops_tx_rtcp;
-    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
     if (para->rtcp) {
       ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
-      ops_tx_rtcp.rtcp_buffer_size = 1024;
-      ops_tx.rtcp = &ops_tx_rtcp;
+      ops_tx.rtcp.buffer_size = 1024;
     }
 
     uint8_t planes = st_frame_fmt_planes(tx_fmt[i]);
@@ -992,16 +989,13 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
     if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
 
-    struct st_rx_rtcp_ops ops_rx_rtcp;
-    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
     if (para->rtcp) {
       ops_rx.flags |= ST20P_RX_FLAG_ENABLE_RTCP | ST20P_RX_FLAG_SIMULATE_PKT_LOSS;
-      ops_rx_rtcp.nack_interval_us = 250;
-      ops_rx_rtcp.seq_bitmap_size = 64;
-      ops_rx_rtcp.seq_skip_window = 0;
-      ops_rx_rtcp.burst_loss_max = 1;
-      ops_rx_rtcp.sim_loss_rate = 0.1;
-      ops_rx.rtcp = &ops_rx_rtcp;
+      ops_rx.rtcp.nack_interval_us = 250;
+      ops_rx.rtcp.seq_bitmap_size = 64;
+      ops_rx.rtcp.seq_skip_window = 0;
+      ops_rx.rtcp.burst_loss_max = 1;
+      ops_rx.rtcp.sim_loss_rate = 0.1;
     }
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);

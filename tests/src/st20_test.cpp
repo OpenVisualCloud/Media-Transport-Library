@@ -1880,12 +1880,9 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     if (tx_type[i] == ST20_TYPE_RTP_LEVEL) {
       rtp_tx_specific_init(&ops_tx, test_ctx_tx[i]);
     }
-    struct st_tx_rtcp_ops ops_tx_rtcp;
-    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
     if (enable_rtcp) {
       ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
-      ops_tx_rtcp.rtcp_buffer_size = 1024;
-      ops_tx.rtcp = &ops_tx_rtcp;
+      ops_tx.rtcp.buffer_size = 1024;
     }
 
     // out of order
@@ -1973,16 +1970,13 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
     ops_rx.rtp_ring_size = 1024 * 2;
     ops_rx.flags = ST20_RX_FLAG_DMA_OFFLOAD;
     if (hdr_split) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
-    struct st_rx_rtcp_ops ops_rx_rtcp;
-    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
     if (enable_rtcp) {
       ops_rx.flags |= ST20_RX_FLAG_ENABLE_RTCP | ST20_RX_FLAG_SIMULATE_PKT_LOSS;
-      ops_rx_rtcp.nack_interval_us = 250;
-      ops_rx_rtcp.seq_bitmap_size = 32;
-      ops_rx_rtcp.seq_skip_window = 10;
-      ops_rx_rtcp.burst_loss_max = 32;
-      ops_rx_rtcp.sim_loss_rate = 0.0001;
-      ops_rx.rtcp = &ops_rx_rtcp;
+      ops_rx.rtcp.nack_interval_us = 250;
+      ops_rx.rtcp.seq_bitmap_size = 32;
+      ops_rx.rtcp.seq_skip_window = 10;
+      ops_rx.rtcp.burst_loss_max = 32;
+      ops_rx.rtcp.sim_loss_rate = 0.0001;
     }
 
     if (rx_type[i] == ST20_TYPE_SLICE_LEVEL) {

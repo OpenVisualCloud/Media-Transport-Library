@@ -22,23 +22,19 @@ This real-time detection and correction process serves to maintain the continuit
 To enable and configure RTCP in IMTL for packet loss handling, the following code snippet provides a template:
 
 ```cpp
-struct st_tx_rtcp_ops ops_tx_rtcp;
 ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;  // Enabling RTCP on the transmitter side
-ops_tx_rtcp.rtcp_buffer_size = 1024;        // Setting RTCP buffer size for retransmission
-ops_tx.rtcp = &ops_tx_rtcp;                 // Linking RTCP operations to the transmitter config
+ops.rtcp.buffer_size = 1024;        // Setting RTCP buffer size for retransmission
 
-struct st_rx_rtcp_ops ops_rx_rtcp;
 ops_rx.flags |= ST20P_RX_FLAG_ENABLE_RTCP;  // Enabling RTCP on the receiver side
-ops_rx_rtcp.nack_interval_us = 250;         // Defining the NACK interval for loss detection (in microseconds)
-ops_rx_rtcp.seq_bitmap_size = 64;           // The size of the sequence number bitmap for tracking packet loss
-ops_rx_rtcp.seq_skip_window = 0;            // The allowable sequence number skip window
-ops_rx.rtcp = &ops_rx_rtcp;                 // Linking RTCP operations to the receiver config
+ops.rtcp.nack_interval_us = 250;         // Defining the NACK interval for loss detection (in microseconds)
+ops.rtcp.seq_bitmap_size = 64;           // The size of the sequence number bitmap for tracking packet loss
+ops.rtcp.seq_skip_window = 4;            // The allowable sequence number skip window
 ```
 
 In this configuration:
 
 - The `ST20P_TX_FLAG_ENABLE_RTCP` and `ST20P_RX_FLAG_ENABLE_RTCP` flags are set to enable RTCP on both transmission and reception paths, respectively. Other supported session types are `st20`, `st22` and `st22p`.
-- The transmitter's `rtcp_buffer_size` sets the buffer capacity for storing packets which might need to be retransmitted.
+- The transmitter's `rtcp_buffer_size` sets the buffer capacity for storing packets which might need to be retransmitted. The buffer size should not be less than tx descriptor size.
 - The receiver's `nack_interval_us` specifies how frequently it will check and potentially request retransmission of lost packets.
 - The `seq_bitmap_size` determines the range of sequence numbers the receiver will monitor for loss detection. The total number of packets for tracking is `seq_bitmap_size * 8`.
 - The `seq_skip_window` configures the permissible range within which out-of-order packets will be accepted without triggering a NACK.

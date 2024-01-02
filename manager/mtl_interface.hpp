@@ -156,9 +156,13 @@ int mtl_interface::load_xdp() {
       xdp_prog = nullptr;
     } else {
       if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0) < 0) {
-        log(log_level::ERROR, "Failed to attach XDP program " + xdp_prog_path);
-        xdp_program__close(xdp_prog);
-        return -1;
+        log(log_level::WARNING,
+            "Failed to attach XDP program with native mode, try skb mode.");
+        if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_SKB, 0) < 0) {
+          log(log_level::ERROR, "Failed to attach XDP program " + xdp_prog_path);
+          xdp_program__close(xdp_prog);
+          return -1;
+        }
       }
     }
   }

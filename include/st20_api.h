@@ -955,10 +955,11 @@ struct st20_ext_frame {
 struct st_tx_rtcp_ops {
   /**
    * The size of the packets buffer for RTCP, should be power of two.
+   * This value should not be less than nb_tx_desc.
    * Only used when ST20(P)/22(P)_TX_FLAG_ENABLE_RTCP flag set.
    * If leave it to 0 the lib will use ST_TX_VIDEO_RTCP_RING_SIZE.
    */
-  uint16_t rtcp_buffer_size;
+  uint16_t buffer_size;
 };
 
 /**
@@ -1038,7 +1039,7 @@ struct st20_tx_ops {
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST20_TX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_tx_rtcp_ops* rtcp;
+  struct st_tx_rtcp_ops rtcp;
   /**
    * Optional. Session linesize(stride) in bytes, leave to zero if no padding for each
    * line. Valid linesize should be wider than width size.
@@ -1188,7 +1189,7 @@ struct st22_tx_ops {
   /** Optional. UDP source port number, leave as 0 to use same port as destination port */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** Optional for ST20_TX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_tx_rtcp_ops* rtcp;
+  struct st_tx_rtcp_ops rtcp;
   /** Optional. The tx destination mac address if ST20_TX_FLAG_USER_P(R)_MAC is enabled */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
@@ -1360,7 +1361,7 @@ struct st20_rx_ops {
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_rx_rtcp_ops* rtcp;
+  struct st_rx_rtcp_ops rtcp;
   /**
    * Optional. Session linesize(stride) in bytes, leave to zero if no padding for each
    * line. Valid linesize should be wider than width size.
@@ -1504,7 +1505,7 @@ struct st22_rx_ops {
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST22_RX_FLAG_ENABLE_RTCP, RTCP info */
-  struct st_rx_rtcp_ops* rtcp;
+  struct st_rx_rtcp_ops rtcp;
 
   /** Mandatory for ST22_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
