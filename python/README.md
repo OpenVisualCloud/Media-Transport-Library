@@ -86,17 +86,15 @@ sudo pip3 install av
 Execute the `st20p_rx.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream and display it.
 
 ```bash
-# Customize the port, IP and display option in the code before using
-python3 python/example/st20p_rx.py
+python3 python/example/st20p_rx.py --p_port 0000:ac:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20
 ```
 
 ### 3.2 st20p_tx.py
 
-Run the `st20p_tx.py`, which reads YUV video data from a file and transmits it over the network as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream.
+Run the `st20p_tx.py`, which reads YUV video data from a file(default: yuv422p10le_1080p.yuv) and transmits it over the network as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream.
 
 ```bash
-# Customize the port, IP and display option in the code before using
-python3 python/example/st20p_tx.py
+python3 python/example/st20p_tx.py --p_port 0000:ac:01.0 --p_sip 192.168.108.101 --p_tx_ip 239.168.85.20
 ```
 
 ### 3.3 st20p_rx_encode.py
@@ -104,8 +102,7 @@ python3 python/example/st20p_tx.py
 Run the `st20p_rx_encode.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream and encode it to a `.mp4` encoder file.
 
 ```bash
-# Customize the port, IP and display option in the code before using
-python3 python/example/st20p_rx_encode.py
+python3 python/example/st20p_rx_encode.py --p_port 0000:ac:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20
 ```
 
 ### 3.4 st20p_tx_decode.py
@@ -113,6 +110,5 @@ python3 python/example/st20p_rx_encode.py
 Use `st20p_tx_decode.py` to decode YUV video from an encoded file `jellyfish-3-mbps-hd-hevc-10bit.mkv` and transmit it as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream across the network.
 
 ```bash
-# Customize the port, IP and display option in the code before using
-python3 python/example/st20p_tx_decode.py
+python3 python/example/st20p_tx_decode.py --p_port 0000:ac:01.0 --p_sip 192.168.108.101 --p_tx_ip 239.168.85.20
 ```
