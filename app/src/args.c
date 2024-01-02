@@ -367,6 +367,25 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
   va_end(args);
 }
 
+static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_params* p,
+                               char* str, enum mtl_port port) {
+  st_json_context_t* json_ctx = ctx->json_ctx;
+  if (json_ctx) {
+    int json_num_interfaces = json_ctx->num_interfaces;
+    st_json_interface_t* json_interfaces = &json_ctx->interfaces[port];
+    if (port < json_num_interfaces) {
+      info("%s, override json interface for port: %d to %s\n", __func__, port, str);
+      snprintf(json_interfaces->name, sizeof(json_interfaces->name), "%s", str);
+      snprintf(p->port[port], sizeof(p->port[port]), "%s", str);
+    }
+  } else {
+    snprintf(p->port[port], sizeof(p->port[port]), "%s", str);
+    p->num_ports++;
+  }
+
+  return 0;
+}
+
 int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
                       char** argv) {
   int cmd = -1, optIdx = 0;
@@ -379,12 +398,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
 
     switch (cmd) {
       case ST_ARG_P_PORT:
-        snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
-        p->num_ports++;
+        app_args_parse_port(ctx, p, optarg, MTL_PORT_P);
         break;
       case ST_ARG_R_PORT:
-        snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
-        p->num_ports++;
+        app_args_parse_port(ctx, p, optarg, MTL_PORT_R);
         break;
       case ST_ARG_P_SIP:
         inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));

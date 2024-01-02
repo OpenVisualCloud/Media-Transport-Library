@@ -20,7 +20,7 @@ def main():
     current_datetime = datetime.now()
     output_file = current_datetime.strftime("%Y_%m_%d_%H_%M_%S") + "_output.mp4"
 
-    args = arg_util.parse_args(True)
+    args = arg_util.parse_args(False)
 
     # Init para
     init_para = mtl.mtl_init_params()
