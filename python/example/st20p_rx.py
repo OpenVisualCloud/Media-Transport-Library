@@ -3,6 +3,7 @@
 
 import sys
 
+import arg_util
 import cv2_util
 import pymtl as mtl
 
@@ -65,11 +66,13 @@ def main():
     output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
     interlaced = False
 
+    args = arg_util.parse_args(True)
+
     # Init para
     init_para = mtl.mtl_init_params()
-    mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, "0000:af:01.0")
+    mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, args.p_port)
     init_para.num_ports = 1
-    mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, "192.168.108.102")
+    mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
     init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
@@ -98,7 +101,7 @@ def main():
         mtl.mtl_para_port_get(init_para, mtl.MTL_SESSION_PORT_P),
     )
     rx_port.num_port = 1
-    mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, "239.168.85.20")
+    mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, args.p_rx_ip)
     mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, 20000)
     rx_port.payload_type = 112
     rx_para.port = rx_port

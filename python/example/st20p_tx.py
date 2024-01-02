@@ -4,6 +4,7 @@
 import ctypes
 import sys
 
+import arg_util
 import cv2_util
 import pymtl as mtl
 
@@ -25,11 +26,13 @@ def main():
         print(f"Open {yuv_file_path} fail")
         sys.exit(1)
 
+    args = arg_util.parse_args(True)
+
     # Init para
     init_para = mtl.mtl_init_params()
-    mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, "0000:af:01.1")
+    mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, args.p_port)
     init_para.num_ports = 1
-    mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, "192.168.108.101")
+    mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
     init_para.flags = (
         mtl.MTL_FLAG_BIND_NUMA
         | mtl.MTL_FLAG_DEV_AUTO_START_STOP
@@ -62,7 +65,7 @@ def main():
         mtl.mtl_para_port_get(init_para, mtl.MTL_SESSION_PORT_P),
     )
     tx_port.num_port = 1
-    mtl.st_txp_para_dip_set(tx_port, mtl.MTL_SESSION_PORT_P, "239.168.85.20")
+    mtl.st_txp_para_dip_set(tx_port, mtl.MTL_SESSION_PORT_P, args.p_tx_ip)
     mtl.st_txp_para_udp_port_set(tx_port, mtl.MTL_SESSION_PORT_P, 20000)
     tx_port.payload_type = 112
     tx_para.port = tx_port
