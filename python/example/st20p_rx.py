@@ -66,7 +66,7 @@ def main():
     output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
     interlaced = False
 
-    args = arg_util.parse_args(True)
+    args = arg_util.parse_args(False)
 
     # Init para
     init_para = mtl.mtl_init_params()
