@@ -413,7 +413,7 @@ The TX side maintains a buffer ring that retains recently transmitted packets. U
 
 It's important to be mindful that the RTCP retransmission method used by IMTL for packet loss recovery is not a standardized feature within the SMPTE ST 2110 suite. Consequently, this approach may not be compatible with non-IMTL implementations.
 
-It can be enabled by `ST**_TX_FLAG_ENABLE_RTCP` and `ST**_RX_FLAG_ENABLE_RTCP`, and the configuration for RTCP can be customized by `struct st_tx_rtcp_ops` and `struct st_rx_rtcp_ops`.
+It can be enabled by `ST**_TX_FLAG_ENABLE_RTCP` and `ST**_RX_FLAG_ENABLE_RTCP`, and the configuration for RTCP can be customized by `ops.rtcp` (`struct st_tx_rtcp_ops` and `struct st_rx_rtcp_ops`).
 
 For more details, please refer to [RTCP doc](rtcp.md).
 

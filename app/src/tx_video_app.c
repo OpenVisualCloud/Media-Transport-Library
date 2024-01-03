@@ -790,12 +790,9 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   if (ctx->tx_ts_epoch) ops.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20_TX_FLAG_DISABLE_BULK;
 
-  struct st_tx_rtcp_ops ops_rtcp;
-  memset(&ops_rtcp, 0, sizeof(ops_rtcp));
   if (video && video->enable_rtcp) {
     ops.flags |= ST20_TX_FLAG_ENABLE_RTCP;
-    ops_rtcp.rtcp_buffer_size = 1024;
-    ops.rtcp = &ops_rtcp;
+    ops.rtcp.buffer_size = 1024;
   }
 
   ret = st20_get_pgroup(ops.fmt, &s->st20_pg);

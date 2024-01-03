@@ -792,7 +792,7 @@ struct st20p_tx_ops {
   size_t transport_linesize;
 
   /** Optional for ST20P_TX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_tx_rtcp_ops* rtcp;
+  struct st_tx_rtcp_ops rtcp;
   /**
    * Optional. tx destination mac address.
    * Valid if ST20P_TX_FLAG_USER_P(R)_MAC is enabled
@@ -872,7 +872,7 @@ struct st20p_rx_ops {
   /** Optional. Array of external frames */
   struct st_ext_frame* ext_frames;
   /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_rx_rtcp_ops* rtcp;
+  struct st_rx_rtcp_ops rtcp;
   /**
    * Optional. Callback when the lib query next external frame's data address.
    * And only non-block method can be used within this callback as it run from lcore
@@ -943,7 +943,7 @@ struct st22p_tx_ops {
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
 
   /** Optional for ST22P_TX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_tx_rtcp_ops* rtcp;
+  struct st_tx_rtcp_ops rtcp;
   /**
    * Optional. tx destination mac address.
    * Valid if ST22P_TX_FLAG_USER_P(R)_MAC is enabled
@@ -997,7 +997,7 @@ struct st22p_rx_ops {
    * interlaced, it's the expected codestream size for each field */
   size_t max_codestream_size;
   /** Optional for ST22P_RX_FLAG_ENABLE_RTCP. RTCP info */
-  struct st_rx_rtcp_ops* rtcp;
+  struct st_rx_rtcp_ops rtcp;
   /**
    * Optional. Callback when frame available in the lib.
    * And only non-block method can be used within this callback as it run from lcore

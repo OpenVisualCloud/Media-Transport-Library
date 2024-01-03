@@ -1255,12 +1255,9 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_tx.rtp_frame_total_pkts = test_ctx_tx[i]->total_pkts_in_frame;
     ops_tx.notify_frame_done = st22_frame_done;
     ops_tx.get_next_frame = st22_next_video_frame;
-    struct st_tx_rtcp_ops ops_tx_rtcp;
-    memset(&ops_tx_rtcp, 0, sizeof(ops_tx_rtcp));
     if (enable_rtcp) {
       ops_tx.flags |= ST22_TX_FLAG_ENABLE_RTCP;
-      ops_tx_rtcp.rtcp_buffer_size = 512;
-      ops_tx.rtcp = &ops_tx_rtcp;
+      ops_tx.rtcp.buffer_size = 512;
     }
 
     tx_handle[i] = st22_tx_create(m_handle, &ops_tx);
@@ -1306,15 +1303,12 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.payload_type = ST22_TEST_PAYLOAD_TYPE;
     ops_rx.type = ST22_TYPE_FRAME_LEVEL;
     ops_rx.framebuff_cnt = test_ctx_rx[i]->fb_cnt;
-    struct st_rx_rtcp_ops ops_rx_rtcp;
-    memset(&ops_rx_rtcp, 0, sizeof(ops_rx_rtcp));
     if (enable_rtcp) {
       ops_rx.flags |= ST22_RX_FLAG_ENABLE_RTCP | ST22_RX_FLAG_SIMULATE_PKT_LOSS;
-      ops_rx_rtcp.nack_interval_us = 100;
-      ops_rx_rtcp.seq_skip_window = 0;
-      ops_rx_rtcp.burst_loss_max = 4;
-      ops_rx_rtcp.sim_loss_rate = 0.0001;
-      ops_rx.rtcp = &ops_rx_rtcp;
+      ops_rx.rtcp.nack_interval_us = 100;
+      ops_rx.rtcp.seq_skip_window = 0;
+      ops_rx.rtcp.burst_loss_max = 4;
+      ops_rx.rtcp.sim_loss_rate = 0.0001;
     }
 
     ops_rx.notify_rtp_ready = st22_rx_rtp_ready;

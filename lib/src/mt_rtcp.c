@@ -359,21 +359,29 @@ static int rtcp_rx_stat(void* priv) {
 
 struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
                                      struct mt_rtcp_tx_ops* ops) {
+  const enum mtl_port port = ops->port;
+  const char* name = ops->name;
   struct mt_rtcp_tx* tx =
-      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_tx), mt_socket_id(impl, ops->port));
+      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_tx), mt_socket_id(impl, port));
   if (!tx) {
-    err("%s(%s), failed to allocate memory for mt_rtcp_tx\n", __func__, ops->name);
+    err("%s(%s), failed to allocate memory for mt_rtcp_tx\n", __func__, name);
     return NULL;
   }
   tx->parent = impl;
-  tx->port = ops->port;
+  tx->port = port;
   tx->payload_format = ops->payload_format;
 
+  if (ops->buffer_size < mt_if_nb_tx_desc(impl, port)) {
+    warn("%s(%s), buffer_size(%u) is small, adjust to nb_tx_desc(%u)\n", __func__, name,
+         ops->buffer_size, mt_if_nb_tx_desc(impl, port));
+    ops->buffer_size = mt_if_nb_tx_desc(impl, port);
+  }
+
+  uint32_t n = ops->buffer_size + mt_if_nb_tx_desc(impl, port);
   struct rte_mempool* pool =
-      mt_mempool_create(impl, ops->port, ops->name, ops->buffer_size, MT_MBUF_CACHE_SIZE,
-                        0, MTL_MTU_MAX_BYTES);
+      mt_mempool_create(impl, port, name, n, MT_MBUF_CACHE_SIZE, 0, MTL_MTU_MAX_BYTES);
   if (!pool) {
-    err("%s(%s), failed to create mempool for mt_rtcp_tx\n", __func__, ops->name);
+    err("%s(%s), failed to create mempool for mt_rtcp_tx\n", __func__, name);
     mt_rtcp_tx_free(tx);
     return NULL;
   }
@@ -383,31 +391,30 @@ struct mt_rtcp_tx* mt_rtcp_tx_create(struct mtl_main_impl* impl,
   memset(&flow, 0, sizeof(flow));
   mtl_memcpy(&flow.dip_addr, &ops->udp_hdr->ipv4.dst_addr, MTL_IP_ADDR_LEN);
   flow.dst_port = ntohs(ops->udp_hdr->udp.dst_port) - 1; /* rtp port */
-  struct mt_txq_entry* q = mt_txq_get(impl, ops->port, &flow);
+  struct mt_txq_entry* q = mt_txq_get(impl, port, &flow);
   if (!q) {
-    err("%s(%s), failed to create queue for mt_rtcp_tx\n", __func__, ops->name);
+    err("%s(%s), failed to create queue for mt_rtcp_tx\n", __func__, name);
     mt_rtcp_tx_free(tx);
     return NULL;
   }
   tx->mbuf_queue = q;
 
-  struct mt_u64_fifo* ring =
-      mt_u64_fifo_init(ops->buffer_size, mt_socket_id(impl, ops->port));
+  struct mt_u64_fifo* ring = mt_u64_fifo_init(ops->buffer_size, mt_socket_id(impl, port));
   if (!ring) {
-    err("%s(%s), failed to create ring for mt_rtcp_tx\n", __func__, ops->name);
+    err("%s(%s), failed to create ring for mt_rtcp_tx\n", __func__, name);
     mt_rtcp_tx_free(tx);
     return NULL;
   }
   tx->mbuf_ring = ring;
 
   tx->ssrc = ops->ssrc;
-  snprintf(tx->name, sizeof(tx->name) - 1, "%s", ops->name);
+  snprintf(tx->name, sizeof(tx->name) - 1, "%s", name);
   rte_memcpy(&tx->udp_hdr, ops->udp_hdr, sizeof(tx->udp_hdr));
 
   mt_stat_register(impl, rtcp_tx_stat, tx, tx->name);
   tx->active = true;
 
-  info("%s(%s), suss\n", __func__, tx->name);
+  info("%s(%s), suss\n", __func__, name);
 
   return tx;
 }
@@ -444,25 +451,27 @@ void mt_rtcp_tx_free(struct mt_rtcp_tx* tx) {
 
 struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
                                      struct mt_rtcp_rx_ops* ops) {
+  const enum mtl_port port = ops->port;
+  const char* name = ops->name;
   struct mt_rtcp_rx* rx =
-      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_rx), mt_socket_id(impl, ops->port));
+      mt_rte_zmalloc_socket(sizeof(struct mt_rtcp_rx), mt_socket_id(impl, port));
   if (!rx) {
-    err("%s(%s), failed to allocate memory for mt_rtcp_rx\n", __func__, ops->name);
+    err("%s(%s), failed to allocate memory for mt_rtcp_rx\n", __func__, name);
     return NULL;
   }
 
   rx->parent = impl;
-  rx->port = ops->port;
+  rx->port = port;
   rx->ssrc = 0;
   rx->nacks_send_interval = ops->nacks_send_interval;
   rx->nacks_send_time = mt_get_tsc(impl);
-  snprintf(rx->name, sizeof(rx->name) - 1, "%s", ops->name);
+  snprintf(rx->name, sizeof(rx->name) - 1, "%s", name);
   rte_memcpy(&rx->udp_hdr, ops->udp_hdr, sizeof(rx->udp_hdr));
 
   uint8_t* seq_bitmap = mt_rte_zmalloc_socket(sizeof(uint8_t) * ops->seq_bitmap_size,
-                                              mt_socket_id(impl, rx->port));
+                                              mt_socket_id(impl, port));
   if (!seq_bitmap) {
-    err("%s(%s), failed to allocate memory for seq_bitmap\n", __func__, rx->name);
+    err("%s(%s), failed to allocate memory for seq_bitmap\n", __func__, name);
     mt_rtcp_rx_free(rx);
     return NULL;
   }
@@ -472,7 +481,7 @@ struct mt_rtcp_rx* mt_rtcp_rx_create(struct mtl_main_impl* impl,
   mt_stat_register(impl, rtcp_rx_stat, rx, rx->name);
   rx->active = true;
 
-  info("%s(%s), suss\n", __func__, rx->name);
+  info("%s(%s), suss\n", __func__, name);
 
   return rx;
 }
