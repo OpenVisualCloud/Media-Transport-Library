@@ -238,7 +238,6 @@ struct st22_tx_video_info {
 
   struct st22_boxes st22_boxes;
   int st22_total_pkts;
-  int st22_min_pkts;
 };
 
 struct st_vsync_info {
@@ -270,8 +269,6 @@ struct st_tx_video_session_impl {
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   int idx; /* index for current tx_session */
   uint64_t advice_sleep_us;
-  uint16_t queue_burst_pkts[MTL_SESSION_PORT_MAX];
-  uint16_t tx_done_cleanup[MTL_SESSION_PORT_MAX];
   int recovery_idx;
 
   struct st_tx_video_session_handle_impl* st20_handle;
@@ -379,7 +376,6 @@ struct st_tx_video_session_impl {
   uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
   uint32_t stat_lines_not_ready; /* query app lines not ready */
   uint32_t stat_vsync_mismatch;
-  uint32_t stat_tx_done_cleanup;
   uint64_t stat_bytes_tx[MTL_SESSION_PORT_MAX];
   uint32_t stat_user_meta_cnt;
   uint32_t stat_user_meta_pkt_cnt;

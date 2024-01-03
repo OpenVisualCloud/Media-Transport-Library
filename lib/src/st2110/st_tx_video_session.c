@@ -1669,25 +1669,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
           s->stat_user_busy_first = false;
           dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
         }
-        if (s->tx_done_cleanup[MTL_SESSION_PORT_P] &&
-            (mt_get_tsc(impl) > pacing->tsc_time_cursor)) {
-          /* flush tx queue to cleanup all mbufs, for tv_frame_free_cb */
-          dbg("%s(%d), tx done cleanup %u\n", __func__, s->idx,
-              s->tx_done_cleanup[MTL_SESSION_PORT_P]);
-          for (int i = 0; i < num_port; i++) {
-            struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
-            if (!pad) continue;
-
-            rte_mbuf_refcnt_update(pad, 1);
-            uint16_t tx = mt_txq_burst(s->queue[i], &pad, 1);
-            if (tx < 1) {
-              rte_mbuf_refcnt_update(pad, -1);
-            } else {
-              s->tx_done_cleanup[i]--;
-              s->stat_tx_done_cleanup++;
-            }
-          }
-        }
         s->stat_build_ret_code = -STI_FRAME_APP_GET_FRAME_BUSY;
         return MTL_TASKLET_ALL_DONE;
       }
@@ -1721,9 +1702,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       rte_atomic32_inc(&frame->refcnt);
       s->st20_frame_idx = next_frame_idx;
       s->st20_frame_lines_ready = 0;
-      for (int i = 0; i < num_port; i++) {
-        s->tx_done_cleanup[i] = s->queue_burst_pkts[i];
-      }
       dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
       s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
 
@@ -2172,9 +2150,6 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       st22_info->st22_total_pkts = frame_size / s->st20_pkt_len;
       if (frame_size % s->st20_pkt_len) st22_info->st22_total_pkts++;
       s->st20_total_pkts = st22_info->st22_total_pkts;
-      /* wa for attach_extbuf issue(no free cb) when too less pkts */
-      if (s->st20_total_pkts < st22_info->st22_min_pkts)
-        s->st20_total_pkts = st22_info->st22_min_pkts;
       st22_info->cur_frame_size = frame_size;
       s->st20_frame_idx = next_frame_idx;
       s->st20_frame_stat = ST21_TX_STAT_SENDING_PKTS;
@@ -2482,8 +2457,6 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       }
       s->pad[i][j] = pad;
     }
-
-    s->queue_burst_pkts[i] = mt_if_nb_tx_burst(impl, port);
   }
 
   return 0;
@@ -2520,6 +2493,27 @@ static bool tv_has_chain_buf(struct st_tx_video_session_impl* s) {
 
   for (int port = 0; port < num_ports; port++) {
     if (!s->eth_has_chain[port]) return false;
+  }
+
+  /* all ports capable chain */
+  return true;
+}
+
+static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
+                                  struct st_tx_video_session_impl* s) {
+  struct st20_tx_ops* ops = &s->ops;
+  int num_ports = ops->num_port;
+
+  for (int port = 0; port < num_ports; port++) {
+    enum mtl_port s_port = mt_port_logic2phy(s->port_maps, port);
+    uint16_t max_buffer_nb = mt_if_nb_tx_desc(impl, s_port);
+    max_buffer_nb += s->ring_count;
+    /* at least two swap buffer */
+    if ((s->st20_total_pkts * 3 / 2) < max_buffer_nb) {
+      warn("%s(%d), max_buffer_nb %u on s_port %d too large, st20_total_pkts %d\n",
+           __func__, s->idx, max_buffer_nb, s_port, s->st20_total_pkts);
+      return false;
+    }
   }
 
   /* all ports capable chain */
@@ -2702,8 +2696,6 @@ static int tv_init_st22_frame(struct mtl_main_impl* impl,
 
   st22_info->get_next_frame = st22_frame_ops->get_next_frame;
   st22_info->notify_frame_done = st22_frame_ops->notify_frame_done;
-  st22_info->st22_min_pkts = mt_if_nb_tx_desc(impl, MTL_PORT_P) / s->st20_frames_cnt + 1;
-  dbg("%s(%d), st22_min_pkts %d\n", __func__, s->idx, st22_info->st22_min_pkts);
 
   s->st22_info = st22_info;
 
@@ -2983,15 +2975,15 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     }
   }
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
-  /* manually disable chain or any port can't support chain */
-  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s);
   s->multi_src_port = mt_user_multi_src_port(impl);
-
   s->ring_count = ST_TX_VIDEO_SESSIONS_RING_SIZE;
   /* make sure the ring is smaller than total pkts */
   while (s->ring_count > s->st20_total_pkts) {
     s->ring_count /= 2;
   }
+  /* manually disable chain or any port can't support chain */
+  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s) ||
+                   !tv_pkts_capable_chain(impl, s);
 
   enum mtl_port port;
   for (int i = 0; i < num_port; i++) {
@@ -3172,11 +3164,6 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     notice("TX_VIDEO_SESSION(%d,%d): busy as no ready frame from user %u\n", m_idx, idx,
            s->stat_user_busy);
     s->stat_user_busy = 0;
-  }
-  if (s->stat_tx_done_cleanup) {
-    notice("TX_VIDEO_SESSION(%d,%d): tx done for cleanup %u\n", m_idx, idx,
-           s->stat_tx_done_cleanup);
-    s->stat_tx_done_cleanup = 0;
   }
   if (s->stat_lines_not_ready) {
     notice("TX_VIDEO_SESSION(%d,%d): query new lines but app not ready %u\n", m_idx, idx,
