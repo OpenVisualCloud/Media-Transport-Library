@@ -3124,7 +3124,7 @@ void rx_video_session_clear_cpu_busy(struct st_rx_video_session_impl* s) {
 void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
                                    struct st_rx_video_session_impl* s) {
   uint64_t avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
-  /* aussme one taskelt can bulk 3 pkts */
+  /* assume one taskelt can bulk 3 pkts */
   s->cpu_busy_score = (double)avg_ns_per_loop / 3 / s->trs * 100.0;
   dbg("%s(%d), avg_ns_per_loop %" PRIu64 ", trs %f, busy %f\n", __func__, s->idx,
       avg_ns_per_loop, s->trs, s->cpu_busy_score);
@@ -3137,13 +3137,12 @@ void rx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
     enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
     struct mtl_port_status stats;
     memset(&stats, 0, sizeof(stats));
-    mtl_get_port_stats(s->impl, port, &stats);
+    mt_read_admin_port_stats(s->impl, port, &stats);
     if (stats.rx_hw_dropped_packets) {
       dbg("%s(%d,%d), incomplete %d and hw_dropped_pkts %" PRIu64 "\n", __func__,
           sch->idx, s->idx, incomplete_frame_cnt, stats.rx_hw_dropped_packets);
       s->imiss_busy_score += 40.0;
     }
-    mtl_reset_port_stats(s->impl, port);
     if (s->imiss_busy_score > 95.0) {
       notice("%s(%d,%d), imiss busy, incomplete %d and hw_dropped_pkts %" PRIu64 "\n",
              __func__, sch->idx, s->idx, incomplete_frame_cnt,
