@@ -71,4 +71,9 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl);
 uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                uint32_t hash);
 
+int mt_update_admin_port_stats(struct mtl_main_impl* impl);
+int mt_read_admin_port_stats(struct mtl_main_impl* impl, enum mtl_port port,
+                             struct mtl_port_status* stats);
+int mt_reset_admin_port_stats(struct mtl_main_impl* impl);
+
 #endif

@@ -696,6 +696,7 @@ struct mt_interface {
   struct mtl_port_status* dev_stats_sw;        /* for MT_DRV_F_NOT_DPDK_PMD */
   struct mtl_port_status stats_sum;            /* for dev_inf_stat dump */
   struct mtl_port_status user_stats_port;      /* for mtl_get_port_stats */
+  struct mtl_port_status stats_admin;          /* stats used in admin task */
 
   uint64_t simulate_malicious_pkt_tsc;
 

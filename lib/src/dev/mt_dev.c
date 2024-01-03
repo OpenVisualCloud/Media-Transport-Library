@@ -199,6 +199,8 @@ static int dev_inf_get_stat_dpdk(struct mt_interface* inf) {
   stat_update_dpdk(stats_sum, &stats, drv_type);
   struct mtl_port_status* port_stats = &inf->user_stats_port;
   stat_update_dpdk(port_stats, &stats, drv_type);
+  struct mtl_port_status* stats_admin = &inf->stats_admin;
+  stat_update_dpdk(stats_admin, &stats, drv_type);
 
   if (!dev_stats_not_reset) {
     dbg("%s(%d), reset eth status\n", __func__, port);
@@ -229,6 +231,9 @@ static int dev_inf_get_stat_sw(struct mt_interface* inf) {
   stat_update_sw(stats_sum, stats);
   struct mtl_port_status* port_stats = &inf->user_stats_port;
   stat_update_sw(port_stats, stats);
+  struct mtl_port_status* stats_admin = &inf->stats_admin;
+  stat_update_sw(stats_admin, stats);
+
   memset(stats, 0, sizeof(*stats));
 
   rte_spinlock_unlock(&inf->stats_lock);
@@ -2382,6 +2387,38 @@ int mt_dev_tsc_done_action(struct mtl_main_impl* impl) {
     inf->tsc_time_base = mt_get_tsc(impl);
   }
 
+  return 0;
+}
+
+int mt_update_admin_port_stats(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+
+  for (int port = 0; port < num_ports; port++) {
+    struct mt_interface* inf = mt_if(impl, port);
+    dev_inf_get_stat(inf);
+  }
+  return 0;
+}
+
+int mt_reset_admin_port_stats(struct mtl_main_impl* impl) {
+  int num_ports = mt_num_ports(impl);
+
+  for (int port = 0; port < num_ports; port++) {
+    struct mt_interface* inf = mt_if(impl, port);
+    memset(&inf->stats_admin, 0, sizeof(inf->stats_admin));
+  }
+  return 0;
+}
+
+int mt_read_admin_port_stats(struct mtl_main_impl* impl, enum mtl_port port,
+                             struct mtl_port_status* stats) {
+  if (port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EIO;
+  }
+
+  struct mt_interface* inf = mt_if(impl, port);
+  memcpy(stats, &inf->stats_admin, sizeof(*stats));
   return 0;
 }
 

@@ -331,8 +331,9 @@ static void admin_alarm_handler(void* param) {
 
 static int admin_func(struct mtl_main_impl* impl) {
   struct mt_admin* admin = mt_get_admin(impl);
-
   dbg("%s, start\n", __func__);
+
+  mt_update_admin_port_stats(impl);
 
   admin_cal_cpu_busy(impl);
 
@@ -348,6 +349,8 @@ static int admin_func(struct mtl_main_impl* impl) {
   if (migrated) admin_clear_cpu_busy(impl);
 
   rte_eal_alarm_set(admin->period_us, admin_alarm_handler, impl);
+
+  mt_reset_admin_port_stats(impl);
 
   return 0;
 }
