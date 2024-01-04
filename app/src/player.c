@@ -25,7 +25,9 @@ int st_app_player_uinit(struct st_app_context* ctx) {
 }
 
 int st_app_player_init(struct st_app_context* ctx) {
+  info("%s, SDL_Init start\n", __func__);
   int res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+  info("%s, SDL_Init result %d\n", __func__, res);
   if (res) {
     warn("%s, SDL_Init fail: %s\n", __func__, SDL_GetError());
     st_app_player_uinit(ctx);
@@ -134,9 +136,11 @@ static void* display_thread_func(void* arg) {
 #endif
 
     SDL_RenderPresent(d->renderer);
+
 #ifdef WINDOWSENV
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      dbg("%s, SDL event: %d\n", __func__, event.type);
       if (event.type == SDL_QUIT) d->display_thread_stop = true;
     }
 #endif
@@ -224,5 +228,6 @@ int st_app_init_display(struct st_display* d, char* name, int width, int height,
     return ret;
   }
 
+  info("%s(%s), succ, pixel width: %d, height: %d\n", __func__, name, width, height);
   return 0;
 }

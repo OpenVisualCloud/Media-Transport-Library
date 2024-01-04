@@ -192,11 +192,14 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
 
   s->width = ops.width;
   s->height = ops.height;
+  if (ops.interlaced) {
+    s->height >>= 1;
+  }
 
   s->pcapng_max_pkts = ctx->pcapng_max_pkts;
   s->expect_fps = st_frame_rate(ops.fps);
 
-  if (ctx->has_sdl && st22p && st22p->display) {
+  if ((st22p && st22p->display) || ctx->rx_display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {

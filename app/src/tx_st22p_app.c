@@ -259,6 +259,9 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
 
   s->width = ops.width;
   s->height = ops.height;
+  if (ops.interlaced) {
+    s->height >>= 1;
+  }
   memcpy(s->st22p_source_url, st22p ? st22p->info.st22p_url : ctx->tx_st22p_url,
          ST_APP_URL_MAX_LEN);
   s->st = ctx->st;
@@ -292,7 +295,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
     return ret;
   }
 
-  if (ctx->has_sdl && st22p && st22p->display) {
+  if ((st22p && st22p->display) || ctx->tx_display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {

@@ -12,7 +12,7 @@
     "tx_sessions": [
         {
             "dip": [
-                "192.168.17.102"
+                "local:1"
             ],
             "interface": [
                 0
@@ -24,8 +24,7 @@
                     "payload_type": 112,
                     "width": 1920,
                     "height": 1080,
-                    "fps": "p50",
-                    "interlaced": true,
+                    "fps": "p59",
                     "device": "AUTO",
                     "input_format": "YUV422RFC4175PG2BE10",
                     "transport_format": "YUV_422_10bit",
@@ -37,7 +36,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "192.168.17.101"
+                "local:0"
             ],
             "interface": [
                 1
@@ -49,8 +48,7 @@
                     "payload_type": 112,
                     "width": 1920,
                     "height": 1080,
-                    "fps": "p50",
-                    "interlaced": true,
+                    "fps": "p59",
                     "device": "AUTO",
                     "output_format": "YUV422RFC4175PG2BE10",
                     "transport_format": "YUV_422_10bit",

@@ -799,6 +799,9 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   if (ret < 0) return ret;
   s->width = ops.width;
   s->height = ops.height;
+  if (ops.interlaced) {
+    s->height >>= 1;
+  }
   s->interlaced = ops.interlaced ? true : false;
   s->num_port = ops.num_port;
   memcpy(s->st20_source_url, video ? video->info.video_url : ctx->tx_video_url,
@@ -876,7 +879,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
     return ret;
   }
 
-  if (ctx->has_sdl && video && video->display) {
+  if ((video && video->display) || ctx->tx_display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {

@@ -312,6 +312,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
 
   s->width = ops.width;
   s->height = ops.height;
+  if (ops.interlaced) {
+    s->height >>= 1;
+  }
   s->num_port = ops.port.num_port;
   memcpy(s->st20p_source_url, st20p ? st20p->info.st20p_url : ctx->tx_st20p_url,
          ST_APP_URL_MAX_LEN);
@@ -346,7 +349,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     return ret;
   }
 
-  if (ctx->has_sdl && st20p && st20p->display) {
+  if ((st20p && st20p->display) || ctx->tx_display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {

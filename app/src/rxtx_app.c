@@ -428,13 +428,15 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  if (ctx->json_ctx && ctx->json_ctx->has_display) {
+  if ((ctx->json_ctx && ctx->json_ctx->has_display) || ctx->tx_display ||
+      ctx->rx_display) {
     ret = st_app_player_init(ctx);
     if (ret < 0) {
-      ctx->has_sdl = false;
-    } else {
-      ctx->has_sdl = true;
+      err("%s, player init fail %d\n", __func__, ret);
+      st_app_ctx_free(ctx);
+      return ret;
     }
+    ctx->has_sdl = true;
   }
 
   if (ctx->runtime_session) {

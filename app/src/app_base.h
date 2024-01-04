@@ -252,6 +252,7 @@ struct st_app_rx_video_session {
   struct user_pgroup user_pg;
   int width;
   int height;
+  bool interlaced;
 
   /* stat */
   int stat_frame_received;
@@ -508,6 +509,8 @@ struct st_app_context {
   bool tx_copy_once;
   bool app_thread;
   bool enable_timing_parser;
+  bool tx_display;
+  bool rx_display;
 
   bool ptp_systime_sync;
   int ptp_sync_cnt;
