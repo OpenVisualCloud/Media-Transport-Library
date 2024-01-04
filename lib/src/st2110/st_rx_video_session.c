@@ -2011,7 +2011,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
 
   /* find the target slot by tmstamp */
   bool exist_ts = false;
-  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
+  struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload, &exist_ts);
   if (!slot || !slot->frame) {
     if (exist_ts) {
       s->stat_pkts_redundant_dropped++;
