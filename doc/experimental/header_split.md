@@ -6,8 +6,22 @@ Header split is a hardware-based feature for RX memory copy offload. It can leve
 
 ## 2. Build DPDK with header split patch
 
+Note: please checkout DPDK to v23.03 as it is verified. It has known raw flow issues with DPDK v23.08 and v23.11.
+
 ```bash
-git am patches/dpdk/23.07/hdr_split/0001-net-ice-support-hdr-split-mbuf-callback.patch
+cd dpdk
+# checkout v23.03 version
+git checkout v23.03
+git switch -c v23.03
+git am $imtl_source_code/patches/dpdk/23.03/*.patch
+git am $imtl_source_code/patches/dpdk/23.03/hdr_split/0001-net-ice-support-hdr-split-mbuf-callback.patch
+
+# build dpdk
+rm build -rf
+meson setup build
+ninja -C build
+sudo ninja install -C build
+cd ..
 ```
 
 ## 3. Update DDP package version with header split feature
