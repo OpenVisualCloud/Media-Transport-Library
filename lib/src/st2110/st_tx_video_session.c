@@ -2504,12 +2504,15 @@ static bool tv_pkts_capable_chain(struct mtl_main_impl* impl,
   struct st20_tx_ops* ops = &s->ops;
   int num_ports = ops->num_port;
 
+  /* true for rtp type */
+  if (!st20_is_frame_type(ops->type)) return true;
+
   for (int port = 0; port < num_ports; port++) {
     enum mtl_port s_port = mt_port_logic2phy(s->port_maps, port);
     uint16_t max_buffer_nb = mt_if_nb_tx_desc(impl, s_port);
-    max_buffer_nb += s->ring_count;
+    // max_buffer_nb += s->ring_count;
     /* at least two swap buffer */
-    if ((s->st20_total_pkts * 3 / 2) < max_buffer_nb) {
+    if ((s->st20_total_pkts * (s->st20_frames_cnt - 1)) < max_buffer_nb) {
       warn("%s(%d), max_buffer_nb %u on s_port %d too large, st20_total_pkts %d\n",
            __func__, s->idx, max_buffer_nb, s_port, s->st20_total_pkts);
       return false;
