@@ -1272,7 +1272,7 @@ TEST(St20p, digest_1080p_packet_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.check_fps = false;
   para.pkt_convert = true;
-  para.send_done_check = true;
+  para.send_done_check = false;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

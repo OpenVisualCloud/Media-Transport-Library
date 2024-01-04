@@ -41,11 +41,15 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
 
   if (!ctx->handle) return -EIO; /* not ready */
 
+  if (!ctx->ptp_time_first_frame) {
+    ctx->ptp_time_first_frame = mtl_ptp_read_time(ctx->ctx->handle);
+  }
+
   *next_frame_idx = ctx->fb_idx;
 
   if (ctx->user_pacing) {
     meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    meta->timestamp = mtl_ptp_read_time(ctx->ctx->handle) + 25 * 1000 * 1000;
+    meta->timestamp = ctx->ptp_time_first_frame + ctx->frame_time * ctx->fb_send * 2;
   } else if (ctx->user_timestamp) {
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = ctx->fb_send;
@@ -4268,6 +4272,7 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
     test_ctx_tx[i]->check_sha = true;
     test_ctx_tx[i]->user_pacing = user_pacing[i];
     test_ctx_tx[i]->user_timestamp = user_timestamp[i];
+    test_ctx_tx[i]->frame_time = (double)NS_PER_S / st_frame_rate(fps);
 
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_timestamp_test";
