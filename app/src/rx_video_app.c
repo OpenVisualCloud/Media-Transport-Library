@@ -427,8 +427,8 @@ static int app_rx_video_detected(void* priv, const struct st20_detect_meta* meta
 static int app_rx_video_uinit(struct st_app_rx_video_session* s) {
   int ret, idx = s->idx;
 
-  st_app_uinit_display(s->display);
   if (s->display) {
+    st_app_uinit_display(s->display);
     st_app_free(s->display);
   }
 
@@ -605,11 +605,12 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
     s->framebuffs[j].frame = NULL;
   }
 
-  if (ctx->has_sdl && video && video->display) {
+  if ((video && video->display) || ctx->rx_display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
+      st_app_free(d);
       app_rx_video_uinit(s);
       return -EIO;
     }

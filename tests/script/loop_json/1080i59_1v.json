@@ -12,7 +12,7 @@
     "tx_sessions": [
         {
             "dip": [
-                "192.168.17.102"
+                "local:1"
             ],
             "interface": [
                 0
@@ -28,7 +28,7 @@
                     "tr_offset": "default",
                     "video_format": "i1080i59",
                     "pg_format": "YUV_422_10bit",
-                    "video_url": "./test.yuv"
+                    "video_url": "./yuv422rfc4175be10_1080i.yuv"
                 }
             ]
         }
@@ -36,7 +36,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "192.168.17.101"
+                "local:0"
             ],
             "interface": [
                 1
