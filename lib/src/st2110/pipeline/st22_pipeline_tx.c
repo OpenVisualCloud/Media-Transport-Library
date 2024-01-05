@@ -195,7 +195,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
   dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, encode_idx,
       result, data_size);
   if ((result < 0) || (data_size <= ST22_ENCODE_MIN_FRAME_SZ) || (data_size > max_size)) {
-    info("%s(%d), invalid frame %u result %d data_size %" PRIu64
+    warn("%s(%d), invalid frame %u result %d data_size %" PRIu64
          ", allowed min %u max %" PRIu64 "\n",
          __func__, idx, encode_idx, result, data_size, ST22_ENCODE_MIN_FRAME_SZ,
          max_size);
@@ -609,7 +609,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
-  mt_pthread_cond_init(&ctx->block_wake_cond, NULL);
+  mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   if (ops->flags & ST22P_TX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */

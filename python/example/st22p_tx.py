@@ -9,6 +9,7 @@ import pymtl as mtl
 
 def main():
     args = misc_util.parse_args(True)
+    bpp = 3
 
     yuv_file = open(args.tx_url, "rb")
     if not yuv_file:
@@ -32,16 +33,23 @@ def main():
         print("mtl_init fail")
         sys.exit(1)
 
-    # Create st20p tx session
-    tx_para = mtl.st20p_tx_ops()
-    tx_para.name = "st20p_tx_python"
+    # Create st22p tx session
+    tx_para = mtl.st22p_tx_ops()
+    tx_para.name = "st22p_tx_python"
     tx_para.width = args.width
     tx_para.height = args.height
     tx_para.fps = mtl.ST_FPS_P59_94
     tx_para.interlaced = args.interlaced
     tx_para.framebuff_cnt = 3
-    tx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     tx_para.input_fmt = args.pipeline_fmt
+    tx_para.pack_type = mtl.ST22_PACK_CODESTREAM
+    tx_para.codec = mtl.ST22_CODEC_JPEGXS
+    tx_para.device = mtl.ST_PLUGIN_DEVICE_AUTO
+    tx_para.quality = mtl.ST22_QUALITY_MODE_QUALITY
+    tx_para.codec_thread_cnt = 2
+    tx_para.codestream_size = tx_para.width * tx_para.height * bpp / 8
+    if tx_para.interlaced:
+        tx_para.codestream_size /= 2
     # tx port
     tx_port = mtl.st_tx_port()
     mtl.st_txp_para_port_set(
@@ -55,19 +63,19 @@ def main():
     tx_port.payload_type = args.payload_type
     tx_para.port = tx_port
     # enable block get mode
-    tx_para.flags = mtl.ST20P_TX_FLAG_BLOCK_GET
-    # create st20p_tx session
-    st20p_tx = mtl.st20p_tx_create(mtl_handle, tx_para)
-    if not st20p_tx:
-        print("st20p_tx_create fail")
+    tx_para.flags = mtl.ST22P_TX_FLAG_BLOCK_GET
+    # create st22p_tx session
+    st22p_tx = mtl.st22p_tx_create(mtl_handle, tx_para)
+    if not st22p_tx:
+        print("st22p_tx_create fail")
         sys.exit(1)
-    frame_sz = mtl.st20p_tx_frame_size(st20p_tx)
+    frame_sz = mtl.st22p_tx_frame_size(st22p_tx)
     print(f"frame_sz: {hex(frame_sz)}")
 
     # loop until ctrl-c
     try:
         while True:
-            frame = mtl.st20p_tx_get_frame(st20p_tx)
+            frame = mtl.st22p_tx_get_frame(st22p_tx)
             if frame:
                 # print(f"frame addr: {hex(mtl.st_frame_addr_cpuva(frame, 0))}")
                 # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
@@ -85,15 +93,15 @@ def main():
                         )
                 else:
                     print(f"Fail to read {hex(frame_sz)} from {args.tx_url}")
-                mtl.st20p_tx_put_frame(st20p_tx, frame)
+                mtl.st22p_tx_put_frame(st22p_tx, frame)
             else:
-                print("st20p_tx_get_frame get fail")
+                print("st22p_tx_get_frame get fail")
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt")
 
-    # Free st20p_tx session
-    mtl.st20p_tx_free(st20p_tx)
+    # Free st22p_tx session
+    mtl.st22p_tx_free(st22p_tx)
 
     # Close file
     yuv_file.close()

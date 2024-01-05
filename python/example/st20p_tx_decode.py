@@ -4,8 +4,8 @@
 import ctypes
 import sys
 
-import arg_util
 import av
+import misc_util
 import numpy as np
 import pymtl as mtl
 
@@ -52,25 +52,21 @@ def get_video_resolution(video_path):
 
 
 def main():
-    # jellyfish-3-mbps-hd-hevc-10bit.mkv or output.mp4
-    input_file_path = "jellyfish-3-mbps-hd-hevc-10bit.mkv"
-    width, height = get_video_resolution(input_file_path)
-    print(f"input_file_path: {input_file_path}, width: {width}, height: {height}")
+    args = misc_util.parse_args(True)
+
+    width, height = get_video_resolution(args.tx_url)
+    print(f"tx_url: {args.tx_url}, width: {width}, height: {height}")
     mtl_input_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR10LE
     av_pixel_output_format = "yuv422p10le"
-
-    args = arg_util.parse_args(True)
 
     # Init para
     init_para = mtl.mtl_init_params()
     mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, args.p_port)
     init_para.num_ports = 1
     mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
-    init_para.flags = (
-        mtl.MTL_FLAG_BIND_NUMA
-        | mtl.MTL_FLAG_DEV_AUTO_START_STOP
-        | mtl.MTL_FLAG_PTP_ENABLE
-    )
+    init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
+    if args.ptp:
+        init_para.flags |= mtl.MTL_FLAG_PTP_ENABLE
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
 
@@ -98,8 +94,8 @@ def main():
     )
     tx_port.num_port = 1
     mtl.st_txp_para_dip_set(tx_port, mtl.MTL_SESSION_PORT_P, args.p_tx_ip)
-    mtl.st_txp_para_udp_port_set(tx_port, mtl.MTL_SESSION_PORT_P, 20000)
-    tx_port.payload_type = 112
+    mtl.st_txp_para_udp_port_set(tx_port, mtl.MTL_SESSION_PORT_P, args.udp_port)
+    tx_port.payload_type = args.payload_type
     tx_para.port = tx_port
     # enable block get mode
     tx_para.flags = mtl.ST20P_TX_FLAG_BLOCK_GET
@@ -112,7 +108,7 @@ def main():
     print(f"frame_sz: {hex(frame_sz)}")
 
     # loop until ctrl-c
-    container = av.open(input_file_path)
+    container = av.open(args.tx_url)
     try:
         stream = next(s for s in container.streams if s.type == "video")
         while True:

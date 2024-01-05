@@ -7,12 +7,12 @@ import misc_util
 import pymtl as mtl
 
 
-def interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
+def interlaced_rx_loop(mtl_handle, st22p_rx, display, display_scale_factor):
     first = None
     # loop until ctrl-c
     try:
         while True:
-            field = mtl.st20p_rx_get_frame(st20p_rx)
+            field = mtl.st22p_rx_get_frame(st22p_rx)
             if not field:
                 continue
             if field.second_field:
@@ -21,29 +21,29 @@ def interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
                     misc_util.field_display(
                         mtl_handle, first, field, display_scale_factor
                     )
-                    mtl.st20p_rx_put_frame(st20p_rx, first)
+                    mtl.st22p_rx_put_frame(st22p_rx, first)
                     first = None
 
                 # put field
-                mtl.st20p_rx_put_frame(st20p_rx, field)
+                mtl.st22p_rx_put_frame(st22p_rx, field)
             else:  # first field
                 if first:
-                    mtl.st20p_rx_put_frame(st20p_rx, first)
+                    mtl.st22p_rx_put_frame(st22p_rx, first)
                     first = None
                 first = field
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt")
         if first:
-            mtl.st20p_rx_put_frame(st20p_rx, first)
+            mtl.st22p_rx_put_frame(st22p_rx, first)
             first = None
 
 
-def frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
+def frame_rx_loop(mtl_handle, st22p_rx, display, display_scale_factor):
     # loop until ctrl-c
     try:
         while True:
-            frame = mtl.st20p_rx_get_frame(st20p_rx)
+            frame = mtl.st22p_rx_get_frame(st22p_rx)
             if frame:
                 # print(f"frame addr: {hex(mtl.st_frame_addr_cpuva(frame, 0))}")
                 # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
@@ -51,7 +51,7 @@ def frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
                 if display:
                     misc_util.frame_display(mtl_handle, frame, display_scale_factor)
                 # return the frame
-                mtl.st20p_rx_put_frame(st20p_rx, frame)
+                mtl.st22p_rx_put_frame(st22p_rx, frame)
 
     except KeyboardInterrupt:
         print("KeyboardInterrupt")
@@ -77,16 +77,21 @@ def main():
         print("mtl_init fail")
         sys.exit(1)
 
-    # Create st20p rx session
-    rx_para = mtl.st20p_rx_ops()
-    rx_para.name = "st20p_rx_python"
+    # Create st22p rx session
+    rx_para = mtl.st22p_rx_ops()
+    rx_para.name = "st22p_rx_python"
     rx_para.width = args.width
     rx_para.height = args.height
     rx_para.fps = mtl.ST_FPS_P59_94
     rx_para.interlaced = args.interlaced
     rx_para.framebuff_cnt = 3
-    rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     rx_para.output_fmt = args.pipeline_fmt
+    rx_para.pack_type = mtl.ST22_PACK_CODESTREAM
+    rx_para.codec = mtl.ST22_CODEC_JPEGXS
+    rx_para.device = mtl.ST_PLUGIN_DEVICE_AUTO
+    # let lib to decide
+    rx_para.max_codestream_size = 0
+    rx_para.codec_thread_cnt = 2
     # rx port
     rx_port = mtl.st_rx_port()
     mtl.st_rxp_para_port_set(
@@ -100,24 +105,24 @@ def main():
     rx_port.payload_type = args.payload_type
     rx_para.port = rx_port
     # enable block get mode
-    rx_para.flags = mtl.ST20P_RX_FLAG_BLOCK_GET
-    # create st20p_rx session
-    st20p_rx = mtl.st20p_rx_create(mtl_handle, rx_para)
-    if not st20p_rx:
-        print("st20p_rx_create fail")
+    rx_para.flags = mtl.ST22P_RX_FLAG_BLOCK_GET
+    # create st22p_rx session
+    st22p_rx = mtl.st22p_rx_create(mtl_handle, rx_para)
+    if not st22p_rx:
+        print("st22p_rx_create fail")
         sys.exit(1)
 
     if args.interlaced:
         interlaced_rx_loop(
-            mtl_handle, st20p_rx, args.display, args.display_scale_factor
+            mtl_handle, st22p_rx, args.display, args.display_scale_factor
         )
     else:
-        frame_rx_loop(mtl_handle, st20p_rx, args.display, args.display_scale_factor)
+        frame_rx_loop(mtl_handle, st22p_rx, args.display, args.display_scale_factor)
 
     misc_util.destroy()
 
-    # Free st20p_rx session
-    mtl.st20p_rx_free(st20p_rx)
+    # Free st22p_rx session
+    mtl.st22p_rx_free(st22p_rx)
 
     # Free MTL instance
     mtl.mtl_uninit(mtl_handle)

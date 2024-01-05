@@ -3,24 +3,20 @@
 
 import ctypes
 import sys
-from datetime import datetime
 
-import arg_util
 import av
+import misc_util
 import numpy as np
 import pymtl as mtl
 
 
 def main():
-    width = 1920
-    height = 1080
+    args = misc_util.parse_args(False)
+
     mtl_output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
     av_pixel_input_format = "yuv422p"
 
-    current_datetime = datetime.now()
-    output_file = current_datetime.strftime("%Y_%m_%d_%H_%M_%S") + "_output.mp4"
-
-    args = arg_util.parse_args(False)
+    output_file = args.rx_url
 
     # Init para
     init_para = mtl.mtl_init_params()
@@ -28,6 +24,8 @@ def main():
     init_para.num_ports = 1
     mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
     init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
+    if args.ptp:
+        init_para.flags |= mtl.MTL_FLAG_PTP_ENABLE
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
 
@@ -40,8 +38,8 @@ def main():
     # Create st20p rx session
     rx_para = mtl.st20p_rx_ops()
     rx_para.name = "st20p_rx_python"
-    rx_para.width = width
-    rx_para.height = height
+    rx_para.width = args.width
+    rx_para.height = args.height
     rx_para.fps = mtl.ST_FPS_P59_94
     rx_para.framebuff_cnt = 3
     rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
@@ -55,8 +53,8 @@ def main():
     )
     rx_port.num_port = 1
     mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, args.p_rx_ip)
-    mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, 20000)
-    rx_port.payload_type = 112
+    mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, args.udp_port)
+    rx_port.payload_type = args.payload_type
     rx_para.port = rx_port
     # enable block get mode
     rx_para.flags = mtl.ST20P_RX_FLAG_BLOCK_GET
@@ -69,8 +67,8 @@ def main():
     # create h264_stream
     h264 = av.open(output_file, mode="w")
     h264_stream = h264.add_stream("libx264", rate=60)
-    h264_stream.width = width
-    h264_stream.height = height
+    h264_stream.width = args.width
+    h264_stream.height = args.height
     h264_stream.pix_fmt = "yuv420p"  # h264 use yuv420p
 
     # loop until ctrl-c
@@ -80,7 +78,7 @@ def main():
             if not frame:
                 continue
 
-            video_frame = av.VideoFrame(width, height, av_pixel_input_format)
+            video_frame = av.VideoFrame(args.width, args.height, av_pixel_input_format)
             for plane in range(mtl.st_frame_fmt_planes(frame.fmt)):
                 p_size = mtl.st_frame_plane_size(frame, plane)
                 # print(f"plane: {plane} size: {p_size}")

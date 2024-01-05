@@ -345,7 +345,8 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
 
   /* wait ptp and tsc calibrate done */
-  mt_ptp_wait_stable(impl, MTL_PORT_P, 60 * 3 * MS_PER_S);
+  ret = mt_ptp_wait_stable(impl, MTL_PORT_P, 60 * 3 * MS_PER_S);
+  if (ret < 0) return ret;
   mt_wait_tsc_stable(impl);
 
   train_start_time = mt_get_tsc(impl);

@@ -1526,6 +1526,11 @@ int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeo
   if (!ptp->active) return 0;
 
   while (ptp->delta_result_cnt <= 5) {
+    if (mt_aborted(impl)) {
+      err("%s, fail as user aborted\n", __func__);
+      return -EIO;
+    }
+
     if (timeout_ms >= 0) {
       int ms = (mt_get_tsc(impl) - start_ts) / NS_PER_MS;
       if (ms > timeout_ms) {

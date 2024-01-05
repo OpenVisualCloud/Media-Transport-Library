@@ -30,8 +30,8 @@ Follow the guide in ffmpeg site.
 
 ```bash
 wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc.mkv
-ffmpeg -i jellyfish-3-mbps-hd-hevc.mkv -vframes 3 -c:v rawvideo yuv420p8le.yuv
-ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p8le.yuv -pix_fmt yuv422p test_planar8.yuv
+ffmpeg -i jellyfish-3-mbps-hd-hevc.mkv -vframes 8 -c:v rawvideo yuv420p8le_1080p.yuv
+ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p8le_1080p.yuv -pix_fmt yuv422p yuv422p8le_1080p.yuv
 ```
 
 ### 3.2 Edit kahawai.json to enable the st22 ffmpeg plugin
@@ -51,14 +51,16 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p8le.yuv -pix_fmt yuv422p test_pla
 
 ### 3.3 Run the sample with tx and rx based on h264 CBR
 
+Customize the p_port as the setup.
+
 Tx run:
 
 ```bash
-./build/app/TxSt22PipelineSample --st22_codec h264_cbr --pipeline_fmt YUV422PLANAR8 --tx_url test_planar8.yuv
+./build/app/TxSt22PipelineSample --p_port 0000:ac:01.0 --st22_codec h264_cbr --pipeline_fmt YUV422PLANAR8 --tx_url yuv422p8le_1080p.yuv
 ```
 
 Rx run:
 
 ```bash
-./build/app/RxSt22PipelineSample --st22_codec h264_cbr --pipeline_fmt YUV422PLANAR8 --rx_url out_planar8.yuv
+./build/app/RxSt22PipelineSample --p_port 0000:ac:01.1 --st22_codec h264_cbr --pipeline_fmt YUV422PLANAR8 --rx_url out_yuv422p8le_1080p.yuv
 ```
