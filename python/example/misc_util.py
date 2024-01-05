@@ -1,13 +1,103 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
-# opencv2 utils
+# misc utils
 
+import argparse
 import ctypes
 import sys
 
 import cv2
 import numpy as np
 import pymtl as mtl
+
+
+def parse_pipeline_fmt(name):
+    fmt = mtl.st_frame_name_to_fmt(name)
+    if fmt >= mtl.ST_FRAME_FMT_MAX:
+        raise argparse.ArgumentTypeError(f"{name} is not a valid fmt name")
+    return fmt
+
+
+def parse_st22_codec(name):
+    if name == "jpegxs":
+        return mtl.ST22_CODEC_JPEGXS
+    if name == "h264_cbr":
+        return mtl.ST22_CODEC_H264_CBR
+
+    raise argparse.ArgumentTypeError(f"{name} is not a valid codec name")
+
+
+def parse_args(is_tx):
+    parser = argparse.ArgumentParser(description="Argument util for MTL example")
+    if is_tx:
+        p_port_default = "0000:af:01.1"
+    else:
+        p_port_default = "0000:af:01.0"
+    parser.add_argument(
+        "--p_port", type=str, default=p_port_default, help="primary port name"
+    )
+    if is_tx:
+        p_sip_default = "192.168.108.101"
+    else:
+        p_sip_default = "192.168.108.102"
+    parser.add_argument(
+        "--p_sip", type=str, default=p_sip_default, help="primary local IP address"
+    )
+    # p_tx_ip
+    parser.add_argument(
+        "--p_tx_ip",
+        type=str,
+        default="239.168.85.20",
+        help="primary TX dest IP address",
+    )
+    # p_rx_ip
+    parser.add_argument(
+        "--p_rx_ip",
+        type=str,
+        default="239.168.85.20",
+        help="primary RX source IP address",
+    )
+    # pipeline_fmt
+    parser.add_argument(
+        "--pipeline_fmt",
+        type=parse_pipeline_fmt,
+        default=mtl.ST_FRAME_FMT_YUV422PLANAR10LE,
+        help="pipeline_fmt",
+    )
+    # display
+    parser.add_argument("--display", action="store_true", help="enable display option")
+    parser.add_argument(
+        "--display_scale_factor", type=int, default=2, help="display scale factor"
+    )
+    # tx_url
+    parser.add_argument(
+        "--tx_url", type=str, default="yuv422p10le_1080p.yuv", help="tx url file path"
+    )
+    # rx_url
+    parser.add_argument(
+        "--rx_url", type=str, default="test.mp4", help="rx url file path"
+    )
+    # width & height
+    parser.add_argument("--width", type=int, default=1920, help="width")
+    parser.add_argument("--height", type=int, default=1080, help="height")
+    # interlaced
+    parser.add_argument(
+        "--interlaced", action="store_true", help="Enable interlaced option"
+    )
+    # udp_port
+    parser.add_argument("--udp_port", type=int, default=20000, help="udp port")
+    # payload_type
+    parser.add_argument("--payload_type", type=int, default=112, help="payload type")
+    # ptp
+    parser.add_argument("--ptp", action="store_true", help="Enable built-in PTP option")
+    # st22_codec
+    parser.add_argument(
+        "--st22_codec",
+        type=parse_st22_codec,
+        default=mtl.ST22_CODEC_JPEGXS,
+        help="st22_codec",
+    )
+    return parser.parse_args()
 
 
 def ptr_to_yuv422p8(ptr, width, height):
@@ -167,3 +257,15 @@ def field_display(mtl_handle, first, second, display_scale_factor):
         mtl.st_field_merge(first, second, frame)
         frame_display(mtl_handle, frame, display_scale_factor)
         mtl.st_frame_free(frame)
+
+
+def copy_to_st_frame(yuv_frame, frame):
+    src_p = ctypes.c_char_p(yuv_frame)
+    src_address = ctypes.cast(src_p, ctypes.c_void_p).value
+    src_address_uint64 = ctypes.c_uint64(src_address).value
+    # mtl_memcpy_action
+    memcpy_ops = mtl.mtl_memcpy_ops()
+    memcpy_ops.dst = mtl.st_frame_addr_cpuva(frame, 0)
+    memcpy_ops.src = src_address_uint64
+    memcpy_ops.sz = frame.data_size
+    mtl.mtl_memcpy_action(memcpy_ops)

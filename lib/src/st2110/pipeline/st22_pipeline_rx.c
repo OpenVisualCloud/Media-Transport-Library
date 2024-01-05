@@ -544,7 +544,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
-  mt_pthread_cond_init(&ctx->block_wake_cond, NULL);
+  mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   if (ops->flags & ST22P_RX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */
