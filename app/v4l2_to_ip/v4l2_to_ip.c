@@ -842,25 +842,30 @@ static int video_set_format(struct device* dev, unsigned int w, unsigned int h,
 
   ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
   if (ret < 0) {
-    printf("Unable to set format: %s (%d).\n", strerror(errno), errno);
+    printf("Failed to configure video format: %s (%d).\n", strerror(errno), errno);
     return ret;
   }
 
   if (video_is_mplane(dev)) {
-    printf("Video format set: %s (%08x) %ux%u field %s, %u planes: \n",
-           v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
-           fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
-           v4l2_field_name(fmt.fmt.pix_mp.field), fmt.fmt.pix_mp.num_planes);
+    printf(
+        "Video attributes, pixel format: %s (%08x), resolution: %ux%u field: %s, number "
+        "of planes: %u\n",
+        v4l2_format_name(fmt.fmt.pix_mp.pixelformat), fmt.fmt.pix_mp.pixelformat,
+        fmt.fmt.pix_mp.width, fmt.fmt.pix_mp.height,
+        v4l2_field_name(fmt.fmt.pix_mp.field), fmt.fmt.pix_mp.num_planes);
 
     for (i = 0; i < fmt.fmt.pix_mp.num_planes; i++) {
-      printf(" * Stride %u, buffer size %u\n", fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
+      printf("Plane %d attributes, stride: %u, buffer size: %u\n", i,
+             fmt.fmt.pix_mp.plane_fmt[i].bytesperline,
              fmt.fmt.pix_mp.plane_fmt[i].sizeimage);
     }
   } else {
-    printf("Video format set: %s (%08x) %ux%u (stride %u) field %s buffer size %u\n",
-           v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
-           fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
-           v4l2_field_name(fmt.fmt.pix.field), fmt.fmt.pix.sizeimage);
+    printf(
+        "Video attributes, pixel format: %s (%08x), resolution: %ux%u, stride: %u, "
+        "field: %s buffer size %u\n",
+        v4l2_format_name(fmt.fmt.pix.pixelformat), fmt.fmt.pix.pixelformat,
+        fmt.fmt.pix.width, fmt.fmt.pix.height, fmt.fmt.pix.bytesperline,
+        v4l2_field_name(fmt.fmt.pix.field), fmt.fmt.pix.sizeimage);
   }
 
   return 0;
