@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use bitflags::bitflags;
 use derive_builder::Builder;
 use std::mem::MaybeUninit;
@@ -99,7 +100,7 @@ bitflags! {
     }
 }
 
-#[derive(Default, Builder, Debug)]
+#[derive(Default, Builder, Debug, Clone)]
 #[builder(setter(into))]
 pub struct Mtl {
     #[builder(default)]
@@ -121,24 +122,22 @@ pub struct Mtl {
 }
 
 impl Mtl {
-    pub fn init(mut self) -> Result<Self, &'static str> {
+    pub fn init(mut self) -> Result<Self> {
         if self.handle.is_some() {
-            return Err("MTL is already initialized");
+            bail!("MTL is already initialized");
         }
 
         let num_ports = self.net_devs.len();
         if num_ports > 8 || num_ports == 0 {
-            return Err("Invalid number of netdevs");
+            bail!("Invalid number of netdevs");
         }
 
         // Create an uninitialized instance of mtl_init_params and zero out the memory
         let mut c_param: MaybeUninit<sys::mtl_init_params> = MaybeUninit::uninit();
-        unsafe {
-            std::ptr::write_bytes(c_param.as_mut_ptr(), 0, 1);
-        }
 
         // Fill the params
         unsafe {
+            std::ptr::write_bytes(c_param.as_mut_ptr(), 0, 1);
             let c_param = &mut *c_param.as_mut_ptr();
             c_param.num_ports = num_ports as _;
             for (i, net_dev) in self.net_devs.iter().enumerate() {
@@ -164,6 +163,8 @@ impl Mtl {
                 if let Some(ip) = net_dev.get_gateway() {
                     c_param.gateway[i] = ip.octets();
                 }
+                c_param.tx_queues_cnt[i] = net_dev.get_tx_queues_cnt();
+                c_param.rx_queues_cnt[i] = net_dev.get_rx_queues_cnt();
             }
             for (i, dma_dev) in self.dma_devs.iter().enumerate() {
                 let port_bytes: Vec<i8> = dma_dev
@@ -191,11 +192,19 @@ impl Mtl {
 
         let handle = unsafe { sys::mtl_init(&mut c_param as *mut _) };
         if handle == std::ptr::null_mut() {
-            Err("Failed to initialize MTL")
+            bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);
             Ok(self)
         }
+    }
+
+    pub fn handle(&self) -> &Option<sys::mtl_handle> {
+        &self.handle
+    }
+
+    pub fn net_devs(&self) -> &Vec<NetDev> {
+        &self.net_devs
     }
 }
 

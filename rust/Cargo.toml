@@ -9,13 +9,15 @@ path = "src/imtl/lib.rs"
 
 [dependencies]
 derive_builder = "0.12.0"
+bitflags  = "2.4.1"
+anyhow = "1.0.79"
 
 [dependencies.imtl-sys]
 path = "imtl-sys"
 version = "^0.1.0"
 
-[dependencies.bitflags]
-version = "2.4.1"
+[dev-dependencies]
+ctrlc = "3.4.2"
 
 [features]
 convert = ["imtl-sys/convert"]
