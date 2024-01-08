@@ -1,3 +1,27 @@
+/*!
+ * MTL Main Handle
+ *
+ * This module provides the foundational components for the MTL library.
+ * It defines configurations for logging, networking protocols, IOVA modes, and
+ * initializable structures needed to create and manage network devices and their
+ * behaviors in a flexible manner. The `mtl` structure serves as the main handle
+ * for interacting with the library, providing methods for initialization and management.
+ *
+ * The module utilizes bitflags for managing various initialization flags and derives builders
+ * for easy and readable instance creation. Error handling is facilitated by the `anyhow` crate.
+ *
+ * Enums `LogLevel`, `RssMode`, and `IovaMode` define the operation modes for logging,
+ * Receive Side Scaling, and input-output virtual address translation, respectively.
+ * Struct `Flags` provides bitflag constants for fine-grained initialization options. The `Mtl`
+ * struct encapsulates the library configuration and is designed with a builder pattern
+ * for convenient construction.
+ *
+ * The `Mtl` also implements the `Drop` trait to ensure proper cleanup and resource deallocation,
+ * further promoting safety and preventing resource leaks.
+ *
+ * Usage of this library requires careful composition of these configurations to match
+ * the specific needs of the network environment being targeted.
+ */
 use anyhow::{bail, Result};
 use bitflags::bitflags;
 use derive_builder::Builder;
@@ -6,16 +30,19 @@ use std::mem::MaybeUninit;
 use crate::netdev::NetDev;
 use crate::sys;
 
+/// Level of detail for logging messages.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum LogLevel {
     Debug = 0,
     Info,
     Notice,
     Warning,
+    /// Default logging level, indicating an error.
     #[default]
     Error,
 }
 
+/// Receive Side Scaling (RSS) mode options for the network device.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum RssMode {
     #[default]
@@ -24,14 +51,20 @@ pub enum RssMode {
     L3L4,
 }
 
+/// DPDK IOVA mode.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum IovaMode {
+    /// Default mode, automatically determines address translation.
     #[default]
     Auto = 0,
+    /// Use IOVA virtual address mode.
     Va,
+    /// Use IOVA physical address mode.
     Pa,
 }
 
+// Define a set of flags using the `bitflags` macro. These flags will be used
+// to set configuration options for initializing MTL.
 bitflags! {
     #[derive(Copy, Clone, Debug, Default)]
     pub struct Flags: u64 {
@@ -100,28 +133,42 @@ bitflags! {
     }
 }
 
+/// Configuration structure for a new `mtl` instance.
 #[derive(Default, Builder, Debug, Clone)]
 #[builder(setter(into))]
 pub struct Mtl {
+    /// Handle to the `mtl` instance after initialization.
     #[builder(default)]
     handle: Option<sys::mtl_handle>,
 
+    /// Mandatory list of network devices.
     net_devs: Vec<NetDev>, /* Mandatory */
+    /// Optional list of DMA devices.
     #[builder(default)]
     dma_devs: Vec<String>,
+    /// Optional list of logical cores to pin the `mtl` schedulers to.
     #[builder(default)]
     lcores: Option<String>,
+    /// Optional logging level configuration.
     #[builder(default)]
     log_level: LogLevel,
+    /// Optional RSS configuration.
     #[builder(default)]
     rss_mode: RssMode,
+    /// Optional IOVA mode configuration.
     #[builder(default)]
     iova_mode: IovaMode,
+    /// Optional flags configuration.
     #[builder(default)]
     flags: Flags,
 }
 
 impl Mtl {
+    /// Initialize the 'mtl' instance with the provided configuration.
+    ///
+    /// # Errors
+    /// Returns an error if the 'mtl' has already been initialized or if the number of network devices
+    /// is not within the allowed range.
     pub fn init(mut self) -> Result<Self> {
         if self.handle.is_some() {
             bail!("MTL is already initialized");
@@ -199,15 +246,18 @@ impl Mtl {
         }
     }
 
+    /// Get a reference to the `mtl` handle.
     pub fn handle(&self) -> &Option<sys::mtl_handle> {
         &self.handle
     }
 
+    /// Get a reference to the vector of `NetDev` configuration instances.
     pub fn net_devs(&self) -> &Vec<NetDev> {
         &self.net_devs
     }
 }
 
+// Drop trait implementation to automatically clean up resources when the `Mtl` instance goes out of scope.
 impl Drop for Mtl {
     fn drop(&mut self) {
         if let Some(handle) = self.handle {

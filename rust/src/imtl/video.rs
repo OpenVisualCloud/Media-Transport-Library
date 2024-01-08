@@ -1,5 +1,10 @@
 /*!
-ST 2110-20 and ST 2110-22 Video Session
+ * ST 2110-20 and ST 2110-22 Video Session
+ *
+ * This module defines the structures and implementations necessary for setting up
+ * RTP sessions for transmitting and receiving uncompressed (ST 2110-20) and
+ * compressed video (ST 2110-22).
+ *
  */
 
 use crate::mtl::Mtl;
@@ -10,14 +15,16 @@ use crossbeam_utils::sync::Parker;
 use derive_builder::Builder;
 use std::{ffi::c_void, mem::MaybeUninit};
 
+/// Different packing formats for uncompressed video.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Packing {
     #[default]
-    Bpm = 0,
-    Gpm,
-    GpmSl,
+    Bpm = 0, // Block Packing Mode
+    Gpm,   // General Packing Mode
+    GpmSl, // General Packing Mode with Single Line
 }
 
+/// Different frame rates (frames per second) supported.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Fps {
     #[default]
@@ -34,6 +41,7 @@ pub enum Fps {
     P23_98,
 }
 
+/// Different transport formats for raw video data.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum TransportFmt {
     #[default]
@@ -54,6 +62,7 @@ pub enum TransportFmt {
     Yuv444_16bit,
 }
 
+/// States that a frame can be in during processing.
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 enum FrameStatus {
     #[default]
@@ -62,6 +71,7 @@ enum FrameStatus {
     Ready,
 }
 
+/// VideoTx structure for handling transmission of uncompressed video.
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
 pub struct VideoTx {
@@ -135,6 +145,7 @@ unsafe extern "C" fn notify_frame_done(
 }
 
 impl VideoTx {
+    /// Initializes a new VideoTx session using the specified Media Transport Library (MTL).
     pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
         if self.handle.is_some() {
             bail!("VideoTx Session is already created");
@@ -178,7 +189,6 @@ impl VideoTx {
             ops.interlaced = self.interlaced as _;
             ops.framebuff_cnt = self.fb_cnt as _;
 
-            // TODO add real callback functions
             let pointer_to_void: *mut c_void = &self as *const VideoTx as *mut c_void;
             ops.priv_ = pointer_to_void;
             ops.get_next_frame = Some(get_next_frame);
@@ -199,10 +209,12 @@ impl VideoTx {
         }
     }
 
+    /// Get the raw frame size
     pub fn frame_size(&self) -> usize {
         self.frame_size
     }
 
+    /// Wait until free frame available
     pub fn wait_free_frame(&mut self) {
         let frame_idx = self.producer_idx;
         if !self.is_frame_free(frame_idx) {
@@ -210,6 +222,7 @@ impl VideoTx {
         }
     }
 
+    /// Fill the frame buffer to be transmitted
     pub fn fill_next_frame(&mut self, frame: &[u8]) -> Result<()> {
         let mut frame_idx = self.producer_idx;
         while !self.is_frame_free(frame_idx) {
@@ -260,6 +273,7 @@ impl VideoTx {
 }
 
 impl Drop for VideoTx {
+    /// Automatically called when the VideoTx instance is dropped from memory.
     fn drop(&mut self) {
         if let Some(handle) = self.handle {
             unsafe {

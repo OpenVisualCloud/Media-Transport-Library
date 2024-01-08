@@ -12,7 +12,6 @@ derive_builder = "0.12.0"
 bitflags  = "2.4.1"
 anyhow = "1.0.79"
 crossbeam-utils = "0.8.18"
-memmap2 = "0.9.3"
 
 [dependencies.imtl-sys]
 path = "imtl-sys"
@@ -20,6 +19,7 @@ version = "^0.1.0"
 
 [dev-dependencies]
 ctrlc = "3.4.2"
+memmap2 = "0.9.3"
 
 [features]
 convert = ["imtl-sys/convert"]
