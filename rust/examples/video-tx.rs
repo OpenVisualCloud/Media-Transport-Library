@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use clap::Parser;
 use std::net::Ipv4Addr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,7 +10,34 @@ use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
 use imtl::video::{Fps, TransportFmt, VideoTxBuilder};
 
+/// Simple program to use IMTL to send raw YUV frame from file
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Name of the netdev
+    #[arg(short, long, default_value_t = String::from("0000:4b:01.0"))]
+    netdev: String,
+
+    /// Source IP address
+    #[arg(short, long, default_value_t = Ipv4Addr::new(192, 168, 96, 111))]
+    sip: Ipv4Addr,
+
+    /// Destination IP address
+    #[arg(short, long, default_value_t = Ipv4Addr::new(239, 19, 96, 111))]
+    ip: Ipv4Addr,
+
+    /// Destination UDP Port number
+    #[arg(short, long, default_value_t = 20000)]
+    port: u16,
+
+    /// Name of the YUV file
+    #[arg(short, long)]
+    yuv: String,
+}
+
 fn main() -> Result<()> {
+    let args = Args::parse();
+
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     ctrlc::set_handler(move || {
@@ -18,7 +46,7 @@ fn main() -> Result<()> {
     .expect("Error setting Ctrl-C handler");
 
     /* open a yuv file from disk and map to memory */
-    let yuv_file = std::fs::File::open("/tmp/test.yuv").context("Failed to open yuv file")?;
+    let yuv_file = std::fs::File::open(args.yuv).context("Failed to open yuv file")?;
     let yuv_file = unsafe {
         memmap2::MmapOptions::new()
             .map(&yuv_file)
@@ -29,10 +57,10 @@ fn main() -> Result<()> {
     flags.insert(Flags::MTL_FLAG_BIND_NUMA | Flags::MTL_FLAG_DEV_AUTO_START_STOP);
 
     let net_dev0 = NetDevBuilder::default()
-        .port("0000:4b:01.0")
+        .port(args.netdev)
         .pmd(PmdType::DpdkPmd)
         .net_proto(NetProto::Static)
-        .ip("192.168.96.111".parse().ok())
+        .ip(args.sip)
         .netmask("255.255.255.0".parse().ok())
         .gateway("0.0.0.0".parse().ok())
         .tx_queues_cnt(1u16)
@@ -55,10 +83,10 @@ fn main() -> Result<()> {
 
     let session = RtpSessionBuilder::default()
         .net_dev(net_dev0.clone())
-        .ip(Ipv4Addr::new(239, 19, 96, 111))
-        .port(20000u16)
+        .ip(args.ip)
+        .port(args.port)
         .payload_type(112u8)
-        .name("My Rust Video Tx".to_string())
+        .name(String::from("My Rust Video Tx"))
         .build()
         .context("Failed to add rtp session")?;
 
