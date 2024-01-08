@@ -1,4 +1,4 @@
-use anyhow::{Context, Ok, Result};
+use anyhow::{bail, Context, Result};
 use std::net::Ipv4Addr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +16,14 @@ fn main() -> Result<()> {
         r.store(false, Ordering::SeqCst);
     })
     .expect("Error setting Ctrl-C handler");
+
+    /* open a yuv file from disk and map to memory */
+    let yuv_file = std::fs::File::open("/tmp/test.yuv").context("Failed to open yuv file")?;
+    let yuv_file = unsafe {
+        memmap2::MmapOptions::new()
+            .map(&yuv_file)
+            .context("Failed to map yuv file")?
+    };
 
     let mut flags = Flags::empty();
     flags.insert(Flags::MTL_FLAG_BIND_NUMA | Flags::MTL_FLAG_DEV_AUTO_START_STOP);
@@ -54,7 +62,7 @@ fn main() -> Result<()> {
         .build()
         .context("Failed to add rtp session")?;
 
-    let _video_tx = VideoTxBuilder::default()
+    let mut video_tx = VideoTxBuilder::default()
         .rtp_session(session)
         .width(1920u32)
         .height(1080u32)
@@ -65,8 +73,22 @@ fn main() -> Result<()> {
         .create(&mtl)
         .context("Failed to create tx video session")?;
 
+    let frames = yuv_file.chunks_exact(video_tx.frame_size());
+    if frames.len() == 0 {
+        bail!("No frames in file");
+    }
+    let mut frames = frames.cycle();
+    let mut frame = frames.next().unwrap();
+
     while running.load(Ordering::SeqCst) {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        match video_tx.fill_next_frame(frame) {
+            Ok(_) => {
+                frame = frames.next().unwrap();
+            }
+            Err(_) => {
+                video_tx.wait_free_frame();
+            }
+        }
     }
 
     Ok(())

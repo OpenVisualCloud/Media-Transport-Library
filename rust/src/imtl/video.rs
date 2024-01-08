@@ -6,6 +6,7 @@ use crate::mtl::Mtl;
 use crate::session::RtpSession;
 use crate::sys;
 use anyhow::{bail, Result};
+use crossbeam_utils::sync::Parker;
 use derive_builder::Builder;
 use std::{ffi::c_void, mem::MaybeUninit};
 
@@ -53,6 +54,14 @@ pub enum TransportFmt {
     Yuv444_16bit,
 }
 
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+enum FrameStatus {
+    #[default]
+    Free,
+    InUse,
+    Ready,
+}
+
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
 pub struct VideoTx {
@@ -74,42 +83,54 @@ pub struct VideoTx {
     fb_cnt: u8,
     #[builder(default = "false")]
     interlaced: bool,
-    #[builder(default)]
-    frame_in_use: u8,
-    #[builder(default)]
-    consumer_idx: u16,
+
+    #[builder(setter(skip))]
+    consumer_idx: u8,
+    #[builder(setter(skip))]
+    producer_idx: u8,
+    #[builder(setter(skip))]
+    frame_status: Vec<FrameStatus>,
+    #[builder(setter(skip))]
+    frame_size: usize,
+    #[builder(setter(skip))]
+    parker: Parker,
 }
 
-unsafe extern "C" fn get_next_frame_dummy(
+unsafe extern "C" fn get_next_frame(
     p_void: *mut c_void,
     next_frame_idx: *mut u16,
     _: *mut sys::st20_tx_frame_meta,
 ) -> i32 {
     unsafe {
         let s: &mut VideoTx = &mut *(p_void as *mut VideoTx);
-        let mut nfi = s.consumer_idx;
-        nfi = (nfi + 1) % s.fb_cnt as u16;
+        let nfi = s.consumer_idx;
 
-        if s.is_frame_in_use(nfi) {
-            return -1;
+        if s.is_frame_ready(nfi) {
+            s.set_frame_in_use(nfi);
+            *next_frame_idx = nfi as _;
+            s.consumer_idx = s.next_frame_idx(nfi);
+            0
+        } else {
+            -5 // invalid frame status, return -EIO
         }
-
-        s.set_frame_in_use(nfi);
-        s.consumer_idx = nfi;
-        *next_frame_idx = nfi;
-        0
     }
 }
 
-unsafe extern "C" fn notify_frame_done_dummy(
+unsafe extern "C" fn notify_frame_done(
     p_void: *mut c_void,
     frame_idx: u16,
     _: *mut sys::st20_tx_frame_meta,
 ) -> i32 {
     unsafe {
         let s: &mut VideoTx = &mut *(p_void as *mut VideoTx);
-        s.unset_frame_in_use(frame_idx);
-        0
+        if s.is_frame_in_use(frame_idx as _) {
+            s.set_frame_free(frame_idx as _);
+            let u = s.parker.unparker().clone();
+            u.unpark();
+            0
+        } else {
+            -5 // invalid frame status, return -EIO
+        }
     }
 }
 
@@ -118,6 +139,13 @@ impl VideoTx {
         if self.handle.is_some() {
             bail!("VideoTx Session is already created");
         }
+
+        for _ in 0..self.fb_cnt {
+            self.frame_status.push(FrameStatus::Free);
+        }
+        self.parker = Parker::new();
+        self.consumer_idx = 0;
+        self.producer_idx = 0;
 
         let mut ops: MaybeUninit<sys::st20_tx_ops> = MaybeUninit::uninit();
 
@@ -153,8 +181,8 @@ impl VideoTx {
             // TODO add real callback functions
             let pointer_to_void: *mut c_void = &self as *const VideoTx as *mut c_void;
             ops.priv_ = pointer_to_void;
-            ops.get_next_frame = Some(get_next_frame_dummy);
-            ops.notify_frame_done = Some(notify_frame_done_dummy);
+            ops.get_next_frame = Some(get_next_frame);
+            ops.notify_frame_done = Some(notify_frame_done);
         }
 
         let mut ops = unsafe { ops.assume_init() };
@@ -164,20 +192,70 @@ impl VideoTx {
             bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);
+            unsafe {
+                self.frame_size = sys::st20_tx_get_framebuffer_size(handle);
+            }
             Ok(self)
         }
     }
 
-    fn set_frame_in_use(&mut self, frame_idx: u16) {
-        self.frame_in_use |= 1 << frame_idx;
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
     }
 
-    fn unset_frame_in_use(&mut self, frame_idx: u16) {
-        self.frame_in_use &= !(1 << frame_idx);
+    pub fn wait_free_frame(&mut self) {
+        let frame_idx = self.producer_idx;
+        if !self.is_frame_free(frame_idx) {
+            self.parker.park();
+        }
     }
 
-    fn is_frame_in_use(&self, frame_idx: u16) -> bool {
-        (self.frame_in_use & (1 << frame_idx)) != 0
+    pub fn fill_next_frame(&mut self, frame: &[u8]) -> Result<()> {
+        let mut frame_idx = self.producer_idx;
+        while !self.is_frame_free(frame_idx) {
+            frame_idx = self.next_frame_idx(frame_idx);
+            if frame_idx == self.producer_idx {
+                bail!("No free frames");
+            }
+        }
+
+        unsafe {
+            let frame_dst = sys::st20_tx_get_framebuffer(self.handle.unwrap(), frame_idx as _);
+            // memcpy frame to frame_dst with size
+            sys::mtl_memcpy(frame_dst, frame.as_ptr() as _, self.frame_size);
+        }
+
+        self.set_frame_ready(frame_idx);
+        self.producer_idx = self.next_frame_idx(frame_idx);
+        Ok(())
+    }
+
+    fn set_frame_in_use(&mut self, frame_idx: u8) {
+        self.frame_status[frame_idx as usize] = FrameStatus::InUse;
+    }
+
+    fn set_frame_free(&mut self, frame_idx: u8) {
+        self.frame_status[frame_idx as usize] = FrameStatus::Free;
+    }
+
+    fn set_frame_ready(&mut self, frame_idx: u8) {
+        self.frame_status[frame_idx as usize] = FrameStatus::Ready;
+    }
+
+    fn is_frame_in_use(&self, frame_idx: u8) -> bool {
+        self.frame_status[frame_idx as usize] == FrameStatus::InUse
+    }
+
+    fn is_frame_free(&self, frame_idx: u8) -> bool {
+        self.frame_status[frame_idx as usize] == FrameStatus::Free
+    }
+
+    fn is_frame_ready(&self, frame_idx: u8) -> bool {
+        self.frame_status[frame_idx as usize] == FrameStatus::Ready
+    }
+
+    fn next_frame_idx(&self, frame_idx: u8) -> u8 {
+        (frame_idx + 1) % self.fb_cnt
     }
 }
 
