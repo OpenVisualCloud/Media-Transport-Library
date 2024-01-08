@@ -13,10 +13,10 @@ imtl = "0.1.1"
 
 ## Example
 
-```bash
-cargo run --example version
-cargo run --example init
+Simple program to use IMTL to send raw YUV frame from file, video format: yuv42210bit 1080p60.
 
-cd imtl-sys
-cargo run --example no_std
+```bash
+cargo run --example video-tx -- --yuv ./test.yuv
+# Check more options with --help
+cargo run --example video-tx -- --help
 ```
