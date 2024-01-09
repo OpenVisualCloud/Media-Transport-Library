@@ -294,6 +294,9 @@ struct st_frame {
   void* priv;
   /** priv data for user */
   void* opaque;
+  /** timing parser meta for st20p_rx_get_frame, only active if
+   * ST20P_RX_FLAG_TIMING_PARSER_META */
+  struct st20_rx_tp_meta* tp;
 };
 
 /** Device type of st plugin */
@@ -535,9 +538,14 @@ enum st20p_rx_flag {
    */
   ST20P_RX_FLAG_DISABLE_MIGRATE = (MTL_BIT32(20)),
   /**
-   * Enable the timing analyze
+   * Enable the timing analyze info in the stat dump
    */
-  ST20P_RX_FLAG_ENABLE_TIMING_PARSER = (MTL_BIT32(21)),
+  ST20P_RX_FLAG_TIMING_PARSER_STAT = (MTL_BIT32(21)),
+  /**
+   * Enable the timing analyze info in the the return `struct st_frame` by the
+   * st20p_rx_get_frame
+   */
+  ST20P_RX_FLAG_TIMING_PARSER_META = (MTL_BIT32(22)),
 };
 
 /** The structure info for st plugin encode session create request. */
@@ -1747,6 +1755,20 @@ int st20p_rx_reset_port_stats(st20p_rx_handle handle, enum mtl_session_port port
  *   - <0: Error code.
  */
 int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src);
+
+/**
+ * Get the timing parser pass critical to rx st2110-20(pipeline) session.
+ * Only avaiable if ST20P_RX_FLAG_TIMING_PARSER_META is enabled.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(pipeline) session.
+ * @param pass
+ *   the pointer to save the timing parser pass critical.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_rx_timing_parser_critical(st20p_rx_handle handle, struct st20_rx_tp_pass* pass);
 
 /**
  * Convert color format from source frame to destination frame.

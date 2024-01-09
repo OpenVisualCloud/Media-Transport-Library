@@ -192,9 +192,14 @@ extern "C" {
 #define ST20_RX_FLAG_DISABLE_MIGRATE (MTL_BIT32(20))
 /**
  * Flag bit in flags of struct st20_rx_ops.
- * Enable the timing analyze
+ * Enable the timing analyze info in the stat dump
  */
-#define ST20_RX_FLAG_ENABLE_TIMING_PARSER (MTL_BIT32(21))
+#define ST20_RX_FLAG_TIMING_PARSER_STAT (MTL_BIT32(21))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Enable the timing analyze info in the st20_rx_frame_meta
+ */
+#define ST20_RX_FLAG_TIMING_PARSER_META (MTL_BIT32(22))
 
 /**
  * Flag bit in flags of struct st22_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -386,6 +391,88 @@ struct st20_tx_slice_meta {
 };
 
 /**
+ * st20 rx timing parser meta for each frame as defined in SMPTE ST2110-21.
+ * Referenced from
+ * `https://github.com/ebu/pi-list/blob/master/docs/video_timing_analysis.md`.
+ *
+ * cinst: Instantaneous value of the Retwork Compatibility model C.
+ * vrx: Measured level of the Virtual Receive Buffer.
+ * ipt: Inter-packet time, ns
+ * fpt: First Packet Time measured between frame/field reference time and the first
+ *      captured packet of a frame/field. Unit: ns
+ * latency: TPA0(Actual measured arrival time of a packet) - RTP Timestamp. Unit: ns
+ * rtp_offset: RTP OFFSET = RTP Timestamp - N x Tframe, unit: timestamp ticks
+ * rtp_ts_delta: Delta between RTP timestamps of 2 consecutive frames/fields,
+ *               unit: timestamp ticks.
+ */
+struct st20_rx_tp_meta {
+  /** the max of cinst for current frame */
+  int32_t cinst_max;
+  /** the min of cinst for current frame */
+  int32_t cinst_min;
+  /** the average of cinst for current frame */
+  float cinst_avg;
+  /** the max of vrx for current frame */
+  int32_t vrx_max;
+  /** the min of vrx for current frame */
+  int32_t vrx_min;
+  /** the average of vrx for current frame */
+  float vrx_avg;
+  /** the max of ipt(Inter-packet time, ns) for current frame */
+  int32_t ipt_max;
+  /** the min of ipt(Inter-packet time, ns) for current frame */
+  int32_t ipt_min;
+  /** the average of ipt(Inter-packet time, ns) for current frame */
+  float ipt_avg;
+
+  /** fpt(ns) for current frame */
+  int32_t fpt;
+  /** latency(ns) for current frame */
+  int32_t latency;
+  /** rtp_offset(ticks) for current frame */
+  int32_t rtp_offset;
+  /** rtp_ts_delta(ticks) for current frame */
+  int32_t rtp_ts_delta;
+  /** RX timing parser compliant result */
+  enum st_rx_tp_compliant compliant;
+  /** the failed cause if compliant is not ST_RX_TP_COMPLIANT_NARROW */
+  char failed_cause[64];
+
+  /* packets count in current report meta */
+  uint32_t pkts_cnt;
+};
+
+/** st20 rx timing parser pass critical */
+struct st20_rx_tp_pass {
+  /** The max allowed cinst for narrow */
+  int32_t cinst_max_narrow;
+  /** The max allowed cinst for wide */
+  int32_t cinst_max_wide;
+  /** The min allowed cinst: 0 */
+  int32_t cinst_min;
+  /** The max allowed vrx full for narrow */
+  int32_t vrx_max_narrow;
+  /** The max allowed vrx wide for narrow */
+  int32_t vrx_max_wide;
+  /** The min allowed vrx: 0 */
+  int32_t vrx_min;
+  /** tr_offset, in ns, pass if fpt < tr_offset */
+  int32_t tr_offset;
+  /** The max allowed latency: 1000 us */
+  int32_t latency_max;
+  /** The min allowed latency: 0 */
+  int32_t latency_min;
+  /** The max allowed rtp_offset */
+  int32_t rtp_offset_max;
+  /** The min allowed rtp_offset: -1 */
+  int32_t rtp_offset_min;
+  /** The max allowed rtp_ts_delta */
+  int32_t rtp_ts_delta_max;
+  /** The min allowed rtp_ts_delta */
+  int32_t rtp_ts_delta_min;
+};
+
+/**
  * Frame meta data of st2110-20(video) rx streaming
  */
 struct st20_rx_frame_meta {
@@ -434,6 +521,8 @@ struct st20_rx_frame_meta {
    * of received packets can be assessed by comparing 'pkts_recv[s_port]' with
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
+  /** st20 rx timing parser meta, only active if ST20_RX_FLAG_TIMING_PARSER_META */
+  struct st20_rx_tp_meta* tp;
 };
 
 /**
@@ -1705,35 +1794,6 @@ int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
 int st20_tx_reset_port_stats(st20_tx_handle handle, enum mtl_session_port port);
 
 /**
- * Retrieve the general statistics(I/O) for one rx st2110-20(video) session port.
- *
- * @param handle
- *   The handle to the rx st2110-20(video) session.
- * @param port
- *   The port index.
- * @param stats
- *   A pointer to stats structure.
- * @return
- *   - >=0 succ.
- *   - <0: Error code.
- */
-int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
-                           struct st20_rx_port_status* stats);
-
-/**
- * Reset the general statistics(I/O) for one rx st2110-20(video) session port.
- *
- * @param handle
- *   The handle to the rx st2110-20(video) session.
- * @param port
- *   The port index.
- * @return
- *   - >=0 succ.
- *   - <0: Error code.
- */
-int st20_rx_reset_port_stats(st20_rx_handle handle, enum mtl_session_port port);
-
-/**
  * Retrieve the pixel group info from st2110-20(video) format.
  *
  * @param fmt
@@ -2039,6 +2099,49 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta);
  *   - false: no dma.
  */
 bool st20_rx_dma_enabled(st20_rx_handle handle);
+
+/**
+ * Get the timing parser pass critical to rx st2110-20(video) session.
+ * Only avaiable if ST20_RX_FLAG_TIMING_PARSER_META is enabled.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(video) session.
+ * @param pass
+ *   the pointer to save the timing parser pass critical.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass* pass);
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
+                           struct st20_rx_port_status* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st20_rx_reset_port_stats(st20_rx_handle handle, enum mtl_session_port port);
 
 /**
  * Create one rx st2110-22(compressed video) session.

@@ -713,9 +713,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_frame_meta* meta = &slot->meta;
 
   if (s->enable_timing_parser) {
-    /* todo: share the timing data to st20_rx_frame_meta */
     struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx];
     rv_tp_slot_parse_result(s, tp_slot);
+
+    if (s->enable_timing_parser_meta) {
+      meta->tp = &tp_slot->meta;
+    }
   }
 
   dbg("%s(%d), start\n", __func__, s->idx);
@@ -2991,9 +2994,15 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
 
   s->st22_expect_frame_size = 0;
   s->burst_loss_cnt = 0;
-  if (s->ops.flags & ST20_RX_FLAG_ENABLE_TIMING_PARSER) {
-    info("%s(%d), enable the timing analyze\n", __func__, idx);
+  if (s->ops.flags & ST20_RX_FLAG_TIMING_PARSER_STAT) {
+    info("%s(%d), enable the timing analyze stat\n", __func__, idx);
     s->enable_timing_parser = true;
+    s->enable_timing_parser_stat = true;
+  }
+  if (s->ops.flags & ST20_RX_FLAG_TIMING_PARSER_META) {
+    info("%s(%d), enable the timing analyze meta\n", __func__, idx);
+    s->enable_timing_parser = true;
+    s->enable_timing_parser_meta = true;
   }
 
   ret = rv_init_hw(impl, s);
@@ -3340,7 +3349,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_st22_boxes);
     s->stat_st22_boxes = 0;
   }
-  if (s->enable_timing_parser) rv_tp_stat(s);
+  if (s->enable_timing_parser_stat) rv_tp_stat(s);
 
   if (s->time_measure) {
     struct mt_stat_u64* stat_time = &s->stat_time;
@@ -4168,6 +4177,29 @@ int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rv_queue_id(s, i);
   }
 
+  return 0;
+}
+
+int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass* pass) {
+  struct st_rx_video_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_RX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EIO;
+  }
+
+  struct st_rx_video_session_impl* s = s_impl->impl;
+  int idx = s->idx;
+  if (!s->enable_timing_parser) {
+    err("%s(%d), timing parser control not enabled\n", __func__, idx);
+    return -EIO;
+  }
+  if (!s->tp) {
+    err("%s(%d), timing parser info not init\n", __func__, idx);
+    return -EBUSY;
+  }
+
+  mtl_memcpy(pass, &s->tp->pass, sizeof(*pass));
   return 0;
 }
 

@@ -5,7 +5,9 @@
 * dpdk: upgrade dpdk version to 23.11.
 * st22: add interlaced support.
 * log: add custom log printer, see mtl_set_log_printer.
+* rx/timing_parser: add timing_parser stat report for RX video, `--rx_timing_parser` in RxTxApp to enable.
 * pipeline: add block get mode support, see `ST20P_TX_FLAG_BLOCK_GET`/`ST20P_RX_FLAG_BLOCK_GET`/`ST22P_TX_FLAG_BLOCK_GET`/`ST22P_RX_FLAG_BLOCK_GET`.
+* rx/timing_parser: add support to export the timing_parser to app, see `app/sample/rx_st20p_timing_parser_sample.c` for usage
 
 ## Changelog for 23.12
 

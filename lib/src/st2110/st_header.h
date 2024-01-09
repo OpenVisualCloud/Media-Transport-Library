@@ -498,52 +498,23 @@ struct st_rx_session_priv {
   enum mtl_session_port s_port;
 };
 
-enum st_rx_tp_compliant {
-  ST_RX_TP_COMPLIANT_FAILED = 0,
-  ST_RX_TP_COMPLIANT_WIDE,
-  ST_RX_TP_COMPLIANT_NARROW,
-  ST_RX_TP_COMPLIANT_MAX,
-};
-
 struct st_rv_tp_slot {
   /* epoch of current slot */
   uint64_t cur_epochs;
-  /* result(packet) cnt in current slot */
-  uint32_t pkt_cnt;
+
+  struct st20_rx_tp_meta meta;
 
   uint32_t rtp_tmstamp;
   uint64_t first_pkt_time; /* ns */
   uint64_t prev_pkt_time;  /* ns */
-  /* fpt(first packet time) against the epoch, pass criteria < TR_OFFSET */
-  int32_t fpt_to_epoch; /* ns */
-  int32_t latency;      /* ns */
-  int32_t rtp_offset;   /* ticks */
-  int32_t rtp_ts_delta; /* ticks */
-
-  /* latency */
-  // int32_t latency;
-  /* rtp offset */
-  // int32_t rtp_offset;
-
   /* Cinst, packet level check */
-  int32_t cinst_max;
-  int32_t cinst_min;
   int64_t cinst_sum;
-  float cinst_avg;
   /* vrx, packet level check */
   int32_t vrx_drained_prev;
   int32_t vrx_prev;
-  int32_t vrx_max;
-  int32_t vrx_min;
   int64_t vrx_sum;
-  float vrx_avg;
   /* Inter-packet time(ns), packet level check */
-  int32_t ipt_max;
-  int32_t ipt_min;
   int64_t ipt_sum;
-  float ipt_avg;
-
-  enum st_rx_tp_compliant compliant;
 };
 
 struct st_rv_tp_stat {
@@ -569,14 +540,8 @@ struct st_rv_tp_stat {
 struct st_rx_video_tp {
   /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
   double trs;
-  /* in ns, tr offset time of each frame */
-  double tr_offset;
   /* pass criteria */
-  uint32_t c_max_narrow_pass;
-  uint32_t c_max_wide_pass;
-  uint32_t vrx_full_narrow_pass;
-  uint32_t vrx_full_wide_pass;
-  int32_t rtp_offset_max_pass;
+  struct st20_rx_tp_pass pass;
 
   /* timing info for each slot */
   struct st_rv_tp_slot slots[ST_VIDEO_RX_REC_NUM_OFO];
@@ -692,6 +657,8 @@ struct st_rx_video_session_impl {
 
   /* if enable the parser for the st2110-21 timing */
   bool enable_timing_parser;
+  bool enable_timing_parser_stat;
+  bool enable_timing_parser_meta;
   struct st_rx_video_tp* tp;
 
   /* status */

@@ -55,6 +55,7 @@
 #endif
 
 #define ST_MAX(a, b) ((a) > (b) ? (a) : (b))
+#define ST_MIN(a, b) ((a) < (b) ? (a) : (b))
 
 enum sample_udp_mode {
   /* client/server mode */
