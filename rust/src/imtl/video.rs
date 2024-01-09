@@ -10,7 +10,7 @@
 use crate::mtl::Mtl;
 use crate::session::RtpSession;
 use crate::sys;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use crossbeam_utils::sync::Parker;
 use derive_builder::Builder;
 use std::{ffi::c_void, mem::MaybeUninit};
@@ -106,7 +106,7 @@ pub struct VideoTx {
     parker: Parker,
 }
 
-unsafe extern "C" fn get_next_frame(
+unsafe extern "C" fn video_tx_get_next_frame(
     p_void: *mut c_void,
     next_frame_idx: *mut u16,
     _: *mut sys::st20_tx_frame_meta,
@@ -126,7 +126,7 @@ unsafe extern "C" fn get_next_frame(
     }
 }
 
-unsafe extern "C" fn notify_frame_done(
+unsafe extern "C" fn video_tx_notify_frame_done(
     p_void: *mut c_void,
     frame_idx: u16,
     _: *mut sys::st20_tx_frame_meta,
@@ -145,7 +145,7 @@ unsafe extern "C" fn notify_frame_done(
 }
 
 impl VideoTx {
-    /// Initializes a new VideoTx session using the specified Media Transport Library (MTL).
+    /// Initializes a new VideoTx session with Media Transport Library (MTL) handle.
     pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
         if self.handle.is_some() {
             bail!("VideoTx Session is already created");
@@ -191,8 +191,8 @@ impl VideoTx {
 
             let pointer_to_void: *mut c_void = &self as *const VideoTx as *mut c_void;
             ops.priv_ = pointer_to_void;
-            ops.get_next_frame = Some(get_next_frame);
-            ops.notify_frame_done = Some(notify_frame_done);
+            ops.get_next_frame = Some(video_tx_get_next_frame);
+            ops.notify_frame_done = Some(video_tx_notify_frame_done);
         }
 
         let mut ops = unsafe { ops.assume_init() };
@@ -272,12 +272,182 @@ impl VideoTx {
     }
 }
 
+// Drop trait implementation to automatically clean up resources when the `VideoTx` instance goes out of scope.
 impl Drop for VideoTx {
-    /// Automatically called when the VideoTx instance is dropped from memory.
     fn drop(&mut self) {
         if let Some(handle) = self.handle {
             unsafe {
                 sys::st20_tx_free(handle);
+            }
+        }
+    }
+}
+
+/// VideoRx structure for handling receiving of uncompressed video.
+#[derive(Default, Builder, Debug)]
+#[builder(setter(into))]
+pub struct VideoRx {
+    #[builder(default)]
+    rtp_session: RtpSession,
+    #[builder(default)]
+    handle: Option<sys::st20_rx_handle>,
+    #[builder(default = "1920")]
+    width: u32,
+    #[builder(default = "1080")]
+    height: u32,
+    #[builder(default)]
+    fps: Fps,
+    #[builder(default)]
+    t_fmt: TransportFmt,
+    #[builder(default = "3")]
+    fb_cnt: u8,
+    #[builder(default = "false")]
+    interlaced: bool,
+
+    #[builder(setter(skip))]
+    consumer_idx: u8,
+    #[builder(setter(skip))]
+    producer_idx: u8,
+    #[builder(setter(skip))]
+    frame_size: usize,
+    #[builder(setter(skip))]
+    parker: Parker,
+    #[builder(setter(skip))]
+    frames: Vec<*mut c_void>,
+}
+
+unsafe extern "C" fn video_rx_notify_frame_ready(
+    p_void: *mut c_void,
+    framebuffer: *mut c_void,
+    _: *mut sys::st20_rx_frame_meta,
+) -> i32 {
+    unsafe {
+        let s: &mut VideoRx = &mut *(p_void as *mut VideoRx);
+        match s.enqueue_frame(framebuffer) {
+            Ok(_) => {
+                let u = s.parker.unparker().clone();
+                u.unpark();
+                0
+            }
+            Err(_) => -16, // return -EBUSY
+        }
+    }
+}
+
+impl VideoRx {
+    /// Initializes a new VideoRx session with Media Transport Library (MTL) handle.
+    pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
+        if self.handle.is_some() {
+            bail!("VideoRx Session is already created");
+        }
+
+        for _ in 0..self.fb_cnt {
+            self.frames.push(std::ptr::null_mut());
+        }
+        self.parker = Parker::new();
+        self.consumer_idx = 0;
+        self.producer_idx = 0;
+
+        let mut ops: MaybeUninit<sys::st20_rx_ops> = MaybeUninit::uninit();
+
+        // Fill the ops
+        unsafe {
+            std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+            let ops = &mut *ops.as_mut_ptr();
+            ops.num_port = 1;
+            ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+
+            let net_dev = self.rtp_session.net_dev();
+            let port_bytes: Vec<i8> = net_dev
+                .get_port()
+                .as_bytes()
+                .iter()
+                .cloned()
+                .map(|b| b as i8) // Convert u8 to i8
+                .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                .take(64) // Take only up to 64 elements
+                .collect();
+            ops.port[0].copy_from_slice(&port_bytes);
+            ops.sip_addr[0] = self.rtp_session.ip().octets();
+            ops.udp_port[0] = self.rtp_session.port() as _;
+            ops.payload_type = self.rtp_session.payload_type() as _;
+            ops.width = self.width as _;
+            ops.height = self.height as _;
+            ops.fps = self.fps as _;
+            ops.fmt = self.t_fmt as _;
+            ops.interlaced = self.interlaced as _;
+            ops.framebuff_cnt = self.fb_cnt as _;
+
+            let pointer_to_void: *mut c_void = &self as *const VideoRx as *mut c_void;
+            ops.priv_ = pointer_to_void;
+            ops.notify_frame_ready = Some(video_rx_notify_frame_ready);
+        }
+
+        let mut ops = unsafe { ops.assume_init() };
+
+        let handle = unsafe { sys::st20_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+        if handle == std::ptr::null_mut() {
+            bail!("Failed to initialize MTL")
+        } else {
+            self.handle = Some(handle);
+            unsafe {
+                self.frame_size = sys::st20_rx_get_framebuffer_size(handle);
+            }
+            Ok(self)
+        }
+    }
+
+    /// Get the raw frame size
+    pub fn frame_size(&self) -> usize {
+        self.frame_size
+    }
+
+    /// Wait until new frame available
+    pub fn wait_new_frame(&mut self) {
+        if self.frames[self.consumer_idx as usize].is_null() {
+            self.parker.park();
+        }
+    }
+
+    /// Copy the new frame to user provided memory
+    pub fn fill_new_frame(&mut self, data: &[u8]) -> Result<()> {
+        let frame = self.frames[self.consumer_idx as usize];
+        if frame.is_null() {
+            bail!("No frame available");
+        } else {
+            unsafe {
+                sys::mtl_memcpy(data.as_ptr() as _, frame as _, self.frame_size);
+                sys::st20_rx_put_framebuff(self.handle.unwrap(), frame as _);
+            }
+            self.frames[self.consumer_idx as usize] = std::ptr::null_mut();
+            self.consumer_idx = self.next_frame_idx(self.consumer_idx);
+            Ok(())
+        }
+    }
+
+    fn enqueue_frame(&mut self, frame: *mut c_void) -> Result<()> {
+        let producer_idx = self.producer_idx;
+
+        if !self.frames[producer_idx as usize].is_null() {
+            return Err(anyhow!("Frame is busy"));
+        }
+
+        self.frames[producer_idx as usize] = frame;
+        self.producer_idx = self.next_frame_idx(producer_idx);
+        Ok(())
+    }
+
+    fn next_frame_idx(&self, frame_idx: u8) -> u8 {
+        (frame_idx + 1) % self.fb_cnt
+    }
+}
+
+// Drop trait implementation to automatically clean up resources when the `VideoRx` instance goes out of scope.
+impl Drop for VideoRx {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle {
+            unsafe {
+                sys::st20_rx_free(handle);
             }
         }
     }
@@ -300,27 +470,6 @@ pub struct CompressedVideoTx {
     #[builder(default = "3")]
     fb_cnt: u8,
     fb_max_size: u32,
-    #[builder(default = "false")]
-    interlaced: bool,
-}
-
-#[derive(Default, Builder, Debug)]
-#[builder(setter(into))]
-pub struct VideoRx {
-    #[builder(default)]
-    rtp_session: RtpSession,
-    #[builder(default)]
-    handle: Option<sys::st20_rx_handle>,
-    #[builder(default = "1920")]
-    width: u32,
-    #[builder(default = "1080")]
-    height: u32,
-    #[builder(default)]
-    fps: Fps,
-    #[builder(default)]
-    t_fmt: TransportFmt,
-    #[builder(default = "3")]
-    fb_cnt: u8,
     #[builder(default = "false")]
     interlaced: bool,
 }
@@ -352,16 +501,6 @@ impl Drop for CompressedVideoTx {
         if let Some(handle) = self.handle {
             unsafe {
                 sys::st22_tx_free(handle);
-            }
-        }
-    }
-}
-
-impl Drop for VideoRx {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle {
-            unsafe {
-                sys::st20_rx_free(handle);
             }
         }
     }
