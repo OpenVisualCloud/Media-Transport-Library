@@ -1,5 +1,6 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::Parser;
+use std::io::Write;
 use std::net::Ipv4Addr;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,18 +9,18 @@ use std::sync::Arc;
 use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
-use imtl::video::{Fps, TransportFmt, VideoTxBuilder};
+use imtl::video::{Fps, TransportFmt, VideoRxBuilder};
 
-/// Simple program to use IMTL to send raw YUV frame from file
+/// Simple program to use IMTL to receive raw YUV frame and safe the latest one to file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Name of the netdev
-    #[arg(short, long, default_value_t = String::from("0000:4b:01.0"))]
+    #[arg(short, long, default_value_t = String::from("0000:4b:01.1"))]
     netdev: String,
 
-    /// Source IP address
-    #[arg(short, long, default_value_t = Ipv4Addr::new(192, 168, 96, 111))]
+    /// Netdev IP address
+    #[arg(short, long, default_value_t = Ipv4Addr::new(192, 168, 96, 112))]
     sip: Ipv4Addr,
 
     /// Destination IP address
@@ -45,10 +46,6 @@ fn main() -> Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    /* open a yuv file from disk and map to memory */
-    let yuv_file = std::fs::File::open(args.yuv)?;
-    let yuv_file = unsafe { memmap2::MmapOptions::new().map(&yuv_file)? };
-
     let mut flags = Flags::empty();
     flags.insert(Flags::MTL_FLAG_BIND_NUMA | Flags::MTL_FLAG_DEV_AUTO_START_STOP);
 
@@ -59,8 +56,8 @@ fn main() -> Result<()> {
         .ip(args.sip)
         .netmask("255.255.255.0".parse().ok())
         .gateway("0.0.0.0".parse().ok())
-        .tx_queues_cnt(1u16)
-        .rx_queues_cnt(0u16)
+        .tx_queues_cnt(0u16)
+        .rx_queues_cnt(1u16)
         .build()
         .context("Failed to add net dev")?;
 
@@ -82,11 +79,11 @@ fn main() -> Result<()> {
         .ip(args.ip)
         .port(args.port)
         .payload_type(112u8)
-        .name(String::from("My Rust Video Tx"))
+        .name(String::from("My Rust Video Rx"))
         .build()
         .context("Failed to add rtp session")?;
 
-    let mut video_tx = VideoTxBuilder::default()
+    let mut video_rx = VideoRxBuilder::default()
         .rtp_session(session)
         .width(1920u32)
         .height(1080u32)
@@ -97,23 +94,21 @@ fn main() -> Result<()> {
         .create(&mtl)
         .context("Failed to create tx video session")?;
 
-    let frames = yuv_file.chunks_exact(video_tx.frame_size());
-    if frames.len() == 0 {
-        bail!("No frames in file");
-    }
-    let mut frames = frames.cycle();
-    let mut frame = frames.next().unwrap();
+    let frame = vec![0u8; video_rx.frame_size()];
 
     while running.load(Ordering::SeqCst) {
-        match video_tx.fill_next_frame(frame) {
-            Ok(_) => {
-                frame = frames.next().unwrap();
-            }
+        match video_rx.fill_new_frame(&frame) {
+            Ok(_) => {}
             Err(_) => {
-                video_tx.wait_free_frame();
+                video_rx.wait_new_frame();
             }
         }
     }
+
+    // create a yuv file and save the frame to it
+    let mut yuv_file = std::fs::File::create(&args.yuv)?;
+    yuv_file.write_all(&frame)?;
+    println!("Wrote frame to yuv file {}", &args.yuv);
 
     Ok(())
 }
