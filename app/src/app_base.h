@@ -60,6 +60,7 @@
 #define UTC_OFFSET (37) /* 2022/07 */
 
 #define ST_MAX(a, b) ((a) > (b) ? (a) : (b))
+#define ST_MIN(a, b) ((a) < (b) ? (a) : (b))
 
 struct st_display {
   char name[36];

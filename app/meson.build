@@ -293,6 +293,13 @@ executable('TxVideoSplitSample', video_tx_split_sample_sources,
   dependencies: [asan_dep, mtl, ws2_32_dep, mman_dep]
 )
 
+executable('RxVideoTimingParserSample', rx_st20p_timing_parser_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, ws2_32_dep, mman_dep]
+)
+
 # Legacy video samples app
 executable('TxVideoSample', video_tx_sample_sources,
   c_args : app_c_args,

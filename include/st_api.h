@@ -42,6 +42,18 @@ enum st10_timestamp_fmt {
   ST10_TIMESTAMP_FMT_MAX,
 };
 
+/** ST RX timing parser compliant result */
+enum st_rx_tp_compliant {
+  /** Fail */
+  ST_RX_TP_COMPLIANT_FAILED = 0,
+  /** Wide */
+  ST_RX_TP_COMPLIANT_WIDE,
+  /** Narrow */
+  ST_RX_TP_COMPLIANT_NARROW,
+  /** max value of this enum */
+  ST_RX_TP_COMPLIANT_MAX,
+};
+
 /**
  * FPS type of media streaming, Frame per second or Field per second
  */

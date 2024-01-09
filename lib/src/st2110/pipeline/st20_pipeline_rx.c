@@ -210,6 +210,13 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
         meta->pkts_recv[s_port];
   }
 
+  if (meta->tp) {
+    mtl_memcpy(&framebuff->tp, meta->tp, sizeof(framebuff->tp));
+    framebuff->src.tp = framebuff->dst.tp = &framebuff->tp;
+  } else {
+    framebuff->src.tp = framebuff->dst.tp = NULL;
+  }
+
   /* check user meta */
   framebuff->user_meta_data_size = 0;
   if (meta->user_meta) {
@@ -413,8 +420,10 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ops->flags & ST20P_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
   if (ops->flags & ST20P_RX_FLAG_DISABLE_MIGRATE)
     ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
-  if (ops->flags & ST20P_RX_FLAG_ENABLE_TIMING_PARSER)
-    ops_rx.flags |= ST20_RX_FLAG_ENABLE_TIMING_PARSER;
+  if (ops->flags & ST20P_RX_FLAG_TIMING_PARSER_STAT)
+    ops_rx.flags |= ST20_RX_FLAG_TIMING_PARSER_STAT;
+  if (ops->flags & ST20P_RX_FLAG_TIMING_PARSER_META)
+    ops_rx.flags |= ST20_RX_FLAG_TIMING_PARSER_META;
   if (ops->flags & ST20P_RX_FLAG_PKT_CONVERT) {
     uint64_t pkt_cvt_output_cap =
         ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_Y210 | ST_FMT_CAP_UYVY;
@@ -989,4 +998,17 @@ int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src
   }
 
   return st20_rx_update_source(ctx->transport, src);
+}
+
+int st20p_rx_timing_parser_critical(st20p_rx_handle handle,
+                                    struct st20_rx_tp_pass* pass) {
+  struct st20p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st20_rx_timing_parser_critical(ctx->transport, pass);
 }

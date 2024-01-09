@@ -26,6 +26,7 @@ struct st20p_rx_frame {
   void* user_meta; /* the user meta data */
   size_t user_meta_buffer_size;
   size_t user_meta_data_size;
+  struct st20_rx_tp_meta tp;
 };
 
 struct st20p_rx_ctx {

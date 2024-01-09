@@ -476,6 +476,15 @@ Intel® Media SDK: Leverage IMTL's robust capabilities within Intel® Media SDK 
 
 In addition to the built-in RxTxApp, IMTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, detail can be found at [fwd](../app/sample/fwd/).
 
+### 6.16 RX Timing Parser
+
+To verify the compliance of incoming ST2110-20 RX streams with the ST2110 standard, IMTL provides several utilities for analysis. To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, IMTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing.
+The fallback method is to read the time when IMTL processes the packet. However, it's important to note that this fallback method cannot guarantee timing accuracy, potentially rendering the parsed results unreliable.
+
+The simplest method is to enable the built-in status report. An application can activate the feature by setting the flag `ST20_RX_FLAG_TIMING_PARSER_STAT` or `ST20P_RX_FLAG_TIMING_PARSER_STAT`. Subsequently, IMTL will engage the Timing Parser module and include the results in the status log.
+
+For applications requiring access to the timing parser results for each frame, the flag `ST20_RX_FLAG_TIMING_PARSER_META` or `ST20P_RX_FLAG_TIMING_PARSER_META` can be enabled. This allows an application to retrieve detailed parsing results via the `struct st20_rx_tp_meta` found within the RX meta structure for each frame. Reference sample code is available at [rx_st20p_timing_parser_sample.c](../app/sample/rx_st20p_timing_parser_sample.c).
+
 ## 7. Misc
 
 ### 7.1 Logging

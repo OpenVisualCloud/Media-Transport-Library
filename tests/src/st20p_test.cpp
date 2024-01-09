@@ -457,6 +457,9 @@ static void test_st20p_rx_frame_thread(void* args) {
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
+    if (s->rx_timing_parser) {
+      if (!frame->tp) s->incomplete_frame_cnt++;
+    }
 
     /* check user timestamp if it has */
     if (s->user_timestamp && !s->user_pacing) {
@@ -617,6 +620,7 @@ struct st20p_rx_digest_test_para {
   enum st21_pacing pacing;
   uint32_t ssrc;
   bool block_get;
+  bool rx_timing_parser;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -899,6 +903,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     test_ctx_rx[i]->user_timestamp = para->user_timestamp;
     test_ctx_rx[i]->user_meta = para->user_meta;
     test_ctx_rx[i]->block_get = para->block_get;
+    test_ctx_rx[i]->rx_timing_parser = para->rx_timing_parser;
     test_ctx_rx[i]->frame_size =
         st_frame_size(rx_fmt[i], width[i], height[i], para->interlace);
     /* copy sha */
@@ -975,6 +980,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
     else
       ops_rx.notify_frame_available = test_st20p_rx_frame_available;
+    if (para->rx_timing_parser) ops_rx.flags |= ST20P_RX_FLAG_TIMING_PARSER_META;
     ops_rx.notify_event = test_ctx_notify_event;
     if (para->rx_ext) {
       if (para->rx_dedicated_ext) {
@@ -1126,8 +1132,9 @@ TEST(St20p, digest_1080p_s1) {
 
   struct st20p_rx_digest_test_para para;
   test_st20p_init_rx_digest_para(&para);
-  para.level = ST_TEST_LEVEL_ALL;
+  para.level = ST_TEST_LEVEL_MANDATORY;
   para.check_fps = false;
+  para.rx_timing_parser = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

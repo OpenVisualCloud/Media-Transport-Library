@@ -18,6 +18,7 @@ rx_st20p_tx_st20p_downsample_merge_fwd_sources = files('fwd/rx_st20p_tx_st20p_do
 
 # misc
 video_tx_split_sample_sources = files('tx_video_split_sample.c', 'sample_util.c')
+rx_st20p_timing_parser_sample_sources = files('rx_st20p_timing_parser_sample.c', 'sample_util.c')
 
 # ext frame
 pipeline_tx_st20_ext_frame_sample_sources = files('ext_frame/tx_st20_pipeline_ext_frame_sample.c', 'sample_util.c')
