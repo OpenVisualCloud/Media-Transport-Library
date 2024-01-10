@@ -1,5 +1,8 @@
 use anyhow::{bail, Context, Result};
 use clap::Parser;
+use sdl2::pixels::PixelFormatEnum;
+use sdl2::render::{Canvas, Texture};
+use sdl2::video::Window;
 use std::net::Ipv4Addr;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -33,11 +36,11 @@ struct Args {
 
     /// Width
     #[arg(long, default_value_t = 1920)]
-    width: u16,
+    width: u32,
 
     /// Height
     #[arg(long, default_value_t = 1080)]
-    height: u16,
+    height: u32,
 
     /// Framerate
     #[arg(long, default_value_t = String::from("60"))]
@@ -50,6 +53,10 @@ struct Args {
     /// Name of the YUV file
     #[arg(long)]
     yuv: String,
+
+    /// Enable display window, only for 'yuv_422_8bit' format
+    #[arg(long, default_value_t = false)]
+    display: bool,
 
     /// Log level
     #[arg(short, long, default_value_t = String::from("info"))]
@@ -118,6 +125,39 @@ fn main() -> Result<()> {
         .create(&mtl)
         .context("Failed to create tx video session")?;
 
+    let sdl_context;
+    let video_subsystem;
+    let window;
+    let texture_creator;
+    let mut canvas: Option<Canvas<Window>> = None;
+    let mut texture: Option<Texture> = None;
+    if args.display {
+        sdl_context = sdl2::init().unwrap();
+        video_subsystem = sdl_context.video().unwrap();
+        window = video_subsystem
+            .window("IMTL TX Video", args.width / 4, args.height / 4)
+            .position_centered()
+            .opengl()
+            .build()
+            .map_err(|e| e.to_string())
+            .unwrap();
+
+        canvas = Some(
+            window
+                .into_canvas()
+                .build()
+                .map_err(|e| e.to_string())
+                .unwrap(),
+        );
+        texture_creator = canvas.as_ref().unwrap().texture_creator();
+        texture = Some(
+            texture_creator
+                .create_texture_streaming(PixelFormatEnum::UYVY, args.width, args.height)
+                .map_err(|e| e.to_string())
+                .unwrap(),
+        );
+    }
+
     let frames = yuv_file.chunks_exact(video_tx.frame_size());
     if frames.len() == 0 {
         bail!("No frames in file");
@@ -128,6 +168,15 @@ fn main() -> Result<()> {
     while running.load(Ordering::SeqCst) {
         match video_tx.fill_next_frame(frame) {
             Ok(_) => {
+                if let (Some(ref mut texture), Some(ref mut canvas)) = (&mut texture, &mut canvas) {
+                    texture
+                        .update(None, &frame, args.width as usize * 2)
+                        .map_err(|e| e.to_string())
+                        .unwrap();
+                    canvas.clear();
+                    canvas.copy(&texture, None, None).unwrap();
+                    canvas.present();
+                }
                 frame = frames.next().unwrap();
             }
             Err(_) => {

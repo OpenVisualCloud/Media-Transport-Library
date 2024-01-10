@@ -37,11 +37,11 @@ struct Args {
 
     /// Width
     #[arg(long, default_value_t = 1920)]
-    width: u16,
+    width: u32,
 
     /// Height
     #[arg(long, default_value_t = 1080)]
-    height: u16,
+    height: u32,
 
     /// Framerate
     #[arg(long, default_value_t = String::from("60"))]
@@ -55,7 +55,7 @@ struct Args {
     #[arg(long)]
     yuv: Option<String>,
 
-    /// Enable display window
+    /// Enable display window, only for 'yuv_422_8bit' format
     #[arg(long, default_value_t = false)]
     display: bool,
 
@@ -132,11 +132,7 @@ fn main() -> Result<()> {
         sdl_context = sdl2::init().unwrap();
         video_subsystem = sdl_context.video().unwrap();
         window = video_subsystem
-            .window(
-                "IMTL RX Video",
-                (args.width / 4) as _,
-                (args.height / 4) as _,
-            )
+            .window("IMTL RX Video", args.width / 4, args.height / 4)
             .position_centered()
             .opengl()
             .build()
@@ -153,7 +149,7 @@ fn main() -> Result<()> {
         texture_creator = canvas.as_ref().unwrap().texture_creator();
         texture = Some(
             texture_creator
-                .create_texture_streaming(PixelFormatEnum::UYVY, args.width as _, args.height as _)
+                .create_texture_streaming(PixelFormatEnum::UYVY, args.width, args.height)
                 .map_err(|e| e.to_string())
                 .unwrap(),
         );
