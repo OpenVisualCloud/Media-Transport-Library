@@ -204,17 +204,20 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   framebuff->src.status = framebuff->dst.status = meta->status;
 
   framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
-  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
-       s_port++) {
+  for (enum mtl_session_port s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
     framebuff->src.pkts_recv[s_port] = framebuff->dst.pkts_recv[s_port] =
         meta->pkts_recv[s_port];
   }
 
-  if (meta->tp) {
-    mtl_memcpy(&framebuff->tp, meta->tp, sizeof(framebuff->tp));
-    framebuff->src.tp = framebuff->dst.tp = &framebuff->tp;
-  } else {
-    framebuff->src.tp = framebuff->dst.tp = NULL;
+  /* copy timing parser meta */
+  for (enum mtl_session_port s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
+    framebuff->src.tp[s_port] = framebuff->dst.tp[s_port] = NULL;
+  }
+
+  for (enum mtl_session_port s_port = 0; s_port < ctx->ops.port.num_port; s_port++) {
+    if (!meta->tp[s_port]) continue;
+    mtl_memcpy(&framebuff->tp[s_port], meta->tp[s_port], sizeof(framebuff->tp[s_port]));
+    framebuff->src.tp[s_port] = framebuff->dst.tp[s_port] = &framebuff->tp[s_port];
   }
 
   /* check user meta */

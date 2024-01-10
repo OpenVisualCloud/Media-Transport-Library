@@ -478,7 +478,9 @@ In addition to the built-in RxTxApp, IMTL also provides numerous sample codes th
 
 ### 6.16 RX Timing Parser
 
-To verify the compliance of incoming ST2110-20 RX streams with the ST2110 standard, IMTL provides several utilities for analysis. To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, IMTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing.
+To verify the compliance of incoming ST2110-20 RX streams with the ST2110 standard, IMTL provides several utilities for analysis.
+To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, IMTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing. And please set `MTL_FLAG_ENABLE_HW_TIMESTAMP` flag to enable HW offload timestamp for all RX packets.
+
 The fallback method is to read the time when IMTL processes the packet. However, it's important to note that this fallback method cannot guarantee timing accuracy, potentially rendering the parsed results unreliable.
 
 The simplest method is to enable the built-in status report. An application can activate the feature by setting the flag `ST20_RX_FLAG_TIMING_PARSER_STAT` or `ST20P_RX_FLAG_TIMING_PARSER_STAT`. Subsequently, IMTL will engage the Timing Parser module and include the results in the status log.

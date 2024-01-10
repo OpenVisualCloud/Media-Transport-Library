@@ -10,8 +10,9 @@ static inline float rv_tp_calculate_avg(uint32_t cnt, int64_t sum) {
   return cnt ? ((float)sum / cnt) : -1.0f;
 }
 
-void rv_tp_on_packet(struct st_rx_video_session_impl* s, struct st_rv_tp_slot* slot,
-                     uint32_t rtp_tmstamp, uint64_t pkt_time, int pkt_idx) {
+void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s_port,
+                     struct st_rv_tp_slot* slot, uint32_t rtp_tmstamp, uint64_t pkt_time,
+                     int pkt_idx) {
   struct st_rx_video_tp* tp = s->tp;
   uint64_t epoch_tmstamp;
   double tvd, packet_delta_ns, trs = tp->trs;
@@ -31,10 +32,10 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, struct st_rv_tp_slot* s
     double diff_rtp_ts_ns = diff_rtp_ts * s->frame_time / s->frame_time_sampling;
     slot->meta.latency = slot->meta.fpt - diff_rtp_ts_ns;
     slot->meta.rtp_offset = diff_rtp_ts;
-    if (tp->pre_rtp_tmstamp) {
-      slot->meta.rtp_ts_delta = rtp_tmstamp - tp->pre_rtp_tmstamp;
+    if (tp->pre_rtp_tmstamp[s_port]) {
+      slot->meta.rtp_ts_delta = rtp_tmstamp - tp->pre_rtp_tmstamp[s_port];
     }
-    tp->pre_rtp_tmstamp = rtp_tmstamp;
+    tp->pre_rtp_tmstamp[s_port] = rtp_tmstamp;
   }
 
   epoch_tmstamp = (uint64_t)(slot->cur_epochs * s->frame_time);
@@ -139,7 +140,7 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
 }
 
 void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
-                             struct st_rv_tp_slot* slot) {
+                             enum mtl_session_port s_port, struct st_rv_tp_slot* slot) {
   struct st_rx_video_tp* tp = s->tp;
   float cinst_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->cinst_sum);
   float vrx_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->vrx_sum);
@@ -162,7 +163,7 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
   if (!s->enable_timing_parser_stat) return;
 
   /* update stat */
-  struct st_rv_tp_stat* stat = &tp->stat;
+  struct st_rv_tp_stat* stat = &tp->stat[s_port];
   struct st_rv_tp_slot* stat_slot = &stat->slot;
 
   stat->stat_compliant_result[compliant]++;
@@ -197,19 +198,23 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
   stat->stat_frame_cnt++;
 }
 
-static void rv_tp_stat_init(struct st_rx_video_tp* tp) {
-  struct st_rv_tp_stat* stat = &tp->stat;
+static void rv_tp_stat_init(struct st_rx_video_session_impl* s,
+                            struct st_rx_video_tp* tp) {
+  MTL_MAY_UNUSED(s);
+  for (int s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
+    struct st_rv_tp_stat* stat = &tp->stat[s_port];
 
-  memset(stat, 0, sizeof(*stat));
-  rv_tp_slot_init(&stat->slot);
-  stat->stat_fpt_min = INT_MAX;
-  stat->stat_fpt_max = INT_MIN;
-  stat->stat_latency_min = INT_MAX;
-  stat->stat_latency_max = INT_MIN;
-  stat->stat_rtp_offset_min = INT_MAX;
-  stat->stat_rtp_offset_max = INT_MIN;
-  stat->stat_rtp_ts_delta_min = INT_MAX;
-  stat->stat_rtp_ts_delta_max = INT_MIN;
+    memset(stat, 0, sizeof(*stat));
+    rv_tp_slot_init(&stat->slot);
+    stat->stat_fpt_min = INT_MAX;
+    stat->stat_fpt_max = INT_MIN;
+    stat->stat_latency_min = INT_MAX;
+    stat->stat_latency_max = INT_MIN;
+    stat->stat_rtp_offset_min = INT_MAX;
+    stat->stat_rtp_offset_max = INT_MIN;
+    stat->stat_rtp_ts_delta_min = INT_MAX;
+    stat->stat_rtp_ts_delta_max = INT_MIN;
+  }
 }
 
 void rv_tp_stat(struct st_rx_video_session_impl* s) {
@@ -217,37 +222,40 @@ void rv_tp_stat(struct st_rx_video_session_impl* s) {
   struct st_rx_video_tp* tp = s->tp;
   if (!tp) return;
 
-  struct st_rv_tp_stat* stat = &tp->stat;
-  struct st_rv_tp_slot* stat_slot = &stat->slot;
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    struct st_rv_tp_stat* stat = &tp->stat[s_port];
+    struct st_rv_tp_slot* stat_slot = &stat->slot;
 
-  info("%s(%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx,
-       stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
-       stat->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
-       stat->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
-  float cinst_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->cinst_sum);
-  float vrx_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->vrx_sum);
-  float ipt_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->ipt_sum);
-  info("%s(%d), Cinst AVG %.2f MIN %d MAX %d!\n", __func__, idx, cinst_avg,
-       stat_slot->meta.cinst_min, stat_slot->meta.cinst_max);
-  info("%s(%d), VRX AVG %.2f MIN %d MAX %d!\n", __func__, idx, vrx_avg,
-       stat_slot->meta.vrx_min, stat_slot->meta.vrx_max);
-  info("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, idx, ipt_avg,
-       stat_slot->meta.ipt_min, stat_slot->meta.ipt_max);
-  float fpt_avg = rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_fpt_sum);
-  info("%s(%d), FPT AVG %.2f MIN %d MAX %d DIFF %d!\n", __func__, idx, fpt_avg,
-       stat->stat_fpt_min, stat->stat_fpt_max, stat->stat_fpt_max - stat->stat_fpt_min);
-  float latency_avg = rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_latency_sum);
-  info("%s(%d), LATENCY AVG %.2f MIN %d MAX %d!\n", __func__, idx, latency_avg,
-       stat->stat_latency_min, stat->stat_latency_max);
-  float rtp_offset_avg =
-      rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_offset_sum);
-  info("%s(%d), RTP OFFSET AVG %.2f MIN %d MAX %d!\n", __func__, idx, rtp_offset_avg,
-       stat->stat_rtp_offset_min, stat->stat_rtp_offset_max);
-  float rtp_ts_delta_avg =
-      rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_ts_delta_sum);
-  info("%s(%d), RTP TS DELTA AVG %.2f MIN %d MAX %d!\n", __func__, idx, rtp_ts_delta_avg,
-       stat->stat_rtp_ts_delta_min, stat->stat_rtp_ts_delta_max);
-  rv_tp_stat_init(tp);
+    info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, s_port,
+         stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
+         stat->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
+         stat->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
+    float cinst_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->cinst_sum);
+    float vrx_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->vrx_sum);
+    float ipt_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->ipt_sum);
+    info("%s(%d), Cinst AVG %.2f MIN %d MAX %d!\n", __func__, idx, cinst_avg,
+         stat_slot->meta.cinst_min, stat_slot->meta.cinst_max);
+    info("%s(%d), VRX AVG %.2f MIN %d MAX %d!\n", __func__, idx, vrx_avg,
+         stat_slot->meta.vrx_min, stat_slot->meta.vrx_max);
+    info("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, idx,
+         ipt_avg, stat_slot->meta.ipt_min, stat_slot->meta.ipt_max);
+    float fpt_avg = rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_fpt_sum);
+    info("%s(%d), FPT AVG %.2f MIN %d MAX %d DIFF %d!\n", __func__, idx, fpt_avg,
+         stat->stat_fpt_min, stat->stat_fpt_max, stat->stat_fpt_max - stat->stat_fpt_min);
+    float latency_avg = rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_latency_sum);
+    info("%s(%d), LATENCY AVG %.2f MIN %d MAX %d!\n", __func__, idx, latency_avg,
+         stat->stat_latency_min, stat->stat_latency_max);
+    float rtp_offset_avg =
+        rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_offset_sum);
+    info("%s(%d), RTP OFFSET AVG %.2f MIN %d MAX %d!\n", __func__, idx, rtp_offset_avg,
+         stat->stat_rtp_offset_min, stat->stat_rtp_offset_max);
+    float rtp_ts_delta_avg =
+        rv_tp_calculate_avg(stat->stat_frame_cnt, stat->stat_rtp_ts_delta_sum);
+    info("%s(%d), RTP TS DELTA AVG %.2f MIN %d MAX %d!\n", __func__, idx,
+         rtp_ts_delta_avg, stat->stat_rtp_ts_delta_min, stat->stat_rtp_ts_delta_max);
+  }
+
+  rv_tp_stat_init(s, tp);
 }
 
 void rv_tp_slot_init(struct st_rv_tp_slot* slot) {
@@ -301,8 +309,6 @@ int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   }
   s->tp = tp;
 
-  rv_tp_stat_init(tp);
-
   double reactive = 1080.0 / 1125.0;
   if (ops->interlaced && ops->height <= 576) {
     reactive = (ops->height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
@@ -337,7 +343,7 @@ int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   tp->pass.rtp_ts_delta_max = sampling + 1;
   tp->pass.rtp_ts_delta_min = sampling;
 
-  rv_tp_stat_init(tp);
+  rv_tp_stat_init(s, tp);
 
   info("%s[%02d], trs %f tr offset %d sampling %f\n", __func__, idx, tp->trs,
        tp->pass.tr_offset, s->frame_time_sampling);

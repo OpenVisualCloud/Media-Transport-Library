@@ -522,7 +522,7 @@ struct st20_rx_frame_meta {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
   /** st20 rx timing parser meta, only active if ST20_RX_FLAG_TIMING_PARSER_META */
-  struct st20_rx_tp_meta* tp;
+  struct st20_rx_tp_meta* tp[MTL_SESSION_PORT_MAX];
 };
 
 /**

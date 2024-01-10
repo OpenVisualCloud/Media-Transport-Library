@@ -713,11 +713,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   struct st20_rx_frame_meta* meta = &slot->meta;
 
   if (s->enable_timing_parser) {
-    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx];
-    rv_tp_slot_parse_result(s, tp_slot);
-
-    if (s->enable_timing_parser_meta) {
-      meta->tp = &tp_slot->meta;
+    for (int s_port = 0; s_port < ops->num_port; s_port++) {
+      struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
+      rv_tp_slot_parse_result(s, s_port, tp_slot);
+      if (s->enable_timing_parser_meta) {
+        meta->tp[s_port] = &tp_slot->meta;
+      }
     }
   }
 
@@ -1001,7 +1002,12 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   slot->pkts_recv_per_port[MTL_SESSION_PORT_R] = 0;
   s->slot_idx = slot_idx;
 
-  if (s->enable_timing_parser) rv_tp_slot_init(&s->tp->slots[slot_idx]);
+  if (s->enable_timing_parser) {
+    for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+      struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
+      rv_tp_slot_init(tp_slot);
+    }
+  }
 
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
@@ -1481,6 +1487,18 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     return -EIO;
   }
 
+  /* if enable_timing_parser */
+  if (s->enable_timing_parser) {
+    struct mtl_main_impl* impl = rv_get_impl(s);
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+
+    uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
+    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
+    dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
+        tmstamp, pkt_ns, pkt_idx);
+    rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
+  }
+
   /* check if the same pkt got already */
   if (slot->seq_id_got) {
     if (seq_id_u32 >= slot->seq_id_base_u32)
@@ -1535,18 +1553,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   bool dma_copy = false;
   bool need_copy = true;
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
-
-  /* if enable_timing_parser */
-  if (s->enable_timing_parser) {
-    struct mtl_main_impl* impl = rv_get_impl(s);
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-
-    uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
-    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx];
-    dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
-        tmstamp, pkt_ns, pkt_idx);
-    rv_tp_on_packet(s, tp_slot, tmstamp, pkt_ns, pkt_idx);
-  }
 
   if (s->st20_uframe_size) {
     /* user frame mode, pass to app to handle the payload */
@@ -2448,6 +2454,9 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   uint32_t tmstamp = ntohl(rtp->base.tmstamp);
   uint8_t payload_type = rtp->base.payload_type;
   MTL_MAY_UNUSED(ctrl_thread);
+
+  /* only detect on the main port */
+  if (MTL_SESSION_PORT_P != s_port) return 0;
 
   if (payload_type != ops->payload_type) {
     dbg("%s, payload_type mismatch %d %d\n", __func__, payload_type, ops->payload_type);

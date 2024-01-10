@@ -544,11 +544,11 @@ struct st_rx_video_tp {
   struct st20_rx_tp_pass pass;
 
   /* timing info for each slot */
-  struct st_rv_tp_slot slots[ST_VIDEO_RX_REC_NUM_OFO];
-  uint32_t pre_rtp_tmstamp;
+  struct st_rv_tp_slot slots[ST_VIDEO_RX_REC_NUM_OFO][MTL_SESSION_PORT_MAX];
+  uint32_t pre_rtp_tmstamp[MTL_SESSION_PORT_MAX];
 
   /* for the status */
-  struct st_rv_tp_stat stat;
+  struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
 };
 
 struct st_rx_video_session_impl {
