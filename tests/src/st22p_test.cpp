@@ -1078,6 +1078,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_NEAR(vsyncrate_tx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
 
     test_ctx_tx[i]->stop = true;
+    if (para->block_get) st22p_tx_wake_block(tx_handle[i]);
     test_ctx_tx[i]->cv.notify_all();
     tx_thread[i].join();
   }
@@ -1095,6 +1096,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
 
     test_ctx_rx[i]->stop = true;
+    if (para->block_get) st22p_rx_wake_block(rx_handle[i]);
     test_ctx_rx[i]->cv.notify_all();
     rx_thread[i].join();
   }

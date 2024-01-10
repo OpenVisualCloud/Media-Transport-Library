@@ -392,8 +392,6 @@ struct st_app_tx_st22p_session {
   double expect_fps;
 
   pthread_t st22p_app_thread;
-  pthread_cond_t st22p_wake_cond;
-  pthread_mutex_t st22p_wake_mutex;
   bool st22p_app_thread_stop;
 };
 
@@ -415,8 +413,6 @@ struct st_app_rx_st22p_session {
   double expect_fps;
 
   pthread_t st22p_app_thread;
-  pthread_cond_t st22p_wake_cond;
-  pthread_mutex_t st22p_wake_mutex;
   bool st22p_app_thread_stop;
 
   struct st_display* display;
@@ -448,8 +444,6 @@ struct st_app_tx_st20p_session {
   double expect_fps;
 
   pthread_t st20p_app_thread;
-  pthread_cond_t st20p_wake_cond;
-  pthread_mutex_t st20p_wake_mutex;
   bool st20p_app_thread_stop;
 };
 
@@ -473,8 +467,6 @@ struct st_app_rx_st20p_session {
   double expect_fps;
 
   pthread_t st20p_app_thread;
-  pthread_cond_t st20p_wake_cond;
-  pthread_mutex_t st20p_wake_mutex;
   bool st20p_app_thread_stop;
 
   struct st_display* display;

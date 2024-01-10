@@ -865,3 +865,17 @@ int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* 
 
   return st20_tx_update_destination(ctx->transport, dst);
 }
+
+int st20p_tx_wake_block(st20p_tx_handle handle) {
+  struct st20p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  if (ctx->block_get) tx_st20p_block_wake(ctx);
+
+  return 0;
+}

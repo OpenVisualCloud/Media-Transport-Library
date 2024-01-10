@@ -1012,3 +1012,17 @@ int st20p_rx_timing_parser_critical(st20p_rx_handle handle,
 
   return st20_rx_timing_parser_critical(ctx->transport, pass);
 }
+
+int st20p_rx_wake_block(st20p_rx_handle handle) {
+  struct st20p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  if (ctx->block_get) rx_st20p_block_wake(ctx);
+
+  return 0;
+}

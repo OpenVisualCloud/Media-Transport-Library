@@ -12,8 +12,6 @@ struct rx_st20p_sample_ctx {
   pthread_t frame_thread;
 
   int fb_recv;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   size_t frame_size;
   int dst_fd;
@@ -23,16 +21,6 @@ struct rx_st20p_sample_ctx {
 
   int fb_cnt;
 };
-
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_sample_ctx* s = priv;
-
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
 
 static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
   if (s->dst_begin) {
@@ -102,9 +90,7 @@ static void* rx_st20p_frame_thread(void* arg) {
   while (!s->stop) {
     frame = st20p_rx_get_frame(handle);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
     dbg("%s(%d), one new frame\n", __func__, s->idx);
@@ -153,8 +139,6 @@ int main(int argc, char** argv) {
     memset(app[i], 0, sizeof(struct rx_st20p_sample_ctx));
     app[i]->idx = i;
     app[i]->stop = false;
-    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->dst_fd = -1;
     app[i]->fb_cnt = ctx.framebuff_cnt;
 
@@ -177,7 +161,7 @@ int main(int argc, char** argv) {
     ops_rx.output_fmt = ctx.output_fmt;
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_rx.framebuff_cnt = app[i]->fb_cnt;
-    ops_rx.notify_frame_available = rx_st20p_frame_available;
+    ops_rx.flags = ST20P_RX_FLAG_BLOCK_GET;
 
     st20p_rx_handle rx_handle = st20p_rx_create(ctx.st, &ops_rx);
     if (!rx_handle) {
@@ -214,9 +198,7 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    st_pthread_mutex_lock(&app[i]->wake_mutex);
-    st_pthread_cond_signal(&app[i]->wake_cond);
-    st_pthread_mutex_unlock(&app[i]->wake_mutex);
+    if (app[i]->handle) st20p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
 
@@ -238,8 +220,6 @@ error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
       if (app[i]->handle) st20p_rx_free(app[i]->handle);
-      st_pthread_mutex_destroy(&app[i]->wake_mutex);
-      st_pthread_cond_destroy(&app[i]->wake_cond);
       free(app[i]);
     }
   }

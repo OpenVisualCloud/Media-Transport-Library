@@ -1334,6 +1334,17 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
 int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
+ * Wake up the block wait on st22p_tx_get_frame if ST22P_TX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(pipeline) session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22p_tx_wake_block(st22p_tx_handle handle);
+
+/**
  * Create one rx st2110-22 pipeline session.
  *
  * @param mt
@@ -1451,6 +1462,17 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
  *   - <0: Error code.
  */
 int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src);
+
+/**
+ * Wake up the block wait on st22p_rx_get_frame if ST22P_RX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(pipeline) session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22p_rx_wake_block(st22p_rx_handle handle);
 
 /**
  * Create one tx st2110-20 pipeline session.
@@ -1596,6 +1618,17 @@ int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port
  *   - <0: Error code.
  */
 int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst);
+
+/**
+ * Wake up the block wait on st20p_tx_get_frame if ST20P_TX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(pipeline) session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_tx_wake_block(st20p_tx_handle handle);
 
 /**
  * Create one rx st2110-20 pipeline session.
@@ -1758,7 +1791,7 @@ int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src
 
 /**
  * Get the timing parser pass critical to rx st2110-20(pipeline) session.
- * Only avaiable if ST20P_RX_FLAG_TIMING_PARSER_META is enabled.
+ * Only available if ST20P_RX_FLAG_TIMING_PARSER_META is enabled.
  *
  * @param handle
  *   The handle to the rx st2110-20(pipeline) session.
@@ -1769,6 +1802,17 @@ int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src
  *   - <0: Error code.
  */
 int st20p_rx_timing_parser_critical(st20p_rx_handle handle, struct st20_rx_tp_pass* pass);
+
+/**
+ * Wake up the block wait on st20p_rx_get_frame if ST20P_RX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(pipeline) session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_rx_wake_block(st20p_rx_handle handle);
 
 /**
  * Convert color format from source frame to destination frame.

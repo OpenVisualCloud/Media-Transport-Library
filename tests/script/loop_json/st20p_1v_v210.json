@@ -12,21 +12,21 @@
     "tx_sessions": [
         {
             "dip": [
-                "192.168.17.102"
+                "local:1"
             ],
             "interface": [
                 0
             ],
             "st20p": [
                 {
-                    "replicas": 2,
+                    "replicas": 1,
                     "start_port": 20000,
                     "payload_type": 112,
                     "width": 1920,
                     "height": 1080,
                     "fps": "p59",
                     "device": "AUTO",
-                    "input_format": "YUV422PLANAR10LE",
+                    "input_format": "V210",
                     "transport_format": "YUV_422_10bit",
                     "st20p_url": "./test.yuv"
                 }
@@ -36,21 +36,21 @@
     "rx_sessions": [
         {
             "ip": [
-                "192.168.17.101"
+                "local:0"
             ],
             "interface": [
                 1
             ],
             "st20p": [
                 {
-                    "replicas": 2,
+                    "replicas": 1,
                     "start_port": 20000,
                     "payload_type": 112,
                     "width": 1920,
                     "height": 1080,
                     "fps": "p59",
                     "device": "AUTO",
-                    "output_format": "YUV422PLANAR10LE",
+                    "output_format": "V210",
                     "transport_format": "YUV_422_10bit",
                     "display": false,
                     "measure_latency": true

@@ -4,16 +4,6 @@
 
 #include "rx_st22p_app.h"
 
-static int app_rx_st22p_frame_available(void* priv) {
-  struct st_app_rx_st22p_session* s = priv;
-
-  st_pthread_mutex_lock(&s->st22p_wake_mutex);
-  st_pthread_cond_signal(&s->st22p_wake_cond);
-  st_pthread_mutex_unlock(&s->st22p_wake_mutex);
-
-  return 0;
-}
-
 static void app_rx_st22p_consume_frame(struct st_app_rx_st22p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -48,11 +38,8 @@ static void* app_rx_st22p_frame_thread(void* arg) {
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st22p_app_thread_stop) {
     frame = st22p_rx_get_frame(s->handle);
-    if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->st22p_wake_mutex);
-      if (!s->st22p_app_thread_stop)
-        st_pthread_cond_wait(&s->st22p_wake_cond, &s->st22p_wake_mutex);
-      st_pthread_mutex_unlock(&s->st22p_wake_mutex);
+    if (!frame) { /* no ready frame */
+      warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
 
@@ -111,16 +98,10 @@ static int app_rx_st22p_uinit(struct st_app_rx_st22p_session* s) {
 
   s->st22p_app_thread_stop = true;
   if (s->st22p_app_thread_stop) {
-    /* wake up the thread */
-    st_pthread_mutex_lock(&s->st22p_wake_mutex);
-    st_pthread_cond_signal(&s->st22p_wake_cond);
-    st_pthread_mutex_unlock(&s->st22p_wake_mutex);
     info("%s(%d), wait app thread stop\n", __func__, idx);
+    if (s->handle) st22p_rx_wake_block(s->handle);
     pthread_join(s->st22p_app_thread, NULL);
   }
-
-  st_pthread_mutex_destroy(&s->st22p_wake_mutex);
-  st_pthread_cond_destroy(&s->st22p_wake_cond);
 
   if (s->handle) {
     ret = st22p_rx_free(s->handle);
@@ -183,12 +164,9 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.device = st22p ? st22p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.codec_thread_cnt = st22p ? st22p->info.codec_thread_count : 0;
   ops.max_codestream_size = 0;
-  ops.notify_frame_available = app_rx_st22p_frame_available;
+  ops.flags |= ST22P_RX_FLAG_BLOCK_GET;
   ops.framebuff_cnt = s->framebuff_cnt;
   if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_RX_FLAG_ENABLE_RTCP;
-
-  st_pthread_mutex_init(&s->st22p_wake_mutex, NULL);
-  st_pthread_cond_init(&s->st22p_wake_cond, NULL);
 
   s->width = ops.width;
   s->height = ops.height;

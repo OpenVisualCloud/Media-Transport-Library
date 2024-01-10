@@ -12,8 +12,6 @@ struct rx_st22p_sample_ctx {
   pthread_t frame_thread;
 
   int fb_recv;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   size_t frame_size;
   int dst_fd;
@@ -21,16 +19,6 @@ struct rx_st22p_sample_ctx {
   uint8_t* dst_end;
   uint8_t* dst_cursor;
 };
-
-static int rx_st22p_frame_available(void* priv) {
-  struct rx_st22p_sample_ctx* s = priv;
-
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
 
 static int rx_st22p_close_source(struct rx_st22p_sample_ctx* s) {
   if (s->dst_begin) {
@@ -107,9 +95,7 @@ static void* rx_st22p_frame_thread(void* arg) {
   while (!s->stop) {
     frame = st22p_rx_get_frame(handle);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
     rx_st22p_consume_frame(s, frame);
@@ -149,8 +135,6 @@ int main(int argc, char** argv) {
     memset(app[i], 0, sizeof(struct rx_st22p_sample_ctx));
     app[i]->idx = i;
     app[i]->stop = false;
-    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->dst_fd = -1;
 
     struct st22p_rx_ops ops_rx;
@@ -175,7 +159,7 @@ int main(int argc, char** argv) {
     ops_rx.max_codestream_size = 0; /* let lib to decide */
     ops_rx.framebuff_cnt = ctx.framebuff_cnt;
     ops_rx.codec_thread_cnt = 2;
-    ops_rx.notify_frame_available = rx_st22p_frame_available;
+    ops_rx.flags = ST22P_RX_FLAG_BLOCK_GET;
 
     st22p_rx_handle rx_handle = st22p_rx_create(ctx.st, &ops_rx);
     if (!rx_handle) {
@@ -211,9 +195,7 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    st_pthread_mutex_lock(&app[i]->wake_mutex);
-    st_pthread_cond_signal(&app[i]->wake_cond);
-    st_pthread_mutex_unlock(&app[i]->wake_mutex);
+    if (app[i]->handle) st22p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
 

@@ -19,7 +19,7 @@
             ],
             "st20p": [
                 {
-                    "replicas": 2,
+                    "replicas": 1,
                     "start_port": 20000,
                     "payload_type": 112,
                     "width": 1920,
@@ -43,7 +43,7 @@
             ],
             "st20p": [
                 {
-                    "replicas": 2,
+                    "replicas": 1,
                     "start_port": 20000,
                     "payload_type": 112,
                     "width": 1920,

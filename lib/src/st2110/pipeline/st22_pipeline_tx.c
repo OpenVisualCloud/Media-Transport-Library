@@ -733,3 +733,17 @@ int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* 
 
   return st22_tx_update_destination(ctx->transport, dst);
 }
+
+int st22p_tx_wake_block(st22p_tx_handle handle) {
+  struct st22p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  if (ctx->block_get) tx_st22p_block_wake(ctx);
+
+  return 0;
+}
