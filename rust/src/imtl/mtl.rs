@@ -26,6 +26,7 @@ use anyhow::{bail, Result};
 use bitflags::bitflags;
 use derive_builder::Builder;
 use std::mem::MaybeUninit;
+use std::str::FromStr;
 
 use crate::netdev::NetDev;
 use crate::sys;
@@ -40,6 +41,21 @@ pub enum LogLevel {
     /// Default logging level, indicating an error.
     #[default]
     Error,
+}
+
+impl FromStr for LogLevel {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "debug" => Ok(LogLevel::Debug),
+            "info" => Ok(LogLevel::Info),
+            "notice" => Ok(LogLevel::Notice),
+            "warning" => Ok(LogLevel::Warning),
+            "error" => Ok(LogLevel::Error),
+            _ => bail!("Invalid log level: {}", s),
+        }
+    }
 }
 
 /// Receive Side Scaling (RSS) mode options for the network device.

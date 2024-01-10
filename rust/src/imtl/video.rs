@@ -10,10 +10,10 @@
 use crate::mtl::Mtl;
 use crate::session::RtpSession;
 use crate::sys;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use crossbeam_utils::sync::Parker;
 use derive_builder::Builder;
-use std::{ffi::c_void, mem::MaybeUninit};
+use std::{ffi::c_void, fmt::Display, mem::MaybeUninit, str::FromStr};
 
 /// Different packing formats for uncompressed video.
 #[derive(Copy, Clone, Debug, Default)]
@@ -41,6 +41,64 @@ pub enum Fps {
     P23_98,
 }
 
+impl Display for Fps {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Fps::P59_94 => write!(f, "59.94"),
+            Fps::P50 => write!(f, "50"),
+            Fps::P29_97 => write!(f, "29.97"),
+            Fps::P25 => write!(f, "25"),
+            Fps::P119_88 => write!(f, "119.88"),
+            Fps::P120 => write!(f, "120"),
+            Fps::P100 => write!(f, "100"),
+            Fps::P60 => write!(f, "60"),
+            Fps::P30 => write!(f, "30"),
+            Fps::P24 => write!(f, "24"),
+            Fps::P23_98 => write!(f, "23.98"),
+        }
+    }
+}
+
+impl FromStr for Fps {
+    type Err = anyhow::Error;
+
+    fn from_str(fps: &str) -> Result<Self> {
+        match fps {
+            "59.94" => Ok(Fps::P59_94),
+            "50" => Ok(Fps::P50),
+            "29.97" => Ok(Fps::P29_97),
+            "25" => Ok(Fps::P25),
+            "119.88" => Ok(Fps::P119_88),
+            "120" => Ok(Fps::P120),
+            "100" => Ok(Fps::P100),
+            "60" => Ok(Fps::P60),
+            "30" => Ok(Fps::P30),
+            "24" => Ok(Fps::P24),
+            "23.98" => Ok(Fps::P23_98),
+            _ => bail!("Invalid FPS value"),
+        }
+    }
+}
+
+impl Fps {
+    /// convert Fps to float
+    pub fn to_float(self) -> f32 {
+        match self {
+            Fps::P59_94 => 60000.0 / 1001.0,
+            Fps::P50 => 50000.0 / 1000.0,
+            Fps::P29_97 => 30000.0 / 1001.0,
+            Fps::P25 => 25000.0 / 1000.0,
+            Fps::P119_88 => 11988.0 / 1000.0,
+            Fps::P120 => 12000.0 / 1000.0,
+            Fps::P100 => 10000.0 / 1000.0,
+            Fps::P60 => 60000.0 / 1000.0,
+            Fps::P30 => 30000.0 / 1000.0,
+            Fps::P24 => 24000.0 / 1000.0,
+            Fps::P23_98 => 24000.0 / 1001.0,
+        }
+    }
+}
+
 /// Different transport formats for raw video data.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum TransportFmt {
@@ -60,6 +118,53 @@ pub enum TransportFmt {
     Yuv444_10bit,
     Yuv444_12bit,
     Yuv444_16bit,
+}
+
+impl Display for TransportFmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportFmt::Yuv422_10bit => write!(f, "YUV 4:2:2 10bit"),
+            TransportFmt::Yuv422_8bit => write!(f, "YUV 4:2:2 8bit"),
+            TransportFmt::Yuv422_12bit => write!(f, "YUV 4:2:2 12bit"),
+            TransportFmt::Yuv422_16bit => write!(f, "YUV 4:2:2 16bit"),
+            TransportFmt::Yuv420_8bit => write!(f, "YUV 4:2:0 8bit"),
+            TransportFmt::Yuv420_10bit => write!(f, "YUV 4:2:0 10bit"),
+            TransportFmt::Yuv420_12bit => write!(f, "YUV 4:2:0 12bit"),
+            TransportFmt::Rgb8bit => write!(f, "RGB 8bit"),
+            TransportFmt::Rgb10bit => write!(f, "RGB 10bit"),
+            TransportFmt::Rgb12bit => write!(f, "RGB 12bit"),
+            TransportFmt::Rgb16bit => write!(f, "RGB 16bit"),
+            TransportFmt::Yuv444_8bit => write!(f, "YUV 4:4:4 8bit"),
+            TransportFmt::Yuv444_10bit => write!(f, "YUV 4:4:4 10bit"),
+            TransportFmt::Yuv444_12bit => write!(f, "YUV 4:4:4 12bit"),
+            TransportFmt::Yuv444_16bit => write!(f, "YUV 4:4:4 16bit"),
+        }
+    }
+}
+
+impl FromStr for TransportFmt {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "yuv_422_10bit" => Ok(TransportFmt::Yuv422_10bit),
+            "yuv_422_8bit" => Ok(TransportFmt::Yuv422_8bit),
+            "yuv_422_12bit" => Ok(TransportFmt::Yuv422_12bit),
+            "yuv_422_16bit" => Ok(TransportFmt::Yuv422_16bit),
+            "yuv_420_8bit" => Ok(TransportFmt::Yuv420_8bit),
+            "yuv_420_10bit" => Ok(TransportFmt::Yuv420_10bit),
+            "yuv_420_12bit" => Ok(TransportFmt::Yuv420_12bit),
+            "rgb_8bit" => Ok(TransportFmt::Rgb8bit),
+            "rgb_10bit" => Ok(TransportFmt::Rgb10bit),
+            "rgb_12bit" => Ok(TransportFmt::Rgb12bit),
+            "rgb_16bit" => Ok(TransportFmt::Rgb16bit),
+            "yuv_444_8bit" => Ok(TransportFmt::Yuv444_8bit),
+            "yuv_444_10bit" => Ok(TransportFmt::Yuv444_10bit),
+            "yuv_444_12bit" => Ok(TransportFmt::Yuv444_12bit),
+            "yuv_444_16bit" => Ok(TransportFmt::Yuv444_16bit),
+            _ => bail!(format!("Unknown format: {}", s)),
+        }
+    }
 }
 
 /// States that a frame can be in during processing.
@@ -429,7 +534,7 @@ impl VideoRx {
         let producer_idx = self.producer_idx;
 
         if !self.frames[producer_idx as usize].is_null() {
-            return Err(anyhow!("Frame is busy"));
+            bail!("Frame is busy");
         }
 
         self.frames[producer_idx as usize] = frame;
