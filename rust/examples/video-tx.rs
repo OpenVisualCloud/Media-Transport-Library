@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::net::Ipv4Addr;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -15,24 +16,44 @@ use imtl::video::{Fps, TransportFmt, VideoTxBuilder};
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Name of the netdev
-    #[arg(short, long, default_value_t = String::from("0000:4b:01.0"))]
+    #[arg(long, default_value_t = String::from("0000:4b:01.0"))]
     netdev: String,
 
-    /// Source IP address
-    #[arg(short, long, default_value_t = Ipv4Addr::new(192, 168, 96, 111))]
+    /// Netdev IP address
+    #[arg(long, default_value_t = Ipv4Addr::new(192, 168, 96, 111))]
     sip: Ipv4Addr,
 
     /// Destination IP address
-    #[arg(short, long, default_value_t = Ipv4Addr::new(239, 19, 96, 111))]
+    #[arg(long, default_value_t = Ipv4Addr::new(239, 19, 96, 111))]
     ip: Ipv4Addr,
 
     /// Destination UDP Port number
-    #[arg(short, long, default_value_t = 20000)]
+    #[arg(long, default_value_t = 20000)]
     port: u16,
 
+    /// Width
+    #[arg(long, default_value_t = 1920)]
+    width: u16,
+
+    /// Height
+    #[arg(long, default_value_t = 1080)]
+    height: u16,
+
+    /// Framerate
+    #[arg(long, default_value_t = String::from("60"))]
+    fps: String,
+
+    /// Transport format
+    #[arg(long, default_value_t = String::from("yuv_422_10bit"))]
+    format: String,
+
     /// Name of the YUV file
-    #[arg(short, long)]
+    #[arg(long)]
     yuv: String,
+
+    /// Log level
+    #[arg(short, long, default_value_t = String::from("info"))]
+    log_level: String,
 }
 
 fn main() -> Result<()> {
@@ -69,7 +90,7 @@ fn main() -> Result<()> {
     let mtl = MtlBuilder::default()
         .net_devs(net_devs)
         .flags(flags)
-        .log_level(LogLevel::Info)
+        .log_level(LogLevel::from_str(&args.log_level)?)
         .build()
         .unwrap()
         .init()
@@ -88,10 +109,10 @@ fn main() -> Result<()> {
 
     let mut video_tx = VideoTxBuilder::default()
         .rtp_session(session)
-        .width(1920u32)
-        .height(1080u32)
-        .fps(Fps::P60)
-        .t_fmt(TransportFmt::Yuv422_10bit)
+        .width(args.width)
+        .height(args.height)
+        .fps(Fps::from_str(&args.fps)?)
+        .t_fmt(TransportFmt::from_str(&args.format)?)
         .build()
         .unwrap()
         .create(&mtl)
