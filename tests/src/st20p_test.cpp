@@ -458,7 +458,7 @@ static void test_st20p_rx_frame_thread(void* args) {
     if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
     timestamp = frame->timestamp;
     if (s->rx_timing_parser) {
-      if (!frame->tp) s->incomplete_frame_cnt++;
+      if (!frame->tp[MTL_SESSION_PORT_P]) s->incomplete_frame_cnt++;
     }
 
     /* check user timestamp if it has */
