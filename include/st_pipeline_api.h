@@ -296,7 +296,7 @@ struct st_frame {
   void* opaque;
   /** timing parser meta for st20p_rx_get_frame, only active if
    * ST20P_RX_FLAG_TIMING_PARSER_META */
-  struct st20_rx_tp_meta* tp;
+  struct st20_rx_tp_meta* tp[MTL_SESSION_PORT_MAX];
 };
 
 /** Device type of st plugin */

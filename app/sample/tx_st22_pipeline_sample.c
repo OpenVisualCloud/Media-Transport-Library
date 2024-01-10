@@ -203,12 +203,19 @@ int main(int argc, char** argv) {
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st22p_sample";
     ops_tx.priv = app[i];  // app handle register to lib
-    ops_tx.port.num_port = 1;
+    ops_tx.port.num_port = ctx.param.num_ports;
     memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    if (ops_tx.port.num_port > 1) {
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+      snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+               ctx.param.port[MTL_PORT_R]);
+      ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+    }
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.width = ctx.width;
     ops_tx.height = ctx.height;

@@ -39,7 +39,8 @@ struct rx_timing_parser_sample_ctx {
   bool pass_get; /* pass critical is only available */
 
   /* stat report */
-  struct rx_tp_stat stat;
+  struct rx_tp_stat stat[MTL_SESSION_PORT_MAX];
+  uint8_t num_port;
 };
 
 static void rx_st20p_tp_stat_init(struct rx_tp_stat* stat) {
@@ -62,9 +63,9 @@ static void rx_st20p_tp_stat_init(struct rx_tp_stat* stat) {
 }
 
 static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx* s,
-                                   struct rx_tp_stat* stat) {
+                                   enum mtl_session_port port, struct rx_tp_stat* stat) {
   int idx = s->idx;
-  info("%s(%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx,
+  info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, port,
        stat->compliant_result[ST_RX_TP_COMPLIANT_NARROW],
        stat->compliant_result[ST_RX_TP_COMPLIANT_WIDE],
        stat->compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
@@ -81,14 +82,14 @@ static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx* s,
 }
 
 static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx* s,
-                               struct st20_rx_tp_meta* tp) {
+                               enum mtl_session_port port, struct st20_rx_tp_meta* tp) {
   if (tp->compliant != ST_RX_TP_COMPLIANT_NARROW) {
     dbg("%s(%d), compliant failed %d cause: %s, frame idx %d\n", __func__, s->idx,
         tp->compliant, tp->failed_cause, s->fb_recv);
   }
 
   /* update stat */
-  struct rx_tp_stat* stat = &s->stat;
+  struct rx_tp_stat* stat = &s->stat[port];
   stat->vrx_min = ST_MIN(tp->vrx_min, stat->vrx_min);
   stat->vrx_max = ST_MAX(tp->vrx_max, stat->vrx_max);
   stat->cinst_min = ST_MIN(tp->cinst_min, stat->cinst_min);
@@ -132,7 +133,9 @@ static void* rx_st20p_tp_thread(void* arg) {
              s->pass.vrx_max_narrow, s->pass.vrx_max_wide);
       }
     }
-    rx_st20p_tp_consume(s, frame->tp);
+    rx_st20p_tp_consume(s, MTL_SESSION_PORT_P, frame->tp[MTL_SESSION_PORT_P]);
+    if (s->num_port > 1)
+      rx_st20p_tp_consume(s, MTL_SESSION_PORT_R, frame->tp[MTL_SESSION_PORT_R]);
 
     s->fb_recv++;
     st20p_rx_put_frame(handle, frame);
@@ -150,6 +153,9 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  /* enable hw offload timestamp */
+  ctx.param.flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -172,18 +178,28 @@ int main(int argc, char** argv) {
     app[i]->idx = i;
     app[i]->stop = false;
     app[i]->fb_cnt = ctx.framebuff_cnt;
-    rx_st20p_tp_stat_init(&app[i]->stat);
+    app[i]->num_port = ctx.param.num_ports;
+
+    rx_st20p_tp_stat_init(&app[i]->stat[MTL_SESSION_PORT_P]);
+    rx_st20p_tp_stat_init(&app[i]->stat[MTL_SESSION_PORT_R]);
 
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20p_test";
     ops_rx.priv = app[i];  // app handle register to lib
-    ops_rx.port.num_port = 1;
+    ops_rx.port.num_port = app[i]->num_port;
     memcpy(ops_rx.port.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
+    if (ops_rx.port.num_port > 1) {
+      memcpy(ops_rx.port.sip_addr[MTL_SESSION_PORT_R], ctx.rx_sip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
+      snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+               ctx.param.port[MTL_PORT_R]);
+      ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
+    }
     ops_rx.port.payload_type = ctx.payload_type;
     ops_rx.width = ctx.width;
     ops_rx.height = ctx.height;
@@ -221,8 +237,14 @@ int main(int argc, char** argv) {
     cnt++;
     if ((cnt % 10) == 0) {
       for (int i = 0; i < session_num; i++) {
-        rx_st20p_tp_stat_print(app[i], &app[i]->stat);
-        rx_st20p_tp_stat_init(&app[i]->stat);
+        rx_st20p_tp_stat_print(app[i], MTL_SESSION_PORT_P,
+                               &app[i]->stat[MTL_SESSION_PORT_P]);
+        rx_st20p_tp_stat_init(&app[i]->stat[MTL_SESSION_PORT_P]);
+        if (app[i]->num_port > 1) {
+          rx_st20p_tp_stat_print(app[i], MTL_SESSION_PORT_R,
+                                 &app[i]->stat[MTL_SESSION_PORT_R]);
+          rx_st20p_tp_stat_init(&app[i]->stat[MTL_SESSION_PORT_R]);
+        }
       }
     }
   }
@@ -230,6 +252,7 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
+    if (app[i]->handle) st20p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
   }
