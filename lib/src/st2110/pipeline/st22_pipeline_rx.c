@@ -690,3 +690,17 @@ int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src
 
   return st22_rx_update_source(ctx->transport, src);
 }
+
+int st22p_rx_wake_block(st22p_rx_handle handle) {
+  struct st22p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  if (ctx->block_get) rx_st22p_block_wake(ctx);
+
+  return 0;
+}

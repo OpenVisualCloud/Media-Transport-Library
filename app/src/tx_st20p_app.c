@@ -27,16 +27,6 @@ static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session* s,
   }
 }
 
-static int app_tx_st20p_frame_available(void* priv) {
-  struct st_app_tx_st20p_session* s = priv;
-
-  st_pthread_mutex_lock(&s->st20p_wake_mutex);
-  st_pthread_cond_signal(&s->st20p_wake_cond);
-  st_pthread_mutex_unlock(&s->st20p_wake_mutex);
-
-  return 0;
-}
-
 static int app_tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
   struct st_app_tx_st20p_session* s = priv;
   if (event == ST_EVENT_VSYNC) {
@@ -79,11 +69,8 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
     frame = st20p_tx_get_frame(handle);
-    if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->st20p_wake_mutex);
-      if (!s->st20p_app_thread_stop)
-        st_pthread_cond_wait(&s->st20p_wake_cond, &s->st20p_wake_mutex);
-      st_pthread_mutex_unlock(&s->st20p_wake_mutex);
+    if (!frame) { /* no ready frame */
+      warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
     app_tx_st20p_build_frame(s, frame);
@@ -165,11 +152,9 @@ static int app_tx_st20p_start_source(struct st_app_tx_st20p_session* s) {
 
 static void app_tx_st20p_stop_source(struct st_app_tx_st20p_session* s) {
   s->st20p_app_thread_stop = true;
-  /* wake up the thread */
-  st_pthread_mutex_lock(&s->st20p_wake_mutex);
-  st_pthread_cond_signal(&s->st20p_wake_cond);
-  st_pthread_mutex_unlock(&s->st20p_wake_mutex);
   if (s->st20p_app_thread) {
+    info("%s(%d), wait app thread stop\n", __func__, s->idx);
+    if (s->handle) st20p_tx_wake_block(s->handle);
     pthread_join(s->st20p_app_thread, NULL);
     s->st20p_app_thread = 0;
   }
@@ -211,9 +196,6 @@ static int app_tx_st20p_uinit(struct st_app_tx_st20p_session* s) {
   if (s->display) {
     st_app_free(s->display);
   }
-
-  st_pthread_mutex_destroy(&s->st20p_wake_mutex);
-  st_pthread_cond_destroy(&s->st20p_wake_cond);
 
   return 0;
 }
@@ -299,7 +281,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.framebuff_cnt = 2;
-  ops.notify_frame_available = app_tx_st20p_frame_available;
+  ops.flags |= ST20P_TX_FLAG_BLOCK_GET;
   ops.start_vrx = ctx->tx_start_vrx;
   ops.pad_interval = ctx->tx_pad_interval;
   ops.rtp_timestamp_delta_us = ctx->tx_ts_delta_us;
@@ -323,9 +305,6 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
 
   s->framebuff_cnt = ops.framebuff_cnt;
   s->st20p_source_fd = -1;
-
-  st_pthread_mutex_init(&s->st20p_wake_mutex, NULL);
-  st_pthread_cond_init(&s->st20p_wake_cond, NULL);
 
   handle = st20p_tx_create(ctx->st, &ops);
   if (!handle) {

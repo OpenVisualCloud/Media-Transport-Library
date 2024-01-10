@@ -4,16 +4,6 @@
 
 #include "rx_st20p_app.h"
 
-static int app_rx_st20p_frame_available(void* priv) {
-  struct st_app_rx_st20p_session* s = priv;
-
-  st_pthread_mutex_lock(&s->st20p_wake_mutex);
-  st_pthread_cond_signal(&s->st20p_wake_cond);
-  st_pthread_mutex_unlock(&s->st20p_wake_mutex);
-
-  return 0;
-}
-
 static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -63,11 +53,8 @@ static void* app_rx_st20p_frame_thread(void* arg) {
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st20p_app_thread_stop) {
     frame = st20p_rx_get_frame(s->handle);
-    if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->st20p_wake_mutex);
-      if (!s->st20p_app_thread_stop)
-        st_pthread_cond_wait(&s->st20p_wake_cond, &s->st20p_wake_mutex);
-      st_pthread_mutex_unlock(&s->st20p_wake_mutex);
+    if (!frame) { /* no ready frame */
+      warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
 
@@ -140,15 +127,10 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
   s->st20p_app_thread_stop = true;
   if (s->st20p_app_thread_stop) {
     /* wake up the thread */
-    st_pthread_mutex_lock(&s->st20p_wake_mutex);
-    st_pthread_cond_signal(&s->st20p_wake_cond);
-    st_pthread_mutex_unlock(&s->st20p_wake_mutex);
     info("%s(%d), wait app thread stop\n", __func__, idx);
+    if (s->handle) st20p_rx_wake_block(s->handle);
     pthread_join(s->st20p_app_thread, NULL);
   }
-
-  st_pthread_mutex_destroy(&s->st20p_wake_mutex);
-  st_pthread_cond_destroy(&s->st20p_wake_cond);
 
   if (s->handle) {
     ret = st20p_rx_free(s->handle);
@@ -235,15 +217,12 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
   ops.port.payload_type = st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
-  ops.notify_frame_available = app_rx_st20p_frame_available;
+  ops.flags |= ST20P_RX_FLAG_BLOCK_GET;
   ops.framebuff_cnt = s->framebuff_cnt;
   /* always try to enable DMA offload */
-  ops.flags = ST20P_RX_FLAG_DMA_OFFLOAD;
+  ops.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
   if (ctx->enable_timing_parser) ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
-
-  st_pthread_mutex_init(&s->st20p_wake_mutex, NULL);
-  st_pthread_cond_init(&s->st20p_wake_cond, NULL);
 
   s->width = ops.width;
   s->height = ops.height;

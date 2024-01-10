@@ -13,8 +13,6 @@ struct tx_st22p_sample_ctx {
   pthread_t frame_thread;
 
   int fb_send;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   size_t frame_size;
   uint8_t* source_begin;
@@ -124,16 +122,6 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   return 0;
 }
 
-static int tx_st22p_frame_available(void* priv) {
-  struct tx_st22p_sample_ctx* s = priv;
-
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
-
 static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame* frame) {
   if (s->frame_cursor + s->frame_size > s->source_end) {
     s->frame_cursor = s->source_begin;
@@ -167,9 +155,7 @@ static void* tx_st22p_frame_thread(void* arg) {
   while (!s->stop) {
     frame = st22p_tx_get_frame(handle);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
     if (s->source_begin) tx_st22p_build_frame(s, frame);
@@ -212,8 +198,6 @@ int main(int argc, char** argv) {
     app[i]->st = ctx.st;
     app[i]->idx = i;
     app[i]->stop = false;
-    st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
-    st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
     struct st22p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
@@ -239,7 +223,7 @@ int main(int argc, char** argv) {
     ops_tx.codestream_size = ops_tx.width * ops_tx.height * bpp / 8;
     if (ops_tx.interlaced) ops_tx.codestream_size /= 2;
     ops_tx.framebuff_cnt = ctx.framebuff_cnt;
-    ops_tx.notify_frame_available = tx_st22p_frame_available;
+    ops_tx.flags = ST22P_TX_FLAG_BLOCK_GET;
 
     st22p_tx_handle tx_handle = st22p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {
@@ -270,9 +254,7 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    st_pthread_mutex_lock(&app[i]->wake_mutex);
-    st_pthread_cond_signal(&app[i]->wake_cond);
-    st_pthread_mutex_unlock(&app[i]->wake_mutex);
+    if (app[i]->handle) st22p_tx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
 
@@ -293,8 +275,6 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      st_pthread_mutex_destroy(&app[i]->wake_mutex);
-      st_pthread_cond_destroy(&app[i]->wake_cond);
       if (app[i]->handle) st22p_tx_free(app[i]->handle);
       free(app[i]);
     }
