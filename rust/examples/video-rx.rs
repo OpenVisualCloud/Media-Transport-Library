@@ -15,7 +15,7 @@ use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
 use imtl::video::{Fps, TransportFmt, VideoRxBuilder};
 
-/// Simple program to use IMTL to receive raw YUV frame and safe the latest one to file
+/// Simple program to use IMTL to receive raw YUV frame and save the latest one to file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
