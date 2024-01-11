@@ -138,8 +138,13 @@ typedef struct mtl_dma_mem* mtl_dma_mem_handle;
  */
 #define MTL_ALIGN(val, align) (((val) + ((align)-1)) & ~((align)-1))
 
+#ifdef __MTL_PYTHON_BUILD__
+/** swig not support __deprecated__ */
+#define __mtl_deprecated_msg(msg)
+#else
 /** Macro to mark functions and fields to be removal */
 #define __mtl_deprecated_msg(msg) __attribute__((__deprecated__(msg)))
+#endif
 
 #ifndef MTL_MAY_UNUSED
 /** Macro to mark unused-parameter */

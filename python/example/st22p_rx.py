@@ -103,7 +103,7 @@ def main():
         mtl.mtl_para_port_get(init_para, mtl.MTL_SESSION_PORT_P),
     )
     rx_port.num_port = 1
-    mtl.st_rxp_para_sip_set(rx_port, mtl.MTL_SESSION_PORT_P, args.p_rx_ip)
+    mtl.st_rxp_para_ip_set(rx_port, mtl.MTL_SESSION_PORT_P, args.p_rx_ip)
     mtl.st_rxp_para_udp_port_set(rx_port, mtl.MTL_SESSION_PORT_P, args.udp_port)
     rx_port.payload_type = args.payload_type
     rx_para.port = rx_port
