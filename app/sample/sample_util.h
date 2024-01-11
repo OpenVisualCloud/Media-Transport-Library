@@ -73,7 +73,7 @@ struct st_sample_context {
   mtl_handle st;
   struct mtl_init_params param;
   uint8_t tx_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];  /* tx destination IP */
-  uint8_t rx_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];  /* rx source IP */
+  uint8_t rx_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];   /* rx source IP */
   uint8_t fwd_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* fwd destination IP */
   char tx_url[ST_SAMPLE_URL_MAX_LEN];
   char rx_url[ST_SAMPLE_URL_MAX_LEN];

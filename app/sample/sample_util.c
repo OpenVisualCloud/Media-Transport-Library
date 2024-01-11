@@ -202,10 +202,10 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_R]);
         break;
       case SAMPLE_ARG_P_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_P]);
         break;
       case SAMPLE_ARG_R_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_R]);
+        inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_R]);
         break;
       case SAMPLE_ARG_P_FWD_IP:
         inet_pton(AF_INET, optarg, ctx->fwd_dip_addr[MTL_PORT_P]);
@@ -418,13 +418,13 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   if (unicast) {
     inet_pton(AF_INET, "192.168.85.80", ctx->tx_dip_addr[MTL_PORT_P]);
     inet_pton(AF_INET, "192.168.85.81", ctx->tx_dip_addr[MTL_PORT_R]);
-    inet_pton(AF_INET, "192.168.85.60", ctx->rx_sip_addr[MTL_PORT_P]);
-    inet_pton(AF_INET, "192.168.85.61", ctx->rx_sip_addr[MTL_PORT_R]);
+    inet_pton(AF_INET, "192.168.85.60", ctx->rx_ip_addr[MTL_PORT_P]);
+    inet_pton(AF_INET, "192.168.85.61", ctx->rx_ip_addr[MTL_PORT_R]);
   } else {
     inet_pton(AF_INET, "239.168.85.20", ctx->tx_dip_addr[MTL_PORT_P]);
     inet_pton(AF_INET, "239.168.85.21", ctx->tx_dip_addr[MTL_PORT_R]);
-    inet_pton(AF_INET, "239.168.85.20", ctx->rx_sip_addr[MTL_PORT_P]);
-    inet_pton(AF_INET, "239.168.85.21", ctx->rx_sip_addr[MTL_PORT_R]);
+    inet_pton(AF_INET, "239.168.85.20", ctx->rx_ip_addr[MTL_PORT_P]);
+    inet_pton(AF_INET, "239.168.85.21", ctx->rx_ip_addr[MTL_PORT_R]);
   }
   inet_pton(AF_INET, "239.168.86.20", ctx->fwd_dip_addr[MTL_PORT_P]);
   inet_pton(AF_INET, "239.168.86.21", ctx->fwd_dip_addr[MTL_PORT_R]);

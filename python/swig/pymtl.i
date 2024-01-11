@@ -9,6 +9,7 @@
 
 %begin %{
 #define SWIG_PYTHON_CAST_MODE
+#define __MTL_PYTHON_BUILD__
 %}
 
 %{
@@ -18,8 +19,6 @@
 #include <mtl/st_pipeline_api.h>
 %}
 
-%define __MTL_LIB_BUILD__
-%enddef
 %define __MTL_PYTHON_BUILD__
 %enddef
 

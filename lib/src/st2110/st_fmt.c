@@ -1244,8 +1244,8 @@ int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char*
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int st_rxp_para_sip_set(struct st_rx_port* p, enum mtl_port port, char* ip) {
-  int ret = inet_pton(AF_INET, ip, p->sip_addr[port]);
+int st_rxp_para_ip_set(struct st_rx_port* p, enum mtl_port port, char* ip) {
+  int ret = inet_pton(AF_INET, ip, p->ip_addr[port]);
   if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);
   return -EIO;

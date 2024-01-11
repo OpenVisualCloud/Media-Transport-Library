@@ -214,7 +214,7 @@ for (i = 0; i < session_num; i++)
     ops_rx.priv = app; // app handle register to lib
     ops_rx.num_port = 1;
     uint8_t ip[4]={xx,xx,xx,xx};
-    memcpy(ops_rx.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx src ip like 239.0.0.1
+    memcpy(ops_rx.ip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //rx ip like 239.0.0.1
     snprintf(ops_rx.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x"); // send port interface like 0000:af:00.0
     ops_rx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_rx.pacing = ST21_PACING_NARROW;
@@ -298,7 +298,7 @@ for (i = 0; i < session_num; i++)
     ops_rx.priv = app; // app handle register to lib
     ops_rx.num_port = 1;
     uint8_t ip[4] = {xx,xx,xx,xx};
-    memcpy(ops_rx.sip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); //tx src ip like 239.0.0.1
+    memcpy(ops_rx.ip_addr[ST_PORT_P], ip, ST_IP_ADDR_LEN); // rx ip like 239.0.0.1
     snprintf(ops_rx.port[ST_PORT_P], ST_PORT_MAX_LEN, "%s", "xxxx:xx:xx.x"); // send port interface like 0000:af:00.0
     ops_rx.udp_port[ST_PORT_P] = 10000 + i * 2; // user could config the udp port in this interface.
     ops_rx.pacing = ST21_PACING_NARROW;

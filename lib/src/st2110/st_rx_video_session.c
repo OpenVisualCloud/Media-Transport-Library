@@ -2697,7 +2697,7 @@ static int rv_init_hw(struct mtl_main_impl* impl, struct st_rx_video_session_imp
     st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps, ops->interlaced,
                            &bps);
     flow.bytes_per_sec = bps / 8;
-    rte_memcpy(flow.dip_addr, ops->sip_addr[i], MTL_IP_ADDR_LEN);
+    rte_memcpy(flow.dip_addr, ops->ip_addr[i], MTL_IP_ADDR_LEN);
     if (mt_is_multicast_ip(flow.dip_addr))
       rte_memcpy(flow.sip_addr, ops->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     else
@@ -2741,10 +2741,10 @@ static int rv_uinit_mcast(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
+    if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
     if (mt_drv_mcast_in_dp(impl, port)) continue;
-    mt_mcast_leave(impl, mt_ip_to_u32(ops->sip_addr[i]),
+    mt_mcast_leave(impl, mt_ip_to_u32(ops->ip_addr[i]),
                    mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
 
@@ -2757,14 +2757,14 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (!mt_is_multicast_ip(ops->sip_addr[i])) continue;
+    if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
     if (mt_drv_mcast_in_dp(impl, port)) continue;
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;
     }
-    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->sip_addr[i]),
+    ret = mt_mcast_join(impl, mt_ip_to_u32(ops->ip_addr[i]),
                         mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
     if (ret < 0) return ret;
   }
@@ -2782,7 +2782,7 @@ static int rv_init_rtcp_uhdr(struct mtl_main_impl* impl,
   struct rte_ipv4_hdr* ipv4 = &uhdr->ipv4;
   struct rte_udp_hdr* udp = &uhdr->udp;
   struct st20_rx_ops* ops = &s->ops;
-  uint8_t* dip = ops->sip_addr[s_port];
+  uint8_t* dip = ops->ip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
 
@@ -3421,7 +3421,7 @@ static int rv_update_src(struct st_rx_video_sessions_mgr* mgr,
 
   /* update ip and port */
   for (int i = 0; i < num_port; i++) {
-    memcpy(ops->sip_addr[i], src->sip_addr[i], MTL_IP_ADDR_LEN);
+    memcpy(ops->ip_addr[i], src->ip_addr[i], MTL_IP_ADDR_LEN);
     memcpy(ops->mcast_sip_addr[i], src->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = src->udp_port[i];
     s->st20_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10000 + idx * 2);
@@ -3675,7 +3675,7 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
   }
 
   for (int i = 0; i < num_ports; i++) {
-    ip = ops->sip_addr[i];
+    ip = ops->ip_addr[i];
     ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
@@ -3684,7 +3684,7 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
   }
 
   if (num_ports > 1) {
-    if (0 == memcmp(ops->sip_addr[0], ops->sip_addr[1], MTL_IP_ADDR_LEN)) {
+    if (0 == memcmp(ops->ip_addr[0], ops->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
     }
@@ -3771,7 +3771,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
   }
 
   for (int i = 0; i < num_ports; i++) {
-    ip = ops->sip_addr[i];
+    ip = ops->ip_addr[i];
     ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
@@ -3780,7 +3780,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
   }
 
   if (num_ports > 1) {
-    if (0 == memcmp(ops->sip_addr[0], ops->sip_addr[1], MTL_IP_ADDR_LEN)) {
+    if (0 == memcmp(ops->ip_addr[0], ops->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
     }
@@ -4284,7 +4284,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.priv = ops->priv;
   st20_ops.num_port = ops->num_port;
   for (int i = 0; i < ops->num_port; i++) {
-    memcpy(st20_ops.sip_addr[i], ops->sip_addr[i], MTL_IP_ADDR_LEN);
+    memcpy(st20_ops.ip_addr[i], ops->ip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(st20_ops.port[i], MTL_PORT_MAX_LEN, "%s", ops->port[i]);
     st20_ops.udp_port[i] = ops->udp_port[i];
   }

@@ -181,9 +181,9 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.name = name;
   ops.priv = s;
   ops.port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.port.sip_addr[MTL_SESSION_PORT_P],
+  memcpy(ops.port.ip_addr[MTL_SESSION_PORT_P],
          st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
-               : ctx->rx_sip_addr[MTL_PORT_P],
+               : ctx->rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   memcpy(
       ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
@@ -194,9 +194,9 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
       st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
   ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
   if (ops.port.num_port > 1) {
-    memcpy(ops.port.sip_addr[MTL_SESSION_PORT_R],
+    memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
            st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
-                 : ctx->rx_sip_addr[MTL_PORT_R],
+                 : ctx->rx_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     memcpy(
         ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
