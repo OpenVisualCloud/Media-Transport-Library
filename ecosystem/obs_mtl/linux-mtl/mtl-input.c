@@ -345,7 +345,7 @@ static void mtl_input_init(struct mtl_rx_session* s) {
   ops_rx.name = "mtl-input";
   ops_rx.priv = s;  // app handle register to lib
   ops_rx.port.num_port = 1;
-  inet_pton(AF_INET, s->ip, ops_rx.port.sip_addr[MTL_PORT_P]);
+  inet_pton(AF_INET, s->ip, ops_rx.port.ip_addr[MTL_PORT_P]);
   snprintf(ops_rx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
   ops_rx.port.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
   ops_rx.width = s->width;

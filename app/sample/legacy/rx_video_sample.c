@@ -170,7 +170,7 @@ int main(int argc, char** argv) {
     ops_rx.name = "st20_rx";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);

@@ -148,7 +148,7 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx* ctx,
   ops_rx.name = ops->name;
   ops_rx.priv = transport;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ops->sip_addr[port], MTL_IP_ADDR_LEN);
+  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ops->ip_addr[port], MTL_IP_ADDR_LEN);
   memcpy(ops_rx.mcast_sip_addr[MTL_SESSION_PORT_P], ops->mcast_sip_addr[port],
          MTL_IP_ADDR_LEN);
   snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s", ops->port[port]);
@@ -245,9 +245,9 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops) {
     err("%s, invalid num_port %u\n", __func__, num_port);
     return NULL;
   }
-  if (0 == memcmp(ops->sip_addr[MTL_SESSION_PORT_P], ops->sip_addr[MTL_SESSION_PORT_R],
+  if (0 == memcmp(ops->ip_addr[MTL_SESSION_PORT_P], ops->ip_addr[MTL_SESSION_PORT_R],
                   MTL_IP_ADDR_LEN)) {
-    uint8_t* ip = ops->sip_addr[MTL_SESSION_PORT_P];
+    uint8_t* ip = ops->ip_addr[MTL_SESSION_PORT_P];
     err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
     return NULL;
   }

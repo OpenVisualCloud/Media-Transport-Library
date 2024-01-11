@@ -420,10 +420,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_R]);
         break;
       case ST_ARG_P_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_P]);
+        inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_P]);
         break;
       case ST_ARG_R_RX_IP:
-        inet_pton(AF_INET, optarg, ctx->rx_sip_addr[MTL_PORT_R]);
+        inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_R]);
         break;
       case ST_ARG_P_NETMASK:
         inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_P]);

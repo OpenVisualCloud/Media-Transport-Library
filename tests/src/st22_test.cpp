@@ -131,13 +131,13 @@ static void st22_rx_ops_init(tests_context* st22, struct st22_rx_ops* ops) {
   ops->priv = st22;
   ops->num_port = ctx->para.num_ports;
   if (ctx->same_dual_port) ops->num_port = 1;
-  memcpy(ops->sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+  memcpy(ops->ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
   ops->udp_port[MTL_SESSION_PORT_P] = 10000 + st22->idx;
   if (ops->num_port == 2) {
-    memcpy(ops->sip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
+    memcpy(ops->ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
@@ -454,7 +454,7 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
     ops_rx.name = "st22_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
@@ -656,7 +656,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     ops_rx.name = "st22_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
@@ -695,7 +695,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   /* switch to mcast port p(tx_session:1) */
   memset(&src, 0, sizeof(src));
   src.udp_port[MTL_SESSION_PORT_P] = 10000 + 1;
-  memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   for (int i = 0; i < rx_sessions; i++) {
     ret = st22_rx_update_source(rx_handle[i], &src);
@@ -720,7 +720,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
     /* switch to mcast port r(tx_session:2) */
     memset(&src, 0, sizeof(src));
     src.udp_port[MTL_SESSION_PORT_P] = 10000 + 2;
-    memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
+    memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     for (int i = 0; i < rx_sessions; i++) {
       ret = st22_rx_update_source(rx_handle[i], &src);
@@ -745,7 +745,7 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   /* switch to unicast(tx_session:0) */
   memset(&src, 0, sizeof(src));
   src.udp_port[MTL_SESSION_PORT_P] = 10000 + 0;
-  memcpy(src.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+  memcpy(src.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   for (int i = 0; i < rx_sessions; i++) {
     ret = st22_rx_update_source(rx_handle[i], &src);
@@ -881,7 +881,7 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       ops_rx.name = "st22_test";
       ops_rx.priv = test_ctx_rx[i];
       ops_rx.num_port = 1;
-      memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+      memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
              MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
                ctx->para.port[MTL_PORT_R]);
@@ -1048,7 +1048,7 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st22_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
@@ -1291,7 +1291,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st22_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
@@ -1488,7 +1488,7 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     ops_rx.name = "st22_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.num_port = 1;
-    memcpy(ops_rx.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);

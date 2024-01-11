@@ -99,11 +99,10 @@ static int kahawai_read_header(AVFormatContext* ctx) {
   if (NULL == s->src_addr) {
     av_log(ctx, AV_LOG_ERROR, "Invalid source IP address\n");
     return AVERROR(EINVAL);
-  } else if (sscanf(s->src_addr, "%hhu.%hhu.%hhu.%hhu",
-                    &ops_rx.port.sip_addr[MTL_PORT_P][0],
-                    &ops_rx.port.sip_addr[MTL_PORT_P][1],
-                    &ops_rx.port.sip_addr[MTL_PORT_P][2],
-                    &ops_rx.port.sip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
+  } else if (sscanf(
+                 s->src_addr, "%hhu.%hhu.%hhu.%hhu", &ops_rx.port.ip_addr[MTL_PORT_P][0],
+                 &ops_rx.port.ip_addr[MTL_PORT_P][1], &ops_rx.port.ip_addr[MTL_PORT_P][2],
+                 &ops_rx.port.ip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
     av_log(ctx, AV_LOG_ERROR, "Failed to parse source IP address: %s\n", s->src_addr);
     return AVERROR(EINVAL);
   }

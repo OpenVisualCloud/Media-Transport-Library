@@ -749,7 +749,7 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
   int ret;
 
   for (int i = 0; i < num_ports; i++) {
-    ip = src->sip_addr[i];
+    ip = src->ip_addr[i];
     ret = mt_ip_addr_check(ip);
     if (ret < 0) {
       err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
@@ -758,7 +758,7 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
   }
 
   if (num_ports > 1) {
-    if (0 == memcmp(src->sip_addr[0], src->sip_addr[1], MTL_IP_ADDR_LEN)) {
+    if (0 == memcmp(src->ip_addr[0], src->ip_addr[1], MTL_IP_ADDR_LEN)) {
       err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
     }

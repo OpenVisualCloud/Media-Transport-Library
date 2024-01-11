@@ -730,8 +730,13 @@ struct st_tx_port {
 
 /** The structure info for st rx port, used in creating session. */
 struct st_rx_port {
-  /** Mandatory. source IP address of sender or multicast IP address */
-  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+  union {
+    /** Mandatory. multicast IP address or sender IP for unicast */
+    uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+    /** deprecated, use ip_addr instead, sip_addr is confused */
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
+  };
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
   /** Mandatory. Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */
@@ -2004,8 +2009,8 @@ static inline uint32_t st_frame_data_height(struct st_frame* frame) {
 
 /** Helper to set the port for struct st_rx_port */
 int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char* name);
-/** Helper to set the sip for struct st_rx_port */
-int st_rxp_para_sip_set(struct st_rx_port* p, enum mtl_port port, char* ip);
+/** Helper to set the ip for struct st_rx_port */
+int st_rxp_para_ip_set(struct st_rx_port* p, enum mtl_port port, char* ip);
 /** Helper to set the udp port number for struct st_rx_port */
 static inline void st_rxp_para_udp_port_set(struct st_rx_port* p, enum mtl_port port,
                                             uint16_t udp_port) {

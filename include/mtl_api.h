@@ -138,12 +138,8 @@ typedef struct mtl_dma_mem* mtl_dma_mem_handle;
  */
 #define MTL_ALIGN(val, align) (((val) + ((align)-1)) & ~((align)-1))
 
-#ifdef __MTL_LIB_BUILD__
-#define __mtl_deprecated_msg(msg)
-#else
 /** Macro to mark functions and fields to be removal */
 #define __mtl_deprecated_msg(msg) __attribute__((__deprecated__(msg)))
-#endif
 
 #ifndef MTL_MAY_UNUSED
 /** Macro to mark unused-parameter */
@@ -636,14 +632,22 @@ struct mtl_init_params {
    * use mtl_get_fix_info to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
+#ifdef __MTL_LIB_BUILD__
+  uint16_t tx_sessions_cnt_max;
+#else
   uint16_t tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
+#endif
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_fix_info to query the actual count.
    * dpdk context will allocate the hw resources(queues, memory) based on this number.
    */
+#ifdef __MTL_LIB_BUILD__
+  uint16_t rx_sessions_cnt_max;
+#else
   uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
+#endif
 };
 
 /**

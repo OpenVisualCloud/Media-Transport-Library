@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
-    mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
+    mudp_init_sockaddr(&app[i]->client_addr, ctx.rx_ip_addr[MTL_PORT_P],
                        ctx.udp_port + i);
     bool mcast = mudp_is_multicast(&app[i]->client_addr);
 

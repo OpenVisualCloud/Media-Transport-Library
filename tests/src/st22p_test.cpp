@@ -519,7 +519,7 @@ static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) 
   ops_rx->name = "st22p_test";
   ops_rx->priv = st22;
   ops_rx->port.num_port = 1;
-  memcpy(ops_rx->port.sip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
+  memcpy(ops_rx->port.ip_addr[MTL_SESSION_PORT_P], ctx->mcast_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops_rx->port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
@@ -1006,7 +1006,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ops_rx.name = "st22p_test";
     ops_rx.priv = test_ctx_rx[i];
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx->para.sip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);

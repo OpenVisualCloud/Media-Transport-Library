@@ -155,8 +155,13 @@ struct st_tx_dest_info {
  * Leave redundant info to zero if the session only has primary port.
  */
 struct st_rx_source_info {
-  /** source IP address of sender */
-  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+  union {
+    /** Mandatory. multicast IP address or sender IP for unicast */
+    uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+    /** deprecated, use ip_addr instead, sip_addr is confused */
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
+  };
   /** UDP port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
   /** Optional. source filter IP address of multicast */

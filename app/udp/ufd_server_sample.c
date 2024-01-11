@@ -250,7 +250,7 @@ int main(int argc, char** argv) {
     if (ctx.udp_tx_bps) mufd_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     if (ctx.has_tx_dst_mac[MTL_PORT_P])
       mufd_set_tx_mac(app[i]->socket, ctx.tx_dst_mac[MTL_PORT_P]);
-    mufd_init_sockaddr(&app[i]->client_addr, ctx.rx_sip_addr[MTL_PORT_P],
+    mufd_init_sockaddr(&app[i]->client_addr, ctx.rx_ip_addr[MTL_PORT_P],
                        ctx.udp_port + i);
     bool mcast = mudp_is_multicast(&app[i]->client_addr);
 

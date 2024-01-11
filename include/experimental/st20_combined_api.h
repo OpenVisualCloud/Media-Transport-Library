@@ -63,8 +63,13 @@ struct st20rc_rx_ops {
   const char* name;
   /** private data to the callback function */
   void* priv;
-  /** source IP address of sender or multicast IP address */
-  uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+  union {
+    /** Mandatory. multicast IP address or sender IP for unicast */
+    uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
+    /** deprecated, use ip_addr instead, sip_addr is confused */
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
+  };
   /** num of ports this session attached to, must be 2 */
   uint8_t num_port;
   /** Pcie BDF path like 0000:af:00.0, should align to BDF of mtl_init */

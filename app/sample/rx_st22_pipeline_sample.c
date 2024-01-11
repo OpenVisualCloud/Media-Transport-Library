@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
     ops_rx.name = "st22p_sample";
     ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = 1;
-    memcpy(ops_rx.port.sip_addr[MTL_SESSION_PORT_P], ctx.rx_sip_addr[MTL_PORT_P],
+    memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
