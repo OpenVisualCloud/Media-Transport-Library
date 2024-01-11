@@ -33,15 +33,11 @@ ffmpeg_plugin: &ffmpeg_plugin
   - 'ecosystem/ffmpeg_plugin/**'
   - .github/workflows/ffmpeg_plugin.yml
 
-librist: &librist
+ecosystem: &ecosystem
   - *api
-  - "ecosystem/librist/**"
-  - .github/workflows/rist.yml
-
-obs_plugin: &obs_plugin
-  - *api
+  - .github/workflows/ecosystem.yml
   - 'ecosystem/obs_mtl/**'
-  - .github/workflows/obs.yml
+  - "ecosystem/librist/**"
 
 dpdk_patches: &dpdk_patches
   - 'patches/dpdk/**'
