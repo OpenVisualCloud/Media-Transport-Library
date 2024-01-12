@@ -477,7 +477,7 @@ impl VideoRx {
                 .take(64) // Take only up to 64 elements
                 .collect();
             ops.port[0].copy_from_slice(&port_bytes);
-            ops.sip_addr[0] = self.rtp_session.ip().octets();
+            ops.__bindgen_anon_1.ip_addr[0] = self.rtp_session.ip().octets();
             ops.udp_port[0] = self.rtp_session.port() as _;
             ops.payload_type = self.rtp_session.payload_type() as _;
             ops.width = self.width as _;
