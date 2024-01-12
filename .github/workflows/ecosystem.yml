@@ -38,8 +38,6 @@ jobs:
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
-    container:
-      image: ubuntu:latest
     strategy:
       matrix:
         os: [ubuntu-latest]
@@ -89,6 +87,7 @@ jobs:
         run: |
           cd rust/
           cargo build --verbose
+          cargo clippy
           cd imtl-sys
           cargo build --verbose
           cargo test --verbose

@@ -254,7 +254,7 @@ impl Mtl {
         let mut c_param = unsafe { c_param.assume_init() };
 
         let handle = unsafe { sys::mtl_init(&mut c_param as *mut _) };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);

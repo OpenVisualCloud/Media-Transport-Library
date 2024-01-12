@@ -307,7 +307,7 @@ impl VideoTx {
         let mut ops = unsafe { ops.assume_init() };
 
         let handle = unsafe { sys::st20_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);
@@ -495,7 +495,7 @@ impl VideoRx {
         let mut ops = unsafe { ops.assume_init() };
 
         let handle = unsafe { sys::st20_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);
