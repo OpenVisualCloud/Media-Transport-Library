@@ -84,3 +84,11 @@ jobs:
       - name: Build python binding
         run: |
           ./script/build_python.sh
+
+      - name: Build Rust binding
+        run: |
+          cd rust/
+          cargo build --verbose
+          cd imtl-sys
+          cargo build --verbose
+          cargo test --verbose

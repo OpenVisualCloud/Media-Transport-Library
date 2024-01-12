@@ -49,6 +49,7 @@ fn main() {
             arp_timeout_s: 0,
             ptp_sync_notify: None,
             rss_sch_nb: [0; 8],
+            memzone_max: 0,
         };
 
         /* initialize dev handle */

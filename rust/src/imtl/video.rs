@@ -97,6 +97,10 @@ impl Fps {
             Fps::P23_98 => 24000.0 / 1001.0,
         }
     }
+
+    pub fn duration(self, frame_count: u32) -> std::time::Duration {
+        std::time::Duration::from_secs_f32(frame_count as f32 / self.to_float())
+    }
 }
 
 /// Different transport formats for raw video data.
@@ -319,11 +323,11 @@ impl VideoTx {
         self.frame_size
     }
 
-    /// Wait until free frame available
+    /// Wait until free frame available, default timeout is 1 frame interval
     pub fn wait_free_frame(&mut self) {
         let frame_idx = self.producer_idx;
         if !self.is_frame_free(frame_idx) {
-            self.parker.park();
+            self.parker.park_timeout(self.fps.duration(1));
         }
     }
 
@@ -507,10 +511,10 @@ impl VideoRx {
         self.frame_size
     }
 
-    /// Wait until new frame available
+    /// Wait until new frame available, default timeout is 1 frame interval
     pub fn wait_new_frame(&mut self) {
         if self.frames[self.consumer_idx as usize].is_null() {
-            self.parker.park();
+            self.parker.park_timeout(self.fps.duration(1));
         }
     }
 
