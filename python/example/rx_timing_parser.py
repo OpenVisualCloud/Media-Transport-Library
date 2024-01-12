@@ -1,6 +1,8 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2023 Intel Corporation
+
 import datetime
 import threading
-import time
 
 import matplotlib.pyplot as plt
 import misc_util
@@ -78,7 +80,7 @@ class Dashboard:
     def clear_data_event(self, event):
         print("Clear all data")
         self.init_data()
-        self.draw()
+        self.update(event)
 
     def update_vrx(self, max, min, avg):
         if self.data_count == 0:
