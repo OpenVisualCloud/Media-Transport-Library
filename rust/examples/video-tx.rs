@@ -4,7 +4,6 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::render::{Canvas, Texture};
 use sdl2::video::Window;
 use std::net::Ipv4Addr;
-use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -103,10 +102,10 @@ fn main() -> Result<()> {
         .init()
         .context("Failed to init mtl")?;
 
-    let net_dev0 = Rc::new(mtl.net_devs()[0].clone());
+    let net_dev0 = mtl.net_devs()[0].clone();
 
     let session = RtpSessionBuilder::default()
-        .net_dev(net_dev0.clone())
+        .net_dev(net_dev0)
         .ip(args.ip)
         .port(args.port)
         .payload_type(112u8)
@@ -138,24 +137,15 @@ fn main() -> Result<()> {
             .window("IMTL TX Video", args.width / 4, args.height / 4)
             .position_centered()
             .opengl()
-            .build()
-            .map_err(|e| e.to_string())
-            .unwrap();
+            .build()?;
 
-        canvas = Some(
-            window
-                .into_canvas()
-                .build()
-                .map_err(|e| e.to_string())
-                .unwrap(),
-        );
+        canvas = Some(window.into_canvas().build()?);
         texture_creator = canvas.as_ref().unwrap().texture_creator();
-        texture = Some(
-            texture_creator
-                .create_texture_streaming(PixelFormatEnum::UYVY, args.width, args.height)
-                .map_err(|e| e.to_string())
-                .unwrap(),
-        );
+        texture = Some(texture_creator.create_texture_streaming(
+            PixelFormatEnum::UYVY,
+            args.width,
+            args.height,
+        )?);
     }
 
     let frames = yuv_file.chunks_exact(video_tx.frame_size());
@@ -169,10 +159,7 @@ fn main() -> Result<()> {
         match video_tx.fill_next_frame(frame) {
             Ok(_) => {
                 if let (Some(ref mut texture), Some(ref mut canvas)) = (&mut texture, &mut canvas) {
-                    texture
-                        .update(None, &frame, args.width as usize * 2)
-                        .map_err(|e| e.to_string())
-                        .unwrap();
+                    texture.update(None, &frame, args.width as usize * 2)?;
                     canvas.clear();
                     canvas.copy(&texture, None, None).unwrap();
                     canvas.present();

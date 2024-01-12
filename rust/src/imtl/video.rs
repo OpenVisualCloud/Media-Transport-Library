@@ -97,6 +97,10 @@ impl Fps {
             Fps::P23_98 => 24000.0 / 1001.0,
         }
     }
+
+    pub fn duration(self, frame_count: u32) -> std::time::Duration {
+        std::time::Duration::from_secs_f32(frame_count as f32 / self.to_float())
+    }
 }
 
 /// Different transport formats for raw video data.
@@ -303,7 +307,7 @@ impl VideoTx {
         let mut ops = unsafe { ops.assume_init() };
 
         let handle = unsafe { sys::st20_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);
@@ -319,11 +323,11 @@ impl VideoTx {
         self.frame_size
     }
 
-    /// Wait until free frame available
+    /// Wait until free frame available, default timeout is 1 frame interval
     pub fn wait_free_frame(&mut self) {
         let frame_idx = self.producer_idx;
         if !self.is_frame_free(frame_idx) {
-            self.parker.park();
+            self.parker.park_timeout(self.fps.duration(1));
         }
     }
 
@@ -473,7 +477,7 @@ impl VideoRx {
                 .take(64) // Take only up to 64 elements
                 .collect();
             ops.port[0].copy_from_slice(&port_bytes);
-            ops.sip_addr[0] = self.rtp_session.ip().octets();
+            ops.__bindgen_anon_1.ip_addr[0] = self.rtp_session.ip().octets();
             ops.udp_port[0] = self.rtp_session.port() as _;
             ops.payload_type = self.rtp_session.payload_type() as _;
             ops.width = self.width as _;
@@ -491,7 +495,7 @@ impl VideoRx {
         let mut ops = unsafe { ops.assume_init() };
 
         let handle = unsafe { sys::st20_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
-        if handle == std::ptr::null_mut() {
+        if handle.is_null() {
             bail!("Failed to initialize MTL")
         } else {
             self.handle = Some(handle);
@@ -507,10 +511,10 @@ impl VideoRx {
         self.frame_size
     }
 
-    /// Wait until new frame available
+    /// Wait until new frame available, default timeout is 1 frame interval
     pub fn wait_new_frame(&mut self) {
         if self.frames[self.consumer_idx as usize].is_null() {
-            self.parker.park();
+            self.parker.park_timeout(self.fps.duration(1));
         }
     }
 
