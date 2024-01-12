@@ -84,7 +84,7 @@ def main():
     tx_para.name = "st20p_tx_python"
     tx_para.width = width
     tx_para.height = height
-    tx_para.fps = mtl.ST_FPS_P59_94
+    tx_para.fps = args.fps
     tx_para.framebuff_cnt = 3
     tx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     tx_para.input_fmt = mtl_input_fmt

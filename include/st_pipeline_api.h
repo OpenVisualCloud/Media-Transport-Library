@@ -2039,6 +2039,11 @@ static inline mtl_cpuva_t st_frame_addr_cpuva(struct st_frame* frame, uint8_t pl
 static inline mtl_iova_t st_frame_iova(struct st_frame* frame, uint8_t plane) {
   return frame->iova[plane];
 }
+/** Helper to get the frame tp meta from struct st_frame */
+static inline struct st20_rx_tp_meta* st_frame_tp_meta(struct st_frame* frame,
+                                                       enum mtl_session_port port) {
+  return frame->tp[port];
+}
 
 /** request to create a plained memory by rte malloc to hold the frame buffer */
 struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,

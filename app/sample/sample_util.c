@@ -174,24 +174,15 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_PAYLOAD_TYPE:
         ctx->payload_type = atoi(optarg);
         break;
-      case SAMPLE_ARG_FPS:
-        if (!strcmp(optarg, "59.94"))
-          ctx->fps = ST_FPS_P59_94;
-        else if (!strcmp(optarg, "50"))
-          ctx->fps = ST_FPS_P50;
-        else if (!strcmp(optarg, "60"))
-          ctx->fps = ST_FPS_P60;
-        else if (!strcmp(optarg, "30"))
-          ctx->fps = ST_FPS_P30;
-        else if (!strcmp(optarg, "29.97"))
-          ctx->fps = ST_FPS_P29_97;
-        else if (!strcmp(optarg, "25"))
-          ctx->fps = ST_FPS_P25;
-        else if (!strcmp(optarg, "24"))
-          ctx->fps = ST_FPS_P24;
-        else
-          err("%s, unknow fps %s\n", __func__, optarg);
+      case SAMPLE_ARG_FPS: {
+        enum st_fps fps = st_name_to_fps(optarg);
+        if (fps < ST_FPS_MAX) {
+          ctx->fps = fps;
+        } else {
+          err("%s, unknown fps name %s\n", __func__, optarg);
+        }
         break;
+      }
       case SAMPLE_ARG_INTERLACED:
         ctx->interlaced = true;
         break;

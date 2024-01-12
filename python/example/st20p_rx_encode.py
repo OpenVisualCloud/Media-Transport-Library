@@ -43,7 +43,7 @@ def main():
     rx_para.name = "st20p_rx_python"
     rx_para.width = args.width
     rx_para.height = args.height
-    rx_para.fps = mtl.ST_FPS_P59_94
+    rx_para.fps = args.fps
     rx_para.framebuff_cnt = 3
     rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     rx_para.output_fmt = mtl_output_fmt

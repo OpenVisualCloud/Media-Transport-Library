@@ -10,6 +10,7 @@
 
 struct st_fps_timing {
   enum st_fps fps;
+  char* name;
   int sampling_clock_rate; /* 90k of sampling clock rate */
   int mul;                 /* 60000 for ST_FPS_P59_94 */
   int den;                 /* 1001 for ST_FPS_P59_94 */

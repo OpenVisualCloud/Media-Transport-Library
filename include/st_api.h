@@ -279,12 +279,23 @@ double st_frame_rate(enum st_fps fps);
 
 /**
  * Helper function returning enum st_fps from frame rate
+ *
  * @param framerate
  *   frame rate number
  * @return
  *   enum st_fps fps.
  */
 enum st_fps st_frame_rate_to_st_fps(double framerate);
+
+/**
+ * Helper function returning enum st_fps from frame name
+ *
+ * @param name
+ *   fps name
+ * @return
+ *   enum st_fps fps.
+ */
+enum st_fps st_name_to_fps(const char* name);
 
 /**
  * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.
