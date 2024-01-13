@@ -70,6 +70,8 @@ creating /usr/local/lib/python3.10/dist-packages/pymtl-0.1-py3.10-linux-x86_64.e
 Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-packages
 ```
 
+Note: remember to rebuild the python binding if any change to the public API of IMTL.
+
 ## 3. Run python example code
 
 Install `opencv-python` dependency:
@@ -79,6 +81,8 @@ Install `opencv-python` dependency:
 sudo pip3 install opencv-python
 # PyAv for video decode/encode
 sudo pip3 install av
+# for rx_timing_parser.py
+sudo pip3 install matplotlib
 ```
 
 ### 3.1 st20p_tx.py
@@ -157,4 +161,10 @@ st22p_rx:
 
 ```bash
 python3 python/example/st22p_rx.py --p_port 0000:ac:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422PLANAR10LE --st22_codec jpegxs --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --interlaced --display
+```
+
+### 3.8 rx_timing_parser
+
+```bash
+python3 python/example/rx_timing_parser.py --p_port 0000:af:00.1 --ptp --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422RFC4175PG2BE10 --width 1920 --height 1080 --udp_port 20000 --payload_type 112
 ```

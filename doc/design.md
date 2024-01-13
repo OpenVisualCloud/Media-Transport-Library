@@ -487,6 +487,8 @@ The simplest method is to enable the built-in status report. An application can 
 
 For applications requiring access to the timing parser results for each frame, the flag `ST20_RX_FLAG_TIMING_PARSER_META` or `ST20P_RX_FLAG_TIMING_PARSER_META` can be enabled. This allows an application to retrieve detailed parsing results via the `struct st20_rx_tp_meta` found within the RX meta structure for each frame. Reference sample code is available at [rx_st20p_timing_parser_sample.c](../app/sample/rx_st20p_timing_parser_sample.c).
 
+It also features a sample timing parser UI constructed using the IMTL Python bindings, which can be found at [rx_timing_parser.py](../python/example/rx_timing_parser.py).
+
 ## 7. Misc
 
 ### 7.1 Logging
