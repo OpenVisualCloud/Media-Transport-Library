@@ -8,7 +8,6 @@ import time
 import matplotlib.pyplot as plt
 import misc_util
 import pymtl as mtl
-from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import Button
 
 
