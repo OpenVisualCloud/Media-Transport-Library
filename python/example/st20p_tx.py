@@ -28,6 +28,7 @@ def main():
         init_para.flags |= mtl.MTL_FLAG_PTP_ENABLE
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
+    init_para.nb_tx_desc = args.nb_tx_desc
 
     # Create MTL instance
     mtl_handle = mtl.mtl_init(init_para)

@@ -168,3 +168,9 @@ python3 python/example/st22p_rx.py --p_port 0000:ac:01.1 --p_sip 192.168.108.102
 ```bash
 python3 python/example/rx_timing_parser.py --p_port 0000:af:00.1 --ptp --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422RFC4175PG2BE10 --width 3840 --height 2160 --udp_port 20000 --payload_type 112
 ```
+
+tx:
+
+```bash
+python3 python/example/st20p_tx.py --p_port 0000:af:00.0 --ptp --width 3840 --height 2160 --pipeline_fmt YUV422RFC4175PG2BE10 --tx_url test_4k.yuv --nb_tx_desc 4096 --udp_port 20000 --payload_type 112
+```
