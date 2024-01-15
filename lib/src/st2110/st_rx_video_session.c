@@ -2982,15 +2982,11 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   int estimated_total_pkts = s->st20_frame_size / ST_VIDEO_BPM_SIZE;
   s->trs = s->frame_time / estimated_total_pkts;
 
-  if (s->trs < 2000) /* 2us per pkt */
-    s->rx_burst_size = 128 * 4;
-  else if (s->trs < 3000)
-    s->rx_burst_size = 128 * 2;
-  else
-    s->rx_burst_size = 128 * 1;
   if (ops->rx_burst_size) {
     s->rx_burst_size = ops->rx_burst_size;
     info("%s(%d), user customized rx_burst_size %u\n", __func__, idx, s->rx_burst_size);
+  } else {
+    s->rx_burst_size = 128;
   }
 
   /* init simulated packet loss for test usage */
@@ -3103,7 +3099,6 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
        __func__, idx, ops->width, ops->height, st20_frame_fmt_name(ops->fmt),
        ops->packing, ops->payload_type, ops->flags, s->frame_time / NS_PER_MS,
        st_frame_rate(s->ops.fps));
-  info("%s(%d), rx_burst_size %u\n", __func__, idx, s->rx_burst_size);
   return 0;
 }
 
