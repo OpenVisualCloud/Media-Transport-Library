@@ -342,6 +342,11 @@ enum mtl_init_flag {
    */
   MTL_FLAG_RXTX_SIMD_512 = (MTL_BIT64(7)),
   /**
+   * Enable HW offload timestamp for all RX packets target the compliance analyze. Only
+   * can work for PF on E810 now.
+   */
+  MTL_FLAG_ENABLE_HW_TIMESTAMP = (MTL_BIT64(8)),
+  /**
    * Use PI controller for built-in PTP implementation, only for PF now.
    */
   MTL_FLAG_PTP_PI = (MTL_BIT64(9)),
@@ -350,7 +355,6 @@ enum mtl_init_flag {
    */
   MTL_FLAG_UDP_LCORE = (MTL_BIT64(10)),
   /**
-
    * Enable random source port for MTL_TRANSPORT_ST2110 tx.
    */
   MTL_FLAG_RANDOM_SRC_PORT = (MTL_BIT64(11)),
@@ -385,11 +389,6 @@ enum mtl_init_flag {
    * dedicate thread for cni message
    */
   MTL_FLAG_CNI_THREAD = (MTL_BIT64(32)),
-  /**
-   * Enable HW offload timestamp for all RX packets target the compliance analyze. Only
-   * can work for PF on E810 now.
-   */
-  MTL_FLAG_ENABLE_HW_TIMESTAMP = (MTL_BIT64(33)),
   /**
    * Enable NIC promiscuous mode for RX
    */

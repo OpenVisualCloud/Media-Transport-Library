@@ -1365,6 +1365,20 @@ static inline uint32_t rfc4175_rtp_seq_id(struct st20_rfc4175_rtp_hdr* rtp) {
   return seq_id;
 }
 
+static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
+                                    struct rte_mbuf* mbuf, enum mtl_session_port s_port,
+                                    struct st_rx_video_slot_impl* slot, uint32_t tmstamp,
+                                    int pkt_idx) {
+  struct mtl_main_impl* impl = rv_get_impl(s);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+
+  uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
+  struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
+  dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
+      tmstamp, pkt_ns, pkt_idx);
+  rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
+}
+
 static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                                enum mtl_session_port s_port, bool ctrl_thread) {
   struct st20_rx_ops* ops = &s->ops;
@@ -1487,18 +1501,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     return -EIO;
   }
 
-  /* if enable_timing_parser */
-  if (s->enable_timing_parser) {
-    struct mtl_main_impl* impl = rv_get_impl(s);
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-
-    uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
-    struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
-    dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
-        tmstamp, pkt_ns, pkt_idx);
-    rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
-  }
-
   /* check if the same pkt got already */
   if (slot->seq_id_got) {
     if (seq_id_u32 >= slot->seq_id_base_u32)
@@ -1518,6 +1520,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
           pkt_idx);
       s->stat_pkts_redundant_dropped++;
       slot->pkts_recv_per_port[s_port]++;
+      /* tp for the redundant packet */
+      if (s->enable_timing_parser)
+        rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
       return 0;
     }
     if (pkt_idx != (slot->last_pkt_idx + 1)) {
@@ -1549,6 +1554,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     }
   }
   slot->last_pkt_idx = pkt_idx;
+
+  /* if enable_timing_parser */
+  if (s->enable_timing_parser) rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
 
   bool dma_copy = false;
   bool need_copy = true;

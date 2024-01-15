@@ -73,6 +73,7 @@ def main():
         init_para.flags |= mtl.MTL_FLAG_PTP_ENABLE
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
+    init_para.nb_rx_desc = args.nb_rx_desc
 
     # Create MTL instance
     mtl_handle = mtl.mtl_init(init_para)
@@ -85,7 +86,7 @@ def main():
     rx_para.name = "st20p_rx_python"
     rx_para.width = args.width
     rx_para.height = args.height
-    rx_para.fps = mtl.ST_FPS_P59_94
+    rx_para.fps = args.fps
     rx_para.interlaced = args.interlaced
     rx_para.framebuff_cnt = 3
     rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT

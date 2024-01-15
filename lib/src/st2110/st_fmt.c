@@ -119,6 +119,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P120 */
         .fps = ST_FPS_P120,
+        .name = "120",
         .sampling_clock_rate = 90 * 1000,
         .mul = 120,
         .den = 1,
@@ -129,6 +130,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P119_88 */
         .fps = ST_FPS_P119_88,
+        .name = "119.88",
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000 * 2,
         .den = 1001,
@@ -139,6 +141,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P100 */
         .fps = ST_FPS_P100,
+        .name = "100",
         .sampling_clock_rate = 90 * 1000,
         .mul = 100,
         .den = 1,
@@ -149,6 +152,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P60 */
         .fps = ST_FPS_P60,
+        .name = "60",
         .sampling_clock_rate = 90 * 1000,
         .mul = 60,
         .den = 1,
@@ -159,6 +163,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P59_94 */
         .fps = ST_FPS_P59_94,
+        .name = "59.94",
         .sampling_clock_rate = 90 * 1000,
         .mul = 60000,
         .den = 1001,
@@ -169,6 +174,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P50 */
         .fps = ST_FPS_P50,
+        .name = "50",
         .sampling_clock_rate = 90 * 1000,
         .mul = 50,
         .den = 1,
@@ -179,6 +185,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P30 */
         .fps = ST_FPS_P30,
+        .name = "30",
         .sampling_clock_rate = 90 * 1000,
         .mul = 30,
         .den = 1,
@@ -189,6 +196,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P29_97 */
         .fps = ST_FPS_P29_97,
+        .name = "29.97",
         .sampling_clock_rate = 90 * 1000,
         .mul = 30000,
         .den = 1001,
@@ -199,6 +207,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P25 */
         .fps = ST_FPS_P25,
+        .name = "25",
         .sampling_clock_rate = 90 * 1000,
         .mul = 25,
         .den = 1,
@@ -209,6 +218,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P24 */
         .fps = ST_FPS_P24,
+        .name = "24",
         .sampling_clock_rate = 90 * 1000,
         .mul = 24,
         .den = 1,
@@ -219,6 +229,7 @@ static const struct st_fps_timing st_fps_timings[] = {
     {
         /* ST_FPS_P23.98 */
         .fps = ST_FPS_P23_98,
+        .name = "23.98",
         .sampling_clock_rate = 90 * 1000,
         .mul = 24000,
         .den = 1001,
@@ -654,6 +665,19 @@ enum st_fps st_frame_rate_to_st_fps(double framerate) {
   }
 
   err("%s, invalid fps %f\n", __func__, framerate);
+  return ST_FPS_MAX;
+}
+
+enum st_fps st_name_to_fps(const char* name) {
+  int i;
+
+  for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
+    if (!strcmp(name, st_fps_timings[i].name)) {
+      return st_fps_timings[i].fps;
+    }
+  }
+
+  err("%s, invalid name %s\n", __func__, name);
   return ST_FPS_MAX;
 }
 

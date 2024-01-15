@@ -41,7 +41,7 @@ def main():
     tx_para.name = "st22p_tx_python"
     tx_para.width = args.width
     tx_para.height = args.height
-    tx_para.fps = mtl.ST_FPS_P59_94
+    tx_para.fps = args.fps
     tx_para.interlaced = args.interlaced
     tx_para.framebuff_cnt = 3
     tx_para.input_fmt = args.pipeline_fmt

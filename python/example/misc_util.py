@@ -27,6 +27,13 @@ def parse_st22_codec(name):
     raise argparse.ArgumentTypeError(f"{name} is not a valid codec name")
 
 
+def parse_fps(name):
+    fps = mtl.st_name_to_fps(name)
+    if fps >= mtl.ST_FPS_MAX:
+        raise argparse.ArgumentTypeError(f"{name} is not a valid fps name")
+    return fps
+
+
 def parse_args(is_tx):
     parser = argparse.ArgumentParser(description="Argument util for MTL example")
     if is_tx:
@@ -43,6 +50,9 @@ def parse_args(is_tx):
     parser.add_argument(
         "--p_sip", type=str, default=p_sip_default, help="primary local IP address"
     )
+    # nb_tx_desc & nb_rx_desc
+    parser.add_argument("--nb_tx_desc", type=int, default=0, help="nb_tx_desc")
+    parser.add_argument("--nb_rx_desc", type=int, default=0, help="nb_rx_desc")
     # p_tx_ip
     parser.add_argument(
         "--p_tx_ip",
@@ -63,6 +73,13 @@ def parse_args(is_tx):
         type=parse_pipeline_fmt,
         default=mtl.ST_FRAME_FMT_YUV422PLANAR10LE,
         help="pipeline_fmt",
+    )
+    # fps
+    parser.add_argument(
+        "--fps",
+        type=parse_fps,
+        default=mtl.ST_FPS_P59_94,
+        help="fps",
     )
     # display
     parser.add_argument("--display", action="store_true", help="enable display option")
