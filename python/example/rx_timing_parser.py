@@ -200,6 +200,7 @@ def main():
     rx_para.framebuff_cnt = 3
     rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
     rx_para.output_fmt = args.pipeline_fmt
+    rx_para.rx_burst_size = args.rx_burst_size
     # rx port
     rx_port = mtl.st_rx_port()
     mtl.st_rxp_para_port_set(

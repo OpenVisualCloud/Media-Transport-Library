@@ -218,6 +218,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.port.payload_type = st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.flags |= ST20P_RX_FLAG_BLOCK_GET;
+  ops.rx_burst_size = ctx->rx_burst_size;
   ops.framebuff_cnt = s->framebuff_cnt;
   /* always try to enable DMA offload */
   ops.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;

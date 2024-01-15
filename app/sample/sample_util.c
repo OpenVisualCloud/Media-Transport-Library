@@ -45,6 +45,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_RSS_MODE,
   SAMPLE_ARG_NB_TX_DESC,
   SAMPLE_ARG_NB_RX_DESC,
+  SAMPLE_ARG_RX_BURST_SZ,
   SAMPLE_ARG_DHCP,
 
   SAMPLE_ARG_TX_VIDEO_URL = 0x200,
@@ -102,6 +103,7 @@ static struct option sample_args_options[] = {
     {"nb_tx_desc", required_argument, 0, SAMPLE_ARG_NB_TX_DESC},
     {"nb_rx_desc", required_argument, 0, SAMPLE_ARG_NB_RX_DESC},
     {"dhcp", no_argument, 0, SAMPLE_ARG_DHCP},
+    {"rx_burst_size", required_argument, 0, SAMPLE_ARG_RX_BURST_SZ},
 
     {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
     {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
@@ -264,6 +266,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_NB_RX_DESC:
         p->nb_rx_desc = atoi(optarg);
+        break;
+      case SAMPLE_ARG_RX_BURST_SZ:
+        ctx->rx_burst_size = atoi(optarg);
         break;
       case SAMPLE_ARG_QUEUES_CNT:
         for (int i = 0; i < MTL_PORT_MAX; i++) {

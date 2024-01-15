@@ -94,6 +94,7 @@ struct st_sample_context {
   bool ext_frame;
   bool hdr_split;
   bool rx_dump;
+  uint16_t rx_burst_size;
 
   char logo_url[ST_SAMPLE_URL_MAX_LEN];
   uint32_t logo_width;
