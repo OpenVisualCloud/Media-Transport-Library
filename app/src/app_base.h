@@ -504,6 +504,7 @@ struct st_app_context {
   bool enable_timing_parser;
   bool tx_display;
   bool rx_display;
+  uint16_t rx_burst_size;
 
   bool ptp_systime_sync;
   int ptp_sync_cnt;
