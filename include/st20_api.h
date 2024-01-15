@@ -1420,6 +1420,9 @@ struct st20_rx_ops {
   /** Optional. Flags to control session behaviors. See ST20_RX_FLAG_* for possible value
    */
   uint32_t flags;
+  /* Optional, the size for each mt_rxq_burst, leave to zero to let system select a
+   * default value */
+  uint16_t rx_burst_size;
 
   /**
    * Mandatory for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.

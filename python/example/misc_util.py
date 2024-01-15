@@ -53,6 +53,7 @@ def parse_args(is_tx):
     # nb_tx_desc & nb_rx_desc
     parser.add_argument("--nb_tx_desc", type=int, default=0, help="nb_tx_desc")
     parser.add_argument("--nb_rx_desc", type=int, default=0, help="nb_rx_desc")
+    parser.add_argument("--rx_burst_size", type=int, default=0, help="rx_burst_size")
     # p_tx_ip
     parser.add_argument(
         "--p_tx_ip",

@@ -459,6 +459,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.ssrc = ops->port.ssrc;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.framebuff_cnt = ops->framebuff_cnt;
+  ops_rx.rx_burst_size = ops->rx_burst_size;
   ops_rx.notify_frame_ready = rx_st20p_frame_ready;
   ops_rx.notify_event = rx_st20p_notify_event;
   if (ctx->derive) {

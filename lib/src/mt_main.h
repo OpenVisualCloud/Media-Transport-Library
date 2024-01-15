@@ -1839,6 +1839,16 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
+static inline void st_rx_mbuf_set_ptp(struct rte_mbuf* mbuf, uint64_t time_stamp) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->rx_priv.ptp_time_stamp = time_stamp;
+}
+
+static inline uint64_t st_rx_mbuf_get_ptp(struct rte_mbuf* mbuf) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->rx_priv.ptp_time_stamp;
+}
+
 #ifdef ST_PCAPNG_ENABLED
 struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
                                 struct mt_rxq_entry* rxq, const struct rte_mbuf* m,

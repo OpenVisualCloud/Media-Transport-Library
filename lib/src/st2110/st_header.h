@@ -98,12 +98,11 @@ struct st_tx_muf_priv_data {
   uint32_t idx;            /* index of current frame */
 };
 
-/* info passing between dma and rx */
 struct st_rx_muf_priv_data {
+  uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
   uint32_t offset;
   uint32_t len;
   uint32_t lender;
-  uint32_t padding;
 };
 
 /* the frame is malloc by rte malloc, not ext or head split */
@@ -549,6 +548,7 @@ struct st_rx_video_tp {
 
   /* for the status */
   struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
+  uint32_t stat_adjust;
 };
 
 struct st_rx_video_session_impl {
@@ -558,6 +558,7 @@ struct st_rx_video_session_impl {
   struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   bool time_measure;
+  uint16_t rx_burst_size;
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -707,6 +708,11 @@ struct st_rx_video_session_impl {
   double stat_cpu_busy_score;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  /* for rx burst */
+  uint64_t last_burst_time[MTL_SESSION_PORT_MAX];
+  int stat_burst_succ_cnt;
+  uint16_t stat_burst_pkts_max;
+  uint64_t stat_burst_pkts_sum;
 };
 
 struct st_rx_video_sessions_mgr {

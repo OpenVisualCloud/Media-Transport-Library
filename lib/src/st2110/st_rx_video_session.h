@@ -7,8 +7,6 @@
 
 #include "st_main.h"
 
-#define ST_RX_VIDEO_BURST_SIZE (128)
-
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
 
 #define ST_RV_TP_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
