@@ -15,7 +15,7 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
                      int pkt_idx) {
   struct st_rx_video_tp* tp = s->tp;
   uint64_t epoch_tmstamp;
-  double tvd, packet_delta_ns, trs = tp->trs;
+  double tvd, trs = tp->trs;
 
   if (!slot->cur_epochs) { /* the first packet */
     uint64_t epochs = (double)pkt_time / s->frame_time;
@@ -23,8 +23,9 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
 
     slot->cur_epochs = epochs;
     slot->rtp_tmstamp = rtp_tmstamp;
-    slot->first_pkt_time = pkt_time;
-    slot->meta.fpt = pkt_time - epoch_tmstamp;
+    double first_pkt_time = (double)pkt_time - (trs * pkt_idx);
+    slot->first_pkt_time = first_pkt_time;
+    slot->meta.fpt = first_pkt_time - epoch_tmstamp;
 
     uint64_t tmstamp64 = epochs * s->frame_time_sampling;
     uint32_t tmstamp32 = tmstamp64;
@@ -40,16 +41,13 @@ void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s
 
   epoch_tmstamp = (uint64_t)(slot->cur_epochs * s->frame_time);
   tvd = epoch_tmstamp + tp->pass.tr_offset;
+  double expect_time = tvd + trs * (pkt_idx + 1);
 
   /* Calculate vrx */
-  packet_delta_ns = (double)pkt_time - tvd;
-  int32_t drained = (packet_delta_ns + trs) / trs;
-  int32_t vrx_cur = slot->vrx_prev + 1 - (drained - slot->vrx_drained_prev);
+  int32_t vrx_cur = (expect_time - pkt_time) / trs;
   slot->vrx_sum += vrx_cur;
   slot->meta.vrx_min = RTE_MIN(vrx_cur, slot->meta.vrx_min);
   slot->meta.vrx_max = RTE_MAX(vrx_cur, slot->meta.vrx_max);
-  slot->vrx_prev = vrx_cur;
-  slot->vrx_drained_prev = drained;
 
   /* Calculate C-inst */
   int exp_cin_pkts = ((pkt_time - slot->first_pkt_time) / trs) * ST_TP_CINST_DRAIN_FACTOR;

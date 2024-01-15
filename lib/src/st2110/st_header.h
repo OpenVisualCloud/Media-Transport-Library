@@ -99,10 +99,10 @@ struct st_tx_muf_priv_data {
 };
 
 struct st_rx_muf_priv_data {
-  uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
   uint32_t offset;
   uint32_t len;
   uint32_t lender;
+  uint32_t padding;
 };
 
 /* the frame is malloc by rte malloc, not ext or head split */
@@ -509,8 +509,6 @@ struct st_rv_tp_slot {
   /* Cinst, packet level check */
   int64_t cinst_sum;
   /* vrx, packet level check */
-  int32_t vrx_drained_prev;
-  int32_t vrx_prev;
   int64_t vrx_sum;
   /* Inter-packet time(ns), packet level check */
   int64_t ipt_sum;
@@ -548,7 +546,7 @@ struct st_rx_video_tp {
 
   /* for the status */
   struct st_rv_tp_stat stat[MTL_SESSION_PORT_MAX];
-  uint32_t stat_adjust;
+  uint32_t stat_untrusted_pkts;
 };
 
 struct st_rx_video_session_impl {
@@ -559,6 +557,7 @@ struct st_rx_video_session_impl {
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   bool time_measure;
   uint16_t rx_burst_size;
+  uint16_t cur_succ_burst_cnt;
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -709,7 +708,6 @@ struct st_rx_video_session_impl {
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
   /* for rx burst */
-  uint64_t last_burst_time[MTL_SESSION_PORT_MAX];
   int stat_burst_succ_cnt;
   uint16_t stat_burst_pkts_max;
   uint64_t stat_burst_pkts_sum;

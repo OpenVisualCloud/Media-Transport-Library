@@ -209,6 +209,7 @@ int main(int argc, char** argv) {
     ops_rx.output_fmt = ctx.output_fmt;
     ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
     ops_rx.framebuff_cnt = app[i]->fb_cnt;
+    ops_rx.rx_burst_size = ctx.rx_burst_size;
     ops_rx.flags = ST20P_RX_FLAG_BLOCK_GET;
     ops_rx.flags |= ST20P_RX_FLAG_TIMING_PARSER_META;
 

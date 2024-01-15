@@ -1369,8 +1369,17 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
                                     struct rte_mbuf* mbuf, enum mtl_session_port s_port,
                                     struct st_rx_video_slot_impl* slot, uint32_t tmstamp,
                                     int pkt_idx) {
-  uint64_t pkt_ns = st_rx_mbuf_get_ptp(mbuf);
-  struct st_rv_tp_slot* tp_slot = &s->tp->slots[slot->idx][s_port];
+  struct st_rx_video_tp* tp = s->tp;
+  if (s->cur_succ_burst_cnt > (tp->pass.cinst_max_narrow / 2)) {
+    /* untrusted result */
+    tp->stat_untrusted_pkts++;
+    return;
+  }
+  struct mtl_main_impl* impl = rv_get_impl(s);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+
+  uint64_t pkt_ns = mt_mbuf_time_stamp(impl, mbuf, port);
+  struct st_rv_tp_slot* tp_slot = &tp->slots[slot->idx][s_port];
   dbg("%s(%d,%d), tmstamp %u pkt_ns %" PRIu64 " pkt_idx %d\n", __func__, s->idx, s_port,
       tmstamp, pkt_ns, pkt_idx);
   rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
@@ -2656,43 +2665,17 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
     if (!s->rxq[s_port]) continue;
 
     rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], s->rx_burst_size);
-    uint64_t burst_time = mt_get_tsc(s->impl);
+    s->cur_succ_burst_cnt = rv;
     if (rv) {
       s->stat_burst_succ_cnt++;
       s->stat_burst_pkts_sum += rv;
       if (rv > s->stat_burst_pkts_max) s->stat_burst_pkts_max = rv;
-
-      struct st_rx_video_tp* tp = s->tp;
-      if (s->enable_timing_parser && tp) {
-        /* compensation for the burst time jitter */
-        bool adjust = false;
-        uint64_t diff = burst_time - s->last_burst_time[s_port];
-        enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-
-        if (diff > (tp->pass.cinst_max_narrow * tp->trs)) adjust = true;
-
-        if (adjust) {
-          double pkt_ns = mt_mbuf_time_stamp(s->impl, mbuf[rv - 1], port);
-          pkt_ns -= s->tp->trs * (rv - 1); /* set to start */
-          for (uint16_t i = 0; i < rv; i++) {
-            st_rx_mbuf_set_ptp(mbuf[i], pkt_ns);
-            pkt_ns += s->tp->trs;
-          }
-          tp->stat_adjust++;
-        } else {
-          for (uint16_t i = 0; i < rv; i++) {
-            st_rx_mbuf_set_ptp(mbuf[i], mt_mbuf_time_stamp(s->impl, mbuf[i], port));
-          }
-        }
-      }
 
       rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
 
       done = false;
     }
-
-    s->last_burst_time[s_port] = burst_time;
   }
 
   /* submit if any */
@@ -3416,9 +3399,10 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
 
   struct st_rx_video_tp* tp = s->tp;
-  if (tp && tp->stat_adjust) {
-    info("%s(%d), time adjust %u for timing parser\n", __func__, idx, tp->stat_adjust);
-    tp->stat_adjust = 0;
+  if (tp && tp->stat_untrusted_pkts) {
+    info("%s(%d), untrusted pkts time %u for timing parser\n", __func__, idx,
+         tp->stat_untrusted_pkts);
+    tp->stat_untrusted_pkts = 0;
   }
   if (s->enable_timing_parser_stat) rv_tp_stat(s);
 
