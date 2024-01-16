@@ -124,12 +124,12 @@ jobs:
           zip -r libmtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip build/lib
           zip -r ffmpeg-mtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip $FFMPEG_PREFIX/bin
 
-      - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      - uses: actions/upload-artifact@1eb3cb2b3e0f29609092a73eb033bb759a334595 # v4.1.0
         with:
           name: Intel Media Transport Library (libmtl.dll) Built on MSYS2 ${{matrix.sys}} DPDK v${{matrix.dpdk}}
           path: libmtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip
 
-      - uses: actions/upload-artifact@c7d193f32edcb7bfad88892161225aeda64e9392 # v4.0.0
+      - uses: actions/upload-artifact@1eb3cb2b3e0f29609092a73eb033bb759a334595 # v4.1.0
         with:
           name: FFmpeg enable MTL MSYS2 Windows Release (non-free, GPL) Built on MSYS2 ${{matrix.sys}} DPDK v${{matrix.dpdk}}
           path: ffmpeg-mtl-${{matrix.sys}}-dpdk-v${{matrix.dpdk}}.zip
