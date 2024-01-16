@@ -99,8 +99,7 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sc
   return 0;
 }
 
-static int sch_tasklet_func(void* args) {
-  struct mtl_sch_impl* sch = args;
+static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
   int num_tasklet, i;
@@ -112,12 +111,11 @@ static int sch_tasklet_func(void* args) {
   uint64_t loop_cnt = 0;
 
   num_tasklet = sch->max_tasklet_idx;
-  info("%s(%d), start with %d tasklets\n", __func__, idx, num_tasklet);
+  info("%s(%d), start with %d tasklets, pid %d\n", __func__, idx, num_tasklet, sch->pid);
 
   char thread_name[32];
   snprintf(thread_name, sizeof(thread_name), "mtl_sch_%d", idx);
-
-  mtl_thread_setname(pthread_self(), thread_name);
+  mtl_thread_setname(sch->tid, thread_name);
 
   for (i = 0; i < num_tasklet; i++) {
     tasklet = sch->tasklet[i];
@@ -177,8 +175,18 @@ static int sch_tasklet_func(void* args) {
   return 0;
 }
 
+static int sch_tasklet_lcore(void* arg) {
+  struct mtl_sch_impl* sch = arg;
+  sch->tid = pthread_self();
+  sch->pid = gettid();
+  sch_tasklet_func(sch);
+  return 0;
+}
+
 static void* sch_tasklet_thread(void* arg) {
-  sch_tasklet_func(arg);
+  struct mtl_sch_impl* sch = arg;
+  sch->pid = gettid();
+  sch_tasklet_func(sch);
   return NULL;
 }
 
@@ -207,7 +215,7 @@ static int sch_start(struct mtl_sch_impl* sch) {
       sch_unlock(sch);
       return ret;
     }
-    ret = rte_eal_remote_launch(sch_tasklet_func, sch, sch->lcore);
+    ret = rte_eal_remote_launch(sch_tasklet_lcore, sch, sch->lcore);
   } else {
     ret = pthread_create(&sch->tid, NULL, sch_tasklet_thread, sch);
   }
@@ -377,8 +385,8 @@ static int sch_stat(void* priv) {
 
   if (!mt_sch_is_active(sch)) return 0;
 
-  notice("SCH(%d:%s): tasklets %d, lcore %u, avg loop %" PRIu64 " ns\n", idx, sch->name,
-         num_tasklet, sch->lcore, mt_sch_avg_ns_loop(sch));
+  notice("SCH(%d:%s): tasklets %d, lcore %u(pid: %d), avg loop %" PRIu64 " ns\n", idx,
+         sch->name, num_tasklet, sch->lcore, sch->pid, mt_sch_avg_ns_loop(sch));
   if (mt_user_tasklet_time_measure(sch->parent)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
