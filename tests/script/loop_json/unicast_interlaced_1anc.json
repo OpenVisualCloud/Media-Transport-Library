@@ -1,0 +1,52 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "local:1"
+            ],
+            "interface": [
+                0
+            ],
+            "ancillary": [
+                {
+                    "replicas": 1,
+                    "start_port": 40000,
+                    "payload_type": 113,
+                    "type": "frame",
+                    "ancillary_format": "closed_caption",
+                    "ancillary_url": "./test.txt",
+                    "ancillary_fps": "p59",
+                    "interlaced": true,
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "local:0",
+            ],
+            "interface": [
+                1
+            ],
+            "ancillary": [
+                {
+                    "replicas": 1,
+                    "payload_type": 113,
+                    "start_port": 40000,
+                    "interlaced": true,
+                }
+            ]
+        }
+    ]
+}

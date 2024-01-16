@@ -979,6 +979,7 @@ struct st_tx_ancillary_session_impl {
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
   bool time_measure;
+  bool second_field;
 
   uint32_t max_pkt_len; /* max data len(byte) for each pkt */
 
@@ -1020,6 +1021,9 @@ struct st_tx_ancillary_session_impl {
   uint32_t stat_max_notify_frame_us;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  /* interlace */
+  uint32_t stat_interlace_first_field;
+  uint32_t stat_interlace_second_field;
 };
 
 struct st_tx_ancillary_sessions_mgr {
@@ -1074,6 +1078,10 @@ struct st_rx_ancillary_session_impl {
   uint32_t stat_max_notify_rtp_us;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  /* for interlace */
+  uint32_t stat_interlace_first_field;
+  uint32_t stat_interlace_second_field;
+  int stat_pkts_wrong_interlace_dropped;
 };
 
 struct st_rx_ancillary_sessions_mgr {

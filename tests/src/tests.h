@@ -226,6 +226,7 @@ class tests_context {
   bool user_meta = false;
   bool block_get = false;
   bool rx_timing_parser = false;
+  bool st40_empty_frame = false;
 };
 
 #define TEST_USER_META_MAGIC ST_PLUGIN_MAGIC('U', 'S', 'M', 'T')

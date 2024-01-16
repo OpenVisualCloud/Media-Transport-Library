@@ -92,6 +92,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
+  struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
   MTL_MAY_UNUSED(s_port);
 
   if (payload_type != ops->payload_type) {
@@ -106,6 +107,23 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
       s->st40_stat_pkts_wrong_ssrc_dropped++;
+      return -EINVAL;
+    }
+  }
+
+  /* check interlace */
+  if (s->ops.interlaced) {
+    if (!(rfc8331->f & 0x2)) {
+      s->stat_pkts_wrong_interlace_dropped++;
+      return -EINVAL;
+    }
+    if (rfc8331->f & 0x1)
+      s->stat_interlace_second_field++;
+    else
+      s->stat_interlace_first_field++;
+  } else {
+    if (rfc8331->f) {
+      s->stat_pkts_wrong_interlace_dropped++;
       return -EINVAL;
     }
   }
@@ -393,7 +411,8 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   }
 
   s->attached = true;
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), flags 0x%x, %s\n", __func__, idx, ops->flags,
+       ops->interlaced ? "interlace" : "progressive");
   return 0;
 }
 
@@ -424,6 +443,17 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     notice("RX_ANC_SESSION(%d): wrong hdr ssrc dropped pkts %d\n", idx,
            s->st40_stat_pkts_wrong_ssrc_dropped);
     s->st40_stat_pkts_wrong_ssrc_dropped = 0;
+  }
+  if (s->stat_pkts_wrong_interlace_dropped) {
+    notice("RX_ANC_SESSION(%d): wrong hdr interlace dropped pkts %d\n", idx,
+           s->stat_pkts_wrong_interlace_dropped);
+    s->stat_pkts_wrong_interlace_dropped = 0;
+  }
+  if (s->ops.interlaced) {
+    notice("RX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
+           s->stat_interlace_first_field, s->stat_interlace_second_field);
+    s->stat_interlace_first_field = 0;
+    s->stat_interlace_second_field = 0;
   }
   if (s->time_measure) {
     struct mt_stat_u64* stat_time = &s->stat_time;

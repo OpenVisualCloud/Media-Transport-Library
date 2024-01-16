@@ -489,6 +489,14 @@ For applications requiring access to the timing parser results for each frame, t
 
 It also features a sample timing parser UI constructed using the IMTL Python bindings, which can be found at [rx_timing_parser.py](../python/example/rx_timing_parser.py).
 
+### 6.17 ST40(ancillary) Interlaced support
+
+In iMTL, similar to st20 video, each field is treated as an individual frame, with fields being transmitted separately over the network, to avoid the need for new APIs specifically for fields.
+
+For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, fps: ST_FPS_P50`.
+
+For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), RTP passthrough mode is the only supported, it's application's duty to check the if it's the first or second by inspecting the F bits in rfc8331 header.
+
 ## 7. Misc
 
 ### 7.1 Logging
