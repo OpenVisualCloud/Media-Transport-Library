@@ -459,6 +459,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.fps = anc ? anc->info.anc_fps : ST_FPS_P59_94;
   s->st40_pcap_input = false;
   ops.type = anc ? anc->info.type : ST40_TYPE_FRAME_LEVEL;
+  ops.interlaced = anc ? anc->info.interlaced : false;
   ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st40_source_url, ".pcap")) {

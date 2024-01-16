@@ -323,6 +323,7 @@ TEST(St40_rx, create_expect_fail_ring_sz) {
 static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
                                enum st40_type type) {
   size_t frame_size = 240;
+  if (st40->st40_empty_frame) frame_size = 0;
 
   st40->pkt_data_len = frame_size;
   st40->frame_size = frame_size;
@@ -344,7 +345,10 @@ static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
       dst->meta[0].stream_num = 0;
       dst->meta[0].did = 0x43;
       dst->meta[0].sdid = 0x02;
-      dst->meta_num = 1;
+      if (st40->st40_empty_frame)
+        dst->meta_num = 0;
+      else
+        dst->meta_num = 1;
       dst->data = st40->frame_buf[frame];
     }
   }
@@ -442,7 +446,8 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
 
 static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
                              enum st_test_level level, int sessions = 1,
-                             bool check_sha = false, bool user_timestamp = false) {
+                             bool check_sha = false, bool user_timestamp = false,
+                             bool empty_frame = false, bool interlaced = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -486,6 +491,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     test_ctx_tx[i]->ctx = ctx;
     test_ctx_tx[i]->fb_cnt = TEST_SHA_HIST_NUM;
     test_ctx_tx[i]->fb_idx = 0;
+    test_ctx_tx[i]->st40_empty_frame = empty_frame;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st40_test";
     ops_tx.priv = test_ctx_tx[i];
@@ -498,6 +504,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ops_tx.type = type[i];
     ops_tx.fps = fps[i];
     ops_tx.payload_type = ST40_TEST_PAYLOAD_TYPE;
+    ops_tx.interlaced = interlaced;
     ops_tx.ssrc = i ? i + 0x88888888 : 0;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (user_timestamp) {
@@ -553,6 +560,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     ops_rx.notify_rtp_ready = rx_rtp_ready;
     ops_rx.rtp_ring_size = 1024;
     ops_rx.payload_type = ST40_TEST_PAYLOAD_TYPE;
+    ops_rx.interlaced = interlaced;
     ops_rx.ssrc = i ? i + 0x88888888 : 0;
     rx_handle[i] = st40_rx_create(m_handle, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
@@ -705,6 +713,12 @@ TEST(St40_rx, frame_user_timestamp) {
   enum st40_type type[1] = {ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[1] = {ST_FPS_P59_94};
   st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 1, true, true);
+}
+TEST(St40_rx, frame_interlaced_empty) {
+  enum st40_type type[1] = {ST40_TYPE_FRAME_LEVEL};
+  enum st_fps fps[1] = {ST_FPS_P50};
+  /* no sha check */
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 1, false, false, true, true);
 }
 
 static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,

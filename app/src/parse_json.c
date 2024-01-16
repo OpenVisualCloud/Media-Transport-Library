@@ -1091,6 +1091,12 @@ static int st_json_parse_tx_anc(int idx, json_object* anc_obj,
     return -ST_JSON_NOT_VALID;
   }
 
+  /* parse anc interlaced */
+  json_object* anc_interlaced = st_json_object_object_get(anc_obj, "interlaced");
+  if (anc_interlaced) {
+    anc->info.interlaced = json_object_get_boolean(anc_interlaced);
+  }
+
   /* parse anc url */
   ret = parse_url(anc_obj, "ancillary_url", anc->info.anc_url);
   if (ret < 0) return ret;
@@ -1119,6 +1125,12 @@ static int st_json_parse_rx_anc(int idx, json_object* anc_obj,
   if (ret < 0) {
     err("%s, use default pt %u\n", __func__, ST_APP_PAYLOAD_TYPE_ANCILLARY);
     anc->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  }
+
+  /* parse anc interlaced */
+  json_object* anc_interlaced = st_json_object_object_get(anc_obj, "interlaced");
+  if (anc_interlaced) {
+    anc->info.interlaced = json_object_get_boolean(anc_interlaced);
   }
 
   /* parse enable rtcp */

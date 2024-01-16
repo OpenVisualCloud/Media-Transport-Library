@@ -172,6 +172,7 @@ typedef struct st_json_ancillary_info {
   enum st40_type type;
   enum anc_format anc_format;
   enum st_fps anc_fps;
+  bool interlaced;
 
   char anc_url[ST_APP_URL_MAX_LEN];
 } st_json_ancillary_info_t;

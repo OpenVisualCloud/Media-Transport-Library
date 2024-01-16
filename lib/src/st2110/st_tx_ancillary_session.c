@@ -258,7 +258,8 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
 
 static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
                                             struct st_tx_ancillary_session_impl* s,
-                                            bool sync, uint64_t required_tai) {
+                                            bool sync, uint64_t required_tai,
+                                            bool second_field) {
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
@@ -266,6 +267,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
   double to_epoch;
+  bool interlaced = s->ops.interlaced;
 
   if (required_tai) {
     uint64_t ptp_epochs = ptp_time / frame_time;
@@ -284,6 +286,16 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
     if (diff < pacing->max_onward_epochs) {
       /* point to next epoch since if it in the range of onward */
       epochs = next_epochs;
+    }
+  }
+
+  if (interlaced) {
+    if (second_field) { /* align to odd epoch */
+      if (!(epochs & 0x1)) epochs++;
+      s->stat_interlace_second_field++;
+    } else { /* align to even epoch */
+      if (epochs & 0x1) epochs++;
+      s->stat_interlace_first_field++;
     }
   }
 
@@ -322,6 +334,9 @@ static int tx_ancillary_session_init_next_meta(struct st_tx_ancillary_session_im
 
   memset(meta, 0, sizeof(*meta));
   meta->fps = ops->fps;
+  if (ops->interlaced) { /* init second_field but user still can customize also */
+    meta->second_field = s->second_field;
+  }
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
@@ -454,8 +469,17 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
   rtp->anc_count = idx - s->st40_pkt_idx;
-  rtp->f = 0b00;
+  if (s->ops.interlaced) {
+    if (frame_info->tc_meta.second_field)
+      rtp->f = 0b11;
+    else
+      rtp->f = 0b10;
+  } else {
+    rtp->f = 0b00;
+  }
   if (idx == anc_count) rtp->base.marker = 1;
+  dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
+      payload_size);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -533,8 +557,17 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
   rtp->anc_count = idx - anc_idx;
-  rtp->f = 0b00;
+  if (s->ops.interlaced) {
+    if (frame_info->tc_meta.second_field)
+      rtp->f = 0b11;
+    else
+      rtp->f = 0b10;
+  } else {
+    rtp->f = 0b00;
+  }
   if (idx == anc_count) rtp->base.marker = 1;
+  dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
+      payload_size);
   return idx;
 }
 
@@ -562,7 +595,12 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->st40_stat_frame_cnt);
     s->st40_rtp_time = rtp->tmstamp;
-    tx_ancillary_session_sync_pacing(impl, s, false, 0);
+    bool second_field = false;
+    if (s->ops.interlaced) {
+      struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
+      second_field = (rfc8331->f == 0b11) ? true : false;
+    }
+    tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
   }
   if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
     s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
@@ -613,7 +651,12 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         s->st40_pkt_idx = 0;
         rte_atomic32_inc(&s->st40_stat_frame_cnt);
         s->st40_rtp_time = rtp->base.tmstamp;
-        tx_ancillary_session_sync_pacing(impl, s, false, 0);
+        bool second_field = false;
+        if (s->ops.interlaced) {
+          struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
+          second_field = (rfc8331->f == 0b11) ? true : false;
+        }
+        tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
       }
       if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
         s->pacing.rtp_time_stamp = ntohl(rtp->base.tmstamp);
@@ -744,9 +787,11 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     /* how do we split if it need two or more pkts? */
     dbg("%s(%d), st40_total_pkts %d total_udw %d meta_num %u src %p\n", __func__, idx,
         s->st40_total_pkts, total_udw, src->meta_num, src);
-    if (s->st40_total_pkts < 1) {
+    if (s->st40_total_pkts > 1) {
       err("%s(%d), frame %u invalid st40_total_pkts %d\n", __func__, idx, next_frame_idx,
           s->st40_total_pkts);
+      s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
+      return MTL_TASKLET_ALL_DONE;
     }
   }
 
@@ -756,13 +801,18 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     /* user timestamp control if any */
     uint64_t required_tai = tx_ancillary_pacing_required_tai(s, frame->tc_meta.tfmt,
                                                              frame->tc_meta.timestamp);
-    tx_ancillary_session_sync_pacing(impl, s, false, required_tai);
+    bool second_field = frame->tc_meta.second_field;
+    tx_ancillary_session_sync_pacing(impl, s, false, required_tai, second_field);
     if (ops->flags & ST40_TX_FLAG_USER_TIMESTAMP &&
         (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
       pacing->rtp_time_stamp = (uint32_t)frame->tc_meta.timestamp;
     }
     frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
     frame->tc_meta.timestamp = pacing->cur_epoch_time;
+    /* init to next field */
+    if (ops->interlaced) {
+      s->second_field = second_field ? false : true;
+    }
     s->calculate_time_cursor = false; /* clear */
   }
 
@@ -1407,7 +1457,8 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  info("%s(%d), succ\n", __func__, idx);
+  info("%s(%d), type %d flags 0x%x, %s\n", __func__, idx, ops->type, ops->flags,
+       ops->interlaced ? "interlace" : "progressive");
   return 0;
 }
 
@@ -1444,6 +1495,12 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
   }
   if (frame_cnt <= 0) {
     warn("TX_ANC_SESSION(%d): build ret %d\n", idx, s->stat_build_ret_code);
+  }
+  if (s->ops.interlaced) {
+    notice("TX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
+           s->stat_interlace_first_field, s->stat_interlace_second_field);
+    s->stat_interlace_first_field = 0;
+    s->stat_interlace_second_field = 0;
   }
 
   if (s->stat_error_user_timestamp) {

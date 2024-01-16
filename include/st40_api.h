@@ -219,6 +219,8 @@ struct st40_tx_frame_meta {
   uint64_t timestamp;
   /** epoch */
   uint64_t epoch;
+  /** Second field type indicate for interlaced mode, set by user */
+  bool second_field;
 };
 
 /**
@@ -241,6 +243,8 @@ struct st40_tx_ops {
   enum st_fps fps;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
 
   /** Optional. Synchronization source defined in RFC3550, if zero the session will assign
    * a random value */
@@ -314,6 +318,8 @@ struct st40_rx_ops {
 
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
 
   /** Optional. source filter IP address of multicast */
   uint8_t mcast_sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
