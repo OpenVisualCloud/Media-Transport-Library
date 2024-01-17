@@ -45,6 +45,7 @@ enum test_args_cmd {
   TEST_ARG_IOVA_MODE,
   TEST_ARG_MULTI_SRC_PORT,
   TEST_ARG_DHCP,
+  TEST_ARG_MCAST_ONLY,
 };
 
 static struct option test_args_options[] = {
@@ -82,6 +83,7 @@ static struct option test_args_options[] = {
     {"iova_mode", required_argument, 0, TEST_ARG_IOVA_MODE},
     {"multi_src_port", no_argument, 0, TEST_ARG_MULTI_SRC_PORT},
     {"dhcp", no_argument, 0, TEST_ARG_DHCP},
+    {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
 
     {0, 0, 0, 0}};
 
@@ -275,6 +277,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
           p->net_proto[port] = MTL_PROTO_DHCP;
         ctx->dhcp = true;
         break;
+      case TEST_ARG_MCAST_ONLY:
+        ctx->mcast_only = true;
+        break;
       default:
         break;
     }
@@ -310,6 +315,14 @@ static void test_random_ip(struct st_tests_context* ctx) {
   r_ip[1] = p_ip[1];
   r_ip[2] = p_ip[2];
   r_ip[3] = p_ip[3] + 1;
+
+  if (ctx->mcast_only) {
+    r_ip = ctx->mcast_ip_addr[MTL_PORT_2];
+    r_ip[0] = p_ip[0];
+    r_ip[1] = p_ip[1];
+    r_ip[2] = p_ip[2];
+    r_ip[3] = p_ip[3] + 2;
+  }
 }
 
 static uint64_t test_ptp_from_real_time(void* priv) {
