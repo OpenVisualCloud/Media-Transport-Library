@@ -93,6 +93,7 @@ struct st_tests_context {
   enum st_test_level level;
   bool hdr_split;
   bool dhcp;
+  bool mcast_only;
   enum mtl_iova_mode iova;
   enum mtl_rss_mode rss_mode;
   bool same_dual_port;
