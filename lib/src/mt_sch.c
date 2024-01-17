@@ -111,7 +111,8 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   uint64_t loop_cnt = 0;
 
   num_tasklet = sch->max_tasklet_idx;
-  info("%s(%d), start with %d tasklets, pid %d\n", __func__, idx, num_tasklet, sch->pid);
+  info("%s(%d), start with %d tasklets, t_pid %d\n", __func__, idx, num_tasklet,
+       (int)sch->t_pid);
 
   char thread_name[32];
   snprintf(thread_name, sizeof(thread_name), "mtl_sch_%d", idx);
@@ -178,14 +179,18 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 static int sch_tasklet_lcore(void* arg) {
   struct mtl_sch_impl* sch = arg;
   sch->tid = pthread_self();
-  sch->pid = gettid();
+#ifndef WINDOWSENV
+  sch->t_pid = gettid();
+#endif
   sch_tasklet_func(sch);
   return 0;
 }
 
 static void* sch_tasklet_thread(void* arg) {
   struct mtl_sch_impl* sch = arg;
-  sch->pid = gettid();
+#ifndef WINDOWSENV
+  sch->t_pid = gettid();
+#endif
   sch_tasklet_func(sch);
   return NULL;
 }
@@ -385,8 +390,8 @@ static int sch_stat(void* priv) {
 
   if (!mt_sch_is_active(sch)) return 0;
 
-  notice("SCH(%d:%s): tasklets %d, lcore %u(pid: %d), avg loop %" PRIu64 " ns\n", idx,
-         sch->name, num_tasklet, sch->lcore, sch->pid, mt_sch_avg_ns_loop(sch));
+  notice("SCH(%d:%s): tasklets %d, lcore %u(t_pid: %d), avg loop %" PRIu64 " ns\n", idx,
+         sch->name, num_tasklet, sch->lcore, (int)sch->t_pid, mt_sch_avg_ns_loop(sch));
   if (mt_user_tasklet_time_measure(sch->parent)) {
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];

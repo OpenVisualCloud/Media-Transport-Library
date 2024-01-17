@@ -477,7 +477,7 @@ struct mtl_sch_impl {
   unsigned int lcore;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
   pthread_t tid;      /* thread id for run_in_thread */
-  pid_t pid;
+  pid_t t_pid;        /* gettid */
 
   int data_quota_mbs_total; /* total data quota(mb/s) for current sch */
   int data_quota_mbs_limit; /* limit data quota(mb/s) for current sch */
