@@ -2,3 +2,5 @@
 et
 fentry.skel.h
 vmlinux.h
+*.o
+lcore_monitor
