@@ -267,6 +267,32 @@ int st20_rfc4175_422be10_to_yuv422p8_simd(struct st20_rfc4175_422_10_pg2_be* pg,
                                           uint32_t h, enum mtl_simd_level level);
 
 /**
+ * Convert rfc4175_422be10 to yuv420p8 with required SIMD level.
+ * Note the level may downgrade to the SIMD which system really support.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param y
+ *   Point to Y(yuv420p8) vector.
+ * @param b
+ *   Point to b(yuv420p8) vector.
+ * @param r
+ *   Point to r(yuv420p8) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @param level
+ *   simd level.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+int st20_rfc4175_422be10_to_yuv420p8_simd(struct st20_rfc4175_422_10_pg2_be* pg,
+                                          uint8_t* y, uint8_t* b, uint8_t* r, uint32_t w,
+                                          uint32_t h, enum mtl_simd_level level);
+
+/**
  * Convert rfc4175_422be12 to yuv422p12le with required SIMD level.
  * Note the level may downgrade to the SIMD which system really support.
  *

@@ -250,6 +250,31 @@ static inline int st20_rfc4175_422be10_to_yuv422p8(struct st20_rfc4175_422_10_pg
 }
 
 /**
+ * Convert rfc4175_422be10 to yuv420p8 with the max optimized SIMD level.
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param y
+ *   Point to Y(yuv420p8) vector.
+ * @param b
+ *   Point to b(yuv420p8) vector.
+ * @param r
+ *   Point to r(yuv420p8) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
+static inline int st20_rfc4175_422be10_to_yuv420p8(struct st20_rfc4175_422_10_pg2_be* pg,
+                                                   uint8_t* y, uint8_t* b, uint8_t* r,
+                                                   uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be10_to_yuv420p8_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
+}
+
+/**
  * Convert rfc4175_422be12 to yuv422p12le with the max optimized SIMD level.
  *
  * @param pg

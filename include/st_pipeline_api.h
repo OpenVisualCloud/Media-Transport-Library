@@ -146,6 +146,8 @@ enum st_frame_fmt {
    * transport frame without conversion. The frame should not have lines padding.
    */
   ST_FRAME_FMT_YUV422CUSTOM8 = 13,
+  /** YUV 420 planar 8bit */
+  ST_FRAME_FMT_YUV420PLANAR8 = 14,
   /** End of yuv format list, new yuv should be inserted before this */
   ST_FRAME_FMT_YUV_END,
 

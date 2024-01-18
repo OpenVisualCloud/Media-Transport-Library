@@ -127,6 +127,14 @@ static int rx_st20p_packet_convert(void* priv, void* frame,
     uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
                  framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
     ret = st20_rfc4175_422be10_to_yuv422p8(src, y, b, r, meta->pg_cnt, 2);
+  } else if (ctx->ops.output_fmt == ST_FRAME_FMT_YUV420PLANAR8) {
+    uint8_t* y = (uint8_t*)framebuff->dst.addr[0] +
+                 framebuff->dst.linesize[0] * meta->row_number + meta->row_offset * 2;
+    uint8_t* b = (uint8_t*)framebuff->dst.addr[1] +
+                 framebuff->dst.linesize[1] * meta->row_number + meta->row_offset;
+    uint8_t* r = (uint8_t*)framebuff->dst.addr[2] +
+                 framebuff->dst.linesize[2] * meta->row_number + meta->row_offset;
+    ret = st20_rfc4175_422be10_to_yuv420p8(src, y, b, r, meta->pg_cnt, 2);
   }
 
   return ret;
