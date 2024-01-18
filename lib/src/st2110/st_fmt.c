@@ -353,6 +353,13 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .sampling = ST_FRAME_SAMPLING_422,
     },
     {
+        /* ST_FRAME_FMT_YUV420PLANAR8 */
+        .fmt = ST_FRAME_FMT_YUV420PLANAR8,
+        .name = "YUV420PLANAR8",
+        .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_420,
+    },
+    {
         /* ST_FRAME_FMT_RGBRFC4175PG4BE10 */
         .fmt = ST_FRAME_FMT_RGBRFC4175PG4BE10,
         .name = "RGBRFC4175PG4BE10",
@@ -522,6 +529,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
       size = pixels * 3; /* 8 bits RGB pixel in a 24 bits */
       break;
     case ST_FRAME_FMT_YUV420CUSTOM8:
+    case ST_FRAME_FMT_YUV420PLANAR8:
       size = st20_frame_size(ST20_FMT_YUV_420_8BIT, width, height);
       break;
     default:

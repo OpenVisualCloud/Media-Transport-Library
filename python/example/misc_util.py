@@ -131,6 +131,19 @@ def ptr_to_yuv422p8(ptr, width, height):
     return y, u, v
 
 
+def ptr_to_yuv420p8(ptr, width, height):
+    y_size = width * height
+    u_size = width * height // 4
+
+    frame = np.frombuffer(ptr, dtype=np.uint8)
+
+    y = frame[:y_size].reshape((height, width))
+    u = frame[y_size : y_size + u_size].reshape((height // 2, width // 2))
+    v = frame[y_size + u_size :].reshape((height // 2, width // 2))
+
+    return y, u, v
+
+
 def yuv422p10le_to_yuv422(ptr, width, height):
     y_size = width * height
     u_size = width * height // 2
@@ -170,11 +183,45 @@ def downscale_yuv422(y, u, v, scale_factor):
     return y_downscaled, u_downscaled, v_downscaled
 
 
+def downscale_yuv420(y, u, v, scale_factor):
+    height, width = y.shape
+
+    y_downscaled = cv2.resize(
+        y,
+        (width // scale_factor, height // scale_factor),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    u_downscaled = cv2.resize(
+        u,
+        (width // (2 * scale_factor), height // (2 * scale_factor)),
+        interpolation=cv2.INTER_LINEAR,
+    )
+    v_downscaled = cv2.resize(
+        v,
+        (width // (2 * scale_factor), height // (2 * scale_factor)),
+        interpolation=cv2.INTER_LINEAR,
+    )
+
+    return y_downscaled, u_downscaled, v_downscaled
+
+
 def display_yuv422(y, u, v):
     u = cv2.resize(u, (y.shape[1], y.shape[0]), interpolation=cv2.INTER_LINEAR)
     v = cv2.resize(v, (y.shape[1], y.shape[0]), interpolation=cv2.INTER_LINEAR)
 
     yuv = cv2.merge([y, u, v])
+    display_img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
+    cv2.imshow(sys.argv[0], display_img)
+    cv2.waitKey(1)
+
+
+def display_yuv420(y, u, v):
+    u = cv2.resize(u, (y.shape[1], y.shape[0]), interpolation=cv2.INTER_LINEAR)
+    v = cv2.resize(v, (y.shape[1], y.shape[0]), interpolation=cv2.INTER_LINEAR)
+
+    yuv = cv2.merge([y, u, v])
+
+    # display_img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_I420)
     display_img = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
     cv2.imshow(sys.argv[0], display_img)
     cv2.waitKey(1)
@@ -198,6 +245,22 @@ def frame_display_yuv422p8(frame, display_scale_factor):
     y_scale, u_scale, v_scale = downscale_yuv422(y, u, v, display_scale_factor)
     # Convert to RGB and display
     display_yuv422(y_scale, u_scale, v_scale)
+
+
+def frame_display_yuv420p8(frame, display_scale_factor):
+    # Pack frame pointer from frame addr
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
+        mtl.st_frame_addr_cpuva(frame, 0)
+    )
+    width = frame.width
+    height = frame.height
+
+    # Convert to yuv420 planar 8
+    y, u, v = ptr_to_yuv420p8(ptr, width, height)
+    # Downscale
+    y_scale, u_scale, v_scale = downscale_yuv420(y, u, v, display_scale_factor)
+    # Convert to RGB and display
+    display_yuv420(y_scale, u_scale, v_scale)
 
 
 def frame_display_yuv422p10le(frame, display_scale_factor):
@@ -259,6 +322,8 @@ def frame_display(mtl_handle, frame, display_scale_factor):
         frame_display_yuv422p8(frame, display_scale_factor)
     elif frame.fmt == mtl.ST_FRAME_FMT_YUV422RFC4175PG2BE10:
         frame_display_rfc4175be10(mtl_handle, frame, display_scale_factor)
+    elif frame.fmt == mtl.ST_FRAME_FMT_YUV420PLANAR8:
+        frame_display_yuv420p8(frame, display_scale_factor)
     else:
         print(f"Unknown fmt: {mtl.st_frame_fmt_name(frame.fmt)}")
 
