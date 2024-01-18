@@ -9,6 +9,8 @@
 * pipeline: add block get mode support, see `ST20P_TX_FLAG_BLOCK_GET`/`ST20P_RX_FLAG_BLOCK_GET`/`ST22P_TX_FLAG_BLOCK_GET`/`ST22P_RX_FLAG_BLOCK_GET`.
 * rx/timing_parser: add support to export the timing_parser to app, see `app/sample/rx_st20p_timing_parser_sample.c` for usage.
 * st40: add interlaced support.
+* cvt: add st20_rfc4175_422be10_to_yuv422p8 with avx512
+* cvt: add st20_rfc4175_422be10_to_yuv420p8 with avx512
 
 ## Changelog for 23.12
 

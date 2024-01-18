@@ -1396,6 +1396,15 @@ int st20_rfc4175_422be10_to_yuv420p8_simd(struct st20_rfc4175_422_10_pg2_be* pg,
   MTL_MAY_UNUSED(level);
   MTL_MAY_UNUSED(ret);
 
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) && (cpu_level >= MTL_SIMD_LEVEL_AVX512)) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be10_to_yuv420p8_avx512(pg, y, b, r, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
   /* the last option */
   return st20_rfc4175_422be10_to_yuv420p8_scalar(pg, y, b, r, w, h);
 }

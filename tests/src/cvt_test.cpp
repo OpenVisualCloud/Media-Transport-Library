@@ -1208,6 +1208,42 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p8_avx512_vbmi) {
   }
 }
 
+static void test_cvt_rfc4175_422be10_to_yuv420p8(int w, int h) {
+  int ret;
+  size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
+  size_t fb_yuv420p8_size = (size_t)w * h * 3 / 2;
+  struct st20_rfc4175_422_10_pg2_be* pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size_10);
+  uint8_t* p8 = (uint8_t*)st_test_zmalloc(fb_yuv420p8_size);
+  uint8_t* p8_2 = (uint8_t*)st_test_zmalloc(fb_yuv420p8_size);
+
+  if (!pg_10 || !p8 || !p8_2) {
+    EXPECT_EQ(0, 1);
+    if (pg_10) st_test_free(pg_10);
+    if (p8) st_test_free(p8);
+    if (p8_2) st_test_free(p8_2);
+    return;
+  }
+
+  st_test_rand_data((uint8_t*)pg_10, fb_pg2_size_10, 0);
+  ret = st20_rfc4175_422be10_to_yuv420p8_simd(pg_10, p8, p8 + w * h, p8 + w * h * 5 / 4,
+                                              w, h, MTL_SIMD_LEVEL_NONE);
+  EXPECT_EQ(0, ret);
+  ret = st20_rfc4175_422be10_to_yuv420p8_simd(
+      pg_10, p8_2, p8_2 + w * h, p8_2 + w * h * 5 / 4, w, h, MTL_SIMD_LEVEL_AVX512);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(p8, p8_2, fb_yuv420p8_size));
+
+  st_test_free(pg_10);
+  st_test_free(p8);
+  st_test_free(p8_2);
+}
+
+TEST(Cvt, rfc4175_422be10_to_yuv420p8) {
+  test_cvt_rfc4175_422be10_to_yuv420p8(1920, 1080);
+}
+
 static void test_cvt_rfc4175_422le10_to_v210(int w, int h, enum mtl_simd_level cvt_level,
                                              enum mtl_simd_level back_level) {
   int ret;
