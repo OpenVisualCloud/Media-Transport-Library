@@ -808,6 +808,126 @@ int st20_rfc4175_422be10_to_yuv422p8_avx512(struct st20_rfc4175_422_10_pg2_be* p
   return 0;
 }
 
+int st20_rfc4175_422be10_to_yuv420p8_avx512(struct st20_rfc4175_422_10_pg2_be* pg,
+                                            uint8_t* y, uint8_t* b, uint8_t* r,
+                                            uint32_t w, uint32_t h) {
+  __m128i shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffle0_tbl_128);
+  __m128i sllv_mask = _mm_loadu_si128((__m128i*)be10_to_le8_sllv_tbl_128);
+  __m128i sllv_shuffle_mask = _mm_loadu_si128((__m128i*)be10_to_le8_shuffle1_tbl_128);
+  __m128i uyvy2uvyy_mask = _mm_loadu_si128((__m128i*)p8_uyvy2uvyy_mask);
+  __mmask16 k = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+
+  uint32_t line_pg_cnt = w / 2; /* two pgs in one convert */
+  uint32_t pg_cnt;
+
+  for (uint32_t i = 0; i < (h / 2); i++) { /* 2 lines each loop */
+    /* first line */
+    pg_cnt = line_pg_cnt;
+    while (pg_cnt >= 16) {
+      __m128i uvyy[4];
+
+      for (int step = 0; step < 4; step++) {
+        __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+        pg += 2;
+        __m128i shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+        __m128i sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+        /* uyvy uyvy .... .... */
+        __m128i uyvy_t1 = _mm_shuffle_epi8(sllv_result, sllv_shuffle_mask);
+
+        input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+        pg += 2;
+        shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+        sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+        /* uyvy uyvy .... .... */
+        __m128i uyvy_t2 = _mm_shuffle_epi8(sllv_result, sllv_shuffle_mask);
+
+        /* uyvy uyvy uyvy uyvy */
+        __m128i uyvy = _mm_unpacklo_epi64(uyvy_t1, uyvy_t2);
+        /* uuuu vvvv yyyy yyyy */
+        uvyy[step] = _mm_shuffle_epi8(uyvy, uyvy2uvyy_mask);
+      }
+
+      /* merge all u v y from u0v0y0y1, u1v1y2y3, u2v2y4y5, u3v3y6y7*/
+      /* merge y */
+      __m128i y0y1y2y3 = _mm_unpackhi_epi64(uvyy[0], uvyy[1]);
+      _mm_storeu_si128((__m128i*)y, y0y1y2y3);
+      y += 16;
+      __m128i y4y5y6y7 = _mm_unpackhi_epi64(uvyy[2], uvyy[3]);
+      _mm_storeu_si128((__m128i*)y, y4y5y6y7);
+      y += 16;
+      /* merge b and r */
+      __m128i u0v0u1v1 = _mm_unpacklo_epi64(uvyy[0], uvyy[1]);
+      __m128i u2v2u3v3 = _mm_unpacklo_epi64(uvyy[2], uvyy[3]);
+      __m128i u0u2v0v2 = _mm_unpacklo_epi32(u0v0u1v1, u2v2u3v3);
+      __m128i u1u3v1v3 = _mm_unpackhi_epi32(u0v0u1v1, u2v2u3v3);
+      __m128i u0u1u2u3 = _mm_unpacklo_epi32(u0u2v0v2, u1u3v1v3);
+      _mm_storeu_si128((__m128i*)b, u0u1u2u3);
+      b += 16;
+      __m128i v0v1v2v3 = _mm_unpackhi_epi32(u0u2v0v2, u1u3v1v3);
+      _mm_storeu_si128((__m128i*)r, v0v1v2v3);
+      r += 16;
+
+      pg_cnt -= 16;
+    }
+    while (pg_cnt > 0) {
+      *b++ = pg->Cb00;
+      *y++ = (pg->Y00 << 2) | (pg->Y00_ >> 2);
+      *r++ = (pg->Cr00 << 4) | (pg->Cr00_ >> 2);
+      *y++ = (pg->Y01 << 6) | (pg->Y01_ >> 2);
+      pg++;
+
+      pg_cnt--;
+    }
+
+    /* second line, no u and v */
+    pg_cnt = line_pg_cnt;
+    while (pg_cnt >= 16) {
+      __m128i uvyy[4];
+
+      for (int step = 0; step < 4; step++) {
+        __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+        pg += 2;
+        __m128i shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+        __m128i sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+        /* uyvy uyvy .... .... */
+        __m128i uyvy_t1 = _mm_shuffle_epi8(sllv_result, sllv_shuffle_mask);
+
+        input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+        pg += 2;
+        shuffle_result = _mm_shuffle_epi8(input, shuffle_mask);
+        sllv_result = _mm_sllv_epi16(shuffle_result, sllv_mask);
+        /* uyvy uyvy .... .... */
+        __m128i uyvy_t2 = _mm_shuffle_epi8(sllv_result, sllv_shuffle_mask);
+
+        /* uyvy uyvy uyvy uyvy */
+        __m128i uyvy = _mm_unpacklo_epi64(uyvy_t1, uyvy_t2);
+        /* uuuu vvvv yyyy yyyy */
+        uvyy[step] = _mm_shuffle_epi8(uyvy, uyvy2uvyy_mask);
+      }
+
+      /* merge all u v y from u0v0y0y1, u1v1y2y3, u2v2y4y5, u3v3y6y7*/
+      /* merge y */
+      __m128i y0y1y2y3 = _mm_unpackhi_epi64(uvyy[0], uvyy[1]);
+      _mm_storeu_si128((__m128i*)y, y0y1y2y3);
+      y += 16;
+      __m128i y4y5y6y7 = _mm_unpackhi_epi64(uvyy[2], uvyy[3]);
+      _mm_storeu_si128((__m128i*)y, y4y5y6y7);
+      y += 16;
+
+      pg_cnt -= 16;
+    }
+    while (pg_cnt > 0) {
+      *y++ = (pg->Y00 << 2) | (pg->Y00_ >> 2);
+      *y++ = (pg->Y01 << 6) | (pg->Y01_ >> 2);
+      pg++;
+
+      pg_cnt--;
+    }
+  }
+
+  return 0;
+}
+
 /* begin st20_rfc4175_422le10_to_v210_avx512 */
 static uint8_t le10_to_v210_shuffle_r_tbl_128[16] = {
     0, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,

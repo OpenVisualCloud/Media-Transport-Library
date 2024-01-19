@@ -36,6 +36,8 @@ For detailed API usage, please refer to [st_convert_api.h](../include/st_convert
 | rfc4175_422le10   | v210              | &#x2705; |          | &#x2705; | &#x2705; |
 | rfc4175_422le10   | rfc4175_422be10   | &#x2705; |          | &#x2705; | &#x2705; |
 | rfc4175_422le10   | yuv422p10le       | &#x2705; |          |          |          |
+| rfc4175_422be10   | yuv422p8          | &#x2705; |          | &#x2705; |          |
+| rfc4175_422be10   | yuv420p8          | &#x2705; |          | &#x2705; |          |
 | yuv422p10le       | rfc4175_422be10   | &#x2705; |          | &#x2705; |          |
 | yuv422p10le       | rfc4175_422le10   | &#x2705; |          |          |          |
 | v210              | rfc4175_422be10   | &#x2705; |          | &#x2705; | &#x2705; |
@@ -322,6 +324,20 @@ Y210 (1 pixel group)
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |      0x4      |      0x5      |      0x6      |      0x7      | 
 ```
+
+### yuv422p8
+
+Color space: YUV<br>
+Sample: 422<br>
+Packed/planar: planar<br>
+Depth: 8<br>
+
+### yuv420p8
+
+Color space: YUV<br>
+Sample: 420<br>
+Packed/planar: planar<br>
+Depth: 8<br>
 
 ### yuv422p12le
 
