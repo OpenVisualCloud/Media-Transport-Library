@@ -8,9 +8,3 @@ pub mod netdev;
 pub mod session;
 pub mod version;
 pub mod video;
-
-// modules
-#[cfg(feature = "convert")]
-pub mod convert;
-#[cfg(feature = "pipeline")]
-pub mod pipeline;

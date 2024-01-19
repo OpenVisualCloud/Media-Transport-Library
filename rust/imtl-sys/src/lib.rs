@@ -4,12 +4,6 @@
 
 include!(concat!(env!("OUT_DIR"), "/mtl_bindings.rs"));
 
-#[cfg(feature = "convert")]
-pub mod convert;
-
-#[cfg(feature = "pipeline")]
-pub mod pipeline;
-
 #[cfg(test)]
 mod tests {
     use super::*;

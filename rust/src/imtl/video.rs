@@ -19,26 +19,26 @@ use std::{ffi::c_void, fmt::Display, mem::MaybeUninit, str::FromStr};
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Packing {
     #[default]
-    Bpm = 0, // Block Packing Mode
-    Gpm,   // General Packing Mode
-    GpmSl, // General Packing Mode with Single Line
+    Bpm = sys::st20_packing_ST20_PACKING_BPM as _, // Block Packing Mode
+    Gpm = sys::st20_packing_ST20_PACKING_GPM as _, // General Packing Mode
+    GpmSl = sys::st20_packing_ST20_PACKING_GPM_SL as _, // General Packing Mode with Single Line
 }
 
 /// Different frame rates (frames per second) supported.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Fps {
     #[default]
-    P59_94 = 0,
-    P50,
-    P29_97,
-    P25,
-    P119_88,
-    P120,
-    P100,
-    P60,
-    P30,
-    P24,
-    P23_98,
+    P59_94 = sys::st_fps_ST_FPS_P59_94 as _,
+    P50 = sys::st_fps_ST_FPS_P50 as _,
+    P29_97 = sys::st_fps_ST_FPS_P29_97 as _,
+    P25 = sys::st_fps_ST_FPS_P25 as _,
+    P119_88 = sys::st_fps_ST_FPS_P119_88 as _,
+    P120 = sys::st_fps_ST_FPS_P120 as _,
+    P100 = sys::st_fps_ST_FPS_P100 as _,
+    P60 = sys::st_fps_ST_FPS_P60 as _,
+    P30 = sys::st_fps_ST_FPS_P30 as _,
+    P24 = sys::st_fps_ST_FPS_P24 as _,
+    P23_98 = sys::st_fps_ST_FPS_P23_98 as _,
 }
 
 impl Display for Fps {
@@ -107,33 +107,35 @@ impl Fps {
 #[derive(Copy, Clone, Debug, Default)]
 pub enum TransportFmt {
     #[default]
-    Yuv422_10bit = 0,
-    Yuv422_8bit,
-    Yuv422_12bit,
-    Yuv422_16bit,
-    Yuv420_8bit,
-    Yuv420_10bit,
-    Yuv420_12bit,
-    Rgb8bit,
-    Rgb10bit,
-    Rgb12bit,
-    Rgb16bit,
-    Yuv444_8bit,
-    Yuv444_10bit,
-    Yuv444_12bit,
-    Yuv444_16bit,
+    Yuv422_8bit = sys::st20_fmt_ST20_FMT_YUV_422_8BIT as _,
+    Yuv422_10bit = sys::st20_fmt_ST20_FMT_YUV_422_10BIT as _,
+    Yuv422_12bit = sys::st20_fmt_ST20_FMT_YUV_422_12BIT as _,
+    Yuv422_16bit = sys::st20_fmt_ST20_FMT_YUV_422_16BIT as _,
+    Yuv420_8bit = sys::st20_fmt_ST20_FMT_YUV_420_8BIT as _,
+    Yuv420_10bit = sys::st20_fmt_ST20_FMT_YUV_420_10BIT as _,
+    Yuv420_12bit = sys::st20_fmt_ST20_FMT_YUV_420_12BIT as _,
+    Yuv420_16bit = sys::st20_fmt_ST20_FMT_YUV_420_16BIT as _,
+    Rgb8bit = sys::st20_fmt_ST20_FMT_RGB_8BIT as _,
+    Rgb10bit = sys::st20_fmt_ST20_FMT_RGB_10BIT as _,
+    Rgb12bit = sys::st20_fmt_ST20_FMT_RGB_12BIT as _,
+    Rgb16bit = sys::st20_fmt_ST20_FMT_RGB_16BIT as _,
+    Yuv444_8bit = sys::st20_fmt_ST20_FMT_YUV_444_8BIT as _,
+    Yuv444_10bit = sys::st20_fmt_ST20_FMT_YUV_444_10BIT as _,
+    Yuv444_12bit = sys::st20_fmt_ST20_FMT_YUV_444_12BIT as _,
+    Yuv444_16bit = sys::st20_fmt_ST20_FMT_YUV_444_16BIT as _,
 }
 
 impl Display for TransportFmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TransportFmt::Yuv422_10bit => write!(f, "YUV 4:2:2 10bit"),
             TransportFmt::Yuv422_8bit => write!(f, "YUV 4:2:2 8bit"),
+            TransportFmt::Yuv422_10bit => write!(f, "YUV 4:2:2 10bit"),
             TransportFmt::Yuv422_12bit => write!(f, "YUV 4:2:2 12bit"),
             TransportFmt::Yuv422_16bit => write!(f, "YUV 4:2:2 16bit"),
             TransportFmt::Yuv420_8bit => write!(f, "YUV 4:2:0 8bit"),
             TransportFmt::Yuv420_10bit => write!(f, "YUV 4:2:0 10bit"),
             TransportFmt::Yuv420_12bit => write!(f, "YUV 4:2:0 12bit"),
+            TransportFmt::Yuv420_16bit => write!(f, "YUV 4:2:0 16bit"),
             TransportFmt::Rgb8bit => write!(f, "RGB 8bit"),
             TransportFmt::Rgb10bit => write!(f, "RGB 10bit"),
             TransportFmt::Rgb12bit => write!(f, "RGB 12bit"),
@@ -151,13 +153,14 @@ impl FromStr for TransportFmt {
 
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "yuv_422_10bit" => Ok(TransportFmt::Yuv422_10bit),
             "yuv_422_8bit" => Ok(TransportFmt::Yuv422_8bit),
+            "yuv_422_10bit" => Ok(TransportFmt::Yuv422_10bit),
             "yuv_422_12bit" => Ok(TransportFmt::Yuv422_12bit),
             "yuv_422_16bit" => Ok(TransportFmt::Yuv422_16bit),
             "yuv_420_8bit" => Ok(TransportFmt::Yuv420_8bit),
             "yuv_420_10bit" => Ok(TransportFmt::Yuv420_10bit),
             "yuv_420_12bit" => Ok(TransportFmt::Yuv420_12bit),
+            "yuv_420_16bit" => Ok(TransportFmt::Yuv420_16bit),
             "rgb_8bit" => Ok(TransportFmt::Rgb8bit),
             "rgb_10bit" => Ok(TransportFmt::Rgb10bit),
             "rgb_12bit" => Ok(TransportFmt::Rgb12bit),
@@ -184,6 +187,8 @@ enum FrameStatus {
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
 pub struct VideoTx {
+    #[builder(default)]
+    netdev_id: u8,
     #[builder(default)]
     rtp_session: RtpSession,
     #[builder(default)]
@@ -276,7 +281,8 @@ impl VideoTx {
             ops.num_port = 1;
             ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
 
-            let net_dev = self.rtp_session.net_dev();
+            let id = self.netdev_id as usize;
+            let net_dev = mtl.net_devs().get(id).unwrap();
             let port_bytes: Vec<i8> = net_dev
                 .get_port()
                 .as_bytes()
@@ -397,6 +403,8 @@ impl Drop for VideoTx {
 #[builder(setter(into))]
 pub struct VideoRx {
     #[builder(default)]
+    netdev_id: u8,
+    #[builder(default)]
     rtp_session: RtpSession,
     #[builder(default)]
     handle: Option<sys::st20_rx_handle>,
@@ -444,7 +452,7 @@ unsafe extern "C" fn video_rx_notify_frame_ready(
 }
 
 impl VideoRx {
-    /// Initializes a new VideoRx session with Media Transport Library (MTL) handle.
+    /// Initializes a new VideoRx session with Media Transport Library (MTL) handle and Netdev ID.
     pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
         if self.handle.is_some() {
             bail!("VideoRx Session is already created");
@@ -466,7 +474,8 @@ impl VideoRx {
             ops.num_port = 1;
             ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
 
-            let net_dev = self.rtp_session.net_dev();
+            let id = self.netdev_id as usize;
+            let net_dev = mtl.net_devs().get(id).unwrap();
             let port_bytes: Vec<i8> = net_dev
                 .get_port()
                 .as_bytes()

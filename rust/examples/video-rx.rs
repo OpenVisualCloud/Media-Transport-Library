@@ -104,10 +104,7 @@ fn main() -> Result<()> {
         .init()
         .context("Failed to init mtl")?;
 
-    let net_dev0 = mtl.net_devs()[0].clone();
-
     let session = RtpSessionBuilder::default()
-        .net_dev(net_dev0)
         .ip(args.ip)
         .port(args.port)
         .payload_type(112u8)
@@ -116,6 +113,7 @@ fn main() -> Result<()> {
         .context("Failed to add rtp session")?;
 
     let mut video_rx = VideoRxBuilder::default()
+        .netdev_id(0)
         .rtp_session(session)
         .width(args.width)
         .height(args.height)
