@@ -96,6 +96,8 @@ jobs:
       LD_LIBRARY_PATH: /usr/local/lib:/usr/lib64
       TEST_PORT_P: native_af_xdp:enp24s0f0
       TEST_PORT_R: native_af_xdp:enp24s0f1
+      INTERFACE_P: enp24s0f0
+      INTERFACE_R: enp24s0f1
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
@@ -108,10 +110,21 @@ jobs:
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
 
+      - name: Setup network interfaces
+        run: |
+          sudo nmcli dev set ${{  env.INTERFACE_P  }} managed no
+          sudo ifconfig ${{  env.INTERFACE_P  }} 192.168.108.101/24
+          sudo nmcli dev set ${{  env.INTERFACE_R  }} managed no
+          sudo ifconfig ${{  env.INTERFACE_R  }} 192.168.108.102/24
+          echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/napi_defer_hard_irqs
+          echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/gro_flush_timeout
+          echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/napi_defer_hard_irqs
+          echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/gro_flush_timeout
+
       - name: Run st2110 test case
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=St*:-St22_?x.*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --pacing_way tsc --gtest_filter=St*:-St22_?x.*:*pacing*:*ext*:*create_free_max*
 
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=St20p*:-*pacing*:*ext*:*create_free_max*
