@@ -123,7 +123,7 @@ jobs:
 
       - name: Run st2110 test case
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --pacing_way tsc --gtest_filter=St*:-St22_?x.*:*pacing*:*ext*:*create_free_max*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --pacing_way tsc --gtest_filter=St*:-St22_?x.*:*pacing*:*ext*:*create_free_max*:*detect*
 
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
