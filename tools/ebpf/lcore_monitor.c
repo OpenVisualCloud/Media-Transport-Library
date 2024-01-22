@@ -22,7 +22,8 @@
 struct lcore_monitor_ctx {
   char bpf_prog[64];
   struct lcore_tid_cfg cfg;
-  struct lcore_tid_event out;
+  struct lcore_tid_event sched_out;
+  struct lcore_tid_event irq_entry;
 };
 
 enum lm_args_cmd {
@@ -132,17 +133,28 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
 
   dbg("%s: type %d, ns %" PRIu64 "\n", __func__, e->type, e->ns);
   if (e->type == LCORE_SCHED_OUT) {
-    memcpy(&ctx->out, e, sizeof(ctx->out));
-    dbg("%s: out ns %" PRIu64 "\n", __func__, ctx->out.ns);
+    memcpy(&ctx->sched_out, e, sizeof(ctx->sched_out));
+    dbg("%s: out ns %" PRIu64 "\n", __func__, ctx->sched_out.ns);
     return 0;
   }
 
   if (e->type == LCORE_SCHED_IN) {
-    float ns = e->ns - ctx->out.ns;
-    int next_pid = ctx->out.next_pid;
+    float ns = e->ns - ctx->sched_out.ns;
+    int next_pid = ctx->sched_out.next_pid;
     char process_name[64];
     get_process_name_by_pid(next_pid, process_name, sizeof(process_name));
     info("%s: sched out %.3fus as comm: %s\n", __func__, ns / 1000, process_name);
+  }
+
+  if (e->type == LCORE_IRQ_ENTRY) {
+    memcpy(&ctx->irq_entry, e, sizeof(ctx->irq_entry));
+    dbg("%s: irq_entry ns %" PRIu64 "\n", __func__, ctx->irq_entry.ns);
+    return 0;
+  }
+
+  if (e->type == LCORE_IRQ_EXIT) {
+    float ns = e->ns - ctx->irq_entry.ns;
+    info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, ctx->irq_entry.irq);
   }
 
   return 0;
@@ -194,15 +206,39 @@ int main(int argc, char** argv) {
     return -1;
   }
 
+  /* attach bpf_prog_sched_switch */
   prog = bpf_object__find_program_by_name(obj, "bpf_prog_sched_switch");
   if (!prog) {
-    err("%s, finding BPF program failed\n", __func__);
+    err("%s, finding bpf_prog_sched_switch failed\n", __func__);
+    return -1;
+  }
+  link = bpf_program__attach_tracepoint(prog, "sched", "sched_switch");
+  if (libbpf_get_error(link)) {
+    err("%s, attaching bpf_prog_sched_switch to tracepoint failed\n", __func__);
     return -1;
   }
 
-  link = bpf_program__attach_tracepoint(prog, "sched", "sched_switch");
+  /* attach bpf_prog_irq_handler_entry */
+  prog = bpf_object__find_program_by_name(obj, "bpf_prog_irq_handler_entry");
+  if (!prog) {
+    err("%s, finding bpf_prog_irq_handler_entry failed\n", __func__);
+    return -1;
+  }
+  link = bpf_program__attach_tracepoint(prog, "irq", "irq_handler_entry");
   if (libbpf_get_error(link)) {
-    err("%s, attaching BPF program to tracepoint failed\n", __func__);
+    err("%s, attaching bpf_prog_irq_handler_entry to tracepoint failed\n", __func__);
+    return -1;
+  }
+
+  /* attach bpf_prog_irq_handler_exit */
+  prog = bpf_object__find_program_by_name(obj, "bpf_prog_irq_handler_exit");
+  if (!prog) {
+    err("%s, finding bpf_prog_irq_handler_exit failed\n", __func__);
+    return -1;
+  }
+  link = bpf_program__attach_tracepoint(prog, "irq", "irq_handler_exit");
+  if (libbpf_get_error(link)) {
+    err("%s, attaching bpf_prog_irq_handler_exit to tracepoint failed\n", __func__);
     return -1;
   }
 
