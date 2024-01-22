@@ -1,4 +1,4 @@
-name: gtest
+name: afxdp_gtest
 
 on:
   # allow manually trigger
@@ -13,19 +13,13 @@ on:
       - 'maint-**'
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: afxdp-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 23.11
-  TEST_PF_PORT_P: 0000:af:00.0
-  TEST_PF_PORT_R: 0000:af:00.0
-  TEST_PORT_P: 0000:af:01.0
-  TEST_PORT_R: 0000:af:01.1
-  TEST_DMA_PORT_P: 0000:80:04.0
-  TEST_DMA_PORT_R: 0000:80:04.1
 
 permissions:
   contents: read
@@ -48,7 +42,7 @@ jobs:
   Build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [Linux, self-hosted, XDP]
     timeout-minutes: 60
 
     steps:
@@ -69,7 +63,7 @@ jobs:
 
       - name: Install the build dependency
         run: |
-          sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
+          sudo apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev
 
       - name: Install the python package
         run: pip install pyelftools==0.29 ninja==1.11.1
@@ -82,12 +76,14 @@ jobs:
       - name: Build dpdk
         run: |
           cd dpdk
-          meson build
+          meson setup build -Ddisable_libs='bpf' -Ddisable_drivers='net/af_xdp'
           ninja -C build
           cd build
           sudo ninja install
 
       - name: Build
+        env:
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
         run: |
           ./build.sh
           sudo ldconfig
@@ -95,7 +91,13 @@ jobs:
   Test:
     needs: [changes, Build]
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [Linux, self-hosted, XDP]
+    env:
+      LD_LIBRARY_PATH: /usr/local/lib:/usr/lib64
+      TEST_PORT_P: native_af_xdp:enp24s0f0
+      TEST_PORT_R: native_af_xdp:enp24s0f1
+      INTERFACE_P: enp24s0f0
+      INTERFACE_R: enp24s0f1
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
@@ -108,40 +110,21 @@ jobs:
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
 
-      - name: Binding network adapter
+      - name: Setup network interfaces
         run: |
-          sudo ./script/nicctl.sh create_vf ${{  env.TEST_PF_PORT_P  }} || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
-
-      - name: Run ufd test case
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
-
-      - name: Run shared ufd test case
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
-
-      - name: Run shared ufd test case with lcore
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
-
-      - name: Run ufd test case with rss
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4
-
-      - name: Run udp ld preload test case
-        run: |
-          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.89.80 --r_sip 192.168.89.81
+          sudo nmcli dev set ${{  env.INTERFACE_P  }} managed no
+          sudo ifconfig ${{  env.INTERFACE_P  }} 192.168.108.101/24
+          sudo nmcli dev set ${{  env.INTERFACE_R  }} managed no
+          sudo ifconfig ${{  env.INTERFACE_R  }} 192.168.108.102/24
+          echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/napi_defer_hard_irqs
+          echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/gro_flush_timeout
+          echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/napi_defer_hard_irqs
+          echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/gro_flush_timeout
 
       - name: Run st2110 test case
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --gtest_filter=-St22_?x.*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --pacing_way tsc --gtest_filter=St*:-St22_?x.*:*pacing*:*ext*:*create_free_max*:*detect*:*rtcp*
 
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
-
-      - name: Run st2110 st20p test case with kernel loopback
-        run: |
-          ./build/tests/KahawaiTest --p_port kernel:lo --r_port kernel:lo --auto_start_stop --gtest_filter=St20p*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=St20p*:-*pacing*:*ext*:*create_free_max*:*rtcp*
