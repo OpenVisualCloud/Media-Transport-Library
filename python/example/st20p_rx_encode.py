@@ -13,8 +13,8 @@ import pymtl as mtl
 def main():
     args = misc_util.parse_args(False)
 
-    mtl_output_fmt = mtl.ST_FRAME_FMT_YUV422PLANAR8
-    av_pixel_input_format = "yuv422p"
+    mtl_output_fmt = mtl.ST_FRAME_FMT_YUV420PLANAR8
+    av_pixel_input_format = "yuv420p"
 
     output_file = args.rx_url
 
@@ -89,8 +89,8 @@ def main():
                 ptr = (ctypes.c_ubyte * p_size).from_address(
                     mtl.st_frame_addr_cpuva(frame, plane)
                 )
-                y = np.ctypeslib.as_array(ptr, (p_size,))
-                video_frame.planes[plane].update(y)
+                p = np.ctypeslib.as_array(ptr, (p_size,))
+                video_frame.planes[plane].update(p)
 
             for packet in h264_stream.encode(video_frame):
                 h264.mux(packet)
