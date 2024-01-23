@@ -130,6 +130,7 @@ static int get_process_name_by_pid(pid_t pid, char* process_name, size_t max_len
 static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   struct lcore_monitor_ctx* ctx = pri;
   const struct lcore_tid_event* e = data;
+  int ret;
 
   dbg("%s: type %d, ns %" PRIu64 "\n", __func__, e->type, e->ns);
   if (e->type == LCORE_SCHED_OUT) {
@@ -142,8 +143,11 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
     float ns = e->ns - ctx->sched_out.ns;
     int next_pid = ctx->sched_out.next_pid;
     char process_name[64];
-    get_process_name_by_pid(next_pid, process_name, sizeof(process_name));
-    info("%s: sched out %.3fus as comm: %s\n", __func__, ns / 1000, process_name);
+    ret = get_process_name_by_pid(next_pid, process_name, sizeof(process_name));
+    if (ret < 0)
+      info("%s: sched out %.3fus as pid: %d\n", __func__, ns / 1000, next_pid);
+    else
+      info("%s: sched out %.3fus as comm: %s\n", __func__, ns / 1000, process_name);
   }
 
   if (e->type == LCORE_IRQ_ENTRY) {
