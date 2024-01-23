@@ -172,5 +172,5 @@ python3 python/example/rx_timing_parser.py --p_port 0000:af:00.1 --ptp --p_sip 1
 tx:
 
 ```bash
-python3 python/example/st20p_tx.py --p_port 0000:af:00.0 --ptp --width 3840 --height 2160 --pipeline_fmt YUV422RFC4175PG2BE10 --tx_url test_4k.yuv --nb_tx_desc 4096 --udp_port 20000 --payload_type 112
+python3 python/example/st20p_tx.py --p_port 0000:af:00.0 --ptp --width 3840 --height 2160 --pipeline_fmt YUV422RFC4175PG2BE10 --tx_url test_4k.yuv --nb_tx_desc 4096 --udp_port 20000 --payload_type 112 --lcores 91,92
 ```

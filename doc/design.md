@@ -106,6 +106,14 @@ IMTL also supports session creation after the MTL instance has started; therefor
   ...
 ```
 
+### 2.7 Manual assigned lcores
+
+By default, the lcore resources for each IMTL instance are automatically assigned by the manager service. However, in certain scenarios, applications may need to manage lcore usage directly.
+
+Additionally, timing-sensitive applications may require the execution of workloads on isolated cores for improved accuracy. To facilitate this, the `struct mtl_init_params` includes a parameter named `lcores`. This parameter allows applications to specify a custom list of logical cores that the IMTL can utilize.
+
+For user convenience, the built-in RxTxApp also offers a command-line option `--lcores <lcore list>` to enable users to customize their logical cores list.
+
 ## 3. Memory management
 
 ### 3.1 Huge Page
@@ -488,6 +496,9 @@ The simplest method is to enable the built-in status report. An application can 
 For applications requiring access to the timing parser results for each frame, the flag `ST20_RX_FLAG_TIMING_PARSER_META` or `ST20P_RX_FLAG_TIMING_PARSER_META` can be enabled. This allows an application to retrieve detailed parsing results via the `struct st20_rx_tp_meta` found within the RX meta structure for each frame. Reference sample code is available at [rx_st20p_timing_parser_sample.c](../app/sample/rx_st20p_timing_parser_sample.c).
 
 It also features a sample timing parser UI constructed using the IMTL Python bindings, which can be found at [rx_timing_parser.py](../python/example/rx_timing_parser.py).
+
+To increase the reliability of parsed results, it is recommended to use the `isocpus` kernel boot parameter to isolate a subset of dedicated CPUs specifically for time-sensitive parsing tasks. Isolating CPUs can help ensure that these tasks are not preempted by other processes, thus maintaining a high level of reliability.
+After isolating the CPUs, you can manually assign these dedicated cores to an IMTL instance. For detailed instructions on this manual assignment process, please refer to the section: `#### 2.7 Manual Assigned lcores`
 
 ### 6.17 ST40(ancillary) Interlaced support
 

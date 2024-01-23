@@ -115,6 +115,8 @@ def parse_args(is_tx):
         default=mtl.ST22_CODEC_JPEGXS,
         help="st22_codec",
     )
+    # lcores
+    parser.add_argument("--lcores", type=str, default="", help="lcores")
     return parser.parse_args()
 
 

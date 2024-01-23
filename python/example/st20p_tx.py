@@ -29,6 +29,8 @@ def main():
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
     init_para.nb_tx_desc = args.nb_tx_desc
+    if args.lcores:
+        init_para.lcores = args.lcores
 
     # Create MTL instance
     mtl_handle = mtl.mtl_init(init_para)

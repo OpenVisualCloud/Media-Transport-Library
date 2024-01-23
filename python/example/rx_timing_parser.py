@@ -186,6 +186,9 @@ def main():
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
     init_para.nb_rx_desc = args.nb_rx_desc
+    if args.lcores:
+        init_para.lcores = args.lcores
+        print(f"mtl start with lcores: {init_para.lcores}")
 
     # Create MTL instance
     mtl_handle = mtl.mtl_init(init_para)
