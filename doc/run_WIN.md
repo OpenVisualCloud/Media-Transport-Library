@@ -136,14 +136,13 @@ The port name can be obtained from the same location. For instance, as shown in 
 
 ## 5. Run and test
 
-You can bind the app to the cpu socket 0 ( if your NIC is inserted into the pcie slot belongs to cpu socket 0 )as following:
-To identify the socket if you do not know it, in the NIC card driver property page, check the bus number, if the number is great than 0x80, then socket 1, else socket 0, for example
-
 Use the following command to execute the program on socket 0. Append `1>log.txt 2>&1` to redirect all logs to a file. This is recommended because on Windows, console output is treated as a high-priority UI task and could interfere with the IMTL tasklet.
 
 ```powershell
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json 1>log.txt 2>&1
 ```
+
+To determine the socket if you are not clear, access the NIC card driver's property page and locate the bus number. In a typical two socket system, if the number is greater than 0x80, the corresponding socket is Socket 1; otherwise, it is Socket 0.
 
 Please refer to sections "5. Run the sample application" in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
 
