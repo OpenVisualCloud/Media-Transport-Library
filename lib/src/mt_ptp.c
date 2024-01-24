@@ -1234,7 +1234,10 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
   if (!mt_user_ptp_service(impl)) {
     if (mt_if_has_offload_timestamp(impl, port)) {
-      ptp->no_timesync = true;
+      if (!mt_if_has_timesync(impl, port)) {
+        ptp->no_timesync = true;
+        warn("%s(%d), ptp running without timesync support\n", __func__, port);
+      }
       info("%s(%d), ptp sync from user for hw offload timestamp\n", __func__, port);
       ptp_sync_from_user(impl, ptp);
       rte_eal_alarm_set(MT_PTP_TP_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);

@@ -3395,7 +3395,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
 
   struct st_rx_video_tp* tp = s->tp;
   if (tp && tp->stat_untrusted_pkts) {
-    info("%s(%d), untrusted pkts time %u for timing parser\n", __func__, idx,
+    info("%s(%d), untrusted %u pkts time for timing parser\n", __func__, idx,
          tp->stat_untrusted_pkts);
     tp->stat_untrusted_pkts = 0;
   }
