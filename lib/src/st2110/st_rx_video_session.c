@@ -2675,7 +2675,7 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
       s->stat_burst_succ_cnt++;
       s->stat_burst_pkts_sum += rv;
       if (rv > s->stat_burst_pkts_max) s->stat_burst_pkts_max = rv;
-      if (rv >= s->rx_burst_size) {
+      if (rv >= (s->rx_burst_size / 2)) {
         s->in_continuous_burst[s_port] = true;
       }
 
