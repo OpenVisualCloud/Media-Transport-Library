@@ -15,6 +15,53 @@ use crossbeam_utils::sync::Parker;
 use derive_builder::Builder;
 use std::{ffi::c_void, fmt::Display, mem::MaybeUninit, str::FromStr};
 
+#[derive(Clone, Debug)]
+enum VideoHandle {
+    Tx(sys::st20_tx_handle),
+    Rx(sys::st20_rx_handle),
+    PipelineTx(sys::st20p_tx_handle),
+    PipelineRx(sys::st20p_rx_handle),
+    /* TODO
+    CompressedTx(sys::st22_tx_handle),
+    CompressedRx(sys::st22_rx_handle),
+    PipelineCompressedTx(sys::st22p_tx_handle),
+    PipelineCompressedRx(sys::st22p_rx_handle),
+    */
+}
+
+impl Drop for VideoHandle {
+    fn drop(&mut self) {
+        match self {
+            VideoHandle::Tx(h) => unsafe {
+                sys::st20_tx_free(*h);
+            },
+            VideoHandle::Rx(h) => unsafe {
+                sys::st20_rx_free(*h);
+            },
+            VideoHandle::PipelineTx(h) => unsafe {
+                sys::st20p_tx_free(*h);
+            },
+            VideoHandle::PipelineRx(h) => unsafe {
+                sys::st20p_rx_free(*h);
+            },
+            /* TODO
+            VideoHandle::CompressedTx(h) => unsafe {
+                sys::st22_tx_free(*h);
+            },
+            VideoHandle::CompressedRx(h) => unsafe {
+                sys::st22_rx_free(*h);
+            },
+            VideoHandle::PipelineCompressedTx(h) => unsafe {
+                sys::st22p_tx_free(*h);
+            },
+            VideoHandle::PipelineCompressedRx(h) => unsafe {
+                sys::st22p_rx_free(*h);
+            },
+            */
+        }
+    }
+}
+
 /// Different packing formats for uncompressed video.
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Packing {
@@ -183,6 +230,40 @@ enum FrameStatus {
     Ready,
 }
 
+#[derive(Copy, Clone, Debug, Default)]
+pub enum FrameFmt {
+    Yuv422Planar10Le = sys::st_frame_fmt_ST_FRAME_FMT_YUV422PLANAR10LE as _,
+    V210 = sys::st_frame_fmt_ST_FRAME_FMT_V210 as _,
+    Y210 = sys::st_frame_fmt_ST_FRAME_FMT_Y210 as _,
+    Yuv422Planar8 = sys::st_frame_fmt_ST_FRAME_FMT_YUV422PLANAR8 as _,
+    Uyvy = sys::st_frame_fmt_ST_FRAME_FMT_UYVY as _,
+    #[default]
+    Yuv422Rfc4175Pg2Be10 = sys::st_frame_fmt_ST_FRAME_FMT_YUV422RFC4175PG2BE10 as _,
+    Yuv422Planar12Le = sys::st_frame_fmt_ST_FRAME_FMT_YUV422PLANAR12LE as _,
+    Yuv422Rfc4175Pg2Be12 = sys::st_frame_fmt_ST_FRAME_FMT_YUV422RFC4175PG2BE12 as _,
+    Yuv444Planar10Le = sys::st_frame_fmt_ST_FRAME_FMT_YUV444PLANAR10LE as _,
+    Yuv444Rfc4175Pg4Be10 = sys::st_frame_fmt_ST_FRAME_FMT_YUV444RFC4175PG4BE10 as _,
+    Yuv444Planar12Le = sys::st_frame_fmt_ST_FRAME_FMT_YUV444PLANAR12LE as _,
+    Yuv444Rfc4175Pg2Be12 = sys::st_frame_fmt_ST_FRAME_FMT_YUV444RFC4175PG2BE12 as _,
+    Yuv420Custom8 = sys::st_frame_fmt_ST_FRAME_FMT_YUV420CUSTOM8 as _,
+    Yuv422Custom8 = sys::st_frame_fmt_ST_FRAME_FMT_YUV422CUSTOM8 as _,
+    Argb = sys::st_frame_fmt_ST_FRAME_FMT_ARGB as _,
+    Bgra = sys::st_frame_fmt_ST_FRAME_FMT_BGRA as _,
+    Rgb8 = sys::st_frame_fmt_ST_FRAME_FMT_RGB8 as _,
+    Gbrplanar10Le = sys::st_frame_fmt_ST_FRAME_FMT_GBRPLANAR10LE as _,
+    RgbRfc4175Pg4Be10 = sys::st_frame_fmt_ST_FRAME_FMT_RGBRFC4175PG4BE10 as _,
+    Gbrplanar12Le = sys::st_frame_fmt_ST_FRAME_FMT_GBRPLANAR12LE as _,
+    RgbRfc4175Pg2Be12 = sys::st_frame_fmt_ST_FRAME_FMT_RGBRFC4175PG2BE12 as _,
+    JpegxsCodestream = sys::st_frame_fmt_ST_FRAME_FMT_JPEGXS_CODESTREAM as _,
+    H264CbrCodestream = sys::st_frame_fmt_ST_FRAME_FMT_H264_CBR_CODESTREAM as _,
+}
+
+impl Display for FrameFmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 /// VideoTx structure for handling transmission of uncompressed video.
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
@@ -191,8 +272,6 @@ pub struct VideoTx {
     netdev_id: u8,
     #[builder(default)]
     rtp_session: RtpSession,
-    #[builder(default)]
-    handle: Option<sys::st20_tx_handle>,
     #[builder(default = "1920")]
     width: u32,
     #[builder(default = "1080")]
@@ -208,6 +287,12 @@ pub struct VideoTx {
     #[builder(default = "false")]
     interlaced: bool,
 
+    // For pipeline API
+    #[builder(default)]
+    input_fmt: Option<FrameFmt>,
+
+    #[builder(setter(skip))]
+    handle: Option<VideoHandle>,
     #[builder(setter(skip))]
     consumer_idx: u8,
     #[builder(setter(skip))]
@@ -258,6 +343,15 @@ unsafe extern "C" fn video_tx_notify_frame_done(
     }
 }
 
+unsafe extern "C" fn st20p_tx_notify_frame_done(p_void: *mut c_void, _: *mut sys::st_frame) -> i32 {
+    unsafe {
+        let s: &mut VideoTx = &mut *(p_void as *mut VideoTx);
+        let u = s.parker.unparker().clone();
+        u.unpark();
+        0
+    }
+}
+
 impl VideoTx {
     /// Initializes a new VideoTx session with Media Transport Library (MTL) handle.
     pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
@@ -265,62 +359,116 @@ impl VideoTx {
             bail!("VideoTx Session is already created");
         }
 
-        for _ in 0..self.fb_cnt {
-            self.frame_status.push(FrameStatus::Free);
-        }
         self.parker = Parker::new();
-        self.consumer_idx = 0;
-        self.producer_idx = 0;
 
-        let mut ops: MaybeUninit<sys::st20_tx_ops> = MaybeUninit::uninit();
+        if let Some(input_fmt) = self.input_fmt {
+            // Use pipeline API
 
-        // Fill the ops
-        unsafe {
-            std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
-            let ops = &mut *ops.as_mut_ptr();
-            ops.num_port = 1;
-            ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+            let mut ops: MaybeUninit<sys::st20p_tx_ops> = MaybeUninit::uninit();
 
-            let id = self.netdev_id as usize;
-            let net_dev = mtl.net_devs().get(id).unwrap();
-            let port_bytes: Vec<i8> = net_dev
-                .get_port()
-                .as_bytes()
-                .iter()
-                .cloned()
-                .map(|b| b as i8) // Convert u8 to i8
-                .chain(std::iter::repeat(0)) // Pad with zeros if needed
-                .take(64) // Take only up to 64 elements
-                .collect();
-            ops.port[0].copy_from_slice(&port_bytes);
-            ops.dip_addr[0] = self.rtp_session.ip().octets();
-            ops.udp_port[0] = self.rtp_session.port() as _;
-            ops.payload_type = self.rtp_session.payload_type() as _;
-            ops.packing = self.packing as _;
-            ops.width = self.width as _;
-            ops.height = self.height as _;
-            ops.fps = self.fps as _;
-            ops.fmt = self.t_fmt as _;
-            ops.interlaced = self.interlaced as _;
-            ops.framebuff_cnt = self.fb_cnt as _;
-
-            let pointer_to_void: *mut c_void = &self as *const VideoTx as *mut c_void;
-            ops.priv_ = pointer_to_void;
-            ops.get_next_frame = Some(video_tx_get_next_frame);
-            ops.notify_frame_done = Some(video_tx_notify_frame_done);
-        }
-
-        let mut ops = unsafe { ops.assume_init() };
-
-        let handle = unsafe { sys::st20_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
-        if handle.is_null() {
-            bail!("Failed to initialize MTL")
-        } else {
-            self.handle = Some(handle);
+            // Fill the ops
             unsafe {
-                self.frame_size = sys::st20_tx_get_framebuffer_size(handle);
+                std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+                let ops = &mut *ops.as_mut_ptr();
+                ops.port.num_port = 1;
+                ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+
+                let id = self.netdev_id as usize;
+                let net_dev = mtl.net_devs().get(id).unwrap();
+                let port_bytes: Vec<i8> = net_dev
+                    .get_port()
+                    .as_bytes()
+                    .iter()
+                    .cloned()
+                    .map(|b| b as i8) // Convert u8 to i8
+                    .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                    .take(64) // Take only up to 64 elements
+                    .collect();
+                ops.port.port[0].copy_from_slice(&port_bytes);
+                ops.port.dip_addr[0] = self.rtp_session.ip().octets();
+                ops.port.udp_port[0] = self.rtp_session.port() as _;
+                ops.port.payload_type = self.rtp_session.payload_type() as _;
+                ops.transport_packing = self.packing as _;
+                ops.width = self.width as _;
+                ops.height = self.height as _;
+                ops.fps = self.fps as _;
+                ops.input_fmt = input_fmt as _;
+                ops.transport_fmt = self.t_fmt as _;
+                ops.interlaced = self.interlaced as _;
+                ops.framebuff_cnt = self.fb_cnt as _;
+                ops.device = sys::st_plugin_device_ST_PLUGIN_DEVICE_AUTO; // only set auto for now
+
+                let pointer_to_void: *mut c_void = &self as *const VideoTx as *mut c_void;
+                ops.priv_ = pointer_to_void;
+                ops.notify_frame_done = Some(st20p_tx_notify_frame_done);
             }
-            Ok(self)
+
+            let mut ops = unsafe { ops.assume_init() };
+
+            let handle = unsafe { sys::st20p_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+            if handle.is_null() {
+                bail!("Failed to initialize MTL")
+            } else {
+                self.handle = Some(VideoHandle::PipelineTx(handle));
+                Ok(self)
+            }
+        } else {
+            for _ in 0..self.fb_cnt {
+                self.frame_status.push(FrameStatus::Free);
+            }
+            self.consumer_idx = 0;
+            self.producer_idx = 0;
+
+            let mut ops: MaybeUninit<sys::st20_tx_ops> = MaybeUninit::uninit();
+
+            // Fill the ops
+            unsafe {
+                std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+                let ops = &mut *ops.as_mut_ptr();
+                ops.num_port = 1;
+                ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+
+                let id = self.netdev_id as usize;
+                let net_dev = mtl.net_devs().get(id).unwrap();
+                let port_bytes: Vec<i8> = net_dev
+                    .get_port()
+                    .as_bytes()
+                    .iter()
+                    .cloned()
+                    .map(|b| b as i8) // Convert u8 to i8
+                    .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                    .take(64) // Take only up to 64 elements
+                    .collect();
+                ops.port[0].copy_from_slice(&port_bytes);
+                ops.dip_addr[0] = self.rtp_session.ip().octets();
+                ops.udp_port[0] = self.rtp_session.port() as _;
+                ops.payload_type = self.rtp_session.payload_type() as _;
+                ops.packing = self.packing as _;
+                ops.width = self.width as _;
+                ops.height = self.height as _;
+                ops.fps = self.fps as _;
+                ops.fmt = self.t_fmt as _;
+                ops.interlaced = self.interlaced as _;
+                ops.framebuff_cnt = self.fb_cnt as _;
+
+                let pointer_to_void: *mut c_void = &self as *const VideoTx as *mut c_void;
+                ops.priv_ = pointer_to_void;
+                ops.get_next_frame = Some(video_tx_get_next_frame);
+                ops.notify_frame_done = Some(video_tx_notify_frame_done);
+            }
+
+            let mut ops = unsafe { ops.assume_init() };
+
+            let handle = unsafe { sys::st20_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+            if handle.is_null() {
+                bail!("Failed to initialize MTL")
+            } else {
+                self.handle = Some(VideoHandle::Tx(handle));
+                unsafe {
+                    self.frame_size = sys::st20_tx_get_framebuffer_size(handle);
+                }
+                Ok(self)
+            }
         }
     }
 
@@ -331,31 +479,58 @@ impl VideoTx {
 
     /// Wait until free frame available, default timeout is 1 frame interval
     pub fn wait_free_frame(&mut self) {
-        let frame_idx = self.producer_idx;
-        if !self.is_frame_free(frame_idx) {
-            self.parker.park_timeout(self.fps.duration(1));
+        match self.handle {
+            Some(VideoHandle::Tx(_)) => {
+                let frame_idx = self.producer_idx;
+                if !self.is_frame_free(frame_idx) {
+                    self.parker.park_timeout(self.fps.duration(1));
+                }
+            }
+            Some(VideoHandle::PipelineTx(_)) => self.parker.park_timeout(self.fps.duration(1)),
+            _ => (),
         }
     }
 
     /// Fill the frame buffer to be transmitted
     pub fn fill_next_frame(&mut self, frame: &[u8]) -> Result<()> {
-        let mut frame_idx = self.producer_idx;
-        while !self.is_frame_free(frame_idx) {
-            frame_idx = self.next_frame_idx(frame_idx);
-            if frame_idx == self.producer_idx {
-                bail!("No free frames");
+        match self.handle {
+            Some(VideoHandle::Tx(handle)) => {
+                let mut frame_idx = self.producer_idx;
+                while !self.is_frame_free(frame_idx) {
+                    frame_idx = self.next_frame_idx(frame_idx);
+                    if frame_idx == self.producer_idx {
+                        bail!("No free frames");
+                    }
+                }
+
+                unsafe {
+                    let frame_dst = sys::st20_tx_get_framebuffer(handle, frame_idx as _);
+                    // memcpy frame to frame_dst with size
+                    sys::mtl_memcpy(frame_dst, frame.as_ptr() as _, self.frame_size);
+                }
+
+                self.set_frame_ready(frame_idx);
+                self.producer_idx = self.next_frame_idx(frame_idx);
+                Ok(())
             }
+            Some(VideoHandle::PipelineTx(handle)) => {
+                unsafe {
+                    let inner_frame = sys::st20p_tx_get_frame(handle);
+                    if inner_frame.is_null() {
+                        bail!("No free frames");
+                    }
+                    // memcpy frame to frame_dst with size, assume lines no padding
+                    sys::mtl_memcpy(
+                        (*inner_frame).addr[0],
+                        frame.as_ptr() as _,
+                        (*inner_frame).data_size,
+                    );
+                    sys::st20p_tx_put_frame(handle, inner_frame);
+                }
+                Ok(())
+            }
+            _ => bail!("Invalid handle"),
         }
-
-        unsafe {
-            let frame_dst = sys::st20_tx_get_framebuffer(self.handle.unwrap(), frame_idx as _);
-            // memcpy frame to frame_dst with size
-            sys::mtl_memcpy(frame_dst, frame.as_ptr() as _, self.frame_size);
-        }
-
-        self.set_frame_ready(frame_idx);
-        self.producer_idx = self.next_frame_idx(frame_idx);
-        Ok(())
     }
 
     fn set_frame_in_use(&mut self, frame_idx: u8) {
@@ -387,17 +562,6 @@ impl VideoTx {
     }
 }
 
-// Drop trait implementation to automatically clean up resources when the `VideoTx` instance goes out of scope.
-impl Drop for VideoTx {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle {
-            unsafe {
-                sys::st20_tx_free(handle);
-            }
-        }
-    }
-}
-
 /// VideoRx structure for handling receiving of uncompressed video.
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
@@ -406,8 +570,6 @@ pub struct VideoRx {
     netdev_id: u8,
     #[builder(default)]
     rtp_session: RtpSession,
-    #[builder(default)]
-    handle: Option<sys::st20_rx_handle>,
     #[builder(default = "1920")]
     width: u32,
     #[builder(default = "1080")]
@@ -421,6 +583,12 @@ pub struct VideoRx {
     #[builder(default = "false")]
     interlaced: bool,
 
+    // For pipeline API
+    #[builder(default)]
+    output_fmt: Option<FrameFmt>,
+
+    #[builder(setter(skip))]
+    handle: Option<VideoHandle>,
     #[builder(setter(skip))]
     consumer_idx: u8,
     #[builder(setter(skip))]
@@ -451,6 +619,15 @@ unsafe extern "C" fn video_rx_notify_frame_ready(
     }
 }
 
+unsafe extern "C" fn st20p_rx_notify_frame_available(p_void: *mut c_void) -> i32 {
+    unsafe {
+        let s: &mut VideoRx = &mut *(p_void as *mut VideoRx);
+        let u = s.parker.unparker().clone();
+        u.unpark();
+        0
+    }
+}
+
 impl VideoRx {
     /// Initializes a new VideoRx session with Media Transport Library (MTL) handle and Netdev ID.
     pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
@@ -458,60 +635,112 @@ impl VideoRx {
             bail!("VideoRx Session is already created");
         }
 
-        for _ in 0..self.fb_cnt {
-            self.frames.push(std::ptr::null_mut());
-        }
         self.parker = Parker::new();
-        self.consumer_idx = 0;
-        self.producer_idx = 0;
 
-        let mut ops: MaybeUninit<sys::st20_rx_ops> = MaybeUninit::uninit();
+        if let Some(output_fmt) = self.output_fmt {
+            let mut ops: MaybeUninit<sys::st20p_rx_ops> = MaybeUninit::uninit();
 
-        // Fill the ops
-        unsafe {
-            std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
-            let ops = &mut *ops.as_mut_ptr();
-            ops.num_port = 1;
-            ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
-
-            let id = self.netdev_id as usize;
-            let net_dev = mtl.net_devs().get(id).unwrap();
-            let port_bytes: Vec<i8> = net_dev
-                .get_port()
-                .as_bytes()
-                .iter()
-                .cloned()
-                .map(|b| b as i8) // Convert u8 to i8
-                .chain(std::iter::repeat(0)) // Pad with zeros if needed
-                .take(64) // Take only up to 64 elements
-                .collect();
-            ops.port[0].copy_from_slice(&port_bytes);
-            ops.__bindgen_anon_1.ip_addr[0] = self.rtp_session.ip().octets();
-            ops.udp_port[0] = self.rtp_session.port() as _;
-            ops.payload_type = self.rtp_session.payload_type() as _;
-            ops.width = self.width as _;
-            ops.height = self.height as _;
-            ops.fps = self.fps as _;
-            ops.fmt = self.t_fmt as _;
-            ops.interlaced = self.interlaced as _;
-            ops.framebuff_cnt = self.fb_cnt as _;
-
-            let pointer_to_void: *mut c_void = &self as *const VideoRx as *mut c_void;
-            ops.priv_ = pointer_to_void;
-            ops.notify_frame_ready = Some(video_rx_notify_frame_ready);
-        }
-
-        let mut ops = unsafe { ops.assume_init() };
-
-        let handle = unsafe { sys::st20_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
-        if handle.is_null() {
-            bail!("Failed to initialize MTL")
-        } else {
-            self.handle = Some(handle);
+            // Fill the ops
             unsafe {
-                self.frame_size = sys::st20_rx_get_framebuffer_size(handle);
+                std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+                let ops = &mut *ops.as_mut_ptr();
+                ops.port.num_port = 1;
+                ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+
+                let id = self.netdev_id as usize;
+                let net_dev = mtl.net_devs().get(id).unwrap();
+                let port_bytes: Vec<i8> = net_dev
+                    .get_port()
+                    .as_bytes()
+                    .iter()
+                    .cloned()
+                    .map(|b| b as i8) // Convert u8 to i8
+                    .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                    .take(64) // Take only up to 64 elements
+                    .collect();
+                ops.port.port[0].copy_from_slice(&port_bytes);
+                ops.port.__bindgen_anon_1.ip_addr[0] = self.rtp_session.ip().octets();
+                ops.port.udp_port[0] = self.rtp_session.port() as _;
+                ops.port.payload_type = self.rtp_session.payload_type() as _;
+                ops.width = self.width as _;
+                ops.height = self.height as _;
+                ops.fps = self.fps as _;
+                ops.output_fmt = output_fmt as _;
+                ops.transport_fmt = self.t_fmt as _;
+                ops.interlaced = self.interlaced as _;
+                ops.framebuff_cnt = self.fb_cnt as _;
+                ops.device = sys::st_plugin_device_ST_PLUGIN_DEVICE_AUTO; // only set auto for now
+
+                let pointer_to_void: *mut c_void = &self as *const VideoRx as *mut c_void;
+                ops.priv_ = pointer_to_void;
+                ops.notify_frame_available = Some(st20p_rx_notify_frame_available);
             }
-            Ok(self)
+
+            let mut ops = unsafe { ops.assume_init() };
+
+            let handle = unsafe { sys::st20p_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+            if handle.is_null() {
+                bail!("Failed to initialize MTL")
+            } else {
+                self.handle = Some(VideoHandle::PipelineRx(handle));
+                Ok(self)
+            }
+        } else {
+            for _ in 0..self.fb_cnt {
+                self.frames.push(std::ptr::null_mut());
+            }
+
+            self.consumer_idx = 0;
+            self.producer_idx = 0;
+
+            let mut ops: MaybeUninit<sys::st20_rx_ops> = MaybeUninit::uninit();
+
+            // Fill the ops
+            unsafe {
+                std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+                let ops = &mut *ops.as_mut_ptr();
+                ops.num_port = 1;
+                ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+
+                let id = self.netdev_id as usize;
+                let net_dev = mtl.net_devs().get(id).unwrap();
+                let port_bytes: Vec<i8> = net_dev
+                    .get_port()
+                    .as_bytes()
+                    .iter()
+                    .cloned()
+                    .map(|b| b as i8) // Convert u8 to i8
+                    .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                    .take(64) // Take only up to 64 elements
+                    .collect();
+                ops.port[0].copy_from_slice(&port_bytes);
+                ops.__bindgen_anon_1.ip_addr[0] = self.rtp_session.ip().octets();
+                ops.udp_port[0] = self.rtp_session.port() as _;
+                ops.payload_type = self.rtp_session.payload_type() as _;
+                ops.width = self.width as _;
+                ops.height = self.height as _;
+                ops.fps = self.fps as _;
+                ops.fmt = self.t_fmt as _;
+                ops.interlaced = self.interlaced as _;
+                ops.framebuff_cnt = self.fb_cnt as _;
+
+                let pointer_to_void: *mut c_void = &self as *const VideoRx as *mut c_void;
+                ops.priv_ = pointer_to_void;
+                ops.notify_frame_ready = Some(video_rx_notify_frame_ready);
+            }
+
+            let mut ops = unsafe { ops.assume_init() };
+
+            let handle = unsafe { sys::st20_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+            if handle.is_null() {
+                bail!("Failed to initialize MTL")
+            } else {
+                self.handle = Some(VideoHandle::Rx(handle));
+                unsafe {
+                    self.frame_size = sys::st20_rx_get_framebuffer_size(handle);
+                }
+                Ok(self)
+            }
         }
     }
 
@@ -522,24 +751,49 @@ impl VideoRx {
 
     /// Wait until new frame available, default timeout is 1 frame interval
     pub fn wait_new_frame(&mut self) {
-        if self.frames[self.consumer_idx as usize].is_null() {
-            self.parker.park_timeout(self.fps.duration(1));
+        match self.handle {
+            Some(VideoHandle::Rx(_)) => {
+                if self.frames[self.consumer_idx as usize].is_null() {
+                    self.parker.park_timeout(self.fps.duration(1));
+                }
+            }
+            Some(VideoHandle::PipelineRx(_)) => {
+                self.parker.park_timeout(self.fps.duration(1));
+            }
+            _ => (),
         }
     }
 
     /// Copy the new frame to user provided memory
     pub fn fill_new_frame(&mut self, data: &[u8]) -> Result<()> {
-        let frame = self.frames[self.consumer_idx as usize];
-        if frame.is_null() {
-            bail!("No frame available");
-        } else {
-            unsafe {
-                sys::mtl_memcpy(data.as_ptr() as _, frame as _, self.frame_size);
-                sys::st20_rx_put_framebuff(self.handle.unwrap(), frame as _);
+        match self.handle {
+            Some(VideoHandle::Rx(handle)) => {
+                let frame = self.frames[self.consumer_idx as usize];
+                if frame.is_null() {
+                    bail!("No frame available");
+                } else {
+                    unsafe {
+                        sys::mtl_memcpy(data.as_ptr() as _, frame as _, self.frame_size);
+                        sys::st20_rx_put_framebuff(handle, frame as _);
+                    }
+                    self.frames[self.consumer_idx as usize] = std::ptr::null_mut();
+                    self.consumer_idx = self.next_frame_idx(self.consumer_idx);
+                    Ok(())
+                }
             }
-            self.frames[self.consumer_idx as usize] = std::ptr::null_mut();
-            self.consumer_idx = self.next_frame_idx(self.consumer_idx);
-            Ok(())
+            Some(VideoHandle::PipelineRx(handle)) => {
+                unsafe {
+                    let frame = sys::st20p_rx_get_frame(handle);
+                    if frame.is_null() {
+                        bail!("No frame available");
+                    }
+                    // assume lines no padding
+                    sys::mtl_memcpy(data.as_ptr() as _, (*frame).addr[0], (*frame).data_size);
+                    sys::st20p_rx_put_frame(handle, frame);
+                }
+                Ok(())
+            }
+            _ => bail!("Invalid handle"),
         }
     }
 
@@ -557,17 +811,6 @@ impl VideoRx {
 
     fn next_frame_idx(&self, frame_idx: u8) -> u8 {
         (frame_idx + 1) % self.fb_cnt
-    }
-}
-
-// Drop trait implementation to automatically clean up resources when the `VideoRx` instance goes out of scope.
-impl Drop for VideoRx {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle {
-            unsafe {
-                sys::st20_rx_free(handle);
-            }
-        }
     }
 }
 
