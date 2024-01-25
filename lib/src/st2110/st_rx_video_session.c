@@ -1375,6 +1375,11 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
     tp->stat_untrusted_pkts++;
     return;
   }
+  if (s->in_continuous_burst[s_port]) {
+    /* untrusted result */
+    tp->stat_untrusted_pkts++;
+    return;
+  }
   struct mtl_main_impl* impl = rv_get_impl(s);
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
 
@@ -2670,11 +2675,16 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
       s->stat_burst_succ_cnt++;
       s->stat_burst_pkts_sum += rv;
       if (rv > s->stat_burst_pkts_max) s->stat_burst_pkts_max = rv;
+      if (rv >= (s->rx_burst_size / 2)) {
+        s->in_continuous_burst[s_port] = true;
+      }
 
       rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
 
       done = false;
+    } else {
+      s->in_continuous_burst[s_port] = false;
     }
   }
 

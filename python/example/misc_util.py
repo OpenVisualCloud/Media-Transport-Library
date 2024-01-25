@@ -4,6 +4,7 @@
 
 import argparse
 import ctypes
+import datetime
 import sys
 
 import cv2
@@ -117,6 +118,10 @@ def parse_args(is_tx):
     )
     # lcores
     parser.add_argument("--lcores", type=str, default="", help="lcores")
+    # log file
+    parser.add_argument("--log_file", type=str, default="py_temp.log", help="log_file")
+    # default max histories 10 mins, 1 entry per second
+    parser.add_argument("--histories", type=int, default=60 * 10, help="histories")
     return parser.parse_args()
 
 
@@ -354,3 +359,9 @@ def copy_to_st_frame(yuv_frame, frame):
     memcpy_ops.src = src_address_uint64
     memcpy_ops.sz = frame.data_size
     mtl.mtl_memcpy_action(memcpy_ops)
+
+
+def cur_time_str():
+    current_time = datetime.datetime.now()
+    formatted_time = current_time.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    return formatted_time

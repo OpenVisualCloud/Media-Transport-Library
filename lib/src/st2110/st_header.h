@@ -558,6 +558,7 @@ struct st_rx_video_session_impl {
   bool time_measure;
   uint16_t rx_burst_size;
   uint16_t cur_succ_burst_cnt;
+  bool in_continuous_burst[MTL_SESSION_PORT_MAX];
 
   struct st20_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
