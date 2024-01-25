@@ -25,6 +25,7 @@
 use anyhow::{bail, Result};
 use bitflags::bitflags;
 use derive_builder::Builder;
+use std::fmt::Display;
 use std::mem::MaybeUninit;
 use std::str::FromStr;
 
@@ -41,6 +42,18 @@ pub enum LogLevel {
     /// Default logging level, indicating an error.
     #[default]
     Error,
+}
+
+impl Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogLevel::Debug => write!(f, "debug"),
+            LogLevel::Info => write!(f, "info"),
+            LogLevel::Notice => write!(f, "notice"),
+            LogLevel::Warning => write!(f, "warning"),
+            LogLevel::Error => write!(f, "error"),
+        }
+    }
 }
 
 impl FromStr for LogLevel {
