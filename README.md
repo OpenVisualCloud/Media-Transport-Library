@@ -37,6 +37,7 @@ If you find value in our project, please consider giving it a star. Your support
 * SIMD color space converter between big-endian and little-endian.
 * ST2110-22 with encoder/decoder plugin interface.
 * ST2022-6 by RTP passthrough interface.
+* ST2110-20 RX timing compliance parser with hardware RX timestamp offload.
 
 ### 1.2 Architecture
 

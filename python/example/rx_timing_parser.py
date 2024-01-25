@@ -14,13 +14,13 @@ from matplotlib.widgets import Button
 class Dashboard:
     active = False
 
-    def __init__(self, max_histories):
+    def __init__(self, max_histories, title_str):
         self.max_histories = max_histories
         # init data
         self.init_data()
         # init vrx plot
         self.fig, self.ax = plt.subplots()
-        plt.title("ST2110-20 Rx Timing Parser")
+        plt.title(title_str)
         plt.subplots_adjust(bottom=0.2)
         (self.vrx_max_line,) = self.ax.plot(
             self.times, self.vrx_max_values, label="VRX Max"
@@ -110,7 +110,7 @@ class Dashboard:
         self.fail_count += fail
 
 
-def rx_frame_loop(st20p_rx, update_interval, plot):
+def rx_frame_loop(st20p_rx, update_interval, plot, log_file):
     f_idx = 0
     vrx_min = 10000
     vrx_max = -10000
@@ -119,8 +119,9 @@ def rx_frame_loop(st20p_rx, update_interval, plot):
     wide = 0
     fail = 0
 
-    # loop until ctrl-c
+    log_file.write(f"{misc_util.cur_time_str()}: start\n")
 
+    # loop until ctrl-c
     while plot.active:
         frame = mtl.st20p_rx_get_frame(st20p_rx)
         if frame:
@@ -137,6 +138,8 @@ def rx_frame_loop(st20p_rx, update_interval, plot):
                 wide += 1
             else:
                 fail += 1
+                log_file.write(f"{misc_util.cur_time_str()}: {tp.failed_cause}\n")
+                log_file.flush()
 
             if f_idx > update_interval:
                 vrx_avg = vrx_avg_sum // f_idx
@@ -160,6 +163,8 @@ def rx_frame_loop(st20p_rx, update_interval, plot):
             # sleep to allow ui draw
             time.sleep(0.005)
 
+    log_file.write(f"{misc_util.cur_time_str()}: ending\n")
+
 
 def plt_show():
     plt.show()
@@ -168,8 +173,10 @@ def plt_show():
 def main():
     args = misc_util.parse_args(False)
 
-    # initial plot, max 1 hour, 1 item 1 second
-    plot = Dashboard(max_histories=60 * 60 * 1)
+    log_file = open(args.log_file, "w")
+
+    title_str = f"ST2110-20 Rx Timing Parser: {args.p_rx_ip}@{args.udp_port}"
+    plot = Dashboard(max_histories=args.histories, title_str=title_str)
 
     # Init mtl para
     init_para = mtl.mtl_init_params()
@@ -226,7 +233,7 @@ def main():
     # update plot per 1 s
     framerate = mtl.st_frame_rate(rx_para.fps)
     rx_frame_thread = threading.Thread(
-        target=rx_frame_loop, args=(st20p_rx, framerate, plot)
+        target=rx_frame_loop, args=(st20p_rx, framerate, plot, log_file)
     )
     rx_frame_thread.start()
 
@@ -244,6 +251,8 @@ def main():
 
     # Free MTL instance
     mtl.mtl_uninit(mtl_handle)
+
+    log_file.close()
 
     print("Everything fine, bye")
 
