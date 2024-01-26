@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17'])
+project('mtl_manager', 'cpp', default_options: ['buildtype=release', 'cpp_std=c++17'], version: '0.2.0')
 
 exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
@@ -14,8 +14,6 @@ endif
 message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
-
-sources = ['mtl_manager.cpp']
 
 cpp_args = ['-std=c++17', '-Wall']
 link_cpp_args = ['-lstdc++fs']
@@ -40,6 +38,15 @@ if libxdp_dep.found() and libbpf_dep.found()
 else
   message('libxdp and libbpf not found, no af_xdp backend')
 endif
+
+# Generate XDP prog code
+gen_skel = find_program('gen_skel.sh')
+sekl = custom_target('skeleton',
+  output : ['xdp.skel.h'],
+  input : ['manager.xdp.c'],
+  command : [gen_skel] + meson.current_source_dir())
+
+sources = ['mtl_manager.cpp', sekl]
 
 executable('MtlManager', sources,
   cpp_args: cpp_args,

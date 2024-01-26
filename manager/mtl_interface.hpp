@@ -9,6 +9,8 @@
 #include <bpf/libbpf.h>
 #include <xdp/libxdp.h>
 #include <xdp/xsk.h>
+
+#include "xdp.skel.h"
 #endif
 
 #include <net/if.h>
@@ -136,34 +138,39 @@ int mtl_interface::clear_flow_rules() {
 
 #ifdef MTL_HAS_XDP_BACKEND
 int mtl_interface::load_xdp() {
-  /* get xdp prog path from env or use manager default path */
-  std::string xdp_prog_path;
-  char* xdp_prog_path_env = getenv("MTL_XDP_PROG_PATH");
-  if (xdp_prog_path_env != nullptr) {
-    xdp_prog_path = xdp_prog_path_env;
-  } else {
-    xdp_prog_path = "/tmp/imtl/xdp_prog.o";
-  }
+  /* get customized xdp prog path from env */
+  std::string xdp_prog_path = getenv("MTL_XDP_PROG_PATH");
 
   if (!std::filesystem::is_regular_file(xdp_prog_path)) {
     log(log_level::WARNING,
-        "Fallback to use libxdp default prog for " + xdp_prog_path + " is not valid.");
+        "Fallback to use built-in prog for " + xdp_prog_path + " is not valid.");
   } else {
     xdp_prog = xdp_program__open_file(xdp_prog_path.c_str(), NULL, NULL);
     if (libxdp_get_error(xdp_prog)) {
-      log(log_level::WARNING,
-          "Fallback to use libxdp default prog for " + xdp_prog_path + " cannot load.");
+      log(log_level::WARNING, "Fallback to use built-in prog prog for " + xdp_prog_path +
+                                  " cannot be loaded.");
       xdp_prog = nullptr;
-    } else {
-      if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0) < 0) {
-        log(log_level::WARNING,
-            "Failed to attach XDP program with native mode, try skb mode.");
-        if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_SKB, 0) < 0) {
-          log(log_level::ERROR, "Failed to attach XDP program " + xdp_prog_path);
-          xdp_program__close(xdp_prog);
-          return -1;
-        }
-      }
+    }
+  }
+
+  if (xdp_prog == nullptr) {
+    /* load built-in xdp prog from skeleton */
+    xdp_prog_path = "<built-in>";
+    struct manager_xdp* skel = manager_xdp__open();
+    if (!skel) {
+      log(log_level::ERROR, "Failed to open built-in xdp prog skeleton");
+      return -1;
+    }
+    xdp_prog = xdp_program__from_bpf_obj(skel->obj, "xdp");
+  }
+
+  if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0) < 0) {
+    log(log_level::WARNING,
+        "Failed to attach XDP program with native mode, try skb mode.");
+    if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_SKB, 0) < 0) {
+      log(log_level::ERROR, "Failed to attach XDP program " + xdp_prog_path);
+      xdp_program__close(xdp_prog);
+      return -1;
     }
   }
 
@@ -183,7 +190,6 @@ int mtl_interface::load_xdp() {
     return -1;
   }
 
-  if (xdp_prog == nullptr) xdp_prog_path = "<libxdp_default>";
   log(log_level::INFO, "Loaded xdp prog " + xdp_prog_path);
   return 0;
 }
