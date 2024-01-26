@@ -258,9 +258,69 @@ pub enum FrameFmt {
     H264CbrCodestream = sys::st_frame_fmt_ST_FRAME_FMT_H264_CBR_CODESTREAM as _,
 }
 
+impl FromStr for FrameFmt {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        use FrameFmt::*;
+        match s {
+            "YUV422PLANAR10LE" => Ok(Yuv422Planar10Le),
+            "V210" => Ok(V210),
+            "Y210" => Ok(Y210),
+            "YUV422PLANAR8" => Ok(Yuv422Planar8),
+            "UYVY" => Ok(Uyvy),
+            "YUV422RFC4175PG2BE10" => Ok(Yuv422Rfc4175Pg2Be10),
+            "YUV422PLANAR12LE" => Ok(Yuv422Planar12Le),
+            "YUV422RFC4175PG2BE12" => Ok(Yuv422Rfc4175Pg2Be12),
+            "YUV444PLANAR10LE" => Ok(Yuv444Planar10Le),
+            "YUV444RFC4175PG4BE10" => Ok(Yuv444Rfc4175Pg4Be10),
+            "YUV444PLANAR12LE" => Ok(Yuv444Planar12Le),
+            "YUV444RFC4175PG2BE12" => Ok(Yuv444Rfc4175Pg2Be12),
+            "YUV420CUSTOM8" => Ok(Yuv420Custom8),
+            "YUV422CUSTOM8" => Ok(Yuv422Custom8),
+            "ARGB" => Ok(Argb),
+            "BGRA" => Ok(Bgra),
+            "RGB8" => Ok(Rgb8),
+            "GBRPLANAR10LE" => Ok(Gbrplanar10Le),
+            "RGBRFC4175PG4BE10" => Ok(RgbRfc4175Pg4Be10),
+            "GBRPLANAR12LE" => Ok(Gbrplanar12Le),
+            "RGBRFC4175PG2BE12" => Ok(RgbRfc4175Pg2Be12),
+            "JPEGXS_CODESTREAM" => Ok(JpegxsCodestream),
+            "H264_CBR_CODESTREAM" => Ok(H264CbrCodestream),
+            _ => bail!(format!("Unknown format: {}", s)),
+        }
+    }
+}
+
 impl Display for FrameFmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl FrameFmt {
+    pub fn frame_size(&self, width: u32, height: u32) -> Result<usize> {
+        use FrameFmt::*;
+        match self {
+            Yuv422Planar10Le | Y210 | Yuv422Planar12Le => Ok(width as usize * height as usize * 4),
+            V210 => Ok(width as usize * height as usize * 16 / 6),
+            Yuv422Planar8 | Uyvy | Yuv422Custom8 => Ok(width as usize * height as usize * 2),
+            Yuv422Rfc4175Pg2Be10 => Ok(width as usize * height as usize * 5 / 2),
+            Yuv422Rfc4175Pg2Be12 => Ok(width as usize * height as usize * 3),
+            Yuv444Planar10Le | Yuv444Planar12Le | Gbrplanar10Le | Gbrplanar12Le => {
+                Ok(width as usize * height as usize * 6)
+            }
+            Yuv444Rfc4175Pg4Be10 | RgbRfc4175Pg4Be10 => {
+                Ok(width as usize * height as usize * 15 / 4)
+            }
+            Yuv444Rfc4175Pg2Be12 | RgbRfc4175Pg2Be12 => {
+                Ok(width as usize * height as usize * 9 / 2)
+            }
+            Yuv420Custom8 => Ok(width as usize * height as usize * 6 / 4),
+            Argb | Bgra => Ok(width as usize * height as usize * 4),
+            Rgb8 => Ok(width as usize * height as usize * 3),
+            _ => bail!("Unknown frame size"),
+        }
     }
 }
 

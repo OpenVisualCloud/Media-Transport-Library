@@ -10,7 +10,7 @@ use std::sync::Arc;
 use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
-use imtl::video::{Fps, TransportFmt, VideoTxBuilder};
+use imtl::video::{Fps, FrameFmt, TransportFmt, VideoTxBuilder};
 
 /// Simple program to use IMTL to send raw YUV frame from file
 #[derive(Parser, Debug)]
@@ -43,6 +43,10 @@ struct Args {
     /// Framerate
     #[arg(long, default_value_t = Fps::P60)]
     fps: Fps,
+
+    /// Pipeline input format
+    #[arg(long)]
+    input_format: Option<FrameFmt>,
 
     /// Transport format
     #[arg(long, default_value_t = TransportFmt::Yuv422_10bit)]
@@ -115,6 +119,7 @@ fn main() -> Result<()> {
         .width(args.width)
         .height(args.height)
         .fps(args.fps)
+        .input_fmt(args.input_format)
         .t_fmt(args.format)
         .build()
         .unwrap()
@@ -145,7 +150,12 @@ fn main() -> Result<()> {
         )?);
     }
 
-    let frames = yuv_file.chunks_exact(video_tx.frame_size());
+    let frame_size = if let Some(input_format) = args.input_format {
+        input_format.frame_size(args.width, args.height)?
+    } else {
+        video_tx.frame_size()
+    };
+    let frames = yuv_file.chunks_exact(frame_size);
     if frames.len() == 0 {
         bail!("No frames in file");
     }

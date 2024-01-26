@@ -11,7 +11,7 @@ use std::sync::Arc;
 use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
-use imtl::video::{Fps, TransportFmt, VideoRxBuilder};
+use imtl::video::{Fps, FrameFmt, TransportFmt, VideoRxBuilder};
 
 /// Simple program to use IMTL to receive raw YUV frame and save the latest one to file
 #[derive(Parser, Debug)]
@@ -45,6 +45,10 @@ struct Args {
     #[arg(long, default_value_t = Fps::P60)]
     fps: Fps,
 
+    /// Pipeline output format
+    #[arg(long)]
+    output_format: Option<FrameFmt>,
+
     /// Transport format
     #[arg(long, default_value_t = TransportFmt::Yuv422_10bit)]
     format: TransportFmt,
@@ -53,7 +57,7 @@ struct Args {
     #[arg(long)]
     yuv: Option<String>,
 
-    /// Enable display window, only for 'yuv_422_8bit' format
+    /// Enable display window, only support for 'UYVY' output/transport format
     #[arg(long, default_value_t = false)]
     display: bool,
 
@@ -117,6 +121,7 @@ fn main() -> Result<()> {
         .width(args.width)
         .height(args.height)
         .fps(args.fps)
+        .output_fmt(args.output_format)
         .t_fmt(args.format)
         .build()
         .unwrap()
@@ -146,7 +151,12 @@ fn main() -> Result<()> {
         )?);
     }
 
-    let frame = vec![0u8; video_rx.frame_size()];
+    let frame_size = if let Some(output_format) = args.output_format {
+        output_format.frame_size(args.width, args.height)?
+    } else {
+        video_rx.frame_size()
+    };
+    let frame = vec![0u8; frame_size];
 
     while running.load(Ordering::SeqCst) {
         match video_rx.fill_new_frame(&frame) {
