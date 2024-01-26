@@ -2,11 +2,11 @@
 # Copyright 2023 Intel Corporation
 
 .PHONY: all
-all: et xsk.xdp.o lcore_monitor_kern.o lcore_monitor
+all: et xsk.xdp.o lcore_monitor_kern.o lcore_monitor_kern.skel.h lcore_monitor
 
 .PHONY: clean
 clean:
-	rm -rf et *.o *.skel.h lcore_monitor
+	rm -rf et *.o *.skel.h lcore_monitor vmlinux.h
 
 vmlinux.h:
 	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $@
@@ -35,6 +35,10 @@ et: et.c $(SKEL_FILES)
 lcore_monitor_kern.o: lcore_monitor_kern.c lcore_monitor.h
 	clang -g -O2 -target bpf -c lcore_monitor_kern.c -o $@
 	llvm-strip -g $@
+
+# Generate lcore_monitor_kern skeletons
+lcore_monitor_kern.skel.h: lcore_monitor_kern.o
+	bpftool gen skeleton $< > $@
 
 # Build lcore_monitor user prog
 lcore_monitor: lcore_monitor.c lcore_monitor.h

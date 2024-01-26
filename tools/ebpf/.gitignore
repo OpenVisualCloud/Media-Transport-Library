@@ -1,6 +1,6 @@
 # generated file
 et
-fentry.skel.h
+*.skel.h
 vmlinux.h
 *.o
 lcore_monitor
