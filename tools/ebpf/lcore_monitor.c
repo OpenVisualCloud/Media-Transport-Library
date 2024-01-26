@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "lcore_monitor_kern.skel.h"
 #include "log.h"
 
 struct lcore_monitor_ctx {
@@ -184,78 +185,34 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  struct bpf_object* obj;
-  struct bpf_program* prog;
-  struct bpf_link* link;
+  struct lcore_monitor_kern* skel = NULL;
+  struct ring_buffer* rb = NULL;
 
-  obj = bpf_object__open(ctx.bpf_prog);
-  if (libbpf_get_error(obj)) {
-    err("%s, open bpf object %s fail\n", __func__, ctx.bpf_prog);
-    return -1;
+  skel = lcore_monitor_kern__open_and_load();
+  if (!skel) {
+    err("%s, Failed to open and load skeleton\n", __func__);
+    goto exit;
   }
-  if (bpf_object__load(obj)) {
-    err("%s, load bpf object %s fail\n", __func__, ctx.bpf_prog);
-    return -1;
-  }
-  info("%s, load bpf object %s succ\n", __func__, ctx.bpf_prog);
-
+  int map_fd = bpf_map__fd(skel->maps.lm_cfg_map);
   uint32_t key = 0;
-  int map_fd = bpf_object__find_map_fd_by_name(obj, "lm_cfg_map");
-  if (map_fd < 0) {
-    err("%s, get lm_cfg_map fail\n", __func__);
-    return -1;
+  ret = bpf_map_update_elem(map_fd, &key, &ctx.cfg, BPF_ANY);
+  if (ret < 0) {
+    err("%s, update lm_cfg_map fail\n", __func__);
+    goto exit;
   }
-  if (bpf_map_update_elem(map_fd, &key, &ctx.cfg, BPF_ANY) != 0) {
-    err("%s, update core_id_map fail\n", __func__);
-    return -1;
-  }
-
-  /* attach bpf_prog_sched_switch */
-  prog = bpf_object__find_program_by_name(obj, "bpf_prog_sched_switch");
-  if (!prog) {
-    err("%s, finding bpf_prog_sched_switch failed\n", __func__);
-    return -1;
-  }
-  link = bpf_program__attach_tracepoint(prog, "sched", "sched_switch");
-  if (libbpf_get_error(link)) {
-    err("%s, attaching bpf_prog_sched_switch to tracepoint failed\n", __func__);
-    return -1;
-  }
-
-  /* attach bpf_prog_irq_handler_entry */
-  prog = bpf_object__find_program_by_name(obj, "bpf_prog_irq_handler_entry");
-  if (!prog) {
-    err("%s, finding bpf_prog_irq_handler_entry failed\n", __func__);
-    return -1;
-  }
-  link = bpf_program__attach_tracepoint(prog, "irq", "irq_handler_entry");
-  if (libbpf_get_error(link)) {
-    err("%s, attaching bpf_prog_irq_handler_entry to tracepoint failed\n", __func__);
-    return -1;
-  }
-
-  /* attach bpf_prog_irq_handler_exit */
-  prog = bpf_object__find_program_by_name(obj, "bpf_prog_irq_handler_exit");
-  if (!prog) {
-    err("%s, finding bpf_prog_irq_handler_exit failed\n", __func__);
-    return -1;
-  }
-  link = bpf_program__attach_tracepoint(prog, "irq", "irq_handler_exit");
-  if (libbpf_get_error(link)) {
-    err("%s, attaching bpf_prog_irq_handler_exit to tracepoint failed\n", __func__);
-    return -1;
-  }
-
-  int lm_events_fd = bpf_object__find_map_fd_by_name(obj, "lm_events_map");
-  if (lm_events_fd < 0) {
-    err("%s, get lm_events_map fail\n", __func__);
-    return -1;
-  }
-  struct ring_buffer* rb = ring_buffer__new(lm_events_fd, lm_event_handler, &ctx, NULL);
+  int lm_events_fd = bpf_map__fd(skel->maps.lm_events_map);
+  rb = ring_buffer__new(lm_events_fd, lm_event_handler, &ctx, NULL);
   if (!rb) {
     err("%s, create ring buffer fail\n", __func__);
-    return -1;
+    goto exit;
   }
+  ret = lcore_monitor_kern__attach(skel);
+  if (ret) {
+    err("%s, Failed to attach skeleton\n", __func__);
+    lcore_monitor_kern__destroy(skel);
+    goto exit;
+  }
+  info("%s, attach skeleton succ\n", __func__);
 
   signal(SIGINT, lm_sig_handler);
 
@@ -272,7 +229,8 @@ int main(int argc, char** argv) {
   }
 
   info("%s, stop now\n", __func__);
-  bpf_link__destroy(link);
-  bpf_object__close(obj);
+exit:
+  if (rb) ring_buffer__free(rb);
+  if (skel) lcore_monitor_kern__destroy(skel);
   return 0;
 }
