@@ -1,6 +1,6 @@
 [package]
 name = "imtl-rs"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 [lib]
@@ -22,7 +22,3 @@ ctrlc = "3.4.2"
 memmap2 = "0.9.3"
 clap = { version = "4.4.13", features = ["derive"] }
 sdl2 = "0.36.0"
-
-[features]
-convert = ["imtl-sys/convert"]
-pipeline = ["imtl-sys/pipeline"]

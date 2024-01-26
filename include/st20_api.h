@@ -274,6 +274,7 @@ enum st20_fmt {
   ST20_FMT_YUV_420_8BIT,      /**< 8-bit YUV 4:2:0 */
   ST20_FMT_YUV_420_10BIT,     /**< 10-bit YUV 4:2:0 */
   ST20_FMT_YUV_420_12BIT,     /**< 12-bit YUV 4:2:0 */
+  ST20_FMT_YUV_420_16BIT,     /**< 16-bit YUV 4:2:0 */
   ST20_FMT_RGB_8BIT,          /**< 8-bit RGB */
   ST20_FMT_RGB_10BIT,         /**< 10-bit RGB */
   ST20_FMT_RGB_12BIT,         /**< 12-bit RGB */

@@ -4,14 +4,13 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::render::{Canvas, Texture};
 use sdl2::video::Window;
 use std::net::Ipv4Addr;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
-use imtl::video::{Fps, TransportFmt, VideoTxBuilder};
+use imtl::video::{Fps, FrameFmt, TransportFmt, VideoTxBuilder};
 
 /// Simple program to use IMTL to send raw YUV frame from file
 #[derive(Parser, Debug)]
@@ -42,12 +41,16 @@ struct Args {
     height: u32,
 
     /// Framerate
-    #[arg(long, default_value_t = String::from("60"))]
-    fps: String,
+    #[arg(long, default_value_t = Fps::P60)]
+    fps: Fps,
+
+    /// Pipeline input format
+    #[arg(long)]
+    input_format: Option<FrameFmt>,
 
     /// Transport format
-    #[arg(long, default_value_t = String::from("yuv_422_10bit"))]
-    format: String,
+    #[arg(long, default_value_t = TransportFmt::Yuv422_10bit)]
+    format: TransportFmt,
 
     /// Name of the YUV file
     #[arg(long)]
@@ -58,8 +61,8 @@ struct Args {
     display: bool,
 
     /// Log level
-    #[arg(short, long, default_value_t = String::from("info"))]
-    log_level: String,
+    #[arg(short, long, default_value_t = LogLevel::Info)]
+    log_level: LogLevel,
 }
 
 fn main() -> Result<()> {
@@ -96,16 +99,13 @@ fn main() -> Result<()> {
     let mtl = MtlBuilder::default()
         .net_devs(net_devs)
         .flags(flags)
-        .log_level(LogLevel::from_str(&args.log_level)?)
+        .log_level(args.log_level)
         .build()
         .unwrap()
         .init()
         .context("Failed to init mtl")?;
 
-    let net_dev0 = mtl.net_devs()[0].clone();
-
     let session = RtpSessionBuilder::default()
-        .net_dev(net_dev0)
         .ip(args.ip)
         .port(args.port)
         .payload_type(112u8)
@@ -114,11 +114,13 @@ fn main() -> Result<()> {
         .context("Failed to add rtp session")?;
 
     let mut video_tx = VideoTxBuilder::default()
+        .netdev_id(0)
         .rtp_session(session)
         .width(args.width)
         .height(args.height)
-        .fps(Fps::from_str(&args.fps)?)
-        .t_fmt(TransportFmt::from_str(&args.format)?)
+        .fps(args.fps)
+        .input_fmt(args.input_format)
+        .t_fmt(args.format)
         .build()
         .unwrap()
         .create(&mtl)
@@ -148,7 +150,12 @@ fn main() -> Result<()> {
         )?);
     }
 
-    let frames = yuv_file.chunks_exact(video_tx.frame_size());
+    let frame_size = if let Some(input_format) = args.input_format {
+        input_format.frame_size(args.width, args.height)?
+    } else {
+        video_tx.frame_size()
+    };
+    let frames = yuv_file.chunks_exact(frame_size);
     if frames.len() == 0 {
         bail!("No frames in file");
     }
@@ -159,9 +166,9 @@ fn main() -> Result<()> {
         match video_tx.fill_next_frame(frame) {
             Ok(_) => {
                 if let (Some(ref mut texture), Some(ref mut canvas)) = (&mut texture, &mut canvas) {
-                    texture.update(None, &frame, args.width as usize * 2)?;
+                    texture.update(None, frame, args.width as usize * 2)?;
                     canvas.clear();
-                    canvas.copy(&texture, None, None).unwrap();
+                    canvas.copy(texture, None, None).unwrap();
                     canvas.present();
                 }
                 frame = frames.next().unwrap();

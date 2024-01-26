@@ -5,14 +5,13 @@ use sdl2::render::{Canvas, Texture};
 use sdl2::video::Window;
 use std::io::Write;
 use std::net::Ipv4Addr;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
-use imtl::video::{Fps, TransportFmt, VideoRxBuilder};
+use imtl::video::{Fps, FrameFmt, TransportFmt, VideoRxBuilder};
 
 /// Simple program to use IMTL to receive raw YUV frame and save the latest one to file
 #[derive(Parser, Debug)]
@@ -43,24 +42,28 @@ struct Args {
     height: u32,
 
     /// Framerate
-    #[arg(long, default_value_t = String::from("60"))]
-    fps: String,
+    #[arg(long, default_value_t = Fps::P60)]
+    fps: Fps,
+
+    /// Pipeline output format
+    #[arg(long)]
+    output_format: Option<FrameFmt>,
 
     /// Transport format
-    #[arg(long, default_value_t = String::from("yuv_422_10bit"))]
-    format: String,
+    #[arg(long, default_value_t = TransportFmt::Yuv422_10bit)]
+    format: TransportFmt,
 
     /// Name of the YUV file
     #[arg(long)]
     yuv: Option<String>,
 
-    /// Enable display window, only for 'yuv_422_8bit' format
+    /// Enable display window, only support for 'UYVY' output/transport format
     #[arg(long, default_value_t = false)]
     display: bool,
 
     /// Log level
-    #[arg(short, long, default_value_t = String::from("info"))]
-    log_level: String,
+    #[arg(short, long, default_value_t = LogLevel::Info)]
+    log_level: LogLevel,
 }
 
 fn main() -> Result<()> {
@@ -98,16 +101,13 @@ fn main() -> Result<()> {
     let mtl = MtlBuilder::default()
         .net_devs(net_devs)
         .flags(flags)
-        .log_level(LogLevel::from_str(&args.log_level)?)
+        .log_level(args.log_level)
         .build()
         .unwrap()
         .init()
         .context("Failed to init mtl")?;
 
-    let net_dev0 = mtl.net_devs()[0].clone();
-
     let session = RtpSessionBuilder::default()
-        .net_dev(net_dev0)
         .ip(args.ip)
         .port(args.port)
         .payload_type(112u8)
@@ -116,11 +116,13 @@ fn main() -> Result<()> {
         .context("Failed to add rtp session")?;
 
     let mut video_rx = VideoRxBuilder::default()
+        .netdev_id(0)
         .rtp_session(session)
         .width(args.width)
         .height(args.height)
-        .fps(Fps::from_str(&args.fps)?)
-        .t_fmt(TransportFmt::from_str(&args.format)?)
+        .fps(args.fps)
+        .output_fmt(args.output_format)
+        .t_fmt(args.format)
         .build()
         .unwrap()
         .create(&mtl)
@@ -149,7 +151,12 @@ fn main() -> Result<()> {
         )?);
     }
 
-    let frame = vec![0u8; video_rx.frame_size()];
+    let frame_size = if let Some(output_format) = args.output_format {
+        output_format.frame_size(args.width, args.height)?
+    } else {
+        video_rx.frame_size()
+    };
+    let frame = vec![0u8; frame_size];
 
     while running.load(Ordering::SeqCst) {
         match video_rx.fill_new_frame(&frame) {
@@ -157,7 +164,7 @@ fn main() -> Result<()> {
                 if let (Some(ref mut texture), Some(ref mut canvas)) = (&mut texture, &mut canvas) {
                     texture.update(None, &frame, args.width as usize * 2)?;
                     canvas.clear();
-                    canvas.copy(&texture, None, None).unwrap();
+                    canvas.copy(texture, None, None).unwrap();
                     canvas.present();
                 }
             }

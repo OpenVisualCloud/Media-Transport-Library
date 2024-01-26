@@ -15,7 +15,3 @@ rand = "0.8.5"
 [build-dependencies]
 bindgen = "0.69.1"
 pkg-config = "0.3.27"
-
-[features]
-convert = []
-pipeline = []

@@ -7,14 +7,11 @@
  */
 
 use derive_builder::Builder;
-
-use crate::netdev::NetDev;
-use std::{net::Ipv4Addr, rc::Rc};
+use std::net::Ipv4Addr;
 
 #[derive(Clone, Builder, Debug)]
 #[builder(setter(into))]
 pub struct RtpSession {
-    net_dev: Rc<NetDev>,
     ip: Ipv4Addr,
     port: u16,
     payload_type: u8,
@@ -28,11 +25,6 @@ pub struct RtpSession {
 }
 
 impl RtpSession {
-    /// Retrieves a reference to the associated `NetDev` object.
-    pub fn net_dev(&self) -> &NetDev {
-        &self.net_dev
-    }
-
     /// Retrieves the IP address used by this RTP session.
     pub fn ip(&self) -> Ipv4Addr {
         self.ip
@@ -74,8 +66,7 @@ impl RtpSession {
 impl Default for RtpSession {
     fn default() -> Self {
         Self {
-            ip: Ipv4Addr::new(127, 0, 0, 1),
-            net_dev: Rc::new(NetDev::default()),
+            ip: Ipv4Addr::new(239, 0, 0, 1),
             port: 0,
             payload_type: 0,
             enable_rtcp: false,
