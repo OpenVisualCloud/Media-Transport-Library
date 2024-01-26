@@ -86,7 +86,7 @@ jobs:
       - name: Build Rust binding
         run: |
           cd rust/
-          cargo clippy
+          cargo clippy --all-targets
           cargo build --all-targets --verbose
           cd imtl-sys
           cargo test --verbose

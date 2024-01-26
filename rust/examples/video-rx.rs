@@ -164,7 +164,7 @@ fn main() -> Result<()> {
                 if let (Some(ref mut texture), Some(ref mut canvas)) = (&mut texture, &mut canvas) {
                     texture.update(None, &frame, args.width as usize * 2)?;
                     canvas.clear();
-                    canvas.copy(&texture, None, None).unwrap();
+                    canvas.copy(texture, None, None).unwrap();
                     canvas.present();
                 }
             }
