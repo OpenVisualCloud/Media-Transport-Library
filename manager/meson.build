@@ -15,6 +15,8 @@ message('BUILD Environment: ' + exec_env)
 
 cpp_c = meson.get_compiler('cpp')
 
+sources = ['mtl_manager.cpp']
+
 cpp_args = ['-std=c++17', '-Wall']
 link_cpp_args = ['-lstdc++fs']
 
@@ -35,18 +37,17 @@ libxdp_dep = dependency('libxdp', required: false)
 libbpf_dep = dependency('libbpf', required: false)
 if libxdp_dep.found() and libbpf_dep.found()
   add_global_arguments('-DMTL_HAS_XDP_BACKEND', language : 'cpp')
+  # Generate XDP prog code
+  gen_skel = find_program('gen_skel.sh')
+  sekl = custom_target('skeleton',
+    output : ['xdp.skel.h'],
+    input : ['manager.xdp.c'],
+    command : [gen_skel] + meson.current_source_dir())
+
+  sources += [sekl]
 else
   message('libxdp and libbpf not found, no af_xdp backend')
 endif
-
-# Generate XDP prog code
-gen_skel = find_program('gen_skel.sh')
-sekl = custom_target('skeleton',
-  output : ['xdp.skel.h'],
-  input : ['manager.xdp.c'],
-  command : [gen_skel] + meson.current_source_dir())
-
-sources = ['mtl_manager.cpp', sekl]
 
 executable('MtlManager', sources,
   cpp_args: cpp_args,

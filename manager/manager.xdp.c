@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause
- * Copyright(c) 2023 Intel Corporation
+ * Copyright(c) 2024 Intel Corporation
  */
 
 //clang-format off
