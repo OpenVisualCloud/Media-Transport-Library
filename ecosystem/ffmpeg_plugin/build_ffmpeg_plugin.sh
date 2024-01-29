@@ -1,12 +1,14 @@
-#!/bin/bash -ex
+#!/bin/bash
+
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2024 Intel Corporation
+
+set -e
 
 build_openh264(){
-    if [ ! -d "./openh264" ];then
-        git clone https://github.com/cisco/openh264.git
-    fi
-
-    cd ./openh264
-    git checkout -b openh264v2.3.1 origin/openh264v2.3.1
+    rm openh264 -rf
+    git clone https://github.com/cisco/openh264.git -b openh264v2.4.0
+    cd openh264
     make -j "$(nproc)"
     sudo make install
     sudo ldconfig
@@ -14,18 +16,12 @@ build_openh264(){
 }
 
 build_ffmpeg(){
-    if [ ! -d "./ffmpeg" ];then
-        git clone https://git.ffmpeg.org/ffmpeg.git
-    fi
-
-    cd ./ffmpeg
-    git checkout -b 4.4 origin/release/4.4
-    git checkout 4.4
-    git reset --hard aa28df74ab197c49a05fecc40c81e0f8ec4ad0c3
-    cp -f ../kahawai_common.c ../kahawai_common.h ../kahawai_dec.c ../kahawai_enc.c ./libavdevice/
-    git am --whitespace=fix ../0001-avdevice-kahawai-Add-kahawai-input-output-devices.patch
-    ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-mtl --enable-libopenh264 --enable-encoder=libopenh264
-    make clean
+    rm FFmpeg -rf
+    git clone https://github.com/FFmpeg/FFmpeg.git -b release/6.1
+    cd FFmpeg
+    cp -f ../mtl_* ./libavdevice/
+    git am ../0001-avdevice-add-mtl-in-out-dev-support.patch
+    ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
     make -j "$(nproc)"
     sudo make install
     sudo ldconfig
