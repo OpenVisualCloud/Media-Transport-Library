@@ -13,31 +13,43 @@ MTL Manager is a daemon server designed to operate with root privileges. Its pri
 
 ## Build
 
-To compile the MTL Manager, use the following commands:
+To compile and install the MTL Manager, use the following commands:
 
 ```bash
 meson setup build
 meson compile -C build
+sudo meson install -C build
 ```
+
+Besides MTL Manager, it will also install a built-in XDP program for udp port filtering to `/var/run/imtl/mtl.xdp.o`.
 
 ## Run
 
 To run the MTL Manager, execute:
 
 ```bash
-sudo ./build/MtlManager
+sudo MtlManager
 ```
 
 This command will start the MTL Manager with root privileges, which are necessary for the advanced eBPF and network configurations and management tasks it performs.
 
-## Run with another XDP program
-
-We have a modified version of the original AF_XDP eBPF program which allows user to add or remove udp dest port in the eBPF program to act as a packet filter, this is built in the manager.
-
-To run the MTL Manager with any other AF_XDP eBPF program, execute:
+The XDP program for udp port filtering will be loaded along with the libxdp's xsk program when the AF_XDP socket is created. You can check the loaded programs with xdp-loader:
 
 ```bash
-sudo MTL_XDP_PROG_PATH=/path/to/xsk.xdp.o ./build/MtlManager
+$ sudo xdp-loader status
+Interface        Prio  Program name      Mode     ID   Tag               Chain actions
+--------------------------------------------------------------------------------------
+lo                     <No XDP program loaded!>
+ens787f0               <No XDP program loaded!>
+ens787f1               <No XDP program loaded!>
+ens785f0               xdp_dispatcher    native   23661 90f686eb86991928 
+ =>              19     mtl_dp_filter             23670 02aea45cd16e8656  XDP_DROP
+ =>              20     xsk_def_prog              23622 8f9c40757cb0a6a2  XDP_PASS
+ens785f1               xdp_dispatcher    native   23675 90f686eb86991928 
+ =>              19     mtl_dp_filter             23678 02aea45cd16e8656  XDP_DROP
+ =>              20     xsk_def_prog              23639 8f9c40757cb0a6a2  XDP_PASS
+virbr0                 <No XDP program loaded!>
+docker0                <No XDP program loaded!>
 ```
 
 ## Run in a Docker container

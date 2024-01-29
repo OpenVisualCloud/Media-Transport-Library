@@ -21,8 +21,9 @@ struct {
 
 struct {
   __uint(priority, 19);
+  __uint(XDP_PASS, 0);
   __uint(XDP_DROP, 1);
-} XDP_RUN_CONFIG(imtl_dp_filter);
+} XDP_RUN_CONFIG(mtl_dp_filter);
 
 volatile int refcnt = 1;
 
@@ -35,7 +36,7 @@ static int __always_inline lookup_udp4_dp(int dp) {
 }
 
 SEC("xdp")
-int imtl_dp_filter(struct xdp_md* ctx) {
+int mtl_dp_filter(struct xdp_md* ctx) {
   if (!refcnt) return XDP_PASS;
 
   void* data_end = (void*)(long)ctx->data_end;
@@ -65,8 +66,3 @@ int imtl_dp_filter(struct xdp_md* ctx) {
   /* go to next program: xsk_def_prog */
   return XDP_DROP;
 }
-
-#define XDP_METADATA_SECTION "xdp_metadata"
-#define XSK_PROG_VERSION 1
-
-__uint(xsk_prog_version, XSK_PROG_VERSION) SEC(XDP_METADATA_SECTION);
