@@ -19,14 +19,10 @@ struct {
   __type(value, int);
 } udp4_dp_filter SEC(".maps");
 
-#define DEFAULT_QUEUE_IDS 64
-
 struct {
-  __uint(type, BPF_MAP_TYPE_XSKMAP);
-  __uint(key_size, sizeof(int));
-  __uint(value_size, sizeof(int));
-  __uint(max_entries, DEFAULT_QUEUE_IDS);
-} xsks_map SEC(".maps");
+  __uint(priority, 19);
+  __uint(XDP_DROP, 1);
+} XDP_RUN_CONFIG(imtl_dp_filter);
 
 volatile int refcnt = 1;
 
@@ -39,7 +35,7 @@ static int __always_inline lookup_udp4_dp(int dp) {
 }
 
 SEC("xdp")
-int xsk_def_prog(struct xdp_md* ctx) {
+int imtl_dp_filter(struct xdp_md* ctx) {
   if (!refcnt) return XDP_PASS;
 
   void* data_end = (void*)(long)ctx->data_end;
@@ -66,7 +62,8 @@ int xsk_def_prog(struct xdp_md* ctx) {
   int dst_port = bpf_ntohs(udphdr->dest);
   if (lookup_udp4_dp(dst_port) == 0) return XDP_PASS;
 
-  return bpf_redirect_map(&xsks_map, ctx->rx_queue_index, XDP_PASS);
+  /* go to next program: xsk_def_prog */
+  return XDP_DROP;
 }
 
 #define XDP_METADATA_SECTION "xdp_metadata"
