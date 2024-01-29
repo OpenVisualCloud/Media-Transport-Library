@@ -46,7 +46,13 @@ class mtl_interface {
   mtl_interface(int ifindex);
   ~mtl_interface();
 
-  int get_xsks_map_fd() { return xsks_map_fd; }
+  int get_xsks_map_fd() {
+#ifdef MTL_HAS_XDP_BACKEND
+    return xsks_map_fd;
+#else
+    return -1;
+#endif
+  }
   int update_udp_dp_filter(uint16_t dst_port, bool add);
 };
 
@@ -219,6 +225,6 @@ void mtl_interface::unload_xdp() {
 }
 #endif
 
-std::unordered_map<unsigned int, std::weak_ptr<mtl_interface>> g_interfaces;
+std::unordered_map<unsigned int, std::weak_ptr<mtl_interface> > g_interfaces;
 
 #endif
