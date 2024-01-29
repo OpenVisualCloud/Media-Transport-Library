@@ -53,7 +53,7 @@ mtl_interface::mtl_interface(int ifindex)
       xdp_prog(nullptr),
       xsks_map_fd(-1),
       udp4_dp_filter_fd(-1),
-      xdp_mode(XDP_MODE_UNSPEC) {
+      xdp_mode(0) {
 #ifdef MTL_HAS_XDP_BACKEND
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #endif
