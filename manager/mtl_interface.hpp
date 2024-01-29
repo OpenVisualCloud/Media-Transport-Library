@@ -25,10 +25,12 @@
 class mtl_interface {
  private:
   const int ifindex;
+#ifdef MTL_HAS_XDP_BACKEND
   struct xdp_program* xdp_prog;
   int xsks_map_fd;
   int udp4_dp_filter_fd;
   enum xdp_attach_mode xdp_mode;
+#endif
 
  private:
   void log(const log_level& level, const std::string& message) const {
@@ -48,13 +50,12 @@ class mtl_interface {
   int update_udp_dp_filter(uint16_t dst_port, bool add);
 };
 
-mtl_interface::mtl_interface(int ifindex)
-    : ifindex(ifindex),
-      xdp_prog(nullptr),
-      xsks_map_fd(-1),
-      udp4_dp_filter_fd(-1),
-      xdp_mode(0) {
+mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
 #ifdef MTL_HAS_XDP_BACKEND
+  xdp_prog = nullptr;
+  xsks_map_fd = -1;
+  udp4_dp_filter_fd = -1;
+  xdp_mode = XDP_MODE_UNSPEC;
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #endif
 
