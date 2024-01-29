@@ -46,7 +46,7 @@ typedef struct mtlMuxerContext {
   size_t frame_size;
 } mtlMuxerContext;
 
-static int mtl_write_header(AVFormatContext* ctx) {
+static int mtl_st20p_write_header(AVFormatContext* ctx) {
   mtlMuxerContext* s = ctx->priv_data;
   struct st20p_tx_ops ops_tx;
   const AVPixFmtDescriptor* pix_fmt_desc = NULL;
@@ -147,7 +147,7 @@ static int mtl_write_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
+static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   mtlMuxerContext* s = ctx->priv_data;
   struct st_frame* frame;
 
@@ -173,7 +173,7 @@ static int mtl_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   return 0;
 }
 
-static int mtl_write_trailer(AVFormatContext* ctx) {
+static int mtl_st20p_write_trailer(AVFormatContext* ctx) {
   mtlMuxerContext* s = ctx->priv_data;
 
   dbg(ctx, "%s, start\n", __func__);
@@ -256,13 +256,13 @@ static const AVClass mtl_muxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_OUTPUT,
 };
 
-const FFOutputFormat ff_mtl_muxer = {
-    .p.name = "mtl",
-    .p.long_name = NULL_IF_CONFIG_SMALL("mtl output device"),
+const FFOutputFormat ff_mtl_st20p_muxer = {
+    .p.name = "mtl_st20p",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
     .priv_data_size = sizeof(mtlMuxerContext),
-    .write_header = mtl_write_header,
-    .write_packet = mtl_write_packet,
-    .write_trailer = mtl_write_trailer,
+    .write_header = mtl_st20p_write_header,
+    .write_packet = mtl_st20p_write_packet,
+    .write_trailer = mtl_st20p_write_trailer,
     .p.video_codec = AV_CODEC_ID_RAWVIDEO,
     .p.flags = AVFMT_NOFILE,
     .p.priv_class = &mtl_muxer_class,

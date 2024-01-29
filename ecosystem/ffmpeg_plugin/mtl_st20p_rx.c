@@ -24,7 +24,7 @@
 #include "libavutil/pixdesc.h"
 #include "mtl_common.h"
 
-typedef struct MtlDemuxerContext {
+typedef struct MtlSt20pDemuxerContext {
   const AVClass* class; /**< Class for private options. */
 
   int idx;
@@ -46,10 +46,10 @@ typedef struct MtlDemuxerContext {
   st20p_rx_handle rx_handle;
 
   int64_t frame_counter;
-} MtlDemuxerContext;
+} MtlSt20pDemuxerContext;
 
-static int mtl_read_header(AVFormatContext* ctx) {
-  MtlDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_header(AVFormatContext* ctx) {
+  MtlSt20pDemuxerContext* s = ctx->priv_data;
   AVStream* st = NULL;
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
   int packet_size = 0;
@@ -179,8 +179,8 @@ static int mtl_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  MtlDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  MtlSt20pDemuxerContext* s = ctx->priv_data;
   int ret = 0;
   struct st_frame* frame;
 
@@ -213,8 +213,8 @@ static int mtl_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   return 0;
 }
 
-static int mtl_read_close(AVFormatContext* ctx) {
-  MtlDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_close(AVFormatContext* ctx) {
+  MtlSt20pDemuxerContext* s = ctx->priv_data;
 
   dbg("%s, start\n", __func__);
   // Destroy rx session
@@ -234,7 +234,7 @@ static int mtl_read_close(AVFormatContext* ctx) {
   return 0;
 }
 
-#define OFFSET(x) offsetof(MtlDemuxerContext, x)
+#define OFFSET(x) offsetof(MtlSt20pDemuxerContext, x)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption mtl_options[] = {
     // mtl port info
@@ -331,13 +331,13 @@ static const AVClass mtl_demuxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_INPUT,
 };
 
-const AVInputFormat ff_mtl_demuxer = {
-    .name = "mtl",
-    .long_name = NULL_IF_CONFIG_SMALL("mtl input device"),
-    .priv_data_size = sizeof(MtlDemuxerContext),
-    .read_header = mtl_read_header,
-    .read_packet = mtl_read_packet,
-    .read_close = mtl_read_close,
+const AVInputFormat ff_mtl_st20p_demuxer = {
+    .name = "mtl_st20p",
+    .long_name = NULL_IF_CONFIG_SMALL("mtl st20p input device"),
+    .priv_data_size = sizeof(MtlSt20pDemuxerContext),
+    .read_header = mtl_st20p_read_header,
+    .read_packet = mtl_st20p_read_packet,
+    .read_close = mtl_st20p_read_close,
     .flags = AVFMT_NOFILE,
     .extensions = "mtl",
     .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
