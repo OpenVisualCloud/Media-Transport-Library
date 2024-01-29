@@ -68,3 +68,8 @@ int xsk_def_prog(struct xdp_md* ctx) {
 
   return bpf_redirect_map(&xsks_map, ctx->rx_queue_index, XDP_PASS);
 }
+
+#define XDP_METADATA_SECTION "xdp_metadata"
+#define XSK_PROG_VERSION 1
+
+__uint(xsk_prog_version, XSK_PROG_VERSION) SEC(XDP_METADATA_SECTION);

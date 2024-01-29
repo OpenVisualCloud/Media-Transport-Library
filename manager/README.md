@@ -30,14 +30,14 @@ sudo ./build/MtlManager
 
 This command will start the MTL Manager with root privileges, which are necessary for the advanced eBPF and network configurations and management tasks it performs.
 
-## Run with our XDP program
+## Run with another XDP program
 
-We have a modified version of the original AF_XDP eBPF program which allows user to add or remove udp dest port in the eBPF program to act as a packet filter, please see [ebpf tool](../tools/ebpf) for how to build it.
+We have a modified version of the original AF_XDP eBPF program which allows user to add or remove udp dest port in the eBPF program to act as a packet filter, this is built in the manager.
 
-To run the MTL Manager with our XDP program, execute:
+To run the MTL Manager with any other AF_XDP eBPF program, execute:
 
 ```bash
-sudo MTL_XDP_PROG_PATH=/path/to/Media-Transport-Library/tools/ebpf/xsk.xdp.o ./build/MtlManager
+sudo MTL_XDP_PROG_PATH=/path/to/xsk.xdp.o ./build/MtlManager
 ```
 
 ## Run in a Docker container
@@ -57,7 +57,6 @@ docker run -d \
   --privileged --net=host \
   -v /var/run/imtl:/var/run/imtl \
   -v /sys/fs/bpf:/sys/fs/bpf \
-  -v "$(pwd)"/../tools/ebpf/xsk.xdp.o:/tmp/imtl/xdp_prog.o \
   mtl-manager:latest
 ```
 
