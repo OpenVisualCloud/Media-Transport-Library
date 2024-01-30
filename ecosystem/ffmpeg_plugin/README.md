@@ -1,55 +1,63 @@
-# The ffmpeg plugin
+# The ffmpeg plugin for MTL
 
-## How To build
+## 1. Build
 
-./build_ffmpeg_plugin.sh
-
-## How to run
-
-One-session input example:
+### 1.1 Build openh264
 
 ```bash
-ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -dma_dev "0000:00:01.0" -ext_frames_mode 1 -f kahawai -i "k" -vframes 2000 -f rawvideo /dev/null -y"
+git clone https://github.com/cisco/openh264.git -b openh264v2.4.0
+cd openh264
+make -j "$(nproc)"
+sudo make install
+sudo ldconfig
+cd ../
 ```
 
-Two-sessions input example:
+### 1.2 Build ffmpeg with MTL patches
+
+Note: $imtl_source_code should be pointed to top source code tree of Intel® Media Transport Library.
+
+```bash
+git clone https://github.com/FFmpeg/FFmpeg.git -b release/6.1
+cd FFmpeg
+# apply the build patch
+git am $imtl_source_code/ecosystem/ffmpeg_plugin/0001-avdevice-add-mtl-in-out-dev-support.patch
+# copy the mtl in/out implementation code
+cp $imtl_source_code/ecosystem/ffmpeg_plugin/mtl_* -rf libavdevice/
+# build with --enable-mtl, customize the option as your setup
+./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+make -j "$(nproc)"
+sudo make install
+sudo ldconfig
+```
+
+## 2. Run
+
+### 2.1 St20p input example
+
+Single session input example, please start the st2110-20 10bit YUV422 tx stream on "239.168.85.20:20000" before using:
+
+```bash
+ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "k" -vframes 2000 -f rawvideo /dev/null -y
+```
+
+Two sessions input example, one on "239.168.85.20:20000" and the second on "239.168.85.20:20002":
 
 ```bash
 <!-- markdownlint-disable line-length -->
-ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -total_sessions 2 -ext_frames_mode 1 -f kahawai -i "1" -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20002 -port 0000:31:00.0 -local_addr "192.168.96.3" -src_addr "239.168.85.20" -total_sessions 2 -ext_frames_mode 1 -f kahawai -i "2" -map 0:0 -vframes 5000 -f rawvideo /dev/null -y -map 1:0 -vframes 5000 -f rawvideo /dev/null -y
+ffmpeg -total_sessions 2 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "1" -port 0000:af:01.0 -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20002 -payload_type 112 -f mtl_st20p -i "2" -map 0:0 -vframes 2000 -f rawvideo /dev/null -y -map 1:0 -vframes 2000 -f rawvideo /dev/null -y
 ```
 
-With openh264 encoder example:
+Open-h264 encoder example on stream "239.168.85.20:20000":
 
 ```bash
-ffmpeg -framerate 60 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -port 0000:31:00.0 -local_addr "192.168.96.2" -src_addr "239.168.85.20" -dma_dev "0000:00:01.0" -ext_frames_mode 1 -f kahawai -i "k" -vframes 2000 -c:v libopenh264 out.264 -y
+ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "k" -vframes 2000 -c:v libopenh264 out.264 -y
 ```
 
-One-session output example:
+### 2.2 St20p output example
+
+One-session output example which reading from a yuv file and sending ST2110-20 stream to "239.168.85.20:20000":
 
 ```bash
-ffmpeg -video_size 512x512 -f rawvideo -pix_fmt rgb24 -i input.rgb -filter:v fps=60 -udp_port 20000 -port 0000:31:00.0 -local_addr 192.168.96.2 -dst_addr 239.168.85.20 -f kahawai_mux -
+ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -total_sessions 1 -port 0000:af:01.1 -local_addr "192.168.96.3" -tx_addr 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st20p -
 ```
-
-Input parameters description:
-
-1. "framerate" supports 24, 25, 30, 60 and 120.
-2. "pixel_format" supports yuv422p10le only for input now.
-3. "f kahawai" is required to set to select Intel® Media Transport Library as the input device.
-4. "i" can be set with anything for being a virtual device, no dev node.
-5. "vframes" shall be set with the frame number to be read.
-6. "udp_port port local_addr src_addr fb_cnt" definitions are the same as in sample.
-7. "total_sessions" shall be set with the total number of rx sessions.
-8. "ext_frames_mode" can be set to 1 (ext frames enabled) or 0 (disabled).
-9. "dma_dev" can be set with a DMA device node on the same rx socket.
-
-Output parameters description:
-
-1. "f kahawai_mux" is required to select kahawai as the output device.
-2. "udp_port port local_addr src_addr fb_cnt" definitions are the same as in sample.
-3. "total_sessions" shall be set with the total number of tx sessions.
-
-Known issues:
-
-1. Only RGB24 pixel format supported for output
-2. Either input or output only operation could be enabled and kahawai transcoding is not supported

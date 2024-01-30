@@ -190,12 +190,12 @@ int main(int argc, char** argv) {
 
   skel = lcore_monitor_kern__open_and_load();
   if (!skel) {
-    err("%s, Failed to open and load skeleton\n", __func__);
+    err("%s, failed to open and load skeleton\n", __func__);
     goto exit;
   }
-  int map_fd = bpf_map__fd(skel->maps.lm_cfg_map);
   uint32_t key = 0;
-  ret = bpf_map_update_elem(map_fd, &key, &ctx.cfg, BPF_ANY);
+  ret = bpf_map__update_elem(skel->maps.lm_cfg_map, &key, sizeof(key), &ctx.cfg,
+                             sizeof(ctx.cfg), BPF_ANY);
   if (ret < 0) {
     err("%s, update lm_cfg_map fail\n", __func__);
     goto exit;
@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
   }
   ret = lcore_monitor_kern__attach(skel);
   if (ret) {
-    err("%s, Failed to attach skeleton\n", __func__);
+    err("%s, failed to attach skeleton\n", __func__);
     lcore_monitor_kern__destroy(skel);
     goto exit;
   }
