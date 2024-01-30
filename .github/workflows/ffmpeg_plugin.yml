@@ -55,6 +55,11 @@ jobs:
           apt-get update -y
           apt-get install -y git
 
+      - name: Git config
+        run: |
+          git config --global user.email "you@example.com"
+          git config --global user.name "Your Name"
+
       - name: checkout kahawai repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
@@ -62,7 +67,6 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           repository: 'cisco/openh264'
-          ref: openh264v2.4.0
           path: openh264
 
       - name: checkout FFmpeg repo
@@ -82,11 +86,6 @@ jobs:
       - name: Install the python package
         run: pip install pyelftools==0.29 ninja==1.11.1
 
-      - name: Git config
-        run: |
-          git config --global user.email "you@example.com"
-          git config --global user.name "Your Name"
-
       - name: Build
         run: |
           ./build.sh
@@ -98,6 +97,7 @@ jobs:
       - name: Build openh264
         run: |
           cd openh264/
+          git checkout openh264v2.4.0
           make -j "$(nproc)"
           sudo make install
           sudo ldconfig

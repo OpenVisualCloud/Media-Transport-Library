@@ -5,8 +5,9 @@
 ### 1.1 Build openh264
 
 ```bash
-git clone https://github.com/cisco/openh264.git -b openh264v2.4.0
+git clone https://github.com/cisco/openh264.git
 cd openh264
+git checkout openh264v2.4.0
 make -j "$(nproc)"
 sudo make install
 sudo ldconfig
@@ -18,8 +19,9 @@ cd ../
 Note: $imtl_source_code should be pointed to top source code tree of Intel® Media Transport Library.
 
 ```bash
-git clone https://github.com/FFmpeg/FFmpeg.git -b release/6.1
+git clone https://github.com/FFmpeg/FFmpeg.git
 cd FFmpeg
+git checkout release/6.1
 # apply the build patch
 git am $imtl_source_code/ecosystem/ffmpeg_plugin/6.1/*.patch
 # copy the mtl in/out implementation code
