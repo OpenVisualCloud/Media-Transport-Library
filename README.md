@@ -47,7 +47,7 @@ The library incorporates a virtual data path backend layer, designed to abstract
 
 * DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'poll mode' driver. This approach provides direct hardware access, eliminates heavy user/kernel context switches, and avoids IRQ (Interrupt Request) switches. As a result, DPDK PMDs deliver ultra-low latency and high throughput, making them ideal for demanding networking applications.
 * Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems.
-* AF_XDP (Express Data Path) with eBPF filter(still in developing): AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. It's particularly valuable in scenarios where performance is critical, but a full kernel bypass solution like DPDK is not feasible or desired.
+* AF_XDP with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. It's particularly valuable in scenarios where performance is critical, but a full kernel bypass solution like DPDK is not feasible or desired.
 
 The library introduces a tasklet-based asynchronous scheduler that optimizes CPU resource utilization, facilitating integration with various packet processing units and accelerators.
 

@@ -1,6 +1,6 @@
 # XDP Guide
 
-This guide provides a comprehensive overview of XDP (Express Data Path) and its application within IMTL (Intel Multi-Tenant Library), which utilizes AF_XDP as its new network backend.
+This guide provides a comprehensive overview of XDP (eXpress Data Path) and its application within IMTL, which utilizes AF_XDP as its new network backend.
 
 ## Understanding XDP and AF_XDP
 
@@ -10,13 +10,17 @@ To utilize XDP, an eBPF XDP program is loaded into the kernel and attached to a 
 
 AF_XDP, a new socket family, enables user space applications to send and receive packets directly with the network driver. To use AF_XDP, a user must first create an AF_XDP socket with the socket() call, then call bind() to start sending and receiving packets.
 
-The AF_XDP socket is bound to one hardware queue of the network interface. The socket file descriptor (fd) needs to be updated to the xsks_map of the xsk XDP program. This allows the program to redirect incoming packets to their intended socket.
+The AF_XDP socket is bound to one hardware queue of the network interface. The socket fd needs to be updated to the xsks_map of the xsk XDP program. This allows the program to redirect incoming packets to their intended socket.
 
-Users should allocate a memory region in user space for sharing between the kernel and user space, even among different processes. There are four rings for data path transferring: TX/RX rings and Fill/Completion rings.
+Users should allocate a memory region called UMEM in user space for sharing between the kernel and user space, even among different processes. There are four rings for data path transferring: TX/RX rings and Fill/Completion rings.
+
+On the transmission side, the user space application populates the TX ring with packet descriptors. These descriptors contain pointers to the UMEM area (frames) where the actual data buffers reside. Once the TX ring is filled, the Network Interface Card (NIC) driver takes over, transmitting the packets onto the network. After the packets have been sent, the NIC driver populates the Completion ring with the descriptors of the packets that have been successfully transmitted.
+
+On the receiving end, the user space application fills the Fill ring with packet descriptors which tell the driver where it should dma/copy the packet buffers. The NIC driver, upon receiving packets from the network, fills the populated descriptors in the RX ring.
 
 With AF_XDP, IMTL can send and receive packets directly with the network driver, bypassing the kernel stack. This makes deployment more efficient and convenient for cloud and edge environments compared to the DPDK backend.
 
-IMTL also uses an XDP program to filter data path packets. This XDP program is built with our MTL Manager and is loaded along with the libxdp built-in xsk XDP program. Thanks to libxdp's xdp-dispatcher, we can run multiple XDP programs on the same network interface. For the XDP code, please see [mtl_dp_filter](../manager/mtl.xdp.c).
+IMTL also uses an XDP program to filter data path packets. This XDP program is built with our MTL Manager and is loaded along with the libxdp built-in xsk XDP program that is for AF_XDP. Thanks to libxdp's xdp-dispatcher, we can run multiple XDP programs on the same network interface. For the XDP code, please see [mtl_dp_filter](../manager/mtl.xdp.c).
 
 ![XDP in IMTL](png/xdp-imtl.svg)
 

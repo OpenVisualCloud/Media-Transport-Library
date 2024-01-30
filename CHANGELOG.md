@@ -13,6 +13,7 @@
 * cvt: add st20_rfc4175_422be10_to_yuv420p8 with avx512
 * backend: add XDP based backend, see doc/xdp.md.
 * manager: add a daemon server for privileged control management, see manager/README.md.
+* backend/xdp: add UDP port filter XDP program for splitting data path traffic.
 
 ## Changelog for 23.12
 
