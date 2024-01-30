@@ -21,15 +21,18 @@ Note: $imtl_source_code should be pointed to top source code tree of Intel® Med
 git clone https://github.com/FFmpeg/FFmpeg.git -b release/6.1
 cd FFmpeg
 # apply the build patch
-git am $imtl_source_code/ecosystem/ffmpeg_plugin/0001-avdevice-add-mtl-in-out-dev-support.patch
+git am $imtl_source_code/ecosystem/ffmpeg_plugin/6.1/*.patch
 # copy the mtl in/out implementation code
-cp $imtl_source_code/ecosystem/ffmpeg_plugin/mtl_* -rf libavdevice/
+cp $imtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
+cp $imtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
 # build with --enable-mtl, customize the option as your setup
 ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
 make -j "$(nproc)"
 sudo make install
 sudo ldconfig
 ```
+
+Note, for ffmpeg 4.4 version, replace 6.1 with 4.4 for above example commands.
 
 ## 2. Run
 

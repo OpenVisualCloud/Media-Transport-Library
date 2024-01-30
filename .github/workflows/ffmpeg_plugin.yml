@@ -50,7 +50,26 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - name: Update to latest git
+        run: |
+          apt-get update -y
+          apt-get install -y git
+
+      - name: checkout kahawai repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: checkout openh264 repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: 'cisco/openh264'
+          ref: openh264v2.4.0
+          path: openh264
+
+      - name: checkout FFmpeg repo
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: 'FFmpeg/FFmpeg'
+          path: FFmpeg
 
       - name: Install the build dependency
         run: |
@@ -76,8 +95,36 @@ jobs:
         run: |
           ./script/build_st22_ffmpeg_plugin.sh
 
-      - name: Build ffmpeg plugin
+      - name: Build openh264
         run: |
-          cd ecosystem/ffmpeg_plugin/
-          ./build_ffmpeg_plugin.sh
-          cd ../../
+          cd openh264/
+          make -j "$(nproc)"
+          sudo make install
+          sudo ldconfig
+          cd ../
+
+      - name: Build ffmpeg 6.1 plugin
+        run: |
+          cd FFmpeg/
+          git checkout release/6.1
+          cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
+          cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
+          git am ../ecosystem/ffmpeg_plugin/6.1/*.patch
+          ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+          make -j "$(nproc)"
+          sudo make install
+          sudo ldconfig
+          cd ../
+
+      - name: Build ffmpeg 4.4 plugin
+        run: |
+          cd FFmpeg/
+          git checkout release/4.4
+          cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
+          cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
+          git am ../ecosystem/ffmpeg_plugin/4.4/*.patch
+          ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+          make -j "$(nproc)"
+          sudo make install
+          sudo ldconfig
+          cd ../
