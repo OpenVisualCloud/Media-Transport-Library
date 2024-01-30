@@ -45,5 +45,5 @@ sudo ./et --prog fentry [--print]
 xdp: a privileged program to load custom xdp bpf program:
 
 ```bash
-sudo ./et --prog xdp --ifname ens785f0,ens785f1 --xdp_path xsk.xdp.o
+sudo ./et --prog xdp --ifname ens785f0,ens785f1 --xdp_path your.xdp.o
 ```

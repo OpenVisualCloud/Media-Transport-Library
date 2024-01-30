@@ -18,7 +18,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.1 Features
 
-* Supported data path backend: DPDK PMD,native kernel socket, and AF_XDP with eBPF filter(still in developing)
+* Supported data path backend: DPDK PMD, native kernel socket, and AF_XDP with eBPF filter.
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
@@ -30,9 +30,9 @@ If you find value in our project, please consider giving it a star. Your support
 #### 1.1.1 ST2110 features
 
 * Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
-* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7
-* 1080p, 1080i, 720p, 4k, 8k and other
-* FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
+* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7.
+* 1080p, 1080i, 720p, 4k, 8k and others.
+* FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98.
 * All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
 * SIMD color space converter between big-endian and little-endian.
 * ST2110-22 with encoder/decoder plugin interface.
@@ -47,7 +47,7 @@ The library incorporates a virtual data path backend layer, designed to abstract
 
 * DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'poll mode' driver. This approach provides direct hardware access, eliminates heavy user/kernel context switches, and avoids IRQ (Interrupt Request) switches. As a result, DPDK PMDs deliver ultra-low latency and high throughput, making them ideal for demanding networking applications.
 * Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems.
-* AF_XDP (Express Data Path) with eBPF filter(still in developing): AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. It's particularly valuable in scenarios where performance is critical, but a full kernel bypass solution like DPDK is not feasible or desired.
+* AF_XDP with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. It's particularly valuable in scenarios where performance is critical, but a full kernel bypass solution like DPDK is not feasible or desired.
 
 The library introduces a tasklet-based asynchronous scheduler that optimizes CPU resource utilization, facilitating integration with various packet processing units and accelerators.
 
