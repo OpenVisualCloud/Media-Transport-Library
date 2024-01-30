@@ -30,9 +30,7 @@ To enable XDP support, you need to check some configurations for eBPF and XDP on
 
 ### Kernel Config
 
-To enable eBPF support, you need to enable CONFIG_BPF_SYSCALL.
-
-To enable XDP support, you need to enable CONFIG_XDP_SOCKETS and CONFIG_XDP_FLAGS_MODES.
+To enable eBPF and XDP support, you need to enable CONFIG_BPF_SYSCALL and CONFIG_XDP_SOCKETS. Newer kernel version is recommended.
 
 ### Installing Extra Dependencies
 
