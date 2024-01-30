@@ -67,13 +67,16 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           repository: 'cisco/openh264'
+          ref: openh264v2.4.0
           path: openh264
+
 
       - name: checkout FFmpeg repo
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           repository: 'FFmpeg/FFmpeg'
           path: FFmpeg
+          fetch-depth: 0
 
       - name: Install the build dependency
         run: |
@@ -97,7 +100,6 @@ jobs:
       - name: Build openh264
         run: |
           cd openh264/
-          git checkout -b openh264v2.4.0 --track origin/openh264v2.4.0
           make -j "$(nproc)"
           sudo make install
           sudo ldconfig
@@ -106,7 +108,7 @@ jobs:
       - name: Build ffmpeg 6.1 plugin
         run: |
           cd FFmpeg/
-          git checkout -b release/6.1 --track origin/release/6.1
+          git checkout release/6.1
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
           git am ../ecosystem/ffmpeg_plugin/6.1/*.patch
@@ -119,7 +121,7 @@ jobs:
       - name: Build ffmpeg 4.4 plugin
         run: |
           cd FFmpeg/
-          git checkout -b release/4.4 --track origin/release/4.4
+          git checkout release/4.4
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
           git am ../ecosystem/ffmpeg_plugin/4.4/*.patch
