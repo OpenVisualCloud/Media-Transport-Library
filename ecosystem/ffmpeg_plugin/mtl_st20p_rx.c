@@ -17,11 +17,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavformat/avformat.h"
-#include "libavformat/internal.h"
-#include "libavutil/imgutils.h"
-#include "libavutil/opt.h"
-#include "libavutil/pixdesc.h"
 #include "mtl_common.h"
 
 typedef struct MtlSt20pDemuxerContext {
@@ -331,15 +326,20 @@ static const AVClass mtl_demuxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_INPUT,
 };
 
-const AVInputFormat ff_mtl_st20p_demuxer = {
-    .name = "mtl_st20p",
-    .long_name = NULL_IF_CONFIG_SMALL("mtl st20p input device"),
-    .priv_data_size = sizeof(MtlSt20pDemuxerContext),
-    .read_header = mtl_st20p_read_header,
-    .read_packet = mtl_st20p_read_packet,
-    .read_close = mtl_st20p_read_close,
-    .flags = AVFMT_NOFILE,
-    .extensions = "mtl",
-    .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
-    .priv_class = &mtl_demuxer_class,
+#ifndef MTL_FFMPEG_4_4
+const AVInputFormat ff_mtl_st20p_demuxer =
+#else
+AVInputFormat ff_mtl_st20p_demuxer =
+#endif
+    {
+        .name = "mtl_st20p",
+        .long_name = NULL_IF_CONFIG_SMALL("mtl st20p input device"),
+        .priv_data_size = sizeof(MtlSt20pDemuxerContext),
+        .read_header = mtl_st20p_read_header,
+        .read_packet = mtl_st20p_read_packet,
+        .read_close = mtl_st20p_read_close,
+        .flags = AVFMT_NOFILE,
+        .extensions = "mtl",
+        .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
+        .priv_class = &mtl_demuxer_class,
 };

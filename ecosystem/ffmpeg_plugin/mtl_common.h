@@ -19,8 +19,26 @@
 
 #include <mtl/st_pipeline_api.h>
 
+// clang-format off
+/* MTL FFMPEG version */
+#include "libavdevice/version.h"
+#if LIBAVDEVICE_VERSION_MAJOR <= 58
+#define MTL_FFMPEG_4_4
+#else
+#define MTL_FFMPEG_6_1
+#endif
+// clang-format on
+
+#include "libavformat/avformat.h"
+#include "libavformat/internal.h"
+#ifdef MTL_FFMPEG_6_1
+#include "libavformat/mux.h"
+#endif
 #include "libavutil/common.h"
+#include "libavutil/imgutils.h"
 #include "libavutil/log.h"
+#include "libavutil/opt.h"
+#include "libavutil/pixdesc.h"
 #include "libavutil/rational.h"
 
 /* log define */

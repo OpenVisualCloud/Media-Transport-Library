@@ -17,9 +17,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavformat/mux.h"
-#include "libavutil/opt.h"
-#include "libavutil/pixdesc.h"
 #include "mtl_common.h"
 
 typedef struct mtlMuxerContext {
@@ -256,6 +253,20 @@ static const AVClass mtl_muxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_OUTPUT,
 };
 
+#ifdef MTL_FFMPEG_4_4
+AVOutputFormat ff_mtl_st20p_muxer = {
+    .name = "mtl_st20p",
+    .long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
+    .priv_data_size = sizeof(mtlMuxerContext),
+    .write_header = mtl_st20p_write_header,
+    .write_packet = mtl_st20p_write_packet,
+    .write_trailer = mtl_st20p_write_trailer,
+    .video_codec = AV_CODEC_ID_RAWVIDEO,
+    .flags = AVFMT_NOFILE,
+    .control_message = NULL,
+    .priv_class = &mtl_muxer_class,
+};
+#else
 const FFOutputFormat ff_mtl_st20p_muxer = {
     .p.name = "mtl_st20p",
     .p.long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
@@ -267,3 +278,4 @@ const FFOutputFormat ff_mtl_st20p_muxer = {
     .p.flags = AVFMT_NOFILE,
     .p.priv_class = &mtl_muxer_class,
 };
+#endif
