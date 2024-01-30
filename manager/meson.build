@@ -51,7 +51,7 @@ if libxdp_dep.found() and libbpf_dep.found()
     input : xdp_temp_obj,
     output : 'mtl.xdp.o',
     install: true,
-    install_dir: '/var/run/imtl',
+    install_dir: get_option('prefix') + '/lib/bpf',
     command : [llvm_strip, '-g', '@INPUT@', '-o', '@OUTPUT@']
   )
 else

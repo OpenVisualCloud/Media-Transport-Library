@@ -25,8 +25,6 @@ struct {
   __uint(XDP_DROP, 1);
 } XDP_RUN_CONFIG(mtl_dp_filter);
 
-volatile int refcnt = 1;
-
 static int __always_inline lookup_udp4_dp(int dp) {
   int* value;
 
@@ -37,8 +35,6 @@ static int __always_inline lookup_udp4_dp(int dp) {
 
 SEC("xdp")
 int mtl_dp_filter(struct xdp_md* ctx) {
-  if (!refcnt) return XDP_PASS;
-
   void* data_end = (void*)(long)ctx->data_end;
   void* data = (void*)(long)ctx->data;
 

@@ -21,7 +21,7 @@ meson compile -C build
 sudo meson install -C build
 ```
 
-Besides MTL Manager, it will also install a built-in XDP program for udp port filtering to `/var/run/imtl/mtl.xdp.o`.
+Besides MTL Manager, it will also install a built-in XDP program for udp port filtering.
 
 ## Run
 
@@ -33,7 +33,7 @@ sudo MtlManager
 
 This command will start the MTL Manager with root privileges, which are necessary for the advanced eBPF and network configurations and management tasks it performs.
 
-The XDP program for udp port filtering will be loaded along with the libxdp's xsk program when the AF_XDP socket is created. You can check the loaded programs with xdp-loader:
+The XDP program for udp port filtering will be loaded along with the libxdp's built-in xsk program when the AF_XDP socket is created. It utilizes the xdp-dispatcher program provided by libxdp which allows running of multiple XDP programs in chain on the same interface. You can check the loaded programs with xdp-loader:
 
 ```bash
 $ sudo xdp-loader status

@@ -149,7 +149,7 @@ int mtl_interface::clear_flow_rules() {
 
 int mtl_interface::load_xdp() {
   /* load built-in xdp prog */
-  xdp_prog = xdp_program__open_file("/var/run/imtl/mtl.xdp.o", NULL, NULL);
+  xdp_prog = xdp_program__find_file("mtl.xdp.o", NULL, NULL);
   if (libxdp_get_error(xdp_prog)) {
     log(log_level::ERROR, "Failed to load built-in xdp program.");
     return -1;
@@ -194,6 +194,6 @@ void mtl_interface::unload_xdp() {
 }
 #endif
 
-std::unordered_map<unsigned int, std::weak_ptr<mtl_interface> > g_interfaces;
+std::unordered_map<unsigned int, std::weak_ptr<mtl_interface>> g_interfaces;
 
 #endif
