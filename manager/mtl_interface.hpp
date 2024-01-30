@@ -23,8 +23,12 @@
 class mtl_interface {
  private:
   const int ifindex;
+#ifdef MTL_HAS_XDP_BACKEND
   struct xdp_program* xdp_prog;
   int xsks_map_fd;
+  int udp4_dp_filter_fd;
+  enum xdp_attach_mode xdp_mode;
+#endif
 
  private:
   void log(const log_level& level, const std::string& message) const {
@@ -40,13 +44,22 @@ class mtl_interface {
   mtl_interface(int ifindex);
   ~mtl_interface();
 
-  int get_xsks_map_fd() { return xsks_map_fd; }
+  int get_xsks_map_fd() {
+#ifdef MTL_HAS_XDP_BACKEND
+    return xsks_map_fd;
+#else
+    return -1;
+#endif
+  }
   int update_udp_dp_filter(uint16_t dst_port, bool add);
 };
 
-mtl_interface::mtl_interface(int ifindex)
-    : ifindex(ifindex), xdp_prog(nullptr), xsks_map_fd(-1) {
+mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
 #ifdef MTL_HAS_XDP_BACKEND
+  xdp_prog = nullptr;
+  xsks_map_fd = -1;
+  udp4_dp_filter_fd = -1;
+  xdp_mode = XDP_MODE_UNSPEC;
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #endif
 
@@ -69,15 +82,13 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
     return -1;
   }
 
-  int map_fd = bpf_map__fd(
-      bpf_object__find_map_by_name(xdp_program__bpf_obj(xdp_prog), "udp4_dp_filter"));
-  if (map_fd < 0) {
-    log(log_level::WARNING, "Failed to get udp4_dp_filter map fd");
+  if (udp4_dp_filter_fd < 0) {
+    log(log_level::WARNING, "No valid udp4_dp_filter map fd");
     return -1;
   }
 
   int value = add ? 1 : 0;
-  if (bpf_map_update_elem(map_fd, &dst_port, &value, BPF_ANY) < 0) {
+  if (bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY) < 0) {
     log(log_level::WARNING, "Failed to update udp4_dp_filter map");
     return -1;
   }
@@ -135,74 +146,51 @@ int mtl_interface::clear_flow_rules() {
 }
 
 #ifdef MTL_HAS_XDP_BACKEND
+
 int mtl_interface::load_xdp() {
-  /* get xdp prog path from env or use manager default path */
-  std::string xdp_prog_path;
-  char* xdp_prog_path_env = getenv("MTL_XDP_PROG_PATH");
-  if (xdp_prog_path_env != nullptr) {
-    xdp_prog_path = xdp_prog_path_env;
-  } else {
-    xdp_prog_path = "/tmp/imtl/xdp_prog.o";
-  }
-
-  if (!std::filesystem::is_regular_file(xdp_prog_path)) {
-    log(log_level::WARNING,
-        "Fallback to use libxdp default prog for " + xdp_prog_path + " is not valid.");
-  } else {
-    xdp_prog = xdp_program__open_file(xdp_prog_path.c_str(), NULL, NULL);
-    if (libxdp_get_error(xdp_prog)) {
-      log(log_level::WARNING,
-          "Fallback to use libxdp default prog for " + xdp_prog_path + " cannot load.");
-      xdp_prog = nullptr;
-    } else {
-      if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0) < 0) {
-        log(log_level::WARNING,
-            "Failed to attach XDP program with native mode, try skb mode.");
-        if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_SKB, 0) < 0) {
-          log(log_level::ERROR, "Failed to attach XDP program " + xdp_prog_path);
-          xdp_program__close(xdp_prog);
-          return -1;
-        }
-      }
-    }
-  }
-
-  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
-    if (xdp_prog != nullptr) {
-      xdp_program__detach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0);
-      xdp_program__close(xdp_prog);
-    }
-    /* unload all xdp programs for the interface */
-    struct xdp_multiprog* multiprog = xdp_multiprog__get_from_ifindex(ifindex);
-    if (multiprog != nullptr) {
-      xdp_multiprog__detach(multiprog);
-      xdp_multiprog__close(multiprog);
-    }
-
-    log(log_level::ERROR, "Failed to setup AF_XDP socket.");
+  /* load built-in xdp prog */
+  xdp_prog = xdp_program__find_file("mtl.xdp.o", NULL, NULL);
+  if (libxdp_get_error(xdp_prog)) {
+    log(log_level::ERROR, "Failed to load built-in xdp program.");
     return -1;
   }
 
-  if (xdp_prog == nullptr) xdp_prog_path = "<libxdp_default>";
-  log(log_level::INFO, "Loaded xdp prog " + xdp_prog_path);
+  if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0) < 0) {
+    log(log_level::WARNING,
+        "Failed to attach XDP program with native mode, try skb mode.");
+    if (xdp_program__attach(xdp_prog, ifindex, XDP_MODE_SKB, 0) < 0) {
+      log(log_level::ERROR, "Failed to attach XDP program.");
+      xdp_program__close(xdp_prog);
+      return -1;
+    }
+    xdp_mode = XDP_MODE_SKB;
+  }
+  xdp_mode = XDP_MODE_NATIVE;
+
+  /* save the filter map fd */
+  udp4_dp_filter_fd = bpf_map__fd(
+      bpf_object__find_map_by_name(xdp_program__bpf_obj(xdp_prog), "udp4_dp_filter"));
+  if (udp4_dp_filter_fd < 0) {
+    log(log_level::ERROR, "Failed to get udp4_dp_filter map fd.");
+    unload_xdp();
+    return -1;
+  }
+
+  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
+    log(log_level::ERROR, "Failed to setup AF_XDP socket.");
+    unload_xdp();
+    return -1;
+  }
+
+  log(log_level::INFO, "Loaded xdp prog.");
   return 0;
 }
 
 void mtl_interface::unload_xdp() {
-  if (xdp_prog != nullptr) {
-    xdp_program__detach(xdp_prog, ifindex, XDP_MODE_NATIVE, 0);
-    xdp_program__close(xdp_prog);
-    xdp_prog = nullptr;
-  } else {
-    log(log_level::WARNING, "Using libxdp default prog. Try to unload all.");
-  }
-  /* unload all xdp programs for the interface */
-  struct xdp_multiprog* multiprog = xdp_multiprog__get_from_ifindex(ifindex);
-  if (multiprog != nullptr) {
-    xdp_multiprog__detach(multiprog);
-    xdp_multiprog__close(multiprog);
-  }
-  log(log_level::INFO, "Unloaded xdp prog");
+  xdp_program__detach(xdp_prog, ifindex, xdp_mode, 0);
+  xdp_program__close(xdp_prog);
+
+  log(log_level::INFO, "Unloaded xdp prog.");
 }
 #endif
 

@@ -10,7 +10,7 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 # Install build dependencies
 RUN apt-get update -y && \
-    apt-get install -y git gcc pkg-config make m4 clang llvm zlib1g-dev libelf-dev libpcap-dev libcap-ng-dev meson
+    apt-get install -y git gcc pkg-config make m4 clang llvm zlib1g-dev libelf-dev libpcap-dev libcap-ng-dev meson gcc-multilib
 
 # Clone and build the xdp-tools project
 RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git && \
@@ -22,7 +22,9 @@ RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git 
 COPY . manager
 
 # Build the MTL Manager
-RUN cd manager && meson setup build && meson compile -C build
+RUN cd manager && \
+    meson setup build && \
+    DESTDIR=/install meson install -C build
 
 # Runtime stage, ubuntu 22.04
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37
@@ -35,8 +37,7 @@ RUN apt-get update -y && \
 
 # Copy the necessary binaries and libraries from the builder
 COPY --from=builder /install /
-COPY --from=builder /manager/build /app
 
-WORKDIR /app
+RUN ldconfig
 
-ENTRYPOINT ["./MtlManager"]
+ENTRYPOINT ["MtlManager"]
