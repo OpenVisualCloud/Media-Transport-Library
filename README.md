@@ -18,7 +18,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.1 Features
 
-* Supported data path backend: DPDK PMD,native kernel socket, and AF_XDP with eBPF filter(still in developing)
+* Supported data path backend: DPDK PMD, native kernel socket, and AF_XDP with eBPF filter.
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
 * Non-root run.
 * Multi-process handling, allowing for up to 8 NICs per process.
@@ -30,9 +30,9 @@ If you find value in our project, please consider giving it a star. Your support
 #### 1.1.1 ST2110 features
 
 * Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
-* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7
-* 1080p, 1080i, 720p, 4k, 8k and other
-* FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98
+* ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7.
+* 1080p, 1080i, 720p, 4k, 8k and others.
+* FPS: 120, 119.88, 100, 60, 59.94, 50, 30, 29.97, 25, 24, 23.98.
 * All video formats listed in ST2110-20, including YUV 4:2:2 10-bit and others, are supported.
 * SIMD color space converter between big-endian and little-endian.
 * ST2110-22 with encoder/decoder plugin interface.

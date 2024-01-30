@@ -150,7 +150,7 @@ The library incorporates a virtual data path backend layer, designed to abstract
 
 * DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'DPDK poll mode' driver.
 * Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems. Related code can be found from [mt_dp_socket.c](../lib/src/datapath/mt_dp_socket.c)
-* AF_XDP (Express Data Path) with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. Please refer to [mt_af_xdp.c](../lib/src/dev/mt_af_xdp.c) for detail.
+* AF_XDP (Express Data Path) with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. Please refer to [XDP Guide](xdp.md) for detail.
 * Native Windows Kernel Network Socket Stack: in plan, not implemented.
 
 IMTL selects the backend NIC based on input from the application. Users should specify both of the following parameters in `struct mtl_init_params`, the port name should follow the format described below, and the pmd type can be fetched using `mtl_pmd_by_port_name`.
