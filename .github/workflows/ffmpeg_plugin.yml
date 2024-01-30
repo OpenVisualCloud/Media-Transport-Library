@@ -97,7 +97,7 @@ jobs:
       - name: Build openh264
         run: |
           cd openh264/
-          git checkout openh264v2.4.0
+          git checkout -b openh264v2.4.0 --track origin/openh264v2.4.0
           make -j "$(nproc)"
           sudo make install
           sudo ldconfig
@@ -106,7 +106,7 @@ jobs:
       - name: Build ffmpeg 6.1 plugin
         run: |
           cd FFmpeg/
-          git checkout release/6.1
+          git checkout -b release/6.1 --track origin/release/6.1
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
           git am ../ecosystem/ffmpeg_plugin/6.1/*.patch
@@ -119,7 +119,7 @@ jobs:
       - name: Build ffmpeg 4.4 plugin
         run: |
           cd FFmpeg/
-          git checkout release/4.4
+          git checkout -b release/4.4 --track origin/release/4.4
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
           cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
           git am ../ecosystem/ffmpeg_plugin/4.4/*.patch
