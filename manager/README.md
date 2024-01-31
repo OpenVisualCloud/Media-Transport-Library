@@ -13,6 +13,13 @@ MTL Manager is a daemon server designed to operate with root privileges. Its pri
 
 ## Build
 
+To build with XDP support, install the dependencies:
+
+```bash
+sudo apt-get update
+sudo apt-get install make m4 clang llvm zlib1g-dev libelf-dev libpcap-dev libcap-ng-dev gcc-multilib
+```
+
 To compile and install the MTL Manager, use the following commands:
 
 ```bash
