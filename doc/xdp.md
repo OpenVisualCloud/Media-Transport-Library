@@ -74,7 +74,7 @@ sudo pacman -Syu --needed make m4 clang llvm zlib elfutils libcap-ng
 It is recommended to use the latest xdp-tools repository to build libxdp and libbpf. We added a fix to address memory leak in libxdp, you can refer to [PR 376](https://github.com/xdp-project/xdp-tools/pull/376)
 
 ```bash
-git clone https://github.com/xdp-project/xdp-tools.git
+git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git
 cd xdp-tools
 ./configure
 make
