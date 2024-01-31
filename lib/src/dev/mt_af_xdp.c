@@ -795,6 +795,11 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     return -EIO;
   }
 
+  if (!mt_is_manager_connected(impl)) {
+    err("%s(%d), AF_XDP backend must run with MTL Manager!\n", __func__, port);
+    return -EIO;
+  }
+
   struct mt_xdp_priv* xdp = mt_rte_zmalloc_socket(sizeof(*xdp), mt_socket_id(impl, port));
   if (!xdp) {
     err("%s(%d), xdp malloc fail\n", __func__, port);
@@ -809,11 +814,10 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   else
     xdp->start_queue = p->xdp_info[port].start_queue;
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
+  xdp->has_ctrl = true;
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
   xdp_parse_drv_name(xdp);
-
-  if (mt_is_manager_connected(impl)) xdp->has_ctrl = true;
 
   xdp_parse_combined_info(xdp);
   if ((xdp->start_queue + xdp->queues_cnt) > xdp->combined_count) {

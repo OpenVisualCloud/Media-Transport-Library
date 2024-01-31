@@ -124,6 +124,16 @@ echo 2 | sudo tee /sys/class/net/ens785f0/napi_defer_hard_irqs
 echo 200000 | sudo tee /sys/class/net/ens785f0/gro_flush_timeout
 ```
 
+### Add Capabilities to the Application
+
+The application needs to be run with `CAP_NET_ADMIN` and `CAP_NET_RAW` capabilities.
+
+For example, before running RxTxApp, you should run:
+
+```bash
+sudo setcap 'cap_net_admin+ep cap_net_raw+ep' ./build/app/RxTxApp
+```
+
 ### Running RxTxApp
 
 Just configure the network interface in json file like this, then you can refer to [Run Guide](run.md) for more usage:
