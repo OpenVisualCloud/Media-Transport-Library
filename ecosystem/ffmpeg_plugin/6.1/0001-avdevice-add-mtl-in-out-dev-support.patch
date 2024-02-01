@@ -1,17 +1,17 @@
-From cba5c84e7015150a2ca22bace39034a27e224666 Mon Sep 17 00:00:00 2001
+From bbb572621ae9319c34398cf7c605822bff2e9cf1 Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Fri, 26 Jan 2024 16:23:34 +0800
 Subject: [PATCH] avdevice: add mtl in/out dev support
 
 Signed-off-by: Frank Du <frank.du@intel.com>
 ---
- configure                | 5 +++++
- libavdevice/Makefile     | 2 ++
- libavdevice/alldevices.c | 2 ++
- 3 files changed, 9 insertions(+)
+ configure                | 7 +++++++
+ libavdevice/Makefile     | 4 ++++
+ libavdevice/alldevices.c | 4 ++++
+ 3 files changed, 15 insertions(+)
 
 diff --git a/configure b/configure
-index a89cfa6d95..4ced0f2179 100755
+index a89cfa6d95..823466185e 100755
 --- a/configure
 +++ b/configure
 @@ -309,6 +309,7 @@ External library support:
@@ -30,16 +30,18 @@ index a89cfa6d95..4ced0f2179 100755
      openal
      opengl
      openssl
-@@ -3593,6 +3595,8 @@ kmsgrab_indev_deps="libdrm"
+@@ -3593,6 +3595,10 @@ kmsgrab_indev_deps="libdrm"
  lavfi_indev_deps="avfilter"
  libcdio_indev_deps="libcdio"
  libdc1394_indev_deps="libdc1394"
 +mtl_st20p_indev_deps="mtl"
 +mtl_st20p_outdev_deps="mtl"
++mtl_st22p_indev_deps="mtl"
++mtl_st22p_outdev_deps="mtl"
  openal_indev_deps="openal"
  opengl_outdev_deps="opengl"
  opengl_outdev_suggest="sdl2"
-@@ -6868,6 +6872,7 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
+@@ -6868,6 +6874,7 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
                                   check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host; } ||
                                 die "ERROR: mmal not found" &&
                                 check_func_headers interface/mmal/mmal.h "MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS"; }
@@ -48,28 +50,32 @@ index a89cfa6d95..4ced0f2179 100755
                                 { for al_extralibs in "${OPENAL_LIBS}" "-lopenal" "-lOpenAL32"; do
                                 check_lib openal 'AL/al.h' alGetError "${al_extralibs}" && break; done } ||
 diff --git a/libavdevice/Makefile b/libavdevice/Makefile
-index c30449201d..9269a37d53 100644
+index c30449201d..134fdcba89 100644
 --- a/libavdevice/Makefile
 +++ b/libavdevice/Makefile
-@@ -34,6 +34,8 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
+@@ -34,6 +34,10 @@ OBJS-$(CONFIG_IEC61883_INDEV)            += iec61883.o
  OBJS-$(CONFIG_JACK_INDEV)                += jack.o timefilter.o
  OBJS-$(CONFIG_KMSGRAB_INDEV)             += kmsgrab.o
  OBJS-$(CONFIG_LAVFI_INDEV)               += lavfi.o
 +OBJS-$(CONFIG_MTL_ST20P_INDEV)           += mtl_common.o mtl_st20p_rx.o
 +OBJS-$(CONFIG_MTL_ST20P_OUTDEV)          += mtl_common.o mtl_st20p_tx.o
++OBJS-$(CONFIG_MTL_ST22P_INDEV)           += mtl_common.o mtl_st22p_rx.o
++OBJS-$(CONFIG_MTL_ST22P_OUTDEV)          += mtl_common.o mtl_st22p_tx.o
  OBJS-$(CONFIG_OPENAL_INDEV)              += openal-dec.o
  OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
  OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o
 diff --git a/libavdevice/alldevices.c b/libavdevice/alldevices.c
-index 8a90fcb5d7..53f90a9c90 100644
+index 8a90fcb5d7..76bd48920e 100644
 --- a/libavdevice/alldevices.c
 +++ b/libavdevice/alldevices.c
-@@ -40,6 +40,8 @@ extern const AVInputFormat  ff_iec61883_demuxer;
+@@ -40,6 +40,10 @@ extern const AVInputFormat  ff_iec61883_demuxer;
  extern const AVInputFormat  ff_jack_demuxer;
  extern const AVInputFormat  ff_kmsgrab_demuxer;
  extern const AVInputFormat  ff_lavfi_demuxer;
 +extern const AVInputFormat  ff_mtl_st20p_demuxer;
 +extern const FFOutputFormat ff_mtl_st20p_muxer;
++extern const AVInputFormat  ff_mtl_st22p_demuxer;
++extern const FFOutputFormat ff_mtl_st22p_muxer;
  extern const AVInputFormat  ff_openal_demuxer;
  extern const FFOutputFormat ff_opengl_muxer;
  extern const AVInputFormat  ff_oss_demuxer;
