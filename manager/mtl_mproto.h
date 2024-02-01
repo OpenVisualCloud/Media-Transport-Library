@@ -32,6 +32,10 @@ typedef enum {
   MTL_MSG_TYPE_PUT_LCORE,
   MTL_MSG_TYPE_ADD_UDP_DP_FILTER,
   MTL_MSG_TYPE_DEL_UDP_DP_FILTER,
+  MTL_MSG_TYPE_GET_QUEUE,
+  MTL_MSG_TYPE_PUT_QUEUE,
+  MTL_MSG_TYPE_ADD_RX_FLOW,
+  MTL_MSG_TYPE_DEL_RX_FLOW,
   /* server to client */
   MTL_MSG_TYPE_SC = 200,
   MTL_MSG_TYPE_RESPONSE,
@@ -70,6 +74,11 @@ typedef struct {
 } mtl_udp_dp_filter_message_t;
 
 typedef struct {
+  unsigned int ifindex;
+  uint16_t queue_id;
+} mtl_queue_message_t;
+
+typedef struct {
   uint8_t response; /* 0 for success, 1 for error */
 } mtl_response_message_t;
 
@@ -81,6 +90,7 @@ typedef struct {
     mtl_request_map_fd_message_t request_map_fd_msg;
     mtl_lcore_message_t lcore_msg;
     mtl_udp_dp_filter_message_t udp_dp_filter_msg;
+    mtl_queue_message_t queue_msg;
     mtl_response_message_t response_msg;
   } body;
 } mtl_message_t;

@@ -41,6 +41,8 @@ class mtl_instance {
   int handle_message_request_map_fd(mtl_request_map_fd_message_t* request_map_fd_msg);
   int handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t* udp_dp_filter_msg,
                                    bool add);
+  int handle_message_get_queue(mtl_queue_message_t* queue_msg);
+  int handle_message_put_queue(mtl_queue_message_t* queue_msg);
 
   int send_response(bool success) {
     mtl_message_t msg;
@@ -95,6 +97,12 @@ int mtl_instance::handle_message(const char* buf, int len) {
       break;
     case MTL_MSG_TYPE_DEL_UDP_DP_FILTER:
       handle_message_udp_dp_filter(&msg->body.udp_dp_filter_msg, false);
+      break;
+    case MTL_MSG_TYPE_GET_QUEUE:
+      handle_message_get_queue(&msg->body.queue_msg);
+      break;
+    case MTL_MSG_TYPE_PUT_QUEUE:
+      handle_message_put_queue(&msg->body.queue_msg);
       break;
     default:
       log(log_level::ERROR, "Unknown message type");
@@ -230,6 +238,31 @@ int mtl_instance::handle_message_udp_dp_filter(
   int ret = interface->update_udp_dp_filter(port, add);
   send_response(ret == 0);
   return ret;
+}
+
+int mtl_instance::handle_message_get_queue(mtl_queue_message_t* queue_msg) {
+  unsigned int ifindex = ntohl(queue_msg->ifindex);
+  auto interface = get_interface(ifindex);
+  if (interface == nullptr) {
+    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
+    send_response(false);
+    return -1;
+  }
+  int ret = interface->get_queue(ntohs(queue_msg->queue_id));
+  send_response(ret == 0);
+  return ret;
+}
+
+int mtl_instance::handle_message_put_queue(mtl_queue_message_t* queue_msg) {
+  unsigned int ifindex = ntohl(queue_msg->ifindex);
+  auto interface = get_interface(ifindex);
+  if (interface == nullptr) {
+    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
+    send_response(false);
+    return -1;
+  }
+  interface->put_queue(ntohs(queue_msg->queue_id));
+  return 0;
 }
 
 #endif

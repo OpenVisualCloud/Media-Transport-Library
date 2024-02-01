@@ -147,6 +147,58 @@ int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int if
   return -response;
 }
 
+int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex,
+                          unsigned int queue_id) {
+  int ret;
+  int sock = impl->instance_fd;
+
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(MTL_MSG_TYPE_GET_QUEUE);
+  msg.body.queue_msg.ifindex = htonl(ifindex);
+  msg.body.queue_msg.queue_id = htons(queue_id);
+  msg.header.body_len = htonl(sizeof(mtl_queue_message_t));
+
+  ret = send(sock, &msg, sizeof(mtl_message_t), 0);
+  if (ret < 0) {
+    err("%s(%u), send message fail\n", __func__, ifindex);
+    return ret;
+  }
+
+  ret = recv(sock, &msg, sizeof(mtl_message_t), 0);
+  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
+      ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
+    err("%s, recv response fail\n", __func__);
+    return -EIO;
+  }
+
+  int response = msg.body.response_msg.response;
+
+  /* return negative value incase user check with < 0 */
+  return -response;
+}
+
+int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
+                          unsigned int queue_id) {
+  int ret;
+  int sock = impl->instance_fd;
+
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(MTL_MSG_TYPE_PUT_QUEUE);
+  msg.body.queue_msg.ifindex = htonl(ifindex);
+  msg.body.queue_msg.queue_id = htons(queue_id);
+  msg.header.body_len = htonl(sizeof(mtl_queue_message_t));
+
+  ret = send(sock, &msg, sizeof(mtl_message_t), 0);
+  if (ret < 0) {
+    err("%s(%u), send message fail\n", __func__, ifindex);
+    return ret;
+  }
+
+  return 0;
+}
+
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -252,6 +304,22 @@ int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
 int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
+  return -ENOTSUP;
+}
+
+int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex,
+                          unsigned int queue_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  MTL_MAY_UNUSED(queue_id);
+  return -ENOTSUP;
+}
+
+int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
+                          unsigned int queue_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  MTL_MAY_UNUSED(queue_id);
   return -ENOTSUP;
 }
 

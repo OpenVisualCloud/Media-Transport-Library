@@ -78,6 +78,7 @@ struct mt_xdp_priv {
   enum mtl_port port;
   char drv[32];
   uint32_t flags; /* XDP_F_* */
+  unsigned int ifindex;
 
   uint8_t start_queue;
   uint16_t queues_cnt;
@@ -247,6 +248,8 @@ static int xdp_free(struct mt_xdp_priv* xdp) {
         warn("%s(%d,%u), rx_entry still active\n", __func__, port, xq->q);
         mt_rx_xdp_put(xq->rx_entry);
       }
+
+      mt_instance_put_queue(xdp->parent, xdp->ifindex, xq->q);
     }
     mt_rte_free(xdp->queues_info);
     xdp->queues_info = NULL;
@@ -784,6 +787,20 @@ int mt_dev_xdp_get_combined(struct mt_interface* inf, uint16_t* combined) {
   return 0;
 }
 
+static uint16_t xdp_get_queue(struct mt_xdp_priv* xdp, uint16_t start_queue) {
+  struct mtl_main_impl* impl = xdp->parent;
+  int ret = 0;
+  uint16_t q;
+
+  for (q = start_queue; q < xdp->combined_count; q++) {
+    ret = mt_instance_get_queue(impl, xdp->ifindex, q);
+    if (ret == 0) return q;
+  }
+
+  err("%s(%d), get queue fail\n", __func__, xdp->port);
+  return q;
+}
+
 int mt_dev_xdp_init(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
@@ -807,6 +824,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   }
   xdp->parent = impl;
   xdp->port = port;
+  xdp->ifindex = if_nametoindex(mt_kernel_if_name(impl, port));
   xdp->max_combined = 1;
   xdp->combined_count = 1;
   if (mt_has_srss(impl, port))
@@ -835,12 +853,18 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     xdp_free(xdp);
     return -ENOMEM;
   }
+  uint16_t q = xdp->start_queue;
   for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
     struct mt_xdp_queue* xq = &xdp->queues_info[i];
-    uint16_t q = i + xdp->start_queue;
+    q = xdp_get_queue(xdp, q);
+    if (q >= xdp->combined_count) {
+      err("%s(%d), no queue found\n", __func__, port);
+      xdp_free(xdp);
+      return -EIO;
+    }
 
     xq->port = port;
-    xq->q = q;
+    xq->q = q++;
     xq->umem_ring_size = XSK_RING_CONS__DEFAULT_NUM_DESCS;
     xq->tx_free_thresh = 0; /* default check free always */
     xq->tx_full_thresh = 1;

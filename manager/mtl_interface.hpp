@@ -13,12 +13,15 @@
 
 #include <net/if.h>
 
+#include <bitset>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 #include "logging.hpp"
+
+#define MTL_MAX_QUEUES 64
 
 class mtl_interface {
  private:
@@ -29,6 +32,7 @@ class mtl_interface {
   int udp4_dp_filter_fd;
   enum xdp_attach_mode xdp_mode;
 #endif
+  std::bitset<MTL_MAX_QUEUES> queues;
 
  private:
   void log(const log_level& level, const std::string& message) const {
@@ -52,6 +56,9 @@ class mtl_interface {
 #endif
   }
   int update_udp_dp_filter(uint16_t dst_port, bool add);
+  int get_queue(uint16_t queue_id);
+  int put_queue(uint16_t queue_id);
+  // int add_rx_flow()
 };
 
 mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
@@ -62,6 +69,7 @@ mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
   xdp_mode = XDP_MODE_UNSPEC;
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #endif
+  queues.reset();
 
   log(log_level::INFO, "Added interface.");
 }
@@ -105,6 +113,24 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
       "update_udp_dp_filter() called but XDP backend is not enabled.");
   return -1;
 #endif
+}
+
+int mtl_interface::get_queue(uint16_t queue_id) {
+  if (queues.test(queue_id))
+    return -1;
+  else
+    queues.set(queue_id, true);
+  log(log_level::INFO, "Get queue " + std::to_string(queue_id));
+  return 0;
+}
+
+int mtl_interface::put_queue(uint16_t queue_id) {
+  if (!queues.test(queue_id))
+    return -1;
+  else
+    queues.set(queue_id, false);
+  log(log_level::INFO, "Put queue " + std::to_string(queue_id));
+  return 0;
 }
 
 int mtl_interface::clear_flow_rules() {
