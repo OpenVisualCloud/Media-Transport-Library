@@ -201,7 +201,7 @@ static int xdp_stat_dump(void* priv) {
 static void xdp_queue_clean_mbuf(struct mt_xdp_queue* xq) {
   struct xsk_ring_prod* rpq = &xq->rx_prod;
   struct rte_mempool* mp = xq->mbuf_pool;
-  uint32_t size = xq->umem_ring_size;
+  uint32_t size = xq->umem_ring_size * 2 + 128 /* max burst size */;
   uint32_t idx = 0;
 
   /* clean rx prod ring */
