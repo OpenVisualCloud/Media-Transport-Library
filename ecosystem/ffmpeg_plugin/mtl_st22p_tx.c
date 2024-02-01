@@ -30,27 +30,33 @@ typedef struct mtlMuxerContext {
   int udp_port;
   int payload_type;
   int fb_cnt;
+  float bpp;
   int session_cnt;
+  int codec_thread_cnt;
 
   int width;
   int height;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
   mtl_handle dev_handle;
-  st20p_tx_handle tx_handle;
+  st22p_tx_handle tx_handle;
 
   int64_t frame_counter;
   size_t frame_size;
 } mtlMuxerContext;
 
-static int mtl_st20p_write_header(AVFormatContext* ctx) {
+static int mtl_st22p_write_header(AVFormatContext* ctx) {
   mtlMuxerContext* s = ctx->priv_data;
-  struct st20p_tx_ops ops_tx;
+  struct st22p_tx_ops ops_tx;
   const AVPixFmtDescriptor* pix_fmt_desc = NULL;
 
   dbg("%s, start\n", __func__);
   memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+  ops_tx.flags |= ST22P_TX_FLAG_BLOCK_GET;
+  ops_tx.codec = ST22_CODEC_JPEGXS;
+  ops_tx.pack_type = ST22_PACK_CODESTREAM;
+  ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
+  ops_tx.codec_thread_cnt = 0;
 
   if (NULL == s->port) {
     err(ctx, "%s, port NULL\n", __func__);
@@ -88,6 +94,9 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
 
   ops_tx.width = s->width = ctx->streams[0]->codecpar->width;
   ops_tx.height = s->height = ctx->streams[0]->codecpar->height;
+  /* bpp */
+  info(ctx, "%s, bpp: %f\n", __func__, s->bpp);
+  ops_tx.codestream_size = (float)ops_tx.width * ops_tx.height * s->bpp / 8;
   s->framerate = ctx->streams[0]->avg_frame_rate;
   ops_tx.fps = framerate_to_st_fps(s->framerate);
   if (ops_tx.fps == ST_FPS_MAX) {
@@ -102,11 +111,9 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
   switch (s->pixel_format) {
     case AV_PIX_FMT_YUV422P10LE:
       ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       break;
     case AV_PIX_FMT_RGB24:
       ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
-      ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
       break;
     default:
       err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
@@ -121,40 +128,40 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  ops_tx.name = "st20p";
+  ops_tx.name = "st22p";
   ops_tx.priv = s;  // Handle of priv_data registered to lib
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   info(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_tx.framebuff_cnt = s->fb_cnt;
 
-  s->tx_handle = st20p_tx_create(s->dev_handle, &ops_tx);
+  s->tx_handle = st22p_tx_create(s->dev_handle, &ops_tx);
   if (!s->tx_handle) {
-    err(ctx, "%s, st20p_tx_create failed\n", __func__);
+    err(ctx, "%s, st22p_tx_create failed\n", __func__);
     return AVERROR(EIO);
   }
 
-  s->frame_size = st20p_tx_frame_size(s->tx_handle);
+  s->frame_size = st22p_tx_frame_size(s->tx_handle);
   if (s->frame_size <= 0) {
-    err(ctx, "%s, st20p_tx_frame_size failed\n", __func__);
+    err(ctx, "%s, st22p_tx_frame_size failed\n", __func__);
     return AVERROR(EINVAL);
   }
 
-  info(ctx, "%s(%d), st20p_tx_create succ %p\n", __func__, s->idx, s->tx_handle);
+  info(ctx, "%s(%d), st22p_tx_create succ %p\n", __func__, s->idx, s->tx_handle);
   s->frame_counter = 0;
   return 0;
 }
 
-static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
+static int mtl_st22p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   mtlMuxerContext* s = ctx->priv_data;
   struct st_frame* frame;
 
   dbg("%s, start\n", __func__);
-  frame = st20p_tx_get_frame(s->tx_handle);
+  frame = st22p_tx_get_frame(s->tx_handle);
   if (!frame) {
-    info(ctx, "%s, st20p_tx_get_frame timeout\n", __func__);
+    info(ctx, "%s, st22p_tx_get_frame timeout\n", __func__);
     return AVERROR(EIO);
   }
-  dbg(ctx, "%s, st20p_tx_get_frame: %p\n", __func__, frame);
+  dbg(ctx, "%s, st22p_tx_get_frame: %p\n", __func__, frame);
   if (frame->data_size != s->frame_size) {
     err(ctx,
         "%s(%d), unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
@@ -164,22 +171,22 @@ static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   /* todo: zero copy with external frame mode */
   mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);
 
-  st20p_tx_put_frame(s->tx_handle, frame);
+  st22p_tx_put_frame(s->tx_handle, frame);
   s->frame_counter++;
   dbg(ctx, "%s, frame counter %" PRId64 "\n", __func__, s->frame_counter);
   return 0;
 }
 
-static int mtl_st20p_write_trailer(AVFormatContext* ctx) {
+static int mtl_st22p_write_trailer(AVFormatContext* ctx) {
   mtlMuxerContext* s = ctx->priv_data;
 
   dbg(ctx, "%s, start\n", __func__);
 
   // Destroy tx session
   if (s->tx_handle) {
-    st20p_tx_free(s->tx_handle);
+    st22p_tx_free(s->tx_handle);
     s->tx_handle = NULL;
-    info(ctx, "%s(%d), st20p_tx_free succ\n", __func__, s->idx);
+    info(ctx, "%s(%d), st22p_tx_free succ\n", __func__, s->idx);
   }
 
   // Destroy device
@@ -194,7 +201,7 @@ static int mtl_st20p_write_trailer(AVFormatContext* ctx) {
 
 #define OFFSET(x) offsetof(mtlMuxerContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
-static const AVOption mtl_st20p_tx_options[] = {
+static const AVOption mtl_st22p_tx_options[] = {
     // mtl port info
     {"port", "ST port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},
     {"local_addr",
@@ -242,40 +249,49 @@ static const AVOption mtl_st20p_tx_options[] = {
      1,
      INT_MAX,
      ENC},
+    {"bpp", "bit per pixel", OFFSET(bpp), AV_OPT_TYPE_FLOAT, {.dbl = 3.0}, 0.1, 8.0, ENC},
+    {"codec_thread_cnt",
+     "Codec threads count",
+     OFFSET(codec_thread_cnt),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     64,
+     ENC},
     {NULL},
 };
 
-static const AVClass mtl_st20p_muxer_class = {
+static const AVClass mtl_st22p_muxer_class = {
     .class_name = "mtl muxer",
     .item_name = av_default_item_name,
-    .option = mtl_st20p_tx_options,
+    .option = mtl_st22p_tx_options,
     .version = LIBAVUTIL_VERSION_INT,
     .category = AV_CLASS_CATEGORY_DEVICE_OUTPUT,
 };
 
 #ifdef MTL_FFMPEG_4_4
-AVOutputFormat ff_mtl_st20p_muxer = {
-    .name = "mtl_st20p",
-    .long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
+AVOutputFormat ff_mtl_st22p_muxer = {
+    .name = "mtl_st22p",
+    .long_name = NULL_IF_CONFIG_SMALL("mtl st22p output device"),
     .priv_data_size = sizeof(mtlMuxerContext),
-    .write_header = mtl_st20p_write_header,
-    .write_packet = mtl_st20p_write_packet,
-    .write_trailer = mtl_st20p_write_trailer,
+    .write_header = mtl_st22p_write_header,
+    .write_packet = mtl_st22p_write_packet,
+    .write_trailer = mtl_st22p_write_trailer,
     .video_codec = AV_CODEC_ID_RAWVIDEO,
     .flags = AVFMT_NOFILE,
     .control_message = NULL,
-    .priv_class = &mtl_st20p_muxer_class,
+    .priv_class = &mtl_st22p_muxer_class,
 };
 #else
-const FFOutputFormat ff_mtl_st20p_muxer = {
-    .p.name = "mtl_st20p",
-    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
+const FFOutputFormat ff_mtl_st22p_muxer = {
+    .p.name = "mtl_st22p",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st22p output device"),
     .priv_data_size = sizeof(mtlMuxerContext),
-    .write_header = mtl_st20p_write_header,
-    .write_packet = mtl_st20p_write_packet,
-    .write_trailer = mtl_st20p_write_trailer,
+    .write_header = mtl_st22p_write_header,
+    .write_packet = mtl_st22p_write_packet,
+    .write_trailer = mtl_st22p_write_trailer,
     .p.video_codec = AV_CODEC_ID_RAWVIDEO,
     .p.flags = AVFMT_NOFILE,
-    .p.priv_class = &mtl_st20p_muxer_class,
+    .p.priv_class = &mtl_st22p_muxer_class,
 };
 #endif
