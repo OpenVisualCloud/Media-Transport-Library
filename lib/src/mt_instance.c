@@ -12,7 +12,7 @@
 #include "mt_log.h"
 #include "mt_util.h"
 
-int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   int ret;
   int sock = impl->instance_fd;
 
@@ -31,7 +31,7 @@ int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   return 0;
 }
 
-int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   int ret;
   int sock = impl->instance_fd;
 
@@ -148,7 +148,7 @@ int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int if
 }
 
 int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex,
-                          unsigned int queue_id) {
+                          uint16_t queue_id) {
   int ret;
   int sock = impl->instance_fd;
 
@@ -179,7 +179,7 @@ int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex,
 }
 
 int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
-                          unsigned int queue_id) {
+                          uint16_t queue_id) {
   int ret;
   int sock = impl->instance_fd;
 
@@ -289,13 +289,13 @@ int mt_instance_uinit(struct mtl_main_impl* impl) {
   return -ENOTSUP;
 }
 
-int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(lcore_id);
   return -ENOTSUP;
 }
 
-int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(lcore_id);
   return -ENOTSUP;
@@ -308,7 +308,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
 }
 
 int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex,
-                          unsigned int queue_id) {
+                          uint16_t queue_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
   MTL_MAY_UNUSED(queue_id);
@@ -316,7 +316,7 @@ int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex,
 }
 
 int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
-                          unsigned int queue_id) {
+                          uint16_t queue_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
   MTL_MAY_UNUSED(queue_id);
