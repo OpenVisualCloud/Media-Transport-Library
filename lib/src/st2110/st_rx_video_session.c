@@ -4336,6 +4336,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.num_port = ops->num_port;
   for (int i = 0; i < ops->num_port; i++) {
     memcpy(st20_ops.ip_addr[i], ops->ip_addr[i], MTL_IP_ADDR_LEN);
+    memcpy(st20_ops.mcast_sip_addr[i], ops->mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(st20_ops.port[i], MTL_PORT_MAX_LEN, "%s", ops->port[i]);
     st20_ops.udp_port[i] = ops->udp_port[i];
   }
