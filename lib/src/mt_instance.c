@@ -248,7 +248,6 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
 int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
-  MTL_MAY_UNUSED(queue_id);
   return -ENOTSUP;
 }
 

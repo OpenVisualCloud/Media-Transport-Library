@@ -102,7 +102,7 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
   if (add && udp4_dp_refcnt[dst_port] > 1) {
     /* Port already in the map, no need to update */
     return 0;
-  } else if (!add && udp4_dp_refcnt[dst_port] >= 0) {
+  } else if (!add && udp4_dp_refcnt[dst_port] > 0) {
     /* There are still references to the port, no need to update */
     return 0;
   }
