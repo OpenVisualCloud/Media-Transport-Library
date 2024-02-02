@@ -1012,9 +1012,9 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name,
+static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, int ifindex,
                                        uint16_t dp, bool add) {
-  return mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dp, add);
+  return mt_instance_update_udp_dp_filter(impl, ifindex, dp, add);
 }
 
 struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -1083,8 +1083,7 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
       mt_rx_xdp_put(entry);
       return NULL;
     }
-    if (xdp->has_ctrl &&
-        !xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, true))
+    if (xdp->has_ctrl && !xdp_socket_update_dp(impl, xdp->ifindex, flow->dst_port, true))
       entry->skip_all_check = true;
     else
       entry->skip_all_check = false;
@@ -1146,8 +1145,7 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
   if (entry->flow_rsp) {
     mt_rx_flow_free(impl, port, entry->flow_rsp);
     entry->flow_rsp = NULL;
-    if (xdp->has_ctrl)
-      xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, false);
+    if (xdp->has_ctrl) xdp_socket_update_dp(impl, xdp->ifindex, flow->dst_port, false);
   }
   if (xq) {
     xdp_queue_rx_stat(xq);

@@ -97,15 +97,12 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
 
   int value = add ? 1 : 0;
   if (bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY) < 0) {
-    log(log_level::WARNING, "Failed to update udp4_dp_filter map");
+    log(log_level::ERROR, "Failed to update udp4_dp_filter map");
     return -1;
   }
 
-  if (add)
-    log(log_level::INFO, "Added port " + std::to_string(dst_port) + " to udp4_dp_filter");
-  else
-    log(log_level::INFO,
-        "Removed port " + std::to_string(dst_port) + " from udp4_dp_filter");
+  std::string action = add ? "Added " : "Removed ";
+  log(log_level::INFO, action + std::to_string(dst_port) + " in udp4_dp_filter");
 
   return 0;
 #else
@@ -193,17 +190,17 @@ int mtl_interface::load_xdp() {
   }
   xdp_mode = XDP_MODE_NATIVE;
 
+  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
+    log(log_level::ERROR, "Failed to setup AF_XDP socket.");
+    unload_xdp();
+    return -1;
+  }
+
   /* save the filter map fd */
   udp4_dp_filter_fd = bpf_map__fd(
       bpf_object__find_map_by_name(xdp_program__bpf_obj(xdp_prog), "udp4_dp_filter"));
   if (udp4_dp_filter_fd < 0) {
     log(log_level::ERROR, "Failed to get udp4_dp_filter map fd.");
-    unload_xdp();
-    return -1;
-  }
-
-  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
-    log(log_level::ERROR, "Failed to setup AF_XDP socket.");
     unload_xdp();
     return -1;
   }
