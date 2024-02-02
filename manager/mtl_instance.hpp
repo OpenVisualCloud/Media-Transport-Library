@@ -35,21 +35,21 @@ class mtl_instance {
                 "[Instance " + hostname + ":" + std::to_string(pid) + "] " + message);
   }
 
-  int handle_message_get_lcore(mtl_lcore_message_t* lcore_msg);
-  int handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
-  int handle_message_register(mtl_register_message_t* register_msg);
-  int handle_message_request_map_fd(mtl_request_map_fd_message_t* request_map_fd_msg);
-  int handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t* udp_dp_filter_msg,
-                                   bool add);
-  int handle_message_get_queue(mtl_queue_message_t* queue_msg);
-  int handle_message_put_queue(mtl_queue_message_t* queue_msg);
+  void handle_message_get_lcore(mtl_lcore_message_t* lcore_msg);
+  void handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
+  void handle_message_register(mtl_register_message_t* register_msg);
+  void handle_message_if_xsk_map_fd(mtl_if_message_t* request_map_fd_msg);
+  void handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t* udp_dp_filter_msg,
+                                    bool add);
+  void handle_message_if_get_queue(mtl_if_message_t* queue_msg);
+  void handle_message_if_put_queue(mtl_if_message_t* queue_msg);
 
-  int send_response(bool success) {
+  int send_response(int response, mtl_message_type_t type = MTL_MSG_TYPE_RESPONSE) {
     mtl_message_t msg;
     msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-    msg.header.type = (mtl_message_type_t)htonl(MTL_MSG_TYPE_RESPONSE);
+    msg.header.type = (mtl_message_type_t)htonl(type);
     msg.header.body_len = htonl(sizeof(mtl_response_message_t));
-    msg.body.response_msg.response = success ? 0 : 1;
+    msg.body.response_msg.response = htonl(response);
     return send(conn_fd, &msg, sizeof(mtl_message_t), 0);
   }
   std::shared_ptr<mtl_interface> get_interface(const unsigned int ifindex);
@@ -68,15 +68,15 @@ class mtl_instance {
   int get_pid() const { return pid; }
   int get_uid() const { return uid; }
   std::string get_hostname() const { return hostname; }
-  int handle_message(const char* buf, int len);
+  void handle_message(const char* buf, int len);
 };
 
-int mtl_instance::handle_message(const char* buf, int len) {
-  if ((size_t)len < sizeof(mtl_message_t)) return -1;
+void mtl_instance::handle_message(const char* buf, int len) {
+  if ((size_t)len < sizeof(mtl_message_t)) return;
   mtl_message_t* msg = (mtl_message_t*)buf;
   if (ntohl(msg->header.magic) != MTL_MANAGER_MAGIC) {
     log(log_level::ERROR, "Invalid magic");
-    return -1;
+    return;
   }
 
   switch (ntohl(msg->header.type)) {
@@ -89,8 +89,8 @@ int mtl_instance::handle_message(const char* buf, int len) {
     case MTL_MSG_TYPE_PUT_LCORE:
       handle_message_put_lcore(&msg->body.lcore_msg);
       break;
-    case MTL_MSG_TYPE_REQUEST_MAP_FD:
-      handle_message_request_map_fd(&msg->body.request_map_fd_msg);
+    case MTL_MSG_TYPE_IF_XSK_MAP_FD:
+      handle_message_if_xsk_map_fd(&msg->body.if_msg);
       break;
     case MTL_MSG_TYPE_ADD_UDP_DP_FILTER:
       handle_message_udp_dp_filter(&msg->body.udp_dp_filter_msg, true);
@@ -98,53 +98,55 @@ int mtl_instance::handle_message(const char* buf, int len) {
     case MTL_MSG_TYPE_DEL_UDP_DP_FILTER:
       handle_message_udp_dp_filter(&msg->body.udp_dp_filter_msg, false);
       break;
-    case MTL_MSG_TYPE_GET_QUEUE:
-      handle_message_get_queue(&msg->body.queue_msg);
+    case MTL_MSG_TYPE_IF_GET_QUEUE:
+      handle_message_if_get_queue(&msg->body.if_msg);
       break;
-    case MTL_MSG_TYPE_PUT_QUEUE:
-      handle_message_put_queue(&msg->body.queue_msg);
+    case MTL_MSG_TYPE_IF_PUT_QUEUE:
+      handle_message_if_put_queue(&msg->body.if_msg);
       break;
     default:
       log(log_level::ERROR, "Unknown message type");
       break;
   }
-
-  return 0;
 }
 
-int mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
+void mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
   if (!is_registered) {
     log(log_level::WARNING, "Instance is not registered");
-    return -1;
+    return;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
   int ret = mtl_lcore::get_instance().get_lcore(lcore_id);
   if (ret < 0) {
-    send_response(false);
-    return -1;
+    send_response(ret);
+    return;
   }
   lcore_ids.push_back(lcore_id);
   log(log_level::INFO, "Added lcore " + std::to_string(lcore_id));
-  send_response(true);
-  return 0;
+  send_response(0);
 }
 
-int mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
+void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
   if (!is_registered) {
     log(log_level::INFO, "Instance is not registered");
-    return -1;
+    return;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
-  mtl_lcore::get_instance().put_lcore(lcore_id);
+
   auto it = std::find_if(lcore_ids.begin(), lcore_ids.end(),
                          [lcore_id](uint16_t id) { return id == lcore_id; });
   if (it != lcore_ids.end()) lcore_ids.erase(it);
 
+  int ret = mtl_lcore::get_instance().put_lcore(lcore_id);
+  if (ret < 0) {
+    send_response(ret);
+    return;
+  }
   log(log_level::INFO, "Removed lcore " + std::to_string(lcore_id));
-  return 0;
+  send_response(0);
 }
 
-int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) {
+void mtl_instance::handle_message_register(mtl_register_message_t* register_msg) {
   pid = ntohl(register_msg->pid);
   uid = ntohl(register_msg->uid);
   hostname = std::string(register_msg->hostname, 64);
@@ -154,17 +156,15 @@ int mtl_instance::handle_message_register(mtl_register_message_t* register_msg) 
     auto interface = get_interface(ifindex);
     if (interface == nullptr) {
       log(log_level::ERROR, "Could not get interface " + std::to_string(ifindex));
-      send_response(false);
-      return -1;
+      send_response(-1);
+      return;
     }
   }
 
   log(log_level::INFO, "Registered.");
 
   is_registered = true;
-  send_response(true);
-
-  return 0;
+  send_response(0);
 }
 
 std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int ifindex) {
@@ -196,10 +196,9 @@ std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int if
   }
 }
 
-int mtl_instance::handle_message_request_map_fd(
-    mtl_request_map_fd_message_t* request_map_fd_msg) {
+void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
   int fd = -1;
-  unsigned int ifindex = ntohl(request_map_fd_msg->ifindex);
+  unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface != nullptr) fd = interface->get_xsks_map_fd();
 
@@ -222,47 +221,45 @@ int mtl_instance::handle_message_request_map_fd(
   cmsg->cmsg_len = CMSG_LEN(sizeof(int));
   *((int*)CMSG_DATA(cmsg)) = fd;
 
-  return sendmsg(conn_fd, &msg, 0);
+  sendmsg(conn_fd, &msg, 0);
 }
 
-int mtl_instance::handle_message_udp_dp_filter(
+void mtl_instance::handle_message_udp_dp_filter(
     mtl_udp_dp_filter_message_t* udp_dp_filter_msg, bool add) {
   unsigned int ifindex = ntohl(udp_dp_filter_msg->ifindex);
   uint16_t port = ntohs(udp_dp_filter_msg->port);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(false);
-    return -1;
+    send_response(-1);
+    return;
   }
   int ret = interface->update_udp_dp_filter(port, add);
-  send_response(ret == 0);
-  return ret;
+  send_response(ret);
 }
 
-int mtl_instance::handle_message_get_queue(mtl_queue_message_t* queue_msg) {
-  unsigned int ifindex = ntohl(queue_msg->ifindex);
+void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
+  unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(false);
-    return -1;
+    send_response(-1, MTL_MSG_TYPE_IF_QUEUE_ID);
+    return;
   }
-  int ret = interface->get_queue(ntohs(queue_msg->queue_id));
-  send_response(ret == 0);
-  return ret;
+  int ret = interface->get_queue();
+  send_response(ret, MTL_MSG_TYPE_IF_QUEUE_ID);
 }
 
-int mtl_instance::handle_message_put_queue(mtl_queue_message_t* queue_msg) {
-  unsigned int ifindex = ntohl(queue_msg->ifindex);
+void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
+  unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(false);
-    return -1;
+    send_response(-1);
+    return;
   }
-  interface->put_queue(ntohs(queue_msg->queue_id));
-  return 0;
+  int ret = interface->put_queue(ntohs(if_msg->queue_id));
+  send_response(ret);
 }
 
 #endif

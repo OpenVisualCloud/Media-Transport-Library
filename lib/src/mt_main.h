@@ -1346,11 +1346,6 @@ static inline int mt_num_ports(struct mtl_main_impl* impl) {
 
 bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id);
 
-static inline uint8_t mt_afxdp_start_queue(struct mtl_main_impl* impl,
-                                           enum mtl_port port) {
-  return impl->user_para.xdp_info[port].start_queue;
-}
-
 /* if user enable the phc2sys service */
 static inline bool mt_user_phc2sys_service(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_PHC2SYS_ENABLE)

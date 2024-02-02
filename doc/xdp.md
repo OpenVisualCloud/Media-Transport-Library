@@ -157,7 +157,6 @@ To configure the network interface in your own app, here is the example code:
 /* struct mtl_init_params* p */
 snprintf(p->port[i], sizeof(p->port[i]), "%s", "native_af_xdp:ens785f0");
 p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
-p->xdp_info[i].start_queue = 1;
 ...
 mtl_init(p);
 ```

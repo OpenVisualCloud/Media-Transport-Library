@@ -80,7 +80,6 @@ struct mt_xdp_priv {
   uint32_t flags; /* XDP_F_* */
   unsigned int ifindex;
 
-  uint8_t start_queue;
   uint16_t queues_cnt;
   uint32_t max_combined;
   uint32_t combined_count;
@@ -333,8 +332,7 @@ static int xdp_parse_pacing_ice(struct mt_xdp_priv* xdp) {
 
   uint32_t rate = MTL_BIT32(31);
   char path[128];
-  snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name,
-           xdp->start_queue);
+  snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name, 1);
   int ret = mt_sysfs_write_uint32(path, rate);
   info("%s(%d), rl feature %s\n", __func__, port, ret < 0 ? "no" : "yes");
   if (ret >= 0) {
@@ -787,24 +785,9 @@ int mt_dev_xdp_get_combined(struct mt_interface* inf, uint16_t* combined) {
   return 0;
 }
 
-static uint16_t xdp_get_queue(struct mt_xdp_priv* xdp, uint16_t start_queue) {
-  struct mtl_main_impl* impl = xdp->parent;
-  int ret = 0;
-  uint16_t q;
-
-  for (q = start_queue; q < xdp->combined_count; q++) {
-    ret = mt_instance_get_queue(impl, xdp->ifindex, q);
-    if (ret == 0) return q;
-  }
-
-  err("%s(%d), get queue fail\n", __func__, xdp->port);
-  return q;
-}
-
 int mt_dev_xdp_init(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
-  struct mtl_init_params* p = mt_get_user_params(impl);
   int ret;
 
   if (!mt_pmd_is_native_af_xdp(impl, port)) {
@@ -827,10 +810,6 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp->ifindex = if_nametoindex(mt_kernel_if_name(impl, port));
   xdp->max_combined = 1;
   xdp->combined_count = 1;
-  if (mt_has_srss(impl, port))
-    xdp->start_queue = 0; /* rss loop all queues */
-  else
-    xdp->start_queue = p->xdp_info[port].start_queue;
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   xdp->has_ctrl = true;
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
@@ -838,10 +817,10 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   xdp_parse_drv_name(xdp);
 
   xdp_parse_combined_info(xdp);
-  if ((xdp->start_queue + xdp->queues_cnt) > xdp->combined_count) {
-    err("%s(%d), too many queues requested, start_queue %u queues_cnt %u combined_count "
+  if (xdp->queues_cnt > xdp->combined_count) {
+    err("%s(%d), too many queues requested, queues_cnt %u combined_count "
         "%u\n",
-        __func__, port, xdp->start_queue, xdp->queues_cnt, xdp->combined_count);
+        __func__, port, xdp->queues_cnt, xdp->combined_count);
     xdp_free(xdp);
     return -ENOTSUP;
   }
@@ -853,18 +832,17 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     xdp_free(xdp);
     return -ENOMEM;
   }
-  uint16_t q = xdp->start_queue;
   for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
-    struct mt_xdp_queue* xq = &xdp->queues_info[i];
-    q = xdp_get_queue(xdp, q);
-    if (q >= xdp->combined_count) {
-      err("%s(%d), no queue found\n", __func__, port);
+    int q = mt_instance_get_queue(impl, xdp->ifindex);
+    if (q < 0) {
+      err("%s(%d), no free queue found\n", __func__, port);
       xdp_free(xdp);
       return -EIO;
     }
 
+    struct mt_xdp_queue* xq = &xdp->queues_info[i];
     xq->port = port;
-    xq->q = q++;
+    xq->q = q;
     xq->umem_ring_size = XSK_RING_CONS__DEFAULT_NUM_DESCS;
     xq->tx_free_thresh = 0; /* default check free always */
     xq->tx_full_thresh = 1;
@@ -895,8 +873,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   inf->port_id = inf->port;
   inf->xdp = xdp;
   inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
-  info("%s(%d), start queue %u cnt %u\n", __func__, port, xdp->start_queue,
-       xdp->queues_cnt);
+  info("%s(%d), cnt %u\n", __func__, port, xdp->queues_cnt);
   return 0;
 }
 
@@ -1077,7 +1054,7 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
 
   if (!args || !args->skip_flow) {
     /* create flow */
-    entry->flow_rsp = mt_rx_flow_create(impl, port, q - xdp->start_queue, flow);
+    entry->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
     if (!entry->flow_rsp) {
       err("%s(%d,%u), create flow fail\n", __func__, port, q);
       mt_rx_xdp_put(entry);

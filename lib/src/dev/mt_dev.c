@@ -360,8 +360,8 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       const char* if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
-               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name,
-               p->xdp_info[i].start_queue, queue_pair_cnt);
+               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name, 1,
+               queue_pair_cnt);
       /* save kport info */
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);

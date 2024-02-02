@@ -929,8 +929,6 @@ void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
 int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
   struct st_rx_ancillary_session_impl* s;
-  struct mtl_main_impl* impl;
-  enum mtl_port port;
 
   if (s_impl->type != MT_HANDLE_RX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -938,17 +936,10 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
   }
 
   s = s_impl->impl;
-  impl = s_impl->parent;
 
   memset(meta, 0x0, sizeof(*meta));
   meta->num_port = RTE_MIN(s->ops.num_port, MTL_SESSION_PORT_MAX);
   for (uint8_t i = 0; i < meta->num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-
-    if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
-      /* af_xdp pmd */
-      meta->start_queue[i] = mt_afxdp_start_queue(impl, port);
-    }
     meta->queue_id[i] = rx_ancillary_queue_id(s, i);
   }
 

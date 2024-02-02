@@ -354,7 +354,6 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   struct ifreq ifr;
   int ret, fd;
   int free_loc = -1, flow_id = -1;
-  uint8_t start_queue = mt_afxdp_start_queue(impl, port);
   const char* if_name = mt_kernel_if_name(impl, port);
   bool has_ip_flow = true;
 
@@ -455,14 +454,14 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
       rte_memcpy(&fs->h_u.udp_ip4_spec.ip4dst, flow->sip_addr, MTL_IP_ADDR_LEN);
     }
   }
-  fs->ring_cookie = queue_id + start_queue;
+  fs->ring_cookie = queue_id;
   fs->location = free_loc; /* for some NICs the location must be set */
 
   ifr.ifr_data = (void*)&cmd;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
-    err("%s(%d), cannot insert classifier: %s, start_queue %u, if %s\n", __func__, port,
-        strerror(errno), start_queue, if_name);
+    err("%s(%d), cannot insert classifier: %s, if %s\n", __func__, port, strerror(errno),
+        if_name);
     if (ret == -EPERM)
       err("%s(%d), please add capability for the app: sudo setcap 'cap_net_admin+ep' "
           "<app>\n",

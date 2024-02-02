@@ -14,7 +14,6 @@ fn main() {
             port: [port_p; 8],
             num_ports: 1,
             pmd: [0; 8],
-            xdp_info: [mtl_af_xdp_params { start_queue: 0 }; 8],
             sip_addr: [[192, 168, 96, 1]; 8],
             netmask: [[255, 255, 255, 0]; 8],
             gateway: [[192, 168, 96, 1]; 8],

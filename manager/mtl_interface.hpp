@@ -31,6 +31,7 @@ class mtl_interface {
   int xsks_map_fd;
   int udp4_dp_filter_fd;
   enum xdp_attach_mode xdp_mode;
+  std::unordered_map<uint16_t, int> udp4_dp_refcnt;
 #endif
   std::bitset<MTL_MAX_QUEUES> queues;
 
@@ -56,7 +57,7 @@ class mtl_interface {
 #endif
   }
   int update_udp_dp_filter(uint16_t dst_port, bool add);
-  int get_queue(uint16_t queue_id);
+  int get_queue();
   int put_queue(uint16_t queue_id);
   // int add_rx_flow()
 };
@@ -70,6 +71,7 @@ mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #endif
   queues.reset();
+  queues.set(0, true); /* Reserve queue 0 for system. */
 
   log(log_level::INFO, "Added interface.");
 }
@@ -95,6 +97,16 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
     return -1;
   }
 
+  udp4_dp_refcnt[dst_port] += add ? 1 : -1;
+
+  if (add && udp4_dp_refcnt[dst_port] > 1) {
+    /* Port already in the map, no need to update */
+    return 0;
+  } else if (!add && udp4_dp_refcnt[dst_port] >= 0) {
+    /* There are still references to the port, no need to update */
+    return 0;
+  }
+
   int value = add ? 1 : 0;
   if (bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY) < 0) {
     log(log_level::ERROR, "Failed to update udp4_dp_filter map");
@@ -112,22 +124,30 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
 #endif
 }
 
-int mtl_interface::get_queue(uint16_t queue_id) {
-  if (queues.test(queue_id))
+int mtl_interface::get_queue() {
+  if (!queues.all()) {
+    size_t q = 0;
+    while (queues.test(q)) {
+      q++;
+    }
+    queues.set(q, true);
+    log(log_level::INFO, "Get queue " + std::to_string(q));
+    return q;
+  } else {
+    log(log_level::ERROR, "No free queue");
     return -1;
-  else
-    queues.set(queue_id, true);
-  log(log_level::INFO, "Get queue " + std::to_string(queue_id));
-  return 0;
+  }
 }
 
 int mtl_interface::put_queue(uint16_t queue_id) {
-  if (!queues.test(queue_id))
+  if (queue_id >= MTL_MAX_QUEUES || !queues.test(queue_id)) {
+    log(log_level::ERROR, "Invalid or free queue " + std::to_string(queue_id));
     return -1;
-  else
-    queues.set(queue_id, false);
-  log(log_level::INFO, "Put queue " + std::to_string(queue_id));
-  return 0;
+  } else {
+    queues.reset(queue_id);
+    log(log_level::INFO, "Put queue " + std::to_string(queue_id));
+    return 0;
+  }
 }
 
 int mtl_interface::clear_flow_rules() {
