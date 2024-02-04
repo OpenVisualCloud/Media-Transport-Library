@@ -43,20 +43,20 @@ Note, for ffmpeg 4.4 version, replace 6.1 with 4.4 for above example commands.
 Single session input example, please start the st2110-20 10bit YUV422 tx stream on "239.168.85.20:20000" before using:
 
 ```bash
-ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "k" -vframes 2000 -f rawvideo /dev/null -y
+ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "k" -vframes 2000 -f rawvideo /dev/null -y
 ```
 
 Two sessions input example, one on "239.168.85.20:20000" and the second on "239.168.85.20:20002":
 
 ```bash
 <!-- markdownlint-disable line-length -->
-ffmpeg -total_sessions 2 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "1" -port 0000:af:01.0 -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20002 -payload_type 112 -f mtl_st20p -i "2" -map 0:0 -vframes 2000 -f rawvideo /dev/null -y -map 1:0 -vframes 2000 -f rawvideo /dev/null -y
+ffmpeg -total_sessions 2 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "1" -port 0000:af:01.0 -rx_addr "239.168.85.20" -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -udp_port 20002 -payload_type 112 -f mtl_st20p -i "2" -map 0:0 -vframes 2000 -f rawvideo /dev/null -y -map 1:0 -vframes 2000 -f rawvideo /dev/null -y
 ```
 
 Open-h264 encoder example on stream "239.168.85.20:20000":
 
 ```bash
-ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "k" -vframes 2000 -c:v libopenh264 out.264 -y
+ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -udp_port 20000 -payload_type 112 -f mtl_st20p -i "k" -vframes 2000 -c:v libopenh264 out.264 -y
 ```
 
 ### 2.2 St20p output example
@@ -72,7 +72,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i
 Single session input example, please start the st2110-22 jpegxs tx stream on "239.168.85.20:20000" before using:
 
 ```bash
-ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -framerate 59.94 -pixel_format yuv422p10le -width 1920 -height 1080 -udp_port 20000 -payload_type 112 -f mtl_st22p -i "k" -vframes 2000 -f rawvideo /dev/null -y
+ffmpeg -total_sessions 1 -port 0000:af:01.0 -local_addr "192.168.96.2" -rx_addr "239.168.85.20" -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -udp_port 20000 -payload_type 112 -f mtl_st22p -i "k" -vframes 2000 -f rawvideo /dev/null -y
 ```
 
 ### 2.4 St22p output example
