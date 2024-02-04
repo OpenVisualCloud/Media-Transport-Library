@@ -29,8 +29,7 @@ typedef struct MtlSt22pDemuxerContext {
   char* rx_addr;
   int udp_port;
   int payload_type;
-  int width;
-  int height;
+  int width, height;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
   int fb_cnt;
