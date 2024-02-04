@@ -29,9 +29,8 @@ typedef struct MtlSt22pDemuxerContext {
   char* rx_addr;
   int udp_port;
   int payload_type;
-  int width;
-  int height;
-  char* pixel_format;
+  int width, height;
+  enum AVPixelFormat pixel_format;
   AVRational framerate;
   int fb_cnt;
   int session_cnt;
@@ -111,7 +110,7 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   }
 
   /* transport_fmt is hardcode now */
-  pix_fmt = av_get_pix_fmt(s->pixel_format);
+  pix_fmt = s->pixel_format;
   pix_fmt_desc = av_pix_fmt_desc_get(pix_fmt);
   switch (pix_fmt) {
     case AV_PIX_FMT_YUV422P10LE:
@@ -234,7 +233,7 @@ static int mtl_st22p_read_close(AVFormatContext* ctx) {
 }
 
 #define OFFSET(x) offsetof(MtlSt22pDemuxerContext, x)
-#define DEC AV_OPT_FLAG_DECODING_PARAM
+#define DEC (AV_OPT_FLAG_DECODING_PARAM)
 static const AVOption mtl_st22p_rx_options[] = {
     // mtl port info
     {"port", "mtl port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},
@@ -267,35 +266,38 @@ static const AVOption mtl_st22p_rx_options[] = {
      -1,
      INT_MAX,
      DEC},
-    {"width",
-     "Video frame width",
+    {"video_size",
+     "Video frame size",
      OFFSET(width),
-     AV_OPT_TYPE_INT,
-     {.i64 = 1920},
-     -1,
-     INT_MAX,
+     AV_OPT_TYPE_IMAGE_SIZE,
+     {.str = "1920x1080"},
+     0,
+     0,
      DEC},
-    {"height",
-     "Video frame height",
-     OFFSET(height),
-     AV_OPT_TYPE_INT,
-     {.i64 = 1080},
-     -1,
-     INT_MAX,
-     DEC},
-    {"pixel_format",
-     "Video frame format",
+    {"pix_fmt",
+     "Pixel format for framebuffer",
      OFFSET(pixel_format),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = DEC},
-    {"framerate",
+     AV_OPT_TYPE_PIXEL_FMT,
+     {.i64 = AV_PIX_FMT_YUV422P10LE},
+     -1,
+     INT32_MAX,
+     DEC},
+    /* avoid "Option pixel_format not found." error */
+    {"pixel_format",
+     "Pixel format for framebuffer",
+     OFFSET(pixel_format),
+     AV_OPT_TYPE_PIXEL_FMT,
+     {.i64 = AV_PIX_FMT_YUV422P10LE},
+     -1,
+     INT32_MAX,
+     DEC},
+    {"fps",
      "Video frame rate",
      OFFSET(framerate),
-     AV_OPT_TYPE_VIDEO_RATE,
-     {.str = "59.94"},
+     AV_OPT_TYPE_RATIONAL,
+     {.dbl = 59.94},
      0,
-     INT_MAX,
+     1000,
      DEC},
     {"fb_cnt",
      "Frame buffer count",
