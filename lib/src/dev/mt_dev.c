@@ -360,8 +360,8 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       const char* if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(port_param, 2 * MTL_PORT_MAX_LEN,
-               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name,
-               p->xdp_info[i].start_queue, queue_pair_cnt);
+               "net_af_xdp%d,iface=%s,start_queue=%u,queue_count=%u", i, if_name, 1,
+               queue_pair_cnt);
       /* save kport info */
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "net_af_xdp%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
@@ -2112,14 +2112,10 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->nb_rx_q = queue_pair_cnt;
       inf->system_rx_queues_end = 0;
     } else if (mt_pmd_is_native_af_xdp(impl, i)) {
-      if (mt_has_srss(impl, i)) {
-        uint16_t combined = 1;
-        mt_dev_xdp_get_combined(inf, &combined);
-        queue_pair_cnt = combined; /* rss loop all queues */
-      } else {
-        /* one more for the sys tx queue */
-        queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
-      }
+      /* todo: handle for rss */
+      /* one more for the sys tx queue */
+      queue_pair_cnt = RTE_MAX(p->tx_queues_cnt[i] + 1, p->rx_queues_cnt[i]);
+
       inf->nb_tx_q = queue_pair_cnt;
       inf->nb_rx_q = queue_pair_cnt;
       inf->system_rx_queues_end = 0;

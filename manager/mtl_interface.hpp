@@ -11,8 +11,12 @@
 #include <xdp/xsk.h>
 #endif
 
+#include <linux/ethtool.h>
+#include <linux/sockios.h>
 #include <net/if.h>
+#include <sys/ioctl.h>
 
+#include <bitset>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -20,28 +24,35 @@
 
 #include "logging.hpp"
 
+#define MTL_MAX_QUEUES 64
+
 class mtl_interface {
  private:
-  const int ifindex;
+  const unsigned int ifindex;
+  uint32_t max_combined;
+  uint32_t combined_count;
 #ifdef MTL_HAS_XDP_BACKEND
   struct xdp_program* xdp_prog;
   int xsks_map_fd;
   int udp4_dp_filter_fd;
   enum xdp_attach_mode xdp_mode;
+  std::unordered_map<uint16_t, int> udp4_dp_refcnt;
 #endif
+  std::vector<bool> queues;
 
  private:
   void log(const log_level& level, const std::string& message) const {
     logger::log(level, "[Interface " + std::to_string(ifindex) + "] " + message);
   }
   int clear_flow_rules();
+  int parse_combined_info();
 #ifdef MTL_HAS_XDP_BACKEND
   int load_xdp();
   void unload_xdp();
 #endif
 
  public:
-  mtl_interface(int ifindex);
+  mtl_interface(unsigned int ifindex);
   ~mtl_interface();
 
   int get_xsks_map_fd() {
@@ -52,9 +63,13 @@ class mtl_interface {
 #endif
   }
   int update_udp_dp_filter(uint16_t dst_port, bool add);
+  int get_queue();
+  int put_queue(uint16_t queue_id);
+  // int add_rx_flow()
 };
 
-mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
+mtl_interface::mtl_interface(unsigned int ifindex)
+    : ifindex(ifindex), max_combined(0), combined_count(0) {
 #ifdef MTL_HAS_XDP_BACKEND
   xdp_prog = nullptr;
   xsks_map_fd = -1;
@@ -62,6 +77,10 @@ mtl_interface::mtl_interface(int ifindex) : ifindex(ifindex) {
   xdp_mode = XDP_MODE_UNSPEC;
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
 #endif
+  if (parse_combined_info() < 0)
+    throw std::runtime_error("Failed to parse combined info.");
+  queues.resize(combined_count, false);
+  queues[0] = true; /* Reserve queue 0 for system. */
 
   log(log_level::INFO, "Added interface.");
 }
@@ -87,17 +106,24 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
     return -1;
   }
 
+  udp4_dp_refcnt[dst_port] += add ? 1 : -1;
+
+  if (add && udp4_dp_refcnt[dst_port] > 1) {
+    /* Port already in the map, no need to update */
+    return 0;
+  } else if (!add && udp4_dp_refcnt[dst_port] > 0) {
+    /* There are still references to the port, no need to update */
+    return 0;
+  }
+
   int value = add ? 1 : 0;
   if (bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY) < 0) {
-    log(log_level::WARNING, "Failed to update udp4_dp_filter map");
+    log(log_level::ERROR, "Failed to update udp4_dp_filter map");
     return -1;
   }
 
-  if (add)
-    log(log_level::INFO, "Added port " + std::to_string(dst_port) + " to udp4_dp_filter");
-  else
-    log(log_level::INFO,
-        "Removed port " + std::to_string(dst_port) + " from udp4_dp_filter");
+  std::string action = add ? "Added " : "Removed ";
+  log(log_level::INFO, action + std::to_string(dst_port) + " in udp4_dp_filter");
 
   return 0;
 #else
@@ -105,6 +131,30 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
       "update_udp_dp_filter() called but XDP backend is not enabled.");
   return -1;
 #endif
+}
+
+int mtl_interface::get_queue() {
+  auto it = std::find(queues.begin(), queues.end(), false);
+  if (it != queues.end()) {
+    size_t q = std::distance(queues.begin(), it);
+    queues[q] = true;
+    log(log_level::INFO, "Get queue " + std::to_string(q));
+    return q;
+  } else {
+    log(log_level::ERROR, "No free queue");
+    return -1;
+  }
+}
+
+int mtl_interface::put_queue(uint16_t queue_id) {
+  if (queue_id >= queues.size() || !queues[queue_id]) {
+    log(log_level::ERROR, "Invalid or free queue " + std::to_string(queue_id));
+    return -1;
+  } else {
+    queues[queue_id] = false;
+    log(log_level::INFO, "Put queue " + std::to_string(queue_id));
+    return 0;
+  }
 }
 
 int mtl_interface::clear_flow_rules() {
@@ -145,6 +195,38 @@ int mtl_interface::clear_flow_rules() {
   return 0;
 }
 
+int mtl_interface::parse_combined_info() {
+  struct ethtool_channels channels = {};
+  char ifname[IF_NAMESIZE];
+  if (!if_indextoname(ifindex, ifname)) {
+    log(log_level::ERROR, "Failed to get interface name");
+    return -1;
+  }
+
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    log(log_level::ERROR, "Failed to create socket");
+    return -1;
+  }
+
+  channels.cmd = ETHTOOL_GCHANNELS;
+  ifreq ifr;
+  snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifname);
+  ifr.ifr_data = (caddr_t)&channels;
+  if (ioctl(fd, SIOCETHTOOL, &ifr) < 0) {
+    log(log_level::ERROR, "Failed to get channel info");
+    close(fd);
+    return -1;
+  }
+  close(fd);
+
+  max_combined = channels.max_combined;
+  combined_count = channels.combined_count;
+  log(log_level::INFO, "max_combined " + std::to_string(max_combined) +
+                           " combined_count " + std::to_string(combined_count));
+  return 0;
+}
+
 #ifdef MTL_HAS_XDP_BACKEND
 
 int mtl_interface::load_xdp() {
@@ -167,17 +249,17 @@ int mtl_interface::load_xdp() {
   }
   xdp_mode = XDP_MODE_NATIVE;
 
+  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
+    log(log_level::ERROR, "Failed to setup AF_XDP socket.");
+    unload_xdp();
+    return -1;
+  }
+
   /* save the filter map fd */
   udp4_dp_filter_fd = bpf_map__fd(
       bpf_object__find_map_by_name(xdp_program__bpf_obj(xdp_prog), "udp4_dp_filter"));
   if (udp4_dp_filter_fd < 0) {
     log(log_level::ERROR, "Failed to get udp4_dp_filter map fd.");
-    unload_xdp();
-    return -1;
-  }
-
-  if (xsk_setup_xdp_prog(ifindex, &xsks_map_fd) < 0 || xsks_map_fd < 0) {
-    log(log_level::ERROR, "Failed to setup AF_XDP socket.");
     unload_xdp();
     return -1;
   }

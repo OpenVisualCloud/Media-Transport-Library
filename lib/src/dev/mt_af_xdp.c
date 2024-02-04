@@ -5,10 +5,8 @@
 
 #include "mt_af_xdp.h"
 
-#include <linux/ethtool.h>
 #include <linux/if_link.h>
 #include <linux/if_xdp.h>
-#include <linux/sockios.h>
 #include <sys/un.h>
 #include <xdp/xsk.h>
 
@@ -78,11 +76,9 @@ struct mt_xdp_priv {
   enum mtl_port port;
   char drv[32];
   uint32_t flags; /* XDP_F_* */
+  unsigned int ifindex;
 
-  uint8_t start_queue;
   uint16_t queues_cnt;
-  uint32_t max_combined;
-  uint32_t combined_count;
 
   struct mt_xdp_queue* queues_info;
   pthread_mutex_t queues_lock;
@@ -247,6 +243,8 @@ static int xdp_free(struct mt_xdp_priv* xdp) {
         warn("%s(%d,%u), rx_entry still active\n", __func__, port, xq->q);
         mt_rx_xdp_put(xq->rx_entry);
       }
+
+      mt_instance_put_queue(xdp->parent, xdp->ifindex, xq->q);
     }
     mt_rte_free(xdp->queues_info);
     xdp->queues_info = NULL;
@@ -254,43 +252,6 @@ static int xdp_free(struct mt_xdp_priv* xdp) {
 
   mt_pthread_mutex_destroy(&xdp->queues_lock);
   mt_rte_free(xdp);
-  return 0;
-}
-
-static int _xdp_parse_combined_info(const char* if_name,
-                                    struct ethtool_channels* channels) {
-  struct ifreq ifr;
-  int fd, ret;
-
-  fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (fd < 0) return fd;
-
-  channels->cmd = ETHTOOL_GCHANNELS;
-  ifr.ifr_data = (void*)channels;
-  strlcpy(ifr.ifr_name, if_name, IFNAMSIZ);
-  ret = ioctl(fd, SIOCETHTOOL, &ifr);
-
-  close(fd);
-  return ret;
-}
-
-static int xdp_parse_combined_info(struct mt_xdp_priv* xdp) {
-  struct mtl_main_impl* impl = xdp->parent;
-  enum mtl_port port = xdp->port;
-  const char* if_name = mt_kernel_if_name(impl, port);
-  struct ethtool_channels channels;
-  int ret;
-
-  ret = _xdp_parse_combined_info(if_name, &channels);
-  if (ret < 0) {
-    warn("%s(%d), get combined info fail %d\n", __func__, port, ret);
-    return ret;
-  }
-
-  xdp->max_combined = channels.max_combined;
-  xdp->combined_count = channels.combined_count;
-  info("%s(%d), combined max %u cnt %u\n", __func__, port, xdp->max_combined,
-       xdp->combined_count);
   return 0;
 }
 
@@ -330,8 +291,7 @@ static int xdp_parse_pacing_ice(struct mt_xdp_priv* xdp) {
 
   uint32_t rate = MTL_BIT32(31);
   char path[128];
-  snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name,
-           xdp->start_queue);
+  snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name, 1);
   int ret = mt_sysfs_write_uint32(path, rate);
   info("%s(%d), rl feature %s\n", __func__, port, ret < 0 ? "no" : "yes");
   if (ret >= 0) {
@@ -765,29 +725,9 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
   return valid_rx;
 }
 
-int mt_dev_xdp_get_combined(struct mt_interface* inf, uint16_t* combined) {
-  struct mtl_main_impl* impl = inf->parent;
-  enum mtl_port port = inf->port;
-  const char* if_name = mt_kernel_if_name(impl, port);
-  struct ethtool_channels channels;
-  int ret;
-
-  ret = _xdp_parse_combined_info(if_name, &channels);
-  if (ret < 0) {
-    warn("%s(%d), get combined info fail %d, only 1 queue\n", __func__, port, ret);
-    *combined = 1;
-    return 0;
-  }
-
-  *combined = channels.combined_count;
-  info("%s(%d), %u\n", __func__, port, *combined);
-  return 0;
-}
-
 int mt_dev_xdp_init(struct mt_interface* inf) {
   struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
-  struct mtl_init_params* p = mt_get_user_params(impl);
   int ret;
 
   if (!mt_pmd_is_native_af_xdp(impl, port)) {
@@ -807,26 +747,12 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   }
   xdp->parent = impl;
   xdp->port = port;
-  xdp->max_combined = 1;
-  xdp->combined_count = 1;
-  if (mt_has_srss(impl, port))
-    xdp->start_queue = 0; /* rss loop all queues */
-  else
-    xdp->start_queue = p->xdp_info[port].start_queue;
+  xdp->ifindex = if_nametoindex(mt_kernel_if_name(impl, port));
   xdp->queues_cnt = RTE_MAX(inf->nb_tx_q, inf->nb_rx_q);
   xdp->has_ctrl = true;
   mt_pthread_mutex_init(&xdp->queues_lock, NULL);
 
   xdp_parse_drv_name(xdp);
-
-  xdp_parse_combined_info(xdp);
-  if ((xdp->start_queue + xdp->queues_cnt) > xdp->combined_count) {
-    err("%s(%d), too many queues requested, start_queue %u queues_cnt %u combined_count "
-        "%u\n",
-        __func__, port, xdp->start_queue, xdp->queues_cnt, xdp->combined_count);
-    xdp_free(xdp);
-    return -ENOTSUP;
-  }
 
   xdp->queues_info = mt_rte_zmalloc_socket(sizeof(*xdp->queues_info) * xdp->queues_cnt,
                                            mt_socket_id(impl, port));
@@ -836,9 +762,14 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
     return -ENOMEM;
   }
   for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
-    struct mt_xdp_queue* xq = &xdp->queues_info[i];
-    uint16_t q = i + xdp->start_queue;
+    int q = mt_instance_get_queue(impl, xdp->ifindex);
+    if (q < 0) {
+      err("%s(%d), no free queue found\n", __func__, port);
+      xdp_free(xdp);
+      return -EIO;
+    }
 
+    struct mt_xdp_queue* xq = &xdp->queues_info[i];
     xq->port = port;
     xq->q = q;
     xq->umem_ring_size = XSK_RING_CONS__DEFAULT_NUM_DESCS;
@@ -871,8 +802,7 @@ int mt_dev_xdp_init(struct mt_interface* inf) {
   inf->port_id = inf->port;
   inf->xdp = xdp;
   inf->feature |= MT_IF_FEATURE_TX_MULTI_SEGS;
-  info("%s(%d), start queue %u cnt %u\n", __func__, port, xdp->start_queue,
-       xdp->queues_cnt);
+  info("%s(%d), cnt %u\n", __func__, port, xdp->queues_cnt);
   return 0;
 }
 
@@ -988,9 +918,9 @@ uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkt
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, const char* if_name,
+static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, int ifindex,
                                        uint16_t dp, bool add) {
-  return mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dp, add);
+  return mt_instance_update_udp_dp_filter(impl, ifindex, dp, add);
 }
 
 struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -1053,14 +983,13 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
 
   if (!args || !args->skip_flow) {
     /* create flow */
-    entry->flow_rsp = mt_rx_flow_create(impl, port, q - xdp->start_queue, flow);
+    entry->flow_rsp = mt_rx_flow_create(impl, port, q, flow);
     if (!entry->flow_rsp) {
       err("%s(%d,%u), create flow fail\n", __func__, port, q);
       mt_rx_xdp_put(entry);
       return NULL;
     }
-    if (xdp->has_ctrl &&
-        !xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, true))
+    if (xdp->has_ctrl && !xdp_socket_update_dp(impl, xdp->ifindex, flow->dst_port, true))
       entry->skip_all_check = true;
     else
       entry->skip_all_check = false;
@@ -1122,8 +1051,7 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
   if (entry->flow_rsp) {
     mt_rx_flow_free(impl, port, entry->flow_rsp);
     entry->flow_rsp = NULL;
-    if (xdp->has_ctrl)
-      xdp_socket_update_dp(impl, mt_kernel_if_name(impl, port), flow->dst_port, false);
+    if (xdp->has_ctrl) xdp_socket_update_dp(impl, xdp->ifindex, flow->dst_port, false);
   }
   if (xq) {
     xdp_queue_rx_stat(xq);

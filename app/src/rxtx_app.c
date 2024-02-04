@@ -148,9 +148,6 @@ static void user_param_init(struct st_app_context* ctx, struct mtl_init_params* 
 
   p->pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
   p->pmd[MTL_PORT_R] = MTL_PMD_DPDK_USER;
-  /* default start queue set to 1 */
-  p->xdp_info[MTL_PORT_P].start_queue = 1;
-  p->xdp_info[MTL_PORT_R].start_queue = 1;
   p->flags |= MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
   p->flags |= MTL_FLAG_RX_VIDEO_MIGRATE;

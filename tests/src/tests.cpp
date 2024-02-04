@@ -69,10 +69,7 @@ static struct option test_args_options[] = {
     {"nb_rx_desc", required_argument, 0, TEST_ARG_NB_RX_DESC},
     {"auto_start_stop", no_argument, 0, TEST_ARG_AUTO_START_STOP},
     {"afxdp_zc_disable", no_argument, 0, TEST_ARG_AF_XDP_ZC_DISABLE},
-    {"start_queue", required_argument, 0, TEST_ARG_START_QUEUE},
     {"queue_cnt", required_argument, 0, TEST_ARG_QUEUE_CNT},
-    {"p_start_queue", required_argument, 0, TEST_ARG_P_START_QUEUE},
-    {"r_start_queue", required_argument, 0, TEST_ARG_R_START_QUEUE},
     {"hdr_split", no_argument, 0, TEST_ARG_HDR_SPLIT},
     {"tasklet_thread", no_argument, 0, TEST_ARG_TASKLET_THREAD},
     {"tsc", no_argument, 0, TEST_ARG_TSC_PACING},
@@ -201,16 +198,6 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_AF_XDP_ZC_DISABLE:
         p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
-        break;
-      case TEST_ARG_START_QUEUE:
-        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
-        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
-        break;
-      case TEST_ARG_P_START_QUEUE:
-        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
-        break;
-      case TEST_ARG_R_START_QUEUE:
-        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
         break;
       case TEST_ARG_QUEUE_CNT: {
         uint16_t cnt = atoi(optarg);
@@ -373,9 +360,6 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->tx_queues_cnt[MTL_PORT_R] = 16;
   p->rx_queues_cnt[MTL_PORT_P] = 16;
   p->rx_queues_cnt[MTL_PORT_R] = 16;
-  /* default start queue set to 1 */
-  p->xdp_info[MTL_PORT_P].start_queue = 1;
-  p->xdp_info[MTL_PORT_R].start_queue = 1;
 
   /* build default lcore list */
   pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, "0-%d",

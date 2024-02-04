@@ -218,9 +218,6 @@ static struct option st_app_args_options[] = {
     {"runtime_session", no_argument, 0, ST_ARG_RUNTIME_SESSION},
     {"ttf_file", required_argument, 0, ST_ARG_TTF_FILE},
     {"afxdp_zc_disable", no_argument, 0, ST_ARG_AF_XDP_ZC_DISABLE},
-    {"start_queue", required_argument, 0, ST_ARG_START_QUEUE},
-    {"p_start_queue", required_argument, 0, ST_ARG_P_START_QUEUE},
-    {"r_start_queue", required_argument, 0, ST_ARG_R_START_QUEUE},
     {"tasklet_time", no_argument, 0, ST_ARG_TASKLET_TIME},
     {"utc_offset", required_argument, 0, ST_ARG_UTC_OFFSET},
     {"no_srq", no_argument, 0, ST_ARG_NO_SYSTEM_RX_QUEUES},
@@ -678,16 +675,6 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_AF_XDP_ZC_DISABLE:
         p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
-        break;
-      case ST_ARG_START_QUEUE:
-        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
-        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
-        break;
-      case ST_ARG_P_START_QUEUE:
-        p->xdp_info[MTL_PORT_P].start_queue = atoi(optarg);
-        break;
-      case ST_ARG_R_START_QUEUE:
-        p->xdp_info[MTL_PORT_R].start_queue = atoi(optarg);
         break;
       case ST_ARG_TASKLET_TIME:
         p->flags |= MTL_FLAG_TASKLET_TIME_MEASURE;

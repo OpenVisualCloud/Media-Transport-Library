@@ -443,15 +443,6 @@ enum mtl_init_flag {
   MTL_FLAG_RX_UDP_PORT_ONLY = (MTL_BIT64(46)),
 };
 
-/**
- * The structure describing how to init af_xdp interface.
- * See https://doc.dpdk.org/guides/nics/af_xdp.html for detail.
- */
-struct mtl_af_xdp_params {
-  /** starting netdev queue id, must > 0, 0 is reserved for system usage */
-  uint8_t start_queue;
-};
-
 struct mtl_ptp_sync_notify_meta {
   /** offset to UTC of current master PTP */
   int16_t master_utc_offset;
@@ -512,11 +503,6 @@ struct mtl_init_params {
    * User can use "route -n" to get gateway before bind the port to DPDK PMD.
    */
   uint8_t gateway[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
-
-  /**
-   * Mandatory only for MTL_PMD_DPDK_AF_XDP. af_xdp port init info.
-   */
-  struct mtl_af_xdp_params xdp_info[MTL_PORT_MAX];
 
   /** Optional. Flags to control MTL behaviors. See MTL_FLAG_* for possible value */
   uint64_t flags;

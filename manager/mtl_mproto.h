@@ -27,14 +27,19 @@ typedef enum {
   MTL_MSG_TYPE_CS = 100,
   MTL_MSG_TYPE_REGISTER,
   MTL_MSG_TYPE_HEARTBEAT,
-  MTL_MSG_TYPE_REQUEST_MAP_FD,
   MTL_MSG_TYPE_GET_LCORE,
   MTL_MSG_TYPE_PUT_LCORE,
   MTL_MSG_TYPE_ADD_UDP_DP_FILTER,
   MTL_MSG_TYPE_DEL_UDP_DP_FILTER,
+  MTL_MSG_TYPE_IF_XSK_MAP_FD,
+  MTL_MSG_TYPE_IF_GET_QUEUE,
+  MTL_MSG_TYPE_IF_PUT_QUEUE,
+  MTL_MSG_TYPE_IF_ADD_FLOW,
+  MTL_MSG_TYPE_IF_DEL_FLOW,
   /* server to client */
   MTL_MSG_TYPE_SC = 200,
   MTL_MSG_TYPE_RESPONSE,
+  MTL_MSG_TYPE_IF_QUEUE_ID,
 } mtl_message_type_t;
 
 /* message header */
@@ -58,7 +63,8 @@ typedef struct {
 
 typedef struct {
   unsigned int ifindex;
-} mtl_request_map_fd_message_t;
+  uint16_t queue_id;
+} mtl_if_message_t;
 
 typedef struct {
   uint16_t lcore;
@@ -70,7 +76,7 @@ typedef struct {
 } mtl_udp_dp_filter_message_t;
 
 typedef struct {
-  uint8_t response; /* 0 for success, 1 for error */
+  int response; /* 0 for success, negative for error, positive for other use */
 } mtl_response_message_t;
 
 typedef struct {
@@ -78,7 +84,7 @@ typedef struct {
   union {
     mtl_register_message_t register_msg;
     mtl_heartbeat_message_t heartbeat_msg;
-    mtl_request_map_fd_message_t request_map_fd_msg;
+    mtl_if_message_t if_msg;
     mtl_lcore_message_t lcore_msg;
     mtl_udp_dp_filter_message_t udp_dp_filter_msg;
     mtl_response_message_t response_msg;

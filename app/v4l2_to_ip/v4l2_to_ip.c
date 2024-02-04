@@ -1831,7 +1831,6 @@ int main(int argc, char* argv[]) {
   // init st20
   st_v4l2_tx->param.num_ports = 1;
   st_v4l2_tx->param.pmd[MTL_PORT_P] = TX_VIDEO_PMD;
-  st_v4l2_tx->param.xdp_info[MTL_PORT_P].start_queue = 1;
   strncpy(st_v4l2_tx->param.port[MTL_PORT_P], port, MTL_PORT_MAX_LEN);
   memcpy(st_v4l2_tx->param.sip_addr[MTL_PORT_P], g_tx_video_local_ip, MTL_IP_ADDR_LEN);
   st_v4l2_tx->param.flags =

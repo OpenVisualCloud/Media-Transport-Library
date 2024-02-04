@@ -277,11 +277,6 @@ static int mt_user_params_check(struct mtl_init_params* p) {
 
     /* af xdp check */
     if (mtl_pmd_is_af_xdp(p->pmd[i])) {
-      if (p->xdp_info[i].start_queue <= 0) {
-        err("%s(%d), invalid afxdp start_queue %u\n", __func__, i,
-            p->xdp_info[i].start_queue);
-        return -EINVAL;
-      }
       if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)
         if_name = mt_native_afxdp_port2if(p->port[i]);
       else

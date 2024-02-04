@@ -12,8 +12,26 @@
 #include "mt_log.h"
 #include "mt_util.h"
 
-int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
-  int ret;
+static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
+                                             mtl_message_type_t response_type) {
+  int ret = send(sock, msg, sizeof(*msg), 0);
+  if (ret < 0) {
+    err("%s, send message fail\n", __func__);
+    return ret;
+  }
+
+  memset(msg, 0, sizeof(*msg));
+  ret = recv(sock, msg, sizeof(*msg), 0);
+  if (ret < 0 || ntohl(msg->header.magic) != MTL_MANAGER_MAGIC ||
+      ntohl(msg->header.type) != response_type) {
+    err("%s, recv response fail\n", __func__);
+    return -EIO;
+  }
+
+  return ntohl(msg->body.response_msg.response);
+}
+
+int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
@@ -22,17 +40,10 @@ int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   msg.body.lcore_msg.lcore = htons(lcore_id);
   msg.header.body_len = sizeof(msg.body.lcore_msg);
 
-  ret = send(sock, &msg, sizeof(msg), 0);
-  if (ret < 0) {
-    err("%s, send message fail\n", __func__);
-    return ret;
-  }
-
-  return 0;
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
-int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
-  int ret;
+int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
@@ -41,23 +52,7 @@ int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
   msg.body.lcore_msg.lcore = htons(lcore_id);
   msg.header.body_len = htonl(sizeof(mtl_lcore_message_t));
 
-  ret = send(sock, &msg, sizeof(mtl_message_t), 0);
-  if (ret < 0) {
-    err("%s, send message fail\n", __func__);
-    return ret;
-  }
-
-  ret = recv(sock, &msg, sizeof(mtl_message_t), 0);
-  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
-      ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
-    err("%s, recv response fail\n", __func__);
-    return -EIO;
-  }
-
-  int response = msg.body.response_msg.response;
-
-  /* return negative value incase user check with < 0 */
-  return -response;
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
 int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
@@ -67,11 +62,11 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
 
   mtl_message_t mtl_msg;
   mtl_msg.header.magic = htonl(MTL_MANAGER_MAGIC);
-  mtl_msg.header.type = htonl(MTL_MSG_TYPE_REQUEST_MAP_FD);
-  mtl_msg.body.request_map_fd_msg.ifindex = htonl(ifindex);
-  mtl_msg.header.body_len = htonl(sizeof(mtl_request_map_fd_message_t));
+  mtl_msg.header.type = htonl(MTL_MSG_TYPE_IF_XSK_MAP_FD);
+  mtl_msg.body.if_msg.ifindex = htonl(ifindex);
+  mtl_msg.header.body_len = htonl(sizeof(mtl_if_message_t));
 
-  ret = send(sock, &mtl_msg, sizeof(mtl_message_t), 0);
+  ret = send(sock, &mtl_msg, sizeof(mtl_msg), 0);
   if (ret < 0) {
     err("%s(%u), send message fail\n", __func__, ifindex);
     return ret;
@@ -117,7 +112,6 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifi
 
 int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int ifindex,
                                      uint16_t dst_port, bool add) {
-  int ret;
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
@@ -128,23 +122,33 @@ int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int if
   msg.body.udp_dp_filter_msg.port = htons(dst_port);
   msg.header.body_len = htonl(sizeof(mtl_udp_dp_filter_message_t));
 
-  ret = send(sock, &msg, sizeof(mtl_message_t), 0);
-  if (ret < 0) {
-    err("%s(%u), send message fail\n", __func__, ifindex);
-    return ret;
-  }
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+}
 
-  ret = recv(sock, &msg, sizeof(mtl_message_t), 0);
-  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
-      ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
-    err("%s, recv response fail\n", __func__);
-    return -EIO;
-  }
+int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex) {
+  int sock = impl->instance_fd;
 
-  int response = msg.body.response_msg.response;
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(MTL_MSG_TYPE_IF_GET_QUEUE);
+  msg.body.if_msg.ifindex = htonl(ifindex);
+  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
 
-  /* return negative value incase user check with < 0 */
-  return -response;
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_IF_QUEUE_ID);
+}
+
+int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
+                          uint16_t queue_id) {
+  int sock = impl->instance_fd;
+
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(MTL_MSG_TYPE_IF_PUT_QUEUE);
+  msg.body.if_msg.ifindex = htonl(ifindex);
+  msg.body.if_msg.queue_id = htons(queue_id);
+  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
+
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
@@ -175,7 +179,8 @@ int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   mtl_register_message_t* reg_msg = &msg.body.register_msg;
   reg_msg->pid = htonl(u_info->pid);
   reg_msg->uid = htonl(getuid());
-  snprintf(reg_msg->hostname, sizeof(reg_msg->hostname), "%s", u_info->hostname);
+  strncpy(reg_msg->hostname, u_info->hostname, sizeof(reg_msg->hostname) - 1);
+  reg_msg->hostname[sizeof(reg_msg->hostname) - 1] = '\0';
 
   /* manager will load xdp program for afxdp interfaces */
   uint16_t num_xdp_if = 0;
@@ -188,22 +193,7 @@ int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   }
   reg_msg->num_if = htons(num_xdp_if);
 
-  ret = send(sock, &msg, sizeof(msg), 0);
-  if (ret < 0) {
-    err("%s, send message fail\n", __func__);
-    close(sock);
-    return ret;
-  }
-
-  ret = recv(sock, &msg, sizeof(msg), 0);
-  if (ret < 0 || ntohl(msg.header.magic) != MTL_MANAGER_MAGIC ||
-      ntohl(msg.header.type) != MTL_MSG_TYPE_RESPONSE) {
-    err("%s, recv response fail\n", __func__);
-    close(sock);
-    return ret;
-  }
-
-  int response = msg.body.response_msg.response;
+  int response = instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
   if (response != 0) {
     err("%s, register fail\n", __func__);
     close(sock);
@@ -237,13 +227,13 @@ int mt_instance_uinit(struct mtl_main_impl* impl) {
   return -ENOTSUP;
 }
 
-int mt_instance_get_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(lcore_id);
   return -ENOTSUP;
 }
 
-int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
+int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(lcore_id);
   return -ENOTSUP;
@@ -252,6 +242,20 @@ int mt_instance_put_lcore(struct mtl_main_impl* impl, unsigned int lcore_id) {
 int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
+  return -ENOTSUP;
+}
+
+int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  return -ENOTSUP;
+}
+
+int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
+                          uint16_t queue_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  MTL_MAY_UNUSED(queue_id);
   return -ENOTSUP;
 }
 

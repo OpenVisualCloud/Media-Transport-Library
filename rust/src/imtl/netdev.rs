@@ -56,9 +56,6 @@ pub struct NetDev {
     tx_queues_cnt: u16,
     /// The number of receive queues for the device.
     rx_queues_cnt: u16,
-    /// The starting queue index for XDP.
-    #[builder(default)]
-    xdp_start_queue: u8,
 }
 
 /// The `impl` block provides getter methods for `NetDev` properties, allowing
@@ -102,10 +99,5 @@ impl NetDev {
     /// Returns the number of receive queues for the device.
     pub fn get_rx_queues_cnt(&self) -> u16 {
         self.rx_queues_cnt
-    }
-
-    /// Returns the XDP start queue for the device.
-    pub fn get_xdp_start_queue(&self) -> u8 {
-        self.xdp_start_queue
     }
 }

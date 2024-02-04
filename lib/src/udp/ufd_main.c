@@ -359,8 +359,6 @@ static int ufd_set_afxdp(struct ufd_mt_ctx* ctx) {
 
   for (uint8_t i = 0; i < p->num_ports; i++) {
     p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
-    if (!mtl_pmd_is_af_xdp(p->pmd[i])) continue;
-    p->xdp_info[i].start_queue = 1;
   }
 
   return 0;
