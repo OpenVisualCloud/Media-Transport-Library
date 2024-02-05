@@ -42,18 +42,17 @@ static int app_tx_st20p_notify_event(void* priv, enum st_event event, void* args
 }
 
 static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
-                                     struct st_frame* frame) {
-  if (s->st20p_frame_cursor + s->st20p_frame_size > s->st20p_source_end) {
-    s->st20p_frame_cursor = s->st20p_source_begin;
-  }
+                                     struct st_frame* frame, size_t frame_size) {
   uint8_t* src = s->st20p_frame_cursor;
 
-  mtl_memcpy(frame->addr[0], src, s->st20p_frame_size);
+  if (!s->ctx->tx_copy_once || !s->st20p_frames_copied) {
+    mtl_memcpy(frame, src, frame_size);
+  }
   /* point to next frame */
-  s->st20p_frame_cursor += s->st20p_frame_size;
-
-  if (frame->interlaced) {
-    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+  s->st20p_frame_cursor += frame_size;
+  if (s->st20p_frame_cursor + frame_size > s->st20p_source_end) {
+    s->st20p_frame_cursor = s->st20p_source_begin;
+    s->st20p_frames_copied = true;
   }
 
   app_tx_st20p_display_frame(s, frame);
@@ -73,7 +72,7 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
-    app_tx_st20p_build_frame(s, frame);
+    app_tx_st20p_build_frame(s, frame, s->st20p_frame_size);
     if (s->sha_check) {
       st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
       frame->user_meta = shas;
@@ -232,6 +231,7 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   st20p_tx_handle handle;
   memset(&ops, 0, sizeof(ops));
 
+  s->ctx = ctx;
   s->last_stat_time_ns = st_app_get_monotonic_time();
   s->sha_check = ctx->video_sha_check;
 
