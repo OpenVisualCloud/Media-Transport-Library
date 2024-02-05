@@ -45,7 +45,6 @@ docker run -it \
   --device /dev/vfio \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
-  --cap-add NET_ADMIN \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
   mtl:latest
@@ -58,7 +57,6 @@ docker run -it \
   --net host \
   --device /dev/vfio \
   --cap-add SYS_NICE \
-  --cap-add NET_ADMIN \
   --cap-add NET_RAW \
   --cap-add CAP_BPF \
   -v /var/run/imtl:/var/run/imtl \
@@ -76,7 +74,6 @@ Explanation of `docker run` arguments:
 | `--ulimit memlock=-1` | For DPDK PMD to do DMA remapping or AF_XDP backend to create UMEM |
 | `--cap-add SYS_NICE` | For DPDK eal to set NUMA memory policy |
 | `--cap-add IPC_LOCK` | For DPDK PMD to do DMA mapping |
-| `--cap-add NET_ADMIN` | For kernel NIC configuration |
 | `--cap-add NET_RAW` | For AF_XDP backend to create socket |
 | `--cap-add CAP_BPF` | For AF_XDP backend to update xsks_map |
 | `--cap-add SYS_TIME` | For systime adjustment if `--phc2sys` enabled |
@@ -102,7 +99,6 @@ docker run -it \
   --device /dev/vfio/312 \
   --cap-add SYS_NICE \
   --cap-add IPC_LOCK \
-  --cap-add NET_ADMIN \
   -v /var/run/imtl:/var/run/imtl \
   --ulimit memlock=-1 \
   mtl:latest

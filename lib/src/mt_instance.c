@@ -14,7 +14,7 @@
 
 static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
                                              mtl_message_type_t response_type) {
-  int ret = send(sock, msg, sizeof(*msg), 0);
+  ssize_t ret = send(sock, msg, sizeof(*msg), 0);
   if (ret < 0) {
     err("%s, send message fail\n", __func__);
     return ret;

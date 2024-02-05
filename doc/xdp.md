@@ -126,12 +126,12 @@ echo 200000 | sudo tee /sys/class/net/ens785f0/gro_flush_timeout
 
 ### Add Capabilities to the Application
 
-The application needs to be run with `CAP_NET_ADMIN` and `CAP_NET_RAW` capabilities.
+The application needs to be run with `CAP_NET_RAW` capability.
 
 For example, before running RxTxApp, you should run:
 
 ```bash
-sudo setcap 'cap_net_admin+ep cap_net_raw+ep' ./build/app/RxTxApp
+sudo setcap 'cap_net_raw+ep' ./build/app/RxTxApp
 ```
 
 ### Running RxTxApp

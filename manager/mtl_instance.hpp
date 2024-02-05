@@ -27,7 +27,7 @@ class mtl_instance {
   int pid;
   int uid;
   std::string hostname;
-  std::vector<uint16_t> lcore_ids;
+  std::unordered_set<uint16_t> lcore_ids;
   std::unordered_map<unsigned int, std::shared_ptr<mtl_interface>> interfaces;
   std::unordered_map<unsigned int, std::unordered_set<uint16_t>> if_queue_ids;
   std::unordered_map<unsigned int, std::unordered_set<unsigned int>> if_flow_ids;
@@ -150,7 +150,7 @@ void mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
     send_response(ret);
     return;
   }
-  lcore_ids.push_back(lcore_id);
+  lcore_ids.insert(lcore_id);
   log(log_level::INFO, "Added lcore " + std::to_string(lcore_id));
   send_response(0);
 }
@@ -161,16 +161,12 @@ void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
     return;
   }
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
-
-  auto it = std::find_if(lcore_ids.begin(), lcore_ids.end(),
-                         [lcore_id](uint16_t id) { return id == lcore_id; });
-  if (it != lcore_ids.end()) lcore_ids.erase(it);
-
   int ret = mtl_lcore::get_instance().put_lcore(lcore_id);
   if (ret < 0) {
     send_response(ret);
     return;
   }
+  lcore_ids.erase(lcore_id);
   log(log_level::INFO, "Removed lcore " + std::to_string(lcore_id));
   send_response(0);
 }
