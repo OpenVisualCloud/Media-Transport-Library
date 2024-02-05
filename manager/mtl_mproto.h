@@ -40,6 +40,7 @@ typedef enum {
   MTL_MSG_TYPE_SC = 200,
   MTL_MSG_TYPE_RESPONSE,
   MTL_MSG_TYPE_IF_QUEUE_ID,
+  MTL_MSG_TYPE_IF_FLOW_ID,
 } mtl_message_type_t;
 
 /* message header */
@@ -64,6 +65,12 @@ typedef struct {
 typedef struct {
   unsigned int ifindex;
   uint16_t queue_id;
+  uint32_t flow_id;   /* location in ethtool */
+  uint32_t flow_type; /* flow type in ethtool */
+  uint32_t src_ip;
+  uint32_t dst_ip;
+  uint16_t src_port;
+  uint16_t dst_port;
 } mtl_if_message_t;
 
 typedef struct {

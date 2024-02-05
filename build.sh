@@ -134,5 +134,10 @@ meson setup "${MANAGER_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enab
 popd
 pushd "${MANAGER_BUILD_DIR}"
 ninja
+if [ "$user" == "root" ]; then
+    ninja install
+else
+    sudo ninja install
+fi
 popd
 fi

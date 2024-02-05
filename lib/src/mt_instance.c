@@ -151,6 +151,40 @@ int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
+int mt_instance_add_flow(struct mtl_main_impl* impl, unsigned int ifindex,
+                         uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
+                         uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+  int sock = impl->instance_fd;
+
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(MTL_MSG_TYPE_IF_ADD_FLOW);
+  msg.body.if_msg.ifindex = htonl(ifindex);
+  msg.body.if_msg.queue_id = htons(queue_id);
+  msg.body.if_msg.flow_type = htonl(flow_type);
+  msg.body.if_msg.src_ip = htonl(src_ip);
+  msg.body.if_msg.dst_ip = htonl(dst_ip);
+  msg.body.if_msg.src_port = htons(src_port);
+  msg.body.if_msg.dst_port = htons(dst_port);
+  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
+
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_IF_FLOW_ID);
+}
+
+int mt_instance_del_flow(struct mtl_main_impl* impl, unsigned int ifindex,
+                         uint32_t flow_id) {
+  int sock = impl->instance_fd;
+
+  mtl_message_t msg;
+  msg.header.magic = htonl(MTL_MANAGER_MAGIC);
+  msg.header.type = htonl(MTL_MSG_TYPE_IF_DEL_FLOW);
+  msg.body.if_msg.ifindex = htonl(ifindex);
+  msg.body.if_msg.flow_id = htonl(flow_id);
+  msg.header.body_len = htonl(sizeof(mtl_if_message_t));
+
+  return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
+}
+
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -256,6 +290,28 @@ int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
   MTL_MAY_UNUSED(queue_id);
+  return -ENOTSUP;
+}
+
+int mt_instance_add_flow(struct mtl_main_impl* impl, unsigned int ifindex,
+                         uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
+                         uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  MTL_MAY_UNUSED(queue_id);
+  MTL_MAY_UNUSED(flow_type);
+  MTL_MAY_UNUSED(src_ip);
+  MTL_MAY_UNUSED(dst_ip);
+  MTL_MAY_UNUSED(src_port);
+  MTL_MAY_UNUSED(dst_port);
+  return -ENOTSUP;
+}
+
+int mt_instance_del_flow(struct mtl_main_impl* impl, unsigned int ifindex,
+                         uint32_t flow_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(ifindex);
+  MTL_MAY_UNUSED(flow_id);
   return -ENOTSUP;
 }
 

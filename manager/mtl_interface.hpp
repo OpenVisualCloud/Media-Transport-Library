@@ -65,7 +65,9 @@ class mtl_interface {
   int update_udp_dp_filter(uint16_t dst_port, bool add);
   int get_queue();
   int put_queue(uint16_t queue_id);
-  // int add_rx_flow()
+  int add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip, uint32_t dst_ip,
+               uint16_t src_port, uint16_t dst_port);
+  int del_flow(uint32_t flow_id);
 };
 
 mtl_interface::mtl_interface(unsigned int ifindex)
@@ -224,6 +226,154 @@ int mtl_interface::parse_combined_info() {
   combined_count = channels.combined_count;
   log(log_level::INFO, "max_combined " + std::to_string(max_combined) +
                            " combined_count " + std::to_string(combined_count));
+  return 0;
+}
+
+int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
+                            uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+  struct ifreq ifr;
+  int ret, fd;
+  int free_loc = -1, flow_id = -1;
+  char ifname[IF_NAMESIZE];
+  if (!if_indextoname(ifindex, ifname)) {
+    log(log_level::ERROR, "Failed to get interface name");
+    return -1;
+  }
+
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    log(log_level::ERROR, "Failed to create socket");
+    return -1;
+  }
+
+  memset(&ifr, 0, sizeof(ifr));
+  snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifname);
+  struct ethtool_rxnfc cmd;
+  memset(&cmd, 0, sizeof(cmd));
+
+  /* get the free location */
+  cmd.cmd = ETHTOOL_GRXCLSRLCNT;
+  ifr.ifr_data = (caddr_t)&cmd;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    log(log_level::ERROR, "Failed to get rule cnt info");
+    close(fd);
+    return ret;
+  }
+
+  struct ethtool_rxnfc* cmd_w_rules;
+  cmd_w_rules = (struct ethtool_rxnfc*)calloc(
+      1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
+  cmd_w_rules->cmd = ETHTOOL_GRXCLSRLALL;
+  cmd_w_rules->rule_cnt = cmd.rule_cnt;
+  ifr.ifr_data = (caddr_t)cmd_w_rules;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    log(log_level::ERROR, "Failed to get rule info");
+    free(cmd_w_rules);
+    close(fd);
+    return ret;
+  }
+
+  uint32_t rule_size = cmd_w_rules->data;
+  free_loc = rule_size - 1; /* start from lowest priority */
+  while (free_loc > 0) {
+    bool used = false;
+    for (uint32_t i = 0; i < cmd.rule_cnt; i++) {
+      if (cmd_w_rules->rule_locs[i] == (uint32_t)free_loc) {
+        used = true;
+        break;
+      }
+    }
+    if (used)
+      free_loc--;
+    else {
+      break;
+    }
+  }
+  if (free_loc == 0) {
+    log(log_level::ERROR, "Cannot find free location");
+    close(fd);
+    free(cmd_w_rules);
+    return -1;
+  }
+
+  free(cmd_w_rules);
+
+  /* set the flow rule */
+  memset(&cmd, 0, sizeof(cmd));
+  cmd.cmd = ETHTOOL_SRXCLSRLINS;
+  struct ethtool_rx_flow_spec* fs = &cmd.fs;
+  fs->flow_type = flow_type;
+  if (dst_port) {
+    fs->m_u.udp_ip4_spec.pdst = 0xFFFF;
+    fs->h_u.udp_ip4_spec.pdst = htons(dst_port);
+  }
+  if (src_port) {
+    fs->m_u.udp_ip4_spec.psrc = 0xFFFF;
+    fs->h_u.udp_ip4_spec.psrc = htons(src_port);
+  }
+  if (dst_ip) {
+    fs->m_u.udp_ip4_spec.ip4src = 0xFFFFFFFF;
+    fs->h_u.udp_ip4_spec.ip4dst = htonl(dst_ip);
+  }
+  if (src_ip) {
+    fs->m_u.udp_ip4_spec.ip4dst = 0xFFFFFFFF;
+    fs->h_u.udp_ip4_spec.ip4src = htonl(src_ip);
+  }
+  fs->ring_cookie = queue_id;
+  fs->location = free_loc; /* for some NICs the location must be set */
+
+  ifr.ifr_data = (caddr_t)&cmd;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    log(log_level::ERROR, "Cannot insert flow rule: " + std::string(strerror(errno)));
+    close(fd);
+    return ret;
+  }
+  flow_id = fs->location;
+
+  close(fd);
+
+  log(log_level::INFO, "Successfully inserted flow rule " + std::to_string(flow_id) +
+                           " with queue " + std::to_string(queue_id));
+  return flow_id;
+}
+
+int mtl_interface::del_flow(uint32_t flow_id) {
+  struct ifreq ifr;
+  int ret, fd;
+  char ifname[IF_NAMESIZE];
+  if (!if_indextoname(ifindex, ifname)) {
+    log(log_level::ERROR, "Failed to get interface name");
+    return -1;
+  }
+
+  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    log(log_level::ERROR, "Failed to create socket");
+    return -1;
+  }
+
+  memset(&ifr, 0, sizeof(ifr));
+  snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifname);
+  struct ethtool_rxnfc cmd;
+  memset(&cmd, 0, sizeof(cmd));
+
+  cmd.cmd = ETHTOOL_SRXCLSRLDEL;
+  cmd.fs.location = flow_id;
+
+  ifr.ifr_data = (caddr_t)&cmd;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    log(log_level::ERROR, "Cannot delete flow rule " + std::to_string(flow_id) + " ," +
+                              std::string(strerror(errno)));
+    close(fd);
+    return ret;
+  }
+  close(fd);
+
+  log(log_level::INFO, "Successfully deleted flow rule " + std::to_string(flow_id));
   return 0;
 }
 

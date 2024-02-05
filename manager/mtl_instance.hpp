@@ -12,6 +12,7 @@
 #include <chrono>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "logging.hpp"
@@ -28,6 +29,8 @@ class mtl_instance {
   std::string hostname;
   std::vector<uint16_t> lcore_ids;
   std::unordered_map<unsigned int, std::shared_ptr<mtl_interface>> interfaces;
+  std::unordered_map<unsigned int, std::unordered_set<uint16_t>> if_queue_ids;
+  std::unordered_map<unsigned int, std::unordered_set<unsigned int>> if_flow_ids;
 
  private:
   void log(const log_level& level, const std::string& message) const {
@@ -38,11 +41,13 @@ class mtl_instance {
   void handle_message_get_lcore(mtl_lcore_message_t* lcore_msg);
   void handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
   void handle_message_register(mtl_register_message_t* register_msg);
-  void handle_message_if_xsk_map_fd(mtl_if_message_t* request_map_fd_msg);
+  void handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg);
   void handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t* udp_dp_filter_msg,
                                     bool add);
-  void handle_message_if_get_queue(mtl_if_message_t* queue_msg);
-  void handle_message_if_put_queue(mtl_if_message_t* queue_msg);
+  void handle_message_if_get_queue(mtl_if_message_t* if_msg);
+  void handle_message_if_put_queue(mtl_if_message_t* if_msg);
+  void handle_message_if_add_flow(mtl_if_message_t* if_msg);
+  void handle_message_if_del_flow(mtl_if_message_t* if_msg);
 
   int send_response(int response, mtl_message_type_t type = MTL_MSG_TYPE_RESPONSE) {
     mtl_message_t msg;
@@ -60,6 +65,24 @@ class mtl_instance {
   ~mtl_instance() {
     log(log_level::INFO, "Remove client.");
     for (const auto& lcore_id : lcore_ids) mtl_lcore::get_instance().put_lcore(lcore_id);
+    for (auto& pair : if_queue_ids) {
+      auto interface = get_interface(pair.first);
+      if (interface != nullptr) {
+        for (uint16_t id : pair.second) {
+          interface->put_queue(id);
+        }
+        pair.second.clear();
+      }
+    }
+    for (auto& pair : if_flow_ids) {
+      auto interface = get_interface(pair.first);
+      if (interface != nullptr) {
+        for (unsigned int id : pair.second) {
+          interface->del_flow(id);
+        }
+        pair.second.clear();
+      }
+    }
 
     close(conn_fd);
   }
@@ -103,6 +126,12 @@ void mtl_instance::handle_message(const char* buf, int len) {
       break;
     case MTL_MSG_TYPE_IF_PUT_QUEUE:
       handle_message_if_put_queue(&msg->body.if_msg);
+      break;
+    case MTL_MSG_TYPE_IF_ADD_FLOW:
+      handle_message_if_add_flow(&msg->body.if_msg);
+      break;
+    case MTL_MSG_TYPE_IF_DEL_FLOW:
+      handle_message_if_del_flow(&msg->body.if_msg);
       break;
     default:
       log(log_level::ERROR, "Unknown message type");
@@ -247,6 +276,7 @@ void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
     return;
   }
   int ret = interface->get_queue();
+  if (ret > 0) if_queue_ids[ifindex].insert(ret);
   send_response(ret, MTL_MSG_TYPE_IF_QUEUE_ID);
 }
 
@@ -258,7 +288,38 @@ void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
     send_response(-1);
     return;
   }
-  int ret = interface->put_queue(ntohs(if_msg->queue_id));
+  uint16_t queue_id = ntohs(if_msg->queue_id);
+  int ret = interface->put_queue(queue_id);
+  if (ret == 0) if_queue_ids[ifindex].erase(queue_id);
+  send_response(ret);
+}
+
+void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
+  unsigned int ifindex = ntohl(if_msg->ifindex);
+  auto interface = get_interface(ifindex);
+  if (interface == nullptr) {
+    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
+    send_response(-1);
+    return;
+  }
+  int ret = interface->add_flow(ntohs(if_msg->queue_id), ntohl(if_msg->flow_type),
+                                ntohl(if_msg->src_ip), ntohl(if_msg->dst_ip),
+                                ntohs(if_msg->src_port), ntohs(if_msg->dst_port));
+  if (ret > 0) if_flow_ids[ifindex].insert(ret);
+  send_response(ret, MTL_MSG_TYPE_IF_FLOW_ID);
+}
+
+void mtl_instance::handle_message_if_del_flow(mtl_if_message_t* if_msg) {
+  unsigned int ifindex = ntohl(if_msg->ifindex);
+  auto interface = get_interface(ifindex);
+  if (interface == nullptr) {
+    log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
+    send_response(-1);
+    return;
+  }
+  unsigned int flow_id = ntohl(if_msg->flow_id);
+  int ret = interface->del_flow(flow_id);
+  if (ret == 0) if_flow_ids[ifindex].erase(flow_id);
   send_response(ret);
 }
 
