@@ -314,12 +314,12 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     fs->h_u.udp_ip4_spec.psrc = htons(src_port);
   }
   if (dst_ip) {
-    fs->m_u.udp_ip4_spec.ip4src = 0xFFFFFFFF;
-    fs->h_u.udp_ip4_spec.ip4dst = htonl(dst_ip);
+    fs->m_u.udp_ip4_spec.ip4dst = 0xFFFFFFFF;
+    fs->h_u.udp_ip4_spec.ip4dst = dst_ip;
   }
   if (src_ip) {
-    fs->m_u.udp_ip4_spec.ip4dst = 0xFFFFFFFF;
-    fs->h_u.udp_ip4_spec.ip4src = htonl(src_ip);
+    fs->m_u.udp_ip4_spec.ip4src = 0xFFFFFFFF;
+    fs->h_u.udp_ip4_spec.ip4src = src_ip;
   }
   fs->ring_cookie = queue_id;
   fs->location = free_loc; /* for some NICs the location must be set */

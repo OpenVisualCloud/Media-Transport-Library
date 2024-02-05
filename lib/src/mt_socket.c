@@ -380,17 +380,18 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   }
 
   uint32_t sip = 0, dip = 0;
+  uint16_t dport = flow->dst_port;
   if (has_ip_flow) {
     if (mt_is_multicast_ip(flow->dip_addr)) {
-      rte_memcpy(&dip, flow->dip_addr, MTL_IP_ADDR_LEN);
+      dip = *(uint32_t*)flow->dip_addr;
     } else {
-      rte_memcpy(&sip, flow->dip_addr, MTL_IP_ADDR_LEN);
-      rte_memcpy(&dip, flow->sip_addr, MTL_IP_ADDR_LEN);
+      sip = *(uint32_t*)flow->dip_addr;
+      dip = *(uint32_t*)flow->sip_addr;
     }
   }
 
-  return mt_instance_add_flow(impl, if_nametoindex(if_name), queue_id, UDP_V4_FLOW, sip,
-                              dip, 0, flow->dst_port);
+  return mt_instance_add_flow(impl, if_nametoindex(if_name), queue_id,
+                              0x02 /*UDP_V4_FLOW*/, sip, dip, 0, dport);
 }
 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
