@@ -16,8 +16,6 @@
 #endif /* MTL_DISABLE_PCAPNG */
 #else  /* Linux */
 #include <arpa/inet.h>
-#include <linux/ethtool.h>
-#include <linux/sockios.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <netinet/udp.h>

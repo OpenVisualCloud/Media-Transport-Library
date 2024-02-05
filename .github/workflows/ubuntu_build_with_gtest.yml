@@ -107,12 +107,17 @@ jobs:
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
+          sudo killall -SIGINT MtlManager || true
 
       - name: Binding network adapter
         run: |
           sudo ./script/nicctl.sh create_vf ${{  env.TEST_PF_PORT_P  }} || true
           sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
           sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
+
+      - name: Start MtlManager at background
+        run: |
+          sudo MtlManager &
 
       - name: Run ufd test case
         run: |

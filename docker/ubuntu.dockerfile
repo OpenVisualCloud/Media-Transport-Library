@@ -42,7 +42,7 @@ RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git 
 # Build IMTL
 RUN cd $MTL_REPO && ./build.sh && \
     DESTDIR=/install meson install -C build && \
-    setcap 'cap_net_admin+ep cap_net_raw+ep' ./build/app/RxTxApp
+    setcap 'cap_net_raw+ep' ./build/app/RxTxApp
 
 # Ubuntu 22.04, runtime stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS final

@@ -4,6 +4,7 @@
 
 #include "mt_socket.h"
 
+#include "mt_instance.h"
 #include "mt_log.h"
 #include "mt_util.h"
 
@@ -351,11 +352,13 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
 
 int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
                        struct mt_rxq_flow* flow) {
-  struct ifreq ifr;
-  int ret, fd;
-  int free_loc = -1, flow_id = -1;
   const char* if_name = mt_kernel_if_name(impl, port);
   bool has_ip_flow = true;
+
+  if (!mt_is_manager_connected(impl)) {
+    err("%s(%d), manager not connected\n", __func__, port);
+    return -EIO;
+  }
 
   if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) {
     err("%s(%d), sys_queue not supported\n", __func__, port);
@@ -376,146 +379,29 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
     }
   }
 
-  /* open control socket */
-  fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (fd < 0) {
-    err("%s(%d), cannot create control socket: %d\n", __func__, port, fd);
-    return fd;
-  }
-
-  memset(&ifr, 0, sizeof(ifr));
-  strncpy(ifr.ifr_name, if_name, sizeof(ifr.ifr_name) - 1);
-  struct ethtool_rxnfc cmd;
-  memset(&cmd, 0, sizeof(cmd));
-
-  /* get the free location */
-  cmd.cmd = ETHTOOL_GRXCLSRLCNT;
-  ifr.ifr_data = (void*)&cmd;
-  ret = ioctl(fd, SIOCETHTOOL, &ifr);
-  if (ret < 0) {
-    err("%s(%d), cannot get rule count: %s\n", __func__, port, strerror(errno));
-    close(fd);
-    return ret;
-  }
-
-  struct ethtool_rxnfc* cmd_w_rules;
-  cmd_w_rules = calloc(1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
-  cmd_w_rules->cmd = ETHTOOL_GRXCLSRLALL;
-  cmd_w_rules->rule_cnt = cmd.rule_cnt;
-  ifr.ifr_data = (void*)cmd_w_rules;
-  ret = ioctl(fd, SIOCETHTOOL, &ifr);
-  if (ret < 0) {
-    err("%s(%d), cannot get rules: %s\n", __func__, port, strerror(errno));
-    close(fd);
-    free(cmd_w_rules);
-    return ret;
-  }
-
-  uint32_t rule_size = cmd_w_rules->data;
-  free_loc = rule_size - 1; /* start from lowest priority */
-  while (free_loc > 0) {
-    bool used = false;
-    for (int i = 0; i < cmd.rule_cnt; i++) {
-      if (cmd_w_rules->rule_locs[i] == free_loc) {
-        used = true;
-        break;
-      }
-    }
-    if (used)
-      free_loc--;
-    else {
-      info("%s(%d), found free location: %d\n", __func__, port, free_loc);
-      break;
-    }
-  }
-  if (free_loc == 0) {
-    err("%s(%d), cannot find free location\n", __func__, port);
-    close(fd);
-    free(cmd_w_rules);
-    return -EIO;
-  }
-
-  free(cmd_w_rules);
-
-  /* set the flow rule */
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.cmd = ETHTOOL_SRXCLSRLINS;
-  struct ethtool_rx_flow_spec* fs = &cmd.fs;
-  fs->flow_type = UDP_V4_FLOW;
-  fs->m_u.udp_ip4_spec.pdst = 0xFFFF;
-  fs->h_u.udp_ip4_spec.pdst = htons(flow->dst_port);
+  uint32_t sip = 0, dip = 0;
+  uint16_t dport = flow->dst_port;
   if (has_ip_flow) {
-    fs->m_u.udp_ip4_spec.ip4dst = 0xFFFFFFFF;
     if (mt_is_multicast_ip(flow->dip_addr)) {
-      rte_memcpy(&fs->h_u.udp_ip4_spec.ip4dst, flow->dip_addr, MTL_IP_ADDR_LEN);
+      dip = *(uint32_t*)flow->dip_addr;
     } else {
-      fs->m_u.udp_ip4_spec.ip4src = 0xFFFFFFFF;
-      rte_memcpy(&fs->h_u.udp_ip4_spec.ip4src, flow->dip_addr, MTL_IP_ADDR_LEN);
-      rte_memcpy(&fs->h_u.udp_ip4_spec.ip4dst, flow->sip_addr, MTL_IP_ADDR_LEN);
+      sip = *(uint32_t*)flow->dip_addr;
+      dip = *(uint32_t*)flow->sip_addr;
     }
   }
-  fs->ring_cookie = queue_id;
-  fs->location = free_loc; /* for some NICs the location must be set */
 
-  ifr.ifr_data = (void*)&cmd;
-  ret = ioctl(fd, SIOCETHTOOL, &ifr);
-  if (ret < 0) {
-    err("%s(%d), cannot insert classifier: %s, if %s\n", __func__, port, strerror(errno),
-        if_name);
-    if (ret == -EPERM)
-      err("%s(%d), please add capability for the app: sudo setcap 'cap_net_admin+ep' "
-          "<app>\n",
-          __func__, port);
-    close(fd);
-    return ret;
-  }
-  flow_id = fs->location;
-
-  close(fd);
-
-  info("%s(%d), succ, flow_id %d\n", __func__, port, flow_id);
-  return flow_id;
+  return mt_instance_add_flow(impl, if_nametoindex(if_name), queue_id,
+                              0x02 /*UDP_V4_FLOW*/, sip, dip, 0, dport);
 }
 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
-  struct ethtool_rxnfc cmd;
-  int ret, fd;
   const char* if_name = mt_kernel_if_name(impl, port);
 
-  if (flow_id <= 0) {
-    err("%s(%d), flow_id %d is invalid\n", __func__, port, flow_id);
-    return -EINVAL;
+  if (!mt_is_manager_connected(impl)) {
+    err("%s(%d), manager not connected\n", __func__, port);
   }
 
-  memset(&cmd, 0, sizeof(cmd));
-  cmd.cmd = ETHTOOL_SRXCLSRLDEL;
-  cmd.fs.location = flow_id;
-
-  fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (fd < 0) {
-    err("%s(%d), cannot get control socket: %d\n", __func__, port, fd);
-    return fd;
-  }
-
-  struct ifreq ifr;
-  memset(&ifr, 0, sizeof(ifr));
-  strncpy(ifr.ifr_name, if_name, IFNAMSIZ - 1);
-  ifr.ifr_data = (char*)&cmd;
-
-  ret = ioctl(fd, SIOCETHTOOL, &ifr);
-  if (ret < 0) {
-    err("%s(%d), cannot remove classifier: %s\n", __func__, port, strerror(errno));
-    if (ret == -EPERM)
-      err("%s(%d), please add capability for the app: sudo setcap 'cap_net_admin+ep' "
-          "<app>\n",
-          __func__, port);
-    close(fd);
-    return ret;
-  }
-  close(fd);
-  info("%s(%d), succ, flow_id %d\n", __func__, port, flow_id);
-
-  return 0;
+  return mt_instance_del_flow(impl, if_nametoindex(if_name), flow_id);
 }
 #else
 int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],

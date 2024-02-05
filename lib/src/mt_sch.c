@@ -606,6 +606,7 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
         ret = mt_instance_get_lcore(impl, cur_lcore);
         if (ret == 0) {
           *lcore = cur_lcore;
+          rte_atomic32_inc(&impl->lcore_cnt);
           return 0;
         }
       }
@@ -661,10 +662,14 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
 }
 
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
+  int ret;
   if (mt_is_manager_connected(impl)) {
-    return mt_instance_put_lcore(impl, lcore);
+    ret = mt_instance_put_lcore(impl, lcore);
+    if (ret == 0) {
+      rte_atomic32_dec(&impl->lcore_cnt);
+      return 0;
+    }
   } else {
-    int ret;
     struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
     struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
 
@@ -701,8 +706,8 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
 
   err_unlock:
     sch_filelock_unlock(mgr);
-    return ret;
   }
+  return ret;
 }
 
 bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore) {

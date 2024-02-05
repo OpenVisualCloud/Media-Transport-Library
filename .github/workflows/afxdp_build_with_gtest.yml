@@ -109,6 +109,7 @@ jobs:
           sudo killall -SIGINT KahawaiTest || true
           sudo killall -SIGINT KahawaiUfdTest || true
           sudo killall -SIGINT KahawaiUplTest || true
+          sudo killall -SIGINT MtlManager || true
 
       - name: Setup network interfaces
         run: |
@@ -120,6 +121,10 @@ jobs:
           echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/gro_flush_timeout
           echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/napi_defer_hard_irqs
           echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/gro_flush_timeout
+
+      - name: Start MtlManager at background
+        run: |
+          sudo MtlManager &
 
       - name: Run st2110 test case
         run: |
