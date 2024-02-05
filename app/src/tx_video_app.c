@@ -154,7 +154,9 @@ static void app_tx_video_build_frame(struct st_app_tx_video_session* s, void* fr
                                      size_t frame_size) {
   uint8_t* src = s->st20_frame_cursor;
 
-  if (!s->ctx->tx_copy_once || !s->st20_frames_copied) mtl_memcpy(frame, src, frame_size);
+  if (!s->ctx->tx_copy_once || !s->st20_frames_copied) {
+    mtl_memcpy(frame, src, frame_size);
+  }
   /* point to next frame */
   s->st20_frame_cursor += frame_size;
   if (s->st20_frame_cursor + frame_size > s->st20_source_end) {

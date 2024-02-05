@@ -423,6 +423,8 @@ struct st_app_rx_st22p_session {
 };
 
 struct st_app_tx_st20p_session {
+  struct st_app_context* ctx;
+
   int idx;
   st20p_tx_handle handle;
   mtl_handle st;
@@ -439,6 +441,7 @@ struct st_app_tx_st20p_session {
   uint8_t* st20p_source_end;
   uint8_t* st20p_frame_cursor;
   int st20p_source_fd;
+  bool st20p_frames_copied;
 
   struct st_display* display;
   double expect_fps;

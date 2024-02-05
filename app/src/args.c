@@ -59,6 +59,7 @@ enum st_args_cmd {
   ST_ARG_NO_BULK,
   ST_ARG_TX_DISPLAY,
   ST_ARG_RX_DISPLAY,
+  ST_ARG_DISABLE_MIGRATE,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -184,6 +185,7 @@ static struct option st_app_args_options[] = {
     {"no_bulk", no_argument, 0, ST_ARG_NO_BULK},
     {"tx_display", no_argument, 0, ST_ARG_TX_DISPLAY},
     {"rx_display", no_argument, 0, ST_ARG_RX_DISPLAY},
+    {"disable_migrate", no_argument, 0, ST_ARG_DISABLE_MIGRATE},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -546,6 +548,10 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_DISPLAY:
         ctx->rx_display = true;
+        break;
+      case ST_ARG_DISABLE_MIGRATE:
+        p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
+        p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))
