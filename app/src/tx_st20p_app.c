@@ -46,7 +46,7 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
   uint8_t* src = s->st20p_frame_cursor;
 
   if (!s->ctx->tx_copy_once || !s->st20p_frames_copied) {
-    mtl_memcpy(frame, src, frame_size);
+    mtl_memcpy(frame->addr[0], src, frame_size);
   }
   /* point to next frame */
   s->st20p_frame_cursor += frame_size;
