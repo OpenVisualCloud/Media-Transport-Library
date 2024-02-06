@@ -214,14 +214,15 @@ int mtl_interface::clear_flow_rules() {
       cmd.fs.location = id;
       ifr.ifr_data = (caddr_t)&cmd;
       ret = ioctl(fd, SIOCETHTOOL, &ifr);
-      if (ret < 0) {
-        log(log_level::ERROR, "Failed to clear rule " + std::to_string(id));
-      }
-      log(log_level::INFO, "Rule " + std::to_string(id) + " cleared");
+      if (ret < 0)
+        log(log_level::WARNING, "Failed to clear rule " + std::to_string(id));
+      else
+        log(log_level::INFO, "Rule " + std::to_string(id) + " cleared");
     }
 
     free(cmd_w_rules);
   }
+
   close(fd);
   return 0;
 }
@@ -260,7 +261,7 @@ int mtl_interface::parse_combined_info() {
 
 int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
                             uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
-  int ret, fd;
+  int ret = 0;
   int free_loc = -1, flow_id = -1;
   char ifname[IF_NAMESIZE];
   if (!if_indextoname(ifindex, ifname)) {
@@ -268,7 +269,7 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     return -1;
   }
 
-  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
     log(log_level::ERROR, "Failed to create socket");
     return -1;
