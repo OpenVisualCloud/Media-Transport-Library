@@ -72,6 +72,7 @@ class mtl_interface {
 
 mtl_interface::mtl_interface(unsigned int ifindex)
     : ifindex(ifindex), max_combined(0), combined_count(0) {
+  clear_flow_rules();
 #ifdef MTL_HAS_XDP_BACKEND
   xdp_prog = nullptr;
   xsks_map_fd = -1;
@@ -160,40 +161,69 @@ int mtl_interface::put_queue(uint16_t queue_id) {
 }
 
 int mtl_interface::clear_flow_rules() {
+  int ret = 0;
   char ifname[IF_NAMESIZE];
   if (!if_indextoname(ifindex, ifname)) {
     log(log_level::ERROR, "Failed to get interface name");
     return -1;
   }
 
-  FILE* fp;
-  char buffer[1024];
-  std::string command = "ethtool -n " + std::string(ifname);
-
-  fp = popen(command.c_str(), "r");
-  if (fp == nullptr) {
-    log(log_level::ERROR, "Failed to run " + command);
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (fd < 0) {
+    log(log_level::ERROR, "Failed to create socket");
     return -1;
   }
 
-  std::vector<int> rule_ids;
-  int rule_id;
-  while (fgets(buffer, sizeof(buffer), fp) != nullptr) {
-    if (sscanf(buffer, "Filter: %d", &rule_id) == 1) {
-      rule_ids.push_back(rule_id);
+  struct ethtool_rxnfc cmd = {};
+  struct ifreq ifr = {};
+  snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifname);
+
+  /* get all with ethtool */
+  cmd.cmd = ETHTOOL_GRXCLSRLCNT;
+  ifr.ifr_data = (caddr_t)&cmd;
+  ret = ioctl(fd, SIOCETHTOOL, &ifr);
+  if (ret < 0) {
+    log(log_level::ERROR, "Failed to get rule cnt info");
+    close(fd);
+    return ret;
+  }
+
+  if (cmd.rule_cnt > 0) {
+    struct ethtool_rxnfc* cmd_w_rules = (struct ethtool_rxnfc*)calloc(
+        1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
+    if (!cmd_w_rules) {
+      log(log_level::ERROR, "Failed to allocate memory");
+      close(fd);
+      return -1;
     }
+    cmd_w_rules->cmd = ETHTOOL_GRXCLSRLALL;
+    cmd_w_rules->rule_cnt = cmd.rule_cnt;
+    ifr.ifr_data = (caddr_t)cmd_w_rules;
+    ret = ioctl(fd, SIOCETHTOOL, &ifr);
+    if (ret < 0) {
+      log(log_level::ERROR, "Failed to get rule info");
+      free(cmd_w_rules);
+      close(fd);
+      return ret;
+    }
+
+    for (uint32_t i = 0; i < cmd.rule_cnt; i++) {
+      uint32_t id = cmd_w_rules->rule_locs[i];
+      memset(&cmd, 0, sizeof(cmd));
+      cmd.cmd = ETHTOOL_SRXCLSRLDEL;
+      cmd.fs.location = id;
+      ifr.ifr_data = (caddr_t)&cmd;
+      ret = ioctl(fd, SIOCETHTOOL, &ifr);
+      if (ret < 0)
+        log(log_level::WARNING, "Failed to clear rule " + std::to_string(id));
+      else
+        log(log_level::INFO, "Rule " + std::to_string(id) + " cleared");
+    }
+
+    free(cmd_w_rules);
   }
 
-  pclose(fp);
-
-  for (int id : rule_ids) {
-    log(log_level::INFO, "Delete flow rule " + std::to_string(id));
-    std::string delete_command =
-        "ethtool -N " + std::string(ifname) + " delete " + std::to_string(id);
-    if (system(delete_command.c_str()))
-      log(log_level::WARNING, "Failed to run " + delete_command);
-  }
-
+  close(fd);
   return 0;
 }
 
@@ -231,8 +261,7 @@ int mtl_interface::parse_combined_info() {
 
 int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
                             uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
-  struct ifreq ifr;
-  int ret, fd;
+  int ret = 0;
   int free_loc = -1, flow_id = -1;
   char ifname[IF_NAMESIZE];
   if (!if_indextoname(ifindex, ifname)) {
@@ -240,16 +269,15 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     return -1;
   }
 
-  fd = socket(AF_INET, SOCK_DGRAM, 0);
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
     log(log_level::ERROR, "Failed to create socket");
     return -1;
   }
 
-  memset(&ifr, 0, sizeof(ifr));
+  struct ethtool_rxnfc cmd = {};
+  struct ifreq ifr = {};
   snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifname);
-  struct ethtool_rxnfc cmd;
-  memset(&cmd, 0, sizeof(cmd));
 
   /* get the free location */
   cmd.cmd = ETHTOOL_GRXCLSRLCNT;
@@ -341,7 +369,6 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
 }
 
 int mtl_interface::del_flow(uint32_t flow_id) {
-  struct ifreq ifr;
   int ret, fd;
   char ifname[IF_NAMESIZE];
   if (!if_indextoname(ifindex, ifname)) {
@@ -355,14 +382,12 @@ int mtl_interface::del_flow(uint32_t flow_id) {
     return -1;
   }
 
-  memset(&ifr, 0, sizeof(ifr));
+  struct ethtool_rxnfc cmd = {};
+  struct ifreq ifr = {};
   snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifname);
-  struct ethtool_rxnfc cmd;
-  memset(&cmd, 0, sizeof(cmd));
 
   cmd.cmd = ETHTOOL_SRXCLSRLDEL;
   cmd.fs.location = flow_id;
-
   ifr.ifr_data = (caddr_t)&cmd;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
