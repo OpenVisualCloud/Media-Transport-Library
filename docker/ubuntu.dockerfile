@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+# NOTE: This Dockerfile is intended for development purposes only.
+# It has been tested for functionality, but not for security.
+# Please review and modify as necessary before using in a production environment.
+
 # Ubuntu 22.04, build stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS builder
 
