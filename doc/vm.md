@@ -118,7 +118,7 @@ edit vm0
     </features>
     ```
 
-* Add memtune hard_limit if you passthrough more than 2 PFs/VFs to the VM, the size should be "2 * memory + 1GB"
+* Add memtune hard_limit if you passthrough n(>= 2) PFs/VFs to the VM, the size should be "n * memory + 1GB"
 
     ```xml
     <memory unit='KiB'>8388608</memory>
