@@ -12,9 +12,8 @@ LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
 
 # Install build dependencies and debug tools
 RUN apt-get update -y && \
-    apt-get install -y git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev && \
-    apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin && \
-    pip install pyelftools ninja && \
+    apt-get install -y git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev && \
+    apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

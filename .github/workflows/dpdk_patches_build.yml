@@ -67,10 +67,7 @@ jobs:
       - name: Install the build dependency
         run: |
           apt-get update -y
-          apt-get install -y sudo git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
-
-      - name: Install the python package
-        run: pip install pyelftools==0.29 ninja==1.11.1
+          apt-get install -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
 
       - name: Git config
         run: |
