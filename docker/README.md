@@ -2,6 +2,8 @@
 
 Docker guide for Intel® Media Transport Library.
 
+Please note that the Dockerfile provided is intended for development use only. It has been tested for functionality, but not for security. Users are advised to review and modify it as necessary before using it in a production environment.
+
 ## 1. DPDK NIC PMD and env setup on host
 
 Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfio(2110) user group and vfio driver mode for VFs.

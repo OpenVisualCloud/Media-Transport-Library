@@ -61,6 +61,8 @@ docker0                <No XDP program loaded!>
 
 ## Run in a Docker container
 
+Please note that the Dockerfile provided is intended for development use only. It has been tested for functionality, but not for security. Users are advised to review and modify it as necessary before using it in a production environment.
+
 Build the Docker image:
 
 ```bash
