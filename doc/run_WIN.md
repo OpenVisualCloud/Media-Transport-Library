@@ -99,7 +99,7 @@ The previously installed drivers will now be installed for the "Virtual to physi
 
 ![Image](./png/virt2phy.png)
 
-## 4. Steps for netuio driver
+## 4. Install netuio driver
 
 ### 4.1 Compile the driver
 
@@ -133,6 +133,35 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 In contrast to Linux, Windows does not support the use of the nicctl.sh script, lspci, and dpdk-devbind.py. Once the driver is installed in the Windows UIO section, the NIC is automatically bound to PMD in the Device Manager.
 
 The port name can be obtained from the same location. For instance, as shown in the previous figure, the PCI number in the Location field is `bus 175, device 0, function 0`. When converted to hexadecimal format, this becomes `0000:af:00.0`, which is usable for IMTL.
+
+### 4.6 Install driver for DMA devices
+
+If you want to use the DMA devices, you need to install the netuio driver for them too.
+
+Edit the `netuio.inf` file in the driver folder, and add the following lines to the `[Standard.NTamd64]` section.
+
+```text
+%Intel.SPR.DSA.Description%=netuio_Device, PCI\VEN_8086&DEV_0B25
+%Intel.ICX.CBDMA.Description%=netuio_Device, PCI\VEN_8086&DEV_0B00
+%Intel.SKX.CBDMA.Description%=netuio_Device, PCI\VEN_8086&DEV_2021
+```
+
+Add the following lines to the `[Strings]` section.
+
+```text
+Intel.SPR.DSA.Description = "Intel(R) Sapphire Rapids DSA Device"
+Intel.ICX.CBDMA.Description = "Intel(R) Ice Lake CBDMA Device"
+Intel.SKX.CBDMA.Description = "Intel(R) Sky Lake CBDMA Device"
+```
+
+Then you can use devcon to install the driver or do it manually.
+For example, if you are using SPR platform, the Device ID of DSA is `PCI\VEN_8086&DEV_0B25`.
+
+```powershell
+devcon.exe update netuio.inf "PCI\VEN_8086&DEV_0B25"
+```
+
+Once you have installed the driver, you can use Device Manager to check the PCI port of the DMA devices. The usage of the DMA devices is the same as on Linux.
 
 ## 5. Run and test
 
