@@ -22,6 +22,7 @@ windows_gtest: &windows_gtest
 linux_gtest: &linux_gtest
   - .github/workflows/ubuntu_build_with_gtest.yml
   - '.github/workflows/upl*'
+  - 'patches/ice_drv/**'
   - *src
   - *build
 
