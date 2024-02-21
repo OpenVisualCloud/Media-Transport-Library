@@ -60,6 +60,9 @@ struct st20p_rx_ctx {
 
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;
+  /* get frame stat */
+  int stat_get_frame_try;
+  int stat_get_frame_succ;
 };
 
 #endif
