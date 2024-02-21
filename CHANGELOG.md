@@ -10,10 +10,10 @@
 * rx/timing_parser: add support to export the timing_parser to app, see `app/sample/rx_st20p_timing_parser_sample.c` for usage.
 * st40: add interlaced support.
 * cvt: add st20_rfc4175_422be10_to_yuv422p8 with avx512
-* cvt: add st20_rfc4175_422be10_to_yuv420p8 with avx512
 * backend: add XDP based backend, see doc/xdp.md.
 * manager: add a daemon server for privileged control management, see manager/README.md.
 * backend/xdp: add UDP port filter XDP program for splitting data path traffic.
+* ice: update driver to 1.13.7
 
 ## Changelog for 23.12
 
