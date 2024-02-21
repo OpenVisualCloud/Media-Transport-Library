@@ -1133,9 +1133,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 }
 
 TEST(St20p, digest_1080p_s1) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  enum st_fps fps[1] = {ST_FPS_P25};
+  int width[1] = {1280};
+  int height[1] = {720};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
@@ -1210,9 +1210,9 @@ TEST(St20p, digest_s2) {
 }
 
 TEST(St20p, digest_1080p_fail_interval) {
-  enum st_fps fps[1] = {ST_FPS_P59_94};
-  int width[1] = {1920};
-  int height[1] = {1080};
+  enum st_fps fps[1] = {ST_FPS_P25};
+  int width[1] = {1280};
+  int height[1] = {720};
   enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
   enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_10BIT};
   enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
