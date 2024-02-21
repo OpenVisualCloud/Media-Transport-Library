@@ -5,6 +5,7 @@
 #include "st20_pipeline_rx.h"
 
 #include "../../mt_log.h"
+#include "../../mt_stat.h"
 
 static const char* st20p_rx_frame_stat_name[ST20P_RX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_converting", "converted", "in_user",
@@ -382,13 +383,9 @@ static int rx_st20p_convert_dump(void* priv) {
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t convert_idx = ctx->framebuff_convert_idx;
-  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  notice("RX_st20p(%s), p(%d:%s) cv(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
-         rx_st20p_stat_name(framebuff[producer_idx].stat), convert_idx,
-         rx_st20p_stat_name(framebuff[convert_idx].stat), consumer_idx,
-         rx_st20p_stat_name(framebuff[consumer_idx].stat));
+  notice("RX_st20p(%s), cv(%d:%s)\n", ctx->ops_name, convert_idx,
+         rx_st20p_stat_name(framebuff[convert_idx].stat));
 
   int convert_fail = rte_atomic32_read(&ctx->stat_convert_fail);
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
@@ -674,6 +671,26 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
   return 0;
 }
 
+static int rx_st20p_stat(void* priv) {
+  struct st20p_rx_ctx* ctx = priv;
+  struct st20p_rx_frame* framebuff = ctx->framebuffs;
+
+  if (!ctx->ready) return -EBUSY; /* not ready */
+
+  uint16_t producer_idx = ctx->framebuff_producer_idx;
+  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  notice("RX_st20p(%s), p(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+         rx_st20p_stat_name(framebuff[producer_idx].stat), consumer_idx,
+         rx_st20p_stat_name(framebuff[consumer_idx].stat));
+
+  notice("RX_st20p(%s), get frame try %d succ %d\n", ctx->ops_name,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  ctx->stat_get_frame_try = 0;
+  ctx->stat_get_frame_succ = 0;
+
+  return 0;
+}
+
 static int st20p_rx_get_block_wait(struct st20p_rx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
@@ -696,6 +713,8 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
   }
 
   if (!ctx->ready) return NULL; /* not ready */
+
+  ctx->stat_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
 
@@ -749,6 +768,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle) {
     frame->user_meta = NULL;
     frame->user_meta_size = 0;
   }
+  ctx->stat_get_frame_succ++;
   return frame;
 }
 
@@ -869,6 +889,8 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
 
   if (!ctx->block_get) rx_st20p_notify_frame_available(ctx);
 
+  mt_stat_register(impl, rx_st20p_stat, ctx, ctx->ops_name);
+
   return ctx;
 }
 
@@ -882,6 +904,10 @@ int st20p_rx_free(st20p_rx_handle handle) {
   }
 
   notice("%s(%d), start\n", __func__, ctx->idx);
+
+  if (ctx->ready) {
+    mt_stat_unregister(impl, rx_st20p_stat, ctx);
+  }
 
   if (ctx->convert_impl) {
     st20_put_converter(impl, ctx->convert_impl);

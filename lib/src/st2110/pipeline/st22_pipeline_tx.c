@@ -226,8 +226,13 @@ static int tx_st22p_encode_dump(void* priv) {
   int encode_fail = rte_atomic32_read(&ctx->stat_encode_fail);
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
   if (encode_fail) {
-    notice("RX_ST22P(%s), encode fail %d\n", ctx->ops_name, encode_fail);
+    notice("TX_ST22P(%s), encode fail %d\n", ctx->ops_name, encode_fail);
   }
+
+  notice("TX_ST22P(%s), get frame try %d succ %d\n", ctx->ops_name,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  ctx->stat_get_frame_try = 0;
+  ctx->stat_get_frame_succ = 0;
 
   return 0;
 }
@@ -446,6 +451,8 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
 
   if (!ctx->ready) return NULL; /* not ready */
 
+  ctx->stat_get_frame_try++;
+
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       tx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_TX_FRAME_FREE);
@@ -473,6 +480,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     framebuff->dst.second_field = framebuff->src.second_field = ctx->second_field;
     ctx->second_field = ctx->second_field ? false : true;
   }
+  ctx->stat_get_frame_succ++;
   return &framebuff->src;
 }
 

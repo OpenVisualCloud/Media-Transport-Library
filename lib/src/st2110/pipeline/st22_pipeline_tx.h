@@ -56,6 +56,9 @@ struct st22p_tx_ctx {
   size_t src_size;
 
   rte_atomic32_t stat_encode_fail;
+  /* get frame stat */
+  int stat_get_frame_try;
+  int stat_get_frame_succ;
 };
 
 #endif

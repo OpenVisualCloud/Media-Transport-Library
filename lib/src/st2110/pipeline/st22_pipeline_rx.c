@@ -237,6 +237,11 @@ static int rx_st22p_decode_dump(void* priv) {
     notice("RX_ST22P(%s), busy drop frame %d\n", ctx->ops_name, busy);
   }
 
+  notice("RX_ST22P(%s), get frame try %d succ %d\n", ctx->ops_name,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  ctx->stat_get_frame_try = 0;
+  ctx->stat_get_frame_succ = 0;
+
   return 0;
 }
 
@@ -434,6 +439,8 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
 
   if (!ctx->ready) return NULL; /* not ready */
 
+  ctx->stat_get_frame_try++;
+
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
@@ -457,6 +464,7 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
+  ctx->stat_get_frame_succ++;
   return &framebuff->dst;
 }
 

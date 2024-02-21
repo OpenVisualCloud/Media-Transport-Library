@@ -383,7 +383,7 @@ int main(int argc, char** argv) {
         ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
             tx_st20_sessions, ctx->tx_audio_session_cnt, ctx->tx_anc_session_cnt);
       }
-      if (ctx->para.pmd[i] == MTL_PMD_DPDK_USER) {
+      if (ctx->para.tx_queues_cnt[i] && (ctx->para.pmd[i] == MTL_PMD_DPDK_USER)) {
         ctx->para.tx_queues_cnt[i] += 4; /* add extra 4 queues for recovery */
       }
     }

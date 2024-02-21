@@ -5,6 +5,7 @@
 #include "st20_pipeline_tx.h"
 
 #include "../../mt_log.h"
+#include "../../mt_stat.h"
 
 static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_converting", "converted", "in_user", "in_transmitting",
@@ -216,13 +217,9 @@ static int tx_st20p_convert_dump(void* priv) {
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t convert_idx = ctx->framebuff_convert_idx;
-  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  notice("TX_st20p(%s), p(%d:%s) cv(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
-         tx_st20p_stat_name(framebuff[producer_idx].stat), convert_idx,
-         tx_st20p_stat_name(framebuff[convert_idx].stat), consumer_idx,
-         tx_st20p_stat_name(framebuff[consumer_idx].stat));
+  notice("TX_st20p(%s), cv(%d:%s)\n", ctx->ops_name, convert_idx,
+         tx_st20p_stat_name(framebuff[convert_idx].stat));
 
   int convert_fail = rte_atomic32_read(&ctx->stat_convert_fail);
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
@@ -470,6 +467,26 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   return 0;
 }
 
+static int tx_st20p_stat(void* priv) {
+  struct st20p_tx_ctx* ctx = priv;
+  struct st20p_tx_frame* framebuff = ctx->framebuffs;
+
+  if (!ctx->ready) return -EBUSY; /* not ready */
+
+  uint16_t producer_idx = ctx->framebuff_producer_idx;
+  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  notice("TX_st20p(%s), p(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+         tx_st20p_stat_name(framebuff[producer_idx].stat), consumer_idx,
+         tx_st20p_stat_name(framebuff[consumer_idx].stat));
+
+  notice("TX_st20p(%s), get frame try %d succ %d\n", ctx->ops_name,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  ctx->stat_get_frame_try = 0;
+  ctx->stat_get_frame_succ = 0;
+
+  return 0;
+}
+
 static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
@@ -491,6 +508,8 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   }
 
   if (!ctx->ready) return NULL; /* not ready */
+
+  ctx->stat_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
@@ -522,6 +541,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   }
   frame->user_meta = NULL;
   frame->user_meta_size = 0;
+  ctx->stat_get_frame_succ++;
   return frame;
 }
 
@@ -741,6 +761,8 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   /* notify app can get frame */
   if (!ctx->block_get) tx_st20p_notify_frame_available(ctx);
 
+  mt_stat_register(impl, tx_st20p_stat, ctx, ctx->ops_name);
+
   return ctx;
 }
 
@@ -754,6 +776,10 @@ int st20p_tx_free(st20p_tx_handle handle) {
   }
 
   notice("%s(%d), start\n", __func__, ctx->idx);
+
+  if (ctx->ready) {
+    mt_stat_unregister(impl, tx_st20p_stat, ctx);
+  }
 
   if (ctx->convert_impl) {
     st20_put_converter(impl, ctx->convert_impl);
