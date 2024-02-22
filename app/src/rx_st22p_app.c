@@ -256,6 +256,8 @@ static int app_rx_st22p_pcap(struct st_app_rx_st22p_session* s) {
 int st_app_rx_st22p_sessions_init(struct st_app_context* ctx) {
   int ret = 0, i = 0;
   struct st_app_rx_st22p_session* s;
+  int fb_cnt = ctx->rx_video_fb_cnt;
+  if (fb_cnt <= 0) fb_cnt = ST_APP_DEFAULT_FB_CNT;
 
   dbg("%s(%d), rx_st22p_session_cnt %d\n", __func__, i, ctx->rx_st22p_session_cnt);
   ctx->rx_st22p_sessions = (struct st_app_rx_st22p_session*)st_app_zmalloc(
@@ -265,7 +267,7 @@ int st_app_rx_st22p_sessions_init(struct st_app_context* ctx) {
     s = &ctx->rx_st22p_sessions[i];
     s->idx = i;
     s->st = ctx->st;
-    s->framebuff_cnt = 3;
+    s->framebuff_cnt = fb_cnt;
 
     ret = app_rx_st22p_init(
         ctx, ctx->json_ctx ? &ctx->json_ctx->rx_st22p_sessions[i] : NULL, s);

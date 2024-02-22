@@ -42,6 +42,8 @@
 
 #define ST_APP_MAX_LCORES (32)
 
+#define ST_APP_DEFAULT_FB_CNT (3)
+
 #define ST_APP_EXPECT_NEAR(val, expect, delta) \
   ((val > (expect - delta)) && (val < (expect + delta)))
 
