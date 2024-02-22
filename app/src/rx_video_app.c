@@ -700,7 +700,7 @@ int st_app_rx_video_sessions_init(struct st_app_context* ctx) {
   int ret, i;
   struct st_app_rx_video_session* s;
   int fb_cnt = ctx->rx_video_fb_cnt;
-  if (fb_cnt <= 0) fb_cnt = 6;
+  if (fb_cnt <= 0) fb_cnt = ST_APP_DEFAULT_FB_CNT;
 
   ctx->rx_video_sessions = (struct st_app_rx_video_session*)st_app_zmalloc(
       sizeof(struct st_app_rx_video_session) * ctx->rx_video_session_cnt);
