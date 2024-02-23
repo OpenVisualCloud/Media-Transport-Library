@@ -1390,6 +1390,11 @@ static inline void rv_tp_pkt_handle(struct st_rx_video_session_impl* s,
   rv_tp_on_packet(s, s_port, tp_slot, tmstamp, pkt_ns, pkt_idx);
 }
 
+static inline void* rv_frame_memcpy(void* dst, const void* src, size_t n) {
+  /* not use rte_memcpy since it find performance issue on writing frame */
+  return memcpy(dst, src, n);
+}
+
 static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                                enum mtl_session_port s_port, bool ctrl_thread) {
   struct st20_rx_ops* ops = &s->ops;
@@ -1595,9 +1600,9 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     /* copy the payload to target frame by dma or cpu */
     if (extra_rtp && s->st20_linesize > s->st20_bytes_in_line) {
       /* packet crosses line padding, copy two lines data */
-      rte_memcpy(slot->frame->addr + offset, payload, line1_length);
-      rte_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
-                 payload + line1_length, payload_length - line1_length);
+      rv_frame_memcpy(slot->frame->addr + offset, payload, line1_length);
+      rv_frame_memcpy(slot->frame->addr + (line1_number + 1) * s->st20_linesize,
+                      payload + line1_length, payload_length - line1_length);
     } else if (dma_dev && (payload_length > ST_RX_VIDEO_DMA_MIN_SIZE) &&
                !mt_dma_full(dma_dev) &&
                !rv_frame_payload_cross_page(s, slot->frame, offset, payload_length)) {
@@ -1608,7 +1613,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
                         payload_iova, payload_length);
       if (ret < 0) {
         /* use cpu copy if dma copy fail */
-        rte_memcpy(slot->frame->addr + offset, payload, payload_length);
+        rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
       } else {
         /* abstract dma dev takes ownership of this mbuf */
         st_rx_mbuf_set_offset(mbuf, offset);
@@ -1620,7 +1625,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
         s->stat_pkts_dma++;
       }
     } else {
-      rte_memcpy(slot->frame->addr + offset, payload, payload_length);
+      rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
     }
   }
 
@@ -1956,7 +1961,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
     s->stat_pkts_offset_dropped++;
     return -EIO;
   }
-  rte_memcpy(slot->frame->addr + offset, payload, payload_length);
+  rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
   rv_slot_add_frame_size(slot, payload_length);
   s->stat_pkts_received++;
   slot->pkts_received++;
@@ -2145,7 +2150,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   }
 
   if (need_copy) {
-    rte_memcpy(slot->frame->addr + offset, payload, payload_length);
+    rv_frame_memcpy(slot->frame->addr + offset, payload, payload_length);
   }
 
   rv_slot_add_frame_size(slot, payload_length);
