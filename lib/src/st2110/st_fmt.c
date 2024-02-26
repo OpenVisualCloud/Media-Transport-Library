@@ -113,6 +113,13 @@ static const struct st20_pgroup st20_pgroups[] = {
         .coverage = 1,
         .name = "ST20_FMT_YUV_444_16BIT",
     },
+    {
+        /* ST20_FMT_YUV_422_PLANAR10LE */
+        .fmt = ST20_FMT_YUV_422_PLANAR10LE,
+        .size = 4, /* assume PLANAR as packed now */
+        .coverage = 1,
+        .name = "ST20_FMT_YUV_422_PLANAR10LE",
+    },
 };
 
 static const struct st_fps_timing st_fps_timings[] = {
@@ -622,7 +629,7 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
   return size * pg.size / pg.coverage;
 }
 
-const char* st20_frame_fmt_name(enum st20_fmt fmt) {
+const char* st20_fmt_name(enum st20_fmt fmt) {
   struct st20_pgroup pg;
   memset(&pg, 0, sizeof(pg));
 
@@ -632,6 +639,19 @@ const char* st20_frame_fmt_name(enum st20_fmt fmt) {
     return "unknown";
   }
   return pg.name;
+}
+
+enum st20_fmt st20_name_to_fmt(const char* name) {
+  int i;
+
+  for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
+    if (!strcmp(name, st20_pgroups[i].name)) {
+      return st20_pgroups[i].fmt;
+    }
+  }
+
+  err("%s, invalid name %s\n", __func__, name);
+  return ST20_FMT_MAX;
 }
 
 int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
@@ -788,6 +808,8 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
       return ST_FRAME_FMT_RGBRFC4175PG2BE12;
     case ST20_FMT_RGB_8BIT:
       return ST_FRAME_FMT_RGB8;
+    case ST20_FMT_YUV_422_PLANAR10LE:
+      return ST_FRAME_FMT_YUV422PLANAR10LE;
     default:
       err("%s, invalid tfmt %d\n", __func__, tfmt);
       return ST_FRAME_FMT_MAX;

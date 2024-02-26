@@ -87,6 +87,7 @@ struct st_sample_context {
   enum st20_fmt fmt;
   enum st_frame_fmt input_fmt;
   enum st_frame_fmt output_fmt;
+  enum st20_packing packing;
   uint16_t framebuff_cnt;
   uint16_t udp_port;
   uint8_t payload_type;

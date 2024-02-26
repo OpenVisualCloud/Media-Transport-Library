@@ -91,7 +91,7 @@ def main():
     rx_para.fps = args.fps
     rx_para.interlaced = args.interlaced
     rx_para.framebuff_cnt = 3
-    rx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
+    rx_para.transport_fmt = args.transport_fmt
     rx_para.output_fmt = args.pipeline_fmt
     # rx port
     rx_port = mtl.st_rx_port()

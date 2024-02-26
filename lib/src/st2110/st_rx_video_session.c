@@ -3111,8 +3111,8 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
        __func__, idx, s->st20_frames_cnt, s->st20_frame_size, s->st20_frame_bitmap_size,
        s->st20_uframe_size, ops->type, ops->interlaced ? "interlace" : "progressive");
   info("%s(%d), w %u h %u fmt %s packing %d pt %d flags 0x%x frame time %fms fps %f\n",
-       __func__, idx, ops->width, ops->height, st20_frame_fmt_name(ops->fmt),
-       ops->packing, ops->payload_type, ops->flags, s->frame_time / NS_PER_MS,
+       __func__, idx, ops->width, ops->height, st20_fmt_name(ops->fmt), ops->packing,
+       ops->payload_type, ops->flags, s->frame_time / NS_PER_MS,
        st_frame_rate(s->ops.fps));
   return 0;
 }

@@ -668,6 +668,8 @@ static int parse_video_pg_format(json_object* video_obj, st_json_video_session_t
     video->info.pg_format = ST20_FMT_RGB_12BIT;
   } else if (strcmp(pg_format, "RGB_16bit") == 0) {
     video->info.pg_format = ST20_FMT_RGB_16BIT;
+  } else if (strcmp(pg_format, "YUV_422_PLANAR10LE") == 0) {
+    video->info.pg_format = ST20_FMT_YUV_422_PLANAR10LE;
   } else {
     err("%s, invalid pixel group format %s\n", __func__, pg_format);
     return -ST_JSON_NOT_VALID;
@@ -1635,6 +1637,8 @@ static int parse_st20p_transport_format(json_object* st20p_obj,
     st20p->info.transport_format = ST20_FMT_RGB_12BIT;
   } else if (strcmp(t_format, "RGB_16bit") == 0) {
     st20p->info.transport_format = ST20_FMT_RGB_16BIT;
+  } else if (strcmp(t_format, "YUV_422_PLANAR10LE") == 0) {
+    st20p->info.transport_format = ST20_FMT_YUV_422_PLANAR10LE;
   } else {
     err("%s, invalid transport format %s\n", __func__, t_format);
     return -ST_JSON_NOT_VALID;

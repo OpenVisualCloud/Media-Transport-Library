@@ -15,8 +15,26 @@ import pymtl as mtl
 def parse_pipeline_fmt(name):
     fmt = mtl.st_frame_name_to_fmt(name)
     if fmt >= mtl.ST_FRAME_FMT_MAX:
-        raise argparse.ArgumentTypeError(f"{name} is not a valid fmt name")
+        raise argparse.ArgumentTypeError(f"{name} is not a valid pipeline fmt")
     return fmt
+
+
+def parse_transport_fmt(name):
+    fmt = mtl.st20_name_to_fmt(name)
+    if fmt >= mtl.ST20_FMT_MAX:
+        raise argparse.ArgumentTypeError(f"{name} is not a valid transport fmt")
+    return fmt
+
+
+def parse_packing(name):
+    if name == "bpm":
+        return mtl.ST20_PACKING_BPM
+    if name == "gpm":
+        return mtl.ST20_PACKING_GPM
+    if name == "gpm_sl":
+        return mtl.ST20_PACKING_GPM_SL
+
+    raise argparse.ArgumentTypeError(f"{name} is not a packing name")
 
 
 def parse_st22_codec(name):
@@ -75,6 +93,20 @@ def parse_args(is_tx):
         type=parse_pipeline_fmt,
         default=mtl.ST_FRAME_FMT_YUV422PLANAR10LE,
         help="pipeline_fmt",
+    )
+    # transport_fmt
+    parser.add_argument(
+        "--transport_fmt",
+        type=parse_transport_fmt,
+        default=mtl.ST20_FMT_YUV_422_10BIT,
+        help="transport_fmt",
+    )
+    # packing
+    parser.add_argument(
+        "--packing",
+        type=parse_packing,
+        default=mtl.ST20_PACKING_BPM,
+        help="packing",
     )
     # fps
     parser.add_argument(

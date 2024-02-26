@@ -467,6 +467,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.rx_burst_size = ops->rx_burst_size;
   ops_rx.notify_frame_ready = rx_st20p_frame_ready;
   ops_rx.notify_event = rx_st20p_notify_event;
+
   if (ctx->derive) {
     /* ext frame info directly passed down to st20 lib */
     if (ops->ext_frames) {
@@ -883,7 +884,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   /* all ready now */
   ctx->ready = true;
   notice("%s(%d), transport fmt %s, output fmt %s, flags 0x%x\n", __func__, idx,
-         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt),
+         st20_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->output_fmt),
          ops->flags);
   st20p_rx_idx++;
 

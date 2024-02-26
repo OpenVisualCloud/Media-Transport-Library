@@ -283,7 +283,14 @@ enum st20_fmt {
   ST20_FMT_YUV_444_10BIT,     /**< 10-bit YUV 4:4:4 */
   ST20_FMT_YUV_444_12BIT,     /**< 12-bit YUV 4:4:4 */
   ST20_FMT_YUV_444_16BIT,     /**< 16-bit YUV 4:4:4 */
-  ST20_FMT_MAX,               /**< max value of this enum */
+  /*
+   * Below are the formats which not compatible with st2110 rfc4175.
+   * Ex, user want to transport ST_FRAME_FMT_YUV422PLANAR10LE directly with padding on the
+   * network and no color convert required.
+   */
+  ST20_FMT_YUV_422_PLANAR10LE, /**< 10-bit YUV 4:2:2 planar little endian. Experimental
+                                  now, how to support ext frame? */
+  ST20_FMT_MAX,                /**< max value of this enum */
 };
 
 /**
@@ -2293,6 +2300,28 @@ void* st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx);
  *   - <0: Error code.
  */
 int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta);
+
+/**
+ * Get the name of st20_fmt
+ *
+ * @param fmt
+ *   format.
+ * @return
+ *   The pointer to name.
+ *   NULL: Fail.
+ */
+const char* st20_fmt_name(enum st20_fmt fmt);
+
+/**
+ * Get st20_fmt from name
+ *
+ * @param name
+ *   name.
+ * @return
+ *   The st20_fmt.
+ *   ST20_FMT_MAX: Fail.
+ */
+enum st20_fmt st20_name_to_fmt(const char* name);
 
 #if defined(__cplusplus)
 }

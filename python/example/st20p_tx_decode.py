@@ -89,7 +89,8 @@ def main():
     tx_para.height = height
     tx_para.fps = args.fps
     tx_para.framebuff_cnt = 3
-    tx_para.transport_fmt = mtl.ST20_FMT_YUV_422_10BIT
+    tx_para.transport_fmt = args.transport_fmt
+    tx_para.transport_packing = args.packing
     tx_para.input_fmt = mtl_input_fmt
     # tx port
     tx_port = mtl.st_tx_port()
