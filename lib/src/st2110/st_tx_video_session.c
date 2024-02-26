@@ -2800,6 +2800,11 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
         s->st20_total_pkts - s->st20_pkt_info[ST20_PKT_TYPE_LINE_TAIL].number;
     dbg("%s(%d),  line_last_len: %d\n", __func__, idx, line_last_len);
   } else if (ops->packing == ST20_PACKING_BPM) {
+    if (ST_VIDEO_BPM_SIZE % s->st20_pg.size) {
+      err("%s(%d), bpm size 1260 can not be divide by pg size %u\n", __func__, idx,
+          s->st20_pg.size);
+      return -EIO;
+    }
     s->st20_pkt_len = ST_VIDEO_BPM_SIZE;
     int last_pkt_len = s->st20_frame_size % s->st20_pkt_len;
     s->st20_pkt_size = s->st20_pkt_len + sizeof(struct st_rfc4175_video_hdr);
@@ -3075,8 +3080,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
        s->st20_pkt_len, s->st20_pkt_size, s->st20_total_pkts, s->st20_pkts_in_line,
        ops->type, ops->flags, ops->interlaced ? "interlace" : "progressive");
   info("%s(%d), w %u h %u fmt %s packing %d pt %d, pacing way: %s\n", __func__, idx,
-       ops->width, ops->height, st20_frame_fmt_name(ops->fmt), ops->packing,
-       ops->payload_type, st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]));
+       ops->width, ops->height, st20_fmt_name(ops->fmt), ops->packing, ops->payload_type,
+       st_tx_pacing_way_name(s->pacing_way[MTL_SESSION_PORT_P]));
   return 0;
 }
 

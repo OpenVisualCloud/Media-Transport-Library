@@ -1553,3 +1553,19 @@ TEST(St20p, digest_rtcp_s1) {
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
+
+TEST(St20p, transport_yuv422p10le) {
+  enum st_fps fps[1] = {ST_FPS_P59_94};
+  int width[1] = {1920};
+  int height[1] = {1080};
+  enum st_frame_fmt tx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
+  enum st20_fmt t_fmt[1] = {ST20_FMT_YUV_422_PLANAR10LE};
+  enum st_frame_fmt rx_fmt[1] = {ST_FRAME_FMT_YUV422PLANAR10LE};
+
+  struct st20p_rx_digest_test_para para;
+  test_st20p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_ALL;
+  para.packing = ST20_PACKING_BPM;
+
+  st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
+}

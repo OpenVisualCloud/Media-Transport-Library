@@ -754,7 +754,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   /* all ready now */
   ctx->ready = true;
   notice("%s(%d), transport fmt %s, input fmt: %s, flags 0x%x\n", __func__, idx,
-         st20_frame_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->input_fmt),
+         st20_fmt_name(ops->transport_fmt), st_frame_fmt_name(ops->input_fmt),
          ops->flags);
   st20p_tx_idx++;
 

@@ -33,7 +33,7 @@ struct st_frame_fmt_desc {
   enum st_frame_sampling sampling;
 };
 
-const char* st20_frame_fmt_name(enum st20_fmt fmt);
+const char* st20_fmt_name(enum st20_fmt fmt);
 
 const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way);
 

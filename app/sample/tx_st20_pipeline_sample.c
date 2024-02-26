@@ -204,6 +204,7 @@ int main(int argc, char** argv) {
     ops_tx.framebuff_cnt = ctx.framebuff_cnt;
     ops_tx.flags = ST20P_TX_FLAG_BLOCK_GET;
     ops_tx.notify_frame_done = tx_st20p_frame_done;
+    ops_tx.transport_packing = ctx.packing;
 
     st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
     if (!tx_handle) {

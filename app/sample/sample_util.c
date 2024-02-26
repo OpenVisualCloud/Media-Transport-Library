@@ -56,7 +56,9 @@ enum sample_args_cmd {
   SAMPLE_ARG_SESSIONS_CNT,
   SAMPLE_ARG_EXT_FRAME,
   SAMPLE_ARG_ST22_CODEC,
-  SAMPLE_ARG_PIPELINE_FRAME_FMT,
+  SAMPLE_ARG_PIPELINE_FMT,
+  SAMPLE_ARG_TRANSPORT_FMT,
+  SAMPLE_ARG_PACKING,
   SAMPLE_ARG_GDDR_PA,
   SAMPLE_ARG_RX_DUMP,
   SAMPLE_ARG_USE_CPU_COPY,
@@ -112,7 +114,9 @@ static struct option sample_args_options[] = {
     {"height", required_argument, 0, SAMPLE_ARG_HEIGHT},
     {"ext_frame", no_argument, 0, SAMPLE_ARG_EXT_FRAME},
     {"st22_codec", required_argument, 0, SAMPLE_ARG_ST22_CODEC},
-    {"pipeline_fmt", required_argument, 0, SAMPLE_ARG_PIPELINE_FRAME_FMT},
+    {"pipeline_fmt", required_argument, 0, SAMPLE_ARG_PIPELINE_FMT},
+    {"transport_fmt", required_argument, 0, SAMPLE_ARG_TRANSPORT_FMT},
+    {"packing", required_argument, 0, SAMPLE_ARG_PACKING},
     {"ptp", no_argument, 0, SAMPLE_ARG_LIB_PTP},
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
@@ -311,7 +315,7 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         else
           err("%s, unknown codec %s\n", __func__, optarg);
         break;
-      case SAMPLE_ARG_PIPELINE_FRAME_FMT: {
+      case SAMPLE_ARG_PIPELINE_FMT: {
         enum st_frame_fmt fmt = st_frame_name_to_fmt(optarg);
         if (fmt < ST_FRAME_FMT_MAX) {
           ctx->input_fmt = fmt;
@@ -321,6 +325,25 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         }
         break;
       }
+      case SAMPLE_ARG_TRANSPORT_FMT: {
+        enum st20_fmt fmt = st20_name_to_fmt(optarg);
+        if (fmt < ST20_FMT_MAX) {
+          ctx->fmt = fmt;
+        } else {
+          err("%s, unknown fmt %s\n", __func__, optarg);
+        }
+        break;
+      }
+      case SAMPLE_ARG_PACKING:
+        if (!strcmp(optarg, "bpm"))
+          ctx->packing = ST20_PACKING_BPM;
+        else if (!strcmp(optarg, "gpm"))
+          ctx->packing = ST20_PACKING_GPM;
+        else if (!strcmp(optarg, "gpm_sl"))
+          ctx->packing = ST20_PACKING_GPM_SL;
+        else
+          err("%s, unknown codec %s\n", __func__, optarg);
+        break;
       case SAMPLE_ARG_UDP_MODE:
         if (!strcmp(optarg, "default"))
           ctx->udp_mode = SAMPLE_UDP_DEFAULT;
@@ -433,6 +456,7 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->fmt = ST20_FMT_YUV_422_10BIT;
   ctx->input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   ctx->output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ctx->packing = ST20_PACKING_BPM;
   ctx->udp_port = 20000;
   ctx->payload_type = 112;
   snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", "test.yuv");
