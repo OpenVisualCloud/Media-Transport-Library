@@ -247,8 +247,10 @@ struct mt_ptp_impl {
   int32_t expect_correct_result_avg;
   int32_t expect_t2_t1_delta_sum;
   int32_t expect_t2_t1_delta_avg;
+  int t2_t1_delta_continuous_err;
   int32_t expect_t4_t3_delta_sum;
   int32_t expect_t4_t3_delta_avg;
+  int t4_t3_delta_continuous_err;
   uint64_t expect_result_start_ns;
   uint64_t expect_result_period_ns;
 

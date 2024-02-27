@@ -569,7 +569,9 @@ static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
   ptp->expect_result_sum = 0;
   ptp->expect_correct_result_sum = 0;
   ptp->expect_t2_t1_delta_sum = 0;
+  ptp->t2_t1_delta_continuous_err = 0;
   ptp->expect_t4_t3_delta_sum = 0;
+  ptp->t4_t3_delta_continuous_err = 0;
   ptp->expect_result_start_ns = 0;
 }
 
@@ -652,6 +654,15 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         t2_t1_delta = ptp->expect_t2_t1_delta_avg;
         ptp->t2 = ptp->t1 + t2_t1_delta; /* update t2 */
         ptp->stat_t2_t1_delta_calibrate++;
+        ptp->t2_t1_delta_continuous_err++;
+        if (ptp->t2_t1_delta_continuous_err > 10) {
+          err("%s(%d), reset t2_t1_delta as too many continuous errors\n", __func__,
+              ptp->port);
+          ptp->expect_t2_t1_delta_avg = 0;
+          ptp_expect_result_clear(ptp);
+        }
+      } else {
+        ptp->t2_t1_delta_continuous_err = 0;
       }
     }
     if (ptp->expect_t4_t3_delta_avg) { /* check t4_t3_delta */
@@ -660,6 +671,15 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         t4_t3_delta = ptp->expect_t4_t3_delta_avg;
         ptp->t3 = ptp->t4 - t4_t3_delta; /* update t3 */
         ptp->stat_t4_t3_delta_calibrate++;
+        ptp->t4_t3_delta_continuous_err++;
+        if (ptp->t4_t3_delta_continuous_err > 10) {
+          err("%s(%d), reset t4_t3_delta as too many continuous errors\n", __func__,
+              ptp->port);
+          ptp->expect_t4_t3_delta_avg = 0;
+          ptp_expect_result_clear(ptp);
+        } else {
+          ptp->t4_t3_delta_continuous_err = 0;
+        }
       }
     }
   }
