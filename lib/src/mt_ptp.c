@@ -568,6 +568,8 @@ static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
   ptp->expect_result_cnt = 0;
   ptp->expect_result_sum = 0;
   ptp->expect_correct_result_sum = 0;
+  ptp->expect_t2_t1_delta_sum = 0;
+  ptp->expect_t4_t3_delta_sum = 0;
   ptp->expect_result_start_ns = 0;
 }
 
@@ -584,6 +586,8 @@ static void ptp_result_reset(struct mt_ptp_impl* ptp) {
   ptp->delta_result_sum = 0;
   ptp->expect_result_avg = 0;
   ptp->expect_correct_result_avg = 0;
+  ptp->expect_t2_t1_delta_avg = 0;
+  ptp->expect_t2_t1_delta_avg = 0;
 }
 
 static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
@@ -632,12 +636,57 @@ static void ptp_sync_timeout_handler(void* param) {
 
 static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   struct mtl_main_impl* impl = ptp->impl;
-  int64_t delta = ((int64_t)ptp->t4 - ptp->t3) - ((int64_t)ptp->t2 - ptp->t1);
-  int64_t path_delay = ((int64_t)ptp->t2 - ptp->t1) + ((int64_t)ptp->t4 - ptp->t3);
-  uint64_t abs_delta, expect_delta;
+  int64_t t2_t1_delta = ((int64_t)ptp->t2 - ptp->t1);
+  int64_t t4_t3_delta = ((int64_t)ptp->t4 - ptp->t3);
 
   dbg("%s(%d), t1 %" PRIu64 " t2 %" PRIu64 " t3 %" PRIu64 " t4 %" PRIu64 "\n", __func__,
       ptp->port, ptp->t1, ptp->t2, ptp->t3, ptp->t4);
+  dbg("%s(%d), t2-t1 delta %" PRId64 " t4-t3 delta %" PRIu64 "\n", __func__, ptp->port,
+      t2_t1_delta, t4_t3_delta);
+  if (ptp->calibrate_t2_t3) {
+    /* max 1us delta */
+    int32_t max_diff = 1000;
+    if (ptp->expect_t2_t1_delta_avg) { /* check t2_t1_delta */
+      if (t2_t1_delta < (ptp->expect_t2_t1_delta_avg - max_diff) ||
+          t2_t1_delta > (ptp->expect_t2_t1_delta_avg + max_diff)) {
+        t2_t1_delta = ptp->expect_t2_t1_delta_avg;
+        ptp->t2 = ptp->t1 + t2_t1_delta; /* update t2 */
+        ptp->stat_t2_t1_delta_calibrate++;
+        ptp->t2_t1_delta_continuous_err++;
+        if (ptp->t2_t1_delta_continuous_err > 10) {
+          err("%s(%d), reset t2_t1_delta as too many continuous errors\n", __func__,
+              ptp->port);
+          ptp->expect_t2_t1_delta_avg = 0;
+          ptp->t2_t1_delta_continuous_err = 0;
+          ptp_expect_result_clear(ptp);
+        }
+      } else {
+        ptp->t2_t1_delta_continuous_err = 0;
+      }
+    }
+    if (ptp->expect_t4_t3_delta_avg) { /* check t4_t3_delta */
+      if (t4_t3_delta < (ptp->expect_t4_t3_delta_avg - max_diff) ||
+          t4_t3_delta > (ptp->expect_t4_t3_delta_avg + max_diff)) {
+        t4_t3_delta = ptp->expect_t4_t3_delta_avg;
+        ptp->t3 = ptp->t4 - t4_t3_delta; /* update t3 */
+        ptp->stat_t4_t3_delta_calibrate++;
+        ptp->t4_t3_delta_continuous_err++;
+        if (ptp->t4_t3_delta_continuous_err > 10) {
+          err("%s(%d), reset t4_t3_delta as too many continuous errors\n", __func__,
+              ptp->port);
+          ptp->expect_t4_t3_delta_avg = 0;
+          ptp->t4_t3_delta_continuous_err = 0;
+          ptp_expect_result_clear(ptp);
+        }
+      } else {
+        ptp->t4_t3_delta_continuous_err = 0;
+      }
+    }
+  }
+
+  int64_t delta = t4_t3_delta - t2_t1_delta;
+  int64_t path_delay = t2_t1_delta + t4_t3_delta;
+  uint64_t abs_delta, expect_delta;
 
   delta /= 2;
 
@@ -721,15 +770,25 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         ptp->expect_result_start_ns = mt_get_monotonic_time();
       ptp->expect_result_sum += delta;
       ptp->expect_correct_result_sum += correct_delta;
+      ptp->expect_t2_t1_delta_sum += t2_t1_delta;
+      ptp->expect_t4_t3_delta_sum += t4_t3_delta;
+      ptp->expect_result_sum += delta;
       if (ptp->expect_result_cnt >= 10) {
         ptp->expect_result_avg = ptp->expect_result_sum / ptp->expect_result_cnt;
         ptp->expect_correct_result_avg =
             ptp->expect_correct_result_sum / ptp->expect_result_cnt;
+        ptp->expect_t2_t1_delta_avg =
+            ptp->expect_t2_t1_delta_sum / ptp->expect_result_cnt;
+        ptp->expect_t4_t3_delta_avg =
+            ptp->expect_t4_t3_delta_sum / ptp->expect_result_cnt;
         ptp->expect_result_period_ns =
             (mt_get_monotonic_time() - ptp->expect_result_start_ns) /
             (ptp->expect_result_cnt - 1);
-        dbg("%s(%d), expect result avg %u, period %fs\n", __func__, ptp->port,
-            ptp->expect_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
+        dbg("%s(%d), expect result avg %d(correct: %d), t2_t1_delta %d, t4_t3_delta %d, "
+            "period %fs\n",
+            __func__, ptp->port, ptp->expect_result_avg, ptp->expect_correct_result_avg,
+            ptp->expect_t2_t1_delta_avg, ptp->expect_t4_t3_delta_avg,
+            (float)ptp->expect_result_period_ns / NS_PER_S);
         ptp_expect_result_clear(ptp);
       }
     } else {
@@ -1301,6 +1360,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   ptp->active = true;
   if (!mt_if_has_timesync(impl, port)) {
     ptp->no_timesync = true;
+    ptp->calibrate_t2_t3 = true;
     warn("%s(%d), ptp running without timesync support\n", __func__, port);
   }
   info("%s(%d), sip: %d.%d.%d.%d\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
@@ -1437,14 +1497,25 @@ static int ptp_stat(void* priv) {
            ", cnt %d\n",
            port, ptp->stat_path_delay_sum / ptp->stat_path_delay_cnt,
            ptp->stat_path_delay_min, ptp->stat_path_delay_max, ptp->stat_path_delay_cnt);
-  notice("PTP(%d): mode %s, sync cnt %d, expect avg %d:%d@%fs\n", port,
-         ptp_mode_str(ptp->t2_mode), ptp->stat_sync_cnt, ptp->expect_result_avg,
-         ptp->expect_correct_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S);
+  notice(
+      "PTP(%d): mode %s, sync cnt %d, expect avg %d:%d@%fs t2_t1_delta %d t4_t3_delta "
+      "%d\n",
+      port, ptp_mode_str(ptp->t2_mode), ptp->stat_sync_cnt, ptp->expect_result_avg,
+      ptp->expect_correct_result_avg, (float)ptp->expect_result_period_ns / NS_PER_S,
+      ptp->expect_t2_t1_delta_avg, ptp->expect_t4_t3_delta_avg);
   if (ptp->stat_rx_sync_err || ptp->stat_result_err || ptp->stat_tx_sync_err)
     notice("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", port,
            ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
   if (ptp->stat_sync_timeout_err)
     notice("PTP(%d): sync timeout %d\n", port, ptp->stat_sync_timeout_err);
+
+  if (ptp->calibrate_t2_t3) {
+    notice("PTP(%d): t2_t1_delta_calibrate %d stat_t4_t3_delta_calibrate %d\n", port,
+           ptp->stat_t2_t1_delta_calibrate, ptp->stat_t4_t3_delta_calibrate);
+    ptp->stat_t2_t1_delta_calibrate = 0;
+    ptp->stat_t4_t3_delta_calibrate = 0;
+  }
+
   ptp_stat_clear(ptp);
 
   return 0;
