@@ -230,6 +230,8 @@ struct mt_ptp_impl {
   uint16_t t3_sequence_id;
   uint64_t t4;
 
+  bool calibrate_t2_t3; /* for no_timesync case which the t2 and t3 get from tsc */
+
   bool locked;
   bool connected;
 
@@ -243,6 +245,10 @@ struct mt_ptp_impl {
   int32_t expect_result_avg;
   int32_t expect_correct_result_sum;
   int32_t expect_correct_result_avg;
+  int32_t expect_t2_t1_delta_sum;
+  int32_t expect_t2_t1_delta_avg;
+  int32_t expect_t4_t3_delta_sum;
+  int32_t expect_t4_t3_delta_avg;
   uint64_t expect_result_start_ns;
   uint64_t expect_result_period_ns;
 
@@ -279,6 +285,8 @@ struct mt_ptp_impl {
   int32_t stat_result_err;
   int32_t stat_sync_timeout_err;
   int32_t stat_sync_cnt;
+  int32_t stat_t2_t1_delta_calibrate;
+  int32_t stat_t4_t3_delta_calibrate;
   uint16_t stat_sync_keep;
 };
 
