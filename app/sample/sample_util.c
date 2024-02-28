@@ -64,6 +64,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_USE_CPU_COPY,
   SAMPLE_ARG_USER_META,
   SAMPLE_ARG_LIB_PTP,
+  SAMPLE_ARG_PACING_WAY,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -118,6 +119,7 @@ static struct option sample_args_options[] = {
     {"transport_fmt", required_argument, 0, SAMPLE_ARG_TRANSPORT_FMT},
     {"packing", required_argument, 0, SAMPLE_ARG_PACKING},
     {"ptp", no_argument, 0, SAMPLE_ARG_LIB_PTP},
+    {"pacing_way", required_argument, 0, SAMPLE_ARG_PACING_WAY},
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_len", required_argument, 0, SAMPLE_ARG_UDP_LEN},
@@ -264,6 +266,24 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
           p->rss_mode = MTL_RSS_MODE_NONE;
         else
           err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_PACING_WAY:
+        if (!strcmp(optarg, "auto"))
+          p->pacing = ST21_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          p->pacing = ST21_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsn"))
+          p->pacing = ST21_TX_PACING_WAY_TSN;
+        else if (!strcmp(optarg, "tsc"))
+          p->pacing = ST21_TX_PACING_WAY_TSC;
+        else if (!strcmp(optarg, "tsc_narrow"))
+          p->pacing = ST21_TX_PACING_WAY_TSC_NARROW;
+        else if (!strcmp(optarg, "ptp"))
+          p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
+        else
+          err("%s, unknow pacing way %s\n", __func__, optarg);
         break;
       case SAMPLE_ARG_NB_TX_DESC:
         p->nb_tx_desc = atoi(optarg);

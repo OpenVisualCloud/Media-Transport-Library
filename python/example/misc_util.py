@@ -46,6 +46,36 @@ def parse_st22_codec(name):
     raise argparse.ArgumentTypeError(f"{name} is not a valid codec name")
 
 
+def parse_pacing_way(name):
+    if name == "auto":
+        return mtl.ST21_TX_PACING_WAY_AUTO
+    if name == "rl":
+        return mtl.ST21_TX_PACING_WAY_RL
+    if name == "tsn":
+        return mtl.ST21_TX_PACING_WAY_TSN
+    if name == "tsc":
+        return mtl.ST21_TX_PACING_WAY_TSC
+    if name == "tsc_narrow":
+        return mtl.ST21_TX_PACING_WAY_TSC_NARROW
+    if name == "ptp":
+        return mtl.ST21_TX_PACING_WAY_PTP
+    if name == "be":
+        return mtl.ST21_TX_PACING_WAY_BE
+
+    raise argparse.ArgumentTypeError(f"{name} is not a valid pacing way")
+
+
+def parse_rss_mode(name):
+    if name == "none":
+        return mtl.MTL_RSS_MODE_NONE
+    if name == "l3_l4":
+        return mtl.MTL_RSS_MODE_L3_L4
+    if name == "l3":
+        return mtl.MTL_RSS_MODE_L3
+
+    raise argparse.ArgumentTypeError(f"{name} is not a valid rss mode")
+
+
 def parse_fps(name):
     fps = mtl.st_name_to_fps(name)
     if fps >= mtl.ST_FPS_MAX:
@@ -147,6 +177,20 @@ def parse_args(is_tx):
         type=parse_st22_codec,
         default=mtl.ST22_CODEC_JPEGXS,
         help="st22_codec",
+    )
+    # pacing_way
+    parser.add_argument(
+        "--pacing_way",
+        type=parse_pacing_way,
+        default=mtl.ST21_TX_PACING_WAY_AUTO,
+        help="pacing_way",
+    )
+    # rss_mode
+    parser.add_argument(
+        "--rss_mode",
+        type=parse_rss_mode,
+        default=mtl.MTL_RSS_MODE_NONE,
+        help="rss_mode",
     )
     # lcores
     parser.add_argument("--lcores", type=str, default="", help="lcores")
