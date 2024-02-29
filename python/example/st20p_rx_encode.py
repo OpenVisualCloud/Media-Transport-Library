@@ -31,6 +31,9 @@ def main():
         init_para.flags |= mtl.MTL_FLAG_PTP_ENABLE
     mtl.mtl_para_tx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 0)
     mtl.mtl_para_rx_queues_cnt_set(init_para, mtl.MTL_PORT_P, 1)
+    init_para.rss_mode = args.rss_mode
+    init_para.pacing = args.pacing_way
+    init_para.nb_tx_desc = args.nb_tx_desc
     init_para.nb_rx_desc = args.nb_rx_desc
     if args.lcores:
         init_para.lcores = args.lcores

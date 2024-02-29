@@ -17,6 +17,7 @@
 #define MT_PTP_USE_TX_TIMER (1)
 #define MT_PTP_CHECK_TX_TIME_STAMP (0)
 #define MT_PTP_CHECK_RX_TIME_STAMP (0)
+#define MT_PTP_CHECK_HW_SW_DELTA (0)
 #define MT_PTP_PRINT_ERR_RESULT (0)
 
 #define MT_PTP_TP_SYNC_MS (10)
@@ -653,7 +654,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         ptp->t2 = ptp->t1 + t2_t1_delta; /* update t2 */
         ptp->stat_t2_t1_delta_calibrate++;
         ptp->t2_t1_delta_continuous_err++;
-        if (ptp->t2_t1_delta_continuous_err > 10) {
+        if (ptp->t2_t1_delta_continuous_err > 20) {
           err("%s(%d), reset t2_t1_delta as too many continuous errors\n", __func__,
               ptp->port);
           ptp->expect_t2_t1_delta_avg = 0;
@@ -671,7 +672,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
         ptp->t3 = ptp->t4 - t4_t3_delta; /* update t3 */
         ptp->stat_t4_t3_delta_calibrate++;
         ptp->t4_t3_delta_continuous_err++;
-        if (ptp->t4_t3_delta_continuous_err > 10) {
+        if (ptp->t4_t3_delta_continuous_err > 20) {
           err("%s(%d), reset t4_t3_delta as too many continuous errors\n", __func__,
               ptp->port);
           ptp->expect_t4_t3_delta_avg = 0;
@@ -872,6 +873,9 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     err("%s(%d), tx fail\n", __func__, port);
     return;
   }
+#if MT_PTP_CHECK_HW_SW_DELTA
+  uint64_t burst_time = ptp_get_raw_time(ptp);
+#endif
 
 #if MT_PTP_USE_TX_TIME_STAMP
   if (ptp->qbv_enabled) {
@@ -889,6 +893,10 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     while (max_retry > 0) {
       ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
       if (ret >= 0) {
+#if MT_PTP_CHECK_HW_SW_DELTA
+        info("%s(%d), t3 hw-sw delta %" PRId64 "\n", __func__, ptp->port,
+             tx_ns - burst_time);
+#endif
         break;
       }
 
@@ -954,6 +962,10 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   }
 
   ptp_timesync_read_rx_time(ptp, timesync, &rx_ns);
+#if MT_PTP_CHECK_HW_SW_DELTA
+  info("%s(%d), t2 hw-sw delta %" PRId64 "\n", __func__, ptp->port,
+       ptp_get_raw_time(ptp) - rx_ns);
+#endif
 
 #if MT_PTP_CHECK_TX_TIME_STAMP
   uint64_t ptp_ns, delta;
