@@ -396,6 +396,21 @@ def frame_display_rfc4175be10(mtl_handle, frame, display_scale_factor):
         mtl.st_frame_free(yuv422p8_frame)
 
 
+def frame_display_v210(mtl_handle, frame, display_scale_factor):
+    rfc4175be10_frame = mtl.st_frame_create(
+        mtl_handle,
+        mtl.ST_FRAME_FMT_YUV422RFC4175PG2BE10,
+        frame.width,
+        frame.height,
+        frame.interlaced,
+    )
+    if rfc4175be10_frame:
+        # It's very slow since it include many converting steps, just demo the usage
+        mtl.st_frame_convert(frame, rfc4175be10_frame)
+        frame_display_rfc4175be10(mtl_handle, rfc4175be10_frame, display_scale_factor)
+        mtl.st_frame_free(rfc4175be10_frame)
+
+
 def frame_display(mtl_handle, frame, display_scale_factor):
     if frame.fmt == mtl.ST_FRAME_FMT_YUV422PLANAR10LE:
         frame_display_yuv422p10le(frame, display_scale_factor)
@@ -407,6 +422,8 @@ def frame_display(mtl_handle, frame, display_scale_factor):
         frame_display_rfc4175be10(mtl_handle, frame, display_scale_factor)
     elif frame.fmt == mtl.ST_FRAME_FMT_YUV420PLANAR8:
         frame_display_yuv420p8(frame, display_scale_factor)
+    elif frame.fmt == mtl.ST_FRAME_FMT_V210:
+        frame_display_v210(mtl_handle, frame, display_scale_factor)
     else:
         print(f"Unknown fmt: {mtl.st_frame_fmt_name(frame.fmt)}")
 
