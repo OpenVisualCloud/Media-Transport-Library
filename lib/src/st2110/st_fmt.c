@@ -120,6 +120,13 @@ static const struct st20_pgroup st20_pgroups[] = {
         .coverage = 1,
         .name = "ST20_FMT_YUV_422_PLANAR10LE",
     },
+    {
+        /* ST20_FMT_V210 */
+        .fmt = ST20_FMT_V210,
+        .size = 8,
+        .coverage = 3,
+        .name = "ST20_FMT_V210",
+    },
 };
 
 static const struct st_fps_timing st_fps_timings[] = {
@@ -810,6 +817,8 @@ enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
       return ST_FRAME_FMT_RGB8;
     case ST20_FMT_YUV_422_PLANAR10LE:
       return ST_FRAME_FMT_YUV422PLANAR10LE;
+    case ST20_FMT_V210:
+      return ST_FRAME_FMT_V210;
     default:
       err("%s, invalid tfmt %d\n", __func__, tfmt);
       return ST_FRAME_FMT_MAX;

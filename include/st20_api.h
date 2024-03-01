@@ -290,6 +290,7 @@ enum st20_fmt {
    */
   ST20_FMT_YUV_422_PLANAR10LE, /**< 10-bit YUV 4:2:2 planar little endian. Experimental
                                   now, how to support ext frame? */
+  ST20_FMT_V210,               /**< 10-bit YUV 422 V210 */
   ST20_FMT_MAX,                /**< max value of this enum */
 };
 
