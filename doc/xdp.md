@@ -53,7 +53,7 @@ Ubuntu:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin
+sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
 ```
 
 CentOS/Redhat:
@@ -99,7 +99,14 @@ Run-time dependency libbpf found: YES 1.2.0
 If not, and you have installed them, you may run this command then reconfigure the project so pkg-config can find them:
 
 ```bash
-export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
+export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig/:/usr/local/lib/pkgconfig/:/usr/lib64/pkgconfig/
+```
+
+The possible additional `PKG_CONFIG_PATH` usually can by resolved by searching the `libxdp.pc` and `libbpf.pc` from system lib path.
+
+```bash
+find /usr/ -name libxdp.pc
+find /usr/ -name libbpf.pc
 ```
 
 ## Running Guide

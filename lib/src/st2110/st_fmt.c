@@ -425,7 +425,7 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
 };
 
 static const char* st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
-    "auto", "ratelimit", "tsc", "tsn", "ptp",
+    "auto", "ratelimit", "tsc", "tsn", "ptp", "be", "tsc_narrow",
 };
 
 const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way) {

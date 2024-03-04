@@ -407,7 +407,7 @@ enum mtl_init_flag {
    */
   MTL_FLAG_TASKLET_TIME_MEASURE = (MTL_BIT64(38)),
   /**
-   * Disable the zero copy for af_xdp tx video session
+   * Disable the zero copy for af_xdp, use copy mode only
    */
   MTL_FLAG_AF_XDP_ZC_DISABLE = (MTL_BIT64(39)),
   /**

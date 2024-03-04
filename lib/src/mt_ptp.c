@@ -1345,8 +1345,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
 
     ptp->gen_rxq = mt_rxq_get(impl, port, &flow);
     if (!ptp->gen_rxq) {
-      err("%s(%d), gen_rxq get fail\n", __func__, port);
-      return -ENOMEM;
+      warn("%s(%d), gen_rxq get fail\n", __func__, port);
+      return 0; /* likely no permission, no ptp */
     }
 
     flow.dst_port = MT_PTP_UDP_EVENT_PORT;
@@ -1522,7 +1522,7 @@ static int ptp_stat(void* priv) {
     notice("PTP(%d): sync timeout %d\n", port, ptp->stat_sync_timeout_err);
 
   if (ptp->calibrate_t2_t3) {
-    notice("PTP(%d): t2_t1_delta_calibrate %d stat_t4_t3_delta_calibrate %d\n", port,
+    notice("PTP(%d): t2_t1_delta_calibrate %d t4_t3_delta_calibrate %d\n", port,
            ptp->stat_t2_t1_delta_calibrate, ptp->stat_t4_t3_delta_calibrate);
     ptp->stat_t2_t1_delta_calibrate = 0;
     ptp->stat_t4_t3_delta_calibrate = 0;

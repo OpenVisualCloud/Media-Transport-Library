@@ -340,6 +340,7 @@ static void mcast_membership_report_cb(void* param) {
 
   for (int port = 0; port < num_ports; port++) {
     struct mt_mcast_impl* mcast = get_mcast(impl, port);
+    if (!mcast) continue;
     if (!mcast->has_external_query) {
       ret = mcast_membership_report_on_query(impl, port);
       if (ret < 0) {
