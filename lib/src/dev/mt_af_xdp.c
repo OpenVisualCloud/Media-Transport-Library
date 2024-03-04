@@ -427,6 +427,7 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   struct mtl_main_impl* impl = xdp->parent;
+  const char* if_name = mt_kernel_if_name(impl, port);
   struct xsk_socket_config cfg;
   int ret;
 
@@ -438,9 +439,14 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
     cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
   // cfg.bind_flags = XDP_USE_NEED_WAKEUP;
 
+  if (!mt_user_af_xdp_zc(impl)) {
+    warn("%s(%d,%u), user special to copy mode only\n", __func__, port, q);
+    ret = -EAGAIN;
+    goto copy_mode;
+  }
+
   /* first try zero copy mode */
   cfg.bind_flags |= XDP_ZEROCOPY; /* force zero copy mode */
-  const char* if_name = mt_kernel_if_name(impl, port);
   ret = xsk_socket__create(&xq->socket, if_name, q, xq->umem, &xq->rx_cons, &xq->tx_prod,
                            &cfg);
   if (ret < 0) {
@@ -450,7 +456,14 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
     }
     warn("%s(%d,%u), xsk create with zero copy fail %d(%s), try copy mode\n", __func__,
          port, q, ret, strerror(ret));
-    cfg.bind_flags &= ~XDP_ZEROCOPY; /* force zero copy mode */
+  } else {
+    xdp->flags |= XDP_F_ZERO_COPY;
+  }
+
+copy_mode:
+  /* try copy mode */
+  if (ret < 0) {
+    cfg.bind_flags &= ~XDP_ZEROCOPY; /* clear zero copy */
     ret = xsk_socket__create(&xq->socket, if_name, q, xq->umem, &xq->rx_cons,
                              &xq->tx_prod, &cfg);
     if (ret < 0) {
@@ -460,9 +473,8 @@ static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
       err("%s(%d,%u), xsk create fail %d(%s)\n", __func__, port, q, ret, strerror(ret));
       return ret;
     }
-  } else {
-    xdp->flags |= XDP_F_ZERO_COPY;
   }
+
   xq->socket_fd = xsk_socket__fd(xq->socket);
 
   if (xdp->has_ctrl) return xdp_socket_update_xskmap(impl, xq, if_name);
