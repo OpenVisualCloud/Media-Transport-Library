@@ -179,3 +179,4 @@ find ./ -name "*.md" -exec markdownlint {} -c .markdown-lint.yml \;
 find ./ -name "*.md" -exec textlint {} \;
 # find ./ -name "*.md" -exec textlint {} --fix \;
 ```
+ 
