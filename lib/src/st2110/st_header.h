@@ -814,6 +814,7 @@ struct st_tx_audio_session_impl {
   uint32_t stat_recoverable_error;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  struct mt_stat_u64 stat_tx_delta;
 };
 
 struct st_tx_audio_sessions_mgr {

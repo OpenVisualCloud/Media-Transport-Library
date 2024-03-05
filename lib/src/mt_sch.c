@@ -107,6 +107,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = mt_user_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
+  uint64_t sch_tsc_s = 0;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
 
@@ -130,6 +131,8 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
+
+    if (time_measure) sch_tsc_s = mt_get_tsc(impl);
 
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
@@ -160,6 +163,11 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       sch->avg_ns_per_loop = delta_loop_ns / loop_cnt;
       loop_cnt = 0;
       loop_cal_start_ns = mt_get_tsc(impl);
+    }
+
+    if (time_measure) {
+      uint64_t delta_ns = mt_get_tsc(impl) - sch_tsc_s;
+      mt_stat_u64_update(&sch->stat_time, delta_ns);
     }
   }
 
@@ -389,12 +397,20 @@ static int sch_stat(void* priv) {
   notice("SCH(%d:%s): tasklets %d, lcore %u(t_pid: %d), avg loop %" PRIu64 " ns\n", idx,
          sch->name, num_tasklet, sch->lcore, sch->t_pid, mt_sch_avg_ns_loop(sch));
   if (mt_user_tasklet_time_measure(sch->parent)) {
+    struct mt_stat_u64* stat_time = &sch->stat_time;
+    if (stat_time->cnt) {
+      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+      notice("SCH(%d): time avg %.2fus max %.2fus min %.2fus\n", idx,
+             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+             (float)stat_time->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_time);
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
 
       dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
-      struct mt_stat_u64* stat_time = &tasklet->stat_time;
+      stat_time = &tasklet->stat_time;
       if (stat_time->cnt) {
         uint64_t avg_ns = stat_time->sum / stat_time->cnt;
         notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
@@ -850,6 +866,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     sch->run_in_thread = mt_user_tasklet_thread(impl);
+    mt_stat_u64_init(&sch->stat_time);
 
     /* sleep info init */
     sch->allow_sleep = mt_user_tasklet_sleep(impl);

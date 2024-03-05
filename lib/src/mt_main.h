@@ -551,6 +551,8 @@ struct mtl_sch_impl {
   uint32_t stat_sleep_cnt;
   uint64_t stat_sleep_ns_min;
   uint64_t stat_sleep_ns_max;
+  /* for time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct mt_lcore_mgr {
