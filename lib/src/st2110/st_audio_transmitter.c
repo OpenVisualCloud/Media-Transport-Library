@@ -144,6 +144,7 @@ int st_audio_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* s
   trs->mgr = mgr;
 
   rte_atomic32_set(&mgr->transmitter_started, 0);
+  rte_atomic32_set(&mgr->transmitter_clients, 0);
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = trs;

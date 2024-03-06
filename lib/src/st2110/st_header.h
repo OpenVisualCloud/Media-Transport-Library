@@ -768,6 +768,9 @@ struct st_tx_audio_session_impl {
   bool pacing_in_build; /* if control pacing in the build stage */
   bool time_measure;
 
+  /* dedicated queue tx mode */
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
+
   uint16_t st30_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st30_frames;
   uint32_t st30_frame_size; /* size per frame*/
@@ -835,6 +838,7 @@ struct st_tx_audio_sessions_mgr {
   rte_spinlock_t mutex[ST_SCH_MAX_TX_AUDIO_SESSIONS]; /* protect session */
 
   rte_atomic32_t transmitter_started;
+  rte_atomic32_t transmitter_clients;
 
   /* status */
   int st30_stat_pkts_burst;
