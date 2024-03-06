@@ -14,20 +14,23 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 # Install build dependencies
 RUN apt-get update -y && \
-    apt-get install -y git gcc pkg-config make m4 clang llvm zlib1g-dev libelf-dev libpcap-dev libcap-ng-dev meson gcc-multilib
+    apt-get install -y --no-install-recommends git build-essential pkg-config m4 clang llvm zlib1g-dev libelf-dev libpcap-dev libcap-ng-dev meson gcc-multilib ca-certificates
 
 # Clone and build the xdp-tools project
-RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git && \
-    cd xdp-tools && ./configure && make && make install && \
-    DESTDIR=/install make install && \
-    cd lib/libbpf/src && make install && \
+RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git
+WORKDIR /xdp-tools
+RUN ./configure && make && \
+    make install && \
+    DESTDIR=/install make install
+WORKDIR /xdp-tools/lib/libbpf/src
+RUN make install && \
     DESTDIR=/install make install
 
-COPY . manager
+COPY . /manager
 
 # Build the MTL Manager
-RUN cd manager && \
-    meson setup build && \
+WORKDIR /manager
+RUN meson setup build && \
     DESTDIR=/install meson install -C build
 
 # Runtime stage, ubuntu 22.04
@@ -35,7 +38,7 @@ FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7c
 
 # Install runtime dependencies
 RUN apt-get update -y && \
-    apt-get install -y ethtool libelf1 && \
+    apt-get install -y --no-install-recommends ethtool libelf1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
