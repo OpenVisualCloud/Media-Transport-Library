@@ -911,6 +911,8 @@ static int parse_audio_ptime(json_object* audio_obj, st_json_audio_session_t* au
       audio->info.audio_ptime = ST30_PTIME_1MS;
     } else if (strcmp(audio_ptime, "0.12") == 0) {
       audio->info.audio_ptime = ST30_PTIME_125US;
+    } else if (strcmp(audio_ptime, "0.125") == 0) {
+      audio->info.audio_ptime = ST30_PTIME_125US;
     } else if (strcmp(audio_ptime, "0.25") == 0) {
       audio->info.audio_ptime = ST30_PTIME_250US;
     } else if (strcmp(audio_ptime, "0.33") == 0) {
@@ -2120,7 +2122,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
           json_object_get_type(interface_array) == json_type_array) {
         int len = json_object_array_length(interface_array);
         if (len != num_inf) {
-          err("%s, wrong interface number\n", __func__);
+          err("%s, %d dip arrays but %d interface arrays\n", __func__, num_inf, len);
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }
@@ -2456,7 +2458,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
           json_object_get_type(interface_array) == json_type_array) {
         int len = json_object_array_length(interface_array);
         if (len != num_inf) {
-          err("%s, wrong interface number\n", __func__);
+          err("%s, %d dip arrays but %d interface arrays\n", __func__, num_inf, len);
           ret = -ST_JSON_NOT_VALID;
           goto error;
         }

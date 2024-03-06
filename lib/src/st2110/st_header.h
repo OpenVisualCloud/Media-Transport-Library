@@ -814,6 +814,7 @@ struct st_tx_audio_session_impl {
   uint32_t stat_recoverable_error;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  struct mt_stat_u64 stat_tx_delta;
 };
 
 struct st_tx_audio_sessions_mgr {
@@ -858,6 +859,12 @@ struct st_ra_tp_slot {
   int32_t dpvr_max;
   int64_t dpvr_sum;
   enum st_rx_tp_compliant compliant;
+
+  /* Inter-packet time(ns), packet level check */
+  int64_t ipt_sum;
+  int32_t ipt_max;
+  int32_t ipt_min;
+  float ipt_avg;
 };
 
 struct st_ra_tp_stat {
@@ -882,6 +889,8 @@ struct st_rx_audio_tp {
   struct st_ra_tp_slot slot;
   /* for the status */
   struct st_ra_tp_stat stat;
+
+  uint64_t prev_pkt_time; /* ns */
 };
 
 struct st_rx_audio_session_impl {

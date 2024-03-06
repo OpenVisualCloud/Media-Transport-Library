@@ -587,7 +587,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
-  if (mt_u64_fifo_count(ring_p) > s->trans_ring_thresh) {
+  if (mt_u64_fifo_count(ring_p) >= s->trans_ring_thresh) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -808,7 +808,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
-  if (mt_u64_fifo_count(ring_p) > s->trans_ring_thresh) {
+  if (mt_u64_fifo_count(ring_p) >= s->trans_ring_thresh) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -961,6 +961,10 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
       return MTL_TASKLET_ALL_DONE;
     }
     s->trans_ring_inflight[s_port] = NULL;
+    if (s->time_measure) {
+      uint64_t delta_ns = cur_tsc - target_tsc;
+      mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
+    }
   }
 
   /* try to dequeue pkt */
@@ -992,6 +996,10 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
     s->stat_transmit_ret_code = -STI_TSCTRS_PKT_ENQUEUE_FAIL;
     s->trans_ring_inflight[s_port] = pkt;
     return MTL_TASKLET_ALL_DONE;
+  }
+  if (s->time_measure) {
+    uint64_t delta_ns = cur_tsc - target_tsc;
+    mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
   }
 
   return 0;
@@ -1301,7 +1309,8 @@ static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
   }
   s->trans_ring_thresh = trans_ring_thresh;
 
-  info("%s(%d,%d), trans_ring_thresh %u\n", __func__, mgr_idx, idx, trans_ring_thresh);
+  info("%s(%d,%d), trans_ring_thresh %u fifo %u\n", __func__, mgr_idx, idx,
+       trans_ring_thresh, count);
   return 0;
 }
 
@@ -1450,6 +1459,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
+  mt_stat_u64_init(&s->stat_tx_delta);
 
   s->st30_rtp_time_app = 0xFFFFFFFF;
   s->st30_rtp_time = 0xFFFFFFFF;
@@ -1606,6 +1616,15 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
              (float)stat_time->min / NS_PER_US);
     }
     mt_stat_u64_init(stat_time);
+
+    struct mt_stat_u64* stat_tx_delta = &s->stat_tx_delta;
+    if (stat_tx_delta->cnt) {
+      uint64_t avg_ns = stat_tx_delta->sum / stat_tx_delta->cnt;
+      notice("TX_AUDIO_SESSION(%d,%d): tx delta avg %.2fus max %.2fus min %.2fus\n",
+             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_tx_delta->max / NS_PER_US,
+             (float)stat_tx_delta->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_tx_delta);
 
     if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
       notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
