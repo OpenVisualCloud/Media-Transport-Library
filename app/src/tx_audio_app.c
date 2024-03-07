@@ -409,6 +409,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
     ops.flags |= ST30_TX_FLAG_USER_P_MAC;
   }
   if (ctx->tx_audio_build_pacing) ops.flags |= ST30_TX_FLAG_BUILD_PACING;
+  if (ctx->tx_audio_dedicate_queue) ops.flags |= ST30_TX_FLAG_DEDICATE_QUEUE;
   if (ctx->tx_audio_fifo_size) ops.fifo_size = ctx->tx_audio_fifo_size;
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[MTL_SESSION_PORT_R],
