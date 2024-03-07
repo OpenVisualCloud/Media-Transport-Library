@@ -8,6 +8,35 @@ Please note that the Dockerfile provided is intended for development use only. I
 
 Follow [run guide](../doc/run.md) to setup the hugepages, driver of NIC PFs, vfio(2110) user group and vfio driver mode for VFs.
 
+### 1.1 Add group to access /dev/vfio/* devices
+
+This section guides you through creating a dedicated group, granting the appropriate permissions, and setting up udev rules to maintain these settings across system reboots and devices re-creations.
+
+Add a new group named `vfio` with GID `2110` to control the VFIO devices. If GID `2110` is in use, consider using a different one.
+
+```bash
+getent group 2110 || sudo groupadd -g 2110 vfio
+```
+
+Create or edit a udev rules file, for example, /etc/udev/rules.d/10-vfio.rules, with your preferred text editor. For instance, using vim:
+
+```bash
+sudo vim /etc/udev/rules.d/10-vfio.rules
+```
+
+Add the following line to set the group ownership to vfio and enable read/write access for the group to any VFIO devices that appear:
+
+```bash
+SUBSYSTEM=="vfio", GROUP="vfio", MODE="0660"
+```
+
+Then reload the udev rules with:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
 ## 2. Build Docker image
 
 ```bash
