@@ -34,9 +34,9 @@ echo 1 > /sys/kernel/debug/tracing/events/irq_vectors/enable
 echo 1 > /sys/kernel/debug/tracing/tracing_on
 
 # sleep
-sleep ${time_s}
+sleep "${time_s}"
 
 # disable trace and save the log
 echo 0 > /sys/kernel/debug/tracing/tracing_on
-cat /sys/kernel/debug/tracing/per_cpu/cpu${cpu}/trace > ${out_file}
+cat /sys/kernel/debug/tracing/per_cpu/cpu"${cpu}"/trace > "${out_file}"
 echo "Collected to file: ${out_file}"
