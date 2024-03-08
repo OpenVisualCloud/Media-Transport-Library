@@ -1382,6 +1382,14 @@ static inline bool mt_user_auto_start_stop(struct mtl_main_impl* impl) {
     return false;
 }
 
+/* if user enable the auto start/stop */
+static inline bool mt_user_across_numa_core(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_ALLOW_ACROSS_NUMA_CORE)
+    return true;
+  else
+    return false;
+}
+
 /* if user disable the af xdp zc */
 static inline bool mt_user_af_xdp_zc(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_AF_XDP_ZC_DISABLE)

@@ -46,6 +46,7 @@ enum test_args_cmd {
   TEST_ARG_MULTI_SRC_PORT,
   TEST_ARG_DHCP,
   TEST_ARG_MCAST_ONLY,
+  TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
 };
 
 static struct option test_args_options[] = {
@@ -81,6 +82,7 @@ static struct option test_args_options[] = {
     {"multi_src_port", no_argument, 0, TEST_ARG_MULTI_SRC_PORT},
     {"dhcp", no_argument, 0, TEST_ARG_DHCP},
     {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
+    {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
 
     {0, 0, 0, 0}};
 
@@ -266,6 +268,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_MCAST_ONLY:
         ctx->mcast_only = true;
+        break;
+      case TEST_ARG_ALLOW_ACROSS_NUMA_CORE:
+        p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
         break;
       default:
         break;
