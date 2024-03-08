@@ -609,16 +609,26 @@ static int sch_init_lcores(struct mt_sch_mgr* mgr) {
   return 0;
 }
 
+static inline bool sch_socket_match(int cpu_socket, int dev_socket,
+                                    bool skip_numa_check) {
+  if (skip_numa_check) return true;
+  return mt_socket_match(cpu_socket, dev_socket);
+}
+
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
                      enum mt_lcore_type type) {
-  unsigned int cur_lcore = 0;
+  unsigned int cur_lcore;
   int ret;
+  bool skip_numa_check = false;
+
+again:
+  cur_lcore = 0;
   if (mt_is_manager_connected(impl)) {
     do {
       cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                          mt_socket_id(impl, MTL_PORT_P))) {
+          sch_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                           mt_socket_id(impl, MTL_PORT_P), skip_numa_check)) {
         ret = mt_instance_get_lcore(impl, cur_lcore);
         if (ret == 0) {
           *lcore = cur_lcore;
@@ -645,8 +655,8 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
       shm_entry = &lcore_shm->lcores_info[cur_lcore];
 
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                          mt_socket_id(impl, MTL_PORT_P))) {
+          sch_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                           mt_socket_id(impl, MTL_PORT_P), skip_numa_check)) {
         if (!shm_entry->active) {
           *lcore = cur_lcore;
           shm_entry->active = true;
@@ -673,7 +683,14 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
     sch_filelock_unlock(mgr);
   }
 
-  err("%s, fail to find lcore\n", __func__);
+  if (!skip_numa_check && mt_user_across_numa_core(impl)) {
+    warn("%s, can't find available lcore from socket %d, try with other numa cpu\n",
+         __func__, mt_socket_id(impl, MTL_PORT_P));
+    skip_numa_check = true;
+    goto again;
+  }
+
+  err("%s, fail to find available lcore\n", __func__);
   return -EIO;
 }
 
