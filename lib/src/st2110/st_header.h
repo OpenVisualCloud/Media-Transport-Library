@@ -768,6 +768,9 @@ struct st_tx_audio_session_impl {
   bool pacing_in_build; /* if control pacing in the build stage */
   bool time_measure;
 
+  /* dedicated queue tx mode */
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
+
   uint16_t st30_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st30_frames;
   uint32_t st30_frame_size; /* size per frame*/
@@ -814,6 +817,7 @@ struct st_tx_audio_session_impl {
   uint32_t stat_recoverable_error;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  struct mt_stat_u64 stat_tx_delta;
 };
 
 struct st_tx_audio_sessions_mgr {
@@ -834,6 +838,7 @@ struct st_tx_audio_sessions_mgr {
   rte_spinlock_t mutex[ST_SCH_MAX_TX_AUDIO_SESSIONS]; /* protect session */
 
   rte_atomic32_t transmitter_started;
+  rte_atomic32_t transmitter_clients;
 
   /* status */
   int st30_stat_pkts_burst;
@@ -858,6 +863,12 @@ struct st_ra_tp_slot {
   int32_t dpvr_max;
   int64_t dpvr_sum;
   enum st_rx_tp_compliant compliant;
+
+  /* Inter-packet time(ns), packet level check */
+  int64_t ipt_sum;
+  int32_t ipt_max;
+  int32_t ipt_min;
+  float ipt_avg;
 };
 
 struct st_ra_tp_stat {
@@ -882,6 +893,8 @@ struct st_rx_audio_tp {
   struct st_ra_tp_slot slot;
   /* for the status */
   struct st_ra_tp_stat stat;
+
+  uint64_t prev_pkt_time; /* ns */
 };
 
 struct st_rx_audio_session_impl {

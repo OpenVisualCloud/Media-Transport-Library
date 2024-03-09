@@ -385,7 +385,11 @@ void ra_tp_slot_parse_result(struct st_rx_audio_session_impl* s,
 
   stat_slot->dpvr_sum += slot->dpvr_sum;
   stat_slot->dpvr_min = RTE_MIN(stat_slot->dpvr_min, slot->dpvr_min);
-  stat_slot->dpvr_max = RTE_MAX(stat_slot->dpvr_min, slot->dpvr_max);
+  stat_slot->dpvr_max = RTE_MAX(stat_slot->dpvr_max, slot->dpvr_max);
+
+  stat_slot->ipt_sum += slot->ipt_sum;
+  stat_slot->ipt_min = RTE_MIN(stat_slot->ipt_min, slot->ipt_min);
+  stat_slot->ipt_max = RTE_MAX(stat_slot->ipt_max, slot->ipt_max);
 
   stat_slot->pkt_cnt += slot->pkt_cnt;
 }
@@ -413,6 +417,15 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, struct st_ra_tp_slot* s
 
   struct st_ra_tp_stat* stat = &tp->stat;
   if (!stat->dpvr_first) stat->dpvr_first = dpvr;
+
+  if (tp->prev_pkt_time) {
+    double ipt = (double)pkt_time - tp->prev_pkt_time;
+
+    slot->ipt_sum += ipt;
+    slot->ipt_min = RTE_MIN(ipt, slot->ipt_min);
+    slot->ipt_max = RTE_MAX(ipt, slot->ipt_max);
+  }
+  tp->prev_pkt_time = pkt_time;
 }
 
 int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s) {
@@ -469,6 +482,9 @@ void ra_tp_stat(struct st_rx_audio_session_impl* s) {
   float dpvr_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->dpvr_sum);
   info("%s(%d), dpvr AVG %.2f MIN %d MAX %d, pkt_cnt %u\n", __func__, idx, dpvr_avg,
        stat_slot->dpvr_min, stat_slot->dpvr_max, stat_slot->pkt_cnt);
+  float ipt_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->ipt_sum);
+  info("%s(%d), ipt AVG %.2f MIN %d MAX %d\n", __func__, idx, ipt_avg, stat_slot->ipt_min,
+       stat_slot->ipt_max);
 
   /* Maximum Timestamped Delay Factor */
   int32_t tsdf =
@@ -483,4 +499,7 @@ void ra_tp_slot_init(struct st_ra_tp_slot* slot) {
 
   slot->dpvr_max = INT_MIN;
   slot->dpvr_min = INT_MAX;
+
+  slot->ipt_max = INT_MIN;
+  slot->ipt_min = INT_MAX;
 }

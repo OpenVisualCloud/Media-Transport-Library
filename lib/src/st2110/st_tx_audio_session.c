@@ -587,7 +587,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
-  if (mt_u64_fifo_count(ring_p) > s->trans_ring_thresh) {
+  if (mt_u64_fifo_count(ring_p) >= s->trans_ring_thresh) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -703,7 +703,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
   pkt = rte_pktmbuf_alloc(hdr_pool_p);
   if (!pkt) {
-    err("%s(%d), pkt alloc fail\n", __func__, idx);
+    dbg("%s(%d), pkt alloc fail\n", __func__, idx);
     s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -808,7 +808,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
-  if (mt_u64_fifo_count(ring_p) > s->trans_ring_thresh) {
+  if (mt_u64_fifo_count(ring_p) >= s->trans_ring_thresh) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -955,12 +955,24 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
       s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_TSC_NOT_REACH;
       return MTL_TASKLET_ALL_DONE;
     }
-    ret = rte_ring_mp_enqueue(trs_ring, pkt);
-    if (ret < 0) {
-      s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_ENQUEUE_FAIL;
-      return MTL_TASKLET_ALL_DONE;
+    if (s->queue[s_port]) {
+      uint16_t tx = mt_txq_burst(s->queue[t_port], &pkt, 1);
+      if (tx < 1) {
+        s->stat_transmit_ret_code = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
+        return MTL_TASKLET_ALL_DONE;
+      }
+    } else {
+      ret = rte_ring_mp_enqueue(trs_ring, pkt);
+      if (ret < 0) {
+        s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_ENQUEUE_FAIL;
+        return MTL_TASKLET_ALL_DONE;
+      }
     }
     s->trans_ring_inflight[s_port] = NULL;
+    if (s->time_measure) {
+      uint64_t delta_ns = cur_tsc - target_tsc;
+      mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
+    }
   }
 
   /* try to dequeue pkt */
@@ -987,11 +999,24 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
     }
   }
 
-  ret = rte_ring_mp_enqueue(trs_ring, pkt);
-  if (ret < 0) { /* save to inflight */
-    s->stat_transmit_ret_code = -STI_TSCTRS_PKT_ENQUEUE_FAIL;
-    s->trans_ring_inflight[s_port] = pkt;
-    return MTL_TASKLET_ALL_DONE;
+  if (s->queue[s_port]) {
+    uint16_t tx = mt_txq_burst(s->queue[s_port], &pkt, 1);
+    if (tx < 1) {
+      s->stat_transmit_ret_code = -STI_TSCTRS_BURST_FAIL;
+      s->trans_ring_inflight[s_port] = pkt;
+      return MTL_TASKLET_ALL_DONE;
+    }
+  } else {
+    ret = rte_ring_mp_enqueue(trs_ring, pkt);
+    if (ret < 0) { /* save to inflight */
+      s->stat_transmit_ret_code = -STI_TSCTRS_PKT_ENQUEUE_FAIL;
+      s->trans_ring_inflight[s_port] = pkt;
+      return MTL_TASKLET_ALL_DONE;
+    }
+  }
+  if (s->time_measure) {
+    uint64_t delta_ns = cur_tsc - target_tsc;
+    mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
   }
 
   return 0;
@@ -1117,6 +1142,8 @@ static int tx_audio_session_flush(struct st_tx_audio_sessions_mgr* mgr,
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
+    if (s->queue[i]) continue; /* skip as dedicate queue used */
+
     if (pool && rte_mempool_in_use_count(pool) &&
         rte_atomic32_read(&mgr->transmitter_started)) {
       info("%s(%d,%d), start to flush port %d\n", __func__, mgr_idx, s_idx, i);
@@ -1301,7 +1328,8 @@ static int tx_audio_session_init_trans_ring(struct mtl_main_impl* impl,
   }
   s->trans_ring_thresh = trans_ring_thresh;
 
-  info("%s(%d,%d), trans_ring_thresh %u\n", __func__, mgr_idx, idx, trans_ring_thresh);
+  info("%s(%d,%d), trans_ring_thresh %u fifo %u\n", __func__, mgr_idx, idx,
+       trans_ring_thresh, count);
   return 0;
 }
 
@@ -1374,6 +1402,48 @@ static int tx_audio_session_init_sw(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tx_audio_session_uinit_queue(struct mtl_main_impl* impl,
+                                        struct st_tx_audio_session_impl* s) {
+  MTL_MAY_UNUSED(impl);
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+
+    if (s->queue[i]) {
+      mt_txq_flush(s->queue[i], mt_get_pad(impl, port));
+      mt_txq_put(s->queue[i]);
+      s->queue[i] = NULL;
+    }
+  }
+  return 0;
+}
+
+static int tx_audio_session_init_queue(struct mtl_main_impl* impl,
+                                       struct st_tx_audio_session_impl* s) {
+  int idx = s->idx;
+  enum mtl_port port;
+  uint16_t queue_id;
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    port = mt_port_logic2phy(s->port_maps, i);
+
+    struct mt_txq_flow flow;
+    memset(&flow, 0, sizeof(flow));
+    mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
+    flow.dst_port = s->ops.udp_port[i];
+    flow.gso_sz = s->st30_pkt_size - sizeof(struct mt_udp_hdr);
+    s->queue[i] = mt_txq_get(impl, port, &flow);
+    if (!s->queue[i]) {
+      tx_audio_session_uinit_queue(impl, s);
+      return -EIO;
+    }
+    queue_id = mt_txq_queue_id(s->queue[i]);
+    info("%s(%d), port(l:%d,p:%d), queue %d\n", __func__, idx, i, port, queue_id);
+  }
+
+  return 0;
+}
+
 static int tx_audio_session_attach(struct mtl_main_impl* impl,
                                    struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s,
@@ -1404,10 +1474,12 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
 
-    ret = tx_audio_sessions_mgr_init_hw(impl, mgr, port);
-    if (ret < 0) {
-      err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
-      return -EIO;
+    if (!(ops->flags & ST30_TX_FLAG_DEDICATE_QUEUE)) {
+      ret = tx_audio_sessions_mgr_init_hw(impl, mgr, port);
+      if (ret < 0) {
+        err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
+        return -EIO;
+      }
     }
   }
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
@@ -1450,6 +1522,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
+  mt_stat_u64_init(&s->stat_tx_delta);
 
   s->st30_rtp_time_app = 0xFFFFFFFF;
   s->st30_rtp_time = 0xFFFFFFFF;
@@ -1478,6 +1551,17 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), init sw fail %d\n", __func__, idx, ret);
     return ret;
+  }
+
+  if (ops->flags & ST30_TX_FLAG_DEDICATE_QUEUE) {
+    ret = tx_audio_session_init_queue(impl, s);
+    if (ret < 0) {
+      err("%s(%d), init dedicated queue fail %d\n", __func__, idx, ret);
+      tx_audio_session_uinit_sw(mgr, s);
+      return ret;
+    }
+  } else {
+    rte_atomic32_inc(&mgr->transmitter_clients);
   }
 
   s->active = true;
@@ -1607,6 +1691,15 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
     }
     mt_stat_u64_init(stat_time);
 
+    struct mt_stat_u64* stat_tx_delta = &s->stat_tx_delta;
+    if (stat_tx_delta->cnt) {
+      uint64_t avg_ns = stat_tx_delta->sum / stat_tx_delta->cnt;
+      notice("TX_AUDIO_SESSION(%d,%d): tx delta avg %.2fus max %.2fus min %.2fus\n",
+             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_tx_delta->max / NS_PER_US,
+             (float)stat_tx_delta->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_tx_delta);
+
     if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
       notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
              m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
@@ -1619,7 +1712,11 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s) {
   tx_audio_session_stat(mgr, s);
+  tx_audio_session_uinit_queue(mgr->parent, s);
   tx_audio_session_uinit_sw(mgr, s);
+  if (!(s->ops.flags & ST30_TX_FLAG_DEDICATE_QUEUE)) {
+    rte_atomic32_dec(&mgr->transmitter_clients);
+  }
   return 0;
 }
 
@@ -1638,7 +1735,8 @@ static int st_tx_audio_sessions_stat(void* priv) {
     notice("TX_AUDIO_MGR(%d), pkts burst %d\n", m_idx, mgr->st30_stat_pkts_burst);
     mgr->st30_stat_pkts_burst = 0;
   } else {
-    if (mgr->max_idx > 0) {
+    int32_t clients = rte_atomic32_read(&mgr->transmitter_clients);
+    if ((clients > 0) && (mgr->max_idx > 0)) {
       for (int i = 0; i < mt_num_ports(mgr->parent); i++) {
         warn("TX_AUDIO_MGR(%d): trs ret %d:%d\n", m_idx, i, mgr->stat_trs_ret_code[i]);
       }

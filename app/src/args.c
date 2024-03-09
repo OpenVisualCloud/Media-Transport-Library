@@ -115,6 +115,7 @@ enum st_args_cmd {
   ST_ARG_TX_NO_CHAIN,
   ST_ARG_MULTI_SRC_PORT,
   ST_ARG_AUDIO_BUILD_PACING,
+  ST_ARG_AUDIO_DEDICATE_QUEUE,
   ST_ARG_AUDIO_FIFO_SIZE,
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
@@ -127,6 +128,7 @@ enum st_args_cmd {
   ST_ARG_VIDEO_SHA_CHECK,
   ST_ARG_ARP_TIMEOUT_S,
   ST_ARG_RSS_SCH_NB,
+  ST_ARG_ALLOW_ACROSS_NUMA_CORE,
   ST_ARG_MAX,
 };
 
@@ -238,6 +240,7 @@ static struct option st_app_args_options[] = {
     {"tx_no_chain", no_argument, 0, ST_ARG_TX_NO_CHAIN},
     {"multi_src_port", no_argument, 0, ST_ARG_MULTI_SRC_PORT},
     {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
+    {"audio_dedicate_queue", no_argument, 0, ST_ARG_AUDIO_DEDICATE_QUEUE},
     {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
@@ -250,6 +253,7 @@ static struct option st_app_args_options[] = {
     {"video_sha_check", no_argument, 0, ST_ARG_VIDEO_SHA_CHECK},
     {"arp_timeout_s", required_argument, 0, ST_ARG_ARP_TIMEOUT_S},
     {"rss_sch_nb", required_argument, 0, ST_ARG_RSS_SCH_NB},
+    {"allow_across_numa_core", no_argument, 0, ST_ARG_ALLOW_ACROSS_NUMA_CORE},
 
     {0, 0, 0, 0}};
 
@@ -746,6 +750,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_AUDIO_BUILD_PACING:
         ctx->tx_audio_build_pacing = true;
         break;
+      case ST_ARG_AUDIO_DEDICATE_QUEUE:
+        ctx->tx_audio_dedicate_queue = true;
+        break;
       case ST_ARG_AUDIO_FIFO_SIZE:
         ctx->tx_audio_fifo_size = atoi(optarg);
         break;
@@ -786,6 +793,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         for (enum mtl_port port = MTL_PORT_P; port < MTL_PORT_MAX; port++) {
           p->rss_sch_nb[port] = atoi(optarg);
         }
+        break;
+      case ST_ARG_ALLOW_ACROSS_NUMA_CORE:
+        p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
         break;
       case '?':
         break;

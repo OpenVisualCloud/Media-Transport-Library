@@ -12,8 +12,8 @@ LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
 
 # Install build dependencies and debug tools
 RUN apt-get update -y && \
-    apt-get install -y git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev && \
-    apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
+    apt-get install -y --no-install-recommends git build-essential meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev ca-certificates && \
+    apt-get install -y --no-install-recommends m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -23,10 +23,13 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 COPY . $MTL_REPO
 
-# Clone and build DPDK before bpf and xdp
+# Clone DPDK and xdp-tools repo
 RUN git clone https://github.com/DPDK/dpdk.git && \
-    cd dpdk && \
-    git checkout v$DPDK_VER && \
+    git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git
+
+# Build DPDK with Media-Transport-Library patches
+WORKDIR /dpdk
+RUN git checkout v$DPDK_VER && \
     git switch -c v$DPDK_VER && \
     git config --global user.email "you@example.com" && \
     git config --global user.name "Your Name" && \
@@ -35,15 +38,18 @@ RUN git clone https://github.com/DPDK/dpdk.git && \
     meson install -C build && \
     DESTDIR=/install meson install -C build
 
-# Clone and build the xdp-tools project
-RUN git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git && \
-    cd xdp-tools && ./configure && make && make install && \
-    DESTDIR=/install make install && \
-    cd lib/libbpf/src && make install && \
+# Build the xdp-tools project
+WORKDIR /xdp-tools
+RUN ./configure && make &&\
+    make install && \
+    DESTDIR=/install make install
+WORKDIR /xdp-tools/lib/libbpf/src
+RUN make install && \
     DESTDIR=/install make install
 
 # Build IMTL
-RUN cd $MTL_REPO && ./build.sh && \
+WORKDIR /$MTL_REPO
+RUN ./build.sh && \
     DESTDIR=/install meson install -C build && \
     setcap 'cap_net_raw+ep' ./build/app/RxTxApp
 
@@ -54,7 +60,7 @@ LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
 
 # Install runtime dependencies
 RUN apt-get update -y && \
-    apt-get install -y libnuma1 libjson-c5 libpcap0.8 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3 zlib1g libelf1 libcap-ng0 libatomic1 && \
+    apt-get install -y --no-install-recommends libnuma1 libjson-c5 libpcap0.8 libsdl2-2.0-0 libsdl2-ttf-2.0-0 libssl3 zlib1g libelf1 libcap-ng0 libatomic1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -66,11 +72,11 @@ RUN groupadd -g 2110 vfio && \
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder /Media-Transport-Library/build /home/imtl
 
+WORKDIR /home/imtl/
+
 # ldconfig
-RUN cd /home/imtl && ldconfig
+RUN ldconfig
 
 USER imtl
-
-WORKDIR /home/imtl/
 
 CMD ["/bin/bash"]

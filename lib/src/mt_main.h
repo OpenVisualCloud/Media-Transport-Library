@@ -551,6 +551,8 @@ struct mtl_sch_impl {
   uint32_t stat_sleep_cnt;
   uint64_t stat_sleep_ns_min;
   uint64_t stat_sleep_ns_max;
+  /* for time measure */
+  struct mt_stat_u64 stat_time;
 };
 
 struct mt_lcore_mgr {
@@ -1375,6 +1377,14 @@ static inline bool mt_user_ptp_service(struct mtl_main_impl* impl) {
 /* if user enable the auto start/stop */
 static inline bool mt_user_auto_start_stop(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_DEV_AUTO_START_STOP)
+    return true;
+  else
+    return false;
+}
+
+/* if user enable the auto start/stop */
+static inline bool mt_user_across_numa_core(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_ALLOW_ACROSS_NUMA_CORE)
     return true;
   else
     return false;

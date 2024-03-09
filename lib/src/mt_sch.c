@@ -107,6 +107,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mt_sch_tasklet_impl* tasklet;
   bool time_measure = mt_user_tasklet_time_measure(impl);
   uint64_t tsc_s = 0;
+  uint64_t sch_tsc_s = 0;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
 
@@ -130,6 +131,8 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
+
+    if (time_measure) sch_tsc_s = mt_get_tsc(impl);
 
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
@@ -160,6 +163,11 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
       sch->avg_ns_per_loop = delta_loop_ns / loop_cnt;
       loop_cnt = 0;
       loop_cal_start_ns = mt_get_tsc(impl);
+    }
+
+    if (time_measure) {
+      uint64_t delta_ns = mt_get_tsc(impl) - sch_tsc_s;
+      mt_stat_u64_update(&sch->stat_time, delta_ns);
     }
   }
 
@@ -389,12 +397,20 @@ static int sch_stat(void* priv) {
   notice("SCH(%d:%s): tasklets %d, lcore %u(t_pid: %d), avg loop %" PRIu64 " ns\n", idx,
          sch->name, num_tasklet, sch->lcore, sch->t_pid, mt_sch_avg_ns_loop(sch));
   if (mt_user_tasklet_time_measure(sch->parent)) {
+    struct mt_stat_u64* stat_time = &sch->stat_time;
+    if (stat_time->cnt) {
+      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+      notice("SCH(%d): time avg %.2fus max %.2fus min %.2fus\n", idx,
+             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+             (float)stat_time->min / NS_PER_US);
+    }
+    mt_stat_u64_init(stat_time);
     for (int i = 0; i < num_tasklet; i++) {
       tasklet = sch->tasklet[i];
       if (!tasklet) continue;
 
       dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
-      struct mt_stat_u64* stat_time = &tasklet->stat_time;
+      stat_time = &tasklet->stat_time;
       if (stat_time->cnt) {
         uint64_t avg_ns = stat_time->sum / stat_time->cnt;
         notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
@@ -593,16 +609,26 @@ static int sch_init_lcores(struct mt_sch_mgr* mgr) {
   return 0;
 }
 
+static inline bool sch_socket_match(int cpu_socket, int dev_socket,
+                                    bool skip_numa_check) {
+  if (skip_numa_check) return true;
+  return mt_socket_match(cpu_socket, dev_socket);
+}
+
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
                      enum mt_lcore_type type) {
-  unsigned int cur_lcore = 0;
+  unsigned int cur_lcore;
   int ret;
+  bool skip_numa_check = false;
+
+again:
+  cur_lcore = 0;
   if (mt_is_manager_connected(impl)) {
     do {
       cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                          mt_socket_id(impl, MTL_PORT_P))) {
+          sch_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                           mt_socket_id(impl, MTL_PORT_P), skip_numa_check)) {
         ret = mt_instance_get_lcore(impl, cur_lcore);
         if (ret == 0) {
           *lcore = cur_lcore;
@@ -629,8 +655,8 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
       shm_entry = &lcore_shm->lcores_info[cur_lcore];
 
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          mt_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                          mt_socket_id(impl, MTL_PORT_P))) {
+          sch_socket_match(rte_lcore_to_socket_id(cur_lcore),
+                           mt_socket_id(impl, MTL_PORT_P), skip_numa_check)) {
         if (!shm_entry->active) {
           *lcore = cur_lcore;
           shm_entry->active = true;
@@ -657,7 +683,14 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
     sch_filelock_unlock(mgr);
   }
 
-  err("%s, fail to find lcore\n", __func__);
+  if (!skip_numa_check && mt_user_across_numa_core(impl)) {
+    warn("%s, can't find available lcore from socket %d, try with other numa cpu\n",
+         __func__, mt_socket_id(impl, MTL_PORT_P));
+    skip_numa_check = true;
+    goto again;
+  }
+
+  err("%s, fail to find available lcore\n", __func__);
   return -EIO;
 }
 
@@ -850,6 +883,7 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     sch->run_in_thread = mt_user_tasklet_thread(impl);
+    mt_stat_u64_init(&sch->stat_time);
 
     /* sleep info init */
     sch->allow_sleep = mt_user_tasklet_sleep(impl);

@@ -384,7 +384,11 @@ enum mtl_init_flag {
    * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
    */
   MTL_FLAG_DEV_AUTO_START_STOP = (MTL_BIT64(17)),
-
+  /**
+   * Enable the use of cores across NUMA nodes; by default, only cores within the same
+   * NUMA node as the NIC are used due to the high cost of cross-NUMA communication.
+   */
+  MTL_FLAG_ALLOW_ACROSS_NUMA_CORE = (MTL_BIT64(18)),
   /**
    * dedicate thread for cni message
    */
