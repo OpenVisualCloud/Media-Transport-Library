@@ -743,6 +743,42 @@ struct st_tx_audio_session_pacing {
   uint32_t max_late_epochs;
 };
 
+#define ST30_TX_RL_QUEUES_USED (2)
+
+enum st30_tx_rl_stage {
+  ST30_TX_RL_STAGE_PREPARE,
+  ST30_TX_RL_STAGE_TRANS,
+  ST30_TX_RL_STAGE_WARM_UP,
+};
+
+struct st_tx_audio_session_rl_port {
+  /* two queues used per port */
+  struct mt_txq_entry* queue[ST30_TX_RL_QUEUES_USED];
+  struct rte_mbuf* pad; /* pkt with pad_pkt_size len */
+  struct rte_mbuf* pkt; /* pkt with st30_pkt_size len */
+  int cur_queue;
+  int cur_pkt_idx;
+  uint64_t trs_target_tsc;
+
+  uint32_t stat_pkts_burst;
+  uint32_t stat_pad_pkts_burst;
+  uint32_t stat_warmup_pkts_burst;
+  uint32_t stat_mismatch_sync_point;
+  uint32_t stat_recalculate_warmup;
+};
+
+struct st_tx_audio_session_rl_info {
+  /* size for padding pkt which include the header */
+  uint32_t pad_pkt_size;
+  int pads_per_st30_pkt;
+  int pkts_per_sync;
+  int pkts_prepare_warmup;
+  uint32_t required_accuracy_ns;
+  uint32_t max_warmup_trs;
+  /* info per port */
+  struct st_tx_audio_session_rl_port port_info[MTL_SESSION_PORT_MAX];
+};
+
 struct st_tx_audio_session_impl {
   int idx; /* index for current session */
   struct st30_tx_ops ops;
@@ -768,8 +804,9 @@ struct st_tx_audio_session_impl {
   bool pacing_in_build; /* if control pacing in the build stage */
   bool time_measure;
 
-  /* dedicated queue tx mode */
-  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
+  /* rl based pacing */
+  bool rl_based_pacing;
+  struct st_tx_audio_session_rl_info rl;
 
   uint16_t st30_frames_cnt; /* numbers of frames requested */
   struct st_frame_trans* st30_frames;

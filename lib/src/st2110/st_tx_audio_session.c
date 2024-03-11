@@ -955,18 +955,10 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
       s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_TSC_NOT_REACH;
       return MTL_TASKLET_ALL_DONE;
     }
-    if (s->queue[s_port]) {
-      uint16_t tx = mt_txq_burst(s->queue[t_port], &pkt, 1);
-      if (tx < 1) {
-        s->stat_transmit_ret_code = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
-        return MTL_TASKLET_ALL_DONE;
-      }
-    } else {
-      ret = rte_ring_mp_enqueue(trs_ring, pkt);
-      if (ret < 0) {
-        s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_ENQUEUE_FAIL;
-        return MTL_TASKLET_ALL_DONE;
-      }
+    ret = rte_ring_mp_enqueue(trs_ring, pkt);
+    if (ret < 0) {
+      s->stat_transmit_ret_code = -STI_TSCTRS_INFLIGHT_ENQUEUE_FAIL;
+      return MTL_TASKLET_ALL_DONE;
     }
     s->trans_ring_inflight[s_port] = NULL;
     if (s->time_measure) {
@@ -999,24 +991,381 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
     }
   }
 
-  if (s->queue[s_port]) {
-    uint16_t tx = mt_txq_burst(s->queue[s_port], &pkt, 1);
-    if (tx < 1) {
-      s->stat_transmit_ret_code = -STI_TSCTRS_BURST_FAIL;
-      s->trans_ring_inflight[s_port] = pkt;
-      return MTL_TASKLET_ALL_DONE;
-    }
-  } else {
-    ret = rte_ring_mp_enqueue(trs_ring, pkt);
-    if (ret < 0) { /* save to inflight */
-      s->stat_transmit_ret_code = -STI_TSCTRS_PKT_ENQUEUE_FAIL;
-      s->trans_ring_inflight[s_port] = pkt;
-      return MTL_TASKLET_ALL_DONE;
-    }
+  ret = rte_ring_mp_enqueue(trs_ring, pkt);
+  if (ret < 0) { /* save to inflight */
+    s->stat_transmit_ret_code = -STI_TSCTRS_PKT_ENQUEUE_FAIL;
+    s->trans_ring_inflight[s_port] = pkt;
+    return MTL_TASKLET_ALL_DONE;
   }
   if (s->time_measure) {
     uint64_t delta_ns = cur_tsc - target_tsc;
     mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
+  }
+
+  return 0;
+}
+
+static const char* audio_pacing_way_names[ST30_TX_PACING_WAY_MAX] = {
+    "auto",
+    "ratelimit",
+    "tsc",
+};
+
+const char* audio_pacing_way_name(enum st30_tx_pacing_way way) {
+  return audio_pacing_way_names[way];
+}
+
+static int tx_audio_session_uinit_rl(struct mtl_main_impl* impl,
+                                     struct st_tx_audio_session_impl* s) {
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  MTL_MAY_UNUSED(impl);
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[i];
+
+    for (int j = 0; j < ST30_TX_RL_QUEUES_USED; j++) {
+      if (rl_port->queue[j]) {
+        mt_txq_flush(rl_port->queue[j], mt_get_pad(impl, port));
+        mt_txq_put(rl_port->queue[j]);
+        rl_port->queue[j] = NULL;
+      }
+    }
+
+    if (rl_port->pad) {
+      rte_pktmbuf_free(rl_port->pad);
+      rl_port->pad = NULL;
+    }
+    if (rl_port->pkt) {
+      rte_pktmbuf_free(rl_port->pkt);
+      rl_port->pkt = NULL;
+    }
+  }
+  return 0;
+}
+
+static inline uint64_t tx_audio_session_initial_rl_bps(
+    struct st_tx_audio_session_impl* s) {
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  double bps = (double)(s->st30_pkt_size + rl->pad_pkt_size * rl->pads_per_st30_pkt) *
+               (double)NS_PER_S / s->pacing.trs;
+  return bps;
+}
+
+static int double_cmp(const void* a, const void* b) {
+  const double* ai = a;
+  const double* bi = b;
+
+  if (*ai < *bi) {
+    return -1;
+  } else if (*ai > *bi) {
+    return 1;
+  }
+  return 0;
+}
+
+static inline uint64_t tx_audio_session_profiling_rl_bps(
+    struct mtl_main_impl* impl, struct st_tx_audio_session_impl* s,
+    enum mtl_session_port s_port, uint64_t initial_bytes_per_sec, int rl_q_idx) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  int idx = s->idx;
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
+  struct mt_txq_entry* queue = rl_port->queue[rl_q_idx];
+
+  /* wait tsc calibrate done */
+  mt_wait_tsc_stable(impl);
+
+  uint64_t train_start_tsc = mt_get_tsc(impl);
+
+  /* warm-up stage to consume all nix tx buf */
+  int pad_pkts = mt_if_nb_tx_desc(impl, port) * 1;
+  struct rte_mbuf* pad = rl_port->pad;
+  for (int i = 0; i < pad_pkts; i++) {
+    rte_mbuf_refcnt_update(pad, 1);
+    mt_txq_burst_busy(queue, &pad, 1, 10);
+  }
+
+  /* profiling stage */
+  double expect_per_sec = NS_PER_S / s->pacing.trs;
+  int total = expect_per_sec / 5;
+  int loop_cnt = 10;
+  double loop_actual_per_sec[loop_cnt];
+  for (int loop = 0; loop < loop_cnt; loop++) {
+    uint64_t tsc_start = mt_get_tsc(impl);
+    for (int i = 0; i < total; i++) {
+      pad = rl_port->pkt;
+      rte_mbuf_refcnt_update(pad, 1);
+      mt_txq_burst_busy(queue, &pad, 1, 10);
+
+      pad = rl_port->pad;
+      rte_mbuf_refcnt_update(pad, rl->pads_per_st30_pkt);
+      for (int i = 0; i < rl->pads_per_st30_pkt; i++) {
+        mt_txq_burst_busy(queue, &pad, 1, 10);
+      }
+    }
+    uint64_t tsc_end = mt_get_tsc(impl);
+    double time_sec = (double)(tsc_end - tsc_start) / NS_PER_S;
+    loop_actual_per_sec[loop] = total / time_sec;
+    dbg("%s(%d), pkts per second expect %f actual %f\n", __func__, idx, expect_per_sec,
+        loop_actual_per_sec[loop]);
+  }
+  /* sort */
+  qsort(loop_actual_per_sec, loop_cnt, sizeof(double), double_cmp);
+  double actual_per_sec_sum = 0;
+  int entry_in_sum = 0;
+  for (int i = 1; i < (loop_cnt - 1); i++) {
+    actual_per_sec_sum += loop_actual_per_sec[i];
+    entry_in_sum++;
+  }
+  double actual_per_sec = actual_per_sec_sum / entry_in_sum;
+  info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__, idx,
+       expect_per_sec, actual_per_sec,
+       ((double)mt_get_tsc(impl) - train_start_tsc) / NS_PER_S);
+  return initial_bytes_per_sec * expect_per_sec / actual_per_sec;
+}
+
+static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
+                                    struct st_tx_audio_session_impl* s) {
+  int idx = s->idx;
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  enum mtl_port port;
+  uint16_t queue_id;
+  uint64_t bytes_per_sec;
+
+  rl->pad_pkt_size = MTL_UDP_MAX_BYTES;
+  rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
+  rl->pkts_prepare_warmup = 4;
+  rl->pads_per_st30_pkt = 3;
+  rl->max_warmup_trs = 4;
+  /* sync every 10ms */
+  rl->pkts_per_sync = (double)NS_PER_S / s->pacing.trs / 100;
+
+  bytes_per_sec = tx_audio_session_initial_rl_bps(s);
+
+  for (int i = 0; i < s->ops.num_port; i++) {
+    struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[i];
+    port = mt_port_logic2phy(s->port_maps, i);
+
+    /* pad pkt */
+    rl_port->pad = mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port,
+                                RTE_ETHER_TYPE_IPV4, rl->pad_pkt_size);
+    if (!rl_port->pad) {
+      tx_audio_session_uinit_rl(impl, s);
+      return -ENOMEM;
+    }
+    rl_port->pkt = mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port,
+                                RTE_ETHER_TYPE_IPV4, s->st30_pkt_size);
+    if (!rl_port->pkt) {
+      tx_audio_session_uinit_rl(impl, s);
+      return -ENOMEM;
+    }
+
+    for (int j = 0; j < ST30_TX_RL_QUEUES_USED; j++) {
+      struct mt_txq_flow flow;
+      memset(&flow, 0, sizeof(flow));
+      flow.bytes_per_sec = bytes_per_sec;
+      mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
+      flow.dst_port = s->ops.udp_port[i];
+      flow.gso_sz = s->st30_pkt_size - sizeof(struct mt_udp_hdr);
+      rl_port->queue[j] = mt_txq_get(impl, port, &flow);
+      if (!rl_port->queue[j]) {
+        tx_audio_session_uinit_rl(impl, s);
+        return -EIO;
+      }
+      if (j == 0) { /* only profile on the first */
+        bytes_per_sec = tx_audio_session_profiling_rl_bps(impl, s, MTL_SESSION_PORT_P,
+                                                          bytes_per_sec, j);
+        info("%s(%d), profiled bytes_per_sec %" PRIu64 "\n", __func__, idx,
+             bytes_per_sec);
+        int ret = mt_txq_set_tx_bps(rl_port->queue[j], bytes_per_sec);
+        if (ret < 0) {
+          tx_audio_session_uinit_rl(impl, s);
+          return ret;
+        }
+      }
+      queue_id = mt_txq_queue_id(rl_port->queue[j]);
+      info("%s(%d), port(l:%d,p:%d), queue %d at sync %d\n", __func__, idx, i, port,
+           queue_id, j);
+    }
+  }
+
+  return 0;
+}
+
+static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, int s_port,
+                                           struct rte_mbuf* pkt) {
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
+  int pads_per_st30_pkt = rl->pads_per_st30_pkt;
+  int cur_queue = rl_port->cur_queue;
+  struct mt_txq_entry* queue = rl_port->queue[cur_queue];
+  struct rte_mbuf* pads[pads_per_st30_pkt];
+  uint16_t tx;
+
+  tx = mt_txq_burst(queue, &pkt, 1);
+  if (tx < 1) {
+    dbg("%s(%d,%d), sending pkt fail\n", __func__, s->idx, s_port);
+    return 0;
+  }
+  rl_port->stat_pkts_burst += 1;
+
+  /* insert the pads */
+  for (int i = 0; i < pads_per_st30_pkt; i++) {
+    pads[i] = rl_port->pad;
+  }
+  rte_mbuf_refcnt_update(rl_port->pad, pads_per_st30_pkt);
+  tx = mt_txq_burst(queue, pads, pads_per_st30_pkt);
+  if (tx != pads_per_st30_pkt) {
+    /* how to deal fail here */
+    err("%s(%d,%d), sending %u pad pkts fail\n", __func__, s->idx, s_port,
+        pads_per_st30_pkt);
+  }
+  rl_port->stat_pad_pkts_burst += pads_per_st30_pkt;
+
+  rl_port->cur_pkt_idx++;
+  if (rl_port->cur_pkt_idx >= rl->pkts_per_sync) {
+    dbg("%s(%d,%d), switch to next queue, cur queue %d pkts %d send\n", __func__, idx,
+        s_port, cur_queue, rl_port->cur_pkt_idx);
+    rl_port->cur_pkt_idx = 0;
+    cur_queue++;
+    if (cur_queue >= ST30_TX_RL_QUEUES_USED) cur_queue = 0;
+    rl_port->cur_queue = cur_queue;
+  }
+
+  return 1;
+}
+
+static uint16_t tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl* s,
+                                               int s_port, int pre, int pkts) {
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
+  int cur_queue = rl_port->cur_queue;
+  struct mt_txq_entry* queue = rl_port->queue[cur_queue];
+  struct rte_mbuf* pad;
+
+  /* sending the prepare warmup pkts */
+  pad = rl_port->pad;
+  rte_mbuf_refcnt_update(pad, pre);
+  for (int i = 0; i < pre; i++) {
+    mt_txq_burst(queue, &pad, 1);
+  }
+  rl_port->stat_warmup_pkts_burst += pre;
+
+  /* sending the pattern pkts */
+  for (int i = 0; i < pkts; i++) {
+    pad = rl_port->pkt;
+    rte_mbuf_refcnt_update(pad, 1);
+    mt_txq_burst(queue, &pad, 1);
+
+    pad = rl_port->pad;
+    rte_mbuf_refcnt_update(pad, rl->pads_per_st30_pkt);
+    for (int j = 0; j < rl->pads_per_st30_pkt; j++) {
+      mt_txq_burst(queue, &pad, 1);
+    }
+  }
+  rl_port->stat_warmup_pkts_burst += (pkts * rl->pads_per_st30_pkt);
+
+  return 0;
+}
+
+static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
+                                              struct st_tx_audio_session_impl* s,
+                                              int s_port, struct rte_mbuf* pkt) {
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
+  uint64_t target_tsc = rl_port->trs_target_tsc;
+  uint64_t cur_tsc;
+
+  cur_tsc = mt_get_tsc(impl);
+  if (cur_tsc > target_tsc) { /* time already reach */
+    dbg("%s(%d,%d), warmup fail, cur %" PRIu64 " target %" PRIu64 ", burst directly\n",
+        __func__, s->idx, s_port, cur_tsc, target_tsc);
+    rl_port->trs_target_tsc = 0; /* clear target tsc */
+    rl_port->stat_mismatch_sync_point++;
+    /* 3 dummy pkts to fill the rl burst buffer */
+    tx_audio_session_rl_warmup_pkt(s, s_port, rl->pkts_prepare_warmup, 0);
+    return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
+  }
+
+  /* check if we are reaching the warmup stage */
+  uint32_t delta_tsc = target_tsc - cur_tsc;
+  uint32_t trs = s->pacing.trs;
+  uint32_t delta_pkts = delta_tsc / trs;
+  if (delta_pkts > rl->max_warmup_trs) {
+    dbg("%s(%d,%d), delta_pkts %u too large\n", __func__, idx, s_port, delta_pkts);
+    return 0;
+  }
+  uint32_t accuracy = delta_tsc % trs;
+  if (accuracy > rl->required_accuracy_ns) {
+    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__, idx, s_port,
+        accuracy, delta_tsc, trs);
+    return 0;
+  }
+  dbg("%s(%d,%d), accuracy %u succ\n", __func__, idx, s_port, accuracy);
+
+  rl_port->trs_target_tsc = 0; /* clear target tsc */
+  /* sending the prepare pkts */
+  tx_audio_session_rl_warmup_pkt(s, s_port, rl->pkts_prepare_warmup, 0);
+  /* sending the warmup pkts */
+  for (int i = delta_pkts; i > 0; i--) {
+    tx_audio_session_rl_warmup_pkt(s, s_port, 0, 1);
+    /* re-calculate the delta */
+    uint32_t delta_tsc_now = target_tsc - mt_get_tsc(impl);
+    uint32_t delta_pkts_now = delta_tsc_now / trs;
+    if (delta_pkts_now < (i - 1)) {
+      dbg("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx, delta_pkts_now,
+          i);
+      i = delta_pkts_now; /* reset delta_pkts */
+      rl_port->stat_recalculate_warmup++;
+    }
+  }
+  /* sending the first pkt now */
+  return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
+}
+
+static int tx_audio_session_tasklet_rl_transmit(struct mtl_main_impl* impl,
+                                                struct st_tx_audio_session_impl* s,
+                                                int s_port) {
+  int ret;
+  struct rte_mbuf* pkt;
+  struct st_tx_audio_session_rl_info* rl = &s->rl;
+  struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
+  uint16_t tx;
+
+  /* check if any pending pkt */
+  pkt = s->trans_ring_inflight[s_port];
+  if (pkt) {
+    if (rl_port->trs_target_tsc) { /* waiting the first pkt */
+      tx = tx_audio_session_rl_first_pkt(impl, s, s_port, pkt);
+    } else {
+      tx = tx_audio_session_rl_tx_pkt(s, s_port, pkt);
+    }
+    if (tx < 1) {
+      s->stat_transmit_ret_code = -STI_RLTRS_BURST_INFLIGHT_FAIL;
+      return MTL_TASKLET_ALL_DONE;
+    }
+    s->trans_ring_inflight[s_port] = NULL;
+  }
+
+  /* try to dequeue pkt */
+  ret = mt_u64_fifo_get(s->trans_ring[s_port], (uint64_t*)&pkt);
+  if (ret < 0) {
+    s->stat_transmit_ret_code = -STI_RLTRS_DEQUEUE_FAIL;
+    return MTL_TASKLET_ALL_DONE; /* no pkt */
+  }
+
+  if (0 == rl_port->cur_pkt_idx) {
+    /* the first pkt, start warmup */
+    rl_port->trs_target_tsc = st_tx_mbuf_get_tsc(pkt);
+    tx = tx_audio_session_rl_first_pkt(impl, s, s_port, pkt);
+  } else {
+    tx = tx_audio_session_rl_tx_pkt(s, s_port, pkt);
+  }
+  if (tx < 1) {
+    s->trans_ring_inflight[s_port] = pkt;
+    s->stat_transmit_ret_code = -STI_RLTRS_BURST_FAIL;
+    return MTL_TASKLET_ALL_DONE;
   }
 
   return 0;
@@ -1042,7 +1391,10 @@ static int tx_audio_sessions_tasklet(void* priv) {
       pending += tx_audio_session_tasklet_rtp(impl, s);
 
     for (int port = 0; port < s->ops.num_port; port++) {
-      pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
+      if (s->rl_based_pacing)
+        pending += tx_audio_session_tasklet_rl_transmit(impl, s, port);
+      else
+        pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
     }
 
     if (s->time_measure) {
@@ -1140,9 +1492,10 @@ static int tx_audio_session_flush(struct st_tx_audio_sessions_mgr* mgr,
                                   struct st_tx_audio_session_impl* s) {
   int mgr_idx = mgr->idx, s_idx = s->idx;
 
+  if (s->rl_based_pacing) return 0; /* skip as rl pacing */
+
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
-    if (s->queue[i]) continue; /* skip as dedicate queue used */
 
     if (pool && rte_mempool_in_use_count(pool) &&
         rte_atomic32_read(&mgr->transmitter_started)) {
@@ -1402,48 +1755,6 @@ static int tx_audio_session_init_sw(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_audio_session_uinit_queue(struct mtl_main_impl* impl,
-                                        struct st_tx_audio_session_impl* s) {
-  MTL_MAY_UNUSED(impl);
-
-  for (int i = 0; i < s->ops.num_port; i++) {
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
-
-    if (s->queue[i]) {
-      mt_txq_flush(s->queue[i], mt_get_pad(impl, port));
-      mt_txq_put(s->queue[i]);
-      s->queue[i] = NULL;
-    }
-  }
-  return 0;
-}
-
-static int tx_audio_session_init_queue(struct mtl_main_impl* impl,
-                                       struct st_tx_audio_session_impl* s) {
-  int idx = s->idx;
-  enum mtl_port port;
-  uint16_t queue_id;
-
-  for (int i = 0; i < s->ops.num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-
-    struct mt_txq_flow flow;
-    memset(&flow, 0, sizeof(flow));
-    mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
-    flow.dst_port = s->ops.udp_port[i];
-    flow.gso_sz = s->st30_pkt_size - sizeof(struct mt_udp_hdr);
-    s->queue[i] = mt_txq_get(impl, port, &flow);
-    if (!s->queue[i]) {
-      tx_audio_session_uinit_queue(impl, s);
-      return -EIO;
-    }
-    queue_id = mt_txq_queue_id(s->queue[i]);
-    info("%s(%d), port(l:%d,p:%d), queue %d\n", __func__, idx, i, port, queue_id);
-  }
-
-  return 0;
-}
-
 static int tx_audio_session_attach(struct mtl_main_impl* impl,
                                    struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s,
@@ -1455,6 +1766,38 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
+
+  /* detect pacing */
+  double pkt_time = st30_get_packet_time(ops->ptime);
+  bool detect_rl = false;
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_AUTO) && (pkt_time < (NS_PER_MS / 2))) {
+    info("%s(%d), try detect rl as pkt_time %fns\n", __func__, idx, pkt_time);
+    detect_rl = true;
+  }
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_RL) || detect_rl) {
+    bool cap_rl = true;
+    /* check if all port support rl */
+    for (int i = 0; i < num_port; i++) {
+      enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+      enum st21_tx_pacing_way sys_pacing_way = mt_if(impl, port)->tx_pacing_way;
+      if (sys_pacing_way != ST21_TX_PACING_WAY_RL) {
+        if (detect_rl) {
+          info("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
+               port, sys_pacing_way);
+          cap_rl = false;
+          break;
+        } else {
+          err("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
+              port, sys_pacing_way);
+          return -ENOTSUP;
+        }
+      }
+    }
+    if (cap_rl) {
+      info("%s(%d), select rl based pacing for pkt_time %fns\n", __func__, idx, pkt_time);
+      s->rl_based_pacing = true;
+    }
+  }
 
   s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
@@ -1474,7 +1817,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
 
-    if (!(ops->flags & ST30_TX_FLAG_DEDICATE_QUEUE)) {
+    if (!s->rl_based_pacing) {
       ret = tx_audio_sessions_mgr_init_hw(impl, mgr, port);
       if (ret < 0) {
         err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
@@ -1553,10 +1896,10 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  if (ops->flags & ST30_TX_FLAG_DEDICATE_QUEUE) {
-    ret = tx_audio_session_init_queue(impl, s);
+  if (s->rl_based_pacing) {
+    ret = tx_audio_session_init_rl(impl, s);
     if (ret < 0) {
-      err("%s(%d), init dedicated queue fail %d\n", __func__, idx, ret);
+      err("%s(%d), init rl fail %d\n", __func__, idx, ret);
       tx_audio_session_uinit_sw(mgr, s);
       return ret;
     }
@@ -1566,8 +1909,10 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
 
   s->active = true;
 
-  info("%s(%d), pkt_len %u frame_size %u fps %f\n", __func__, idx, s->pkt_len,
-       s->st30_frame_size, (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts);
+  info("%s(%d), pkt_len %u frame_size %u fps %f, pacing_way %s\n", __func__, idx,
+       s->pkt_len, s->st30_frame_size,
+       (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,
+       audio_pacing_way_name(ops->pacing_way));
   return 0;
 }
 
@@ -1681,6 +2026,25 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
         s->stat_unrecoverable_error);
     /* not reset unrecoverable_error */
   }
+  if (s->rl_based_pacing) {
+    struct st_tx_audio_session_rl_port* rl_port = &s->rl.port_info[0];
+    notice("TX_AUDIO_SESSION(%d,%d): rl pkts %u pads %u warmup %u\n", m_idx, idx,
+           rl_port->stat_pkts_burst, rl_port->stat_pad_pkts_burst,
+           rl_port->stat_warmup_pkts_burst);
+    rl_port->stat_pkts_burst = 0;
+    rl_port->stat_pad_pkts_burst = 0;
+    rl_port->stat_warmup_pkts_burst = 0;
+    if (rl_port->stat_mismatch_sync_point) {
+      notice("TX_AUDIO_SESSION(%d,%d): mismatch sync point %u\n", m_idx, idx,
+             rl_port->stat_mismatch_sync_point);
+      rl_port->stat_mismatch_sync_point = 0;
+    }
+    if (rl_port->stat_recalculate_warmup) {
+      notice("TX_AUDIO_SESSION(%d,%d): recalculate warmup %u\n", m_idx, idx,
+             rl_port->stat_recalculate_warmup);
+      rl_port->stat_recalculate_warmup = 0;
+    }
+  }
   if (s->time_measure) {
     struct mt_stat_u64* stat_time = &s->stat_time;
     if (stat_time->cnt) {
@@ -1712,9 +2076,9 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s) {
   tx_audio_session_stat(mgr, s);
-  tx_audio_session_uinit_queue(mgr->parent, s);
+  tx_audio_session_uinit_rl(mgr->parent, s);
   tx_audio_session_uinit_sw(mgr, s);
-  if (!(s->ops.flags & ST30_TX_FLAG_DEDICATE_QUEUE)) {
+  if (!s->rl_based_pacing) {
     rte_atomic32_dec(&mgr->transmitter_clients);
   }
   return 0;

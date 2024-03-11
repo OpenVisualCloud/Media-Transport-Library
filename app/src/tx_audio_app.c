@@ -76,12 +76,10 @@ static void app_tx_audio_build_frame(struct st_app_tx_audio_session* s, void* fr
   uint8_t* dst = frame;
 
   if (s->st30_frame_cursor + frame_size > s->st30_source_end) {
-    int len = s->st30_source_end - s->st30_frame_cursor;
-    len = len / s->pkt_len * s->pkt_len;
-    if (len) mtl_memcpy(dst, s->st30_frame_cursor, len);
-    /* wrap back in the end */
-    mtl_memcpy(dst + len, s->st30_source_begin, frame_size - len);
-    s->st30_frame_cursor = s->st30_source_begin + frame_size - len;
+    /* reset to the start */
+    s->st30_frame_cursor = s->st30_source_begin;
+    mtl_memcpy(dst, s->st30_frame_cursor, s->st30_frame_size);
+    s->st30_frame_cursor += s->st30_frame_size;
   } else {
     mtl_memcpy(dst, src, s->st30_frame_size);
     s->st30_frame_cursor += s->st30_frame_size;
@@ -409,7 +407,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
     ops.flags |= ST30_TX_FLAG_USER_P_MAC;
   }
   if (ctx->tx_audio_build_pacing) ops.flags |= ST30_TX_FLAG_BUILD_PACING;
-  if (ctx->tx_audio_dedicate_queue) ops.flags |= ST30_TX_FLAG_DEDICATE_QUEUE;
+  ops.pacing_way = ctx->tx_audio_pacing_way;
   if (ctx->tx_audio_fifo_size) ops.fifo_size = ctx->tx_audio_fifo_size;
   if (ops.num_port > 1) {
     memcpy(ops.dip_addr[MTL_SESSION_PORT_R],

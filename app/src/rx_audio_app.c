@@ -70,9 +70,14 @@ static int app_rx_audio_compare_with_ref(struct st_app_rx_audio_session* session
     }
     if (session->st30_ref_cursor == old_ref) {
       if (ret) {
-        err("%s(%d), bad audio reference file, stop referencing\n", __func__,
-            session->idx);
-        app_rx_audio_close_source(session);
+        info("%s(%d), bad audio, stop referencing for current frame\n", __func__,
+             session->idx);
+        session->st30_ref_err++;
+        if (session->st30_ref_err > 100) {
+          err("%s(%d), too many bad audio err, stop referencing\n", __func__,
+              session->idx);
+          app_rx_audio_close_source(session);
+        }
         return ret;
       } else {
         break;
