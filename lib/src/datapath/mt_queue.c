@@ -219,6 +219,15 @@ int mt_txq_done_cleanup(struct mt_txq_entry* entry) {
   return 0;
 }
 
+int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
+  if (!entry->txq) {
+    err("%s(%u), not txq\n", __func__, entry->queue_id);
+    return -ENOTSUP;
+  }
+
+  return mt_dev_set_tx_bps(entry->parent, entry->txq, bytes_per_sec);
+}
+
 int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
   if (entry->tsq)
     return mt_tsq_flush(entry->parent, entry->tsq, pad);

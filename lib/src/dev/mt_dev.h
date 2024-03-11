@@ -37,7 +37,7 @@ static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
   return queue->queue_id;
 }
 int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
-int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
+int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                       uint64_t bytes_per_sec);
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                            struct rte_mbuf* pad);

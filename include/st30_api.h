@@ -60,11 +60,6 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * If enable the rtcp.
  */
 #define ST30_TX_FLAG_ENABLE_RTCP (MTL_BIT32(6))
-/**
- * Flag bit in flags of struct st30_tx_ops.
- * If use dedicated queue for TX.
- */
-#define ST30_TX_FLAG_DEDICATE_QUEUE (MTL_BIT32(7))
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -130,6 +125,20 @@ enum st30_type {
   ST30_TYPE_FRAME_LEVEL = 0, /**< app interface lib based on frame level */
   ST30_TYPE_RTP_LEVEL,       /**< app interface lib based on RTP level */
   ST30_TYPE_MAX,             /**< max value of this enum */
+};
+
+/**
+ * st30 tx pacing way
+ */
+enum st30_tx_pacing_way {
+  /** auto detected pacing */
+  ST30_TX_PACING_WAY_AUTO = 0,
+  /** rate limit based pacing */
+  ST30_TX_PACING_WAY_RL,
+  /** tsc based pacing */
+  ST30_TX_PACING_WAY_TSC,
+  /** Max value of this enum */
+  ST30_TX_PACING_WAY_MAX,
 };
 
 /**
@@ -281,6 +290,8 @@ struct st30_tx_ops {
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
 
+  /** Optional. The pacing engine */
+  enum st30_tx_pacing_way pacing_way;
   /** Optional. Synchronization source defined in RFC3550, if zero the session will assign
    * a random value */
   uint32_t ssrc;

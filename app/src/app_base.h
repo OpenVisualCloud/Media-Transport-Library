@@ -536,8 +536,8 @@ struct st_app_context {
   int tx_audio_session_cnt;
   int tx_audio_rtp_ring_size; /* the ring size for tx audio rtp type */
   bool tx_audio_build_pacing;
-  bool tx_audio_dedicate_queue;
   int tx_audio_fifo_size;
+  enum st30_tx_pacing_way tx_audio_pacing_way;
 
   struct st_app_tx_anc_session* tx_anc_sessions;
   char tx_anc_url[ST_APP_URL_MAX_LEN];

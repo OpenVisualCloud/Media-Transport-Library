@@ -115,7 +115,7 @@ enum st_args_cmd {
   ST_ARG_TX_NO_CHAIN,
   ST_ARG_MULTI_SRC_PORT,
   ST_ARG_AUDIO_BUILD_PACING,
-  ST_ARG_AUDIO_DEDICATE_QUEUE,
+  ST_ARG_AUDIO_TX_PACING,
   ST_ARG_AUDIO_FIFO_SIZE,
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
@@ -240,7 +240,7 @@ static struct option st_app_args_options[] = {
     {"tx_no_chain", no_argument, 0, ST_ARG_TX_NO_CHAIN},
     {"multi_src_port", no_argument, 0, ST_ARG_MULTI_SRC_PORT},
     {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
-    {"audio_dedicate_queue", no_argument, 0, ST_ARG_AUDIO_DEDICATE_QUEUE},
+    {"audio_tx_pacing", required_argument, 0, ST_ARG_AUDIO_TX_PACING},
     {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
@@ -750,8 +750,15 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_AUDIO_BUILD_PACING:
         ctx->tx_audio_build_pacing = true;
         break;
-      case ST_ARG_AUDIO_DEDICATE_QUEUE:
-        ctx->tx_audio_dedicate_queue = true;
+      case ST_ARG_AUDIO_TX_PACING:
+        if (!strcmp(optarg, "auto"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsc"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_TSC;
+        else
+          err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
       case ST_ARG_AUDIO_FIFO_SIZE:
         ctx->tx_audio_fifo_size = atoi(optarg);

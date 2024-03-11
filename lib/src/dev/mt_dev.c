@@ -1456,22 +1456,6 @@ static uint64_t ptp_from_tsc(struct mtl_main_impl* impl, enum mtl_port port) {
   return inf->real_time_base + tsc - inf->tsc_time_base;
 }
 
-int mt_dev_set_tx_bps(struct mtl_main_impl* impl, enum mtl_port port, uint16_t q,
-                      uint64_t bytes_per_sec) {
-  struct mt_interface* inf = mt_if(impl, port);
-
-  if (q >= inf->nb_tx_q) {
-    err("%s(%d), invalid queue %d\n", __func__, port, q);
-    return -EIO;
-  }
-
-  if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
-    dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
-  }
-
-  return 0;
-}
-
 struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
                                         struct mt_txq_flow* flow) {
   struct mt_interface* inf = mt_if(impl, port);
@@ -1714,6 +1698,27 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
 
   tx_queue->fatal_error = true;
   err("%s(%d), q %d masked as fatal error\n", __func__, port, queue_id);
+  return 0;
+}
+
+int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+                      uint64_t bytes_per_sec) {
+  enum mtl_port port = queue->port;
+  struct mt_interface* inf = mt_if(impl, port);
+  uint16_t queue_id = queue->queue_id;
+
+  if (queue_id >= inf->nb_tx_q) {
+    err("%s(%d), invalid queue %d\n", __func__, port, queue_id);
+    return -EIO;
+  }
+
+  if (inf->tx_pacing_way != ST21_TX_PACING_WAY_RL) {
+    err("%s(%d,%u), pacing %d is not rl\n", __func__, port, queue_id, inf->tx_pacing_way);
+    return -ENOTSUP;
+  }
+
+  dev_tx_queue_set_rl_rate(inf, queue_id, bytes_per_sec);
+
   return 0;
 }
 
