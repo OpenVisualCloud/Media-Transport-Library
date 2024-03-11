@@ -288,6 +288,7 @@ struct st_app_rx_audio_session {
   uint8_t* st30_ref_begin;
   uint8_t* st30_ref_end;
   uint8_t* st30_ref_cursor;
+  int st30_ref_err;
 
   pthread_t st30_app_thread;
   pthread_cond_t st30_wake_cond;

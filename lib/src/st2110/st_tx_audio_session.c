@@ -1313,11 +1313,11 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
     /* re-calculate the delta */
     uint32_t delta_tsc_now = target_tsc - mt_get_tsc(impl);
     uint32_t delta_pkts_now = delta_tsc_now / trs;
-    if (delta_pkts_now < i) {
+    if (delta_pkts_now < (i - 1)) {
+      dbg("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx, delta_pkts_now,
+          i);
       i = delta_pkts_now; /* reset delta_pkts */
       rl_port->stat_recalculate_warmup++;
-      err("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx, delta_pkts_now,
-          i);
     }
   }
   /* sending the first pkt now */
