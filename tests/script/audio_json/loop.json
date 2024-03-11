@@ -23,10 +23,10 @@
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
-                    "audio_format": "PCM16",
-                    "audio_channel": ["ST"],
+                    "audio_format": "PCM24",
+                    "audio_channel": ["U02"],
                     "audio_sampling": "48kHz",
-                    "audio_ptime": "0.125",
+                    "audio_ptime": "1",
                     "audio_url": "./test.wav"
                 }
             ]
@@ -46,10 +46,10 @@
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
-                    "audio_format": "PCM16",
-                    "audio_channel": ["ST"],
+                    "audio_format": "PCM24",
+                    "audio_channel": ["U02"],
                     "audio_sampling": "48kHz",
-                    "audio_ptime": "0.125",
+                    "audio_ptime": "1",
                     "audio_url": "./test.wav"
                 }
             ]

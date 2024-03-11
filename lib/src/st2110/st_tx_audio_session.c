@@ -1767,6 +1767,38 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  /* detect pacing */
+  double pkt_time = st30_get_packet_time(ops->ptime);
+  bool detect_rl = false;
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_AUTO) && (pkt_time < (NS_PER_MS / 2))) {
+    info("%s(%d), try detect rl as pkt_time %fns\n", __func__, idx, pkt_time);
+    detect_rl = true;
+  }
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_RL) || detect_rl) {
+    bool cap_rl = true;
+    /* check if all port support rl */
+    for (int i = 0; i < num_port; i++) {
+      enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+      enum st21_tx_pacing_way sys_pacing_way = mt_if(impl, port)->tx_pacing_way;
+      if (sys_pacing_way != ST21_TX_PACING_WAY_RL) {
+        if (detect_rl) {
+          info("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
+               port, sys_pacing_way);
+          cap_rl = false;
+          break;
+        } else {
+          err("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
+              port, sys_pacing_way);
+          return -ENOTSUP;
+        }
+      }
+    }
+    if (cap_rl) {
+      info("%s(%d), select rl based pacing for pkt_time %fns\n", __func__, idx, pkt_time);
+      s->rl_based_pacing = true;
+    }
+  }
+
   s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
@@ -1785,7 +1817,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
 
-    if (ops->pacing_way != ST30_TX_PACING_WAY_RL) {
+    if (s->rl_based_pacing) {
       ret = tx_audio_sessions_mgr_init_hw(impl, mgr, port);
       if (ret < 0) {
         err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
@@ -1848,20 +1880,6 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), tx_audio_session_init_pacing fail %d\n", __func__, idx, ret);
     return ret;
-  }
-
-  if (ops->pacing_way == ST30_TX_PACING_WAY_RL) {
-    /* check if all port support rl */
-    for (int i = 0; i < num_port; i++) {
-      enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
-      enum st21_tx_pacing_way sys_pacing_way = mt_if(impl, port)->tx_pacing_way;
-      if (sys_pacing_way != ST21_TX_PACING_WAY_RL) {
-        err("%s(%d), the port sys pacing way %d not capable to RL\n", __func__, port,
-            sys_pacing_way);
-        return -ENOTSUP;
-      }
-    }
-    s->rl_based_pacing = true;
   }
 
   for (int i = 0; i < num_port; i++) {
