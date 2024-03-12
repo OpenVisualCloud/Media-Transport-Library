@@ -259,6 +259,36 @@ int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port
   return -EINVAL;
 }
 
+int mt_audio_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
+                                     uint64_t input_bps, uint64_t profiled_bps) {
+  struct mt_audio_pacing_train_result* ptr = &mt_if(impl, port)->audio_pt_results[0];
+
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
+    if (ptr[i].input_bps) continue;
+    ptr[i].input_bps = input_bps;
+    ptr[i].profiled_bps = profiled_bps;
+    return 0;
+  }
+
+  err("%s(%d), no space\n", __func__, port);
+  return -ENOMEM;
+}
+
+int mt_audio_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
+                                        uint64_t input_bps, uint64_t* profiled_bps) {
+  struct mt_audio_pacing_train_result* ptr = &mt_if(impl, port)->audio_pt_results[0];
+
+  for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
+    if (input_bps == ptr[i].input_bps) {
+      *profiled_bps = ptr[i].profiled_bps;
+      return 0;
+    }
+  }
+
+  dbg("%s(%d), no entry for %" PRIu64 "\n", __func__, port, input_bps);
+  return -EINVAL;
+}
+
 void st_video_rtp_dump(enum mtl_port port, int idx, char* tag,
                        struct st20_rfc4175_rtp_hdr* rtp) {
   uint16_t line1_number = ntohs(rtp->row_number);

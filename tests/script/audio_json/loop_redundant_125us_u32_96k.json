@@ -33,14 +33,16 @@
         },
         {
             "dip": [
-                "local:1"
+                "local:1",
+                "local:0"
             ],
             "interface": [
-                0
+                0,
+                1
             ],
             "audio": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
@@ -57,13 +59,15 @@
         {
             "ip": [
                 "local:0",
+                "local:1",
             ],
             "interface": [
-                1
+                1,
+                0
             ],
             "audio": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
