@@ -24,11 +24,11 @@ void rv_tp_stat(struct st_rx_video_session_impl* s);
 int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s);
 int ra_tp_uinit(struct st_rx_audio_session_impl* s);
 
-void ra_tp_on_packet(struct st_rx_audio_session_impl* s, struct st_ra_tp_slot* slot,
+void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
                      uint32_t rtp_tmstamp, uint64_t pkt_time);
 
 void ra_tp_slot_parse_result(struct st_rx_audio_session_impl* s,
-                             struct st_ra_tp_slot* slot);
+                             enum mtl_session_port s_port);
 
 void ra_tp_stat(struct st_rx_audio_session_impl* s);
 

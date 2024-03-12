@@ -728,7 +728,7 @@ struct st_rx_video_sessions_mgr {
 
 struct st_tx_audio_session_pacing {
   double trs;               /* in ns for of 2 consecutive packets */
-  double pkt_time_sampling; /* time of each pkt in sampling(48k) */
+  double pkt_time_sampling; /* time of each pkt in sampling */
   uint64_t cur_epochs;      /* epoch of current pkt */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
@@ -896,10 +896,12 @@ struct st_audio_transmitter_impl {
   int inflight_cnt[MTL_PORT_MAX];          /* for stats */
 };
 
+/* tp for every 200ms */
 struct st_ra_tp_slot {
   uint32_t pkt_cnt;
   int32_t dpvr_min;
   int32_t dpvr_max;
+  int32_t dpvr_first;
   int64_t dpvr_sum;
   enum st_rx_tp_compliant compliant;
 
@@ -913,27 +915,36 @@ struct st_ra_tp_slot {
 struct st_ra_tp_stat {
   uint32_t stat_compliant_result[ST_RX_TP_COMPLIANT_MAX];
   struct st_ra_tp_slot slot;
-  int32_t dpvr_first;
+  int32_t tsdf_min;
+  int32_t tsdf_max;
+  int64_t tsdf_sum;
+  uint32_t tsdf_cnt;
 };
 
 struct st_rx_audio_tp {
-  /* time of the frame in nanoseconds */
-  double frame_time;
-  /* time of the frame in sampling */
-  double frame_time_sampling;
+  /* time of the packet in nanoseconds */
+  double pkt_time;
+  /* time of the packet in sampling */
+  double pkt_time_sampling;
   /* Pass Criteria*/
-  /* Delta Packet vs RTP */
-  int32_t dpvr_max_pass_narrow; /* in us */
-  int32_t dpvr_max_pass_wide;   /* in us */
+  /* Maximum Delta Packet vs RTP */
+  /* in us, 3(1 packetization + 1 transit + 1 jitter) pkt time */
+  int32_t dpvr_max_pass_narrow;
+  /* in us, 19(1 packetization + 1 transit + 17 jitter) pkt tim */
+  int32_t dpvr_max_pass_wide;
   /* Maximum Timestamped Delay Factor */
-  int32_t tsdf_max_pass; /* in us */
+  int32_t tsdf_max_pass_narrow; /* in us */
+  int32_t tsdf_max_pass_wide;   /* in us */
+
+  uint64_t prev_pkt_time[MTL_SESSION_PORT_MAX]; /* ns */
 
   /* timing info for each frame */
-  struct st_ra_tp_slot slot;
+  struct st_ra_tp_slot slot[MTL_SESSION_PORT_MAX];
   /* for the status */
-  struct st_ra_tp_stat stat;
+  struct st_ra_tp_stat stat[MTL_SESSION_PORT_MAX];
+  uint32_t stat_bursted_cnt[MTL_SESSION_PORT_MAX];
 
-  uint64_t prev_pkt_time; /* ns */
+  uint64_t last_parse_time;
 };
 
 struct st_rx_audio_session_impl {
