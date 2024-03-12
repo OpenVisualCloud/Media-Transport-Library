@@ -1147,12 +1147,11 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   /* sync every 10ms */
   rl->pkts_per_sync = (double)NS_PER_S / s->pacing.trs / 100;
 
-  uint64_t initial_bytes_per_sec = tx_audio_session_initial_rl_bps(s);
-
   for (int i = 0; i < s->ops.num_port; i++) {
     struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[i];
     port = mt_port_logic2phy(s->port_maps, i);
 
+    uint64_t initial_bytes_per_sec = tx_audio_session_initial_rl_bps(s);
     int profiled = mt_audio_pacing_train_result_search(impl, port, initial_bytes_per_sec,
                                                        &profiled_per_sec);
 
@@ -1186,8 +1185,8 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
         return -EIO;
       }
       if ((j == 0) && (profiled < 0)) { /* only profile on the first */
-        uint64_t trained = tx_audio_session_profiling_rl_bps(impl, s, MTL_SESSION_PORT_P,
-                                                             initial_bytes_per_sec, j);
+        uint64_t trained =
+            tx_audio_session_profiling_rl_bps(impl, s, i, initial_bytes_per_sec, j);
         if (!trained) {
           tx_audio_session_uinit_rl(impl, s);
           return -EIO;
