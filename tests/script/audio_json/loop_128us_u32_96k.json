@@ -19,7 +19,7 @@
             ],
             "video": [
                 {
-                    "replicas": 1,
+                    "replicas": 0,
                     "type": "frame",
                     "pacing": "gap",
                     "start_port": 20000,

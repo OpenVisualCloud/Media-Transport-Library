@@ -98,6 +98,8 @@ struct st_tests_context {
   enum mtl_rss_mode rss_mode;
   bool same_dual_port;
 
+  enum st30_tx_pacing_way tx_audio_pacing_way;
+
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
   st20_converter_dev_handle converter_dev_handle;

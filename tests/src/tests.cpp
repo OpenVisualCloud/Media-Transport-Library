@@ -47,6 +47,7 @@ enum test_args_cmd {
   TEST_ARG_DHCP,
   TEST_ARG_MCAST_ONLY,
   TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
+  TEST_ARG_AUDIO_TX_PACING,
 };
 
 static struct option test_args_options[] = {
@@ -83,6 +84,7 @@ static struct option test_args_options[] = {
     {"dhcp", no_argument, 0, TEST_ARG_DHCP},
     {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
     {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
+    {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
 
     {0, 0, 0, 0}};
 
@@ -271,6 +273,16 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         break;
       case TEST_ARG_ALLOW_ACROSS_NUMA_CORE:
         p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
+        break;
+      case TEST_ARG_AUDIO_TX_PACING:
+        if (!strcmp(optarg, "auto"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsc"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_TSC;
+        else
+          err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
       default:
         break;

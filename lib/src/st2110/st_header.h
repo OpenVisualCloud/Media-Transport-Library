@@ -759,6 +759,8 @@ struct st_tx_audio_session_rl_port {
   int cur_queue;
   int cur_pkt_idx;
   uint64_t trs_target_tsc;
+  /* inflight padding */
+  uint32_t trs_pad_inflight_num;
 
   uint32_t stat_pkts_burst;
   uint32_t stat_pad_pkts_burst;
@@ -804,8 +806,8 @@ struct st_tx_audio_session_impl {
   bool pacing_in_build; /* if control pacing in the build stage */
   bool time_measure;
 
-  /* rl based pacing */
-  bool rl_based_pacing;
+  enum st30_tx_pacing_way tx_pacing_way;
+  /* for rl based pacing */
   struct st_tx_audio_session_rl_info rl;
 
   uint16_t st30_frames_cnt; /* numbers of frames requested */
