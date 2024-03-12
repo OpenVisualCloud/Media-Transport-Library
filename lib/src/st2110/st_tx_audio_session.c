@@ -1407,7 +1407,7 @@ static int tx_audio_sessions_tasklet(void* priv) {
       pending += tx_audio_session_tasklet_rtp(impl, s);
 
     for (int port = 0; port < s->ops.num_port; port++) {
-      if (s->rl_based_pacing)
+      if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL)
         pending += tx_audio_session_tasklet_rl_transmit(impl, s, port);
       else
         pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
@@ -1508,7 +1508,7 @@ static int tx_audio_session_flush(struct st_tx_audio_sessions_mgr* mgr,
                                   struct st_tx_audio_session_impl* s) {
   int mgr_idx = mgr->idx, s_idx = s->idx;
 
-  if (s->rl_based_pacing) return 0; /* skip as rl pacing */
+  if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL) return 0; /* skip as rl pacing */
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
@@ -1784,20 +1784,24 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) return ret;
 
   /* detect pacing */
+  s->tx_pacing_way = ST30_TX_PACING_WAY_TSC;
   double pkt_time = st30_get_packet_time(ops->ptime);
   bool detect_rl = false;
   if ((ops->pacing_way == ST30_TX_PACING_WAY_AUTO) && (pkt_time < (NS_PER_MS / 2))) {
     info("%s(%d), try detect rl as pkt_time %fns\n", __func__, idx, pkt_time);
     detect_rl = true;
   }
-  if ((ops->pacing_way == ST30_TX_PACING_WAY_RL) || detect_rl) {
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_RL) && (pkt_time < (NS_PER_MS * 2))) {
+    detect_rl = true;
+  }
+  if (detect_rl) {
     bool cap_rl = true;
     /* check if all port support rl */
     for (int i = 0; i < num_port; i++) {
       enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
       enum st21_tx_pacing_way sys_pacing_way = mt_if(impl, port)->tx_pacing_way;
       if (sys_pacing_way != ST21_TX_PACING_WAY_RL) {
-        if (detect_rl) {
+        if (ops->pacing_way == ST30_TX_PACING_WAY_AUTO) {
           info("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
                port, sys_pacing_way);
           cap_rl = false;
@@ -1811,7 +1815,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     }
     if (cap_rl) {
       info("%s(%d), select rl based pacing for pkt_time %fns\n", __func__, idx, pkt_time);
-      s->rl_based_pacing = true;
+      s->tx_pacing_way = ST30_TX_PACING_WAY_RL;
     }
   }
 
@@ -1833,7 +1837,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     s->eth_ipv4_cksum_offload[i] = mt_if_has_offload_ipv4_cksum(impl, port);
     s->eth_has_chain[i] = mt_if_has_multi_seg(impl, port);
 
-    if (!s->rl_based_pacing) {
+    if (s->tx_pacing_way != ST30_TX_PACING_WAY_RL) {
       ret = tx_audio_sessions_mgr_init_hw(impl, mgr, port);
       if (ret < 0) {
         err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
@@ -1912,7 +1916,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  if (s->rl_based_pacing) {
+  if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL) {
     ret = tx_audio_session_init_rl(impl, s);
     if (ret < 0) {
       err("%s(%d), init rl fail %d\n", __func__, idx, ret);
@@ -1928,7 +1932,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   info("%s(%d), pkt_len %u frame_size %u fps %f, pacing_way %s\n", __func__, idx,
        s->pkt_len, s->st30_frame_size,
        (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,
-       audio_pacing_way_name(ops->pacing_way));
+       audio_pacing_way_name(s->tx_pacing_way));
   return 0;
 }
 
@@ -2042,7 +2046,7 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
         s->stat_unrecoverable_error);
     /* not reset unrecoverable_error */
   }
-  if (s->rl_based_pacing) {
+  if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL) {
     struct st_tx_audio_session_rl_port* rl_port = &s->rl.port_info[0];
     notice("TX_AUDIO_SESSION(%d,%d): rl pkts %u pads %u warmup %u\n", m_idx, idx,
            rl_port->stat_pkts_burst, rl_port->stat_pad_pkts_burst,
@@ -2094,7 +2098,7 @@ static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
   tx_audio_session_stat(mgr, s);
   tx_audio_session_uinit_rl(mgr->parent, s);
   tx_audio_session_uinit_sw(mgr, s);
-  if (!s->rl_based_pacing) {
+  if (s->tx_pacing_way != ST30_TX_PACING_WAY_RL) {
     rte_atomic32_dec(&mgr->transmitter_clients);
   }
   return 0;

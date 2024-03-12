@@ -806,8 +806,8 @@ struct st_tx_audio_session_impl {
   bool pacing_in_build; /* if control pacing in the build stage */
   bool time_measure;
 
-  /* rl based pacing */
-  bool rl_based_pacing;
+  enum st30_tx_pacing_way tx_pacing_way;
+  /* for rl based pacing */
   struct st_tx_audio_session_rl_info rl;
 
   uint16_t st30_frames_cnt; /* numbers of frames requested */

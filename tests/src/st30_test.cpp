@@ -458,6 +458,7 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
     ops_tx.payload_type = ST30_TEST_PAYLOAD_TYPE;
     ops_tx.ssrc = i ? i + 0x66666666 : 0;
     ops_tx.ptime = ptime[i];
+    ops_tx.pacing_way = ctx->tx_audio_pacing_way;
     ops_tx.framebuff_size =
         st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
     EXPECT_GE(ops_tx.framebuff_size, 0);
@@ -864,6 +865,7 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
     ops_tx.fmt = ST30_FMT_PCM24;
     ops_tx.payload_type = ST30_TEST_PAYLOAD_TYPE;
     ops_tx.ptime = ST30_PTIME_1MS;
+    ops_tx.pacing_way = ctx->tx_audio_pacing_way;
     ops_tx.framebuff_size =
         st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
@@ -1157,6 +1159,7 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
     ops_tx.fmt = fmt[i];
     ops_tx.payload_type = ST30_TEST_PAYLOAD_TYPE;
     ops_tx.ptime = ST30_PTIME_1MS;
+    ops_tx.pacing_way = ctx->tx_audio_pacing_way;
     ops_tx.framebuff_size =
         st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
     ;
@@ -1348,6 +1351,7 @@ static void st30_create_after_start_test(enum st30_type type[],
       ops_tx.fmt = fmt[i];
       ops_tx.payload_type = ST30_TEST_PAYLOAD_TYPE;
       ops_tx.ptime = ST30_PTIME_1MS;
+      ops_tx.pacing_way = ctx->tx_audio_pacing_way;
       ops_tx.framebuff_size =
           st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
       ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
