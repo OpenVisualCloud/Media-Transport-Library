@@ -1137,7 +1137,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
   rl->pkts_prepare_warmup = 4;
   rl->pads_per_st30_pkt = 3;
-  rl->max_warmup_trs = 4;
+  rl->max_warmup_trs = 4; /* max 4 trs warmup sync */
   /* sync every 10ms */
   rl->pkts_per_sync = (double)NS_PER_S / s->pacing.trs / 100;
 
@@ -1217,11 +1217,12 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
   rte_mbuf_refcnt_update(rl_port->pad, pads_per_st30_pkt);
   tx = mt_txq_burst(queue, pads, pads_per_st30_pkt);
   if (tx != pads_per_st30_pkt) {
-    /* how to deal fail here */
-    err("%s(%d,%d), sending %u pad pkts fail\n", __func__, s->idx, s_port,
-        pads_per_st30_pkt);
+    dbg("%s(%d,%d), sending %u pad pkts only %u succ\n", __func__, s->idx, s_port,
+        pads_per_st30_pkt, tx);
+    /* save to pad inflight */
+    rl_port->trs_pad_inflight_num = pads_per_st30_pkt - tx;
   }
-  rl_port->stat_pad_pkts_burst += pads_per_st30_pkt;
+  rl_port->stat_pad_pkts_burst += tx;
 
   rl_port->cur_pkt_idx++;
   if (rl_port->cur_pkt_idx >= rl->pkts_per_sync) {
@@ -1283,7 +1284,7 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
         __func__, s->idx, s_port, cur_tsc, target_tsc);
     rl_port->trs_target_tsc = 0; /* clear target tsc */
     rl_port->stat_mismatch_sync_point++;
-    /* 3 dummy pkts to fill the rl burst buffer */
+    /* dummy pkts to fill the rl burst buffer */
     tx_audio_session_rl_warmup_pkt(s, s_port, rl->pkts_prepare_warmup, 0);
     return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
   }
@@ -1346,6 +1347,21 @@ static int tx_audio_session_tasklet_rl_transmit(struct mtl_main_impl* impl,
       return MTL_TASKLET_ALL_DONE;
     }
     s->trans_ring_inflight[s_port] = NULL;
+  }
+
+  /* check if any padding inflight pkts in transmitter */
+  if (rl_port->trs_pad_inflight_num > 0) {
+    int cur_queue = rl_port->cur_queue;
+    struct mt_txq_entry* queue = rl_port->queue[cur_queue];
+    struct rte_mbuf* pad = rl_port->pad;
+
+    tx = mt_txq_burst(queue, &pad, 1);
+    rl_port->trs_pad_inflight_num -= tx;
+    if (tx < 1) {
+      s->stat_transmit_ret_code = -STI_RLTRS_BURST_PAD_INFLIGHT_FAIL;
+    }
+
+    return MTL_TASKLET_HAS_PENDING;
   }
 
   /* try to dequeue pkt */
