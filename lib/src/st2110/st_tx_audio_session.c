@@ -1119,6 +1119,12 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
     entry_in_sum++;
   }
   double actual_per_sec = actual_per_sec_sum / entry_in_sum;
+  double ratio = actual_per_sec / expect_per_sec;
+  if (ratio > 1.1 || ratio < 0.9) {
+    err("%s(%d), fail, expect %f but actual %f\n", __func__, idx, expect_per_sec,
+        actual_per_sec);
+    return 0;
+  }
   info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__, idx,
        expect_per_sec, actual_per_sec,
        ((double)mt_get_tsc(impl) - train_start_tsc) / NS_PER_S);
@@ -1131,7 +1137,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   struct st_tx_audio_session_rl_info* rl = &s->rl;
   enum mtl_port port;
   uint16_t queue_id;
-  uint64_t bytes_per_sec;
+  uint64_t profiled_per_sec = 0;
 
   rl->pad_pkt_size = MTL_UDP_MAX_BYTES;
   rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
@@ -1141,11 +1147,14 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   /* sync every 10ms */
   rl->pkts_per_sync = (double)NS_PER_S / s->pacing.trs / 100;
 
-  bytes_per_sec = tx_audio_session_initial_rl_bps(s);
+  uint64_t initial_bytes_per_sec = tx_audio_session_initial_rl_bps(s);
 
   for (int i = 0; i < s->ops.num_port; i++) {
     struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[i];
     port = mt_port_logic2phy(s->port_maps, i);
+
+    int profiled = mt_audio_pacing_train_result_search(impl, port, initial_bytes_per_sec,
+                                                       &profiled_per_sec);
 
     /* pad pkt */
     rl_port->pad = mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port,
@@ -1164,7 +1173,10 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
     for (int j = 0; j < ST30_TX_RL_QUEUES_USED; j++) {
       struct mt_txq_flow flow;
       memset(&flow, 0, sizeof(flow));
-      flow.bytes_per_sec = bytes_per_sec;
+      if (profiled < 0)
+        flow.bytes_per_sec = initial_bytes_per_sec;
+      else
+        flow.bytes_per_sec = profiled_per_sec;
       mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
       flow.dst_port = s->ops.udp_port[i];
       flow.gso_sz = s->st30_pkt_size - sizeof(struct mt_udp_hdr);
@@ -1173,16 +1185,22 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
         tx_audio_session_uinit_rl(impl, s);
         return -EIO;
       }
-      if (j == 0) { /* only profile on the first */
-        bytes_per_sec = tx_audio_session_profiling_rl_bps(impl, s, MTL_SESSION_PORT_P,
-                                                          bytes_per_sec, j);
-        info("%s(%d), profiled bytes_per_sec %" PRIu64 "\n", __func__, idx,
-             bytes_per_sec);
-        int ret = mt_txq_set_tx_bps(rl_port->queue[j], bytes_per_sec);
+      if ((j == 0) && (profiled < 0)) { /* only profile on the first */
+        uint64_t trained = tx_audio_session_profiling_rl_bps(impl, s, MTL_SESSION_PORT_P,
+                                                             initial_bytes_per_sec, j);
+        if (!trained) {
+          tx_audio_session_uinit_rl(impl, s);
+          return -EIO;
+        }
+
+        mt_audio_pacing_train_result_add(impl, port, initial_bytes_per_sec, trained);
+        info("%s(%d), trained bytes_per_sec %" PRIu64 "\n", __func__, idx, trained);
+        int ret = mt_txq_set_tx_bps(rl_port->queue[j], trained);
         if (ret < 0) {
           tx_audio_session_uinit_rl(impl, s);
           return ret;
         }
+        initial_bytes_per_sec = trained;
       }
       queue_id = mt_txq_queue_id(rl_port->queue[j]);
       info("%s(%d), port(l:%d,p:%d), queue %d at sync %d\n", __func__, idx, i, port,

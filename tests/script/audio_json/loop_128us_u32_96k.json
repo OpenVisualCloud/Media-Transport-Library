@@ -40,7 +40,7 @@
             ],
             "audio": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
@@ -63,7 +63,7 @@
             ],
             "audio": [
                 {
-                    "replicas": 1,
+                    "replicas": 2,
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,

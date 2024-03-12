@@ -571,6 +571,11 @@ struct mt_sch_mgr {
   bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
 };
 
+struct mt_audio_pacing_train_result {
+  uint64_t input_bps;    /* input, byte per sec */
+  uint64_t profiled_bps; /* profiled result */
+};
+
 struct mt_pacing_train_result {
   uint64_t rl_bps;           /* input, byte per sec */
   float pacing_pad_interval; /* result */
@@ -689,6 +694,8 @@ struct mt_interface {
   bool tx_rl_root_active;
   /* video rl pacing train result */
   struct mt_pacing_train_result pt_results[MT_MAX_RL_ITEMS];
+  /* audio rl pacing train result */
+  struct mt_audio_pacing_train_result audio_pt_results[MT_MAX_RL_ITEMS];
 
   /* function ops per interface(pf/vf) */
   uint64_t (*ptp_get_time_fn)(struct mtl_main_impl* impl, enum mtl_port port);
