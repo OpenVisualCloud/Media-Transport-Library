@@ -74,9 +74,14 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 #define ST30_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
 /**
  * Flag bit in flags of struct st30_rx_ops.
- * Enable the timing analyze
+ * Enable the timing analyze in the stat dump
  */
-#define ST30_RX_FLAG_ENABLE_TIMING_PARSER (MTL_BIT32(16))
+#define ST30_RX_FLAG_TIMING_PARSER_STAT (MTL_BIT32(16))
+/**
+ * Flag bit in flags of struct st30_rx_ops.
+ * Enable the timing analyze info by st30_rx_tp_meta of notify_timing_parser_result
+ */
+#define ST30_RX_FLAG_TIMING_PARSER_META (MTL_BIT32(17))
 
 /** default time in the fifo between packet builder and pacing */
 #define ST30_TX_FIFO_DEFAULT_TIME_MS (10)
@@ -264,6 +269,38 @@ struct st30_rx_frame_meta {
 };
 
 /**
+ * st30 rx timing parser meta for every 200ms
+ *
+ * dpvr: Delta Packet vs RTP, us.
+ * ipt: Inter-packet time, ns
+ * tsdf: Timestamped Delay Factor, us.
+ */
+struct st30_rx_tp_meta {
+  /** the max of dpvr(us) for current report period */
+  int32_t dpvr_max;
+  /** the min of dpvr(us) for current report period */
+  int32_t dpvr_min;
+  /** the average of dpvr(us) for current report period */
+  float dpvr_avg;
+  /** the max of ipt(ns) for current report period */
+  int32_t ipt_max;
+  /** the min of ipt(ns) for current report period */
+  int32_t ipt_min;
+  /** the average of ipt(ns) for current report period */
+  float ipt_avg;
+  /** the tsdf(us) for current report period */
+  int32_t tsdf;
+
+  /** RX timing parser compliant result */
+  enum st_rx_tp_compliant compliant;
+  /** the failed cause if compliant is not ST_RX_TP_COMPLIANT_NARROW */
+  char failed_cause[64];
+
+  /* packets count in current report period */
+  uint32_t pkts_cnt;
+};
+
+/**
  * The structure describing how to create a tx st2110-30(audio) session.
  * Include the PCIE port and other required info
  */
@@ -352,6 +389,8 @@ struct st30_tx_ops {
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
+  /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
+  uint32_t rl_accuracy_ns;
 
   /**
    * size for each sample group,
@@ -440,6 +479,13 @@ struct st30_rx_ops {
    * routine.
    */
   int (*notify_rtp_ready)(void* priv);
+  /**
+   * Mandatory for ST30_RX_FLAG_TIMING_PARSER_META. The callback to notify the rx timing
+   * parser result for every 200ms . And only non-block method can be used in this
+   * callback as it run from lcore tasklet routine.
+   */
+  int (*notify_timing_parser_result)(void* priv, enum mtl_session_port port,
+                                     struct st30_rx_tp_meta* tp);
 
   /**
    * size for each sample group,

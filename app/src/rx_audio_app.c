@@ -179,6 +179,23 @@ static int app_rx_audio_rtp_ready(void* priv) {
   return 0;
 }
 
+static int app_rx_audio_timing_parser_result(void* priv, enum mtl_session_port port,
+                                             struct st30_rx_tp_meta* tp) {
+  struct st_app_rx_audio_session* s = priv;
+
+  s->stat_compliant_result[tp->compliant]++;
+  s->ipt_max = ST_MAX(s->ipt_max, tp->ipt_max);
+  if (tp->compliant != ST_RX_TP_COMPLIANT_NARROW) {
+    warn("%s(%d,%d), failed cause %s, pkts_cnt %u\n", __func__, s->idx, port,
+         tp->failed_cause, tp->pkts_cnt);
+    warn("%s(%d,%d), tsdf %dus, ipt(ns) min %d max %d avg %f\n", __func__, s->idx, port,
+         tp->tsdf, tp->ipt_min, tp->ipt_max, tp->ipt_avg);
+    dbg("%s(%d,%d), dpvr(us) min %d max %d avg %f\n", __func__, s->idx, port,
+        tp->dpvr_min, tp->dpvr_max, tp->dpvr_avg);
+  }
+  return 0;
+}
+
 static int app_rx_audio_uinit(struct st_app_rx_audio_session* s) {
   int ret, idx = s->idx;
 
@@ -217,6 +234,22 @@ static int app_rx_audio_result(struct st_app_rx_audio_session* s) {
            ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
                                                                               : "FAILED",
            framerate, s->stat_frame_total_received);
+  return 0;
+}
+
+static int app_rx_audio_stat(struct st_app_rx_audio_session* s) {
+  s->stat_dump_cnt++;
+  if (s->enable_timing_parser_meta) {
+    if ((s->stat_dump_cnt % 6) == 0) {
+      /* report every 1 min */
+      warn("%s(%d), COMPLIANT NARROW %d WIDE %d FAILED %d, ipt max %fus\n", __func__,
+           s->idx, s->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
+           s->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
+           s->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED], (float)s->ipt_max / 1000);
+      memset(s->stat_compliant_result, 0, sizeof(s->stat_compliant_result));
+      s->ipt_max = 0;
+    }
+  }
   return 0;
 }
 
@@ -286,7 +319,12 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.rtp_ring_size = ctx->rx_audio_rtp_ring_size ? ctx->rx_audio_rtp_ring_size : 16;
   if (audio && audio->enable_rtcp) ops.flags |= ST30_RX_FLAG_ENABLE_RTCP;
-  if (ctx->enable_timing_parser) ops.flags |= ST30_RX_FLAG_ENABLE_TIMING_PARSER;
+  if (ctx->enable_timing_parser) ops.flags |= ST30_RX_FLAG_TIMING_PARSER_STAT;
+  if (ctx->enable_timing_parser_meta) {
+    ops.notify_timing_parser_result = app_rx_audio_timing_parser_result;
+    ops.flags |= ST30_RX_FLAG_TIMING_PARSER_META;
+    s->enable_timing_parser_meta = true;
+  }
 
   st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
   st_pthread_cond_init(&s->st30_wake_cond, NULL);
@@ -366,6 +404,19 @@ int st_app_rx_audio_sessions_result(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_audio_session_cnt; i++) {
     s = &ctx->rx_audio_sessions[i];
     ret += app_rx_audio_result(s);
+  }
+
+  return ret;
+}
+
+int st_app_rx_audio_sessions_stat(struct st_app_context* ctx) {
+  int i, ret = 0;
+  struct st_app_rx_audio_session* s;
+
+  if (!ctx->rx_audio_sessions) return 0;
+  for (i = 0; i < ctx->rx_audio_session_cnt; i++) {
+    s = &ctx->rx_audio_sessions[i];
+    ret += app_rx_audio_stat(s);
   }
 
   return ret;

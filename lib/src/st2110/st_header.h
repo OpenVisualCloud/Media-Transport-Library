@@ -767,6 +767,7 @@ struct st_tx_audio_session_rl_port {
   uint32_t stat_warmup_pkts_burst;
   uint32_t stat_mismatch_sync_point;
   uint32_t stat_recalculate_warmup;
+  uint32_t stat_hit_backup_cp;
 };
 
 struct st_tx_audio_session_rl_info {
@@ -898,18 +899,12 @@ struct st_audio_transmitter_impl {
 
 /* tp for every 200ms */
 struct st_ra_tp_slot {
-  uint32_t pkt_cnt;
-  int32_t dpvr_min;
-  int32_t dpvr_max;
+  struct st30_rx_tp_meta meta;
+
   int32_t dpvr_first;
   int64_t dpvr_sum;
-  enum st_rx_tp_compliant compliant;
-
   /* Inter-packet time(ns), packet level check */
   int64_t ipt_sum;
-  int32_t ipt_max;
-  int32_t ipt_min;
-  float ipt_avg;
 };
 
 struct st_ra_tp_stat {
@@ -955,7 +950,11 @@ struct st_rx_audio_session_impl {
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_audio_session_handle_impl* st30_handle;
   bool time_measure;
+
   bool enable_timing_parser;
+  bool enable_timing_parser_stat;
+  bool enable_timing_parser_meta;
+  struct st_rx_audio_tp* tp;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
@@ -982,8 +981,6 @@ struct st_rx_audio_session_impl {
   struct st30_rx_frame_meta meta; /* only for frame type */
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
-
-  struct st_rx_audio_tp* tp;
 
   /* status */
   int st30_stat_pkts_dropped;

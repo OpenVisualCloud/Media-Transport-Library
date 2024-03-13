@@ -469,6 +469,7 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
       ops.rtp_ring_size = 16;
   }
   if (audio && audio->enable_rtcp) ops.flags |= ST30_TX_FLAG_ENABLE_RTCP;
+  ops.rl_accuracy_ns = ctx->tx_audio_rl_accuracy_us * 1000;
 
   handle = st30_tx_create(ctx->st, &ops);
   if (!handle) {
