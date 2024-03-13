@@ -3044,12 +3044,12 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
 
   s->st22_expect_frame_size = 0;
   s->burst_loss_cnt = 0;
-  if (s->ops.flags & ST20_RX_FLAG_TIMING_PARSER_STAT) {
+  if (ops->flags & ST20_RX_FLAG_TIMING_PARSER_STAT) {
     info("%s(%d), enable the timing analyze stat\n", __func__, idx);
     s->enable_timing_parser = true;
     s->enable_timing_parser_stat = true;
   }
-  if (s->ops.flags & ST20_RX_FLAG_TIMING_PARSER_META) {
+  if (ops->flags & ST20_RX_FLAG_TIMING_PARSER_META) {
     info("%s(%d), enable the timing analyze meta\n", __func__, idx);
     s->enable_timing_parser = true;
     s->enable_timing_parser_meta = true;

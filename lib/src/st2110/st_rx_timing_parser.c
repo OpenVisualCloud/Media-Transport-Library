@@ -364,15 +364,39 @@ static void ra_tp_stat_init(struct st_rx_audio_tp* tp) {
   }
 }
 
+static void ra_tp_compliant_set_cause(struct st30_rx_tp_meta* meta, char* cause) {
+  snprintf(meta->failed_cause, sizeof(meta->failed_cause), "%s", cause);
+}
+
 static enum st_rx_tp_compliant ra_tp_slot_compliant(struct st_rx_audio_tp* tp,
                                                     struct st_ra_tp_slot* slot,
                                                     int32_t tsdf) {
   /* dpvr and tsdf check */
-  if ((slot->dpvr_min < 0) || (slot->dpvr_max > tp->dpvr_max_pass_wide))
+  if (slot->meta.dpvr_min < 0) {
+    ra_tp_compliant_set_cause(&slot->meta, "dpvr exceed min");
     return ST_RX_TP_COMPLIANT_FAILED;
-  if ((tsdf < 0) || (tsdf > tp->tsdf_max_pass_wide)) return ST_RX_TP_COMPLIANT_FAILED;
-  if (slot->dpvr_max > tp->dpvr_max_pass_narrow) return ST_RX_TP_COMPLIANT_WIDE;
-  if (tsdf > tp->tsdf_max_pass_narrow) return ST_RX_TP_COMPLIANT_WIDE;
+  }
+  if (slot->meta.dpvr_max > tp->dpvr_max_pass_wide) {
+    ra_tp_compliant_set_cause(&slot->meta, "dpvr exceed max wide");
+    return ST_RX_TP_COMPLIANT_FAILED;
+  }
+  if (tsdf < 0) {
+    ra_tp_compliant_set_cause(&slot->meta, "tsdf exceed min");
+    return ST_RX_TP_COMPLIANT_FAILED;
+  }
+  if (tsdf > tp->tsdf_max_pass_wide) {
+    ra_tp_compliant_set_cause(&slot->meta, "tsdf exceed max wide");
+    return ST_RX_TP_COMPLIANT_FAILED;
+  }
+  if (slot->meta.dpvr_max > tp->dpvr_max_pass_narrow) {
+    ra_tp_compliant_set_cause(&slot->meta, "dpvr exceed max narrow");
+    return ST_RX_TP_COMPLIANT_WIDE;
+  }
+  if (tsdf > tp->tsdf_max_pass_narrow) {
+    ra_tp_compliant_set_cause(&slot->meta, "tsdf exceed max narrow");
+    return ST_RX_TP_COMPLIANT_WIDE;
+  }
+  ra_tp_compliant_set_cause(&slot->meta, "narrow");
   return ST_RX_TP_COMPLIANT_NARROW;
 }
 
@@ -382,12 +406,17 @@ void ra_tp_slot_parse_result(struct st_rx_audio_session_impl* s,
   struct st_ra_tp_slot* slot = &s->tp->slot[s_port];
   dbg("%s(%d,%d), start\n", __func__, s->idx, s_port);
 
+  slot->meta.ipt_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->ipt_sum);
+  slot->meta.dpvr_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->dpvr_sum);
+
+  /* calculate tsdf */
   int32_t tsdf =
-      (slot->dpvr_max - slot->dpvr_first) - (slot->dpvr_min - slot->dpvr_first);
+      (slot->meta.dpvr_max - slot->dpvr_first) - (slot->meta.dpvr_min - slot->dpvr_first);
+  slot->meta.tsdf = tsdf;
 
   /* parse tp compliant for current frame */
   enum st_rx_tp_compliant compliant = ra_tp_slot_compliant(tp, slot, tsdf);
-  slot->compliant = compliant;
+  slot->meta.compliant = compliant;
 
   /* update stat */
   struct st_ra_tp_stat* stat = &tp->stat[s_port];
@@ -400,18 +429,16 @@ void ra_tp_slot_parse_result(struct st_rx_audio_session_impl* s,
   stat->tsdf_cnt++;
 
   stat_slot->dpvr_sum += slot->dpvr_sum;
-  stat_slot->dpvr_min = RTE_MIN(stat_slot->dpvr_min, slot->dpvr_min);
-  stat_slot->dpvr_max = RTE_MAX(stat_slot->dpvr_max, slot->dpvr_max);
+  stat_slot->meta.dpvr_min = RTE_MIN(stat_slot->meta.dpvr_min, slot->meta.dpvr_min);
+  stat_slot->meta.dpvr_max = RTE_MAX(stat_slot->meta.dpvr_max, slot->meta.dpvr_max);
 
   if (!stat_slot->dpvr_first) stat_slot->dpvr_first = slot->dpvr_first;
 
   stat_slot->ipt_sum += slot->ipt_sum;
-  stat_slot->ipt_min = RTE_MIN(stat_slot->ipt_min, slot->ipt_min);
-  stat_slot->ipt_max = RTE_MAX(stat_slot->ipt_max, slot->ipt_max);
+  stat_slot->meta.ipt_min = RTE_MIN(stat_slot->meta.ipt_min, slot->meta.ipt_min);
+  stat_slot->meta.ipt_max = RTE_MAX(stat_slot->meta.ipt_max, slot->meta.ipt_max);
 
-  stat_slot->pkt_cnt += slot->pkt_cnt;
-
-  ra_tp_slot_init(slot);
+  stat_slot->meta.pkts_cnt += slot->meta.pkts_cnt;
 }
 
 void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
@@ -429,11 +456,11 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s
   double latency = fpt_delta - diff_rtp_ts_ns;
   double dpvr = latency / NS_PER_US;
 
-  slot->pkt_cnt++;
+  slot->meta.pkts_cnt++;
 
   /* calculate Delta Packet vs RTP */
-  slot->dpvr_min = RTE_MIN(dpvr, slot->dpvr_min);
-  slot->dpvr_max = RTE_MAX(dpvr, slot->dpvr_max);
+  slot->meta.dpvr_min = RTE_MIN(dpvr, slot->meta.dpvr_min);
+  slot->meta.dpvr_max = RTE_MAX(dpvr, slot->meta.dpvr_max);
   slot->dpvr_sum += dpvr;
 
   if (!slot->dpvr_first) slot->dpvr_first = dpvr;
@@ -442,8 +469,8 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s
     double ipt = (double)pkt_time - tp->prev_pkt_time[s_port];
 
     slot->ipt_sum += ipt;
-    slot->ipt_min = RTE_MIN(ipt, slot->ipt_min);
-    slot->ipt_max = RTE_MAX(ipt, slot->ipt_max);
+    slot->meta.ipt_min = RTE_MIN(ipt, slot->meta.ipt_min);
+    slot->meta.ipt_max = RTE_MAX(ipt, slot->meta.ipt_max);
   }
   tp->prev_pkt_time[s_port] = pkt_time;
 }
@@ -505,18 +532,18 @@ void ra_tp_stat(struct st_rx_audio_session_impl* s) {
          stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
          stat->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
          stat->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
-    float dpvr_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->dpvr_sum);
+    float dpvr_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->dpvr_sum);
     info("%s(%d), dpvr(us) AVG %.2f MIN %d MAX %d, pkt_cnt %u\n", __func__, idx, dpvr_avg,
-         stat_slot->dpvr_min, stat_slot->dpvr_max, stat_slot->pkt_cnt);
+         stat_slot->meta.dpvr_min, stat_slot->meta.dpvr_max, stat_slot->meta.pkts_cnt);
 
     /* Maximum Timestamped Delay Factor */
     float tsdf_avg = rv_tp_calculate_avg(stat->tsdf_cnt, stat->tsdf_sum);
     info("%s(%d), tsdf(us) AVG %.2f MIN %d MAX %d\n", __func__, idx, tsdf_avg,
          stat->tsdf_min, stat->tsdf_max);
 
-    float ipt_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->ipt_sum);
+    float ipt_avg = rv_tp_calculate_avg(stat_slot->meta.pkts_cnt, stat_slot->ipt_sum);
     info("%s(%d), ipt(ns) AVG %.2f MIN %d MAX %d\n", __func__, idx, ipt_avg,
-         stat_slot->ipt_min, stat_slot->ipt_max);
+         stat_slot->meta.ipt_min, stat_slot->meta.ipt_max);
 
     if (tp->stat_bursted_cnt[s_port]) {
       info("%s(%d), untrusted bursted cnt %u\n", __func__, idx,
@@ -531,9 +558,9 @@ void ra_tp_stat(struct st_rx_audio_session_impl* s) {
 void ra_tp_slot_init(struct st_ra_tp_slot* slot) {
   memset(slot, 0, sizeof(*slot));
 
-  slot->dpvr_max = INT_MIN;
-  slot->dpvr_min = INT_MAX;
+  slot->meta.dpvr_max = INT_MIN;
+  slot->meta.dpvr_min = INT_MAX;
 
-  slot->ipt_max = INT_MIN;
-  slot->ipt_min = INT_MAX;
+  slot->meta.ipt_max = INT_MIN;
+  slot->meta.ipt_min = INT_MAX;
 }

@@ -298,7 +298,12 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       uint64_t now = mt_get_tsc(impl);
       if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
         for (int sp = 0; sp < ops->num_port; sp++) {
+          struct st_ra_tp_slot* slot = &s->tp->slot[s_port];
           ra_tp_slot_parse_result(s, sp);
+          if (s->enable_timing_parser_meta) {
+            ops->notify_timing_parser_result(ops->priv, s_port, &slot->meta);
+          }
+          ra_tp_slot_init(slot);
         }
         tp->last_parse_time = now;
       }
@@ -635,9 +640,19 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
-  if (s->ops.flags & ST30_RX_FLAG_ENABLE_TIMING_PARSER) {
-    info("%s(%d), enable the timing analyze\n", __func__, idx);
+  if (ops->flags & ST30_RX_FLAG_TIMING_PARSER_STAT) {
+    info("%s(%d), enable the timing analyze stat\n", __func__, idx);
     s->enable_timing_parser = true;
+    s->enable_timing_parser_stat = true;
+  }
+  if (ops->flags & ST30_RX_FLAG_TIMING_PARSER_META) {
+    if (!ops->notify_timing_parser_result) {
+      err("%s(%d), notify_timing_parser_result callback is NULL\n", __func__, idx);
+      return -EIO;
+    }
+    info("%s(%d), enable the timing analyze meta\n", __func__, idx);
+    s->enable_timing_parser = true;
+    s->enable_timing_parser_meta = true;
   }
 
   if (s->enable_timing_parser) {
@@ -730,7 +745,7 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
     s->stat_max_notify_frame_us = 0;
   }
 
-  if (s->enable_timing_parser) ra_tp_stat(s);
+  if (s->enable_timing_parser_stat) ra_tp_stat(s);
 }
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,

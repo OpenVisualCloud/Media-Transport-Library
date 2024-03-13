@@ -65,7 +65,8 @@ enum st_args_cmd {
   ST_ARG_TEST_TIME,
   ST_ARG_PTP_UNICAST_ADDR,
   ST_ARG_CNI_THREAD,
-  ST_ARG_RX_TIMING_PARSER,
+  ST_ARG_RX_TIMING_PARSER_STAT,
+  ST_ARG_RX_TIMING_PARSER_META,
   ST_ARG_RX_BURST_SZ,
   ST_ARG_USER_LCORES,
   ST_ARG_SCH_DATA_QUOTA,
@@ -193,7 +194,8 @@ static struct option st_app_args_options[] = {
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
     {"ptp_unicast", no_argument, 0, ST_ARG_PTP_UNICAST_ADDR},
     {"cni_thread", no_argument, 0, ST_ARG_CNI_THREAD},
-    {"rx_timing_parser", no_argument, 0, ST_ARG_RX_TIMING_PARSER},
+    {"rx_timing_parser", no_argument, 0, ST_ARG_RX_TIMING_PARSER_STAT},
+    {"rx_timing_parser_meta", no_argument, 0, ST_ARG_RX_TIMING_PARSER_META},
     {"rx_burst_size", required_argument, 0, ST_ARG_RX_BURST_SZ},
     {"lcores", required_argument, 0, ST_ARG_USER_LCORES},
     {"sch_data_quota", required_argument, 0, ST_ARG_SCH_DATA_QUOTA},
@@ -579,8 +581,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_TEST_TIME:
         ctx->test_time_s = atoi(optarg);
         break;
-      case ST_ARG_RX_TIMING_PARSER:
+      case ST_ARG_RX_TIMING_PARSER_STAT:
         ctx->enable_timing_parser = true;
+        p->flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
+        break;
+      case ST_ARG_RX_TIMING_PARSER_META:
+        ctx->enable_timing_parser_meta = true;
         p->flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
         break;
       case ST_ARG_RX_BURST_SZ:

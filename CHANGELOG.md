@@ -14,6 +14,7 @@
 * manager: add a daemon server for privileged control management, see manager/README.md.
 * backend/xdp: add UDP port filter XDP program for splitting data path traffic.
 * ice: update driver to 1.13.7
+* rx/timing_parser: add timing_parser for audio, see `ST30_RX_FLAG_TIMING_PARSER_STAT` and `ST30_RX_FLAG_TIMING_PARSER_META`
 
 ## Changelog for 23.12
 

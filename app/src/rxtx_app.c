@@ -86,6 +86,7 @@ static void app_stat(void* priv) {
   st_app_rx_st22p_sessions_stat(ctx);
   st_app_rx_st20p_sessions_stat(ctx);
   st_app_rx_st20r_sessions_stat(ctx);
+  st_app_rx_audio_sessions_stat(ctx);
 
   if (ctx->ptp_systime_sync) {
     app_dump_ptp_sync_stat(ctx);
