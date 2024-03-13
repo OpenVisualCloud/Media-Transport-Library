@@ -354,59 +354,80 @@ int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
 }
 
 static void ra_tp_stat_init(struct st_rx_audio_tp* tp) {
-  struct st_ra_tp_stat* stat = &tp->stat;
+  for (int s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
+    struct st_ra_tp_stat* stat = &tp->stat[s_port];
 
-  memset(stat, 0, sizeof(*stat));
-  ra_tp_slot_init(&stat->slot);
+    memset(stat, 0, sizeof(*stat));
+    ra_tp_slot_init(&stat->slot);
+    stat->tsdf_max = INT_MIN;
+    stat->tsdf_min = INT_MAX;
+  }
 }
 
 static enum st_rx_tp_compliant ra_tp_slot_compliant(struct st_rx_audio_tp* tp,
-                                                    struct st_ra_tp_slot* slot) {
-  /* dpvr check */
+                                                    struct st_ra_tp_slot* slot,
+                                                    int32_t tsdf) {
+  /* dpvr and tsdf check */
   if ((slot->dpvr_min < 0) || (slot->dpvr_max > tp->dpvr_max_pass_wide))
     return ST_RX_TP_COMPLIANT_FAILED;
+  if ((tsdf < 0) || (tsdf > tp->tsdf_max_pass_wide)) return ST_RX_TP_COMPLIANT_FAILED;
   if (slot->dpvr_max > tp->dpvr_max_pass_narrow) return ST_RX_TP_COMPLIANT_WIDE;
+  if (tsdf > tp->tsdf_max_pass_narrow) return ST_RX_TP_COMPLIANT_WIDE;
   return ST_RX_TP_COMPLIANT_NARROW;
 }
 
 void ra_tp_slot_parse_result(struct st_rx_audio_session_impl* s,
-                             struct st_ra_tp_slot* slot) {
+                             enum mtl_session_port s_port) {
   struct st_rx_audio_tp* tp = s->tp;
+  struct st_ra_tp_slot* slot = &s->tp->slot[s_port];
+  dbg("%s(%d,%d), start\n", __func__, s->idx, s_port);
+
+  int32_t tsdf =
+      (slot->dpvr_max - slot->dpvr_first) - (slot->dpvr_min - slot->dpvr_first);
 
   /* parse tp compliant for current frame */
-  enum st_rx_tp_compliant compliant = ra_tp_slot_compliant(tp, slot);
+  enum st_rx_tp_compliant compliant = ra_tp_slot_compliant(tp, slot, tsdf);
   slot->compliant = compliant;
 
   /* update stat */
-  struct st_ra_tp_stat* stat = &tp->stat;
+  struct st_ra_tp_stat* stat = &tp->stat[s_port];
   struct st_ra_tp_slot* stat_slot = &stat->slot;
 
   stat->stat_compliant_result[compliant]++;
+  stat->tsdf_min = RTE_MIN(stat->tsdf_min, tsdf);
+  stat->tsdf_max = RTE_MAX(stat->tsdf_max, tsdf);
+  stat->tsdf_sum += tsdf;
+  stat->tsdf_cnt++;
 
   stat_slot->dpvr_sum += slot->dpvr_sum;
   stat_slot->dpvr_min = RTE_MIN(stat_slot->dpvr_min, slot->dpvr_min);
   stat_slot->dpvr_max = RTE_MAX(stat_slot->dpvr_max, slot->dpvr_max);
+
+  if (!stat_slot->dpvr_first) stat_slot->dpvr_first = slot->dpvr_first;
 
   stat_slot->ipt_sum += slot->ipt_sum;
   stat_slot->ipt_min = RTE_MIN(stat_slot->ipt_min, slot->ipt_min);
   stat_slot->ipt_max = RTE_MAX(stat_slot->ipt_max, slot->ipt_max);
 
   stat_slot->pkt_cnt += slot->pkt_cnt;
+
+  ra_tp_slot_init(slot);
 }
 
-void ra_tp_on_packet(struct st_rx_audio_session_impl* s, struct st_ra_tp_slot* slot,
+void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
                      uint32_t rtp_tmstamp, uint64_t pkt_time) {
   struct st_rx_audio_tp* tp = s->tp;
+  struct st_ra_tp_slot* slot = &tp->slot[s_port];
 
-  uint64_t epochs = (double)pkt_time / tp->frame_time;
-  uint64_t epoch_tmstamp = (double)epochs * tp->frame_time;
+  uint64_t epochs = (double)pkt_time / tp->pkt_time;
+  uint64_t epoch_tmstamp = (double)epochs * tp->pkt_time;
   double fpt_delta = (double)pkt_time - epoch_tmstamp;
-  uint64_t tmstamp64 = epochs * tp->frame_time_sampling;
+  uint64_t tmstamp64 = epochs * tp->pkt_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
   double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
-  double diff_rtp_ts_ns = diff_rtp_ts * tp->frame_time / tp->frame_time_sampling;
+  double diff_rtp_ts_ns = diff_rtp_ts * tp->pkt_time / tp->pkt_time_sampling;
   double latency = fpt_delta - diff_rtp_ts_ns;
-  double dpvr = latency / 1000;
+  double dpvr = latency / NS_PER_US;
 
   slot->pkt_cnt++;
 
@@ -415,17 +436,16 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, struct st_ra_tp_slot* s
   slot->dpvr_max = RTE_MAX(dpvr, slot->dpvr_max);
   slot->dpvr_sum += dpvr;
 
-  struct st_ra_tp_stat* stat = &tp->stat;
-  if (!stat->dpvr_first) stat->dpvr_first = dpvr;
+  if (!slot->dpvr_first) slot->dpvr_first = dpvr;
 
-  if (tp->prev_pkt_time) {
-    double ipt = (double)pkt_time - tp->prev_pkt_time;
+  if (tp->prev_pkt_time[s_port]) {
+    double ipt = (double)pkt_time - tp->prev_pkt_time[s_port];
 
     slot->ipt_sum += ipt;
     slot->ipt_min = RTE_MIN(ipt, slot->ipt_min);
     slot->ipt_max = RTE_MAX(ipt, slot->ipt_max);
   }
-  tp->prev_pkt_time = pkt_time;
+  tp->prev_pkt_time[s_port] = pkt_time;
 }
 
 int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s) {
@@ -442,20 +462,23 @@ int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s) {
   }
   s->tp = tp;
 
-  int sampling = (ops->sampling == ST30_SAMPLING_48K) ? 48 : 96;
-  tp->frame_time = (double)1000000000.0 * 1 / 1000; /* 1ms, in ns */
-  tp->frame_time_sampling = (double)(sampling * 1000) * 1 / 1000;
+  tp->pkt_time = st30_get_packet_time(ops->ptime);
+  int sample_num = st30_get_sample_num(ops->ptime, ops->sampling);
+  tp->pkt_time_sampling = (double)(sample_num * 1000) * 1 / 1000;
 
-  tp->dpvr_max_pass_narrow = 3 * tp->frame_time / 1000; /* in us */
-  tp->dpvr_max_pass_wide = 20 * tp->frame_time / 1000;  /* in us */
-  tp->tsdf_max_pass = 17 * tp->frame_time / 1000;       /* in us */
+  tp->dpvr_max_pass_narrow = (1 + 1 + 1) * tp->pkt_time / NS_PER_US; /* in us */
+  tp->dpvr_max_pass_wide = (1 + 1 + 17) * tp->pkt_time / NS_PER_US;  /* in us */
+  tp->tsdf_max_pass_narrow = 1 * tp->pkt_time / NS_PER_US;           /* in us */
+  tp->tsdf_max_pass_wide = 17 * tp->pkt_time / NS_PER_US;            /* in us */
 
   ra_tp_stat_init(tp);
 
+  tp->last_parse_time = mt_get_tsc(impl);
+
   info("%s(%d), Delta Packet vs RTP Pass Criteria in us, narrow %d wide %d\n", __func__,
        idx, tp->dpvr_max_pass_narrow, tp->dpvr_max_pass_wide);
-  info("%s(%d), Maximum Timestamped Delay Factor Pass Criteria %d (us)\n", __func__, idx,
-       tp->tsdf_max_pass);
+  info("%s(%d), Timestamped Delay Factor Pass Criteria in us, narrow %d wide %d\n",
+       __func__, idx, tp->tsdf_max_pass_narrow, tp->tsdf_max_pass_wide);
 
   return 0;
 }
@@ -472,24 +495,35 @@ int ra_tp_uinit(struct st_rx_audio_session_impl* s) {
 void ra_tp_stat(struct st_rx_audio_session_impl* s) {
   int idx = s->idx;
   struct st_rx_audio_tp* tp = s->tp;
-  struct st_ra_tp_stat* stat = &tp->stat;
-  struct st_ra_tp_slot* stat_slot = &stat->slot;
+  if (!tp) return;
 
-  info("%s(%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx,
-       stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
-       stat->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
-       stat->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
-  float dpvr_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->dpvr_sum);
-  info("%s(%d), dpvr AVG %.2f MIN %d MAX %d, pkt_cnt %u\n", __func__, idx, dpvr_avg,
-       stat_slot->dpvr_min, stat_slot->dpvr_max, stat_slot->pkt_cnt);
-  float ipt_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->ipt_sum);
-  info("%s(%d), ipt AVG %.2f MIN %d MAX %d\n", __func__, idx, ipt_avg, stat_slot->ipt_min,
-       stat_slot->ipt_max);
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    struct st_ra_tp_stat* stat = &tp->stat[s_port];
+    struct st_ra_tp_slot* stat_slot = &stat->slot;
 
-  /* Maximum Timestamped Delay Factor */
-  int32_t tsdf =
-      (stat_slot->dpvr_max - stat->dpvr_first) - (stat_slot->dpvr_min - stat->dpvr_first);
-  info("%s(%d), tsdf %d\n", __func__, idx, tsdf);
+    info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, s_port,
+         stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
+         stat->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
+         stat->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
+    float dpvr_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->dpvr_sum);
+    info("%s(%d), dpvr(us) AVG %.2f MIN %d MAX %d, pkt_cnt %u\n", __func__, idx, dpvr_avg,
+         stat_slot->dpvr_min, stat_slot->dpvr_max, stat_slot->pkt_cnt);
+
+    /* Maximum Timestamped Delay Factor */
+    float tsdf_avg = rv_tp_calculate_avg(stat->tsdf_cnt, stat->tsdf_sum);
+    info("%s(%d), tsdf(us) AVG %.2f MIN %d MAX %d\n", __func__, idx, tsdf_avg,
+         stat->tsdf_min, stat->tsdf_max);
+
+    float ipt_avg = rv_tp_calculate_avg(stat_slot->pkt_cnt, stat_slot->ipt_sum);
+    info("%s(%d), ipt(ns) AVG %.2f MIN %d MAX %d\n", __func__, idx, ipt_avg,
+         stat_slot->ipt_min, stat_slot->ipt_max);
+
+    if (tp->stat_bursted_cnt[s_port]) {
+      info("%s(%d), untrusted bursted cnt %u\n", __func__, idx,
+           tp->stat_bursted_cnt[s_port]);
+      tp->stat_bursted_cnt[s_port] = 0;
+    }
+  }
 
   ra_tp_stat_init(tp);
 }

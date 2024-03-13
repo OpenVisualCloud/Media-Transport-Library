@@ -252,6 +252,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     s->st30_stat_pkts_dropped++;
+    if (s->enable_timing_parser) {
+      enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+      ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
+    }
     return -EIO;
   }
   /* update seq id */
@@ -265,7 +269,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       s->st30_stat_pkts_dropped++;
       return -EIO;
     }
-    if (s->enable_timing_parser) ra_tp_slot_init(&s->tp->slot);
   }
   uint32_t offset = s->st30_pkt_idx * s->pkt_len;
   if ((offset + s->pkt_len) > s->st30_frame_size) {
@@ -281,7 +284,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   if (s->enable_timing_parser) {
     enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-    ra_tp_on_packet(s, &s->tp->slot, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
+    ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
   }
 
   // notify frame done
@@ -289,7 +292,17 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     struct st30_rx_frame_meta* meta = &s->meta;
     uint64_t tsc_start = 0;
 
-    if (s->enable_timing_parser) ra_tp_slot_parse_result(s, &s->tp->slot);
+    if (s->enable_timing_parser) {
+      /* parse timing result every 200ms */
+      struct st_rx_audio_tp* tp = s->tp;
+      uint64_t now = mt_get_tsc(impl);
+      if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
+        for (int sp = 0; sp < ops->num_port; sp++) {
+          ra_tp_slot_parse_result(s, sp);
+        }
+        tp->last_parse_time = now;
+      }
+    }
 
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = tmstamp;
@@ -412,6 +425,9 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
     if (rv) {
       rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
+      if (s->enable_timing_parser && s->tp) {
+        if (rv > 1) s->tp->stat_bursted_cnt[s_port]++;
+      }
     }
 
     if (rv) done = false;
