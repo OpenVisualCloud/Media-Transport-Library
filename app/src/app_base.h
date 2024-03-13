@@ -299,6 +299,7 @@ struct st_app_rx_audio_session {
   int stat_frame_total_received;
   uint64_t stat_frame_first_rx_time;
   double expect_fps;
+  uint32_t stat_dump_cnt;
 
   bool enable_timing_parser_meta;
   uint32_t stat_compliant_result[ST_RX_TP_COMPLIANT_MAX];
@@ -543,6 +544,7 @@ struct st_app_context {
   int tx_audio_rtp_ring_size; /* the ring size for tx audio rtp type */
   bool tx_audio_build_pacing;
   int tx_audio_fifo_size;
+  int tx_audio_rl_accuracy_us;
   enum st30_tx_pacing_way tx_audio_pacing_way;
 
   struct st_app_tx_anc_session* tx_anc_sessions;

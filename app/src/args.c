@@ -117,6 +117,7 @@ enum st_args_cmd {
   ST_ARG_MULTI_SRC_PORT,
   ST_ARG_AUDIO_BUILD_PACING,
   ST_ARG_AUDIO_TX_PACING,
+  ST_ARG_AUDIO_RL_ACCURACY_US,
   ST_ARG_AUDIO_FIFO_SIZE,
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
@@ -243,6 +244,7 @@ static struct option st_app_args_options[] = {
     {"multi_src_port", no_argument, 0, ST_ARG_MULTI_SRC_PORT},
     {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
     {"audio_tx_pacing", required_argument, 0, ST_ARG_AUDIO_TX_PACING},
+    {"audio_rl_accuracy", required_argument, 0, ST_ARG_AUDIO_RL_ACCURACY_US},
     {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
@@ -765,6 +767,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
           ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_TSC;
         else
           err("%s, unknow audio tx pacing %s\n", __func__, optarg);
+        break;
+      case ST_ARG_AUDIO_RL_ACCURACY_US:
+        ctx->tx_audio_rl_accuracy_us = atoi(optarg);
         break;
       case ST_ARG_AUDIO_FIFO_SIZE:
         ctx->tx_audio_fifo_size = atoi(optarg);

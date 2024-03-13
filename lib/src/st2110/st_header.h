@@ -767,6 +767,7 @@ struct st_tx_audio_session_rl_port {
   uint32_t stat_warmup_pkts_burst;
   uint32_t stat_mismatch_sync_point;
   uint32_t stat_recalculate_warmup;
+  uint32_t stat_hit_backup_cp;
 };
 
 struct st_tx_audio_session_rl_info {

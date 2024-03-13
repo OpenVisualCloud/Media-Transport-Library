@@ -389,6 +389,8 @@ struct st30_tx_ops {
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
+  /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
+  uint32_t rl_accuracy_ns;
 
   /**
    * size for each sample group,

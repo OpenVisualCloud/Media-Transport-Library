@@ -1140,7 +1140,13 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   uint64_t profiled_per_sec = 0;
 
   rl->pad_pkt_size = MTL_UDP_MAX_BYTES;
-  rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
+  if (s->ops.rl_accuracy_ns) {
+    rl->required_accuracy_ns = s->ops.rl_accuracy_ns; /* 40us */
+    info("%s(%d), user required accuracy %uns\n", __func__, idx,
+         rl->required_accuracy_ns);
+  } else {
+    rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
+  }
   rl->pkts_prepare_warmup = 4;
   rl->pads_per_st30_pkt = 3;
   rl->max_warmup_trs = 4; /* max 4 trs warmup sync */
@@ -1321,6 +1327,10 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
     return 0;
   }
   dbg("%s(%d,%d), accuracy %u succ\n", __func__, idx, s_port, accuracy);
+  if (delta_pkts != rl->max_warmup_trs) {
+    /* hit on backup check point */
+    rl_port->stat_hit_backup_cp++;
+  }
 
   rl_port->trs_target_tsc = 0; /* clear target tsc */
   /* sending the prepare pkts */
@@ -2072,14 +2082,19 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
     rl_port->stat_pad_pkts_burst = 0;
     rl_port->stat_warmup_pkts_burst = 0;
     if (rl_port->stat_mismatch_sync_point) {
-      notice("TX_AUDIO_SESSION(%d,%d): mismatch sync point %u\n", m_idx, idx,
-             rl_port->stat_mismatch_sync_point);
+      warn("TX_AUDIO_SESSION(%d,%d): mismatch sync point %u\n", m_idx, idx,
+           rl_port->stat_mismatch_sync_point);
       rl_port->stat_mismatch_sync_point = 0;
     }
     if (rl_port->stat_recalculate_warmup) {
-      notice("TX_AUDIO_SESSION(%d,%d): recalculate warmup %u\n", m_idx, idx,
-             rl_port->stat_recalculate_warmup);
+      warn("TX_AUDIO_SESSION(%d,%d): recalculate warmup %u\n", m_idx, idx,
+           rl_port->stat_recalculate_warmup);
       rl_port->stat_recalculate_warmup = 0;
+    }
+    if (rl_port->stat_hit_backup_cp) {
+      warn("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n", m_idx, idx,
+           rl_port->stat_hit_backup_cp);
+      rl_port->stat_hit_backup_cp = 0;
     }
   }
   if (s->time_measure) {

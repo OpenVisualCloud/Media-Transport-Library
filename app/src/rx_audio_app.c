@@ -238,13 +238,17 @@ static int app_rx_audio_result(struct st_app_rx_audio_session* s) {
 }
 
 static int app_rx_audio_stat(struct st_app_rx_audio_session* s) {
+  s->stat_dump_cnt++;
   if (s->enable_timing_parser_meta) {
-    warn("%s(%d), COMPLIANT NARROW %d WIDE %d FAILED %d, ipt max %fus\n", __func__,
-         s->idx, s->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
-         s->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
-         s->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED], (float)s->ipt_max / 1000);
-    memset(s->stat_compliant_result, 0, sizeof(s->stat_compliant_result));
-    s->ipt_max = 0;
+    if ((s->stat_dump_cnt % 6) == 0) {
+      /* report every 1 min */
+      warn("%s(%d), COMPLIANT NARROW %d WIDE %d FAILED %d, ipt max %fus\n", __func__,
+           s->idx, s->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
+           s->stat_compliant_result[ST_RX_TP_COMPLIANT_WIDE],
+           s->stat_compliant_result[ST_RX_TP_COMPLIANT_FAILED], (float)s->ipt_max / 1000);
+      memset(s->stat_compliant_result, 0, sizeof(s->stat_compliant_result));
+      s->ipt_max = 0;
+    }
   }
   return 0;
 }
