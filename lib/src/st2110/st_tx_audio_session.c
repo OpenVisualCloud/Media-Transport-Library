@@ -2092,8 +2092,8 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
       rl_port->stat_recalculate_warmup = 0;
     }
     if (rl_port->stat_hit_backup_cp) {
-      warn("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n", m_idx, idx,
-           rl_port->stat_hit_backup_cp);
+      notice("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n", m_idx, idx,
+             rl_port->stat_hit_backup_cp);
       rl_port->stat_hit_backup_cp = 0;
     }
   }

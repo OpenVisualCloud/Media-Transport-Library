@@ -186,8 +186,8 @@ static int app_rx_audio_timing_parser_result(void* priv, enum mtl_session_port p
   s->stat_compliant_result[tp->compliant]++;
   s->ipt_max = ST_MAX(s->ipt_max, tp->ipt_max);
   if (tp->compliant != ST_RX_TP_COMPLIANT_NARROW) {
-    warn("%s(%d,%d), failed cause %s, pkts_cnt %u\n", __func__, s->idx, port,
-         tp->failed_cause, tp->pkts_cnt);
+    warn("%s(%d,%d), compliant %d, failed cause %s, pkts_cnt %u\n", __func__, s->idx,
+         port, tp->compliant, tp->failed_cause, tp->pkts_cnt);
     warn("%s(%d,%d), tsdf %dus, ipt(ns) min %d max %d avg %f\n", __func__, s->idx, port,
          tp->tsdf, tp->ipt_min, tp->ipt_max, tp->ipt_avg);
     dbg("%s(%d,%d), dpvr(us) min %d max %d avg %f\n", __func__, s->idx, port,

@@ -298,10 +298,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       uint64_t now = mt_get_tsc(impl);
       if ((now - tp->last_parse_time) > (200 * NS_PER_MS)) {
         for (int sp = 0; sp < ops->num_port; sp++) {
-          struct st_ra_tp_slot* slot = &s->tp->slot[s_port];
+          struct st_ra_tp_slot* slot = &s->tp->slot[sp];
           ra_tp_slot_parse_result(s, sp);
           if (s->enable_timing_parser_meta) {
-            ops->notify_timing_parser_result(ops->priv, s_port, &slot->meta);
+            ops->notify_timing_parser_result(ops->priv, sp, &slot->meta);
           }
           ra_tp_slot_init(slot);
         }
