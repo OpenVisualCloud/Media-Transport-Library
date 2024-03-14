@@ -545,6 +545,7 @@ struct st_app_context {
   bool tx_audio_build_pacing;
   int tx_audio_fifo_size;
   int tx_audio_rl_accuracy_us;
+  int tx_audio_rl_offset_us;
   enum st30_tx_pacing_way tx_audio_pacing_way;
 
   struct st_app_tx_anc_session* tx_anc_sessions;
