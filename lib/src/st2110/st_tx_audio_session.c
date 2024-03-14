@@ -315,6 +315,8 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   pacing->pacing_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
+  dbg("%s(%d), epochs %" PRIu64 ", rtp_time_stamp %u\n", __func__, s->idx, epochs,
+      pacing->rtp_time_stamp);
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, s->idx,
@@ -1147,6 +1149,9 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   } else {
     rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
   }
+  if (s->ops.rl_offset_ns) {
+    info("%s(%d), user required offset %dns\n", __func__, idx, s->ops.rl_offset_ns);
+  }
   rl->pkts_prepare_warmup = 4;
   rl->pads_per_st30_pkt = 3;
   rl->max_warmup_trs = 4; /* max 4 trs warmup sync */
@@ -1298,7 +1303,7 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
                                               int s_port, struct rte_mbuf* pkt) {
   struct st_tx_audio_session_rl_info* rl = &s->rl;
   struct st_tx_audio_session_rl_port* rl_port = &rl->port_info[s_port];
-  uint64_t target_tsc = rl_port->trs_target_tsc;
+  uint64_t target_tsc = rl_port->trs_target_tsc + s->ops.rl_offset_ns;
   uint64_t cur_tsc;
 
   cur_tsc = mt_get_tsc(impl);
@@ -2092,8 +2097,8 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
       rl_port->stat_recalculate_warmup = 0;
     }
     if (rl_port->stat_hit_backup_cp) {
-      warn("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n", m_idx, idx,
-           rl_port->stat_hit_backup_cp);
+      notice("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n", m_idx, idx,
+             rl_port->stat_hit_backup_cp);
       rl_port->stat_hit_backup_cp = 0;
     }
   }

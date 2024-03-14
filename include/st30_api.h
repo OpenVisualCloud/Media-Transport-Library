@@ -391,6 +391,8 @@ struct st30_tx_ops {
   int (*notify_rtp_done)(void* priv);
   /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
   uint32_t rl_accuracy_ns;
+  /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check point */
+  int32_t rl_offset_ns;
 
   /**
    * size for each sample group,
