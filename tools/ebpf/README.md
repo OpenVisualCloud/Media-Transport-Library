@@ -15,7 +15,7 @@ make
 lcore_monitor: a tools to monitor the scheduler even on the IMTL lcore.
 
 ```bash
-sudo ./lcore_monitor --lcore 30 --t_pid 194145 --bpf_prog lcore_monitor_kern.o
+sudo ./lcore_monitor --lcore 30 --t_pid 194145
 ```
 
 The output is like below, inspect the time to check if the lcore is suspending for a long time.

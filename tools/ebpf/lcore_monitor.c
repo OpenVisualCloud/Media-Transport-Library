@@ -21,28 +21,25 @@
 #include "log.h"
 
 struct lcore_monitor_ctx {
-  char bpf_prog[64];
   struct lcore_tid_cfg cfg;
   struct lcore_tid_event sched_out;
   struct lcore_tid_event irq_entry;
+  struct lcore_tid_event vector_entry;
 };
 
 enum lm_args_cmd {
   LM_ARG_UNKNOWN = 0,
   LM_ARG_CORE = 0x100, /* start from end of ascii */
   LM_ARG_T_PID,
-  LM_ARG_BPF_PROG,
   LM_ARG_BPF_TRACE,
   LM_ARG_HELP,
 };
 
-static struct option et_args_options[] = {
-    {"lcore", required_argument, 0, LM_ARG_CORE},
-    {"t_pid", required_argument, 0, LM_ARG_T_PID},
-    {"bpf_prog", required_argument, 0, LM_ARG_BPF_PROG},
-    {"bpf_trace", no_argument, 0, LM_ARG_BPF_TRACE},
-    {"help", no_argument, 0, LM_ARG_HELP},
-    {0, 0, 0, 0}};
+static struct option et_args_options[] = {{"lcore", required_argument, 0, LM_ARG_CORE},
+                                          {"t_pid", required_argument, 0, LM_ARG_T_PID},
+                                          {"bpf_trace", no_argument, 0, LM_ARG_BPF_TRACE},
+                                          {"help", no_argument, 0, LM_ARG_HELP},
+                                          {0, 0, 0, 0}};
 
 static void lm_print_help() {
   printf("\n");
@@ -51,7 +48,6 @@ static void lm_print_help() {
   printf(" Params:\n");
   printf("  --lcore <id>        Set the monitor lcore\n");
   printf("  --t_pid <id>        Set the monitor t_pid\n");
-  printf("  --bpf_prog <path>   Set bpf prog path\n");
   printf("  --bpf_trace         Enable bpf trace\n");
   printf("  --help              Print help info\n");
 
@@ -71,9 +67,6 @@ static int lm_parse_args(struct lcore_monitor_ctx* ctx, int argc, char** argv) {
         break;
       case LM_ARG_T_PID:
         ctx->cfg.t_pid = atoi(optarg);
-        break;
-      case LM_ARG_BPF_PROG:
-        snprintf(ctx->bpf_prog, sizeof(ctx->bpf_prog), "%s", optarg);
         break;
       case LM_ARG_BPF_TRACE:
         ctx->cfg.bpf_trace = true;
@@ -153,13 +146,24 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
 
   if (e->type == LCORE_IRQ_ENTRY) {
     memcpy(&ctx->irq_entry, e, sizeof(ctx->irq_entry));
-    dbg("%s: irq_entry ns %" PRIu64 "\n", __func__, ctx->irq_entry.ns);
+    dbg("%s: irq_entry %d ns %" PRIu64 "\n", __func__, e->irq, e->ns);
     return 0;
   }
 
   if (e->type == LCORE_IRQ_EXIT) {
     float ns = e->ns - ctx->irq_entry.ns;
-    info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, ctx->irq_entry.irq);
+    info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, e->irq);
+  }
+
+  if (e->type == LCORE_VECTOR_ENTRY) {
+    memcpy(&ctx->vector_entry, e, sizeof(ctx->vector_entry));
+    dbg("%s: vector_entry %d ns %" PRIu64 "\n", __func__, e->vector, e->ns);
+    return 0;
+  }
+
+  if (e->type == LCORE_VECTOR_EXIT) {
+    float ns = e->ns - ctx->vector_entry.ns;
+    info("%s: sched out %.3fus as vector: %d\n", __func__, ns / 1000, e->vector);
   }
 
   return 0;
@@ -170,8 +174,6 @@ int main(int argc, char** argv) {
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
-  /* default */
-  snprintf(ctx.bpf_prog, sizeof(ctx.bpf_prog), "%s", "lcore_monitor_kern.o");
   ret = lm_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
   if (!ctx.cfg.core_id) {

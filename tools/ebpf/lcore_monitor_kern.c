@@ -73,6 +73,7 @@ int bpf_prog_sched_switch(struct trace_event_raw_sched_switch* args) {
   return 0;
 }
 
+#if 0
 static int lm_irq_event_submit(enum lcore_tid_event_type type,
                                struct trace_event_raw_irq_handler_entry* args) {
   struct lcore_tid_event* e;
@@ -124,6 +125,61 @@ int bpf_prog_irq_handler_exit(struct trace_event_raw_irq_handler_entry* args) {
   }
 
   lm_irq_event_submit(LCORE_IRQ_EXIT, args);
+
+  return 0;
+}
+#endif
+
+static int lm_vector_event_submit(enum lcore_tid_event_type type, int vector) {
+  struct lcore_tid_event* e;
+
+  e = bpf_ringbuf_reserve(&lm_events_map, sizeof(*e), 0);
+  if (!e) {
+    char fmt[] = "lm event ringbuf reserve fail\n";
+    bpf_trace_printk(fmt, sizeof(fmt));
+    return 0;
+  }
+
+  e->type = type;
+  e->ns = bpf_ktime_get_ns();
+  e->vector = vector;
+
+  bpf_ringbuf_submit(e, 0);
+  return 0;
+}
+
+SEC("raw_tp/irq_work_entry")
+int BPF_PROG(irq_work_entry, unsigned int vector) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
+  if (!cfg) return 0;
+
+  /* core id check */
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
+
+  if (cfg->bpf_trace) {
+    char fmt[] = "irq_work_entry, vector %d\n";
+    bpf_trace_printk(fmt, sizeof(fmt), vector);
+  }
+
+  lm_vector_event_submit(LCORE_VECTOR_ENTRY, vector);
+
+  return 0;
+}
+
+SEC("raw_tp/irq_work_exit")
+int BPF_PROG(irq_work_exit, unsigned int vector) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
+  if (!cfg) return 0;
+
+  /* core id check */
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
+
+  if (cfg->bpf_trace) {
+    char fmt[] = "irq_work_exit, vector %d\n";
+    bpf_trace_printk(fmt, sizeof(fmt), vector);
+  }
+
+  lm_vector_event_submit(LCORE_VECTOR_EXIT, vector);
 
   return 0;
 }
