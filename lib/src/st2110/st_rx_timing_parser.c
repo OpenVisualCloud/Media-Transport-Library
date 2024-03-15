@@ -446,12 +446,12 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s
   struct st_rx_audio_tp* tp = s->tp;
   struct st_ra_tp_slot* slot = &tp->slot[s_port];
 
-  uint64_t epochs = (double)pkt_time / tp->pkt_time;
-  uint64_t epoch_tmstamp = (double)epochs * tp->pkt_time;
-  double fpt_delta = (double)pkt_time - epoch_tmstamp;
-  uint64_t tmstamp64 = epochs * tp->pkt_time_sampling;
-  uint32_t tmstamp32 = tmstamp64;
-  double diff_rtp_ts = (double)rtp_tmstamp - tmstamp32;
+  uint64_t epoch = (double)pkt_time / tp->pkt_time;
+  uint64_t epoch_ns = (double)epoch * tp->pkt_time;
+  double fpt_delta = (double)pkt_time - epoch_ns;
+  uint64_t epoch_ts64 = epoch * tp->pkt_time_sampling;
+  uint32_t epoch_ts = epoch_ts64;
+  double diff_rtp_ts = (double)rtp_tmstamp - epoch_ts;
   double diff_rtp_ts_ns = diff_rtp_ts * tp->pkt_time / tp->pkt_time_sampling;
   double latency = fpt_delta - diff_rtp_ts_ns;
   double dpvr = latency / NS_PER_US;
