@@ -1221,6 +1221,25 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
   return 0;
 }
 
+static void tx_audio_session_rl_switch_queue(
+    struct st_tx_audio_session_rl_port* rl_port) {
+  int cur_queue = rl_port->cur_queue;
+  cur_queue++;
+  if (cur_queue >= ST30_TX_RL_QUEUES_USED) cur_queue = 0;
+  rl_port->cur_queue = cur_queue;
+}
+
+static void tx_audio_session_rl_inc_pkt_idx(struct st_tx_audio_session_rl_info* rl,
+                                            struct st_tx_audio_session_rl_port* rl_port) {
+  rl_port->cur_pkt_idx++;
+  if (rl_port->cur_pkt_idx >= rl->pkts_per_sync) {
+    dbg("%s(%d,%d), switch to next queue, cur queue %d pkts %d send\n", __func__, idx,
+        s_port, cur_queue, rl_port->cur_pkt_idx);
+    rl_port->cur_pkt_idx = 0;
+    tx_audio_session_rl_switch_queue(rl_port);
+  }
+}
+
 static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, int s_port,
                                            struct rte_mbuf* pkt) {
   struct st_tx_audio_session_rl_info* rl = &s->rl;
@@ -1244,22 +1263,14 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl* s, i
   }
   rte_mbuf_refcnt_update(rl_port->pad, pads_per_st30_pkt);
   tx = mt_txq_burst(queue, pads, pads_per_st30_pkt);
+  rl_port->stat_pad_pkts_burst += tx;
   if (tx != pads_per_st30_pkt) {
     dbg("%s(%d,%d), sending %u pad pkts only %u succ\n", __func__, s->idx, s_port,
         pads_per_st30_pkt, tx);
     /* save to pad inflight */
     rl_port->trs_pad_inflight_num = pads_per_st30_pkt - tx;
-  }
-  rl_port->stat_pad_pkts_burst += tx;
-
-  rl_port->cur_pkt_idx++;
-  if (rl_port->cur_pkt_idx >= rl->pkts_per_sync) {
-    dbg("%s(%d,%d), switch to next queue, cur queue %d pkts %d send\n", __func__, idx,
-        s_port, cur_queue, rl_port->cur_pkt_idx);
-    rl_port->cur_pkt_idx = 0;
-    cur_queue++;
-    if (cur_queue >= ST30_TX_RL_QUEUES_USED) cur_queue = 0;
-    rl_port->cur_queue = cur_queue;
+  } else {
+    tx_audio_session_rl_inc_pkt_idx(rl, rl_port);
   }
 
   return 1;
@@ -1312,10 +1323,13 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
         __func__, s->idx, s_port, cur_tsc, target_tsc);
     rl_port->trs_target_tsc = 0; /* clear target tsc */
     rl_port->stat_mismatch_sync_point++;
+    rl_port->force_sync_first_tsc = false;
     /* dummy pkts to fill the rl burst buffer */
     tx_audio_session_rl_warmup_pkt(s, s_port, rl->pkts_prepare_warmup, 0);
     return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
   }
+
+  if (rl_port->force_sync_first_tsc) return 0;
 
   /* check if we are reaching the warmup stage */
   uint32_t delta_tsc = target_tsc - cur_tsc;
@@ -1337,22 +1351,26 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
     rl_port->stat_hit_backup_cp++;
   }
 
-  rl_port->trs_target_tsc = 0; /* clear target tsc */
   /* sending the prepare pkts */
   tx_audio_session_rl_warmup_pkt(s, s_port, rl->pkts_prepare_warmup, 0);
   /* sending the warmup pkts */
   for (int i = delta_pkts; i > 0; i--) {
     tx_audio_session_rl_warmup_pkt(s, s_port, 0, 1);
+
     /* re-calculate the delta */
     uint32_t delta_tsc_now = target_tsc - mt_get_tsc(impl);
     uint32_t delta_pkts_now = delta_tsc_now / trs;
-    if (delta_pkts_now < (i - 1)) {
+    if (delta_pkts_now < (i - 0)) {
       dbg("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx, delta_pkts_now,
           i);
-      i = delta_pkts_now; /* reset delta_pkts */
+      /* try next sync point */
       rl_port->stat_recalculate_warmup++;
+      rl_port->force_sync_first_tsc = true;
+      return 0;
     }
   }
+
+  rl_port->trs_target_tsc = 0; /* clear target tsc */
   /* sending the first pkt now */
   return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
 }
@@ -1392,7 +1410,9 @@ static int tx_audio_session_tasklet_rl_transmit(struct mtl_main_impl* impl,
     if (tx < 1) {
       s->stat_transmit_ret_code = -STI_RLTRS_BURST_PAD_INFLIGHT_FAIL;
     }
-
+    if (rl_port->trs_pad_inflight_num == 0) { /* all done for current pkt */
+      tx_audio_session_rl_inc_pkt_idx(rl, rl_port);
+    }
     return MTL_TASKLET_HAS_PENDING;
   }
 

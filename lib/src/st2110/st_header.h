@@ -761,6 +761,7 @@ struct st_tx_audio_session_rl_port {
   uint64_t trs_target_tsc;
   /* inflight padding */
   uint32_t trs_pad_inflight_num;
+  bool force_sync_first_tsc;
 
   uint32_t stat_pkts_burst;
   uint32_t stat_pad_pkts_burst;
