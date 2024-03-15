@@ -36,5 +36,5 @@ lcore_monitor_kern.skel.h: lcore_monitor_kern.o
 	bpftool gen skeleton $< > $@
 
 # Build lcore_monitor user prog
-lcore_monitor: lcore_monitor.c lcore_monitor.h
+lcore_monitor: lcore_monitor.c lcore_monitor.h lcore_monitor_kern.skel.h
 	gcc -Wall -o lcore_monitor lcore_monitor.c -lbpf -lelf

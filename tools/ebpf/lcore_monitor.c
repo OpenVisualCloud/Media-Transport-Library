@@ -25,6 +25,7 @@ struct lcore_monitor_ctx {
   struct lcore_tid_cfg cfg;
   struct lcore_tid_event sched_out;
   struct lcore_tid_event irq_entry;
+  struct lcore_tid_event vector_entry;
 };
 
 enum lm_args_cmd {
@@ -153,13 +154,24 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
 
   if (e->type == LCORE_IRQ_ENTRY) {
     memcpy(&ctx->irq_entry, e, sizeof(ctx->irq_entry));
-    dbg("%s: irq_entry ns %" PRIu64 "\n", __func__, ctx->irq_entry.ns);
+    dbg("%s: irq_entry %d ns %" PRIu64 "\n", __func__, e->irq, e->ns);
     return 0;
   }
 
   if (e->type == LCORE_IRQ_EXIT) {
     float ns = e->ns - ctx->irq_entry.ns;
-    info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, ctx->irq_entry.irq);
+    info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, e->irq);
+  }
+
+  if (e->type == LCORE_VECTOR_ENTRY) {
+    memcpy(&ctx->vector_entry, e, sizeof(ctx->vector_entry));
+    dbg("%s: vector_entry %d ns %" PRIu64 "\n", __func__, e->vector, e->ns);
+    return 0;
+  }
+
+  if (e->type == LCORE_VECTOR_EXIT) {
+    float ns = e->ns - ctx->vector_entry.ns;
+    info("%s: sched out %.3fus as vector: %d\n", __func__, ns / 1000, e->vector);
   }
 
   return 0;
