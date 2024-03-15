@@ -29,6 +29,17 @@ else
   set_variable('mtl_has_xdp_backend', false)
 endif
 
+# rdma check
+libibvers_dep = dependency('libibverbs', required: false)
+librdmacm_dep = dependency('librdmacm', required: false)
+if libibvers_dep.found() and librdmacm_dep.found()
+  add_global_arguments('-DMTL_HAS_RDMA_BACKEND', language : 'c')
+  set_variable('mtl_has_rdma_backend', true)
+else
+  message('libibvers and librdmacm not found, no rdma backend')
+  set_variable('mtl_has_rdma_backend', false)
+endif
+
 # usdt check
 sdt_header = 'sys/sdt.h'
 mtl_has_sdt_header = cc.has_header(sdt_header)
