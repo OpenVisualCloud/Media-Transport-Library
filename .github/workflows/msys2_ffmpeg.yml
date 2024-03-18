@@ -27,7 +27,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
 
       - id: ffmpeg_compose
         uses: OpenVisualCloud/Media-Transport-Library@823685a40d2d7e86524d85e620add44eff62ffc9 # main
@@ -37,14 +37,14 @@ jobs:
           tap: false
 
       - name: Checkout mman-win32
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
         with:
           repository: 'alitrack/mman-win32'
           ref: master
           path: mman-win32
 
       - name: Checkout Cisco H264
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
         with:
           repository: 'cisco/openh264'
           ref: openh264v2.3.1
