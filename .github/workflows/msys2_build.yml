@@ -1,6 +1,8 @@
 name: Windows MSYS2 build
 
 on:
+  # allow manually trigger
+  workflow_dispatch:
   push:
     branches:
       - main

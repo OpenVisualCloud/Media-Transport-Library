@@ -1,18 +1,25 @@
-# eBPF tools
+# eBPF based tools for IMTL
 
-This directory contains tools for eBPF.
+This directory contains eBPF based tools for IMTL.
 
-## Build
+## 1. Dependencies
 
-Dependencies: libbpf, libxdp, bpftool, clang, llvm, gcc, libelf, zlib.
+Dependencies: libbpf, bpftool, libxdp, clang, llvm, gcc, libelf, zlib.
+
+If you has problems to install the dependencies for libbpf, bpftool, or libxdp, you might need to install these dependencies manually, follow libbpf page <https://github.com/libbpf/libbpf>, bpftool page <https://github.com/libbpf/bpftool>, libxdp page <https://github.com/xdp-project/xdp-tools> to build and install from source code directly.
+
+## 2. Build
 
 ```bash
 make
 ```
 
-## Run
+## 3. Run
 
-lcore_monitor: a tools to monitor the scheduler even on the IMTL lcore.
+### 3.1 lcore_monitor
+
+lcore_monitor: a tool to monitor the scheduler and interrupt event on one MTL lcore. The IMTL achieves high data packet throughput and low latency by defaulting to busy polling, also referred to as busy-waiting or spinning.
+To ensure peak performance, it is crucial to verify that no other tasks are running on the same logical core (lcore) that IMTL utilizes. For debugging purposes, the tool provides a status overview via an eBPF (extended Berkeley Packet Filter) trace point hook, which monitors the activities on a single core.
 
 ```bash
 sudo ./lcore_monitor --lcore 30 --t_pid 194145
@@ -35,6 +42,8 @@ MT: MT: 2024-01-17 15:45:14, DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2602.47060
 MT: MT: 2024-01-17 15:45:14, SCH(0:sch_0): tasklets 3, lcore 29(t_pid: 190637), avg loop 105 ns
 MT: MT: 2024-01-17 15:45:14, SCH(1:sch_1): tasklets 1, lcore 30(t_pid: 190638), avg loop 45 ns
 ```
+
+### 3.2 fentry
 
 fentry: a simple program to trace udp_send_skb calls, requires kernel > 5.5.
 

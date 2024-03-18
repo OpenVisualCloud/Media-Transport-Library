@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "lcore_monitor_kern.skel.h"
+#include "lcore_monitor.skel.h"
 #include "log.h"
 
 struct lcore_monitor_ctx {
@@ -187,10 +187,10 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  struct lcore_monitor_kern* skel = NULL;
+  struct lcore_monitor_bpf* skel = NULL;
   struct ring_buffer* rb = NULL;
 
-  skel = lcore_monitor_kern__open_and_load();
+  skel = lcore_monitor_bpf__open_and_load();
   if (!skel) {
     err("%s, failed to open and load skeleton\n", __func__);
     goto exit;
@@ -208,10 +208,10 @@ int main(int argc, char** argv) {
     err("%s, create ring buffer fail\n", __func__);
     goto exit;
   }
-  ret = lcore_monitor_kern__attach(skel);
+  ret = lcore_monitor_bpf__attach(skel);
   if (ret) {
     err("%s, failed to attach skeleton\n", __func__);
-    lcore_monitor_kern__destroy(skel);
+    lcore_monitor_bpf__destroy(skel);
     goto exit;
   }
   info("%s, attach skeleton succ\n", __func__);
@@ -233,6 +233,6 @@ int main(int argc, char** argv) {
   info("%s, stop now\n", __func__);
 exit:
   if (rb) ring_buffer__free(rb);
-  if (skel) lcore_monitor_kern__destroy(skel);
+  if (skel) lcore_monitor_bpf__destroy(skel);
   return 0;
 }

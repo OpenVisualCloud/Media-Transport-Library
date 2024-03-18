@@ -73,3 +73,6 @@ afxdp_test: &afxdp_test
   - .github/workflows/afxdp_build_with_gtest.yml
   - *src
   - *build
+
+tools_build: &tools_build
+  - 'tools/**'

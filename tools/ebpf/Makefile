@@ -2,11 +2,11 @@
 # Copyright 2023 Intel Corporation
 
 .PHONY: all
-all: et lcore_monitor_kern.o lcore_monitor_kern.skel.h lcore_monitor
+all: et lcore_monitor
 
 .PHONY: clean
 clean:
-	rm -rf et *.o *.skel.h lcore_monitor vmlinux.h
+	rm -rf lcore_monitor et *.o *.skel.h vmlinux.h
 
 vmlinux.h:
 	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $@
@@ -23,18 +23,9 @@ vmlinux.h:
 # Get a list of all the .skel.h files
 SKEL_FILES := $(patsubst %.bpf.c,%.skel.h,$(wildcard *.bpf.c))
 
-et: et.c $(SKEL_FILES)
-	gcc -Wall -o $@ $(filter %.c,$^) -include $(SKEL_FILES) -lxdp -l:libbpf.a -lelf -lz
-
-# Build lcore_monitor_kern ebpf prog
-lcore_monitor_kern.o: lcore_monitor_kern.c lcore_monitor.h
-	clang -g -O2 -target bpf -c lcore_monitor_kern.c -o $@
-	llvm-strip -g $@
-
-# Generate lcore_monitor_kern skeletons
-lcore_monitor_kern.skel.h: lcore_monitor_kern.o
-	bpftool gen skeleton $< > $@
+et: et.c fentry.skel.h
+	gcc -Wall -o $@ $(filter %.c,$^) -lxdp -lbpf -lelf -lz
 
 # Build lcore_monitor user prog
-lcore_monitor: lcore_monitor.c lcore_monitor.h lcore_monitor_kern.skel.h
-	gcc -Wall -o lcore_monitor lcore_monitor.c -lbpf -lelf
+lcore_monitor: lcore_monitor.c lcore_monitor.skel.h
+	gcc -Wall -o $@ $(filter %.c,$^) -lbpf -lelf -lz
