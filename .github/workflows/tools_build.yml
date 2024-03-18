@@ -59,21 +59,21 @@ jobs:
       - name: Install the build dependency
         run: |
           apt-get update -y
-          apt-get install -y git make m4 gcc clang llvm
+          apt-get install -y sudo git make m4 gcc clang llvm
           apt-get install -y libpcap-dev
           apt-get install -y zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
 
       - name: Build sch_smi_emulate
         run: |
-          pushd tools/sch_smi_emulate/
+          cd tools/sch_smi_emulate/
           make
-          popd
+          cd ../../
 
       - name: Build readpcap
         run: |
-          pushd tools/readpcap/
+          cd tools/readpcap/
           make
-          popd
+          cd ../../
 
       - name: Checkout bpftool
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -84,18 +84,30 @@ jobs:
 
       - name: Build and install libbpf
         run: |
-          pushd bpftool/libbpf/src/
+          cd bpftool/libbpf/src/
           make install
-          popd
+          cd ../../../
 
       - name: Build and install bpftool
         run: |
-          pushd bpftool/src/
+          cd bpftool/src/
           make install
-          popd
+          cd ../../
+
+      - name: Checkout xdp-tools
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: 'xdp-project/xdp-tools'
+          path: xdp-tools
+          submodules: recursive
+
+      - name: Build and install xdp-tools
+        run: |
+          cd xdp-tools && ./configure
+          make install
 
       - name: Build ebpf based IMTL tools
         run: |
-          pushd tools/ebpf/
+          cd tools/ebpf/
           make
-          popd
+          cd ../../

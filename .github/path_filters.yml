@@ -75,4 +75,4 @@ afxdp_test: &afxdp_test
   - *build
 
 tools_build: &tools_build
-  - 'etools/**'
+  - 'tools/**'
