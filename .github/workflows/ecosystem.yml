@@ -1,6 +1,8 @@
 name: ecosystem build checker
 
 on:
+  # allow manually trigger
+  workflow_dispatch:
   push:
     branches:
       - main

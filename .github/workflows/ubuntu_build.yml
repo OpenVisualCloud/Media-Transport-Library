@@ -1,6 +1,8 @@
 name: Ubuntu build
 
 on:
+  # allow manually trigger
+  workflow_dispatch:
   push:
     branches:
       - main

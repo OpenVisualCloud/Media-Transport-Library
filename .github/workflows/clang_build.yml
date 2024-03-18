@@ -1,6 +1,8 @@
 name: Clang build
 
 on:
+  # allow manually trigger
+  workflow_dispatch:
   push:
     branches:
       - main
