@@ -2,7 +2,7 @@
 
 This directory contains tools for eBPF.
 
-## Build
+## 1. Build
 
 Dependencies: libbpf, libxdp, bpftool, clang, llvm, gcc, libelf, zlib.
 
@@ -10,7 +10,9 @@ Dependencies: libbpf, libxdp, bpftool, clang, llvm, gcc, libelf, zlib.
 make
 ```
 
-## Run
+## 2. Run
+
+### 2.1 lcore_monitor
 
 lcore_monitor: a tools to monitor the scheduler even on the IMTL lcore.
 
@@ -35,6 +37,8 @@ MT: MT: 2024-01-17 15:45:14, DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2602.47060
 MT: MT: 2024-01-17 15:45:14, SCH(0:sch_0): tasklets 3, lcore 29(t_pid: 190637), avg loop 105 ns
 MT: MT: 2024-01-17 15:45:14, SCH(1:sch_1): tasklets 1, lcore 30(t_pid: 190638), avg loop 45 ns
 ```
+
+### 2.2 fentry
 
 fentry: a simple program to trace udp_send_skb calls, requires kernel > 5.5.
 

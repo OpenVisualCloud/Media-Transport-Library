@@ -1,0 +1,101 @@
+name: Ubuntu tools build
+
+on:
+  push:
+    branches:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+
+env:
+  # Customize the env if
+  # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
+  MTL_BUILD_DISABLE_PCAPNG: true
+  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.filter.outputs.tools_build == 'true' }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v2
+        id: filter
+        with:
+          filters: .github/path_filters.yml
+
+  build:
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    container:
+      image: ubuntu:latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
+        with:
+          source: '.'
+          extensions: 'hpp,h,cpp,c,cc'
+
+      - name: Install the build dependency
+        run: |
+          apt-get update -y
+          apt-get install -y git make m4 gcc clang llvm
+          apt-get install -y libpcap-dev
+          apt-get install -y zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
+
+      - name: Build sch_smi_emulate
+        run: |
+          pushd tools/sch_smi_emulate/
+          make
+          popd
+
+      - name: Build readpcap
+        run: |
+          pushd tools/readpcap/
+          make
+          popd
+
+      - name: Checkout bpftool
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          repository: 'libbpf/bpftool'
+          path: bpftool
+          submodules: recursive
+
+      - name: Build and install libbpf
+        run: |
+          pushd bpftool/libbpf/src/
+          make install
+          popd
+
+      - name: Build and install bpftool
+        run: |
+          pushd bpftool/src/
+          make install
+          popd
+
+      - name: Build ebpf based IMTL tools
+        run: |
+          pushd tools/ebpf/
+          make
+          popd
