@@ -18,6 +18,8 @@
 #include <xdp/libxdp.h>
 #include <xdp/xsk.h>
 
+#include "fentry.skel.h"
+
 static volatile bool stop = false;
 
 static int libbpf_print_fn(enum libbpf_print_level level, const char* format,
