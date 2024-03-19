@@ -211,7 +211,6 @@ int main(int argc, char** argv) {
   ret = lcore_monitor_bpf__attach(skel);
   if (ret) {
     err("%s, failed to attach skeleton\n", __func__);
-    lcore_monitor_bpf__destroy(skel);
     goto exit;
   }
   info("%s, attach skeleton succ\n", __func__);
