@@ -99,6 +99,14 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
                  MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED,
     },
+    {
+        .name = "rdma",
+        .port_type = MT_PORT_RDMA,
+        .drv_type = MT_DRV_RDMA,
+        .flow_type = MT_FLOW_ALL,
+        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
+                 MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED,
+    },
 };
 
 static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_info) {
@@ -336,6 +344,12 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       const char* if_name = mt_native_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "native_af_xdp_%d", i);
+      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
+      continue;
+    } else if (pmd == MTL_PMD_RDMA) {
+      const char* if_name = mt_rdma_port2if(p->port[i]);
+      if (!if_name) return -EINVAL;
+      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "rdma_%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
       continue;
     } else if (pmd == MTL_PMD_DPDK_AF_XDP) {
@@ -2033,7 +2047,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->port = i;
 
     /* parse port id */
-    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
+    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i) ||
+        mt_pmd_is_rdma(impl, i)) {
       port = impl->kport_info.kernel_if[i];
       port_id = i;
     } else {
@@ -2062,6 +2077,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = parse_driver_info("kernel_socket", &inf->drv_info);
     else if (mt_pmd_is_native_af_xdp(impl, i))
       ret = parse_driver_info("native_af_xdp", &inf->drv_info);
+    else if (mt_pmd_is_rdma(impl, i))
+      ret = parse_driver_info("rdma", &inf->drv_info);
     else
       ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
     if (ret < 0) {

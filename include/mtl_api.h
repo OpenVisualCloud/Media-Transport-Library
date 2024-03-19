@@ -220,6 +220,8 @@ enum mtl_pmd_type {
   MTL_PMD_KERNEL_SOCKET,
   /** Run MTL directly on AF_XDP, CAP_NET_RAW is needed for UMEM creation */
   MTL_PMD_NATIVE_AF_XDP,
+  /** Run MTL directly on RDMA */
+  MTL_PMD_RDMA,
   /** max value of this enum */
   MTL_PMD_TYPE_MAX,
 };
