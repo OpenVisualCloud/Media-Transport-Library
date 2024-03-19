@@ -24,12 +24,12 @@ vmlinux.h:
 SKEL_FILES := $(patsubst %.bpf.c,%.skel.h,$(wildcard *.bpf.c))
 
 et: et.c fentry.skel.h
-	gcc -Wall -o $@ $(filter %.c,$^) -lxdp -lbpf -lelf -lz
+	gcc -Wall -o $@ $(filter %.c,$^) -lxdp -l:libbpf.a -lelf -lz
 
 # Build lcore_monitor user prog
 lcore_monitor: lcore_monitor.c lcore_monitor.skel.h lcore_monitor.h
-	gcc -Wall -o $@ $(filter %.c,$^) -lbpf -lelf -lz
+	gcc -Wall -o $@ $(filter %.c,$^) -l:libbpf.a -lelf -lz
 
 # Build udp_monitor user prog
 udp_monitor: udp_monitor.c udp_monitor.skel.h udp_monitor.h
-	gcc -Wall -o $@ $(filter %.c,$^) -lbpf -lelf -lz
+	gcc -Wall -o $@ $(filter %.c,$^) -l:libbpf.a -lelf -lz
