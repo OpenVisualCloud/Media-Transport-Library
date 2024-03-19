@@ -15,6 +15,8 @@
 * backend/xdp: add UDP port filter XDP program for splitting data path traffic.
 * ice: update driver to 1.13.7
 * rx/timing_parser: add timing_parser for audio, see `ST30_RX_FLAG_TIMING_PARSER_STAT` and `ST30_RX_FLAG_TIMING_PARSER_META`
+* tools/ebpf: add lcore_monitor to monitor the lcore status for debug usage
+* tools/ebpf: add udp_monitor to sniff all UDP streaming on the network
 
 ## Changelog for 23.12
 

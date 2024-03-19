@@ -13,34 +13,78 @@
 #include <net/if.h>
 #include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/queue.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "log.h"
 #include "udp_monitor.skel.h"
 
+#ifndef NS_PER_S
+#define NS_PER_S (1000000000)
+#endif
+
+struct udp_detect_entry {
+  struct udp_pkt_tuple tuple; /* udp tuple identify */
+  uint32_t pkt_cnt;
+  uint64_t tx_bytes;
+  bool sys; /* 224.0.1.129(ptp) or 255.255.255.255 */
+  /* linked list */
+  TAILQ_ENTRY(udp_detect_entry) next;
+};
+
+TAILQ_HEAD(udp_detect_list, udp_detect_entry);
+
 struct udp_monitor_ctx {
+  struct udp_detect_list detect;
   const char* interface;
+  int dump_period_s;
+  bool skip_sys;
 };
 
 enum um_args_cmd {
   UM_ARG_UNKNOWN = 0,
   UM_ARG_INTERFACE = 0x100, /* start from end of ascii */
+  UM_ARG_DUMP_PERIOD_S,
+  UM_ARG_NO_SKIP_SYS,
   UM_ARG_HELP,
 };
 
 static struct option um_args_options[] = {
     {"interface", required_argument, 0, UM_ARG_INTERFACE},
+    {"dump_period_s", required_argument, 0, UM_ARG_DUMP_PERIOD_S},
+    {"no_skip_sys", no_argument, 0, UM_ARG_NO_SKIP_SYS},
     {"help", no_argument, 0, UM_ARG_HELP},
     {0, 0, 0, 0}};
+
+static inline void* um_zmalloc(size_t sz) {
+  void* p = malloc(sz);
+  if (p) memset(p, 0x0, sz);
+  return p;
+}
+
+static inline uint64_t um_timespec_to_ns(const struct timespec* ts) {
+  return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;
+}
+
+/* Monotonic time (in nanoseconds) since some unspecified starting point. */
+static inline uint64_t um_get_monotonic_time() {
+  struct timespec ts;
+
+  clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+  return um_timespec_to_ns(&ts);
+}
 
 static void um_print_help() {
   printf("\n");
   printf("##### Usage: #####\n\n");
 
   printf(" Params:\n");
-  printf("  --interface <if>    Set the network interface\n");
-  printf("  --help              Print help info\n");
+  printf("  --interface <if>         Set the network interface\n");
+  printf("  --dump_period_s <sec>    Set the dump period\n");
+  printf("  --no_skip_sys            Not skip the system packets like PTP\n");
+  printf("  --help                   Print help info\n");
 
   printf("\n");
 }
@@ -56,6 +100,12 @@ static int um_parse_args(struct udp_monitor_ctx* ctx, int argc, char** argv) {
       case UM_ARG_INTERFACE:
         ctx->interface = optarg;
         break;
+      case UM_ARG_DUMP_PERIOD_S:
+        ctx->dump_period_s = atoi(optarg);
+        break;
+      case UM_ARG_NO_SKIP_SYS:
+        ctx->skip_sys = false;
+        break;
       case UM_ARG_HELP:
       default:
         um_print_help();
@@ -66,15 +116,69 @@ static int um_parse_args(struct udp_monitor_ctx* ctx, int argc, char** argv) {
   return 0;
 }
 
+static int udp_hdr_list_dump(struct udp_monitor_ctx* ctx, bool clear, bool skip_sys,
+                             double dump_period_s) {
+  struct udp_detect_list* list = &ctx->detect;
+  struct udp_detect_entry* entry;
+
+  TAILQ_FOREACH(entry, list, next) {
+    if (!entry->pkt_cnt) continue;
+    if (skip_sys && entry->sys) continue;
+
+    uint8_t* dip = (uint8_t*)&entry->tuple.dst_ip;
+    uint8_t* sip = (uint8_t*)&entry->tuple.src_ip;
+    double rate_m = (double)entry->tx_bytes * 8 / dump_period_s / (1000 * 1000);
+
+    info("%u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, %f Mb/s pkts %u\n", sip[0], sip[1], sip[2],
+         sip[3], ntohs(entry->tuple.src_port), dip[0], dip[1], dip[2], dip[3],
+         ntohs(entry->tuple.dst_port), rate_m, entry->pkt_cnt);
+    if (clear) {
+      entry->pkt_cnt = 0;
+      entry->tx_bytes = 0;
+    }
+  }
+
+  return 0;
+}
+
 static int udp_hdr_entry_handler(void* pri, void* data, size_t data_sz) {
   struct udp_monitor_ctx* ctx = pri;
   const struct udp_pkt_entry* e = data;
+  struct udp_detect_list* list = &ctx->detect;
+  struct udp_detect_entry* entry;
 
-  uint8_t* dip = (uint8_t*)&e->dst_ip;
-  uint8_t* sip = (uint8_t*)&e->src_ip;
+  uint8_t* dip = (uint8_t*)&e->tuple.dst_ip;
+  uint8_t* sip = (uint8_t*)&e->tuple.src_ip;
+  dbg("%s, %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n", __func__, sip[0], sip[1], sip[2],
+      sip[3], ntohs(e->tuple.src_port), dip[0], dip[1], dip[2], dip[3],
+      ntohs(e->tuple.dst_port), e->len);
 
-  info("%s, %u.%u.%u.%u -> %u.%u.%u.%u\n", __func__, sip[0], sip[1], sip[2], sip[3],
-       dip[0], dip[1], dip[2], dip[3]);
+  /* check if any exist */
+  TAILQ_FOREACH(entry, list, next) {
+    if (0 == memcmp(&e->tuple, &entry->tuple, sizeof(entry->tuple))) {
+      entry->pkt_cnt++;
+      entry->tx_bytes += e->len;
+      return 0; /* found */
+    }
+  }
+
+  entry = um_zmalloc(sizeof(*entry));
+  if (!entry) {
+    err("%s, entry malloc fail\n", __func__);
+    return -ENOMEM;
+  }
+  memcpy(&entry->tuple, &e->tuple, sizeof(entry->tuple));
+  entry->pkt_cnt++;
+  entry->tx_bytes += e->len;
+  /* 224.0.1.129 */
+  if (dip[0] == 224 && dip[1] == 0 && dip[2] == 1 && dip[3] == 129) entry->sys = true;
+  /* 255.255.255.255 */
+  if (dip[0] == 255 && dip[1] == 255 && dip[2] == 255 && dip[3] == 255) entry->sys = true;
+  /* add to list */
+  TAILQ_INSERT_TAIL(list, entry, next);
+  info("%s, new detected stream: %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n", __func__,
+       sip[0], sip[1], sip[2], sip[3], ntohs(e->tuple.src_port), dip[0], dip[1], dip[2],
+       dip[3], ntohs(e->tuple.dst_port), e->len);
 
   return 0;
 }
@@ -153,8 +257,12 @@ int main(int argc, char** argv) {
   struct udp_monitor_bpf* skel = NULL;
   struct ring_buffer* rb = NULL;
   int prog_fd = -1;
+  uint64_t last_ns, cur_ns, ns_diff;
 
   memset(&ctx, 0, sizeof(ctx));
+  ctx.dump_period_s = 5;
+  ctx.skip_sys = true;
+
   ret = um_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
   if (!ctx.interface) {
@@ -162,6 +270,8 @@ int main(int argc, char** argv) {
     um_print_help();
     return -1;
   }
+
+  TAILQ_INIT(&ctx.detect);
 
   /* Create raw socket */
   sock_raw_fd = open_raw_sock(ctx.interface);
@@ -211,9 +321,12 @@ int main(int argc, char** argv) {
 
   signal(SIGINT, um_sig_handler);
 
-  info("%s, start to poll udp pkts for %s\n", __func__, ctx.interface);
+  info("%s, start to poll udp pkts for %s, dump period %ds\n", __func__, ctx.interface,
+       ctx.dump_period_s);
+  last_ns = um_get_monotonic_time();
   while (!g_um_stop) {
     ret = ring_buffer__poll(rb, 100);
+    dbg("%s, polling ret %d\n", __func__, ret);
     if (ret == -EINTR) {
       ret = 0;
       break;
@@ -221,6 +334,15 @@ int main(int argc, char** argv) {
     if (ret < 0) {
       err("%s, polling fail\n", __func__);
       break;
+    }
+    cur_ns = um_get_monotonic_time();
+    ns_diff = cur_ns - last_ns;
+    if (ns_diff > ((uint64_t)ctx.dump_period_s * NS_PER_S)) {
+      double dump_period_s = (double)ns_diff / NS_PER_S;
+      /* report status now */
+      info("\n----- DUMP UDP STAT EVERY %ds -----\n", ctx.dump_period_s);
+      udp_hdr_list_dump(&ctx, true, ctx.skip_sys, dump_period_s);
+      last_ns = cur_ns;
     }
   }
 
@@ -232,5 +354,12 @@ exit:
   if (skel) udp_monitor_bpf__destroy(skel);
   if (sock_fd >= 0) close(sock_fd);
   if (sock_raw_fd >= 0) close(sock_raw_fd);
+
+  /* free all entries in list */
+  struct udp_detect_entry* entry;
+  while ((entry = TAILQ_FIRST(&ctx.detect))) {
+    TAILQ_REMOVE(&ctx.detect, entry, next);
+    free(entry);
+  }
   return 0;
 }

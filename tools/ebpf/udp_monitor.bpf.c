@@ -41,9 +41,13 @@ int bpf_socket_handler(struct __sk_buff* skb) {
   e = bpf_ringbuf_reserve(&udp_hdr_rb, sizeof(*e), 0);
   if (!e) return 0;
 
-  /* fill src_ip and dst_ip */
-  bpf_skb_load_bytes(skb, nhoff + offsetof(struct iphdr, saddr), &(e->src_ip), 4);
-  bpf_skb_load_bytes(skb, nhoff + offsetof(struct iphdr, daddr), &(e->dst_ip), 4);
+  /* fill src and dst ip */
+  bpf_skb_load_bytes(skb, nhoff + offsetof(struct iphdr, saddr), &(e->tuple.src_ip), 4);
+  bpf_skb_load_bytes(skb, nhoff + offsetof(struct iphdr, daddr), &(e->tuple.dst_ip), 4);
+  /* fill src and dst port */
+  bpf_skb_load_bytes(skb, nhoff + 0, &verlen, 1);
+  bpf_skb_load_bytes(skb, nhoff + ((verlen & 0xF) << 2), &(e->tuple.ports), 4);
+  e->len = skb->len;
 
   bpf_ringbuf_submit(e, 0);
 
