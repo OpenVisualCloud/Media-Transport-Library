@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2023 Intel Corporation
+ * Copyright(c) 2024 Intel Corporation
  */
 
 // clang-format off
@@ -41,6 +41,7 @@ struct udp_monitor_ctx {
   const char* interface;
   int dump_period_s;
   bool skip_sys;
+  bool promisc;
 };
 
 enum um_args_cmd {
@@ -48,6 +49,7 @@ enum um_args_cmd {
   UM_ARG_INTERFACE = 0x100, /* start from end of ascii */
   UM_ARG_DUMP_PERIOD_S,
   UM_ARG_NO_SKIP_SYS,
+  UM_ARG_NO_PROMISC,
   UM_ARG_HELP,
 };
 
@@ -55,6 +57,7 @@ static struct option um_args_options[] = {
     {"interface", required_argument, 0, UM_ARG_INTERFACE},
     {"dump_period_s", required_argument, 0, UM_ARG_DUMP_PERIOD_S},
     {"no_skip_sys", no_argument, 0, UM_ARG_NO_SKIP_SYS},
+    {"no_promiscuous", no_argument, 0, UM_ARG_NO_PROMISC},
     {"help", no_argument, 0, UM_ARG_HELP},
     {0, 0, 0, 0}};
 
@@ -84,6 +87,7 @@ static void um_print_help() {
   printf("  --interface <if>         Set the network interface\n");
   printf("  --dump_period_s <sec>    Set the dump period\n");
   printf("  --no_skip_sys            Not skip the system packets like PTP\n");
+  printf("  --no_promiscuous         Not enable promiscuous mode\n");
   printf("  --help                   Print help info\n");
 
   printf("\n");
@@ -105,6 +109,9 @@ static int um_parse_args(struct udp_monitor_ctx* ctx, int argc, char** argv) {
         break;
       case UM_ARG_NO_SKIP_SYS:
         ctx->skip_sys = false;
+        break;
+      case UM_ARG_NO_PROMISC:
+        ctx->promisc = false;
         break;
       case UM_ARG_HELP:
       default:
@@ -262,6 +269,7 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   ctx.dump_period_s = 5;
   ctx.skip_sys = true;
+  ctx.promisc = true;
 
   ret = um_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
@@ -279,10 +287,12 @@ int main(int argc, char** argv) {
     err("%s, failed to open raw sock %d\n", __func__, sock_raw_fd);
     goto exit;
   }
-  sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock_fd < 0) {
-    err("%s, failed to open sock_fd for promisc %d\n", __func__, sock_fd);
-    goto exit;
+  if (ctx.promisc) {
+    sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock_fd < 0) {
+      err("%s, failed to open sock_fd for promisc %d\n", __func__, sock_fd);
+      goto exit;
+    }
   }
 
   skel = udp_monitor_bpf__open_and_load();
@@ -312,12 +322,15 @@ int main(int argc, char** argv) {
   }
   info("%s, attach bpf skeleton to %s succ, sock_raw_fd %d\n", __func__, ctx.interface,
        sock_raw_fd);
-  ret = enable_promisc(sock_fd, ctx.interface, 1);
-  if (ret < 0) {
-    err("%s, failed to enable promisc %d\n", __func__, ret);
-    goto exit;
+  if (ctx.promisc) {
+    ret = enable_promisc(sock_fd, ctx.interface, 1);
+    if (ret < 0) {
+      err("%s, failed to enable promisc %d\n", __func__, ret);
+      goto exit;
+    }
+    info("%s, enable promisc for %s succ, sock_fd %d\n", __func__, ctx.interface,
+         sock_fd);
   }
-  info("%s, enable promisc for %s succ, sock_fd %d\n", __func__, ctx.interface, sock_fd);
 
   signal(SIGINT, um_sig_handler);
 
@@ -347,7 +360,7 @@ int main(int argc, char** argv) {
   }
 
   info("%s, stop now\n", __func__);
-  enable_promisc(sock_fd, ctx.interface, 0);
+  if (sock_fd >= 0) enable_promisc(sock_fd, ctx.interface, 0);
 
 exit:
   if (rb) ring_buffer__free(rb);
