@@ -90,7 +90,9 @@ static struct option test_args_options[] = {
 
 static struct st_tests_context* g_test_ctx;
 
-struct st_tests_context* st_test_ctx(void) { return g_test_ctx; }
+struct st_tests_context* st_test_ctx(void) {
+  return g_test_ctx;
+}
 
 static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   if (!in_dev) return -EIO;

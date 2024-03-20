@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <asm-generic/errno-base.h>
 #include <infiniband/verbs.h>
+#include <pthread.h>
 #include <rdma/rdma_cma.h>
 #include <rdma/rdma_verbs.h>
 #include <stddef.h>
@@ -15,10 +16,8 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-#include "../mt_flow.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
-#include "../mt_util.h"
 
 struct mt_rdma_tx_queue {
   enum mtl_port port;
@@ -40,6 +39,7 @@ struct mt_rdma_tx_queue {
   void* send_buffer;
   size_t send_buffer_size;
   bool connected;
+  pthread_t connect_thread;
 
   struct mt_tx_rdma_entry* tx_entry;
 
@@ -85,6 +85,7 @@ struct mt_rdma_rx_queue {
 
   bool connected;
   uint8_t* sip;
+  pthread_t connect_thread;
 };
 
 struct mt_rdma_priv {
@@ -252,6 +253,7 @@ static inline uintptr_t rdma_mp_base_addr(struct rte_mempool* mp, uint64_t* alig
 }
 
 static void rdma_tx_poll_done(struct mt_rdma_tx_queue* txq) {
+  if (!txq->connected) return;
   struct ibv_cq* cq = txq->cq;
   struct ibv_wc wc[32];
   int n = ibv_poll_cq(cq, 32, wc);
@@ -269,6 +271,7 @@ static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq
                         struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   if (!txq->connected) return 0;
   enum mtl_port port = txq->port;
+  // uint16_t q = txq->q;
   struct rte_mempool* mbuf_pool = txq->mbuf_pool;
   uint16_t tx = 0;
   struct mtl_port_status* stats = mt_if(impl, port)->dev_stats_sw;
@@ -342,9 +345,9 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
   if (!entry->rxq->connected) return 0;
   struct mt_rdma_rx_queue* rxq = entry->rxq;
   enum mtl_port port = entry->port;
-  //uint16_t q = rxq->q;
+  // uint16_t q = rxq->q;
 
-  //struct rte_mempool* mp = rxq->mbuf_pool;
+  // struct rte_mempool* mp = rxq->mbuf_pool;
   struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
   uint64_t rx_bytes = 0;
   struct ibv_wc wc[nb_pkts];
@@ -493,11 +496,16 @@ static int rdma_tx_mr_init(struct mt_rdma_tx_queue* txq) {
   return 0;
 }
 
-static void rdma_tx_process_connect(struct mt_rdma_tx_queue* txq) {
+static void* rdma_tx_process_connect(void* arg) {
+  struct mt_rdma_tx_queue* txq = arg;
   struct rdma_cm_event* event;
   int ret = 0;
   while (!ret && !txq->connected) {
     ret = rdma_get_cm_event(txq->ec, &event);
+    if (ret == -1 && errno == EINVAL) {
+      printf("Event channel has been destroyed.\n");
+      break;
+    }
     if (!ret) {
       switch (event->event) {
         case RDMA_CM_EVENT_ADDR_RESOLVED:
@@ -579,10 +587,11 @@ static void rdma_tx_process_connect(struct mt_rdma_tx_queue* txq) {
     }
   }
 
-  return;
+  return NULL;
 
 connect_err:
   rdma_ack_cm_event(event);
+  return NULL;
 }
 
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
@@ -593,6 +602,7 @@ static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
   if (txq->rai) rdma_freeaddrinfo(txq->rai);
   if (txq->cma_id) rdma_destroy_id(txq->cma_id);
   if (txq->ec) rdma_destroy_event_channel(txq->ec);
+  pthread_join(txq->connect_thread, NULL);
 
   return 0;
 }
@@ -649,10 +659,9 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
     return ret;
   }
 
-  rdma_tx_process_connect(txq);
-
-  if (!txq->connected) {
-    err("%s(%d), rdma connect failed\n", __func__, txq->port);
+  ret = pthread_create(&txq->connect_thread, NULL, rdma_tx_process_connect, txq);
+  if (ret) {
+    err("%s(%d), pthread_create failed\n", __func__, txq->port);
     rdma_tx_queue_uinit(txq);
     return ret;
   }
@@ -677,11 +686,16 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
   return 0;
 }
 
-static void rdma_rx_process_connect(struct mt_rdma_rx_queue* rxq) {
+static void* rdma_rx_process_connect(void* arg) {
+  struct mt_rdma_rx_queue* rxq = arg;
   struct rdma_cm_event* event;
   int ret = 0;
   while (!ret && !rxq->connected) {
     ret = rdma_get_cm_event(rxq->ec, &event);
+    if (ret == -1 && errno == EINVAL) {
+      printf("Event channel has been destroyed.\n");
+      break;
+    }
     if (!ret) {
       switch (event->event) {
         case RDMA_CM_EVENT_CONNECT_REQUEST:
@@ -744,10 +758,11 @@ static void rdma_rx_process_connect(struct mt_rdma_rx_queue* rxq) {
     }
   }
 
-  return;
+  return NULL;
 
 connect_err:
   rdma_ack_cm_event(event);
+  return NULL;
 }
 
 static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
@@ -756,6 +771,7 @@ static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
   if (rxq->pd) ibv_dealloc_pd(rxq->pd);
   if (rxq->listen_id) rdma_destroy_id(rxq->listen_id);
   if (rxq->ec) rdma_destroy_event_channel(rxq->ec);
+  pthread_join(rxq->connect_thread, NULL);
   return 0;
 }
 
@@ -805,10 +821,9 @@ static int rdma_rx_queue_init(struct mt_rdma_rx_queue* rxq) {
     return ret;
   }
 
-  rdma_rx_process_connect(rxq);
-
-  if (!rxq->connected) {
-    err("%s(%d), rdma connect failed\n", __func__, rxq->port);
+  ret = pthread_create(&rxq->connect_thread, NULL, rdma_rx_process_connect, rxq);
+  if (ret) {
+    err("%s(%d), pthread_create failed\n", __func__, rxq->port);
     rdma_rx_queue_uinit(rxq);
     return ret;
   }

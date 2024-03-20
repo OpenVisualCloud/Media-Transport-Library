@@ -335,7 +335,8 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.flags = MT_TXQ_FLOW_F_SYS_QUEUE;
-    if (mt_drv_kernel_based(impl, i) && !mt_pmd_is_native_af_xdp(impl, i))
+    if (mt_drv_kernel_based(impl, i) && !mt_pmd_is_native_af_xdp(impl, i) &&
+        !mt_pmd_is_rdma(impl, i))
       flow.flags = MT_TXQ_FLOW_F_FORCE_SOCKET;
     dp->txq_sys_entry = mt_txq_get(impl, i, &flow);
     if (!dp->txq_sys_entry) {

@@ -11,6 +11,7 @@
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #include "mt_af_xdp.h"
+#include "mt_rdma.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -1999,6 +2000,10 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
       mt_dev_xdp_uinit(inf);
     }
 
+    if (mt_pmd_is_rdma(impl, i)) {
+      mt_dev_rdma_uinit(inf);
+    }
+
     if (inf->pad) {
       rte_pktmbuf_free(inf->pad);
       inf->pad = NULL;
@@ -2332,6 +2337,15 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = mt_dev_xdp_init(inf);
       if (ret < 0) {
         err("%s(%d), native xdp dev init fail %d\n", __func__, i, ret);
+        mt_dev_if_uinit(impl);
+        return -ENOMEM;
+      }
+    }
+
+    if (mt_pmd_is_rdma(impl, i)) {
+      ret = mt_dev_rdma_init(inf);
+      if (ret < 0) {
+        err("%s(%d), rdma dev init fail %d\n", __func__, i, ret);
         mt_dev_if_uinit(impl);
         return -ENOMEM;
       }
