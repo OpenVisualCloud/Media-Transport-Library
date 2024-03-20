@@ -119,7 +119,7 @@ enum mt_port_type {
   MT_PORT_DPDK_AF_PKT,
   MT_PORT_KERNEL_SOCKET,
   MT_PORT_NATIVE_AF_XDP,
-  MT_PORT_RDMA,
+  MT_PORT_RDMA_UD,
 };
 
 enum mt_rl_type {
@@ -147,8 +147,8 @@ enum mt_driver_type {
   MT_DRV_KERNEL_SOCKET,
   /* native af xdp */
   MT_DRV_NATIVE_AF_XDP,
-  /* rdma */
-  MT_DRV_RDMA,
+  /* rdma ud */
+  MT_DRV_IRDMA,
 };
 
 enum mt_flow_type {
@@ -1379,8 +1379,8 @@ static inline bool mt_pmd_is_native_af_xdp(struct mtl_main_impl* impl,
     return false;
 }
 
-static inline bool mt_pmd_is_rdma(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (MTL_PMD_RDMA == mt_get_user_params(impl)->pmd[port])
+static inline bool mt_pmd_is_rdma_ud(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (MTL_PMD_RDMA_UD == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;

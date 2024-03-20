@@ -409,7 +409,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];
     if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP ||
-        pmd == MTL_PMD_RDMA)
+        pmd == MTL_PMD_RDMA_UD)
       socket[i] = mt_socket_get_numa(kport_info.kernel_if[i]);
     else if (pmd != MTL_PMD_DPDK_USER)
       socket[i] = mt_dev_get_socket_id(kport_info.dpdk_port[i]);

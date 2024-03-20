@@ -79,7 +79,7 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rx_xdp_q) goto fail;
     entry->queue_id = mt_rx_xdp_queue_id(entry->rx_xdp_q);
     entry->burst = rx_xdp_burst;
-  } else if (mt_pmd_is_rdma(impl, port)) {
+  } else if (mt_pmd_is_rdma_ud(impl, port)) {
     entry->rx_rdma_q = mt_rx_rdma_get(impl, port, flow, NULL);
     if (!entry->rx_rdma_q) goto fail;
     entry->queue_id = mt_rx_rdma_queue_id(entry->rx_rdma_q);
@@ -192,7 +192,7 @@ struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->tx_xdp_q) goto fail;
     entry->queue_id = mt_tx_xdp_queue_id(entry->tx_xdp_q);
     entry->burst = tx_xdp_burst;
-  } else if (mt_pmd_is_rdma(impl, port)) {
+  } else if (mt_pmd_is_rdma_ud(impl, port)) {
     entry->tx_rdma_q = mt_tx_rdma_get(impl, port, flow, NULL);
     if (!entry->tx_rdma_q) goto fail;
     entry->queue_id = mt_tx_rdma_queue_id(entry->tx_rdma_q);
@@ -336,7 +336,7 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
     memset(&flow, 0, sizeof(flow));
     flow.flags = MT_TXQ_FLOW_F_SYS_QUEUE;
     if (mt_drv_kernel_based(impl, i) && !mt_pmd_is_native_af_xdp(impl, i) &&
-        !mt_pmd_is_rdma(impl, i))
+        !mt_pmd_is_rdma_ud(impl, i))
       flow.flags = MT_TXQ_FLOW_F_FORCE_SOCKET;
     dp->txq_sys_entry = mt_txq_get(impl, i, &flow);
     if (!dp->txq_sys_entry) {

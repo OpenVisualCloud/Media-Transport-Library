@@ -390,7 +390,7 @@ int mt_dev_rdma_init(struct mt_interface* inf) {
   enum mtl_port port = inf->port;
   int ret;
 
-  if (!mt_pmd_is_rdma(impl, port)) {
+  if (!mt_pmd_is_rdma_ud(impl, port)) {
     err("%s(%d), not rdma\n", __func__, port);
     return -EIO;
   }
@@ -835,7 +835,7 @@ struct mt_tx_rdma_entry* mt_tx_rdma_get(struct mtl_main_impl* impl, enum mtl_por
                                         struct mt_txq_flow* flow,
                                         struct mt_tx_rdma_get_args* args) {
   MTL_MAY_UNUSED(args);
-  if (!mt_pmd_is_rdma(impl, port)) {
+  if (!mt_pmd_is_rdma_ud(impl, port)) {
     err("%s(%d), this pmd is not rdma\n", __func__, port);
     return NULL;
   }
@@ -912,7 +912,7 @@ uint16_t mt_tx_rdma_burst(struct mt_tx_rdma_entry* entry, struct rte_mbuf** tx_p
 struct mt_rx_rdma_entry* mt_rx_rdma_get(struct mtl_main_impl* impl, enum mtl_port port,
                                         struct mt_rxq_flow* flow,
                                         struct mt_rx_rdma_get_args* args) {
-  if (!mt_pmd_is_rdma(impl, port)) {
+  if (!mt_pmd_is_rdma_ud(impl, port)) {
     err("%s(%d), this pmd is not rdma\n", __func__, port);
     return NULL;
   }
