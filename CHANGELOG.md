@@ -17,6 +17,7 @@
 * rx/timing_parser: add timing_parser for audio, see `ST30_RX_FLAG_TIMING_PARSER_STAT` and `ST30_RX_FLAG_TIMING_PARSER_META`
 * tools/ebpf: add lcore_monitor to monitor the lcore status for debug usage
 * tools/ebpf: add udp_monitor to sniff all UDP streaming on the network
+* usdt: add eBPF based User Statically-Defined Tracing (USDT) probes support, see doc/usdt.md
 
 ## Changelog for 23.12
 

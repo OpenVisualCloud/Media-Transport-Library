@@ -11,6 +11,7 @@
 #include "mt_mcast.h"
 #include "mt_sch.h"
 #include "mt_stat.h"
+#include "mt_usdt.h"
 #include "mt_util.h"
 
 #define MT_PTP_USE_TX_TIME_STAMP (1)
@@ -560,6 +561,7 @@ static void ptp_delay_req_read_tx_time_handler(void* param) {
   ret = ptp_timesync_read_tx_time(ptp, &tx_ns);
   if (ret >= 0) {
     ptp->t3 = tx_ns;
+    MT_PTP_MSG_PROBE(ptp->port, 3, ptp->t3);
   } else {
     if (!ptp->t4) rte_eal_alarm_set(5, ptp_delay_req_read_tx_time_handler, ptp);
   }
@@ -752,6 +754,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   }
 
   ptp_adjust_delta(ptp, delta, false);
+  MT_PTP_RESULT_PROBE(ptp->port, delta, correct_delta);
   ptp_t_result_clear(ptp);
   ptp->connected = true;
 
@@ -923,6 +926,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 #else
   ptp->t3 = ptp_get_raw_time(ptp);
 #endif
+    MT_PTP_MSG_PROBE(ptp->port, 3, ptp->t3);
     dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
         ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
 
@@ -983,6 +987,7 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
 #endif
   ptp_t_result_clear(ptp);
   ptp->t2 = rx_ns;
+  MT_PTP_MSG_PROBE(ptp->port, 2, ptp->t2);
   ptp->t2_sequence_id = msg->hdr.sequence_id;
   ptp->t2_vlan = vlan;
   ptp->t2_mode = mode;
@@ -1001,6 +1006,7 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
   }
   ptp->t1 = ptp_net_tmstamp_to_ns(&msg->precise_origin_timestamp) +
             (be64toh(msg->hdr.correction_field) >> 16);
+  MT_PTP_MSG_PROBE(ptp->port, 1, ptp->t1);
   ptp->t1_domain_number = msg->hdr.domain_number;
   dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t1,
       ptp_get_raw_time(ptp));
@@ -1070,6 +1076,7 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
   }
   ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp) -
             (be64toh(msg->hdr.correction_field) >> 16);
+  MT_PTP_MSG_PROBE(ptp->port, 4, ptp->t4);
   dbg("%s(%d), t4 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t4,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
 

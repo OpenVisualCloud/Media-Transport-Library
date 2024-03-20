@@ -8,18 +8,19 @@ Dependencies: libbpf, bpftool, libxdp, clang, llvm, gcc, libelf, zlib.
 
 If you has problems to install the dependencies for libbpf, bpftool, or libxdp, you might need to install these dependencies manually, follow libbpf page <https://github.com/libbpf/libbpf>, bpftool page <https://github.com/libbpf/bpftool>, libxdp page <https://github.com/xdp-project/xdp-tools> to build and install from source code directly.
 
-## 2. Build
+## 2. Run
 
-```bash
-make
-```
-
-## 3. Run
-
-### 3.1 lcore_monitor
+### 2.1 lcore_monitor
 
 lcore_monitor: a eBPF based tool to monitor the scheduler and interrupt event on one MTL lcore. The IMTL achieves high data packet throughput and low latency by defaulting to busy polling, also referred to as busy-waiting or spinning.
 To ensure peak performance, it is crucial to verify that no other tasks are running on the same logical core (lcore) that IMTL utilizes. For debugging purposes, the tool provides a status overview via an eBPF (extended Berkeley Packet Filter) trace point hook, which monitors the activities on a single core.
+
+Build:
+
+```bash
+make lcore_monitor
+```
+Run:
 
 ```bash
 sudo ./lcore_monitor --lcore 30 --t_pid 194145
@@ -43,10 +44,17 @@ MT: MT: 2024-01-17 15:45:14, SCH(0:sch_0): tasklets 3, lcore 29(t_pid: 190637), 
 MT: MT: 2024-01-17 15:45:14, SCH(1:sch_1): tasklets 1, lcore 30(t_pid: 190638), avg loop 45 ns
 ```
 
-### 3.2 udp_monitor
+### 2.2 udp_monitor
 
 udp_monitor: a eBPF based tool to monitor UDP streaming on the network, please note the promiscuous mode will be enabled on the selected interface.
 "promiscuous mode" means that a network interface card will pass all packets received up to the software for processing, versus the traditional mode of operation wherein only packets destined for the NIC's MAC address are passed to software. Generally, promiscuous mode is used to "sniff" all traffic on the wire.
+
+Build:
+
+```bash
+make udp_monitor
+```
+Run:
 
 ```bash
 sudo ./udp_monitor --interface enp175s0f0np0 --dump_period_s 5
@@ -62,18 +70,4 @@ The dump output is like below:
 192.168.17.102:29970 -> 239.168.17.102:30000, 1.967981 Mb/s pkts 5000
 192.168.17.102:40003 -> 239.168.17.102:40000, 0.102719 Mb/s pkts 300
 192.168.17.101:39925 -> 239.168.17.101:40000, 0.102719 Mb/s pkts 300
-```
-
-### 3.3 fentry
-
-fentry: a simple program to trace udp_send_skb calls, requires kernel > 5.5.
-
-```bash
-sudo ./et --prog fentry [--print]
-```
-
-xdp: a privileged program to load custom xdp bpf program:
-
-```bash
-sudo ./et --prog xdp --ifname ens785f0,ens785f1 --xdp_path your.xdp.o
 ```
