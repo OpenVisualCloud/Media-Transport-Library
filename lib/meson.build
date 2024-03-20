@@ -118,6 +118,6 @@ mtl_lib += shared_library(meson.project_name(), sources,
   link_args : mtl_link_c_args,
   # asan should be always the first dep
   dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep,
-                 jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep],
+                 jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep, libibvers_dep, librdmacm_dep],
   install: true
 )

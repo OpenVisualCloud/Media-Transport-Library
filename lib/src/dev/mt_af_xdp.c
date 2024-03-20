@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright(c) 2023 Intel Corporation
- * The data path based on linux kernel socket interface
+ * The data path based on xdp interface
  */
 
 #include "mt_af_xdp.h"

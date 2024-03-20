@@ -1128,7 +1128,7 @@ struct mt_tx_rdma_entry {
   enum mtl_port port;
   struct mt_txq_flow flow;
   uint16_t queue_id;
-  struct mt_rdma_queue* rq;
+  struct mt_rdma_tx_queue* txq;
 };
 
 struct mt_rx_rdma_entry {
@@ -1136,7 +1136,7 @@ struct mt_rx_rdma_entry {
   enum mtl_port port;
   struct mt_rxq_flow flow;
   uint16_t queue_id;
-  struct mt_rdma_queue* rq;
+  struct mt_rdma_rx_queue* rxq;
 };
 
 struct mt_flow_impl {
