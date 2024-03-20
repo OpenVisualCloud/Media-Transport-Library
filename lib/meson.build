@@ -29,6 +29,16 @@ else
   set_variable('mtl_has_xdp_backend', false)
 endif
 
+# usdt check
+sdt_header = 'sys/sdt.h'
+mtl_has_sdt_header = cc.has_header(sdt_header)
+if mtl_has_sdt_header
+  message('sys/sdt.h found, build with USDT support')
+  add_global_arguments('-DMTL_HAS_USDT', language : 'c')
+else
+  message('sys/sdt.h not found, no USDT support')
+endif
+
 # add source file
 subdir('src')
 
