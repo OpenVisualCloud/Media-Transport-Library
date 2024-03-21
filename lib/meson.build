@@ -30,17 +30,39 @@ else
 endif
 
 # usdt check
-sdt_header = 'sys/sdt.h'
-mtl_has_sdt_header = cc.has_header(sdt_header)
-if mtl_has_sdt_header
-  message('sys/sdt.h found, build with USDT support')
-  add_global_arguments('-DMTL_HAS_USDT', language : 'c')
+mtl_has_usdt = false
+dtrace = find_program('dtrace', required: false)
+if cc.has_header('sys/sdt.h') and dtrace.found()
+  mtl_has_usdt = true
 else
-  message('sys/sdt.h not found, no USDT support')
+  message('sys/sdt.h or dtrace not found, no USDT support')
+endif
+
+if mtl_has_usdt
+  message('usdt tools check ok, build with USDT support')
+  add_global_arguments('-DMTL_HAS_USDT', language : 'c')
+
+  # build usdt provider
+  usdt_provider = files('src/mt_usdt_provider.d')
+  usdt_provider_header = custom_target('usdt_provider_header',
+    input: usdt_provider,
+    output: 'mt_usdt_provider.h',
+    command: [dtrace, '-C', '-h', '-s', '@INPUT@', '-o', '@OUTPUT@'],
+  )
+  usdt_provider_object = custom_target('usdt_provider_object',
+    input: usdt_provider,
+    output: 'mt_usdt_provider.o',
+    command: [dtrace, '-C', '-G', '-s', '@INPUT@', '-o', '@OUTPUT@'],
+    depends: usdt_provider_header,
+  )
 endif
 
 # add source file
 subdir('src')
+
+if mtl_has_usdt
+  sources += usdt_provider_object
+endif
 
 mtl_c_args = []
 mtl_link_c_args = []
