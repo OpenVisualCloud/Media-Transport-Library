@@ -64,13 +64,9 @@ sudo bpftrace -e 'usdt::ptp:ptp_msg { printf("p%u,t%u:%llu\n", arg0, arg1, arg2)
 Example output like below:
 ```bash
 p0,t2:1711003484946427306
-p1,t2:1711003484946429331
-p1,t1:1711003484946449452
 p0,t1:1711003484946449452
 p0,t3:1711003484953729512
-p1,t3:1711003484953744581
 p0,t4:1711003484953757844
-p1,t4:1711003484953775828
 ```
 
 Or by trace-bpfcc:
@@ -92,9 +88,7 @@ sudo bpftrace -e 'usdt::ptp:ptp_result { printf("p%d,delta:%d,correct_delta:%d\n
 Example output like below:
 ```bash
 p0,delta:25122,correct_delta:67
-p1,delta:25031,correct_delta:32
 p0,delta:25216,correct_delta:353
-p1,delta:25106,correct_delta:261
 ```
 
 Or by trace-bpfcc:

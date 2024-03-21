@@ -651,13 +651,16 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
     if (ptp->expect_t2_t1_delta_avg) { /* check t2_t1_delta */
       if (t2_t1_delta < (ptp->expect_t2_t1_delta_avg - max_diff) ||
           t2_t1_delta > (ptp->expect_t2_t1_delta_avg + max_diff)) {
+        ptp->t2_t1_delta_continuous_err++;
+        if (ptp->t2_t1_delta_continuous_err > 20) {
+          err("%s(%d), t2_t1_delta %" PRId64 ", reset as too many continuous errors\n",
+              __func__, ptp->port, t2_t1_delta);
+        }
         t2_t1_delta = ptp->expect_t2_t1_delta_avg;
         ptp->t2 = ptp->t1 + t2_t1_delta; /* update t2 */
         ptp->stat_t2_t1_delta_calibrate++;
-        ptp->t2_t1_delta_continuous_err++;
+
         if (ptp->t2_t1_delta_continuous_err > 20) {
-          err("%s(%d), reset t2_t1_delta as too many continuous errors\n", __func__,
-              ptp->port);
           ptp->expect_t2_t1_delta_avg = 0;
           ptp->t2_t1_delta_continuous_err = 0;
           ptp_expect_result_clear(ptp);
@@ -669,13 +672,16 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
     if (ptp->expect_t4_t3_delta_avg) { /* check t4_t3_delta */
       if (t4_t3_delta < (ptp->expect_t4_t3_delta_avg - max_diff) ||
           t4_t3_delta > (ptp->expect_t4_t3_delta_avg + max_diff)) {
+        ptp->t4_t3_delta_continuous_err++;
+        if (ptp->t4_t3_delta_continuous_err > 20) {
+          err("%s(%d), t4_t3_delta %" PRId64 ", reset as too many continuous errors\n",
+              __func__, ptp->port, t4_t3_delta);
+        }
         t4_t3_delta = ptp->expect_t4_t3_delta_avg;
         ptp->t3 = ptp->t4 - t4_t3_delta; /* update t3 */
         ptp->stat_t4_t3_delta_calibrate++;
-        ptp->t4_t3_delta_continuous_err++;
+
         if (ptp->t4_t3_delta_continuous_err > 20) {
-          err("%s(%d), reset t4_t3_delta as too many continuous errors\n", __func__,
-              ptp->port);
           ptp->expect_t4_t3_delta_avg = 0;
           ptp->t4_t3_delta_continuous_err = 0;
           ptp_expect_result_clear(ptp);
@@ -1063,14 +1069,20 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
 
 static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
                                 struct mt_ptp_delay_resp_msg* msg) {
+  if (!ptp_port_id_equal(&msg->requesting_port_identity, &ptp->our_port_id)) {
+    /* not our request resp */
+    return 0;
+  }
+
   if (ptp->t4) {
     dbg("%s(%d), t4 already get\n", __func__, ptp->port);
     return -EIO;
   }
 
   if (ptp->t3_sequence_id != ntohs(msg->hdr.sequence_id)) {
-    dbg("%s(%d), mismatch sequence_id %d %d\n", __func__, ptp->port, msg->hdr.sequence_id,
-        ptp->t3_sequence_id);
+    err("%s(%d), mismatch sequence_id get %d expect %d\n", __func__, ptp->port,
+        msg->hdr.sequence_id, ptp->t3_sequence_id);
+    ptp->stat_t3_sequence_id_mismatch++;
     return -EIO;
   }
   ptp->t4 = ptp_net_tmstamp_to_ns(&msg->receive_timestamp) -
@@ -1525,13 +1537,17 @@ static int ptp_stat(void* priv) {
     notice("PTP(%d): rx time error %d, tx time error %d, delta result error %d\n", port,
            ptp->stat_rx_sync_err, ptp->stat_tx_sync_err, ptp->stat_result_err);
   if (ptp->stat_sync_timeout_err)
-    notice("PTP(%d): sync timeout %d\n", port, ptp->stat_sync_timeout_err);
+    err("PTP(%d): sync timeout %d\n", port, ptp->stat_sync_timeout_err);
 
   if (ptp->calibrate_t2_t3) {
     notice("PTP(%d): t2_t1_delta_calibrate %d t4_t3_delta_calibrate %d\n", port,
            ptp->stat_t2_t1_delta_calibrate, ptp->stat_t4_t3_delta_calibrate);
     ptp->stat_t2_t1_delta_calibrate = 0;
     ptp->stat_t4_t3_delta_calibrate = 0;
+  }
+  if (ptp->stat_t3_sequence_id_mismatch) {
+    err("PTP(%d): t3 sequence id mismatch %d\n", port, ptp->stat_t3_sequence_id_mismatch);
+    ptp->stat_t3_sequence_id_mismatch = 0;
   }
 
   ptp_stat_clear(ptp);
@@ -1540,11 +1556,10 @@ static int ptp_stat(void* priv) {
 }
 
 int mt_ptp_init(struct mtl_main_impl* impl) {
-  int num_ports = mt_num_ports(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
   int ret;
 
-  for (int i = 0; i < num_ports; i++) {
+  for (int i = 0; i < 1; i++) { /* only probe on the MTL_PORT_P */
     struct mt_ptp_impl* ptp = mt_rte_zmalloc_socket(sizeof(*ptp), socket);
     if (!ptp) {
       err("%s(%d), ptp malloc fail\n", __func__, i);
