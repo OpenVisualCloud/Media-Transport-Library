@@ -31,7 +31,7 @@ endif
 
 # usdt check
 mtl_has_usdt = false
-dtrace = find_program('dtrace')
+dtrace = find_program('dtrace', required: false)
 if cc.has_header('sys/sdt.h') and dtrace.found()
   mtl_has_usdt = true
 else
