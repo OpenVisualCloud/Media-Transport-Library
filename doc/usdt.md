@@ -23,9 +23,11 @@ rm build
 ./build.sh
 ```
 
-Check the build log and below build message indicate the USDT support is enabled successfully.
+Check the build log and below build messages indicate the USDT support is enabled successfully.
 ```bash
-Message: sys/sdt.h found, build with USDT support
+Program dtrace found: YES (/usr/bin/dtrace)
+Has header "sys/sdt.h" : YES
+Message: usdt tools check ok, build with USDT support
 ```
 
 Then please find all USDT probes available in IMTL by the `bpftrace` tool, the `bpftrace` installation please follow <https://github.com/bpftrace/bpftrace/blob/master/INSTALL.md>.
@@ -41,9 +43,8 @@ usdt:/usr/local/lib/x86_64-linux-gnu/libmtl.so:ptp:ptp_msg
 usdt:/usr/local/lib/x86_64-linux-gnu/libmtl.so:ptp:ptp_result
 ```
 
-Or by trace-bpfcc:
+Or by trace-bpfcc: customize the so path as your setup
 ```bash
-# customize the so path as your setup
 tplist-bpfcc -l /usr/local/lib/x86_64-linux-gnu/libmtl.so -v
 ```
 
@@ -59,10 +60,9 @@ Provider: sys, probe name: log_msg, parm1: level, parm2: char* msg
 
 The `log_msg` USDT is strategically positioned within the `MT_LOG` macro, enabling it to trace all log messages within IMTL. It operates independently from the IMTL Logging system, offering a means to monitor the system's status in production, where typically, the `enum mtl_log_level` is configured to `MTL_LOG_LEVEL_ERR`.
 
-usage:
+usage: customize the application process name as your setup
 ```bash
-# customize the application process name as your setup
-sudo BPFTRACE_STRLEN=128 bpftrace -e 'usdt::sys:log_msg { printf("%s l%d: %s\n", strftime("%H:%M:%S", nsecs), arg0, str(arg1)); }' -p $(pidof RxTxApp)
+sudo BPFTRACE_STRLEN=128 bpftrace -e 'usdt::sys:log_msg { printf("%s l%d: %s", strftime("%H:%M:%S", nsecs), arg0, str(arg1)); }' -p $(pidof RxTxApp)
 ```
 
 Example output like below:
@@ -94,9 +94,8 @@ Example output like below:
 
 Provider: ptp, probe name: ptp_msg, parm1: port, parm2: stage, parm3: value
 
-usage:
+usage: customize the application process name as your setup
 ```bash
-# customize the application process name as your setup
 sudo bpftrace -e 'usdt::ptp:ptp_msg { printf("%s p%u,t%u:%llu\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
 ```
 
@@ -112,9 +111,8 @@ Example output like below:
 
 Provider: ptp, Name: ptp_result, parm1: port, parm2: raw delta, parm3: correct delta of PI.
 
-usage:
+usage: customize the application process name as your setup
 ```bash
-# customize the application process name as your setup
 sudo bpftrace -e 'usdt::ptp:ptp_result { printf("%s p%d,delta:%d,correct_delta:%d\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
 ```
 
