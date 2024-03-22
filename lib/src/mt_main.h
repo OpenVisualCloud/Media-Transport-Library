@@ -119,6 +119,7 @@ enum mt_port_type {
   MT_PORT_DPDK_AF_PKT,
   MT_PORT_KERNEL_SOCKET,
   MT_PORT_NATIVE_AF_XDP,
+  MT_PORT_RDMA_UD,
 };
 
 enum mt_rl_type {
@@ -146,6 +147,8 @@ enum mt_driver_type {
   MT_DRV_KERNEL_SOCKET,
   /* native af xdp */
   MT_DRV_NATIVE_AF_XDP,
+  /* rdma ud */
+  MT_DRV_IRDMA,
 };
 
 enum mt_flow_type {
@@ -728,6 +731,7 @@ struct mt_interface {
   struct rte_ether_addr k_mac_addr;
 
   void* xdp;
+  void* rdma;
 };
 
 struct mt_user_info {
@@ -1120,6 +1124,22 @@ struct mt_rx_xdp_entry {
   int mcast_fd;
 };
 
+struct mt_tx_rdma_entry {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  struct mt_txq_flow flow;
+  uint16_t queue_id;
+  struct mt_rdma_tx_queue* txq;
+};
+
+struct mt_rx_rdma_entry {
+  struct mtl_main_impl* parent;
+  enum mtl_port port;
+  struct mt_rxq_flow flow;
+  uint16_t queue_id;
+  struct mt_rdma_rx_queue* rxq;
+};
+
 struct mt_flow_impl {
   pthread_mutex_t mutex; /* protect mt_rx_flow_create */
 };
@@ -1355,6 +1375,13 @@ static inline bool mt_pmd_is_kernel_socket(struct mtl_main_impl* impl,
 static inline bool mt_pmd_is_native_af_xdp(struct mtl_main_impl* impl,
                                            enum mtl_port port) {
   if (MTL_PMD_NATIVE_AF_XDP == mt_get_user_params(impl)->pmd[port])
+    return true;
+  else
+    return false;
+}
+
+static inline bool mt_pmd_is_rdma_ud(struct mtl_main_impl* impl, enum mtl_port port) {
+  if (MTL_PMD_RDMA_UD == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;

@@ -11,6 +11,7 @@
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #include "mt_af_xdp.h"
+#include "mt_rdma.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -98,6 +99,15 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
                  MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED,
+    },
+    {
+        .name = "rdma",
+        .port_type = MT_PORT_RDMA_UD,
+        .drv_type = MT_DRV_IRDMA,
+        .flow_type = MT_FLOW_ALL,
+        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
+                 MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED |
+                 MT_DRV_F_NO_SYS_TX_QUEUE,
     },
 };
 
@@ -336,6 +346,12 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       const char* if_name = mt_native_afxdp_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "native_af_xdp_%d", i);
+      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
+      continue;
+    } else if (pmd == MTL_PMD_RDMA_UD) {
+      const char* if_name = mt_rdma_port2if(p->port[i]);
+      if (!if_name) return -EINVAL;
+      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "rdma_%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
       continue;
     } else if (pmd == MTL_PMD_DPDK_AF_XDP) {
@@ -1985,6 +2001,10 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
       mt_dev_xdp_uinit(inf);
     }
 
+    if (mt_pmd_is_rdma_ud(impl, i)) {
+      mt_dev_rdma_uinit(inf);
+    }
+
     if (inf->pad) {
       rte_pktmbuf_free(inf->pad);
       inf->pad = NULL;
@@ -2033,7 +2053,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->port = i;
 
     /* parse port id */
-    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
+    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i) ||
+        mt_pmd_is_rdma_ud(impl, i)) {
       port = impl->kport_info.kernel_if[i];
       port_id = i;
     } else {
@@ -2062,6 +2083,8 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = parse_driver_info("kernel_socket", &inf->drv_info);
     else if (mt_pmd_is_native_af_xdp(impl, i))
       ret = parse_driver_info("native_af_xdp", &inf->drv_info);
+    else if (mt_pmd_is_rdma_ud(impl, i))
+      ret = parse_driver_info("rdma", &inf->drv_info);
     else
       ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
     if (ret < 0) {
@@ -2315,6 +2338,15 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = mt_dev_xdp_init(inf);
       if (ret < 0) {
         err("%s(%d), native xdp dev init fail %d\n", __func__, i, ret);
+        mt_dev_if_uinit(impl);
+        return -ENOMEM;
+      }
+    }
+
+    if (mt_pmd_is_rdma_ud(impl, i)) {
+      ret = mt_dev_rdma_init(inf);
+      if (ret < 0) {
+        err("%s(%d), rdma dev init fail %d\n", __func__, i, ret);
         mt_dev_if_uinit(impl);
         return -ENOMEM;
       }
