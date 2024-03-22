@@ -94,6 +94,9 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   uint8_t payload_type = rtp->payload_type;
   struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
   MTL_MAY_UNUSED(s_port);
+  uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
+  MTL_MAY_UNUSED(pkt_len);
+  uint32_t tmstamp = ntohl(rtp->tmstamp);
 
   if (payload_type != ops->payload_type) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
@@ -144,14 +147,15 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
-    s->st40_stat_pkts_dropped++;
+    s->st40_stat_pkts_enqueue_fail++;
+    MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
-  if (rtp->tmstamp != s->tmstamp) {
+  if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->st40_stat_frames_received);
-    s->tmstamp = rtp->tmstamp;
+    s->tmstamp = tmstamp;
   }
   s->st40_stat_pkts_received++;
 
@@ -164,6 +168,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     s->stat_max_notify_rtp_us = RTE_MAX(s->stat_max_notify_rtp_us, delta_us);
   }
 
+  MT_USDT_ST40_RX_MBUF_AVAILABLE(s->mgr->idx, s->idx, mbuf, tmstamp, pkt_len);
   return 0;
 }
 
@@ -371,6 +376,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  s->mgr = mgr;
   s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
@@ -448,6 +454,11 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     notice("RX_ANC_SESSION(%d): wrong hdr interlace dropped pkts %d\n", idx,
            s->stat_pkts_wrong_interlace_dropped);
     s->stat_pkts_wrong_interlace_dropped = 0;
+  }
+  if (s->st40_stat_pkts_enqueue_fail) {
+    notice("RX_ANC_SESSION(%d): enqueue failed pkts %d\n", idx,
+           s->st40_stat_pkts_enqueue_fail);
+    s->st40_stat_pkts_enqueue_fail = 0;
   }
   if (s->ops.interlaced) {
     notice("RX_ANC_SESSION(%d): interlace first field %u second field %u\n", idx,
@@ -919,11 +930,18 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len) {
 void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
   struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
+  struct st_rx_ancillary_session_impl* s;
 
-  if (s_impl->type != MT_HANDLE_RX_ANC)
+  if (s_impl->type != MT_HANDLE_RX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
+    return;
+  }
+
+  s = s_impl->impl;
+  MTL_MAY_UNUSED(s);
 
   if (pkt) rte_pktmbuf_free(pkt);
+  MT_USDT_ST40_RX_MBUF_PUT(s->mgr->idx, s->idx, mbuf);
 }
 
 int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {

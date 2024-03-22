@@ -2,6 +2,8 @@
 
 Building the Intel® Media Transport Library requires three parts: building the DPDK library, building the Intel® Media Transport Library on top of DPDK, and building the sample application.
 
+Please note that the DPDK dependency remains necessary when utilizing the XDP/kernel socket data path backend. We leverage numerous DPDK APIs, including those for CPU, memory, queues, and mbufs, to construct a highly efficient network processing implementation.
+
 ## 1. Prerequisites
 
 ### 1.1 Install the build dependency from OS software store

@@ -212,6 +212,7 @@ static int rv_put_frame(struct st_rx_video_session_impl* s,
   MTL_MAY_UNUSED(s);
   dbg("%s(%d), put frame at %d\n", __func__, s->idx, frame->idx);
   rte_atomic32_dec(&frame->refcnt);
+  MT_USDT_ST20_RX_FRAME_PUT(s->parent->idx, s->idx, frame->idx, frame->addr);
   return 0;
 }
 
@@ -752,6 +753,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
        s_port++) {
     meta->pkts_recv[s_port] = slot->pkts_recv_per_port[s_port];
   }
+  meta->rtp_timestamp = slot->tmstamp;
 
   if (slot->frame->user_meta_data_size) {
     meta->user_meta_size = slot->frame->user_meta_data_size;
@@ -760,6 +762,9 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     meta->user_meta_size = 0;
     meta->user_meta = NULL;
   }
+  MT_USDT_ST20_RX_FRAME_AVAILABLE(s->parent->idx, s->idx, slot->frame->idx,
+                                  slot->frame->addr, slot->tmstamp,
+                                  meta->frame_recv_size);
   if (meta->frame_recv_size >= s->st20_frame_size) {
     meta->status = ST_FRAME_STATUS_COMPLETE;
     if (ops->num_port > 1) {
@@ -1012,6 +1017,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
     s->stat_slot_get_frame_fail++;
+    MT_USDT_ST20_RX_NO_FRAMEBUFFER(s->parent->idx, s->idx, tmstamp);
     dbg("%s(%d): slot %d get frame fail\n", __func__, s->idx, slot_idx);
     return NULL;
   }
