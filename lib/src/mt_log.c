@@ -43,6 +43,20 @@ int mtl_set_log_printer(mtl_log_printer_t f) {
 
 mtl_log_printer_t mt_get_log_printer(void) { return g_mt_log_printer; }
 
+static void log_usdt_printer(enum mtl_log_level level, const char* format, ...) {
+  char msg[256];
+  va_list args;
+  MTL_MAY_UNUSED(level);
+
+  va_start(args, format);
+  vsnprintf(msg, sizeof(msg), format, args);
+  va_end(args);
+
+  MT_USDT_SYS_LOG_MSG(level, msg);
+}
+
+mtl_log_printer_t mt_get_usdt_log_printer(void) { return log_usdt_printer; }
+
 static enum mtl_log_level g_mt_log_level = MTL_LOG_LEVEL_INFO;
 
 int mt_set_log_global_level(enum mtl_log_level level) {

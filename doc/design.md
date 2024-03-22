@@ -548,3 +548,9 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
   va_end(args);
 }
 ```
+
+And in a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ERR` usually, in this cast USDT probes can be used to fetching the logging, detail see [usdt](usdt.md) doc, `#### 2.1.1 log_msg USDT` part.
+
+### 7.2 USDT
+
+IMTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, detail see [usdt](usdt.md) doc.

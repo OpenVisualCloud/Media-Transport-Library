@@ -49,6 +49,7 @@ else
   message('sys/sdt.h or dtrace not found, no USDT support')
 endif
 
+usdt_provider_header = []
 if mtl_has_usdt
   message('usdt tools check ok, build with USDT support')
   add_global_arguments('-DMTL_HAS_USDT', language : 'c')
@@ -67,6 +68,10 @@ if mtl_has_usdt
     depends: usdt_provider_header,
   )
 endif
+
+usdt_provider_header_dep = declare_dependency(
+  sources : usdt_provider_header,
+)
 
 # add source file
 subdir('src')
@@ -140,6 +145,7 @@ mtl_lib += shared_library(meson.project_name(), sources,
   link_args : mtl_link_c_args,
   # asan should be always the first dep
   dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep,
-                 jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep, libibvers_dep, librdmacm_dep],
+                 jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep, libibvers_dep, librdmacm_dep,
+                 usdt_provider_header_dep,],
   install: true
 )
