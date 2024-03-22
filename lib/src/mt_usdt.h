@@ -31,11 +31,17 @@
   do {                                                         \
   } while (0)
 
+#define SYS_LOG_MSG_ENABLED() (0)
+
 #endif
 
-#define MT_PTP_MSG_PROBE(port, stage, value) \
+#define MT_USDT_PTP_MSG(port, stage, value) \
   MT_DTRACE_PROBE3(ptp, ptp_msg, port, stage, value)
-#define MT_PTP_RESULT_PROBE(port, delta, correct) \
+#define MT_USDT_PTP_RESULT(port, delta, correct) \
   MT_DTRACE_PROBE3(ptp, ptp_result, port, delta, correct)
+
+#define MT_USDT_SYS_LOG_MSG(level, msg) MT_DTRACE_PROBE2(sys, log_msg, level, msg)
+
+#define MT_USDT_SYS_LOG_MSG_ENABLED() SYS_LOG_MSG_ENABLED()
 
 #endif

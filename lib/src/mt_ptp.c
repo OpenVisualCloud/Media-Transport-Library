@@ -11,7 +11,6 @@
 #include "mt_mcast.h"
 #include "mt_sch.h"
 #include "mt_stat.h"
-#include "mt_usdt.h"
 #include "mt_util.h"
 
 #define MT_PTP_USE_TX_TIME_STAMP (1)
@@ -759,7 +758,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   }
 
   ptp_adjust_delta(ptp, delta, false);
-  MT_PTP_RESULT_PROBE(ptp->port, delta, correct_delta);
+  MT_USDT_PTP_RESULT(ptp->port, delta, correct_delta);
   ptp_t_result_clear(ptp);
   ptp->connected = true;
 
@@ -933,7 +932,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 #endif
     dbg("%s(%d), t3 %" PRIu64 ", seq %d, max_retry %d, ptp %" PRIu64 "\n", __func__, port,
         ptp->t3, ptp->t3_sequence_id, max_retry, ptp_get_raw_time(ptp));
-    MT_PTP_MSG_PROBE(ptp->port, 3, ptp->t3);
+    MT_USDT_PTP_MSG(ptp->port, 3, ptp->t3);
 
     /* all time get */
     if (ptp->t4 && ptp->t2 && ptp->t1) {
@@ -997,7 +996,7 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   ptp->t2_mode = mode;
   dbg("%s(%d), t2 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t2,
       ptp->t2_sequence_id, ptp_get_raw_time(ptp));
-  MT_PTP_MSG_PROBE(ptp->port, 2, ptp->t2);
+  MT_USDT_PTP_MSG(ptp->port, 2, ptp->t2);
 
   return 0;
 }
@@ -1014,7 +1013,7 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
   ptp->t1_domain_number = msg->hdr.domain_number;
   dbg("%s(%d), t1 %" PRIu64 ", ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t1,
       ptp_get_raw_time(ptp));
-  MT_PTP_MSG_PROBE(ptp->port, 1, ptp->t1);
+  MT_USDT_PTP_MSG(ptp->port, 1, ptp->t1);
 
 #if MT_PTP_USE_TX_TIMER
   rte_eal_alarm_set(MT_PTP_DELAY_REQ_US + (ptp->port * MT_PTP_DELAY_STEP_US),
@@ -1089,7 +1088,7 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
             (be64toh(msg->hdr.correction_field) >> 16);
   dbg("%s(%d), t4 %" PRIu64 ", seq %d, ptp %" PRIu64 "\n", __func__, ptp->port, ptp->t4,
       ptp->t3_sequence_id, ptp_get_raw_time(ptp));
-  MT_PTP_MSG_PROBE(ptp->port, 4, ptp->t4);
+  MT_USDT_PTP_MSG(ptp->port, 4, ptp->t4);
 
   /* all time get */
   if (ptp->t3 && ptp->t2 && ptp->t1) {

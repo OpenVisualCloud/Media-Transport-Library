@@ -404,7 +404,11 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     err("%s, mt_dev_eal_init fail %d\n", __func__, ret);
     return NULL;
   }
-  info("MTL version: %s, dpdk version: %s\n", mtl_version(), rte_version());
+  notice("%s, MTL version: %s, dpdk version: %s\n", __func__, mtl_version(),
+         rte_version());
+#ifdef MTL_HAS_USDT
+  notice("%s, MTL_HAS_USDT is defined for this build\n", __func__);
+#endif
 
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];

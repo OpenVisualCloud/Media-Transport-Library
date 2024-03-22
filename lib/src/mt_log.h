@@ -7,6 +7,7 @@
 
 #include <rte_log.h>
 
+#include "mt_usdt.h"
 #include "mtl_api.h"
 
 /* log define */
@@ -17,6 +18,8 @@ enum mtl_log_level mt_get_log_global_level(void);
 
 mtl_log_prefix_formatter_t mt_get_log_prefix_formatter(void);
 mtl_log_printer_t mt_get_log_printer(void);
+
+mtl_log_printer_t mt_get_usdt_log_printer(void);
 
 #define MT_LOG(l, t, format, ...)                                              \
   do {                                                                         \
@@ -29,6 +32,10 @@ mtl_log_printer_t mt_get_log_printer(void);
         printer(MTL_LOG_LEVEL_##l, "MTL: %s" format, __prefix, ##__VA_ARGS__); \
       else                                                                     \
         RTE_LOG(l, t, "%s" format, __prefix, ##__VA_ARGS__);                   \
+    }                                                                          \
+    if (MT_USDT_SYS_LOG_MSG_ENABLED()) {                                       \
+      mtl_log_printer_t usdt_printer = mt_get_usdt_log_printer();              \
+      usdt_printer(MTL_LOG_LEVEL_##l, format, ##__VA_ARGS__);                  \
     }                                                                          \
   } while (0)
 
