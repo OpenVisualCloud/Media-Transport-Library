@@ -31,6 +31,7 @@ struct mt_rdma_tx_queue {
   void* send_buffer;
   size_t send_buffer_size;
   bool connected;
+  bool stop;
   pthread_t connect_thread;
   uint16_t outstanding_wr;
 
@@ -64,6 +65,7 @@ struct mt_rdma_rx_queue {
   size_t recv_len;
   size_t recv_buffer_size;
   bool connected;
+  bool stop;
   pthread_t connect_thread;
 
   struct mt_rx_rdma_entry* rx_entry;
@@ -495,7 +497,7 @@ static void* rdma_tx_connect_thread(void* arg) {
   pfd.events = POLLIN;
 
   info("%s(%d, %u), start\n", __func__, port, q);
-  while (!txq->connected) {
+  while (!txq->stop && !txq->connected) {
     int ret = poll(&pfd, 1, 200);
     if (ret > 0) {
       ret = rdma_get_cm_event(txq->ec, &event);
@@ -596,13 +598,14 @@ connect_err:
 }
 
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
+  if (txq->connected) rdma_disconnect(txq->cma_id);
   if (txq->ah) ibv_destroy_ah(txq->ah);
   if (txq->send_mr) ibv_dereg_mr(txq->send_mr);
   if (txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
   if (txq->pd) ibv_dealloc_pd(txq->pd);
   if (txq->rai) rdma_freeaddrinfo(txq->rai);
   if (txq->cma_id) rdma_destroy_id(txq->cma_id);
-  txq->connected = true;
+  txq->stop = true;
   pthread_join(txq->connect_thread, NULL);
   if (txq->ec) rdma_destroy_event_channel(txq->ec);
 
@@ -663,6 +666,7 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
     return ret;
   }
 
+  txq->stop = false;
   ret = pthread_create(&txq->connect_thread, NULL, rdma_tx_connect_thread, txq);
   if (ret) {
     err("%s(%d, %u), pthread_create fail %d\n", __func__, port, q, ret);
@@ -702,7 +706,7 @@ static void* rdma_rx_connect_thread(void* arg) {
   pfd.events = POLLIN;
 
   info("%s(%d, %u), start\n", __func__, port, q);
-  while (!rxq->connected) {
+  while (!rxq->stop && !rxq->connected) {
     int ret = poll(&pfd, 1, 200);
     if (ret > 0) {
       ret = rdma_get_cm_event(rxq->ec, &event);
@@ -789,7 +793,7 @@ static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
   if (rxq->qp) ibv_destroy_qp(rxq->qp);
   if (rxq->pd) ibv_dealloc_pd(rxq->pd);
   if (rxq->listen_id) rdma_destroy_id(rxq->listen_id);
-  rxq->connected = true;
+  rxq->stop = true;
   pthread_join(rxq->connect_thread, NULL);
   if (rxq->ec) rdma_destroy_event_channel(rxq->ec);
 
@@ -844,6 +848,7 @@ static int rdma_rx_queue_init(struct mt_rdma_rx_queue* rxq) {
     return ret;
   }
 
+  rxq->stop = false;
   ret = pthread_create(&rxq->connect_thread, NULL, rdma_rx_connect_thread, rxq);
   if (ret) {
     err("%s(%d, %u), pthread_create fail %d\n", __func__, port, q, ret);
@@ -914,9 +919,13 @@ int mt_tx_rdma_put(struct mt_tx_rdma_entry* entry) {
   struct mt_rdma_tx_queue* txq = entry->txq;
 
   if (txq) {
-    /* poll all done buf */
-    rdma_tx_poll_done(txq);
     rdma_queue_tx_stat(txq);
+    /* flush posted mbufs */
+    if (txq->cma_id->qp) {
+      struct ibv_qp_attr qp_attr = {.qp_state = IBV_QPS_ERR};
+      ibv_modify_qp(txq->cma_id->qp, &qp_attr, IBV_QP_STATE);
+    }
+    rdma_tx_poll_done(txq);
     rdma_tx_queue_uinit(txq);
 
     txq->tx_entry = NULL;
@@ -988,6 +997,22 @@ struct mt_rx_rdma_entry* mt_rx_rdma_get(struct mtl_main_impl* impl, enum mtl_por
   return entry;
 }
 
+static void rdma_queue_rx_flush(struct mt_rdma_rx_queue* rxq) {
+  if (!rxq->qp) return;
+  struct ibv_qp_attr qp_attr = {.qp_state = IBV_QPS_ERR};
+  ibv_modify_qp(rxq->qp, &qp_attr, IBV_QP_STATE);
+  struct ibv_wc wc[32];
+  int rx = 0;
+  do {
+    rx = ibv_poll_cq(rxq->cq, 32, wc);
+    struct rte_mbuf* m = NULL;
+    for (int i = 0; i < rx; i++) {
+      m = (struct rte_mbuf*)wc[i].wr_id;
+      rte_pktmbuf_free(m);
+    }
+  } while (rx > 0);
+}
+
 int mt_rx_rdma_put(struct mt_rx_rdma_entry* entry) {
   enum mtl_port port = entry->port;
   struct mt_rxq_flow* flow = &entry->flow;
@@ -996,6 +1021,8 @@ int mt_rx_rdma_put(struct mt_rx_rdma_entry* entry) {
 
   if (rxq) {
     rdma_queue_rx_stat(rxq);
+    /* flush posted mbufs */
+    rdma_queue_rx_flush(rxq);
     rdma_rx_queue_uinit(rxq);
     rxq->rx_entry = NULL;
   }
