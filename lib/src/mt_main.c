@@ -952,8 +952,9 @@ const char* mtl_version(void) {
   static char version[128];
   if (version[0] != 0) return version;
 
-  snprintf(version, sizeof(version), "%d.%d.%d %s %s %s", MTL_VERSION_MAJOR,
-           MTL_VERSION_MINOR, MTL_VERSION_LAST, __TIMESTAMP__, __MTL_GIT__, MTL_COMPILER);
+  snprintf(version, sizeof(version), "%d.%d.%d.%s %s %s %s", MTL_VERSION_MAJOR,
+           MTL_VERSION_MINOR, MTL_VERSION_LAST, MTL_VERSION_EXTRA, __TIMESTAMP__,
+           __MTL_GIT__, MTL_COMPILER);
 
   return version;
 }
