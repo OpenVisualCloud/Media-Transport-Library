@@ -34,6 +34,7 @@ prj_ver = meson.project_version().split('.')
 mtl_conf.set('MTL_VERSION_MAJOR', prj_ver.get(0).to_int())
 mtl_conf.set('MTL_VERSION_MINOR', prj_ver.get(1).to_int())
 mtl_conf.set('MTL_VERSION_LAST', prj_ver.get(2).to_int())
+mtl_conf.set_quoted('MTL_VERSION_EXTRA', prj_ver.get(3))
 # parse compiler config
 cc_ver = meson.get_compiler('c').get_id() + '-' + meson.get_compiler('c').version()
 mtl_conf.set_quoted('MTL_COMPILER', cc_ver)

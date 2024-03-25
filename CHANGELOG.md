@@ -1,6 +1,6 @@
 # Changelog
 
-## Changelog for 24.04
+## Changelog for 24.06
 
 * dpdk: upgrade dpdk version to 23.11.
 * st22: add interlaced support.
