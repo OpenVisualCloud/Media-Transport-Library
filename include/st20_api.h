@@ -381,6 +381,8 @@ struct st20_tx_frame_meta {
   uint64_t timestamp;
   /** epoch */
   uint64_t epoch;
+  /** Timestamp value in the rtp header */
+  uint32_t rtp_timestamp;
   /**
    * The user meta data buffer for current frame, the size must smaller than
    * MTL_PKT_MAX_RTP_BYTES. This data will be transported to RX with video data and passed
@@ -518,6 +520,8 @@ struct st20_rx_frame_meta {
   uint64_t timestamp_last_pkt;
   /** first packet time in ns to the start of current epoch */
   int64_t fpt;
+  /** Timestamp value in the rtp header */
+  uint32_t rtp_timestamp;
   /**
    * The received user meta data buffer for current frame.
    */

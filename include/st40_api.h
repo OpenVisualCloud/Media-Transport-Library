@@ -221,6 +221,8 @@ struct st40_tx_frame_meta {
   uint64_t epoch;
   /** Second field type indicate for interlaced mode, set by user */
   bool second_field;
+  /** Timestamp value in the rtp header */
+  uint32_t rtp_timestamp;
 };
 
 /**

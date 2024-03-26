@@ -789,6 +789,7 @@ struct st_tx_audio_session_impl {
   char ops_name[ST_MAX_NAME_LEN];
   int recovery_idx;
   bool active;
+  struct st_tx_audio_sessions_mgr* mgr;
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
@@ -945,6 +946,7 @@ struct st_rx_audio_tp {
 
 struct st_rx_audio_session_impl {
   int idx; /* index for current session */
+  struct st_rx_audio_sessions_mgr* mgr;
   bool attached;
   struct st30_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -965,7 +967,7 @@ struct st_rx_audio_session_impl {
   struct st_frame_trans* st30_frames;
   int st30_frames_cnt; /* numbers of frames requested */
   size_t st30_frame_size;
-  void* st30_cur_frame; /* pointer to current frame */
+  struct st_frame_trans* st30_cur_frame; /* pointer to current frame */
 
   uint32_t pkt_len;       /* data len(byte) for each pkt */
   uint32_t st30_pkt_size; /* size for each pkt which include the header */
@@ -985,6 +987,7 @@ struct st_rx_audio_session_impl {
 
   /* status */
   int st30_stat_pkts_dropped;
+  int stat_slot_get_frame_fail;
   int st30_stat_pkts_wrong_pt_dropped;
   int st30_stat_pkts_wrong_ssrc_dropped;
   int st30_stat_pkts_len_mismatch_dropped;
@@ -1025,6 +1028,7 @@ struct st_tx_ancillary_session_pacing {
 
 struct st_tx_ancillary_session_impl {
   int idx; /* index for current session */
+  struct st_tx_ancillary_sessions_mgr* mgr;
   struct st40_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
 
@@ -1112,6 +1116,7 @@ struct st_tx_ancillary_sessions_mgr {
 
 struct st_rx_ancillary_session_impl {
   int idx; /* index for current session */
+  struct st_rx_ancillary_sessions_mgr* mgr;
   bool attached;
   struct st40_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -1133,6 +1138,7 @@ struct st_rx_ancillary_session_impl {
   /* status */
   rte_atomic32_t st40_stat_frames_received;
   int st40_stat_pkts_dropped;
+  int st40_stat_pkts_enqueue_fail;
   int st40_stat_pkts_wrong_pt_dropped;
   int st40_stat_pkts_wrong_ssrc_dropped;
   int st40_stat_pkts_received;

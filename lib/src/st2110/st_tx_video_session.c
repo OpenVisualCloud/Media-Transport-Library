@@ -86,9 +86,10 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
       s->st22_info->notify_frame_done(s->ops.priv, frame_idx,
                                       &s->st20_frames[frame_idx].tx_st22_meta);
   } else {
+    struct st20_tx_frame_meta* tv_meta = &s->st20_frames[frame_idx].tv_meta;
     if (s->ops.notify_frame_done)
-      s->ops.notify_frame_done(s->ops.priv, frame_idx,
-                               &s->st20_frames[frame_idx].tv_meta);
+      s->ops.notify_frame_done(s->ops.priv, frame_idx, tv_meta);
+    MT_USDT_ST20_TX_FRAME_DONE(s->mgr->idx, s->idx, frame_idx, tv_meta->rtp_timestamp);
   }
   if (s->time_measure) {
     uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
@@ -1717,11 +1718,14 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tv_meta.timestamp = pacing->cur_epoch_time;
+      frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
       frame->tv_meta.epoch = pacing->cur_epochs;
       /* init to next field */
       if (ops->interlaced) {
         s->second_field = second_field ? false : true;
       }
+      MT_USDT_ST20_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
+                                 pacing->rtp_time_stamp);
     }
   }
 

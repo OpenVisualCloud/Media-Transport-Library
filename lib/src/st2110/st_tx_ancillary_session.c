@@ -793,6 +793,9 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
       return MTL_TASKLET_ALL_DONE;
     }
+
+    MT_USDT_ST40_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
+                               src->meta_num, total_udw);
   }
 
   /* sync pacing */
@@ -809,6 +812,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     }
     frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
     frame->tc_meta.timestamp = pacing->cur_epoch_time;
+    frame->tc_meta.rtp_timestamp = pacing->rtp_time_stamp;
     /* init to next field */
     if (ops->interlaced) {
       s->second_field = second_field ? false : true;
@@ -908,11 +912,12 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   if (s->st40_pkt_idx >= s->st40_total_pkts) {
     dbg("%s(%d), frame %d done\n", __func__, idx, s->st40_frame_idx);
     struct st_frame_trans* frame = &s->st40_frames[s->st40_frame_idx];
+    struct st40_tx_frame_meta* tc_meta = &frame->tc_meta;
     uint64_t tsc_start = 0;
     if (s->time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (s->ops.notify_frame_done)
-      ops->notify_frame_done(ops->priv, s->st40_frame_idx, &frame->tc_meta);
+      ops->notify_frame_done(ops->priv, s->st40_frame_idx, tc_meta);
     if (s->time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
@@ -922,6 +927,9 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->st40_stat_frame_cnt);
     pacing->tsc_time_cursor = 0;
+
+    MT_USDT_ST40_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st40_frame_idx,
+                               tc_meta->rtp_timestamp);
   }
 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
@@ -1389,6 +1397,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
 
+  s->mgr = mgr;
   s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);

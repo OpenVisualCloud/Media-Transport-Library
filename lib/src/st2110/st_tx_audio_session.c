@@ -664,6 +664,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
       s->st30_frame_idx = next_frame_idx;
       dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
       s->st30_frame_stat = ST30_TX_STAT_SENDING_PKTS;
+      MT_USDT_ST30_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr);
     }
   }
 
@@ -679,6 +680,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     }
     frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
     frame->ta_meta.timestamp = pacing->cur_epoch_time;
+    frame->ta_meta.rtp_timestamp = pacing->rtp_time_stamp;
     s->calculate_time_cursor = false; /* clear */
   }
 
@@ -775,11 +777,12 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
   if (s->st30_pkt_idx >= s->st30_total_pkts) {
     dbg("%s(%d), frame %d done\n", __func__, idx, s->st30_frame_idx);
     struct st_frame_trans* frame = &s->st30_frames[s->st30_frame_idx];
+    struct st30_tx_frame_meta* ta_meta = &frame->ta_meta;
     uint64_t tsc_start = 0;
     if (s->time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (s->ops.notify_frame_done)
-      ops->notify_frame_done(ops->priv, s->st30_frame_idx, &frame->ta_meta);
+      ops->notify_frame_done(ops->priv, s->st30_frame_idx, ta_meta);
     if (s->time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
@@ -790,6 +793,8 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     s->check_frame_done_time = true;
     s->st30_pkt_idx = 0;
     rte_atomic32_inc(&s->st30_stat_frame_cnt);
+    MT_USDT_ST30_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st30_frame_idx,
+                               ta_meta->rtp_timestamp);
   }
 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
@@ -1834,6 +1839,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
+
+  s->mgr = mgr;
 
   /* detect pacing */
   s->tx_pacing_way = ST30_TX_PACING_WAY_TSC;
