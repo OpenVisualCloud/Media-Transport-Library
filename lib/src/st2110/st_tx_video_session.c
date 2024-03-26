@@ -80,7 +80,9 @@ static inline uint64_t tv_rl_bps(struct st_tx_video_session_impl* s) {
 
 static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t frame_idx) {
   uint64_t tsc_start = 0;
-  if (s->time_measure) tsc_start = mt_get_tsc(s->impl);
+  struct mtl_main_impl* impl = s->impl;
+  bool time_measure = mt_sessions_time_measure(impl);
+  if (time_measure) tsc_start = mt_get_tsc(impl);
   if (s->st22_info) {
     if (s->st22_info->notify_frame_done)
       s->st22_info->notify_frame_done(s->ops.priv, frame_idx,
@@ -91,8 +93,8 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
       s->ops.notify_frame_done(s->ops.priv, frame_idx, tv_meta);
     MT_USDT_ST20_TX_FRAME_DONE(s->mgr->idx, s->idx, frame_idx, tv_meta->rtp_timestamp);
   }
-  if (s->time_measure) {
-    uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
+  if (time_measure) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
     s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
   }
 }
@@ -1659,9 +1661,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
       tv_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
-      if (s->time_measure) tsc_start = mt_get_tsc(impl);
+      bool time_measure = mt_sessions_time_measure(impl);
+      if (time_measure) tsc_start = mt_get_tsc(impl);
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
-      if (s->time_measure) {
+      if (time_measure) {
         uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
         s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
       }
@@ -2113,9 +2116,10 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
 
       tv_init_st22_next_meta(s, &meta);
       /* Query next frame buffer idx */
-      if (s->time_measure) tsc_start = mt_get_tsc(impl);
+      bool time_measure = mt_sessions_time_measure(impl);
+      if (time_measure) tsc_start = mt_get_tsc(impl);
       ret = st22_info->get_next_frame(ops->priv, &next_frame_idx, &meta);
-      if (s->time_measure) {
+      if (time_measure) {
         uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
         s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
       }
@@ -2332,7 +2336,8 @@ static int tvs_tasklet_handler(void* priv) {
     if (!s) continue;
     if (!s->active) goto exit;
 
-    if (s->time_measure) tsc_s = mt_get_tsc(impl);
+    bool time_measure = mt_sessions_time_measure(impl);
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(s);
     /* check vsync if it has vsync enabled */
@@ -2346,7 +2351,7 @@ static int tvs_tasklet_handler(void* priv) {
     else
       pending = tv_tasklet_rtp(impl, s);
 
-    if (s->time_measure) {
+    if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
@@ -2937,7 +2942,6 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     s->st20_fb_size = s->st20_linesize * height;
   }
   s->st20_frames_cnt = ops->framebuff_cnt;
-  s->time_measure = mt_user_tasklet_time_measure(impl);
 
   ret = tv_init_pkt(impl, s, ops, st22_frame_ops);
   if (ret < 0) {
@@ -3237,23 +3241,20 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     }
   }
 
-  if (s->time_measure) {
-    struct mt_stat_u64* stat_time = &s->stat_time;
-    if (stat_time->cnt) {
-      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("TX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
-             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
-    }
+  struct mt_stat_u64* stat_time = &s->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("TX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
+           m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
     mt_stat_u64_init(stat_time);
-
-    if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
-      notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
-             m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
-    }
-    s->stat_max_next_frame_us = 0;
-    s->stat_max_notify_frame_us = 0;
   }
+  if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+    notice("TX_VIDEO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
+           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+  }
+  s->stat_max_next_frame_us = 0;
+  s->stat_max_notify_frame_us = 0;
 }
 
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,

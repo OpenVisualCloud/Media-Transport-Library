@@ -6,6 +6,10 @@
 
 provider sys {
   probe log_msg(int level, char* msg);
+  /* attach to enable the tasklet_time_measure at runtime */
+  probe tasklet_time_measure();
+  /* attach to enable the sessions_time_measure at runtime */
+  probe sessions_time_measure();
 }
 
 provider ptp {

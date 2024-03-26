@@ -253,6 +253,12 @@ static int mt_main_free(struct mtl_main_impl* impl) {
   return 0;
 }
 
+bool mt_sessions_time_measure(struct mtl_main_impl* impl) {
+  bool enabled = mt_user_tasklet_time_measure(impl);
+  if (MT_USDT_SESSIONS_TIME_MEASURE_ENABLED()) enabled = true;
+  return enabled;
+}
+
 static int mt_user_params_check(struct mtl_init_params* p) {
   int num_ports = p->num_ports, ret;
   uint8_t* ip = NULL;
@@ -392,6 +398,11 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
+
+  /* place holder to let bpf trace can attach to usdt::sys:tasklet_time_measure and
+   * usdt::sys:sessions_time_measure */
+  MT_SYS_TASKLET_TIME_MEASURE();
+  MT_SYS_SESSIONS_TIME_MEASURE();
 
   ret = mt_user_params_check(p);
   if (ret < 0) {

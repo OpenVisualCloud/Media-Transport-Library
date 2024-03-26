@@ -249,7 +249,6 @@ struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
   bool active;
-  bool time_measure;
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
   bool mbuf_mempool_reuse_rx[MTL_SESSION_PORT_MAX]; /* af_xdp zero copy */

@@ -47,6 +47,8 @@
   } while (0)
 
 #define SYS_LOG_MSG_ENABLED() (0)
+#define SYS_TASKLET_TIME_MEASURE() (0)
+#define SYS_SESSIONS_TIME_MEASURE() (0)
 
 #endif
 
@@ -58,6 +60,12 @@
 #define MT_USDT_SYS_LOG_MSG(level, msg) MT_DTRACE_PROBE2(sys, log_msg, level, msg)
 
 #define MT_USDT_SYS_LOG_MSG_ENABLED() SYS_LOG_MSG_ENABLED()
+
+#define MT_SYS_TASKLET_TIME_MEASURE() SYS_TASKLET_TIME_MEASURE()
+#define MT_USDT_TASKLET_TIME_MEASURE_ENABLED() SYS_TASKLET_TIME_MEASURE_ENABLED()
+
+#define MT_SYS_SESSIONS_TIME_MEASURE() SYS_SESSIONS_TIME_MEASURE()
+#define MT_USDT_SESSIONS_TIME_MEASURE_ENABLED() SYS_SESSIONS_TIME_MEASURE_ENABLED()
 
 #define MT_USDT_ST20_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, tmstamp) \
   MT_DTRACE_PROBE5(st20, tx_frame_next, m_idx, s_idx, f_idx, va, tmstamp)
