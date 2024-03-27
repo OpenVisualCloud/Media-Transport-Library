@@ -161,9 +161,10 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
-  if (s->time_measure) tsc_start = mt_get_tsc(impl);
+  bool time_measure = mt_sessions_time_measure(impl);
+  if (time_measure) tsc_start = mt_get_tsc(impl);
   ops->notify_rtp_ready(ops->priv);
-  if (s->time_measure) {
+  if (time_measure) {
     uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
     s->stat_max_notify_rtp_us = RTE_MAX(s->stat_max_notify_rtp_us, delta_us);
   }
@@ -217,15 +218,16 @@ static int rx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_rx_ancillary_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
+  bool time_measure = mt_sessions_time_measure(impl);
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
-    if (s->time_measure) tsc_s = mt_get_tsc(impl);
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     pending += rx_ancillary_session_tasklet(s);
 
-    if (s->time_measure) {
+    if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
@@ -377,7 +379,6 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) return ret;
 
   s->mgr = mgr;
-  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
@@ -466,21 +467,19 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
     s->stat_interlace_first_field = 0;
     s->stat_interlace_second_field = 0;
   }
-  if (s->time_measure) {
-    struct mt_stat_u64* stat_time = &s->stat_time;
-    if (stat_time->cnt) {
-      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("RX_ANC_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
-             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
-    }
-    mt_stat_u64_init(stat_time);
 
-    if (s->stat_max_notify_rtp_us > 8) {
-      notice("RX_ANC_SESSION(%d): notify rtp max %uus\n", idx, s->stat_max_notify_rtp_us);
-    }
-    s->stat_max_notify_rtp_us = 0;
+  struct mt_stat_u64* stat_time = &s->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("RX_ANC_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
+           (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
+    mt_stat_u64_init(stat_time);
   }
+  if (s->stat_max_notify_rtp_us > 8) {
+    notice("RX_ANC_SESSION(%d): notify rtp max %uus\n", idx, s->stat_max_notify_rtp_us);
+  }
+  s->stat_max_notify_rtp_us = 0;
 }
 
 static int rx_ancillary_session_detach(struct mtl_main_impl* impl,

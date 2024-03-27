@@ -681,10 +681,11 @@ static inline int rv_notify_frame_ready(struct st_rx_video_session_impl* s, void
                                         struct st20_rx_frame_meta* meta) {
   int ret;
   uint64_t tsc_start = 0;
+  bool time_measure = mt_sessions_time_measure(s->impl);
 
-  if (s->time_measure) tsc_start = mt_get_tsc(s->impl);
+  if (time_measure) tsc_start = mt_get_tsc(s->impl);
   ret = s->ops.notify_frame_ready(s->ops.priv, frame, meta);
-  if (s->time_measure) {
+  if (time_measure) {
     uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
     s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
   }
@@ -697,10 +698,11 @@ static inline int st22_notify_frame_ready(struct st_rx_video_session_impl* s, vo
   int ret;
   uint64_t tsc_start = 0;
   struct st22_rx_video_info* st22_info = s->st22_info;
+  bool time_measure = mt_sessions_time_measure(s->impl);
 
-  if (s->time_measure) tsc_start = mt_get_tsc(s->impl);
+  if (time_measure) tsc_start = mt_get_tsc(s->impl);
   ret = st22_info->notify_frame_ready(s->ops.priv, frame, meta);
-  if (s->time_measure) {
+  if (time_measure) {
     uint32_t delta_us = (mt_get_tsc(s->impl) - tsc_start) / NS_PER_US;
     s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
   }
@@ -2958,7 +2960,6 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   }
 
   s->impl = impl;
-  s->time_measure = mt_user_tasklet_time_measure(impl);
   s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
   s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
   s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
@@ -3155,11 +3156,12 @@ static int rvs_pkt_rx_tasklet_handler(void* priv) {
   int sidx;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
+  bool time_measure = mt_sessions_time_measure(impl);
 
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_video_session_try_get(mgr, sidx);
     if (!s) continue;
-    if (s->time_measure) tsc_s = mt_get_tsc(impl);
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     pending += rv_pkt_rx_tasklet(s);
 
@@ -3167,7 +3169,7 @@ static int rvs_pkt_rx_tasklet_handler(void* priv) {
     if (s->ops.flags & ST20_RX_FLAG_ENABLE_VSYNC) rv_poll_vsync(impl, s);
     if (s->ops.flags & ST20_RX_FLAG_ENABLE_RTCP) rv_send_nack(s);
 
-    if (s->time_measure) {
+    if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
@@ -3422,22 +3424,19 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
   }
   if (s->enable_timing_parser_stat) rv_tp_stat(s);
 
-  if (s->time_measure) {
-    struct mt_stat_u64* stat_time = &s->stat_time;
-    if (stat_time->cnt) {
-      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("RX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
-             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
-    }
+  struct mt_stat_u64* stat_time = &s->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("RX_VIDEO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
+           m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
     mt_stat_u64_init(stat_time);
-
-    if (s->stat_max_notify_frame_us > 8) {
-      notice("RX_VIDEO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
-             s->stat_max_notify_frame_us);
-    }
-    s->stat_max_notify_frame_us = 0;
   }
+  if (s->stat_max_notify_frame_us > 8) {
+    notice("RX_VIDEO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
+           s->stat_max_notify_frame_us);
+  }
+  s->stat_max_notify_frame_us = 0;
 }
 
 static int rvs_pkt_rx_tasklet_start(void* priv) {

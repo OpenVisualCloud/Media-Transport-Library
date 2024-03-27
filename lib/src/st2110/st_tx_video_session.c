@@ -2330,13 +2330,13 @@ static int tvs_tasklet_handler(void* priv) {
   struct st_tx_video_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
+  bool time_measure = mt_sessions_time_measure(impl);
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_video_session_try_get(mgr, sidx);
     if (!s) continue;
     if (!s->active) goto exit;
 
-    bool time_measure = mt_sessions_time_measure(impl);
     if (time_measure) tsc_s = mt_get_tsc(impl);
 
     if (s->ops.flags & ST20_TX_FLAG_ENABLE_RTCP) tv_tasklet_rtcp(s);
