@@ -24,6 +24,10 @@ enum lcore_tid_event_type {
   LCORE_VECTOR_ENTRY,
   /* hook on tracepoint/irq_vectors/irq_work_exit */
   LCORE_VECTOR_EXIT,
+  /* hook on tracepoint:raw_syscalls:sys_enter */
+  LCORE_SYS_ENTER,
+  /* hook on tracepoint:raw_syscalls:sys_exit */
+  LCORE_SYS_EXIT,
 };
 
 struct lcore_tid_event {
@@ -33,6 +37,7 @@ struct lcore_tid_event {
     int next_pid; /* for LCORE_SCHED_IN/LCORE_SCHED_OUT */
     int irq;      /* for LCORE_IRQ_ENTRY/LCORE_IRQ_EXIT */
     int vector;   /* LCORE_VECTOR_ENTRY/LCORE_VECTOR_EXIT */
+    int id;       /* for LCORE_SYS_ENTER/LCORE_SYS_EXIT */
   };
 };
 

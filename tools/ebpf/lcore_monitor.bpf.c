@@ -58,7 +58,7 @@ int bpf_prog_sched_switch(struct trace_event_raw_sched_switch* args) {
   if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
 
   if (cfg->bpf_trace) {
-    char fmt[] = "sched_switch: prev_pid %d next_pid in\n";
+    char fmt[] = "sched_switch: prev_pid %d next_pid in %d\n";
     bpf_trace_printk(fmt, sizeof(fmt), args->prev_pid, args->next_pid);
   }
 
@@ -180,6 +180,60 @@ int BPF_PROG(irq_work_exit, unsigned int vector) {
   }
 
   lm_vector_event_submit(LCORE_VECTOR_EXIT, vector);
+
+  return 0;
+}
+
+static int lm_syscall_event_submit(enum lcore_tid_event_type type, int id) {
+  struct lcore_tid_event* e;
+
+  e = bpf_ringbuf_reserve(&lm_events_map, sizeof(*e), 0);
+  if (!e) {
+    char fmt[] = "lm event ringbuf reserve fail\n";
+    bpf_trace_printk(fmt, sizeof(fmt));
+    return 0;
+  }
+
+  e->type = type;
+  e->ns = bpf_ktime_get_ns();
+  e->id = id;
+
+  bpf_ringbuf_submit(e, 0);
+  return 0;
+}
+
+SEC("tracepoint/raw_syscalls/sys_enter")
+int bpf_prog_sys_enter(struct trace_event_raw_sys_enter* args) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
+  if (!cfg) return 0;
+
+  /* core id check */
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
+
+  if (cfg->bpf_trace) {
+    char fmt[] = "sys_enter: id %d\n";
+    bpf_trace_printk(fmt, sizeof(fmt), args->id);
+  }
+
+  lm_syscall_event_submit(LCORE_SYS_ENTER, args->id);
+
+  return 0;
+}
+
+SEC("tracepoint/raw_syscalls/sys_exit")
+int bpf_prog_sys_enxit(struct trace_event_raw_sys_exit* args) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
+  if (!cfg) return 0;
+
+  /* core id check */
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
+
+  if (cfg->bpf_trace) {
+    char fmt[] = "sys_enter: id %d\n";
+    bpf_trace_printk(fmt, sizeof(fmt), args->id);
+  }
+
+  lm_syscall_event_submit(LCORE_SYS_EXIT, args->id);
 
   return 0;
 }

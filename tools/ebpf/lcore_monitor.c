@@ -25,6 +25,8 @@ struct lcore_monitor_ctx {
   struct lcore_tid_event sched_out;
   struct lcore_tid_event irq_entry;
   struct lcore_tid_event vector_entry;
+  struct lcore_tid_event syscall;
+  int filter_ns;
 };
 
 enum lm_args_cmd {
@@ -32,14 +34,17 @@ enum lm_args_cmd {
   LM_ARG_CORE = 0x100, /* start from end of ascii */
   LM_ARG_T_PID,
   LM_ARG_BPF_TRACE,
+  LM_ARG_FILTER_US,
   LM_ARG_HELP,
 };
 
-static struct option et_args_options[] = {{"lcore", required_argument, 0, LM_ARG_CORE},
-                                          {"t_pid", required_argument, 0, LM_ARG_T_PID},
-                                          {"bpf_trace", no_argument, 0, LM_ARG_BPF_TRACE},
-                                          {"help", no_argument, 0, LM_ARG_HELP},
-                                          {0, 0, 0, 0}};
+static struct option et_args_options[] = {
+    {"lcore", required_argument, 0, LM_ARG_CORE},
+    {"t_pid", required_argument, 0, LM_ARG_T_PID},
+    {"bpf_trace", no_argument, 0, LM_ARG_BPF_TRACE},
+    {"filter_us", required_argument, 0, LM_ARG_FILTER_US},
+    {"help", no_argument, 0, LM_ARG_HELP},
+    {0, 0, 0, 0}};
 
 static void lm_print_help() {
   printf("\n");
@@ -48,6 +53,7 @@ static void lm_print_help() {
   printf(" Params:\n");
   printf("  --lcore <id>        Set the monitor lcore\n");
   printf("  --t_pid <id>        Set the monitor t_pid\n");
+  printf("  --filter_us <us>    Report the sch/irq event only if the time > filter_us\n");
   printf("  --bpf_trace         Enable bpf trace\n");
   printf("  --help              Print help info\n");
 
@@ -70,6 +76,9 @@ static int lm_parse_args(struct lcore_monitor_ctx* ctx, int argc, char** argv) {
         break;
       case LM_ARG_BPF_TRACE:
         ctx->cfg.bpf_trace = true;
+        break;
+      case LM_ARG_FILTER_US:
+        ctx->filter_ns = atoi(optarg) * 1000;
         break;
       case LM_ARG_HELP:
       default:
@@ -132,9 +141,9 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
     dbg("%s: out ns %" PRIu64 "\n", __func__, ctx->sched_out.ns);
     return 0;
   }
-
   if (e->type == LCORE_SCHED_IN) {
     float ns = e->ns - ctx->sched_out.ns;
+    if (ns < ctx->filter_ns) return 0;
     int next_pid = ctx->sched_out.next_pid;
     char process_name[64];
     ret = get_process_name_by_pid(next_pid, process_name, sizeof(process_name));
@@ -142,6 +151,7 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
       info("%s: sched out %.3fus as pid: %d\n", __func__, ns / 1000, next_pid);
     else
       info("%s: sched out %.3fus as comm: %s\n", __func__, ns / 1000, process_name);
+    return 0;
   }
 
   if (e->type == LCORE_IRQ_ENTRY) {
@@ -149,10 +159,11 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
     dbg("%s: irq_entry %d ns %" PRIu64 "\n", __func__, e->irq, e->ns);
     return 0;
   }
-
   if (e->type == LCORE_IRQ_EXIT) {
     float ns = e->ns - ctx->irq_entry.ns;
+    if (ns < ctx->filter_ns) return 0;
     info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, e->irq);
+    return 0;
   }
 
   if (e->type == LCORE_VECTOR_ENTRY) {
@@ -160,12 +171,26 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
     dbg("%s: vector_entry %d ns %" PRIu64 "\n", __func__, e->vector, e->ns);
     return 0;
   }
-
   if (e->type == LCORE_VECTOR_EXIT) {
     float ns = e->ns - ctx->vector_entry.ns;
+    if (ns < ctx->filter_ns) return 0;
     info("%s: sched out %.3fus as vector: %d\n", __func__, ns / 1000, e->vector);
+    return 0;
   }
 
+  if (e->type == LCORE_SYS_ENTER) {
+    memcpy(&ctx->syscall, e, sizeof(ctx->syscall));
+    dbg("%s: sys enter id: %d ns: %" PRIu64 "\n", __func__, e->id, e->ns);
+    return 0;
+  }
+  if (e->type == LCORE_SYS_EXIT) {
+    float ns = e->ns - ctx->syscall.ns;
+    if (ns < ctx->filter_ns) return 0;
+    info("%s: syscall out %.3fus as syscall: %d\n", __func__, ns / 1000, e->id);
+    return 0;
+  }
+
+  err("%s: unknow type %d\n", __func__, e->type);
   return 0;
 }
 
