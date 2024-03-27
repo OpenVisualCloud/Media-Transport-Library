@@ -99,15 +99,18 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sc
   return 0;
 }
 
+static bool sch_tasklet_time_measure(struct mtl_main_impl* impl) {
+  bool enabled = mt_user_tasklet_time_measure(impl);
+  if (MT_USDT_TASKLET_TIME_MEASURE_ENABLED()) enabled = true;
+  return enabled;
+}
+
 static int sch_tasklet_func(struct mtl_sch_impl* sch) {
   struct mtl_main_impl* impl = sch->parent;
   int idx = sch->idx;
   int num_tasklet, i;
   struct mtl_tasklet_ops* ops;
   struct mt_sch_tasklet_impl* tasklet;
-  bool time_measure = mt_user_tasklet_time_measure(impl);
-  uint64_t tsc_s = 0;
-  uint64_t sch_tsc_s = 0;
   uint64_t loop_cal_start_ns;
   uint64_t loop_cnt = 0;
 
@@ -131,8 +134,10 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
 
   while (rte_atomic32_read(&sch->request_stop) == 0) {
     int pending = MTL_TASKLET_ALL_DONE;
+    bool time_measure = sch_tasklet_time_measure(impl);
+    uint64_t tm_sch_tsc_s = 0; /* for sch time_measure */
 
-    if (time_measure) sch_tsc_s = mt_get_tsc(impl);
+    if (time_measure) tm_sch_tsc_s = mt_get_tsc(impl);
 
     num_tasklet = sch->max_tasklet_idx;
     for (i = 0; i < num_tasklet; i++) {
@@ -145,10 +150,12 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
         continue;
       }
       ops = &tasklet->ops;
-      if (time_measure) tsc_s = mt_get_tsc(impl);
+
+      uint64_t tm_tasklet_tsc_s = 0; /* for tasklet time_measure */
+      if (time_measure) tm_tasklet_tsc_s = mt_get_tsc(impl);
       pending += ops->handler(ops->priv);
       if (time_measure) {
-        uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
+        uint64_t delta_ns = mt_get_tsc(impl) - tm_tasklet_tsc_s;
         mt_stat_u64_update(&tasklet->stat_time, delta_ns);
       }
     }
@@ -166,7 +173,7 @@ static int sch_tasklet_func(struct mtl_sch_impl* sch) {
     }
 
     if (time_measure) {
-      uint64_t delta_ns = mt_get_tsc(impl) - sch_tsc_s;
+      uint64_t delta_ns = mt_get_tsc(impl) - tm_sch_tsc_s;
       mt_stat_u64_update(&sch->stat_time, delta_ns);
     }
   }
@@ -396,27 +403,27 @@ static int sch_stat(void* priv) {
 
   notice("SCH(%d:%s): tasklets %d, lcore %u(t_pid: %d), avg loop %" PRIu64 " ns\n", idx,
          sch->name, num_tasklet, sch->lcore, sch->t_pid, mt_sch_avg_ns_loop(sch));
-  if (mt_user_tasklet_time_measure(sch->parent)) {
-    struct mt_stat_u64* stat_time = &sch->stat_time;
+
+  /* print the stat time info */
+  struct mt_stat_u64* stat_time = &sch->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("SCH(%d): time avg %.2fus max %.2fus min %.2fus\n", idx,
+           (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
+    mt_stat_u64_init(stat_time);
+  }
+  for (int i = 0; i < num_tasklet; i++) {
+    tasklet = sch->tasklet[i];
+    if (!tasklet) continue;
+
+    dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
+    stat_time = &tasklet->stat_time;
     if (stat_time->cnt) {
       uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("SCH(%d): time avg %.2fus max %.2fus min %.2fus\n", idx,
-             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+      notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
+             tasklet->name, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
              (float)stat_time->min / NS_PER_US);
-    }
-    mt_stat_u64_init(stat_time);
-    for (int i = 0; i < num_tasklet; i++) {
-      tasklet = sch->tasklet[i];
-      if (!tasklet) continue;
-
-      dbg("SCH(%d): tasklet %s at %d\n", idx, tasklet->name, i);
-      stat_time = &tasklet->stat_time;
-      if (stat_time->cnt) {
-        uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-        notice("SCH(%d,%d): tasklet %s, avg %.2fus max %.2fus min %.2fus\n", idx, i,
-               tasklet->name, (float)avg_ns / NS_PER_US,
-               (float)stat_time->max / NS_PER_US, (float)stat_time->min / NS_PER_US);
-      }
       mt_stat_u64_init(stat_time);
     }
   }

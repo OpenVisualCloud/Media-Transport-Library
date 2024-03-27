@@ -754,9 +754,10 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     tx_ancillary_session_init_next_meta(s, &meta);
     /* Query next frame buffer idx */
     uint64_t tsc_start = 0;
-    if (s->time_measure) tsc_start = mt_get_tsc(impl);
+    bool time_measure = mt_sessions_time_measure(impl);
+    if (time_measure) tsc_start = mt_get_tsc(impl);
     ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
-    if (s->time_measure) {
+    if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
     }
@@ -914,11 +915,12 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     struct st_frame_trans* frame = &s->st40_frames[s->st40_frame_idx];
     struct st40_tx_frame_meta* tc_meta = &frame->tc_meta;
     uint64_t tsc_start = 0;
-    if (s->time_measure) tsc_start = mt_get_tsc(impl);
+    bool time_measure = mt_sessions_time_measure(impl);
+    if (time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (s->ops.notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st40_frame_idx, tc_meta);
-    if (s->time_measure) {
+    if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
@@ -1082,11 +1084,12 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
   struct st_tx_ancillary_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
+  bool time_measure = mt_sessions_time_measure(impl);
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_ancillary_session_try_get(mgr, sidx);
     if (!s) continue;
-    if (s->time_measure) tsc_s = mt_get_tsc(impl);
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST40_TYPE_FRAME_LEVEL)
@@ -1094,7 +1097,7 @@ static int tx_ancillary_sessions_tasklet_handler(void* priv) {
     else
       pending += tx_ancillary_session_tasklet_rtp(impl, mgr, s);
 
-    if (s->time_measure) {
+    if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
@@ -1398,7 +1401,6 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) return ret;
 
   s->mgr = mgr;
-  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
@@ -1517,23 +1519,21 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
            s->stat_error_user_timestamp);
     s->stat_error_user_timestamp = 0;
   }
-  if (s->time_measure) {
-    struct mt_stat_u64* stat_time = &s->stat_time;
-    if (stat_time->cnt) {
-      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("TX_ANC_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
-             (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
-    }
-    mt_stat_u64_init(stat_time);
 
-    if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
-      notice("TX_ANC_SESSION(%d): get next frame max %uus, notify done max %uus\n", idx,
-             s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
-    }
-    s->stat_max_next_frame_us = 0;
-    s->stat_max_notify_frame_us = 0;
+  struct mt_stat_u64* stat_time = &s->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("TX_ANC_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
+           (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
+    mt_stat_u64_init(stat_time);
   }
+  if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+    notice("TX_ANC_SESSION(%d): get next frame max %uus, notify done max %uus\n", idx,
+           s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+  }
+  s->stat_max_next_frame_us = 0;
+  s->stat_max_notify_frame_us = 0;
 }
 
 static int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,

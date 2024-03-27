@@ -316,9 +316,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
                                     meta->frame_recv_size);
 
     /* get a full frame */
-    if (s->time_measure) tsc_start = mt_get_tsc(impl);
+    bool time_measure = mt_sessions_time_measure(impl);
+    if (time_measure) tsc_start = mt_get_tsc(impl);
     int ret = ops->notify_frame_ready(ops->priv, s->st30_cur_frame->addr, meta);
-    if (s->time_measure) {
+    if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
@@ -447,15 +448,16 @@ static int rx_audio_sessions_tasklet_handler(void* priv) {
   struct st_rx_audio_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
+  bool time_measure = mt_sessions_time_measure(impl);
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = rx_audio_session_try_get(mgr, sidx);
     if (!s) continue;
-    if (s->time_measure) tsc_s = mt_get_tsc(impl);
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     pending += rx_audio_session_tasklet(s);
 
-    if (s->time_measure) {
+    if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
@@ -600,7 +602,6 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   if (ret < 0) return ret;
 
   s->mgr = mgr;
-  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
@@ -734,22 +735,20 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
            s->stat_slot_get_frame_fail);
     s->stat_slot_get_frame_fail = 0;
   }
-  if (s->time_measure) {
-    struct mt_stat_u64* stat_time = &s->stat_time;
-    if (stat_time->cnt) {
-      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("RX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
-             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
-    }
-    mt_stat_u64_init(stat_time);
 
-    if (s->stat_max_notify_frame_us > 8) {
-      notice("RX_AUDIO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
-             s->stat_max_notify_frame_us);
-    }
-    s->stat_max_notify_frame_us = 0;
+  struct mt_stat_u64* stat_time = &s->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("RX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
+           m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
+    mt_stat_u64_init(stat_time);
   }
+  if (s->stat_max_notify_frame_us > 8) {
+    notice("RX_AUDIO_SESSION(%d,%d): notify frame max %uus\n", m_idx, idx,
+           s->stat_max_notify_frame_us);
+  }
+  s->stat_max_notify_frame_us = 0;
 
   if (s->enable_timing_parser_stat) ra_tp_stat(s);
 }

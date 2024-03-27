@@ -1489,6 +1489,8 @@ static inline bool mt_user_tasklet_time_measure(struct mtl_main_impl* impl) {
     return false;
 }
 
+bool mt_sessions_time_measure(struct mtl_main_impl* impl);
+
 /* if user enable rx mono pool */
 static inline bool mt_user_rx_mono_pool(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_MONO_POOL)

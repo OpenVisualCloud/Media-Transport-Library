@@ -639,9 +639,10 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
       tx_audio_session_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
-      if (s->time_measure) tsc_start = mt_get_tsc(impl);
+      bool time_measure = mt_sessions_time_measure(impl);
+      if (time_measure) tsc_start = mt_get_tsc(impl);
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
-      if (s->time_measure) {
+      if (time_measure) {
         uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
         s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
       }
@@ -779,11 +780,12 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     struct st_frame_trans* frame = &s->st30_frames[s->st30_frame_idx];
     struct st30_tx_frame_meta* ta_meta = &frame->ta_meta;
     uint64_t tsc_start = 0;
-    if (s->time_measure) tsc_start = mt_get_tsc(impl);
+    bool time_measure = mt_sessions_time_measure(impl);
+    if (time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (s->ops.notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st30_frame_idx, ta_meta);
-    if (s->time_measure) {
+    if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
@@ -968,7 +970,9 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
       return MTL_TASKLET_ALL_DONE;
     }
     s->trans_ring_inflight[s_port] = NULL;
-    if (s->time_measure) {
+
+    bool time_measure = mt_sessions_time_measure(impl);
+    if (time_measure) {
       uint64_t delta_ns = cur_tsc - target_tsc;
       mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
     }
@@ -1004,7 +1008,9 @@ static int tx_audio_session_tasklet_transmit(struct mtl_main_impl* impl,
     s->trans_ring_inflight[s_port] = pkt;
     return MTL_TASKLET_ALL_DONE;
   }
-  if (s->time_measure) {
+
+  bool time_measure = mt_sessions_time_measure(impl);
+  if (time_measure) {
     uint64_t delta_ns = cur_tsc - target_tsc;
     mt_stat_u64_update(&s->stat_tx_delta, delta_ns);
   }
@@ -1450,12 +1456,13 @@ static int tx_audio_sessions_tasklet(void* priv) {
   struct st_tx_audio_session_impl* s;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
+  bool time_measure = mt_sessions_time_measure(impl);
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_audio_session_try_get(mgr, sidx);
     if (!s) continue;
     if (!s->active) goto exit;
-    if (s->time_measure) tsc_s = mt_get_tsc(impl);
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST30_TYPE_FRAME_LEVEL)
@@ -1470,7 +1477,7 @@ static int tx_audio_sessions_tasklet(void* priv) {
         pending += tx_audio_session_tasklet_transmit(impl, mgr, s, port);
     }
 
-    if (s->time_measure) {
+    if (time_measure) {
       uint64_t delta_ns = mt_get_tsc(impl) - tsc_s;
       mt_stat_u64_update(&s->stat_time, delta_ns);
     }
@@ -1878,7 +1885,6 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     }
   }
 
-  s->time_measure = mt_user_tasklet_time_measure(impl);
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
@@ -2129,32 +2135,29 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
       rl_port->stat_hit_backup_cp = 0;
     }
   }
-  if (s->time_measure) {
-    struct mt_stat_u64* stat_time = &s->stat_time;
-    if (stat_time->cnt) {
-      uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-      notice("TX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
-             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
-             (float)stat_time->min / NS_PER_US);
-    }
+
+  struct mt_stat_u64* stat_time = &s->stat_time;
+  if (stat_time->cnt) {
+    uint64_t avg_ns = stat_time->sum / stat_time->cnt;
+    notice("TX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min %.2fus\n",
+           m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+           (float)stat_time->min / NS_PER_US);
     mt_stat_u64_init(stat_time);
-
-    struct mt_stat_u64* stat_tx_delta = &s->stat_tx_delta;
-    if (stat_tx_delta->cnt) {
-      uint64_t avg_ns = stat_tx_delta->sum / stat_tx_delta->cnt;
-      notice("TX_AUDIO_SESSION(%d,%d): tx delta avg %.2fus max %.2fus min %.2fus\n",
-             m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_tx_delta->max / NS_PER_US,
-             (float)stat_tx_delta->min / NS_PER_US);
-    }
-    mt_stat_u64_init(stat_tx_delta);
-
-    if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
-      notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
-             m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
-    }
-    s->stat_max_next_frame_us = 0;
-    s->stat_max_notify_frame_us = 0;
   }
+  struct mt_stat_u64* stat_tx_delta = &s->stat_tx_delta;
+  if (stat_tx_delta->cnt) {
+    uint64_t avg_ns = stat_tx_delta->sum / stat_tx_delta->cnt;
+    notice("TX_AUDIO_SESSION(%d,%d): tx delta avg %.2fus max %.2fus min %.2fus\n", m_idx,
+           idx, (float)avg_ns / NS_PER_US, (float)stat_tx_delta->max / NS_PER_US,
+           (float)stat_tx_delta->min / NS_PER_US);
+    mt_stat_u64_init(stat_tx_delta);
+  }
+  if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
+    notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max %uus\n",
+           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+  }
+  s->stat_max_next_frame_us = 0;
+  s->stat_max_notify_frame_us = 0;
 }
 
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,

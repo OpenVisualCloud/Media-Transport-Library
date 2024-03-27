@@ -58,6 +58,8 @@ Available probes:
 ```bash
 provider sys {
   probe log_msg(int level, char* msg);
+  /* attach to enable the tasklet_time_measure at runtime */
+  probe tasklet_time_measure();
 }
 ```
 
@@ -93,6 +95,99 @@ Example output like below:
 10:58:51 l2: RX_VIDEO_SESSION(1,0:app_rx_video_0): throughput 2611.475818 Mb/s, cpu busy 0.393960
 10:58:51 l2: RX_VIDEO_SESSION(1,0): succ burst max 21, avg 1.036176
 10:58:51 l2: * *    E N D    S T A T E   * *
+```
+
+#### 2.1.2 tasklet_time_measure USDT
+
+IMTL provides a flag named `MTL_FLAG_TASKLET_TIME_MEASURE` which enables the time measurement tracing feature, as the tasklet loop time is critical to our polling mode design. When this feature is activated during the initialization routine, IMTL will report the tasklet execution information through the status dump thread.
+
+Typically, this flag is disabled in a production system since the time measurement tracing logic may incur additional CPU overhead. However, the USDT probe offers alternative methods to activate tracing at any time. The time measurement tracing becomes active when IMTL detects that a tasklet_time_measure USDT probe is attached.
+
+Usage: Execute the following sample command to enable the probe, replacing "RxTxApp" with the name of your application process:
+
+```bash
+sudo bpftrace -e 'usdt::sys:tasklet_time_measure { printf("%s", strftime("%H:%M:%S", nsecs)); }' -p $(pidof RxTxApp)
+```
+
+Then you can then monitor the tasklet execution time by reviewing the relevant log entries.
+
+```bash
+MTL: 2024-03-26 16:00:19, * *    M T    D E V   S T A T E   * *
+MTL: 2024-03-26 16:00:19, DEV(0): Avr rate, tx: 2612.232158 Mb/s, rx: 0.000000 Mb/s, pkts, tx: 2476211, rx: 0
+MTL: 2024-03-26 16:00:19, DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2604.192667 Mb/s, pkts, tx: 0, rx: 2476103
+MTL: 2024-03-26 16:00:19, SCH(0:sch_0): tasklets 9, lcore 29(t_pid: 338795), avg loop 465 ns
+MTL: 2024-03-26 16:00:19, SCH(0): time avg 0.46us max 115.02us min 0.41us
+MTL: 2024-03-26 16:00:19, SCH(0,0): tasklet cni, avg 0.02us max 89.46us min 0.02us
+MTL: 2024-03-26 16:00:19, SCH(0,1): tasklet tx_video_sessions_mgr, avg 0.04us max 49.32us min 0.03us
+MTL: 2024-03-26 16:00:19, SCH(0,2): tasklet video_transmitter, avg 0.08us max 54.36us min 0.02us
+MTL: 2024-03-26 16:00:19, SCH(0,3): tasklet tx_audio_sessions, avg 0.05us max 67.64us min 0.03us
+MTL: 2024-03-26 16:00:19, SCH(0,4): tasklet audio_transmitter, avg 0.01us max 34.32us min 0.01us
+MTL: 2024-03-26 16:00:19, SCH(0,5): tasklet tx_ancillary_sessions_mgr, avg 0.05us max 51.70us min 0.03us
+MTL: 2024-03-26 16:00:19, SCH(0,6): tasklet ancillary_transmitter, avg 0.01us max 32.79us min 0.01us
+MTL: 2024-03-26 16:00:19, SCH(0,7): tasklet rx_audio_sessions_mgr, avg 0.05us max 114.62us min 0.03us
+MTL: 2024-03-26 16:00:19, SCH(0,8): tasklet rx_anc_sessions_mgr, avg 0.04us max 41.12us min 0.03us
+MTL: 2024-03-26 16:00:19, SCH(1:sch_1): tasklets 1, lcore 30(t_pid: 338796), avg loop 88 ns
+MTL: 2024-03-26 16:00:19, SCH(1): time avg 0.08us max 18.59us min 0.06us
+MTL: 2024-03-26 16:00:19, SCH(1,0): tasklet rvs_pkt_rx, avg 0.05us max 18.54us min 0.03us
+```
+
+And if you want to trace both tasklet_time_measure and log_msg, follow below bpftrace script.
+
+```bash
+sudo BPFTRACE_STRLEN=128 bpftrace -e '
+usdt::sys:tasklet_time_measure {
+  printf("%s", strftime("%H:%M:%S", nsecs));
+}
+usdt::sys:log_msg {
+  printf("%s l%d: %s", strftime("%H:%M:%S", nsecs), arg0, str(arg1));
+}
+' -p $(pidof RxTxApp)
+```
+
+#### 2.1.3 sessions_time_measure USDT
+
+Usage: Execute the following sample command to enable the probe, replacing "RxTxApp" with the name of your application process:
+
+```bash
+sudo bpftrace -e 'usdt::sys:sessions_time_measure { printf("%s", strftime("%H:%M:%S", nsecs)); }' -p $(pidof RxTxApp)
+```
+
+Then you can then monitor the sessions tasklet execution time by reviewing the relevant log entries.
+
+```bash
+MTL: 2024-03-27 10:53:59, TX_VIDEO_SESSION(0,0:app_tx_video_0): fps 59.999419, frame 600 pkts 2467064:2466461 inflight 147929:148040
+MTL: 2024-03-27 10:53:59, TX_VIDEO_SESSION(0,0): throughput 2611.029471 Mb/s: 0.000000 Mb/s, cpu busy 2.395878
+MTL: 2024-03-27 10:53:59, TX_VIDEO_SESSION(0,0): tasklet time avg 0.01us max 56.88us min 0.00us
+MTL: 2024-03-27 10:53:59, TX_AUDIO_SESSION(0,0:app_tx_audio0): fps 999.990357 frame cnt 10000, pkt cnt 10000, inflight count 0: 0
+MTL: 2024-03-27 10:53:59, TX_AUDIO_SESSION(0,0): tasklet time avg 0.02us max 33.55us min 0.02us
+MTL: 2024-03-27 10:53:59, TX_AUDIO_SESSION(0,0): tx delta avg 0.21us max 13.46us min 0.00us
+MTL: 2024-03-27 10:53:59, TX_AUDIO_SESSION(0,0): get next frame max 11us, notify done max 0us
+MTL: 2024-03-27 10:53:59, TX_AUDIO_MGR(0), pkts burst 10000
+MTL: 2024-03-27 10:53:59, TX_ANC_SESSION(0:app_tx_ancillary0): fps 59.999409 frame cnt 600, pkt cnt 600
+MTL: 2024-03-27 10:53:59, TX_ANC_SESSION(0): tasklet time avg 0.02us max 51.84us min 0.02us
+MTL: 2024-03-27 10:53:59, TX_ANC_MGR, pkts burst 600
+MTL: 2024-03-27 10:53:59, RX_VIDEO_SESSION(1,0:app_rx_video_0): fps 59.999408 frames 600 pkts 2466455
+MTL: 2024-03-27 10:53:59, RX_VIDEO_SESSION(1,0:app_rx_video_0): throughput 2611.048395 Mb/s, cpu busy 0.625198
+MTL: 2024-03-27 10:53:59, RX_VIDEO_SESSION(1,0): succ burst max 91, avg 1.036065
+MTL: 2024-03-27 10:53:59, RX_VIDEO_SESSION(1,0): tasklet time avg 0.02us max 374.35us min 0.01us
+MTL: 2024-03-27 10:53:59, RX_AUDIO_SESSION(0,0:app_rx_audio0): fps 999.989986, st30 received frames 10000, received pkts 10000
+MTL: 2024-03-27 10:53:59, RX_AUDIO_SESSION(0,0): tasklet time avg 0.01us max 65.37us min 0.01us
+MTL: 2024-03-27 10:53:59, RX_AUDIO_SESSION(0,0): notify frame max 10us
+MTL: 2024-03-27 10:53:59, RX_ANC_SESSION(0:app_rx_anc0): fps 59.999337, st40 received frames 600, received pkts 600
+MTL: 2024-03-27 10:53:59, RX_ANC_SESSION(0): tasklet time avg 0.01us max 59.42us min 0.01us
+```
+
+And if you want to trace both sessions_time_measure and log_msg, follow below bpftrace script.
+
+```bash
+sudo BPFTRACE_STRLEN=128 bpftrace -e '
+usdt::sys:sessions_time_measure {
+  printf("%s", strftime("%H:%M:%S", nsecs));
+}
+usdt::sys:log_msg {
+  printf("%s l%d: %s", strftime("%H:%M:%S", nsecs), arg0, str(arg1));
+}
+' -p $(pidof RxTxApp)
 ```
 
 ### 2.2 PTP tracing

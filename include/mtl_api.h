@@ -408,8 +408,7 @@ enum mtl_init_flag {
    */
   MTL_FLAG_RX_MONO_POOL = (MTL_BIT64(36)),
   /**
-   * Enable tasklet time measurement, report status if tasklet run time longer than
-   * tasklet_time_thresh_us in mtl_init_params.
+   * Enable the routine time measurement in tasklet and sessions
    */
   MTL_FLAG_TASKLET_TIME_MEASURE = (MTL_BIT64(38)),
   /**
