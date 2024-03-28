@@ -2414,7 +2414,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
       flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
     flow.gso_sz = s->st20_pkt_size - sizeof(struct mt_udp_hdr);
-#ifndef WINDOWSENV /* RDMA only works on Linux */
+#ifdef MTL_HAS_RDMA_BACKEND
     int num_mrs = 1;
     if (!s->tx_no_chain) num_mrs += s->st20_frames_cnt;
     void* mrs_bufs[num_mrs];
@@ -2606,7 +2606,10 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
       if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ops->rtcp.buffer_size;
       if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
-      if (mt_pmd_is_rdma_ud(impl, port)) n += 2048;
+      if (mt_pmd_is_rdma_ud(impl, port))
+        /* Unlike DPDK, the RDMA UD backend faces delays in freeing mbufs after send
+         * operations, requiring more mempool elements for now. */
+        n += 2048;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
