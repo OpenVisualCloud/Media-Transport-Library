@@ -96,7 +96,6 @@ struct st_tx_muf_priv_data {
   uint64_t ptp_time_stamp; /* ptp time stamp of current mbuf */
   void* priv;              /* private data to current frame */
   uint32_t idx;            /* index of packet in current frame */
-  uint16_t frame_idx;      /* index of current frame */
 };
 
 struct st_rx_muf_priv_data {
