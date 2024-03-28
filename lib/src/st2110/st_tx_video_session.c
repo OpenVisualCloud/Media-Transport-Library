@@ -1792,6 +1792,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
   for (unsigned int i = 0; i < bulk; i++) {
     st_tx_mbuf_set_priv(pkts[i], &s->st20_frames[s->st20_frame_idx]);
+    st_tx_mbuf_set_frame_idx(pkts[i], s->st20_frame_idx);
     if (s->st20_pkt_idx >= s->st20_total_pkts) {
       s->stat_pkts_dummy++;
       if (!s->tx_no_chain) rte_pktmbuf_free(pkts_chain[i]);
@@ -1808,6 +1809,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
     if (send_r) {
       st_tx_mbuf_set_priv(pkts_r[i], &s->st20_frames[s->st20_frame_idx]);
+      st_tx_mbuf_set_frame_idx(pkts_r[i], s->st20_frame_idx);
       if (s->st20_pkt_idx >= s->st20_total_pkts) {
         st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
       } else {
@@ -2405,6 +2407,11 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
+    /* for rdma ud */
+    int num_mrs = 1;
+    if (!s->tx_no_chain) num_mrs += s->st20_frames_cnt;
+    void* mrs_bufs[num_mrs];
+    size_t mrs_sizes[num_mrs];
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -2414,6 +2421,30 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
       flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
     flow.gso_sz = s->st20_pkt_size - sizeof(struct mt_udp_hdr);
+    if (mt_pmd_is_rdma_ud(impl, port)) {
+      /* register mempool memory to rdma */
+      void* base_addr = NULL;
+      size_t mr_size, align = 0;
+      struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
+      base_addr = (void*)mt_mp_base_addr(pool, &align);
+      mr_size = (size_t)pool->populated_size *
+                    (size_t)rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL) +
+                align;
+      mrs_bufs[0] = base_addr;
+      mrs_sizes[0] = mr_size;
+      if (!s->tx_no_chain) {
+        /* register frames memory to rdma */
+        struct st_frame_trans* frame;
+        for (int j = 0; j < s->st20_frames_cnt; j++) {
+          frame = &s->st20_frames[j];
+          mrs_bufs[j + 1] = frame->addr;
+          mrs_sizes[j + 1] = s->st20_fb_size;
+        }
+      }
+      flow.num_mrs = num_mrs;
+      flow.mrs_bufs = mrs_bufs;
+      flow.mrs_sizes = mrs_sizes;
+    }
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tv_uinit_hw(s);

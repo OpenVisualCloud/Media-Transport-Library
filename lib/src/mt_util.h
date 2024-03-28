@@ -293,4 +293,16 @@ static inline void mt_stat_u64_update(struct mt_stat_u64* stat, uint64_t new) {
   stat->cnt++;
 }
 
+static inline uintptr_t mt_mp_base_addr(struct rte_mempool* mp, uint64_t* align) {
+  struct rte_mempool_memhdr* hdr;
+  uintptr_t hdr_addr, aligned_addr;
+
+  hdr = STAILQ_FIRST(&mp->mem_list);
+  hdr_addr = (uintptr_t)hdr->addr;
+  aligned_addr = hdr_addr & ~(getpagesize() - 1);
+  *align = hdr_addr - aligned_addr;
+
+  return aligned_addr;
+}
+
 #endif

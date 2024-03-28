@@ -11,12 +11,12 @@
 
 #include "../mt_log.h"
 #include "../mt_stat.h"
+#include "../mt_util.h"
 
 #define MT_RDMA_MAX_WR (2048)
 
 struct mt_rdma_tx_queue {
   enum mtl_port port;
-  struct rte_mempool* mbuf_pool;
   uint16_t q;
   uint8_t* sip;
 
@@ -27,9 +27,9 @@ struct mt_rdma_tx_queue {
   struct ibv_ah* ah;
   uint32_t remote_qpn;
   struct rdma_addrinfo* rai;
-  struct ibv_mr* send_mr;
-  void* send_buffer;
-  size_t send_buffer_size;
+  struct ibv_mr** send_mrs;
+  int num_mrs;
+
   bool connected;
   bool stop;
   pthread_t connect_thread;
@@ -41,7 +41,6 @@ struct mt_rdma_tx_queue {
   uint64_t stat_tx_bytes;
   uint64_t stat_tx_free;
   uint64_t stat_tx_submit;
-  uint64_t stat_tx_copy;
   uint64_t stat_tx_mbuf_alloc_fail;
   uint64_t stat_tx_post_send_fail;
   uint64_t stat_tx_prod_full;
@@ -102,10 +101,6 @@ static int rdma_queue_tx_stat(struct mt_rdma_tx_queue* txq) {
   txq->stat_tx_bytes = 0;
   txq->stat_tx_submit = 0;
   txq->stat_tx_free = 0;
-  if (txq->stat_tx_copy) {
-    notice("%s(%d,%u), pkts copy %" PRIu64 "\n", __func__, port, q, txq->stat_tx_copy);
-    txq->stat_tx_copy = 0;
-  }
 
   if (txq->stat_tx_mbuf_alloc_fail) {
     warn("%s(%d,%u), mbuf alloc fail %" PRIu64 "\n", __func__, port, q,
@@ -231,28 +226,17 @@ static int rdma_rx_post_recv(struct mt_rdma_rx_queue* rxq, struct rte_mbuf** mbu
   return 0;
 }
 
-static inline uintptr_t rdma_mp_base_addr(struct rte_mempool* mp, uint64_t* align) {
-  struct rte_mempool_memhdr* hdr;
-  uintptr_t hdr_addr, aligned_addr;
-
-  hdr = STAILQ_FIRST(&mp->mem_list);
-  hdr_addr = (uintptr_t)hdr->addr;
-  aligned_addr = hdr_addr & ~(getpagesize() - 1);
-  *align = hdr_addr - aligned_addr;
-
-  return aligned_addr;
-}
-
 static void rdma_tx_poll_done(struct mt_rdma_tx_queue* txq) {
   if (!txq->connected) return;
   struct ibv_cq* cq = txq->cq;
-  struct ibv_wc wc[32];
-  int n = ibv_poll_cq(cq, 32, wc);
+  struct ibv_wc wc[128];
+  int n = ibv_poll_cq(cq, 128, wc);
 
   for (int i = 0; i < n; i++) {
     if (wc[i].opcode == IBV_WC_SEND && wc[i].status == IBV_WC_SUCCESS) {
       /* success */
     } else {
+      err("%s, poll fail, wc status %d\n", __func__, wc[i].status);
       txq->stat_tx_completion_fail++;
     }
     rte_pktmbuf_free((struct rte_mbuf*)wc[i].wr_id);
@@ -264,9 +248,9 @@ static void rdma_tx_poll_done(struct mt_rdma_tx_queue* txq) {
 static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq,
                         struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   if (!txq->connected) return 0;
+  int ret = 0;
   enum mtl_port port = txq->port;
-  // uint16_t q = txq->q;
-  struct rte_mempool* mbuf_pool = txq->mbuf_pool;
+  uint16_t q = txq->q;
   uint16_t tx = 0;
   struct mtl_port_status* stats = mt_if(impl, port)->dev_stats_sw;
   uint64_t tx_bytes = 0;
@@ -279,38 +263,49 @@ static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq
     return 0;
   }
 
+  struct ibv_send_wr wr, *bad;
+  struct ibv_sge sge[2];
+  struct rte_mbuf *m = NULL, *n = NULL;
   for (uint16_t i = 0; i < nb_pkts; i++) {
-    struct rte_mbuf* m = tx_pkts[i];
-    struct rte_mbuf* local = rte_pktmbuf_alloc(mbuf_pool);
-    if (!local) {
-      dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, q);
-      txq->stat_tx_mbuf_alloc_fail++;
-      goto exit;
-    }
-    void* pkt = rte_pktmbuf_mtod(local, void*);
-    void* data = pkt;
-    struct rte_mbuf* n = m;
+    m = tx_pkts[i];
+
+    sge[0].addr = rte_pktmbuf_mtod(m, uint64_t);
+    sge[0].length = m->data_len;
+    sge[0].lkey = txq->send_mrs[0]->lkey;
+
     uint16_t nb_segs = m->nb_segs;
-    for (uint16_t seg = 0; seg < nb_segs; seg++) {
-      rte_memcpy(data, rte_pktmbuf_mtod(n, void*), n->data_len);
-      data += n->data_len;
-      /* point to next */
-      n = n->next;
+    if (nb_segs > 1) {
+      uint16_t frame_idx = st_tx_mbuf_get_frame_idx(m);
+      n = m->next;
+      int mr_idx = frame_idx + 1;
+      sge[1].addr = (uint64_t)n->buf_addr;
+      sge[1].length = n->buf_len;
+      sge[1].lkey = txq->send_mrs[mr_idx]->lkey;
+      dbg("%s(%d, %u), ext buffer %p len %u mr_lkey %u\n", __func__, port, q, n->buf_addr,
+          n->buf_len, sge[1].lkey);
     }
 
-    if (rdma_post_ud_send(txq->cma_id, local, pkt, m->pkt_len, txq->send_mr,
-                          IBV_SEND_SIGNALED, txq->ah, txq->remote_qpn)) {
-      dbg("%s(%d, %u), post send fail\n", __func__, port, q);
+    wr.wr_id = (uintptr_t)m;
+    wr.next = NULL;
+    wr.sg_list = sge;
+    wr.num_sge = nb_segs;
+    wr.opcode = IBV_WR_SEND;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    wr.wr.ud.ah = txq->ah;
+    wr.wr.ud.remote_qpn = txq->remote_qpn;
+    wr.wr.ud.remote_qkey = RDMA_UDP_QKEY;
+
+    ret = ibv_post_send(txq->cma_id->qp, &wr, &bad);
+    if (ret) {
+      err("%s(%d, %u), post send fail %d\n", __func__, port, q, ret);
       txq->stat_tx_post_send_fail++;
+      rte_pktmbuf_free(m);
       goto exit;
     }
+
     txq->outstanding_wr++;
 
     tx_bytes += m->pkt_len;
-    rte_pktmbuf_free(m);
-    dbg("%s(%d, %u), tx local mbuf %p umem pkt %p addr 0x%" PRIu64 "\n", __func__, port,
-        q, local, pkt, addr);
-    txq->stat_tx_copy++;
     tx++;
   }
 
@@ -422,12 +417,6 @@ int mt_dev_rdma_init(struct mt_interface* inf) {
     txq->sip = mt_sip_addr(impl, port);
     txq->port = port;
     txq->q = i;
-    txq->mbuf_pool = inf->rx_queues[i].mbuf_pool;
-    if (!txq->mbuf_pool) {
-      err("%s(%d), no mbuf_pool for txq %u\n", __func__, port, i);
-      rdma_free(rdma);
-      return -EIO;
-    }
   }
 
   for (uint16_t i = 0; i < rdma->rx_queues_cnt; i++) {
@@ -470,20 +459,49 @@ int mt_dev_rdma_uinit(struct mt_interface* inf) {
   return 0;
 }
 
-static int rdma_tx_mr_init(struct mt_rdma_tx_queue* txq) {
-  void* base_addr = NULL;
-  struct rte_mempool* pool = txq->mbuf_pool;
-  size_t mr_size, align = 0;
+static int rdma_tx_uinit_mrs(struct mt_rdma_tx_queue* txq) {
+  for (int i = 0; i < txq->num_mrs; ++i) {
+    ibv_dereg_mr(txq->send_mrs[i]);
+  }
+  mt_rte_free(txq->send_mrs);
+  return 0;
+}
 
-  base_addr = (void*)rdma_mp_base_addr(pool, &align);
-  mr_size = (size_t)pool->populated_size *
-                (size_t)rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL) +
-            align;
-  txq->send_mr = ibv_reg_mr(txq->pd, base_addr, mr_size, IBV_ACCESS_LOCAL_WRITE);
-  if (!txq->send_mr) {
-    err("%s(%d,%u), ibv_reg_mr fail\n", __func__, txq->port, txq->q);
+static int rdma_tx_init_mrs(struct mt_rdma_tx_queue* txq, void** buffers, size_t* sizes,
+                            int num_mrs) {
+  struct mtl_main_impl* impl = txq->tx_entry->parent;
+  enum mtl_port port = txq->port;
+  uint16_t q = txq->q;
+
+  if (!txq->pd) {
+    err("%s(%d, %u), tx pd not allocated\n", __func__, port, q);
+    return -EIO;
+  }
+
+  struct ibv_mr** mrs =
+      mt_rte_zmalloc_socket(num_mrs * sizeof(struct ibv_mr*), mt_socket_id(impl, port));
+  if (!mrs) {
+    err("%s(%d, %u), mrs malloc fail\n", __func__, port, q);
     return -ENOMEM;
   }
+
+  for (int i = 0; i < num_mrs; ++i) {
+    struct ibv_mr* mr = ibv_reg_mr(txq->pd, buffers[i], sizes[i], IBV_ACCESS_LOCAL_WRITE);
+    if (!mr) {
+      err("%s(%d, %u), ibv_reg_mr fail, buffer %p size %" PRIu64 "\n", __func__, port, q,
+          buffers[i], sizes[i]);
+      txq->num_mrs = i;
+      rdma_tx_uinit_mrs(txq);
+      return -EIO;
+    }
+    mrs[i] = mr;
+    info("%s(%d, %u), mr registered, buffer %p size %" PRIu64 " mr_lkey %u\n", __func__,
+         port, q, buffers[i], sizes[i], mr->lkey);
+  }
+
+  txq->send_mrs = mrs;
+  txq->num_mrs = num_mrs;
+
   return 0;
 }
 
@@ -529,7 +547,7 @@ static void* rdma_tx_connect_thread(void* arg) {
             struct ibv_qp_init_attr init_qp_attr = {};
             init_qp_attr.cap.max_send_wr = MT_RDMA_MAX_WR;
             init_qp_attr.cap.max_recv_wr = 1;
-            init_qp_attr.cap.max_send_sge = 1;
+            init_qp_attr.cap.max_send_sge = 2;
             init_qp_attr.cap.max_recv_sge = 1;
             init_qp_attr.qp_context = txq;
             init_qp_attr.send_cq = txq->cq;
@@ -539,12 +557,6 @@ static void* rdma_tx_connect_thread(void* arg) {
             ret = rdma_create_qp(txq->cma_id, txq->pd, &init_qp_attr);
             if (ret) {
               err("%s(%d, %u), rdma_create_qp fail %d\n", __func__, port, q, ret);
-              goto connect_err;
-            }
-
-            ret = rdma_tx_mr_init(txq);
-            if (ret) {
-              err("%s(%d, %u), rdma_tx_mr_init fail %d\n", __func__, port, q, ret);
               goto connect_err;
             }
 
@@ -600,13 +612,11 @@ connect_err:
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
   if (txq->connected) rdma_disconnect(txq->cma_id);
   if (txq->ah) ibv_destroy_ah(txq->ah);
-  if (txq->send_mr) ibv_dereg_mr(txq->send_mr);
   if (txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
   if (txq->pd) ibv_dealloc_pd(txq->pd);
   if (txq->rai) rdma_freeaddrinfo(txq->rai);
   if (txq->cma_id) rdma_destroy_id(txq->cma_id);
   txq->stop = true;
-  pthread_join(txq->connect_thread, NULL);
   if (txq->ec) rdma_destroy_event_channel(txq->ec);
 
   return 0;
@@ -674,6 +684,14 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
     return ret;
   }
 
+  /* tx init must wait for the connection done */
+  pthread_join(txq->connect_thread, NULL);
+  if (!txq->connected) {
+    err("%s(%d, %u), connection fail\n", __func__, port, q);
+    rdma_tx_queue_uinit(txq);
+    return -EIO;
+  }
+
   return 0;
 }
 
@@ -684,7 +702,7 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
 
   rxq->recv_len =
       rte_pktmbuf_data_room_size(pool) + sizeof(struct ibv_grh) - RTE_PKTMBUF_HEADROOM;
-  base_addr = (void*)rdma_mp_base_addr(pool, &align);
+  base_addr = (void*)mt_mp_base_addr(pool, &align);
   mr_size = (size_t)pool->populated_size *
                 (size_t)rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL) +
             align;
@@ -906,6 +924,12 @@ struct mt_tx_rdma_entry* mt_tx_rdma_get(struct mtl_main_impl* impl, enum mtl_por
     return NULL;
   }
 
+  if (rdma_tx_init_mrs(txq, flow->mrs_bufs, flow->mrs_sizes, flow->num_mrs)) {
+    err("%s(%d), rdma_tx_init_mrs fail\n", __func__, port);
+    mt_tx_rdma_put(entry);
+    return NULL;
+  }
+
   uint8_t* ip = flow->dip_addr;
   info("%s(%d), ip %u.%u.%u.%u, port %u, queue %u\n", __func__, port, ip[0], ip[1], ip[2],
        ip[3], flow->dst_port, entry->queue_id);
@@ -926,6 +950,7 @@ int mt_tx_rdma_put(struct mt_tx_rdma_entry* entry) {
       ibv_modify_qp(txq->cma_id->qp, &qp_attr, IBV_QP_STATE);
     }
     rdma_tx_poll_done(txq);
+    rdma_tx_uinit_mrs(txq);
     rdma_tx_queue_uinit(txq);
 
     txq->tx_entry = NULL;

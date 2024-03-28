@@ -947,6 +947,11 @@ struct mt_txq_flow {
   uint32_t flags;
   /* only for kernel socket */
   uint16_t gso_sz;
+
+  /* only for rdma ud */
+  void** mrs_bufs;
+  size_t* mrs_sizes;
+  int num_mrs;
 };
 
 struct mt_tsq_impl; /* forward delcare */
@@ -1850,6 +1855,16 @@ static inline void st_tx_mbuf_set_idx(struct rte_mbuf* mbuf, uint32_t idx) {
 static inline uint32_t st_tx_mbuf_get_idx(struct rte_mbuf* mbuf) {
   struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
   return priv->tx_priv.idx;
+}
+
+static inline void st_tx_mbuf_set_frame_idx(struct rte_mbuf* mbuf, uint16_t frame_idx) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  priv->tx_priv.frame_idx = frame_idx;
+}
+
+static inline uint32_t st_tx_mbuf_get_frame_idx(struct rte_mbuf* mbuf) {
+  struct mt_muf_priv_data* priv = rte_mbuf_to_priv(mbuf);
+  return priv->tx_priv.frame_idx;
 }
 
 static inline void st_tx_mbuf_set_priv(struct rte_mbuf* mbuf, void* p) {
