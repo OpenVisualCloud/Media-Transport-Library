@@ -10,7 +10,9 @@
 
 static struct uplt_ctx* g_uplt_ctx;
 
-struct uplt_ctx* uplt_get_ctx(void) { return g_uplt_ctx; }
+struct uplt_ctx* uplt_get_ctx(void) {
+  return g_uplt_ctx;
+}
 
 static void uplt_ctx_init(struct uplt_ctx* ctx) {
   inet_pton(AF_INET, "192.168.89.80", ctx->sip_addr[UPLT_PORT_P]);

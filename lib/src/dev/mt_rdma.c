@@ -265,7 +265,7 @@ static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq
 
   struct ibv_send_wr wr, *bad;
   struct ibv_sge sge[2];
-  struct rte_mbuf *m = NULL, *n = NULL;
+  struct rte_mbuf* m = NULL;
   for (uint16_t i = 0; i < nb_pkts; i++) {
     m = tx_pkts[i];
 
@@ -275,17 +275,17 @@ static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq
 
     uint16_t nb_segs = m->nb_segs;
     if (nb_segs > 1) {
-      uint16_t frame_idx = st_tx_mbuf_get_frame_idx(m);
-      n = m->next;
-      int mr_idx = frame_idx + 1;
-      sge[1].addr = (uint64_t)n->buf_addr;
-      sge[1].length = n->buf_len;
+      struct st_frame_trans* frame = st_tx_mbuf_get_priv(m);
+      m = m->next;
+      int mr_idx = frame->idx + 1;
+      sge[1].addr = (uint64_t)m->buf_addr;
+      sge[1].length = m->buf_len;
       sge[1].lkey = txq->send_mrs[mr_idx]->lkey;
-      dbg("%s(%d, %u), ext buffer %p len %u mr_lkey %u\n", __func__, port, q, n->buf_addr,
-          n->buf_len, sge[1].lkey);
+      dbg("%s(%d, %u), ext buffer %p len %u mr_lkey %u\n", __func__, port, q, m->buf_addr,
+          m->buf_len, sge[1].lkey);
     }
 
-    wr.wr_id = (uintptr_t)m;
+    wr.wr_id = (uintptr_t)tx_pkts[i];
     wr.next = NULL;
     wr.sg_list = sge;
     wr.num_sge = nb_segs;

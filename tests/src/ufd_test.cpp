@@ -30,7 +30,9 @@ static struct option utest_args_options[] = {
 
 static struct utest_ctx* g_utest_ctx;
 
-struct utest_ctx* utest_get_ctx(void) { return g_utest_ctx; }
+struct utest_ctx* utest_get_ctx(void) {
+  return g_utest_ctx;
+}
 
 static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
   int cmd = -1, opt_idx = 0;

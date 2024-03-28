@@ -1792,7 +1792,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
   for (unsigned int i = 0; i < bulk; i++) {
     st_tx_mbuf_set_priv(pkts[i], &s->st20_frames[s->st20_frame_idx]);
-    st_tx_mbuf_set_frame_idx(pkts[i], s->st20_frame_idx);
     if (s->st20_pkt_idx >= s->st20_total_pkts) {
       s->stat_pkts_dummy++;
       if (!s->tx_no_chain) rte_pktmbuf_free(pkts_chain[i]);
@@ -1809,7 +1808,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
     if (send_r) {
       st_tx_mbuf_set_priv(pkts_r[i], &s->st20_frames[s->st20_frame_idx]);
-      st_tx_mbuf_set_frame_idx(pkts_r[i], s->st20_frame_idx);
       if (s->st20_pkt_idx >= s->st20_total_pkts) {
         st_tx_mbuf_set_idx(pkts_r[i], ST_TX_DUMMY_PKT_IDX);
       } else {
