@@ -6,7 +6,7 @@
 * test_720p.yuv for 720p video
 * test_4k.yuv for 4k video
 * test_8k.yuv for 4k video
-* test.wav for audio
+* test.pcm for audio
 * test.txt for ancillary
 * test.pcap for rtp pcap models
 * test_st22.pcap for st22 pcap files

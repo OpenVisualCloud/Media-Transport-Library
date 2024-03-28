@@ -39,7 +39,7 @@
                     "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_ptime": "1",
-                    "audio_url": "./test.wav"
+                    "audio_url": "./test.pcm"
                 }
             ],
             "ancillary": [
@@ -87,7 +87,7 @@
                     "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_ptime": "1",
-                    "audio_url": "./test.wav"
+                    "audio_url": "./test.pcm"
                 }
             ],
             "ancillary": [

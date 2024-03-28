@@ -50,7 +50,7 @@
                     "audio_channel": ["U32"],
                     "audio_sampling": "96kHz",
                     "audio_ptime": "0.125",
-                    "audio_url": "./test.wav"
+                    "audio_url": "./test.pcm"
                 }
             ]
         }
@@ -75,7 +75,7 @@
                     "audio_channel": ["U32"],
                     "audio_sampling": "96kHz",
                     "audio_ptime": "0.125",
-                    "audio_url": "./test.wav"
+                    "audio_url": "./test.pcm"
                 }
             ]
         }

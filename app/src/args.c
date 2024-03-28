@@ -45,6 +45,7 @@ enum st_args_cmd {
   ST_ARG_RX_VIDEO_RTP_RING_SIZE,
   ST_ARG_RX_AUDIO_SESSIONS_CNT,
   ST_ARG_RX_AUDIO_RTP_RING_SIZE,
+  ST_ARG_RX_AUDIO_DUMP_TIME_S,
   ST_ARG_RX_ANC_SESSIONS_CNT,
   ST22_ARG_RX_SESSIONS_CNT,
   ST_ARG_HDR_SPLIT,
@@ -177,6 +178,7 @@ static struct option st_app_args_options[] = {
     {"rx_video_rtp_ring_size", required_argument, 0, ST_ARG_RX_VIDEO_RTP_RING_SIZE},
     {"rx_audio_sessions_count", required_argument, 0, ST_ARG_RX_AUDIO_SESSIONS_CNT},
     {"rx_audio_rtp_ring_size", required_argument, 0, ST_ARG_RX_AUDIO_RTP_RING_SIZE},
+    {"rx_audio_dump_time_s", required_argument, 0, ST_ARG_RX_AUDIO_DUMP_TIME_S},
     {"rx_anc_sessions_count", required_argument, 0, ST_ARG_RX_ANC_SESSIONS_CNT},
     {"rx_st22_sessions_count", required_argument, 0, ST22_ARG_RX_SESSIONS_CNT},
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
@@ -498,6 +500,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_AUDIO_RTP_RING_SIZE:
         ctx->rx_audio_rtp_ring_size = atoi(optarg);
+        break;
+      case ST_ARG_RX_AUDIO_DUMP_TIME_S:
+        ctx->rx_audio_dump_time_s = atoi(optarg);
         break;
       case ST_ARG_RX_ANC_SESSIONS_CNT:
         ctx->rx_anc_session_cnt = atoi(optarg);

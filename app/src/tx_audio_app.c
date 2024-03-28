@@ -332,7 +332,7 @@ static int app_tx_audio_start_source(struct st_app_tx_audio_session* s) {
 }
 
 static void app_tx_audio_stop_source(struct st_app_tx_audio_session* s) {
-  if (s->st30_source_fd >= 0) {
+  if (s->st30_source_fd >= 0 || s->st30_pcap) {
     s->st30_app_thread_stop = true;
     /* wake up the thread */
     st_pthread_mutex_lock(&s->st30_wake_mutex);
@@ -388,6 +388,9 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   s->st30_source_fd = -1;
   st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
   st_pthread_cond_init(&s->st30_wake_cond, NULL);
+
+  snprintf(s->st30_source_url, sizeof(s->st30_source_url), "%s",
+           audio ? audio->info.audio_url : ctx->tx_audio_url);
 
   snprintf(name, 32, "app_tx_audio%d", idx);
   ops.name = name;
@@ -480,8 +483,6 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   }
 
   s->handle = handle;
-  snprintf(s->st30_source_url, sizeof(s->st30_source_url), "%s",
-           audio ? audio->info.audio_url : ctx->tx_audio_url);
 
   ret = app_tx_audio_open_source(s);
   if (ret < 0) {

@@ -290,6 +290,13 @@ struct st_app_rx_audio_session {
   uint8_t* st30_ref_cursor;
   int st30_ref_err;
 
+  int st30_dump_time_s;
+  int st30_dump_fd;
+  char st30_dump_url[ST_APP_URL_MAX_LEN];
+  uint8_t* st30_dump_begin;
+  uint8_t* st30_dump_end;
+  uint8_t* st30_dump_cursor;
+
   pthread_t st30_app_thread;
   pthread_cond_t st30_wake_cond;
   pthread_mutex_t st30_wake_mutex;
@@ -570,6 +577,7 @@ struct st_app_context {
   int rx_video_fb_cnt;
   int rx_video_rtp_ring_size; /* the ring size for rx video rtp type */
   bool has_sdl;               /* has SDL device or not*/
+  int rx_audio_dump_time_s;   /* the audio dump time */
 
   struct st_app_rx_audio_session* rx_audio_sessions;
   int rx_audio_session_cnt;
