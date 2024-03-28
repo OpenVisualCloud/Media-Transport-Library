@@ -2606,6 +2606,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
       n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
       if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ops->rtcp.buffer_size;
       if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+      if (mt_pmd_is_rdma_ud(impl, port)) n += 2048;
       if (s->mbuf_mempool_hdr[i]) {
         warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
       } else {
@@ -2630,6 +2631,7 @@ static int tv_mempool_init(struct mtl_main_impl* impl,
     n = mt_if_nb_tx_desc(impl, port) + s->ring_count;
     if (ops->flags & ST20_TX_FLAG_ENABLE_RTCP) n += ops->rtcp.buffer_size;
     if (ops->type == ST20_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
+    if (mt_pmd_is_rdma_ud(impl, port)) n += 2048;
 
     if (s->tx_mono_pool) {
       s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
