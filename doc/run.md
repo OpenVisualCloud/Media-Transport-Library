@@ -404,6 +404,8 @@ packet egresses from the sender.
 --ptp_sync_sys                       : debug option, enabling the synchronization of PTP time from MTL to the system time in the application. On Linux, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./build/app/RxTxApp`.
 --rss_sch_nb <number>                : debug option, set the schedulers(lcores) number for the RSS dispatch.
 --log_time_ms                        : debug option, enable a ms accuracy log printer by the api mtl_set_log_prefix_formatter.
+--rx_video_file_frames <count>       : debug option, dump the received video frames to one yuv file
+--rx_audio_dump_time_s <seconds>     : debug option, dump the received audio frames to one pcm file
 ```
 
 ## 6. Tests

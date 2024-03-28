@@ -171,7 +171,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   /* tx */
   snprintf(ctx->tx_video_url, sizeof(ctx->tx_video_url), "%s", "test.yuv");
   ctx->tx_video_session_cnt = 0;
-  snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", "test.wav");
+  snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", "test.pcm");
   ctx->tx_audio_session_cnt = 0;
   snprintf(ctx->tx_anc_url, sizeof(ctx->tx_anc_url), "%s", "test.txt");
   ctx->tx_anc_session_cnt = 0;

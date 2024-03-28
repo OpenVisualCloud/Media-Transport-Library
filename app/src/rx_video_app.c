@@ -568,7 +568,7 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);
 
-  if (mtl_pmd_by_port_name(ops.port[MTL_SESSION_PORT_P]) == MTL_PMD_DPDK_AF_XDP) {
+  if (mtl_pmd_by_port_name(ops.port[MTL_SESSION_PORT_P]) != MTL_PMD_DPDK_USER) {
     snprintf(s->st20_dst_url, ST_APP_URL_MAX_LEN, "st_app%d_%d_%d_%s.yuv", idx, ops.width,
              ops.height, ops.port[MTL_SESSION_PORT_P]);
   } else {

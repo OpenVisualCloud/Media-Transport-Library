@@ -4,6 +4,54 @@
 
 #include "rx_audio_app.h"
 
+static int app_rx_audio_close_dump(struct st_app_rx_audio_session* s) {
+  if (s->st30_dump_fd >= 0) {
+    munmap(s->st30_dump_begin, s->st30_dump_end - s->st30_dump_begin);
+    close(s->st30_dump_fd);
+    s->st30_dump_fd = -1;
+  }
+
+  return 0;
+}
+
+static int app_rx_audio_open_dump(struct st_app_rx_audio_session* s) {
+  int fd, ret, idx = s->idx;
+  off_t f_size;
+
+  /* user do not require dump to file */
+  if (s->st30_dump_time_s < 1) return 0;
+
+  fd = st_open_mode(s->st30_dump_url, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+  if (fd < 0) {
+    err("%s(%d), open %s fail\n", __func__, idx, s->st30_dump_url);
+    return -EIO;
+  }
+
+  f_size = (off_t)s->expect_fps * s->st30_frame_size * s->st30_dump_time_s;
+  ret = ftruncate(fd, f_size);
+  if (ret < 0) {
+    err("%s(%d), ftruncate %s fail\n", __func__, idx, s->st30_dump_url);
+    close(fd);
+    return -EIO;
+  }
+
+  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (MAP_FAILED == m) {
+    err("%s(%d), mmap %s fail\n", __func__, idx, s->st30_dump_url);
+    close(fd);
+    return -EIO;
+  }
+
+  s->st30_dump_begin = m;
+  s->st30_dump_cursor = m;
+  s->st30_dump_end = m + f_size;
+  s->st30_dump_fd = fd;
+  info("%s(%d), save %ds data to file %s(%p,%" PRIu64 ")\n", __func__, idx,
+       s->st30_dump_time_s, s->st30_dump_url, m, f_size);
+
+  return 0;
+}
+
 static int app_rx_audio_close_source(struct st_app_rx_audio_session* session) {
   if (session->st30_ref_fd >= 0) {
     munmap(session->st30_ref_begin, session->st30_ref_end - session->st30_ref_begin);
@@ -14,7 +62,7 @@ static int app_rx_audio_close_source(struct st_app_rx_audio_session* session) {
   return 0;
 }
 
-static int app_rx_audio_open_source(struct st_app_rx_audio_session* session) {
+static int app_rx_audio_open_ref(struct st_app_rx_audio_session* session) {
   int fd, idx = session->idx;
   struct stat i;
 
@@ -151,8 +199,8 @@ static int app_rx_audio_init_rtp_thread(struct st_app_rx_audio_session* s) {
   return 0;
 }
 
-static int app_rx_audio_frame_done(void* priv, void* frame,
-                                   struct st30_rx_frame_meta* meta) {
+static int app_rx_audio_frame_ready(void* priv, void* frame,
+                                    struct st30_rx_frame_meta* meta) {
   struct st_app_rx_audio_session* s = priv;
   MTL_MAY_UNUSED(meta);
 
@@ -163,6 +211,15 @@ static int app_rx_audio_frame_done(void* priv, void* frame,
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
   if (s->st30_ref_fd > 0) app_rx_audio_compare_with_ref(s, frame);
+
+  if (s->st30_dump_fd > 0) {
+    if (s->st30_dump_cursor + s->st30_frame_size > s->st30_dump_end)
+      s->st30_dump_cursor = s->st30_dump_begin;
+    dbg("%s(%d), dst %p src %p size %d\n", __func__, s->idx, s->st30_dump_cursor, frame,
+        s->st30_frame_size);
+    mtl_memcpy(s->st30_dump_cursor, frame, s->st30_frame_size);
+    s->st30_dump_cursor += s->st30_frame_size;
+  }
 
   dbg("%s(%d), frame %p\n", __func__, s->idx, frame);
   st30_rx_put_framebuff(s->handle, frame);
@@ -218,6 +275,7 @@ static int app_rx_audio_uinit(struct st_app_rx_audio_session* s) {
     s->handle = NULL;
   }
   app_rx_audio_close_source(s);
+  app_rx_audio_close_dump(s);
 
   return 0;
 }
@@ -290,7 +348,7 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
              audio ? audio->base.inf[MTL_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.udp_port[MTL_SESSION_PORT_R] = audio ? audio->base.udp_port : (10100 + s->idx);
   }
-  ops.notify_frame_ready = app_rx_audio_frame_done;
+  ops.notify_frame_ready = app_rx_audio_frame_ready;
   ops.notify_rtp_ready = app_rx_audio_rtp_ready;
   ops.type = audio ? audio->info.type : ST30_TYPE_FRAME_LEVEL;
   ops.fmt = audio ? audio->info.audio_format : ST30_FMT_PCM16;
@@ -332,9 +390,20 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   snprintf(s->st30_ref_url, sizeof(s->st30_ref_url), "%s",
            audio ? audio->info.audio_url : "null");
 
-  ret = app_rx_audio_open_source(s);
+  ret = app_rx_audio_open_ref(s);
   if (ret < 0) {
-    err("%s(%d), app_rx_audio_open_source fail %d\n", __func__, idx, ret);
+    err("%s(%d), app_rx_audio_open_ref fail %d\n", __func__, idx, ret);
+    app_rx_audio_uinit(s);
+    return -EIO;
+  }
+
+  /* dump */
+  snprintf(s->st30_dump_url, ST_APP_URL_MAX_LEN, "st_audio_app%d_%d_%d_%u.pcm", idx,
+           st30_get_sample_rate(ops.sampling), st30_get_sample_size(ops.fmt) * 8,
+           ops.channel);
+  ret = app_rx_audio_open_dump(s);
+  if (ret < 0) {
+    err("%s(%d), app_rx_audio_open_dump fail %d\n", __func__, idx, ret);
     app_rx_audio_uinit(s);
     return -EIO;
   }
@@ -370,6 +439,8 @@ int st_app_rx_audio_sessions_init(struct st_app_context* ctx) {
     s->idx = i;
     s->framebuff_cnt = 2;
     s->st30_ref_fd = -1;
+    s->st30_dump_time_s = ctx->rx_audio_dump_time_s;
+    s->st30_dump_fd = -1;
 
     ret = app_rx_audio_init(
         ctx, ctx->json_ctx ? &ctx->json_ctx->rx_audio_sessions[i] : NULL, s);
