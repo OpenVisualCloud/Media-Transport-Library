@@ -2405,11 +2405,6 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
 
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
-    /* for rdma ud */
-    int num_mrs = 1;
-    if (!s->tx_no_chain) num_mrs += s->st20_frames_cnt;
-    void* mrs_bufs[num_mrs];
-    size_t mrs_sizes[num_mrs];
 
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -2419,6 +2414,11 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
       flow.flags |= MT_TXQ_FLOW_F_LAUNCH_TIME;
     flow.gso_sz = s->st20_pkt_size - sizeof(struct mt_udp_hdr);
+#ifndef WINDOWSENV /* RDMA only works on Linux */
+    int num_mrs = 1;
+    if (!s->tx_no_chain) num_mrs += s->st20_frames_cnt;
+    void* mrs_bufs[num_mrs];
+    size_t mrs_sizes[num_mrs];
     if (mt_pmd_is_rdma_ud(impl, port)) {
       /* register mempool memory to rdma */
       void* base_addr = NULL;
@@ -2443,6 +2443,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
       flow.mrs_bufs = mrs_bufs;
       flow.mrs_sizes = mrs_sizes;
     }
+#endif
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tv_uinit_hw(s);
