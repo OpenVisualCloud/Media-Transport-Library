@@ -947,6 +947,11 @@ struct mt_txq_flow {
   uint32_t flags;
   /* only for kernel socket */
   uint16_t gso_sz;
+
+  /* only for rdma ud */
+  void** mrs_bufs;
+  size_t* mrs_sizes;
+  int num_mrs;
 };
 
 struct mt_tsq_impl; /* forward delcare */

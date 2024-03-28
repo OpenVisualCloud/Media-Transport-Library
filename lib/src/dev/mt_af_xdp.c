@@ -301,18 +301,6 @@ static int xdp_parse_pacing_ice(struct mt_xdp_priv* xdp) {
   return ret;
 }
 
-static inline uintptr_t xdp_mp_base_addr(struct rte_mempool* mp, uint64_t* align) {
-  struct rte_mempool_memhdr* hdr;
-  uintptr_t hdr_addr, aligned_addr;
-
-  hdr = STAILQ_FIRST(&mp->mem_list);
-  hdr_addr = (uintptr_t)hdr->addr;
-  aligned_addr = hdr_addr & ~(getpagesize() - 1);
-  *align = hdr_addr - aligned_addr;
-
-  return aligned_addr;
-}
-
 static int xdp_umem_init(struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
@@ -331,7 +319,7 @@ static int xdp_umem_init(struct mt_xdp_queue* xq) {
   cfg.frame_headroom = pool->header_size + sizeof(struct rte_mbuf) +
                        rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM;
 
-  base_addr = (void*)xdp_mp_base_addr(pool, &align);
+  base_addr = (void*)mt_mp_base_addr(pool, &align);
   umem_size = (uint64_t)pool->populated_size * (uint64_t)cfg.frame_size + align;
   dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, base_addr,
       umem_size);
