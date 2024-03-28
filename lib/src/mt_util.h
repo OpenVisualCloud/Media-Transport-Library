@@ -293,6 +293,7 @@ static inline void mt_stat_u64_update(struct mt_stat_u64* stat, uint64_t new) {
   stat->cnt++;
 }
 
+#ifndef WINDOWSENV
 static inline uintptr_t mt_mp_base_addr(struct rte_mempool* mp, uint64_t* align) {
   struct rte_mempool_memhdr* hdr;
   uintptr_t hdr_addr, aligned_addr;
@@ -304,5 +305,6 @@ static inline uintptr_t mt_mp_base_addr(struct rte_mempool* mp, uint64_t* align)
 
   return aligned_addr;
 }
+#endif
 
 #endif

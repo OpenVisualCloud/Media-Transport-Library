@@ -230,19 +230,23 @@ static void rdma_tx_poll_done(struct mt_rdma_tx_queue* txq) {
   if (!txq->connected) return;
   struct ibv_cq* cq = txq->cq;
   struct ibv_wc wc[128];
-  int n = ibv_poll_cq(cq, 128, wc);
+  int n = 0;
 
-  for (int i = 0; i < n; i++) {
-    if (wc[i].opcode == IBV_WC_SEND && wc[i].status == IBV_WC_SUCCESS) {
-      /* success */
-    } else {
-      err("%s, poll fail, wc status %d\n", __func__, wc[i].status);
-      txq->stat_tx_completion_fail++;
+  do {
+    n = ibv_poll_cq(cq, 128, wc);
+
+    for (int i = 0; i < n; i++) {
+      if (wc[i].opcode == IBV_WC_SEND && wc[i].status == IBV_WC_SUCCESS) {
+        /* success */
+      } else {
+        err("%s, poll fail, wc status %d\n", __func__, wc[i].status);
+        txq->stat_tx_completion_fail++;
+      }
+      rte_pktmbuf_free((struct rte_mbuf*)wc[i].wr_id);
     }
-    rte_pktmbuf_free((struct rte_mbuf*)wc[i].wr_id);
-  }
-  txq->outstanding_wr -= n;
-  txq->stat_tx_free += n;
+    txq->outstanding_wr -= n;
+    txq->stat_tx_free += n;
+  } while (n > 0);
 }
 
 static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq,
@@ -319,7 +323,6 @@ exit:
     txq->stat_tx_submit++;
     txq->stat_tx_pkts += tx;
     txq->stat_tx_bytes += tx_bytes;
-
   } else {
     rdma_tx_poll_done(txq);
   }
@@ -610,13 +613,14 @@ connect_err:
 }
 
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
+  txq->stop = true;
   if (txq->connected) rdma_disconnect(txq->cma_id);
   if (txq->ah) ibv_destroy_ah(txq->ah);
   if (txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
+  if (txq->cq) ibv_destroy_cq(txq->cq);
   if (txq->pd) ibv_dealloc_pd(txq->pd);
   if (txq->rai) rdma_freeaddrinfo(txq->rai);
   if (txq->cma_id) rdma_destroy_id(txq->cma_id);
-  txq->stop = true;
   if (txq->ec) rdma_destroy_event_channel(txq->ec);
 
   return 0;
@@ -679,7 +683,7 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
   txq->stop = false;
   ret = pthread_create(&txq->connect_thread, NULL, rdma_tx_connect_thread, txq);
   if (ret) {
-    err("%s(%d, %u), pthread_create fail %d\n", __func__, port, q, ret);
+    err("%s(%d, %u), connect thread create fail %d\n", __func__, port, q, ret);
     rdma_tx_queue_uinit(txq);
     return ret;
   }
@@ -807,12 +811,13 @@ connect_err:
 }
 
 static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
-  if (rxq->recv_mr) ibv_dereg_mr(rxq->recv_mr);
-  if (rxq->qp) ibv_destroy_qp(rxq->qp);
-  if (rxq->pd) ibv_dealloc_pd(rxq->pd);
-  if (rxq->listen_id) rdma_destroy_id(rxq->listen_id);
   rxq->stop = true;
   pthread_join(rxq->connect_thread, NULL);
+  if (rxq->recv_mr) ibv_dereg_mr(rxq->recv_mr);
+  if (rxq->qp) ibv_destroy_qp(rxq->qp);
+  if (rxq->cq) ibv_destroy_cq(rxq->cq);
+  if (rxq->pd) ibv_dealloc_pd(rxq->pd);
+  if (rxq->listen_id) rdma_destroy_id(rxq->listen_id);
   if (rxq->ec) rdma_destroy_event_channel(rxq->ec);
 
   return 0;
@@ -869,7 +874,7 @@ static int rdma_rx_queue_init(struct mt_rdma_rx_queue* rxq) {
   rxq->stop = false;
   ret = pthread_create(&rxq->connect_thread, NULL, rdma_rx_connect_thread, rxq);
   if (ret) {
-    err("%s(%d, %u), pthread_create fail %d\n", __func__, port, q, ret);
+    err("%s(%d, %u), connect thread create fail %d\n", __func__, port, q, ret);
     rdma_rx_queue_uinit(rxq);
     return ret;
   }
