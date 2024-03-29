@@ -308,7 +308,7 @@ static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq
 
     txq->outstanding_wr++;
 
-    tx_bytes += m->pkt_len;
+    tx_bytes += m->pkt_len - sizeof(struct mt_udp_hdr);
     tx++;
   }
 
@@ -359,7 +359,7 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
     rte_pktmbuf_pkt_len(pkt) = len;
     rte_pktmbuf_data_len(pkt) = len;
     rx_pkts[i] = pkt;
-    rx_bytes += len;
+    rx_bytes += len - sizeof(struct mt_udp_hdr);
   }
 
   /* post recv */
