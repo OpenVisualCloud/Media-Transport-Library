@@ -7,7 +7,6 @@
 
 #include <rdma/rdma_cma.h>
 #include <rdma/rdma_verbs.h>
-#include <stdint.h>
 
 #include "../mt_log.h"
 #include "../mt_stat.h"
@@ -212,7 +211,9 @@ static int rdma_rx_post_recv(struct mt_rdma_rx_queue* rxq, struct rte_mbuf** mbu
 
   for (int i = 0; i < sz; i++) {
     m = mbufs[i];
-    void* addr = rte_pktmbuf_mtod(m, void*) - sizeof(struct ibv_grh);
+    /* skip l2/l3/l4 headers, leave space for ibv_grh */
+    void* addr = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr)) -
+                 sizeof(struct ibv_grh);
     ret = rdma_post_recv(rxq->cma_id, m, addr, rxq->recv_len, rxq->recv_mr);
     if (ret) {
       rxq->stat_rx_post_recv_fail++;
@@ -270,9 +271,9 @@ static uint16_t rdma_tx(struct mtl_main_impl* impl, struct mt_rdma_tx_queue* txq
   struct rte_mbuf* m = NULL;
   for (uint16_t i = 0; i < nb_pkts; i++) {
     m = tx_pkts[i];
-
-    sge[0].addr = rte_pktmbuf_mtod(m, uint64_t);
-    sge[0].length = m->data_len;
+    /* l2/l3/l4 headers are not used in data path */
+    sge[0].addr = rte_pktmbuf_mtod_offset(m, uint64_t, sizeof(struct mt_udp_hdr));
+    sge[0].length = m->data_len - sizeof(struct mt_udp_hdr);
     sge[0].lkey = txq->send_mrs[0]->lkey;
 
     uint16_t nb_segs = m->nb_segs;
@@ -353,7 +354,8 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
   struct rte_mbuf* pkt = NULL;
   for (int i = 0; i < rx; i++) {
     pkt = (struct rte_mbuf*)wc[i].wr_id;
-    uint32_t len = wc[i].byte_len - sizeof(struct ibv_grh);
+    /* leave l2/l3/l4 headers space for compatibility */
+    uint32_t len = wc[i].byte_len + sizeof(struct mt_udp_hdr) - sizeof(struct ibv_grh);
     rte_pktmbuf_pkt_len(pkt) = len;
     rte_pktmbuf_data_len(pkt) = len;
     rx_pkts[i] = pkt;
@@ -705,8 +707,9 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
   struct rte_mempool* pool = rxq->mbuf_pool;
   size_t mr_size, align = 0;
 
-  rxq->recv_len =
-      rte_pktmbuf_data_room_size(pool) + sizeof(struct ibv_grh) - RTE_PKTMBUF_HEADROOM;
+  /* l2/l3/l4 headers are not used in data path */
+  rxq->recv_len = rte_pktmbuf_data_room_size(pool) + sizeof(struct ibv_grh) -
+                  RTE_PKTMBUF_HEADROOM - sizeof(struct mt_udp_hdr);
   base_addr = (void*)mt_mp_base_addr(pool, &align);
   mr_size = (size_t)pool->populated_size *
                 (size_t)rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL) +
@@ -790,6 +793,7 @@ static void* rdma_rx_connect_thread(void* arg) {
             }
             info("%s(%d, %u), rdma connected\n", __func__, port, q);
             rxq->connected = true;
+            break;
           default:
             goto connect_err;
         }
