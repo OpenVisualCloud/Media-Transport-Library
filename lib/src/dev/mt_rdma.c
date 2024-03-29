@@ -183,8 +183,7 @@ static int rdma_free(struct mt_rdma_priv* rdma) {
         mt_tx_rdma_put(txq->tx_entry);
       }
     }
-    mt_rte_free(rdma->tx_queues);
-    rdma->tx_queues = NULL;
+    MT_SAFE_FREE(rdma->tx_queues, mt_rte_free);
   }
 
   if (rdma->rx_queues) {
@@ -196,8 +195,7 @@ static int rdma_free(struct mt_rdma_priv* rdma) {
         mt_rx_rdma_put(rxq->rx_entry);
       }
     }
-    mt_rte_free(rdma->rx_queues);
-    rdma->rx_queues = NULL;
+    MT_SAFE_FREE(rdma->rx_queues, mt_rte_free);
   }
 
   mt_pthread_mutex_destroy(&rdma->queues_lock);
@@ -463,10 +461,13 @@ int mt_dev_rdma_uinit(struct mt_interface* inf) {
 }
 
 static int rdma_tx_uinit_mrs(struct mt_rdma_tx_queue* txq) {
-  for (int i = 0; i < txq->num_mrs; ++i) {
-    ibv_dereg_mr(txq->send_mrs[i]);
+  if (txq->send_mrs) {
+    for (int i = 0; i < txq->num_mrs; ++i) {
+      MT_SAFE_FREE(txq->send_mrs[i], ibv_dereg_mr);
+    }
+    mt_rte_free(txq->send_mrs);
   }
-  mt_rte_free(txq->send_mrs);
+
   return 0;
 }
 
@@ -589,9 +590,9 @@ static void* rdma_tx_connect_thread(void* arg) {
           case RDMA_CM_EVENT_REJECTED:
             err("%s(%d, %u), event: %s, error: %d\n", __func__, port, q,
                 rdma_event_str(event->event), event->status);
-            break;
+            goto connect_err;
           default:
-            break;
+            goto connect_err;
         }
         rdma_ack_cm_event(event);
       }
@@ -615,13 +616,13 @@ connect_err:
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
   txq->stop = true;
   if (txq->connected) rdma_disconnect(txq->cma_id);
-  if (txq->ah) ibv_destroy_ah(txq->ah);
-  if (txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
-  if (txq->cq) ibv_destroy_cq(txq->cq);
-  if (txq->pd) ibv_dealloc_pd(txq->pd);
-  if (txq->rai) rdma_freeaddrinfo(txq->rai);
-  if (txq->cma_id) rdma_destroy_id(txq->cma_id);
-  if (txq->ec) rdma_destroy_event_channel(txq->ec);
+  MT_SAFE_FREE(txq->ah, ibv_destroy_ah);
+  if (txq->cma_id && txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
+  MT_SAFE_FREE(txq->cq, ibv_destroy_cq);
+  MT_SAFE_FREE(txq->pd, ibv_dealloc_pd);
+  MT_SAFE_FREE(txq->rai, rdma_freeaddrinfo);
+  MT_SAFE_FREE(txq->cma_id, rdma_destroy_id);
+  MT_SAFE_FREE(txq->ec, rdma_destroy_event_channel);
 
   return 0;
 }
@@ -790,7 +791,7 @@ static void* rdma_rx_connect_thread(void* arg) {
             info("%s(%d, %u), rdma connected\n", __func__, port, q);
             rxq->connected = true;
           default:
-            break;
+            goto connect_err;
         }
         rdma_ack_cm_event(event);
       }
@@ -813,12 +814,12 @@ connect_err:
 static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
   rxq->stop = true;
   pthread_join(rxq->connect_thread, NULL);
-  if (rxq->recv_mr) ibv_dereg_mr(rxq->recv_mr);
-  if (rxq->qp) ibv_destroy_qp(rxq->qp);
-  if (rxq->cq) ibv_destroy_cq(rxq->cq);
-  if (rxq->pd) ibv_dealloc_pd(rxq->pd);
-  if (rxq->listen_id) rdma_destroy_id(rxq->listen_id);
-  if (rxq->ec) rdma_destroy_event_channel(rxq->ec);
+  MT_SAFE_FREE(rxq->recv_mr, ibv_dereg_mr);
+  MT_SAFE_FREE(rxq->qp, ibv_destroy_qp);
+  MT_SAFE_FREE(rxq->cq, ibv_destroy_cq);
+  MT_SAFE_FREE(rxq->pd, ibv_dealloc_pd);
+  MT_SAFE_FREE(rxq->listen_id, rdma_destroy_id);
+  MT_SAFE_FREE(rxq->ec, rdma_destroy_event_channel);
 
   return 0;
 }
@@ -950,7 +951,7 @@ int mt_tx_rdma_put(struct mt_tx_rdma_entry* entry) {
   if (txq) {
     rdma_queue_tx_stat(txq);
     /* flush posted mbufs */
-    if (txq->cma_id->qp) {
+    if (txq->cma_id && txq->cma_id->qp) {
       struct ibv_qp_attr qp_attr = {.qp_state = IBV_QPS_ERR};
       ibv_modify_qp(txq->cma_id->qp, &qp_attr, IBV_QP_STATE);
     }
