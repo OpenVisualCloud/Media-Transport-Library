@@ -116,6 +116,10 @@ struct st_sample_context {
   bool use_cpu_copy;
 
   bool has_user_meta; /* if provide user meta data with the st2110-20 frame */
+
+  /* perf */
+  int perf_frames;
+  int perf_fb_cnt;
 };
 
 struct st_frame_user_meta {

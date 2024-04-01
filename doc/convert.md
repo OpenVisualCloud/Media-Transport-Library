@@ -18,7 +18,7 @@ During the conversion of ultra-high-definition video frames, the LLC load miss r
 
 This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized. It is particularly helpful for 4K or 8K scenarios.
 
-To use the functions `st20_<src_format>_to_<dest_format>_dma`, you need to first acquire the DMA device and pass the st_udma_handle to the function. For information on DMA device creation, please refer to [dma_sample.c](../app/sample/dma_sample.c).
+To use the functions `st20_<src_format>_to_<dest_format>_dma`, you need to first acquire the DMA device and pass the st_udma_handle to the function. For information on DMA device creation, please refer to [dma_sample.c](../app/sample/dma/dma_sample.c).
 
 For detailed API usage, please refer to [st_convert_api.h](../include/st_convert_api.h).
 

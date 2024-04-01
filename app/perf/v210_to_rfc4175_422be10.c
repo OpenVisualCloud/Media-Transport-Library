@@ -112,9 +112,10 @@ static int perf_cvt_v210_to_be(mtl_handle st, int w, int h, int frames, int fb_c
 }
 
 static void* perf_thread(void* arg) {
-  mtl_handle dev_handle = arg;
-  int frames = 60;
-  int fb_cnt = 3;
+  struct st_sample_context* ctx = arg;
+  mtl_handle dev_handle = ctx->st;
+  int frames = ctx->perf_frames;
+  int fb_cnt = ctx->perf_fb_cnt;
 
   unsigned int lcore = 0;
   int ret = mtl_get_lcore(dev_handle, &lcore);
@@ -150,7 +151,7 @@ int main(int argc, char** argv) {
   }
 
   pthread_t thread;
-  ret = pthread_create(&thread, NULL, perf_thread, ctx.st);
+  ret = pthread_create(&thread, NULL, perf_thread, &ctx);
   if (ret) goto exit;
   pthread_join(thread, NULL);
 
