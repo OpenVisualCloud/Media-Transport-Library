@@ -815,6 +815,12 @@ struct st_tx_audio_session_impl {
   uint32_t st30_frame_size; /* size per frame*/
   uint16_t st30_frame_idx;  /* current frame index */
   enum st30_tx_frame_status st30_frame_stat;
+  int frames_per_sec;
+
+  /* usdt dump */
+  int usdt_dump_fd;
+  char usdt_dump_path[64];
+  int usdt_dumped_frames;
 
   uint16_t st30_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st30_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */

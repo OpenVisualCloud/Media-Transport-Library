@@ -5,6 +5,7 @@
  */
 
 provider sys {
+  /* attach to enable the usdt log msg at runtime */
   probe log_msg(int level, char* msg);
   /* attach to enable the tasklet_time_measure at runtime */
   probe tasklet_time_measure();
@@ -31,6 +32,8 @@ provider st30 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va);
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe tx_frame_dump(int m_idx, int s_idx, char* dump_file, int frames);
   /* rx */
   probe rx_frame_available(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp, uint32_t data_size);
   probe rx_frame_put(int m_idx, int s_idx, int f_idx, void* va);

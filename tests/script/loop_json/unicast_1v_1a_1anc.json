@@ -12,7 +12,7 @@
     "tx_sessions": [
         {
             "dip": [
-                "192.168.17.102"
+                "local:1"
             ],
             "interface": [
                 0
@@ -36,7 +36,7 @@
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
-                    "audio_format": "PCM16",
+                    "audio_format": "PCM24",
                     "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_ptime": "1",
@@ -59,7 +59,7 @@
     "rx_sessions": [
         {
             "ip": [
-                "192.168.17.101",
+                "local:0",
             ],
             "interface": [
                 1
@@ -83,7 +83,7 @@
                     "type": "frame",
                     "start_port": 30000,
                     "payload_type": 111,
-                    "audio_format": "PCM16",
+                    "audio_format": "PCM24",
                     "audio_channel": ["ST"],
                     "audio_sampling": "48kHz",
                     "audio_ptime": "1",

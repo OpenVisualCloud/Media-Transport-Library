@@ -398,7 +398,7 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   }
 
   /* dump */
-  snprintf(s->st30_dump_url, ST_APP_URL_MAX_LEN, "st_audio_app%d_%d_%d_%u.pcm", idx,
+  snprintf(s->st30_dump_url, ST_APP_URL_MAX_LEN, "st_audio_app%d_%d_%d_c%u.pcm", idx,
            st30_get_sample_rate(ops.sampling), st30_get_sample_size(ops.fmt) * 8,
            ops.channel);
   ret = app_rx_audio_open_dump(s);

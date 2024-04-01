@@ -50,6 +50,8 @@
 #define SYS_TASKLET_TIME_MEASURE_ENABLED() (0)
 #define SYS_SESSIONS_TIME_MEASURE_ENABLED() (0)
 
+#define ST30_TX_FRAME_DUMP_ENABLED() (0)
+
 #endif
 
 #define MT_USDT_PTP_MSG(port, stage, value) \
@@ -82,6 +84,9 @@
   MT_DTRACE_PROBE4(st30, tx_frame_next, m_idx, s_idx, f_idx, va)
 #define MT_USDT_ST30_TX_FRAME_DONE(m_idx, s_idx, f_idx, tmstamp) \
   MT_DTRACE_PROBE4(st30, tx_frame_done, m_idx, s_idx, f_idx, tmstamp)
+#define MT_USDT_ST30_TX_FRAME_DUMP(m_idx, s_idx, file, frames) \
+  MT_DTRACE_PROBE4(st30, tx_frame_dump, m_idx, s_idx, file, frames)
+#define MT_USDT_ST30_TX_FRAME_DUMP_ENABLED() ST30_TX_FRAME_DUMP_ENABLED()
 
 #define MT_USDT_ST30_RX_FRAME_AVAILABLE(m_idx, s_idx, f_idx, va, tmstamp, data_size) \
   MT_DTRACE_PROBE6(st30, rx_frame_available, m_idx, s_idx, f_idx, va, tmstamp, data_size)
