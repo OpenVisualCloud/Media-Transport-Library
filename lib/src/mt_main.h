@@ -87,6 +87,14 @@
 #define MT_TIMEOUT_INFINITE (INT_MAX)
 #define MT_TIMEOUT_ZERO (0)
 
+#define MT_SAFE_FREE(obj, free_fn) \
+  do {                             \
+    if (obj) {                     \
+      free_fn(obj);                \
+      obj = NULL;                  \
+    }                              \
+  } while (0)
+
 struct mtl_main_impl; /* forward declare */
 
 /* dynamic fields are implemented after rte_mbuf */

@@ -2208,6 +2208,9 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #endif
 
+    /* Disable checksum calculation for RDMA UD backend */
+    if (mt_pmd_is_rdma_ud(impl, i)) inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
+
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     /* Detect LaunchTime capability */
     if (dev_info->tx_offload_capa & RTE_ETH_TX_OFFLOAD_SEND_ON_TIMESTAMP &&

@@ -3780,7 +3780,10 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
   struct st20_rfc4175_rtp_hdr* rtp;
   struct rte_udp_hdr* udp;
 
-  pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
+  struct rte_mempool* pool = mt_drv_no_sys_txq(impl, port)
+                                 ? s->mbuf_mempool_hdr[s_port]
+                                 : mt_sys_tx_mempool(impl, port);
+  pkt = rte_pktmbuf_alloc(pool);
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -3816,7 +3819,9 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 
-  uint16_t send = mt_sys_queue_tx_burst(impl, port, &pkt, 1);
+  uint16_t send = mt_drv_no_sys_txq(impl, port)
+                      ? mt_txq_burst_busy(s->queue[s_port], &pkt, 1, 10)
+                      : mt_sys_queue_tx_burst(impl, port, &pkt, 1);
   if (send < 1) {
     err("%s(%d), tx fail\n", __func__, port);
     rte_pktmbuf_free(pkt);
