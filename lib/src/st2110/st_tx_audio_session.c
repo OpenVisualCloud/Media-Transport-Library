@@ -596,7 +596,7 @@ static int tx_audio_session_usdt_dump_frame(struct st_tx_audio_session_impl* s,
              "imtl_usdt_st30tx_m%ds%d_%d_%d_c%u_XXXXXX.pcm", mgr->idx, idx,
              st30_get_sample_rate(ops->sampling), st30_get_sample_size(ops->fmt) * 8,
              ops->channel);
-    ret = mkstemps(s->usdt_dump_path, strlen(".pcm"));
+    ret = mt_mkstemps(s->usdt_dump_path, strlen(".pcm"));
     if (ret < 0) {
       err("%s(%d), mkstemps %s fail %d\n", __func__, idx, s->usdt_dump_path, ret);
       return ret;
