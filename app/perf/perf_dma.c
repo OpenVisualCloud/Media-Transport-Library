@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
-  ret = tx_sample_parse_args(&ctx, argc, argv);
+  ret = dma_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);
@@ -123,19 +123,21 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
-  dma_copy_perf(ctx.st, 1920, 1080, 60, 128);
-  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 128);
-  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, 60, 128);
+  int frames = ctx.perf_frames;
+
+  dma_copy_perf(ctx.st, 1920, 1080, frames, 128);
+  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, frames, 128);
+  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, frames, 128);
   info("\n");
 
-  dma_copy_perf(ctx.st, 1920, 1080, 60, 1200);
-  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 1200);
-  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, 60, 1200);
+  dma_copy_perf(ctx.st, 1920, 1080, frames, 1200);
+  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, frames, 1200);
+  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, frames, 1200);
   info("\n");
 
-  dma_copy_perf(ctx.st, 1920, 1080, 60, 4096);
-  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, 60, 4096);
-  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, 60, 4096);
+  dma_copy_perf(ctx.st, 1920, 1080, frames, 4096);
+  dma_copy_perf(ctx.st, 1920 * 2, 1080 * 2, frames, 4096);
+  dma_copy_perf(ctx.st, 1920 * 4, 1080 * 4, frames, 4096);
   info("\n");
 
   /* release sample(st) dev */

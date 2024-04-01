@@ -65,6 +65,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_USER_META,
   SAMPLE_ARG_LIB_PTP,
   SAMPLE_ARG_PACING_WAY,
+  SAMPLE_ARG_PERF_FRAMES,
+  SAMPLE_ARG_PERF_FB_CNT,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -128,6 +130,8 @@ static struct option sample_args_options[] = {
     {"use_cpu_copy", no_argument, 0, SAMPLE_ARG_USE_CPU_COPY},
     {"rx_dump", no_argument, 0, SAMPLE_ARG_RX_DUMP},
     {"user_meta", no_argument, 0, SAMPLE_ARG_USER_META},
+    {"perf_frames", required_argument, 0, SAMPLE_ARG_PERF_FRAMES},
+    {"perf_fb_cnt", required_argument, 0, SAMPLE_ARG_PERF_FB_CNT},
 
     {0, 0, 0, 0}};
 
@@ -394,6 +398,12 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_USE_CPU_COPY:
         ctx->use_cpu_copy = true;
         break;
+      case SAMPLE_ARG_PERF_FRAMES:
+        ctx->perf_frames = atoi(optarg);
+        break;
+      case SAMPLE_ARG_PERF_FB_CNT:
+        ctx->perf_fb_cnt = atoi(optarg);
+        break;
       case '?':
         break;
       default:
@@ -487,6 +497,10 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->logo_height = 200;
 
   ctx->st22p_codec = ST22_CODEC_JPEGXS;
+
+  /* default 60 frames on 3 fb */
+  ctx->perf_frames = 60;
+  ctx->perf_fb_cnt = 3;
 
   _sample_parse_args(ctx, argc, argv);
 
