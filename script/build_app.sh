@@ -5,8 +5,6 @@
 
 set -e
 
-user=$(whoami)
-
 function usage()
 {
     echo "Usage: $0 [debug/debugoptimized/plain/release]"
@@ -15,13 +13,6 @@ function usage()
 
 buildtype=release
 enable_asan=false
-
-if [ -n "$MTL_BUILD_DISABLE_PCAPNG" ];  then
-    if [ "$MTL_BUILD_DISABLE_PCAPNG" == "true" ]; then
-        disable_pcapng=true
-        echo "Disable pcapng function."
-    fi
-fi
 
 if [ -n "$MTL_BUILD_ENABLE_ASAN" ];  then
     if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
