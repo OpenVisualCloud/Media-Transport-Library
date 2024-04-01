@@ -354,12 +354,12 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
   struct rte_mbuf* pkt = NULL;
   for (int i = 0; i < rx; i++) {
     pkt = (struct rte_mbuf*)wc[i].wr_id;
-    /* leave l2/l3/l4 headers space for compatibility */
-    uint32_t len = wc[i].byte_len + sizeof(struct mt_udp_hdr) - sizeof(struct ibv_grh);
-    rte_pktmbuf_pkt_len(pkt) = len;
-    rte_pktmbuf_data_len(pkt) = len;
+    uint32_t len = wc[i].byte_len - sizeof(struct ibv_grh);
+    /* reserve l2/l3/l4 headers space for compatibility */
+    rte_pktmbuf_data_len(pkt) = rte_pktmbuf_pkt_len(pkt) =
+        len + sizeof(struct mt_udp_hdr);
     rx_pkts[i] = pkt;
-    rx_bytes += len - sizeof(struct mt_udp_hdr);
+    rx_bytes += len;
   }
 
   /* post recv */
@@ -775,14 +775,14 @@ static void* rdma_rx_connect_thread(void* arg) {
               goto connect_err;
             }
 
-            struct rte_mbuf* mbufs[1024];
-            ret = rte_pktmbuf_alloc_bulk(rxq->mbuf_pool, mbufs, 1024);
+            struct rte_mbuf* mbufs[MT_RDMA_MAX_WR / 2];
+            ret = rte_pktmbuf_alloc_bulk(rxq->mbuf_pool, mbufs, MT_RDMA_MAX_WR / 2);
             if (ret < 0) {
               err("%s(%d, %u), mbuf alloc fail %d\n", __func__, port, q, ret);
               goto connect_err;
             }
 
-            rdma_rx_post_recv(rxq, mbufs, 1024);
+            rdma_rx_post_recv(rxq, mbufs, MT_RDMA_MAX_WR / 2);
 
             struct rdma_conn_param conn_param = {};
             conn_param.qp_num = event->id->qp->qp_num;
@@ -946,6 +946,13 @@ struct mt_tx_rdma_entry* mt_tx_rdma_get(struct mtl_main_impl* impl, enum mtl_por
   return entry;
 }
 
+static void rdma_queue_tx_flush(struct mt_rdma_tx_queue* txq) {
+  if (!txq->cma_id || !txq->cma_id->qp) return;
+  struct ibv_qp_attr qp_attr = {.qp_state = IBV_QPS_ERR};
+  ibv_modify_qp(txq->cma_id->qp, &qp_attr, IBV_QP_STATE);
+  rdma_tx_poll_done(txq);
+}
+
 int mt_tx_rdma_put(struct mt_tx_rdma_entry* entry) {
   enum mtl_port port = entry->port;
   struct mt_txq_flow* flow = &entry->flow;
@@ -955,11 +962,7 @@ int mt_tx_rdma_put(struct mt_tx_rdma_entry* entry) {
   if (txq) {
     rdma_queue_tx_stat(txq);
     /* flush posted mbufs */
-    if (txq->cma_id && txq->cma_id->qp) {
-      struct ibv_qp_attr qp_attr = {.qp_state = IBV_QPS_ERR};
-      ibv_modify_qp(txq->cma_id->qp, &qp_attr, IBV_QP_STATE);
-    }
-    rdma_tx_poll_done(txq);
+    rdma_queue_tx_flush(txq);
     rdma_tx_uinit_mrs(txq);
     rdma_tx_queue_uinit(txq);
 
