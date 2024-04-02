@@ -698,6 +698,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
+  s->usdt_dump_fd = -1;
 
   if (ops->flags & ST30_RX_FLAG_TIMING_PARSER_STAT) {
     info("%s(%d), enable the timing analyze stat\n", __func__, idx);
