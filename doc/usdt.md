@@ -358,9 +358,14 @@ provider st30 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va);
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe tx_frame_dump(int m_idx, int s_idx, char* dump_file, int frames);
   /* rx */
   probe rx_frame_available(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp, uint32_t data_size);
   probe rx_frame_put(int m_idx, int s_idx, int f_idx, void* va);
+  probe rx_no_framebuffer(int m_idx, int s_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, int frames);
 }
 ```
 
@@ -466,6 +471,50 @@ Usage: This utility is designed to detect the absence of available frame buffers
 sudo bpftrace -e 'usdt::st30:rx_no_framebuffer { printf("%s m%d,s%d: no framebuffer for tmstamp:%u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
 ```
 
+#### 2.4.6 tx_frame_dump USDT
+
+Usage: This utility is designed to capture and store audio frames transmitted over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file until detachment occurs.
+
+```bash
+sudo bpftrace -e 'usdt::st30:tx_frame_dump { printf("%s m%d,s%d: dump %d frames to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg3, str(arg2)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+17:17:35 m0,s0: dump 1000 frames to imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm
+17:17:36 m0,s0: dump 2000 frames to imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm
+17:17:37 m0,s0: dump 3000 frames to imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm
+```
+
+Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as your setup.
+
+```bash
+ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm dump.wav
+```
+
+#### 2.4.7 rx_frame_dump USDT
+
+Usage: Similar to tx_frame_dump hook, this utility is designed to capture and store audio frames received over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file until detachment occurs.
+
+```bash
+sudo bpftrace -e 'usdt::st30:rx_frame_dump { printf("%s m%d,s%d: dump %d frames to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg3, str(arg2)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+10:26:07 m0,s0: dump 1000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+10:26:08 m0,s0: dump 2000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+10:26:09 m0,s0: dump 3000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+```
+
+Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as your setup.
+
+```bash
+ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm dump.wav
+```
+
 ### 2.5 st40 tracing
 
 Available probes:
@@ -476,6 +525,7 @@ provider st40 {
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
   /* rx */
   probe rx_mbuf_available(int m_idx, int s_idx, void* mbuf, uint32_t tmstamp, uint32_t data_size);
+  probe rx_mbuf_enqueue_fail(int m_idx, int s_idx, void* mbuf, uint32_t tmstamp);
   probe rx_mbuf_put(int m_idx, int s_idx, void* mbuf);
 }
 ```

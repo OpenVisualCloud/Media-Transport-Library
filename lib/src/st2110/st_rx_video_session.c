@@ -1197,12 +1197,7 @@ static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_sessio
              idx, max_dump_packets);
   }
 
-#ifndef WINDOWSENV
-  int fd = mkstemps(s->pcapng_file_name, strlen(".pcapng"));
-#else
-  s->pcapng_file_name[strlen(s->pcapng_file_name) - strlen(".pcapng")] = '\0';
-  int fd = mkstemp(s->pcapng_file_name);
-#endif
+  int fd = mt_mkstemps(s->pcapng_file_name, strlen(".pcapng"));
   if (fd == -1) {
     err("%s(%d), failed to open pcapng file\n", __func__, idx);
     return -EIO;

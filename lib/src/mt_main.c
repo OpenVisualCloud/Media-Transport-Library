@@ -399,8 +399,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
   RTE_BUILD_BUG_ON(sizeof(struct mt_udp_hdr) != 42);
 
-  /* place holder to let bpf trace can attach to usdt::sys:tasklet_time_measure and
-   * usdt::sys:sessions_time_measure */
+  /* place holder to let bpf trace can attach to runtime point */
   MT_SYS_TASKLET_TIME_MEASURE();
   MT_SYS_SESSIONS_TIME_MEASURE();
 

@@ -250,6 +250,15 @@ static inline int mt_fd_set_nonbolck(int fd) {
 }
 #endif
 
+static inline int mt_mkstemps(char* template, int suffix_len) {
+#ifdef WINDOWSENV
+  template[strlen(template) - suffix_len] = '\0';
+  return mkstemp(template);
+#else
+  return mkstemps(template, suffix_len);
+#endif
+}
+
 const char* mt_dpdk_afxdp_port2if(const char* port);
 const char* mt_dpdk_afpkt_port2if(const char* port);
 const char* mt_kernel_port2if(const char* port);
