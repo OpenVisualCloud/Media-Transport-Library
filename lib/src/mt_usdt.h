@@ -51,6 +51,7 @@
 #define SYS_SESSIONS_TIME_MEASURE_ENABLED() (0)
 
 #define ST30_TX_FRAME_DUMP_ENABLED() (0)
+#define ST30_RX_FRAME_DUMP_ENABLED() (0)
 
 #endif
 
@@ -94,6 +95,9 @@
   MT_DTRACE_PROBE4(st30, rx_frame_put, m_idx, s_idx, f_idx, va)
 #define MT_USDT_ST30_RX_NO_FRAMEBUFFER(m_idx, s_idx, tmstamp) \
   MT_DTRACE_PROBE3(st30, rx_no_framebuffer, m_idx, s_idx, tmstamp)
+#define MT_USDT_ST30_RX_FRAME_DUMP(m_idx, s_idx, file, frames) \
+  MT_DTRACE_PROBE4(st30, rx_frame_dump, m_idx, s_idx, file, frames)
+#define MT_USDT_ST30_RX_FRAME_DUMP_ENABLED() ST30_RX_FRAME_DUMP_ENABLED()
 
 #define MT_USDT_ST40_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, meta_num, total_udw) \
   MT_DTRACE_PROBE6(st40, tx_frame_next, m_idx, s_idx, f_idx, va, meta_num, total_udw)

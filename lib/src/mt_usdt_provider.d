@@ -38,6 +38,8 @@ provider st30 {
   probe rx_frame_available(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp, uint32_t data_size);
   probe rx_frame_put(int m_idx, int s_idx, int f_idx, void* va);
   probe rx_no_framebuffer(int m_idx, int s_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, int frames);
 }
 
 provider st40 {

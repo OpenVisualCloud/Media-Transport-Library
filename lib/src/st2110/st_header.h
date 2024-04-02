@@ -970,6 +970,12 @@ struct st_rx_audio_session_impl {
   int st30_frames_cnt; /* numbers of frames requested */
   size_t st30_frame_size;
   struct st_frame_trans* st30_cur_frame; /* pointer to current frame */
+  int frames_per_sec;
+
+  /* usdt dump */
+  int usdt_dump_fd;
+  char usdt_dump_path[64];
+  int usdt_dumped_frames;
 
   uint32_t pkt_len;       /* data len(byte) for each pkt */
   uint32_t st30_pkt_size; /* size for each pkt which include the header */

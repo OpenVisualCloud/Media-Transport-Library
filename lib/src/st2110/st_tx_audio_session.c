@@ -1851,6 +1851,7 @@ static int tx_audio_session_uinit_sw(struct st_tx_audio_sessions_mgr* mgr,
   tx_audio_session_mempool_free(s);
 
   tx_audio_session_free_frames(s);
+  tx_audio_session_usdt_dump_close(s);
 
   return 0;
 }
@@ -2049,8 +2050,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     rte_atomic32_inc(&mgr->transmitter_clients);
   }
 
-  s->active = true;
   s->frames_per_sec = (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts;
+  s->active = true;
 
   info("%s(%d), pkt_len %u frame_size %u fps %f, pacing_way %s\n", __func__, idx,
        s->pkt_len, s->st30_frame_size,

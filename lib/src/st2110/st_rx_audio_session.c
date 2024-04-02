@@ -200,6 +200,56 @@ static int rx_audio_sessions_tasklet_stop(void* priv) {
   return 0;
 }
 
+static int rx_audio_session_usdt_dump_close(struct st_rx_audio_session_impl* s) {
+  int idx = s->idx;
+
+  if (s->usdt_dump_fd >= 0) {
+    info("%s(%d), close fd %d, dumped frames %d\n", __func__, idx, s->usdt_dump_fd,
+         s->usdt_dumped_frames);
+    close(s->usdt_dump_fd);
+    s->usdt_dump_fd = -1;
+  }
+  return 0;
+}
+
+static int rx_audio_session_usdt_dump_frame(struct st_rx_audio_session_impl* s,
+                                            struct st_frame_trans* frame) {
+  struct st_rx_audio_sessions_mgr* mgr = s->mgr;
+  int idx = s->idx;
+  int ret;
+
+  if (s->usdt_dump_fd < 0) {
+    struct st30_rx_ops* ops = &s->ops;
+    snprintf(s->usdt_dump_path, sizeof(s->usdt_dump_path),
+             "imtl_usdt_st30rx_m%ds%d_%d_%d_c%u_XXXXXX.pcm", mgr->idx, idx,
+             st30_get_sample_rate(ops->sampling), st30_get_sample_size(ops->fmt) * 8,
+             ops->channel);
+    ret = mt_mkstemps(s->usdt_dump_path, strlen(".pcm"));
+    if (ret < 0) {
+      err("%s(%d), mkstemps %s fail %d\n", __func__, idx, s->usdt_dump_path, ret);
+      return ret;
+    }
+    s->usdt_dump_fd = ret;
+    info("%s(%d), mkstemps succ on %s fd %d\n", __func__, idx, s->usdt_dump_path,
+         s->usdt_dump_fd);
+  }
+
+  /* write frame to dump file */
+  ssize_t n = write(s->usdt_dump_fd, frame->addr, s->st30_frame_size);
+  if (n != s->st30_frame_size) {
+    warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
+  } else {
+    s->usdt_dumped_frames++;
+    /* logging every 1 sec */
+    if ((s->usdt_dumped_frames % (s->frames_per_sec * 1)) == 0) {
+      MT_USDT_ST30_RX_FRAME_DUMP(mgr->idx, s->idx, s->usdt_dump_path,
+                                 s->usdt_dumped_frames);
+    }
+  }
+
+  return 0;
+}
+
 static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
                                              struct st_rx_audio_session_impl* s,
                                              struct rte_mbuf* mbuf,
@@ -285,6 +335,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (s->frame_recv_size >= s->st30_frame_size) {
     struct st30_rx_frame_meta* meta = &s->meta;
     uint64_t tsc_start = 0;
+    struct st_frame_trans* frame = s->st30_cur_frame;
 
     if (s->enable_timing_parser) {
       /* parse timing result every 200ms */
@@ -311,28 +362,33 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     meta->rtp_timestamp = tmstamp;
     meta->frame_recv_size = s->frame_recv_size;
 
-    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, s->st30_cur_frame->idx,
-                                    s->st30_cur_frame->addr, tmstamp,
+    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr, tmstamp,
                                     meta->frame_recv_size);
+    /* check if dump USDT enabled */
+    if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
+      rx_audio_session_usdt_dump_frame(s, frame);
+    } else {
+      rx_audio_session_usdt_dump_close(s);
+    }
 
     /* get a full frame */
     bool time_measure = mt_sessions_time_measure(impl);
     if (time_measure) tsc_start = mt_get_tsc(impl);
-    int ret = ops->notify_frame_ready(ops->priv, s->st30_cur_frame->addr, meta);
+    int ret = ops->notify_frame_ready(ops->priv, frame->addr, meta);
     if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
       s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
-      rx_audio_session_put_frame(s, s->st30_cur_frame);
+      rx_audio_session_put_frame(s, frame);
     }
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
     rte_atomic32_inc(&s->st30_stat_frames_received);
     s->st30_cur_frame = NULL;
-    dbg("%s: full frame on %p\n", __func__, s->st30_frame);
   }
+
   return 0;
 }
 
@@ -563,6 +619,7 @@ static int rx_audio_session_init_mcast(struct mtl_main_impl* impl,
 static int rx_audio_session_uinit_sw(struct st_rx_audio_session_impl* s) {
   rx_audio_session_free_frames(s);
   rx_audio_session_free_rtps(s);
+  rx_audio_session_usdt_dump_close(s);
   return 0;
 }
 
@@ -686,9 +743,11 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  s->frames_per_sec =
+      (double)NS_PER_S / st30_get_packet_time(ops->ptime) / s->st30_total_pkts;
   s->attached = true;
-  info("%s(%d), pkt_len %u frame_size %" PRId64 "\n", __func__, idx, s->pkt_len,
-       s->st30_frame_size);
+  info("%s(%d), pkt_len %u frame_size %" PRId64 ", expect fps %d\n", __func__, idx,
+       s->pkt_len, s->st30_frame_size, s->frames_per_sec);
   return 0;
 }
 
