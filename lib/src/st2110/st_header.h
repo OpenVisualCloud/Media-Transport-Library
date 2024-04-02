@@ -284,6 +284,7 @@ struct st_tx_video_session_impl {
 
   struct st_vsync_info vsync;
   bool second_field;
+  int usdt_frame_cnt;
 
   struct st20_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
@@ -578,6 +579,7 @@ struct st_rx_video_session_impl {
   struct st_rx_video_detector detector;
 
   struct st_vsync_info vsync;
+  int usdt_frame_cnt;
 
   /* frames info */
   size_t st20_frame_size;        /* size per frame, without padding */
