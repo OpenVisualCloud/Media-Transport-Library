@@ -350,6 +350,36 @@ Usage: This utility is designed to detect the absence of available frame buffers
 sudo bpftrace -e 'usdt::st20:rx_no_framebuffer { printf("%s m%d,s%d: no framebuffer for tmstamp:%u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
 ```
 
+#### 2.3.6 tx_frame_dump USDT
+
+Usage: This utility is designed to capture and store video frames transmitted over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs. Please note, the video file is large and the dump happens on the tasklet path which may affect the performance.
+
+```bash
+sudo bpftrace -e 'usdt::st20:tx_frame_dump { printf("%s m%d,s%d: dump frame %p size %u to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg3, arg4, str(arg2)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:55:15 m0,s0: dump frame 0x320850e600 size 5184000 to imtl_usdt_st20tx_m0s0_1920_1080_5T6CWy.yuv
+15:55:20 m0,s0: dump frame 0x3207f0e600 size 5184000 to imtl_usdt_st20tx_m0s0_1920_1080_uI7c3W.yuv
+```
+
+#### 2.3.6 rx_frame_dump USDT
+
+Usage: This utility is designed to capture and store video frames received over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs. Please note, the video file is large and the dump happens on the tasklet path which may affect the performance.
+
+```bash
+sudo bpftrace -e 'usdt::st20:rx_frame_dump { printf("%s m%d,s%d: dump frame %p size %u to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg3, arg4, str(arg2)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:57:35 m1,s0: dump frame 0x320bb0e600 size 5184000 to imtl_usdt_st20rx_m1s0_1920_1080_MEFuOW.yuv
+15:57:40 m1,s0: dump frame 0x320bb0e600 size 5184000 to imtl_usdt_st20rx_m1s0_1920_1080_ehmjPp.yuv
+```
+
 ### 2.4 st30 tracing
 
 Available probes:

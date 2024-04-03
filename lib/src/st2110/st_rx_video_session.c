@@ -710,10 +710,44 @@ static inline int st22_notify_frame_ready(struct st_rx_video_session_impl* s, vo
   return ret;
 }
 
+static int rv_usdt_dump_frame(struct mtl_main_impl* impl,
+                              struct st_rx_video_session_impl* s,
+                              struct st_frame_trans* frame) {
+  struct st_rx_video_sessions_mgr* mgr = s->parent;
+  int idx = s->idx;
+  int fd;
+  char usdt_dump_path[64];
+  struct st20_rx_ops* ops = &s->ops;
+  uint64_t tsc_s = mt_get_tsc(impl);
+
+  snprintf(usdt_dump_path, sizeof(usdt_dump_path),
+           "imtl_usdt_st20rx_m%ds%d_%d_%d_XXXXXX.yuv", mgr->idx, idx, ops->width,
+           ops->height);
+  fd = mt_mkstemps(usdt_dump_path, strlen(".yuv"));
+  if (fd < 0) {
+    err("%s(%d), mkstemps %s fail %d\n", __func__, idx, usdt_dump_path, fd);
+    return fd;
+  }
+
+  /* write frame to dump file */
+  ssize_t n = write(fd, frame->addr, s->st20_frame_size);
+  if (n != s->st20_frame_size) {
+    warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
+  } else {
+    MT_USDT_ST20_RX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
+  }
+
+  info("%s(%d), write %" PRIu64 " to %s(fd:%d), time %fms\n", __func__, idx, n,
+       usdt_dump_path, fd, (float)(mt_get_tsc(impl) - tsc_s) / NS_PER_MS);
+  close(fd);
+  return 0;
+}
+
 static void rv_frame_notify(struct st_rx_video_session_impl* s,
                             struct st_rx_video_slot_impl* slot) {
   struct st20_rx_ops* ops = &s->ops;
   struct st20_rx_frame_meta* meta = &slot->meta;
+  struct st_frame_trans* frame = slot->frame;
 
   if (s->enable_timing_parser) {
     for (int s_port = 0; s_port < ops->num_port; s_port++) {
@@ -757,16 +791,27 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   }
   meta->rtp_timestamp = slot->tmstamp;
 
-  if (slot->frame->user_meta_data_size) {
-    meta->user_meta_size = slot->frame->user_meta_data_size;
-    meta->user_meta = slot->frame->user_meta;
+  if (frame->user_meta_data_size) {
+    meta->user_meta_size = frame->user_meta_data_size;
+    meta->user_meta = frame->user_meta;
   } else {
     meta->user_meta_size = 0;
     meta->user_meta = NULL;
   }
-  MT_USDT_ST20_RX_FRAME_AVAILABLE(s->parent->idx, s->idx, slot->frame->idx,
-                                  slot->frame->addr, slot->tmstamp,
-                                  meta->frame_recv_size);
+
+  MT_USDT_ST20_RX_FRAME_AVAILABLE(s->parent->idx, s->idx, frame->idx, frame->addr,
+                                  slot->tmstamp, meta->frame_recv_size);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST20_RX_FRAME_DUMP_ENABLED()) {
+    int period = (double)NS_PER_S / s->frame_time * 5; /* dump every 5s now */
+    if ((s->usdt_frame_cnt % period) == (period / 2)) {
+      rv_usdt_dump_frame(s->impl, s, frame);
+    }
+    s->usdt_frame_cnt++;
+  } else {
+    s->usdt_frame_cnt = 0;
+  }
+
   if (meta->frame_recv_size >= s->st20_frame_size) {
     meta->status = ST_FRAME_STATUS_COMPLETE;
     if (ops->num_port > 1) {
@@ -779,10 +824,10 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
     /* notify frame */
     dbg("%s(%d): tmstamp %u\n", __func__, s->idx, slot->tmstamp);
-    int ret = rv_notify_frame_ready(s, slot->frame->addr, meta);
+    int ret = rv_notify_frame_ready(s, frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready fail %d\n", __func__, s->idx, ret);
-      rv_put_frame(s, slot->frame);
+      rv_put_frame(s, frame);
       slot->frame = NULL;
     }
 
@@ -811,9 +856,9 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      rv_notify_frame_ready(s, slot->frame->addr, meta);
+      rv_notify_frame_ready(s, frame->addr, meta);
     } else {
-      rv_put_frame(s, slot->frame);
+      rv_put_frame(s, frame);
       slot->frame = NULL;
     }
   }
