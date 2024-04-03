@@ -74,7 +74,6 @@ struct mt_rdma_rx_queue {
   uint64_t stat_rx_post_recv_fail;
 
   uint32_t stat_rx_pkt_invalid;
-  uint32_t stat_rx_pkt_err_udp_port;
 };
 
 struct mt_rdma_priv {
@@ -145,10 +144,8 @@ static int rdma_queue_rx_stat(struct mt_rdma_rx_queue* rxq) {
     rxq->stat_rx_post_recv_fail = 0;
   }
   if (rxq->stat_rx_pkt_invalid) {
-    err("%s(%d,%u), invalid pkt %u wrong udp port %u\n", __func__, port, q,
-        rxq->stat_rx_pkt_invalid, rxq->stat_rx_pkt_err_udp_port);
+    err("%s(%d,%u), invalid pkt %u\n", __func__, port, q, rxq->stat_rx_pkt_invalid);
     rxq->stat_rx_pkt_invalid = 0;
-    rxq->stat_rx_pkt_err_udp_port = 0;
   }
 
   return 0;
@@ -217,7 +214,8 @@ static int rdma_rx_post_recv(struct mt_rdma_rx_queue* rxq, struct rte_mbuf** mbu
     ret = rdma_post_recv(rxq->cma_id, m, addr, rxq->recv_len, rxq->recv_mr);
     if (ret) {
       rxq->stat_rx_post_recv_fail++;
-      err("%s(%d,%u), rdma_post_recv %u fail %d\n", __func__, port, q, i, ret);
+      err("%s(%d,%u), rdma_post_recv %u fail %d, addr %p, len %" PRIu64 "\n", __func__,
+          port, q, i, ret, addr, rxq->recv_len);
       return ret;
     }
   }
@@ -351,28 +349,35 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
     return 0;
   }
 
+  int rx_valid = 0;
   struct rte_mbuf* pkt = NULL;
   for (int i = 0; i < rx; i++) {
     pkt = (struct rte_mbuf*)wc[i].wr_id;
+    if (wc[i].status != IBV_WC_SUCCESS) {
+      rxq->stat_rx_pkt_invalid += rx;
+      rte_pktmbuf_free(pkt);
+      continue;
+    }
     uint32_t len = wc[i].byte_len - sizeof(struct ibv_grh);
     /* reserve l2/l3/l4 headers space for compatibility */
     rte_pktmbuf_data_len(pkt) = rte_pktmbuf_pkt_len(pkt) =
         len + sizeof(struct mt_udp_hdr);
-    rx_pkts[i] = pkt;
+    rx_pkts[rx_valid++] = pkt;
     rx_bytes += len;
   }
+  if (rx_valid < rx) rte_pktmbuf_free_bulk(&fill[rx_valid], rx - rx_valid);
 
   /* post recv */
-  rdma_rx_post_recv(rxq, fill, rx);
+  rdma_rx_post_recv(rxq, fill, rx_valid);
 
   if (stats) {
-    stats->rx_packets += rx;
+    stats->rx_packets += rx_valid;
     stats->rx_bytes += rx_bytes;
   }
-  rxq->stat_rx_pkts += rx;
+  rxq->stat_rx_pkts += rx_valid;
   rxq->stat_rx_bytes += rx_bytes;
 
-  return rx;
+  return rx_valid;
 }
 
 int mt_dev_rdma_init(struct mt_interface* inf) {
@@ -501,8 +506,8 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_queue* txq, void** buffers, size_t
       return -EIO;
     }
     mrs[i] = mr;
-    info("%s(%d, %u), mr registered, buffer %p size %" PRIu64 " mr_lkey %u\n", __func__,
-         port, q, buffers[i], sizes[i], mr->lkey);
+    dbg("%s(%d, %u), mr registered, buffer %p size %" PRIu64 " mr_lkey %u\n", __func__,
+        port, q, buffers[i], sizes[i], mr->lkey);
   }
 
   txq->send_mrs = mrs;
@@ -617,7 +622,6 @@ connect_err:
 
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
   txq->stop = true;
-  if (txq->connected) rdma_disconnect(txq->cma_id);
   MT_SAFE_FREE(txq->ah, ibv_destroy_ah);
   if (txq->cma_id && txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
   MT_SAFE_FREE(txq->cq, ibv_destroy_cq);
@@ -666,14 +670,13 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
   char dport[6];
   snprintf(dport, 6, "%d", txq->tx_entry->flow.dst_port);
   ret = rdma_getaddrinfo(ip, dport, &hints, &rai);
+  rdma_freeaddrinfo(res);
   if (ret) {
     err("%s(%d, %u), rdma_getaddrinfo fail %d\n", __func__, port, q, ret);
     rdma_tx_queue_uinit(txq);
-    rdma_freeaddrinfo(res);
     return ret;
   }
   txq->rai = rai;
-  rdma_freeaddrinfo(res);
 
   /* connect to server */
   ret = rdma_resolve_addr(txq->cma_id, rai->ai_src_addr, rai->ai_dst_addr, 2000);
@@ -683,6 +686,7 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
     return ret;
   }
 
+  txq->connected = false;
   txq->stop = false;
   ret = pthread_create(&txq->connect_thread, NULL, rdma_tx_connect_thread, txq);
   if (ret) {
@@ -719,6 +723,8 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
     err("%s(%d, %u), ibv_reg_mr fail\n", __func__, rxq->port, rxq->q);
     return -ENOMEM;
   }
+  dbg("%s(%d, %u), mr registered, buffer %p size %" PRIu64 " mr_lkey %u\n", __func__,
+      rxq->port, rxq->q, base_addr, mr_size, rxq->recv_mr->lkey);
   return 0;
 }
 
@@ -777,7 +783,7 @@ static void* rdma_rx_connect_thread(void* arg) {
 
             struct rte_mbuf* mbufs[MT_RDMA_MAX_WR / 2];
             ret = rte_pktmbuf_alloc_bulk(rxq->mbuf_pool, mbufs, MT_RDMA_MAX_WR / 2);
-            if (ret < 0) {
+            if (ret) {
               err("%s(%d, %u), mbuf alloc fail %d\n", __func__, port, q, ret);
               goto connect_err;
             }
@@ -795,6 +801,8 @@ static void* rdma_rx_connect_thread(void* arg) {
             rxq->connected = true;
             break;
           default:
+            err("%s(%d, %u), event: %s, error: %d\n", __func__, port, q,
+                rdma_event_str(event->event), event->status);
             goto connect_err;
         }
         rdma_ack_cm_event(event);
@@ -876,6 +884,7 @@ static int rdma_rx_queue_init(struct mt_rdma_rx_queue* rxq) {
     return ret;
   }
 
+  rxq->connected = false;
   rxq->stop = false;
   ret = pthread_create(&rxq->connect_thread, NULL, rdma_rx_connect_thread, rxq);
   if (ret) {
