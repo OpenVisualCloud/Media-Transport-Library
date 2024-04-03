@@ -2965,6 +2965,14 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
   return 0;
 }
 
+static int tv_uinit(struct st_tx_video_session_impl* s) {
+  tv_uinit_rtcp(s);
+  /* must uinit hw firstly as frame use shared external buffer */
+  tv_uinit_hw(s);
+  tv_uinit_sw(s);
+  return 0;
+}
+
 static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s, struct st20_tx_ops* ops,
                      enum mt_handle_type s_type, struct st22_tx_ops* st22_frame_ops) {
@@ -3090,22 +3098,22 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   ret = tv_init_sw(impl, mgr, s, st22_frame_ops);
   if (ret < 0) {
     err("%s(%d), tv_init_sw fail %d\n", __func__, idx, ret);
-    return -EIO;
+    tv_uinit(s);
+    return ret;
   }
 
   ret = tv_init_hw(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), tx_session_init_hw fail %d\n", __func__, idx, ret);
-    tv_uinit_sw(s);
-    return -EIO;
+    tv_uinit(s);
+    return ret;
   }
 
   for (int i = 0; i < num_port; i++) {
     ret = tv_init_hdr(impl, s, i);
     if (ret < 0) {
       err("%s(%d), tx_session_init_hdr fail %d port %d\n", __func__, idx, ret, i);
-      tv_uinit_hw(s);
-      tv_uinit_sw(s);
+      tv_uinit(s);
       return ret;
     }
   }
@@ -3114,8 +3122,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
     ret = tv_init_rtcp(impl, mgr, s);
     if (ret < 0) {
       err("%s(%d), tx_session_init_rtcp fail %d\n", __func__, idx, ret);
-      tv_uinit_hw(s);
-      tv_uinit_sw(s);
+      tv_uinit(s);
       return ret;
     }
   }
@@ -3123,9 +3130,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   ret = tv_init_pacing(impl, s);
   if (ret < 0) {
     err("%s(%d), tx_session_init_pacing fail %d\n", __func__, idx, ret);
-    tv_uinit_rtcp(s);
-    tv_uinit_hw(s);
-    tv_uinit_sw(s);
+    tv_uinit(s);
     return ret;
   }
 
@@ -3338,10 +3343,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
                      struct st_tx_video_session_impl* s) {
   tv_stat(mgr, s);
-  /* must uinit hw firstly as frame use shared external buffer */
-  tv_uinit_rtcp(s);
-  tv_uinit_hw(s);
-  tv_uinit_sw(s);
+  tv_uinit(s);
   return 0;
 }
 

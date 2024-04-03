@@ -1892,6 +1892,13 @@ static int tx_audio_session_init_sw(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tx_audio_session_uinit(struct st_tx_audio_sessions_mgr* mgr,
+                                  struct st_tx_audio_session_impl* s) {
+  tx_audio_session_uinit_rl(mgr->parent, s);
+  tx_audio_session_uinit_sw(mgr, s);
+  return 0;
+}
+
 static int tx_audio_session_attach(struct mtl_main_impl* impl,
                                    struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s,
@@ -2036,6 +2043,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   ret = tx_audio_session_init_sw(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), init sw fail %d\n", __func__, idx, ret);
+    tx_audio_session_uinit(mgr, s);
     return ret;
   }
 
@@ -2043,7 +2051,7 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
     ret = tx_audio_session_init_rl(impl, s);
     if (ret < 0) {
       err("%s(%d), init rl fail %d\n", __func__, idx, ret);
-      tx_audio_session_uinit_sw(mgr, s);
+      tx_audio_session_uinit(mgr, s);
       return ret;
     }
   } else {
@@ -2222,8 +2230,7 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
 static int tx_audio_session_detach(struct st_tx_audio_sessions_mgr* mgr,
                                    struct st_tx_audio_session_impl* s) {
   tx_audio_session_stat(mgr, s);
-  tx_audio_session_uinit_rl(mgr->parent, s);
-  tx_audio_session_uinit_sw(mgr, s);
+  tx_audio_session_uinit(mgr, s);
   if (s->tx_pacing_way != ST30_TX_PACING_WAY_RL) {
     rte_atomic32_dec(&mgr->transmitter_clients);
   }

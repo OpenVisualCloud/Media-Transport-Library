@@ -584,9 +584,8 @@ static int rx_audio_session_uinit_mcast(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
+    if (!s->mcast_joined[i]) continue;
     port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_drv_mcast_in_dp(impl, port)) continue;
     mt_mcast_leave(impl, mt_ip_to_u32(ops->ip_addr[i]),
                    mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
@@ -611,6 +610,7 @@ static int rx_audio_session_init_mcast(struct mtl_main_impl* impl,
     ret = mt_mcast_join(impl, mt_ip_to_u32(ops->ip_addr[i]),
                         mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
     if (ret < 0) return ret;
+    s->mcast_joined[i] = true;
   }
 
   return 0;
@@ -643,6 +643,15 @@ static int rx_audio_session_init_sw(struct mtl_main_impl* impl,
   }
   if (ret < 0) return ret;
 
+  return 0;
+}
+
+static int rx_audio_session_uinit(struct mtl_main_impl* impl,
+                                  struct st_rx_audio_session_impl* s) {
+  ra_tp_uinit(s);
+  rx_audio_session_uinit_mcast(impl, s);
+  rx_audio_session_uinit_sw(s);
+  rx_audio_session_uinit_hw(s);
   return 0;
 }
 
@@ -719,29 +728,30 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
     ret = ra_tp_init(impl, s);
     if (ret < 0) {
       err("%s(%d), ra_tp_init fail %d\n", __func__, idx, ret);
-      return -EIO;
+      rx_audio_session_uinit(impl, s);
+      return ret;
     }
   }
 
   ret = rx_audio_session_init_hw(impl, s);
   if (ret < 0) {
     err("%s(%d), rx_audio_session_init_hw fail %d\n", __func__, idx, ret);
-    return -EIO;
+    rx_audio_session_uinit(impl, s);
+    return ret;
   }
 
   ret = rx_audio_session_init_sw(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), rx_audio_session_init_sw fail %d\n", __func__, idx, ret);
-    rx_audio_session_uinit_hw(s);
-    return -EIO;
+    rx_audio_session_uinit(impl, s);
+    return ret;
   }
 
   ret = rx_audio_session_init_mcast(impl, s);
   if (ret < 0) {
     err("%s(%d), rx_audio_session_init_mcast fail %d\n", __func__, idx, ret);
-    rx_audio_session_uinit_sw(s);
-    rx_audio_session_uinit_hw(s);
-    return -EIO;
+    rx_audio_session_uinit(impl, s);
+    return ret;
   }
 
   s->frames_per_sec =
@@ -818,11 +828,7 @@ static int rx_audio_session_detach(struct mtl_main_impl* impl,
                                    struct st_rx_audio_session_impl* s) {
   s->attached = false;
   rx_audio_session_stat(mgr, s);
-
-  ra_tp_uinit(s);
-  rx_audio_session_uinit_mcast(impl, s);
-  rx_audio_session_uinit_sw(s);
-  rx_audio_session_uinit_hw(s);
+  rx_audio_session_uinit(impl, s);
   return 0;
 }
 

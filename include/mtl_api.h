@@ -391,6 +391,10 @@ enum mtl_init_flag {
    * NUMA node as the NIC are used due to the high cost of cross-NUMA communication.
    */
   MTL_FLAG_ALLOW_ACROSS_NUMA_CORE = (MTL_BIT64(18)),
+  /** not send multicast join message, for the SDN switch case which deliver the stream
+   * directly
+   */
+  MTL_FLAG_NO_MULTICAST = (MTL_BIT64(19)),
   /**
    * dedicate thread for cni message
    */

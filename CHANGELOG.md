@@ -18,6 +18,7 @@
 * tools/ebpf: add lcore_monitor to monitor the lcore status for debug usage
 * tools/ebpf: add udp_monitor to sniff all UDP streaming on the network
 * usdt: add eBPF based User Statically-Defined Tracing (USDT) probes support, see doc/usdt.md
+* multicast: add MTL_FLAG_NO_MULTICAST option
 
 ## Changelog for 23.12
 
