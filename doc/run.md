@@ -368,6 +368,8 @@ If it failed to run the sample, please help to collect the system setup status b
 --log_level <level>                  : set log level. e.g. debug, info, notice, warning, error.
 --log_file <file path>               : set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.
 --arp_timeout_s <sec>                : set the arp timeout in seconds if using unicast address. Default timeout value is 60 seconds.
+--allow_across_numa_core             : allow the usage of cores across NUMA nodes
+--no_multicast                       : disable the multicast join message, usually for the SDN switch case.
 
 --rx_timing_parser                   : debug option, enable timing check for video rx streams.
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.

@@ -133,6 +133,7 @@ enum st_args_cmd {
   ST_ARG_ARP_TIMEOUT_S,
   ST_ARG_RSS_SCH_NB,
   ST_ARG_ALLOW_ACROSS_NUMA_CORE,
+  ST_ARG_NO_MULTICAST,
   ST_ARG_MAX,
 };
 
@@ -262,6 +263,7 @@ static struct option st_app_args_options[] = {
     {"arp_timeout_s", required_argument, 0, ST_ARG_ARP_TIMEOUT_S},
     {"rss_sch_nb", required_argument, 0, ST_ARG_RSS_SCH_NB},
     {"allow_across_numa_core", no_argument, 0, ST_ARG_ALLOW_ACROSS_NUMA_CORE},
+    {"no_multicast", no_argument, 0, ST_ARG_NO_MULTICAST},
 
     {0, 0, 0, 0}};
 
@@ -824,6 +826,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_ALLOW_ACROSS_NUMA_CORE:
         p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
+        break;
+      case ST_ARG_NO_MULTICAST:
+        p->flags |= MTL_FLAG_NO_MULTICAST;
         break;
       case '?':
         break;

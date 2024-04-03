@@ -449,8 +449,12 @@ static struct rte_ether_addr mcast_mac_all = {{0x01, 0x00, 0x5e, 0x00, 0x00, 0x0
 int mt_mcast_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
-
   bool has_mcast = false;
+
+  if (mt_user_no_multicast(impl)) {
+    info("%s, skip multicast mgr as MTL_FLAG_NO_MULTICAST\n", __func__);
+    return 0;
+  }
 
   for (int i = 0; i < num_ports; i++) {
     if (mt_drv_mcast_in_dp(impl, i)) continue;
@@ -554,6 +558,10 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sour
   struct mt_interface* inf = mt_if(impl, port);
   uint8_t* ip = (uint8_t*)&group_addr;
 
+  if (mt_user_no_multicast(impl)) {
+    return 0;
+  }
+
   if (mcast->group_num >= MT_MCAST_GROUP_MAX) {
     err("%s(%d), reach max multicast group number!\n", __func__, port);
     return -EIO;
@@ -648,6 +656,10 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sour
 /* delete a group address with/without source address from the group ip list */
 int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t source_addr,
                    enum mtl_port port) {
+  if (mt_user_no_multicast(impl)) {
+    return 0;
+  }
+
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
   int group_num = mcast->group_num;
   struct mt_interface* inf = mt_if(impl, port);

@@ -2823,9 +2823,8 @@ static int rv_uinit_mcast(struct mtl_main_impl* impl,
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
-    if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
+    if (!s->mcast_joined[i]) continue;
     port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_drv_mcast_in_dp(impl, port)) continue;
     mt_mcast_leave(impl, mt_ip_to_u32(ops->ip_addr[i]),
                    mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
   }
@@ -2849,6 +2848,7 @@ static int rv_init_mcast(struct mtl_main_impl* impl, struct st_rx_video_session_
     ret = mt_mcast_join(impl, mt_ip_to_u32(ops->ip_addr[i]),
                         mt_ip_to_u32(ops->mcast_sip_addr[i]), port);
     if (ret < 0) return ret;
+    s->mcast_joined[i] = true;
   }
 
   return 0;
@@ -2968,6 +2968,14 @@ static int rv_init_pkt_handler(struct st_rx_video_session_impl* s) {
     s->pkt_handler = rv_handle_rtp_pkt;
   }
 
+  return 0;
+}
+
+static int rv_uinit(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
+  rv_uinit_mcast(impl, s);
+  rv_uinit_rtcp(s);
+  rv_uinit_sw(impl, s);
+  rv_uinit_hw(s);
   return 0;
 }
 
@@ -3105,7 +3113,8 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   ret = rv_init_hw(impl, s);
   if (ret < 0) {
     err("%s(%d), rv_init_hw fail %d\n", __func__, idx, ret);
-    return -EIO;
+    rv_uinit(impl, s);
+    return ret;
   }
 
   if (st20_is_frame_type(ops->type) && (!st22_ops) &&
@@ -3114,32 +3123,29 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
     ret = rv_detector_init(s);
     if (ret < 0) {
       err("%s(%d), rv_detector_init fail %d\n", __func__, idx, ret);
-      rv_uinit_hw(s);
-      return -EIO;
+      rv_uinit(impl, s);
+      return ret;
     }
   } else {
     ret = rv_init_sw(impl, mgr, s, st22_ops);
     if (ret < 0) {
       err("%s(%d), rv_init_sw fail %d\n", __func__, idx, ret);
       rv_uinit_hw(s);
-      return -EIO;
+      return ret;
     }
   }
 
   ret = rv_init_mcast(impl, s);
   if (ret < 0) {
     err("%s(%d), rv_init_mcast fail %d\n", __func__, idx, ret);
-    rv_uinit_sw(impl, s);
-    rv_uinit_hw(s);
-    return -EIO;
+    rv_uinit(impl, s);
+    return ret;
   }
 
   if (ops->flags & ST20_RX_FLAG_ENABLE_RTCP) {
     ret = rv_init_rtcp(impl, mgr, s);
     if (ret < 0) {
-      rv_uinit_mcast(impl, s);
-      rv_uinit_sw(impl, s);
-      rv_uinit_hw(s);
+      rv_uinit(impl, s);
       err("%s(%d), rv_init_rtcp fail %d\n", __func__, idx, ret);
       return ret;
     }
@@ -3148,8 +3154,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   ret = rv_init_pkt_handler(s);
   if (ret < 0) {
     err("%s(%d), init pkt handler fail %d\n", __func__, idx, ret);
-    rv_uinit_sw(impl, s);
-    rv_uinit_hw(s);
+    rv_uinit(impl, s);
     return -EIO;
   }
 
@@ -3501,10 +3506,7 @@ static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
                      struct st_rx_video_session_impl* s) {
   s->attached = false;
   rv_stat(mgr, s);
-  rv_uinit_mcast(impl, s);
-  rv_uinit_rtcp(s);
-  rv_uinit_sw(impl, s);
-  rv_uinit_hw(s);
+  rv_uinit(impl, s);
   return 0;
 }
 

@@ -1388,6 +1388,12 @@ static int tx_ancillary_session_init_sw(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int tx_ancillary_session_uinit(struct st_tx_ancillary_sessions_mgr* mgr,
+                                      struct st_tx_ancillary_session_impl* s) {
+  tx_ancillary_session_uinit_sw(mgr, s);
+  return 0;
+}
+
 static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
                                        struct st_tx_ancillary_sessions_mgr* mgr,
                                        struct st_tx_ancillary_session_impl* s,
@@ -1421,7 +1427,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     ret = tx_ancillary_sessions_mgr_init_hw(impl, mgr, port);
     if (ret < 0) {
       err("%s(%d), mgr init hw fail for port %d\n", __func__, idx, port);
-      return -EIO;
+      return ret;
     }
   }
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
@@ -1465,6 +1471,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   ret = tx_ancillary_session_init_sw(impl, mgr, s);
   if (ret < 0) {
     err("%s(%d), init sw fail %d\n", __func__, idx, ret);
+    tx_ancillary_session_uinit(mgr, s);
     return ret;
   }
 
@@ -1539,7 +1546,7 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
 static int tx_ancillary_session_detach(struct st_tx_ancillary_sessions_mgr* mgr,
                                        struct st_tx_ancillary_session_impl* s) {
   tx_ancillary_session_stat(s);
-  tx_ancillary_session_uinit_sw(mgr, s);
+  tx_ancillary_session_uinit(mgr, s);
   return 0;
 }
 
