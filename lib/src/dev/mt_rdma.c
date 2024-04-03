@@ -356,7 +356,7 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
   for (int i = 0; i < rx; i++) {
     pkt = (struct rte_mbuf*)wc[i].wr_id;
     if (wc[i].status != IBV_WC_SUCCESS) {
-      rxq->stat_rx_pkt_invalid += rx;
+      rxq->stat_rx_pkt_invalid++;
       rte_pktmbuf_free(pkt);
       continue;
     }
@@ -367,10 +367,9 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
     rx_pkts[rx_valid++] = pkt;
     rx_bytes += len;
   }
-  if (rx_valid < rx) rte_pktmbuf_free_bulk(&fill[rx_valid], rx - rx_valid);
 
   /* post recv */
-  rdma_rx_post_recv(rxq, fill, rx_valid);
+  rdma_rx_post_recv(rxq, fill, rx);
 
   if (stats) {
     stats->rx_packets += rx_valid;
