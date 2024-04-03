@@ -1153,16 +1153,49 @@ struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t 
   return frame;
 }
 
+struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
+                                           bool interlaced) {
+  struct st_frame* frame = mt_zmalloc(sizeof(*frame));
+  if (!frame) {
+    err("%s, frame malloc fail\n", __func__);
+    return NULL;
+  }
+  frame->fmt = fmt;
+  frame->interlaced = interlaced;
+  frame->width = w;
+  frame->height = h;
+  frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC;
+
+  size_t data_sz = st_frame_size(fmt, w, h, interlaced);
+  void* data = mt_zmalloc(data_sz);
+  if (!data) {
+    err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
+    st_frame_free(frame);
+    return NULL;
+  }
+  frame->buffer_size = data_sz;
+  frame->data_size = data_sz;
+  /* init plane */
+  st_frame_init_plane_single_src(frame, data, 0);
+  return frame;
+}
+
 int st_frame_free(struct st_frame* frame) {
-  uint32_t reqiured_flags = ST_FRAME_FLAG_SINGLE_MALLOC | ST_FRAME_FLAG_RTE_MALLOC;
-  if (reqiured_flags != (frame->flags & reqiured_flags)) {
-    err("%s, frame %p is not created by st_frame_create\n", __func__, frame);
+  if (!(frame->flags & ST_FRAME_FLAG_SINGLE_MALLOC)) {
+    err("%s, frame %p is not created by ST_FRAME_FLAG_SINGLE_MALLOC\n", __func__, frame);
     return -EINVAL;
   }
-  if (frame->addr[0]) {
-    mt_rte_free(frame->addr[0]);
+  if (frame->flags & ST_FRAME_FLAG_RTE_MALLOC) {
+    if (frame->addr[0]) {
+      mt_rte_free(frame->addr[0]);
+    }
+    mt_rte_free(frame);
+  } else {
+    if (frame->addr[0]) {
+      mt_free(frame->addr[0]);
+    }
+    mt_free(frame);
   }
-  mt_rte_free(frame);
   return 0;
 }
 

@@ -49,7 +49,7 @@ def frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
                 # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
                 # print(f"pkts_total: {frame.pkts_total}")
                 if display:
-                    misc_util.frame_display(mtl_handle, frame, display_scale_factor)
+                    misc_util.frame_display(frame, display_scale_factor)
                 # return the frame
                 mtl.st20p_rx_put_frame(st20p_rx, frame)
 

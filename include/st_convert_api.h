@@ -44,6 +44,18 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le(
   return st20_rfc4175_422be10_to_yuv422p10le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
+/** helper to call st20_rfc4175_422be10_to_yuv422p10le with mtl_cpuva_t type for python
+ * binding
+ */
+static inline int st20_rfc4175_422be10_to_yuv422p10le_cpuva(mtl_cpuva_t pg_be,
+                                                            mtl_cpuva_t y, mtl_cpuva_t b,
+                                                            mtl_cpuva_t r, uint32_t w,
+                                                            uint32_t h) {
+  return st20_rfc4175_422be10_to_yuv422p10le((struct st20_rfc4175_422_10_pg2_be*)pg_be,
+                                             (uint16_t*)y, (uint16_t*)b, (uint16_t*)r, w,
+                                             h);
+}
+
 /**
  * Convert rfc4175_422be10 to rfc4175_422le10 with the max optimized SIMD level.
  *
@@ -66,7 +78,7 @@ static inline int st20_rfc4175_422be10_to_422le10(
 }
 
 /**
- * Convert rfc4175_422be10 to v210 with required SIMD level.
+ * Convert rfc4175_422be10 to v210 with the max optimized SIMD level.
  * Note the level may downgrade to the SIMD which system really support.
  *
  * @param pg_be
@@ -84,6 +96,15 @@ static inline int st20_rfc4175_422be10_to_422le10(
 static inline int st20_rfc4175_422be10_to_v210(struct st20_rfc4175_422_10_pg2_be* pg_be,
                                                uint8_t* pg_v210, uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_v210_simd(pg_be, pg_v210, w, h, MTL_SIMD_LEVEL_MAX);
+}
+
+/** helper to call st20_rfc4175_422be10_to_v210 with mtl_cpuva_t type for python binding
+ */
+static inline int st20_rfc4175_422be10_to_v210_cpuva(mtl_cpuva_t pg_be,
+                                                     mtl_cpuva_t pg_v210, uint32_t w,
+                                                     uint32_t h) {
+  return st20_rfc4175_422be10_to_v210((struct st20_rfc4175_422_10_pg2_be*)pg_be,
+                                      (uint8_t*)pg_v210, w, h);
 }
 
 /**

@@ -911,6 +911,7 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
 
   MTL_MAY_UNUSED(cpu_level);
   MTL_MAY_UNUSED(ret);
+  MTL_MAY_UNUSED(level);
 
 #ifdef MTL_HAS_AVX512_VBMI2
   if ((level >= MTL_SIMD_LEVEL_AVX512_VBMI2) &&
@@ -933,6 +934,71 @@ int st20_rfc4175_422be10_to_yuv422p10le_simd(struct st20_rfc4175_422_10_pg2_be* 
 
   /* the last option */
   return st20_rfc4175_422be10_to_yuv422p10le_scalar(pg, y, b, r, w, h);
+}
+
+static int st20_rfc4175_422be10_to_yuv422p10le_scalar_2way(
+    struct st20_rfc4175_422_10_pg2_be* pg_be, uint16_t* y_full, uint16_t* b_full,
+    uint16_t* r_full, uint32_t w, uint32_t h, uint16_t* y_decimated,
+    uint16_t* b_decimated, uint16_t* r_decimated, int decimator) {
+  uint32_t pg_per_line = w / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+  int stride = decimator - 1;
+
+  for (uint32_t line = 0; line < h; line++) {
+    for (uint32_t p = 0; p < pg_per_line; p++) {
+      cb = (pg_be->Cb00 << 2) + pg_be->Cb00_;
+      y0 = (pg_be->Y00 << 4) + pg_be->Y00_;
+      cr = (pg_be->Cr00 << 6) + pg_be->Cr00_;
+      y1 = (pg_be->Y01 << 8) + pg_be->Y01_;
+
+      *b_full++ = cb;
+      *y_full++ = y0;
+      *r_full++ = cr;
+      *y_full++ = y1;
+      pg_be++;
+
+      /* handle decimated */
+      if (((line % decimator) == stride) && ((p % decimator) == stride)) {
+        *b_decimated++ = cb;
+        *y_decimated++ = y0;
+        *r_decimated++ = cr;
+        *y_decimated++ = y1;
+      }
+    }
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be10_to_yuv422p10le_simd_2way(
+    struct st20_rfc4175_422_10_pg2_be* pg_be, uint16_t* y_full, uint16_t* b_full,
+    uint16_t* r_full, uint32_t w, uint32_t h, uint16_t* y_decimated,
+    uint16_t* b_decimated, uint16_t* r_decimated, int decimator,
+    enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MTL_MAY_UNUSED(cpu_level);
+  MTL_MAY_UNUSED(ret);
+  MTL_MAY_UNUSED(level);
+
+  if (w % decimator) {
+    err("%s, w %u is not multiple of decimator %d!\n", __func__, w, decimator);
+    return -EINVAL;
+  }
+  if (h % decimator) {
+    err("%s, h %u is not multiple of decimator %d!\n", __func__, w, decimator);
+    return -EINVAL;
+  }
+  if (decimator < 1) {
+    err("%s, invalid decimator %d!\n", __func__, decimator);
+    return -EINVAL;
+  }
+
+  /* the last option */
+  return st20_rfc4175_422be10_to_yuv422p10le_scalar_2way(pg_be, y_full, b_full, r_full, w,
+                                                         h, y_decimated, b_decimated,
+                                                         r_decimated, decimator);
 }
 
 int st20_rfc4175_422be10_to_yuv422p10le_simd_dma(mtl_udma_handle udma,
@@ -1584,6 +1650,86 @@ int st20_rfc4175_422be10_to_v210_simd(struct st20_rfc4175_422_10_pg2_be* pg_be,
 
   /* the last option */
   return st20_rfc4175_422be10_to_v210_scalar((uint8_t*)pg_be, pg_v210, w, h);
+}
+
+int st20_rfc4175_422be10_to_v210_scalar_2way(uint8_t* pg_be, uint8_t* pg_v210_full,
+                                             uint32_t w, uint32_t h,
+                                             uint8_t* pg_v210_decimated, int decimator) {
+  uint32_t line_pg_count = w / 2;
+
+  uint32_t line_batch = line_pg_count / 3;
+  int stride = decimator - 1;
+  for (uint32_t line = 0; line < h; line++) {
+    for (uint32_t i = 0; i < line_batch; i++) {
+      pg_v210_full[0] = pg_be[0] << 2 | pg_be[1] >> 6;
+      pg_v210_full[1] = pg_be[0] >> 6 | pg_be[1] << 6 | ((pg_be[2] >> 2) & 0x3C);
+      pg_v210_full[2] = ((pg_be[1] >> 2) & 0x0F) | ((pg_be[3] << 2) & 0xF0);
+      pg_v210_full[3] = (pg_be[2] << 2 | pg_be[3] >> 6) & 0x3F;
+
+      pg_v210_full[4] = pg_be[4];
+      pg_v210_full[5] = (pg_be[5] << 4) | ((pg_be[6] >> 4) & 0x0C) | (pg_be[3] & 0x03);
+      pg_v210_full[6] = (pg_be[5] >> 4) | (pg_be[7] & 0xF0);
+      pg_v210_full[7] = (pg_be[6]) & 0x3F;
+
+      pg_v210_full[8] = (pg_be[7] << 6) | (pg_be[8] >> 2);
+      pg_v210_full[9] = ((pg_be[7] >> 2) & 0x03) | (pg_be[9] << 2);
+      pg_v210_full[10] = ((pg_be[8] << 2) & 0x0C) | (pg_be[9] >> 6) | (pg_be[10] << 6) |
+                         ((pg_be[11] >> 2) & 0x30);
+      pg_v210_full[11] = (pg_be[10] >> 2);
+
+      pg_v210_full[12] = (pg_be[12] >> 4) | (pg_be[11] << 4);
+      pg_v210_full[13] = ((pg_be[11] >> 4) & 0x03) | (pg_be[13] & 0xFC);
+      pg_v210_full[14] = (pg_be[12] & 0x0F) | (pg_be[14] << 4);
+      pg_v210_full[15] = ((pg_be[14] >> 4) | (pg_be[13] << 4)) & 0x3F;
+
+      pg_v210_full += 16;
+      pg_be += 15;
+
+      /* handle pg_v210_decimated */
+      if (((line % decimator) == stride) && ((i % decimator) == stride)) {
+        uint8_t* v210 = pg_v210_full - decimator * 16;
+        memcpy(pg_v210_decimated, v210, 16);
+        pg_v210_decimated += 16;
+      }
+    }
+  }
+
+  return 0;
+}
+
+int st20_rfc4175_422be10_to_v210_simd_2way(struct st20_rfc4175_422_10_pg2_be* pg_be,
+                                           uint8_t* pg_v210_full, uint32_t w, uint32_t h,
+                                           uint8_t* pg_v210_decimated, int decimator,
+                                           enum mtl_simd_level level) {
+  enum mtl_simd_level cpu_level = mtl_get_simd_level();
+  int ret;
+
+  MTL_MAY_UNUSED(cpu_level);
+  MTL_MAY_UNUSED(ret);
+  MTL_MAY_UNUSED(level);
+
+  uint32_t line_pg_count = w / 2;
+  if (line_pg_count % 3 != 0) {
+    err("%s, invalid line_pg_count %d, pixel group number must be multiple of 3!\n",
+        __func__, line_pg_count);
+    return -EINVAL;
+  }
+  if (w % decimator) {
+    err("%s, w %u is not multiple of decimator %d!\n", __func__, w, decimator);
+    return -EINVAL;
+  }
+  if (h % decimator) {
+    err("%s, h %u is not multiple of decimator %d!\n", __func__, w, decimator);
+    return -EINVAL;
+  }
+  if (decimator < 1 || !RTE_IS_POWER_OF_2(decimator)) {
+    err("%s, invalid decimator %d!\n", __func__, decimator);
+    return -EINVAL;
+  }
+
+  /* the last option */
+  return st20_rfc4175_422be10_to_v210_scalar_2way((uint8_t*)pg_be, pg_v210_full, w, h,
+                                                  pg_v210_decimated, decimator);
 }
 
 int st20_rfc4175_422be10_to_v210_simd_dma(mtl_udma_handle udma,

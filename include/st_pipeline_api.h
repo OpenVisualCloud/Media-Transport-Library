@@ -2050,11 +2050,14 @@ static inline struct st20_rx_tp_meta* st_frame_tp_meta(struct st_frame* frame,
   return frame->tp[port];
 }
 
-/** request to create a plained memory by rte malloc to hold the frame buffer */
+/** request to create a plain memory by rte malloc to hold the frame buffer */
 struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
                                  uint32_t h, bool interlaced);
 /** free the frame created by st_frame_create */
 int st_frame_free(struct st_frame* frame);
+/** request to create a plain memory by libc malloc */
+struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
+                                           bool interlaced);
 
 /** merge two fields to one full frame */
 int st_field_merge(const struct st_frame* first, const struct st_frame* second,
