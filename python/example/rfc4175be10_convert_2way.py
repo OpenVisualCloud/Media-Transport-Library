@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
-# Usage: python3 python/example/rfc4175be10_convert_2way.py --tx_url yuv422rfc4175be10_1080p.yuv --display_scale_factor 2
+# Usage: python3 rfc4175be10_convert_2way.py --tx_url yuv422rfc4175be10_1080p.yuv --display_scale_factor 2
 
 import sys
 
@@ -58,7 +58,8 @@ def main():
         sys.exit(1)
 
     print(
-        f"Read rfc4175 success from {args.tx_url}, w: {args.width}, h: {args.height} sz: {hex(rfc4175_frame.data_size)}, fmt: {mtl.st_frame_fmt_name(rfc4175_frame.fmt)}"
+        f"Read rfc4175 success from {args.tx_url}, w: {args.width}, h: {args.height}, "
+        f"sz: {hex(rfc4175_frame.data_size)}, fmt: {mtl.st_frame_fmt_name(rfc4175_frame.fmt)}"
     )
 
     # the 2 way convert
