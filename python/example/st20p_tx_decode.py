@@ -10,7 +10,7 @@ import numpy as np
 import pymtl as mtl
 
 
-def process_frame(mtl_handle, st20p_tx, frame, av_pixel_output_format):
+def process_frame(st20p_tx, frame, av_pixel_output_format):
     # print(f"{frame.format.name}");
     # convert to av_pixel_output_format
     yuv_frame = frame.reformat(format=av_pixel_output_format)
@@ -123,7 +123,7 @@ def main():
         stream = next(s for s in container.streams if s.type == "video")
         while True:
             for frame in container.decode(stream):
-                process_frame(mtl_handle, st20p_tx, frame, av_pixel_output_format)
+                process_frame(st20p_tx, frame, av_pixel_output_format)
 
             # seek to the first frame
             print("Finish play, seek to first frame")

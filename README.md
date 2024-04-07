@@ -145,11 +145,13 @@ For Python, `black` and `isort` formatter is used.
 ```bash
 sudo pip install black
 sudo pip install isort
+sudo pip install pylint
 ```
 
 ```bash
 black python/
 isort python/
+find python/example/ -name "*.py" -exec pylint {} \;
 ```
 
 #### 7.2.3 Others
