@@ -44,6 +44,7 @@ struct st20p_tx_ctx {
   uint16_t framebuff_consumer_idx;
   struct st20p_tx_frame* framebuffs;
   pthread_mutex_t lock;
+  int usdt_frame_cnt;
 
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;

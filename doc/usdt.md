@@ -241,10 +241,14 @@ provider st20 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp);
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe tx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
   /* rx */
   probe rx_frame_available(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp, uint32_t data_size);
   probe rx_frame_put(int m_idx, int s_idx, int f_idx, void* va);
   probe rx_no_framebuffer(int m_idx, int s_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
 }
 ```
 
@@ -659,4 +663,191 @@ Usage: This utility is designed to detect the application has failed to return t
 
 ```bash
 sudo bpftrace -e 'usdt::st40:rx_mbuf_enqueue_fail { printf("%s m%d,s%d: mbuf %p enqueue fail, tmstamp:%u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }' -p $(pidof RxTxApp)
+```
+
+### 2.6 st20p tracing
+
+Available probes:
+```bash
+provider st20p {
+  /* tx */
+  probe tx_frame_get(int idx, int f_idx, void* va);
+  probe tx_frame_put(int idx, int f_idx, void* va, int stat);
+  probe tx_frame_next(int idx, int f_idx);
+  probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe tx_frame_dump(int idx, char* dump_file, void* va, uint32_t data_size);
+  /* rx */
+  probe rx_frame_get(int idx, int f_idx, void* va);
+  probe rx_frame_put(int idx, int f_idx, void* va);
+  probe rx_frame_available(int idx, int f_idx, uint32_t tmstamp);
+  probe rx_frame_dump(int idx, char* dump_file, uint32_t data_size);
+}
+```
+
+#### 2.6.1 tx_frame_get USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+09:20:25 s0: get frame 0(addr:0x3205f0e600)
+09:20:25 s0: get frame 1(addr:0x320650e600)
+09:20:25 s0: get frame 0(addr:0x3205f0e600)
+09:20:25 s0: get frame 1(addr:0x320650e600)
+```
+
+#### 2.6.2 tx_frame_put USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p,stat:%d)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+09:21:10 s0: put frame 0(addr:0x3205f0e600,stat:3)
+09:21:10 s0: put frame 1(addr:0x320650e600,stat:3)
+09:21:10 s0: put frame 0(addr:0x3205f0e600,stat:3)
+09:21:10 s0: put frame 1(addr:0x320650e600,stat:3)
+```
+
+#### 2.6.3 tx_frame_next USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+09:21:55 s0: next frame 0
+09:21:55 s0: next frame 1
+09:21:55 s0: next frame 0
+09:21:55 s0: next frame 1
+```
+
+#### 2.6.4 tx_frame_done USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+09:22:58 s0: done frame 0(timestamp:3639347793)
+09:22:58 s0: done frame 1(timestamp:3639349294)
+09:22:58 s0: done frame 0(timestamp:3639350796)
+09:22:58 s0: done frame 1(timestamp:3639352297)
+```
+
+And if you want to trace all st20p tx events, use below bpftrace script.
+
+```bash
+sudo bpftrace -e '
+usdt::st20p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st20p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p,stat:%d)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }
+usdt::st20p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st20p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }
+' -p $(pidof RxTxApp)
+```
+
+#### 2.6.5 rx_frame_get USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:rx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+10:37:16 s0: get frame 0(addr:0x3208a17000)
+10:37:16 s0: get frame 1(addr:0x3209217000)
+10:37:16 s0: get frame 2(addr:0x3209a17000)
+```
+
+#### 2.6.6 rx_frame_put USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:rx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+10:37:33 s0: put frame 0(addr:0x3208a17000)
+10:37:33 s0: put frame 1(addr:0x3209217000)
+10:37:33 s0: put frame 2(addr:0x3209a17000)
+```
+
+#### 2.6.7 rx_frame_available USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tmstamp:%u, data size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+10:37:57 s0: available frame 0(addr:0x320a30e600, tmstamp:4044186727, data size:5184000)
+10:37:57 s0: available frame 1(addr:0x320a90e600, tmstamp:4044188229, data size:5184000)
+10:37:57 s0: available frame 2(addr:0x320a30e600, tmstamp:4044189730, data size:5184000)
+```
+
+And if you want to trace all st20p rx events, use below bpftrace script.
+
+```bash
+sudo bpftrace -e '
+usdt::st20p:rx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st20p:rx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st20p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tmstamp:%u, data size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }
+' -p $(pidof RxTxApp)
+```
+
+#### 2.3.8 tx_frame_dump USDT
+
+Usage: Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs.
+
+```bash
+sudo bpftrace -e 'usdt::st20p:tx_frame_dump { printf("%s s%d: dump frame %p size %u to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg2, arg3, str(arg1)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+13:26:41 s0: dump frame 0x3205a17000 size 8294400 to imtl_usdt_st20ptx_s0_1920_1080_I0y9V0.yuv
+13:26:46 s0: dump frame 0x3206217000 size 8294400 to imtl_usdt_st20ptx_s0_1920_1080_CzYDQe.yuv
+```
+
+#### 2.3.9 rx_frame_dump USDT
+
+Usage: Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs.
+
+```bash
+sudo bpftrace -e 'usdt::st20p:rx_frame_dump { printf("%s s%d: dump frame %p size %u to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg2, arg3, str(arg1)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+13:27:24 s0: dump frame 0x3209a17000 size 8294400 to imtl_usdt_st20prx_s0_1920_1080_rKtpGn.yuv
+13:27:29 s0: dump frame 0x3209217000 size 8294400 to imtl_usdt_st20prx_s0_1920_1080_UKWN27.yuv
 ```

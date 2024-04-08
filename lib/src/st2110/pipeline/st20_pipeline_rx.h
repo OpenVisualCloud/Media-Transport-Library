@@ -44,6 +44,7 @@ struct st20p_rx_ctx {
   uint16_t framebuff_consumer_idx;
   struct st20p_rx_frame* framebuffs;
   pthread_mutex_t lock;
+  int usdt_frame_cnt;
 
   /* for ST20P_RX_FLAG_BLOCK_GET */
   bool block_get;

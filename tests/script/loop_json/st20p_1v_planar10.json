@@ -28,7 +28,7 @@
                     "device": "AUTO",
                     "input_format": "YUV422PLANAR10LE",
                     "transport_format": "YUV_422_10bit",
-                    "st20p_url": "./test.yuv"
+                    "st20p_url": "./yuv422p10le_1080p.yuv"
                 }
             ]
         }
