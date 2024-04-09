@@ -49,6 +49,10 @@ struct st22p_tx_ctx {
   pthread_mutex_t block_wake_mutex;
 
   struct st22_encode_session_impl* encode_impl;
+  /* for ST22_ENCODER_RESP_FLAG_BLOCK_GET */
+  bool encode_block_get;
+  pthread_cond_t encode_block_wake_cond;
+  pthread_mutex_t encode_block_wake_mutex;
   bool ready;
   bool ext_frame;
   bool second_field;
@@ -59,6 +63,11 @@ struct st22p_tx_ctx {
   /* get frame stat */
   int stat_get_frame_try;
   int stat_get_frame_succ;
+  int stat_put_frame;
+  /* get frame stat */
+  int stat_encode_get_frame_try;
+  int stat_encode_get_frame_succ;
+  int stat_encode_put_frame;
 };
 
 #endif

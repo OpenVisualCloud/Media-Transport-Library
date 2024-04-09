@@ -40,6 +40,27 @@ static void tx_st22p_notify_frame_available(struct st22p_tx_ctx* ctx) {
   }
 }
 
+static void tx_st22p_encode_block_wake(struct st22p_tx_ctx* ctx) {
+  /* notify block */
+  mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
+  mt_pthread_cond_signal(&ctx->encode_block_wake_cond);
+  mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
+}
+
+static void tx_st22p_encode_notify_frame_ready(struct st22p_tx_ctx* ctx) {
+  struct st22_encode_session_impl* encoder = ctx->encode_impl;
+  struct st22_encode_dev_impl* dev_impl = encoder->parent;
+  struct st22_encoder_dev* dev = &dev_impl->dev;
+  st22_encode_priv session = encoder->session;
+
+  if (dev->notify_frame_available) dev->notify_frame_available(session);
+
+  if (ctx->encode_block_get) {
+    /* notify block */
+    tx_st22p_encode_block_wake(ctx);
+  }
+}
+
 static struct st22p_tx_frame* tx_st22p_next_available(
     struct st22p_tx_ctx* ctx, uint16_t idx_start, enum st22p_tx_frame_status desired) {
   uint16_t idx = idx_start;
@@ -140,6 +161,22 @@ static int tx_st22p_notify_event(void* priv, enum st_event event, void* args) {
   return 0;
 }
 
+static int tx_st22p_encode_get_block_wait(struct st22p_tx_ctx* ctx) {
+  /* wait on the block cond */
+  mt_pthread_mutex_lock(&ctx->encode_block_wake_mutex);
+  mt_pthread_cond_timedwait_ns(&ctx->encode_block_wake_cond,
+                               &ctx->encode_block_wake_mutex, NS_PER_S);
+  mt_pthread_mutex_unlock(&ctx->encode_block_wake_mutex);
+  return 0;
+}
+
+static int tx_st22p_encode_wake_block(void* priv) {
+  struct st22p_tx_ctx* ctx = priv;
+
+  tx_st22p_encode_block_wake(ctx);
+  return 0;
+}
+
 static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   struct st22p_tx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -150,14 +187,32 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
     return NULL;
   }
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) {
+    dbg("%s(%d), not ready %d\n", __func__, idx, ctx->type);
+    if (ctx->encode_block_get) {
+      tx_st22p_encode_get_block_wait(ctx);
+      if (!ctx->ready) return NULL;
+    }
+    return NULL; /* not ready */
+  }
+
+  ctx->stat_encode_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       tx_st22p_next_available(ctx, ctx->framebuff_encode_idx, ST22P_TX_FRAME_READY);
+  if (!framebuff && ctx->encode_block_get) { /* wait here for block mode */
+    mt_pthread_mutex_unlock(&ctx->lock);
+    tx_st22p_encode_get_block_wait(ctx);
+    /* get again */
+    mt_pthread_mutex_lock(&ctx->lock);
+    framebuff =
+        tx_st22p_next_available(ctx, ctx->framebuff_encode_idx, ST22P_TX_FRAME_READY);
+  }
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    dbg("%s(%d), no ready frame\n", __func__, idx);
     return NULL;
   }
 
@@ -166,6 +221,7 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
   ctx->framebuff_encode_idx = tx_st22p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
 
+  ctx->stat_encode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->encode_frame;
 }
@@ -193,6 +249,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     return -EIO;
   }
 
+  ctx->stat_encode_put_frame++;
   dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, encode_idx,
       result, data_size);
   if ((result < 0) || (data_size <= ST22_ENCODE_MIN_FRAME_SZ) || (data_size > max_size)) {
@@ -230,10 +287,18 @@ static int tx_st22p_encode_dump(void* priv) {
     notice("TX_ST22P(%s), encode fail %d\n", ctx->ops_name, encode_fail);
   }
 
-  notice("TX_ST22P(%s), get frame try %d succ %d\n", ctx->ops_name,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  notice("TX_ST22P(%s), frame get try %d succ %d, put %d\n", ctx->ops_name,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
+  ctx->stat_put_frame = 0;
+
+  notice("TX_ST22P(%s), encoder get try %d succ %d, put %d\n", ctx->ops_name,
+         ctx->stat_encode_get_frame_try, ctx->stat_encode_get_frame_succ,
+         ctx->stat_encode_put_frame);
+  ctx->stat_encode_get_frame_try = 0;
+  ctx->stat_encode_get_frame_succ = 0;
+  ctx->stat_encode_put_frame = 0;
 
   return 0;
 }
@@ -414,6 +479,7 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
   req.req.interlaced = ops->interlaced;
   req.priv = ctx;
   req.get_frame = tx_st22p_encode_get_frame;
+  req.wake_block = tx_st22p_encode_wake_block;
   req.put_frame = tx_st22p_encode_put_frame;
   req.dump = tx_st22p_encode_dump;
 
@@ -429,10 +495,16 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
     return -EINVAL;
   }
 
+  if (encode_impl->req.req.resp_flag & ST22_ENCODER_RESP_FLAG_BLOCK_GET) {
+    ctx->encode_block_get = true;
+    info("%s(%d), encoder use block get mode\n", __func__, idx);
+  }
+
+  dbg("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static int st22p_tx_get_block_wait(struct st22p_tx_ctx* ctx) {
+static int tx_st22p_get_block_wait(struct st22p_tx_ctx* ctx) {
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
@@ -459,7 +531,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
       tx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    st22p_tx_get_block_wait(ctx);
+    tx_st22p_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
@@ -512,7 +584,8 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   }
 
   framebuff->stat = ST22P_TX_FRAME_READY;
-  st22_encode_notify_frame_ready(ctx->encode_impl);
+  tx_st22p_encode_notify_frame_ready(ctx);
+  ctx->stat_put_frame++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
 
   return 0;
@@ -564,9 +637,10 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
   }
 
   framebuff->stat = ST22P_TX_FRAME_READY;
-  st22_encode_notify_frame_ready(ctx->encode_impl);
-
+  tx_st22p_encode_notify_frame_ready(ctx);
+  ctx->stat_put_frame++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
+
   return 0;
 }
 
@@ -616,6 +690,9 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->src_size = src_size;
   rte_atomic32_set(&ctx->stat_encode_fail, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
+
+  mt_pthread_mutex_init(&ctx->encode_block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&ctx->encode_block_wake_cond);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
@@ -690,6 +767,8 @@ int st22p_tx_free(st22p_tx_handle handle) {
   mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
+  mt_pthread_mutex_destroy(&ctx->encode_block_wake_mutex);
+  mt_pthread_cond_destroy(&ctx->encode_block_wake_cond);
   notice("%s(%d), succ\n", __func__, ctx->idx);
   mt_rte_free(ctx);
 

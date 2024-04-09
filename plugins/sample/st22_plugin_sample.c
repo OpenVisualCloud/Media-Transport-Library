@@ -46,9 +46,7 @@ static void* encode_thread(void* arg) {
   while (!s->stop) {
     frame = st22_encoder_get_frame(session_p);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      info("%s(%d), no frame ready\n", __func__, s->idx);
       continue;
     }
     result = encode_frame(s, frame);
@@ -71,10 +69,11 @@ static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session 
     if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
-    st_pthread_mutex_init(&session->wake_mutex, NULL);
-    st_pthread_cond_init(&session->wake_cond, NULL);
 
+    /* simply same codestream size */
     req->max_codestream_size = req->codestream_size;
+    /* enable block get mode */
+    req->resp_flag = ST22_ENCODER_RESP_FLAG_BLOCK_GET;
 
     session->req = *req;
     session->session_p = session_p;
@@ -82,8 +81,6 @@ static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session 
     ret = pthread_create(&session->encode_thread, NULL, encode_thread, session);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, i, ret);
-      st_pthread_mutex_destroy(&session->wake_mutex);
-      st_pthread_cond_destroy(&session->wake_cond);
       free(session);
       return NULL;
     }
@@ -107,13 +104,8 @@ static int encoder_free_session(void* priv, st22_encode_priv session) {
   int idx = encoder_session->idx;
 
   encoder_session->stop = true;
-  st_pthread_mutex_lock(&encoder_session->wake_mutex);
-  st_pthread_cond_signal(&encoder_session->wake_cond);
-  st_pthread_mutex_unlock(&encoder_session->wake_mutex);
+  st22_encoder_wake_block(encoder_session->session_p);
   pthread_join(encoder_session->encode_thread, NULL);
-
-  st_pthread_mutex_destroy(&encoder_session->wake_mutex);
-  st_pthread_cond_destroy(&encoder_session->wake_cond);
 
   info("%s(%d), total %d encode frames\n", __func__, idx, encoder_session->frame_cnt);
   free(encoder_session);
@@ -122,13 +114,8 @@ static int encoder_free_session(void* priv, st22_encode_priv session) {
 }
 
 static int encoder_frame_available(void* priv) {
-  struct st22_encoder_session* s = priv;
-
-  dbg("%s(%d)\n", __func__, s->idx);
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
+  /* nothing to do, sample enable ST22_ENCODER_RESP_FLAG_BLOCK_GET */
+  MTL_MAY_UNUSED(priv);
   return 0;
 }
 
@@ -160,9 +147,7 @@ static void* decode_thread(void* arg) {
   while (!s->stop) {
     frame = st22_decoder_get_frame(session_p);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      info("%s(%d), no frame ready\n", __func__, s->idx);
       continue;
     }
     result = decode_frame(s, frame);
@@ -185,8 +170,9 @@ static st22_decode_priv decoder_create_session(void* priv, st22p_decode_session 
     if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
-    st_pthread_mutex_init(&session->wake_mutex, NULL);
-    st_pthread_cond_init(&session->wake_cond, NULL);
+
+    /* enable block get mode */
+    req->resp_flag = ST22_DECODER_RESP_FLAG_BLOCK_GET;
 
     session->req = *req;
     session->session_p = session_p;
@@ -194,8 +180,6 @@ static st22_decode_priv decoder_create_session(void* priv, st22p_decode_session 
     ret = pthread_create(&session->decode_thread, NULL, decode_thread, session);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, i, ret);
-      st_pthread_mutex_destroy(&session->wake_mutex);
-      st_pthread_cond_destroy(&session->wake_cond);
       free(session);
       return NULL;
     }
@@ -217,13 +201,9 @@ static int decoder_free_session(void* priv, st22_decode_priv session) {
   int idx = decoder_session->idx;
 
   decoder_session->stop = true;
-  st_pthread_mutex_lock(&decoder_session->wake_mutex);
-  st_pthread_cond_signal(&decoder_session->wake_cond);
-  st_pthread_mutex_unlock(&decoder_session->wake_mutex);
-  pthread_join(decoder_session->decode_thread, NULL);
 
-  st_pthread_mutex_destroy(&decoder_session->wake_mutex);
-  st_pthread_cond_destroy(&decoder_session->wake_cond);
+  st22_decoder_wake_block(decoder_session->session_p);
+  pthread_join(decoder_session->decode_thread, NULL);
 
   info("%s(%d), total %d decode frames\n", __func__, idx, decoder_session->frame_cnt);
   free(decoder_session);
@@ -232,13 +212,8 @@ static int decoder_free_session(void* priv, st22_decode_priv session) {
 }
 
 static int decoder_frame_available(void* priv) {
-  struct st22_decoder_session* s = priv;
-
-  dbg("%s(%d)\n", __func__, s->idx);
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
+  /* nothing to do, sample enable ST22_DECODER_RESP_FLAG_BLOCK_GET */
+  MTL_MAY_UNUSED(priv);
   return 0;
 }
 

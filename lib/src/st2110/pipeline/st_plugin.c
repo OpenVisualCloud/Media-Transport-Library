@@ -75,14 +75,6 @@ int st_plugins_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int st22_encode_notify_frame_ready(struct st22_encode_session_impl* encoder) {
-  struct st22_encode_dev_impl* dev_impl = encoder->parent;
-  struct st22_encoder_dev* dev = &dev_impl->dev;
-  st22_encode_priv session = encoder->session;
-
-  return dev->notify_frame_available(session);
-}
-
 int st22_put_encoder(struct mtl_main_impl* impl,
                      struct st22_encode_session_impl* encoder) {
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
@@ -179,14 +171,6 @@ struct st22_encode_session_impl* st22_get_encoder(struct mtl_main_impl* impl,
   err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
       st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
-}
-
-int st22_decode_notify_frame_ready(struct st22_decode_session_impl* decoder) {
-  struct st22_decode_dev_impl* dev_impl = decoder->parent;
-  struct st22_decoder_dev* dev = &dev_impl->dev;
-  st22_decode_priv session = decoder->session;
-
-  return dev->notify_frame_available(session);
 }
 
 int st22_put_decoder(struct mtl_main_impl* impl,
@@ -731,6 +715,17 @@ struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session sessi
   return session_impl->req.get_frame(session_impl->req.priv);
 }
 
+int st22_encoder_wake_block(st22p_encode_session session) {
+  struct st22_encode_session_impl* session_impl = session;
+
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
+    return -EIO;
+  }
+
+  return session_impl->req.wake_block(session_impl->req.priv);
+}
+
 int st22_encoder_put_frame(st22p_encode_session session,
                            struct st22_encode_frame_meta* frame, int result) {
   struct st22_encode_session_impl* session_impl = session;
@@ -752,6 +747,17 @@ struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session sessi
   }
 
   return session_impl->req.get_frame(session_impl->req.priv);
+}
+
+int st22_decoder_wake_block(st22p_decode_session session) {
+  struct st22_decode_session_impl* session_impl = session;
+
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
+    return -EIO;
+  }
+
+  return session_impl->req.wake_block(session_impl->req.priv);
 }
 
 int st22_decoder_put_frame(st22p_decode_session session,

@@ -17,8 +17,6 @@ struct st22_encoder_session {
   st22p_encode_session session_p;
   bool stop;
   pthread_t encode_thread;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   int frame_cnt;
 };
@@ -30,8 +28,6 @@ struct st22_decoder_session {
   st22p_decode_session session_p;
   bool stop;
   pthread_t decode_thread;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   int frame_cnt;
 };
