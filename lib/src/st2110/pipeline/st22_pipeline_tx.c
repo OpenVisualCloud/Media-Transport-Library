@@ -226,7 +226,10 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
 
   ctx->stat_encode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  return &framebuff->encode_frame;
+  struct st22_encode_frame_meta* frame = &framebuff->encode_frame;
+  MT_USDT_ST22P_TX_ENCODE_GET(idx, framebuff->idx, frame->src->addr[0],
+                              frame->dst->addr[0]);
+  return frame;
 }
 
 /* min frame size should be capable of bulk pkts */
@@ -267,6 +270,8 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     framebuff->stat = ST22P_TX_FRAME_ENCODED;
   }
 
+  MT_USDT_ST22P_TX_ENCODE_PUT(idx, framebuff->idx, frame->src->addr[0],
+                              frame->dst->addr[0], result, data_size);
   return 0;
 }
 

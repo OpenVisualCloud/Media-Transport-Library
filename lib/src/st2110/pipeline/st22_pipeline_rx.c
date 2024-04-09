@@ -235,8 +235,11 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   ctx->stat_decode_get_frame_succ++;
+  struct st22_decode_frame_meta* frame = &framebuff->decode_frame;
+  MT_USDT_ST22P_RX_DECODE_GET(idx, framebuff->idx, frame->src->addr[0],
+                              frame->dst->addr[0], frame->src->data_size);
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  return &framebuff->decode_frame;
+  return frame;
 }
 
 static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* frame,
@@ -269,6 +272,8 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
     rx_st22p_notify_frame_available(ctx);
   }
 
+  MT_USDT_ST22P_RX_DECODE_PUT(idx, framebuff->idx, frame->src->addr[0],
+                              frame->dst->addr[0], result);
   return 0;
 }
 

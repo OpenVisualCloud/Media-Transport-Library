@@ -100,4 +100,10 @@ provider st22p {
   probe rx_frame_available(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe rx_frame_dump(int idx, char* dump_file, uint32_t data_size);
+  /* tx encode */
+  probe tx_encode_get(int idx, int f_idx, void* src, void* dst);
+  probe tx_encode_put(int idx, int f_idx, void* src, void* dst, int result, uint32_t data_size);
+  /* rx decode */
+  probe rx_decode_get(int idx, int f_idx, void* src, void* dst, uint32_t data_size);
+  probe rx_decode_put(int idx, int f_idx, void* src, void* dst, int result);
 }

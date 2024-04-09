@@ -1190,3 +1190,83 @@ Example output like below:
 15:22:59 s0: dump frame 0x320830e600 size 5184000 to imtl_usdt_st22prx_s0_1920_1080_gwSetx.yuv
 15:23:04 s0: dump frame 0x3207d0e600 size 5184000 to imtl_usdt_st22prx_s0_1920_1080_N72BCd.yuv
 ```
+
+#### 2.8.10 tx_encode_get USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st22p:tx_encode_get { printf("%s s%d: get encode %d(src:%p,dst:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+16:20:25 s0: get encode 0(src:0x3205b0e600,dst:0x3203a400fc)
+16:20:25 s0: get encode 1(src:0x320610e600,dst:0x32032400fc)
+```
+
+#### 2.8.11 tx_encode_put USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st22p:tx_encode_put { printf("%s s%d: put encode %d(src:%p,dst:%p), result: %d, codestream size: %u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4, arg5); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+16:20:45 s0: put encode 0(src:0x3205b0e600,dst:0x3203a400fc), result: 0, codestream size: 777600
+16:20:45 s0: put encode 1(src:0x320610e600,dst:0x32032400fc), result: 0, codestream size: 777600
+```
+
+And if you want to trace both tx_encode_get and tx_encode_put, use below bpftrace script.
+
+```bash
+sudo bpftrace -e '
+usdt::st22p:tx_encode_get { printf("%s s%d: get encode %d(src:%p,dst:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }
+usdt::st22p:tx_encode_put { printf("%s s%d: put encode %d(src:%p,dst:%p), result %d, codestream size: %u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4, arg5); }
+' -p $(pidof RxTxApp)
+```
+
+#### 2.8.12 rx_decode_get USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st22p:rx_decode_get { printf("%s s%d: get decode %d(src:%p,dst:%p), codestream size: %u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+16:18:43 s0: get decode 0(src:0x3208f0e600,dst:0x320770e600), codestream size: 777600
+16:18:43 s0: get decode 1(src:0x320890e600,dst:0x3207d0e600), codestream size: 777600
+16:18:43 s0: get decode 2(src:0x3208f0e600,dst:0x320830e600), codestream size: 777600
+```
+
+#### 2.8.13 rx_decode_put USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st22p:rx_decode_put { printf("%s s%d: put decode %d(src:%p,dst:%p), result: %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+16:22:03 s0: put decode 0(src:0x320890e600,dst:0x320770e600), result: 0
+16:22:03 s0: put decode 1(src:0x3208f0e600,dst:0x3207d0e600), result: 0
+16:22:03 s0: put decode 2(src:0x320890e600,dst:0x320830e600), result: 0
+```
+
+And if you want to trace both rx_decode_get and rx_decode_put, use below bpftrace script.
+
+```bash
+sudo bpftrace -e '
+usdt::st22p:rx_decode_get { printf("%s s%d: get decode %d(src:%p,dst:%p), codestream size: %u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }
+usdt::st22p:rx_decode_put { printf("%s s%d: put decode %d(src:%p,dst:%p), result: %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }
+' -p $(pidof RxTxApp)
+```

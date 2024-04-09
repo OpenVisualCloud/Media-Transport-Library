@@ -190,4 +190,13 @@
   MT_DTRACE_PROBE4(st22p, rx_frame_dump, idx, file, va, sz)
 #define MT_USDT_ST22P_RX_FRAME_DUMP_ENABLED() ST22P_RX_FRAME_DUMP_ENABLED()
 
+#define MT_USDT_ST22P_TX_ENCODE_GET(idx, f_idx, src, dst) \
+  MT_DTRACE_PROBE4(st22p, tx_encode_get, idx, f_idx, src, dst)
+#define MT_USDT_ST22P_TX_ENCODE_PUT(idx, f_idx, src, dst, result, data_size) \
+  MT_DTRACE_PROBE6(st22p, tx_encode_put, idx, f_idx, src, dst, result, data_size)
+#define MT_USDT_ST22P_RX_DECODE_GET(idx, f_idx, src, dst, data_size) \
+  MT_DTRACE_PROBE5(st22p, rx_decode_get, idx, f_idx, src, dst, data_size)
+#define MT_USDT_ST22P_RX_DECODE_PUT(idx, f_idx, src, dst, result) \
+  MT_DTRACE_PROBE5(st22p, rx_decode_put, idx, f_idx, src, dst, result)
+
 #endif
