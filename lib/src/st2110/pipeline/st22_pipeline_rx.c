@@ -29,6 +29,27 @@ static void rx_st22p_block_wake(struct st22p_rx_ctx* ctx) {
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
 
+static void rx_st22p_decode_block_wake(struct st22p_rx_ctx* ctx) {
+  /* notify block */
+  mt_pthread_mutex_lock(&ctx->decode_block_wake_mutex);
+  mt_pthread_cond_signal(&ctx->decode_block_wake_cond);
+  mt_pthread_mutex_unlock(&ctx->decode_block_wake_mutex);
+}
+
+static void rx_st22p_decode_notify_frame_ready(struct st22p_rx_ctx* ctx) {
+  struct st22_decode_session_impl* decoder = ctx->decode_impl;
+  struct st22_decode_dev_impl* dev_impl = decoder->parent;
+  struct st22_decoder_dev* dev = &dev_impl->dev;
+  st22_decode_priv session = decoder->session;
+
+  if (dev->notify_frame_available) dev->notify_frame_available(session);
+
+  if (ctx->decode_block_get) {
+    /* notify block */
+    rx_st22p_decode_block_wake(ctx);
+  }
+}
+
 static void rx_st22p_notify_frame_available(struct st22p_rx_ctx* ctx) {
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);
@@ -135,7 +156,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
-  st22_decode_notify_frame_ready(ctx->decode_impl);
+  rx_st22p_decode_notify_frame_ready(ctx);
 
   return 0;
 }
@@ -150,6 +171,22 @@ static int rx_st22p_notify_event(void* priv, enum st_event event, void* args) {
   return 0;
 }
 
+static int rx_st22p_decode_get_block_wait(struct st22p_rx_ctx* ctx) {
+  /* wait on the block cond */
+  mt_pthread_mutex_lock(&ctx->decode_block_wake_mutex);
+  mt_pthread_cond_timedwait_ns(&ctx->decode_block_wake_cond,
+                               &ctx->decode_block_wake_mutex, NS_PER_S);
+  mt_pthread_mutex_unlock(&ctx->decode_block_wake_mutex);
+  return 0;
+}
+
+static int rx_st22p_decode_wake_block(void* priv) {
+  struct st22p_rx_ctx* ctx = priv;
+
+  rx_st22p_decode_block_wake(ctx);
+  return 0;
+}
+
 static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   struct st22p_rx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -160,14 +197,32 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
     return NULL;
   }
 
-  if (!ctx->ready) return NULL; /* not ready */
+  if (!ctx->ready) {
+    dbg("%s(%d), not ready %d\n", __func__, idx, ctx->type);
+    if (ctx->decode_block_get) {
+      rx_st22p_decode_get_block_wait(ctx);
+      if (!ctx->ready) return NULL;
+    }
+    return NULL; /* not ready */
+  }
+
+  ctx->stat_decode_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
   framebuff =
       rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
+  if (!framebuff && ctx->decode_block_get) { /* wait here for block mode */
+    mt_pthread_mutex_unlock(&ctx->lock);
+    rx_st22p_decode_get_block_wait(ctx);
+    /* get again */
+    mt_pthread_mutex_lock(&ctx->lock);
+    framebuff =
+        rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
+  }
   /* not any ready frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
+    dbg("%s(%d), no ready frame\n", __func__, idx);
     return NULL;
   }
 
@@ -176,6 +231,7 @@ static struct st22_decode_frame_meta* rx_st22p_decode_get_frame(void* priv) {
   ctx->framebuff_decode_idx = rx_st22p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
 
+  ctx->stat_decode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->decode_frame;
 }
@@ -198,6 +254,7 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
     return -EIO;
   }
 
+  ctx->stat_decode_put_frame++;
   dbg("%s(%d), frame %u result %d\n", __func__, idx, decode_idx, result);
   if (result < 0) {
     /* free the frame */
@@ -238,10 +295,18 @@ static int rx_st22p_decode_dump(void* priv) {
     notice("RX_ST22P(%s), busy drop frame %d\n", ctx->ops_name, busy);
   }
 
-  notice("RX_ST22P(%s), get frame try %d succ %d\n", ctx->ops_name,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  notice("RX_ST22P(%s), frame get try %d succ %d, put %d\n", ctx->ops_name,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
+  ctx->stat_put_frame = 0;
+
+  notice("TX_ST22P(%s), decoder get try %d succ %d, put %d\n", ctx->ops_name,
+         ctx->stat_decode_get_frame_try, ctx->stat_decode_get_frame_succ,
+         ctx->stat_decode_put_frame);
+  ctx->stat_decode_get_frame_try = 0;
+  ctx->stat_decode_get_frame_succ = 0;
+  ctx->stat_decode_put_frame = 0;
 
   return 0;
 }
@@ -405,6 +470,7 @@ static int rx_st22p_get_decoder(struct mtl_main_impl* impl, struct st22p_rx_ctx*
   req.req.interlaced = ops->interlaced;
   req.priv = ctx;
   req.get_frame = rx_st22p_decode_get_frame;
+  req.wake_block = rx_st22p_decode_wake_block;
   req.put_frame = rx_st22p_decode_put_frame;
   req.dump = rx_st22p_decode_dump;
 
@@ -415,10 +481,16 @@ static int rx_st22p_get_decoder(struct mtl_main_impl* impl, struct st22p_rx_ctx*
   }
   ctx->decode_impl = decode_impl;
 
+  if (decode_impl->req.req.resp_flag & ST22_DECODER_RESP_FLAG_BLOCK_GET) {
+    ctx->decode_block_get = true;
+    info("%s(%d), decoder use block get mode\n", __func__, idx);
+  }
+
+  dbg("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static int st22p_rx_get_block_wait(struct st22p_rx_ctx* ctx) {
+static int rx_st22p_get_block_wait(struct st22p_rx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
@@ -447,7 +519,7 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
       rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_unlock(&ctx->lock);
-    st22p_rx_get_block_wait(ctx);
+    rx_st22p_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
@@ -489,6 +561,7 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
   /* free the frame */
   st22_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
   framebuff->stat = ST22P_RX_FRAME_FREE;
+  ctx->stat_put_frame++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
 
   return 0;
@@ -551,6 +624,9 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
+
+  mt_pthread_mutex_init(&ctx->decode_block_wake_mutex, NULL);
+  mt_pthread_cond_wait_init(&ctx->decode_block_wake_cond);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
@@ -623,6 +699,8 @@ int st22p_rx_free(st22p_rx_handle handle) {
   mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);
+  mt_pthread_mutex_destroy(&ctx->decode_block_wake_mutex);
+  mt_pthread_cond_destroy(&ctx->decode_block_wake_cond);
   mt_rte_free(ctx);
 
   return 0;

@@ -29,6 +29,9 @@
 #define PARAMETERIZED_TEST INSTANTIATE_TEST_CASE_P
 #endif
 
+/* forward declare */
+struct st_tests_context;
+
 struct test_converter_session {
   int idx;
 
@@ -64,6 +67,8 @@ struct test_st22_encoder_session {
   int timeout_interval;
   int timeout_ms;
   int rand_ratio;
+
+  struct st_tests_context* ctx;
 };
 
 struct test_st22_decoder_session {
@@ -82,6 +87,8 @@ struct test_st22_decoder_session {
   int fail_interval;
   int timeout_interval;
   int timeout_ms;
+
+  struct st_tests_context* ctx;
 };
 
 struct st_tests_context {
@@ -106,6 +113,8 @@ struct st_tests_context {
   struct test_st22_encoder_session* encoder_sessions[MAX_TEST_ENCODER_SESSIONS];
   struct test_st22_decoder_session* decoder_sessions[MAX_TEST_DECODER_SESSIONS];
   struct test_converter_session* converter_sessions[MAX_TEST_CONVERTER_SESSIONS];
+  bool encoder_use_block_get;
+  bool decoder_use_block_get;
   int plugin_fail_interval;
   int plugin_timeout_interval;
   int plugin_timeout_ms;
@@ -133,6 +142,11 @@ static inline void st_test_jxs_timeout_ms(struct st_tests_context* ctx, int ms) 
 
 static inline void st_test_jxs_rand_ratio(struct st_tests_context* ctx, int rand_ratio) {
   ctx->plugin_rand_ratio = rand_ratio;
+}
+
+static inline void st_test_jxs_use_block_get(struct st_tests_context* ctx, bool block) {
+  ctx->decoder_use_block_get = block;
+  ctx->encoder_use_block_get = block;
 }
 
 int st_test_sch_cnt(struct st_tests_context* ctx);

@@ -56,6 +56,7 @@ static int test_encode_frame(struct test_st22_encoder_session* s,
 static void* test_encode_thread(void* arg) {
   struct test_st22_encoder_session* s = (struct test_st22_encoder_session*)arg;
   st22p_encode_session session_p = s->session_p;
+  struct st_tests_context* ctx = s->ctx;
   struct st22_encode_frame_meta* frame;
   int result;
 
@@ -63,9 +64,11 @@ static void* test_encode_thread(void* arg) {
   while (!s->stop) {
     frame = st22_encoder_get_frame(session_p);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      if (!ctx->encoder_use_block_get) {
+        st_pthread_mutex_lock(&s->wake_mutex);
+        if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+        st_pthread_mutex_unlock(&s->wake_mutex);
+      }
       continue;
     }
     result = test_encode_frame(s, frame);
@@ -88,11 +91,13 @@ static st22_encode_priv test_encoder_create_session(void* priv,
     session = (struct test_st22_encoder_session*)malloc(sizeof(*session));
     if (!session) return NULL;
     memset(session, 0, sizeof(*session));
+    session->ctx = ctx;
     session->idx = i;
     st_pthread_mutex_init(&session->wake_mutex, NULL);
     st_pthread_cond_init(&session->wake_cond, NULL);
 
     req->max_codestream_size = req->codestream_size;
+    if (ctx->encoder_use_block_get) req->resp_flag |= ST22_ENCODER_RESP_FLAG_BLOCK_GET;
 
     session->req = *req;
     session->session_p = session_p;
@@ -148,6 +153,9 @@ static int test_encoder_free_session(void* priv, st22_encode_priv session) {
 
 static int test_encoder_frame_available(void* priv) {
   struct test_st22_encoder_session* s = (struct test_st22_encoder_session*)priv;
+  struct st_tests_context* ctx = s->ctx;
+
+  if (ctx->encoder_use_block_get) return 0;
 
   // dbg("%s(%d)\n", __func__, s->idx);
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -196,6 +204,7 @@ static int test_decode_frame(struct test_st22_decoder_session* s,
 static void* test_decode_thread(void* arg) {
   struct test_st22_decoder_session* s = (struct test_st22_decoder_session*)arg;
   st22p_decode_session session_p = s->session_p;
+  struct st_tests_context* ctx = s->ctx;
   struct st22_decode_frame_meta* frame;
   int result;
 
@@ -203,9 +212,11 @@ static void* test_decode_thread(void* arg) {
   while (!s->stop) {
     frame = st22_decoder_get_frame(session_p);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+      if (!ctx->decoder_use_block_get) {
+        st_pthread_mutex_lock(&s->wake_mutex);
+        if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+        st_pthread_mutex_unlock(&s->wake_mutex);
+      }
       continue;
     }
     result = test_decode_frame(s, frame);
@@ -229,8 +240,11 @@ static st22_decode_priv test_decoder_create_session(void* priv,
     if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
+    session->ctx = ctx;
     st_pthread_mutex_init(&session->wake_mutex, NULL);
     st_pthread_cond_init(&session->wake_cond, NULL);
+
+    if (ctx->decoder_use_block_get) req->resp_flag |= ST22_DECODER_RESP_FLAG_BLOCK_GET;
 
     session->req = *req;
     session->session_p = session_p;
@@ -284,6 +298,9 @@ static int test_decoder_free_session(void* priv, st22_decode_priv session) {
 
 static int test_decoder_frame_available(void* priv) {
   struct test_st22_decoder_session* s = (struct test_st22_decoder_session*)priv;
+  struct st_tests_context* ctx = s->ctx;
+
+  if (ctx->decoder_use_block_get) return 0;
 
   // dbg("%s(%d)\n", __func__, s->idx);
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -724,6 +741,7 @@ struct st22p_rx_digest_test_para {
   bool interlace;
   uint32_t ssrc;
   bool block_get;
+  bool codec_block_get;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -744,6 +762,7 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* par
   para->interlace = false;
   para->ssrc = 0;
   para->block_get = false;
+  para->codec_block_get = false;
 }
 
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -761,6 +780,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   st_test_jxs_timeout_interval(ctx, para->timeout_interval);
   st_test_jxs_timeout_ms(ctx, para->timeout_ms);
   st_test_jxs_rand_ratio(ctx, para->rand_ratio);
+  st_test_jxs_use_block_get(ctx, para->codec_block_get);
 
   if (ctx->para.num_ports != 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
@@ -1212,6 +1232,7 @@ TEST(St22p, digest_st22_s2) {
   para.sessions = 2;
   para.user_timestamp = true;
   para.ssrc = 778899;
+  para.codec_block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
@@ -1244,6 +1265,7 @@ TEST(St22p, digest_st22_1080p_timeout_interval) {
   test_st22p_init_rx_digest_para(&para);
   para.timeout_interval = 3;
   para.timeout_ms = 20;
+  para.codec_block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }
@@ -1295,6 +1317,7 @@ TEST(St22p, digest_st22_s2_ext) {
   para.sessions = 2;
   para.tx_ext = true;
   para.rx_ext = true;
+  para.codec_block_get = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

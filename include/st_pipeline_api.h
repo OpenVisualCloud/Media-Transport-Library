@@ -552,6 +552,20 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_TIMING_PARSER_META = (MTL_BIT32(22)),
 };
 
+/** Bit define for flag_resp of struct st22_decoder_create_req. */
+enum st22_decoder_resp_flag {
+  /** Enable the st22_decoder_get_frame block behavior to wait until a frame becomes
+     available or timeout(1s) */
+  ST22_DECODER_RESP_FLAG_BLOCK_GET = (MTL_BIT32(0)),
+};
+
+/** Bit define for flag_resp of struct st22_encoder_create_req. */
+enum st22_encoder_resp_flag {
+  /** Enable the st22_encoder_get_frame block behavior to wait until a frame becomes
+     available or timeout(1s) */
+  ST22_ENCODER_RESP_FLAG_BLOCK_GET = (MTL_BIT32(0)),
+};
+
 /** The structure info for st plugin encode session create request. */
 struct st22_encoder_create_req {
   /** codestream size required */
@@ -577,6 +591,8 @@ struct st22_encoder_create_req {
 
   /** max size for frame(encoded code stream), set by plugin */
   size_t max_codestream_size;
+  /** the flag indicated by plugin to customize the behavior */
+  uint32_t resp_flag;
 };
 
 /** The structure info for st22 encoder dev. */
@@ -629,6 +645,8 @@ struct st22_decoder_create_req {
   uint16_t framebuff_cnt;
   /** thread count, set by lib */
   uint32_t codec_thread_cnt;
+  /** the flag indicated by plugin to customize the behavior */
+  uint32_t resp_flag;
 };
 
 /** The structure info for st22 decoder dev. */
@@ -1078,6 +1096,18 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle);
 struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session session);
 
 /**
+ * Wake up the block wait on st22_encoder_get_frame if ST22_ENCODER_RESP_FLAG_BLOCK_GET is
+ * enabled.
+ *
+ * @param session
+ *   The handle to the tx st2110-22 pipeline session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22_encoder_wake_block(st22p_encode_session session);
+
+/**
  * Put back the frame which get by st22_encoder_get_frame to the tx
  * st2110-22 pipeline session.
  *
@@ -1130,6 +1160,18 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle);
  *   - Otherwise, the frame pointer.
  */
 struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session session);
+
+/**
+ * Wake up the block wait on st22_decoder_get_frame if ST22_DECODER_RESP_FLAG_BLOCK_GET is
+ * enabled.
+ *
+ * @param session
+ *   The handle to the rx st2110-22 pipeline session.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22_decoder_wake_block(st22p_decode_session session);
 
 /**
  * Put back the frame which get by st22_decoder_get_frame to the rx
