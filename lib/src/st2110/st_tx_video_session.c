@@ -84,9 +84,11 @@ static void tv_notify_frame_done(struct st_tx_video_session_impl* s, uint16_t fr
   bool time_measure = mt_sessions_time_measure(impl);
   if (time_measure) tsc_start = mt_get_tsc(impl);
   if (s->st22_info) {
+    struct st22_tx_frame_meta* tx_st22_meta = &s->st20_frames[frame_idx].tx_st22_meta;
     if (s->st22_info->notify_frame_done)
-      s->st22_info->notify_frame_done(s->ops.priv, frame_idx,
-                                      &s->st20_frames[frame_idx].tx_st22_meta);
+      s->st22_info->notify_frame_done(s->ops.priv, frame_idx, tx_st22_meta);
+    MT_USDT_ST22_TX_FRAME_DONE(s->mgr->idx, s->idx, frame_idx,
+                               tx_st22_meta->rtp_timestamp);
   } else {
     struct st20_tx_frame_meta* tv_meta = &s->st20_frames[frame_idx].tv_meta;
     if (s->ops.notify_frame_done)
@@ -2102,6 +2104,39 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
+static int tv_st22_usdt_dump_codestream(struct mtl_main_impl* impl,
+                                        struct st_tx_video_session_impl* s,
+                                        struct st_frame_trans* frame, size_t size) {
+  struct st_tx_video_sessions_mgr* mgr = s->mgr;
+  int idx = s->idx;
+  int fd;
+  char usdt_dump_path[64];
+  struct st20_tx_ops* ops = &s->ops;
+  uint64_t tsc_s = mt_get_tsc(impl);
+
+  snprintf(usdt_dump_path, sizeof(usdt_dump_path),
+           "imtl_usdt_st22tx_m%ds%d_%d_%d_XXXXXX.raw", mgr->idx, idx, ops->width,
+           ops->height);
+  fd = mt_mkstemps(usdt_dump_path, strlen(".raw"));
+  if (fd < 0) {
+    err("%s(%d), mkstemps %s fail %d\n", __func__, idx, usdt_dump_path, fd);
+    return fd;
+  }
+
+  /* write frame to dump file */
+  ssize_t n = write(fd, frame->addr, size);
+  if (n != size) {
+    warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
+  } else {
+    MT_USDT_ST22_TX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
+  }
+
+  info("%s(%d), write %" PRIu64 " to %s(fd:%d), time %fms\n", __func__, idx, n,
+       usdt_dump_path, fd, (float)(mt_get_tsc(impl) - tsc_s) / NS_PER_MS);
+  close(fd);
+  return 0;
+}
+
 static int tv_tasklet_st22(struct mtl_main_impl* impl,
                            struct st_tx_video_session_impl* s) {
   unsigned int bulk = s->bulk;
@@ -2221,6 +2256,18 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       /* init to next field */
       if (ops->interlaced) {
         s->second_field = second_field ? false : true;
+      }
+      MT_USDT_ST22_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
+                                 pacing->rtp_time_stamp);
+      /* check if dump USDT enabled */
+      if (MT_USDT_ST22_TX_FRAME_DUMP_ENABLED()) {
+        int period = st_frame_rate(ops->fps) * 5; /* dump every 5s now */
+        if ((s->usdt_frame_cnt % period) == (period / 2)) {
+          tv_st22_usdt_dump_codestream(impl, s, frame, frame_size);
+        }
+        s->usdt_frame_cnt++;
+      } else {
+        s->usdt_frame_cnt = 0;
       }
       dbg("%s(%d), next_frame_idx %d(%d pkts) start\n", __func__, idx, next_frame_idx,
           s->st20_total_pkts);

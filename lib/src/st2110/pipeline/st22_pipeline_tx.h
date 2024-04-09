@@ -56,6 +56,7 @@ struct st22p_tx_ctx {
   bool ready;
   bool ext_frame;
   bool second_field;
+  int usdt_frame_cnt;
 
   size_t src_size;
 

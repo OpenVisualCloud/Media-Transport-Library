@@ -212,7 +212,10 @@ static int rv_put_frame(struct st_rx_video_session_impl* s,
   MTL_MAY_UNUSED(s);
   dbg("%s(%d), put frame at %d\n", __func__, s->idx, frame->idx);
   rte_atomic32_dec(&frame->refcnt);
-  MT_USDT_ST20_RX_FRAME_PUT(s->parent->idx, s->idx, frame->idx, frame->addr);
+  if (s->st22_info)
+    MT_USDT_ST22_RX_FRAME_PUT(s->parent->idx, s->idx, frame->idx, frame->addr);
+  else
+    MT_USDT_ST20_RX_FRAME_PUT(s->parent->idx, s->idx, frame->idx, frame->addr);
   return 0;
 }
 
@@ -743,6 +746,39 @@ static int rv_usdt_dump_frame(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int rv_st22_usdt_dump_frame(struct mtl_main_impl* impl,
+                                   struct st_rx_video_session_impl* s,
+                                   struct st_frame_trans* frame, size_t size) {
+  struct st_rx_video_sessions_mgr* mgr = s->parent;
+  int idx = s->idx;
+  int fd;
+  char usdt_dump_path[64];
+  struct st20_rx_ops* ops = &s->ops;
+  uint64_t tsc_s = mt_get_tsc(impl);
+
+  snprintf(usdt_dump_path, sizeof(usdt_dump_path),
+           "imtl_usdt_st22rx_m%ds%d_%d_%d_XXXXXX.raw", mgr->idx, idx, ops->width,
+           ops->height);
+  fd = mt_mkstemps(usdt_dump_path, strlen(".raw"));
+  if (fd < 0) {
+    err("%s(%d), mkstemps %s fail %d\n", __func__, idx, usdt_dump_path, fd);
+    return fd;
+  }
+
+  /* write frame to dump file */
+  ssize_t n = write(fd, frame->addr, size);
+  if (n != size) {
+    warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
+  } else {
+    MT_USDT_ST22_RX_FRAME_DUMP(mgr->idx, s->idx, usdt_dump_path, frame->addr, n);
+  }
+
+  info("%s(%d), write %" PRIu64 " to %s(fd:%d), time %fms\n", __func__, idx, n,
+       usdt_dump_path, fd, (float)(mt_get_tsc(impl) - tsc_s) / NS_PER_MS);
+  close(fd);
+  return 0;
+}
+
 static void rv_frame_notify(struct st_rx_video_session_impl* s,
                             struct st_rx_video_slot_impl* slot) {
   struct st20_rx_ops* ops = &s->ops;
@@ -869,6 +905,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
                                  enum st_frame_status status) {
   struct st20_rx_ops* ops = &s->ops;
   struct st22_rx_frame_meta* meta = &slot->st22_meta;
+  struct st_frame_trans* frame = slot->frame;
 
   meta->second_field = slot->second_field;
   if (ops->interlaced) {
@@ -888,16 +925,29 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     meta->pkts_recv[s_port] = slot->pkts_recv_per_port[s_port];
   }
 
+  MT_USDT_ST22_RX_FRAME_AVAILABLE(s->parent->idx, s->idx, frame->idx, frame->addr,
+                                  slot->tmstamp, meta->frame_total_size);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST22_RX_FRAME_DUMP_ENABLED()) {
+    int period = st_frame_rate(ops->fps) * 5; /* dump every 5s now */
+    if ((s->usdt_frame_cnt % period) == (period / 2)) {
+      rv_st22_usdt_dump_frame(s->impl, s, frame, meta->frame_total_size);
+    }
+    s->usdt_frame_cnt++;
+  } else {
+    s->usdt_frame_cnt = 0;
+  }
+
   /* notify frame */
   int ret = -EIO;
 
   if (st_is_frame_complete(status)) {
     rte_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats[MTL_SESSION_PORT_P].frames++;
-    ret = st22_notify_frame_ready(s, slot->frame->addr, meta);
+    ret = st22_notify_frame_ready(s, frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
-      rv_put_frame(s, slot->frame);
+      rv_put_frame(s, frame);
       slot->frame = NULL;
     }
     /* update trs */
@@ -924,9 +974,9 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
     /* notify the incomplete frame if user required */
     if (ops->flags & ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME) {
-      st22_notify_frame_ready(s, slot->frame->addr, meta);
+      st22_notify_frame_ready(s, frame->addr, meta);
     } else {
-      rv_put_frame(s, slot->frame);
+      rv_put_frame(s, frame);
       slot->frame = NULL;
     }
   }
@@ -1065,7 +1115,10 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   struct st_frame_trans* frame_info = rv_get_frame(s);
   if (!frame_info) {
     s->stat_slot_get_frame_fail++;
-    MT_USDT_ST20_RX_NO_FRAMEBUFFER(s->parent->idx, s->idx, tmstamp);
+    if (s->st22_info)
+      MT_USDT_ST22_RX_NO_FRAMEBUFFER(s->parent->idx, s->idx, tmstamp);
+    else
+      MT_USDT_ST20_RX_NO_FRAMEBUFFER(s->parent->idx, s->idx, tmstamp);
     dbg("%s(%d): slot %d get frame fail\n", __func__, s->idx, slot_idx);
     return NULL;
   }

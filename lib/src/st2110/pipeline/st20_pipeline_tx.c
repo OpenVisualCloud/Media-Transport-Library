@@ -479,14 +479,15 @@ static int tx_st20p_stat(void* priv) {
 
   uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  notice("TX_st20p(%s), p(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+  notice("TX_st20p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
          tx_st20p_stat_name(framebuff[producer_idx].stat), consumer_idx,
          tx_st20p_stat_name(framebuff[consumer_idx].stat));
 
-  notice("TX_st20p(%s), get frame try %d succ %d\n", ctx->ops_name,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  notice("TX_st20p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
+  ctx->stat_put_frame = 0;
 
   return 0;
 }
@@ -631,6 +632,7 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     framebuff->stat = ST20P_TX_FRAME_READY;
     st20_convert_notify_frame_ready(ctx->convert_impl);
   }
+  ctx->stat_put_frame++;
 
   MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat);
   /* check if dump USDT enabled */
@@ -715,6 +717,19 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
       framebuff->stat = ST20P_TX_FRAME_READY;
       st20_convert_notify_frame_ready(ctx->convert_impl);
     }
+  }
+  ctx->stat_put_frame++;
+
+  MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED()) {
+    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
+      tx_st20p_usdt_dump_frame(ctx, frame);
+    }
+    ctx->usdt_frame_cnt++;
+  } else {
+    ctx->usdt_frame_cnt = 0;
   }
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);

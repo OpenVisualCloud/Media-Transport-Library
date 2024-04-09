@@ -54,6 +54,7 @@ struct st22p_rx_ctx {
   pthread_mutex_t decode_block_wake_mutex;
   bool ready;
   bool ext_frame;
+  int usdt_frame_cnt;
 
   size_t dst_size;
   size_t max_codestream_size;
