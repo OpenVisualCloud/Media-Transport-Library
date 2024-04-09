@@ -102,6 +102,7 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
   ctx->framebuff_consumer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
+  MT_USDT_ST20P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
   return 0;
 }
 
@@ -127,6 +128,7 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
   frame->epoch = meta->epoch;
+  frame->rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
@@ -134,6 +136,8 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
   /* notify app can get frame */
   tx_st20p_notify_frame_available(ctx);
+
+  MT_USDT_ST20P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
 
   return ret;
 }
@@ -487,6 +491,37 @@ static int tx_st20p_stat(void* priv) {
   return 0;
 }
 
+static int tx_st20p_usdt_dump_frame(struct st20p_tx_ctx* ctx, struct st_frame* frame) {
+  int idx = ctx->idx;
+  struct mtl_main_impl* impl = ctx->impl;
+  int fd;
+  char usdt_dump_path[64];
+  struct st20p_tx_ops* ops = &ctx->ops;
+  uint64_t tsc_s = mt_get_tsc(impl);
+
+  snprintf(usdt_dump_path, sizeof(usdt_dump_path),
+           "imtl_usdt_st20ptx_s%d_%d_%d_XXXXXX.yuv", idx, ops->width, ops->height);
+  fd = mt_mkstemps(usdt_dump_path, strlen(".yuv"));
+  if (fd < 0) {
+    err("%s(%d), mkstemps %s fail %d\n", __func__, idx, usdt_dump_path, fd);
+    return fd;
+  }
+
+  /* write frame to dump file */
+  ssize_t n = 0;
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  uint32_t h = st_frame_data_height(frame);
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    n += write(fd, frame->addr[plane], frame->linesize[plane] * h);
+  }
+  MT_USDT_ST20P_TX_FRAME_DUMP(idx, usdt_dump_path, frame->addr[0], n);
+
+  info("%s(%d), write %" PRIu64 " to %s(fd:%d), time %fms\n", __func__, idx, n,
+       usdt_dump_path, fd, (float)(mt_get_tsc(impl) - tsc_s) / NS_PER_MS);
+  close(fd);
+  return 0;
+}
+
 static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
@@ -542,6 +577,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   frame->user_meta = NULL;
   frame->user_meta_size = 0;
   ctx->stat_get_frame_succ++;
+  MT_USDT_ST20P_TX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   return frame;
 }
 
@@ -596,6 +632,17 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
     st20_convert_notify_frame_ready(ctx->convert_impl);
   }
 
+  MT_USDT_ST20P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED()) {
+    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
+      tx_st20p_usdt_dump_frame(ctx, frame);
+    }
+    ctx->usdt_frame_cnt++;
+  } else {
+    ctx->usdt_frame_cnt = 0;
+  }
   dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
   return 0;
 }

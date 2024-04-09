@@ -119,6 +119,7 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   framebuff->dst.tfmt = meta->tfmt;
   framebuff->src.timestamp = meta->timestamp;
   framebuff->dst.timestamp = meta->timestamp;
+  framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
     ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);

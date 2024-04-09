@@ -272,6 +272,8 @@ struct st_frame {
   uint64_t timestamp;
   /** epoch info for the done frame */
   uint64_t epoch;
+  /** Timestamp value in the rtp header */
+  uint32_t rtp_timestamp;
   /** flags, value in ST_FRAME_FLAG_* */
   uint32_t flags;
   /** frame status, complete or not */

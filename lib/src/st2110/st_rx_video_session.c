@@ -803,7 +803,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
                                   slot->tmstamp, meta->frame_recv_size);
   /* check if dump USDT enabled */
   if (MT_USDT_ST20_RX_FRAME_DUMP_ENABLED()) {
-    int period = (double)NS_PER_S / s->frame_time * 5; /* dump every 5s now */
+    int period = st_frame_rate(ops->fps) * 5; /* dump every 5s now */
     if ((s->usdt_frame_cnt % period) == (period / 2)) {
       rv_usdt_dump_frame(s->impl, s, frame);
     }
@@ -879,6 +879,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   }
   meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
   meta->timestamp = slot->tmstamp;
+  meta->rtp_timestamp = slot->tmstamp;
   meta->frame_total_size = rv_slot_get_frame_size(slot);
   meta->status = status;
   meta->pkts_total = slot->pkts_received;

@@ -50,6 +50,9 @@
 #define SYS_TASKLET_TIME_MEASURE_ENABLED() (0)
 #define SYS_SESSIONS_TIME_MEASURE_ENABLED() (0)
 
+#define ST20P_TX_FRAME_DUMP_ENABLED() (0)
+#define ST20P_RX_FRAME_DUMP_ENABLED() (0)
+
 #define ST20_TX_FRAME_DUMP_ENABLED() (0)
 #define ST20_RX_FRAME_DUMP_ENABLED() (0)
 
@@ -71,6 +74,28 @@
 
 #define MT_SYS_SESSIONS_TIME_MEASURE() MT_DTRACE_PROBE(sys, sessions_time_measure)
 #define MT_USDT_SESSIONS_TIME_MEASURE_ENABLED() SYS_SESSIONS_TIME_MEASURE_ENABLED()
+
+#define MT_USDT_ST20P_TX_FRAME_GET(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st20p, tx_frame_get, idx, f_idx, va)
+#define MT_USDT_ST20P_TX_FRAME_PUT(idx, f_idx, va, stat) \
+  MT_DTRACE_PROBE4(st20p, tx_frame_put, idx, f_idx, va, stat)
+#define MT_USDT_ST20P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
+  MT_DTRACE_PROBE3(st20p, tx_frame_done, idx, f_idx, tmstamp)
+#define MT_USDT_ST20P_TX_FRAME_NEXT(idx, f_idx) \
+  MT_DTRACE_PROBE2(st20p, tx_frame_next, idx, f_idx)
+#define MT_USDT_ST20P_TX_FRAME_DUMP(idx, file, va, sz) \
+  MT_DTRACE_PROBE4(st20p, tx_frame_dump, idx, file, va, sz)
+#define MT_USDT_ST20P_TX_FRAME_DUMP_ENABLED() ST20P_TX_FRAME_DUMP_ENABLED()
+
+#define MT_USDT_ST20P_RX_FRAME_GET(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st20p, rx_frame_get, idx, f_idx, va)
+#define MT_USDT_ST20P_RX_FRAME_PUT(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st20p, rx_frame_put, idx, f_idx, va)
+#define MT_USDT_ST20P_RX_FRAME_AVAILABLE(idx, f_idx, va, tmstamp, data_size) \
+  MT_DTRACE_PROBE5(st20p, rx_frame_available, idx, f_idx, va, tmstamp, data_size)
+#define MT_USDT_ST20P_RX_FRAME_DUMP(idx, file, va, sz) \
+  MT_DTRACE_PROBE4(st20p, rx_frame_dump, idx, file, va, sz)
+#define MT_USDT_ST20P_RX_FRAME_DUMP_ENABLED() ST20P_RX_FRAME_DUMP_ENABLED()
 
 #define MT_USDT_ST20_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, tmstamp) \
   MT_DTRACE_PROBE5(st20, tx_frame_next, m_idx, s_idx, f_idx, va, tmstamp)

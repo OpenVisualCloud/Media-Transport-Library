@@ -117,6 +117,7 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
   framebuff->dst.tfmt = meta->tfmt;
   /* set dst timestamp to same as src? */
   framebuff->dst.timestamp = meta->timestamp;
+  framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
   /* if second field */
   framebuff->dst.second_field = framebuff->src.second_field = meta->second_field;

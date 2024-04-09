@@ -1764,7 +1764,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
                                  pacing->rtp_time_stamp);
       /* check if dump USDT enabled */
       if (MT_USDT_ST20_TX_FRAME_DUMP_ENABLED()) {
-        int period = s->fps_tm.framerate * 5; /* dump every 5s now */
+        int period = st_frame_rate(ops->fps) * 5; /* dump every 5s now */
         if ((s->usdt_frame_cnt % period) == (period / 2)) {
           tv_usdt_dump_frame(impl, s, frame);
         }
@@ -2217,6 +2217,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tx_st22_meta.timestamp = pacing->cur_epoch_time;
       frame->tx_st22_meta.epoch = pacing->cur_epochs;
+      frame->tx_st22_meta.rtp_timestamp = pacing->rtp_time_stamp;
       /* init to next field */
       if (ops->interlaced) {
         s->second_field = second_field ? false : true;
