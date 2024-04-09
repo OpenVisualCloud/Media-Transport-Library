@@ -2,9 +2,14 @@
 
 ## 1. Background
 
-Remote Direct Memory Access (RDMA) allows direct memory access between computer systems without CPU involvement, reducing latency and increasing throughput. It's essential for high-performance computing and media transport applications requiring low latency and high bandwidth. RDMA over Converged Ethernet (RoCE) carries RDMA operations over Ethernet networks. Unreliable Datagram (UD) is a transport protocol suitable for applications that can tolerate data loss or ensure data integrity independently.
+Remote Direct Memory Access (RDMA) allows direct memory access between computer systems without CPU involvement, reducing latency and increasing throughput.
+It's essential for high-performance computing and media transport applications requiring low latency and high bandwidth.
+RDMA over Converged Ethernet (RoCE) carries RDMA operations over Ethernet networks.
+Unreliable Datagram (UD) is a transport protocol suitable for applications that can tolerate data loss or ensure data integrity independently.
 
-The Intel® Media Transport Library (IMTL) supports RDMA UD backend with IRDMA NICs based on RoCEv2. This feature is similar to the XDP backend, both bypassing the kernel network stack for data transport. It is currently experimental and not recommended for production use.
+The Intel® Media Transport Library (IMTL) supports RDMA UD backend with IRDMA NICs based on RoCEv2.
+This feature is similar to the XDP backend, both bypassing the kernel network stack for data transport.
+It is currently experimental and not recommended for production use.
 
 ## 2. Install RDMA dependencies
 
