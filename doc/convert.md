@@ -10,16 +10,6 @@ The library supports SIMD flags detection at runtime.
 
 The default function `st20_<src_format>_to_<dest_format>` will attempt to use the maximum SIMD level supported on the platform. Users can also specify the maximum SIMD level by calling `st20_<src_format>_to_<dest_format>_simd`.
 
-For detailed API usage, please refer to [st_convert_api.h](../include/st_convert_api.h) and [st_convert_internal.h](../include/st_convert_internal.h).
-
-### The DMA Helper API
-
-During the conversion of ultra-high-definition video frames, the LLC load miss rate can be high due to wide-ranging memory access. To reduce the LLC load miss, we have introduced a DMA helper for the convert API. The source data is preloaded into the software cache blocks with the DMA engine before the SIMD batch processing, so the SIMD load functions can always hit the cache.
-
-This API is implemented with synchronous dma_copy, so the conversion speed is not always optimized. It is particularly helpful for 4K or 8K scenarios.
-
-To use the functions `st20_<src_format>_to_<dest_format>_dma`, you need to first acquire the DMA device and pass the st_udma_handle to the function. For information on DMA device creation, please refer to [dma_sample.c](../app/sample/dma/dma_sample.c).
-
 For detailed API usage, please refer to [st_convert_api.h](../include/st_convert_api.h).
 
 ## Supported Conversion

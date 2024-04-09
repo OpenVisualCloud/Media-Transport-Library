@@ -90,9 +90,7 @@ def main():
                     # copy yuv data to mtl frame
                     misc_util.copy_to_st_frame(yuv_frame, frame)
                     if args.display:
-                        misc_util.frame_display(
-                            mtl_handle, frame, args.display_scale_factor
-                        )
+                        misc_util.frame_display(frame, args.display_scale_factor)
                 else:
                     print(f"Fail to read {hex(frame_sz)} from {args.tx_url}")
                 mtl.st20p_tx_put_frame(st20p_tx, frame)

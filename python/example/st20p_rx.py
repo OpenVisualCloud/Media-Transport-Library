@@ -7,7 +7,7 @@ import misc_util
 import pymtl as mtl
 
 
-def interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
+def interlaced_rx_loop(st20p_rx, display, display_scale_factor):
     first = None
     # loop until ctrl-c
     try:
@@ -18,9 +18,8 @@ def interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
             if field.second_field:
                 if first:  # first field get also
                     # print("Both field get")
-                    misc_util.field_display(
-                        mtl_handle, first, field, display_scale_factor
-                    )
+                    if display:
+                        misc_util.field_display(first, field, display_scale_factor)
                     mtl.st20p_rx_put_frame(st20p_rx, first)
                     first = None
 
@@ -39,7 +38,7 @@ def interlaced_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
             first = None
 
 
-def frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
+def frame_rx_loop(st20p_rx, display, display_scale_factor):
     # loop until ctrl-c
     try:
         while True:
@@ -49,7 +48,7 @@ def frame_rx_loop(mtl_handle, st20p_rx, display, display_scale_factor):
                 # print(f"frame iova: {hex(mtl.st_frame_iova(frame, 0))}")
                 # print(f"pkts_total: {frame.pkts_total}")
                 if display:
-                    misc_util.frame_display(mtl_handle, frame, display_scale_factor)
+                    misc_util.frame_display(frame, display_scale_factor)
                 # return the frame
                 mtl.st20p_rx_put_frame(st20p_rx, frame)
 
@@ -117,11 +116,9 @@ def main():
         sys.exit(1)
 
     if args.interlaced:
-        interlaced_rx_loop(
-            mtl_handle, st20p_rx, args.display, args.display_scale_factor
-        )
+        interlaced_rx_loop(st20p_rx, args.display, args.display_scale_factor)
     else:
-        frame_rx_loop(mtl_handle, st20p_rx, args.display, args.display_scale_factor)
+        frame_rx_loop(st20p_rx, args.display, args.display_scale_factor)
 
     misc_util.destroy()
 
