@@ -12,10 +12,6 @@ on:
       - main
       - 'maint-**'
 
-env:
-  # Customize the env if
-  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
-
 permissions:
   contents: read
 

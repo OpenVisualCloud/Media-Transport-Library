@@ -22,9 +22,6 @@ on:
   schedule:
     - cron: "0 0 * * 1"
 
-env:
-  # Customize the env if
-
 permissions:
   contents: read
 

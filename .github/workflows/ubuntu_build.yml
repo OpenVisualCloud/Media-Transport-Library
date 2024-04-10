@@ -12,9 +12,6 @@ on:
       - main
       - 'maint-**'
 
-env:
-  # Customize the env if
-
 permissions:
   contents: read
 
