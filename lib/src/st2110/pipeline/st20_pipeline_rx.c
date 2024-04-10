@@ -684,14 +684,15 @@ static int rx_st20p_stat(void* priv) {
 
   uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  notice("RX_st20p(%s), p(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+  notice("RX_st20p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
          rx_st20p_stat_name(framebuff[producer_idx].stat), consumer_idx,
          rx_st20p_stat_name(framebuff[consumer_idx].stat));
 
-  notice("RX_st20p(%s), get frame try %d succ %d\n", ctx->ops_name,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ);
+  notice("RX_st20p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
+  ctx->stat_put_frame = 0;
 
   return 0;
 }
@@ -839,6 +840,8 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
   /* free the frame */
   st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
   framebuff->stat = ST20P_RX_FRAME_FREE;
+  ctx->stat_put_frame++;
+
   MT_USDT_ST20P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
 

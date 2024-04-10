@@ -115,6 +115,7 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   ctx->framebuff_consumer_idx = tx_st22p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
+  MT_USDT_ST22P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
   return 0;
 }
 
@@ -147,6 +148,8 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   }
 
   tx_st22p_notify_frame_available(ctx);
+
+  MT_USDT_ST22P_TX_FRAME_DONE(ctx->idx, frame_idx, meta->rtp_timestamp);
 
   return ret;
 }
@@ -223,7 +226,10 @@ static struct st22_encode_frame_meta* tx_st22p_encode_get_frame(void* priv) {
 
   ctx->stat_encode_get_frame_succ++;
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  return &framebuff->encode_frame;
+  struct st22_encode_frame_meta* frame = &framebuff->encode_frame;
+  MT_USDT_ST22P_TX_ENCODE_GET(idx, framebuff->idx, frame->src->addr[0],
+                              frame->dst->addr[0]);
+  return frame;
 }
 
 /* min frame size should be capable of bulk pkts */
@@ -264,6 +270,8 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     framebuff->stat = ST22P_TX_FRAME_ENCODED;
   }
 
+  MT_USDT_ST22P_TX_ENCODE_PUT(idx, framebuff->idx, frame->src->addr[0],
+                              frame->dst->addr[0], result, data_size);
   return 0;
 }
 
@@ -512,6 +520,37 @@ static int tx_st22p_get_block_wait(struct st22p_tx_ctx* ctx) {
   return 0;
 }
 
+static int tx_st22p_usdt_dump_frame(struct st22p_tx_ctx* ctx, struct st_frame* frame) {
+  int idx = ctx->idx;
+  struct mtl_main_impl* impl = ctx->impl;
+  int fd;
+  char usdt_dump_path[64];
+  struct st22p_tx_ops* ops = &ctx->ops;
+  uint64_t tsc_s = mt_get_tsc(impl);
+
+  snprintf(usdt_dump_path, sizeof(usdt_dump_path),
+           "imtl_usdt_st22ptx_s%d_%d_%d_XXXXXX.yuv", idx, ops->width, ops->height);
+  fd = mt_mkstemps(usdt_dump_path, strlen(".yuv"));
+  if (fd < 0) {
+    err("%s(%d), mkstemps %s fail %d\n", __func__, idx, usdt_dump_path, fd);
+    return fd;
+  }
+
+  /* write frame to dump file */
+  ssize_t n = 0;
+  uint8_t planes = st_frame_fmt_planes(frame->fmt);
+  uint32_t h = st_frame_data_height(frame);
+  for (uint8_t plane = 0; plane < planes; plane++) {
+    n += write(fd, frame->addr[plane], frame->linesize[plane] * h);
+  }
+  MT_USDT_ST22P_TX_FRAME_DUMP(idx, usdt_dump_path, frame->addr[0], n);
+
+  info("%s(%d), write %" PRIu64 " to %s(fd:%d), time %fms\n", __func__, idx, n,
+       usdt_dump_path, fd, (float)(mt_get_tsc(impl) - tsc_s) / NS_PER_MS);
+  close(fd);
+  return 0;
+}
+
 struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   struct st22p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
@@ -554,7 +593,9 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     ctx->second_field = ctx->second_field ? false : true;
   }
   ctx->stat_get_frame_succ++;
-  return &framebuff->src;
+  struct st_frame* frame = &framebuff->src;
+  MT_USDT_ST22P_TX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
+  return frame;
 }
 
 int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
@@ -586,8 +627,20 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
   framebuff->stat = ST22P_TX_FRAME_READY;
   tx_st22p_encode_notify_frame_ready(ctx);
   ctx->stat_put_frame++;
-  dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
 
+  MT_USDT_ST22P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST22P_TX_FRAME_DUMP_ENABLED()) {
+    int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
+    if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
+      tx_st22p_usdt_dump_frame(ctx, frame);
+    }
+    ctx->usdt_frame_cnt++;
+  } else {
+    ctx->usdt_frame_cnt = 0;
+  }
+
+  dbg("%s(%d), frame %u succ\n", __func__, idx, producer_idx);
   return 0;
 }
 

@@ -64,6 +64,7 @@ struct st20p_rx_ctx {
   /* get frame stat */
   int stat_get_frame_try;
   int stat_get_frame_succ;
+  int stat_put_frame;
 };
 
 #endif
