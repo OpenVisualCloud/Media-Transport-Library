@@ -1913,14 +1913,6 @@ static inline uint32_t st_rx_mbuf_get_len(struct rte_mbuf* mbuf) {
   return priv->rx_priv.len;
 }
 
-#ifdef ST_PCAPNG_ENABLED
-struct rte_mbuf* mt_pcapng_copy(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rxq_entry* rxq, const struct rte_mbuf* m,
-                                struct rte_mempool* mp, uint32_t length,
-                                uint64_t timestamp, uint64_t tm_ns,
-                                enum rte_pcapng_direction direction);
-#endif
-
 uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
                             enum mtl_port port);
 

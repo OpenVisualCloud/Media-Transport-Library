@@ -23,8 +23,7 @@ on:
     - cron: "0 0 * * 1"
 
 env:
-  # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
-  MTL_BUILD_DISABLE_PCAPNG: true
+  # Customize the env if
 
 permissions:
   contents: read

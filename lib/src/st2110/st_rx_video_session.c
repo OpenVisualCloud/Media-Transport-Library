@@ -8,6 +8,7 @@
 
 #include "../datapath/mt_queue.h"
 #include "../mt_log.h"
+#include "../mt_pcap.h"
 #include "../mt_ptp.h"
 #include "../mt_rtcp.h"
 #include "../mt_stat.h"
@@ -1270,170 +1271,83 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
   return 0;
 }
 
-#ifdef ST_PCAPNG_ENABLED
-static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
-                           uint32_t max_dump_packets, bool sync,
-                           struct st_pcap_dump_meta* meta) {
-  if (s->pcapng != NULL) {
-    err("%s, pcapng dump already started\n", __func__);
-    return -EIO;
-  }
+static int rv_stop_pcap(struct st_rx_video_session_impl* s) {
+  if (!s->pcap) return 0;
 
-  enum mtl_port port = s->port_maps[MTL_SESSION_PORT_P];
+  s->pcap_required_pkts = 0;
+  mt_pcap_close(s->pcap);
+  s->pcap = NULL;
+  return 0;
+}
+
+static int rv_start_pcap(struct st_rx_video_session_impl* s, uint32_t max_dump_packets,
+                         bool sync, struct st_pcap_dump_meta* meta) {
   int idx = s->idx;
-  int pkt_len = ST_PKT_MAX_ETHER_BYTES;
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
+  char file_name[MTL_PCAP_FILE_MAX_LEN];
 
-  if (!mt_drv_dpdk_based(impl, port)) {
-    err("%s, port %d is not dpdk based, unsupported\n", __func__, port);
-    return -ENOTSUP;
+  if (s->pcap != NULL) {
+    err("%s(%d), pcap dump already started\n", __func__, idx);
+    return -EIO;
   }
 
   if (s->st22_info) {
-    snprintf(s->pcapng_file_name, MTL_PCAP_FILE_MAX_LEN, "st22_rx_%d_%u_XXXXXX.pcapng",
-             idx, max_dump_packets);
+    snprintf(file_name, sizeof(file_name), "st22_rx_%d_%u_XXXXXX.pcapng", idx,
+             max_dump_packets);
   } else {
-    snprintf(s->pcapng_file_name, MTL_PCAP_FILE_MAX_LEN, "st20_rx_%d_%u_XXXXXX.pcapng",
-             idx, max_dump_packets);
+    snprintf(file_name, sizeof(file_name), "st20_rx_%d_%u_XXXXXX.pcapng", idx,
+             max_dump_packets);
   }
-
-  int fd = mt_mkstemps(s->pcapng_file_name, strlen(".pcapng"));
-  if (fd == -1) {
-    err("%s(%d), failed to open pcapng file\n", __func__, idx);
+  int fd = mt_mkstemps(file_name, strlen(".pcapng"));
+  if (fd < 0) {
+    err("%s(%d), failed to create pcap file %s\n", __func__, idx, file_name);
     return -EIO;
   }
-
-  struct rte_pcapng* pcapng = rte_pcapng_fdopen(fd, NULL, NULL, "imtl-rx-video", NULL);
-  if (pcapng == NULL) {
-    err("%s(%d), failed to create pcapng\n", __func__, idx);
+  s->pcap = mt_pcap_open(s->impl, port, fd);
+  if (!s->pcap) {
+    err("%s(%d), failed to open pcap file %s\n", __func__, idx, file_name);
     close(fd);
     return -EIO;
   }
 
-#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
-  rte_pcapng_add_interface(pcapng, mt_port_id(impl, port), NULL, NULL, NULL);
-#endif
-
-  char pool_name[ST_MAX_NAME_LEN];
-  snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dS%d_PCAPNG", ST_RX_VIDEO_PREFIX, port, idx);
-  struct rte_mempool* mp =
-      mt_mempool_create_by_ops(impl, port, pool_name, 256, MT_MBUF_CACHE_SIZE, 0,
-                               rte_pcapng_mbuf_size(pkt_len), "ring_mp_sc");
-  if (mp == NULL) {
-    err("%s(%d), failed to create pcapng mempool\n", __func__, idx);
-    rte_pcapng_close(pcapng);
-    return -ENOMEM;
-  }
-
-  s->pcapng_pool = mp;
-  s->pcapng_dumped_pkts = 0;
-  s->pcapng_dropped_pkts = 0;
-  s->pcapng_max_pkts = max_dump_packets;
-  s->pcapng = pcapng;
-  info("%s(%d), pcapng (%s,%u) started, pcapng pool at %p\n", __func__, idx,
-       s->pcapng_file_name, max_dump_packets, mp);
+  s->pcap_dumped_pkts = 0;
+  s->pcap_dropped_pkts = 0;
+  s->pcap_required_pkts = max_dump_packets;
+  info("%s(%d), pcap %s started, max_dump_packets %u\n", __func__, idx, file_name,
+       max_dump_packets);
 
   if (sync) {
     int time_out = 100; /* 100*100ms, 10s */
     int i = 0;
     for (; i < time_out; i++) {
-      if (!s->pcapng) break;
+      if (!s->pcap) break;
       mt_sleep_ms(100);
     }
     if (i >= time_out) {
-      err("%s(%d), pcapng(%s) timeout, dumped %u dropped %u\n", __func__, idx,
-          s->pcapng_file_name, s->pcapng_dumped_pkts, s->pcapng_dropped_pkts);
-      mt_mempool_free(mp);
-      rte_pcapng_close(pcapng);
+      err("%s(%d), pcapng(%s) timeout, dumped %u dropped %u\n", __func__, idx, file_name,
+          s->pcap_dumped_pkts, s->pcap_dropped_pkts);
+      rv_stop_pcap(s);
       return -EIO;
     }
     if (meta) {
-      meta->dumped_packets = s->pcapng_dumped_pkts;
-      snprintf(meta->file_name, MTL_PCAP_FILE_MAX_LEN, "%s", s->pcapng_file_name);
+      meta->dumped_packets = s->pcap_dumped_pkts;
+      snprintf(meta->file_name, sizeof(meta->file_name), "%s", file_name);
     }
-    info("%s(%d), pcapng(%s,%u) dump finish\n", __func__, idx, s->pcapng_file_name,
-         max_dump_packets);
+    info("%s(%d), pcap(%s,%u) dump finish\n", __func__, idx, file_name,
+         s->pcap_dumped_pkts);
   }
 
   return 0;
 }
 
-static int rv_stop_pcapng(struct st_rx_video_session_impl* s) {
-  s->pcapng_dropped_pkts = 0;
-  s->pcapng_max_pkts = 0;
-
-  if (s->pcapng) {
-    rte_pcapng_close(s->pcapng);
-    s->pcapng = NULL;
-#ifdef WINDOWSENV
-    /* add suffix to saved filename */
-    int temp_len = strlen(s->pcapng_file_name);
-    s->pcapng_file_name[temp_len] = '.';
-    char old_name[temp_len + 1];
-    memset(old_name, 0, temp_len + 1);
-    memcpy(old_name, s->pcapng_file_name, temp_len);
-    rename(old_name, s->pcapng_file_name);
-#endif
-  }
-
-  if (s->pcapng_pool) {
-    mt_mempool_free(s->pcapng_pool);
-    s->pcapng_pool = NULL;
-  }
-  return 0;
-}
-
-static int rv_dump_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
-                          struct rte_mbuf** mbuf, uint16_t rv,
-                          enum mtl_session_port s_port) {
-  struct rte_mbuf* pcapng_mbuf[rv];
-  int pcapng_mbuf_cnt = 0;
-  ssize_t len;
+static int rv_dump_pcap(struct st_rx_video_session_impl* s, struct rte_mbuf** mbufs,
+                        uint16_t nb, enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-
-  for (uint16_t i = 0; i < rv; i++) {
-    struct rte_mbuf* mc;
-    uint64_t timestamp_cycle = 0, timestamp_ns = 0;
-#if RTE_VERSION < RTE_VERSION_NUM(23, 11, 0, 0) /* dpdk 23.11 uses internal time */
-    struct mt_interface* inf = mt_if(impl, port);
-    if (inf->feature & MT_IF_FEATURE_RX_OFFLOAD_TIMESTAMP)
-      timestamp_ns = mt_mbuf_time_stamp(impl, mbuf[i], port);
-    else
-      timestamp_cycle = rte_get_tsc_cycles();
-#endif
-
-    mc = mt_pcapng_copy(impl, port, s->rxq[s_port], mbuf[i], s->pcapng_pool,
-                        ST_PKT_MAX_ETHER_BYTES, timestamp_cycle, timestamp_ns,
-                        RTE_PCAPNG_DIRECTION_IN);
-    if (mc == NULL) {
-      warn("%s(%d,%d), can not copy packet\n", __func__, s->idx, s_port);
-      s->pcapng_dropped_pkts++;
-      continue;
-    }
-    pcapng_mbuf[pcapng_mbuf_cnt++] = mc;
-  }
-  len = rte_pcapng_write_packets(s->pcapng, pcapng_mbuf, pcapng_mbuf_cnt);
-  rte_pktmbuf_free_bulk(&pcapng_mbuf[0], pcapng_mbuf_cnt);
-  if (len <= 0) {
-    warn("%s(%d,%d), can not write packet %" PRId64 "\n", __func__, s->idx, s_port, len);
-    s->pcapng_dropped_pkts++;
-    return -EIO;
-  }
-  s->pcapng_dumped_pkts += pcapng_mbuf_cnt;
+  uint16_t dump = mt_pcap_dump(s->impl, port, s->pcap, mbufs, nb);
+  s->pcap_dumped_pkts += dump;
+  s->pcap_dropped_pkts += nb - dump;
   return 0;
 }
-
-#else
-static int rv_start_pcapng(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
-                           uint32_t max_dump_packets, bool sync,
-                           struct st_pcap_dump_meta* meta) {
-  MTL_MAY_UNUSED(impl);
-  MTL_MAY_UNUSED(s);
-  MTL_MAY_UNUSED(max_dump_packets);
-  MTL_MAY_UNUSED(sync);
-  MTL_MAY_UNUSED(meta);
-  return -EINVAL;
-}
-#endif
 
 static int rv_dma_dequeue(struct st_rx_video_session_impl* s) {
   struct mtl_dma_lender_dev* dma_dev = s->dma_dev;
@@ -2712,20 +2626,16 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   bool ctl_thread = pkt_ring ? false : true;
   int ret = 0;
 
-#ifdef ST_PCAPNG_ENABLED /* dump mbufs to pcapng file */
-  struct mtl_main_impl* impl = s_priv->impl;
-  if ((s->pcapng != NULL) && (s->pcapng_max_pkts)) {
-    if (s->pcapng_dumped_pkts < s->pcapng_max_pkts) {
-      rv_dump_pcapng(impl, s, mbuf,
-                     RTE_MIN(nb, s->pcapng_max_pkts - s->pcapng_dumped_pkts), s_port);
+  if (s->pcap_required_pkts) {
+    if (s->pcap_dumped_pkts < s->pcap_required_pkts) {
+      rv_dump_pcap(s, mbuf, RTE_MIN(nb, s->pcap_required_pkts - s->pcap_dumped_pkts),
+                   s_port);
     } else { /* got enough packets, stop dumping */
-      rv_stop_pcapng(s);
-      info("%s(%d,%d), pcapng dump saved to %s, dumped %u packets, dropped %u pcakets\n",
-           __func__, s->idx, s_port, s->pcapng_file_name, s->pcapng_dumped_pkts,
-           s->pcapng_dropped_pkts);
+      rv_stop_pcap(s);
+      info("%s(%d), dumped %u packets, dropped %u packets\n", __func__, s->idx,
+           s->pcap_dumped_pkts, s->pcap_dropped_pkts);
     }
   }
-#endif
 
   if (pkt_ring) {
     /* first pass to the pkt ring if it has pkt handling lcore */
@@ -4122,7 +4032,6 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
                         struct st_pcap_dump_meta* meta) {
   struct st_rx_video_session_handle_impl* s_impl = handle;
   struct st_rx_video_session_impl* s = s_impl->impl;
-  struct mtl_main_impl* impl = s_impl->parent;
   int ret;
 
   if (s_impl->type != MT_HANDLE_RX_VIDEO) {
@@ -4130,7 +4039,7 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
     return -EINVAL;
   }
 
-  ret = rv_start_pcapng(impl, s, max_dump_packets, sync, meta);
+  ret = rv_start_pcap(s, max_dump_packets, sync, meta);
 
   return ret;
 }
@@ -4527,7 +4436,6 @@ int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool s
                         struct st_pcap_dump_meta* meta) {
   struct st22_rx_video_session_handle_impl* s_impl = handle;
   struct st_rx_video_session_impl* s = s_impl->impl;
-  struct mtl_main_impl* impl = s_impl->parent;
   int ret;
 
   if (s_impl->type != MT_ST22_HANDLE_RX_VIDEO) {
@@ -4535,7 +4443,7 @@ int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool s
     return -EINVAL;
   }
 
-  ret = rv_start_pcapng(impl, s, max_dump_packets, sync, meta);
+  ret = rv_start_pcap(s, max_dump_packets, sync, meta);
 
   return ret;
 }

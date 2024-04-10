@@ -14,8 +14,6 @@ on:
 
 env:
   # Customize the env if
-  # Disable since mtl patched dpdk pcapng and this job use prebuilt pkg
-  MTL_BUILD_DISABLE_PCAPNG: true
   PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 permissions:
