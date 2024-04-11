@@ -1324,7 +1324,7 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, enum mtl_session_po
     int time_out = 100; /* 100*100ms, 10s */
     int i = 0;
     for (; i < time_out; i++) {
-      if (!s->pcap) break;
+      if (!s->pcap[s_port]) break;
       mt_sleep_ms(100);
     }
     if (i >= time_out) {
