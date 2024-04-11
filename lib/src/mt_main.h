@@ -369,6 +369,7 @@ struct mt_cni_entry {
   rte_spinlock_t csq_lock; /* protect csq_queues */
 
   struct mt_cni_udp_detect_list udp_detect; /* for udp stream debug usage */
+  struct mt_rx_pcap pcap;
 
   /* stat */
   uint32_t eth_rx_cnt;

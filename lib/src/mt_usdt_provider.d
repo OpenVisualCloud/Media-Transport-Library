@@ -11,6 +11,8 @@ provider sys {
   probe tasklet_time_measure();
   /* attach to enable the sessions_time_measure at runtime */
   probe sessions_time_measure();
+  /* attach to enable the pcap dump for cni rx queue */
+  probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
 }
 
 provider ptp {
@@ -30,6 +32,8 @@ provider st20 {
   probe rx_no_framebuffer(int m_idx, int s_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
+  /* attach to enable the pcap dump at runtime */
+  probe rx_pcap_dump(int m_idx, int s_idx, int s_port, char* dump_file, uint32_t pkts);
 }
 
 provider st30 {
@@ -44,6 +48,8 @@ provider st30 {
   probe rx_no_framebuffer(int m_idx, int s_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, uint32_t data_size);
+  /* attach to enable the pcap dump at runtime */
+  probe rx_pcap_dump(int m_idx, int s_idx, int s_port, char* dump_file, uint32_t pkts);
 }
 
 provider st40 {
