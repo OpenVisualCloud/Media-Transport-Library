@@ -16,10 +16,6 @@ add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 add_global_arguments('-D__MTL_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always', check: false).stdout().strip() + '"', language : 'c')
 add_global_arguments('-D__MTL_LIB_BUILD__="' + meson.project_version() + '"', language : 'c')
 
-if get_option('disable_pcapng') == true
-  add_global_arguments('-DMTL_DISABLE_PCAPNG', language : 'c')
-endif
-
 if is_windows
 if get_option('enable_tap') == true
   add_global_arguments('-DMTL_HAS_TAP', language : 'c')

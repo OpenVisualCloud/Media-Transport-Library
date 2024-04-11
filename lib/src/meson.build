@@ -19,6 +19,7 @@ sources = files(
   'mt_flow.c',
   'mt_instance.c',
   'mt_log.c',
+  'mt_pcap.c',
 )
 
 if is_windows

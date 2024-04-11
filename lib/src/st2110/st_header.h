@@ -623,15 +623,13 @@ struct st_rx_video_session_impl {
   uint16_t dma_nb_desc;
   struct st_rx_video_slot_impl* dma_slot;
   bool dma_copy;
-#ifdef ST_PCAPNG_ENABLED
+
   /* pcap dumper */
-  uint32_t pcapng_dumped_pkts;
-  uint32_t pcapng_dropped_pkts;
-  uint32_t pcapng_max_pkts;
-  struct rte_pcapng* pcapng;
-  struct rte_mempool* pcapng_pool;
-  char pcapng_file_name[MTL_PCAP_FILE_MAX_LEN];
-#endif
+  struct mt_pcap* pcap[MTL_SESSION_PORT_MAX];
+  uint32_t pcap_dumped_pkts[MTL_SESSION_PORT_MAX];
+  uint32_t pcap_dropped_pkts[MTL_SESSION_PORT_MAX];
+  uint32_t pcap_required_pkts[MTL_SESSION_PORT_MAX];
+
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;
   bool has_pkt_lcore;

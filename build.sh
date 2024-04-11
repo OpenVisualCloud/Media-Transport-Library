@@ -14,16 +14,8 @@ function usage()
 }
 
 buildtype=release
-disable_pcapng=false
 enable_asan=false
 enable_tap=false
-
-if [ -n "$MTL_BUILD_DISABLE_PCAPNG" ];  then
-    if [ "$MTL_BUILD_DISABLE_PCAPNG" == "true" ]; then
-        disable_pcapng=true
-        echo "Disable pcapng function."
-    fi
-fi
 
 if [ -n "$MTL_BUILD_ENABLE_ASAN" ];  then
     if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
@@ -73,7 +65,7 @@ LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 
 # build lib
-meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Ddisable_pcapng="$disable_pcapng" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap"
+meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap"
 pushd "${LIB_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
