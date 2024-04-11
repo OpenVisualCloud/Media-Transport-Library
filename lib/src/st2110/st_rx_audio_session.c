@@ -531,27 +531,11 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   }
 
   struct mt_rx_pcap* pcap = &s->pcap[s_port];
-  /* if any pcap progress */
-  if (MT_USDT_ST30_RX_PCAP_DUMP_ENABLED()) {
-    if (!pcap->usdt_dump) {
-      /* dump 5 sec */
-      int required_pkts = s->st30_total_pkts * s->frames_per_sec * 5;
-      ra_start_pcap(s, s_port, required_pkts);
-      pcap->usdt_dump = true;
-    }
-
-    if (pcap->required_pkts) {
-      if (pcap->dumped_pkts < pcap->required_pkts) {
-        ra_dump_pcap(s, mbuf, RTE_MIN(nb, pcap->required_pkts - pcap->dumped_pkts),
-                     s_port);
-      } else { /* got enough packets, stop dumping */
-        ra_stop_pcap(s, s_port);
-      }
-    }
-  } else {
-    if (pcap->usdt_dump) {
+  if (pcap->required_pkts) {
+    if (pcap->dumped_pkts < pcap->required_pkts) {
+      ra_dump_pcap(s, mbuf, RTE_MIN(nb, pcap->required_pkts - pcap->dumped_pkts), s_port);
+    } else { /* got enough packets, stop dumping */
       ra_stop_pcap(s, s_port);
-      pcap->usdt_dump = false;
     }
   }
 
@@ -576,6 +560,22 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
 
   for (int s_port = 0; s_port < num_port; s_port++) {
     if (!s->rxq[s_port]) continue;
+
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    /* if any pcap progress */
+    if (MT_USDT_ST30_RX_PCAP_DUMP_ENABLED()) {
+      if (!pcap->usdt_dump) {
+        /* dump 5 sec */
+        int required_pkts = s->st30_total_pkts * s->frames_per_sec * 5;
+        ra_start_pcap(s, s_port, required_pkts);
+        pcap->usdt_dump = true;
+      }
+    } else {
+      if (pcap->usdt_dump) {
+        ra_stop_pcap(s, s_port);
+        pcap->usdt_dump = false;
+      }
+    }
 
     rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
     if (!rv) continue;
@@ -915,6 +915,13 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
   s->stat_max_notify_frame_us = 0;
 
   if (s->enable_timing_parser_stat) ra_tp_stat(s);
+
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    if (pcap->pcap) {
+      MT_USDT_ST30_RX_PCAP_DUMP(m_idx, idx, s_port, pcap->file_name, pcap->dumped_pkts);
+    }
+  }
 }
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,

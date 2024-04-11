@@ -2652,22 +2652,8 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct rte_ring* pkt_ring = s->pkt_lcore_ring;
   bool ctl_thread = pkt_ring ? false : true;
   int ret = 0;
-  struct mt_rx_pcap* pcap = &s->pcap[s_port];
 
-  /* if any pcap progress */
-  if (MT_USDT_ST20_RX_PCAP_DUMP_ENABLED()) {
-    if (!pcap->usdt_dump) {
-      int estimated_total_pkts = s->st20_frame_size / ST_VIDEO_BPM_SIZE;
-      /* dump 5 frames */
-      rv_start_pcap(s, s_port, estimated_total_pkts * 5, false, NULL);
-      pcap->usdt_dump = true;
-    }
-  } else {
-    if (pcap->usdt_dump) {
-      rv_stop_pcap(s, s_port);
-      pcap->usdt_dump = false;
-    }
-  }
+  struct mt_rx_pcap* pcap = &s->pcap[s_port];
   if (pcap->required_pkts) {
     if (pcap->dumped_pkts < pcap->required_pkts) {
       rv_dump_pcap(s, mbuf, RTE_MIN(nb, pcap->required_pkts - pcap->dumped_pkts), s_port);
@@ -2724,6 +2710,22 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
 
   for (int s_port = 0; s_port < num_port; s_port++) {
     if (!s->rxq[s_port]) continue;
+
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    /* if any pcap progress */
+    if (MT_USDT_ST20_RX_PCAP_DUMP_ENABLED()) {
+      if (!pcap->usdt_dump) {
+        int estimated_total_pkts = s->st20_frame_size / ST_VIDEO_BPM_SIZE;
+        /* dump 5 frames */
+        rv_start_pcap(s, s_port, estimated_total_pkts * 5, false, NULL);
+        pcap->usdt_dump = true;
+      }
+    } else {
+      if (pcap->usdt_dump) {
+        rv_stop_pcap(s, s_port);
+        pcap->usdt_dump = false;
+      }
+    }
 
     rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], s->rx_burst_size);
     s->cur_succ_burst_cnt = rv;
@@ -3486,6 +3488,13 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_max_notify_frame_us);
   }
   s->stat_max_notify_frame_us = 0;
+
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    if (pcap->pcap) {
+      MT_USDT_ST20_RX_PCAP_DUMP(m_idx, idx, s_port, pcap->file_name, pcap->dumped_pkts);
+    }
+  }
 }
 
 static int rvs_pkt_rx_tasklet_start(void* priv) {
