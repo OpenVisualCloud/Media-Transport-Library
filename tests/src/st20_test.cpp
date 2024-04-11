@@ -3870,9 +3870,9 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
     struct st_pcap_dump_meta meta;
     ret = st20_rx_pcapng_dump(rx_handle[i], max_dump_packets, true, &meta);
     EXPECT_GE(ret, 0);
-    EXPECT_EQ(meta.dumped_packets, max_dump_packets);
-    dbg("%s, file_name %s\n", __func__, meta.file_name);
-    if (ret >= 0) remove(meta.file_name);
+    EXPECT_EQ(meta.dumped_packets[MTL_SESSION_PORT_P], max_dump_packets);
+    dbg("%s, file_name %s\n", __func__, meta.file_name[MTL_SESSION_PORT_P]);
+    if (ret >= 0) remove(meta.file_name[MTL_SESSION_PORT_P]);
   }
 
   for (int i = 0; i < sessions; i++) {

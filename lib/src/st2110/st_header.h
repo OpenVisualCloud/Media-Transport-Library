@@ -625,10 +625,10 @@ struct st_rx_video_session_impl {
   bool dma_copy;
 
   /* pcap dumper */
-  struct mt_pcap* pcap;
-  uint32_t pcap_dumped_pkts;
-  uint32_t pcap_dropped_pkts;
-  uint32_t pcap_required_pkts;
+  struct mt_pcap* pcap[MTL_SESSION_PORT_MAX];
+  uint32_t pcap_dumped_pkts[MTL_SESSION_PORT_MAX];
+  uint32_t pcap_dropped_pkts[MTL_SESSION_PORT_MAX];
+  uint32_t pcap_required_pkts[MTL_SESSION_PORT_MAX];
 
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;

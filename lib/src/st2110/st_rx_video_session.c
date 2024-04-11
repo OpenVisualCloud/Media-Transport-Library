@@ -1271,50 +1271,54 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
   return 0;
 }
 
-static int rv_stop_pcap(struct st_rx_video_session_impl* s) {
-  if (!s->pcap) return 0;
+static int rv_stop_pcap(struct st_rx_video_session_impl* s,
+                        enum mtl_session_port s_port) {
+  if (!s->pcap[s_port]) return 0;
 
-  s->pcap_required_pkts = 0;
-  mt_pcap_close(s->pcap);
-  s->pcap = NULL;
+  info("%s(%d,%d), dumped %u packets, dropped %u packets\n", __func__, s->idx, s_port,
+       s->pcap_dumped_pkts[s_port], s->pcap_dropped_pkts[s_port]);
+  s->pcap_required_pkts[s_port] = 0;
+  mt_pcap_close(s->pcap[s_port]);
+  s->pcap[s_port] = NULL;
   return 0;
 }
 
-static int rv_start_pcap(struct st_rx_video_session_impl* s, uint32_t max_dump_packets,
-                         bool sync, struct st_pcap_dump_meta* meta) {
+static int rv_start_pcap(struct st_rx_video_session_impl* s, enum mtl_session_port s_port,
+                         uint32_t max_dump_packets, bool sync,
+                         struct st_pcap_dump_meta* meta) {
   int idx = s->idx;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   char file_name[MTL_PCAP_FILE_MAX_LEN];
 
-  if (s->pcap != NULL) {
-    err("%s(%d), pcap dump already started\n", __func__, idx);
+  if (s->pcap[s_port] != NULL) {
+    err("%s(%d,%d), pcap dump already started\n", __func__, idx, s_port);
     return -EIO;
   }
 
   if (s->st22_info) {
-    snprintf(file_name, sizeof(file_name), "st22_rx_%d_%u_XXXXXX.pcapng", idx,
+    snprintf(file_name, sizeof(file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng", idx, s_port,
              max_dump_packets);
   } else {
-    snprintf(file_name, sizeof(file_name), "st20_rx_%d_%u_XXXXXX.pcapng", idx,
+    snprintf(file_name, sizeof(file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng", idx, s_port,
              max_dump_packets);
   }
   int fd = mt_mkstemps(file_name, strlen(".pcapng"));
   if (fd < 0) {
-    err("%s(%d), failed to create pcap file %s\n", __func__, idx, file_name);
+    err("%s(%d,%d), failed to create pcap file %s\n", __func__, idx, s_port, file_name);
     return -EIO;
   }
-  s->pcap = mt_pcap_open(s->impl, port, fd);
-  if (!s->pcap) {
-    err("%s(%d), failed to open pcap file %s\n", __func__, idx, file_name);
+  s->pcap[s_port] = mt_pcap_open(s->impl, port, fd);
+  if (!s->pcap[s_port]) {
+    err("%s(%d,%d), failed to open pcap file %s\n", __func__, idx, s_port, file_name);
     close(fd);
     return -EIO;
   }
 
-  s->pcap_dumped_pkts = 0;
-  s->pcap_dropped_pkts = 0;
-  s->pcap_required_pkts = max_dump_packets;
-  info("%s(%d), pcap %s started, max_dump_packets %u\n", __func__, idx, file_name,
-       max_dump_packets);
+  s->pcap_dumped_pkts[s_port] = 0;
+  s->pcap_dropped_pkts[s_port] = 0;
+  s->pcap_required_pkts[s_port] = max_dump_packets;
+  info("%s(%d,%d), pcap %s started, max_dump_packets %u\n", __func__, idx, s_port,
+       file_name, max_dump_packets);
 
   if (sync) {
     int time_out = 100; /* 100*100ms, 10s */
@@ -1324,17 +1328,14 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, uint32_t max_dump_p
       mt_sleep_ms(100);
     }
     if (i >= time_out) {
-      err("%s(%d), pcapng(%s) timeout, dumped %u dropped %u\n", __func__, idx, file_name,
-          s->pcap_dumped_pkts, s->pcap_dropped_pkts);
-      rv_stop_pcap(s);
+      err("%s(%d,%d), timeout for sync, stop any way\n", __func__, idx, s_port);
+      rv_stop_pcap(s, s_port);
       return -EIO;
     }
     if (meta) {
-      meta->dumped_packets = s->pcap_dumped_pkts;
-      snprintf(meta->file_name, sizeof(meta->file_name), "%s", file_name);
+      meta->dumped_packets[s_port] = s->pcap_dumped_pkts[s_port];
+      snprintf(meta->file_name[s_port], sizeof(meta->file_name[s_port]), "%s", file_name);
     }
-    info("%s(%d), pcap(%s,%u) dump finish\n", __func__, idx, file_name,
-         s->pcap_dumped_pkts);
   }
 
   return 0;
@@ -1343,9 +1344,9 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, uint32_t max_dump_p
 static int rv_dump_pcap(struct st_rx_video_session_impl* s, struct rte_mbuf** mbufs,
                         uint16_t nb, enum mtl_session_port s_port) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  uint16_t dump = mt_pcap_dump(s->impl, port, s->pcap, mbufs, nb);
-  s->pcap_dumped_pkts += dump;
-  s->pcap_dropped_pkts += nb - dump;
+  uint16_t dump = mt_pcap_dump(s->impl, port, s->pcap[s_port], mbufs, nb);
+  s->pcap_dumped_pkts[s_port] += dump;
+  s->pcap_dropped_pkts[s_port] += nb - dump;
   return 0;
 }
 
@@ -2626,14 +2627,14 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   bool ctl_thread = pkt_ring ? false : true;
   int ret = 0;
 
-  if (s->pcap_required_pkts) {
-    if (s->pcap_dumped_pkts < s->pcap_required_pkts) {
-      rv_dump_pcap(s, mbuf, RTE_MIN(nb, s->pcap_required_pkts - s->pcap_dumped_pkts),
-                   s_port);
+  if (s->pcap_required_pkts[s_port]) {
+    if (s->pcap_dumped_pkts[s_port] < s->pcap_required_pkts[s_port]) {
+      rv_dump_pcap(
+          s, mbuf,
+          RTE_MIN(nb, s->pcap_required_pkts[s_port] - s->pcap_dumped_pkts[s_port]),
+          s_port);
     } else { /* got enough packets, stop dumping */
-      rv_stop_pcap(s);
-      info("%s(%d), dumped %u packets, dropped %u packets\n", __func__, s->idx,
-           s->pcap_dumped_pkts, s->pcap_dropped_pkts);
+      rv_stop_pcap(s, s_port);
     }
   }
 
@@ -4039,9 +4040,12 @@ int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool s
     return -EINVAL;
   }
 
-  ret = rv_start_pcap(s, max_dump_packets, sync, meta);
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    ret = rv_start_pcap(s, s_port, max_dump_packets, sync, meta);
+    if (ret < 0) return ret;
+  }
 
-  return ret;
+  return 0;
 }
 
 int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
@@ -4443,9 +4447,12 @@ int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool s
     return -EINVAL;
   }
 
-  ret = rv_start_pcap(s, max_dump_packets, sync, meta);
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    ret = rv_start_pcap(s, s_port, max_dump_packets, sync, meta);
+    if (ret < 0) return ret;
+  }
 
-  return ret;
+  return 0;
 }
 
 int st22_rx_free(st22_rx_handle handle) {

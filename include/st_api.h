@@ -173,9 +173,9 @@ struct st_rx_source_info {
  */
 struct st_pcap_dump_meta {
   /** file path for the pcap dump file */
-  char file_name[MTL_PCAP_FILE_MAX_LEN];
+  char file_name[MTL_SESSION_PORT_MAX][MTL_PCAP_FILE_MAX_LEN];
   /** number of packets dumped */
-  uint32_t dumped_packets;
+  uint32_t dumped_packets[MTL_SESSION_PORT_MAX];
 };
 
 /**
