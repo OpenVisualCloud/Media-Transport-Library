@@ -233,6 +233,19 @@ executable('RxSt22PipelineSample', pipeline_rx_st22_sample_sources,
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
 )
 
+executable('TxSt30PipelineSample', pipeline_tx_st30_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+executable('RxSt30PipelineSample', pipeline_rx_st30_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+
 # Video forward samples app
 executable('RxSt20pTxSt22pFwd', rx_st20p_tx_st22p_fwd_sources,
   c_args : app_c_args,

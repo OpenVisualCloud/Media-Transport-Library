@@ -192,8 +192,9 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
 
   s->st30_seq_id = 0;
 
-  info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
-       dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port]);
+  info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u payload_type %u\n", __func__, idx, s_port,
+       dip[0], dip[1], dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port],
+       rtp->payload_type);
   info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n", __func__, idx,
        d_addr->addr_bytes[0], d_addr->addr_bytes[1], d_addr->addr_bytes[2],
        d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5], ssrc);
@@ -2061,8 +2062,10 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   s->frames_per_sec = (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts;
   s->active = true;
 
-  info("%s(%d), pkt_len %u frame_size %u fps %f, pacing_way %s\n", __func__, idx,
-       s->pkt_len, s->st30_frame_size,
+  info("%s(%d), fmt %d channel %u sampling %d ptime %d\n", __func__, idx, ops->fmt,
+       ops->channel, ops->sampling, ops->ptime);
+  info("%s(%d), pkt_len %u frame_size %u frames %u fps %f, pacing_way %s\n", __func__,
+       idx, s->pkt_len, s->st30_frame_size, s->st30_frames_cnt,
        (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,
        audio_pacing_way_name(s->tx_pacing_way));
   return 0;
@@ -2441,6 +2444,10 @@ static int tx_audio_ops_check(struct st30_tx_ops* ops) {
     }
     if (!ops->get_next_frame) {
       err("%s, pls set get_next_frame\n", __func__);
+      return -EINVAL;
+    }
+    if (!ops->framebuff_size) {
+      err("%s, pls set framebuff_size\n", __func__);
       return -EINVAL;
     }
   } else if (ops->type == ST30_TYPE_RTP_LEVEL) {
