@@ -57,9 +57,14 @@ All USDT probes is defined in [mt_usdt_provider.d](../lib/src/mt_usdt_provider.d
 Available probes:
 ```bash
 provider sys {
+  /* attach to enable the usdt log msg at runtime */
   probe log_msg(int level, char* msg);
   /* attach to enable the tasklet_time_measure at runtime */
   probe tasklet_time_measure();
+  /* attach to enable the sessions_time_measure at runtime */
+  probe sessions_time_measure();
+  /* attach to enable the pcap dump for cni rx queue */
+  probe cni_pcap_dump(int port, char* dump_file, uint32_t pkts);
 }
 ```
 
@@ -190,6 +195,23 @@ usdt::sys:log_msg {
 ' -p $(pidof RxTxApp)
 ```
 
+#### 2.1.4 cni_pcap_dump USDT
+
+Usage: This utility is designed to capture and store cni packets received over the network to a standard pcap file for offline analyses. Please note the dump happens on the tasklet path which may affect the performance.
+
+```bash
+sudo bpftrace -e 'usdt::sys:cni_pcap_dump { printf("%s p%d: dumped pcap file %s pkts %u\n", strftime("%H:%M:%S", nsecs), arg0, str(arg1), arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+16:10:07 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 81
+16:10:07 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
+16:10:17 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 206
+16:10:17 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
+```
+
 ### 2.2 PTP tracing
 
 Available probes:
@@ -249,6 +271,8 @@ provider st20 {
   probe rx_no_framebuffer(int m_idx, int s_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
+  /* attach to enable the pcap dump at runtime */
+  probe rx_pcap_dump(int m_idx, int s_idx, int s_port, char* dump_file, uint32_t pkts);
 }
 ```
 
@@ -382,6 +406,20 @@ Example output like below:
 ```bash
 15:57:35 m1,s0: dump frame 0x320bb0e600 size 5184000 to imtl_usdt_st20rx_m1s0_1920_1080_MEFuOW.yuv
 15:57:40 m1,s0: dump frame 0x320bb0e600 size 5184000 to imtl_usdt_st20rx_m1s0_1920_1080_ehmjPp.yuv
+```
+
+#### 2.3.8 rx_pcap_dump USDT
+
+Usage: This utility is designed to capture and store st20 packets received over the network to a standard pcap file for offline analyses. Attaching to this hook initiates the process, which will dump the packets of 5 frames. Please note the dump happens on the tasklet path which may affect the performance.
+
+```bash
+sudo bpftrace -e 'usdt::st20:rx_pcap_dump { printf("%s m%d,s%dp%d: dumped pcap file %s pkts %u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, str(arg3), arg4); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+13:53:27 m1,s0p0: dumped pcap file st22rx_s0p0_20570_C9ErTF.pcapng pkts 20570
 ```
 
 ### 2.4 st30 tracing
@@ -547,6 +585,20 @@ Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as 
 
 ```bash
 ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm dump.wav
+```
+
+#### 2.4.8 rx_pcap_dump USDT
+
+Usage: This utility is designed to capture and store st30 packets received over the network to a standard pcap file for offline analyses. Attaching to this hook initiates the process, which will dump the packets of 5 seconds. Please note the dump happens on the tasklet path which may affect the performance.
+
+```bash
+sudo bpftrace -e 'usdt::st30:rx_pcap_dump { printf("%s m%d,s%dp%d: dumped pcap file %s pkts %u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, str(arg3), arg4); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+14:46:02 m0,s0p0: dumped pcap file st30rx_s0p0_5000_FxX2r5.pcapng pkts 5000
 ```
 
 ### 2.5 st40 tracing

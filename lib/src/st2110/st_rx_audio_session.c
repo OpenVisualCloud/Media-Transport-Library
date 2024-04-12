@@ -8,6 +8,7 @@
 
 #include "../datapath/mt_queue.h"
 #include "../mt_log.h"
+#include "../mt_pcap.h"
 #include "../mt_stat.h"
 #include "st_rx_timing_parser.h"
 
@@ -449,6 +450,74 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
+static int ra_stop_pcap(struct st_rx_audio_session_impl* s,
+                        enum mtl_session_port s_port) {
+  struct mt_rx_pcap* pcap = &s->pcap[s_port];
+
+  if (!pcap->pcap) return 0;
+
+  info("%s(%d,%d), dumped %u packets to %s, dropped %u packets\n", __func__, s->idx,
+       s_port, pcap->dumped_pkts, pcap->file_name, pcap->dropped_pkts);
+  MT_USDT_ST30_RX_PCAP_DUMP(s->mgr->idx, s->idx, s_port, pcap->file_name,
+                            pcap->dumped_pkts);
+  pcap->required_pkts = 0;
+  mt_pcap_close(pcap->pcap);
+  pcap->pcap = NULL;
+  return 0;
+}
+
+static int rv_stop_pcap_dump(struct st_rx_audio_session_impl* s) {
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    ra_stop_pcap(s, s_port);
+  }
+  return 0;
+}
+
+static int ra_start_pcap(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
+                         uint32_t max_dump_packets) {
+  int idx = s->idx;
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  struct mt_rx_pcap* pcap = &s->pcap[s_port];
+
+  if (pcap->pcap) {
+    err("%s(%d,%d), pcap dump already started\n", __func__, idx, s_port);
+    return -EIO;
+  }
+
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "st30rx_s%dp%d_%u_XXXXXX.pcapng",
+           idx, s_port, max_dump_packets);
+  int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
+  if (fd < 0) {
+    err("%s(%d,%d), failed to create pcap file %s\n", __func__, idx, s_port,
+        pcap->file_name);
+    return -EIO;
+  }
+  pcap->pcap = mt_pcap_open(s->mgr->parent, port, fd);
+  if (!pcap->pcap) {
+    err("%s(%d,%d), failed to open pcap file %s\n", __func__, idx, s_port,
+        pcap->file_name);
+    close(fd);
+    return -EIO;
+  }
+
+  pcap->dumped_pkts = 0;
+  pcap->dropped_pkts = 0;
+  pcap->required_pkts = max_dump_packets;
+  info("%s(%d,%d), pcap %s started, required dump pkts %u\n", __func__, idx, s_port,
+       pcap->file_name, max_dump_packets);
+  return 0;
+}
+
+static int ra_dump_pcap(struct st_rx_audio_session_impl* s, struct rte_mbuf** mbufs,
+                        uint16_t nb, enum mtl_session_port s_port) {
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+  struct mt_rx_pcap* pcap = &s->pcap[s_port];
+  uint16_t dump = mt_pcap_dump(s->mgr->parent, port, pcap->pcap, mbufs, nb);
+  pcap->dumped_pkts += dump;
+  pcap->dropped_pkts += nb - dump;
+  return 0;
+}
+
 static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_audio_session_impl* s = s_priv->session;
@@ -459,6 +528,15 @@ static int rx_audio_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint
   if (!s->attached) {
     dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
     return -EIO;
+  }
+
+  struct mt_rx_pcap* pcap = &s->pcap[s_port];
+  if (pcap->required_pkts) {
+    if (pcap->dumped_pkts < pcap->required_pkts) {
+      ra_dump_pcap(s, mbuf, RTE_MIN(nb, pcap->required_pkts - pcap->dumped_pkts), s_port);
+    } else { /* got enough packets, stop dumping */
+      ra_stop_pcap(s, s_port);
+    }
   }
 
   if (ST30_TYPE_FRAME_LEVEL == st30_type) {
@@ -483,16 +561,31 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
   for (int s_port = 0; s_port < num_port; s_port++) {
     if (!s->rxq[s_port]) continue;
 
-    rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
-    if (rv) {
-      rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
-      rte_pktmbuf_free_bulk(&mbuf[0], rv);
-      if (s->enable_timing_parser && s->tp) {
-        if (rv > 1) s->tp->stat_bursted_cnt[s_port]++;
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    /* if any pcap progress */
+    if (MT_USDT_ST30_RX_PCAP_DUMP_ENABLED()) {
+      if (!pcap->usdt_dump) {
+        /* dump 5 sec */
+        int required_pkts = s->st30_total_pkts * s->frames_per_sec * 5;
+        ra_start_pcap(s, s_port, required_pkts);
+        pcap->usdt_dump = true;
+      }
+    } else {
+      if (pcap->usdt_dump) {
+        ra_stop_pcap(s, s_port);
+        pcap->usdt_dump = false;
       }
     }
 
-    if (rv) done = false;
+    rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
+    if (!rv) continue;
+
+    rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+    rte_pktmbuf_free_bulk(&mbuf[0], rv);
+    if (s->enable_timing_parser && s->tp) {
+      if (rv > 1) s->tp->stat_bursted_cnt[s_port]++;
+    }
+    done = false;
   }
 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
@@ -648,6 +741,7 @@ static int rx_audio_session_init_sw(struct mtl_main_impl* impl,
 
 static int rx_audio_session_uinit(struct mtl_main_impl* impl,
                                   struct st_rx_audio_session_impl* s) {
+  rv_stop_pcap_dump(s);
   ra_tp_uinit(s);
   rx_audio_session_uinit_mcast(impl, s);
   rx_audio_session_uinit_sw(s);
@@ -821,6 +915,13 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
   s->stat_max_notify_frame_us = 0;
 
   if (s->enable_timing_parser_stat) ra_tp_stat(s);
+
+  for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
+    struct mt_rx_pcap* pcap = &s->pcap[s_port];
+    if (pcap->pcap) {
+      MT_USDT_ST30_RX_PCAP_DUMP(m_idx, idx, s_port, pcap->file_name, pcap->dumped_pkts);
+    }
+  }
 }
 
 static int rx_audio_session_detach(struct mtl_main_impl* impl,

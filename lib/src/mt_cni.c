@@ -11,6 +11,7 @@
 #include "mt_dhcp.h"
 #include "mt_log.h"
 #include "mt_mcast.h"
+#include "mt_pcap.h"
 #include "mt_ptp.h"
 #include "mt_sch.h"
 #include "mt_stat.h"
@@ -277,6 +278,61 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   return 0;
 }
 
+static int cni_stop_pcap(struct mt_cni_entry* cni) {
+  enum mtl_port port = cni->port;
+  struct mt_rx_pcap* pcap = &cni->pcap;
+
+  if (!pcap->pcap) return 0;
+
+  info("%s(%d), dumped %u packets to %s, dropped %u packets\n", __func__, port,
+       pcap->dumped_pkts, pcap->file_name, pcap->dropped_pkts);
+  MT_USDT_CNI_PCAP_DUMP(port, pcap->file_name, pcap->dumped_pkts);
+  pcap->required_pkts = 0;
+  mt_pcap_close(pcap->pcap);
+  pcap->pcap = NULL;
+  return 0;
+}
+
+static int cni_start_pcap(struct mt_cni_entry* cni, uint32_t max_dump_packets) {
+  enum mtl_port port = cni->port;
+  struct mt_rx_pcap* pcap = &cni->pcap;
+
+  if (pcap->pcap) {
+    err("%s(%d), pcap dump already started\n", __func__, port);
+    return -EIO;
+  }
+
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "cni_p%d_%u_XXXXXX.pcapng", port,
+           max_dump_packets);
+  int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
+  if (fd < 0) {
+    err("%s(%d), failed to create pcap file %s\n", __func__, port, pcap->file_name);
+    return -EIO;
+  }
+  pcap->pcap = mt_pcap_open(cni->impl, port, fd);
+  if (!pcap->pcap) {
+    err("%s(%d), failed to open pcap file %s\n", __func__, port, pcap->file_name);
+    close(fd);
+    return -EIO;
+  }
+
+  pcap->dumped_pkts = 0;
+  pcap->dropped_pkts = 0;
+  pcap->required_pkts = max_dump_packets;
+  info("%s(%d), pcap %s started, required dump pkts %u\n", __func__, port,
+       pcap->file_name, max_dump_packets);
+  return 0;
+}
+
+static int cni_dump_pcap(struct mt_cni_entry* cni, struct rte_mbuf** mbufs, uint16_t nb) {
+  enum mtl_port port = cni->port;
+  struct mt_rx_pcap* pcap = &cni->pcap;
+  uint16_t dump = mt_pcap_dump(cni->impl, port, pcap->pcap, mbufs, nb);
+  pcap->dumped_pkts += dump;
+  pcap->dropped_pkts += nb - dump;
+  return 0;
+}
+
 static int cni_traffic(struct mtl_main_impl* impl) {
   struct mt_cni_entry* cni;
   int num_ports = mt_num_ports(impl);
@@ -288,12 +344,37 @@ static int cni_traffic(struct mtl_main_impl* impl) {
     cni = cni_get_entry(impl, i);
     if (!cni->rxq) continue;
 
+    struct mt_rx_pcap* pcap = &cni->pcap;
+    /* if any pcap progress */
+    if (MT_USDT_CNI_PCAP_DUMP_ENABLED()) {
+      if (!pcap->usdt_dump) {
+        /* max 10000 pkts */
+        cni_start_pcap(cni, 10000);
+        pcap->usdt_dump = true;
+      }
+    } else {
+      if (pcap->usdt_dump) {
+        cni_stop_pcap(cni);
+        pcap->usdt_dump = false;
+      }
+    }
+
     mt_tap_handle(impl, i);
 
     /* rx from cni rx queue */
     rx = mt_rxq_burst(cni->rxq, pkts_rx, ST_CNI_RX_BURST_SIZE);
     if (rx > 0) {
       cni->eth_rx_cnt += rx;
+
+      if (pcap->required_pkts) {
+        if (pcap->dumped_pkts < pcap->required_pkts) {
+          cni_dump_pcap(cni, pkts_rx,
+                        RTE_MIN(rx, pcap->required_pkts - pcap->dumped_pkts));
+        } else { /* got enough packets, stop dumping */
+          cni_stop_pcap(cni);
+        }
+      }
+
       for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(cni, pkts_rx[ri]);
       mt_free_mbufs(&pkts_rx[0], rx);
       done = false;
@@ -462,6 +543,11 @@ static int cni_stat(void* priv) {
     }
 
     csq_stat(cni);
+
+    struct mt_rx_pcap* pcap = &cni->pcap;
+    if (pcap->pcap) {
+      MT_USDT_CNI_PCAP_DUMP(i, pcap->file_name, pcap->dumped_pkts);
+    }
   }
 
   return 0;
@@ -538,6 +624,8 @@ int mt_cni_uinit(struct mtl_main_impl* impl) {
 
   for (int i = 0; i < num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
+
+    cni_stop_pcap(cni);
 
     /* free all udp queue entry */
     while ((csq = MT_TAILQ_FIRST(&cni->csq_queues))) {

@@ -625,10 +625,7 @@ struct st_rx_video_session_impl {
   bool dma_copy;
 
   /* pcap dumper */
-  struct mt_pcap* pcap[MTL_SESSION_PORT_MAX];
-  uint32_t pcap_dumped_pkts[MTL_SESSION_PORT_MAX];
-  uint32_t pcap_dropped_pkts[MTL_SESSION_PORT_MAX];
-  uint32_t pcap_required_pkts[MTL_SESSION_PORT_MAX];
+  struct mt_rx_pcap pcap[MTL_SESSION_PORT_MAX];
 
   /* additional lcore for pkt handling */
   unsigned int pkt_lcore;
@@ -973,6 +970,9 @@ struct st_rx_audio_session_impl {
   size_t st30_frame_size;
   struct st_frame_trans* st30_cur_frame; /* pointer to current frame */
   int frames_per_sec;
+
+  /* pcap dumper */
+  struct mt_rx_pcap pcap[MTL_SESSION_PORT_MAX];
 
   /* usdt dump */
   int usdt_dump_fd;

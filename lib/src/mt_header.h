@@ -49,4 +49,13 @@ struct mt_stat_u64 {
   uint64_t sum;
 };
 
+struct mt_rx_pcap {
+  struct mt_pcap* pcap;
+  uint32_t dumped_pkts;
+  uint32_t dropped_pkts;
+  uint32_t required_pkts;
+  char file_name[MTL_PCAP_FILE_MAX_LEN];
+  bool usdt_dump;
+};
+
 #endif

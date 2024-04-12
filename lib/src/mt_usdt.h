@@ -49,15 +49,18 @@
 #define SYS_LOG_MSG_ENABLED() (0)
 #define SYS_TASKLET_TIME_MEASURE_ENABLED() (0)
 #define SYS_SESSIONS_TIME_MEASURE_ENABLED() (0)
+#define SYS_CNI_PCAP_DUMP_ENABLED() (0)
 
 #define ST20P_TX_FRAME_DUMP_ENABLED() (0)
 #define ST20P_RX_FRAME_DUMP_ENABLED() (0)
 
 #define ST20_TX_FRAME_DUMP_ENABLED() (0)
 #define ST20_RX_FRAME_DUMP_ENABLED() (0)
+#define ST20_RX_PCAP_DUMP_ENABLED() (0)
 
 #define ST30_TX_FRAME_DUMP_ENABLED() (0)
 #define ST30_RX_FRAME_DUMP_ENABLED() (0)
+#define ST30_RX_PCAP_DUMP_ENABLED() (0)
 
 #define ST22_TX_FRAME_DUMP_ENABLED() (0)
 #define ST22_RX_FRAME_DUMP_ENABLED() (0)
@@ -80,6 +83,10 @@
 
 #define MT_SYS_SESSIONS_TIME_MEASURE() MT_DTRACE_PROBE(sys, sessions_time_measure)
 #define MT_USDT_SESSIONS_TIME_MEASURE_ENABLED() SYS_SESSIONS_TIME_MEASURE_ENABLED()
+
+#define MT_USDT_CNI_PCAP_DUMP(port, file, pkts) \
+  MT_DTRACE_PROBE3(sys, cni_pcap_dump, port, file, pkts)
+#define MT_USDT_CNI_PCAP_DUMP_ENABLED() SYS_CNI_PCAP_DUMP_ENABLED()
 
 #define MT_USDT_ST20P_TX_FRAME_GET(idx, f_idx, va) \
   MT_DTRACE_PROBE3(st20p, tx_frame_get, idx, f_idx, va)
@@ -120,6 +127,9 @@
 #define MT_USDT_ST20_RX_FRAME_DUMP(m_idx, s_idx, file, va, sz) \
   MT_DTRACE_PROBE5(st20, rx_frame_dump, m_idx, s_idx, file, va, sz)
 #define MT_USDT_ST20_RX_FRAME_DUMP_ENABLED() ST20_RX_FRAME_DUMP_ENABLED()
+#define MT_USDT_ST20_RX_PCAP_DUMP(m_idx, s_idx, s_port, file, pkts) \
+  MT_DTRACE_PROBE5(st20, rx_pcap_dump, m_idx, s_idx, s_port, file, pkts)
+#define MT_USDT_ST20_RX_PCAP_DUMP_ENABLED() ST20_RX_PCAP_DUMP_ENABLED()
 
 #define MT_USDT_ST30_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va) \
   MT_DTRACE_PROBE4(st30, tx_frame_next, m_idx, s_idx, f_idx, va)
@@ -138,6 +148,9 @@
 #define MT_USDT_ST30_RX_FRAME_DUMP(m_idx, s_idx, file, frames) \
   MT_DTRACE_PROBE4(st30, rx_frame_dump, m_idx, s_idx, file, frames)
 #define MT_USDT_ST30_RX_FRAME_DUMP_ENABLED() ST30_RX_FRAME_DUMP_ENABLED()
+#define MT_USDT_ST30_RX_PCAP_DUMP(m_idx, s_idx, s_port, file, pkts) \
+  MT_DTRACE_PROBE5(st30, rx_pcap_dump, m_idx, s_idx, s_port, file, pkts)
+#define MT_USDT_ST30_RX_PCAP_DUMP_ENABLED() ST30_RX_PCAP_DUMP_ENABLED()
 
 #define MT_USDT_ST40_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, meta_num, total_udw) \
   MT_DTRACE_PROBE6(st40, tx_frame_next, m_idx, s_idx, f_idx, va, meta_num, total_udw)
