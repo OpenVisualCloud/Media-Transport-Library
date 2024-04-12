@@ -26,6 +26,18 @@ The dir include the simple sample code for how to develop application quickly ba
 
 [rx_st22_pipeline_sample.c](rx_st22_pipeline_sample.c): A rx compressed video(st2110-22) application based on pipeline interface, library will call the registered decoder plugins. Application only need focus on the frame buffer consumer.
 
+[tx_st30_pipeline_sample.c](tx_st30_pipeline_sample.c): A tx audio(st2110-30) application based on pipeline get/put interface.
+
+```bash
+./build/app/TxSt30PipelineSample --p_port 0000:af:01.0 --p_sip 192.168.75.11 --p_tx_ip 239.168.75.30
+```
+
+[rx_st30_pipeline_sample.c](rx_st30_pipeline_sample.c): A rx audio(st2110-30) application based on pipeline get/put interface.
+
+```bash
+./build/app/RxSt30PipelineSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.30
+```
+
 ```bash
 ./build/app/RxSt22PipelineSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.22
 ```

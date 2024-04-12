@@ -8,4 +8,5 @@ sources += files(
 	'st20_pipeline_tx.c',
 	'st20_pipeline_rx.c',
 	'st30_pipeline_tx.c',
+	'st30_pipeline_rx.c',
 )

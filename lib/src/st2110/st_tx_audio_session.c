@@ -2446,6 +2446,10 @@ static int tx_audio_ops_check(struct st30_tx_ops* ops) {
       err("%s, pls set get_next_frame\n", __func__);
       return -EINVAL;
     }
+    if (!ops->framebuff_size) {
+      err("%s, pls set framebuff_size\n", __func__);
+      return -EINVAL;
+    }
   } else if (ops->type == ST30_TYPE_RTP_LEVEL) {
     if (ops->rtp_ring_size <= 0) {
       err("%s, invalid rtp_ring_size %d\n", __func__, ops->rtp_ring_size);

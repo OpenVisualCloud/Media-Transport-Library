@@ -156,6 +156,72 @@ int st30p_tx_wake_block(st30p_tx_handle handle);
 /* get framebuff size */
 size_t st30p_tx_frame_size(st30p_tx_handle handle);
 
+/** Bit define for flags of struct st20p_rx_ops. */
+enum st30p_rx_flag {
+  /**
+   * Flag bit in flags of struct st30p_rx_ops, for non MTL_PMD_DPDK_USER.
+   * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
+   * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
+   */
+  ST30P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
+
+  /** Enable the st30p_rx_get_frame block behavior to wait until a frame becomes
+   available or timeout(1s) */
+  ST30P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+};
+
+/**
+ * The structure describing how to create a rx st2110-30(audio) pipeline session.
+ * Include the PCIE port and other required info
+ */
+struct st30p_rx_ops {
+  /** Mandatory. rx port info */
+  struct st_rx_port port;
+
+  /** Mandatory. Session payload format */
+  enum st30_fmt fmt;
+  /** Mandatory. Session channel number */
+  uint16_t channel;
+  /** Mandatory. Session sampling rate */
+  enum st30_sampling sampling;
+  /** Mandatory. Session packet time */
+  enum st30_ptime ptime;
+  /** Mandatory. the frame buffer count. */
+  uint16_t framebuff_cnt;
+  /** size for each frame buffer, must be multiple of packet size(st30_get_packet_size) */
+  uint32_t framebuff_size;
+
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. see ST30P_RX_FLAG_* for possible flags */
+  uint32_t flags;
+
+  /**
+   * Optional. Callback when frame available in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_available)(void* priv);
+};
+
+/**
+ * Get one rx frame from the rx st2110-30 pipeline session.
+ * Call st30p_rx_put_frame to return the frame to session.
+ */
+struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle);
+/** Put back the frame which get by st30p_rx_get_frame. */
+int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame);
+/** Free the rx st2110-30 pipeline session. */
+int st30p_rx_free(st30p_rx_handle handle);
+/** Create one rx st2110-30 pipeline session */
+st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops);
+/** Wake up the block wait on st30p_rx_get_frame if ST30P_TX_FLAG_BLOCK_GET is enabled.*/
+int st30p_rx_wake_block(st30p_rx_handle handle);
+/* get framebuff size */
+size_t st30p_rx_frame_size(st30p_rx_handle handle);
+
 #if defined(__cplusplus)
 }
 #endif

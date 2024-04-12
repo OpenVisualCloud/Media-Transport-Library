@@ -63,7 +63,6 @@ static inline void rx_audio_session_put(struct st_rx_audio_sessions_mgr* mgr, in
 
 static struct st_frame_trans* rx_audio_session_get_frame(
     struct st_rx_audio_session_impl* s) {
-  int idx = s->idx;
   struct st_frame_trans* frame_info;
 
   for (int i = 0; i < s->st30_frames_cnt; i++) {
@@ -76,7 +75,7 @@ static struct st_frame_trans* rx_audio_session_get_frame(
     }
   }
 
-  err("%s(%d), no free frame\n", __func__, idx);
+  dbg("%s(%d), no free frame\n", __func__, s->idx);
   return NULL;
 }
 
@@ -1172,6 +1171,10 @@ static int rx_audio_ops_check(struct st30_rx_ops* ops) {
     }
     if (!ops->notify_frame_ready) {
       err("%s, pls set notify_frame_ready\n", __func__);
+      return -EINVAL;
+    }
+    if (!ops->framebuff_size) {
+      err("%s, pls set framebuff_size\n", __func__);
       return -EINVAL;
     }
   } else if (ops->type == ST30_TYPE_RTP_LEVEL) {
