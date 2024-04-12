@@ -48,8 +48,8 @@ enum sample_args_cmd {
   SAMPLE_ARG_RX_BURST_SZ,
   SAMPLE_ARG_DHCP,
 
-  SAMPLE_ARG_TX_VIDEO_URL = 0x200,
-  SAMPLE_ARG_RX_VIDEO_URL,
+  SAMPLE_ARG_TX_URL = 0x200,
+  SAMPLE_ARG_RX_URL,
   SAMPLE_ARG_LOGO_URL,
   SAMPLE_ARG_WIDTH,
   SAMPLE_ARG_HEIGHT,
@@ -67,6 +67,11 @@ enum sample_args_cmd {
   SAMPLE_ARG_PACING_WAY,
   SAMPLE_ARG_PERF_FRAMES,
   SAMPLE_ARG_PERF_FB_CNT,
+  /* audio */
+  SAMPLE_ARG_AUDIO_FMT,
+  SAMPLE_ARG_AUDIO_CHANNEL,
+  SAMPLE_ARG_AUDIO_SAMPLING,
+  SAMPLE_ARG_AUDIO_PTIME,
 
   SAMPLE_ARG_UDP_MODE = 0x300,
   SAMPLE_ARG_UDP_LEN,
@@ -110,8 +115,8 @@ static struct option sample_args_options[] = {
     {"dhcp", no_argument, 0, SAMPLE_ARG_DHCP},
     {"rx_burst_size", required_argument, 0, SAMPLE_ARG_RX_BURST_SZ},
 
-    {"tx_url", required_argument, 0, SAMPLE_ARG_TX_VIDEO_URL},
-    {"rx_url", required_argument, 0, SAMPLE_ARG_RX_VIDEO_URL},
+    {"tx_url", required_argument, 0, SAMPLE_ARG_TX_URL},
+    {"rx_url", required_argument, 0, SAMPLE_ARG_RX_URL},
     {"logo_url", required_argument, 0, SAMPLE_ARG_LOGO_URL},
     {"width", required_argument, 0, SAMPLE_ARG_WIDTH},
     {"height", required_argument, 0, SAMPLE_ARG_HEIGHT},
@@ -122,6 +127,11 @@ static struct option sample_args_options[] = {
     {"packing", required_argument, 0, SAMPLE_ARG_PACKING},
     {"ptp", no_argument, 0, SAMPLE_ARG_LIB_PTP},
     {"pacing_way", required_argument, 0, SAMPLE_ARG_PACING_WAY},
+    /* audio */
+    {"audio_fmt", required_argument, 0, SAMPLE_ARG_AUDIO_FMT},
+    {"channel", required_argument, 0, SAMPLE_ARG_AUDIO_CHANNEL},
+    {"sampling", required_argument, 0, SAMPLE_ARG_AUDIO_SAMPLING},
+    {"ptime", required_argument, 0, SAMPLE_ARG_AUDIO_PTIME},
 
     {"udp_mode", required_argument, 0, SAMPLE_ARG_UDP_MODE},
     {"udp_len", required_argument, 0, SAMPLE_ARG_UDP_LEN},
@@ -182,9 +192,11 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_UDP_PORT:
         ctx->udp_port = atoi(optarg);
+        ctx->audio_udp_port = atoi(optarg);
         break;
       case SAMPLE_ARG_PAYLOAD_TYPE:
         ctx->payload_type = atoi(optarg);
+        ctx->audio_payload_type = atoi(optarg);
         break;
       case SAMPLE_ARG_FPS: {
         enum st_fps fps = st_name_to_fps(optarg);
@@ -310,11 +322,50 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       case SAMPLE_ARG_R_TX_DST_MAC:
         sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_R);
         break;
-      case SAMPLE_ARG_TX_VIDEO_URL:
+      case SAMPLE_ARG_TX_URL:
         snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", optarg);
+        snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", optarg);
         break;
-      case SAMPLE_ARG_RX_VIDEO_URL:
+      case SAMPLE_ARG_RX_URL:
         snprintf(ctx->rx_url, sizeof(ctx->rx_url), "%s", optarg);
+        snprintf(ctx->rx_audio_url, sizeof(ctx->rx_audio_url), "%s", optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_FMT:
+        if (!strcmp(optarg, "pcm8"))
+          ctx->audio_fmt = ST30_FMT_PCM8;
+        else if (!strcmp(optarg, "pcm16"))
+          ctx->audio_fmt = ST30_FMT_PCM16;
+        else if (!strcmp(optarg, "pcm24"))
+          ctx->audio_fmt = ST30_FMT_PCM24;
+        else if (!strcmp(optarg, "am824"))
+          ctx->audio_fmt = ST31_FMT_AM824;
+        else
+          err("%s, unknow audio_fmt %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_CHANNEL:
+        ctx->audio_channel = atoi(optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_SAMPLING:
+        if (!strcmp(optarg, "48k"))
+          ctx->audio_sampling = ST30_SAMPLING_48K;
+        else if (!strcmp(optarg, "96k"))
+          ctx->audio_sampling = ST30_SAMPLING_96K;
+        else if (!strcmp(optarg, "44k"))
+          ctx->audio_sampling = ST31_SAMPLING_44K;
+        else
+          err("%s, unknow audio_sampling %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_PTIME:
+        if (!strcmp(optarg, "1ms")) {
+          ctx->audio_ptime = ST30_PTIME_1MS;
+        } else if (!strcmp(optarg, "125us")) {
+          ctx->audio_ptime = ST30_PTIME_125US;
+          for (int i = 0; i < MTL_PORT_MAX; i++) {
+            p->tx_queues_cnt[i] += 2;
+          }
+        } else {
+          err("%s, unknow audio_ptime %s\n", __func__, optarg);
+        }
         break;
       case SAMPLE_ARG_LOGO_URL:
         snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", optarg);
@@ -492,6 +543,15 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", "test.yuv");
   snprintf(ctx->rx_url, sizeof(ctx->rx_url), "%s", "rx.yuv");
 
+  ctx->audio_fmt = ST30_FMT_PCM24;
+  ctx->audio_channel = 2;
+  ctx->audio_sampling = ST30_SAMPLING_48K;
+  ctx->audio_ptime = ST30_PTIME_1MS;
+  snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", "test.pcm");
+  snprintf(ctx->rx_audio_url, sizeof(ctx->rx_audio_url), "%s", "rx.pcm");
+  ctx->audio_udp_port = 30000;
+  ctx->audio_payload_type = 113;
+
   snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", "logo.yuv");
   ctx->logo_width = 200;
   ctx->logo_height = 200;
@@ -507,8 +567,8 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   /* always enable 1 port */
   if (!p->num_ports) p->num_ports = 1;
 
-  if (tx) sample_tx_queue_cnt_set(ctx, ctx->sessions);
-  if (rx) sample_rx_queue_cnt_set(ctx, ctx->sessions);
+  if (tx && !p->tx_queues_cnt[0]) sample_tx_queue_cnt_set(ctx, ctx->sessions);
+  if (rx && !p->rx_queues_cnt[0]) sample_rx_queue_cnt_set(ctx, ctx->sessions);
   sample_set_afxdp(ctx);
 
   return 0;

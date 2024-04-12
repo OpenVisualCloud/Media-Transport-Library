@@ -851,6 +851,8 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->frames_per_sec =
       (double)NS_PER_S / st30_get_packet_time(ops->ptime) / s->st30_total_pkts;
   s->attached = true;
+  info("%s(%d), fmt %d channel %u sampling %d ptime %d payload_type %u\n", __func__, idx,
+       ops->fmt, ops->channel, ops->sampling, ops->ptime, ops->payload_type);
   info("%s(%d), pkt_len %u frame_size %" PRId64 ", expect fps %d\n", __func__, idx,
        s->pkt_len, s->st30_frame_size, s->frames_per_sec);
   return 0;

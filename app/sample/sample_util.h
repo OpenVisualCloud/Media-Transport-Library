@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <mtl/experimental/st20_combined_api.h>
+#include <mtl/st30_pipeline_api.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <pthread.h>
@@ -54,6 +55,10 @@
 #define NS_PER_S (1000000000)
 #endif
 
+#ifndef NS_PER_MS
+#define NS_PER_MS (1000 * 1000)
+#endif
+
 #define ST_MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ST_MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -96,6 +101,15 @@ struct st_sample_context {
   bool hdr_split;
   bool rx_dump;
   uint16_t rx_burst_size;
+
+  char tx_audio_url[ST_SAMPLE_URL_MAX_LEN];
+  char rx_audio_url[ST_SAMPLE_URL_MAX_LEN];
+  uint16_t audio_udp_port;
+  uint8_t audio_payload_type;
+  enum st30_fmt audio_fmt;
+  uint16_t audio_channel;
+  enum st30_sampling audio_sampling;
+  enum st30_ptime audio_ptime;
 
   char logo_url[ST_SAMPLE_URL_MAX_LEN];
   uint32_t logo_width;
