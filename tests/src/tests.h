@@ -8,6 +8,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <mtl/st30_api.h>
+#include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
 #include <mtl/st_convert_api.h>
 #include <mtl/st_pipeline_api.h>
@@ -200,6 +201,12 @@ class tests_context {
   std::queue<void*> buf_q = {};
   std::queue<bool> second_field_q = {};
   int lines_per_slice = 0;
+
+  /* audio */
+  enum st30_fmt audio_fmt = ST30_FMT_MAX;
+  uint16_t audio_channel = 0;
+  enum st30_sampling audio_sampling = ST30_SAMPLING_MAX;
+  enum st30_ptime audio_ptime = ST30_PTIME_MAX;
 
   size_t frame_size = 0;
   size_t fb_size;

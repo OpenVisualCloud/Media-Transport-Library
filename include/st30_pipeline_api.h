@@ -155,6 +155,8 @@ int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info* 
 int st30p_tx_wake_block(st30p_tx_handle handle);
 /* get framebuff size */
 size_t st30p_tx_frame_size(st30p_tx_handle handle);
+/* get framebuff pointer */
+void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx);
 
 /** Bit define for flags of struct st20p_rx_ops. */
 enum st30p_rx_flag {

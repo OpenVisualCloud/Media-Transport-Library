@@ -467,3 +467,21 @@ size_t st30p_tx_frame_size(st30p_tx_handle handle) {
 
   return ctx->ops.framebuff_size;
 }
+
+void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
+  struct st30p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return NULL;
+  }
+
+  if (idx >= ctx->framebuff_cnt) {
+    err("%s, invalid idx %d, should be in range [0, %u]\n", __func__, cidx,
+        ctx->framebuff_cnt);
+    return NULL;
+  }
+
+  return ctx->framebuffs[idx].frame.addr;
+}
