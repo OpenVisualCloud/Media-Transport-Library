@@ -568,6 +568,9 @@ struct st_app_context {
   struct st_app_tx_st20p_session* tx_st20p_sessions;
   int tx_st20p_session_cnt;
 
+  struct st_app_tx_st30p_session* tx_st30p_sessions;
+  int tx_st30p_session_cnt;
+
   uint8_t rx_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];        /* rx IP */
   uint8_t rx_mcast_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* rx multicast source IP */
 
@@ -591,6 +594,9 @@ struct st_app_context {
 
   struct st_app_rx_st20p_session* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+
+  struct st_app_rx_st20p_session* rx_st30p_sessions;
+  int rx_st30p_session_cnt;
 
   struct st_app_rx_video_session* rx_st20r_sessions;
   int rx_st20r_session_cnt;
