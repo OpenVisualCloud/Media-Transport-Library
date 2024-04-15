@@ -225,6 +225,12 @@ typedef struct st_json_audio_session {
   bool enable_rtcp;
 } st_json_audio_session_t;
 
+typedef struct st_json_st30p_session {
+  st_json_session_base_t base;
+  st_json_audio_info_t info;
+  bool enable_rtcp;
+} st_json_st30p_session_t;
+
 typedef struct st_json_ancillary_session {
   st_json_session_base_t base;
   st_json_ancillary_info_t info;
@@ -273,6 +279,8 @@ typedef struct st_json_context {
   int tx_st22p_session_cnt;
   st_json_st20p_session_t* tx_st20p_sessions;
   int tx_st20p_session_cnt;
+  st_json_st30p_session_t* tx_st30p_sessions;
+  int tx_st30p_session_cnt;
 
   st_json_video_session_t* rx_video_sessions;
   int rx_video_session_cnt;
@@ -286,6 +294,8 @@ typedef struct st_json_context {
   int rx_st20p_session_cnt;
   st_json_video_session_t* rx_st20r_sessions;
   int rx_st20r_session_cnt;
+  st_json_st30p_session_t* rx_st30p_sessions;
+  int rx_st30p_session_cnt;
 } st_json_context_t;
 
 int st_app_parse_json(st_json_context_t* ctx, const char* filename);
