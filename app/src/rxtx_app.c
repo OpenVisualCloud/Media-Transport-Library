@@ -9,21 +9,21 @@
 
 #include "app_base.h"
 #include "args.h"
+#include "experimental/rx_st20r_app.h"
+#include "legacy/rx_audio_app.h"
+#include "legacy/rx_st22_app.h"
+#include "legacy/rx_video_app.h"
+#include "legacy/tx_audio_app.h"
+#include "legacy/tx_st22_app.h"
+#include "legacy/tx_video_app.h"
 #include "log.h"
 #include "player.h"
 #include "rx_ancillary_app.h"
-#include "rx_audio_app.h"
 #include "rx_st20p_app.h"
-#include "rx_st20r_app.h"
-#include "rx_st22_app.h"
 #include "rx_st22p_app.h"
-#include "rx_video_app.h"
 #include "tx_ancillary_app.h"
-#include "tx_audio_app.h"
 #include "tx_st20p_app.h"
-#include "tx_st22_app.h"
 #include "tx_st22p_app.h"
-#include "tx_video_app.h"
 
 static struct st_app_context* g_app_ctx; /* only for st_app_sig_handler */
 static enum mtl_log_level app_log_level;
