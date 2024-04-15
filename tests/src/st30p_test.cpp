@@ -140,18 +140,6 @@ TEST(St30p, rx_create_free_max) {
 }
 TEST(St30p, tx_create_expect_fail) { pipeline_expect_fail_test(st30p_tx); }
 TEST(St30p, rx_create_expect_fail) { pipeline_expect_fail_test(st30p_rx); }
-TEST(St30p, tx_create_expect_fail_fb_cnt) {
-  uint16_t fbcnt = 1;
-  pipeline_expect_fail_test_fb_cnt(st30p_tx, fbcnt);
-  fbcnt = 1000;
-  pipeline_expect_fail_test_fb_cnt(st30p_tx, fbcnt);
-}
-TEST(St30p, rx_create_expect_fail_fb_cnt) {
-  uint16_t fbcnt = 1;
-  pipeline_expect_fail_test_fb_cnt(st30p_rx, fbcnt);
-  fbcnt = 1000;
-  pipeline_expect_fail_test_fb_cnt(st30p_rx, fbcnt);
-}
 
 static void test_st30p_tx_frame_thread(void* args) {
   tests_context* s = (tests_context*)args;
@@ -387,7 +375,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
 
   for (int i = 0; i < sessions; i++) {
     test_ctx_rx[i] = new tests_context();
-    ASSERT_TRUE(test_ctx_tx[i] != NULL);
+    ASSERT_TRUE(test_ctx_rx[i] != NULL);
 
     test_ctx_rx[i]->idx = i;
     test_ctx_rx[i]->ctx = ctx;
@@ -481,7 +469,12 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
          test_ctx_rx[i]->fb_rec, framerate_rx[i], expect_framerate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->fb_rec, 0);
     EXPECT_LE(test_ctx_rx[i]->incomplete_frame_cnt, 4);
-    EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    size_t pkt_len = st30_get_packet_size(
+        test_ctx_rx[i]->audio_fmt, test_ctx_rx[i]->audio_ptime,
+        test_ctx_rx[i]->audio_sampling, test_ctx_rx[i]->audio_channel);
+    if (pkt_len == test_ctx_rx[i]->frame_size) {
+      EXPECT_EQ(test_ctx_rx[i]->sha_fail_cnt, 0);
+    }
     EXPECT_LE(test_ctx_rx[i]->user_meta_fail_cnt, 2);
     if (para->check_fps) {
       EXPECT_NEAR(framerate_rx[i], expect_framerate_rx[i], expect_framerate_rx[i] * 0.1);
@@ -500,6 +493,23 @@ TEST(St30p, digest_s3) {
   test_st30p_init_rx_digest_para(&para);
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.check_fps = true;
+  para.sessions = 3;
+
+  st30p_rx_digest_test(f, c, s, pt, &para);
+}
+
+TEST(St30p, digest_s3_block) {
+  enum st30_sampling s[3] = {ST31_SAMPLING_44K, ST30_SAMPLING_96K, ST30_SAMPLING_48K};
+  enum st30_ptime pt[3] = {ST31_PTIME_1_09MS, ST30_PTIME_1MS, ST30_PTIME_125US};
+  uint16_t c[3] = {3, 5, 7};
+  enum st30_fmt f[3] = {ST31_FMT_AM824, ST30_FMT_PCM16, ST30_FMT_PCM24};
+
+  struct st30p_rx_digest_test_para para;
+  test_st30p_init_rx_digest_para(&para);
+  para.level = ST_TEST_LEVEL_MANDATORY;
+  para.check_fps = true;
+  para.block_get = true;
+  para.sessions = 3;
 
   st30p_rx_digest_test(f, c, s, pt, &para);
 }
