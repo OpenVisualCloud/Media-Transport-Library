@@ -9,6 +9,9 @@ src: &src
   - tests/meson.build
   - tests/meson_options.txt
 
+app_src: &src
+  - 'app/**'
+
 build: &build
   - build.sh
   - kahawai.json
@@ -50,16 +53,19 @@ centos_build: &centos_build
   - .github/workflows/centos_build.yml
   - *src
   - *build
+  - *app_src
 
 ubuntu_build: &ubuntu_build
   - .github/workflows/ubuntu_build.yml
   - *src
   - *build
+  - *app_src
 
 clang_build: &clang_build
   - .github/workflows/clang_build.yml
   - *src
   - *build
+  - *app_src
 
 msys2_build: &msys2_build
   - .github/workflows/msys2_build.yml
