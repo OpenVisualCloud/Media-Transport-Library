@@ -2491,6 +2491,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       ret = -ST_JSON_NULL;
       goto error;
     }
+    ctx->rx_st30p_sessions = (st_json_st30p_session_t*)st_app_zmalloc(
+        ctx->rx_st30p_session_cnt * sizeof(st_json_st30p_session_t));
+    if (!ctx->rx_st30p_sessions) {
+      err("%s, failed to allocate rx_st30p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->rx_st20r_sessions = (st_json_video_session_t*)st_app_zmalloc(
         ctx->rx_st20r_session_cnt * sizeof(*ctx->rx_st20r_sessions));
     if (!ctx->rx_st20r_sessions) {

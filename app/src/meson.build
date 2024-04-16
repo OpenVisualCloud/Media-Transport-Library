@@ -5,6 +5,7 @@ sources = files('rxtx_app.c', 'args.c', 'parse_json.c', 'fmt.c',
 				'tx_st20p_app.c', 'rx_st20p_app.c',
 				'tx_st22p_app.c', 'rx_st22p_app.c',
 				'tx_ancillary_app.c', 'rx_ancillary_app.c',
+				'tx_st30p_app.c', 'rx_st30p_app.c',
 				)
 
 if app_has_sdl2

@@ -327,11 +327,13 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;
   ctx->tx_st22p_session_cnt = ctx->json_ctx->tx_st22p_session_cnt;
   ctx->tx_st20p_session_cnt = ctx->json_ctx->tx_st20p_session_cnt;
+  ctx->tx_st30p_session_cnt = ctx->json_ctx->tx_st30p_session_cnt;
   ctx->rx_video_session_cnt = ctx->json_ctx->rx_video_session_cnt;
   ctx->rx_audio_session_cnt = ctx->json_ctx->rx_audio_session_cnt;
   ctx->rx_anc_session_cnt = ctx->json_ctx->rx_anc_session_cnt;
   ctx->rx_st22p_session_cnt = ctx->json_ctx->rx_st22p_session_cnt;
   ctx->rx_st20p_session_cnt = ctx->json_ctx->rx_st20p_session_cnt;
+  ctx->rx_st30p_session_cnt = ctx->json_ctx->rx_st30p_session_cnt;
   ctx->rx_st20r_session_cnt = ctx->json_ctx->rx_st20r_session_cnt;
   for (int i = 0; i < ctx->json_ctx->num_interfaces; ++i) {
     snprintf(p->port[i], sizeof(p->port[i]), "%s", ctx->json_ctx->interfaces[i].name);
