@@ -68,6 +68,9 @@
 #define ST22P_TX_FRAME_DUMP_ENABLED() (0)
 #define ST22P_RX_FRAME_DUMP_ENABLED() (0)
 
+#define ST30P_TX_FRAME_DUMP_ENABLED() (0)
+#define ST30P_RX_FRAME_DUMP_ENABLED() (0)
+
 #endif
 
 #define MT_USDT_PTP_MSG(port, stage, value) \
@@ -109,6 +112,28 @@
 #define MT_USDT_ST20P_RX_FRAME_DUMP(idx, file, va, sz) \
   MT_DTRACE_PROBE4(st20p, rx_frame_dump, idx, file, va, sz)
 #define MT_USDT_ST20P_RX_FRAME_DUMP_ENABLED() ST20P_RX_FRAME_DUMP_ENABLED()
+
+#define MT_USDT_ST30P_TX_FRAME_GET(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st30p, tx_frame_get, idx, f_idx, va)
+#define MT_USDT_ST30P_TX_FRAME_PUT(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st30p, tx_frame_put, idx, f_idx, va)
+#define MT_USDT_ST30P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
+  MT_DTRACE_PROBE3(st30p, tx_frame_done, idx, f_idx, tmstamp)
+#define MT_USDT_ST30P_TX_FRAME_NEXT(idx, f_idx) \
+  MT_DTRACE_PROBE2(st30p, tx_frame_next, idx, f_idx)
+#define MT_USDT_ST30P_TX_FRAME_DUMP(idx, file, frames) \
+  MT_DTRACE_PROBE3(st30p, tx_frame_dump, idx, file, frames)
+#define MT_USDT_ST30P_TX_FRAME_DUMP_ENABLED() ST30P_TX_FRAME_DUMP_ENABLED()
+
+#define MT_USDT_ST30P_RX_FRAME_GET(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st30p, rx_frame_get, idx, f_idx, va)
+#define MT_USDT_ST30P_RX_FRAME_PUT(idx, f_idx, va) \
+  MT_DTRACE_PROBE3(st30p, rx_frame_put, idx, f_idx, va)
+#define MT_USDT_ST30P_RX_FRAME_AVAILABLE(idx, f_idx, va, tmstamp, data_size) \
+  MT_DTRACE_PROBE5(st30p, rx_frame_available, idx, f_idx, va, tmstamp, data_size)
+#define MT_USDT_ST30P_RX_FRAME_DUMP(idx, file, frames) \
+  MT_DTRACE_PROBE3(st30p, rx_frame_dump, idx, file, frames)
+#define MT_USDT_ST30P_RX_FRAME_DUMP_ENABLED() ST30P_RX_FRAME_DUMP_ENABLED()
 
 #define MT_USDT_ST20_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, tmstamp) \
   MT_DTRACE_PROBE5(st20, tx_frame_next, m_idx, s_idx, f_idx, va, tmstamp)

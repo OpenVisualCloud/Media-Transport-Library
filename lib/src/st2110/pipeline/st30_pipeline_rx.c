@@ -97,6 +97,9 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   dbg("%s(%d), frame %u(%p) succ\n", __func__, ctx->idx, framebuff->idx, frame->addr);
   /* notify app to a ready frame */
   rx_st30p_notify_frame_available(ctx);
+
+  MT_USDT_ST30P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame->addr,
+                                   meta->rtp_timestamp, meta->frame_recv_size);
   return 0;
 }
 
@@ -257,7 +260,7 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
 
   frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
-  // MT_USDT_ST30P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
+  MT_USDT_ST30P_RX_FRAME_GET(idx, framebuff->idx, frame->addr);
   /* check if dump USDT enabled */
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
   return frame;
@@ -285,7 +288,7 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
   framebuff->stat = ST30P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
 
-  // MT_USDT_ST30P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr);
+  MT_USDT_ST30P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, consumer_idx, frame->addr);
   return 0;
 }

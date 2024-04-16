@@ -1322,3 +1322,206 @@ usdt::st22p:rx_decode_get { printf("%s s%d: get decode %d(src:%p,dst:%p), codest
 usdt::st22p:rx_decode_put { printf("%s s%d: put decode %d(src:%p,dst:%p), result: %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }
 ' -p $(pidof RxTxApp)
 ```
+
+### 2.9 st30p tracing
+
+Available probes:
+```bash
+provider st30p {
+  /* tx */
+  probe tx_frame_get(int idx, int f_idx, void* va);
+  probe tx_frame_put(int idx, int f_idx, void* va);
+  probe tx_frame_next(int idx, int f_idx);
+  probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  /* attach to enable the frame dump at runtime */
+  probe tx_frame_dump(int idx, char* dump_file, void* va, uint32_t data_size);
+  /* rx */
+  probe rx_frame_get(int idx, int f_idx, void* va);
+  probe rx_frame_put(int idx, int f_idx, void* va);
+  probe rx_frame_available(int idx, int f_idx, uint32_t tmstamp);
+  probe rx_frame_dump(int idx, char* dump_file, uint32_t data_size);
+}
+```
+
+#### 2.9.1 tx_frame_get USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:50:45 s0: get frame 0(addr:0x3203405500)
+15:50:45 s0: get frame 1(addr:0x3203404940)
+15:50:45 s0: get frame 2(addr:0x3203403d80)
+```
+
+#### 2.9.2 tx_frame_put USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:51:27 s0: put frame 0(addr:0x3203405500)
+15:51:27 s0: put frame 1(addr:0x3203404940)
+15:51:27 s0: put frame 2(addr:0x3203403d80)
+```
+
+#### 2.9.3 tx_frame_next USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:51:45 s0: next frame 0
+15:51:45 s0: next frame 1
+15:51:45 s0: next frame 2
+```
+
+#### 2.9.4 tx_frame_done USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:51:58 s0: done frame 0(timestamp:447475136)
+15:51:58 s0: done frame 1(timestamp:447475616)
+15:51:58 s0: done frame 2(timestamp:447476096)
+```
+
+And if you want to trace all st30p tx events, use below bpftrace script.
+
+```bash
+sudo bpftrace -e '
+usdt::st30p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st30p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st30p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st30p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }
+' -p $(pidof RxTxApp)
+```
+
+#### 2.9.5 rx_frame_get USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:rx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:57:50 s0: get frame 0(addr:0x3203402140)
+15:57:50 s0: get frame 1(addr:0x3203401580)
+15:57:50 s0: get frame 2(addr:0x32034009c0)
+```
+
+#### 2.9.6 rx_frame_put USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:rx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:58:14 s0: put frame 0(addr:0x3203402140)
+15:58:14 s0: put frame 1(addr:0x3203401580)
+15:58:14 s0: put frame 2(addr:0x32034009c0)
+```
+
+#### 2.9.7 rx_frame_available USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tmstamp:%u, data size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+15:59:45 s0: available frame 0(addr:0x32034009c0, tmstamp:469935200, data size:2880)
+15:59:46 s0: available frame 1(addr:0x3203401580, tmstamp:469935728, data size:2880)
+15:59:46 s0: available frame 2(addr:0x3203402140, tmstamp:469936208, data size:2880)
+```
+
+And if you want to trace all st30p rx events, use below bpftrace script.
+
+```bash
+sudo bpftrace -e '
+usdt::st30p:rx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st30p:rx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st30p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tmstamp:%u, data size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }
+' -p $(pidof RxTxApp)
+```
+
+#### 2.9.8 tx_frame_dump USDT
+
+Usage: This utility is designed to capture and store audio frames transmitted over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file until detachment occurs.
+
+```bash
+sudo bpftrace -e 'usdt::st30p:tx_frame_dump { printf("%s s%d: dump %d frames to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg2, str(arg1)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+16:22:22 s0: dump 100 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:23 s0: dump 200 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:24 s0: dump 300 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:25 s0: dump 400 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:26 s0: dump 500 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:27 s0: dump 600 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:28 s0: dump 700 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:29 s0: dump 800 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+16:22:30 s0: dump 900 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
+```
+
+Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as your setup.
+
+```bash
+ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm dump.wav
+```
+
+#### 2.9.9 rx_frame_dump USDT
+
+Usage: Similar to tx_frame_dump hook, this utility is designed to capture and store audio frames received over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file until detachment occurs.
+
+```bash
+sudo bpftrace -e 'usdt::st30p:rx_frame_dump { printf("%s s%d: dump %d frames to %s\n", strftime("%H:%M:%S", nsecs), arg0, arg2, str(arg1)); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```bash
+10:26:07 m0,s0: dump 1000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+10:26:08 m0,s0: dump 2000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+10:26:09 m0,s0: dump 3000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+```
+
+Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as your setup.
+
+```bash
+ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm dump.wav
+```

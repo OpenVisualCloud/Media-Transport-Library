@@ -90,7 +90,7 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   ctx->framebuff_consumer_idx = tx_st30p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
-  // MT_USDT_ST30P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
+  MT_USDT_ST30P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
   return 0;
 }
 
@@ -125,7 +125,7 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   /* notify app can get frame */
   tx_st30p_notify_frame_available(ctx);
 
-  // MT_USDT_ST30P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
+  MT_USDT_ST30P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
   return ret;
 }
 
@@ -177,6 +177,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     return -EIO;
   }
   ctx->transport = transport;
+  ctx->frames_per_sec = transport->impl->frames_per_sec;
 
   struct st30p_tx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
@@ -263,6 +264,53 @@ static int tx_st30p_get_block_wait(struct st30p_tx_ctx* ctx) {
   return 0;
 }
 
+static int tx_st30p_usdt_dump_close(struct st30p_tx_ctx* ctx) {
+  int idx = ctx->idx;
+
+  if (ctx->usdt_dump_fd >= 0) {
+    info("%s(%d), close fd %d, dumped frames %d\n", __func__, idx, ctx->usdt_dump_fd,
+         ctx->usdt_dumped_frames);
+    close(ctx->usdt_dump_fd);
+    ctx->usdt_dump_fd = -1;
+  }
+  return 0;
+}
+
+static int tx_st30p_usdt_dump_frame(struct st30p_tx_ctx* ctx, struct st30_frame* frame) {
+  int idx = ctx->idx;
+  int ret;
+
+  if (ctx->usdt_dump_fd < 0) {
+    struct st30p_tx_ops* ops = &ctx->ops;
+    snprintf(ctx->usdt_dump_path, sizeof(ctx->usdt_dump_path),
+             "imtl_usdt_st30ptx_s%d_%d_%d_c%u_XXXXXX.pcm", idx,
+             st30_get_sample_rate(ops->sampling), st30_get_sample_size(ops->fmt) * 8,
+             ops->channel);
+    ret = mt_mkstemps(ctx->usdt_dump_path, strlen(".pcm"));
+    if (ret < 0) {
+      err("%s(%d), mkstemps %s fail %d\n", __func__, idx, ctx->usdt_dump_path, ret);
+      return ret;
+    }
+    ctx->usdt_dump_fd = ret;
+    info("%s(%d), mkstemps succ on %s fd %d\n", __func__, idx, ctx->usdt_dump_path,
+         ctx->usdt_dump_fd);
+  }
+
+  /* write frame to dump file */
+  ssize_t n = write(ctx->usdt_dump_fd, frame->addr, frame->data_size);
+  if (n != frame->data_size) {
+    warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
+  } else {
+    ctx->usdt_dumped_frames++;
+    /* logging every 1 sec */
+    if ((ctx->usdt_dumped_frames % (ctx->frames_per_sec * 1)) == 0) {
+      MT_USDT_ST30P_TX_FRAME_DUMP(idx, ctx->usdt_dump_path, ctx->usdt_dumped_frames);
+    }
+  }
+
+  return 0;
+}
+
 struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
@@ -301,8 +349,14 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
 
   struct st30_frame* frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
-  // MT_USDT_ST30P_TX_FRAME_GET(idx, framebuff->idx, frame->addr);
+  MT_USDT_ST30P_TX_FRAME_GET(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST30P_TX_FRAME_DUMP_ENABLED()) {
+    tx_st30p_usdt_dump_frame(ctx, frame);
+  } else {
+    tx_st30p_usdt_dump_close(ctx);
+  }
   return frame;
 }
 
@@ -325,7 +379,7 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
 
   framebuff->stat = ST30P_TX_FRAME_READY;
   ctx->stat_put_frame++;
-  // MT_USDT_ST30P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr);
+  MT_USDT_ST30P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame->addr);
   return 0;
 }
@@ -350,6 +404,8 @@ int st30p_tx_free(st30p_tx_handle handle) {
     ctx->transport = NULL;
   }
   tx_st30p_uinit_fbs(ctx);
+
+  tx_st30p_usdt_dump_close(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
@@ -384,6 +440,7 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST30_HANDLE_PIPELINE_TX;
+  ctx->usdt_dump_fd = -1;
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
