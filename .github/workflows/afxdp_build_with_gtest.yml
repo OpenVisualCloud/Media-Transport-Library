@@ -81,6 +81,7 @@ jobs:
       - name: Build
         run: |
           ./build.sh
+          sudo ldconfig
 
   Test:
     needs: [changes, Build]
