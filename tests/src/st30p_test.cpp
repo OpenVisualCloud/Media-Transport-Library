@@ -33,24 +33,6 @@ static int test_st30p_rx_frame_available(void* priv) {
   return 0;
 }
 
-static uint32_t st30p_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
-                                     enum st30_sampling sampling, uint16_t channel,
-                                     double* fps) {
-  /* count frame size */
-  int pkt_per_frame = 1;
-  int pkt_len = st30_get_packet_size(fmt, ptime, sampling, channel);
-  double pkt_time = st30_get_packet_time(ptime);
-  /* when ptime <= 1ms, set frame time to 1ms */
-  if (pkt_time < NS_PER_MS) {
-    pkt_per_frame = NS_PER_MS / pkt_time;
-  }
-  if (fps) {
-    *fps = (double)NS_PER_S / pkt_time / pkt_per_frame;
-  }
-  uint32_t framebuff_size = pkt_per_frame * pkt_len;
-  return framebuff_size;
-}
-
 static void st30p_tx_ops_init(tests_context* st30, struct st30p_tx_ops* ops_tx) {
   auto ctx = st30->ctx;
 
@@ -68,9 +50,10 @@ static void st30p_tx_ops_init(tests_context* st30, struct st30p_tx_ops* ops_tx) 
   ops_tx->channel = 2;
   ops_tx->sampling = ST30_SAMPLING_48K;
   ops_tx->ptime = ST30_PTIME_1MS;
-  /* count frame size */
-  ops_tx->framebuff_size = st30p_framebuff_size(ops_tx->fmt, ops_tx->ptime,
-                                                ops_tx->sampling, ops_tx->channel, NULL);
+  /* count frame size for 10ms  */
+  ops_tx->framebuff_size =
+      st30_calculate_framebuff_size(ops_tx->fmt, ops_tx->ptime, ops_tx->sampling,
+                                    ops_tx->channel, 10 * NS_PER_MS, NULL);
 
   ops_tx->framebuff_cnt = st30->fb_cnt;
   ops_tx->notify_frame_available = test_st30p_tx_frame_available;
@@ -96,8 +79,9 @@ static void st30p_rx_ops_init(tests_context* st30, struct st30p_rx_ops* ops_rx) 
   ops_rx->sampling = ST30_SAMPLING_48K;
   ops_rx->ptime = ST30_PTIME_1MS;
   /* count frame size */
-  ops_rx->framebuff_size = st30p_framebuff_size(ops_rx->fmt, ops_rx->ptime,
-                                                ops_rx->sampling, ops_rx->channel, NULL);
+  ops_rx->framebuff_size =
+      st30_calculate_framebuff_size(ops_rx->fmt, ops_rx->ptime, ops_rx->sampling,
+                                    ops_rx->channel, 10 * NS_PER_MS, NULL);
   ops_rx->framebuff_cnt = st30->fb_cnt;
   ops_rx->notify_frame_available = test_st30p_rx_frame_available;
 
@@ -340,8 +324,8 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     ops_tx.sampling = sampling[i];
     ops_tx.ptime = ptime[i];
     double fps;
-    ops_tx.framebuff_size = st30p_framebuff_size(ops_tx.fmt, ops_tx.ptime,
-                                                 ops_tx.sampling, ops_tx.channel, &fps);
+    ops_tx.framebuff_size = st30_calculate_framebuff_size(
+        ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, &fps);
     expect_framerate_tx[i] = fps;
     ops_tx.framebuff_cnt = test_ctx_tx[i]->fb_cnt;
     if (para->block_get)
