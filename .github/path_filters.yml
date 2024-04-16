@@ -9,7 +9,7 @@ src: &src
   - tests/meson.build
   - tests/meson_options.txt
 
-app_src: &src
+app_src: &app_src
   - 'app/**'
 
 build: &build
