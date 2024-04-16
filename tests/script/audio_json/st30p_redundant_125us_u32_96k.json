@@ -1,0 +1,60 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "local:1",
+                "local:0"
+            ],
+            "interface": [
+                0,
+                1
+            ],
+            "st30p": [
+                {
+                    "replicas": 2,
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM24",
+                    "audio_channel": ["U32"],
+                    "audio_sampling": "96kHz",
+                    "audio_ptime": "0.125",
+                    "audio_url": "./test.pcm"
+                }
+            ]
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "local:0",
+                "local:1",
+            ],
+            "interface": [
+                1,
+                0
+            ],
+            "st30p": [
+                {
+                    "replicas": 2,
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM24",
+                    "audio_channel": ["U32"],
+                    "audio_sampling": "96kHz",
+                    "audio_ptime": "0.125",
+                    "audio_url": "./test.pcm"
+                }
+            ]
+        }
+    ]
+}

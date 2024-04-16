@@ -12,6 +12,7 @@
 #include <mtl/experimental/st20_combined_api.h>
 #include <mtl/st20_api.h>
 #include <mtl/st30_api.h>
+#include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <pcap.h>
@@ -494,6 +495,51 @@ struct st_app_rx_st20p_session {
   uint64_t stat_latency_us_sum;
 };
 
+struct st_app_tx_st30p_session {
+  struct st_app_context* ctx;
+
+  int idx;
+  st30p_tx_handle handle;
+  mtl_handle st;
+  int framebuff_cnt;
+  int st30p_frame_size;
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
+
+  char st30p_source_url[ST_APP_URL_MAX_LEN];
+  uint8_t* st30p_source_begin;
+  uint8_t* st30p_source_end;
+  uint8_t* st30p_frame_cursor;
+  int st30p_source_fd;
+  bool st30p_frames_copied;
+
+  double expect_fps;
+
+  pthread_t st30p_app_thread;
+  bool st30p_app_thread_stop;
+};
+
+struct st_app_rx_st30p_session {
+  int idx;
+  st30p_rx_handle handle;
+  mtl_handle st;
+  int framebuff_cnt;
+  int st30p_frame_size;
+
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
+
+  /* stat */
+  int stat_frame_received;
+  uint64_t stat_last_time;
+  int stat_frame_total_received;
+  uint64_t stat_frame_first_rx_time;
+  double expect_fps;
+
+  pthread_t st30p_app_thread;
+  bool st30p_app_thread_stop;
+};
+
 struct st_app_var_params {
   /* force sleep time(us) for sch tasklet sleep */
   uint64_t sch_force_sleep_us;
@@ -568,6 +614,9 @@ struct st_app_context {
   struct st_app_tx_st20p_session* tx_st20p_sessions;
   int tx_st20p_session_cnt;
 
+  struct st_app_tx_st30p_session* tx_st30p_sessions;
+  int tx_st30p_session_cnt;
+
   uint8_t rx_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];        /* rx IP */
   uint8_t rx_mcast_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* rx multicast source IP */
 
@@ -591,6 +640,9 @@ struct st_app_context {
 
   struct st_app_rx_st20p_session* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+
+  struct st_app_rx_st30p_session* rx_st30p_sessions;
+  int rx_st30p_session_cnt;
 
   struct st_app_rx_video_session* rx_st20r_sessions;
   int rx_st20r_session_cnt;

@@ -811,13 +811,13 @@ static int st_json_parse_rx_video(int idx, json_object* video_obj,
   return ST_JSON_SUCCESS;
 }
 
-static int parse_audio_type(json_object* audio_obj, st_json_audio_session_t* audio) {
+static int parse_audio_type(json_object* audio_obj, st_json_audio_info_t* audio) {
   const char* type = json_object_get_string(st_json_object_object_get(audio_obj, "type"));
   REQUIRED_ITEM(type);
   if (strcmp(type, "frame") == 0) {
-    audio->info.type = ST30_TYPE_FRAME_LEVEL;
+    audio->type = ST30_TYPE_FRAME_LEVEL;
   } else if (strcmp(type, "rtp") == 0) {
-    audio->info.type = ST30_TYPE_RTP_LEVEL;
+    audio->type = ST30_TYPE_RTP_LEVEL;
   } else {
     err("%s, invalid audio type %s\n", __func__, type);
     return -ST_JSON_NOT_VALID;
@@ -825,18 +825,18 @@ static int parse_audio_type(json_object* audio_obj, st_json_audio_session_t* aud
   return ST_JSON_SUCCESS;
 }
 
-static int parse_audio_format(json_object* audio_obj, st_json_audio_session_t* audio) {
+static int parse_audio_format(json_object* audio_obj, st_json_audio_info_t* audio) {
   const char* audio_format =
       json_object_get_string(st_json_object_object_get(audio_obj, "audio_format"));
   REQUIRED_ITEM(audio_format);
   if (strcmp(audio_format, "PCM8") == 0) {
-    audio->info.audio_format = ST30_FMT_PCM8;
+    audio->audio_format = ST30_FMT_PCM8;
   } else if (strcmp(audio_format, "PCM16") == 0) {
-    audio->info.audio_format = ST30_FMT_PCM16;
+    audio->audio_format = ST30_FMT_PCM16;
   } else if (strcmp(audio_format, "PCM24") == 0) {
-    audio->info.audio_format = ST30_FMT_PCM24;
+    audio->audio_format = ST30_FMT_PCM24;
   } else if (strcmp(audio_format, "AM824") == 0) {
-    audio->info.audio_format = ST31_FMT_AM824;
+    audio->audio_format = ST31_FMT_AM824;
   } else {
     err("%s, invalid audio format %s\n", __func__, audio_format);
     return -ST_JSON_NOT_VALID;
@@ -844,7 +844,7 @@ static int parse_audio_format(json_object* audio_obj, st_json_audio_session_t* a
   return ST_JSON_SUCCESS;
 }
 
-static int parse_audio_channel(json_object* audio_obj, st_json_audio_session_t* audio) {
+static int parse_audio_channel(json_object* audio_obj, st_json_audio_info_t* audio) {
   json_object* audio_channel_array =
       st_json_object_object_get(audio_obj, "audio_channel");
   if (audio_channel_array == NULL ||
@@ -852,24 +852,24 @@ static int parse_audio_channel(json_object* audio_obj, st_json_audio_session_t* 
     err("%s, can not parse audio channel\n", __func__);
     return -ST_JSON_PARSE_FAIL;
   }
-  audio->info.audio_channel = 0; /* reset channel number*/
+  audio->audio_channel = 0; /* reset channel number*/
   for (int i = 0; i < json_object_array_length(audio_channel_array); ++i) {
     json_object* channel_obj = json_object_array_get_idx(audio_channel_array, i);
     const char* channel = json_object_get_string(channel_obj);
     REQUIRED_ITEM(channel);
     if (strcmp(channel, "M") == 0) {
-      audio->info.audio_channel += 1;
+      audio->audio_channel += 1;
     } else if (strcmp(channel, "DM") == 0 || strcmp(channel, "ST") == 0 ||
                strcmp(channel, "LtRt") == 0 || strcmp(channel, "AES3") == 0) {
-      audio->info.audio_channel += 2;
+      audio->audio_channel += 2;
     } else if (strcmp(channel, "51") == 0) {
-      audio->info.audio_channel += 6;
+      audio->audio_channel += 6;
     } else if (strcmp(channel, "71") == 0) {
-      audio->info.audio_channel += 8;
+      audio->audio_channel += 8;
     } else if (strcmp(channel, "222") == 0) {
-      audio->info.audio_channel += 24;
+      audio->audio_channel += 24;
     } else if (strcmp(channel, "SGRP") == 0) {
-      audio->info.audio_channel += 4;
+      audio->audio_channel += 4;
     } else if (channel[0] == 'U' && channel[1] >= '0' && channel[1] <= '9' &&
                channel[2] >= '0' && channel[2] <= '9' && channel[3] == '\0') {
       int num_channel = (channel[1] - '0') * 10 + (channel[2] - '0');
@@ -877,7 +877,7 @@ static int parse_audio_channel(json_object* audio_obj, st_json_audio_session_t* 
         err("%s, audio undefined channel number out of range %s\n", __func__, channel);
         return -ST_JSON_NOT_VALID;
       }
-      audio->info.audio_channel += num_channel;
+      audio->audio_channel += num_channel;
     } else {
       err("%s, invalid audio channel %s\n", __func__, channel);
       return -ST_JSON_NOT_VALID;
@@ -886,16 +886,16 @@ static int parse_audio_channel(json_object* audio_obj, st_json_audio_session_t* 
   return ST_JSON_SUCCESS;
 }
 
-static int parse_audio_sampling(json_object* audio_obj, st_json_audio_session_t* audio) {
+static int parse_audio_sampling(json_object* audio_obj, st_json_audio_info_t* audio) {
   const char* audio_sampling =
       json_object_get_string(st_json_object_object_get(audio_obj, "audio_sampling"));
   REQUIRED_ITEM(audio_sampling);
   if (strcmp(audio_sampling, "48kHz") == 0) {
-    audio->info.audio_sampling = ST30_SAMPLING_48K;
+    audio->audio_sampling = ST30_SAMPLING_48K;
   } else if (strcmp(audio_sampling, "96kHz") == 0) {
-    audio->info.audio_sampling = ST30_SAMPLING_96K;
+    audio->audio_sampling = ST30_SAMPLING_96K;
   } else if (strcmp(audio_sampling, "44.1kHz") == 0) {
-    audio->info.audio_sampling = ST31_SAMPLING_44K;
+    audio->audio_sampling = ST31_SAMPLING_44K;
   } else {
     err("%s, invalid audio sampling %s\n", __func__, audio_sampling);
     return -ST_JSON_NOT_VALID;
@@ -903,36 +903,36 @@ static int parse_audio_sampling(json_object* audio_obj, st_json_audio_session_t*
   return ST_JSON_SUCCESS;
 }
 
-static int parse_audio_ptime(json_object* audio_obj, st_json_audio_session_t* audio) {
+static int parse_audio_ptime(json_object* audio_obj, st_json_audio_info_t* audio) {
   const char* audio_ptime =
       json_object_get_string(st_json_object_object_get(audio_obj, "audio_ptime"));
   if (audio_ptime) {
     if (strcmp(audio_ptime, "1") == 0) {
-      audio->info.audio_ptime = ST30_PTIME_1MS;
+      audio->audio_ptime = ST30_PTIME_1MS;
     } else if (strcmp(audio_ptime, "0.12") == 0) {
-      audio->info.audio_ptime = ST30_PTIME_125US;
+      audio->audio_ptime = ST30_PTIME_125US;
     } else if (strcmp(audio_ptime, "0.125") == 0) {
-      audio->info.audio_ptime = ST30_PTIME_125US;
+      audio->audio_ptime = ST30_PTIME_125US;
     } else if (strcmp(audio_ptime, "0.25") == 0) {
-      audio->info.audio_ptime = ST30_PTIME_250US;
+      audio->audio_ptime = ST30_PTIME_250US;
     } else if (strcmp(audio_ptime, "0.33") == 0) {
-      audio->info.audio_ptime = ST30_PTIME_333US;
+      audio->audio_ptime = ST30_PTIME_333US;
     } else if (strcmp(audio_ptime, "4") == 0) {
-      audio->info.audio_ptime = ST30_PTIME_4MS;
+      audio->audio_ptime = ST30_PTIME_4MS;
     } else if (strcmp(audio_ptime, "0.08") == 0) {
-      audio->info.audio_ptime = ST31_PTIME_80US;
+      audio->audio_ptime = ST31_PTIME_80US;
     } else if (strcmp(audio_ptime, "1.09") == 0) {
-      audio->info.audio_ptime = ST31_PTIME_1_09MS;
+      audio->audio_ptime = ST31_PTIME_1_09MS;
     } else if (strcmp(audio_ptime, "0.14") == 0) {
-      audio->info.audio_ptime = ST31_PTIME_0_14MS;
+      audio->audio_ptime = ST31_PTIME_0_14MS;
     } else if (strcmp(audio_ptime, "0.09") == 0) {
-      audio->info.audio_ptime = ST31_PTIME_0_09MS;
+      audio->audio_ptime = ST31_PTIME_0_09MS;
     } else {
       err("%s, invalid audio ptime %s\n", __func__, audio_ptime);
       return -ST_JSON_NOT_VALID;
     }
   } else { /* default ptime 1ms */
-    audio->info.audio_ptime = ST30_PTIME_1MS;
+    audio->audio_ptime = ST30_PTIME_1MS;
   }
   return ST_JSON_SUCCESS;
 }
@@ -957,23 +957,23 @@ static int st_json_parse_tx_audio(int idx, json_object* audio_obj,
   }
 
   /* parse audio type */
-  ret = parse_audio_type(audio_obj, audio);
+  ret = parse_audio_type(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio format */
-  ret = parse_audio_format(audio_obj, audio);
+  ret = parse_audio_format(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio channel */
-  ret = parse_audio_channel(audio_obj, audio);
+  ret = parse_audio_channel(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio sampling */
-  ret = parse_audio_sampling(audio_obj, audio);
+  ret = parse_audio_sampling(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio packet time */
-  ret = parse_audio_ptime(audio_obj, audio);
+  ret = parse_audio_ptime(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio url */
@@ -983,6 +983,52 @@ static int st_json_parse_tx_audio(int idx, json_object* audio_obj,
   /* parse enable rtcp */
   audio->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(audio_obj, "enable_rtcp"));
+
+  return ST_JSON_SUCCESS;
+}
+
+static int st_json_parse_st30p(int idx, json_object* st30p_obj,
+                               st_json_st30p_session_t* st30p) {
+  if (st30p_obj == NULL || st30p == NULL) {
+    err("%s, can not parse tx st30p session\n", __func__);
+    return -ST_JSON_NULL;
+  }
+  int ret;
+
+  /* parse udp port  */
+  ret = parse_base_udp_port(st30p_obj, &st30p->base, idx);
+  if (ret < 0) return ret;
+
+  /* parse payload type */
+  ret = parse_base_payload_type(st30p_obj, &st30p->base);
+  if (ret < 0) {
+    err("%s, use default pt %u\n", __func__, ST_APP_PAYLOAD_TYPE_ST22);
+    st30p->base.payload_type = ST_APP_PAYLOAD_TYPE_ST22;
+  }
+
+  /* parse audio format */
+  ret = parse_audio_format(st30p_obj, &st30p->info);
+  if (ret < 0) return ret;
+
+  /* parse audio channel */
+  ret = parse_audio_channel(st30p_obj, &st30p->info);
+  if (ret < 0) return ret;
+
+  /* parse audio sampling */
+  ret = parse_audio_sampling(st30p_obj, &st30p->info);
+  if (ret < 0) return ret;
+
+  /* parse audio packet time */
+  ret = parse_audio_ptime(st30p_obj, &st30p->info);
+  if (ret < 0) return ret;
+
+  /* parse audio url */
+  ret = parse_url(st30p_obj, "audio_url", st30p->info.audio_url);
+  if (ret < 0) return ret;
+
+  /* parse enable rtcp */
+  st30p->enable_rtcp =
+      json_object_get_boolean(st_json_object_object_get(st30p_obj, "enable_rtcp"));
 
   return ST_JSON_SUCCESS;
 }
@@ -1007,23 +1053,23 @@ static int st_json_parse_rx_audio(int idx, json_object* audio_obj,
   }
 
   /* parse audio type */
-  ret = parse_audio_type(audio_obj, audio);
+  ret = parse_audio_type(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio format */
-  ret = parse_audio_format(audio_obj, audio);
+  ret = parse_audio_format(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio channel */
-  ret = parse_audio_channel(audio_obj, audio);
+  ret = parse_audio_channel(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio sampling */
-  ret = parse_audio_sampling(audio_obj, audio);
+  ret = parse_audio_sampling(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio packet time */
-  ret = parse_audio_ptime(audio_obj, audio);
+  ret = parse_audio_ptime(audio_obj, &audio->info);
   if (ret < 0) return ret;
 
   /* parse audio url */
@@ -1872,6 +1918,10 @@ void st_app_free_json(st_json_context_t* ctx) {
     st_app_free(ctx->tx_st20p_sessions);
     ctx->tx_st20p_sessions = NULL;
   }
+  if (ctx->tx_st30p_sessions) {
+    st_app_free(ctx->tx_st30p_sessions);
+    ctx->tx_st30p_sessions = NULL;
+  }
   if (ctx->rx_video_sessions) {
     st_app_free(ctx->rx_video_sessions);
     ctx->rx_video_sessions = NULL;
@@ -1895,6 +1945,10 @@ void st_app_free_json(st_json_context_t* ctx) {
   if (ctx->rx_st20r_sessions) {
     st_app_free(ctx->rx_st20r_sessions);
     ctx->rx_st20r_sessions = NULL;
+  }
+  if (ctx->rx_st30p_sessions) {
+    st_app_free(ctx->rx_st30p_sessions);
+    ctx->rx_st30p_sessions = NULL;
   }
   if (ctx->log_file) {
     /* malloc use strdup */
@@ -2039,6 +2093,10 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       num = parse_session_num(tx_group, "st20p");
       if (num < 0) goto error;
       ctx->tx_st20p_session_cnt += num;
+      /* parse tx st30p sessions */
+      num = parse_session_num(tx_group, "st30p");
+      if (num < 0) goto error;
+      ctx->tx_st30p_session_cnt += num;
     }
 
     /* allocate tx sessions */
@@ -2077,6 +2135,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       ret = -ST_JSON_NULL;
       goto error;
     }
+    ctx->tx_st30p_sessions = (st_json_st30p_session_t*)st_app_zmalloc(
+        ctx->tx_st30p_session_cnt * sizeof(st_json_st30p_session_t));
+    if (!ctx->tx_st30p_sessions) {
+      err("%s, failed to allocate tx_st30p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
 
     int num_inf = 0;
     int num_video = 0;
@@ -2084,6 +2149,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     int num_anc = 0;
     int num_st22p = 0;
     int num_st20p = 0;
+    int num_st30p = 0;
 
     for (int i = 0; i < json_object_array_length(tx_group_array); ++i) {
       json_object* tx_group = json_object_array_get_idx(tx_group_array, i);
@@ -2110,7 +2176,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
         }
         num_inf = len;
       } else {
-        err("%s, can not parse dip_array\n", __func__);
+        err("%s, can not parse dip array for tx\n", __func__);
         ret = -ST_JSON_PARSE_FAIL;
         goto error;
       }
@@ -2311,6 +2377,39 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
           }
         }
       }
+
+      /* parse tx st30p sessions */
+      json_object* st30p_array = st_json_object_object_get(tx_group, "st30p");
+      if (st30p_array != NULL && json_object_get_type(st30p_array) == json_type_array) {
+        for (int j = 0; j < json_object_array_length(st30p_array); ++j) {
+          json_object* st30p_session = json_object_array_get_idx(st30p_array, j);
+          int replicas =
+              json_object_get_int(st_json_object_object_get(st30p_session, "replicas"));
+          if (replicas < 0) {
+            err("%s, invalid replicas number: %d for st30p\n", __func__, replicas);
+            ret = -ST_JSON_NOT_VALID;
+            goto error;
+          }
+          for (int k = 0; k < replicas; ++k) {
+            parse_session_ip(json_object_get_string(dip_p),
+                             &ctx->tx_st30p_sessions[num_st30p].base, MTL_SESSION_PORT_P);
+            ctx->tx_st30p_sessions[num_st30p].base.inf[0] = &ctx->interfaces[inf_p];
+            ctx->interfaces[inf_p].tx_video_sessions_cnt++;
+            if (num_inf == 2) {
+              parse_session_ip(json_object_get_string(dip_r),
+                               &ctx->tx_st30p_sessions[num_st30p].base,
+                               MTL_SESSION_PORT_R);
+              ctx->tx_st30p_sessions[num_st30p].base.inf[1] = &ctx->interfaces[inf_r];
+              ctx->interfaces[inf_r].tx_video_sessions_cnt++;
+            }
+            ctx->tx_st30p_sessions[num_st30p].base.num_inf = num_inf;
+            ret =
+                st_json_parse_st30p(k, st30p_session, &ctx->tx_st30p_sessions[num_st30p]);
+            if (ret) goto error;
+            num_st30p++;
+          }
+        }
+      }
     }
   }
 
@@ -2350,6 +2449,10 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       num = parse_session_num(rx_group, "st20r");
       if (num < 0) goto error;
       ctx->rx_st20r_session_cnt += num;
+      /* parse rx st30p sessions */
+      num = parse_session_num(rx_group, "st30p");
+      if (num < 0) goto error;
+      ctx->rx_st30p_session_cnt += num;
     }
 
     /* allocate rx sessions */
@@ -2388,6 +2491,13 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       ret = -ST_JSON_NULL;
       goto error;
     }
+    ctx->rx_st30p_sessions = (st_json_st30p_session_t*)st_app_zmalloc(
+        ctx->rx_st30p_session_cnt * sizeof(st_json_st30p_session_t));
+    if (!ctx->rx_st30p_sessions) {
+      err("%s, failed to allocate rx_st30p_sessions\n", __func__);
+      ret = -ST_JSON_NULL;
+      goto error;
+    }
     ctx->rx_st20r_sessions = (st_json_video_session_t*)st_app_zmalloc(
         ctx->rx_st20r_session_cnt * sizeof(*ctx->rx_st20r_sessions));
     if (!ctx->rx_st20r_sessions) {
@@ -2403,6 +2513,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
     int num_st22p = 0;
     int num_st20p = 0;
     int num_st20r = 0;
+    int num_st30p = 0;
 
     for (int i = 0; i < json_object_array_length(rx_group_array); ++i) {
       json_object* rx_group = json_object_array_get_idx(rx_group_array, i);
@@ -2433,7 +2544,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
         }
         num_inf = len;
       } else {
-        err("%s, can not parse dip_array\n", __func__);
+        err("%s, can not parse ip array for rx\n", __func__);
         ret = -ST_JSON_PARSE_FAIL;
         goto error;
       }
@@ -2683,6 +2794,47 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
             if (ret) goto error;
             if (ctx->rx_st20p_sessions[num_st20p].display) ctx->has_display = true;
             num_st20p++;
+          }
+        }
+      }
+
+      /* parse rx st30p sessions */
+      json_object* st30p_array = st_json_object_object_get(rx_group, "st30p");
+      if (st30p_array != NULL && json_object_get_type(st30p_array) == json_type_array) {
+        for (int j = 0; j < json_object_array_length(st30p_array); ++j) {
+          json_object* st30p_session = json_object_array_get_idx(st30p_array, j);
+          int replicas =
+              json_object_get_int(st_json_object_object_get(st30p_session, "replicas"));
+          if (replicas < 0) {
+            err("%s, invalid replicas number: %d\n", __func__, replicas);
+            ret = -ST_JSON_NOT_VALID;
+            goto error;
+          }
+          for (int k = 0; k < replicas; ++k) {
+            parse_session_ip(json_object_get_string(ip_p),
+                             &ctx->rx_st30p_sessions[num_st30p].base, MTL_SESSION_PORT_P);
+            if (mcast_src_ip_p)
+              parse_mcast_src_ip(json_object_get_string(mcast_src_ip_p),
+                                 &ctx->rx_st30p_sessions[num_st30p].base,
+                                 MTL_SESSION_PORT_P);
+            ctx->rx_st30p_sessions[num_st30p].base.inf[0] = &ctx->interfaces[inf_p];
+            ctx->interfaces[inf_p].rx_video_sessions_cnt++;
+            if (num_inf == 2) {
+              parse_session_ip(json_object_get_string(ip_r),
+                               &ctx->rx_st30p_sessions[num_st30p].base,
+                               MTL_SESSION_PORT_R);
+              if (mcast_src_ip_r)
+                parse_mcast_src_ip(json_object_get_string(mcast_src_ip_r),
+                                   &ctx->rx_st30p_sessions[num_st30p].base,
+                                   MTL_SESSION_PORT_R);
+              ctx->rx_st30p_sessions[num_st30p].base.inf[1] = &ctx->interfaces[inf_r];
+              ctx->interfaces[inf_r].rx_video_sessions_cnt++;
+            }
+            ctx->rx_st30p_sessions[num_st30p].base.num_inf = num_inf;
+            ret =
+                st_json_parse_st30p(k, st30p_session, &ctx->rx_st30p_sessions[num_st30p]);
+            if (ret) goto error;
+            num_st30p++;
           }
         }
       }

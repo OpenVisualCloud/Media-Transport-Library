@@ -7,8 +7,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "app_base.h"
-#include "log.h"
+#include "../app_base.h"
+#include "../log.h"
 
 #ifndef _RX_APP_AUDIO_HEAD_H_
 #define _RX_APP_AUDIO_HEAD_H_

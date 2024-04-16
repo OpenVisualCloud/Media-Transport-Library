@@ -7,9 +7,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "app_base.h"
-#include "log.h"
-#include "player.h"
+#include "../app_base.h"
+#include "../log.h"
+#include "../player.h"
 
 #ifndef _RX_APP_ST22_HEAD_H_
 #define _RX_APP_ST22_HEAD_H_

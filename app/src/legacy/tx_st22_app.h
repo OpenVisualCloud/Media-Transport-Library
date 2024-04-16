@@ -8,8 +8,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "app_base.h"
-#include "log.h"
+#include "../app_base.h"
+#include "../log.h"
 
 #ifndef _TX_APP_ST22_HEAD_H_
 #define _TX_APP_ST22_HEAD_H_

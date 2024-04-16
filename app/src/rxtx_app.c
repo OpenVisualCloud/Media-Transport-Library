@@ -9,21 +9,23 @@
 
 #include "app_base.h"
 #include "args.h"
+#include "experimental/rx_st20r_app.h"
+#include "legacy/rx_audio_app.h"
+#include "legacy/rx_st22_app.h"
+#include "legacy/rx_video_app.h"
+#include "legacy/tx_audio_app.h"
+#include "legacy/tx_st22_app.h"
+#include "legacy/tx_video_app.h"
 #include "log.h"
 #include "player.h"
 #include "rx_ancillary_app.h"
-#include "rx_audio_app.h"
 #include "rx_st20p_app.h"
-#include "rx_st20r_app.h"
-#include "rx_st22_app.h"
 #include "rx_st22p_app.h"
-#include "rx_video_app.h"
+#include "rx_st30p_app.h"
 #include "tx_ancillary_app.h"
-#include "tx_audio_app.h"
 #include "tx_st20p_app.h"
-#include "tx_st22_app.h"
 #include "tx_st22p_app.h"
-#include "tx_video_app.h"
+#include "tx_st30p_app.h"
 
 static struct st_app_context* g_app_ctx; /* only for st_app_sig_handler */
 static enum mtl_log_level app_log_level;
@@ -87,6 +89,7 @@ static void app_stat(void* priv) {
   st_app_rx_st20p_sessions_stat(ctx);
   st_app_rx_st20r_sessions_stat(ctx);
   st_app_rx_audio_sessions_stat(ctx);
+  st_app_rx_st30p_sessions_stat(ctx);
 
   if (ctx->ptp_systime_sync) {
     app_dump_ptp_sync_stat(ctx);
@@ -256,6 +259,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_tx_anc_sessions_uinit(ctx);
   st_app_tx_st22p_sessions_uinit(ctx);
   st_app_tx_st20p_sessions_uinit(ctx);
+  st_app_tx_st30p_sessions_uinit(ctx);
   st22_app_tx_sessions_uinit(ctx);
 
   st_app_rx_video_sessions_uinit(ctx);
@@ -263,6 +267,7 @@ static void st_app_ctx_free(struct st_app_context* ctx) {
   st_app_rx_anc_sessions_uinit(ctx);
   st_app_rx_st22p_sessions_uinit(ctx);
   st_app_rx_st20p_sessions_uinit(ctx);
+  st_app_rx_st30p_sessions_uinit(ctx);
   st_app_rx_st20r_sessions_uinit(ctx);
   st22_app_rx_sessions_uinit(ctx);
 
@@ -304,6 +309,7 @@ static int st_app_result(struct st_app_context* ctx) {
   result += st_app_rx_anc_sessions_result(ctx);
   result += st_app_rx_st22p_sessions_result(ctx);
   result += st_app_rx_st20p_sessions_result(ctx);
+  result += st_app_rx_st30p_sessions_result(ctx);
   result += st_app_rx_st20r_sessions_result(ctx);
   return result;
 }
@@ -481,6 +487,13 @@ int main(int argc, char** argv) {
     return -EIO;
   }
 
+  ret = st_app_tx_st30p_sessions_init(ctx);
+  if (ret < 0) {
+    err("%s, st_app_tx_st30p_sessions_init fail %d\n", __func__, ret);
+    st_app_ctx_free(ctx);
+    return -EIO;
+  }
+
   ret = st22_app_tx_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st22_app_tx_sessions_init fail %d\n", __func__, ret);
@@ -526,6 +539,13 @@ int main(int argc, char** argv) {
   ret = st_app_rx_st20p_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_rx_st20p_sessions_init fail %d\n", __func__, ret);
+    st_app_ctx_free(ctx);
+    return -EIO;
+  }
+
+  ret = st_app_rx_st30p_sessions_init(ctx);
+  if (ret < 0) {
+    err("%s, st_app_rx_st30p_sessions_init fail %d\n", __func__, ret);
     st_app_ctx_free(ctx);
     return -EIO;
   }

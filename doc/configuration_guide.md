@@ -4,44 +4,46 @@ Intel® Media Transport Library sample app can use json file to configure sessio
 
 ## Examples
 
-Example `tx_multicast.json` file, find more example config file in [example config](../config):
+Example `tx_1v_1a_1anc.json` file, find more example config file in [example config](../config):
 
 ```json
 {
     "interfaces": [
         {
-            "name": "0000:86:00.0",
-            "ip": "192.168.30.10"   
+            "name": "0000:af:01.0",
+            "ip": "192.168.30.10"
         }
     ],
     "tx_sessions": [
         {
-            "dip": "239.1.1.1",
-            "interface": [
-                0
+            "dip": [
+                "239.1.1.1",
             ],
-            "video": [
+            "interface": [
+                0,
+            ],
+            "st20p": [
                 {
                     "replicas": 1,
-                    "type": "frame",
-                    "pacing": "gap",
                     "start_port": 20000,
                     "payload_type": 112,
-                    "tr_offset": "default",
-                    "video_format": "i1080p59",
-                    "pg_format": "YUV_422_10bit",
-                    "video_url": "./test.yuv"
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./yuv422p10le_1080p.yuv"
                 }
             ],
-            "audio": [
+            "st30p": [
                 {
                     "replicas": 1,
                     "start_port": 30000,
                     "payload_type": 111,
-                    "type": "frame",
-                    "audio_format": "PCM16",
-                    "audio_channel": ["ST"],
-                    "audio_sampling": "48kHz",
+                    "audio_format": "PCM24",
+                    "audio_channel": ["U02"],
+                    "audio_sampling": "96kHz",
                     "audio_ptime": "1",
                     "audio_url": "./test.pcm"
                 }

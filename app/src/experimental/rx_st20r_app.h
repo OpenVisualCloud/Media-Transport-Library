@@ -7,10 +7,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include "app_base.h"
-#include "fmt.h"
-#include "log.h"
-#include "player.h"
+#include "../app_base.h"
+#include "../fmt.h"
+#include "../log.h"
+#include "../player.h"
 
 #ifndef _RX_APP_ST20R_HEAD_H_
 #define _RX_APP_ST20R_HEAD_H_
