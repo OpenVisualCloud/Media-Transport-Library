@@ -1115,7 +1115,7 @@ int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
   int pkt_len = st30_get_packet_size(fmt, ptime, sampling, channel);
   double pkt_time = st30_get_packet_time(ptime);
   double frame_time = desired_frame_time_ns;
-  /* set frame time to 10 ms */
+  /* set frame time to desired frame time */
   if (pkt_time < frame_time) {
     pkt_per_frame = frame_time / pkt_time;
   }
