@@ -655,6 +655,30 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
                          enum st30_sampling sampling, uint16_t channel);
 
 /**
+ * Helper tp calculate the frame buffer size for one desired frame time.
+ *
+ * @param fmt
+ *   The st2110-30(audio) format.
+ * @param ptime
+ *   The st2110-30(audio) packet time.
+ * @param sampling
+ *   The st2110-30(audio) sampling rate.
+ * @param channel
+ *   The st2110-30(audio) channel.
+ * @param desired_frame_time_ns
+ *   The desired frame time in ns.
+ * @param fps
+ *   The fps return for current frame rate based on desired_frame_time_ns. Leave to NULL
+ * if not want to know the fps.
+ * @return
+ *   - >0 the frame buffer size returned.
+ *   - <0: Error code if fail.
+ */
+int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
+                                  enum st30_sampling sampling, uint16_t channel,
+                                  uint64_t desired_frame_time_ns, double* fps);
+
+/**
  * Create one rx st2110-30(audio) session.
  *
  * @param mt

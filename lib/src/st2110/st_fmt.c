@@ -1107,6 +1107,25 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
   return sample_size * sample_num * channel;
 }
 
+int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
+                                  enum st30_sampling sampling, uint16_t channel,
+                                  uint64_t desired_frame_time_ns, double* fps) {
+  /* count frame size */
+  int pkt_per_frame = 1;
+  int pkt_len = st30_get_packet_size(fmt, ptime, sampling, channel);
+  double pkt_time = st30_get_packet_time(ptime);
+  double frame_time = desired_frame_time_ns;
+  /* set frame time to desired frame time */
+  if (pkt_time < frame_time) {
+    pkt_per_frame = frame_time / pkt_time;
+  }
+  if (fps) {
+    *fps = (double)NS_PER_S / pkt_time / pkt_per_frame;
+  }
+  uint32_t framebuff_size = pkt_per_frame * pkt_len;
+  return framebuff_size;
+}
+
 void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova) {
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
 

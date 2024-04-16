@@ -840,7 +840,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
     bool time_measure = mt_sessions_time_measure(impl);
     if (time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
-    if (s->ops.notify_frame_done)
+    if (ops->notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st30_frame_idx, ta_meta);
     if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;

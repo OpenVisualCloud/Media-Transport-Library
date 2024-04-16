@@ -191,16 +191,9 @@ int main(int argc, char** argv) {
     ops_tx.sampling = ctx.audio_sampling;
     ops_tx.ptime = ctx.audio_ptime;
 
-    /* count frame size */
-    int pkt_per_frame = 1;
-    int pkt_len =
-        st30_get_packet_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel);
-    double pkt_time = st30_get_packet_time(ops_tx.ptime);
-    /* when ptime <= 1ms, set frame time to 1ms */
-    if (pkt_time < NS_PER_MS) {
-      pkt_per_frame = NS_PER_MS / pkt_time;
-    }
-    uint32_t framebuff_size = pkt_per_frame * pkt_len;
+    /* set frame size to 10ms time */
+    int framebuff_size = st30_calculate_framebuff_size(
+        ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
     ops_tx.framebuff_size = framebuff_size;
 
     st30p_tx_handle tx_handle = st30p_tx_create(ctx.st, &ops_tx);
