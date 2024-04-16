@@ -1,0 +1,87 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.30.10"
+        },
+        {
+            "name": "0000:af:01.1",
+            "ip": "192.168.30.11"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.1.1.1",
+                "239.1.1.2"
+            ],
+            "interface": [
+                0,
+                1
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./yuv422p10le_1080p.yuv"
+                }
+            ],
+            "st30p": [
+                {
+                    "replicas": 1,
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM24",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "audio_sampling": "96kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.pcm"
+                }
+            ],
+            "ancillary": [
+                {
+                    "replicas": 1,
+                    "start_port": 40000,
+                    "payload_type": 113,
+                    "type": "frame",
+                    "ancillary_format": "closed_caption",
+                    "ancillary_url": "./test.txt",
+                    "ancillary_fps": "p59"
+                }
+            ]
+        },
+        {
+            "dip": [
+                "239.1.2.1",
+                "239.1.2.2"
+            ],
+            "interface": [
+                0,
+                1
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20002,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./yuv422p10le_1080p.yuv"
+                }
+            ]
+        }
+    ]
+}

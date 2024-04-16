@@ -1,0 +1,83 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.2",
+            "ip": "192.168.30.12"
+        },
+        {
+            "name": "0000:af:01.3",
+            "ip": "192.168.30.13"
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "239.1.1.1",
+                "239.1.1.2"
+            ],
+            "interface": [
+                0,
+                1
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "output_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "display": false,
+                    "measure_latency": true
+                }
+            ],
+            "st30p": [
+                {
+                    "replicas": 1,
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM24",
+                    "audio_channel": ["U02"],
+                    "audio_sampling": "96kHz",
+                    "audio_ptime": "1",
+                    "audio_url": "./test.pcm"
+                }
+            ],
+            "ancillary": [
+                {
+                    "replicas": 1,
+                    "payload_type": 113,
+                    "start_port": 40000
+                }
+            ]
+        },
+        {
+            "ip": [
+                "239.1.2.1",
+                "239.1.2.2"
+            ],
+            "interface": [
+                0,
+                1
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20002,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "output_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "display": false,
+                    "measure_latency": true
+                }
+            ]
+        }
+    ]
+}

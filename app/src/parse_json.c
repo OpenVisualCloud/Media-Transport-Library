@@ -2176,7 +2176,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
         }
         num_inf = len;
       } else {
-        err("%s, can not parse dip_array\n", __func__);
+        err("%s, can not parse dip array for tx\n", __func__);
         ret = -ST_JSON_PARSE_FAIL;
         goto error;
       }
@@ -2544,7 +2544,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
         }
         num_inf = len;
       } else {
-        err("%s, can not parse dip_array\n", __func__);
+        err("%s, can not parse ip array for rx\n", __func__);
         ret = -ST_JSON_PARSE_FAIL;
         goto error;
       }
