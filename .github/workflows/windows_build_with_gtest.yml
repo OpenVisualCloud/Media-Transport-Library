@@ -112,4 +112,4 @@ jobs:
 
       - name: Run st2110 test cases except st22
         run: |
-          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=St30p.* --log_level info
+          ./tests/build/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --gtest_filter=-St22*
