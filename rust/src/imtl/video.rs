@@ -3,7 +3,7 @@
  *
  * This module defines the structures and implementations necessary for setting up
  * RTP sessions for transmitting and receiving uncompressed (ST 2110-20) and
- * compressed video (ST 2110-22).
+ * compressed video (ST 2110-22 / JPEG-XS).
  *
  */
 
@@ -21,12 +21,8 @@ enum VideoHandle {
     Rx(sys::st20_rx_handle),
     PipelineTx(sys::st20p_tx_handle),
     PipelineRx(sys::st20p_rx_handle),
-    /* TODO
-    CompressedTx(sys::st22_tx_handle),
-    CompressedRx(sys::st22_rx_handle),
     PipelineCompressedTx(sys::st22p_tx_handle),
     PipelineCompressedRx(sys::st22p_rx_handle),
-    */
 }
 
 impl Drop for VideoHandle {
@@ -44,20 +40,12 @@ impl Drop for VideoHandle {
             VideoHandle::PipelineRx(h) => unsafe {
                 sys::st20p_rx_free(*h);
             },
-            /* TODO
-            VideoHandle::CompressedTx(h) => unsafe {
-                sys::st22_tx_free(*h);
-            },
-            VideoHandle::CompressedRx(h) => unsafe {
-                sys::st22_rx_free(*h);
-            },
             VideoHandle::PipelineCompressedTx(h) => unsafe {
                 sys::st22p_tx_free(*h);
             },
             VideoHandle::PipelineCompressedRx(h) => unsafe {
                 sys::st22p_rx_free(*h);
             },
-            */
         }
     }
 }
@@ -874,14 +862,14 @@ impl VideoRx {
     }
 }
 
-/* TODO
+/// CompressedVideoTx structure for handling transmission of compressed video.
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
 pub struct CompressedVideoTx {
     #[builder(default)]
-    rtp_session: RtpSession,
+    netdev_id: u8,
     #[builder(default)]
-    handle: Option<sys::st22_tx_handle>,
+    rtp_session: RtpSession,
     #[builder(default = "1920")]
     width: u32,
     #[builder(default = "1080")]
@@ -890,18 +878,114 @@ pub struct CompressedVideoTx {
     fps: Fps,
     #[builder(default = "3")]
     fb_cnt: u8,
-    fb_max_size: u32,
     #[builder(default = "false")]
     interlaced: bool,
+    #[builder(default)]
+    input_fmt: FrameFmt,
+    #[builder(default = "2")]
+    codec_thread_cnt: u8,
+    #[builder(default = "3")]
+    bpp: u8,
+
+    #[builder(setter(skip))]
+    handle: Option<VideoHandle>,
 }
 
+impl CompressedVideoTx {
+    /// Initializes a new CompressedVideoTx session with Media Transport Library (MTL) handle.
+    pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
+        if self.handle.is_some() {
+            bail!("CompressedVideoTx Session is already created");
+        }
+
+        let mut ops: MaybeUninit<sys::st22p_tx_ops> = MaybeUninit::uninit();
+
+        unsafe {
+            std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+            let ops = &mut *ops.as_mut_ptr();
+            ops.port.num_port = 1;
+            ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
+
+            let id = self.netdev_id as usize;
+            let net_dev = mtl.net_devs().get(id).unwrap();
+            let port_bytes: Vec<i8> = net_dev
+                .get_port()
+                .as_bytes()
+                .iter()
+                .cloned()
+                .map(|b| b as i8) // Convert u8 to i8
+                .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                .take(64) // Take only up to 64 elements
+                .collect();
+            ops.port.port[0].copy_from_slice(&port_bytes);
+            ops.port.dip_addr[0] = self.rtp_session.ip().octets();
+            ops.port.udp_port[0] = self.rtp_session.port() as _;
+            ops.port.payload_type = self.rtp_session.payload_type() as _;
+            ops.width = self.width as _;
+            ops.height = self.height as _;
+            ops.fps = self.fps as _;
+            ops.input_fmt = self.input_fmt as _;
+            ops.interlaced = self.interlaced as _;
+            ops.pack_type = sys::st22_pack_type_ST22_PACK_CODESTREAM;
+            ops.codec = sys::st22_codec_ST22_CODEC_JPEGXS;
+            ops.device = sys::st_plugin_device_ST_PLUGIN_DEVICE_AUTO;
+            ops.quality = sys::st22_quality_mode_ST22_QUALITY_MODE_QUALITY;
+            ops.codec_thread_cnt = self.codec_thread_cnt as _;
+            ops.codestream_size =
+                self.width as usize * self.height as usize * self.bpp as usize / 8;
+            if ops.interlaced {
+                ops.codestream_size /= 2;
+            }
+            ops.framebuff_cnt = self.fb_cnt as _;
+            ops.flags = sys::st22p_tx_flag_ST22P_TX_FLAG_BLOCK_GET;
+
+            let pointer_to_void: *mut c_void = &self as *const CompressedVideoTx as *mut c_void;
+            ops.priv_ = pointer_to_void;
+        }
+
+        let mut ops = unsafe { ops.assume_init() };
+
+        let handle = unsafe { sys::st22p_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+        if handle.is_null() {
+            bail!("Failed to initialize MTL")
+        } else {
+            self.handle = Some(VideoHandle::PipelineCompressedTx(handle));
+            Ok(self)
+        }
+    }
+
+    /// Fill the frame buffer to be transmitted
+    pub fn fill_next_frame(&mut self, frame: &[u8]) -> Result<()> {
+        match self.handle {
+            Some(VideoHandle::PipelineCompressedTx(handle)) => {
+                unsafe {
+                    let inner_frame = sys::st22p_tx_get_frame(handle);
+                    if inner_frame.is_null() {
+                        bail!("Time-out get frame");
+                    }
+                    // memcpy frame to frame_dst with size, assume lines no padding
+                    sys::mtl_memcpy(
+                        (*inner_frame).addr[0],
+                        frame.as_ptr() as _,
+                        (*inner_frame).data_size,
+                    );
+                    sys::st22p_tx_put_frame(handle, inner_frame);
+                }
+                Ok(())
+            }
+            _ => bail!("Invalid handle"),
+        }
+    }
+}
+
+/// CompressedVideoRx structure for handling receiving of compressed video.
 #[derive(Default, Builder, Debug)]
 #[builder(setter(into))]
 pub struct CompressedVideoRx {
     #[builder(default)]
-    rtp_session: RtpSession,
+    netdev_id: u8,
     #[builder(default)]
-    handle: Option<sys::st22_rx_handle>,
+    rtp_session: RtpSession,
     #[builder(default = "1920")]
     width: u32,
     #[builder(default = "1080")]
@@ -910,30 +994,70 @@ pub struct CompressedVideoRx {
     fps: Fps,
     #[builder(default = "3")]
     fb_cnt: u8,
-    fb_max_size: u32,
     #[builder(default = "false")]
     interlaced: bool,
+    #[builder(default)]
+    output_fmt: FrameFmt,
+    #[builder(default = "2")]
+    codec_thread_cnt: u8,
+
+    #[builder(setter(skip))]
+    handle: Option<VideoHandle>,
 }
 
+impl CompressedVideoRx {
+    /// Initializes a new CompressedVideoTx session with Media Transport Library (MTL) handle.
+    pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
+        if self.handle.is_some() {
+            bail!("CompressedVideoRx Session is already created");
+        }
 
+        let mut ops: MaybeUninit<sys::st22p_rx_ops> = MaybeUninit::uninit();
+        unsafe {
+            std::ptr::write_bytes(ops.as_mut_ptr(), 0, 1);
+            let ops = &mut *ops.as_mut_ptr();
+            ops.port.num_port = 1;
+            ops.name = self.rtp_session.name().unwrap().as_ptr() as *const i8;
 
-impl Drop for CompressedVideoTx {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle {
-            unsafe {
-                sys::st22_tx_free(handle);
-            }
+            let id = self.netdev_id as usize;
+            let net_dev = mtl.net_devs().get(id).unwrap();
+            let port_bytes: Vec<i8> = net_dev
+                .get_port()
+                .as_bytes()
+                .iter()
+                .cloned()
+                .map(|b| b as i8) // Convert u8 to i8
+                .chain(std::iter::repeat(0)) // Pad with zeros if needed
+                .take(64) // Take only up to 64 elements
+                .collect();
+            ops.port.port[0].copy_from_slice(&port_bytes);
+            ops.port.__bindgen_anon_1.ip_addr[0] = self.rtp_session.ip().octets();
+            ops.port.udp_port[0] = self.rtp_session.port() as _;
+            ops.port.payload_type = self.rtp_session.payload_type() as _;
+            ops.width = self.width as _;
+            ops.height = self.height as _;
+            ops.fps = self.fps as _;
+            ops.output_fmt = self.output_fmt as _;
+            ops.interlaced = self.interlaced as _;
+            ops.framebuff_cnt = self.fb_cnt as _;
+            ops.device = sys::st_plugin_device_ST_PLUGIN_DEVICE_AUTO;
+            ops.pack_type = sys::st22_pack_type_ST22_PACK_CODESTREAM;
+            ops.codec = sys::st22_codec_ST22_CODEC_JPEGXS;
+            ops.max_codestream_size = 0; /* let lib to decide */
+            ops.codec_thread_cnt = self.codec_thread_cnt as _;
+            ops.flags = sys::st22p_rx_flag_ST22P_RX_FLAG_BLOCK_GET;
+
+            let pointer_to_void: *mut c_void = &self as *const CompressedVideoRx as *mut c_void;
+            ops.priv_ = pointer_to_void;
+        }
+        let mut ops = unsafe { ops.assume_init() };
+
+        let handle = unsafe { sys::st22p_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
+        if handle.is_null() {
+            bail!("Failed to initialize MTL")
+        } else {
+            self.handle = Some(VideoHandle::PipelineCompressedRx(handle));
+            Ok(self)
         }
     }
 }
-
-impl Drop for CompressedVideoRx {
-    fn drop(&mut self) {
-        if let Some(handle) = self.handle {
-            unsafe {
-                sys::st22_rx_free(handle);
-            }
-        }
-    }
-}
-*/
