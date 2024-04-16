@@ -5,7 +5,9 @@ src: &src
   - 'lib/**'
   - 'ld_preload/**'
   - 'patches/dpdk/**'
-  - 'tests/**'
+  - 'tests/src/**'
+  - tests/meson.build
+  - tests/meson_options.txt
 
 build: &build
   - build.sh
