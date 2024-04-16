@@ -668,9 +668,10 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
  * @param desired_frame_time_ns
  *   The desired frame time in ns.
  * @param fps
- *   The fps return for current frame rate based on desired_frame_time_ns.
+ *   The fps return for current frame rate based on desired_frame_time_ns. Leave to NULL
+ * if not want to know the fps.
  * @return
- *   - >0 the clock rate.
+ *   - >0 the frame buffer size returned.
  *   - <0: Error code if fail.
  */
 int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
