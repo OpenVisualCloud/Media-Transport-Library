@@ -1006,7 +1006,7 @@ pub struct CompressedVideoRx {
 }
 
 impl CompressedVideoRx {
-    /// Initializes a new CompressedVideoTx session with Media Transport Library (MTL) handle.
+    /// Initializes a new CompressedVideoRx session with Media Transport Library (MTL) handle.
     pub fn create(mut self, mtl: &Mtl) -> Result<Self> {
         if self.handle.is_some() {
             bail!("CompressedVideoRx Session is already created");
@@ -1058,6 +1058,25 @@ impl CompressedVideoRx {
         } else {
             self.handle = Some(VideoHandle::PipelineCompressedRx(handle));
             Ok(self)
+        }
+    }
+
+    /// Copy the new frame to user provided memory
+    pub fn fill_new_frame(&mut self, data: &[u8]) -> Result<()> {
+        match self.handle {
+            Some(VideoHandle::PipelineCompressedRx(handle)) => {
+                unsafe {
+                    let frame = sys::st22p_rx_get_frame(handle);
+                    if frame.is_null() {
+                        bail!("Time-out get frame");
+                    }
+                    // assume lines no padding
+                    sys::mtl_memcpy(data.as_ptr() as _, (*frame).addr[0], (*frame).data_size);
+                    sys::st22p_rx_put_frame(handle, frame);
+                }
+                Ok(())
+            }
+            _ => bail!("Invalid handle"),
         }
     }
 }
