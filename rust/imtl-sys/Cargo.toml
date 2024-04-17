@@ -1,6 +1,6 @@
 [package]
 name = "imtl-sys"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [lib]
@@ -13,5 +13,5 @@ path = "src/lib.rs"
 rand = "0.8.5"
 
 [build-dependencies]
-bindgen = "0.69.1"
-pkg-config = "0.3.27"
+bindgen = "0.69.4"
+pkg-config = "0.3.30"
