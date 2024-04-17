@@ -988,7 +988,7 @@ static int st_json_parse_tx_audio(int idx, json_object* audio_obj,
 }
 
 static int st_json_parse_st30p(int idx, json_object* st30p_obj,
-                               st_json_st30p_session_t* st30p) {
+                               st_json_st30p_session_t* st30p, bool rx) {
   if (st30p_obj == NULL || st30p == NULL) {
     err("%s, can not parse tx st30p session\n", __func__);
     return -ST_JSON_NULL;
@@ -1024,7 +1024,14 @@ static int st_json_parse_st30p(int idx, json_object* st30p_obj,
 
   /* parse audio url */
   ret = parse_url(st30p_obj, "audio_url", st30p->info.audio_url);
-  if (ret < 0) return ret;
+  if (ret < 0) {
+    if (rx) {
+      info("%s, no reference file for st30p rx\n", __func__);
+    } else {
+      err("%s, no audio_url for st30p tx\n", __func__);
+      return ret;
+    }
+  }
 
   /* parse enable rtcp */
   st30p->enable_rtcp =
@@ -1075,7 +1082,7 @@ static int st_json_parse_rx_audio(int idx, json_object* audio_obj,
   /* parse audio url */
   ret = parse_url(audio_obj, "audio_url", audio->info.audio_url);
   if (ret < 0) {
-    err("%s, no reference file\n", __func__);
+    info("%s, no reference file\n", __func__);
   }
 
   /* parse enable rtcp */
@@ -2403,8 +2410,8 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
               ctx->interfaces[inf_r].tx_video_sessions_cnt++;
             }
             ctx->tx_st30p_sessions[num_st30p].base.num_inf = num_inf;
-            ret =
-                st_json_parse_st30p(k, st30p_session, &ctx->tx_st30p_sessions[num_st30p]);
+            ret = st_json_parse_st30p(k, st30p_session,
+                                      &ctx->tx_st30p_sessions[num_st30p], false);
             if (ret) goto error;
             num_st30p++;
           }
@@ -2831,8 +2838,8 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
               ctx->interfaces[inf_r].rx_video_sessions_cnt++;
             }
             ctx->rx_st30p_sessions[num_st30p].base.num_inf = num_inf;
-            ret =
-                st_json_parse_st30p(k, st30p_session, &ctx->rx_st30p_sessions[num_st30p]);
+            ret = st_json_parse_st30p(k, st30p_session,
+                                      &ctx->rx_st30p_sessions[num_st30p], true);
             if (ret) goto error;
             num_st30p++;
           }
