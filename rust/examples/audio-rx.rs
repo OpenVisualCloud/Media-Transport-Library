@@ -27,7 +27,7 @@ struct Args {
     ip: Ipv4Addr,
 
     /// Destination UDP Port number
-    #[arg(long, default_value_t = 20000)]
+    #[arg(long, default_value_t = 30000)]
     port: u16,
 
     /// Audio format
@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     let session = RtpSessionBuilder::default()
         .ip(args.ip)
         .port(args.port)
-        .payload_type(112u8)
+        .payload_type(111u8)
         .name(String::from("My Rust Audio Rx"))
         .build()
         .context("Failed to add rtp session")?;
