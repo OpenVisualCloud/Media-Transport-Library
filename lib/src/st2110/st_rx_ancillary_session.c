@@ -136,8 +136,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   /* drop old packet */
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    s->st40_stat_pkts_dropped++;
+    s->st40_stat_pkts_redundant++;
     return 0;
+  }
+  if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
+    s->st40_stat_pkts_out_of_order++;
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -440,14 +443,23 @@ static void rx_ancillary_session_stat(struct st_rx_ancillary_session_impl* s) {
 
   rte_atomic32_set(&s->st40_stat_frames_received, 0);
 
-  notice("RX_ANC_SESSION(%d:%s): fps %f, st40 received frames %d, received pkts %d\n",
-         idx, s->ops_name, framerate, frames_received, s->st40_stat_pkts_received);
+  notice("RX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name, framerate,
+         frames_received, s->st40_stat_pkts_received);
   s->st40_stat_pkts_received = 0;
   s->st40_stat_last_time = cur_time_ns;
 
+  if (s->st40_stat_pkts_redundant) {
+    notice("RX_ANC_SESSION(%d): redundant pkts %d\n", idx, s->st40_stat_pkts_redundant);
+    s->st40_stat_pkts_redundant = 0;
+  }
   if (s->st40_stat_pkts_dropped) {
-    notice("RX_ANC_SESSION(%d): st40 dropped pkts %d\n", idx, s->st40_stat_pkts_dropped);
+    notice("RX_ANC_SESSION(%d): dropped pkts %d\n", idx, s->st40_stat_pkts_dropped);
     s->st40_stat_pkts_dropped = 0;
+  }
+  if (s->st40_stat_pkts_out_of_order) {
+    warn("RX_ANC_SESSION(%d): out of order pkts %d\n", idx,
+         s->st40_stat_pkts_out_of_order);
+    s->st40_stat_pkts_out_of_order = 0;
   }
   if (s->st40_stat_pkts_wrong_pt_dropped) {
     notice("RX_ANC_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,

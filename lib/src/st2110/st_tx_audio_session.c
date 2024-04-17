@@ -807,13 +807,14 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
 
   st_tx_mbuf_set_idx(pkt, s->st30_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
+  s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P]++;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st30_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
+    s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
   }
 
   s->st30_pkt_idx++;
-  s->st30_stat_pkt_cnt++;
   pacing->tsc_time_cursor += pacing->trs;
   /* sync pacing for pkt, even in one frame */
   s->calculate_time_cursor = true;
@@ -966,6 +967,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
     tx_audio_session_build_packet_chain(s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
   }
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
+  s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P]++;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -981,8 +983,8 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl* impl,
       tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     }
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
+    s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
   }
-  s->st30_stat_pkt_cnt++;
   pacing->tsc_time_cursor = 0;
 
   bool done = true;
@@ -2131,12 +2133,13 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr* mgr,
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice(
-      "TX_AUDIO_SESSION(%d,%d:%s): fps %f frame cnt %d, pkt cnt %d, inflight count %d: "
-      "%d\n",
-      m_idx, idx, s->ops_name, framerate, frame_cnt, s->st30_stat_pkt_cnt,
-      s->inflight_cnt[MTL_SESSION_PORT_P], s->inflight_cnt[MTL_SESSION_PORT_R]);
-  s->st30_stat_pkt_cnt = 0;
+  notice("TX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d, pkts %d:%d inflight %d:%d\n",
+         m_idx, idx, s->ops_name, framerate, frame_cnt,
+         s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P],
+         s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R], s->inflight_cnt[MTL_SESSION_PORT_P],
+         s->inflight_cnt[MTL_SESSION_PORT_R]);
+  s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
+  s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
 
   if (s->stat_epoch_mismatch) {
     notice("TX_AUDIO_SESSION(%d,%d): epoch mismatch %u\n", m_idx, idx,

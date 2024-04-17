@@ -22,6 +22,9 @@
   DTRACE_PROBE5(provider, probe, parm1, parm2, parm3, parm4, parm5)
 #define MT_DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6) \
   DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6)
+#define MT_DTRACE_PROB76(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, \
+                         parm7)                                                     \
+  DTRACE_PROBE7(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, parm7)
 #else
 
 #define MT_DTRACE_PROBE(provider, probe) \
@@ -43,6 +46,10 @@
   do {                                                                       \
   } while (0)
 #define MT_DTRACE_PROBE6(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6) \
+  do {                                                                              \
+  } while (0)
+#define MT_DTRACE_PROB76(provider, probe, parm1, parm2, parm3, parm4, parm5, parm6, \
+                         parm7)                                                     \
   do {                                                                              \
   } while (0)
 
@@ -155,6 +162,10 @@
 #define MT_USDT_ST20_RX_PCAP_DUMP(m_idx, s_idx, s_port, file, pkts) \
   MT_DTRACE_PROBE5(st20, rx_pcap_dump, m_idx, s_idx, s_port, file, pkts)
 #define MT_USDT_ST20_RX_PCAP_DUMP_ENABLED() ST20_RX_PCAP_DUMP_ENABLED()
+#define MT_USDT_ST20_RX_FRAME_INCOMPLETE(m_idx, s_idx, f_idx, tmstamp, data_size,      \
+                                         expect_size)                                  \
+  MT_DTRACE_PROBE6(st20, rx_frame_incomplete, m_idx, s_idx, f_idx, tmstamp, data_size, \
+                   expect_size)
 
 #define MT_USDT_ST30_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va) \
   MT_DTRACE_PROBE4(st30, tx_frame_next, m_idx, s_idx, f_idx, va)
