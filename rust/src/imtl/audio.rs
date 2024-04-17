@@ -46,10 +46,10 @@ pub enum Fmt {
 impl Display for Fmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Fmt::Pcm8 => write!(f, "PCM 8bit"),
-            Fmt::Pcm16 => write!(f, "PCM 16bit"),
-            Fmt::Pcm24 => write!(f, "PCM 24bit"),
-            Fmt::Am824 => write!(f, "AM824 32bit"),
+            Fmt::Pcm8 => write!(f, "pcm8"),
+            Fmt::Pcm16 => write!(f, "pcm16"),
+            Fmt::Pcm24 => write!(f, "pcm24"),
+            Fmt::Am824 => write!(f, "am824"),
         }
     }
 }
@@ -80,9 +80,9 @@ pub enum Sampling {
 impl Display for Sampling {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Sampling::S48K => write!(f, "48kHz"),
-            Sampling::S96K => write!(f, "96kHz"),
-            Sampling::S44K => write!(f, "44.1kHz"),
+            Sampling::S48K => write!(f, "48k"),
+            Sampling::S96K => write!(f, "96k"),
+            Sampling::S44K => write!(f, "44.1k"),
         }
     }
 }

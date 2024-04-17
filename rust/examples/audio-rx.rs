@@ -15,11 +15,11 @@ use imtl::session::RtpSessionBuilder;
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Name of the netdev
-    #[arg(long, default_value_t = String::from("0000:4b:01.0"))]
+    #[arg(long, default_value_t = String::from("0000:4b:01.1"))]
     netdev: String,
 
     /// Netdev IP address
-    #[arg(long, default_value_t = Ipv4Addr::new(192, 168, 96, 111))]
+    #[arg(long, default_value_t = Ipv4Addr::new(192, 168, 96, 112))]
     sip: Ipv4Addr,
 
     /// Destination IP address
@@ -82,8 +82,8 @@ fn main() -> Result<()> {
         .ip(args.sip)
         .netmask("255.255.255.0".parse().ok())
         .gateway("0.0.0.0".parse().ok())
+        .tx_queues_cnt(0u16)
         .rx_queues_cnt(1u16)
-        .rx_queues_cnt(0u16)
         .build()
         .context("Failed to add net dev")?;
 

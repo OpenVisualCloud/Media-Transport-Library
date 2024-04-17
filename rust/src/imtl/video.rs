@@ -163,22 +163,22 @@ pub enum TransportFmt {
 impl Display for TransportFmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TransportFmt::Yuv422_8bit => write!(f, "YUV 4:2:2 8bit"),
-            TransportFmt::Yuv422_10bit => write!(f, "YUV 4:2:2 10bit"),
-            TransportFmt::Yuv422_12bit => write!(f, "YUV 4:2:2 12bit"),
-            TransportFmt::Yuv422_16bit => write!(f, "YUV 4:2:2 16bit"),
-            TransportFmt::Yuv420_8bit => write!(f, "YUV 4:2:0 8bit"),
-            TransportFmt::Yuv420_10bit => write!(f, "YUV 4:2:0 10bit"),
-            TransportFmt::Yuv420_12bit => write!(f, "YUV 4:2:0 12bit"),
-            TransportFmt::Yuv420_16bit => write!(f, "YUV 4:2:0 16bit"),
-            TransportFmt::Rgb8bit => write!(f, "RGB 8bit"),
-            TransportFmt::Rgb10bit => write!(f, "RGB 10bit"),
-            TransportFmt::Rgb12bit => write!(f, "RGB 12bit"),
-            TransportFmt::Rgb16bit => write!(f, "RGB 16bit"),
-            TransportFmt::Yuv444_8bit => write!(f, "YUV 4:4:4 8bit"),
-            TransportFmt::Yuv444_10bit => write!(f, "YUV 4:4:4 10bit"),
-            TransportFmt::Yuv444_12bit => write!(f, "YUV 4:4:4 12bit"),
-            TransportFmt::Yuv444_16bit => write!(f, "YUV 4:4:4 16bit"),
+            TransportFmt::Yuv422_8bit => write!(f, "yuv_422_8bit"),
+            TransportFmt::Yuv422_10bit => write!(f, "yuv_422_10bit"),
+            TransportFmt::Yuv422_12bit => write!(f, "yuv_422_12bit"),
+            TransportFmt::Yuv422_16bit => write!(f, "yuv_422_16bit"),
+            TransportFmt::Yuv420_8bit => write!(f, "yuv_420_8bit"),
+            TransportFmt::Yuv420_10bit => write!(f, "yuv_420_10bit"),
+            TransportFmt::Yuv420_12bit => write!(f, "yuv_420_12bit"),
+            TransportFmt::Yuv420_16bit => write!(f, "yuv_420_16bit"),
+            TransportFmt::Rgb8bit => write!(f, "rgb_8bit"),
+            TransportFmt::Rgb10bit => write!(f, "rgb_10bit"),
+            TransportFmt::Rgb12bit => write!(f, "rgb_12bit"),
+            TransportFmt::Rgb16bit => write!(f, "rgb_16bit"),
+            TransportFmt::Yuv444_8bit => write!(f, "yuv_444_8bit"),
+            TransportFmt::Yuv444_10bit => write!(f, "yuv_444_10bit"),
+            TransportFmt::Yuv444_12bit => write!(f, "yuv_444_12bit"),
+            TransportFmt::Yuv444_16bit => write!(f, "yuv_444_16bit"),
         }
     }
 }
@@ -282,7 +282,31 @@ impl FromStr for FrameFmt {
 
 impl Display for FrameFmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        match self {
+            FrameFmt::Yuv422Planar10Le => write!(f, "YUV422PLANAR10LE"),
+            FrameFmt::V210 => write!(f, "V210"),
+            FrameFmt::Y210 => write!(f, "Y210"),
+            FrameFmt::Yuv422Planar8 => write!(f, "YUV422PLANAR8"),
+            FrameFmt::Uyvy => write!(f, "UYVY"),
+            FrameFmt::Yuv422Rfc4175Pg2Be10 => write!(f, "YUV422RFC4175PG2BE10"),
+            FrameFmt::Yuv422Planar12Le => write!(f, "YUV422PLANAR12LE"),
+            FrameFmt::Yuv422Rfc4175Pg2Be12 => write!(f, "YUV422RFC4175PG2BE12"),
+            FrameFmt::Yuv444Planar10Le => write!(f, "YUV444PLANAR10LE"),
+            FrameFmt::Yuv444Rfc4175Pg4Be10 => write!(f, "YUV444RFC4175PG4BE10"),
+            FrameFmt::Yuv444Planar12Le => write!(f, "YUV444PLANAR12LE"),
+            FrameFmt::Yuv444Rfc4175Pg2Be12 => write!(f, "YUV444RFC4175PG2BE12"),
+            FrameFmt::Yuv420Custom8 => write!(f, "YUV420CUSTOM8"),
+            FrameFmt::Yuv422Custom8 => write!(f, "YUV422CUSTOM8"),
+            FrameFmt::Argb => write!(f, "ARGB"),
+            FrameFmt::Bgra => write!(f, "BGRA"),
+            FrameFmt::Rgb8 => write!(f, "RGB8"),
+            FrameFmt::Gbrplanar10Le => write!(f, "GBRPLANAR10LE"),
+            FrameFmt::RgbRfc4175Pg4Be10 => write!(f, "RGBRFC4175PG4BE10"),
+            FrameFmt::Gbrplanar12Le => write!(f, "GBRPLANAR12LE"),
+            FrameFmt::RgbRfc4175Pg2Be12 => write!(f, "RGBRFC4175PG2BE12"),
+            FrameFmt::JpegxsCodestream => write!(f, "JPEGXS_CODESTREAM"),
+            FrameFmt::H264CbrCodestream => write!(f, "H264_CBR_CODESTREAM"),
+        }
     }
 }
 
