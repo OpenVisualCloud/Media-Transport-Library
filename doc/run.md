@@ -311,40 +311,45 @@ For the supported parameters in the json, please refer to [JSON configuration gu
 Below is the command to run one video tx/rx session with json config.
 
 ```bash
-./build/app/RxTxApp --config_file config/test_tx_1port_1v.json
+./build/app/RxTxApp --config_file config/tx_1v.json
 ```
 
 If it runs well, you will see below similar log output periodically.
 
 ```bash
-ST: * *    S T    D E V   S T A T E   * *
-ST: DEV(0): Avr rate, tx: 2638 Mb/s, rx: 0 Mb/s, pkts, tx: 2613182, rx: 80
-ST: DEV(0): Status: imissed 0 ierrors 0 oerrors 0 rx_nombuf 0
-ST: PTP(0), time 1636076300487864574, 2021-11-05 09:38:20
-ST: PTP(0), mode l4, delta: avr 9477, min 8477, max 10568, cnt 10, avg 9477
-ST: CNI(0): eth_rx_cnt 80
-ST: TX_VIDEO_SESSION(0,0): fps 60.099933, pkts build 2593192 burst 2593192
-ST: * *    E N D    S T A T E   * 
+MTL: 2024-04-16 15:38:31, * *    M T    D E V   S T A T E   * *
+MTL: 2024-04-16 15:38:31, DEV(0): Avr rate, tx: 2610.119496 Mb/s, rx: 0.001091 Mb/s, pkts, tx: 2465576, rx: 4
+MTL: 2024-04-16 15:38:31, SCH(0:sch_0): tasklets 3, lcore 28(t_pid: 106158), avg loop 102 ns
+MTL: 2024-04-16 15:38:31, CNI(0): eth_rx_rate 0.001091 Mb/s, eth_rx_cnt 4
+MTL: 2024-04-16 15:38:31, PTP(0): time 1713253074859051552, 2024-04-16 15:37:54
+MTL: 2024-04-16 15:38:31, TX_VIDEO_SESSION(0,0:app_tx_st20p_0): fps 59.900091, frame 599 pkts 2467208:2466608 inflight 147987:148099
+MTL: 2024-04-16 15:38:31, TX_VIDEO_SESSION(0,0): throughput 2611.215061 Mb/s: 0.000000 Mb/s, cpu busy 0.655173
+MTL: 2024-04-16 15:38:31, TX_st20p(0,app_tx_st20p_0), p(0:in_transmitting) c(1:converted)
+MTL: 2024-04-16 15:38:31, TX_st20p(0), frame get try 600 succ 599, put 600
+MTL: 2024-04-16 15:38:31, * *    E N D    S T A T E   * *
 ```
 
 Then run a rx in another node/port.
 
 ```bash
-./build/app/RxTxApp --config_file config/test_rx_1port_1v.json
+./build/app/RxTxApp --config_file config/rx_1v.json
 ```
 
 If it runs well, you will see below similar log output periodically.
 
 ```bash
-ST: * *    S T    D E V   S T A T E   * *
-ST: DEV(0): Avr rate, tx: 0 Mb/s, rx: 2614 Mb/s, pkts, tx: 12, rx: 2589728
-ST: DEV(0): Status: imissed 0 ierrors 0 oerrors 0 rx_nombuf 0
-ST: PTP(0), time 1636075100571923971, 2021-11-05 09:18:20
-ST: PTP(0), mode l2, delta: avr 7154, min -5806, max 10438, cnt 4, avg 6198
-ST: CNI(0): eth_rx_cnt 52
-ST: RX_VIDEO_SESSION(0,0): fps 59.899925, received frames 599, pkts 2589686
-app_rx_video_stat(0), fps 59.899932, 599 frame received
-ST: * *    E N D    S T A T E   * *
+MTL: 2024-04-16 15:39:18, * *    M T    D E V   S T A T E   * *
+MTL: 2024-04-16 15:39:18, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 2602.516773 Mb/s, pkts, tx: 1, rx: 2465849
+MTL: 2024-04-16 15:39:18, SCH(0:sch_0): tasklets 2, lcore 29(t_pid: 106309), avg loop 59 ns
+MTL: 2024-04-16 15:39:18, CNI(0): eth_rx_rate 0.000000 Mb/s, eth_rx_cnt 0
+MTL: 2024-04-16 15:39:18, PTP(0): time 1713253121113848589, 2024-04-16 15:38:41
+MTL: 2024-04-16 15:39:18, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.999295 frames 600 pkts 2466461
+MTL: 2024-04-16 15:39:18, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): throughput 2611.054741 Mb/s, cpu busy 0.505297
+MTL: 2024-04-16 15:39:18, RX_VIDEO_SESSION(0,0): succ burst max 96, avg 1.036124
+MTL: 2024-04-16 15:39:18, RX_st20p(0,app_rx_st20p_0), p(1:free) c(0:ready)
+MTL: 2024-04-16 15:39:18, RX_st20p(0), frame get try 599 succ 599, put 599
+app_rx_st20p_stat(0), avrage latency 18.263382ms
+MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 ```
 
 This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).

@@ -37,6 +37,12 @@ struct st30p_rx_ctx {
   pthread_mutex_t lock;
   bool ready;
 
+  /* usdt dump */
+  int usdt_dump_fd;
+  char usdt_dump_path[64];
+  int usdt_dumped_frames;
+  int frames_per_sec;
+
   /* for ST30P_RX_FLAG_BLOCK_GET */
   bool block_get;
   pthread_cond_t block_wake_cond;

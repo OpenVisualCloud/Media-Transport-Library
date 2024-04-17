@@ -27,24 +27,6 @@
                     "display": false,
                     "measure_latency": true
                 }
-            ],
-            "st30p": [
-                {
-                    "replicas": 1,
-                    "start_port": 30000,
-                    "payload_type": 111,
-                    "audio_format": "PCM24",
-                    "audio_channel": ["U02"],
-                    "audio_sampling": "96kHz",
-                    "audio_ptime": "1"
-                }
-            ],
-            "ancillary": [
-                {
-                    "replicas": 1,
-                    "payload_type": 113,
-                    "start_port": 40000
-                }
             ]
         }
     ]
