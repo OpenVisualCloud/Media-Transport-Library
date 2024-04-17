@@ -1334,12 +1334,13 @@ provider st30p {
   probe tx_frame_next(int idx, int f_idx);
   probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
-  probe tx_frame_dump(int idx, char* dump_file, void* va, uint32_t data_size);
+  probe tx_frame_dump(int idx, char* dump_file, int frames);
   /* rx */
   probe rx_frame_get(int idx, int f_idx, void* va);
   probe rx_frame_put(int idx, int f_idx, void* va);
   probe rx_frame_available(int idx, int f_idx, uint32_t tmstamp);
-  probe rx_frame_dump(int idx, char* dump_file, uint32_t data_size);
+  /* attach to enable the frame dump at runtime */
+  probe rx_frame_dump(int idx, char* dump_file, int frames);
 }
 ```
 
@@ -1515,13 +1516,13 @@ sudo bpftrace -e 'usdt::st30p:rx_frame_dump { printf("%s s%d: dump %d frames to 
 Example output like below:
 
 ```bash
-10:26:07 m0,s0: dump 1000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
-10:26:08 m0,s0: dump 2000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
-10:26:09 m0,s0: dump 3000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
+09:00:34 s0: dump 100 frames to imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm
+09:00:35 s0: dump 200 frames to imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm
+09:00:36 s0: dump 300 frames to imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm
 ```
 
 Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as your setup.
 
 ```bash
-ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm dump.wav
+ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm dump.wav
 ```

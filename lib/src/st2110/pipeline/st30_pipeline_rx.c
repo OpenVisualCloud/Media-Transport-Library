@@ -137,6 +137,7 @@ static int rx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_rx
     return -EIO;
   }
   ctx->transport = transport;
+  ctx->frames_per_sec = transport->impl->frames_per_sec;
 
   return 0;
 }
@@ -210,13 +211,60 @@ static int rx_st30p_stat(void* priv) {
   return 0;
 }
 
-static int st30p_rx_get_block_wait(struct st30p_rx_ctx* ctx) {
+static int rx_st30p_get_block_wait(struct st30p_rx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   dbg("%s(%d), end\n", __func__, ctx->idx);
+  return 0;
+}
+
+static int rx_st30p_usdt_dump_close(struct st30p_rx_ctx* ctx) {
+  int idx = ctx->idx;
+
+  if (ctx->usdt_dump_fd >= 0) {
+    info("%s(%d), close fd %d, dumped frames %d\n", __func__, idx, ctx->usdt_dump_fd,
+         ctx->usdt_dumped_frames);
+    close(ctx->usdt_dump_fd);
+    ctx->usdt_dump_fd = -1;
+  }
+  return 0;
+}
+
+static int rx_st30p_usdt_dump_frame(struct st30p_rx_ctx* ctx, struct st30_frame* frame) {
+  int idx = ctx->idx;
+  int ret;
+
+  if (ctx->usdt_dump_fd < 0) {
+    struct st30p_rx_ops* ops = &ctx->ops;
+    snprintf(ctx->usdt_dump_path, sizeof(ctx->usdt_dump_path),
+             "imtl_usdt_st30prx_s%d_%d_%d_c%u_XXXXXX.pcm", idx,
+             st30_get_sample_rate(ops->sampling), st30_get_sample_size(ops->fmt) * 8,
+             ops->channel);
+    ret = mt_mkstemps(ctx->usdt_dump_path, strlen(".pcm"));
+    if (ret < 0) {
+      err("%s(%d), mkstemps %s fail %d\n", __func__, idx, ctx->usdt_dump_path, ret);
+      return ret;
+    }
+    ctx->usdt_dump_fd = ret;
+    info("%s(%d), mkstemps succ on %s fd %d\n", __func__, idx, ctx->usdt_dump_path,
+         ctx->usdt_dump_fd);
+  }
+
+  /* write frame to dump file */
+  ssize_t n = write(ctx->usdt_dump_fd, frame->addr, frame->data_size);
+  if (n != frame->data_size) {
+    warn("%s(%d), write fail %" PRIu64 "\n", __func__, idx, n);
+  } else {
+    ctx->usdt_dumped_frames++;
+    /* logging every 1 sec */
+    if ((ctx->usdt_dumped_frames % (ctx->frames_per_sec * 1)) == 0) {
+      MT_USDT_ST30P_RX_FRAME_DUMP(idx, ctx->usdt_dump_path, ctx->usdt_dumped_frames);
+    }
+  }
+
   return 0;
 }
 
@@ -241,7 +289,7 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
       rx_st30p_next_available(ctx, ctx->framebuff_consumer_idx, ST30P_RX_FRAME_READY);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
-    st30p_rx_get_block_wait(ctx);
+    rx_st30p_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
     framebuff =
@@ -261,8 +309,13 @@ struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle) {
   frame = &framebuff->frame;
   ctx->stat_get_frame_succ++;
   MT_USDT_ST30P_RX_FRAME_GET(idx, framebuff->idx, frame->addr);
-  /* check if dump USDT enabled */
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame->addr);
+  /* check if dump USDT enabled */
+  if (MT_USDT_ST30P_RX_FRAME_DUMP_ENABLED()) {
+    rx_st30p_usdt_dump_frame(ctx, frame);
+  } else {
+    rx_st30p_usdt_dump_close(ctx);
+  }
   return frame;
 }
 
@@ -313,6 +366,7 @@ int st30p_rx_free(st30p_rx_handle handle) {
     ctx->transport = NULL;
   }
   rx_st30p_uinit_fbs(ctx);
+  rx_st30p_usdt_dump_close(ctx);
 
   mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
@@ -347,6 +401,7 @@ st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST30_HANDLE_PIPELINE_RX;
+  ctx->usdt_dump_fd = -1;
 
   mt_pthread_mutex_init(&ctx->lock, NULL);
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
