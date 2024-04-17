@@ -8,3 +8,4 @@ pub mod netdev;
 pub mod session;
 pub mod version;
 pub mod video;
+pub mod audio;

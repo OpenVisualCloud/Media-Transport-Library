@@ -509,7 +509,7 @@ impl VideoTx {
 
             let handle = unsafe { sys::st20_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
             if handle.is_null() {
-                bail!("Failed to initialize MTL")
+                bail!("Failed to initialize MTL VideoTx")
             } else {
                 self.handle = Some(VideoHandle::Tx(handle));
                 unsafe {
@@ -781,7 +781,7 @@ impl VideoRx {
 
             let handle = unsafe { sys::st20_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
             if handle.is_null() {
-                bail!("Failed to initialize MTL")
+                bail!("Failed to initialize MTL VideoRx")
             } else {
                 self.handle = Some(VideoHandle::Rx(handle));
                 unsafe {
@@ -947,7 +947,7 @@ impl CompressedVideoTx {
 
         let handle = unsafe { sys::st22p_tx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
         if handle.is_null() {
-            bail!("Failed to initialize MTL")
+            bail!("Failed to initialize MTL CompressedVideoTx")
         } else {
             self.handle = Some(VideoHandle::PipelineCompressedTx(handle));
             Ok(self)
@@ -1054,7 +1054,7 @@ impl CompressedVideoRx {
 
         let handle = unsafe { sys::st22p_rx_create(mtl.handle().unwrap(), &mut ops as *mut _) };
         if handle.is_null() {
-            bail!("Failed to initialize MTL")
+            bail!("Failed to initialize MTL CompressedVideoRx")
         } else {
             self.handle = Some(VideoHandle::PipelineCompressedRx(handle));
             Ok(self)
