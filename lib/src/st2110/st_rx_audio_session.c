@@ -294,12 +294,17 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   /* drop old packet */
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    s->st30_stat_pkts_dropped++;
+    s->st30_stat_pkts_redundant++;
     if (s->enable_timing_parser) {
       enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
       ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
     }
     return -EIO;
+  }
+  if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
+    s->st30_stat_pkts_out_of_order++;
+    info("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
+         s->latest_seq_id);
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -428,8 +433,11 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   /* drop old packet */
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    s->st30_stat_pkts_dropped++;
+    s->st30_stat_pkts_redundant++;
     return -EIO;
+  }
+  if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
+    s->st30_stat_pkts_out_of_order++;
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -796,7 +804,6 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->latest_seq_id = -1;
   s->st30_stat_pkts_received = 0;
   s->st30_stat_pkts_dropped = 0;
-  s->st30_stat_frames_dropped = 0;
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
   s->st30_stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
@@ -868,16 +875,24 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->st30_stat_frames_received, 0);
 
-  notice(
-      "RX_AUDIO_SESSION(%d,%d:%s): fps %f, st30 received frames %d, received pkts %d\n",
-      m_idx, idx, s->ops_name, framerate, frames_received, s->st30_stat_pkts_received);
+  notice("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
+         s->ops_name, framerate, frames_received, s->st30_stat_pkts_received);
   s->st30_stat_pkts_received = 0;
   s->st30_stat_last_time = cur_time_ns;
 
-  if (s->st30_stat_frames_dropped || s->st30_stat_pkts_dropped) {
-    notice("RX_AUDIO_SESSION(%d,%d): st30 dropped frames %d, dropped pkts %d\n", m_idx,
-           idx, s->st30_stat_frames_dropped, s->st30_stat_pkts_dropped);
-    s->st30_stat_frames_dropped = 0;
+  if (s->st30_stat_pkts_redundant) {
+    notice("RX_AUDIO_SESSION(%d,%d): redundant pkts %d\n", m_idx, idx,
+           s->st30_stat_pkts_redundant);
+    s->st30_stat_pkts_redundant = 0;
+  }
+  if (s->st30_stat_pkts_out_of_order) {
+    warn("RX_AUDIO_SESSION(%d,%d): out of order pkts %d\n", m_idx, idx,
+         s->st30_stat_pkts_out_of_order);
+    s->st30_stat_pkts_out_of_order = 0;
+  }
+  if (s->st30_stat_pkts_dropped) {
+    notice("RX_AUDIO_SESSION(%d,%d): dropped pkts %d\n", m_idx, idx,
+           s->st30_stat_pkts_dropped);
     s->st30_stat_pkts_dropped = 0;
   }
   if (s->st30_stat_pkts_wrong_pt_dropped) {

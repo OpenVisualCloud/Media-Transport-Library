@@ -273,6 +273,8 @@ provider st20 {
   probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
   /* attach to enable the pcap dump at runtime */
   probe rx_pcap_dump(int m_idx, int s_idx, int s_port, char* dump_file, uint32_t pkts);
+  /* incomplete frame */
+  probe rx_frame_incomplete(int m_idx, int s_idx, int f_idx, uint32_t tmstamp, uint32_t data_size, uint32_t expect_size);
 }
 ```
 
@@ -420,6 +422,21 @@ Example output like below:
 
 ```bash
 13:53:27 m1,s0p0: dumped pcap file st22rx_s0p0_20570_C9ErTF.pcapng pkts 20570
+```
+
+#### 2.3.9 rx_frame_incomplete USDT
+
+This tracking point is engineered to detect any instances of packet loss and failures in constructing a complete frame by IMTL. The underlying causes can vary widely, for example, the sender might not transmit all pixels, packets could be lost due to switch issues, or the NIC might discard packets if the receiver's queue is full.
+
+```bash
+sudo bpftrace -e 'usdt::st20:rx_frame_incomplete { printf("%s m%d,s%d: incomplete frame %d(tmstamp:%u, recv size:%u, expect full size: %u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4, arg5); }' -p $(pidof RxTxApp)
+```
+
+Example output like below if IMTL failed to constructed one full frame:
+
+```bash
+11:05:54 m0,s0: incomplete frame 1(tmstamp:1167274660, recv size:2891700, expect full size: 5184000)
+11:06:45 m0,s0: incomplete frame 1(tmstamp:1172316697, recv size:4956840, expect full size: 5184000)
 ```
 
 ### 2.4 st30 tracing

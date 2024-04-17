@@ -356,7 +356,7 @@ struct st_tx_video_session_impl {
 
   /* stat */
   rte_atomic32_t stat_frame_cnt;
-  int stat_pkts_build;
+  int stat_pkts_build[MTL_SESSION_PORT_MAX];
   int stat_pkts_dummy;
   int stat_pkts_burst;
   int stat_pkts_burst_dummy;
@@ -845,7 +845,7 @@ struct st_tx_audio_session_impl {
 
   /* stat */
   rte_atomic32_t st30_stat_frame_cnt;
-  int st30_stat_pkt_cnt;
+  int st30_stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
   uint32_t stat_epoch_drop;
@@ -997,12 +997,13 @@ struct st_rx_audio_session_impl {
 
   /* status */
   int st30_stat_pkts_dropped;
+  int st30_stat_pkts_redundant;
+  int st30_stat_pkts_out_of_order;
   int stat_slot_get_frame_fail;
   int st30_stat_pkts_wrong_pt_dropped;
   int st30_stat_pkts_wrong_ssrc_dropped;
   int st30_stat_pkts_len_mismatch_dropped;
   int st30_stat_pkts_received;
-  int st30_stat_frames_dropped;
   rte_atomic32_t st30_stat_frames_received;
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
@@ -1084,7 +1085,7 @@ struct st_tx_ancillary_session_impl {
 
   /* stat */
   rte_atomic32_t st40_stat_frame_cnt;
-  int st40_stat_pkt_cnt;
+  int st40_stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
   uint32_t stat_epoch_drop;
@@ -1147,6 +1148,8 @@ struct st_rx_ancillary_session_impl {
   /* status */
   rte_atomic32_t st40_stat_frames_received;
   int st40_stat_pkts_dropped;
+  int st40_stat_pkts_redundant;
+  int st40_stat_pkts_out_of_order;
   int st40_stat_pkts_enqueue_fail;
   int st40_stat_pkts_wrong_pt_dropped;
   int st40_stat_pkts_wrong_ssrc_dropped;

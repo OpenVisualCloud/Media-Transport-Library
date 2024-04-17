@@ -1848,6 +1848,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         tv_build_st20_chain(s, pkts[i], pkts_chain[i]);
       st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
       s->port_user_stats[MTL_SESSION_PORT_P].build++;
+      s->stat_pkts_build[MTL_SESSION_PORT_P]++;
     }
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
 
@@ -1862,13 +1863,13 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
           tv_build_st20_redundant_chain(s, pkts_r[i], pkts[i]);
         st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
         s->port_user_stats[MTL_SESSION_PORT_R].build++;
+        s->stat_pkts_build[MTL_SESSION_PORT_R]++;
       }
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
     }
 
     pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
-    s->stat_pkts_build++;
   }
 
   bool done = false;
@@ -2043,6 +2044,7 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
     }
     st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
     pacing_set_mbuf_time_stamp(pkts[i], pacing);
+    s->stat_pkts_build[MTL_SESSION_PORT_P]++;
     s->port_user_stats[MTL_SESSION_PORT_P].build++;
 
     if (send_r) {
@@ -2061,12 +2063,12 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
         tv_build_rtp_redundant_chain(s, pkts_r[i], pkts[i]);
       st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
       pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
+      s->stat_pkts_build[MTL_SESSION_PORT_R]++;
       s->port_user_stats[MTL_SESSION_PORT_R].build++;
     }
 
     pacing_forward_cursor(pacing); /* pkt forward */
     s->st20_pkt_idx++;
-    s->stat_pkts_build++;
   }
 
   /* build dummy bulk pkts to satisfy video transmitter which is bulk based */
@@ -2298,7 +2300,6 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
 
       pacing_forward_cursor(pacing); /* pkt forward */
       s->st20_pkt_idx++;
-      s->stat_pkts_build++;
       s->stat_pkts_dummy++;
     }
   } else {
@@ -2345,6 +2346,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
           tv_build_st22_chain(s, pkts[i], pkts_chain[i]);
         st_tx_mbuf_set_idx(pkts[i], s->st20_pkt_idx);
         s->port_user_stats[MTL_SESSION_PORT_P].build++;
+        s->stat_pkts_build[MTL_SESSION_PORT_P]++;
       }
       pacing_set_mbuf_time_stamp(pkts[i], pacing);
 
@@ -2358,13 +2360,13 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
             tv_build_st22_redundant_chain(s, pkts_r[i], pkts[i]);
           st_tx_mbuf_set_idx(pkts_r[i], s->st20_pkt_idx);
           s->port_user_stats[MTL_SESSION_PORT_R].build++;
+          s->stat_pkts_build[MTL_SESSION_PORT_R]++;
         }
         pacing_set_mbuf_time_stamp(pkts_r[i], pacing);
       }
 
       pacing_forward_cursor(pacing); /* pkt forward */
       s->st20_pkt_idx++;
-      s->stat_pkts_build++;
     }
   }
 
@@ -3251,16 +3253,18 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->stat_frame_cnt, 0);
 
-  notice("TX_VIDEO_SESSION(%d,%d:%s): fps %f, frame %d pkts %d:%d inflight %d:%d\n",
-         m_idx, idx, s->ops_name, framerate, frame_cnt, s->stat_pkts_build,
-         s->stat_pkts_burst, s->trs_inflight_cnt[0], s->inflight_cnt[0]);
+  notice("TX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d:%d inflight %d:%d\n",
+         m_idx, idx, s->ops_name, framerate, frame_cnt,
+         s->stat_pkts_build[MTL_SESSION_PORT_P], s->stat_pkts_build[MTL_SESSION_PORT_R],
+         s->trs_inflight_cnt[0], s->inflight_cnt[0]);
   notice("TX_VIDEO_SESSION(%d,%d): throughput %f Mb/s: %f Mb/s, cpu busy %f\n", m_idx,
          idx,
          (double)s->stat_bytes_tx[MTL_SESSION_PORT_P] * 8 / time_sec / MTL_STAT_M_UNIT,
          (double)s->stat_bytes_tx[MTL_SESSION_PORT_R] * 8 / time_sec / MTL_STAT_M_UNIT,
          s->stat_cpu_busy_score);
   s->stat_last_time = cur_time_ns;
-  s->stat_pkts_build = 0;
+  s->stat_pkts_build[MTL_SESSION_PORT_P] = 0;
+  s->stat_pkts_build[MTL_SESSION_PORT_R] = 0;
   s->stat_pkts_burst = 0;
   s->trs_inflight_cnt[0] = 0;
   s->inflight_cnt[0] = 0;
@@ -3367,8 +3371,8 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
       if (rte_atomic32_read(&frame_info->refcnt)) frames_in_trans++;
     }
     if ((frames_in_trans > 2) || (frames_in_trans >= framebuff_cnt)) {
-      notice("TX_VIDEO_SESSION(%d,%d:%s): %d frames are in trans, total %u\n", m_idx, idx,
-             s->ops_name, frames_in_trans, framebuff_cnt);
+      notice("TX_VIDEO_SESSION(%d,%d): %d frames are in trans, total %u\n", m_idx, idx,
+             frames_in_trans, framebuff_cnt);
     }
   }
 

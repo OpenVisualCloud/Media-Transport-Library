@@ -886,13 +886,14 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
+  s->st40_stat_pkt_cnt[MTL_SESSION_PORT_P]++;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
+    s->st40_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
   }
 
   s->st40_pkt_idx++;
-  s->st40_stat_pkt_cnt++;
   pacing->tsc_time_cursor += pacing->frame_time;
   s->calculate_time_cursor = true;
 
@@ -1040,6 +1041,7 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
   }
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
+  s->st40_stat_pkt_cnt[MTL_SESSION_PORT_P]++;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1057,9 +1059,8 @@ static int tx_ancillary_session_tasklet_rtp(struct mtl_main_impl* impl,
     }
     st_tx_mbuf_set_idx(pkt_r, s->st40_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
+    s->st40_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
   }
-  s->st40_pkt_idx++;
-  s->st40_stat_pkt_cnt++;
 
   bool done = true;
   if (rte_ring_mp_enqueue(ring_p, (void*)pkt) != 0) {
@@ -1490,9 +1491,11 @@ static void tx_ancillary_session_stat(struct st_tx_ancillary_session_impl* s) {
   rte_atomic32_set(&s->st40_stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice("TX_ANC_SESSION(%d:%s): fps %f frame cnt %d, pkt cnt %d\n", idx, s->ops_name,
-         framerate, frame_cnt, s->st40_stat_pkt_cnt);
-  s->st40_stat_pkt_cnt = 0;
+  notice("TX_ANC_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
+         framerate, frame_cnt, s->st40_stat_pkt_cnt[MTL_SESSION_PORT_P],
+         s->st40_stat_pkt_cnt[MTL_SESSION_PORT_R]);
+  s->st40_stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
+  s->st40_stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
 
   if (s->stat_epoch_mismatch) {
     notice("TX_ANC_SESSION(%d): st40 epoch mismatch %d\n", idx, s->stat_epoch_mismatch);

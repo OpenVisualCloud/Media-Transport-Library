@@ -34,6 +34,8 @@ provider st20 {
   probe rx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
   /* attach to enable the pcap dump at runtime */
   probe rx_pcap_dump(int m_idx, int s_idx, int s_port, char* dump_file, uint32_t pkts);
+  /* incomplete frame */
+  probe rx_frame_incomplete(int m_idx, int s_idx, int f_idx, uint32_t tmstamp, uint32_t data_size, uint32_t expect_size);
 }
 
 provider st30 {

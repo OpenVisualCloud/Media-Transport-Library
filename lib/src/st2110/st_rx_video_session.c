@@ -874,6 +874,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
   } else {
     dbg("%s(%d): frame_recv_size %" PRIu64 ", frame_total_size %" PRIu64 ", tmstamp %u\n",
         __func__, s->idx, meta->frame_recv_size, meta->frame_total_size, slot->tmstamp);
+    MT_USDT_ST20_RX_FRAME_INCOMPLETE(s->parent->idx, s->idx, frame->idx, slot->tmstamp,
+                                     meta->frame_recv_size, s->st20_frame_size);
     meta->status = ST_FRAME_STATUS_CORRUPTED;
     s->stat_frames_dropped++;
     /* record the miss pkts */
@@ -3310,8 +3312,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
            s->ops_name, framerate, frames_received, s->stat_pkts_received);
   }
-  notice("RX_VIDEO_SESSION(%d,%d:%s): throughput %f Mb/s, cpu busy %f\n", m_idx, idx,
-         s->ops_name,
+  notice("RX_VIDEO_SESSION(%d,%d): throughput %f Mb/s, cpu busy %f\n", m_idx, idx,
          (double)s->stat_bytes_received * 8 / dump_period_s / MTL_STAT_M_UNIT,
          s->stat_cpu_busy_score);
   s->stat_pkts_received = 0;
@@ -3347,7 +3348,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
     s->stat_pkts_out_of_order = 0;
   }
   if (s->stat_pkts_redundant_dropped) {
-    notice("RX_VIDEO_SESSION(%d,%d): redundant dropped pkts %d\n", m_idx, idx,
+    notice("RX_VIDEO_SESSION(%d,%d): redundant pkts %d\n", m_idx, idx,
            s->stat_pkts_redundant_dropped);
     s->stat_pkts_redundant_dropped = 0;
   }
