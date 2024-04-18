@@ -244,6 +244,9 @@ pub enum FrameFmt {
     RgbRfc4175Pg2Be12 = sys::st_frame_fmt_ST_FRAME_FMT_RGBRFC4175PG2BE12 as _,
     JpegxsCodestream = sys::st_frame_fmt_ST_FRAME_FMT_JPEGXS_CODESTREAM as _,
     H264CbrCodestream = sys::st_frame_fmt_ST_FRAME_FMT_H264_CBR_CODESTREAM as _,
+    H264Codestream = sys::st_frame_fmt_ST_FRAME_FMT_H264_CODESTREAM as _,
+    H265CbrCodestream = sys::st_frame_fmt_ST_FRAME_FMT_H265_CBR_CODESTREAM as _,
+    H265Codestream = sys::st_frame_fmt_ST_FRAME_FMT_H265_CODESTREAM as _,
 }
 
 impl FromStr for FrameFmt {

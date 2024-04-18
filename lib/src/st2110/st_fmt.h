@@ -80,4 +80,6 @@ static inline void st20_unpack_pg2be_422le12(struct st20_rfc4175_422_12_pg2_be* 
 
 void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova);
 
+enum st_frame_fmt st_codec_codestream_fmt(enum st22_codec codec);
+
 #endif

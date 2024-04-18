@@ -182,6 +182,12 @@ enum st_frame_fmt {
   ST_FRAME_FMT_JPEGXS_CODESTREAM = 56,
   /** ST22 h264 cbr codestream */
   ST_FRAME_FMT_H264_CBR_CODESTREAM = 57,
+  /** ST22 h264 codestream */
+  ST_FRAME_FMT_H264_CODESTREAM = 58,
+  /** ST22 h265 codestream */
+  ST_FRAME_FMT_H265_CBR_CODESTREAM = 59,
+  /** ST22 h265 codestream */
+  ST_FRAME_FMT_H265_CODESTREAM = 60,
   /** End of codestream format list */
   ST_FRAME_FMT_CODESTREAM_END,
   /** max value(< sizeof(uint64_t)) of this enum */
@@ -196,6 +202,8 @@ enum st_frame_fmt {
 #define ST_FMT_CAP_Y210 (MTL_BIT64(ST_FRAME_FMT_Y210))
 /** ST format cap of ST_FRAME_FMT_YUV422PLANAR8 */
 #define ST_FMT_CAP_YUV422PLANAR8 (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR8))
+/** ST format cap of ST_FRAME_FMT_YUV420PLANAR8 */
+#define ST_FMT_CAP_YUV420PLANAR8 (MTL_BIT64(ST_FRAME_FMT_YUV420PLANAR8))
 /** ST format cap of ST_FRAME_FMT_UYVY */
 #define ST_FMT_CAP_UYVY (MTL_BIT64(ST_FRAME_FMT_UYVY))
 /** ST format cap of ST_FRAME_FMT_YUV422RFC4175PG2BE10 */
@@ -212,6 +220,12 @@ enum st_frame_fmt {
 #define ST_FMT_CAP_JPEGXS_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_JPEGXS_CODESTREAM))
 /** ST format cap of ST_FRAME_FMT_H264_CBR_CODESTREAM, used in the st22_plugin caps */
 #define ST_FMT_CAP_H264_CBR_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H264_CBR_CODESTREAM))
+/** ST format cap of ST_FRAME_FMT_H264_CODESTREAM, used in the st22_plugin caps */
+#define ST_FMT_CAP_H264_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H264_CODESTREAM))
+/** ST format cap of ST_FRAME_FMT_H265_CBR_CODESTREAM, used in the st22_plugin caps */
+#define ST_FMT_CAP_H265_CBR_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H265_CBR_CODESTREAM))
+/** ST format cap of ST_FRAME_FMT_H265_CODESTREAM, used in the st22_plugin caps */
+#define ST_FMT_CAP_H265_CODESTREAM (MTL_BIT64(ST_FRAME_FMT_H265_CODESTREAM))
 
 /** Flag bit in flags of struct st_frame. */
 enum st_frame_flag {
@@ -327,6 +341,12 @@ enum st22_codec {
   ST22_CODEC_JPEGXS = 0,
   /** h264 cbr codec */
   ST22_CODEC_H264_CBR,
+  /** h264 codec */
+  ST22_CODEC_H264,
+  /** h265 cbr codec */
+  ST22_CODEC_H265_CBR,
+  /** h265 codec */
+  ST22_CODEC_H265,
   /** max value of this enum */
   ST22_CODEC_MAX,
 };
@@ -2191,6 +2211,9 @@ int st_field_merge(const struct st_frame* first, const struct st_frame* second,
 /** split one full frame to two fields */
 int st_field_split(const struct st_frame* frame, struct st_frame* first,
                    struct st_frame* second);
+
+/** helper for name to codec */
+enum st22_codec st_name_to_codec(const char* name);
 
 #if defined(__cplusplus)
 }

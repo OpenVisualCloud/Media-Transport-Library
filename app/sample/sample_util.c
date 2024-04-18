@@ -383,12 +383,7 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         ctx->ext_frame = true;
         break;
       case SAMPLE_ARG_ST22_CODEC:
-        if (!strcmp(optarg, "jpegxs"))
-          ctx->st22p_codec = ST22_CODEC_JPEGXS;
-        else if (!strcmp(optarg, "h264_cbr"))
-          ctx->st22p_codec = ST22_CODEC_H264_CBR;
-        else
-          err("%s, unknown codec %s\n", __func__, optarg);
+        ctx->st22p_codec = st_name_to_codec(optarg);
         break;
       case SAMPLE_ARG_PIPELINE_FMT: {
         enum st_frame_fmt fmt = st_frame_name_to_fmt(optarg);

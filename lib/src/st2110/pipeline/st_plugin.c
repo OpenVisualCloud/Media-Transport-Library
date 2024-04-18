@@ -552,10 +552,6 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     err("%s, pls set free_session\n", __func__);
     return NULL;
   }
-  if (!dev->notify_frame_available) {
-    err("%s, pls set notify_frame_available\n", __func__);
-    return NULL;
-  }
 
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
@@ -607,10 +603,6 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
   }
   if (!dev->free_session) {
     err("%s, pls set free_session\n", __func__);
-    return NULL;
-  }
-  if (!dev->notify_frame_available) {
-    err("%s, pls set notify_frame_available\n", __func__);
     return NULL;
   }
 

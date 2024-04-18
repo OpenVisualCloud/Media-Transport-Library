@@ -2,28 +2,26 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#ifndef _ST22_FFMPEG_PLUGIN_HEAD_H_
-#define _ST22_FFMPEG_PLUGIN_HEAD_H_
+#ifndef _ST22_AVCODEC_PLUGIN_HEAD_H_
+#define _ST22_AVCODEC_PLUGIN_HEAD_H_
 
 #include <libavcodec/avcodec.h>
 #include <libavutil/opt.h>
 #include <mtl/st_pipeline_api.h>
 
-#define MAX_ST22_ENCODER_SESSIONS (8)
-#define MAX_ST22_DECODER_SESSIONS (8)
+#define MAX_ST22_AVCODEC_ENCODER_SESSIONS (8)
+#define MAX_ST22_AVCODEC_DECODER_SESSIONS (8)
 
-struct st22_encoder_session {
+struct st22_avcodec_encoder_session {
   int idx;
+  enum AVPixelFormat pix_fmt;
 
   struct st22_encoder_create_req req;
   st22p_encode_session session_p;
   bool stop;
   pthread_t encode_thread;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   int frame_cnt;
-  int frame_idx;
 
   /* AVCodec info */
   AVCodecContext* codec_ctx;
@@ -31,18 +29,16 @@ struct st22_encoder_session {
   AVPacket* codec_pkt;
 };
 
-struct st22_decoder_session {
+struct st22_avcodec_decoder_session {
   int idx;
+  enum AVPixelFormat pix_fmt;
 
   struct st22_decoder_create_req req;
   st22p_decode_session session_p;
   bool stop;
   pthread_t decode_thread;
-  pthread_cond_t wake_cond;
-  pthread_mutex_t wake_mutex;
 
   int frame_cnt;
-  int frame_idx;
 
   /* AVCodec info */
   AVCodecContext* codec_ctx;
@@ -51,11 +47,13 @@ struct st22_decoder_session {
   AVCodecParserContext* codec_parser;
 };
 
-struct st22_ffmpeg_ctx {
+struct st22_avcodec_plugin_ctx {
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
-  struct st22_encoder_session* encoder_sessions[MAX_ST22_ENCODER_SESSIONS];
-  struct st22_decoder_session* decoder_sessions[MAX_ST22_DECODER_SESSIONS];
+  struct st22_avcodec_encoder_session*
+      encoder_sessions[MAX_ST22_AVCODEC_ENCODER_SESSIONS];
+  struct st22_avcodec_decoder_session*
+      decoder_sessions[MAX_ST22_AVCODEC_DECODER_SESSIONS];
 };
 
 /* the APIs for plugin */

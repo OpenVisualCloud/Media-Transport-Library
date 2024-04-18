@@ -28,13 +28,13 @@ if [ -n "$1" ];  then
 fi
 
 WORKSPACE=$PWD
-ST22_FFMPEG_PLUGIN_BUILD_DIR=${WORKSPACE}/build/st22_ffmpeg_plugin
+ST22_AVCODEC_PLUGIN_BUILD_DIR=${WORKSPACE}/build/st22_avcodec_plugin
 
-# build st22 ffmpeg plugin
-pushd plugins/st22_ffmpeg/
-meson "${ST22_FFMPEG_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype"
+# build st22 avcodec plugin
+pushd plugins/st22_avcodec/
+meson "${ST22_AVCODEC_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype"
 popd
-pushd "${ST22_FFMPEG_PLUGIN_BUILD_DIR}"
+pushd "${ST22_AVCODEC_PLUGIN_BUILD_DIR}"
 ninja
 sudo ninja install
 popd
