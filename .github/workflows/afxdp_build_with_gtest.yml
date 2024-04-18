@@ -108,10 +108,8 @@ jobs:
 
       - name: Setup network interfaces
         run: |
-          sudo nmcli dev set ${{  env.INTERFACE_P  }} managed no
-          sudo ifconfig ${{  env.INTERFACE_P  }} 192.168.96.10/24
-          sudo nmcli dev set ${{  env.INTERFACE_R  }} managed no
-          sudo ifconfig ${{  env.INTERFACE_R  }} 192.168.96.11/24
+          sudo ifconfig ${{  env.INTERFACE_P  }} 192.167.97.10/24
+          sudo ifconfig ${{  env.INTERFACE_R  }} 192.167.97.11/24
           echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/napi_defer_hard_irqs
           echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/gro_flush_timeout
           echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/napi_defer_hard_irqs
