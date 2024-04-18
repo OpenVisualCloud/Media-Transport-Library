@@ -87,9 +87,9 @@ jobs:
         run: |
           ./build.sh
 
-      - name: Build st22 ffmpeg plugin
+      - name: Build st22 avcodec plugin
         run: |
-          ./script/build_st22_ffmpeg_plugin.sh
+          ./script/build_st22_avcodec_plugin.sh
 
       - name: Build openh264
         run: |

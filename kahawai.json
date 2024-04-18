@@ -2,13 +2,13 @@
     "plugins": [
         {
             "enabled": 0,
-            "name": "st22_ffmpeg",
-            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_ffmpeg.so"
+            "name": "st22_avcodec",
+            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_avcodec.so"
         },
         {
             "enabled": 0,
-            "name": "st22_ffmpeg",
-            "path": "/usr/local/lib64/libst_plugin_st22_ffmpeg.so"
+            "name": "st22_avcodec",
+            "path": "/usr/local/lib64/libst_plugin_st22_avcodec.so"
         },
         {
             "enabled": 1,

@@ -244,6 +244,9 @@ pub enum FrameFmt {
     RgbRfc4175Pg2Be12 = sys::st_frame_fmt_ST_FRAME_FMT_RGBRFC4175PG2BE12 as _,
     JpegxsCodestream = sys::st_frame_fmt_ST_FRAME_FMT_JPEGXS_CODESTREAM as _,
     H264CbrCodestream = sys::st_frame_fmt_ST_FRAME_FMT_H264_CBR_CODESTREAM as _,
+    H264Codestream = sys::st_frame_fmt_ST_FRAME_FMT_H264_CODESTREAM as _,
+    H265CbrCodestream = sys::st_frame_fmt_ST_FRAME_FMT_H265_CBR_CODESTREAM as _,
+    H265Codestream = sys::st_frame_fmt_ST_FRAME_FMT_H265_CODESTREAM as _,
 }
 
 impl FromStr for FrameFmt {
@@ -275,6 +278,9 @@ impl FromStr for FrameFmt {
             "RGBRFC4175PG2BE12" => Ok(RgbRfc4175Pg2Be12),
             "JPEGXS_CODESTREAM" => Ok(JpegxsCodestream),
             "H264_CBR_CODESTREAM" => Ok(H264CbrCodestream),
+            "H264_CODESTREAM" => Ok(H264Codestream),
+            "H265_CBR_CODESTREAM" => Ok(H265CbrCodestream),
+            "H265_CODESTREAM" => Ok(H265Codestream),
             _ => bail!(format!("Unknown format: {}", s)),
         }
     }
@@ -306,6 +312,9 @@ impl Display for FrameFmt {
             FrameFmt::RgbRfc4175Pg2Be12 => write!(f, "RGBRFC4175PG2BE12"),
             FrameFmt::JpegxsCodestream => write!(f, "JPEGXS_CODESTREAM"),
             FrameFmt::H264CbrCodestream => write!(f, "H264_CBR_CODESTREAM"),
+            FrameFmt::H264Codestream => write!(f, "H264_CODESTREAM"),
+            FrameFmt::H265CbrCodestream => write!(f, "H265_CBR_CODESTREAM"),
+            FrameFmt::H265Codestream => write!(f, "H265_CODESTREAM"),
         }
     }
 }

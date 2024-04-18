@@ -52,7 +52,7 @@ def main():
     tx_para.framebuff_cnt = 3
     tx_para.input_fmt = args.pipeline_fmt
     tx_para.pack_type = mtl.ST22_PACK_CODESTREAM
-    tx_para.codec = mtl.ST22_CODEC_JPEGXS
+    tx_para.codec = args.st22_codec
     tx_para.device = mtl.ST_PLUGIN_DEVICE_AUTO
     tx_para.quality = mtl.ST22_QUALITY_MODE_QUALITY
     tx_para.codec_thread_cnt = 2

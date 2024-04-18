@@ -657,11 +657,8 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     return NULL;
   }
 
-  if (ops->codec == ST22_CODEC_JPEGXS) {
-    codestream_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM;
-  } else if (ops->codec == ST22_CODEC_H264_CBR) {
-    codestream_fmt = ST_FRAME_FMT_H264_CBR_CODESTREAM;
-  } else {
+  codestream_fmt = st_codec_codestream_fmt(ops->codec);
+  if (codestream_fmt == ST_FRAME_FMT_MAX) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return NULL;
   }

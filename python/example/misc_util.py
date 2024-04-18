@@ -38,12 +38,10 @@ def parse_packing(name):
 
 
 def parse_st22_codec(name):
-    if name == "jpegxs":
-        return mtl.ST22_CODEC_JPEGXS
-    if name == "h264_cbr":
-        return mtl.ST22_CODEC_H264_CBR
-
-    raise argparse.ArgumentTypeError(f"{name} is not a valid codec name")
+    codec = mtl.st_name_to_codec(name)
+    if codec >= mtl.ST22_CODEC_MAX:
+        raise argparse.ArgumentTypeError(f"{name} is not a valid codec name")
+    return codec
 
 
 def parse_pacing_way(name):

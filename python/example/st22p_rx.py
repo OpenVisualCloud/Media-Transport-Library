@@ -95,7 +95,7 @@ def main():
     rx_para.framebuff_cnt = 3
     rx_para.output_fmt = args.pipeline_fmt
     rx_para.pack_type = mtl.ST22_PACK_CODESTREAM
-    rx_para.codec = mtl.ST22_CODEC_JPEGXS
+    rx_para.codec = args.st22_codec
     rx_para.device = mtl.ST_PLUGIN_DEVICE_AUTO
     # let lib to decide
     rx_para.max_codestream_size = 0

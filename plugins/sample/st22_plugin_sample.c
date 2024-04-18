@@ -103,9 +103,11 @@ static int encoder_free_session(void* priv, st22_encode_priv session) {
   struct st22_encoder_session* encoder_session = session;
   int idx = encoder_session->idx;
 
-  encoder_session->stop = true;
-  st22_encoder_wake_block(encoder_session->session_p);
-  pthread_join(encoder_session->encode_thread, NULL);
+  if (encoder_session->encode_thread) {
+    encoder_session->stop = true;
+    st22_encoder_wake_block(encoder_session->session_p);
+    pthread_join(encoder_session->encode_thread, NULL);
+  }
 
   info("%s(%d), total %d encode frames\n", __func__, idx, encoder_session->frame_cnt);
   free(encoder_session);
@@ -200,10 +202,12 @@ static int decoder_free_session(void* priv, st22_decode_priv session) {
   struct st22_decoder_session* decoder_session = session;
   int idx = decoder_session->idx;
 
-  decoder_session->stop = true;
-
-  st22_decoder_wake_block(decoder_session->session_p);
-  pthread_join(decoder_session->decode_thread, NULL);
+  if (decoder_session->decode_thread) {
+    info("%s(%d), stop thread\n", __func__, idx);
+    decoder_session->stop = true;
+    st22_decoder_wake_block(decoder_session->session_p);
+    pthread_join(decoder_session->decode_thread, NULL);
+  }
 
   info("%s(%d), total %d decode frames\n", __func__, idx, decoder_session->frame_cnt);
   free(decoder_session);

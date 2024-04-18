@@ -422,7 +422,45 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .planes = 1,
         .sampling = ST_FRAME_SAMPLING_MAX,
     },
+    {
+        /* ST_FRAME_FMT_H264_CODESTREAM */
+        .fmt = ST_FRAME_FMT_H264_CODESTREAM,
+        .name = "H264_CODESTREAM",
+        .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_MAX,
+    },
+    {
+        /* ST_FRAME_FMT_H265_CBR_CODESTREAM */
+        .fmt = ST_FRAME_FMT_H265_CBR_CODESTREAM,
+        .name = "H265_CBR_CODESTREAM",
+        .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_MAX,
+    },
+    {
+        /* ST_FRAME_FMT_H265_CODESTREAM */
+        .fmt = ST_FRAME_FMT_H265_CODESTREAM,
+        .name = "H265_CODESTREAM",
+        .planes = 1,
+        .sampling = ST_FRAME_SAMPLING_MAX,
+    },
 };
+
+enum st_frame_fmt st_codec_codestream_fmt(enum st22_codec codec) {
+  if (codec == ST22_CODEC_JPEGXS) {
+    return ST_FRAME_FMT_JPEGXS_CODESTREAM;
+  } else if (codec == ST22_CODEC_H264_CBR) {
+    return ST_FRAME_FMT_H264_CBR_CODESTREAM;
+  } else if (codec == ST22_CODEC_H264) {
+    return ST_FRAME_FMT_H264_CODESTREAM;
+  } else if (codec == ST22_CODEC_H265_CBR) {
+    return ST_FRAME_FMT_H265_CBR_CODESTREAM;
+  } else if (codec == ST22_CODEC_H265) {
+    return ST_FRAME_FMT_H265_CODESTREAM;
+  }
+
+  err("%s, unknow codec %d\n", __func__, codec);
+  return ST_FRAME_FMT_MAX;
+}
 
 static const char* st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
     "auto", "ratelimit", "tsc", "tsn", "ptp", "be", "tsc_narrow",
@@ -740,6 +778,22 @@ enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
 
   err("%s, invalid name %s\n", __func__, name);
   return ST_FRAME_FMT_MAX;
+}
+
+enum st22_codec st_name_to_codec(const char* name) {
+  if (!strcmp(name, "jpegxs"))
+    return ST22_CODEC_JPEGXS;
+  else if (!strcmp(name, "h264_cbr"))
+    return ST22_CODEC_H264_CBR;
+  else if (!strcmp(name, "h264"))
+    return ST22_CODEC_H264;
+  else if (!strcmp(name, "h265_cbr"))
+    return ST22_CODEC_H265_CBR;
+  else if (!strcmp(name, "h265"))
+    return ST22_CODEC_H265;
+
+  err("%s, invalid name %s\n", __func__, name);
+  return ST22_CODEC_MAX;
 }
 
 uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt) {
