@@ -60,6 +60,8 @@ static void* test_encode_thread(void* arg) {
   struct st22_encode_frame_meta* frame;
   int result;
 
+  if (ctx->encoder_use_block_get) st22_encoder_set_block_timeout(session_p, NS_PER_S);
+
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st22_encoder_get_frame(session_p);
@@ -137,9 +139,13 @@ static int test_encoder_free_session(void* priv, st22_encode_priv session) {
   int idx = encoder_session->idx;
 
   encoder_session->stop = true;
-  st_pthread_mutex_lock(&encoder_session->wake_mutex);
-  st_pthread_cond_signal(&encoder_session->wake_cond);
-  st_pthread_mutex_unlock(&encoder_session->wake_mutex);
+  if (ctx->encoder_use_block_get) {
+    st22_encoder_wake_block(encoder_session->session_p);
+  } else {
+    st_pthread_mutex_lock(&encoder_session->wake_mutex);
+    st_pthread_cond_signal(&encoder_session->wake_cond);
+    st_pthread_mutex_unlock(&encoder_session->wake_mutex);
+  }
   pthread_join(encoder_session->encode_thread, NULL);
 
   st_pthread_mutex_destroy(&encoder_session->wake_mutex);
@@ -208,6 +214,8 @@ static void* test_decode_thread(void* arg) {
   struct st22_decode_frame_meta* frame;
   int result;
 
+  if (ctx->encoder_use_block_get) st22_decoder_set_block_timeout(session_p, NS_PER_S);
+
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st22_decoder_get_frame(session_p);
@@ -244,7 +252,9 @@ static st22_decode_priv test_decoder_create_session(void* priv,
     st_pthread_mutex_init(&session->wake_mutex, NULL);
     st_pthread_cond_init(&session->wake_cond, NULL);
 
-    if (ctx->decoder_use_block_get) req->resp_flag |= ST22_DECODER_RESP_FLAG_BLOCK_GET;
+    if (ctx->decoder_use_block_get) {
+      req->resp_flag |= ST22_DECODER_RESP_FLAG_BLOCK_GET;
+    }
 
     session->req = *req;
     session->session_p = session_p;
@@ -282,9 +292,13 @@ static int test_decoder_free_session(void* priv, st22_decode_priv session) {
   int idx = decoder_session->idx;
 
   decoder_session->stop = true;
-  st_pthread_mutex_lock(&decoder_session->wake_mutex);
-  st_pthread_cond_signal(&decoder_session->wake_cond);
-  st_pthread_mutex_unlock(&decoder_session->wake_mutex);
+  if (ctx->encoder_use_block_get) {
+    st22_decoder_wake_block(decoder_session->session_p);
+  } else {
+    st_pthread_mutex_lock(&decoder_session->wake_mutex);
+    st_pthread_cond_signal(&decoder_session->wake_cond);
+    st_pthread_mutex_unlock(&decoder_session->wake_mutex);
+  }
   pthread_join(decoder_session->decode_thread, NULL);
 
   st_pthread_mutex_destroy(&decoder_session->wake_mutex);
@@ -894,6 +908,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ASSERT_TRUE(tx_handle[i] != NULL);
 
     EXPECT_EQ(test_ctx_tx[i]->frame_size, st22p_tx_frame_size(tx_handle[i]));
+    if (para->block_get) {
+      ret = st22p_tx_set_block_timeout(tx_handle[i], NS_PER_S);
+      EXPECT_EQ(ret, 0);
+    }
 
     /* init ext frames, only for no convert */
     if (para->tx_ext) {
@@ -1076,6 +1094,10 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     ASSERT_TRUE(rx_handle[i] != NULL);
 
     EXPECT_EQ(test_ctx_rx[i]->frame_size, st22p_rx_frame_size(rx_handle[i]));
+    if (para->block_get) {
+      ret = st22p_rx_set_block_timeout(rx_handle[i], NS_PER_S);
+      EXPECT_EQ(ret, 0);
+    }
 
     test_ctx_rx[i]->handle = rx_handle[i];
 

@@ -1192,6 +1192,7 @@ struct st22_get_encoder_request {
   void* priv;
   struct st22_encode_frame_meta* (*get_frame)(void* priv);
   int (*wake_block)(void* priv);
+  int (*set_block_timeout)(void* priv, uint64_t timedwait_ns);
   int (*put_frame)(void* priv, struct st22_encode_frame_meta* frame, int result);
   int (*dump)(void* priv);
 };
@@ -1203,6 +1204,7 @@ struct st22_get_decoder_request {
   void* priv;
   struct st22_decode_frame_meta* (*get_frame)(void* priv);
   int (*wake_block)(void* priv);
+  int (*set_block_timeout)(void* priv, uint64_t timedwait_ns);
   int (*put_frame)(void* priv, struct st22_decode_frame_meta* frame, int result);
   int (*dump)(void* priv);
 };

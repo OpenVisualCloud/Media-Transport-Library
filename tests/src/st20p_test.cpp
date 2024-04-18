@@ -786,6 +786,11 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     tx_handle[i] = st20p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
+    if (para->block_get) {
+      ret = st20p_tx_set_block_timeout(tx_handle[i], NS_PER_S);
+      EXPECT_EQ(ret, 0);
+    }
+
     int sch = st20p_tx_get_sch_idx(tx_handle[i]);
     EXPECT_GE(sch, 0);
     ret = mtl_sch_enable_sleep(st, sch, false);
@@ -1014,6 +1019,11 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     rx_handle[i] = st20p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
+
+    if (para->block_get) {
+      ret = st20p_rx_set_block_timeout(rx_handle[i], NS_PER_S);
+      EXPECT_EQ(ret, 0);
+    }
 
     int sch = st20p_rx_get_sch_idx(rx_handle[i]);
     EXPECT_GE(sch, 0);

@@ -527,7 +527,8 @@ static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
+  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                               ctx->block_timeout_ns);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   dbg("%s(%d), end\n", __func__, ctx->idx);
   return 0;
@@ -775,6 +776,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
+  ctx->block_timeout_ns = NS_PER_S;
   if (ops->flags & ST20P_TX_FLAG_BLOCK_GET) {
     ctx->block_get = true;
   }
@@ -965,5 +967,18 @@ int st20p_tx_wake_block(st20p_tx_handle handle) {
 
   if (ctx->block_get) tx_st20p_block_wake(ctx);
 
+  return 0;
+}
+
+int st20p_tx_set_block_timeout(st20p_tx_handle handle, uint64_t timedwait_ns) {
+  struct st20p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  ctx->block_timeout_ns = timedwait_ns;
   return 0;
 }

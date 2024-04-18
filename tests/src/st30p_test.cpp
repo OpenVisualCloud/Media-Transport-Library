@@ -339,6 +339,11 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     tx_handle[i] = st30p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
+    if (para->block_get) {
+      ret = st30p_tx_set_block_timeout(tx_handle[i], NS_PER_S);
+      EXPECT_EQ(ret, 0);
+    }
+
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
     uint8_t* fb;
@@ -405,6 +410,11 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
 
     rx_handle[i] = st30p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
+
+    if (para->block_get) {
+      ret = st30p_rx_set_block_timeout(rx_handle[i], NS_PER_S);
+      EXPECT_EQ(ret, 0);
+    }
 
     test_ctx_rx[i]->handle = rx_handle[i];
 

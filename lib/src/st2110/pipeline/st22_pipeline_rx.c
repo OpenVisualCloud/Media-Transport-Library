@@ -178,7 +178,8 @@ static int rx_st22p_decode_get_block_wait(struct st22p_rx_ctx* ctx) {
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->decode_block_wake_mutex);
   mt_pthread_cond_timedwait_ns(&ctx->decode_block_wake_cond,
-                               &ctx->decode_block_wake_mutex, NS_PER_S);
+                               &ctx->decode_block_wake_mutex,
+                               ctx->decode_block_timeout_ns);
   mt_pthread_mutex_unlock(&ctx->decode_block_wake_mutex);
   return 0;
 }
@@ -187,6 +188,12 @@ static int rx_st22p_decode_wake_block(void* priv) {
   struct st22p_rx_ctx* ctx = priv;
 
   rx_st22p_decode_block_wake(ctx);
+  return 0;
+}
+
+static int rx_st22p_decode_set_timeout(void* priv, uint64_t timedwait_ns) {
+  struct st22p_rx_ctx* ctx = priv;
+  ctx->decode_block_timeout_ns = timedwait_ns;
   return 0;
 }
 
@@ -479,6 +486,7 @@ static int rx_st22p_get_decoder(struct mtl_main_impl* impl, struct st22p_rx_ctx*
   req.priv = ctx;
   req.get_frame = rx_st22p_decode_get_frame;
   req.wake_block = rx_st22p_decode_wake_block;
+  req.set_block_timeout = rx_st22p_decode_set_timeout;
   req.put_frame = rx_st22p_decode_put_frame;
   req.dump = rx_st22p_decode_dump;
 
@@ -502,7 +510,8 @@ static int rx_st22p_get_block_wait(struct st22p_rx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex, NS_PER_S);
+  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                               ctx->block_timeout_ns);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   dbg("%s(%d), end\n", __func__, ctx->idx);
   return 0;
@@ -679,9 +688,11 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
 
   mt_pthread_mutex_init(&ctx->decode_block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->decode_block_wake_cond);
+  ctx->decode_block_timeout_ns = NS_PER_S;
 
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
+  ctx->block_timeout_ns = NS_PER_S;
   if (ops->flags & ST22P_RX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */
@@ -841,5 +852,18 @@ int st22p_rx_wake_block(st22p_rx_handle handle) {
 
   if (ctx->block_get) rx_st22p_block_wake(ctx);
 
+  return 0;
+}
+
+int st22p_rx_set_block_timeout(st22p_rx_handle handle, uint64_t timedwait_ns) {
+  struct st22p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST22_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  ctx->block_timeout_ns = timedwait_ns;
   return 0;
 }

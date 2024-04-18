@@ -385,7 +385,7 @@ enum st22p_tx_flag {
    */
   ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
-   available or timeout(1s) */
+   available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
   ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
@@ -442,7 +442,7 @@ enum st20p_tx_flag {
    */
   ST20P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(10)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
-     available or timeout(1s) */
+     available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
@@ -473,7 +473,7 @@ enum st22p_rx_flag {
   ST22P_RX_FLAG_EXT_FRAME = (MTL_BIT32(4)),
 
   /** Enable the st22p_rx_get_frame block behavior to wait until a frame becomes
-     available or timeout(1s) */
+     available or timeout(default: 1s, use st22p_rx_set_block_timeout to customize) */
   ST22P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
   /**
    * If set, lib will pass the incomplete frame to app also.
@@ -517,7 +517,7 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(5)),
 
   /** Enable the st20p_rx_get_frame block behavior to wait until a frame becomes
-     available or timeout(1s) */
+     available or (default: 1s, use st20p_rx_set_block_timeout to customize) */
   ST20P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
   /**
    * If set, lib will pass the incomplete frame to app also.
@@ -555,14 +555,16 @@ enum st20p_rx_flag {
 /** Bit define for flag_resp of struct st22_decoder_create_req. */
 enum st22_decoder_resp_flag {
   /** Enable the st22_decoder_get_frame block behavior to wait until a frame becomes
-     available or timeout(1s) */
+     available or timeout(default: 1s, use st22_decoder_set_block_timeout to customize)
+   */
   ST22_DECODER_RESP_FLAG_BLOCK_GET = (MTL_BIT32(0)),
 };
 
 /** Bit define for flag_resp of struct st22_encoder_create_req. */
 enum st22_encoder_resp_flag {
   /** Enable the st22_encoder_get_frame block behavior to wait until a frame becomes
-     available or timeout(1s) */
+     available or timeout(default: 1s, use st22_encoder_set_block_timeout to customize)
+   */
   ST22_ENCODER_RESP_FLAG_BLOCK_GET = (MTL_BIT32(0)),
 };
 
@@ -1088,7 +1090,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle);
  * Call st22_encoder_put_frame to return the frame to session.
  *
  * @param session
- *   The handle to the tx st2110-22 pipeline session.
+ *   The handle to the st2110-22 encoder session.
  * @return
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
@@ -1100,7 +1102,7 @@ struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session sessi
  * enabled.
  *
  * @param session
- *   The handle to the tx st2110-22 pipeline session.
+ *   The handle to the st2110-22 encoder session.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
@@ -1108,11 +1110,25 @@ struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session sessi
 int st22_encoder_wake_block(st22p_encode_session session);
 
 /**
+ * Set the block timeout time on st22_decoder_get_frame if
+ * ST22_ENCODER_RESP_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the st2110-22 encoder session.
+ * @param timedwait_ns
+ *   The timeout time in ns.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22_encoder_set_block_timeout(st22p_encode_session session, uint64_t timedwait_ns);
+
+/**
  * Put back the frame which get by st22_encoder_get_frame to the tx
  * st2110-22 pipeline session.
  *
  * @param session
- *   The handle to the tx st2110-22 pipeline session.
+ *   The handle to the st2110-22 encoder session.
  * @param frame
  *   the frame pointer by st22_encoder_get_frame.
  * @param result
@@ -1154,7 +1170,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle);
  * Call st22_decoder_put_frame to return the frame to session.
  *
  * @param session
- *   The handle to the rx st2110-22 pipeline session.
+ *   The handle to the st2110-22 decode session.
  * @return
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
@@ -1166,7 +1182,7 @@ struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session sessi
  * enabled.
  *
  * @param session
- *   The handle to the rx st2110-22 pipeline session.
+ *   The handle to the st2110-22 decode session.
  * @return
  *   - 0: Success.
  *   - <0: Error code.
@@ -1174,11 +1190,25 @@ struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session sessi
 int st22_decoder_wake_block(st22p_decode_session session);
 
 /**
+ * Set the block timeout time on st22_decoder_get_frame if
+ * ST22_DECODER_RESP_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the st2110-22 decode session.
+ * @param timedwait_ns
+ *   The timeout time in ns.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22_decoder_set_block_timeout(st22p_decode_session session, uint64_t timedwait_ns);
+
+/**
  * Put back the frame which get by st22_decoder_get_frame to the rx
  * st2110-22 pipeline session.
  *
  * @param session
- *   The handle to the rx st2110-22 pipeline session.
+ *   The handle to the st2110-22 decode session.
  * @param frame
  *   the frame pointer by st22_encoder_get_frame.
  * @param result
@@ -1399,6 +1429,19 @@ int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* 
 int st22p_tx_wake_block(st22p_tx_handle handle);
 
 /**
+ * Set the block timeout time on st22p_tx_get_frame if ST22P_TX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the tx st2110-22(pipeline) session.
+ * @param timedwait_ns
+ *   The timeout time in ns.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22p_tx_set_block_timeout(st22p_tx_handle handle, uint64_t timedwait_ns);
+
+/**
  * Create one rx st2110-22 pipeline session.
  *
  * @param mt
@@ -1527,6 +1570,19 @@ int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src
  *   - <0: Error code.
  */
 int st22p_rx_wake_block(st22p_rx_handle handle);
+
+/**
+ * Set the block timeout time on st22p_rx_get_frame if ST22P_RX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the rx st2110-22(pipeline) session.
+ * @param timedwait_ns
+ *   The timeout time in ns.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st22p_rx_set_block_timeout(st22p_rx_handle handle, uint64_t timedwait_ns);
 
 /**
  * Create one tx st2110-20 pipeline session.
@@ -1683,6 +1739,19 @@ int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* 
  *   - <0: Error code.
  */
 int st20p_tx_wake_block(st20p_tx_handle handle);
+
+/**
+ * Set the block timeout time on st20p_tx_get_frame if ST20P_TX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(pipeline) session.
+ * @param timedwait_ns
+ *   The timeout time in ns.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_tx_set_block_timeout(st20p_tx_handle handle, uint64_t timedwait_ns);
 
 /**
  * Create one rx st2110-20 pipeline session.
@@ -1867,6 +1936,19 @@ int st20p_rx_timing_parser_critical(st20p_rx_handle handle, struct st20_rx_tp_pa
  *   - <0: Error code.
  */
 int st20p_rx_wake_block(st20p_rx_handle handle);
+
+/**
+ * Set the block timeout time on st20p_rx_get_frame if ST20P_RX_FLAG_BLOCK_GET is enabled.
+ *
+ * @param handle
+ *   The handle to the rx st2110-20(pipeline) session.
+ * @param timedwait_ns
+ *   The timeout time in ns.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st20p_rx_set_block_timeout(st20p_rx_handle handle, uint64_t timedwait_ns);
 
 /**
  * Convert color format from source frame to destination frame.
