@@ -50,6 +50,7 @@ struct st20p_rx_ctx {
   bool block_get;
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
+  uint64_t block_timeout_ns;
 
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;

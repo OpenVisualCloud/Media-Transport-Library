@@ -38,7 +38,7 @@ enum st30p_tx_flag {
   ST30P_TX_FLAG_USER_R_MAC = (MTL_BIT32(1)),
 
   /** Enable the st30p_tx_get_frame block behavior to wait until a frame becomes
-   available or timeout(1s) */
+   available or timeout(default: 1s, use st30p_tx_set_block_timeout to customize)*/
   ST30P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
@@ -157,6 +157,9 @@ int st30p_tx_wake_block(st30p_tx_handle handle);
 size_t st30p_tx_frame_size(st30p_tx_handle handle);
 /* get framebuff pointer */
 void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx);
+/** Set the block timeout time on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is
+ * enabled. */
+int st30p_tx_set_block_timeout(st30p_tx_handle handle, uint64_t timedwait_ns);
 
 /** Bit define for flags of struct st20p_rx_ops. */
 enum st30p_rx_flag {
@@ -168,7 +171,7 @@ enum st30p_rx_flag {
   ST30P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
 
   /** Enable the st30p_rx_get_frame block behavior to wait until a frame becomes
-   available or timeout(1s) */
+   available or timeout(default: 1s, use st30p_rx_set_block_timeout to customize) */
   ST30P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
@@ -219,8 +222,11 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame);
 int st30p_rx_free(st30p_rx_handle handle);
 /** Create one rx st2110-30 pipeline session */
 st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops);
-/** Wake up the block wait on st30p_rx_get_frame if ST30P_TX_FLAG_BLOCK_GET is enabled.*/
+/** Wake up the block wait on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is enabled.*/
 int st30p_rx_wake_block(st30p_rx_handle handle);
+/** Set the block timeout time on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is
+ * enabled. */
+int st30p_rx_set_block_timeout(st30p_rx_handle handle, uint64_t timedwait_ns);
 /* get framebuff size */
 size_t st30p_rx_frame_size(st30p_rx_handle handle);
 

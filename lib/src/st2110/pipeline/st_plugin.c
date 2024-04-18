@@ -726,6 +726,17 @@ int st22_encoder_wake_block(st22p_encode_session session) {
   return session_impl->req.wake_block(session_impl->req.priv);
 }
 
+int st22_encoder_set_block_timeout(st22p_encode_session session, uint64_t timedwait_ns) {
+  struct st22_encode_session_impl* session_impl = session;
+
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
+    return -EIO;
+  }
+
+  return session_impl->req.set_block_timeout(session_impl->req.priv, timedwait_ns);
+}
+
 int st22_encoder_put_frame(st22p_encode_session session,
                            struct st22_encode_frame_meta* frame, int result) {
   struct st22_encode_session_impl* session_impl = session;
@@ -758,6 +769,17 @@ int st22_decoder_wake_block(st22p_decode_session session) {
   }
 
   return session_impl->req.wake_block(session_impl->req.priv);
+}
+
+int st22_decoder_set_block_timeout(st22p_decode_session session, uint64_t timedwait_ns) {
+  struct st22_decode_session_impl* session_impl = session;
+
+  if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
+    return -EIO;
+  }
+
+  return session_impl->req.set_block_timeout(session_impl->req.priv, timedwait_ns);
 }
 
 int st22_decoder_put_frame(st22p_decode_session session,
