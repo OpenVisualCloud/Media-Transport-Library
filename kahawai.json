@@ -11,6 +11,16 @@
             "path": "/usr/local/lib64/libst_plugin_st22_avcodec.so"
         },
         {
+            "enabled": 0,
+            "name": "st22_svt_jpegxs",
+            "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_svt_jpeg_xs.so"
+        },
+        {
+            "enabled": 0,
+            "name": "st22_svt_jpegxs",
+            "path": "/usr/local/lib64/libst_plugin_st22_svt_jpeg_xs.so"
+        },
+        {
             "enabled": 1,
             "name": "st22_sample",
             "path": "/usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_sample.so"

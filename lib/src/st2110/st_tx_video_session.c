@@ -458,14 +458,14 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
   pacing->frame_time = frame_time;
   pacing->frame_time_sampling =
       (double)(s->fps_tm.sampling_clock_rate) * s->fps_tm.den / s->fps_tm.mul;
-  double reactive = 1080.0 / 1125.0;
+  pacing->reactive = 1080.0 / 1125.0;
 
   /* calculate tr offset */
   pacing->tr_offset =
       s->ops.height >= 1080 ? frame_time * (43.0 / 1125.0) : frame_time * (28.0 / 750.0);
   if (s->ops.interlaced) {
     if (s->ops.height <= 576)
-      reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
+      pacing->reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
     if (s->ops.height == 480) {
       pacing->tr_offset = frame_time * (20.0 / 525.0) * 2;
     } else if (s->ops.height == 576) {
@@ -474,8 +474,9 @@ static int tv_init_pacing(struct mtl_main_impl* impl,
       pacing->tr_offset = frame_time * (22.0 / 1125.0) * 2;
     }
   }
-  pacing->trs = frame_time * reactive / s->st20_total_pkts;
-  pacing->frame_idle_time = frame_time - pacing->tr_offset - frame_time * reactive;
+  pacing->trs = frame_time * pacing->reactive / s->st20_total_pkts;
+  pacing->frame_idle_time =
+      frame_time - pacing->tr_offset - frame_time * pacing->reactive;
   dbg("%s[%02d], frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
   if (pacing->frame_idle_time < 0) {
     warn("%s[%02d], error frame_idle_time %f\n", __func__, idx, pacing->frame_idle_time);
@@ -663,6 +664,17 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   }
 
   return 0;
+}
+
+static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
+                               struct st_tx_video_session_impl* s, bool sync,
+                               uint64_t required_tai, bool second_field,
+                               int pkts_in_frame) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  /* reset trs */
+  pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
+  dbg("%s(%d), trs %f\n", __func__, s->idx, pacing->trs);
+  return tv_sync_pacing(impl, s, sync, required_tai, second_field);
 }
 
 static int tv_init_next_meta(struct st_tx_video_session_impl* s,
@@ -2246,7 +2258,8 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
       bool second_field = frame->tx_st22_meta.second_field;
-      tv_sync_pacing(impl, s, false, required_tai, second_field);
+      tv_sync_pacing_st22(impl, s, false, required_tai, second_field,
+                          st22_info->st22_total_pkts);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
         pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
       }
@@ -2260,7 +2273,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         s->second_field = second_field ? false : true;
       }
       MT_USDT_ST22_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
-                                 pacing->rtp_time_stamp);
+                                 pacing->rtp_time_stamp, codestream_size);
       /* check if dump USDT enabled */
       if (MT_USDT_ST22_TX_FRAME_DUMP_ENABLED()) {
         int period = st_frame_rate(ops->fps) * 5; /* dump every 5s now */
@@ -3134,15 +3147,28 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   while (s->ring_count > s->st20_total_pkts) {
     s->ring_count /= 2;
   }
-  /* manually disable chain or any port can't support chain */
-  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s) ||
-                   !tv_pkts_capable_chain(impl, s);
+
+  if (st22_frame_ops) {
+    /* no chain support for st22 since the pkts for each frame may be very small */
+    s->tx_no_chain = true;
+  } else {
+    /* manually disable chain or any port can't support chain */
+    s->tx_no_chain = mt_user_tx_no_chain(impl) || !tv_has_chain_buf(s) ||
+                     !tv_pkts_capable_chain(impl, s);
+  }
+  if (s->tx_no_chain) {
+    info("%s(%d), no chain mbuf support\n", __func__, idx);
+  }
 
   enum mtl_port port;
   for (int i = 0; i < num_port; i++) {
     port = mt_port_logic2phy(s->port_maps, i);
     /* use system pacing way now */
     s->pacing_way[i] = st_tx_pacing_way(impl, port);
+    /* use tsc for st22 since pkts for each frame is vary */
+    if (st22_frame_ops && s->pacing_way[i] == ST21_TX_PACING_WAY_RL) {
+      s->pacing_way[i] = ST21_TX_PACING_WAY_TSC;
+    }
   }
 
   ret = tv_init_sw(impl, mgr, s, st22_frame_ops);

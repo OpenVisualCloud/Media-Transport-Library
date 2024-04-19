@@ -945,16 +945,16 @@ provider st22 {
 usage: customize the application process name as your setup
 
 ```bash
-sudo bpftrace -e 'usdt::st22:tx_frame_next { printf("%s m%d,s%d: next frame %d(addr:%p, tmstamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }' -p $(pidof RxTxApp)
+sudo bpftrace -e 'usdt::st22:tx_frame_next { printf("%s m%d,s%d: next frame %d(addr:%p, tmstamp:%u, size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4, arg5); }' -p $(pidof RxTxApp)
 ```
 
 Example output like below:
 
 ```bash
-13:57:03 m0,s0: next frame 0(addr:0x3203a400c0, tmstamp:10477192)
-13:57:03 m0,s0: next frame 1(addr:0x32032400c0, tmstamp:10478693)
-13:57:03 m0,s0: next frame 0(addr:0x3203a400c0, tmstamp:10480195)
-13:57:03 m0,s0: next frame 1(addr:0x32032400c0, tmstamp:10481696)
+10:08:04 m0,s0: next frame 0(addr:0x32042400c0, tmstamp:3519515195, size:777600)
+10:08:04 m0,s0: next frame 1(addr:0x3203a400c0, tmstamp:3519516696, size:777600)
+10:08:04 m0,s0: next frame 0(addr:0x32042400c0, tmstamp:3519518198, size:777600)
+10:08:04 m0,s0: next frame 1(addr:0x3203a400c0, tmstamp:3519519699, size:777600)
 ```
 
 #### 2.7.2 tx_frame_done USDT

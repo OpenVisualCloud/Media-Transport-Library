@@ -155,6 +155,7 @@ struct st_tx_video_pacing {
   double frame_time_sampling; /* time of the frame in sampling(90k) */
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts) */
   double frame_idle_time;
+  double reactive;
   float pad_interval; /* padding pkt interval(pkts level) for RL pacing */
 
   uint64_t cur_epochs; /* epoch of current frame */
