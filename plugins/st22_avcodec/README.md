@@ -53,14 +53,22 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p_1080p.yuv -pix_fmt yuv422p yuv42
 
 Customize the p_port as the setup.
 
-Tx run:
+Tx and RX run with kernel loopback:
 
 ```bash
 python3 python/example/st22p_tx.py --p_port kernel:lo --p_tx_ip 127.0.0.1 --tx_url yuv420p_1080p.yuv --pipeline_fmt YUV420PLANAR8 --st22_codec h264 --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display --display_scale_factor 4
 ```
 
-Rx run:
-
 ```bash
 python3 python/example/st22p_rx.py --p_port kernel:lo --p_rx_ip 127.0.0.1 --pipeline_fmt YUV420PLANAR8 --st22_codec h264 --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display --display_scale_factor 4
+```
+
+Tx and RX run with dpdk port:
+
+```bash
+python3 python/example/st22p_tx.py --p_port 0000:af:01.0 --p_sip 192.168.108.101 --p_tx_ip 239.168.85.20 --tx_url yuv420p_1080p.yuv --pipeline_fmt YUV420PLANAR8 --st22_codec h264 --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display --display_scale_factor 4
+```
+
+```bash
+python3 python/example/st22p_rx.py --p_port 0000:af:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV420PLANAR8 --st22_codec h264 --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display --display_scale_factor 4
 ```
