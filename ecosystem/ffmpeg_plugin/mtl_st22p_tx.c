@@ -19,7 +19,7 @@
 
 #include "mtl_common.h"
 
-typedef struct mtlMuxerContext {
+typedef struct mtlSt22pMuxerContext {
   const AVClass* class; /**< Class for private options. */
 
   int idx;
@@ -43,10 +43,32 @@ typedef struct mtlMuxerContext {
 
   int64_t frame_counter;
   size_t frame_size;
-} mtlMuxerContext;
+} mtlSt22pMuxerContext;
+
+static int mtl_st22p_write_close(AVFormatContext* ctx) {
+  mtlSt22pMuxerContext* s = ctx->priv_data;
+
+  dbg(ctx, "%s, start\n", __func__);
+
+  // Destroy tx session
+  if (s->tx_handle) {
+    st22p_tx_free(s->tx_handle);
+    s->tx_handle = NULL;
+    info(ctx, "%s(%d), st22p_tx_free succ\n", __func__, s->idx);
+  }
+
+  // Destroy device
+  if (s->dev_handle) {
+    mtl_instance_put(s->dev_handle);
+    s->dev_handle = NULL;
+  }
+
+  info(ctx, "%s(%d), succ\n", __func__, s->idx);
+  return 0;
+}
 
 static int mtl_st22p_write_header(AVFormatContext* ctx) {
-  mtlMuxerContext* s = ctx->priv_data;
+  mtlSt22pMuxerContext* s = ctx->priv_data;
   struct st22p_tx_ops ops_tx;
   const AVPixFmtDescriptor* pix_fmt_desc = NULL;
 
@@ -137,12 +159,14 @@ static int mtl_st22p_write_header(AVFormatContext* ctx) {
   s->tx_handle = st22p_tx_create(s->dev_handle, &ops_tx);
   if (!s->tx_handle) {
     err(ctx, "%s, st22p_tx_create failed\n", __func__);
+    mtl_st22p_write_close(ctx);
     return AVERROR(EIO);
   }
 
   s->frame_size = st22p_tx_frame_size(s->tx_handle);
   if (s->frame_size <= 0) {
     err(ctx, "%s, st22p_tx_frame_size failed\n", __func__);
+    mtl_st22p_write_close(ctx);
     return AVERROR(EINVAL);
   }
 
@@ -152,7 +176,7 @@ static int mtl_st22p_write_header(AVFormatContext* ctx) {
 }
 
 static int mtl_st22p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  mtlMuxerContext* s = ctx->priv_data;
+  mtlSt22pMuxerContext* s = ctx->priv_data;
   struct st_frame* frame;
 
   dbg("%s, start\n", __func__);
@@ -177,29 +201,7 @@ static int mtl_st22p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   return 0;
 }
 
-static int mtl_st22p_write_trailer(AVFormatContext* ctx) {
-  mtlMuxerContext* s = ctx->priv_data;
-
-  dbg(ctx, "%s, start\n", __func__);
-
-  // Destroy tx session
-  if (s->tx_handle) {
-    st22p_tx_free(s->tx_handle);
-    s->tx_handle = NULL;
-    info(ctx, "%s(%d), st22p_tx_free succ\n", __func__, s->idx);
-  }
-
-  // Destroy device
-  if (s->dev_handle) {
-    mtl_instance_put(s->dev_handle);
-    s->dev_handle = NULL;
-  }
-
-  info(ctx, "%s(%d), succ\n", __func__, s->idx);
-  return 0;
-}
-
-#define OFFSET(x) offsetof(mtlMuxerContext, x)
+#define OFFSET(x) offsetof(mtlSt22pMuxerContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption mtl_st22p_tx_options[] = {
     // mtl port info
@@ -262,7 +264,7 @@ static const AVOption mtl_st22p_tx_options[] = {
 };
 
 static const AVClass mtl_st22p_muxer_class = {
-    .class_name = "mtl muxer",
+    .class_name = "mtl_st22p muxer",
     .item_name = av_default_item_name,
     .option = mtl_st22p_tx_options,
     .version = LIBAVUTIL_VERSION_INT,
@@ -273,10 +275,10 @@ static const AVClass mtl_st22p_muxer_class = {
 AVOutputFormat ff_mtl_st22p_muxer = {
     .name = "mtl_st22p",
     .long_name = NULL_IF_CONFIG_SMALL("mtl st22p output device"),
-    .priv_data_size = sizeof(mtlMuxerContext),
+    .priv_data_size = sizeof(mtlSt22pMuxerContext),
     .write_header = mtl_st22p_write_header,
     .write_packet = mtl_st22p_write_packet,
-    .write_trailer = mtl_st22p_write_trailer,
+    .write_trailer = mtl_st22p_write_close,
     .video_codec = AV_CODEC_ID_RAWVIDEO,
     .flags = AVFMT_NOFILE,
     .control_message = NULL,
@@ -286,10 +288,10 @@ AVOutputFormat ff_mtl_st22p_muxer = {
 const FFOutputFormat ff_mtl_st22p_muxer = {
     .p.name = "mtl_st22p",
     .p.long_name = NULL_IF_CONFIG_SMALL("mtl st22p output device"),
-    .priv_data_size = sizeof(mtlMuxerContext),
+    .priv_data_size = sizeof(mtlSt22pMuxerContext),
     .write_header = mtl_st22p_write_header,
     .write_packet = mtl_st22p_write_packet,
-    .write_trailer = mtl_st22p_write_trailer,
+    .write_trailer = mtl_st22p_write_close,
     .p.video_codec = AV_CODEC_ID_RAWVIDEO,
     .p.flags = AVFMT_NOFILE,
     .p.priv_class = &mtl_st22p_muxer_class,

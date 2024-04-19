@@ -1,5 +1,5 @@
 /*
- * mtl st2110-20 video muxer
+ * mtl st2110-30 video muxer
  * Copyright (c) 2024 Intel
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -17,9 +17,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <mtl/st30_pipeline_api.h>
+
 #include "mtl_common.h"
 
-typedef struct mtlSt20pMuxerContext {
+typedef struct mtlSt30pMuxerContext {
   const AVClass* class; /**< Class for private options. */
 
   int idx;
@@ -32,27 +34,23 @@ typedef struct mtlSt20pMuxerContext {
   int fb_cnt;
   int session_cnt;
 
-  int width;
-  int height;
-  enum AVPixelFormat pixel_format;
-  AVRational framerate;
   mtl_handle dev_handle;
-  st20p_tx_handle tx_handle;
+  st30p_tx_handle tx_handle;
 
   int64_t frame_counter;
   size_t frame_size;
-} mtlSt20pMuxerContext;
+} mtlSt30pMuxerContext;
 
-static int mtl_st20p_write_close(AVFormatContext* ctx) {
-  mtlSt20pMuxerContext* s = ctx->priv_data;
+static int mtl_st30p_write_close(AVFormatContext* ctx) {
+  mtlSt30pMuxerContext* s = ctx->priv_data;
 
   dbg(ctx, "%s, start\n", __func__);
 
   // Destroy tx session
   if (s->tx_handle) {
-    st20p_tx_free(s->tx_handle);
+    st30p_tx_free(s->tx_handle);
     s->tx_handle = NULL;
-    info(ctx, "%s(%d), st20p_tx_free succ\n", __func__, s->idx);
+    info(ctx, "%s(%d), st30p_tx_free succ\n", __func__, s->idx);
   }
 
   // Destroy device
@@ -65,14 +63,13 @@ static int mtl_st20p_write_close(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_write_header(AVFormatContext* ctx) {
-  mtlSt20pMuxerContext* s = ctx->priv_data;
-  struct st20p_tx_ops ops_tx;
-  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
+static int mtl_st30p_write_header(AVFormatContext* ctx) {
+  mtlSt30pMuxerContext* s = ctx->priv_data;
+  struct st30p_tx_ops ops_tx;
 
   dbg("%s, start\n", __func__);
   memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
+  ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
 
   if (NULL == s->port) {
     err(ctx, "%s, port NULL\n", __func__);
@@ -108,32 +105,7 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
   }
   ops_tx.port.payload_type = s->payload_type;
 
-  ops_tx.width = s->width = ctx->streams[0]->codecpar->width;
-  ops_tx.height = s->height = ctx->streams[0]->codecpar->height;
-  s->framerate = ctx->streams[0]->avg_frame_rate;
-  ops_tx.fps = framerate_to_st_fps(s->framerate);
-  if (ops_tx.fps == ST_FPS_MAX) {
-    err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
-    return AVERROR(EINVAL);
-  }
-
-  s->pixel_format = ctx->streams[0]->codecpar->format;
-  av_pix_fmt_desc_get(s->pixel_format);
-
-  /* transport_fmt is hardcode now */
-  switch (s->pixel_format) {
-    case AV_PIX_FMT_YUV422P10LE:
-      ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-      break;
-    case AV_PIX_FMT_RGB24:
-      ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
-      ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
-      break;
-    default:
-      err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
-      return AVERROR(EINVAL);
-  }
+  // todo
 
   // get mtl instance
   s->dev_handle =
@@ -143,59 +115,59 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  ops_tx.name = "st20p";
+  ops_tx.name = "st30p";
   ops_tx.priv = s;  // Handle of priv_data registered to lib
-  ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   info(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_tx.framebuff_cnt = s->fb_cnt;
 
-  s->tx_handle = st20p_tx_create(s->dev_handle, &ops_tx);
+  s->tx_handle = st30p_tx_create(s->dev_handle, &ops_tx);
   if (!s->tx_handle) {
-    err(ctx, "%s, st20p_tx_create failed\n", __func__);
-    mtl_st20p_write_close(ctx);
+    err(ctx, "%s, st30p_tx_create failed\n", __func__);
+    mtl_st30p_write_close(ctx);
     return AVERROR(EIO);
   }
 
-  s->frame_size = st20p_tx_frame_size(s->tx_handle);
+  s->frame_size = st30p_tx_frame_size(s->tx_handle);
   if (s->frame_size <= 0) {
-    err(ctx, "%s, st20p_tx_frame_size failed\n", __func__);
+    err(ctx, "%s, st30p_tx_frame_size failed\n", __func__);
+    mtl_st30p_write_close(ctx);
     return AVERROR(EINVAL);
   }
 
-  info(ctx, "%s(%d), st20p_tx_create succ %p\n", __func__, s->idx, s->tx_handle);
+  info(ctx, "%s(%d), st30p_tx_create succ %p\n", __func__, s->idx, s->tx_handle);
   s->frame_counter = 0;
   return 0;
 }
 
-static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  mtlSt20pMuxerContext* s = ctx->priv_data;
-  struct st_frame* frame;
+static int mtl_st30p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  mtlSt30pMuxerContext* s = ctx->priv_data;
+  struct st30_frame* frame;
 
   dbg("%s, start\n", __func__);
-  frame = st20p_tx_get_frame(s->tx_handle);
+  frame = st30p_tx_get_frame(s->tx_handle);
   if (!frame) {
-    info(ctx, "%s, st20p_tx_get_frame timeout\n", __func__);
+    info(ctx, "%s, st30p_tx_get_frame timeout\n", __func__);
     return AVERROR(EIO);
   }
-  dbg(ctx, "%s, st20p_tx_get_frame: %p\n", __func__, frame);
+  dbg(ctx, "%s, st30p_tx_get_frame: %p\n", __func__, frame);
   if (frame->data_size != s->frame_size) {
     err(ctx,
         "%s(%d), unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
         __func__, s->idx, frame->data_size, s->frame_size);
     return AVERROR(EIO);
   }
-  /* todo: zero copy with external frame mode */
-  mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);
 
-  st20p_tx_put_frame(s->tx_handle, frame);
+  mtl_memcpy(frame->addr, pkt->data, s->frame_size);
+
+  st30p_tx_put_frame(s->tx_handle, frame);
   s->frame_counter++;
   dbg(ctx, "%s, frame counter %" PRId64 "\n", __func__, s->frame_counter);
   return 0;
 }
 
-#define OFFSET(x) offsetof(mtlSt20pMuxerContext, x)
+#define OFFSET(x) offsetof(mtlSt30pMuxerContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
-static const AVOption mtl_st20p_tx_options[] = {
+static const AVOption mtl_st30p_tx_options[] = {
     // mtl port info
     {"port", "ST port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},
     {"local_addr",
@@ -246,37 +218,37 @@ static const AVOption mtl_st20p_tx_options[] = {
     {NULL},
 };
 
-static const AVClass mtl_st20p_muxer_class = {
-    .class_name = "mtl_st20p muxer",
+static const AVClass mtl_st30p_muxer_class = {
+    .class_name = "mtl_st30p muxer",
     .item_name = av_default_item_name,
-    .option = mtl_st20p_tx_options,
+    .option = mtl_st30p_tx_options,
     .version = LIBAVUTIL_VERSION_INT,
     .category = AV_CLASS_CATEGORY_DEVICE_OUTPUT,
 };
 
 #ifdef MTL_FFMPEG_4_4
-AVOutputFormat ff_mtl_st20p_muxer = {
-    .name = "mtl_st20p",
-    .long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
-    .priv_data_size = sizeof(mtlSt20pMuxerContext),
-    .write_header = mtl_st20p_write_header,
-    .write_packet = mtl_st20p_write_packet,
-    .write_trailer = mtl_st20p_write_close,
+AVOutputFormat ff_mtl_st30p_muxer = {
+    .name = "mtl_st30p",
+    .long_name = NULL_IF_CONFIG_SMALL("mtl st30p output device"),
+    .priv_data_size = sizeof(mtlSt30pMuxerContext),
+    .write_header = mtl_st30p_write_header,
+    .write_packet = mtl_st30p_write_packet,
+    .write_trailer = mtl_st30p_write_close,
     .video_codec = AV_CODEC_ID_RAWVIDEO,
     .flags = AVFMT_NOFILE,
     .control_message = NULL,
-    .priv_class = &mtl_st20p_muxer_class,
+    .priv_class = &mtl_st30p_muxer_class,
 };
 #else
-const FFOutputFormat ff_mtl_st20p_muxer = {
-    .p.name = "mtl_st20p",
-    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st20p output device"),
-    .priv_data_size = sizeof(mtlSt20pMuxerContext),
-    .write_header = mtl_st20p_write_header,
-    .write_packet = mtl_st20p_write_packet,
-    .write_trailer = mtl_st20p_write_close,
+const FFOutputFormat ff_mtl_st30p_muxer = {
+    .p.name = "mtl_st30p",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st30p output device"),
+    .priv_data_size = sizeof(mtlSt30pMuxerContext),
+    .write_header = mtl_st30p_write_header,
+    .write_packet = mtl_st30p_write_packet,
+    .write_trailer = mtl_st30p_write_close,
     .p.video_codec = AV_CODEC_ID_RAWVIDEO,
     .p.flags = AVFMT_NOFILE,
-    .p.priv_class = &mtl_st20p_muxer_class,
+    .p.priv_class = &mtl_st30p_muxer_class,
 };
 #endif

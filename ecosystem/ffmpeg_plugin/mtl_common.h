@@ -65,6 +65,10 @@
     av_log(ctx, AV_LOG_ERROR, __VA_ARGS__); \
   } while (0)
 
+#ifndef NS_PER_MS
+#define NS_PER_MS (1000 * 1000)
+#endif
+
 typedef struct StFpsDecs {
   enum st_fps st_fps;
   unsigned int min;

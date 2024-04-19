@@ -545,7 +545,7 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", "test.pcm");
   snprintf(ctx->rx_audio_url, sizeof(ctx->rx_audio_url), "%s", "rx.pcm");
   ctx->audio_udp_port = 30000;
-  ctx->audio_payload_type = 113;
+  ctx->audio_payload_type = 111;
 
   snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", "logo.yuv");
   ctx->logo_width = 200;

@@ -43,6 +43,27 @@ typedef struct MtlSt22pDemuxerContext {
   int64_t frame_counter;
 } MtlSt22pDemuxerContext;
 
+static int mtl_st22p_read_close(AVFormatContext* ctx) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
+
+  dbg("%s, start\n", __func__);
+  // Destroy rx session
+  if (s->rx_handle) {
+    st22p_rx_free(s->rx_handle);
+    s->rx_handle = NULL;
+    info(ctx, "%s(%d), st22p_rx_free succ\n", __func__, s->idx);
+  }
+
+  // Destroy device
+  if (s->dev_handle) {
+    mtl_instance_put(s->dev_handle);
+    s->dev_handle = NULL;
+  }
+
+  info(ctx, "%s(%d), succ\n", __func__, s->idx);
+  return 0;
+}
+
 static int mtl_st22p_read_header(AVFormatContext* ctx) {
   MtlSt22pDemuxerContext* s = ctx->priv_data;
   AVStream* st = NULL;
@@ -169,6 +190,7 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   s->rx_handle = st22p_rx_create(s->dev_handle, &ops_rx);
   if (!s->rx_handle) {
     err(ctx, "%s, st22p_rx_create failed\n", __func__);
+    mtl_st22p_read_close(ctx);
     return AVERROR(EIO);
   }
 
@@ -208,27 +230,6 @@ static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   pkt->pts = pkt->dts = s->frame_counter++;
   dbg(ctx, "%s, frame counter %" PRId64 "\n", pkt->pts);
-  return 0;
-}
-
-static int mtl_st22p_read_close(AVFormatContext* ctx) {
-  MtlSt22pDemuxerContext* s = ctx->priv_data;
-
-  dbg("%s, start\n", __func__);
-  // Destroy rx session
-  if (s->rx_handle) {
-    st22p_rx_free(s->rx_handle);
-    s->rx_handle = NULL;
-    info(ctx, "%s(%d), st22p_rx_free succ\n", __func__, s->idx);
-  }
-
-  // Destroy device
-  if (s->dev_handle) {
-    mtl_instance_put(s->dev_handle);
-    s->dev_handle = NULL;
-  }
-
-  info(ctx, "%s(%d), succ\n", __func__, s->idx);
   return 0;
 }
 
@@ -333,7 +334,7 @@ static const AVOption mtl_st22p_rx_options[] = {
 };
 
 static const AVClass mtl_st22p_demuxer_class = {
-    .class_name = "mtl demuxer",
+    .class_name = "mtl_st22p demuxer",
     .item_name = av_default_item_name,
     .option = mtl_st22p_rx_options,
     .version = LIBAVUTIL_VERSION_INT,
