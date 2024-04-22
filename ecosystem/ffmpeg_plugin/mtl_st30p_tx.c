@@ -25,100 +25,83 @@ typedef struct mtlSt30pMuxerContext {
   const AVClass* class; /**< Class for private options. */
 
   int idx;
-  /* session arguments */
-  char* port;
-  char* local_addr;
-  char* tx_addr;
-  int udp_port;
-  int payload_type;
+  /* arguments for devices */
+  StDevArgs devArgs;
+  /* arguments for session port */
+  StTxSessionPortArgs portArgs;
+  /* arguments for session */
   int fb_cnt;
-  int session_cnt;
+  int frame_size;
+
+  int filled;
+  struct st30_frame* last_frame;
 
   mtl_handle dev_handle;
   st30p_tx_handle tx_handle;
 
   int64_t frame_counter;
-  size_t frame_size;
 } mtlSt30pMuxerContext;
 
 static int mtl_st30p_write_close(AVFormatContext* ctx) {
   mtlSt30pMuxerContext* s = ctx->priv_data;
 
-  dbg(ctx, "%s, start\n", __func__);
-
+  dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy tx session
   if (s->tx_handle) {
+    if (s->last_frame) {
+      st30p_tx_put_frame(s->tx_handle, s->last_frame);
+      s->last_frame = NULL;
+    }
     st30p_tx_free(s->tx_handle);
     s->tx_handle = NULL;
-    info(ctx, "%s(%d), st30p_tx_free succ\n", __func__, s->idx);
+    dbg(ctx, "%s(%d), st30p_tx_free succ\n", __func__, s->idx);
   }
 
   // Destroy device
   if (s->dev_handle) {
-    mtl_instance_put(s->dev_handle);
+    mtl_instance_put(ctx, s->dev_handle);
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), succ\n", __func__, s->idx);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 
 static int mtl_st30p_write_header(AVFormatContext* ctx) {
   mtlSt30pMuxerContext* s = ctx->priv_data;
   struct st30p_tx_ops ops_tx;
+  int ret;
 
   dbg("%s, start\n", __func__);
   memset(&ops_tx, 0, sizeof(ops_tx));
-  ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
 
-  if (NULL == s->port) {
-    err(ctx, "%s, port NULL\n", __func__);
-    return AVERROR(EINVAL);
-  }
-  if (strlen(s->port) > MTL_PORT_MAX_LEN) {
-    err(ctx, "%s, port %s too long\n", __func__, s->port);
-    return AVERROR(EINVAL);
-  }
-  ops_tx.port.num_port = 1;
-  snprintf(ops_tx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
-
-  if (NULL == s->tx_addr) {
-    err(ctx, "%s, tx_addr NULL\n", __func__);
-    return AVERROR(EINVAL);
-  } else if (sscanf(s->tx_addr, "%hhu.%hhu.%hhu.%hhu",
-                    &ops_tx.port.dip_addr[MTL_PORT_P][0],
-                    &ops_tx.port.dip_addr[MTL_PORT_P][1],
-                    &ops_tx.port.dip_addr[MTL_PORT_P][2],
-                    &ops_tx.port.dip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    err(ctx, "%s, failed to parse tx IP address: %s\n", __func__, s->tx_addr);
-    return AVERROR(EINVAL);
-  }
-
-  if ((s->udp_port < 0) || (s->udp_port > 0xFFFF)) {
-    err(ctx, "%s, invalid UDP port: %d\n", __func__, s->udp_port);
-    return AVERROR(EINVAL);
-  }
-  ops_tx.port.udp_port[MTL_PORT_P] = s->udp_port;
-  if ((s->payload_type < 0) || (s->payload_type > 0x7F)) {
-    err(ctx, "%s, invalid payload_type: %d\n", __func__, s->udp_port);
-    return AVERROR(EINVAL);
-  }
-  ops_tx.port.payload_type = s->payload_type;
-
-  // todo
-
-  // get mtl instance
-  s->dev_handle =
-      mtl_instance_get(s->port, s->local_addr, s->session_cnt, 0, NULL, &s->idx);
-  if (!s->dev_handle) {
-    err(ctx, "%s, mtl_instance_get fail\n", __func__);
+  ret = mtl_parse_tx_port(ctx, &s->devArgs, &s->portArgs, &ops_tx.port);
+  if (ret < 0) {
+    err(ctx, "%s, parse tx port fail\n", __func__);
     return AVERROR(EIO);
   }
 
-  ops_tx.name = "st30p";
+  ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
+  // todo
+  ops_tx.ptime = ST30_PTIME_1MS;
+  ops_tx.channel = 2;
+  ops_tx.sampling = ST30_SAMPLING_48K;
+  ops_tx.fmt = ST30_FMT_PCM24;
+
+  s->frame_size = st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
+                                                ops_tx.channel, 10 * NS_PER_MS, NULL);
+
+  ops_tx.name = "st30p_ffmpeg";
   ops_tx.priv = s;  // Handle of priv_data registered to lib
-  info(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_tx.framebuff_cnt = s->fb_cnt;
+  ops_tx.framebuff_size = s->frame_size;
+
+  // get mtl dev
+  s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
+  if (!s->dev_handle) {
+    err(ctx, "%s, mtl dev get fail\n", __func__);
+    return AVERROR(EIO);
+  }
 
   s->tx_handle = st30p_tx_create(s->dev_handle, &ops_tx);
   if (!s->tx_handle) {
@@ -127,93 +110,80 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  s->frame_size = st30p_tx_frame_size(s->tx_handle);
-  if (s->frame_size <= 0) {
-    err(ctx, "%s, st30p_tx_frame_size failed\n", __func__);
-    mtl_st30p_write_close(ctx);
-    return AVERROR(EINVAL);
-  }
-
-  info(ctx, "%s(%d), st30p_tx_create succ %p\n", __func__, s->idx, s->tx_handle);
-  s->frame_counter = 0;
+  info(ctx, "%s(%d), tx_handle %p\n", __func__, s->idx, s->tx_handle);
   return 0;
+}
+
+static struct st30_frame* mtl_st30p_fetch_frame(AVFormatContext* ctx,
+                                                mtlSt30pMuxerContext* s) {
+  if (s->last_frame) {
+    return s->last_frame;
+  } else {
+    struct st30_frame* frame;
+    frame = st30p_tx_get_frame(s->tx_handle);
+    dbg(ctx, "%s(%d), get frame addr %p\n", __func__, s->idx, frame->addr);
+    s->last_frame = frame;
+    return frame;
+  }
 }
 
 static int mtl_st30p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   mtlSt30pMuxerContext* s = ctx->priv_data;
-  struct st30_frame* frame;
+  int size = pkt->size;
+  uint8_t* data = pkt->data;
+  struct st30_frame* frame = mtl_st30p_fetch_frame(ctx, s);
 
-  dbg("%s, start\n", __func__);
-  frame = st30p_tx_get_frame(s->tx_handle);
   if (!frame) {
-    info(ctx, "%s, st30p_tx_get_frame timeout\n", __func__);
-    return AVERROR(EIO);
-  }
-  dbg(ctx, "%s, st30p_tx_get_frame: %p\n", __func__, frame);
-  if (frame->data_size != s->frame_size) {
-    err(ctx,
-        "%s(%d), unexpected frame size received: %" PRIu64 " (%" PRIu64 " expected)\n",
-        __func__, s->idx, frame->data_size, s->frame_size);
+    info(ctx, "%s(%d), fetch frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
   }
 
-  mtl_memcpy(frame->addr, pkt->data, s->frame_size);
+  dbg(ctx, "%s(%d), pkt size %d frame size %d\n", __func__, s->idx, size, s->frame_size);
+  while (size > 0) {
+    int left = s->frame_size - s->filled;
+    uint8_t* cur = (uint8_t*)frame->addr + s->filled;
+    dbg(ctx, "%s(%d), size %d left %d filled %d\n", __func__, s->idx, size, left,
+        s->filled);
 
-  st30p_tx_put_frame(s->tx_handle, frame);
-  s->frame_counter++;
-  dbg(ctx, "%s, frame counter %" PRId64 "\n", __func__, s->frame_counter);
+    if (size < left) {
+      mtl_memcpy(cur, data, size);
+      s->filled += size;
+      break;
+    } else {
+      mtl_memcpy(cur, data, left);
+      s->frame_counter++;
+      dbg(ctx, "%s(%d), put frame addr %p\n", __func__, s->idx, frame->addr);
+      st30p_tx_put_frame(s->tx_handle, frame);
+      s->last_frame = NULL;
+      frame = mtl_st30p_fetch_frame(ctx, s);
+      if (!frame) {
+        info(ctx, "%s(%d), fetch frame timeout, size %d\n", __func__, s->idx, size);
+        return AVERROR(EIO);
+      }
+      data += left;
+      size -= left;
+      s->filled = 0;
+    }
+  }
+
+  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 
 #define OFFSET(x) offsetof(mtlSt30pMuxerContext, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption mtl_st30p_tx_options[] = {
-    // mtl port info
-    {"port", "ST port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},
-    {"local_addr",
-     "Local IP address",
-     OFFSET(local_addr),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = ENC},
-    // mtl TX session info
-    {"tx_addr",
-     "TX IP address",
-     OFFSET(tx_addr),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = ENC},
-    {"udp_port",
-     "UDP port",
-     OFFSET(udp_port),
-     AV_OPT_TYPE_INT,
-     {.i64 = -1},
-     -1,
-     INT_MAX,
-     ENC},
-    {"payload_type",
-     "RX session payload type",
-     OFFSET(payload_type),
-     AV_OPT_TYPE_INT,
-     {.i64 = 112},
-     -1,
-     INT_MAX,
-     ENC},
+    // mtl dev port info
+    MTL_TX_DEV_ARGS,
+    // mtl tx port info
+    MTL_TX_PORT_ARGS,
     {"fb_cnt",
      "Frame buffer count",
      OFFSET(fb_cnt),
      AV_OPT_TYPE_INT,
      {.i64 = 3},
      3,
-     8,
-     ENC},
-    {"total_sessions",
-     "Total sessions count",
-     OFFSET(session_cnt),
-     AV_OPT_TYPE_INT,
-     {.i64 = 1},
-     1,
-     INT_MAX,
+     8000,
      ENC},
     {NULL},
 };
@@ -226,6 +196,8 @@ static const AVClass mtl_st30p_muxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_OUTPUT,
 };
 
+#define DEFAULT_CODEC_ID AV_CODEC_ID_PCM_S24BE
+
 #ifdef MTL_FFMPEG_4_4
 AVOutputFormat ff_mtl_st30p_muxer = {
     .name = "mtl_st30p",
@@ -234,20 +206,19 @@ AVOutputFormat ff_mtl_st30p_muxer = {
     .write_header = mtl_st30p_write_header,
     .write_packet = mtl_st30p_write_packet,
     .write_trailer = mtl_st30p_write_close,
-    .video_codec = AV_CODEC_ID_RAWVIDEO,
-    .flags = AVFMT_NOFILE,
+    .flags = AVFMT_NOFILE | AVFMT_NOSTREAMS,
     .control_message = NULL,
     .priv_class = &mtl_st30p_muxer_class,
 };
 #else
 const FFOutputFormat ff_mtl_st30p_muxer = {
-    .p.name = "mtl_st30p",
+    .p.name = "mtl_st30p_pcm24",
     .p.long_name = NULL_IF_CONFIG_SMALL("mtl st30p output device"),
+    .p.audio_codec = AV_CODEC_ID_PCM_S24BE,
     .priv_data_size = sizeof(mtlSt30pMuxerContext),
     .write_header = mtl_st30p_write_header,
     .write_packet = mtl_st30p_write_packet,
     .write_trailer = mtl_st30p_write_close,
-    .p.video_codec = AV_CODEC_ID_RAWVIDEO,
     .p.flags = AVFMT_NOFILE,
     .p.priv_class = &mtl_st30p_muxer_class,
 };

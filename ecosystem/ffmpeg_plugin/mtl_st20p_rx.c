@@ -23,18 +23,15 @@ typedef struct MtlSt20pDemuxerContext {
   const AVClass* class; /**< Class for private options. */
 
   int idx;
-  /* arguments */
-  char* port;
-  char* local_addr;
-  char* rx_addr;
-  int udp_port;
-  int payload_type;
+  /* arguments for devices */
+  StDevArgs devArgs;
+  /* arguments for session port */
+  StRxSessionPortArgs portArgs;
+  /* arguments for session */
   int width, height;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
   int fb_cnt;
-  int session_cnt;
-  char* dma_dev;
 
   mtl_handle dev_handle;
   st20p_rx_handle rx_handle;
@@ -45,21 +42,21 @@ typedef struct MtlSt20pDemuxerContext {
 static int mtl_st20p_read_close(AVFormatContext* ctx) {
   MtlSt20pDemuxerContext* s = ctx->priv_data;
 
-  dbg("%s, start\n", __func__);
+  dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy rx session
   if (s->rx_handle) {
     st20p_rx_free(s->rx_handle);
     s->rx_handle = NULL;
-    info(ctx, "%s(%d), st20p_rx_free succ\n", __func__, s->idx);
+    dbg(ctx, "%s(%d), st20p_rx_free succ\n", __func__, s->idx);
   }
 
   // Destroy device
   if (s->dev_handle) {
-    mtl_instance_put(s->dev_handle);
+    mtl_instance_put(ctx, s->dev_handle);
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), succ\n", __func__, s->idx);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 
@@ -67,47 +64,21 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   MtlSt20pDemuxerContext* s = ctx->priv_data;
   AVStream* st = NULL;
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
-  int packet_size = 0;
   const AVPixFmtDescriptor* pix_fmt_desc = NULL;
   struct st20p_rx_ops ops_rx;
+  int ret;
+  int img_buf_size;
 
-  dbg("%s, start\n", __func__);
+  dbg(ctx, "%s, start\n", __func__);
   memset(&ops_rx, 0, sizeof(ops_rx));
+
+  ret = mtl_parse_rx_port(ctx, &s->devArgs, &s->portArgs, &ops_rx.port);
+  if (ret < 0) {
+    err(ctx, "%s, parse rx port fail\n", __func__);
+    return AVERROR(EIO);
+  }
+
   ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
-
-  if (NULL == s->port) {
-    err(ctx, "%s, port NULL\n", __func__);
-    return AVERROR(EINVAL);
-  }
-  if (strlen(s->port) > MTL_PORT_MAX_LEN) {
-    err(ctx, "%s, port %s too long\n", __func__, s->port);
-    return AVERROR(EINVAL);
-  }
-  ops_rx.port.num_port = 1;
-  snprintf(ops_rx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
-
-  if (NULL == s->rx_addr) {
-    err(ctx, "%s, rx_addr NULL\n", __func__);
-    return AVERROR(EINVAL);
-  } else if (sscanf(
-                 s->rx_addr, "%hhu.%hhu.%hhu.%hhu", &ops_rx.port.ip_addr[MTL_PORT_P][0],
-                 &ops_rx.port.ip_addr[MTL_PORT_P][1], &ops_rx.port.ip_addr[MTL_PORT_P][2],
-                 &ops_rx.port.ip_addr[MTL_PORT_P][3]) != MTL_IP_ADDR_LEN) {
-    err(ctx, "%s, failed to parse rx IP address: %s\n", __func__, s->rx_addr);
-    return AVERROR(EINVAL);
-  }
-
-  if ((s->udp_port < 0) || (s->udp_port > 0xFFFF)) {
-    err(ctx, "%s, invalid UDP port: %d\n", __func__, s->udp_port);
-    return AVERROR(EINVAL);
-  }
-  ops_rx.port.udp_port[MTL_PORT_P] = s->udp_port;
-  if ((s->payload_type < 0) || (s->payload_type > 0x7F)) {
-    err(ctx, "%s, invalid payload_type: %d\n", __func__, s->udp_port);
-    return AVERROR(EINVAL);
-  }
-  ops_rx.port.payload_type = s->payload_type;
-
   if (s->width <= 0) {
     err(ctx, "%s, invalid width: %d\n", __func__, s->width);
     return AVERROR(EINVAL);
@@ -123,7 +94,6 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
     return AVERROR(EINVAL);
   }
-
   /* transport_fmt is hardcode now */
   pix_fmt = s->pixel_format;
   pix_fmt_desc = av_pix_fmt_desc_get(pix_fmt);
@@ -140,18 +110,15 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
       err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
       return AVERROR(EINVAL);
   }
-
-  packet_size = av_image_get_buffer_size(pix_fmt, s->width, s->height, 1);
-  if (packet_size < 0) {
-    err(ctx, "%s, av_image_get_buffer_size failed with %d\n", __func__, packet_size);
-    return packet_size;
+  img_buf_size = av_image_get_buffer_size(pix_fmt, s->width, s->height, 1);
+  if (img_buf_size < 0) {
+    err(ctx, "%s, av_image_get_buffer_size failed with %d\n", __func__, img_buf_size);
+    return img_buf_size;
   }
-  info(ctx, "%s, packet size: %d\n", __func__, packet_size);
+  dbg(ctx, "%s, img_buf_size: %d\n", __func__, img_buf_size);
 
-  if (s->dma_dev) {
-    info(ctx, "%s, try to enable DMA offload\n", __func__);
-    ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
-  }
+  /* try to use dma offload */
+  ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
 
   st = avformat_new_stream(ctx, NULL);
   if (!st) {
@@ -165,23 +132,23 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   st->codecpar->width = s->width;
   st->codecpar->height = s->height;
   avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
-  ctx->packet_size = packet_size;
+  ctx->packet_size = img_buf_size;
   st->codecpar->bit_rate =
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
-  // get mtl instance
-  s->dev_handle =
-      mtl_instance_get(s->port, s->local_addr, 0, s->session_cnt, s->dma_dev, &s->idx);
-  if (!s->dev_handle) {
-    err(ctx, "%s, mtl_instance_get fail\n", __func__);
-    return AVERROR(EIO);
-  }
-
-  ops_rx.name = "st20p_rx";
+  ops_rx.name = "st20p_rx_ffmpeg";
   ops_rx.priv = s;  // Handle of priv_data registered to lib
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
-  info(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
+  dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_rx.framebuff_cnt = s->fb_cnt;
+
+  // get mtl dev
+  s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
+  if (!s->dev_handle) {
+    err(ctx, "%s, mtl dev get fail\n", __func__);
+    mtl_st20p_read_close(ctx);
+    return AVERROR(EIO);
+  }
 
   s->rx_handle = st20p_rx_create(s->dev_handle, &ops_rx);
   if (!s->rx_handle) {
@@ -190,8 +157,14 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
-  info(ctx, "%s(%d), st20p_rx_create succ %p\n", __func__, s->idx, s->rx_handle);
-  s->frame_counter = 0;
+  img_buf_size = st20p_rx_frame_size(s->rx_handle);
+  if (img_buf_size != ctx->packet_size) {
+    err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
+    mtl_st20p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
+  info(ctx, "%s(%d), rx handle %p\n", __func__, s->idx, s->rx_handle);
   return 0;
 }
 
@@ -200,13 +173,13 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   int ret = 0;
   struct st_frame* frame;
 
-  dbg("%s, start\n", __func__);
+  dbg("%s(%d), start\n", __func__, s->idx);
   frame = st20p_rx_get_frame(s->rx_handle);
   if (!frame) {
-    info(ctx, "%s, st20p_rx_get_frame timeout\n", __func__);
+    info(ctx, "%s(%d), st20p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
   }
-  dbg(ctx, "%s, st20p_rx_get_frame: %p\n", __func__, frame);
+  dbg(ctx, "%s(%d), st20p_rx_get_frame: %p\n", __func__, s->idx, frame);
   if (frame->data_size != ctx->packet_size) {
     err(ctx, "%s(%d), unexpected frame size received: %" PRId64 " (%u expected)\n",
         __func__, s->idx, frame->data_size, ctx->packet_size);
@@ -216,7 +189,7 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   ret = av_new_packet(pkt, ctx->packet_size);
   if (ret != 0) {
-    err(ctx, "%s, av_new_packet failed with %d\n", __func__, ret);
+    err(ctx, "%s(%d), av_new_packet failed with %d\n", __func__, s->idx, ret);
     st20p_rx_put_frame(s->rx_handle, frame);
     return ret;
   }
@@ -225,44 +198,18 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   st20p_rx_put_frame(s->rx_handle, frame);
 
   pkt->pts = pkt->dts = s->frame_counter++;
-  dbg(ctx, "%s, frame counter %" PRId64 "\n", pkt->pts);
+  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, pkt->pts);
   return 0;
 }
 
 #define OFFSET(x) offsetof(MtlSt20pDemuxerContext, x)
 #define DEC (AV_OPT_FLAG_DECODING_PARAM)
 static const AVOption mtl_st20p_rx_options[] = {
-    // mtl port info
-    {"port", "mtl port", OFFSET(port), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},
-    {"local_addr",
-     "Local IP address",
-     OFFSET(local_addr),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = DEC},
-    // mtl RX session info
-    {"rx_addr",
-     "RX session IP address",
-     OFFSET(rx_addr),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = DEC},
-    {"udp_port",
-     "UDP port",
-     OFFSET(udp_port),
-     AV_OPT_TYPE_INT,
-     {.i64 = 20000},
-     -1,
-     INT_MAX,
-     DEC},
-    {"payload_type",
-     "RX session payload type",
-     OFFSET(payload_type),
-     AV_OPT_TYPE_INT,
-     {.i64 = 112},
-     -1,
-     INT_MAX,
-     DEC},
+    // mtl dev port info
+    MTL_RX_DEV_ARGS,
+    // mtl rx port info
+    MTL_RX_PORT_ARGS,
+    // session info
     {"video_size",
      "Video frame size",
      OFFSET(width),
@@ -304,20 +251,6 @@ static const AVOption mtl_st20p_rx_options[] = {
      3,
      8,
      DEC},
-    {"total_sessions",
-     "Total sessions count",
-     OFFSET(session_cnt),
-     AV_OPT_TYPE_INT,
-     {.i64 = 1},
-     1,
-     INT_MAX,
-     DEC},
-    {"dma_dev",
-     "DMA device node",
-     OFFSET(dma_dev),
-     AV_OPT_TYPE_STRING,
-     {.str = NULL},
-     .flags = DEC},
     {NULL},
 };
 
