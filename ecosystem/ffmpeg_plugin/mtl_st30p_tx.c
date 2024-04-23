@@ -1,5 +1,5 @@
 /*
- * mtl st2110-30 video muxer
+ * mtl st2110-30 muxer
  * Copyright (c) 2024 Intel
  *
  * FFmpeg is free software; you can redistribute it and/or
