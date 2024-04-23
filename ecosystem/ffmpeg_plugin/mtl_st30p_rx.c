@@ -139,10 +139,14 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
   st->codecpar->codec_id = s->codec_id;
   st->codecpar->sample_rate = s->sample_rate;
+#ifdef MTL_FFMPEG_4_4
+  st->codecpar->channels = s->channels;
+#else
   st->codecpar->ch_layout.nb_channels = s->channels;
+#endif
   st->codecpar->frame_size = frame_buf_size;
-  /* todo: pts */
-  avpriv_set_pts_info(st, 64, 1, 1000000);
+  /* pts with 10ms */
+  avpriv_set_pts_info(st, 64, 1, 100);
 
   ops_rx.name = "st30p_rx_ffmpeg";
   ops_rx.priv = s;  // Handle of priv_data registered to lib

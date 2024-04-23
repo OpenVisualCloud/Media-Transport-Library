@@ -32,6 +32,8 @@ typedef struct mtlSt30pMuxerContext {
   /* arguments for session */
   int fb_cnt;
   int frame_size;
+  char* ptime_str;
+  enum st30_ptime ptime;
 
   int filled;
   struct st30_frame* last_frame;
@@ -71,6 +73,12 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
   mtlSt30pMuxerContext* s = ctx->priv_data;
   struct st30p_tx_ops ops_tx;
   int ret;
+  AVCodecParameters* codecpar = ctx->streams[0]->codecpar;
+
+  if (codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+    err(ctx, "%s, codec_type %d is not audio\n", __func__, codecpar->codec_type);
+    return AVERROR(EINVAL);
+  }
 
   dbg("%s, start\n", __func__);
   memset(&ops_tx, 0, sizeof(ops_tx));
@@ -82,11 +90,46 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
   }
 
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
-  // todo
-  ops_tx.ptime = ST30_PTIME_1MS;
-  ops_tx.channel = 2;
-  ops_tx.sampling = ST30_SAMPLING_48K;
-  ops_tx.fmt = ST30_FMT_PCM24;
+  if (!s->ptime_str) {
+    s->ptime = ST30_PTIME_1MS;
+  } else {
+    if (0 == strcmp(s->ptime_str, "1ms"))
+      s->ptime = ST30_PTIME_1MS;
+    else if (0 == strcmp(s->ptime_str, "125us"))
+      s->ptime = ST30_PTIME_125US;
+    else {
+      err(ctx, "%s, invalid ptime_str: %s\n", __func__, s->ptime_str);
+      return AVERROR(EINVAL);
+    }
+  }
+  ops_tx.ptime = s->ptime;
+#ifdef MTL_FFMPEG_4_4
+  info(ctx, "%s, channels %d\n", __func__, codecpar->channels);
+  ops_tx.channel = codecpar->channels;
+#else
+  info(ctx, "%s, nb_channels %d\n", __func__, codecpar->ch_layout.nb_channels);
+  ops_tx.channel = codecpar->ch_layout.nb_channels;
+#endif
+  if (codecpar->sample_rate == 48000) {
+    ops_tx.sampling = ST30_SAMPLING_48K;
+  } else if (codecpar->sample_rate == 96000) {
+    ops_tx.sampling = ST30_SAMPLING_96K;
+  } else if (codecpar->sample_rate == 44000) {
+    ops_tx.sampling = ST31_SAMPLING_44K;
+  } else {
+    err(ctx, "%s, unknown sample_rate %d\n", __func__, codecpar->sample_rate);
+    return AVERROR(EINVAL);
+  }
+  if (codecpar->codec_id == AV_CODEC_ID_PCM_S24BE) {
+    ops_tx.fmt = ST30_FMT_PCM24;
+  } else if (codecpar->codec_id == AV_CODEC_ID_PCM_S16BE) {
+    ops_tx.fmt = ST30_FMT_PCM16;
+  } else if (codecpar->codec_id == AV_CODEC_ID_PCM_S8) {
+    ops_tx.fmt = ST30_FMT_PCM8;
+  } else {
+    err(ctx, "%s, unknown codec_id %d\n", __func__, codecpar->codec_id);
+    return AVERROR(EINVAL);
+  }
 
   s->frame_size = st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
                                                 ops_tx.channel, 10 * NS_PER_MS, NULL);
@@ -185,6 +228,12 @@ static const AVOption mtl_st30p_tx_options[] = {
      3,
      8000,
      ENC},
+    {"at",
+     "audio packet time",
+     OFFSET(ptime_str),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     .flags = ENC},
     {NULL},
 };
 
@@ -196,25 +245,47 @@ static const AVClass mtl_st30p_muxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_OUTPUT,
 };
 
-#define DEFAULT_CODEC_ID AV_CODEC_ID_PCM_S24BE
-
 #ifdef MTL_FFMPEG_4_4
 AVOutputFormat ff_mtl_st30p_muxer = {
     .name = "mtl_st30p",
-    .long_name = NULL_IF_CONFIG_SMALL("mtl st30p output device"),
+    .long_name = NULL_IF_CONFIG_SMALL("mtl st30p pcm24 output device"),
+    .audio_codec = AV_CODEC_ID_PCM_S24BE,
     .priv_data_size = sizeof(mtlSt30pMuxerContext),
     .write_header = mtl_st30p_write_header,
     .write_packet = mtl_st30p_write_packet,
     .write_trailer = mtl_st30p_write_close,
-    .flags = AVFMT_NOFILE | AVFMT_NOSTREAMS,
-    .control_message = NULL,
+    .flags = AVFMT_NOFILE,
+    .priv_class = &mtl_st30p_muxer_class,
+};
+
+AVOutputFormat ff_mtl_st30p_pcm16_muxer = {
+    .name = "mtl_st30p_pcm16",
+    .long_name = NULL_IF_CONFIG_SMALL("mtl st30p pcm16 output device"),
+    .audio_codec = AV_CODEC_ID_PCM_S16BE,
+    .priv_data_size = sizeof(mtlSt30pMuxerContext),
+    .write_header = mtl_st30p_write_header,
+    .write_packet = mtl_st30p_write_packet,
+    .write_trailer = mtl_st30p_write_close,
+    .flags = AVFMT_NOFILE,
     .priv_class = &mtl_st30p_muxer_class,
 };
 #else
 const FFOutputFormat ff_mtl_st30p_muxer = {
-    .p.name = "mtl_st30p_pcm24",
-    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st30p output device"),
+    .p.name = "mtl_st30p",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st30p pcm24 output device"),
     .p.audio_codec = AV_CODEC_ID_PCM_S24BE,
+    .priv_data_size = sizeof(mtlSt30pMuxerContext),
+    .write_header = mtl_st30p_write_header,
+    .write_packet = mtl_st30p_write_packet,
+    .write_trailer = mtl_st30p_write_close,
+    .p.flags = AVFMT_NOFILE,
+    .p.priv_class = &mtl_st30p_muxer_class,
+};
+
+const FFOutputFormat ff_mtl_st30p_pcm16_muxer = {
+    .p.name = "mtl_st30p_pcm16",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st30p pcm16 output device"),
+    .p.audio_codec = AV_CODEC_ID_PCM_S16BE,
     .priv_data_size = sizeof(mtlSt30pMuxerContext),
     .write_header = mtl_st30p_write_header,
     .write_packet = mtl_st30p_write_packet,
