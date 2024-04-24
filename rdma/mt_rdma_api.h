@@ -16,10 +16,24 @@
 extern "C" {
 #endif
 
-/** Handle to rdma tx session of lib */
+/**
+ * Handle to MTL rdma transport context
+ */
+typedef struct mtl_rdma_impl* mtl_rdma_handle;
+
+/** Handle to rdma tx session of lib. */
 typedef struct mt_rdma_tx_ctx* mt_rdma_tx_handle;
-/** Handle to rdma rx session of lib */
+/** Handle to rdma rx session of lib. */
 typedef struct mt_rdma_rx_ctx* mt_rdma_rx_handle;
+
+/** The structure info for buffer meta. */
+struct mt_rdma_buffer {
+  void* data;
+  size_t size;
+  uint32_t seq_num;
+  uint64_t timestamp;
+  void* user_meta;
+};
 
 /** The structure describing how to create a tx session. */
 struct mt_rdma_tx_ops {
@@ -38,7 +52,7 @@ struct mt_rdma_tx_ops {
 /**
  * Create one rdma tx session.
  *
- * @param mtr
+ * @param mrh
  *   The handle to the media transport rdma context.
  * @param ops
  *   The pointer to the structure describing how to create a tx
@@ -47,7 +61,7 @@ struct mt_rdma_tx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx session.
  */
-mt_rdma_tx_handle mt_rdma_tx_create(mtl_rdma_handle mtr, struct mt_rdma_tx_ops* ops);
+mt_rdma_tx_handle mt_rdma_tx_create(mtl_rdma_handle mrh, struct mt_rdma_tx_ops* ops);
 
 /**
  * Free the tx session.
@@ -70,7 +84,7 @@ int mt_rdma_tx_free(mt_rdma_tx_handle handle);
  *   - NULL if no available buffer in the session.
  *   - Otherwise, the buffer pointer.
  */
-void* mt_rdma_tx_get_buffer(mt_rdma_tx_handle handle);
+struct mt_rdma_buffer* mt_rdma_tx_get_buffer(mt_rdma_tx_handle handle);
 
 /**
  * Put back the buffer which get by mt_rdma_tx_get_buffer to the tx
@@ -84,12 +98,12 @@ void* mt_rdma_tx_get_buffer(mt_rdma_tx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int mt_rdma_tx_put_buffer(mt_rdma_tx_handle handle, void* buffer);
+int mt_rdma_tx_put_buffer(mt_rdma_tx_handle handle, struct mt_rdma_buffer* buffer);
 
 /**
  * Create one rdma tx session.
  *
- * @param mtr
+ * @param mrh
  *   The handle to the media transport rdma context.
  * @param ops
 
@@ -112,7 +126,7 @@ struct mt_rdma_rx_ops {
 /**
  * Create one rdma rx session.
  *
- * @param mtr
+ * @param mrh
  *   The handle to the media transport rdma context.
  * @param ops
  *   The pointer to the structure describing how to create a rx
@@ -121,7 +135,7 @@ struct mt_rdma_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the rx session.
  */
-mt_rdma_rx_handle mt_rdma_rx_create(mtl_rdma_handle mtr, struct mt_rdma_rx_ops* ops);
+mt_rdma_rx_handle mt_rdma_rx_create(mtl_rdma_handle mrh, struct mt_rdma_rx_ops* ops);
 
 /**
  * Free the rx session.
@@ -144,7 +158,7 @@ int mt_rdma_rx_free(mt_rdma_rx_handle handle);
  *   - NULL if no available buffer in the session.
  *   - Otherwise, the buffer pointer.
  */
-void* mt_rdma_rx_get_buffer(mt_rdma_rx_handle handle);
+struct mt_rdma_buffer* mt_rdma_rx_get_buffer(mt_rdma_rx_handle handle);
 
 /**
  * Put back the buffer which get by mt_rdma_rx_get_buffer to the rx
@@ -158,7 +172,7 @@ void* mt_rdma_rx_get_buffer(mt_rdma_rx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int mt_rdma_rx_put_buffer(mt_rdma_rx_handle handle, void* buffer);
+int mt_rdma_rx_put_buffer(mt_rdma_rx_handle handle, struct mt_rdma_buffer* buffer);
 
 #if defined(__cplusplus)
 }
