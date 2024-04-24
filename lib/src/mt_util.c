@@ -420,6 +420,48 @@ int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
   return rte_eth_macaddr_get(port_id, mac_addr);
 }
 
+void* mt_mempool_mem_base_addr(struct rte_mempool* mp) {
+  struct rte_mempool_memhdr* hdr = STAILQ_FIRST(&mp->mem_list);
+  if (mp->nb_mem_chunks != 1)
+    err("%s(%s), invalid nb_mem_chunks %u\n", __func__, mp->name, mp->nb_mem_chunks);
+  return hdr->addr;
+}
+
+size_t mt_mempool_mem_size(struct rte_mempool* mp) {
+  struct rte_mempool_memhdr* hdr = STAILQ_FIRST(&mp->mem_list);
+  if (mp->nb_mem_chunks != 1)
+    err("%s(%s), invalid nb_mem_chunks %u\n", __func__, mp->name, mp->nb_mem_chunks);
+  return hdr->len;
+}
+
+uint32_t mt_mempool_obj_size(struct rte_mempool* mp) {
+  return rte_mempool_calc_obj_size(mp->elt_size, mp->flags, NULL);
+}
+
+int mt_mempool_dump(struct rte_mempool* mp) {
+  uint32_t populated_size = mp->populated_size;
+  struct rte_mbuf* mbufs[populated_size];
+  uint32_t mbufs_alloced = 0;
+  void* base_addr = mt_mempool_mem_base_addr(mp);
+  void* end_addr = base_addr + mt_mempool_mem_size(mp);
+  void* last_hdr = NULL;
+
+  info("%s(%s), %u mbufs object size %u, memory range: %p to %p\n", __func__, mp->name,
+       populated_size, mt_mempool_obj_size(mp), base_addr, end_addr);
+  for (uint32_t i = 0; i < populated_size; i++) {
+    mbufs[i] = rte_pktmbuf_alloc(mp);
+    if (!mbufs[i]) break;
+    mbufs_alloced++;
+    void* hdr = rte_pktmbuf_mtod(mbufs[i], void*);
+    info("%s(%s), mbuf %u hdr %p step %" PRId64 "\n", __func__, mp->name, i, hdr,
+         hdr - last_hdr);
+    last_hdr = hdr;
+  }
+
+  rte_pktmbuf_free_bulk(mbufs, mbufs_alloced);
+  return 0;
+}
+
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                                              enum mtl_port port, const char* name,
                                              unsigned int n, unsigned int cache_size,

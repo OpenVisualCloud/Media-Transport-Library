@@ -1249,9 +1249,9 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       struct rte_mempool* mbuf_pool = NULL;
 
       if (inf->drv_info.flags & MT_DRV_F_RX_POOL_COMMON) {
-        /* no priv for af_xdp/af_packet  */
-        mbuf_pool = mt_mempool_create_by_ops(impl, inf->port, pool_name, mbuf_elements,
-                                             MT_MBUF_CACHE_SIZE, 0, 2048, NULL);
+        /* no priv for af_xdp/af_packet/rdma_ud  */
+        mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
+                                      MT_MBUF_CACHE_SIZE, 0, 2048);
       } else {
         if (q < inf->system_rx_queues_end)
           mbuf_pool = mt_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);

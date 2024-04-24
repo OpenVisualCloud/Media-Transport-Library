@@ -308,7 +308,7 @@ static int xdp_umem_init(struct mt_xdp_queue* xq) {
   struct xsk_umem_config cfg;
   void* base_addr = NULL;
   struct rte_mempool* pool = xq->mbuf_pool;
-  uint64_t umem_size, align = 0;
+  uint64_t umem_size;
 
   memset(&cfg, 0, sizeof(cfg));
   cfg.fill_size = xq->umem_ring_size * 2;
@@ -319,8 +319,8 @@ static int xdp_umem_init(struct mt_xdp_queue* xq) {
   cfg.frame_headroom = pool->header_size + sizeof(struct rte_mbuf) +
                        rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM;
 
-  base_addr = (void*)mt_mp_base_addr(pool, &align);
-  umem_size = (uint64_t)pool->populated_size * (uint64_t)cfg.frame_size + align;
+  base_addr = mt_mempool_mem_base_addr(pool);
+  umem_size = mt_mempool_mem_size(pool);
   dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, base_addr,
       umem_size);
   ret =

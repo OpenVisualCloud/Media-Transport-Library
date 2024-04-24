@@ -108,6 +108,9 @@ struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* me
 int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
                    struct rte_ether_addr* mac_addr);
 
+/* default with stack */
+#define MT_MEMPOOL_OPS_DEFAULT ("stack")
+
 struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                                              enum mtl_port port, const char* name,
                                              unsigned int n, unsigned int cache_size,
@@ -117,9 +120,8 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
 static inline struct rte_mempool* mt_mempool_create(
     struct mtl_main_impl* impl, enum mtl_port port, const char* name, unsigned int n,
     unsigned int cache_size, uint16_t priv_size, uint16_t element_size) {
-  /* default with stack */
   return mt_mempool_create_by_ops(impl, port, name, n, cache_size, priv_size,
-                                  element_size, "stack");
+                                  element_size, MT_MEMPOOL_OPS_DEFAULT);
 }
 
 static inline struct rte_mempool* mt_mempool_create_common(struct mtl_main_impl* impl,
@@ -131,6 +133,11 @@ static inline struct rte_mempool* mt_mempool_create_common(struct mtl_main_impl*
 }
 
 int mt_mempool_free(struct rte_mempool* mp);
+
+void* mt_mempool_mem_base_addr(struct rte_mempool* mp);
+size_t mt_mempool_mem_size(struct rte_mempool* mp);
+uint32_t mt_mempool_obj_size(struct rte_mempool* mp);
+int mt_mempool_dump(struct rte_mempool* mp);
 
 uint16_t mt_rf1071_check_sum(uint8_t* p, size_t len, bool convert);
 
@@ -301,19 +308,5 @@ static inline void mt_stat_u64_update(struct mt_stat_u64* stat, uint64_t new) {
   stat->sum += new;
   stat->cnt++;
 }
-
-#ifndef WINDOWSENV
-static inline uintptr_t mt_mp_base_addr(struct rte_mempool* mp, uint64_t* align) {
-  struct rte_mempool_memhdr* hdr;
-  uintptr_t hdr_addr, aligned_addr;
-
-  hdr = STAILQ_FIRST(&mp->mem_list);
-  hdr_addr = (uintptr_t)hdr->addr;
-  aligned_addr = hdr_addr & ~(getpagesize() - 1);
-  *align = hdr_addr - aligned_addr;
-
-  return aligned_addr;
-}
-#endif
 
 #endif

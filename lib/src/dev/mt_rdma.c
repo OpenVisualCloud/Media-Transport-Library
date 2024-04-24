@@ -477,7 +477,7 @@ static int rdma_tx_mrs_pre_init(struct mt_rdma_tx_queue* txq, void** buffers,
   void** mrs_buffers =
       mt_rte_zmalloc_socket(num_mrs * sizeof(void*), mt_socket_id(impl, port));
   if (!mrs_buffers) {
-    err("%s(%d, %u), mrs_buffers malloc fail\n", __func__, port, q);
+    err("%s(%d, %u), %d mrs_buffers malloc fail\n", __func__, port, q, num_mrs);
     return -ENOMEM;
   }
 
@@ -752,15 +752,13 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
 static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
   void* base_addr = NULL;
   struct rte_mempool* pool = rxq->mbuf_pool;
-  size_t mr_size, align = 0;
+  size_t mr_size;
 
   /* l2/l3/l4 headers are not used in data path */
   rxq->recv_len = rte_pktmbuf_data_room_size(pool) + sizeof(struct ibv_grh) -
                   RTE_PKTMBUF_HEADROOM - sizeof(struct mt_udp_hdr);
-  base_addr = (void*)mt_mp_base_addr(pool, &align);
-  mr_size = (size_t)pool->populated_size *
-                (size_t)rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL) +
-            align;
+  base_addr = mt_mempool_mem_base_addr(pool);
+  mr_size = mt_mempool_mem_size(pool);
   rxq->recv_mr = ibv_reg_mr(rxq->pd, base_addr, mr_size, IBV_ACCESS_LOCAL_WRITE);
   if (!rxq->recv_mr) {
     err("%s(%d, %u), ibv_reg_mr fail\n", __func__, rxq->port, rxq->q);
@@ -1076,7 +1074,7 @@ struct mt_rx_rdma_entry* mt_rx_rdma_get(struct mtl_main_impl* impl, enum mtl_por
   uint16_t q = entry->queue_id;
 
   if (rdma_rx_queue_init(rxq)) {
-    err("%s(%d), rdma tx queue init fail\n", __func__, port);
+    err("%s(%d), rdma rx queue init fail\n", __func__, port);
     mt_rx_rdma_put(entry);
     return NULL;
   }

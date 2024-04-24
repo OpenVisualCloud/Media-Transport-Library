@@ -1445,6 +1445,22 @@ static int tx_ancillary_session_init_queue(struct mtl_main_impl* impl,
     mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     flow.gso_sz = ST_PKT_MAX_ETHER_BYTES;
+
+#ifdef MTL_HAS_RDMA_BACKEND
+    int num_mrs = 1; /* always no tx chain for rdma_ud anc */
+    void* mrs_bufs[num_mrs];
+    size_t mrs_sizes[num_mrs];
+    if (mt_pmd_is_rdma_ud(impl, port)) {
+      /* register mempool memory to rdma */
+      struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
+      mrs_bufs[0] = mt_mempool_mem_base_addr(pool);
+      mrs_sizes[0] = mt_mempool_mem_size(pool);
+      flow.num_mrs = num_mrs;
+      flow.mrs_bufs = mrs_bufs;
+      flow.mrs_sizes = mrs_sizes;
+    }
+#endif
+
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tx_ancillary_session_uinit_queue(impl, s);
@@ -1471,10 +1487,17 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   int ret;
   int idx = s->idx, num_port = ops->num_port;
   char* ports[MTL_SESSION_PORT_MAX];
+  bool rdma_ud = false;
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
+
+  /* use dedicated queue for rdma_ud */
+  for (int i = 0; i < num_port; i++) {
+    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
+    if (mt_pmd_is_rdma_ud(impl, port)) rdma_ud = true;
+  }
 
   s->mgr = mgr;
   if (ops->name) {
@@ -1487,6 +1510,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   /* if disable shared queue */
   s->shared_queue = true;
   if (ops->flags & ST40_TX_FLAG_DEDICATE_QUEUE) s->shared_queue = false;
+  if (rdma_ud) s->shared_queue = false;
 
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx * 2);
@@ -1510,6 +1534,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_ancillary_session_has_chain_buf(s);
+  if (rdma_ud) s->tx_no_chain = true;
   s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_anc_hdr);
 
   s->st40_frames_cnt = ops->framebuff_cnt;
@@ -1552,7 +1577,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  if (ops->flags & ST40_TX_FLAG_DEDICATE_QUEUE) {
+  if (!s->shared_queue) {
     ret = tx_ancillary_session_init_queue(impl, s);
     if (ret < 0) {
       err("%s(%d), init dedicated queue fail %d\n", __func__, idx, ret);
