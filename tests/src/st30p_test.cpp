@@ -237,6 +237,7 @@ struct st30p_rx_digest_test_para {
   int fb_cnt;
   uint32_t ssrc;
   bool block_get;
+  bool dedicated_tx_queue;
 };
 
 static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para* para) {
@@ -248,6 +249,7 @@ static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para* par
   para->level = ST_TEST_LEVEL_MANDATORY;
   para->ssrc = 0;
   para->block_get = false;
+  para->dedicated_tx_queue = false;
 }
 
 static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
@@ -332,6 +334,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
       ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
     else
       ops_tx.notify_frame_available = test_st30p_tx_frame_available;
+    if (para->dedicated_tx_queue) ops_tx.flags |= ST30P_TX_FLAG_DEDICATE_QUEUE;
     ops_tx.notify_frame_done = test_st30p_tx_frame_done;
 
     test_ctx_tx[i]->frame_size = ops_tx.framebuff_size;
@@ -488,6 +491,7 @@ TEST(St30p, digest_s3) {
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.check_fps = true;
   para.sessions = 3;
+  para.dedicated_tx_queue = true;
 
   st30p_rx_digest_test(f, c, s, pt, &para);
 }

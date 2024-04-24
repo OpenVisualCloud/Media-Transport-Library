@@ -447,7 +447,8 @@ static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
 static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
                              enum st_test_level level, int sessions = 1,
                              bool check_sha = false, bool user_timestamp = false,
-                             bool empty_frame = false, bool interlaced = false) {
+                             bool empty_frame = false, bool interlaced = false,
+                             bool dedicate_tx_queue = false) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
@@ -517,6 +518,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     } else {
       ops_tx.get_next_frame = tx_anc_next_frame;
     }
+    if (dedicate_tx_queue) ops_tx.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
     ops_tx.rtp_ring_size = 1024;
     ops_tx.notify_rtp_done = tx_rtp_done;
 
@@ -702,20 +704,21 @@ TEST(St40_rx, frame_fps29_97_fps59_94) {
   enum st_fps fps[2] = {ST_FPS_P29_97, ST_FPS_P59_94};
   st40_rx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
 }
-TEST(St40_rx, frame_fps50_fps59_94) {
+TEST(St40_rx, mix_s2) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2, true, false, false, false,
+                   true);
 }
 TEST(St40_rx, frame_fps50_fps59_94_digest) {
   enum st40_type type[2] = {ST40_TYPE_FRAME_LEVEL, ST40_TYPE_FRAME_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2, true);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2, true);
 }
 TEST(St40_rx, rtp_fps50_fps59_94_digest) {
   enum st40_type type[2] = {ST40_TYPE_RTP_LEVEL, ST40_TYPE_RTP_LEVEL};
   enum st_fps fps[2] = {ST_FPS_P50, ST_FPS_P59_94};
-  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_MANDATORY, 2, true);
+  st40_rx_fps_test(type, fps, ST_TEST_LEVEL_ALL, 2, true);
 }
 TEST(St40_rx, frame_user_timestamp) {
   enum st40_type type[1] = {ST40_TYPE_FRAME_LEVEL};

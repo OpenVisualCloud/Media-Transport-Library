@@ -804,6 +804,9 @@ struct st_tx_audio_session_impl {
   struct rte_mbuf* trans_ring_inflight[MTL_SESSION_PORT_MAX];
   struct rte_ring* packet_ring;
   bool pacing_in_build; /* if control pacing in the build stage */
+  /* dedicated queue tx mode */
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
+  bool shared_queue;
 
   enum st30_tx_pacing_way tx_pacing_way;
   /* for rl based pacing */
@@ -1058,6 +1061,10 @@ struct st_tx_ancillary_session_impl {
   struct rte_ring* packet_ring;
   bool second_field;
 
+  /* dedicated queue tx mode */
+  struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
+  bool shared_queue;
+
   uint32_t max_pkt_len; /* max data len(byte) for each pkt */
 
   uint16_t st40_frames_cnt; /* numbers of frames requested */
@@ -1118,6 +1125,7 @@ struct st_tx_ancillary_sessions_mgr {
   rte_spinlock_t mutex[ST_MAX_TX_ANC_SESSIONS];
 
   rte_atomic32_t transmitter_started;
+  rte_atomic32_t transmitter_clients;
 
   /* status */
   int st40_stat_pkts_burst;
