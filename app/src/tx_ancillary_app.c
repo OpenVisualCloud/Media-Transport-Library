@@ -477,6 +477,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
       ops.rtp_ring_size = 16;
   }
   if (anc && anc->enable_rtcp) ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
+  if (ctx->tx_anc_dedicate_queue) ops.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
 
   handle = st40_tx_create(ctx->st, &ops);
   if (!handle) {

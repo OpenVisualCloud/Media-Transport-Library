@@ -211,6 +211,8 @@ static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t
   s->framebuff_cnt = ops.framebuff_cnt;
   s->st30p_source_fd = -1;
 
+  if (ctx->tx_audio_dedicate_queue) ops.flags |= ST30P_TX_FLAG_DEDICATE_QUEUE;
+
   handle = st30p_tx_create(ctx->st, &ops);
   if (!handle) {
     err("%s(%d), st30p_tx_create fail\n", __func__, idx);

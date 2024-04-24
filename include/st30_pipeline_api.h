@@ -36,6 +36,11 @@ enum st30p_tx_flag {
    * R TX destination mac assigned by user
    */
   ST30P_TX_FLAG_USER_R_MAC = (MTL_BIT32(1)),
+  /**
+   * Flag bit in flags of struct st30p_tx_ops.
+   * If use dedicated queue for TX.
+   */
+  ST30P_TX_FLAG_DEDICATE_QUEUE = (MTL_BIT32(7)),
 
   /** Enable the st30p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_tx_set_block_timeout to customize)*/

@@ -117,10 +117,12 @@ enum st_args_cmd {
   ST_ARG_TX_NO_CHAIN,
   ST_ARG_MULTI_SRC_PORT,
   ST_ARG_AUDIO_BUILD_PACING,
+  ST_ARG_AUDIO_DEDICATE_QUEUE,
   ST_ARG_AUDIO_TX_PACING,
   ST_ARG_AUDIO_RL_ACCURACY_US,
   ST_ARG_AUDIO_RL_OFFSET_US,
   ST_ARG_AUDIO_FIFO_SIZE,
+  ST_ARG_ANC_DEDICATE_QUEUE,
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
   ST_ARG_IOVA_MODE,
@@ -247,10 +249,12 @@ static struct option st_app_args_options[] = {
     {"tx_no_chain", no_argument, 0, ST_ARG_TX_NO_CHAIN},
     {"multi_src_port", no_argument, 0, ST_ARG_MULTI_SRC_PORT},
     {"audio_build_pacing", no_argument, 0, ST_ARG_AUDIO_BUILD_PACING},
+    {"audio_dedicate_queue", no_argument, 0, ST_ARG_AUDIO_DEDICATE_QUEUE},
     {"audio_tx_pacing", required_argument, 0, ST_ARG_AUDIO_TX_PACING},
     {"audio_rl_accuracy", required_argument, 0, ST_ARG_AUDIO_RL_ACCURACY_US},
     {"audio_rl_offset", required_argument, 0, ST_ARG_AUDIO_RL_OFFSET_US},
     {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
+    {"anc_dedicate_queue", no_argument, 0, ST_ARG_ANC_DEDICATE_QUEUE},
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
     {"iova_mode", required_argument, 0, ST_ARG_IOVA_MODE},
@@ -769,6 +773,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_AUDIO_BUILD_PACING:
         ctx->tx_audio_build_pacing = true;
         break;
+      case ST_ARG_AUDIO_DEDICATE_QUEUE:
+        ctx->tx_audio_dedicate_queue = true;
+        break;
       case ST_ARG_AUDIO_TX_PACING:
         if (!strcmp(optarg, "auto"))
           ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_AUTO;
@@ -787,6 +794,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_AUDIO_FIFO_SIZE:
         ctx->tx_audio_fifo_size = atoi(optarg);
+        break;
+      case ST_ARG_ANC_DEDICATE_QUEUE:
+        ctx->tx_anc_dedicate_queue = true;
         break;
       case ST_ARG_DHCP:
         for (int port = 0; port < MTL_PORT_MAX; ++port)

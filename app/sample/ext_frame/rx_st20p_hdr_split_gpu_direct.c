@@ -4,6 +4,15 @@
 
 #include "../sample_util.h"
 
+/* usage:
+ * tx: ./build/app/TxSt20PipelineSample --p_sip 192.168.70.12 --p_tx_ip 239.168.70.100
+ * --p_port 0000:18:00.0 --udp_port 6970
+ *
+ * rx: sudo ./build/app/RxSt20pHdrSplitGpuDirect --p_sip 192.168.70.13 --p_rx_ip
+ * 239.168.70.100 --p_port 0000:18:00.1  --udp_port 6970 --gddr_pa 0x394200000000
+ * --pipeline_fmt YUV422RFC4175PG2BE10
+ */
+
 struct rx_st20p_hg_ctx {
   int idx;
   st20p_rx_handle handle;

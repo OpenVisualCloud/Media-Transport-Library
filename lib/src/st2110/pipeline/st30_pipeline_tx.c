@@ -157,6 +157,8 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
            &ops->tx_dst_mac[MTL_SESSION_PORT_R][0], MTL_MAC_ADDR_LEN);
     ops_tx.flags |= ST30_TX_FLAG_USER_R_MAC;
   }
+  if (ops->flags & ST30P_TX_FLAG_DEDICATE_QUEUE)
+    ops_tx.flags |= ST30_TX_FLAG_DEDICATE_QUEUE;
   ops_tx.pacing_way = ops->pacing_way;
 
   ops_tx.fmt = ops->fmt;

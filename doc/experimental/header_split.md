@@ -44,7 +44,7 @@ ln -s ice_wireless_edge-1.3.9.99_1.pkg ice.pkg
 ## 4. Run
 
 ```bash
-./build/app/RxTxApp --config_file tests/script/hdr_split/1080p59_1v.json --hdr_split
+./build/app/RxTxApp --config_file tests/script/hdr_split_json/1080p59_1v.json --hdr_split
 ```
 
 Check log to see if header split is enabled.

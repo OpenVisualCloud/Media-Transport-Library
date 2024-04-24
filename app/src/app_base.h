@@ -596,6 +596,7 @@ struct st_app_context {
   int tx_audio_session_cnt;
   int tx_audio_rtp_ring_size; /* the ring size for tx audio rtp type */
   bool tx_audio_build_pacing;
+  bool tx_audio_dedicate_queue;
   int tx_audio_fifo_size;
   int tx_audio_rl_accuracy_us;
   int tx_audio_rl_offset_us;
@@ -605,6 +606,7 @@ struct st_app_context {
   char tx_anc_url[ST_APP_URL_MAX_LEN];
   int tx_anc_session_cnt;
   int tx_anc_rtp_ring_size; /* the ring size for tx anc rtp type */
+  bool tx_anc_dedicate_queue;
 
   char tx_st22p_url[ST_APP_URL_MAX_LEN]; /* send st22p content url*/
   struct st_app_tx_st22p_session* tx_st22p_sessions;
