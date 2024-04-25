@@ -757,7 +757,7 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
   /* l2/l3/l4 headers are not used in data path */
   rxq->recv_len = rte_pktmbuf_data_room_size(pool) + sizeof(struct ibv_grh) -
                   RTE_PKTMBUF_HEADROOM - sizeof(struct mt_udp_hdr);
-  base_addr = mt_mempool_mem_base_addr(pool);
+  base_addr = mt_mempool_mem_addr(pool);
   mr_size = mt_mempool_mem_size(pool);
   rxq->recv_mr = ibv_reg_mr(rxq->pd, base_addr, mr_size, IBV_ACCESS_LOCAL_WRITE);
   if (!rxq->recv_mr) {

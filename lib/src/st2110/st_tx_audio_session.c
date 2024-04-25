@@ -1880,7 +1880,7 @@ static int tx_audio_session_init_queue(struct mtl_main_impl* impl,
     if (mt_pmd_is_rdma_ud(impl, port)) {
       /* register mempool memory to rdma */
       struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
-      mrs_bufs[0] = mt_mempool_mem_base_addr(pool);
+      mrs_bufs[0] = mt_mempool_mem_addr(pool);
       mrs_sizes[0] = mt_mempool_mem_size(pool);
       flow.num_mrs = num_mrs;
       flow.mrs_bufs = mrs_bufs;

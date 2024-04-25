@@ -320,7 +320,7 @@ static int xdp_umem_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   cfg.frame_headroom = pool->header_size + sizeof(struct rte_mbuf) +
                        rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM;
 
-  base_addr = mt_mempool_mem_base_addr(pool);
+  base_addr = mt_mempool_mem_addr(pool);
   aligned_base_addr = (void*)((uint64_t)base_addr & ~(mtl_page_size(xdp->parent) - 1));
   umem_size = mt_mempool_mem_size(pool) + base_addr - aligned_base_addr;
   dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, aligned_base_addr,

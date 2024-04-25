@@ -134,7 +134,7 @@ static inline struct rte_mempool* mt_mempool_create_common(struct mtl_main_impl*
 
 int mt_mempool_free(struct rte_mempool* mp);
 
-void* mt_mempool_mem_base_addr(struct rte_mempool* mp);
+void* mt_mempool_mem_addr(struct rte_mempool* mp);
 size_t mt_mempool_mem_size(struct rte_mempool* mp);
 uint32_t mt_mempool_obj_size(struct rte_mempool* mp);
 int mt_mempool_dump(struct rte_mempool* mp);
