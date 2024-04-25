@@ -2527,15 +2527,9 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     size_t mrs_sizes[num_mrs];
     if (mt_pmd_is_rdma_ud(impl, port)) {
       /* register mempool memory to rdma */
-      void* base_addr = NULL;
-      size_t mr_size, align = 0;
       struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
-      base_addr = (void*)mt_mp_base_addr(pool, &align);
-      mr_size = (size_t)pool->populated_size *
-                    (size_t)rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL) +
-                align;
-      mrs_bufs[0] = base_addr;
-      mrs_sizes[0] = mr_size;
+      mrs_bufs[0] = mt_mempool_mem_addr(pool);
+      mrs_sizes[0] = mt_mempool_mem_size(pool);
       if (!s->tx_no_chain) {
         /* register frames memory to rdma */
         struct st_frame_trans* frame;

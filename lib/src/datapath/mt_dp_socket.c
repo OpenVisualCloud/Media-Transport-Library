@@ -686,9 +686,8 @@ struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
   char pool_name[ST_MAX_NAME_LEN];
   snprintf(pool_name, ST_MAX_NAME_LEN, "%sP%dF%d_MBUF", MT_RX_DP_SOCKET_PREFIX, port, fd);
   /* no priv */
-  entry->pool =
-      mt_mempool_create_by_ops(impl, port, pool_name, mbuf_elements, MT_MBUF_CACHE_SIZE,
-                               0, entry->pool_element_sz, NULL);
+  entry->pool = mt_mempool_create(impl, port, pool_name, mbuf_elements,
+                                  MT_MBUF_CACHE_SIZE, 0, entry->pool_element_sz);
   if (!entry->pool) {
     err("%s(%d), mempool %s create fail\n", __func__, port, pool_name);
     mt_rx_socket_put(entry);

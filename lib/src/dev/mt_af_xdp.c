@@ -301,30 +301,32 @@ static int xdp_parse_pacing_ice(struct mt_xdp_priv* xdp) {
   return ret;
 }
 
-static int xdp_umem_init(struct mt_xdp_queue* xq) {
+static int xdp_umem_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   int ret;
   struct xsk_umem_config cfg;
   void* base_addr = NULL;
+  void* aligned_base_addr = NULL;
   struct rte_mempool* pool = xq->mbuf_pool;
-  uint64_t umem_size, align = 0;
+  uint64_t umem_size;
 
   memset(&cfg, 0, sizeof(cfg));
   cfg.fill_size = xq->umem_ring_size * 2;
   cfg.comp_size = xq->umem_ring_size;
   cfg.flags = XDP_UMEM_UNALIGNED_CHUNK_FLAG;
 
-  cfg.frame_size = rte_mempool_calc_obj_size(pool->elt_size, pool->flags, NULL);
+  cfg.frame_size = mt_mempool_obj_size(pool);
   cfg.frame_headroom = pool->header_size + sizeof(struct rte_mbuf) +
                        rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM;
 
-  base_addr = (void*)mt_mp_base_addr(pool, &align);
-  umem_size = (uint64_t)pool->populated_size * (uint64_t)cfg.frame_size + align;
-  dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, base_addr,
+  base_addr = mt_mempool_mem_addr(pool);
+  aligned_base_addr = (void*)((uint64_t)base_addr & ~(mtl_page_size(xdp->parent) - 1));
+  umem_size = mt_mempool_mem_size(pool) + base_addr - aligned_base_addr;
+  dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, aligned_base_addr,
       umem_size);
-  ret =
-      xsk_umem__create(&xq->umem, base_addr, umem_size, &xq->rx_prod, &xq->tx_cons, &cfg);
+  ret = xsk_umem__create(&xq->umem, aligned_base_addr, umem_size, &xq->rx_prod,
+                         &xq->tx_cons, &cfg);
   if (ret < 0) {
     err("%s(%d,%u), umem create fail %d %s\n", __func__, port, q, ret, strerror(errno));
     if (ret == -EPERM)
@@ -333,7 +335,7 @@ static int xdp_umem_init(struct mt_xdp_queue* xq) {
           __func__, port, q);
     return ret;
   }
-  xq->umem_buffer = base_addr;
+  xq->umem_buffer = aligned_base_addr;
 
   info("%s(%d,%u), umem %p buffer %p size %" PRIu64 "\n", __func__, port, q, xq->umem,
        xq->umem_buffer, umem_size);
@@ -475,7 +477,7 @@ static int xdp_queue_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   uint16_t q = xq->q;
   int ret;
 
-  ret = xdp_umem_init(xq);
+  ret = xdp_umem_init(xdp, xq);
   if (ret < 0) {
     err("%s(%d,%u), umem init fail %d\n", __func__, port, q, ret);
     xdp_queue_uinit(xq);

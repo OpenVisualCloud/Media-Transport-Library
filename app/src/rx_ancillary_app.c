@@ -10,6 +10,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   int anc_count = hdr->anc_count;
   int idx, total_size, payload_len;
+  dbg("%s(%d), anc_count %d\n", __func__, s->idx, anc_count);
 
   for (idx = 0; idx < anc_count; idx++) {
     payload_hdr->swaped_first_hdr_chunk = ntohl(payload_hdr->swaped_first_hdr_chunk);
@@ -17,7 +18,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
-      err("anc RTP checkParityBits error\n");
+      err("%s(%d), anc RTP checkParityBits error\n", __func__, s->idx);
       return;
     }
     int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
@@ -28,7 +29,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
     if (checksum !=
         st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
-      err("anc frame checksum error\n");
+      err("%s(%d), anc frame checksum error\n", __func__, s->idx);
       return;
     }
     // get payload
