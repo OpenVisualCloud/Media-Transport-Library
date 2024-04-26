@@ -118,8 +118,9 @@ int main() {
               "MTL Manager is running. Press Ctrl+C or use SIGINT to stop it.");
 
   while (is_running) {
-    struct epoll_event events[clients.size() + 2];
-    int nfds = epoll_wait(epfd, events, clients.size() + 2, -1);
+    std::vector<struct epoll_event> events(clients.size() + 2);
+
+    int nfds = epoll_wait(epfd, events.data(), clients.size() + 2, -1);
     if (nfds < 0) {
       logger::log(log_level::ERROR, "Failed to wait for epoll.");
       continue;
