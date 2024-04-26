@@ -45,6 +45,9 @@ endif
 test_c_args += ['-Wall']
 test_cpp_args += ['-Wall']
 
+# enable error on  Variable Length Arrays
+test_cpp_args += ['-Wvla']
+
 if is_windows
   test_c_args += ['-DWINDOWSENV']
   test_cpp_args += ['-DWINDOWSENV']

@@ -50,19 +50,19 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
   int udp_len = para->udp_len;
   bool dual_loop = para->dual_loop;
 
-  int tx_fds[sessions];
-  int rx_fds[sessions];
-  int rx_timeout[sessions];
-  struct sockaddr_in tx_addr[sessions];
-  struct sockaddr_in rx_addr[sessions];
-  struct sockaddr_in tx_bind_addr[sessions]; /* for dual loop */
-  struct sockaddr_in rx_bind_addr[sessions];
-  struct pollfd fds[sessions];
+  std::vector<int> tx_fds(sessions);
+  std::vector<int> rx_fds(sessions);
+  std::vector<int> rx_timeout(sessions);
+  std::vector<struct sockaddr_in> tx_addr(sessions);
+  std::vector<struct sockaddr_in> rx_addr(sessions);
+  std::vector<struct sockaddr_in> tx_bind_addr(sessions); /* for dual loop */
+  std::vector<struct sockaddr_in> rx_bind_addr(sessions);
+  struct pollfd* fds = new struct pollfd[sessions];
   int ret;
   struct mtl_init_params* p = &ctx->init_params.mt_params;
 
-  char send_buf[udp_len];
-  char recv_buf[udp_len];
+  char* send_buf = new char[udp_len];
+  char* recv_buf = new char[udp_len];
   int payload_len = udp_len - SHA256_DIGEST_LENGTH;
   ssize_t send;
   ssize_t recv;
@@ -156,7 +156,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       int max_retry = 10;
 
       while (poll_retry < max_retry) {
-        memset(fds, 0, sizeof(fds));
+        memset(fds, 0, sizeof(*fds) * sessions);
         for (int i = 0; i < sessions; i++) {
           fds[i].fd = rx_fds[i];
           fds[i].events = POLLIN;
@@ -250,6 +250,9 @@ exit:
       mufd_close(rx_fds[i]);
     }
   }
+  delete[] send_buf;
+  delete[] recv_buf;
+  delete[] fds;
   return 0;
 }
 
