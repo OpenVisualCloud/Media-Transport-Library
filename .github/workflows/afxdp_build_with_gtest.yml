@@ -20,6 +20,7 @@ env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 23.11
+  MTL_BUILD_DISABLE_USDT: true
 
 permissions:
   contents: read
@@ -63,7 +64,7 @@ jobs:
 
       - name: Install the build dependency
         run: |
-          sudo pacman -Syu --noconfirm --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl systemtap
+          sudo pacman -Syu --noconfirm --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl
 
       - name: Apply dpdk patches
         run: |
