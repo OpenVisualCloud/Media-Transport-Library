@@ -63,7 +63,7 @@ jobs:
 
       - name: Install the build dependency
         run: |
-          sudo pacman -Syu --noconfirm --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl
+          sudo pacman -Syu --noconfirm --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl systemtap
 
       - name: Apply dpdk patches
         run: |

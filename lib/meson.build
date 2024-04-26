@@ -42,11 +42,15 @@ endif
 
 # usdt check
 mtl_has_usdt = false
-dtrace = find_program('dtrace', required: false)
-if cc.has_header('sys/sdt.h') and dtrace.found()
-  mtl_has_usdt = true
-else
-  message('sys/sdt.h or dtrace not found, no USDT support')
+
+# usdt not available in windows
+if not is_windows and get_option('enable_usdt') == true
+  dtrace = find_program('dtrace', required: false)
+  if cc.has_header('sys/sdt.h') and dtrace.found()
+    mtl_has_usdt = true
+  else
+    error('sys/sdt.h or dtrace not found, run: apt-get install -y systemtap-sdt-dev or yum install -y systemtap-sdt-devel or pacman -S systemtap')
+  endif
 endif
 
 usdt_provider_header = []

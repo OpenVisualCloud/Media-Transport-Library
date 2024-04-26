@@ -54,6 +54,7 @@ jobs:
           sudo apt-get install -y dpdk-dev
           sudo apt-get install -y libobs-dev
           sudo apt-get install -y swig
+          sudo apt-get install -y systemtap-sdt-dev
 
       - name: Git config
         run: |

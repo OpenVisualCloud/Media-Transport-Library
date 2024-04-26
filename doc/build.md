@@ -53,7 +53,7 @@ sudo yum install cmake flex bison
 #### 1.1.4 Arch Linux
 
 ```bash
-sudo pacman -Syu --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl
+sudo pacman -Syu --needed git gcc meson python python-pyelftools pkg-config json-c libpcap gtest openssl numactl systemtap
 ```
 
 Install below SDL2 packages if you want the display support for RxTxApp.

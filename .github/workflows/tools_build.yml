@@ -58,6 +58,7 @@ jobs:
           apt-get install -y sudo git make m4 gcc clang llvm
           apt-get install -y libpcap-dev
           apt-get install -y zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
+          apt-get install -y systemtap-sdt-dev
 
       - name: Build sch_smi_emulate
         run: |
