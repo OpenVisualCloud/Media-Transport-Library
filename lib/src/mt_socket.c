@@ -390,15 +390,32 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
     }
   }
 
+  if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
+    /* workaround now */
+    queue_id += MT_DPDK_AF_XDP_START_QUEUE;
+    int ret =
+        mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dport, true);
+    if (ret < 0) {
+      err("%s(%d), udp_dp_filter fail %d\n", __func__, port, ret);
+      return ret;
+    }
+  }
   return mt_instance_add_flow(impl, if_nametoindex(if_name), queue_id,
                               0x02 /*UDP_V4_FLOW*/, sip, dip, 0, dport);
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id,
+                          uint16_t dst_port) {
   const char* if_name = mt_kernel_if_name(impl, port);
 
   if (!mt_is_manager_connected(impl)) {
     err("%s(%d), manager not connected\n", __func__, port);
+    return -EIO;
+  }
+
+  if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
+    /* workaround now */
+    mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dst_port, false);
   }
 
   return mt_instance_del_flow(impl, if_nametoindex(if_name), flow_id);
@@ -449,7 +466,8 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
   return -ENOTSUP;
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id) {
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id,
+                          uint16_t dst_port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(flow_id);

@@ -220,7 +220,11 @@ int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   uint16_t num_xdp_if = 0;
   for (int i = 0; i < p->num_ports; i++) {
     if (mtl_pmd_is_af_xdp(p->pmd[i])) {
-      const char* if_name = mt_native_afxdp_port2if(p->port[i]);
+      const char* if_name;
+      if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)
+        if_name = mt_native_afxdp_port2if(p->port[i]);
+      else
+        if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       reg_msg->ifindex[num_xdp_if] = htonl(if_nametoindex(if_name));
       num_xdp_if++;
     }

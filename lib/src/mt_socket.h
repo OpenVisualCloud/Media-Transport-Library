@@ -28,6 +28,7 @@ int mt_socket_get_mac(struct mtl_main_impl* impl, const char* if_name,
 int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t queue_id,
                        struct mt_rxq_flow* flow);
 
-int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id);
+int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id,
+                          uint16_t dst_port);
 
 #endif
