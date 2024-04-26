@@ -429,14 +429,17 @@ TEST(Misc, version_compare) {
 
 static void mtl_memcpy_test(size_t size) {
   ASSERT_TRUE(size > 0);
-  char src[size];
-  char dst[size];
+  char* src = new char[size];
+  char* dst = new char[size];
 
   for (size_t i = 0; i < size; i++) src[i] = i;
   memset(dst, 0, size);
 
   mtl_memcpy(dst, src, size);
   EXPECT_EQ(0, memcmp(src, dst, size));
+
+  delete[] src;
+  delete[] dst;
 }
 
 TEST(Misc, memcpy) {

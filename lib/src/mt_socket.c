@@ -471,6 +471,7 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(flow_id);
+  MTL_MAY_UNUSED(dst_port);
   return -ENOTSUP;
 }
 #endif
