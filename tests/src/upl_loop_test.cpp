@@ -219,7 +219,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         }
         struct iovec iov;
         iov.iov_base = gso_buf;
-        iov.iov_len = sizeof(gso_buf);
+        iov.iov_len = udp_len * gso_nb;
         msg.msg_iovlen = 1;
         msg.msg_iov = &iov;
         char msg_control[CMSG_SPACE(sizeof(uint16_t))];
@@ -235,7 +235,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         *val_p = udp_len;
         dbg("%s, use gso sendmsg\n", __func__);
         send = sendmsg(tx_fds[i], &msg, 0);
-        EXPECT_EQ((size_t)send, sizeof(gso_buf));
+        EXPECT_EQ((size_t)send, udp_len * gso_nb);
         delete[] gso_buf;
       } else if (para->sendmsg) {
         struct iovec iov;
