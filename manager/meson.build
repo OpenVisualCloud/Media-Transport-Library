@@ -22,6 +22,8 @@ link_cpp_args = ['-lstdc++fs']
 
 if get_option('buildtype') != 'debug'
   cpp_args += ['-Werror']
+  # enable error on  Variable Length Arrays
+  cpp_args += ['-Wvla']
 endif
 
 # default no asan dep

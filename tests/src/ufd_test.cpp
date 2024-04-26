@@ -173,7 +173,7 @@ static void socket_max_test(enum mtl_port port) {
   EXPECT_GT(max, 0);
   info("%s(%d), max %d\n", __func__, port, max);
 
-  int fds[max];
+  std::vector<int> fds(max);
   for (int i = 0; i < max; i++) {
     ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, port);
     EXPECT_GE(ret, 0);
@@ -275,8 +275,8 @@ static int check_r_port_alive(struct mtl_init_params* p) {
   struct sockaddr_in tx_addr;
   struct sockaddr_in rx_addr;
   size_t payload_len = 1024;
-  char send_buf[payload_len];
-  char recv_buf[payload_len];
+  char* send_buf = new char[payload_len];
+  char* recv_buf = new char[payload_len];
   st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
   /* max timeout 3 min */
   int sleep_ms = 10;
@@ -305,11 +305,11 @@ static int check_r_port_alive(struct mtl_init_params* p) {
   if (ret < 0) goto out;
 
   while (retry < max_retry) {
-    if (mufd_sendto(tx_fd, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&rx_addr, sizeof(rx_addr)) < 0)
+    if (mufd_sendto(tx_fd, send_buf, payload_len, 0, (const struct sockaddr*)&rx_addr,
+                    sizeof(rx_addr)) < 0)
       warn("%s, send buf fail at %d\n", __func__, retry);
 
-    ssize_t recv = mufd_recvfrom(rx_fd, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+    ssize_t recv = mufd_recvfrom(rx_fd, recv_buf, payload_len, 0, NULL, NULL);
     if (recv > 0) {
       info("%s, rx port alive at %d\n", __func__, retry);
       ret = 0;
@@ -322,6 +322,8 @@ static int check_r_port_alive(struct mtl_init_params* p) {
 out:
   if (tx_fd > 0) mufd_close(tx_fd);
   if (rx_fd > 0) mufd_close(rx_fd);
+  delete[] send_buf;
+  delete[] recv_buf;
   return ret;
 }
 

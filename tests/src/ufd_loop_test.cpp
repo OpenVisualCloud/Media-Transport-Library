@@ -50,19 +50,19 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
   int udp_len = para->udp_len;
   bool dual_loop = para->dual_loop;
 
-  int tx_fds[sessions];
-  int rx_fds[sessions];
-  int rx_timeout[sessions];
-  struct sockaddr_in tx_addr[sessions];
-  struct sockaddr_in rx_addr[sessions];
-  struct sockaddr_in tx_bind_addr[sessions]; /* for dual loop */
-  struct sockaddr_in rx_bind_addr[sessions];
-  struct pollfd fds[sessions];
+  std::vector<int> tx_fds(sessions);
+  std::vector<int> rx_fds(sessions);
+  std::vector<int> rx_timeout(sessions);
+  std::vector<struct sockaddr_in> tx_addr(sessions);
+  std::vector<struct sockaddr_in> rx_addr(sessions);
+  std::vector<struct sockaddr_in> tx_bind_addr(sessions); /* for dual loop */
+  std::vector<struct sockaddr_in> rx_bind_addr(sessions);
+  struct pollfd* fds = new struct pollfd[sessions];
   int ret;
   struct mtl_init_params* p = &ctx->init_params.mt_params;
 
-  char send_buf[udp_len];
-  char recv_buf[udp_len];
+  char* send_buf = new char[udp_len];
+  char* recv_buf = new char[udp_len];
   int payload_len = udp_len - SHA256_DIGEST_LENGTH;
   ssize_t send;
   ssize_t recv;
@@ -144,9 +144,9 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       SHA256((unsigned char*)send_buf, payload_len,
              (unsigned char*)send_buf + payload_len);
 
-      send = mufd_sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+      send = mufd_sendto(tx_fds[i], send_buf, udp_len, 0,
                          (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
-      EXPECT_EQ((size_t)send, sizeof(send_buf));
+      EXPECT_EQ((size_t)send, udp_len);
     }
     if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
@@ -156,7 +156,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       int max_retry = 10;
 
       while (poll_retry < max_retry) {
-        memset(fds, 0, sizeof(fds));
+        memset(fds, 0, sizeof(*fds) * sessions);
         for (int i = 0; i < sessions; i++) {
           fds[i].fd = rx_fds[i];
           fds[i].events = POLLIN;
@@ -181,13 +181,14 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
 
     for (int i = 0; i < sessions; i++) {
       /* rx */
-      recv = mufd_recvfrom(rx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+      recv = mufd_recvfrom(rx_fds[i], recv_buf, udp_len, 0, NULL, NULL);
       if (recv < 0) { /* timeout */
         rx_timeout[i]++;
-        err("%s, recv fail at session %d pkt %d\n", __func__, i, loop);
+        err("%s, recv fail %d at session %d pkt %d fd %d\n", __func__, (int)recv, i, loop,
+            rx_fds[i]);
         continue;
       }
-      EXPECT_EQ((size_t)recv, sizeof(send_buf));
+      EXPECT_EQ((size_t)recv, udp_len);
       /* check idx */
       EXPECT_EQ((char)i, recv_buf[0]);
       /* check sha */
@@ -203,20 +204,21 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
         send_buf[0] = i;
         SHA256((unsigned char*)send_buf, payload_len,
                (unsigned char*)send_buf + payload_len);
-        send = mufd_sendto(rx_fds[i], send_buf, sizeof(send_buf), 0,
+        send = mufd_sendto(rx_fds[i], send_buf, udp_len, 0,
                            (const struct sockaddr*)&tx_addr[i], sizeof(tx_addr[i]));
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       }
       if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
       for (int i = 0; i < sessions; i++) {
-        recv = mufd_recvfrom(tx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+        recv = mufd_recvfrom(tx_fds[i], recv_buf, udp_len, 0, NULL, NULL);
         if (recv < 0) { /* timeout */
           rx_timeout[i]++;
-          err("%s, back recv fail at session %d pkt %d\n", __func__, i, loop);
+          err("%s, back recv fail %d at session %d pkt %d\n", __func__, (int)recv, i,
+              loop);
           continue;
         }
-        EXPECT_EQ((size_t)recv, sizeof(send_buf));
+        EXPECT_EQ((size_t)recv, udp_len);
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
         /* check sha */
@@ -250,6 +252,9 @@ exit:
       mufd_close(rx_fds[i]);
     }
   }
+  delete[] send_buf;
+  delete[] recv_buf;
+  delete[] fds;
   return 0;
 }
 

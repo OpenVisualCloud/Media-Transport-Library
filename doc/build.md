@@ -12,7 +12,7 @@ Please note that the DPDK dependency remains necessary when utilizing the XDP/ke
 
 ```bash
 sudo apt-get update
-sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev
+sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev systemtap-sdt-dev llvm clang
 sudo pip install pyelftools ninja
 ```
 
@@ -27,7 +27,7 @@ sudo apt-get install libsdl2-dev libsdl2-ttf-dev
 ```bash
 sudo yum install -y dnf-plugins-core
 sudo dnf config-manager --set-enabled powertools
-sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel openssl-devel numactl-devel libasan
+sudo yum install git gcc gcc-c++ meson python3 python3-pip pkg-config json-c-devel libpcap-devel gtest-devel openssl-devel numactl-devel libasan systemtap-sdt-devel clang llvm-devel
 sudo pip3 install pyelftools
 ```
 

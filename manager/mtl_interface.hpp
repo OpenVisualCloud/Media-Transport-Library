@@ -121,7 +121,8 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
 
   int value = add ? 1 : 0;
   if (bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY) < 0) {
-    log(log_level::ERROR, "Failed to update udp4_dp_filter map");
+    log(log_level::ERROR,
+        "Failed to update udp4_dp_filter map, dst_port: " + std::to_string(dst_port));
     return -1;
   }
 

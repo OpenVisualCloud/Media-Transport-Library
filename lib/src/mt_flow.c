@@ -209,6 +209,7 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   struct mt_rx_flow_rsp* rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
   rsp->flow_id = -1;
   rsp->queue_id = q;
+  rsp->dst_port = flow->dst_port;
 
   /* no flow if MT_DRV_F_RX_NO_FLOW */
   if (inf->drv_info.flags & MT_DRV_F_RX_NO_FLOW) return rsp;
@@ -249,7 +250,7 @@ static int rx_flow_free(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp) {
 
 retry:
   if (rsp->flow_id > 0) {
-    mt_socket_remove_flow(inf->parent, port, rsp->flow_id);
+    mt_socket_remove_flow(inf->parent, port, rsp->flow_id, rsp->dst_port);
     rsp->flow_id = -1;
   }
   if (rsp->flow) {

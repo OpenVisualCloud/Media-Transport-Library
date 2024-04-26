@@ -80,6 +80,8 @@
 #define MT_IF_STAT_PORT_CONFIGURED (MTL_BIT32(0))
 #define MT_IF_STAT_PORT_STARTED (MTL_BIT32(1))
 
+#define MT_DPDK_AF_XDP_START_QUEUE (1)
+
 #define NS_PER_MS (1000 * 1000)
 #define NS_PER_US (1000)
 #define US_PER_MS (1000)
@@ -604,6 +606,7 @@ struct mt_rx_flow_rsp {
   int flow_id; /* flow id for socket based flow */
   struct rte_flow* flow;
   uint16_t queue_id;
+  uint16_t dst_port;
 };
 
 struct mt_rx_queue {

@@ -62,8 +62,8 @@ static int check_r_port_alive(struct uplt_ctx* ctx) {
   int ret = -EIO;
   struct sockaddr_in rx_addr;
   size_t payload_len = 1024;
-  char send_buf[payload_len];
-  char recv_buf[payload_len];
+  char* send_buf = new char[payload_len];
+  char* recv_buf = new char[payload_len];
   st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
   /* max timeout 3 min */
   int sleep_ms = 10;
@@ -91,10 +91,10 @@ static int check_r_port_alive(struct uplt_ctx* ctx) {
 
   info("%s, start to rx port status\n", __func__);
   while (retry < max_retry) {
-    if (sendto(tx_fd, send_buf, sizeof(send_buf), 0, (const struct sockaddr*)&rx_addr,
+    if (sendto(tx_fd, send_buf, payload_len, 0, (const struct sockaddr*)&rx_addr,
                sizeof(rx_addr)) < 0)
       continue;
-    ssize_t recv = recvfrom(rx_fd, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+    ssize_t recv = recvfrom(rx_fd, recv_buf, payload_len, 0, NULL, NULL);
     if (recv > 0) {
       info("%s, rx port alive at %d\n", __func__, retry);
       ret = 0;
@@ -107,6 +107,8 @@ static int check_r_port_alive(struct uplt_ctx* ctx) {
 out:
   if (tx_fd > 0) close(tx_fd);
   if (rx_fd > 0) close(rx_fd);
+  delete[] send_buf;
+  delete[] recv_buf;
   return ret;
 }
 

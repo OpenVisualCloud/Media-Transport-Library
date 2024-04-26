@@ -60,21 +60,21 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
   int udp_len = para->udp_len;
   bool dual_loop = para->dual_loop;
 
-  int tx_fds[tx_sessions];
-  int rx_fds[rx_sessions];
-  int rx_timeout[rx_sessions];
-  int rx_pkts[rx_sessions];
+  std::vector<int> tx_fds(tx_sessions);
+  std::vector<int> rx_fds(rx_sessions);
+  std::vector<int> rx_timeout(rx_sessions);
+  std::vector<int> rx_pkts(rx_sessions);
   int total_rx_pkts = 0;
-  struct sockaddr_in tx_addr[tx_sessions];
-  struct sockaddr_in rx_addr[rx_sessions];
-  struct sockaddr_in tx_bind_addr[tx_sessions]; /* for dual loop */
-  struct sockaddr_in rx_bind_addr[rx_sessions];
+  std::vector<struct sockaddr_in> tx_addr(tx_sessions);
+  std::vector<struct sockaddr_in> rx_addr(rx_sessions);
+  std::vector<struct sockaddr_in> tx_bind_addr(tx_sessions); /* for dual loop */
+  std::vector<struct sockaddr_in> rx_bind_addr(rx_sessions);
   int ret;
   int epoll_fd = -1;
   int sfd = -1;
 
-  char send_buf[udp_len];
-  char recv_buf[udp_len];
+  char* send_buf = new char[udp_len];
+  char* recv_buf = new char[udp_len];
   int payload_len = udp_len - SHA256_DIGEST_LENGTH;
   ssize_t send;
   ssize_t recv;
@@ -213,13 +213,13 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
       }
       if (para->sendmsg_gso) {
         int gso_nb = 4;
-        char gso_buf[udp_len * gso_nb];
+        char* gso_buf = new char[udp_len * gso_nb];
         for (int gso = 0; gso < gso_nb; gso++) {
           memcpy(&gso_buf[gso * udp_len], send_buf, udp_len);
         }
         struct iovec iov;
         iov.iov_base = gso_buf;
-        iov.iov_len = sizeof(gso_buf);
+        iov.iov_len = udp_len * gso_nb;
         msg.msg_iovlen = 1;
         msg.msg_iov = &iov;
         char msg_control[CMSG_SPACE(sizeof(uint16_t))];
@@ -232,28 +232,29 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         cmsg->cmsg_len = CMSG_LEN(sizeof(uint16_t));
         uint16_t* val_p;
         val_p = (uint16_t*)CMSG_DATA(cmsg);
-        *val_p = sizeof(send_buf);
+        *val_p = udp_len;
         dbg("%s, use gso sendmsg\n", __func__);
         send = sendmsg(tx_fds[i], &msg, 0);
-        EXPECT_EQ((size_t)send, sizeof(gso_buf));
+        EXPECT_EQ((size_t)send, udp_len * gso_nb);
+        delete[] gso_buf;
       } else if (para->sendmsg) {
         struct iovec iov;
         iov.iov_base = send_buf;
-        iov.iov_len = sizeof(send_buf);
+        iov.iov_len = udp_len;
         msg.msg_iovlen = 1;
         msg.msg_iov = &iov;
         dbg("%s, use sendmsg\n", __func__);
         send = sendmsg(tx_fds[i], &msg, 0);
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       } else {
         if (para->reuse_port) { /* reuse test use same port */
-          send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+          send = sendto(tx_fds[i], send_buf, udp_len, 0,
                         (const struct sockaddr*)&rx_addr[0], sizeof(rx_addr[0]));
         } else {
-          send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+          send = sendto(tx_fds[i], send_buf, udp_len, 0,
                         (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
         }
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       }
     }
     if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
@@ -264,8 +265,8 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
 
     if (para->use_poll) {
       while (poll_retry < max_retry) {
-        struct pollfd fds[rx_sessions + 1];
-        memset(fds, 0, sizeof(fds));
+        struct pollfd* fds = new struct pollfd[rx_sessions + 1];
+        memset(fds, 0, sizeof(*fds) * (rx_sessions + 1));
         for (int i = 0; i < rx_sessions; i++) {
           fds[i].fd = rx_fds[i];
           fds[i].events = POLLIN;
@@ -288,6 +289,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
 
         poll_retry++;
         st_usleep(1000);
+        delete[] fds;
       }
     } else if (para->use_select) {
       while (poll_retry < max_retry) {
@@ -323,7 +325,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
       }
     } else if (para->use_epoll) {
       while (poll_retry < max_retry) {
-        struct epoll_event events[rx_sessions];
+        struct epoll_event* events = new struct epoll_event[rx_sessions];
         ret = epoll_wait(epoll_fd, events, rx_sessions, para->rx_timeout_us / 1000);
         EXPECT_GE(ret, 0);
         poll_succ = ret;
@@ -348,12 +350,12 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         memset(&msg, 0, sizeof(msg));
         struct iovec iov;
         iov.iov_base = recv_buf;
-        iov.iov_len = sizeof(recv_buf);
+        iov.iov_len = udp_len;
         msg.msg_iovlen = 1;
         msg.msg_iov = &iov;
         recv = recvmsg(rx_fds[i], &msg, 0);
       } else {
-        recv = recvfrom(rx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+        recv = recvfrom(rx_fds[i], recv_buf, udp_len, 0, NULL, NULL);
       }
       if (recv < 0) { /* timeout */
         if (!para->sendmsg_gso && !para->reuse_port) {
@@ -362,7 +364,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         }
         continue;
       }
-      EXPECT_EQ((size_t)recv, sizeof(send_buf));
+      EXPECT_EQ((size_t)recv, udp_len);
       if (!para->reuse_port) {
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
@@ -382,20 +384,20 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         send_buf[0] = i;
         SHA256((unsigned char*)send_buf, payload_len,
                (unsigned char*)send_buf + payload_len);
-        send = sendto(rx_fds[i], send_buf, sizeof(send_buf), 0,
+        send = sendto(rx_fds[i], send_buf, udp_len, 0,
                       (const struct sockaddr*)&tx_addr[i], sizeof(tx_addr[i]));
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       }
       if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
       for (int i = 0; i < tx_sessions; i++) {
-        recv = recvfrom(tx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+        recv = recvfrom(tx_fds[i], recv_buf, udp_len, 0, NULL, NULL);
         if (recv < 0) { /* timeout */
           rx_timeout[i]++;
           err("%s, back recv fail at session %d pkt %d\n", __func__, i, loop);
           continue;
         }
-        EXPECT_EQ((size_t)recv, sizeof(send_buf));
+        EXPECT_EQ((size_t)recv, udp_len);
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
         /* check sha */
@@ -446,6 +448,8 @@ exit:
       close(rx_fds[i]);
     }
   }
+  delete[] send_buf;
+  delete[] recv_buf;
   return 0;
 }
 

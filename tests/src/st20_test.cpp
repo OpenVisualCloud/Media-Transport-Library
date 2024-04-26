@@ -239,6 +239,8 @@ static int tx_video_build_ooo_mapping(tests_context* s) {
   int total_pkts = s->total_pkts_in_frame;
   int ooo_cnt = 0;
 
+  MTL_MAY_UNUSED(ooo_cnt);
+
   for (int i = 0; i < total_pkts; i++) {
     ooo_mapping[i] = i;
   }
