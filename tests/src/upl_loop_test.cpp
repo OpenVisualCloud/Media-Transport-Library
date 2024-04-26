@@ -232,7 +232,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         cmsg->cmsg_len = CMSG_LEN(sizeof(uint16_t));
         uint16_t* val_p;
         val_p = (uint16_t*)CMSG_DATA(cmsg);
-        *val_p = sizeof(send_buf);
+        *val_p = udp_len;
         dbg("%s, use gso sendmsg\n", __func__);
         send = sendmsg(tx_fds[i], &msg, 0);
         EXPECT_EQ((size_t)send, sizeof(gso_buf));
@@ -240,21 +240,21 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
       } else if (para->sendmsg) {
         struct iovec iov;
         iov.iov_base = send_buf;
-        iov.iov_len = sizeof(send_buf);
+        iov.iov_len = udp_len;
         msg.msg_iovlen = 1;
         msg.msg_iov = &iov;
         dbg("%s, use sendmsg\n", __func__);
         send = sendmsg(tx_fds[i], &msg, 0);
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       } else {
         if (para->reuse_port) { /* reuse test use same port */
-          send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+          send = sendto(tx_fds[i], send_buf, udp_len, 0,
                         (const struct sockaddr*)&rx_addr[0], sizeof(rx_addr[0]));
         } else {
-          send = sendto(tx_fds[i], send_buf, sizeof(send_buf), 0,
+          send = sendto(tx_fds[i], send_buf, udp_len, 0,
                         (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
         }
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       }
     }
     if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
@@ -350,12 +350,12 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         memset(&msg, 0, sizeof(msg));
         struct iovec iov;
         iov.iov_base = recv_buf;
-        iov.iov_len = sizeof(recv_buf);
+        iov.iov_len = udp_len;
         msg.msg_iovlen = 1;
         msg.msg_iov = &iov;
         recv = recvmsg(rx_fds[i], &msg, 0);
       } else {
-        recv = recvfrom(rx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+        recv = recvfrom(rx_fds[i], recv_buf, udp_len, 0, NULL, NULL);
       }
       if (recv < 0) { /* timeout */
         if (!para->sendmsg_gso && !para->reuse_port) {
@@ -364,7 +364,7 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         }
         continue;
       }
-      EXPECT_EQ((size_t)recv, sizeof(send_buf));
+      EXPECT_EQ((size_t)recv, udp_len);
       if (!para->reuse_port) {
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
@@ -384,20 +384,20 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
         send_buf[0] = i;
         SHA256((unsigned char*)send_buf, payload_len,
                (unsigned char*)send_buf + payload_len);
-        send = sendto(rx_fds[i], send_buf, sizeof(send_buf), 0,
+        send = sendto(rx_fds[i], send_buf, udp_len, 0,
                       (const struct sockaddr*)&tx_addr[i], sizeof(tx_addr[i]));
-        EXPECT_EQ((size_t)send, sizeof(send_buf));
+        EXPECT_EQ((size_t)send, udp_len);
       }
       if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
 
       for (int i = 0; i < tx_sessions; i++) {
-        recv = recvfrom(tx_fds[i], recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+        recv = recvfrom(tx_fds[i], recv_buf, udp_len, 0, NULL, NULL);
         if (recv < 0) { /* timeout */
           rx_timeout[i]++;
           err("%s, back recv fail at session %d pkt %d\n", __func__, i, loop);
           continue;
         }
-        EXPECT_EQ((size_t)recv, sizeof(send_buf));
+        EXPECT_EQ((size_t)recv, udp_len);
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
         /* check sha */
