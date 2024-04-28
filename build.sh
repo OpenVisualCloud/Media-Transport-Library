@@ -16,6 +16,7 @@ function usage()
 buildtype=release
 enable_asan=false
 enable_tap=false
+enable_usdt=true
 
 if [ -n "$MTL_BUILD_ENABLE_ASAN" ];  then
     if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
@@ -29,6 +30,13 @@ if [ -n "$MTL_BUILD_ENABLE_TAP" ];  then
     if [ "$MTL_BUILD_ENABLE_TAP" == "true" ]; then
         enable_tap=true
         echo "Enable tap"
+    fi
+fi
+
+if [ -n "$MTL_BUILD_DISABLE_USDT" ];  then
+    if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
+        enable_usdt=false
+        echo "Disable USDT"
     fi
 fi
 
@@ -65,7 +73,7 @@ LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 
 # build lib
-meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap"
+meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt"
 pushd "${LIB_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then

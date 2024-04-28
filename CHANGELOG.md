@@ -20,6 +20,7 @@
 * usdt: add eBPF based User Statically-Defined Tracing (USDT) probes support, see `doc/usdt.md`
 * multicast: add MTL_FLAG_NO_MULTICAST option
 * st30p: add get/put support for audio, detail see `include/st30_pipeline_api.h`
+* ffmpeg: add audio plugin support
 
 ## Changelog for 23.12
 

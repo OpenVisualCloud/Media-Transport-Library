@@ -82,6 +82,8 @@ jobs:
           apt-get install -y dpdk-dev
           apt-get install -y nasm yasm
           apt-get install -y libavcodec-dev
+          apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev gcc-multilib
+          apt-get install -y systemtap-sdt-dev
 
       - name: Build
         run: |
