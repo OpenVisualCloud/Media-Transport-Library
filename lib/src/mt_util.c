@@ -938,7 +938,7 @@ const char* mt_native_afxdp_port2if(const char* port) {
   return port + strlen(native_afxdp_port_prefix);
 }
 
-const char* mt_rdma_port2if(const char* port) {
+const char* mt_rdma_ud_port2if(const char* port) {
   if (mtl_pmd_by_port_name(port) != MTL_PMD_RDMA_UD) {
     err("%s, port %s is not a rdma based\n", __func__, port);
     return NULL;

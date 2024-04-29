@@ -11,7 +11,7 @@
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #include "mt_af_xdp.h"
-#include "mt_rdma.h"
+#include "mt_rdma_ud.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -349,7 +349,7 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
       continue;
     } else if (pmd == MTL_PMD_RDMA_UD) {
-      const char* if_name = mt_rdma_port2if(p->port[i]);
+      const char* if_name = mt_rdma_ud_port2if(p->port[i]);
       if (!if_name) return -EINVAL;
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "rdma_%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
