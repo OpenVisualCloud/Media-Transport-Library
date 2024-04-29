@@ -19,12 +19,12 @@ extern "C" {
 /**
  * Handle to MTL RDMA transport context.
  */
-typedef struct mtl_rdma_impl* mtl_rdma_handle;
+typedef struct mt_rdma_impl* mtl_rdma_handle;
 
 /** Handle to RDMA tx session of lib. */
-typedef struct mtl_rdma_tx_ctx* mtl_rdma_tx_handle;
+typedef struct mt_rdma_tx_ctx* mtl_rdma_tx_handle;
 /** Handle to RDMA rx session of lib. */
-typedef struct mtl_rdma_rx_ctx* mtl_rdma_rx_handle;
+typedef struct mt_rdma_rx_ctx* mtl_rdma_rx_handle;
 
 /** The structure info for buffer meta. */
 struct mtl_rdma_buffer {
@@ -40,8 +40,6 @@ struct mtl_rdma_buffer {
   void* user_meta;
   /** User metadata size */
   size_t user_meta_size;
-  /** Reference count */
-  uint32_t ref_count;
 };
 
 /** The structure describing how to create a tx session. */
@@ -49,13 +47,19 @@ struct mtl_rdma_tx_ops {
   /** RDMA server ip. */
   char* ip;
   /** RDMA server port. */
-  uint16_t port;
+  char* port;
   /** The number of buffers. */
   uint16_t num_buffers;
   /** Buffers addresses. */
   void** buffers;
   /** The size of each buffer, all buffers should have the same size. */
   size_t buffer_size;
+
+  /**
+   * Callback function to notify the buffer is done.
+   * Implement with non-blocking function as it runs in the polling thread.
+   */
+  int (*notify_buffer_done)(void* priv, struct mtl_rdma_buffer* buffer);
 };
 
 /**
@@ -118,18 +122,24 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
 
 /** The structure describing how to create a rx session. */
 struct mtl_rdma_rx_ops {
-  /** Local RDMA device ip */
+  /** Local RDMA interface ip */
   char* local_ip;
   /** RDMA server ip */
   char* ip;
   /** RDMA server port */
-  uint16_t port;
+  char* port;
   /** The number of buffers. */
   uint16_t num_buffers;
   /** buffers addresses */
   void** buffers;
   /** The size of each buffer, all buffers should have the same size. */
   size_t buffer_size;
+
+  /**
+   * Callback function to notify the buffer is ready.
+   * Implement with non-blocking function as it runs in the polling thread.
+   */
+  int (*notify_buffer_ready)(void* priv, struct mtl_rdma_buffer* buffer);
 };
 
 /**
