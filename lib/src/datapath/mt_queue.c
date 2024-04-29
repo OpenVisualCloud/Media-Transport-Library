@@ -6,7 +6,7 @@
 
 #include "../dev/mt_af_xdp.h"
 #include "../dev/mt_dev.h"
-#include "../dev/mt_rdma.h"
+#include "../dev/mt_rdma_ud.h"
 #include "../mt_cni.h"
 #include "../mt_log.h"
 #include "mt_dp_socket.h"

@@ -10,5 +10,5 @@ if mtl_has_xdp_backend
 endif
 
 if mtl_has_rdma_backend
-  sources += files('mt_rdma.c')
+  sources += files('mt_rdma_ud.c')
 endif
