@@ -21,28 +21,33 @@ extern "C" {
  */
 typedef struct mt_rdma_impl* mtl_rdma_handle;
 
-/** Handle to RDMA tx session of lib. */
+/** Handle to RDMA TX session of lib. */
 typedef struct mt_rdma_tx_ctx* mtl_rdma_tx_handle;
-/** Handle to RDMA rx session of lib. */
+/** Handle to RDMA RX session of lib. */
 typedef struct mt_rdma_rx_ctx* mtl_rdma_rx_handle;
 
 /** The structure info for buffer meta. */
 struct mtl_rdma_buffer {
-  /** Buffer address */
+  /** Buffer address, immutable at runtime */
   void* addr;
-  /** Buffer size */
+  /** Buffer data capacity, immutable at runtime */
+  size_t capacity;
+  /** Buffer valid data offset, mutable at runtime */
+  size_t offset;
+  /** Buffer valid data size, mutable at runtime */
   size_t size;
   /** Buffer sequence number */
   uint32_t seq_num;
-  /** Buffer timestamp */
+  /** Buffer timestamp, use nanoseconds in lib */
   uint64_t timestamp;
+
   /** User metadata */
   void* user_meta;
   /** User metadata size */
   size_t user_meta_size;
 };
 
-/** The structure describing how to create a tx session. */
+/** The structure describing how to create a TX session. */
 struct mtl_rdma_tx_ops {
   /** RDMA server ip. */
   char* ip;
@@ -52,47 +57,52 @@ struct mtl_rdma_tx_ops {
   uint16_t num_buffers;
   /** Buffers addresses. */
   void** buffers;
-  /** The size of each buffer, all buffers should have the same size. */
-  size_t buffer_size;
+  /** The max size of each buffer, all buffers should have the same capacity. */
+  size_t buffer_capacity;
 
   /**
-   * Callback function to notify the buffer is done.
+   * Callback function to notify the buffer is sent by local side.
+   * Implement with non-blocking function as it runs in the polling thread.
+   */
+  int (*notify_buffer_sent)(void* priv, struct mtl_rdma_buffer* buffer);
+  /**
+   * Callback function to notify the buffer is consumed by remote side.
    * Implement with non-blocking function as it runs in the polling thread.
    */
   int (*notify_buffer_done)(void* priv, struct mtl_rdma_buffer* buffer);
 };
 
 /**
- * Create one RDMA tx session.
+ * Create one RDMA TX session.
  *
  * @param mrh
- *   The handle to the media transport RDMA context.
+ *   The handle to the RDMA transport context.
  * @param ops
- *   The pointer to the structure describing how to create a tx
+ *   The pointer to the structure describing how to create a TX
  *  session.
  * @return
  *   - NULL on error.
- *   - Otherwise, the handle to the tx session.
+ *   - Otherwise, the handle to the TX session.
  */
 mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_ops* ops);
 
 /**
- * Free the tx session.
+ * Free the TX session.
  *
  * @param handle
- *   The handle to the tx session.
+ *   The handle to the TX session.
  * @return
- *   - 0: Success, tx session freed.
- *   - <0: Error code of the tx session free.
+ *   - 0: Success, TX session freed.
+ *   - <0: Error code of the TX session free.
  */
 int mtl_rdma_tx_free(mtl_rdma_tx_handle handle);
 
 /**
- * Get one tx buffer from the tx session.
+ * Get one TX buffer from the TX session.
  * Call mtl_rdma_tx_put_buffer to return the buffer to session.
  *
  * @param handle
- *   The handle to the tx session.
+ *   The handle to the TX session.
  * @return
  *   - NULL if no available buffer in the session.
  *   - Otherwise, the buffer pointer.
@@ -100,11 +110,11 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle);
 struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle);
 
 /**
- * Put back the buffer which get by mtl_rdma_tx_get_buffer to the tx
+ * Put back the buffer which get by mtl_rdma_tx_get_buffer to the TX
  * session.
  *
  * @param handle
- *   The handle to the tx session.
+ *   The handle to the TX session.
  * @param buffer
  *   the buffer pointer by mtl_rdma_tx_get_buffer.
  * @return
@@ -113,14 +123,7 @@ struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle);
  */
 int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* buffer);
 
-/**
- * Create one RDMA tx session.
- *
- * @param mrh
- *   The handle to the media transport RDMA context.
- * @param ops
-
-/** The structure describing how to create a rx session. */
+/** The structure describing how to create an RX session. */
 struct mtl_rdma_rx_ops {
   /** Local RDMA interface ip */
   char* local_ip;
@@ -132,47 +135,47 @@ struct mtl_rdma_rx_ops {
   uint16_t num_buffers;
   /** buffers addresses */
   void** buffers;
-  /** The size of each buffer, all buffers should have the same size. */
-  size_t buffer_size;
+  /** The max size of each buffer, all buffers should have the same capacity. */
+  size_t buffer_capacity;
 
   /**
-   * Callback function to notify the buffer is ready.
+   * Callback function to notify the buffer is ready to consume.
    * Implement with non-blocking function as it runs in the polling thread.
    */
   int (*notify_buffer_ready)(void* priv, struct mtl_rdma_buffer* buffer);
 };
 
 /**
- * Create one RDMA rx session.
+ * Create one RDMA RX session.
  *
  * @param mrh
- *   The handle to the media transport RDMA context.
+ *   The handle to the RDMA transport context.
  * @param ops
- *   The pointer to the structure describing how to create a rx
+ *   The pointer to the structure describing how to create a RX
  *  session.
  * @return
  *   - NULL on error.
- *   - Otherwise, the handle to the rx session.
+ *   - Otherwise, the handle to the RX session.
  */
 mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh, struct mtl_rdma_rx_ops* ops);
 
 /**
- * Free the rx session.
+ * Free the RX session.
  *
  * @param handle
- *   The handle to the rx session.
+ *   The handle to the RX session.
  * @return
- *   - 0: Success, rx session freed.
- *   - <0: Error code of the rx session free.
+ *   - 0: Success, RX session freed.
+ *   - <0: Error code of the RX session free.
  */
 int mtl_rdma_rx_free(mtl_rdma_rx_handle handle);
 
 /**
- * Get one rx buffer from the rx session.
+ * Get one RX buffer from the RX session.
  * Call mtl_rdma_rx_put_buffer to return the buffer to session.
  *
  * @param handle
- *   The handle to the rx session.
+ *   The handle to the RX session.
  * @return
  *   - NULL if no available buffer in the session.
  *   - Otherwise, the buffer pointer.
@@ -180,11 +183,11 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle);
 struct mtl_rdma_buffer* mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle);
 
 /**
- * Put back the buffer which get by mtl_rdma_rx_get_buffer to the rx
+ * Put back the buffer which get by mtl_rdma_rx_get_buffer to the RX
  * session.
  *
  * @param handle
- *   The handle to the rx session.
+ *   The handle to the RX session.
  * @param buffer
  *   the buffer pointer by mtl_rdma_rx_get_buffer.
  * @return
