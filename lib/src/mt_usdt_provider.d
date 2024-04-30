@@ -97,13 +97,13 @@ provider st22 {
 provider st22p {
   /* tx */
   probe tx_frame_get(int idx, int f_idx, void* va);
-  probe tx_frame_put(int idx, int f_idx, void* va);
+  probe tx_frame_put(int idx, int f_idx, void* va, int stat, uint32_t data_size);
   probe tx_frame_next(int idx, int f_idx);
   probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int idx, char* dump_file, void* va, uint32_t data_size);
   /* rx */
-  probe rx_frame_get(int idx, int f_idx, void* va);
+  probe rx_frame_get(int idx, int f_idx, void* va, uint32_t data_size);
   probe rx_frame_put(int idx, int f_idx, void* va);
   probe rx_frame_available(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */

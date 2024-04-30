@@ -890,9 +890,7 @@ void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  if (ctx->derive) /* derive dst to src frame */
-    return ctx->framebuffs[idx].dst.addr[0];
-  return ctx->framebuffs[idx].src.addr[0];
+  return tx_st20p_user_frame(ctx, &ctx->framebuffs[idx])->addr[0];
 }
 
 size_t st20p_tx_frame_size(st20p_tx_handle handle) {

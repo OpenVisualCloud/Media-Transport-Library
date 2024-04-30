@@ -37,6 +37,8 @@ static void rx_st22p_decode_block_wake(struct st22p_rx_ctx* ctx) {
 }
 
 static void rx_st22p_decode_notify_frame_ready(struct st22p_rx_ctx* ctx) {
+  if (ctx->derive) return; /* no decoder for derive mode */
+
   struct st22_decode_session_impl* decoder = ctx->decode_impl;
   struct st22_decode_dev_impl* dev_impl = decoder->parent;
   struct st22_decoder_dev* dev = &dev_impl->dev;
@@ -153,6 +155,16 @@ static int rx_st22p_frame_ready(void* priv, void* frame,
         meta->pkts_recv[s_port];
   }
 
+  /* ask app to consume src frame directly for derive mode */
+  if (ctx->derive) {
+    framebuff->dst = framebuff->src;
+    framebuff->stat = ST22P_RX_FRAME_DECODED;
+    /* point to next */
+    ctx->framebuff_producer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
+    mt_pthread_mutex_unlock(&ctx->lock);
+    rx_st22p_notify_frame_available(ctx);
+    return 0;
+  }
   framebuff->stat = ST22P_RX_FRAME_READY;
   /* point to next */
   ctx->framebuff_producer_idx = rx_st22p_next_idx(ctx, framebuff->idx);
@@ -376,7 +388,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
 
   struct st22p_rx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-    frames[i].src.fmt = ctx->decode_impl->req.req.input_fmt;
+    frames[i].src.fmt = ctx->codestream_fmt;
     frames[i].src.buffer_size = ops_rx.framebuff_max_size;
     frames[i].src.data_size = ops_rx.framebuff_max_size;
     frames[i].src.interlaced = ops->interlaced;
@@ -394,7 +406,7 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
 
 static int rx_st22p_uinit_dst_fbs(struct st22p_rx_ctx* ctx) {
   if (ctx->framebuffs) {
-    if (!ctx->ext_frame) {
+    if (!ctx->derive && !ctx->ext_frame) {
       for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
         if (ctx->framebuffs[i].dst.addr[0]) {
           mt_rte_free(ctx->framebuffs[i].dst.addr[0]);
@@ -435,6 +447,8 @@ static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx
     frames[i].dst.width = ops->width;
     frames[i].dst.height = ops->height;
     frames[i].dst.priv = &frames[i];
+
+    if (ctx->derive) continue; /* skip the plane init */
 
     if (ctx->ext_frame) { /* will use ext frame from user */
       uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
@@ -587,9 +601,9 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle) {
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   ctx->stat_get_frame_succ++;
   struct st_frame* frame = &framebuff->dst;
-  MT_USDT_ST22P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
+  MT_USDT_ST22P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0], frame->data_size);
   /* check if dump USDT enabled */
-  if (MT_USDT_ST22P_RX_FRAME_DUMP_ENABLED()) {
+  if (!ctx->derive && MT_USDT_ST22P_RX_FRAME_DUMP_ENABLED()) {
     int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       rx_st22p_usdt_dump_frame(ctx, frame);
@@ -651,12 +665,6 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     }
   }
 
-  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
-  if (!dst_size) {
-    err("%s(%d), get dst size fail\n", __func__, idx);
-    return NULL;
-  }
-
   codestream_fmt = st_codec_codestream_fmt(ops->codec);
   if (codestream_fmt == ST_FRAME_FMT_MAX) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
@@ -669,6 +677,21 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     return NULL;
   }
 
+  if (codestream_fmt == ops->output_fmt) {
+    ctx->derive = true;
+    info("%s(%d), derive mode\n", __func__, idx);
+  }
+
+  if (ctx->derive) {
+    dst_size = 0;
+  } else {
+    dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
+    if (!dst_size) {
+      err("%s(%d), get dst size fail\n", __func__, idx);
+      return NULL;
+    }
+  }
+
   ctx->idx = idx;
   ctx->ready = false;
   ctx->ext_frame = (ops->flags & ST22P_RX_FLAG_EXT_FRAME) ? true : false;
@@ -679,6 +702,11 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   /* use the possible max size */
   ctx->max_codestream_size = ops->max_codestream_size;
   if (!ctx->max_codestream_size) ctx->max_codestream_size = dst_size;
+  if (ctx->derive && !ctx->max_codestream_size) {
+    warn("%s(%d), codestream_size is not set by user in derive mode, use default 1M\n",
+         __func__, idx);
+    ctx->max_codestream_size = 0x100000;
+  }
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
   rte_atomic32_set(&ctx->stat_busy, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
@@ -701,11 +729,13 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   ctx->ops = *ops;
 
   /* get one suitable jpegxs decode device */
-  ret = rx_st22p_get_decoder(impl, ctx, ops);
-  if (ret < 0) {
-    err("%s(%d), get decoder fail %d\n", __func__, idx, ret);
-    st22p_rx_free(ctx);
-    return NULL;
+  if (!ctx->derive) {
+    ret = rx_st22p_get_decoder(impl, ctx, ops);
+    if (ret < 0) {
+      err("%s(%d), get decoder fail %d\n", __func__, idx, ret);
+      st22p_rx_free(ctx);
+      return NULL;
+    }
   }
 
   /* init fbs */

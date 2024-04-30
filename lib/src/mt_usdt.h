@@ -219,8 +219,8 @@
 
 #define MT_USDT_ST22P_TX_FRAME_GET(idx, f_idx, va) \
   MT_DTRACE_PROBE3(st22p, tx_frame_get, idx, f_idx, va)
-#define MT_USDT_ST22P_TX_FRAME_PUT(idx, f_idx, va) \
-  MT_DTRACE_PROBE3(st22p, tx_frame_put, idx, f_idx, va)
+#define MT_USDT_ST22P_TX_FRAME_PUT(idx, f_idx, va, stat, size) \
+  MT_DTRACE_PROBE5(st22p, tx_frame_put, idx, f_idx, va, stat, size)
 #define MT_USDT_ST22P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
   MT_DTRACE_PROBE3(st22p, tx_frame_done, idx, f_idx, tmstamp)
 #define MT_USDT_ST22P_TX_FRAME_NEXT(idx, f_idx) \
@@ -229,8 +229,8 @@
   MT_DTRACE_PROBE4(st22p, tx_frame_dump, idx, file, va, sz)
 #define MT_USDT_ST22P_TX_FRAME_DUMP_ENABLED() ST22P_TX_FRAME_DUMP_ENABLED()
 
-#define MT_USDT_ST22P_RX_FRAME_GET(idx, f_idx, va) \
-  MT_DTRACE_PROBE3(st22p, rx_frame_get, idx, f_idx, va)
+#define MT_USDT_ST22P_RX_FRAME_GET(idx, f_idx, va, sz) \
+  MT_DTRACE_PROBE4(st22p, rx_frame_get, idx, f_idx, va, sz)
 #define MT_USDT_ST22P_RX_FRAME_PUT(idx, f_idx, va) \
   MT_DTRACE_PROBE3(st22p, rx_frame_put, idx, f_idx, va)
 #define MT_USDT_ST22P_RX_FRAME_AVAILABLE(idx, f_idx, va, tmstamp, data_size) \

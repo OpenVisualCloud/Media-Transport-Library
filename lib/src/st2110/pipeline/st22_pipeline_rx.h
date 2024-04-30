@@ -56,6 +56,7 @@ struct st22p_rx_ctx {
   uint64_t decode_block_timeout_ns;
 
   bool ready;
+  bool derive; /* output_fmt == transport_fmt */
   bool ext_frame;
   int usdt_frame_cnt;
 

@@ -689,7 +689,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     }
 
     if (frame->data_size != s->frame_size) s->incomplete_frame_cnt++;
-    if (frame->buffer_size != s->frame_size) s->incomplete_frame_cnt++;
+    if (frame->buffer_size < s->frame_size) s->incomplete_frame_cnt++;
     if (frame->width != s->width) s->incomplete_frame_cnt++;
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
@@ -756,6 +756,7 @@ struct st22p_rx_digest_test_para {
   uint32_t ssrc;
   bool block_get;
   bool codec_block_get;
+  bool derive;
 };
 
 static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
@@ -899,10 +900,14 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_tx.rtcp.buffer_size = 512;
     }
 
-    test_ctx_tx[i]->frame_size =
-        st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, ops_tx.interlaced);
-
-    ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
+    if (para->derive) {
+      ops_tx.codestream_size = ops_tx.width * ops_tx.height / compress_ratio[i];
+      test_ctx_tx[i]->frame_size = ops_tx.codestream_size;
+    } else {
+      test_ctx_tx[i]->frame_size =
+          st_frame_size(ops_tx.input_fmt, ops_tx.width, ops_tx.height, ops_tx.interlaced);
+      ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
+    }
 
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
@@ -1087,13 +1092,18 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_rx.rtcp.sim_loss_rate = 0.0001;
     }
 
-    test_ctx_rx[i]->frame_size =
-        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
+    if (para->derive)
+      test_ctx_rx[i]->frame_size = test_ctx_tx[i]->frame_size;
+    else
+      test_ctx_rx[i]->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width,
+                                                 ops_rx.height, ops_rx.interlaced);
 
     rx_handle[i] = st22p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
 
-    EXPECT_EQ(test_ctx_rx[i]->frame_size, st22p_rx_frame_size(rx_handle[i]));
+    if (!para->derive) {
+      EXPECT_EQ(test_ctx_rx[i]->frame_size, st22p_rx_frame_size(rx_handle[i]));
+    }
     if (para->block_get) {
       ret = st22p_rx_set_block_timeout(rx_handle[i], NS_PER_S);
       EXPECT_EQ(ret, 0);
@@ -1340,6 +1350,23 @@ TEST(St22p, digest_st22_s2_ext) {
   para.tx_ext = true;
   para.rx_ext = true;
   para.codec_block_get = true;
+
+  st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
+}
+
+TEST(St22p, digest_derive_s2) {
+  enum st_fps fps[2] = {ST_FPS_P59_94, ST_FPS_P50};
+  int width[2] = {1920, 1920};
+  int height[2] = {1080, 1080};
+  enum st_frame_fmt fmt[2] = {ST_FRAME_FMT_JPEGXS_CODESTREAM,
+                              ST_FRAME_FMT_H264_CBR_CODESTREAM};
+  enum st22_codec codec[2] = {ST22_CODEC_JPEGXS, ST22_CODEC_H264_CBR};
+  int compress_ratio[2] = {5, 8};
+
+  struct st22p_rx_digest_test_para para;
+  test_st22p_init_rx_digest_para(&para);
+  para.sessions = 2;
+  para.derive = true;
 
   st22p_rx_digest_test(fps, width, height, fmt, codec, compress_ratio, &para);
 }

@@ -1115,7 +1115,7 @@ Example output like below:
 usage: customize the application process name as your setup
 
 ```bash
-sudo bpftrace -e 'usdt::st22p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+sudo bpftrace -e 'usdt::st22p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p,stat:%d,size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4); }' -p $(pidof RxTxApp)
 ```
 
 Example output like below:
@@ -1177,7 +1177,7 @@ usdt::st22p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S
 usage: customize the application process name as your setup
 
 ```bash
-sudo bpftrace -e 'usdt::st22p:rx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+sudo bpftrace -e 'usdt::st22p:rx_frame_get { printf("%s s%d: get frame %d(addr:%p,size:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }' -p $(pidof RxTxApp)
 ```
 
 Example output like below:
