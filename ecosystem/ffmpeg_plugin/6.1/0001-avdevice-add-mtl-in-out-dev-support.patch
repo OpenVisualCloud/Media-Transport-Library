@@ -1,4 +1,4 @@
-From 285c069c565801ea0ec553ab67ee411b83b859d0 Mon Sep 17 00:00:00 2001
+From 4eba953cebe01eaabe16ce50119c7d969938065d Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Fri, 26 Jan 2024 16:23:34 +0800
 Subject: [PATCH] avdevice: add mtl in/out dev support
@@ -7,11 +7,11 @@ Signed-off-by: Frank Du <frank.du@intel.com>
 ---
  configure                | 9 +++++++++
  libavdevice/Makefile     | 6 ++++++
- libavdevice/alldevices.c | 7 +++++++
- 3 files changed, 22 insertions(+)
+ libavdevice/alldevices.c | 9 +++++++++
+ 3 files changed, 24 insertions(+)
 
 diff --git a/configure b/configure
-index a89cfa6d95..a1402ab352 100755
+index ca184072b3..b7582d0f39 100755
 --- a/configure
 +++ b/configure
 @@ -309,6 +309,7 @@ External library support:
@@ -22,7 +22,7 @@ index a89cfa6d95..a1402ab352 100755
    --disable-metal          disable Apple Metal framework [autodetect]
    --enable-libmysofa       enable libmysofa, needed for sofalizer filter [no]
    --enable-openal          enable OpenAL 1.1 capture support [no]
-@@ -1907,6 +1908,7 @@ EXTERNAL_LIBRARY_LIST="
+@@ -1908,6 +1909,7 @@ EXTERNAL_LIBRARY_LIST="
      libzvbi
      lv2
      mediacodec
@@ -30,7 +30,7 @@ index a89cfa6d95..a1402ab352 100755
      openal
      opengl
      openssl
-@@ -3593,6 +3595,12 @@ kmsgrab_indev_deps="libdrm"
+@@ -3597,6 +3599,12 @@ kmsgrab_indev_deps="libdrm"
  lavfi_indev_deps="avfilter"
  libcdio_indev_deps="libcdio"
  libdc1394_indev_deps="libdc1394"
@@ -43,7 +43,7 @@ index a89cfa6d95..a1402ab352 100755
  openal_indev_deps="openal"
  opengl_outdev_deps="opengl"
  opengl_outdev_suggest="sdl2"
-@@ -6868,6 +6876,7 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
+@@ -6873,6 +6881,7 @@ enabled mmal              && { check_lib mmal interface/mmal/mmal.h mmal_port_co
                                   check_lib mmal interface/mmal/mmal.h mmal_port_connect -lmmal_core -lmmal_util -lmmal_vc_client -lbcm_host; } ||
                                 die "ERROR: mmal not found" &&
                                 check_func_headers interface/mmal/mmal.h "MMAL_PARAMETER_VIDEO_MAX_NUM_CALLBACKS"; }
@@ -69,16 +69,18 @@ index c30449201d..23b0e130fe 100644
  OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
  OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o
 diff --git a/libavdevice/alldevices.c b/libavdevice/alldevices.c
-index 8a90fcb5d7..7956bf5731 100644
+index 8a90fcb5d7..b183c18e9c 100644
 --- a/libavdevice/alldevices.c
 +++ b/libavdevice/alldevices.c
-@@ -40,6 +40,13 @@ extern const AVInputFormat  ff_iec61883_demuxer;
+@@ -40,6 +40,15 @@ extern const AVInputFormat  ff_iec61883_demuxer;
  extern const AVInputFormat  ff_jack_demuxer;
  extern const AVInputFormat  ff_kmsgrab_demuxer;
  extern const AVInputFormat  ff_lavfi_demuxer;
 +extern const AVInputFormat  ff_mtl_st20p_demuxer;
 +extern const FFOutputFormat ff_mtl_st20p_muxer;
++extern const AVInputFormat  ff_mtl_st22_demuxer;
 +extern const AVInputFormat  ff_mtl_st22p_demuxer;
++extern const FFOutputFormat ff_mtl_st22_muxer;
 +extern const FFOutputFormat ff_mtl_st22p_muxer;
 +extern const AVInputFormat  ff_mtl_st30p_demuxer;
 +extern const FFOutputFormat ff_mtl_st30p_muxer;
