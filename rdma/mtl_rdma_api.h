@@ -9,6 +9,8 @@
  *
  */
 
+#include <stddef.h>
+
 #ifndef _MTL_RDMA_API_HEAD_H_
 #define _MTL_RDMA_API_HEAD_H_
 
@@ -60,13 +62,17 @@ struct mtl_rdma_tx_ops {
   /** The max size of each buffer, all buffers should have the same capacity. */
   size_t buffer_capacity;
 
+  /** Session name */
+  const char* name;
+  /** Optional. Private data to the callback function */
+  void* priv;
   /**
-   * Callback function to notify the buffer is sent by local side.
+   * Optional. Callback function to notify the buffer is sent by local side.
    * Implement with non-blocking function as it runs in the polling thread.
    */
   int (*notify_buffer_sent)(void* priv, struct mtl_rdma_buffer* buffer);
   /**
-   * Callback function to notify the buffer is consumed by remote side.
+   * Optional. Callback function to notify the buffer is consumed by remote side.
    * Implement with non-blocking function as it runs in the polling thread.
    */
   int (*notify_buffer_done)(void* priv, struct mtl_rdma_buffer* buffer);
@@ -138,6 +144,10 @@ struct mtl_rdma_rx_ops {
   /** The max size of each buffer, all buffers should have the same capacity. */
   size_t buffer_capacity;
 
+  /** Session name */
+  const char* name;
+  /** Optional. Private data to the callback function */
+  void* priv;
   /**
    * Callback function to notify the buffer is ready to consume.
    * Implement with non-blocking function as it runs in the polling thread.

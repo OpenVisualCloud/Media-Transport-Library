@@ -32,7 +32,7 @@ if get_option('buildtype') != 'debug'
 endif
 mtl_rdma_c_args += ['-Wall']
 
-pthread_dep = cc.find_library('pthread', required : true)
+pthread_dep = cc.find_library('pthread', required: true)
 asan_dep = []
 if get_option('enable_asan') == true
     message('Enable -fsanitize=address')
@@ -40,7 +40,10 @@ if get_option('enable_asan') == true
     asan_dep = cc.find_library('asan', required: true)
 endif
 
-mtl_rdma_sources = files() # todo: add sources
+mtl_rdma_header_file = files('mtl_rdma_api.h')
+install_headers(mtl_rdma_header_file, subdir: meson.project_name())
+
+mtl_rdma_sources = files('mt_rdma.c', 'mt_rdma_rx.c', 'mt_rdma_tx.c')
 
 mtl_rdma_lib = shared_library(
     meson.project_name(),
@@ -50,6 +53,11 @@ mtl_rdma_lib = shared_library(
     c_args: mtl_rdma_c_args,
 )
 
-mtl_rdma_header_file = files('mtl_rdma_api.h')
-
-install_headers(mtl_rdma_header_file, subdir: meson.project_name())
+pkg = import('pkgconfig')
+pkg.generate(
+    name: meson.project_name(),
+    version: meson.project_version(),
+    libraries: mtl_rdma_lib,
+    filebase: meson.project_name(),
+    description: 'Intel® Media Transport Library - RDMA',
+)
