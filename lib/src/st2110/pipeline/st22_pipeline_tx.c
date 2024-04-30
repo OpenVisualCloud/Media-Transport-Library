@@ -375,7 +375,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.pack_type = ops->pack_type;
   ops_tx.framebuff_cnt = ops->framebuff_cnt;
   if (ctx->derive)
-    ops_tx.framebuff_max_size = ops->codestream_size;
+    ops_tx.framebuff_max_size = ctx->src_size;
   else
     ops_tx.framebuff_max_size = ctx->encode_impl->codestream_max_size;
   ops_tx.get_next_frame = tx_st22p_next_frame;
@@ -765,6 +765,11 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 
   if (ctx->derive) {
     src_size = ops->codestream_size;
+    if (!src_size) {
+      warn("%s(%d), codestream_size is not set by user in derive mode, use default 1M\n",
+           __func__, idx);
+      src_size = 0x100000;
+    }
   } else {
     src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
     if (!src_size) {
