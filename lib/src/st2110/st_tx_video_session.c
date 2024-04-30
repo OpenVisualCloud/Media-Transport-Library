@@ -656,6 +656,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
       __func__, idx, pacing->cur_epochs, pacing->rtp_time_stamp,
       pacing->tsc_time_cursor / 1000 / 1000, to_epoch / 1000 / 1000);
   pacing->ptp_time_cursor = start_time_ptp;
+  pacing->tsc_time_frame_start = pacing->tsc_time_cursor;
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
@@ -2288,6 +2289,15 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
           s->st20_total_pkts);
       dbg("%s(%d), codestream_size %" PRId64 "(%d st22 pkts) time_stamp %u\n", __func__,
           idx, codestream_size, st22_info->st22_total_pkts, pacing->rtp_time_stamp);
+      return MTL_TASKLET_HAS_PENDING;
+    } else if (ST21_TX_STAT_SENDING_PKTS == s->st20_frame_stat) {
+      uint64_t tsc_time_frame_start = s->pacing.tsc_time_frame_start;
+      if (tsc_time_frame_start) {
+        if (mt_get_tsc(impl) < tsc_time_frame_start) {
+          return MTL_TASKLET_ALL_DONE;
+        }
+        s->pacing.tsc_time_frame_start = 0; /* time reach, clear now */
+      }
     }
   }
 

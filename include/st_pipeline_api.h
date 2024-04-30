@@ -2075,6 +2075,14 @@ enum st_frame_fmt st_frame_name_to_fmt(const char* name);
  */
 uint8_t st_frame_fmt_planes(enum st_frame_fmt fmt);
 
+/** helper to know if it's a codestream fmt */
+static inline bool st_frame_fmt_is_codestream(enum st_frame_fmt fmt) {
+  if (fmt >= ST_FRAME_FMT_CODESTREAM_START && fmt <= ST_FRAME_FMT_CODESTREAM_END)
+    return true;
+  else
+    return false;
+}
+
 /**
  * Get st20 transport format from st_frame_fmt
  *
@@ -2138,6 +2146,9 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
  *   size
  */
 static inline size_t st_frame_plane_size(struct st_frame* frame, uint8_t plane) {
+  /* no line size for codestream */
+  if (st_frame_fmt_is_codestream(frame->fmt)) return frame->data_size;
+
   size_t sz = frame->linesize[plane] * frame->height;
   if (frame->interlaced) sz /= 2;
   return sz;

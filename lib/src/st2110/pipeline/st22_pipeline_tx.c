@@ -14,6 +14,11 @@ static const char* tx_st22p_stat_name(enum st22p_tx_frame_status stat) {
   return st22p_tx_frame_stat_name[stat];
 }
 
+static inline struct st_frame* tx_st22p_user_frame(struct st22p_tx_ctx* ctx,
+                                                   struct st22p_tx_frame* framebuff) {
+  return ctx->derive ? &framebuff->dst : &framebuff->src;
+}
+
 static uint16_t tx_st22p_next_idx(struct st22p_tx_ctx* ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
@@ -48,6 +53,8 @@ static void tx_st22p_encode_block_wake(struct st22p_tx_ctx* ctx) {
 }
 
 static void tx_st22p_encode_notify_frame_ready(struct st22p_tx_ctx* ctx) {
+  if (ctx->derive) return; /* no encoder for derive mode */
+
   struct st22_encode_session_impl* encoder = ctx->encode_impl;
   struct st22_encode_dev_impl* dev_impl = encoder->parent;
   struct st22_encoder_dev* dev = &dev_impl->dev;
@@ -103,10 +110,11 @@ static int tx_st22p_next_frame(void* priv, uint16_t* next_frame_idx,
   framebuff->stat = ST22P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
 
-  meta->second_field = framebuff->src.second_field;
+  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  meta->second_field = frame->second_field;
   if (ctx->ops.flags & (ST22P_TX_FLAG_USER_PACING | ST22P_TX_FLAG_USER_TIMESTAMP)) {
-    meta->tfmt = framebuff->src.tfmt;
-    meta->timestamp = framebuff->src.timestamp;
+    meta->tfmt = frame->tfmt;
+    meta->timestamp = frame->timestamp;
     dbg("%s(%d), frame %u succ timestamp %" PRIu64 "\n", __func__, ctx->idx,
         framebuff->idx, meta->timestamp);
   }
@@ -144,7 +152,8 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+    struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
   }
 
   tx_st22p_notify_frame_available(ctx);
@@ -365,7 +374,10 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   ops_tx.type = ST22_TYPE_FRAME_LEVEL;
   ops_tx.pack_type = ops->pack_type;
   ops_tx.framebuff_cnt = ops->framebuff_cnt;
-  ops_tx.framebuff_max_size = ctx->encode_impl->codestream_max_size;
+  if (ctx->derive)
+    ops_tx.framebuff_max_size = ctx->src_size;
+  else
+    ops_tx.framebuff_max_size = ctx->encode_impl->codestream_max_size;
   ops_tx.get_next_frame = tx_st22p_next_frame;
   ops_tx.notify_frame_done = tx_st22p_frame_done;
   ops_tx.notify_event = tx_st22p_notify_event;
@@ -383,7 +395,7 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
   struct st22p_tx_frame* frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     frames[i].dst.addr[0] = st22_tx_get_fb_addr(transport, i);
-    frames[i].dst.fmt = ctx->encode_impl->req.req.output_fmt;
+    frames[i].dst.fmt = ctx->codestream_fmt;
     frames[i].dst.interlaced = ops->interlaced;
     frames[i].dst.buffer_size = ops_tx.framebuff_max_size;
     frames[i].dst.data_size = ops_tx.framebuff_max_size;
@@ -442,6 +454,8 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
     frames[i].src.width = ops->width;
     frames[i].src.height = ops->height;
     frames[i].src.priv = &frames[i];
+
+    if (ctx->derive) continue; /* skip the plane init */
 
     if (ctx->ext_frame) { /* will use ext frame from user */
       uint8_t planes = st_frame_fmt_planes(frames[i].src.fmt);
@@ -602,7 +616,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
     ctx->second_field = ctx->second_field ? false : true;
   }
   ctx->stat_get_frame_succ++;
-  struct st_frame* frame = &framebuff->src;
+  struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
   MT_USDT_ST22P_TX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   return frame;
 }
@@ -633,13 +647,18 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame) {
     framebuff->dst.second_field = framebuff->src.second_field = frame->second_field;
   }
 
-  framebuff->stat = ST22P_TX_FRAME_READY;
-  tx_st22p_encode_notify_frame_ready(ctx);
+  if (ctx->derive) {
+    framebuff->stat = ST22P_TX_FRAME_ENCODED;
+  } else {
+    framebuff->stat = ST22P_TX_FRAME_READY;
+    tx_st22p_encode_notify_frame_ready(ctx);
+  }
   ctx->stat_put_frame++;
 
-  MT_USDT_ST22P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
+  MT_USDT_ST22P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr[0], framebuff->stat,
+                             frame->data_size);
   /* check if dump USDT enabled */
-  if (MT_USDT_ST22P_TX_FRAME_DUMP_ENABLED()) {
+  if (!ctx->derive && MT_USDT_ST22P_TX_FRAME_DUMP_ENABLED()) {
     int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
     if ((ctx->usdt_frame_cnt % period) == (period / 2)) {
       tx_st22p_usdt_dump_frame(ctx, frame);
@@ -668,6 +687,11 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
 
   if (!ctx->ext_frame) {
     err("%s(%d), EXT_FRAME flag not enabled\n", __func__, idx);
+    return -EIO;
+  }
+
+  if (ctx->derive) {
+    err("%s(%d), derive mode not support ext frame\n", __func__, idx);
     return -EIO;
   }
 
@@ -722,12 +746,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
-  if (!src_size) {
-    err("%s(%d), get source size fail\n", __func__, idx);
-    return NULL;
-  }
-
   codestream_fmt = st_codec_codestream_fmt(ops->codec);
   if (codestream_fmt == ST_FRAME_FMT_MAX) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
@@ -736,8 +754,28 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 
   ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
   if (!ctx) {
-    err("%s, ctx malloc fail\n", __func__);
+    err("%s(%d), ctx malloc fail\n", __func__, idx);
     return NULL;
+  }
+
+  if (codestream_fmt == ops->input_fmt) {
+    ctx->derive = true;
+    info("%s(%d), derive mode\n", __func__, idx);
+  }
+
+  if (ctx->derive) {
+    src_size = ops->codestream_size;
+    if (!src_size) {
+      warn("%s(%d), codestream_size is not set by user in derive mode, use default 1M\n",
+           __func__, idx);
+      src_size = 0x100000;
+    }
+  } else {
+    src_size = st_frame_size(ops->input_fmt, ops->width, ops->height, ops->interlaced);
+    if (!src_size) {
+      err("%s(%d), get source size fail\n", __func__, idx);
+      return NULL;
+    }
   }
 
   ctx->idx = idx;
@@ -768,11 +806,13 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->ops = *ops;
 
   /* get one suitable jpegxs encode device */
-  ret = tx_st22p_get_encoder(impl, ctx, ops);
-  if (ret < 0) {
-    err("%s(%d), get encoder fail %d\n", __func__, idx, ret);
-    st22p_tx_free(ctx);
-    return NULL;
+  if (!ctx->derive) {
+    ret = tx_st22p_get_encoder(impl, ctx, ops);
+    if (ret < 0) {
+      err("%s(%d), get encoder fail %d\n", __func__, idx, ret);
+      st22p_tx_free(ctx);
+      return NULL;
+    }
   }
 
   /* init fbs */
@@ -856,7 +896,7 @@ void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  return ctx->framebuffs[idx].src.addr[0];
+  return tx_st22p_user_frame(ctx, &ctx->framebuffs[idx])->addr[0];
 }
 
 size_t st22p_tx_frame_size(st22p_tx_handle handle) {

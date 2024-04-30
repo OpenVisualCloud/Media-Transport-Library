@@ -166,6 +166,7 @@ struct st_tx_video_pacing {
   double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
+  uint64_t tsc_time_frame_start; /* start tsc time for frame start */
 };
 
 enum st20_packet_type {

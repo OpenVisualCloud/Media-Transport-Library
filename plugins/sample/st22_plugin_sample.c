@@ -237,6 +237,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   d_dev.output_fmt_caps = ST_FMT_CAP_ARGB | ST_FMT_CAP_BGRA | ST_FMT_CAP_RGB8;
   d_dev.output_fmt_caps |= ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8 |
                            ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
+  d_dev.output_fmt_caps |= ST_FMT_CAP_YUV420PLANAR8;
   d_dev.create_session = decoder_create_session;
   d_dev.free_session = decoder_free_session;
   d_dev.notify_frame_available = decoder_frame_available;
@@ -256,6 +257,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   e_dev.input_fmt_caps = ST_FMT_CAP_ARGB | ST_FMT_CAP_BGRA | ST_FMT_CAP_RGB8;
   e_dev.input_fmt_caps |= ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8 |
                           ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
+  e_dev.input_fmt_caps |= ST_FMT_CAP_YUV420PLANAR8;
   e_dev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   e_dev.create_session = encoder_create_session;
   e_dev.free_session = encoder_free_session;
