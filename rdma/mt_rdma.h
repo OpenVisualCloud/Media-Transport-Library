@@ -6,7 +6,6 @@
 #define _MT_RDMA_HEAD_H_
 
 #include <infiniband/verbs.h>
-#include <mtl_rdma/mtl_rdma_api.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -14,6 +13,8 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include "mtl_rdma_api.h"
 
 #define MT_RDMA_MSG_MAGIC (0x494D544C) /* ASCII representation of "IMTL" */
 
@@ -79,8 +80,6 @@ struct mt_rdma_tx_ctx {
   void* message_region; /* 1024 bytes * buf_cnt */
   struct mt_rdma_tx_buffer* tx_buffers;
   uint16_t buffer_cnt;
-  pthread_mutex_t buffer_mutex;
-  pthread_cond_t buffer_cond;
   pthread_t connect_thread;
   pthread_t cq_poll_thread;
 
@@ -114,8 +113,6 @@ struct mt_rdma_rx_ctx {
   void* message_region; /* 1024 bytes * buf_cnt */
   struct mt_rdma_rx_buffer* rx_buffers;
   uint16_t buffer_cnt;
-  pthread_mutex_t buffer_mutex;
-  pthread_cond_t buffer_cond;
   pthread_t connect_thread;
   pthread_t cq_poll_thread;
 

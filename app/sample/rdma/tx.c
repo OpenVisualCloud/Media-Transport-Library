@@ -1,9 +1,21 @@
 #include <inttypes.h>
 #include <mtl_rdma/mtl_rdma_api.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+
+static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
+  // printf("Buffer %p done\n", buffer);
+  pthread_mutex_lock(&mtx);
+  pthread_cond_signal(&cond);
+  pthread_mutex_unlock(&mtx);
+  return 0;
+}
 
 int main(int argc, char** argv) {
   int ret = 0;
@@ -29,6 +41,7 @@ int main(int argc, char** argv) {
       .num_buffers = 3,
       .buffers = buffers,
       .buffer_capacity = 1024,
+      .notify_buffer_done = tx_notify_buffer_done,
   };
 
   mtl_rdma_tx_handle tx = mtl_rdma_tx_create(mrh, &tx_ops);
@@ -42,8 +55,10 @@ int main(int argc, char** argv) {
   for (int i = 0; i < count; i++) {
     buffer = mtl_rdma_tx_get_buffer(tx);
     if (!buffer) {
-      // printf("Failed to get buffer\n");
-      sleep(1);
+      /* wait for buffer done */
+      pthread_mutex_lock(&mtx);
+      pthread_cond_wait(&cond, &mtx);
+      pthread_mutex_unlock(&mtx);
       i--;
       continue;
     }
@@ -54,11 +69,10 @@ int main(int argc, char** argv) {
     ret = mtl_rdma_tx_put_buffer(tx, buffer);
     if (ret < 0) {
       printf("Failed to put buffer\n");
-      i--;
       return -1;
     }
 
-    sleep(1);
+    usleep(20000);
   }
 
   mtl_rdma_tx_free(tx);
