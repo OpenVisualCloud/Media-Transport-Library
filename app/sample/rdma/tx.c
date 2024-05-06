@@ -10,7 +10,7 @@ static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
-  // printf("Buffer %p done\n", buffer);
+  printf("Sent buffer: %s\n", (char*)buffer->addr);
   pthread_mutex_lock(&mtx);
   pthread_cond_signal(&cond);
   pthread_mutex_unlock(&mtx);
@@ -68,6 +68,7 @@ int main(int argc, char** argv) {
 
     snprintf((char*)buffer->addr, buffer->capacity, "Hello, RDMA! %d", i);
     buffer->size = strlen((char*)buffer->addr) + 1;
+    usleep(20000); /* simulate producing */
 
     ret = mtl_rdma_tx_put_buffer(tx, buffer);
     if (ret < 0) {
@@ -75,8 +76,6 @@ int main(int argc, char** argv) {
       ret = -1;
       goto out;
     }
-
-    usleep(20000);
   }
 
 out:

@@ -67,7 +67,8 @@ int main(int argc, char** argv) {
     }
 
     /* print buffer string */
-    printf("Buffer %d: %sEND\n", i, (char*)buffer->addr);
+    printf("Received buffer %d: %s\n", i, (char*)buffer->addr);
+    usleep(10000); /* simulate consuming */
 
     ret = mtl_rdma_rx_put_buffer(rx, buffer);
     if (ret < 0) {
