@@ -84,6 +84,21 @@ else
 fi
 popd
 
+# build rdma lib
+if [ "$OS" != "Windows_NT" ]; then
+pushd rdma/
+meson setup "${RDMA_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+popd
+pushd "${RDMA_BUILD_DIR}"
+ninja
+if [ "$user" == "root" ]; then
+    ninja install
+else
+    sudo ninja install
+fi
+popd
+fi
+
 # build app
 pushd app/
 meson setup "${APP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
@@ -134,21 +149,6 @@ pushd manager/
 meson setup "${MANAGER_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
 popd
 pushd "${MANAGER_BUILD_DIR}"
-ninja
-if [ "$user" == "root" ]; then
-    ninja install
-else
-    sudo ninja install
-fi
-popd
-fi
-
-# build rdma
-if [ "$OS" != "Windows_NT" ]; then
-pushd rdma/
-meson setup "${RDMA_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${RDMA_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ]; then
     ninja install
