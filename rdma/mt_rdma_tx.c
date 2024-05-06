@@ -26,7 +26,8 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
         ibv_reg_mr(ctx->pd, tx_buffer->buffer.addr, tx_buffer->buffer.capacity,
                    IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     if (!mr) {
-      fprintf(stderr, "ibv_reg_mr failed\n");
+      fprintf(stderr, "ibv_reg_mr failed for buffer %p capacity %lu\n",
+              tx_buffer->buffer.addr, tx_buffer->buffer.capacity);
       rdma_tx_uinit_mrs(ctx);
       return -ENOMEM;
     }
@@ -36,7 +37,7 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
   struct ibv_mr* mr = ibv_reg_mr(ctx->pd, ctx->message_region, ctx->buffer_cnt * 1024,
                                  IBV_ACCESS_LOCAL_WRITE);
   if (!mr) {
-    fprintf(stderr, "ibv_reg_mr failed\n");
+    fprintf(stderr, "ibv_reg_mr failed for message\n");
     rdma_tx_uinit_mrs(ctx);
     return -ENOMEM;
   }
@@ -199,11 +200,11 @@ static void* rdma_tx_connect_thread(void* arg) {
               goto connect_err;
             }
             struct ibv_qp_init_attr init_qp_attr = {
-                .cap.max_send_wr = 10,
-                .cap.max_recv_wr = 10,
-                .cap.max_send_sge = 2,     /* gather message and meta */
-                .cap.max_recv_sge = 2,     /* scatter message and meta */
-                .cap.max_inline_data = 64, /* max mtu */
+                .cap.max_send_wr = ctx->buffer_cnt * 2,
+                .cap.max_recv_wr = ctx->buffer_cnt,
+                .cap.max_send_sge = 2, /* gather message and meta */
+                .cap.max_recv_sge = 2, /* scatter message and meta */
+                .cap.max_inline_data = 64,
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
@@ -249,7 +250,7 @@ static void* rdma_tx_connect_thread(void* arg) {
             ctx->connected = true;
             break;
           case RDMA_CM_EVENT_DISCONNECTED:
-            printf("RDMA_CM_EVENT_DISCONNECTED\n");
+            printf("RX disconnected.\n");
             ctx->connected = false;
             break;
           default:

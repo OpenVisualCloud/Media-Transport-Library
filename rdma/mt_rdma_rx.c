@@ -206,11 +206,11 @@ static void* rdma_rx_connect_thread(void* arg) {
               goto connect_err;
             }
             struct ibv_qp_init_attr init_qp_attr = {
-                .cap.max_send_wr = 10,
-                .cap.max_recv_wr = 10,
-                .cap.max_send_sge = 2,     /* gather message and meta */
-                .cap.max_recv_sge = 2,     /* scatter message and meta */
-                .cap.max_inline_data = 64, /* max mtu */
+                .cap.max_send_wr = ctx->buffer_cnt * 2,
+                .cap.max_recv_wr = ctx->buffer_cnt * 2,
+                .cap.max_send_sge = 2, /* gather message and meta */
+                .cap.max_recv_sge = 2, /* scatter message and meta */
+                .cap.max_inline_data = 64,
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
