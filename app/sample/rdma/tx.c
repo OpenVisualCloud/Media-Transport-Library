@@ -23,7 +23,8 @@ int main(int argc, char** argv) {
   mtl_rdma_handle mrh = mtl_rdma_init(&p);
   if (!mrh) {
     printf("Failed to initialize RDMA\n");
-    return -1;
+    ret = -1;
+    goto out;
   }
 
   void* buffers[3] = {};
@@ -31,7 +32,8 @@ int main(int argc, char** argv) {
     buffers[i] = calloc(1, 1024);
     if (!buffers[i]) {
       printf("Failed to allocate buffer\n");
-      return -1;
+      ret = -1;
+      goto out;
     }
   }
 
@@ -47,7 +49,8 @@ int main(int argc, char** argv) {
   mtl_rdma_tx_handle tx = mtl_rdma_tx_create(mrh, &tx_ops);
   if (!tx) {
     printf("Failed to create RDMA TX\n");
-    return -1;
+    ret = -1;
+    goto out;
   }
 
   int count = 100;
@@ -69,19 +72,22 @@ int main(int argc, char** argv) {
     ret = mtl_rdma_tx_put_buffer(tx, buffer);
     if (ret < 0) {
       printf("Failed to put buffer\n");
-      return -1;
+      ret = -1;
+      goto out;
     }
 
     usleep(20000);
   }
 
-  mtl_rdma_tx_free(tx);
+out:
+
+  if (tx) mtl_rdma_tx_free(tx);
 
   for (int i = 0; i < 3; i++) {
-    free(buffers[i]);
+    if (buffers[i]) free(buffers[i]);
   }
 
-  mtl_rdma_uinit(mrh);
+  if (mrh) mtl_rdma_uinit(mrh);
 
-  return 0;
+  return ret;
 }

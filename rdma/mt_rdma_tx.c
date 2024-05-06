@@ -8,14 +8,11 @@
 #include "mt_rdma.h"
 
 static int rdma_tx_uinit_mrs(struct mt_rdma_tx_ctx* ctx) {
-  if (ctx->message_mr) {
-    ibv_dereg_mr(ctx->message_mr);
-  }
+  MT_SAFE_FREE(ctx->message_mr, ibv_dereg_mr);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
-    if (tx_buffer->mr) ibv_dereg_mr(tx_buffer->mr);
+    MT_SAFE_FREE(tx_buffer->mr, ibv_dereg_mr);
   }
-
   return 0;
 }
 
@@ -48,8 +45,7 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
 
 static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
   rdma_tx_uinit_mrs(ctx);
-  if (ctx->tx_buffers) free(ctx->tx_buffers);
-
+  MT_SAFE_FREE(ctx->tx_buffers, free);
   return 0;
 }
 
@@ -318,35 +314,27 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
   if (ctx->cq_poll_thread) {
     ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
+    ctx->cq_poll_thread = 0;
   }
 
   if (ctx->connect_thread) {
     ctx->connect_stop = true;
     pthread_join(ctx->connect_thread, NULL);
+    ctx->connect_thread = 0;
   }
 
-  if (ctx->id) {
+  if (ctx->id && ctx->qp) {
     rdma_destroy_qp(ctx->id);
+    ctx->qp = NULL;
   }
 
-  if (ctx->cq) {
-    ibv_destroy_cq(ctx->cq);
-  }
-
-  if (ctx->cc) {
-    ibv_destroy_comp_channel(ctx->cc);
-  }
-
-  if (ctx->pd) {
-    ibv_dealloc_pd(ctx->pd);
-  }
-
-  if (ctx->ec) {
-    rdma_destroy_event_channel(ctx->ec);
-  }
+  MT_SAFE_FREE(ctx->cq, ibv_destroy_cq);
+  MT_SAFE_FREE(ctx->cc, ibv_destroy_comp_channel);
+  MT_SAFE_FREE(ctx->pd, ibv_dealloc_pd);
+  MT_SAFE_FREE(ctx->listen_id, rdma_destroy_id);
+  MT_SAFE_FREE(ctx->ec, rdma_destroy_event_channel);
 
   rdma_tx_free_buffers(ctx);
-
   free(ctx);
 
   return 0;
@@ -381,6 +369,7 @@ mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_op
     fprintf(stderr, "rdma_create_id failed\n");
     goto out;
   }
+  ctx->listen_id = listen_id;
 
   struct rdma_addrinfo hints = {.ai_port_space = RDMA_PS_TCP, .ai_flags = RAI_PASSIVE};
   struct rdma_addrinfo* rai;

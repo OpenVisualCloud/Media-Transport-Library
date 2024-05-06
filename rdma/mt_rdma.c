@@ -4,7 +4,6 @@
 
 #include "mt_rdma.h"
 
-#include <mtl_rdma_api.h>
 #include <stdlib.h>
 
 mtl_rdma_handle mtl_rdma_init(struct mtl_rdma_init_params* p) {

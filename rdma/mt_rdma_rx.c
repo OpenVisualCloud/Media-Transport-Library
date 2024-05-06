@@ -34,15 +34,11 @@ static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
 }
 
 static int rdma_rx_uinit_mrs(struct mt_rdma_rx_ctx* ctx) {
-  if (ctx->message_mr) {
-    ibv_dereg_mr(ctx->message_mr);
-  }
-
+  MT_SAFE_FREE(ctx->message_mr, ibv_dereg_mr);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[i];
-    if (rx_buffer->mr) ibv_dereg_mr(rx_buffer->mr);
+    MT_SAFE_FREE(rx_buffer->mr, ibv_dereg_mr);
   }
-
   return 0;
 }
 
@@ -74,9 +70,8 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx* ctx) {
 
 static int rdma_rx_free_buffers(struct mt_rdma_rx_ctx* ctx) {
   rdma_rx_uinit_mrs(ctx);
-  if (ctx->message_region) free(ctx->message_region);
-  if (ctx->rx_buffers) free(ctx->rx_buffers);
-
+  MT_SAFE_FREE(ctx->message_region, free);
+  MT_SAFE_FREE(ctx->rx_buffers, free);
   return 0;
 }
 
@@ -320,38 +315,28 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
   if (ctx->cq_poll_thread) {
     ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
+    ctx->cq_poll_thread = 0;
   }
 
   if (ctx->connect_thread) {
     ctx->connect_stop = true;
     pthread_join(ctx->connect_thread, NULL);
+    ctx->connect_thread = 0;
   }
 
-  if (ctx->id) {
+  if (ctx->id && ctx->qp) {
     rdma_destroy_qp(ctx->id);
+    ctx->qp = NULL;
   }
 
-  if (ctx->cq) {
-    ibv_destroy_cq(ctx->cq);
-  }
-
-  if (ctx->cc) {
-    ibv_destroy_comp_channel(ctx->cc);
-  }
-
-  if (ctx->pd) {
-    ibv_dealloc_pd(ctx->pd);
-  }
-
-  if (ctx->ec) {
-    rdma_destroy_event_channel(ctx->ec);
-  }
-
-  if (ctx->id) {
-    rdma_destroy_id(ctx->id);
-  }
+  MT_SAFE_FREE(ctx->cq, ibv_destroy_cq);
+  MT_SAFE_FREE(ctx->cc, ibv_destroy_comp_channel);
+  MT_SAFE_FREE(ctx->pd, ibv_dealloc_pd);
+  MT_SAFE_FREE(ctx->id, rdma_destroy_id);
+  MT_SAFE_FREE(ctx->ec, rdma_destroy_event_channel);
 
   rdma_rx_free_buffers(ctx);
+  free(ctx);
 
   return 0;
 }
