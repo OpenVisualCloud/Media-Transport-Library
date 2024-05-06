@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
   }
 
   struct mtl_rdma_rx_ops rx_ops = {
+      .name = "rdma_rx",
       .local_ip = argv[1],
       .ip = argv[2],
       .port = argv[3],

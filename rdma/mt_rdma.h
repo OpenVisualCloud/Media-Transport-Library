@@ -109,6 +109,7 @@ struct mt_rdma_rx_buffer {
 };
 
 struct mt_rdma_rx_ctx {
+  char ops_name[32];
   struct mtl_rdma_rx_ops ops;
   /* RDMA context */
   struct rdma_event_channel* ec;

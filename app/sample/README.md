@@ -178,13 +178,13 @@ The dir include the simple sample code for how to develop application quickly ba
 
 ## 9. RDMA sample
 
-[rdma_tx_sample.c](rdma/rdma_tx.c): A tx application based on rdma interface.
+[rdma_tx.c](rdma/rdma_tx.c): A tx application based on rdma interface.
 
 ```bash
 ./build/app/RdmaTxSample 192.168.75.10 20000
 ```
 
-[rdma_rx_sample.c](rdma/rdma_rx.c): A rx application based on rdma interface.
+[rdma_rx.c](rdma/rdma_rx.c): A rx application based on rdma interface.
 
 ```bash
 ./build/app/RdmaRxSample 192.168.75.11 192.168.75.10 20000
