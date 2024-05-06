@@ -10,6 +10,7 @@ static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
+  (void)(priv);
   printf("Sent buffer: %s\n", (char*)buffer->addr);
   pthread_mutex_lock(&mtx);
   pthread_cond_signal(&cond);
@@ -18,16 +19,22 @@ static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
 }
 
 int main(int argc, char** argv) {
+  if (argc != 3) {
+    printf("Usage: %s <ip> <port>\n", argv[0]);
+    return -1;
+  }
   int ret = 0;
+  void* buffers[3] = {};
+  mtl_rdma_handle mrh = NULL;
+  mtl_rdma_tx_handle tx = NULL;
   struct mtl_rdma_init_params p = {};
-  mtl_rdma_handle mrh = mtl_rdma_init(&p);
+  mrh = mtl_rdma_init(&p);
   if (!mrh) {
     printf("Failed to initialize RDMA\n");
     ret = -1;
     goto out;
   }
 
-  void* buffers[3] = {};
   for (int i = 0; i < 3; i++) {
     buffers[i] = calloc(1, 1024);
     if (!buffers[i]) {
@@ -38,15 +45,15 @@ int main(int argc, char** argv) {
   }
 
   struct mtl_rdma_tx_ops tx_ops = {
-      .ip = "192.168.98.110",
-      .port = "20000",
+      .ip = argv[1],
+      .port = argv[2],
       .num_buffers = 3,
       .buffers = buffers,
       .buffer_capacity = 1024,
       .notify_buffer_done = tx_notify_buffer_done,
   };
 
-  mtl_rdma_tx_handle tx = mtl_rdma_tx_create(mrh, &tx_ops);
+  tx = mtl_rdma_tx_create(mrh, &tx_ops);
   if (!tx) {
     printf("Failed to create RDMA TX\n");
     ret = -1;

@@ -479,3 +479,19 @@ executable('V4l2toIPApp', v4l2_to_ip_sources,
   dependencies: [asan_dep, mtl, libsdl2, libsdl2_ttf, libm, libpthread]
 )
 endif
+
+mtl_rdma = dependency('mtl_rdma', required: false)
+if mtl_rdma.found()
+executable('RdmaTxSample', rdma_tx_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, libpthread, mtl_rdma]
+)
+executable('RdmaRxSample', rdma_rx_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, libpthread, mtl_rdma]
+)
+endif
