@@ -148,10 +148,20 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
               if (ret) {
                 fprintf(stderr, "%s(%s), notify_buffer_ready failed\n", __func__,
                         ctx->ops_name);
-                /* todo error handle */
+                /* todo: error handle */
               }
             }
+          } else if (msg->type == MT_RDMA_MSG_BYE) {
+            printf("%s(%s), received bye message\n", __func__, ctx->ops_name);
+            /* todo: handle tx bye, notice that cq poll thread may stop before receiving
+             * bye message */
           }
+        }
+      } else if (wc.opcode == IBV_WC_SEND) {
+        if (wc.wr_id == MT_RDMA_MSG_BYE) {
+          printf("%s(%s), sent bye message, shutdown cq thread\n", __func__,
+                 ctx->ops_name);
+          goto out;
         }
       }
     }
@@ -244,7 +254,6 @@ static void* rdma_rx_connect_thread(void* arg) {
               rdma_rx_send_buffer_done(ctx, i);
             ctx->connected = 1;
 
-            ctx->cq_poll_stop = false;
             ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread, ctx);
             if (ret) {
               fprintf(stderr, "%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
@@ -320,7 +329,13 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
   }
 
   if (ctx->cq_poll_thread) {
-    ctx->cq_poll_stop = true;
+    struct mt_rdma_message msg = {
+        .magic = MT_RDMA_MSG_MAGIC,
+        .type = MT_RDMA_MSG_BYE,
+    };
+    /* send bye to tx? and wake up cq event */
+    rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
+                   IBV_SEND_SIGNALED | IBV_SEND_INLINE);
     pthread_join(ctx->cq_poll_thread, NULL);
     ctx->cq_poll_thread = 0;
   }

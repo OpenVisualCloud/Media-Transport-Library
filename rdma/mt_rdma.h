@@ -32,6 +32,7 @@ enum mt_rdma_message_type {
   MT_RDMA_MSG_NONE = 0,
   MT_RDMA_MSG_BUFFER_READY,
   MT_RDMA_MSG_BUFFER_DONE,
+  MT_RDMA_MSG_BYE,
   MT_RDMA_MSG_MAX,
 };
 
@@ -94,7 +95,6 @@ struct mt_rdma_tx_ctx {
 
   atomic_bool connected;
   atomic_bool connect_stop;
-  atomic_bool cq_poll_stop;
 
   uint64_t stat_buffer_sent;
   uint64_t stat_buffer_acked;
@@ -128,7 +128,6 @@ struct mt_rdma_rx_ctx {
 
   atomic_bool connected;
   atomic_bool connect_stop;
-  atomic_bool cq_poll_stop;
 
   uint64_t stat_buffer_received;
   uint64_t stat_buffer_error;

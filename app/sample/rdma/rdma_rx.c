@@ -62,21 +62,21 @@ int main(int argc, char** argv) {
     goto out;
   }
 
-  int count = 100;
+  int total = 100;
+  int buffer_consumed = 0;
   struct mtl_rdma_buffer* buffer = NULL;
-  for (int i = 0; i < count; i++) {
+  while (buffer_consumed < total) {
     buffer = mtl_rdma_rx_get_buffer(rx);
     if (!buffer) {
       /* wait for buffer ready */
       pthread_mutex_lock(&mtx);
       pthread_cond_wait(&cond, &mtx);
       pthread_mutex_unlock(&mtx);
-      i--;
       continue;
     }
 
     /* print buffer string */
-    printf("Received buffer %d: %s\n", i, (char*)buffer->addr);
+    printf("Received buffer %d: %s\n", buffer_consumed, (char*)buffer->addr);
     usleep(10000); /* simulate consuming */
 
     ret = mtl_rdma_rx_put_buffer(rx, buffer);
@@ -85,6 +85,8 @@ int main(int argc, char** argv) {
       ret = -1;
       goto out;
     }
+
+    buffer_consumed++;
   }
 
 out:

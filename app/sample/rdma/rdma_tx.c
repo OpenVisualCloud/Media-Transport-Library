@@ -9,9 +9,18 @@
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
-static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
+static int buffer_acked = -3;
+
+static int tx_notify_buffer_sent(void* priv, struct mtl_rdma_buffer* buffer) {
   (void)(priv);
   printf("Sent buffer: %s\n", (char*)buffer->addr);
+  return 0;
+}
+
+static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
+  (void)(priv);
+  buffer_acked++;
+  printf("ACKed buffer: %s\n", (char*)buffer->addr);
   pthread_mutex_lock(&mtx);
   pthread_cond_signal(&cond);
   pthread_mutex_unlock(&mtx);
@@ -52,6 +61,7 @@ int main(int argc, char** argv) {
       .buffers = buffers,
       .buffer_capacity = 1024,
       .notify_buffer_done = tx_notify_buffer_done,
+      .notify_buffer_sent = tx_notify_buffer_sent,
   };
 
   tx = mtl_rdma_tx_create(mrh, &tx_ops);
@@ -84,6 +94,13 @@ int main(int argc, char** argv) {
       ret = -1;
       goto out;
     }
+  }
+
+  while (buffer_acked < count) {
+    /* wait for all buffers acked */
+    pthread_mutex_lock(&mtx);
+    pthread_cond_wait(&cond, &mtx);
+    pthread_mutex_unlock(&mtx);
   }
 
 out:
