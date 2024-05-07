@@ -219,9 +219,9 @@ static void* rdma_rx_connect_thread(void* arg) {
             struct ibv_qp_init_attr init_qp_attr = {
                 .cap.max_send_wr = ctx->buffer_cnt * 2,
                 .cap.max_recv_wr = ctx->buffer_cnt * 2,
-                .cap.max_send_sge = 2, /* gather message and meta */
-                .cap.max_recv_sge = 2, /* scatter message and meta */
-                .cap.max_inline_data = 64,
+                .cap.max_send_sge = 2,     /* gather message and meta */
+                .cap.max_recv_sge = 2,     /* scatter message and meta */
+                .cap.max_inline_data = 64, /* todo: include metadata size */
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
@@ -252,13 +252,14 @@ static void* rdma_rx_connect_thread(void* arg) {
           case RDMA_CM_EVENT_ESTABLISHED:
             for (uint16_t i = 0; i < ctx->buffer_cnt; i++) /* start receiving */
               rdma_rx_send_buffer_done(ctx, i);
-            ctx->connected = 1;
+            ctx->connected = true;
 
             ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread, ctx);
             if (ret) {
               fprintf(stderr, "%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
               goto connect_err;
             }
+            printf("%s(%s), connected\n", __func__, ctx->ops_name);
             break;
           case RDMA_CM_EVENT_ADDR_ERROR:
           case RDMA_CM_EVENT_ROUTE_ERROR:
@@ -346,6 +347,8 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
     ctx->connect_thread = 0;
   }
 
+  rdma_rx_free_buffers(ctx);
+
   if (ctx->id && ctx->qp) {
     rdma_destroy_qp(ctx->id);
     ctx->qp = NULL;
@@ -357,7 +360,6 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
   MT_SAFE_FREE(ctx->id, rdma_destroy_id);
   MT_SAFE_FREE(ctx->ec, rdma_destroy_event_channel);
 
-  rdma_rx_free_buffers(ctx);
   free(ctx);
 
   return 0;

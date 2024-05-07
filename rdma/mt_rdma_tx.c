@@ -46,6 +46,7 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
 
 static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
   rdma_tx_uinit_mrs(ctx);
+  MT_SAFE_FREE(ctx->message_region, free);
   MT_SAFE_FREE(ctx->tx_buffers, free);
   return 0;
 }
@@ -214,9 +215,9 @@ static void* rdma_tx_connect_thread(void* arg) {
             struct ibv_qp_init_attr init_qp_attr = {
                 .cap.max_send_wr = ctx->buffer_cnt * 2,
                 .cap.max_recv_wr = ctx->buffer_cnt,
-                .cap.max_send_sge = 2, /* gather message and meta */
-                .cap.max_recv_sge = 2, /* scatter message and meta */
-                .cap.max_inline_data = 64,
+                .cap.max_send_sge = 2,     /* gather message and meta */
+                .cap.max_recv_sge = 2,     /* scatter message and meta */
+                .cap.max_inline_data = 64, /* todo: include metadata size */
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
@@ -251,6 +252,7 @@ static void* rdma_tx_connect_thread(void* arg) {
               void* msg = ctx->message_region + i * 1024;
               rdma_post_recv(ctx->id, msg, msg, 1024, ctx->message_mr);
             }
+            ctx->connected = true;
 
             /* create poll thread */
             ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_tx_cq_poll_thread, ctx);
@@ -259,7 +261,8 @@ static void* rdma_tx_connect_thread(void* arg) {
               goto connect_err;
             }
 
-            ctx->connected = true;
+            printf("%s(%s), connected\n", __func__, ctx->ops_name);
+
             break;
           case RDMA_CM_EVENT_DISCONNECTED:
             printf("%s(%s), RX disconnected.\n", __func__, ctx->ops_name);
@@ -346,6 +349,8 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
     ctx->connect_thread = 0;
   }
 
+  rdma_tx_free_buffers(ctx);
+
   if (ctx->id && ctx->qp) {
     rdma_destroy_qp(ctx->id);
     ctx->qp = NULL;
@@ -357,7 +362,6 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
   MT_SAFE_FREE(ctx->listen_id, rdma_destroy_id);
   MT_SAFE_FREE(ctx->ec, rdma_destroy_event_channel);
 
-  rdma_tx_free_buffers(ctx);
   free(ctx);
 
   return 0;
@@ -404,6 +408,7 @@ mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_op
   }
 
   ret = rdma_bind_addr(listen_id, rai->ai_src_addr);
+  rdma_freeaddrinfo(rai);
   if (ret) {
     fprintf(stderr, "%s(%s), rdma_bind_addr failed\n", __func__, ops->name);
     goto out;
