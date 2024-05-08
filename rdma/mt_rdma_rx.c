@@ -309,7 +309,7 @@ struct mtl_rdma_buffer* mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle) {
 int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* buffer) {
   struct mt_rdma_rx_ctx* ctx = handle;
   if (!ctx->connected) {
-    return -1;
+    return -EIO;
   }
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
@@ -319,7 +319,7 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* bu
     }
   }
 
-  return -1;
+  return -EIO;
 }
 
 int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
