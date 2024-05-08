@@ -175,3 +175,17 @@ The dir include the simple sample code for how to develop application quickly ba
 ```bash
 ./build/app/RxSt20pDynExtFrameSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.20
 ```
+
+## 9. RDMA sample
+
+[rdma_tx.c](rdma/rdma_tx.c): A tx application based on rdma interface.
+
+```bash
+./build/app/RdmaTxSample 192.168.75.10 20000
+```
+
+[rdma_rx.c](rdma/rdma_rx.c): A rx application based on rdma interface.
+
+```bash
+./build/app/RdmaRxSample 192.168.75.11 192.168.75.10 20000
+```

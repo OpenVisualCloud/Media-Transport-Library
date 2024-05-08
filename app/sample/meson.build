@@ -46,3 +46,7 @@ dma_sample_sources = files('dma/dma_sample.c', 'sample_util.c')
 # experimental
 redundant_rx_st20_combined_sample_sources = files('experimental/rx_st20_redundant_combined_sample.c',
     'sample_util.c')
+
+# rdma
+rdma_tx_sample_sources = files('rdma/rdma_tx.c')
+rdma_rx_sample_sources = files('rdma/rdma_rx.c')
