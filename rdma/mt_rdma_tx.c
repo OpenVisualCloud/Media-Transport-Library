@@ -107,8 +107,9 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
         fprintf(stderr, "%s(%s), Work completion error: %s\n", __func__, ctx->ops_name,
                 ibv_wc_status_str(wc.status));
         /* check more info */
-        fprintf(stderr, "%s(%s), wc.vendor_error = 0x%x, wc.qp_num = %u\n", __func__,
-                ctx->ops_name, wc.vendor_err, wc.qp_num);
+        fprintf(stderr,
+                "%s(%s), wc.opcode = %d, wc.vendor_error = 0x%x, wc.qp_num = %u\n",
+                __func__, ctx->ops_name, wc.opcode, wc.vendor_err, wc.qp_num);
         goto out;
       }
       if (wc.opcode == IBV_WC_RECV) {
