@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef APP_HAS_SDL2
@@ -145,6 +146,12 @@ int main(int argc, char** argv) {
     goto out;
   }
 
+  struct timespec start_time, current_time;
+  clock_gettime(CLOCK_MONOTONIC, &start_time);
+  double elapsed_time;
+  int frame_count = 0;
+  double fps = 0.0;
+
   printf("Starting to receive frames\n");
 
   int frames_consumed = 0;
@@ -172,6 +179,17 @@ int main(int argc, char** argv) {
     }
 
     frames_consumed++;
+    frame_count++;
+    clock_gettime(CLOCK_MONOTONIC, &current_time);
+    elapsed_time = current_time.tv_sec - start_time.tv_sec;
+    elapsed_time += (current_time.tv_nsec - start_time.tv_nsec) / 1000000000.0;
+
+    if (elapsed_time >= 1.0) {
+      fps = frame_count / elapsed_time;
+      printf("FPS: %.2f\n", fps);
+      frame_count = 0;
+      clock_gettime(CLOCK_MONOTONIC, &start_time);
+    }
   }
 
   printf("Received %d frames\n", frames_consumed);
