@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
     elapsed_time = current_time.tv_sec - start_time.tv_sec;
     elapsed_time += (current_time.tv_nsec - start_time.tv_nsec) / 1000000000.0;
 
-    if (elapsed_time >= 1.0) {
+    if (elapsed_time >= 5.0) {
       fps = frame_count / elapsed_time;
       printf("FPS: %.2f\n", fps);
       frame_count = 0;

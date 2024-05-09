@@ -132,7 +132,6 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
   printf("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->cq_poll_stop) {
     ret = poll(&pfd, 1, ms_timeout);
-
     if (ret < 0) {
       fprintf(stderr, "%s(%s), poll failed\n", __func__, ctx->ops_name);
       goto out;

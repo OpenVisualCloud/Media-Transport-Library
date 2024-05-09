@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2024 Intel Corporation
+ */
+
 #include <inttypes.h>
 #include <mtl_rdma/mtl_rdma_api.h>
 #include <pthread.h>
