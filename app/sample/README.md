@@ -189,3 +189,15 @@ The dir include the simple sample code for how to develop application quickly ba
 ```bash
 ./build/app/RdmaRxSample 192.168.75.11 192.168.75.10 20000
 ```
+
+[rdma_video_tx.c](rdma/rdma_video_tx.c): A tx video application based on rdma interface. The default video format is 1920x1080 UYVY frame, and the default video frame rate is 30.
+
+```bash
+./build/app/RdmaVideoTxSample 192.168.75.10 20000 test.yuv
+```
+
+[rdma_video_rx.c](rdma/rdma_video_rx.c): A rx video application based on rdma interface. SDL display is enabled by default.
+
+```bash
+./build/app/RdmaVideoRxSample 192.168.75.11 192.168.75.10 20000
+```
