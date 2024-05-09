@@ -112,11 +112,32 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
   struct mt_rdma_rx_ctx* ctx = arg;
   struct mtl_rdma_rx_ops* ops = &ctx->ops;
   struct ibv_wc wc;
+  struct ibv_cq* cq = ctx->cq;
+  void* cq_ctx = NULL;
+  int ms_timeout = 10;
+
+  /* change completion channel fd to non blocking mode */
+  int flags = fcntl(ctx->cc->fd, F_GETFL);
+  ret = fcntl(ctx->cc->fd, F_SETFL, flags | O_NONBLOCK);
+  if (ret) {
+    fprintf(stderr, "%s(%s), fcntl failed\n", __func__, ctx->ops_name);
+    goto out;
+  }
+  struct pollfd pfd = {
+      .fd = ctx->cc->fd,
+      .events = POLLIN,
+      .revents = 0,
+  };
 
   printf("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->cq_poll_stop) {
-    struct ibv_cq* cq;
-    void* cq_ctx = NULL;
+    do {
+      ret = poll(&pfd, 1, ms_timeout);
+    } while (ret == 0);
+    if (ret < 0) {
+      fprintf(stderr, "%s(%s), poll failed\n", __func__, ctx->ops_name);
+      goto out;
+    }
     ret = ibv_get_cq_event(ctx->cc, &cq, &cq_ctx);
     if (ret) {
       fprintf(stderr, "%s(%s), ibv_get_cq_event failed\n", __func__, ctx->ops_name);
@@ -178,114 +199,118 @@ out:
 
 /* connect thread */
 static void* rdma_rx_connect_thread(void* arg) {
+  int ret = 0;
   struct mt_rdma_rx_ctx* ctx = arg;
   struct rdma_cm_event* event;
-  struct pollfd pfd;
-  pfd.fd = ctx->ec->fd;
-  pfd.events = POLLIN;
+  struct pollfd pfd = {
+      .fd = ctx->ec->fd,
+      .events = POLLIN,
+  };
 
   printf("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->connect_stop) {
-    int ret = poll(&pfd, 1, 200);
-    if (ret > 0) {
-      ret = rdma_get_cm_event(ctx->ec, &event);
-      if (!ret) {
-        switch (event->event) {
-          case RDMA_CM_EVENT_ADDR_RESOLVED:
-            ret = rdma_resolve_route(ctx->id, 2000);
-            if (ret) {
-              fprintf(stderr, "%s(%s), rdma_resolve_route failed\n", __func__,
-                      ctx->ops_name);
-              goto connect_err;
-            }
-            break;
-          case RDMA_CM_EVENT_ROUTE_RESOLVED:
-            ctx->pd = ibv_alloc_pd(event->id->verbs);
-            if (!ctx->pd) {
-              fprintf(stderr, "%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            ctx->cc = ibv_create_comp_channel(event->id->verbs);
-            if (!ctx->cc) {
-              fprintf(stderr, "%s(%s), ibv_create_comp_channel failed\n", __func__,
-                      ctx->ops_name);
-              goto connect_err;
-            }
-            ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
-            if (!ctx->cq) {
-              fprintf(stderr, "%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            ret = ibv_req_notify_cq(ctx->cq, 0);
-            if (ret) {
-              fprintf(stderr, "%s(%s), ibv_req_notify_cq failed\n", __func__,
-                      ctx->ops_name);
-              goto connect_err;
-            }
-            struct ibv_qp_init_attr init_qp_attr = {
-                .cap.max_send_wr = ctx->buffer_cnt * 2,
-                .cap.max_recv_wr = ctx->buffer_cnt * 2,
-                .cap.max_send_sge = 2,     /* gather message and meta */
-                .cap.max_recv_sge = 2,     /* scatter message and meta */
-                .cap.max_inline_data = 64, /* todo: include metadata size */
-                .sq_sig_all = 1,
-                .send_cq = ctx->cq,
-                .recv_cq = ctx->cq,
-                .qp_type = IBV_QPT_RC,
-            };
-            ret = rdma_create_qp(event->id, ctx->pd, &init_qp_attr);
-            if (ret) {
-              fprintf(stderr, "%s(%s), rdma_create_qp failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            ctx->qp = event->id->qp;
-            ret = rdma_rx_init_mrs(ctx);
-            if (ret) {
-              fprintf(stderr, "%s(%s), rdma_tx_init_mrs failed\n", __func__,
-                      ctx->ops_name);
-              goto connect_err;
-            }
-            struct rdma_conn_param conn_param = {
-                .initiator_depth = 1,
-                .responder_resources = 1,
-                .rnr_retry_count = 7 /* infinite retry */,
-            };
-            ret = rdma_connect(event->id, &conn_param);
-            if (ret) {
-              fprintf(stderr, "%s(%s), rdma_connect failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            break;
-          case RDMA_CM_EVENT_ESTABLISHED:
-            for (uint16_t i = 0; i < ctx->buffer_cnt; i++) /* start receiving */
-              rdma_rx_send_buffer_done(ctx, i);
-            ctx->connected = true;
+    do {
+      ret = poll(&pfd, 1, 200);
+    } while (ret == 0);
+    if (ret < 0) {
+      fprintf(stderr, "%s(%s), poll failed: %s\n", __func__, ctx->ops_name,
+              strerror(errno));
+      goto connect_err;
+    }
+    ret = rdma_get_cm_event(ctx->ec, &event);
+    if (!ret) {
+      switch (event->event) {
+        case RDMA_CM_EVENT_ADDR_RESOLVED:
+          ret = rdma_resolve_route(ctx->id, 2000);
+          if (ret) {
+            fprintf(stderr, "%s(%s), rdma_resolve_route failed\n", __func__,
+                    ctx->ops_name);
+            goto connect_err;
+          }
+          break;
+        case RDMA_CM_EVENT_ROUTE_RESOLVED:
+          ctx->pd = ibv_alloc_pd(event->id->verbs);
+          if (!ctx->pd) {
+            fprintf(stderr, "%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          ctx->cc = ibv_create_comp_channel(event->id->verbs);
+          if (!ctx->cc) {
+            fprintf(stderr, "%s(%s), ibv_create_comp_channel failed\n", __func__,
+                    ctx->ops_name);
+            goto connect_err;
+          }
+          ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
+          if (!ctx->cq) {
+            fprintf(stderr, "%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          ret = ibv_req_notify_cq(ctx->cq, 0);
+          if (ret) {
+            fprintf(stderr, "%s(%s), ibv_req_notify_cq failed\n", __func__,
+                    ctx->ops_name);
+            goto connect_err;
+          }
+          struct ibv_qp_init_attr init_qp_attr = {
+              .cap.max_send_wr = ctx->buffer_cnt * 2,
+              .cap.max_recv_wr = ctx->buffer_cnt * 2,
+              .cap.max_send_sge = 2, /* gather message and meta */
+              .cap.max_recv_sge = 2, /* scatter message and meta */
+              .cap.max_inline_data =
+                  64, /* todo: include metadata size, if that size is larger than 64, we
+                         should consider not using inline for msg */
+              .sq_sig_all = 1,
+              .send_cq = ctx->cq,
+              .recv_cq = ctx->cq,
+              .qp_type = IBV_QPT_RC,
+          };
+          ret = rdma_create_qp(event->id, ctx->pd, &init_qp_attr);
+          if (ret) {
+            fprintf(stderr, "%s(%s), rdma_create_qp failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          ctx->qp = event->id->qp;
+          ret = rdma_rx_init_mrs(ctx);
+          if (ret) {
+            fprintf(stderr, "%s(%s), rdma_tx_init_mrs failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          struct rdma_conn_param conn_param = {
+              .initiator_depth = 1,
+              .responder_resources = 1,
+              .rnr_retry_count = 7 /* infinite retry */,
+          };
+          ret = rdma_connect(event->id, &conn_param);
+          if (ret) {
+            fprintf(stderr, "%s(%s), rdma_connect failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          break;
+        case RDMA_CM_EVENT_ESTABLISHED:
+          for (uint16_t i = 0; i < ctx->buffer_cnt; i++) /* start receiving */
+            rdma_rx_send_buffer_done(ctx, i);
+          ctx->connected = true;
 
-            ctx->cq_poll_stop = false;
-            ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread, ctx);
-            if (ret) {
-              fprintf(stderr, "%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            printf("%s(%s), connected\n", __func__, ctx->ops_name);
-            break;
-          case RDMA_CM_EVENT_ADDR_ERROR:
-          case RDMA_CM_EVENT_ROUTE_ERROR:
-          case RDMA_CM_EVENT_CONNECT_ERROR:
-          case RDMA_CM_EVENT_UNREACHABLE:
-          case RDMA_CM_EVENT_REJECTED:
-            fprintf(stderr, "%s(%s), event: %s, error: %d\n", __func__, ctx->ops_name,
-                    rdma_event_str(event->event), event->status);
-            break;
-          default:
-            break;
-        }
-        rdma_ack_cm_event(event);
+          ctx->cq_poll_stop = false;
+          ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread, ctx);
+          if (ret) {
+            fprintf(stderr, "%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          printf("%s(%s), connected\n", __func__, ctx->ops_name);
+          break;
+        case RDMA_CM_EVENT_ADDR_ERROR:
+        case RDMA_CM_EVENT_ROUTE_ERROR:
+        case RDMA_CM_EVENT_CONNECT_ERROR:
+        case RDMA_CM_EVENT_UNREACHABLE:
+        case RDMA_CM_EVENT_REJECTED:
+          fprintf(stderr, "%s(%s), event: %s, error: %d\n", __func__, ctx->ops_name,
+                  rdma_event_str(event->event), event->status);
+          break;
+        default:
+          break;
       }
-    } else if (ret == 0) {
-      /* poll timeout */
-    } else {
-      break;
+      rdma_ack_cm_event(event);
     }
   }
 
