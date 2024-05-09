@@ -64,7 +64,6 @@ static int mtl_st20p_write_close(AVFormatContext* ctx) {
 static int mtl_st20p_write_header(AVFormatContext* ctx) {
   mtlSt20pMuxerContext* s = ctx->priv_data;
   struct st20p_tx_ops ops_tx;
-  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
   int ret;
 
   dbg(ctx, "%s, start\n", __func__);
@@ -88,7 +87,6 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
   }
 
   s->pixel_format = ctx->streams[0]->codecpar->format;
-  av_pix_fmt_desc_get(s->pixel_format);
 
   /* transport_fmt is hardcode now */
   switch (s->pixel_format) {
@@ -101,7 +99,7 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
       ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
       break;
     default:
-      err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
+      err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
       return AVERROR(EINVAL);
   }
 

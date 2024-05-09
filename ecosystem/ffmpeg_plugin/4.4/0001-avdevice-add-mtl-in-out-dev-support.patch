@@ -1,4 +1,4 @@
-From b005434293ccdf992aef3d97850dc8c8b99e07ca Mon Sep 17 00:00:00 2001
+From 70babdc9e5b39a1d5db56432842b1214b3544f5b Mon Sep 17 00:00:00 2001
 From: Frank Du <frank.du@intel.com>
 Date: Fri, 26 Jan 2024 16:23:34 +0800
 Subject: [PATCH] avdevice: add mtl in/out dev support
@@ -7,8 +7,8 @@ Signed-off-by: Frank Du <frank.du@intel.com>
 ---
  configure                | 9 +++++++++
  libavdevice/Makefile     | 6 ++++++
- libavdevice/alldevices.c | 7 +++++++
- 3 files changed, 22 insertions(+)
+ libavdevice/alldevices.c | 9 +++++++++
+ 3 files changed, 24 insertions(+)
 
 diff --git a/configure b/configure
 index d722016613..4a6aa0fd80 100755
@@ -69,15 +69,17 @@ index 0dfe47a1f4..6d9e6322f6 100644
  OBJS-$(CONFIG_OPENGL_OUTDEV)             += opengl_enc.o
  OBJS-$(CONFIG_OSS_INDEV)                 += oss_dec.o oss.o
 diff --git a/libavdevice/alldevices.c b/libavdevice/alldevices.c
-index 92b27a1d14..341c717339 100644
+index 92b27a1d14..62655be91a 100644
 --- a/libavdevice/alldevices.c
 +++ b/libavdevice/alldevices.c
-@@ -41,6 +41,13 @@ extern AVInputFormat  ff_iec61883_demuxer;
+@@ -41,6 +41,15 @@ extern AVInputFormat  ff_iec61883_demuxer;
  extern AVInputFormat  ff_jack_demuxer;
  extern AVInputFormat  ff_kmsgrab_demuxer;
  extern AVInputFormat  ff_lavfi_demuxer;
 +extern AVInputFormat  ff_mtl_st20p_demuxer;
 +extern AVOutputFormat ff_mtl_st20p_muxer;
++extern AVInputFormat  ff_mtl_st22_demuxer;
++extern AVOutputFormat ff_mtl_st22_muxer;
 +extern AVInputFormat  ff_mtl_st22p_demuxer;
 +extern AVOutputFormat ff_mtl_st22p_muxer;
 +extern AVInputFormat  ff_mtl_st30p_demuxer;

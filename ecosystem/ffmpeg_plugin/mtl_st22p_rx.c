@@ -28,6 +28,7 @@ typedef struct MtlSt22pDemuxerContext {
   /* arguments for session port */
   StRxSessionPortArgs portArgs;
   /* arguments for session */
+  char* codec_str;
   int width, height;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
@@ -80,9 +81,18 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   }
 
   ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
-  ops_rx.codec = ST22_CODEC_JPEGXS;
   ops_rx.pack_type = ST22_PACK_CODESTREAM;
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
+
+  if (!s->codec_str) {
+    ops_rx.codec = ST22_CODEC_JPEGXS;
+  } else {
+    ops_rx.codec = st_name_to_codec(s->codec_str);
+    if (ST22_CODEC_MAX == ops_rx.codec) {
+      err(ctx, "%s, unknow codec str %s\n", __func__, s->codec_str);
+      return AVERROR(EIO);
+    }
+  }
 
   if (s->width <= 0) {
     err(ctx, "%s, invalid width: %d\n", __func__, s->width);
@@ -170,6 +180,111 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
+static int mtl_st22_read_header(AVFormatContext* ctx) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
+  AVStream* st = NULL;
+  int img_buf_size;
+  struct st22p_rx_ops ops_rx;
+  int ret;
+  enum AVCodecID codec_id;
+
+  dbg(ctx, "%s, start\n", __func__);
+  memset(&ops_rx, 0, sizeof(ops_rx));
+
+  ret = mtl_parse_rx_port(ctx, &s->devArgs, &s->portArgs, &ops_rx.port);
+  if (ret < 0) {
+    err(ctx, "%s, parse rx port fail\n", __func__);
+    return AVERROR(EIO);
+  }
+
+  ops_rx.flags |= ST22P_RX_FLAG_BLOCK_GET;
+  ops_rx.pack_type = ST22_PACK_CODESTREAM;
+  ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
+
+  if (!s->codec_str) {
+    ops_rx.codec = ST22_CODEC_JPEGXS;
+  } else {
+    ops_rx.codec = st_name_to_codec(s->codec_str);
+    if (ST22_CODEC_MAX == ops_rx.codec) {
+      err(ctx, "%s, unknow codec str %s\n", __func__, s->codec_str);
+      return AVERROR(EIO);
+    }
+  }
+
+  if (ops_rx.codec == ST22_CODEC_JPEGXS) {
+    ops_rx.output_fmt = ST_FRAME_FMT_JPEGXS_CODESTREAM;
+    // codec_id = AV_CODEC_ID_JPEGXS;
+  } else if (ops_rx.codec == ST22_CODEC_H264) {
+    ops_rx.output_fmt = ST_FRAME_FMT_H264_CODESTREAM;
+    codec_id = AV_CODEC_ID_H264;
+  } else if (ops_rx.codec == ST22_CODEC_H265) {
+    ops_rx.output_fmt = ST_FRAME_FMT_H265_CODESTREAM;
+    codec_id = AV_CODEC_ID_H265;
+  } else {
+    err(ctx, "%s, unsupported codec %d\n", __func__, ops_rx.codec);
+    return AVERROR(EIO);
+  }
+
+  if (s->width <= 0) {
+    err(ctx, "%s, invalid width: %d\n", __func__, s->width);
+    return AVERROR(EINVAL);
+  }
+  ops_rx.width = s->width;
+  if (s->height <= 0) {
+    err(ctx, "%s, invalid height: %d\n", __func__, s->height);
+    return AVERROR(EINVAL);
+  }
+  ops_rx.height = s->height;
+  ops_rx.fps = framerate_to_st_fps(s->framerate);
+  if (ops_rx.fps == ST_FPS_MAX) {
+    err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
+    return AVERROR(EINVAL);
+  }
+
+  // get mtl dev
+  s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
+  if (!s->dev_handle) {
+    err(ctx, "%s, mtl dev get fail\n", __func__);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
+  ops_rx.name = "st22p_rx_ffmpeg";
+  ops_rx.priv = s;  // Handle of priv_data registered to lib
+  ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
+  ops_rx.framebuff_cnt = s->fb_cnt;
+
+  s->rx_handle = st22p_rx_create(s->dev_handle, &ops_rx);
+  if (!s->rx_handle) {
+    err(ctx, "%s, st22p_rx_create failed\n", __func__);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
+  img_buf_size = st22p_rx_frame_size(s->rx_handle);
+  dbg(ctx, "%s, img_buf_size: %d\n", __func__, img_buf_size);
+
+  st = avformat_new_stream(ctx, NULL);
+  if (!st) {
+    err(ctx, "%s, avformat_new_stream fail\n", __func__);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(ENOMEM);
+  }
+
+  st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+  st->codecpar->codec_id = codec_id;
+  st->codecpar->width = s->width;
+  st->codecpar->height = s->height;
+  avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
+  ctx->packet_size = img_buf_size;
+  st->codecpar->bit_rate =
+      av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
+
+  info(ctx, "%s(%d), rx handle %p, max packet_size %u\n", __func__, s->idx, s->rx_handle,
+       ctx->packet_size);
+  return 0;
+}
+
 static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   MtlSt22pDemuxerContext* s = ctx->priv_data;
   int ret = 0;
@@ -201,6 +316,40 @@ static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
 
   pkt->pts = pkt->dts = s->frame_counter++;
   dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, pkt->pts);
+  return 0;
+}
+
+static int mtl_st22_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
+  int ret = 0;
+  struct st_frame* frame;
+
+  dbg("%s(%d), start\n", __func__, s->idx);
+  frame = st22p_rx_get_frame(s->rx_handle);
+  if (!frame) {
+    info(ctx, "%s(%d), st22p_rx_get_frame timeout\n", __func__, s->idx);
+    return AVERROR(EIO);
+  }
+  dbg(ctx, "%s(%d), st22p_rx_get_frame: %p\n", __func__, s->idx, frame);
+  if (frame->data_size > ctx->packet_size) {
+    err(ctx, "%s(%d), unexpected frame size received: %" PRId64 " (max %u)\n", __func__,
+        s->idx, frame->data_size, ctx->packet_size);
+    st22p_rx_put_frame(s->rx_handle, frame);
+    return AVERROR(EIO);
+  }
+
+  ret = av_new_packet(pkt, frame->data_size);
+  if (ret != 0) {
+    err(ctx, "%s(%d), av_new_packet failed with %d\n", __func__, s->idx, ret);
+    st22p_rx_put_frame(s->rx_handle, frame);
+    return ret;
+  }
+  mtl_memcpy(pkt->data, frame->addr[0], frame->data_size);
+  st22p_rx_put_frame(s->rx_handle, frame);
+
+  pkt->pts = pkt->dts = s->frame_counter++;
+  dbg(ctx, "%s(%d), frame counter %" PRId64 ", size %d\n", __func__, s->idx, pkt->pts,
+      pkt->size);
   return 0;
 }
 
@@ -261,6 +410,12 @@ static const AVOption mtl_st22p_rx_options[] = {
      0,
      64,
      DEC},
+    {"st22_codec",
+     "st22 codec",
+     OFFSET(codec_str),
+     AV_OPT_TYPE_STRING,
+     {.str = NULL},
+     .flags = DEC},
     {NULL},
 };
 
@@ -283,6 +438,24 @@ AVInputFormat ff_mtl_st22p_demuxer =
         .priv_data_size = sizeof(MtlSt22pDemuxerContext),
         .read_header = mtl_st22p_read_header,
         .read_packet = mtl_st22p_read_packet,
+        .read_close = mtl_st22p_read_close,
+        .flags = AVFMT_NOFILE,
+        .extensions = "mtl",
+        .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
+        .priv_class = &mtl_st22p_demuxer_class,
+};
+
+#ifndef MTL_FFMPEG_4_4
+const AVInputFormat ff_mtl_st22_demuxer =
+#else
+AVInputFormat ff_mtl_st22_demuxer =
+#endif
+    {
+        .name = "mtl_st22",
+        .long_name = NULL_IF_CONFIG_SMALL("mtl st22 raw input device"),
+        .priv_data_size = sizeof(MtlSt22pDemuxerContext),
+        .read_header = mtl_st22_read_header,
+        .read_packet = mtl_st22_read_packet,
         .read_close = mtl_st22p_read_close,
         .flags = AVFMT_NOFILE,
         .extensions = "mtl",
