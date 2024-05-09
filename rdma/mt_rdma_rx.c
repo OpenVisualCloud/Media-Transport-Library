@@ -112,6 +112,8 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
   struct mt_rdma_rx_ctx* ctx = arg;
   struct mtl_rdma_rx_ops* ops = &ctx->ops;
   struct ibv_wc wc;
+
+  printf("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->cq_poll_stop) {
     struct ibv_cq* cq;
     void* cq_ctx = NULL;
@@ -170,6 +172,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
   }
 
 out:
+  printf("%s(%s), exited\n", __func__, ctx->ops_name);
   return NULL;
 }
 
@@ -181,6 +184,7 @@ static void* rdma_rx_connect_thread(void* arg) {
   pfd.fd = ctx->ec->fd;
   pfd.events = POLLIN;
 
+  printf("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->connect_stop) {
     int ret = poll(&pfd, 1, 200);
     if (ret > 0) {
@@ -224,6 +228,7 @@ static void* rdma_rx_connect_thread(void* arg) {
                 .cap.max_send_sge = 2,     /* gather message and meta */
                 .cap.max_recv_sge = 2,     /* scatter message and meta */
                 .cap.max_inline_data = 64, /* todo: include metadata size */
+                .sq_sig_all = 1,
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
@@ -284,6 +289,7 @@ static void* rdma_rx_connect_thread(void* arg) {
     }
   }
 
+  printf("%s(%s), exited\n", __func__, ctx->ops_name);
   return NULL;
 
 connect_err:
@@ -339,7 +345,7 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
     };
     /* send bye to tx? and wake up cq event */
     if (rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
-                       IBV_SEND_SIGNALED | IBV_SEND_INLINE)) {
+                       IBV_SEND_INLINE)) {
       fprintf(stderr, "%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
               strerror(errno));
     }
