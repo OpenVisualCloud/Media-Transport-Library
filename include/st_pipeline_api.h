@@ -552,7 +552,6 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_DMA_OFFLOAD = (MTL_BIT32(17)),
    /**
    * Flag bit in flags of struct st20p_rx_ops.
-   * Only for ST20P_TYPE_FRAME_LEVEL/ST20P_TYPE_SLICE_LEVEL.
    * If set, lib will automatically detect video format.
    * Width, height and fps set by app will be invalid.
    */
@@ -955,9 +954,9 @@ struct st20p_rx_ops {
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
   /**
-   * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL with
-   * ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format. And only
-   * non-block method can be used in this callback as it run from lcore tasklet routine.
+   * Optional with ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format. 
+   * And only non-block method can be used in this callback as it run from lcore 
+   * tasklet routine.
    */
   int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
                          struct st20_detect_reply* reply);
