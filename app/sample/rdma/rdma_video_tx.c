@@ -64,6 +64,9 @@ static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
 void int_handler(int dummy) {
   (void)(dummy);
   keep_running = 0;
+  pthread_mutex_lock(&mtx);
+  pthread_cond_signal(&cond);
+  pthread_mutex_unlock(&mtx);
 }
 
 int main(int argc, char** argv) {

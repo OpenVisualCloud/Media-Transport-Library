@@ -19,14 +19,16 @@ static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
   };
   int ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
   if (ret) {
-    fprintf(stderr, "%s(%s), rdma_post_send failed\n", __func__, ctx->ops_name);
+    fprintf(stderr, "%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
+            strerror(errno));
     return -EIO;
   }
   /* post recv for next ready msg */
   void* r_msg = ctx->message_region + idx * 1024;
   ret = rdma_post_recv(ctx->id, r_msg, r_msg, 1024, ctx->message_mr);
   if (ret) {
-    fprintf(stderr, "%s(%s), rdma_post_recv failed\n", __func__, ctx->ops_name);
+    fprintf(stderr, "%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
+            strerror(errno));
     return -EIO;
   }
   rx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
@@ -110,7 +112,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
   struct mt_rdma_rx_ctx* ctx = arg;
   struct mtl_rdma_rx_ops* ops = &ctx->ops;
   struct ibv_wc wc;
-  for (;;) {
+  while (!ctx->cq_poll_stop) {
     struct ibv_cq* cq;
     void* cq_ctx = NULL;
     ret = ibv_get_cq_event(ctx->cc, &cq, &cq_ctx);
@@ -126,7 +128,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
     }
     while (ibv_poll_cq(ctx->cq, 1, &wc)) {
       if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "%s(%s), Work completion error: %s\n", __func__, ctx->ops_name,
+        fprintf(stderr, "%s(%s), work completion error: %s\n", __func__, ctx->ops_name,
                 ibv_wc_status_str(wc.status));
         /* check more info */
         fprintf(stderr,
@@ -254,6 +256,7 @@ static void* rdma_rx_connect_thread(void* arg) {
               rdma_rx_send_buffer_done(ctx, i);
             ctx->connected = true;
 
+            ctx->cq_poll_stop = false;
             ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread, ctx);
             if (ret) {
               fprintf(stderr, "%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
@@ -335,8 +338,12 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
         .type = MT_RDMA_MSG_BYE,
     };
     /* send bye to tx? and wake up cq event */
-    rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
-                   IBV_SEND_SIGNALED | IBV_SEND_INLINE);
+    if (rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
+                       IBV_SEND_SIGNALED | IBV_SEND_INLINE)) {
+      fprintf(stderr, "%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
+              strerror(errno));
+    }
+    ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
     ctx->cq_poll_thread = 0;
   }

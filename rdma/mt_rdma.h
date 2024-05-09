@@ -95,6 +95,7 @@ struct mt_rdma_tx_ctx {
 
   atomic_bool connected;
   atomic_bool connect_stop;
+  atomic_bool cq_poll_stop;
 
   uint64_t stat_buffer_sent;
   uint64_t stat_buffer_acked;
@@ -128,6 +129,7 @@ struct mt_rdma_rx_ctx {
 
   atomic_bool connected;
   atomic_bool connect_stop;
+  atomic_bool cq_poll_stop;
 
   uint64_t stat_buffer_received;
   uint64_t stat_buffer_error;

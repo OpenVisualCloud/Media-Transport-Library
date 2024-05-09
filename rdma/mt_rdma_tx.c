@@ -88,7 +88,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
   struct mt_rdma_tx_ctx* ctx = arg;
   struct mtl_rdma_tx_ops* ops = &ctx->ops;
   struct ibv_wc wc;
-  for (;;) {
+  while (!ctx->cq_poll_stop) {
     struct ibv_cq* cq;
     void* cq_ctx = NULL;
     ret = ibv_get_cq_event(ctx->cc, &cq, &cq_ctx);
@@ -140,7 +140,12 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
            * bye message */
         }
 
-        rdma_post_recv(ctx->id, msg, msg, 1024, ctx->message_mr);
+        ret = rdma_post_recv(ctx->id, msg, msg, 1024, ctx->message_mr);
+        if (ret) {
+          fprintf(stderr, "%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
+                  strerror(errno));
+          goto out;
+        }
       } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
         struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc.wr_id;
         /* send ready message to rx, todo add user meta with sgl */
@@ -150,7 +155,12 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
             .buf_ready.buf_idx = tx_buffer->idx,
             .buf_ready.seq_num = 0, /* todo */
         };
-        rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
+        ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
+        if (ret) {
+          fprintf(stderr, "%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
+                  strerror(errno));
+          goto out;
+        }
         tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
         tx_buffer->ref_count++;
         if (ops->notify_buffer_sent) {
@@ -251,11 +261,17 @@ static void* rdma_tx_connect_thread(void* arg) {
 
             for (int i = 0; i < ctx->buffer_cnt; i++) { /* post receive done msg */
               void* msg = ctx->message_region + i * 1024;
-              rdma_post_recv(ctx->id, msg, msg, 1024, ctx->message_mr);
+              ret = rdma_post_recv(ctx->id, msg, msg, 1024, ctx->message_mr);
+              if (ret) {
+                fprintf(stderr, "%s(%s), rdma_post_recv failed: %s\n", __func__,
+                        ctx->ops_name, strerror(errno));
+                goto connect_err;
+              }
             }
             ctx->connected = true;
 
             /* create poll thread */
+            ctx->cq_poll_stop = false;
             ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_tx_cq_poll_thread, ctx);
             if (ret) {
               fprintf(stderr, "%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
@@ -317,8 +333,14 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
     if (&tx_buffer->buffer == buffer) {
       /* write to rx immediately */
-      rdma_post_write(ctx->id, tx_buffer, buffer->addr, buffer->size, tx_buffer->mr,
-                      IBV_SEND_SIGNALED, tx_buffer->remote_addr, tx_buffer->remote_key);
+      int ret = rdma_post_write(ctx->id, tx_buffer, buffer->addr, buffer->size,
+                                tx_buffer->mr, IBV_SEND_SIGNALED, tx_buffer->remote_addr,
+                                tx_buffer->remote_key);
+      if (ret) {
+        fprintf(stderr, "%s(%s), rdma_post_write failed: %s\n", __func__, ctx->ops_name,
+                strerror(errno));
+        return -EIO;
+      }
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
       return 0;
     }
@@ -338,8 +360,12 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
         .type = MT_RDMA_MSG_BYE,
     };
     /* send bye to rx? and wake up cq event */
-    rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
-                   IBV_SEND_SIGNALED | IBV_SEND_INLINE);
+    if (rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
+                       IBV_SEND_SIGNALED | IBV_SEND_INLINE)) {
+      fprintf(stderr, "%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
+              strerror(errno));
+    }
+    ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
     ctx->cq_poll_thread = 0;
   }

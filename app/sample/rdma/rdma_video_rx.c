@@ -38,6 +38,9 @@ static int rx_notify_buffer_ready(void* priv, struct mtl_rdma_buffer* buffer) {
 void int_handler(int dummy) {
   (void)(dummy);
   keep_running = 0;
+  pthread_mutex_lock(&mtx);
+  pthread_cond_signal(&cond);
+  pthread_mutex_unlock(&mtx);
 }
 
 #ifdef APP_HAS_SDL2
@@ -165,7 +168,7 @@ int main(int argc, char** argv) {
     if (ret < 0) {
       printf("Failed to put buffer\n");
       ret = -1;
-      goto out;
+      break;
     }
 
     frames_consumed++;
