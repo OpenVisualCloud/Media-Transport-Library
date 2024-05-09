@@ -828,7 +828,10 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle) {
     return 0;
   }
 
-  return ctx->dst_size;
+  if (ctx->derive)
+    return ctx->max_codestream_size;
+  else
+    return ctx->dst_size;
 }
 
 int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta) {
