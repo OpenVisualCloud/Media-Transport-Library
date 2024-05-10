@@ -83,6 +83,9 @@ int main(int argc, char** argv) {
 
     /* print buffer string */
     printf("Received buffer %d: %s\n", buffer_consumed, (char*)buffer->addr);
+    if (buffer->user_meta && buffer->user_meta_size) {
+      printf("User meta: %d\n", *(int*)buffer->user_meta);
+    }
     usleep(10000); /* simulate consuming */
 
     ret = mtl_rdma_rx_put_buffer(rx, buffer);

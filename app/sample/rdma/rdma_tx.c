@@ -92,6 +92,8 @@ int main(int argc, char** argv) {
 
     snprintf((char*)buffer->addr, buffer->capacity, "Hello, RDMA! %d", i);
     buffer->size = strlen((char*)buffer->addr) + 1;
+    buffer->user_meta = &buffer_acked;
+    buffer->user_meta_size = sizeof(buffer_acked);
     usleep(20000); /* simulate producing */
 
     ret = mtl_rdma_tx_put_buffer(tx, buffer);

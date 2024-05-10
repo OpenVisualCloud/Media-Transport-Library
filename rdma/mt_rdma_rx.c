@@ -163,8 +163,10 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                   err("%s(%s), buffer %u is not free\n", __func__, ctx->ops_name, idx);
                   goto out;
                 }
-                rx_buffer->buffer.user_meta =
-                    (void*)(msg + 1); /* will this meta be overwritten? */
+                rx_buffer->buffer
+                    .user_meta = /* Fix it: this msg is posted for another receive,
+                             may be overwritten! Copy to an owned meta buffer. */
+                    (void*)(msg + 1);
                 rx_buffer->buffer.user_meta_size = msg->buf_meta.meta_size;
                 rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
                 break;
