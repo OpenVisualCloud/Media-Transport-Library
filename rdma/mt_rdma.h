@@ -5,6 +5,7 @@
 #ifndef _MT_RDMA_HEAD_H_
 #define _MT_RDMA_HEAD_H_
 
+#include <fcntl.h>
 #include <infiniband/verbs.h>
 #include <poll.h>
 #include <pthread.h>
@@ -95,6 +96,7 @@ struct mt_rdma_tx_ctx {
 
   atomic_bool connected;
   atomic_bool connect_stop;
+  atomic_bool cq_poll_stop;
 
   uint64_t stat_buffer_sent;
   uint64_t stat_buffer_acked;
@@ -128,6 +130,7 @@ struct mt_rdma_rx_ctx {
 
   atomic_bool connected;
   atomic_bool connect_stop;
+  atomic_bool cq_poll_stop;
 
   uint64_t stat_buffer_received;
   uint64_t stat_buffer_error;
