@@ -3264,10 +3264,17 @@ void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s) {
 void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
                                    struct st_tx_video_session_impl* s) {
   uint64_t avg_ns_per_loop = mt_sch_avg_ns_loop(sch);
+  int cbs_build_timeout;
+
   s->cpu_busy_score = (double)avg_ns_per_loop / s->bulk / s->pacing.trs * 100.0;
-  if (rte_atomic32_read(&s->cbs_build_timeout) > 10) {
+
+  /* build timeout check */
+  cbs_build_timeout = rte_atomic32_read(&s->cbs_build_timeout);
+  rte_atomic32_set(&s->cbs_build_timeout, 0);
+  if (cbs_build_timeout > 10) {
     s->cpu_busy_score = 100.0; /* mark as busy */
-    rte_atomic32_set(&s->cbs_build_timeout, 0);
+    notice("%s(%d), mask as busy as build time out %d\n", __func__, s->idx,
+           cbs_build_timeout);
   }
 
   s->stat_cpu_busy_score = s->cpu_busy_score;
