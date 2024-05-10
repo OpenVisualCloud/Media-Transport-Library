@@ -28,6 +28,26 @@ typedef struct mt_rdma_tx_ctx* mtl_rdma_tx_handle;
 /** Handle to RDMA RX session of lib. */
 typedef struct mt_rdma_rx_ctx* mtl_rdma_rx_handle;
 
+/**
+ * Log level type to MTL RDMA transport context
+ */
+enum mtl_rdma_log_level {
+  /** debug log level */
+  MTL_RDMA_LOG_LEVEL_DEBUG = 0,
+  /** info log level */
+  MTL_RDMA_LOG_LEVEL_INFO,
+  /** notice log level */
+  MTL_RDMA_LOG_LEVEL_NOTICE,
+  /** warning log level */
+  MTL_RDMA_LOG_LEVEL_WARNING,
+  /** error log level */
+  MTL_RDMA_LOG_LEVEL_ERR,
+  /** critical log level */
+  MTL_RDMA_LOG_LEVEL_CRIT,
+  /** max value of this enum */
+  MTL_RDMA_LOG_LEVEL_MAX,
+};
+
 /** The structure info for buffer meta. */
 struct mtl_rdma_buffer {
   /** Buffer address, immutable at runtime */
@@ -216,6 +236,8 @@ struct mtl_rdma_init_params {
   char** devices;
   /** RDMA flags. (reserved for future) */
   uint64_t flags;
+  /** Log Level */
+  enum mtl_rdma_log_level log_level;
 };
 
 /**
