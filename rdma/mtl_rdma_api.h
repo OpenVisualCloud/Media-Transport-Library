@@ -19,6 +19,11 @@ extern "C" {
 #endif
 
 /**
+ * Get the uint64_t value for a specified bit set(0 to 63).
+ */
+#define MTL_RDMA_BIT64(nr) (UINT64_C(1) << (nr))
+
+/**
  * Handle to MTL RDMA transport context.
  */
 typedef struct mt_rdma_impl* mtl_rdma_handle;
@@ -225,6 +230,22 @@ struct mtl_rdma_buffer* mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle);
  *   - <0: Error code if put fail.
  */
 int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* buffer);
+
+/** MTL RDMA init flag */
+enum mtl_rdma_init_flag {
+  /** Lib will bind app thread and memory to RDMA device numa node.*/
+  MTL_RDMA_FLAG_BIND_NUMA = (MTL_RDMA_BIT64(0)),
+  /**
+   * Enable low latency mode for buffer transport.
+   * The TX and RX will poll for RDMA write work completion.
+   * It will cause extra CPU usage.
+   */
+  MTL_RDMA_FLAG_LOW_LATENCY = (MTL_RDMA_BIT64(1)),
+  /** Enable shared receive queue for all sessions. */
+  MTL_RDMA_FLAG_ENABLE_SRQ = (MTL_RDMA_BIT64(2)),
+  /** Enable shared completion queue for all sessions. */
+  MTL_RDMA_FLAG_SHARED_CQ = (MTL_RDMA_BIT64(3)),
+};
 
 /**
  * The structure describing how to initialize RDMA transport.

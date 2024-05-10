@@ -15,7 +15,7 @@ mtl_rdma_handle mtl_rdma_init(struct mtl_rdma_init_params* p) {
   struct mt_rdma_impl* impl = NULL;
   impl = calloc(1, sizeof(*impl));
   if (!impl) {
-    err("%s, failed to allocate memory for mtl_rdma_impl", __func__);
+    err("%s, failed to allocate memory for mtl_rdma_impl\n", __func__);
     return NULL;
   }
   impl->init = 1;
