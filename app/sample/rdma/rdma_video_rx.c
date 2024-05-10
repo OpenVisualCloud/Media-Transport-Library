@@ -109,7 +109,9 @@ int main(int argc, char** argv) {
   void* buffers[3] = {};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_rx_handle rx = NULL;
-  struct mtl_rdma_init_params p = {};
+  struct mtl_rdma_init_params p = {
+      .log_level = MTL_RDMA_LOG_LEVEL_INFO,
+  };
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
     printf("Failed to initialize RDMA\n");

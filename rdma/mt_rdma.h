@@ -29,6 +29,41 @@
     }                              \
   } while (0)
 
+void mt_rdma_set_log_level(enum mtl_rdma_log_level level);
+enum mtl_rdma_log_level mt_rdma_get_log_level(void);
+
+/* log define */
+#ifdef DEBUG
+#define dbg(...)                                                                  \
+  do {                                                                            \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_DEBUG) printf(__VA_ARGS__); \
+  } while (0)
+#else
+#define dbg(...) \
+  do {           \
+  } while (0)
+#endif
+#define info(...)                                                                \
+  do {                                                                           \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_INFO) printf(__VA_ARGS__); \
+  } while (0)
+#define notce(...)                                                                 \
+  do {                                                                             \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_NOTICE) printf(__VA_ARGS__); \
+  } while (0)
+#define warn(...)                                                                   \
+  do {                                                                              \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_WARNING) printf(__VA_ARGS__); \
+  } while (0)
+#define err(...)                                                                \
+  do {                                                                          \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_ERR) printf(__VA_ARGS__); \
+  } while (0)
+#define critical(...)    \
+  do {                   \
+    printf(__VA_ARGS__); \
+  } while (0)
+
 enum mt_rdma_message_type {
   MT_RDMA_MSG_NONE = 0,
   MT_RDMA_MSG_BUFFER_READY,
