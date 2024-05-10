@@ -200,7 +200,8 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
             err("%s(%s), received invalid message\n", __func__, ctx->ops_name);
             goto out;
           }
-          ret = rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE, ctx->recv_msgs);
+          ret =
+              rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE, ctx->recv_msgs_mr);
           if (ret) {
             err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
                 strerror(errno));
@@ -310,8 +311,8 @@ static void* rdma_rx_connect_thread(void* arg) {
           case RDMA_CM_EVENT_ESTABLISHED:
             for (uint16_t i = 0; i < ctx->buffer_cnt; i++) { /* start receiving */
               /* post recv for meta/ready msg */
-              void* r_msg = ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE;
-              ret = rdma_post_recv(ctx->id, r_msg, r_msg, MT_RDMA_MSG_MAX_SIZE,
+              void* msg = ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE;
+              ret = rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE,
                                    ctx->recv_msgs_mr);
               if (ret) {
                 err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
