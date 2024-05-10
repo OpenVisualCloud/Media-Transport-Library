@@ -10,7 +10,7 @@ set -e
 
 echo "clang-format check"
 find . -path ./build -prune -o -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' ! -name 'pymtl_wrap.c' \
-    ! -name 'vmlinux.h' -exec clang-format --verbose -i {} +
+	! -name 'vmlinux.h' -exec clang-format --verbose -i {} +
 
 black python/
 isort python/

@@ -23,12 +23,12 @@ test_tx_and_rx() {
 	local tx_prog=$2
 	local rx_prog=$3
 	local width=1920
-	if [ -n "$4" ];  then
-	  width=$4
+	if [ -n "$4" ]; then
+		width=$4
 	fi
 	local height=1080
-	if [ -n "$5" ];  then
-	  height=$5
+	if [ -n "$5" ]; then
+		height=$5
 	fi
 	echo "${name}: start ${tx_prog}, width:${width} height:${height}"
 	"${TEST_BIN_PATH}"/"${tx_prog}" --log_level "${LOG_LEVEL}" --p_port "${ST_PORT_TX}" --p_sip "${ST_SIP_TX}" --p_tx_ip "${ST_TX_IP}" --width "${width}" --height "${height}" &

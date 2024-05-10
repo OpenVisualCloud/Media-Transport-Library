@@ -14,13 +14,13 @@ RXTXAPP=./build/app/RxTxApp
 LOG_LEVEL=error #notice
 
 test_tx_rx_config() {
-    $RXTXAPP --config_file "$1" --p_port $ST_PORT_TX --test_time $TX_SEC --log_level $LOG_LEVEL &
-    pid_tx=$!
-    $RXTXAPP --config_file "$2" --p_port $ST_PORT_RX --test_time $RX_SEC --log_level $LOG_LEVEL
-    echo "wait $1 finish"
-    wait ${pid_tx}
-    echo "pass with tx: $1, rx: $2"
-    echo ""
+	$RXTXAPP --config_file "$1" --p_port $ST_PORT_TX --test_time $TX_SEC --log_level $LOG_LEVEL &
+	pid_tx=$!
+	$RXTXAPP --config_file "$2" --p_port $ST_PORT_RX --test_time $RX_SEC --log_level $LOG_LEVEL
+	echo "wait $1 finish"
+	wait ${pid_tx}
+	echo "pass with tx: $1, rx: $2"
+	echo ""
 }
 
 test_tx_rx_config config/tx_1v.json config/rx_1v.json

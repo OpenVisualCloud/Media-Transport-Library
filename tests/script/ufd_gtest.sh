@@ -5,15 +5,15 @@
 
 set -e
 
-if [ -n "$1" ];  then
-  P_PORT=$1
+if [ -n "$1" ]; then
+	P_PORT=$1
 else
-  P_PORT=0000:af:01.0
+	P_PORT=0000:af:01.0
 fi
-if [ -n "$2" ];  then
-  R_PORT=$2
+if [ -n "$2" ]; then
+	R_PORT=$2
 else
-  R_PORT=0000:af:01.1
+	R_PORT=0000:af:01.1
 fi
 
 echo "P_PORT: $P_PORT, R_PORT: $R_PORT"
@@ -49,4 +49,3 @@ echo "Test OK"
 echo ""
 
 echo "All done"
-
