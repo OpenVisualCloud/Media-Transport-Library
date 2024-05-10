@@ -13,7 +13,9 @@ static inline struct mt_stat_mgr* get_stat_mgr(struct mtl_main_impl* impl) {
   return &impl->stat_mgr;
 }
 
-static inline void stat_lock(struct mt_stat_mgr* mgr) { rte_spinlock_lock(&mgr->lock); }
+static inline void stat_lock(struct mt_stat_mgr* mgr) {
+  rte_spinlock_lock(&mgr->lock);
+}
 
 /* return true if try lock succ */
 static inline bool stat_try_lock(struct mt_stat_mgr* mgr) {
@@ -32,7 +34,9 @@ static int _stat_dump(struct mt_stat_mgr* mgr) {
     notice("STAT: failed to get lock\n");
     return -EIO;
   }
-  MT_TAILQ_FOREACH(item, &mgr->head, next) { item->cb_func(item->cb_priv); }
+  MT_TAILQ_FOREACH(item, &mgr->head, next) {
+    item->cb_func(item->cb_priv);
+  }
   stat_unlock(mgr);
 
   return 0;

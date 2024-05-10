@@ -10,7 +10,9 @@
 
 #define MT_DPDK_LIB_NAME "MT_DPDK"
 
-static inline void* mt_malloc(size_t sz) { return malloc(sz); }
+static inline void* mt_malloc(size_t sz) {
+  return malloc(sz);
+}
 
 static inline void* mt_zmalloc(size_t sz) {
   void* p = malloc(sz);
@@ -18,7 +20,9 @@ static inline void* mt_zmalloc(size_t sz) {
   return p;
 }
 
-static inline void mt_free(void* p) { free(p); }
+static inline void mt_free(void* p) {
+  free(p);
+}
 
 #ifdef MTL_HAS_ASAN
 int mt_asan_init(void);
@@ -35,7 +39,9 @@ static inline void* mt_rte_zmalloc_socket(size_t sz, int socket) {
   return rte_zmalloc_socket(MT_DPDK_LIB_NAME, sz, RTE_CACHE_LINE_SIZE, socket);
 }
 
-static inline void mt_rte_free(void* p) { rte_free(p); }
+static inline void mt_rte_free(void* p) {
+  rte_free(p);
+}
 #endif
 
 #endif

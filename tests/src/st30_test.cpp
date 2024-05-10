@@ -268,11 +268,21 @@ static void st30_rx_assert_cnt(int expect_s30_rx_cnt) {
   EXPECT_EQ(var.st30_rx_sessions_cnt, expect_s30_rx_cnt);
 }
 
-TEST(St30_tx, create_free_single) { create_free_test(st30_tx, 0, 1, 1); }
-TEST(St30_tx, create_free_multi) { create_free_test(st30_tx, 0, 1, 6); }
-TEST(St30_tx, create_free_mix) { create_free_test(st30_tx, 2, 3, 4); }
-TEST(St30_tx, create_free_max) { create_free_max(st30_tx, TEST_CREATE_FREE_MAX); }
-TEST(St30_tx, create_expect_fail) { expect_fail_test(st30_tx); }
+TEST(St30_tx, create_free_single) {
+  create_free_test(st30_tx, 0, 1, 1);
+}
+TEST(St30_tx, create_free_multi) {
+  create_free_test(st30_tx, 0, 1, 6);
+}
+TEST(St30_tx, create_free_mix) {
+  create_free_test(st30_tx, 2, 3, 4);
+}
+TEST(St30_tx, create_free_max) {
+  create_free_max(st30_tx, TEST_CREATE_FREE_MAX);
+}
+TEST(St30_tx, create_expect_fail) {
+  expect_fail_test(st30_tx);
+}
 TEST(St30_tx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
   expect_fail_test_rtp_ring(st30_tx, ST30_TYPE_RTP_LEVEL, ring_size);
@@ -292,11 +302,21 @@ TEST(St30_tx, get_framebuffer_expect_fail) {
   expect_fail_test_get_framebuffer(st30_tx, fbcnt);
 }
 
-TEST(St30_rx, create_free_single) { create_free_test(st30_rx, 0, 1, 1); }
-TEST(St30_rx, create_free_multi) { create_free_test(st30_rx, 0, 1, 6); }
-TEST(St30_rx, create_free_mix) { create_free_test(st30_rx, 2, 3, 4); }
-TEST(St30_rx, create_free_max) { create_free_max(st30_rx, TEST_CREATE_FREE_MAX); }
-TEST(St30_rx, create_expect_fail) { expect_fail_test(st30_rx); }
+TEST(St30_rx, create_free_single) {
+  create_free_test(st30_rx, 0, 1, 1);
+}
+TEST(St30_rx, create_free_multi) {
+  create_free_test(st30_rx, 0, 1, 6);
+}
+TEST(St30_rx, create_free_mix) {
+  create_free_test(st30_rx, 2, 3, 4);
+}
+TEST(St30_rx, create_free_max) {
+  create_free_max(st30_rx, TEST_CREATE_FREE_MAX);
+}
+TEST(St30_rx, create_expect_fail) {
+  expect_fail_test(st30_rx);
+}
 TEST(St30_rx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
   expect_fail_test_rtp_ring(st30_rx, ST30_TYPE_RTP_LEVEL, ring_size);

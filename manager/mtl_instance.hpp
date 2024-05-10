@@ -61,7 +61,8 @@ class mtl_instance {
 
  public:
   mtl_instance(int conn_fd)
-      : conn_fd(conn_fd), is_registered(false), pid(-1), uid(-1), hostname("unknown") {}
+      : conn_fd(conn_fd), is_registered(false), pid(-1), uid(-1), hostname("unknown") {
+  }
   ~mtl_instance() {
     log(log_level::INFO, "Remove client.");
     for (const auto& lcore_id : lcore_ids) mtl_lcore::get_instance().put_lcore(lcore_id);
@@ -87,10 +88,18 @@ class mtl_instance {
     close(conn_fd);
   }
 
-  int get_conn_fd() const { return conn_fd; }
-  int get_pid() const { return pid; }
-  int get_uid() const { return uid; }
-  std::string get_hostname() const { return hostname; }
+  int get_conn_fd() const {
+    return conn_fd;
+  }
+  int get_pid() const {
+    return pid;
+  }
+  int get_uid() const {
+    return uid;
+  }
+  std::string get_hostname() const {
+    return hostname;
+  }
   void handle_message(const char* buf, int len);
 };
 

@@ -609,11 +609,21 @@ static void st20_rx_assert_cnt(int expect_s20_rx_cnt) {
   EXPECT_EQ(var.st20_rx_sessions_cnt, expect_s20_rx_cnt);
 }
 
-TEST(St20_tx, create_free_single) { create_free_test(st20_tx, 0, 1, 1); }
-TEST(St20_tx, create_free_multi) { create_free_test(st20_tx, 0, 1, 6); }
-TEST(St20_tx, create_free_mix) { create_free_test(st20_tx, 2, 3, 4); }
-TEST(St20_tx, create_free_max) { create_free_max(st20_tx, TEST_CREATE_FREE_MAX); }
-TEST(St20_tx, create_expect_fail) { expect_fail_test(st20_tx); }
+TEST(St20_tx, create_free_single) {
+  create_free_test(st20_tx, 0, 1, 1);
+}
+TEST(St20_tx, create_free_multi) {
+  create_free_test(st20_tx, 0, 1, 6);
+}
+TEST(St20_tx, create_free_mix) {
+  create_free_test(st20_tx, 2, 3, 4);
+}
+TEST(St20_tx, create_free_max) {
+  create_free_max(st20_tx, TEST_CREATE_FREE_MAX);
+}
+TEST(St20_tx, create_expect_fail) {
+  expect_fail_test(st20_tx);
+}
 TEST(St20_tx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 1;
   expect_fail_test_fb_cnt(st20_tx, fbcnt);
@@ -647,11 +657,21 @@ TEST(St20_tx, rtp_pkt_size) {
   expect_test_rtp_pkt_size(st20_tx, ST20_TYPE_RTP_LEVEL, rtp_pkt_size, false);
 }
 
-TEST(St20_rx, create_free_single) { create_free_test(st20_rx, 0, 1, 1); }
-TEST(St20_rx, create_free_multi) { create_free_test(st20_rx, 0, 1, 6); }
-TEST(St20_rx, create_free_mix) { create_free_test(st20_rx, 2, 3, 4); }
-TEST(St20_rx, create_free_max) { create_free_max(st20_rx, TEST_CREATE_FREE_MAX); }
-TEST(St20_rx, create_expect_fail) { expect_fail_test(st20_rx); }
+TEST(St20_rx, create_free_single) {
+  create_free_test(st20_rx, 0, 1, 1);
+}
+TEST(St20_rx, create_free_multi) {
+  create_free_test(st20_rx, 0, 1, 6);
+}
+TEST(St20_rx, create_free_mix) {
+  create_free_test(st20_rx, 2, 3, 4);
+}
+TEST(St20_rx, create_free_max) {
+  create_free_max(st20_rx, TEST_CREATE_FREE_MAX);
+}
+TEST(St20_rx, create_expect_fail) {
+  expect_fail_test(st20_rx);
+}
 TEST(St20_rx, create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 0;
   expect_fail_test_fb_cnt(st20_rx, fbcnt);
@@ -1570,10 +1590,18 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   }
 }
 
-TEST(St20_rx, update_source_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 3); }
-TEST(St20_rx, update_source_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 2); }
-TEST(St20_tx, update_dest_frame) { st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 1); }
-TEST(St20_tx, update_dest_rtp) { st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 1); }
+TEST(St20_rx, update_source_frame) {
+  st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 3);
+}
+TEST(St20_rx, update_source_rtp) {
+  st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 2);
+}
+TEST(St20_tx, update_dest_frame) {
+  st20_rx_update_src_test(ST20_TYPE_FRAME_LEVEL, 1);
+}
+TEST(St20_tx, update_dest_rtp) {
+  st20_rx_update_src_test(ST20_TYPE_RTP_LEVEL, 1);
+}
 
 static int st20_digest_rx_frame_ready(void* priv, void* frame,
                                       struct st20_rx_frame_meta* meta) {

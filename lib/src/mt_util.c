@@ -358,7 +358,9 @@ void mt_mbuf_dump(enum mtl_port port, int idx, char* tag, struct rte_mbuf* m) {
   rte_pktmbuf_dump(stdout, m, m->data_len);
 }
 
-void mt_lcore_dump() { rte_lcore_dump(stdout); }
+void mt_lcore_dump() {
+  rte_lcore_dump(stdout);
+}
 
 void mt_eth_link_dump(uint16_t port_id) {
   struct rte_eth_link eth_link;

@@ -15,8 +15,11 @@ class mtl_lcore {
   std::bitset<MTL_MAX_LCORE> bs;
   std::mutex bs_mtx;
 
-  mtl_lcore() { bs.reset(); }
-  ~mtl_lcore() {}
+  mtl_lcore() {
+    bs.reset();
+  }
+  ~mtl_lcore() {
+  }
 
  public:
   mtl_lcore(const mtl_lcore&) = delete;

@@ -21,7 +21,9 @@ class logger {
     }
   }
 
-  static void set_log_level(log_level level) { log_level_min = level; }
+  static void set_log_level(log_level level) {
+    log_level_min = level;
+  }
 
  private:
   static log_level log_level_min;

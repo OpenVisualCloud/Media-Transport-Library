@@ -78,7 +78,9 @@ static void init_expect_fail_test(void) {
   EXPECT_TRUE(handle == NULL);
 }
 
-TEST(Main, init_expect_fail) { init_expect_fail_test(); }
+TEST(Main, init_expect_fail) {
+  init_expect_fail_test();
+}
 
 static void reinit_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
@@ -88,7 +90,9 @@ static void reinit_expect_fail_test(void) {
   EXPECT_TRUE(handle == NULL);
 }
 
-TEST(Main, re_init_fail) { reinit_expect_fail_test(); }
+TEST(Main, re_init_fail) {
+  reinit_expect_fail_test();
+}
 
 static void start_stop_test(int repeat) {
   struct st_tests_context* ctx = st_test_ctx();
@@ -103,9 +107,13 @@ static void start_stop_test(int repeat) {
   }
 }
 
-TEST(Main, start_stop_single) { start_stop_test(1); }
+TEST(Main, start_stop_single) {
+  start_stop_test(1);
+}
 
-TEST(Main, start_stop_multi) { start_stop_test(5); }
+TEST(Main, start_stop_multi) {
+  start_stop_test(5);
+}
 
 static void start_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
@@ -120,7 +128,9 @@ static void start_expect_fail_test(void) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Main, start_expect_fail) { start_expect_fail_test(); }
+TEST(Main, start_expect_fail) {
+  start_expect_fail_test();
+}
 
 static void stop_expect_fail_test(void) {
   struct st_tests_context* ctx = st_test_ctx();
@@ -139,7 +149,9 @@ static void stop_expect_fail_test(void) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Main, stop_expect_fail) { stop_expect_fail_test(); }
+TEST(Main, stop_expect_fail) {
+  stop_expect_fail_test();
+}
 
 TEST(Main, get_fix) {
   struct st_tests_context* ctx = st_test_ctx();
@@ -269,7 +281,9 @@ static void st20_frame_size_test() {
   EXPECT_EQ(size, expect_size);
 }
 
-TEST(Main, st20_frame_size) { st20_frame_size_test(); }
+TEST(Main, st20_frame_size) {
+  st20_frame_size_test();
+}
 
 static void fmt_frame_equal_transport_test() {
   bool equal;
@@ -293,7 +307,9 @@ static void fmt_frame_equal_transport_test() {
   EXPECT_FALSE(equal);
 }
 
-TEST(Main, fmt_equal_transport) { fmt_frame_equal_transport_test(); }
+TEST(Main, fmt_equal_transport) {
+  fmt_frame_equal_transport_test();
+}
 
 static void fmt_frame_fom_transport_test() {
   enum st_frame_fmt to_fmt;
@@ -309,7 +325,9 @@ static void fmt_frame_fom_transport_test() {
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_MAX);
 }
 
-TEST(Main, fmt_frame_transport) { fmt_frame_fom_transport_test(); }
+TEST(Main, fmt_frame_transport) {
+  fmt_frame_fom_transport_test();
+}
 
 static void fmt_frame_to_transport_test() {
   enum st20_fmt to_fmt;
@@ -327,7 +345,9 @@ static void fmt_frame_to_transport_test() {
   EXPECT_TRUE(to_fmt == ST20_FMT_MAX);
 }
 
-TEST(Main, fmt_to_transport) { fmt_frame_to_transport_test(); }
+TEST(Main, fmt_to_transport) {
+  fmt_frame_to_transport_test();
+}
 
 static void frame_api_test() {
   uint32_t w = 1920;
@@ -413,8 +433,12 @@ static void frame_name_test() {
   EXPECT_EQ(st_frame_name_to_fmt(fail), ST_FRAME_FMT_MAX);
 }
 
-TEST(Main, frame_api) { frame_api_test(); }
-TEST(Main, frame_name) { frame_name_test(); }
+TEST(Main, frame_api) {
+  frame_api_test();
+}
+TEST(Main, frame_name) {
+  frame_name_test();
+}
 
 static void size_page_align_test() {
   size_t pg_sz = 4096;
@@ -446,7 +470,9 @@ static void size_page_align_test() {
   EXPECT_EQ(sz, expect_sz);
 }
 
-TEST(Main, size_page_align) { size_page_align_test(); }
+TEST(Main, size_page_align) {
+  size_page_align_test();
+}
 
 class fps_23_98 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 

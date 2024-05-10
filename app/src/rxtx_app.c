@@ -135,9 +135,13 @@ static void app_ptp_sync_notify(void* priv, struct mtl_ptp_sync_notify_meta* met
   return;
 }
 
-void app_set_log_level(enum mtl_log_level level) { app_log_level = level; }
+void app_set_log_level(enum mtl_log_level level) {
+  app_log_level = level;
+}
 
-enum mtl_log_level app_get_log_level(void) { return app_log_level; }
+enum mtl_log_level app_get_log_level(void) {
+  return app_log_level;
+}
 
 static uint64_t app_ptp_from_tai_time(void* priv) {
   struct st_app_context* ctx = priv;

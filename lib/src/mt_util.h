@@ -165,7 +165,9 @@ static inline int mt_u64_fifo_full(struct mt_u64_fifo* fifo) {
   return fifo->used == fifo->size;
 }
 
-static inline int mt_u64_fifo_count(struct mt_u64_fifo* fifo) { return fifo->used; }
+static inline int mt_u64_fifo_count(struct mt_u64_fifo* fifo) {
+  return fifo->used;
+}
 
 static inline int mt_u64_fifo_free_count(struct mt_u64_fifo* fifo) {
   return fifo->size - fifo->used;
@@ -206,7 +208,9 @@ int st_vsync_calculate(struct mtl_main_impl* impl, struct st_vsync_info* vsync);
 
 uint16_t mt_random_port(uint16_t base_port);
 
-static inline const char* mt_string_safe(const char* msg) { return msg ? msg : "null"; }
+static inline const char* mt_string_safe(const char* msg) {
+  return msg ? msg : "null";
+}
 
 static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf** mbufs, uint16_t nb) {
   struct rte_mbuf* m = NULL;
