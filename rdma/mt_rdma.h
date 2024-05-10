@@ -19,7 +19,9 @@
 
 #define MT_RDMA_MSG_MAGIC (0x494D544C) /* ASCII representation of "IMTL" */
 
-#define MT_RDMA_USER_META_MAX (1024 - sizeof(struct mt_rdma_message))
+#define MT_RDMA_MSG_MAX_SIZE (1024)
+
+#define MT_RDMA_USER_META_MAX_SIZE (MT_RDMA_MSG_MAX_SIZE - sizeof(struct mt_rdma_message))
 
 #define MT_SAFE_FREE(obj, free_fn) \
   do {                             \
@@ -66,6 +68,7 @@ enum mtl_rdma_log_level mt_rdma_get_log_level(void);
 
 enum mt_rdma_message_type {
   MT_RDMA_MSG_NONE = 0,
+  MT_RDMA_MSG_BUFFER_META,
   MT_RDMA_MSG_BUFFER_READY,
   MT_RDMA_MSG_BUFFER_DONE,
   MT_RDMA_MSG_BYE,
@@ -79,12 +82,17 @@ struct mt_rdma_message {
     struct {
       uint16_t buf_idx;
       uint32_t seq_num;
+      size_t meta_size;
+    } buf_meta;
+    struct {
+      uint16_t buf_idx;
+      uint32_t seq_num;
     } buf_ready;
     struct {
       uint16_t buf_idx;
+      uint32_t seq_num;
       uint64_t rx_buf_addr;
       uint32_t rx_buf_key;
-      uint32_t seq_num;
     } buf_done;
   };
 };
@@ -118,12 +126,14 @@ struct mt_rdma_tx_ctx {
   struct rdma_cm_id* id;
   struct ibv_pd* pd;
   struct ibv_qp* qp;
-  struct ibv_mr* message_mr;
+  struct ibv_mr* send_msgs_mr;
+  struct ibv_mr* recv_msgs_mr;
   struct rdma_cm_id* listen_id;
 
   uint16_t buffer_producer_idx;
   uint32_t buffer_seq_num;
-  void* message_region; /* 1024 bytes * buf_cnt */
+  void* send_msgs; /* 1024 bytes * buf_cnt, space reserved for metadata */
+  struct mt_rdma_message* recv_msgs;
   struct mt_rdma_tx_buffer* tx_buffers;
   uint16_t buffer_cnt;
   pthread_t connect_thread;
@@ -155,9 +165,9 @@ struct mt_rdma_rx_ctx {
   struct rdma_cm_id* id;
   struct ibv_pd* pd;
   struct ibv_qp* qp;
-  struct ibv_mr* message_mr;
+  struct ibv_mr* recv_msgs_mr;
 
-  void* message_region; /* 1024 bytes * buf_cnt */
+  void* recv_msgs; /* 1024 bytes * buf_cnt, space reserved for metadata */
   struct mt_rdma_rx_buffer* rx_buffers;
   uint16_t buffer_cnt;
   pthread_t connect_thread;
