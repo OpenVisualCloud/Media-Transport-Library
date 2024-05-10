@@ -29,7 +29,9 @@ def process_frame(st20p_tx, frame, av_pixel_output_format):
 
         # pyav yuv422p10le not support Conversion to numpy array, use copy mode
         yuv_array[:y_size] = np.frombuffer(yuv_frame.planes[0], np.uint16)
-        yuv_array[y_size : y_size + u_size] = np.frombuffer(yuv_frame.planes[1], np.uint16)
+        yuv_array[y_size : y_size + u_size] = np.frombuffer(
+            yuv_frame.planes[1], np.uint16
+        )
         yuv_array[y_size + u_size :] = np.frombuffer(yuv_frame.planes[2], np.uint16)
         src_p = ctypes.c_char_p(yuv_array.ctypes.data)
         src_address = ctypes.cast(src_p, ctypes.c_void_p).value

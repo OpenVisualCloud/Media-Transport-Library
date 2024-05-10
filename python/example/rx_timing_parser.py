@@ -177,7 +177,7 @@ def plt_show():
 def main():
     args = misc_util.parse_args(False)
 
-    log_file = open(args.log_file, "w", encoding='utf-8')
+    log_file = open(args.log_file, "w", encoding="utf-8")
     if not log_file:
         print(f"Open {args.log_file} fail")
         sys.exit(1)
