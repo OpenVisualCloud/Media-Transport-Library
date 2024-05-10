@@ -3,6 +3,8 @@
 
 # Usage: python3 rfc4175be10_convert_2way.py --tx_url yuv422rfc4175be10_1080p.yuv --display_scale_factor 2
 
+"""Module of MTL 2 way convert python example."""
+
 import sys
 
 import misc_util
@@ -92,9 +94,9 @@ def main():
     print(
         f"Full frame(fmt: {mtl.st_frame_fmt_name(target_frame.fmt)}) displayed now, any key to next decimated"
     )
-    misc_util.waitKey()
+    misc_util.wait_key()
     misc_util.frame_display(target_frame_decimated, 1)
-    misc_util.waitKey()
+    misc_util.wait_key()
     print(
         f"Decimated frame(fmt: {mtl.st_frame_fmt_name(target_frame.fmt)}) displayed now, any key to exit"
     )

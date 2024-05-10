@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+"""Module of MTL st20p rx encode python example."""
+
 import ctypes
 import sys
 

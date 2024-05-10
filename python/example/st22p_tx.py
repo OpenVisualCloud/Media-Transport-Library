@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+"""Module of MTL st22p tx python example."""
+
 import sys
 
 import misc_util

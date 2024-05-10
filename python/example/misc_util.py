@@ -2,6 +2,8 @@
 # Copyright 2023 Intel Corporation
 # misc utils
 
+"""Module for misc util of MTL python example."""
+
 import argparse
 import ctypes
 import datetime
@@ -312,7 +314,7 @@ def destroy():
     cv2.destroyAllWindows()
 
 
-def waitKey():
+def wait_key():
     cv2.waitKey()
 
 

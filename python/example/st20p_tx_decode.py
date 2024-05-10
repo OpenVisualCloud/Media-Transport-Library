@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+"""Module of MTL st20p tx decode python example."""
+
 import ctypes
 import sys
 
@@ -17,30 +19,29 @@ def process_frame(st20p_tx, frame, av_pixel_output_format):
     tx_frame = mtl.st20p_tx_get_frame(st20p_tx)
     if not tx_frame:
         print("st20p_tx_get_frame fail, skip this video frame")
-        pass
+    else:
+        width = frame.width
+        height = frame.height
+        y_size = width * height
+        u_size = y_size // 2
+        v_size = u_size
+        yuv_array = np.empty(y_size + u_size + v_size, dtype=np.uint16)
 
-    width = frame.width
-    height = frame.height
-    y_size = width * height
-    u_size = y_size // 2
-    v_size = u_size
-    yuv_array = np.empty(y_size + u_size + v_size, dtype=np.uint16)
+        # pyav yuv422p10le not support Conversion to numpy array, use copy mode
+        yuv_array[:y_size] = np.frombuffer(yuv_frame.planes[0], np.uint16)
+        yuv_array[y_size : y_size + u_size] = np.frombuffer(yuv_frame.planes[1], np.uint16)
+        yuv_array[y_size + u_size :] = np.frombuffer(yuv_frame.planes[2], np.uint16)
+        src_p = ctypes.c_char_p(yuv_array.ctypes.data)
+        src_address = ctypes.cast(src_p, ctypes.c_void_p).value
+        src_address_uint64 = ctypes.c_uint64(src_address).value
 
-    # pyav yuv422p10le not support Conversion to numpy array, use copy mode
-    yuv_array[:y_size] = np.frombuffer(yuv_frame.planes[0], np.uint16)
-    yuv_array[y_size : y_size + u_size] = np.frombuffer(yuv_frame.planes[1], np.uint16)
-    yuv_array[y_size + u_size :] = np.frombuffer(yuv_frame.planes[2], np.uint16)
-    src_p = ctypes.c_char_p(yuv_array.ctypes.data)
-    src_address = ctypes.cast(src_p, ctypes.c_void_p).value
-    src_address_uint64 = ctypes.c_uint64(src_address).value
+        memcpy_ops = mtl.mtl_memcpy_ops()
+        memcpy_ops.dst = mtl.st_frame_addr_cpuva(tx_frame, 0)
+        memcpy_ops.src = src_address_uint64
+        memcpy_ops.sz = tx_frame.data_size
+        mtl.mtl_memcpy_action(memcpy_ops)
 
-    memcpy_ops = mtl.mtl_memcpy_ops()
-    memcpy_ops.dst = mtl.st_frame_addr_cpuva(tx_frame, 0)
-    memcpy_ops.src = src_address_uint64
-    memcpy_ops.sz = tx_frame.data_size
-    mtl.mtl_memcpy_action(memcpy_ops)
-
-    mtl.st20p_tx_put_frame(st20p_tx, tx_frame)
+        mtl.st20p_tx_put_frame(st20p_tx, tx_frame)
 
 
 def get_video_resolution(video_path):

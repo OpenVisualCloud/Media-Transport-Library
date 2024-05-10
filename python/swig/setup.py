@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+"""Module of MTL python binding setup."""
+
 from setuptools import Extension, setup
 
 pymtl_module = Extension(

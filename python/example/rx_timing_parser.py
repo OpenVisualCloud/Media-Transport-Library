@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2023 Intel Corporation
 
+"""Module of MTL rx timing parser python example."""
+
 import datetime
+import sys
 import threading
 import time
 
@@ -11,7 +14,10 @@ import pymtl as mtl
 from matplotlib.widgets import Button
 
 
+# pylint: disable=too-many-instance-attributes
 class Dashboard:
+    """Dashboard class"""
+
     active = False
 
     def __init__(self, max_histories, title_str):
@@ -63,7 +69,7 @@ class Dashboard:
         self.wide_count = 0
         self.fail_count = 0
 
-    def update(self, frame):
+    def update(self):
         self.update_ui()
 
     def update_ui(self):
@@ -79,21 +85,21 @@ class Dashboard:
         self.ax.autoscale_view()
         plt.draw()
 
-    def clear_data_event(self, event):
+    def clear_data_event(self):
         print("Clear all data")
         self.init_data()
         self.update_ui()
 
-    def update_vrx(self, max, min, avg):
+    def update_vrx(self, v_max, v_min, v_avg):
         if self.data_count == 0:
             self.vrx_max_values.pop(0)
             self.vrx_min_values.pop(0)
             self.vrx_avg_values.pop(0)
             self.times.pop(0)
         # Update data
-        self.vrx_max_values.append(max)
-        self.vrx_min_values.append(min)
-        self.vrx_avg_values.append(avg)
+        self.vrx_max_values.append(v_max)
+        self.vrx_min_values.append(v_min)
+        self.vrx_avg_values.append(v_avg)
         self.times.append(datetime.datetime.now())
         self.data_count += 1
         # print(f"data_count: {self.data_count}")
@@ -127,10 +133,8 @@ def rx_frame_loop(st20p_rx, update_interval, plot, log_file):
         if frame:
             f_idx += 1
             tp = mtl.st_frame_tp_meta(frame, mtl.MTL_SESSION_PORT_P)
-            if tp.vrx_max > vrx_max:
-                vrx_max = tp.vrx_max
-            if tp.vrx_min < vrx_min:
-                vrx_min = tp.vrx_min
+            vrx_max = max(vrx_max, tp.vrx_max)
+            vrx_min = min(vrx_min, tp.vrx_min)
             vrx_avg_sum += tp.vrx_avg
             if tp.compliant == mtl.ST_RX_TP_COMPLIANT_NARROW:
                 narrow += 1
@@ -173,7 +177,10 @@ def plt_show():
 def main():
     args = misc_util.parse_args(False)
 
-    log_file = open(args.log_file, "w")
+    log_file = open(args.log_file, "w", encoding='utf-8')
+    if not log_file:
+        print(f"Open {args.log_file} fail")
+        sys.exit(1)
 
     title_str = f"ST2110-20 Rx Timing Parser: {args.p_rx_ip}@{args.udp_port}"
     plot = Dashboard(max_histories=args.histories, title_str=title_str)
