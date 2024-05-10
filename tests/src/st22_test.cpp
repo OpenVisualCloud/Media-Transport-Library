@@ -178,11 +178,21 @@ static void st22_rx_assert_cnt(int expect_s22_rx_cnt) {
   EXPECT_EQ(var.st22_rx_sessions_cnt, expect_s22_rx_cnt);
 }
 
-TEST(St22_tx, create_free_single) { create_free_test(st22_tx, 0, 1, 1); }
-TEST(St22_tx, create_free_multi) { create_free_test(st22_tx, 0, 1, 6); }
-TEST(St22_tx, create_free_mix) { create_free_test(st22_tx, 2, 3, 4); }
-TEST(St22_tx, create_free_max) { create_free_max(st22_tx, TEST_CREATE_FREE_MAX); }
-TEST(St22_tx, create_expect_fail) { expect_fail_test(st22_tx); }
+TEST(St22_tx, create_free_single) {
+  create_free_test(st22_tx, 0, 1, 1);
+}
+TEST(St22_tx, create_free_multi) {
+  create_free_test(st22_tx, 0, 1, 6);
+}
+TEST(St22_tx, create_free_mix) {
+  create_free_test(st22_tx, 2, 3, 4);
+}
+TEST(St22_tx, create_free_max) {
+  create_free_max(st22_tx, TEST_CREATE_FREE_MAX);
+}
+TEST(St22_tx, create_expect_fail) {
+  expect_fail_test(st22_tx);
+}
 TEST(St22_tx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
   expect_fail_test_rtp_ring(st22_tx, ST22_TYPE_RTP_LEVEL, ring_size);
@@ -204,11 +214,21 @@ TEST(St22_tx, create_expect_fail_fb_cnt) {
   expect_fail_test_fb_cnt(st22_tx, fbcnt);
 }
 
-TEST(St22_rx, create_free_single) { create_free_test(st22_rx, 0, 1, 1); }
-TEST(St22_rx, create_free_multi) { create_free_test(st22_rx, 0, 1, 6); }
-TEST(St22_rx, create_free_mix) { create_free_test(st22_rx, 2, 3, 4); }
-TEST(St22_rx, create_free_max) { create_free_max(st22_rx, TEST_CREATE_FREE_MAX); }
-TEST(St22_rx, create_expect_fail) { expect_fail_test(st22_rx); }
+TEST(St22_rx, create_free_single) {
+  create_free_test(st22_rx, 0, 1, 1);
+}
+TEST(St22_rx, create_free_multi) {
+  create_free_test(st22_rx, 0, 1, 6);
+}
+TEST(St22_rx, create_free_mix) {
+  create_free_test(st22_rx, 2, 3, 4);
+}
+TEST(St22_rx, create_free_max) {
+  create_free_max(st22_rx, TEST_CREATE_FREE_MAX);
+}
+TEST(St22_rx, create_expect_fail) {
+  expect_fail_test(st22_rx);
+}
 TEST(St22_rx, create_expect_fail_ring_sz) {
   uint16_t ring_size = 0;
   expect_fail_test_rtp_ring(st22_rx, ST22_TYPE_RTP_LEVEL, ring_size);
@@ -797,7 +817,9 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   }
 }
 
-TEST(St22_rx, update_source) { st22_rx_update_src_test(2, ST_TEST_LEVEL_ALL); }
+TEST(St22_rx, update_source) {
+  st22_rx_update_src_test(2, ST_TEST_LEVEL_ALL);
+}
 
 static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[],
                                      int pkt_data_len[], int total_pkts[], int sessions,

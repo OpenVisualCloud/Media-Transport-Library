@@ -164,6 +164,8 @@ docker run -it --rm  -v "$PWD":/opt/ --entrypoint /bin/bash github/super-linter
 
 cd /opt/
 
+# echo "shfmt check"
+find ./ -type f -name "*.sh" -exec shfmt -w {} +
 # echo "shell check"
 find ./ -name "*.sh" -exec shellcheck {} \;
 

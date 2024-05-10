@@ -5,23 +5,23 @@
 
 set -e
 
-if [ -n "$1" ];  then
-  P_PORT=$1
+if [ -n "$1" ]; then
+	P_PORT=$1
 else
-  # default
-  P_PORT=0000:af:01.0
+	# default
+	P_PORT=0000:af:01.0
 fi
-if [ -n "$2" ];  then
-  R_PORT=$2
+if [ -n "$2" ]; then
+	R_PORT=$2
 else
-  # default
-  R_PORT=0000:af:01.1
+	# default
+	R_PORT=0000:af:01.1
 fi
-if [ -n "$3" ];  then
-  DMA_PORT=$3
+if [ -n "$3" ]; then
+	DMA_PORT=$3
 else
-  # default
-  DMA_PORT=0000:80:04.0
+	# default
+	DMA_PORT=0000:80:04.0
 fi
 
 echo "P_PORT: $P_PORT, R_PORT: $R_PORT, DMA_PORT: $DMA_PORT"

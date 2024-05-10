@@ -13,7 +13,7 @@ TEST_LOOP=1
 
 export KAHAWAI_CFG_PATH=../../kahawai.json
 echo "Hdr_split: total ${#TEST_JSON_LIST[@]} cases, each with ${TEST_TIME_SEC}s"
-for ((loop=0; loop<TEST_LOOP; loop++)); do
+for ((loop = 0; loop < TEST_LOOP; loop++)); do
 	cur_json_idx=0
 	for json_file in hdr_split_json/*.json; do
 		cmd="$RXTXAPP --log_level info --test_time $TEST_TIME_SEC --config_file $TEST_JSON_DIR/$json_file --hdr_split"

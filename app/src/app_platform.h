@@ -122,7 +122,9 @@ static inline int st_pthread_cond_signal(pthread_cond_t* cond) {
   return pthread_cond_signal(cond);
 }
 
-static inline int st_open(const char* path, int flags) { return open(path, flags); }
+static inline int st_open(const char* path, int flags) {
+  return open(path, flags);
+}
 
 static inline int st_open_mode(const char* path, int flags, mode_t mode) {
   return open(path, flags, mode);

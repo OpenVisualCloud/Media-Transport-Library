@@ -149,7 +149,9 @@ int pthread_mutex_trylock(pthread_mutex_t* mutex);
 int clock_gettime(int clk_id, struct timespec* tp); /* use precise time for windows */
 
 #ifdef __MTL_LIB_BUILD__
-static inline pid_t getpid() { return GetCurrentProcessId(); }
+static inline pid_t getpid() {
+  return GetCurrentProcessId();
+}
 #endif
 
 #endif

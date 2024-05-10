@@ -5,26 +5,25 @@
 
 set -e
 
-function usage()
-{
-    echo "Usage: $0 [debug]"
-    exit 0
+function usage() {
+	echo "Usage: $0 [debug]"
+	exit 0
 }
 
 buildtype=release
 
-if [ -n "$1" ];  then
-    case $1 in
-      "debug")
-           buildtype=debug
-           ;;
-      "plain")
-           buildtype=plain
-           ;;
-       *)
-           usage
-           ;;
-    esac
+if [ -n "$1" ]; then
+	case $1 in
+	"debug")
+		buildtype=debug
+		;;
+	"plain")
+		buildtype=plain
+		;;
+	*)
+		usage
+		;;
+	esac
 fi
 
 WORKSPACE=$PWD

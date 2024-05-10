@@ -1285,9 +1285,13 @@ int mtl_thread_setname(pthread_t tid, const char* name) {
 #endif
 }
 
-void mtl_sleep_us(unsigned int us) { return mt_sleep_us(us); }
+void mtl_sleep_us(unsigned int us) {
+  return mt_sleep_us(us);
+}
 
-void mtl_delay_us(unsigned int us) { return mt_delay_us(us); }
+void mtl_delay_us(unsigned int us) {
+  return mt_delay_us(us);
+}
 
 int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip) {
   int ret = inet_pton(AF_INET, ip, p->sip_addr[port]);

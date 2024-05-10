@@ -21,9 +21,13 @@ static struct upl_functions libc_fn;
 
 static struct upl_ctx* g_upl_ctx;
 
-static inline struct upl_ctx* upl_get_ctx(void) { return g_upl_ctx; }
+static inline struct upl_ctx* upl_get_ctx(void) {
+  return g_upl_ctx;
+}
 
-static inline void upl_set_ctx(struct upl_ctx* ctx) { g_upl_ctx = ctx; }
+static inline void upl_set_ctx(struct upl_ctx* ctx) {
+  g_upl_ctx = ctx;
+}
 
 static inline int upl_set_upl_entry(struct upl_ctx* ctx, int kfd, void* upl) {
   if (ctx->upl_entires[kfd]) {

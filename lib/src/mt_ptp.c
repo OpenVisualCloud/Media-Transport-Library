@@ -50,7 +50,9 @@ enum servo_state {
   LOCKED,
 };
 
-static inline char* ptp_mode_str(enum mt_ptp_l_mode mode) { return ptp_mode_strs[mode]; }
+static inline char* ptp_mode_str(enum mt_ptp_l_mode mode) {
+  return ptp_mode_strs[mode];
+}
 
 static inline uint64_t ptp_net_tmstamp_to_ns(struct mt_ptp_tmstamp* ts) {
   uint64_t sec = (uint64_t)ntohl(ts->sec_lsb) + ((uint64_t)ntohs(ts->sec_msb) << 32);

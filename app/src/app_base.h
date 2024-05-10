@@ -661,7 +661,9 @@ struct st_app_context {
   int utc_offset;
 };
 
-static inline void* st_app_malloc(size_t sz) { return malloc(sz); }
+static inline void* st_app_malloc(size_t sz) {
+  return malloc(sz);
+}
 
 static inline void* st_app_zmalloc(size_t sz) {
   void* p = malloc(sz);
@@ -669,7 +671,9 @@ static inline void* st_app_zmalloc(size_t sz) {
   return p;
 }
 
-static inline void st_app_free(void* p) { free(p); }
+static inline void st_app_free(void* p) {
+  free(p);
+}
 
 static inline uint64_t st_timespec_to_ns(const struct timespec* ts) {
   return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;

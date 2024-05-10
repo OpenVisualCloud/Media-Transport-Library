@@ -7,10 +7,9 @@ set -e
 
 user=$(whoami)
 
-function usage()
-{
-    echo "Usage: $0 [debug/debugoptimized/plain/release]"
-    exit 0
+function usage() {
+	echo "Usage: $0 [debug/debugoptimized/plain/release]"
+	exit 0
 }
 
 buildtype=release
@@ -18,50 +17,50 @@ enable_asan=false
 enable_tap=false
 enable_usdt=true
 
-if [ -n "$MTL_BUILD_ENABLE_ASAN" ];  then
-    if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
-        enable_asan=true
-        buildtype=debug # use debug build as default for asan
-        echo "Enable asan check."
-    fi
+if [ -n "$MTL_BUILD_ENABLE_ASAN" ]; then
+	if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
+		enable_asan=true
+		buildtype=debug # use debug build as default for asan
+		echo "Enable asan check."
+	fi
 fi
 
-if [ -n "$MTL_BUILD_ENABLE_TAP" ];  then
-    if [ "$MTL_BUILD_ENABLE_TAP" == "true" ]; then
-        enable_tap=true
-        echo "Enable tap"
-    fi
+if [ -n "$MTL_BUILD_ENABLE_TAP" ]; then
+	if [ "$MTL_BUILD_ENABLE_TAP" == "true" ]; then
+		enable_tap=true
+		echo "Enable tap"
+	fi
 fi
 
-if [ -n "$MTL_BUILD_DISABLE_USDT" ];  then
-    if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
-        enable_usdt=false
-        echo "Disable USDT"
-    fi
+if [ -n "$MTL_BUILD_DISABLE_USDT" ]; then
+	if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
+		enable_usdt=false
+		echo "Disable USDT"
+	fi
 fi
 
-if [ -n "$1" ];  then
-    case $1 in
-      "debug")
-           buildtype=debug
-           enable_asan=true
-           ;;
-      "debugonly")
-           buildtype=debug
-           ;;
-      "debugoptimized")
-           buildtype=debugoptimized
-           ;;
-      "plain")
-           buildtype=plain
-           ;;
-      "release")
-           buildtype=release
-           ;;
-       *)
-           usage
-           ;;
-    esac
+if [ -n "$1" ]; then
+	case $1 in
+	"debug")
+		buildtype=debug
+		enable_asan=true
+		;;
+	"debugonly")
+		buildtype=debug
+		;;
+	"debugoptimized")
+		buildtype=debugoptimized
+		;;
+	"plain")
+		buildtype=plain
+		;;
+	"release")
+		buildtype=release
+		;;
+	*)
+		usage
+		;;
+	esac
 fi
 
 WORKSPACE=$PWD
@@ -78,25 +77,25 @@ meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_a
 pushd "${LIB_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
-    ninja install
+	ninja install
 else
-    sudo ninja install
+	sudo ninja install
 fi
 popd
 
 # build rdma lib
 if [ "$OS" != "Windows_NT" ]; then
-pushd rdma/
-meson setup "${RDMA_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${RDMA_BUILD_DIR}"
-ninja
-if [ "$user" == "root" ]; then
-    ninja install
-else
-    sudo ninja install
-fi
-popd
+	pushd rdma/
+	meson setup "${RDMA_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	popd
+	pushd "${RDMA_BUILD_DIR}"
+	ninja
+	if [ "$user" == "root" ]; then
+		ninja install
+	else
+		sudo ninja install
+	fi
+	popd
 fi
 
 # build app
@@ -122,38 +121,38 @@ popd
 pushd "${PLUGINS_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
-    ninja install
+	ninja install
 else
-    sudo ninja install
+	sudo ninja install
 fi
 popd
 
 # build ld_preload
 if [ "$OS" != "Windows_NT" ]; then
-pushd ld_preload/
-meson setup "${LD_PRELOAD_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${LD_PRELOAD_BUILD_DIR}"
-ninja
-if [ "$user" == "root" ]; then
-    ninja install
-else
-    sudo ninja install
-fi
-popd
+	pushd ld_preload/
+	meson setup "${LD_PRELOAD_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	popd
+	pushd "${LD_PRELOAD_BUILD_DIR}"
+	ninja
+	if [ "$user" == "root" ]; then
+		ninja install
+	else
+		sudo ninja install
+	fi
+	popd
 fi
 
 # build mtl_manager
 if [ "$OS" != "Windows_NT" ]; then
-pushd manager/
-meson setup "${MANAGER_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-popd
-pushd "${MANAGER_BUILD_DIR}"
-ninja
-if [ "$user" == "root" ]; then
-    ninja install
-else
-    sudo ninja install
-fi
-popd
+	pushd manager/
+	meson setup "${MANAGER_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+	popd
+	pushd "${MANAGER_BUILD_DIR}"
+	ninja
+	if [ "$user" == "root" ]; then
+		ninja install
+	else
+		sudo ninja install
+	fi
+	popd
 fi

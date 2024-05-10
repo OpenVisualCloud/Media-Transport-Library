@@ -590,7 +590,9 @@ int mt_dma_init(struct mtl_main_impl* impl) {
   return -EINVAL;
 }
 
-int mt_dma_uinit(struct mtl_main_impl* impl) { return -EINVAL; }
+int mt_dma_uinit(struct mtl_main_impl* impl) {
+  return -EINVAL;
+}
 
 struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
                                               struct mt_dma_request_req* req) {
@@ -602,7 +604,9 @@ int mt_dma_free_dev(struct mtl_main_impl* impl, struct mtl_dma_lender_dev* dev) 
 int mt_dma_borrow_mbuf(struct mtl_dma_lender_dev* dev, struct rte_mbuf* mbuf) {
   return -EINVAL;
 }
-int mt_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) { return -EINVAL; }
+int mt_dma_drop_mbuf(struct mtl_dma_lender_dev* dev, uint16_t nb_mbuf) {
+  return -EINVAL;
+}
 int mt_dma_copy(struct mtl_dma_lender_dev* dev, rte_iova_t dst, rte_iova_t src,
                 uint32_t length) {
   return -EINVAL;
@@ -611,11 +615,15 @@ int mt_dma_fill(struct mtl_dma_lender_dev* dev, rte_iova_t dst, uint64_t pattern
                 uint32_t length) {
   return -EINVAL;
 }
-int mt_dma_submit(struct mtl_dma_lender_dev* dev) { return -EINVAL; }
+int mt_dma_submit(struct mtl_dma_lender_dev* dev) {
+  return -EINVAL;
+}
 uint16_t mt_dma_completed(struct mtl_dma_lender_dev* dev, uint16_t nb_cpls,
                           uint16_t* last_idx, bool* has_error) {
   return 0;
 }
-bool mt_dma_full(struct mtl_dma_lender_dev* dev) { return true; }
+bool mt_dma_full(struct mtl_dma_lender_dev* dev) {
+  return true;
+}
 
 #endif

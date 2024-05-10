@@ -19,7 +19,9 @@ static inline struct mt_rsq_impl* rsq_ctx_get(struct mtl_main_impl* impl,
   return impl->rsq[port];
 }
 
-static inline void rsq_lock(struct mt_rsq_queue* s) { rte_spinlock_lock(&s->mutex); }
+static inline void rsq_lock(struct mt_rsq_queue* s) {
+  rte_spinlock_lock(&s->mutex);
+}
 
 /* return true if try lock succ */
 static inline bool rsq_try_lock(struct mt_rsq_queue* s) {
@@ -27,7 +29,9 @@ static inline bool rsq_try_lock(struct mt_rsq_queue* s) {
   return ret ? true : false;
 }
 
-static inline void rsq_unlock(struct mt_rsq_queue* s) { rte_spinlock_unlock(&s->mutex); }
+static inline void rsq_unlock(struct mt_rsq_queue* s) {
+  rte_spinlock_unlock(&s->mutex);
+}
 
 static int rsq_stat_dump(void* priv) {
   struct mt_rsq_impl* rsq = priv;
@@ -370,7 +374,9 @@ static inline struct mt_tsq_impl* tsq_ctx_get(struct mtl_main_impl* impl,
   return impl->tsq[port];
 }
 
-static inline void tsq_lock(struct mt_tsq_queue* s) { mt_pthread_mutex_lock(&s->mutex); }
+static inline void tsq_lock(struct mt_tsq_queue* s) {
+  mt_pthread_mutex_lock(&s->mutex);
+}
 
 /* return true if try lock succ */
 static inline bool tsq_try_lock(struct mt_tsq_queue* s) {

@@ -139,7 +139,9 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
   p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 }
 
-static void utest_ctx_uinit(struct utest_ctx* ctx) { st_test_free(ctx); }
+static void utest_ctx_uinit(struct utest_ctx* ctx) {
+  st_test_free(ctx);
+}
 
 static void socket_single_test(enum mtl_port port) {
   int ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, port);
@@ -151,8 +153,12 @@ static void socket_single_test(enum mtl_port port) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Api, socket_single) { socket_single_test(MTL_PORT_P); }
-TEST(Api, socket_single_r) { socket_single_test(MTL_PORT_R); }
+TEST(Api, socket_single) {
+  socket_single_test(MTL_PORT_P);
+}
+TEST(Api, socket_single_r) {
+  socket_single_test(MTL_PORT_R);
+}
 
 static void socket_expect_fail_test(enum mtl_port port) {
   int ret;
@@ -163,8 +169,12 @@ static void socket_expect_fail_test(enum mtl_port port) {
   EXPECT_LT(ret, 0);
 }
 
-TEST(Api, socket_expect_fail) { socket_expect_fail_test(MTL_PORT_P); }
-TEST(Api, socket_expect_fail_r) { socket_expect_fail_test(MTL_PORT_R); }
+TEST(Api, socket_expect_fail) {
+  socket_expect_fail_test(MTL_PORT_P);
+}
+TEST(Api, socket_expect_fail_r) {
+  socket_expect_fail_test(MTL_PORT_R);
+}
 
 static void socket_max_test(enum mtl_port port) {
   int ret;
@@ -192,8 +202,12 @@ static void socket_max_test(enum mtl_port port) {
   }
 }
 
-TEST(Api, socket_max) { socket_max_test(MTL_PORT_P); }
-TEST(Api, socket_max_r) { socket_max_test(MTL_PORT_R); }
+TEST(Api, socket_max) {
+  socket_max_test(MTL_PORT_P);
+}
+TEST(Api, socket_max_r) {
+  socket_max_test(MTL_PORT_R);
+}
 
 template <typename OPT_TYPE>
 static void socketopt_double(OPT_TYPE* i) {
@@ -252,9 +266,15 @@ static void socketopt_test(int level, int optname) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Api, socket_snd_buf) { socketopt_test<uint32_t>(SOL_SOCKET, SO_SNDBUF); }
-TEST(Api, socket_rcv_buf) { socketopt_test<uint32_t>(SOL_SOCKET, SO_RCVBUF); }
-TEST(Api, socket_cookie) { socketopt_test<uint64_t>(SOL_SOCKET, SO_COOKIE); }
+TEST(Api, socket_snd_buf) {
+  socketopt_test<uint32_t>(SOL_SOCKET, SO_SNDBUF);
+}
+TEST(Api, socket_rcv_buf) {
+  socketopt_test<uint32_t>(SOL_SOCKET, SO_RCVBUF);
+}
+TEST(Api, socket_cookie) {
+  socketopt_test<uint64_t>(SOL_SOCKET, SO_COOKIE);
+}
 
 template <>
 void socketopt_double(struct timeval* i) {
@@ -266,7 +286,9 @@ void socketopt_half(struct timeval* i) {
   i->tv_sec /= 2;
   i->tv_usec /= 2;
 }
-TEST(Api, socket_rcvtimeo) { socketopt_test<struct timeval>(SOL_SOCKET, SO_RCVTIMEO); }
+TEST(Api, socket_rcvtimeo) {
+  socketopt_test<struct timeval>(SOL_SOCKET, SO_RCVTIMEO);
+}
 
 static int check_r_port_alive(struct mtl_init_params* p) {
   int tx_fd = -1;

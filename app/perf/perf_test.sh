@@ -14,7 +14,6 @@ LOG_LEVEL=error
 TEST_FRAMES=120
 TEST_FB_CNT=3
 
-
 perf_func() {
 	local perf_prog=$1
 	echo "Start to run: ${perf_prog}"

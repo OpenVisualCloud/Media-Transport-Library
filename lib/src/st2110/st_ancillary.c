@@ -75,9 +75,13 @@ static uint16_t parity_tab[] = {
     0x0100,         0x0200, 0x0200, 0x0100, 0x0200, 0x0100, 0x0100, 0x0200,
 };
 
-static inline uint16_t get_parity_bits(uint16_t val) { return parity_tab[val & 0xFF]; }
+static inline uint16_t get_parity_bits(uint16_t val) {
+  return parity_tab[val & 0xFF];
+}
 
-static uint16_t st_ntohs(uint8_t* data) { return ((data[0] << 8) | (data[1])); }
+static uint16_t st_ntohs(uint8_t* data) {
+  return ((data[0] << 8) | (data[1]));
+}
 
 static uint16_t get_10bit_udw(int idx, uint8_t* data) {
   int byte_offset, bit_offset;
@@ -161,7 +165,9 @@ static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
   data[1] = (uint8_t)(val & 0xFF);
 }
 
-uint16_t st40_get_udw(uint32_t idx, uint8_t* data) { return get_10bit_udw(idx, data); }
+uint16_t st40_get_udw(uint32_t idx, uint8_t* data) {
+  return get_10bit_udw(idx, data);
+}
 
 void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data) {
   set_10bit_udw(idx, udw, data);

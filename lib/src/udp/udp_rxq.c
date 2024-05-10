@@ -19,7 +19,9 @@ static inline void urq_mgr_unlock(struct mudp_rxq_mgr* mgr) {
   mt_pthread_mutex_unlock(&mgr->mutex);
 }
 
-static inline void urq_lock(struct mur_queue* q) { mt_pthread_mutex_lock(&q->mutex); }
+static inline void urq_lock(struct mur_queue* q) {
+  mt_pthread_mutex_lock(&q->mutex);
+}
 
 /* return true if try lock succ */
 static inline bool urq_try_lock(struct mur_queue* q) {
@@ -27,7 +29,9 @@ static inline bool urq_try_lock(struct mur_queue* q) {
   return ret == 0 ? true : false;
 }
 
-static inline void urq_unlock(struct mur_queue* q) { mt_pthread_mutex_unlock(&q->mutex); }
+static inline void urq_unlock(struct mur_queue* q) {
+  mt_pthread_mutex_unlock(&q->mutex);
+}
 
 static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
                               uint16_t nb_pkts) {

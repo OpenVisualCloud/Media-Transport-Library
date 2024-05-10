@@ -683,7 +683,9 @@ static void video_init(struct device* dev) {
   dev->type = (enum v4l2_buf_type) - 1;
 }
 
-static bool video_has_fd(struct device* dev) { return dev->fd != -1; }
+static bool video_has_fd(struct device* dev) {
+  return dev->fd != -1;
+}
 
 static int video_open(struct device* dev, const char* devname) {
   if (video_has_fd(dev)) {
@@ -765,7 +767,9 @@ static void video_close(struct device* dev) {
   if (dev->opened) close(dev->fd);
 }
 
-static void video_log_status(struct device* dev) { ioctl(dev->fd, VIDIOC_LOG_STATUS); }
+static void video_log_status(struct device* dev) {
+  ioctl(dev->fd, VIDIOC_LOG_STATUS);
+}
 
 static int video_get_format(struct device* dev) {
   struct v4l2_format v_fmt;

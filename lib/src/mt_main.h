@@ -1777,11 +1777,17 @@ static inline uint64_t mt_sch_zero_sleep_thresh_us(struct mtl_main_impl* impl) {
   return impl->var_para.sch_zero_sleep_threshold_us;
 }
 
-static inline void mt_sleep_us(unsigned int us) { return rte_delay_us_sleep(us); }
+static inline void mt_sleep_us(unsigned int us) {
+  return rte_delay_us_sleep(us);
+}
 
-static inline void mt_sleep_ms(unsigned int ms) { return mt_sleep_us(ms * 1000); }
+static inline void mt_sleep_ms(unsigned int ms) {
+  return mt_sleep_us(ms * 1000);
+}
 
-static inline void mt_delay_us(unsigned int us) { return rte_delay_us_block(us); }
+static inline void mt_delay_us(unsigned int us) {
+  return rte_delay_us_block(us);
+}
 
 static inline void mt_free_mbufs(struct rte_mbuf** pkts, int num) {
   for (int i = 0; i < num; i++) {

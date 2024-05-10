@@ -5,8 +5,8 @@
 
 set -e
 
-SUB1=$((RANDOM%256))
-SUB2=$((RANDOM%256))
+SUB1=$((RANDOM % 256))
+SUB2=$((RANDOM % 256))
 
 echo "Change IP to $SUB1.$SUB2"
 

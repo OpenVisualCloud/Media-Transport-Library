@@ -41,7 +41,9 @@ int mtl_set_log_printer(mtl_log_printer_t f) {
   return 0;
 }
 
-mtl_log_printer_t mt_get_log_printer(void) { return g_mt_log_printer; }
+mtl_log_printer_t mt_get_log_printer(void) {
+  return g_mt_log_printer;
+}
 
 static void log_usdt_printer(enum mtl_log_level level, const char* format, ...) {
   char msg[256];
@@ -55,7 +57,9 @@ static void log_usdt_printer(enum mtl_log_level level, const char* format, ...) 
   MT_USDT_SYS_LOG_MSG(level, msg);
 }
 
-mtl_log_printer_t mt_get_usdt_log_printer(void) { return log_usdt_printer; }
+mtl_log_printer_t mt_get_usdt_log_printer(void) {
+  return log_usdt_printer;
+}
 
 static enum mtl_log_level g_mt_log_level = MTL_LOG_LEVEL_INFO;
 
@@ -64,7 +68,9 @@ int mt_set_log_global_level(enum mtl_log_level level) {
   return 0;
 }
 
-enum mtl_log_level mt_get_log_global_level(void) { return g_mt_log_level; }
+enum mtl_log_level mt_get_log_global_level(void) {
+  return g_mt_log_level;
+}
 
 int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
   struct mtl_main_impl* impl = mt;
@@ -121,4 +127,6 @@ enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
   return mt_get_user_params(impl)->log_level;
 }
 
-int mtl_openlog_stream(FILE* f) { return rte_openlog_stream(f); }
+int mtl_openlog_stream(FILE* f) {
+  return rte_openlog_stream(f);
+}

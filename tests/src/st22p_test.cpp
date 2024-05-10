@@ -592,20 +592,36 @@ static void st22p_rx_assert_cnt(int expect_s22_rx_cnt) {
   EXPECT_EQ(var.st22_rx_sessions_cnt, expect_s22_rx_cnt);
 }
 
-TEST(St22p, tx_create_free_single) { pipeline_create_free_test(st22p_tx, 0, 1, 1); }
-TEST(St22p, tx_create_free_multi) { pipeline_create_free_test(st22p_tx, 0, 1, 6); }
-TEST(St22p, tx_create_free_mix) { pipeline_create_free_test(st22p_tx, 2, 3, 4); }
-TEST(St22p, rx_create_free_single) { pipeline_create_free_test(st22p_rx, 0, 1, 1); }
-TEST(St22p, rx_create_free_multi) { pipeline_create_free_test(st22p_rx, 0, 1, 6); }
-TEST(St22p, rx_create_free_mix) { pipeline_create_free_test(st22p_rx, 2, 3, 4); }
+TEST(St22p, tx_create_free_single) {
+  pipeline_create_free_test(st22p_tx, 0, 1, 1);
+}
+TEST(St22p, tx_create_free_multi) {
+  pipeline_create_free_test(st22p_tx, 0, 1, 6);
+}
+TEST(St22p, tx_create_free_mix) {
+  pipeline_create_free_test(st22p_tx, 2, 3, 4);
+}
+TEST(St22p, rx_create_free_single) {
+  pipeline_create_free_test(st22p_rx, 0, 1, 1);
+}
+TEST(St22p, rx_create_free_multi) {
+  pipeline_create_free_test(st22p_rx, 0, 1, 6);
+}
+TEST(St22p, rx_create_free_mix) {
+  pipeline_create_free_test(st22p_rx, 2, 3, 4);
+}
 TEST(St22p, tx_create_free_max) {
   pipeline_create_free_max(st22p_tx, TEST_CREATE_FREE_MAX);
 }
 TEST(St22p, rx_create_free_max) {
   pipeline_create_free_max(st22p_rx, TEST_CREATE_FREE_MAX);
 }
-TEST(St22p, tx_create_expect_fail) { pipeline_expect_fail_test(st22p_tx); }
-TEST(St22p, rx_create_expect_fail) { pipeline_expect_fail_test(st22p_rx); }
+TEST(St22p, tx_create_expect_fail) {
+  pipeline_expect_fail_test(st22p_tx);
+}
+TEST(St22p, rx_create_expect_fail) {
+  pipeline_expect_fail_test(st22p_rx);
+}
 TEST(St22p, tx_create_expect_fail_fb_cnt) {
   uint16_t fbcnt = 1;
   pipeline_expect_fail_test_fb_cnt(st22p_tx, fbcnt);

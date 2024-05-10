@@ -42,7 +42,9 @@ static inline void* st_test_zmalloc(size_t sz) {
   return p;
 }
 
-static inline void st_test_free(void* p) { free(p); }
+static inline void st_test_free(void* p) {
+  free(p);
+}
 
 static inline void st_test_rand_data(uint8_t* p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {

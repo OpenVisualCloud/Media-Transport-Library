@@ -27,7 +27,9 @@ static void uplt_ctx_init(struct uplt_ctx* ctx) {
   p_ip[3] = rand() % 0xFF;
 }
 
-static void uplt_ctx_uinit(struct uplt_ctx* ctx) { st_test_free(ctx); }
+static void uplt_ctx_uinit(struct uplt_ctx* ctx) {
+  st_test_free(ctx);
+}
 
 static int uplt_set_port(int port) {
   char port_u[16];
@@ -52,9 +54,15 @@ static void socket_single_test(int port) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Api, socket_single) { socket_single_test(UPLT_PORT_P); }
-TEST(Api, socket_single_r) { socket_single_test(UPLT_PORT_R); }
-TEST(Api, socket_single_port_max) { socket_single_test(32); }
+TEST(Api, socket_single) {
+  socket_single_test(UPLT_PORT_P);
+}
+TEST(Api, socket_single_r) {
+  socket_single_test(UPLT_PORT_R);
+}
+TEST(Api, socket_single_port_max) {
+  socket_single_test(32);
+}
 
 static int check_r_port_alive(struct uplt_ctx* ctx) {
   int tx_fd = -1;

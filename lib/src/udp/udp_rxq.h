@@ -94,7 +94,9 @@ int mur_client_dump(struct mur_client* q);
 int mur_client_timedwait(struct mur_client* cq, unsigned int timedwait_us,
                          unsigned int poll_sleep_us);
 
-static inline struct rte_ring* mur_client_ring(struct mur_client* c) { return c->ring; }
+static inline struct rte_ring* mur_client_ring(struct mur_client* c) {
+  return c->ring;
+}
 
 static inline int mur_client_set_wake_thresh(struct mur_client* c, unsigned int count) {
   c->wake_thresh_count = count;

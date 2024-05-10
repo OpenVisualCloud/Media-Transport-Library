@@ -5,19 +5,19 @@
 
 set -e
 
-if [ -n "$1" ];  then
-  dpdk_ver=$1
+if [ -n "$1" ]; then
+	dpdk_ver=$1
 else
-  # default to latest 23.11
-  dpdk_ver=23.11
+	# default to latest 23.11
+	dpdk_ver=23.11
 fi
 
 echo "DPDK version: $dpdk_ver"
 
-if [ ! -d "dpdk" ];then
-  # check out dpdk code
-  echo "Clone DPDK source code"
-  git clone https://github.com/DPDK/dpdk.git
+if [ ! -d "dpdk" ]; then
+	# check out dpdk code
+	echo "Clone DPDK source code"
+	git clone https://github.com/DPDK/dpdk.git
 fi
 cd dpdk
 git checkout v"$dpdk_ver"
