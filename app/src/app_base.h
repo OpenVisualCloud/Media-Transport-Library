@@ -339,8 +339,6 @@ struct st22_app_tx_session {
 
   struct st_app_context* ctx;
   mtl_handle st;
-  int lcore;
-  int handle_sch_idx;
 
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
@@ -564,7 +562,7 @@ struct st_app_context {
   bool runtime_session;
   bool enable_hdr_split;
   bool tx_copy_once;
-  bool app_thread;
+  bool app_bind_lcore;
   bool enable_timing_parser;
   bool enable_timing_parser_meta;
   bool tx_display;
