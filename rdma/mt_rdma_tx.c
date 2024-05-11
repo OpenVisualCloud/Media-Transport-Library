@@ -183,6 +183,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
             info("%s(%s), received bye message\n", __func__, ctx->ops_name);
             /* todo: handle rx bye, notice that cq poll thread may stop before receiving
              * bye message */
+            goto out;
           }
 
           ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
@@ -206,6 +207,8 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
                 strerror(errno));
             goto out;
           }
+          info("%s(%s), sent buffer %d ready message\n", __func__, ctx->ops_name,
+               tx_buffer->idx);
           tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
           tx_buffer->ref_count++;
           if (ops->notify_buffer_sent) {
@@ -221,6 +224,11 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
             info("%s(%s), sent bye message, shut down cq thread\n", __func__,
                  ctx->ops_name);
             goto out;
+          } else {
+            struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
+            if (msg->magic == MT_RDMA_MSG_MAGIC) {
+              info("%s(%s), sent message type %d\n", __func__, ctx->ops_name, msg->type);
+            }
           }
         }
       }
@@ -408,6 +416,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
             strerror(errno));
         return -EIO;
       }
+      info("%s(%s), sent meta for buffer %d\n", __func__, ctx->ops_name, i);
 
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
       return 0;

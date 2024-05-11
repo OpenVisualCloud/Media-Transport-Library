@@ -11,7 +11,7 @@ static struct mt_rdma_message* rdma_rx_get_recv_msg(struct mt_rdma_rx_ctx* ctx) 
   for (int i = 0; i < ctx->buffer_cnt * 2; i++) {
     struct mt_rdma_message* msg =
         (struct mt_rdma_message*)(ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE);
-    if (msg->type == MT_RDMA_MSG_NONE) {
+    if (msg->type != MT_RDMA_MSG_BUFFER_META) {
       return msg;
     }
   }
@@ -170,38 +170,52 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
             switch (msg->type) {
               case MT_RDMA_MSG_BUFFER_META:
                 idx = msg->buf_meta.buf_idx;
+                info("%s(%s), buffer %u meta received\n", __func__, ctx->ops_name, idx);
                 rx_buffer = &ctx->rx_buffers[idx];
-                if (rx_buffer->status != MT_RDMA_BUFFER_STATUS_FREE) {
-                  err("%s(%s), buffer %u is not free\n", __func__, ctx->ops_name, idx);
-                  goto out;
-                }
                 rx_buffer->buffer.user_meta =
                     (void*)(msg + 1); /* this msg buffer in use by meta */
                 rx_buffer->buffer.user_meta_size = msg->buf_meta.meta_size;
-                rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
+                if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_WAIT_META) {
+                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
+                  ctx->stat_buffer_received++;
+                  if (ops->notify_buffer_ready) {
+                    ret = ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
+                    if (ret) {
+                      err("%s(%s), notify_buffer_ready failed\n", __func__,
+                          ctx->ops_name);
+                      /* todo: error handle */
+                    }
+                  }
+                } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
+                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
+                } else {
+                  err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name,
+                      idx, rx_buffer->status);
+                  goto out;
+                }
+
                 break;
               case MT_RDMA_MSG_BUFFER_READY:
                 idx = msg->buf_ready.buf_idx;
+                info("%s(%s), buffer %u ready received\n", __func__, ctx->ops_name, idx);
                 rx_buffer = &ctx->rx_buffers[idx];
-                if (rx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
-                  err("%s(%s), buffer %u is not in transmission\n", __func__,
-                      ctx->ops_name, idx);
+                if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
+                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
+                  ctx->stat_buffer_received++;
+                  if (ops->notify_buffer_ready) {
+                    ret = ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
+                    if (ret) {
+                      err("%s(%s), notify_buffer_ready failed\n", __func__,
+                          ctx->ops_name);
+                      /* todo: error handle */
+                    }
+                  }
+                } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
+                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_WAIT_META;
+                } else {
+                  err("%s(%s), buffer %u status invalid\n", __func__, ctx->ops_name, idx);
                   goto out;
                 }
-                rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
-                ctx->stat_buffer_received++;
-                if (ops->notify_buffer_ready) {
-                  ret = ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
-                  if (ret) {
-                    err("%s(%s), notify_buffer_ready failed\n", __func__, ctx->ops_name);
-                    /* todo: error handle */
-                  }
-                }
-                /* recycle this and meta in use receive msg */
-                msg->type = MT_RDMA_MSG_NONE;
-                struct mt_rdma_message* meta_msg =
-                    (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
-                meta_msg->type = MT_RDMA_MSG_NONE;
                 break;
               case MT_RDMA_MSG_BYE:
                 info("%s(%s), received bye message\n", __func__, ctx->ops_name);
@@ -408,6 +422,10 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* bu
         err("%s(%s), buffer %p not in consumption\n", __func__, ctx->ops_name, buffer);
         return -EIO;
       }
+      /* recycle meta in use receive msg */
+      struct mt_rdma_message* meta_msg =
+          (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
+      meta_msg->type = MT_RDMA_MSG_NONE;
       return rdma_rx_send_buffer_done(ctx, rx_buffer->idx);
     }
   }
