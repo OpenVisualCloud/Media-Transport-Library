@@ -472,7 +472,6 @@ mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_op
     return NULL;
   }
   ctx->ops = *ops;
-  ctx->buffer_producer_idx = 0;
   ctx->buffer_seq_num = 0;
   snprintf(ctx->ops_name, 32, "%s", ops->name);
 

@@ -130,7 +130,6 @@ struct mt_rdma_tx_ctx {
   struct ibv_mr* recv_msgs_mr;
   struct rdma_cm_id* listen_id;
 
-  uint16_t buffer_producer_idx;
   uint32_t buffer_seq_num;
   void* send_msgs; /* 1024 bytes * buf_cnt, space reserved for metadata */
   struct mt_rdma_message* recv_msgs;

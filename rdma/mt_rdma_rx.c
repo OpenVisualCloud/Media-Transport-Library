@@ -7,6 +7,18 @@
 
 #include "mt_rdma.h"
 
+static struct mt_rdma_message* rdma_rx_get_recv_msg(struct mt_rdma_rx_ctx* ctx) {
+  for (int i = 0; i < ctx->buffer_cnt * 2; i++) {
+    struct mt_rdma_message* msg =
+        (struct mt_rdma_message*)(ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE);
+    if (msg->type == MT_RDMA_MSG_NONE) {
+      return msg;
+    }
+  }
+  err("%s(%s), no free recv msg\n", __func__, ctx->ops_name);
+  return NULL;
+}
+
 static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
   struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[idx];
   struct mt_rdma_message msg = {
@@ -88,7 +100,7 @@ static int rdma_rx_alloc_buffers(struct mt_rdma_rx_ctx* ctx) {
   }
 
   /* alloc receive message region including metadata, send messages are inlined */
-  ctx->recv_msgs = (char*)calloc(ctx->buffer_cnt, MT_RDMA_MSG_MAX_SIZE);
+  ctx->recv_msgs = (char*)calloc(ctx->buffer_cnt, MT_RDMA_MSG_MAX_SIZE * 2);
   if (!ctx->recv_msgs) {
     err("%s(%s), message calloc failed\n", __func__, ctx->ops_name);
     rdma_rx_free_buffers(ctx);
@@ -163,10 +175,8 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                   err("%s(%s), buffer %u is not free\n", __func__, ctx->ops_name, idx);
                   goto out;
                 }
-                rx_buffer->buffer
-                    .user_meta = /* Fix it: this msg is posted for another receive,
-                             may be overwritten! Copy to an owned meta buffer. */
-                    (void*)(msg + 1);
+                rx_buffer->buffer.user_meta =
+                    (void*)(msg + 1); /* this msg buffer in use by meta */
                 rx_buffer->buffer.user_meta_size = msg->buf_meta.meta_size;
                 rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
                 break;
@@ -187,23 +197,29 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                     /* todo: error handle */
                   }
                 }
+                /* recycle this and meta in use receive msg */
+                msg->type = MT_RDMA_MSG_NONE;
+                struct mt_rdma_message* meta_msg =
+                    (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
+                meta_msg->type = MT_RDMA_MSG_NONE;
                 break;
               case MT_RDMA_MSG_BYE:
                 info("%s(%s), received bye message\n", __func__, ctx->ops_name);
                 /* todo: handle tx bye, notice that cq poll thread may stop before
                  * receiving bye message */
-                break;
+                goto out;
               default:
                 err("%s(%s), unknown message type: %d\n", __func__, ctx->ops_name,
                     msg->type);
-                break;
+                goto out;
             }
           } else {
             err("%s(%s), received invalid message\n", __func__, ctx->ops_name);
             goto out;
           }
-          ret =
-              rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE, ctx->recv_msgs_mr);
+          void* r_msg = rdma_rx_get_recv_msg(ctx);
+          ret = rdma_post_recv(ctx->id, r_msg, r_msg, MT_RDMA_MSG_MAX_SIZE,
+                               ctx->recv_msgs_mr);
           if (ret) {
             err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
                 strerror(errno));
@@ -311,9 +327,9 @@ static void* rdma_rx_connect_thread(void* arg) {
             }
             break;
           case RDMA_CM_EVENT_ESTABLISHED:
-            for (uint16_t i = 0; i < ctx->buffer_cnt; i++) { /* start receiving */
+            for (uint16_t i = 0; i < ctx->buffer_cnt * 2; i++) { /* start receiving */
               /* post recv for meta/ready msg */
-              void* msg = ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE;
+              void* msg = rdma_rx_get_recv_msg(ctx);
               ret = rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE,
                                    ctx->recv_msgs_mr);
               if (ret) {

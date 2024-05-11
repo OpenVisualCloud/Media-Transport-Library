@@ -90,7 +90,8 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    snprintf((char*)buffer->addr, buffer->capacity, "Hello, RDMA! %d", i);
+    snprintf((char*)buffer->addr, buffer->capacity, "Hello, RDMA! id %d acked %d", i,
+             buffer_acked);
     buffer->size = strlen((char*)buffer->addr) + 1;
     buffer->user_meta = &buffer_acked;
     buffer->user_meta_size = sizeof(buffer_acked);
