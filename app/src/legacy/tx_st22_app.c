@@ -58,27 +58,6 @@ static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static void app_tx_st22_thread_bind(struct st22_app_tx_session* s) {
-  if (s->lcore != -1) {
-    mtl_bind_to_lcore(s->st, pthread_self(), s->lcore);
-  }
-}
-
-static void app_tx_st22_check_lcore(struct st22_app_tx_session* s, bool rtp) {
-  int sch_idx = st22_tx_get_sch_idx(s->handle);
-
-  if (!s->ctx->app_thread && (s->handle_sch_idx != sch_idx)) {
-    s->handle_sch_idx = sch_idx;
-    unsigned int lcore;
-    int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
-    if ((ret >= 0) && (lcore != s->lcore)) {
-      s->lcore = lcore;
-      app_tx_st22_thread_bind(s);
-      info("%s(%d), bind to new lcore %d\n", __func__, s->idx, lcore);
-    }
-  }
-}
-
 static void app_tx_st22_build_frame(struct st22_app_tx_session* s, void* codestream_addr,
                                     size_t max_codestream_size, size_t* codestream_size) {
   uint8_t* src = s->st22_frame_cursor;
@@ -104,8 +83,6 @@ static void* app_tx_st22_frame_thread(void* arg) {
   uint16_t producer_idx;
   struct st_tx_frame* framebuff;
 
-  app_tx_st22_thread_bind(s);
-
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22_app_thread_stop) {
     st_pthread_mutex_lock(&s->wake_mutex);
@@ -118,8 +95,6 @@ static void* app_tx_st22_frame_thread(void* arg) {
       continue;
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
-
-    app_tx_st22_check_lcore(s, false);
 
     void* frame_addr = st22_tx_get_fb_addr(s->handle, producer_idx);
     size_t max_framesize = s->bytes_per_frame;
@@ -321,13 +296,6 @@ static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_sessi
   }
   s->handle = handle;
   s->type = ops.type;
-  s->handle_sch_idx = st22_tx_get_sch_idx(handle);
-
-  if (!ctx->app_thread) {
-    unsigned int lcore;
-    ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, false, &lcore);
-    if (ret >= 0) s->lcore = lcore;
-  }
 
   ret = app_tx_st22_open_source(s);
   if (ret < 0) {
@@ -356,7 +324,6 @@ int st22_app_tx_sessions_init(struct st_app_context* ctx) {
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];
     s->idx = i;
-    s->lcore = -1;
     ret = app_tx_st22_init(ctx, s, ctx->st22_bpp);
     if (ret < 0) {
       err("%s(%d), app_tx_st22_init fail %d\n", __func__, i, ret);

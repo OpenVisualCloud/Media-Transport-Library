@@ -33,6 +33,17 @@ static inline void sch_unlock(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_unlock(&sch->mutex);
 }
 
+static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
+    "lib_sch", "lib_tap", "lib_rxv_ring", "app_allocated", "lib_app_sch",
+};
+
+static const char* lcore_type_name(enum mt_lcore_type type) {
+  if (type >= MT_LCORE_TYPE_SCH && type < MT_LCORE_TYPE_MAX)
+    return lcore_type_names[type];
+  else
+    return "unknown";
+}
+
 static void sch_sleep_wakeup(struct mtl_sch_impl* sch) {
   mt_pthread_mutex_lock(&sch->sleep_wake_mutex);
   mt_pthread_cond_signal(&sch->sleep_wake_cond);
@@ -627,6 +638,7 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
   unsigned int cur_lcore;
   int ret;
   bool skip_numa_check = false;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
 again:
   cur_lcore = 0;
@@ -640,12 +652,16 @@ again:
         if (ret == 0) {
           *lcore = cur_lcore;
           rte_atomic32_inc(&impl->lcore_cnt);
+          /* set local lcores info */
+          mgr->local_lcores_active[cur_lcore] = true;
+          mgr->local_lcores_type[cur_lcore] = type;
+          info("%s, succ on manager lcore %d for %s\n", __func__, cur_lcore,
+               lcore_type_name(type));
           return 0;
         }
       }
     } while (cur_lcore < RTE_MAX_LCORE);
   } else {
-    struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
     struct mt_user_info* info = &impl->u_info;
 
     struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
@@ -675,9 +691,12 @@ again:
           shm_entry->pid = info->pid;
           lcore_shm->used++;
           rte_atomic32_inc(&impl->lcore_cnt);
+          /* set local lcores info */
           mgr->local_lcores_active[cur_lcore] = true;
+          mgr->local_lcores_type[cur_lcore] = type;
           ret = sch_filelock_unlock(mgr);
-          info("%s, available lcore %d\n", __func__, cur_lcore);
+          info("%s, succ on shm lcore %d for %s\n", __func__, cur_lcore,
+               lcore_type_name(type));
           if (ret < 0) {
             err("%s, sch_filelock_unlock fail\n", __func__);
             return ret;
@@ -697,20 +716,28 @@ again:
     goto again;
   }
 
-  err("%s, fail to find available lcore\n", __func__);
+  err("%s, no available lcore, type %s\n", __func__, lcore_type_name(type));
   return -EIO;
 }
 
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
   int ret;
+  struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+
   if (mt_is_manager_connected(impl)) {
     ret = mt_instance_put_lcore(impl, lcore);
     if (ret == 0) {
       rte_atomic32_dec(&impl->lcore_cnt);
+      mgr->local_lcores_active[lcore] = false;
+      info("%s, succ on manager lcore %d for %s\n", __func__, lcore,
+           lcore_type_name(mgr->local_lcores_type[lcore]));
       return 0;
+    } else {
+      err("%s, err %d on manager lcore %d for %s\n", __func__, ret, lcore,
+          lcore_type_name(mgr->local_lcores_type[lcore]));
+      return ret;
     }
   } else {
-    struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
     struct mt_lcore_shm* lcore_shm = mgr->lcore_mgr.lcore_shm;
 
     if (lcore >= RTE_MAX_LCORE) {
@@ -737,7 +764,8 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
     rte_atomic32_dec(&impl->lcore_cnt);
     mgr->local_lcores_active[lcore] = false;
     ret = sch_filelock_unlock(mgr);
-    info("%s, lcore %d\n", __func__, lcore);
+    info("%s, succ on shm lcore %d for %s\n", __func__, lcore,
+         lcore_type_name(mgr->local_lcores_type[lcore]));
     if (ret < 0) {
       err("%s, sch_filelock_unlock fail\n", __func__);
       return ret;
@@ -872,8 +900,9 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
 
   mt_pthread_mutex_init(&mgr->mgr_mutex, NULL);
 
+  mgr->lcore_lock_fd = -1;
+
   if (!mt_is_manager_connected(impl)) {
-    mgr->lcore_lock_fd = -1;
     ret = sch_init_lcores(mgr);
     if (ret < 0) return ret;
   }
@@ -1122,17 +1151,6 @@ int mt_sch_stop_all(struct mtl_main_impl* impl) {
 
   info("%s, succ\n", __func__);
   return 0;
-}
-
-static const char* lcore_type_names[MT_LCORE_TYPE_MAX] = {
-    "lib_sch", "lib_tap", "lib_rxv_ring", "app_allocated", "lib_app_sch",
-};
-
-static const char* lcore_type_name(enum mt_lcore_type type) {
-  if (type >= MT_LCORE_TYPE_SCH && type < MT_LCORE_TYPE_MAX)
-    return lcore_type_names[type];
-  else
-    return "unknown";
 }
 
 int mtl_lcore_shm_print(void) {

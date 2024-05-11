@@ -399,7 +399,7 @@ packet egresses from the sender.
 --tasklet_thread                     : debug option, run the tasklet under thread instead of a pinned lcore.
 --tasklet_sleep                      : debug option, enable sleep if all tasklet report done status.
 --tasklet_sleep_us                   : debug option, set the sleep us value if tasklet decide to enter sleep state.
---app_thread                         : debug option, run the app thread under a common os thread instead of a pinned lcore.
+--app_bind_lcore                     : debug option, run the app thread under a pinned lcore.
 --rxtx_simd_512                      : debug option, enable dpdk simd 512 path for rx/tx burst function, see --force-max-simd-bitwidth=512 in dpdk for detail.
 --rss_mode <mode>                    : debug option, available modes: "l3_l4", "l3", "none".
 --tx_no_chain                        : debug option, use memcopy rather than mbuf chain for tx payload.

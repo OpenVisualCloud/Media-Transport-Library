@@ -106,7 +106,8 @@ enum st_args_cmd {
   ST_ARG_TASKLET_THREAD,
   ST_ARG_TASKLET_SLEEP,
   ST_ARG_TASKLET_SLEEP_US,
-  ST_ARG_APP_THREAD,
+  ST_ARG_APP_BIND_THREAD,
+  ST_ARG_APP_BIND_LCORE,
   ST_ARG_RXTX_SIMD_512,
   ST_ARG_PTP_PI,
   ST_ARG_PTP_KP,
@@ -238,7 +239,8 @@ static struct option st_app_args_options[] = {
     {"tasklet_thread", no_argument, 0, ST_ARG_TASKLET_THREAD},
     {"tasklet_sleep", no_argument, 0, ST_ARG_TASKLET_SLEEP},
     {"tasklet_sleep_us", required_argument, 0, ST_ARG_TASKLET_SLEEP_US},
-    {"app_thread", no_argument, 0, ST_ARG_APP_THREAD},
+    {"app_bind_thread", no_argument, 0, ST_ARG_APP_BIND_THREAD},
+    {"app_bind_lcore", no_argument, 0, ST_ARG_APP_BIND_LCORE},
     {"rxtx_simd_512", no_argument, 0, ST_ARG_RXTX_SIMD_512},
     {"pi", no_argument, 0, ST_ARG_PTP_PI},
     {"kp", required_argument, 0, ST_ARG_PTP_KP},
@@ -730,8 +732,11 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_TASKLET_THREAD:
         p->flags |= MTL_FLAG_TASKLET_THREAD;
         break;
-      case ST_ARG_APP_THREAD:
-        ctx->app_thread = true;
+      case ST_ARG_APP_BIND_THREAD:
+        ctx->app_bind_lcore = false;
+        break;
+      case ST_ARG_APP_BIND_LCORE:
+        ctx->app_bind_lcore = true;
         break;
       case ST_ARG_RXTX_SIMD_512:
         p->flags |= MTL_FLAG_RXTX_SIMD_512;

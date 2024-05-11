@@ -138,7 +138,7 @@ static void app_tx_video_thread_bind(struct st_app_tx_video_session* s) {
 static void app_tx_video_check_lcore(struct st_app_tx_video_session* s, bool rtp) {
   int sch_idx = st20_tx_get_sch_idx(s->handle);
 
-  if (!s->ctx->app_thread && (s->handle_sch_idx != sch_idx)) {
+  if (s->ctx->app_bind_lcore && (s->handle_sch_idx != sch_idx)) {
     s->handle_sch_idx = sch_idx;
     unsigned int lcore;
     int ret = st_app_video_get_lcore(s->ctx, s->handle_sch_idx, rtp, &lcore);
@@ -863,7 +863,7 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   bool rtp = false;
   if (ops.type == ST20_TYPE_RTP_LEVEL) rtp = true;
 
-  if (!ctx->app_thread) {
+  if (ctx->app_bind_lcore) {
     ret = st_app_video_get_lcore(ctx, s->handle_sch_idx, rtp, &lcore);
     if (ret >= 0) s->lcore = lcore;
   }

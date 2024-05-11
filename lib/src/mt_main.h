@@ -575,6 +575,16 @@ struct mt_lcore_mgr {
   int lcore_shm_id;
 };
 
+/* remember to update lcore_type_names if any item changed */
+enum mt_lcore_type {
+  MT_LCORE_TYPE_SCH = 0, /* lib scheduler used */
+  MT_LCORE_TYPE_TAP,
+  MT_LCORE_TYPE_RXV_RING_LCORE,
+  MT_LCORE_TYPE_USER,     /* allocated by application */
+  MT_LCORE_TYPE_SCH_USER, /* application allocated by mtl_sch_create  */
+  MT_LCORE_TYPE_MAX,
+};
+
 struct mt_sch_mgr {
   struct mtl_sch_impl sch[MT_MAX_SCH_NUM];
   /* active sch cnt */
@@ -583,7 +593,10 @@ struct mt_sch_mgr {
 
   struct mt_lcore_mgr lcore_mgr;
   int lcore_lock_fd;
-  bool local_lcores_active[RTE_MAX_LCORE]; /* local lcores active map */
+
+  /* local lcores info */
+  bool local_lcores_active[RTE_MAX_LCORE];
+  enum mt_lcore_type local_lcores_type[RTE_MAX_LCORE];
 };
 
 struct mt_audio_pacing_train_result {
@@ -752,16 +765,6 @@ struct mt_user_info {
   /* the current process name */
   char comm[64];
   pid_t pid;
-};
-
-/* remember to update lcore_type_names if any item changed */
-enum mt_lcore_type {
-  MT_LCORE_TYPE_SCH = 0, /* lib scheduler used */
-  MT_LCORE_TYPE_TAP,
-  MT_LCORE_TYPE_RXV_RING_LCORE,
-  MT_LCORE_TYPE_USER,     /* allocated by application */
-  MT_LCORE_TYPE_SCH_USER, /* application allocated by mtl_sch_create  */
-  MT_LCORE_TYPE_MAX,
 };
 
 struct mt_lcore_shm_entry {
