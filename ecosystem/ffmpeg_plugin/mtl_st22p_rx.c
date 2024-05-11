@@ -34,6 +34,7 @@ typedef struct MtlSt22pDemuxerContext {
   AVRational framerate;
   int fb_cnt;
   int codec_thread_cnt;
+  int timeout_sec;
 
   mtl_handle dev_handle;
   st22p_rx_handle rx_handle;
@@ -169,6 +170,9 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  if (s->timeout_sec)
+    st22p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+
   img_buf_size = st22p_rx_frame_size(s->rx_handle);
   if (img_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
@@ -260,6 +264,9 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
     mtl_st22p_read_close(ctx);
     return AVERROR(EIO);
   }
+
+  if (s->timeout_sec)
+    st22p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   img_buf_size = st22p_rx_frame_size(s->rx_handle);
   dbg(ctx, "%s, img_buf_size: %d\n", __func__, img_buf_size);
@@ -393,6 +400,14 @@ static const AVOption mtl_st22p_rx_options[] = {
      {.dbl = 59.94},
      0,
      1000,
+     DEC},
+    {"timeout_s",
+     "Frame get timeout in seconds",
+     OFFSET(timeout_sec),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     60 * 10,
      DEC},
     {"fb_cnt",
      "Frame buffer count",
