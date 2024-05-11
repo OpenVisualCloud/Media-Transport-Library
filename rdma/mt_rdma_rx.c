@@ -327,7 +327,7 @@ static void* rdma_rx_connect_thread(void* arg) {
             }
             break;
           case RDMA_CM_EVENT_ESTABLISHED:
-            for (uint16_t i = 0; i < ctx->buffer_cnt * 2; i++) { /* start receiving */
+            for (uint16_t i = 0; i < ctx->buffer_cnt; i++) { /* start receiving */
               /* post recv for meta/ready msg */
               void* msg = rdma_rx_get_recv_msg(ctx);
               ret = rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE,
