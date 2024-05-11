@@ -552,6 +552,12 @@ enum st20p_rx_flag {
   ST20P_RX_FLAG_DMA_OFFLOAD = (MTL_BIT32(17)),
   /**
    * Flag bit in flags of struct st20p_rx_ops.
+   * If set, lib will automatically detect video format.
+   * Width, height and fps set by app will be invalid.
+   */
+  ST20P_RX_FLAG_AUTO_DETECT = (MTL_BIT32(18)),
+  /**
+   * Flag bit in flags of struct st20p_rx_ops.
    * Only ST20_PACKING_BPM stream can enable this offload as software limit
    * Try to enable header split offload feature.
    */
@@ -947,6 +953,13 @@ struct st20p_rx_ops {
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
+  /**
+   * Optional with ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format.
+   * And only non-block method can be used in this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
+                         struct st20_detect_reply* reply);
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */

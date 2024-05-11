@@ -319,6 +319,16 @@ static int rx_st20p_notify_event(void* priv, enum st_event event, void* args) {
   return 0;
 }
 
+static int rx_st20p_notify_detected(void* priv, const struct st20_detect_meta* meta,
+                                    struct st20_detect_reply* reply) {
+  struct st20p_rx_ctx* ctx = priv;
+  if (ctx->ops.notify_detected) {
+    ctx->ops.notify_detected(ctx->ops.priv, meta, reply);
+  }
+
+  return 0;
+}
+
 static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
   struct st20p_rx_ctx* ctx = priv;
   int idx = ctx->idx;
@@ -429,6 +439,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ops->flags & ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   if (ops->flags & ST20P_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  if (ops->flags & ST20P_RX_FLAG_AUTO_DETECT) ops_rx.flags |= ST20_RX_FLAG_AUTO_DETECT;
   if (ops->flags & ST20P_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
   if (ops->flags & ST20P_RX_FLAG_DISABLE_MIGRATE)
     ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
@@ -471,6 +482,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   ops_rx.rx_burst_size = ops->rx_burst_size;
   ops_rx.notify_frame_ready = rx_st20p_frame_ready;
   ops_rx.notify_event = rx_st20p_notify_event;
+  ops_rx.notify_detected = rx_st20p_notify_detected;
 
   if (ctx->derive) {
     /* ext frame info directly passed down to st20 lib */
