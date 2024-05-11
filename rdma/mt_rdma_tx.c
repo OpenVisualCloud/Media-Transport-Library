@@ -207,7 +207,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
                 strerror(errno));
             goto out;
           }
-          info("%s(%s), sent buffer %d ready message\n", __func__, ctx->ops_name,
+          info("%s(%s), send buffer %d ready message\n", __func__, ctx->ops_name,
                tx_buffer->idx);
           tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
           tx_buffer->ref_count++;
@@ -224,6 +224,8 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
             info("%s(%s), sent bye message, shut down cq thread\n", __func__,
                  ctx->ops_name);
             goto out;
+          } else if (wc.wr_id == 0) {
+            info("%s(%s), sent ready message\n", __func__, ctx->ops_name);
           } else {
             struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
             if (msg->magic == MT_RDMA_MSG_MAGIC) {

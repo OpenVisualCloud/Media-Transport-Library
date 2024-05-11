@@ -213,7 +213,8 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                 } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
                   rx_buffer->status = MT_RDMA_BUFFER_STATUS_WAIT_META;
                 } else {
-                  err("%s(%s), buffer %u status invalid\n", __func__, ctx->ops_name, idx);
+                  err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name,
+                      idx, rx_buffer->status);
                   goto out;
                 }
                 break;
