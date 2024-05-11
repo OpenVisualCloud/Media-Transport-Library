@@ -320,13 +320,13 @@ static int rx_st20p_notify_event(void* priv, enum st_event event, void* args) {
 }
 
 static int rx_st20p_notify_detected(void* priv, const struct st20_detect_meta* meta,
-                         struct st20_detect_reply* reply) {
+                                    struct st20_detect_reply* reply) {
   struct st20p_rx_ctx* ctx = priv;
   if (ctx->ops.notify_detected) {
     ctx->ops.notify_detected(ctx->ops.priv, meta, reply);
   }
 
-  return 0;                        
+  return 0;
 }
 
 static struct st20_convert_frame_meta* rx_st20p_convert_get_frame(void* priv) {
