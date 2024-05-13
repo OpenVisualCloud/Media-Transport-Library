@@ -196,7 +196,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           }
         } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
           struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc.wr_id;
-          /* send ready message to rx, todo add user meta with sgl */
+          /* send ready message to rx */
           struct mt_rdma_message msg = {
               .magic = MT_RDMA_MSG_MAGIC,
               .type = MT_RDMA_MSG_BUFFER_READY,
