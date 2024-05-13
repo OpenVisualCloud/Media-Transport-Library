@@ -31,6 +31,7 @@ typedef struct MtlSt30pDemuxerContext {
   StRxSessionPortArgs portArgs;
   /* arguments for session */
   int fb_cnt;
+  int timeout_sec;
   int sample_rate;
   int channels;
   enum st30_fmt fmt;
@@ -168,6 +169,9 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  if (s->timeout_sec)
+    st30p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+
   frame_buf_size = st30p_rx_frame_size(s->rx_handle);
   if (frame_buf_size != ctx->packet_size) {
     err(ctx, "%s, frame size mismatch %d:%u\n", __func__, frame_buf_size,
@@ -229,6 +233,14 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 3},
      3,
      8,
+     DEC},
+    {"timeout_s",
+     "Frame get timeout in seconds",
+     OFFSET(timeout_sec),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     60 * 10,
      DEC},
     {"ar",
      "audio sampling rate",

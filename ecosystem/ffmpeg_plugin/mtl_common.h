@@ -71,6 +71,10 @@
 #define NS_PER_MS (1000 * 1000)
 #endif
 
+#ifndef NS_PER_S
+#define NS_PER_S (1000 * NS_PER_MS)
+#endif
+
 #define MTL_RX_DEV_ARGS                                                                    \
   {"p_port",           "mtl p port",  OFFSET(devArgs.port[MTL_PORT_P]),                    \
    AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                                       \
