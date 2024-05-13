@@ -637,6 +637,7 @@ struct st20p_rx_digest_test_para {
   uint32_t ssrc;
   bool block_get;
   bool rx_timing_parser;
+  bool rx_auto_detect;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -664,6 +665,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->pacing = ST21_PACING_NARROW;
   para->ssrc = 0;
   para->block_get = false;
+  para->rx_auto_detect = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -1023,6 +1025,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
     if (para->vsync) ops_rx.flags |= ST20P_RX_FLAG_ENABLE_VSYNC;
     if (para->pkt_convert) ops_rx.flags |= ST20P_RX_FLAG_PKT_CONVERT;
+    if (para->rx_auto_detect) ops_rx.flags |= ST20P_RX_FLAG_AUTO_DETECT;
 
     if (para->rtcp) {
       ops_rx.flags |= ST20P_RX_FLAG_ENABLE_RTCP | ST20P_RX_FLAG_SIMULATE_PKT_LOSS;
@@ -1171,6 +1174,7 @@ TEST(St20p, digest_1080p_s1) {
   para.level = ST_TEST_LEVEL_MANDATORY;
   para.check_fps = false;
   para.rx_timing_parser = true;
+  para.rx_auto_detect = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }
@@ -1374,6 +1378,7 @@ TEST(St20p, rx_ext_digest_1080p_no_convert_s2) {
   para.device = ST_PLUGIN_DEVICE_TEST_INTERNAL;
   para.rx_ext = true;
   para.block_get = true;
+  para.rx_auto_detect = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

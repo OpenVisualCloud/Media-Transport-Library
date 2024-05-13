@@ -7,6 +7,8 @@
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
+static int rx_st20p_uinit_dst_fbs(struct st20p_rx_ctx* ctx);
+
 static const char* st20p_rx_frame_stat_name[ST20P_RX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_converting", "converted", "in_user",
 };
@@ -322,6 +324,52 @@ static int rx_st20p_notify_event(void* priv, enum st_event event, void* args) {
 static int rx_st20p_notify_detected(void* priv, const struct st20_detect_meta* meta,
                                     struct st20_detect_reply* reply) {
   struct st20p_rx_ctx* ctx = priv;
+  int idx = ctx->idx;
+  void* dst = NULL;
+  struct st20p_rx_frame* frames = ctx->framebuffs;
+  bool no_dst_malloc = false;
+  int soc_id = mt_socket_id(ctx->impl, MTL_PORT_P);
+
+  info("%s(%d), init dst buffer now, w %d h %d\n", __func__, idx, meta->width,
+       meta->height);
+  ctx->dst_size =
+      st_frame_size(ctx->ops.output_fmt, meta->width, meta->height, meta->interlaced);
+  if (ctx->derive || ctx->ops.ext_frames || ctx->ops.flags & ST20P_RX_FLAG_EXT_FRAME) {
+    no_dst_malloc = true;
+  }
+
+  /* init frame width, height now */
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    frames[i].dst.interlaced = meta->interlaced;
+    frames[i].dst.width = meta->width;
+    frames[i].dst.height = meta->height;
+    frames[i].src.interlaced = meta->interlaced;
+    frames[i].src.width = meta->width;
+    frames[i].src.height = meta->height;
+
+    frames[i].src.buffer_size =
+        st_frame_size(frames[i].src.fmt, frames[i].src.width, frames[i].src.height,
+                      frames[i].src.interlaced);
+    frames[i].src.data_size = frames[i].src.buffer_size;
+    /* rfc4175 uses packed format */
+    frames[i].src.linesize[0] =
+        RTE_MAX(ctx->ops.transport_linesize,
+                st_frame_least_linesize(frames[i].src.fmt, frames[i].src.width, 0));
+
+    if (no_dst_malloc) continue;
+    dst = mt_rte_zmalloc_socket(ctx->dst_size, soc_id);
+    if (!dst) {
+      err("%s(%d), dst frame malloc fail at %u, size %" PRIu64 "\n", __func__, idx, i,
+          ctx->dst_size);
+      rx_st20p_uinit_dst_fbs(ctx);
+      return -ENOMEM;
+    }
+    frames[i].dst.buffer_size = ctx->dst_size;
+    frames[i].dst.data_size = ctx->dst_size;
+    /* init plane */
+    st_frame_init_plane_single_src(&frames[i].dst, dst, mtl_hp_virt2iova(ctx->impl, dst));
+  }
+
   if (ctx->ops.notify_detected) {
     ctx->ops.notify_detected(ctx->ops.priv, meta, reply);
   }
@@ -578,6 +626,11 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
   void* dst = NULL;
   size_t dst_size = ctx->dst_size;
 
+  bool no_dst_malloc = false;
+  if (ops->flags & ST20P_RX_FLAG_EXT_FRAME || ops->flags & ST20P_RX_FLAG_AUTO_DETECT) {
+    no_dst_malloc = true;
+  }
+
   ctx->framebuff_cnt = ops->framebuff_cnt;
   frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
   if (!frames) {
@@ -604,7 +657,7 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
         }
         frames[i].dst.buffer_size = frames[i].dst.data_size = ops->ext_frames[i].size;
         frames[i].dst.opaque = ops->ext_frames[i].opaque;
-      } else if (ops->flags & ST20P_RX_FLAG_EXT_FRAME) {
+      } else if (no_dst_malloc) {
         for (uint8_t plane = 0; plane < planes; plane++) {
           frames[i].dst.addr[plane] = NULL;
           frames[i].dst.iova[plane] = 0;
@@ -612,7 +665,8 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
       } else {
         dst = mt_rte_zmalloc_socket(dst_size, soc_id);
         if (!dst) {
-          err("%s(%d), dst frame malloc fail at %u\n", __func__, idx, i);
+          err("%s(%d), dst frame malloc fail at %u, size %" PRIu64 "\n", __func__, idx, i,
+              dst_size);
           rx_st20p_uinit_dst_fbs(ctx);
           return -ENOMEM;
         }
@@ -622,8 +676,8 @@ static int rx_st20p_init_dst_fbs(struct mtl_main_impl* impl, struct st20p_rx_ctx
         st_frame_init_plane_single_src(&frames[i].dst, dst,
                                        mtl_hp_virt2iova(ctx->impl, dst));
       }
-      if (!(ops->flags & ST20P_RX_FLAG_EXT_FRAME) &&
-          st_frame_sanity_check(&frames[i].dst) < 0) {
+
+      if (!no_dst_malloc && st_frame_sanity_check(&frames[i].dst) < 0) {
         err("%s(%d), dst frame %d sanity check fail\n", __func__, idx, i);
         rx_st20p_uinit_dst_fbs(ctx);
         return -EINVAL;
@@ -867,7 +921,8 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   struct st20p_rx_ctx* ctx;
   int ret;
   int idx = st20p_rx_idx;
-  size_t dst_size;
+  size_t dst_size = 0;
+  bool auto_detect = ops->flags & ST20P_RX_FLAG_AUTO_DETECT ? true : false;
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -883,10 +938,14 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
     }
   }
 
-  dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
-  if (!dst_size) {
-    err("%s(%d), get dst size fail\n", __func__, idx);
-    return NULL;
+  if (auto_detect) {
+    info("%s(%d), auto_detect enabled\n", __func__, idx);
+  } else {
+    dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
+    if (!dst_size) {
+      err("%s(%d), get dst size fail\n", __func__, idx);
+      return NULL;
+    }
   }
 
   ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));

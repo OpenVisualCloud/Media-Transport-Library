@@ -19,13 +19,14 @@ rx_st20p_tx_st20p_downsample_fwd_sources = files('fwd/rx_st20p_tx_st20p_downsamp
 rx_st20p_tx_st20p_downsample_merge_fwd_sources = files('fwd/rx_st20p_tx_st20p_downsample_merge_fwd.c', 'sample_util.c')
 
 # misc
-video_tx_split_sample_sources = files('tx_video_split_sample.c', 'sample_util.c')
 rx_st20p_timing_parser_sample_sources = files('rx_st20p_timing_parser_sample.c', 'sample_util.c')
+rx_st20p_auto_detect_sample_sources = files('rx_st20p_auto_detect_sample.c', 'sample_util.c')
 
 # ext frame
 pipeline_tx_st20_ext_frame_sample_sources = files('ext_frame/tx_st20_pipeline_ext_frame_sample.c', 'sample_util.c')
 pipeline_rx_st20_dyn_ext_frame_sample_sources = files('ext_frame/rx_st20_pipeline_dyn_ext_frame_sample.c', 'sample_util.c')
 pipeline_rx_st20_dyn_hdr_split_gpu_direct_sources = files('ext_frame/rx_st20p_hdr_split_gpu_direct.c', 'sample_util.c')
+video_tx_split_sample_sources = files('ext_frame/tx_video_split_sample.c', 'sample_util.c')
 
 # legacy
 video_tx_sample_sources = files('legacy/tx_video_sample.c', 'sample_util.c')

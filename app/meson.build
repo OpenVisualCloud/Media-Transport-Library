@@ -299,14 +299,14 @@ executable('RxSt20pTxSt20pMergeFwd', rx_st20p_tx_st20p_merge_fwd_sources,
 )
 
 # Misc video samples app
-executable('TxVideoSplitSample', video_tx_split_sample_sources,
+executable('RxVideoTimingParserSample', rx_st20p_timing_parser_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, mtl, ws2_32_dep, mman_dep]
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
 )
 
-executable('RxVideoTimingParserSample', rx_st20p_timing_parser_sample_sources,
+executable('RxVideoAutoDetectSample', rx_st20p_auto_detect_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
@@ -369,6 +369,13 @@ executable('RxSt20pHdrSplitGpuDirect', pipeline_rx_st20_dyn_hdr_split_gpu_direct
   link_args: app_ld_args,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+
+executable('TxVideoSplitSample', video_tx_split_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, ws2_32_dep, mman_dep]
 )
 
 # Low level video samples app
