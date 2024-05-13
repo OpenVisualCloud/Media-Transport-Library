@@ -158,8 +158,8 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           if (msg->magic == MT_RDMA_MSG_MAGIC) {
             if (msg->type == MT_RDMA_MSG_BUFFER_DONE) {
               uint16_t idx = msg->buf_done.buf_idx;
-              info("%s(%s), received buffer %u done message\n", __func__, ctx->ops_name,
-                   idx);
+              dbg("%s(%s), received buffer %u done message\n", __func__, ctx->ops_name,
+                  idx);
               struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[idx];
               if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
                 err("%s(%s), received buffer done message with invalid status %d\n",
@@ -209,8 +209,8 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
                 strerror(errno));
             goto out;
           }
-          info("%s(%s), send buffer %d ready message\n", __func__, ctx->ops_name,
-               tx_buffer->idx);
+          dbg("%s(%s), send buffer %d ready message\n", __func__, ctx->ops_name,
+              tx_buffer->idx);
           tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
           tx_buffer->ref_count++;
           if (ops->notify_buffer_sent) {
@@ -227,11 +227,11 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
                  ctx->ops_name);
             goto out;
           } else if (wc.wr_id == 0) {
-            info("%s(%s), sent ready message\n", __func__, ctx->ops_name);
+            dbg("%s(%s), sent ready message\n", __func__, ctx->ops_name);
           } else {
             struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
             if (msg->magic == MT_RDMA_MSG_MAGIC) {
-              info("%s(%s), sent message type %d\n", __func__, ctx->ops_name, msg->type);
+              dbg("%s(%s), sent message type %d\n", __func__, ctx->ops_name, msg->type);
             }
           }
         }
@@ -420,7 +420,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
             strerror(errno));
         return -EIO;
       }
-      info("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
+      dbg("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
 
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
       return 0;

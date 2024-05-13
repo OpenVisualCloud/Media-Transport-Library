@@ -171,7 +171,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
             switch (msg->type) {
               case MT_RDMA_MSG_BUFFER_META:
                 idx = msg->buf_meta.buf_idx;
-                info("%s(%s), buffer %u meta received\n", __func__, ctx->ops_name, idx);
+                dbg("%s(%s), buffer %u meta received\n", __func__, ctx->ops_name, idx);
                 rx_buffer = &ctx->rx_buffers[idx];
                 rx_buffer->buffer.user_meta =
                     (void*)(msg + 1); /* this msg buffer in use by meta */
@@ -197,7 +197,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                 break;
               case MT_RDMA_MSG_BUFFER_READY:
                 idx = msg->buf_ready.buf_idx;
-                info("%s(%s), buffer %u ready received\n", __func__, ctx->ops_name, idx);
+                dbg("%s(%s), buffer %u ready received\n", __func__, ctx->ops_name, idx);
                 rx_buffer = &ctx->rx_buffers[idx];
                 if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
                   rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
@@ -243,8 +243,8 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
           }
         } else if (wc.opcode == IBV_WC_SEND) {
           if (wc.wr_id == MT_RDMA_MSG_BYE) {
-            info("%s(%s), sent bye message, shutdown cq thread\n", __func__,
-                 ctx->ops_name);
+            dbg("%s(%s), sent bye message, shutdown cq thread\n", __func__,
+                ctx->ops_name);
             goto out;
           }
         }
