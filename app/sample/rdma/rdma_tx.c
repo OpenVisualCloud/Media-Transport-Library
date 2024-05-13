@@ -38,6 +38,8 @@ int main(int argc, char** argv) {
   }
   int ret = 0;
   void* buffers[3] = {};
+  int meta[3] = {};
+  int meta_idx = 0;
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_tx_handle tx = NULL;
   struct mtl_rdma_init_params p = {
@@ -90,11 +92,13 @@ int main(int argc, char** argv) {
       continue;
     }
 
+    meta[meta_idx] = buffer_acked;
     snprintf((char*)buffer->addr, buffer->capacity, "Hello, RDMA! id %d acked %d", i,
-             buffer_acked);
+             meta[meta_idx]);
     buffer->size = strlen((char*)buffer->addr) + 1;
-    buffer->user_meta = &buffer_acked;
-    buffer->user_meta_size = sizeof(buffer_acked);
+    buffer->user_meta = &meta[meta_idx];
+    buffer->user_meta_size = sizeof(int);
+    meta_idx = (meta_idx + 1) % 3;
     usleep(20000); /* simulate producing */
 
     ret = mtl_rdma_tx_put_buffer(tx, buffer);
