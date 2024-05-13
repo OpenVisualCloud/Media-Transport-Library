@@ -72,6 +72,7 @@ static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
   }
   frame_cnt = i.st_size / s->frame_size;
   fbs_size = i.st_size;
+  info("%s, tx_url %s frame_cnt %d\n", __func__, file, frame_cnt);
 
 init_fb:
 

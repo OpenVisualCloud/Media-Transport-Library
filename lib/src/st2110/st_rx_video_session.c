@@ -3961,12 +3961,17 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     return NULL;
   }
 
-  ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps,
-                               ops->interlaced, &bps);
+  if (ops->flags & ST20_RX_FLAG_AUTO_DETECT) {
+    ret = st20_get_bandwidth_bps(1920, 1080, ops->fmt, ST_FPS_P59_94, false, &bps);
+  } else {
+    ret = st20_get_bandwidth_bps(ops->width, ops->height, ops->fmt, ops->fps,
+                                 ops->interlaced, &bps);
+  }
   if (ret < 0) {
     err("%s, st20_get_bandwidth_bps fail\n", __func__);
     return NULL;
   }
+
   quota_mbs = bps / (1000 * 1000);
   quota_mbs *= ops->num_port;
   if (!mt_user_quota_active(impl)) {
