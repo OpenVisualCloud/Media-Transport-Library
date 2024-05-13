@@ -101,7 +101,7 @@ static int rdma_rx_alloc_buffers(struct mt_rdma_rx_ctx* ctx) {
   }
 
   /* alloc receive message region including metadata, send messages are inlined */
-  ctx->recv_msgs = (char*)calloc(ctx->buffer_cnt, MT_RDMA_MSG_MAX_SIZE * 2);
+  ctx->recv_msgs = (char*)calloc(ctx->buffer_cnt * 2, MT_RDMA_MSG_MAX_SIZE);
   if (!ctx->recv_msgs) {
     err("%s(%s), message calloc failed\n", __func__, ctx->ops_name);
     rdma_rx_free_buffers(ctx);
@@ -310,11 +310,9 @@ static void* rdma_rx_connect_thread(void* arg) {
             struct ibv_qp_init_attr init_qp_attr = {
                 .cap.max_send_wr = ctx->buffer_cnt * 2,
                 .cap.max_recv_wr = ctx->buffer_cnt * 2,
-                .cap.max_send_sge = 2, /* gather message and meta */
-                .cap.max_recv_sge = 2, /* scatter message and meta */
-                .cap.max_inline_data =
-                    64, /* todo: include metadata size, if that size is larger than 64, we
-                           should consider not using inline for msg */
+                .cap.max_send_sge = 1,
+                .cap.max_recv_sge = 1,
+                .cap.max_inline_data = sizeof(struct mt_rdma_message),
                 .sq_sig_all = 1,
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,

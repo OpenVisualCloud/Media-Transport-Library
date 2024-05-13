@@ -167,7 +167,7 @@ struct mt_rdma_rx_ctx {
   struct ibv_qp* qp;
   struct ibv_mr* recv_msgs_mr;
 
-  void* recv_msgs; /* 1024 bytes * buf_cnt, space reserved for metadata */
+  void* recv_msgs; /* 1024 bytes * buf_cnt * 2, space reserved for metadata */
   struct mt_rdma_rx_buffer* rx_buffers;
   uint16_t buffer_cnt;
   pthread_t connect_thread;

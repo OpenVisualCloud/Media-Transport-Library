@@ -289,7 +289,7 @@ static void* rdma_tx_connect_thread(void* arg) {
             }
             struct ibv_qp_init_attr init_qp_attr = {
                 .cap.max_send_wr = ctx->buffer_cnt * 2,
-                .cap.max_recv_wr = ctx->buffer_cnt,
+                .cap.max_recv_wr = ctx->buffer_cnt * 2,
                 .cap.max_send_sge = 1,
                 .cap.max_recv_sge = 1,
                 .cap.max_inline_data = sizeof(struct mt_rdma_message),
