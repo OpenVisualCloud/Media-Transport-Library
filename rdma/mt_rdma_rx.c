@@ -11,7 +11,8 @@ static struct mt_rdma_message* rdma_rx_get_recv_msg(struct mt_rdma_rx_ctx* ctx) 
   for (int i = 0; i < ctx->buffer_cnt * 2; i++) {
     struct mt_rdma_message* msg =
         (struct mt_rdma_message*)(ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE);
-    if (msg->type != MT_RDMA_MSG_BUFFER_META) {
+    if (msg->type == MT_RDMA_MSG_NONE) {
+      msg->type = MT_RDMA_MSG_MAX;
       return msg;
     }
   }
@@ -193,7 +194,6 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                       idx, rx_buffer->status);
                   goto out;
                 }
-
                 break;
               case MT_RDMA_MSG_BUFFER_READY:
                 idx = msg->buf_ready.buf_idx;
@@ -217,6 +217,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                       idx, rx_buffer->status);
                   goto out;
                 }
+                msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
                 break;
               case MT_RDMA_MSG_BYE:
                 info("%s(%s), received bye message\n", __func__, ctx->ops_name);
@@ -426,7 +427,7 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* bu
       /* recycle meta in use receive msg */
       struct mt_rdma_message* meta_msg =
           (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
-      meta_msg->type = MT_RDMA_MSG_NONE;
+      meta_msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
       return rdma_rx_send_buffer_done(ctx, rx_buffer->idx);
     }
   }

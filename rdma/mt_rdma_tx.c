@@ -418,7 +418,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
             strerror(errno));
         return -EIO;
       }
-      info("%s(%s), sent meta for buffer %d\n", __func__, ctx->ops_name, i);
+      info("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
 
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
       return 0;
