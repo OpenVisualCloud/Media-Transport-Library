@@ -63,7 +63,7 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx* ctx) {
   }
 
   struct ibv_mr* mr =
-      ibv_reg_mr(ctx->pd, ctx->recv_msgs, ctx->buffer_cnt * MT_RDMA_MSG_MAX_SIZE,
+      ibv_reg_mr(ctx->pd, ctx->recv_msgs, ctx->buffer_cnt * 2 * MT_RDMA_MSG_MAX_SIZE,
                  IBV_ACCESS_LOCAL_WRITE);
   if (!mr) {
     err("%s(%s), ibv_reg_mr message failed\n", __func__, ctx->ops_name);
@@ -427,7 +427,7 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* bu
       /* recycle meta in use receive msg */
       struct mt_rdma_message* meta_msg =
           (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
-      meta_msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
+      meta_msg->type = MT_RDMA_MSG_NONE;
       return rdma_rx_send_buffer_done(ctx, rx_buffer->idx);
     }
   }

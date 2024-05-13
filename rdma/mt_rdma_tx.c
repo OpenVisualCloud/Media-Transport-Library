@@ -158,6 +158,8 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           if (msg->magic == MT_RDMA_MSG_MAGIC) {
             if (msg->type == MT_RDMA_MSG_BUFFER_DONE) {
               uint16_t idx = msg->buf_done.buf_idx;
+              info("%s(%s), received buffer %u done message\n", __func__, ctx->ops_name,
+                   idx);
               struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[idx];
               if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
                 err("%s(%s), received buffer done message with invalid status %d\n",
