@@ -22,20 +22,23 @@ static struct mt_rdma_message* rdma_rx_get_recv_msg(struct mt_rdma_rx_ctx* ctx) 
 
 static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
   struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[idx];
+  pthread_mutex_lock(&rx_buffer->lock);
   struct mt_rdma_message msg = {
       .magic = MT_RDMA_MSG_MAGIC,
       .type = MT_RDMA_MSG_BUFFER_DONE,
       .buf_done.buf_idx = idx,
-      .buf_done.seq_num = 0, /* todo */
+      .buf_done.seq_num = rx_buffer->buffer.seq_num,
       .buf_done.rx_buf_addr = (uint64_t)rx_buffer->buffer.addr,
       .buf_done.rx_buf_key = rx_buffer->mr->rkey,
   };
   int ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
   if (ret) {
     err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name, strerror(errno));
+    pthread_mutex_unlock(&rx_buffer->lock);
     return -EIO;
   }
   rx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
+  pthread_mutex_unlock(&rx_buffer->lock);
   return 0;
 }
 
@@ -78,6 +81,9 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx* ctx) {
 static int rdma_rx_free_buffers(struct mt_rdma_rx_ctx* ctx) {
   rdma_rx_uinit_mrs(ctx);
   MT_SAFE_FREE(ctx->recv_msgs, free);
+  for (int i = 0; i < ctx->buffer_cnt; i++) {
+    pthread_mutex_destroy(&ctx->rx_buffers[i].lock);
+  }
   MT_SAFE_FREE(ctx->rx_buffers, free);
   return 0;
 }
@@ -98,6 +104,7 @@ static int rdma_rx_alloc_buffers(struct mt_rdma_rx_ctx* ctx) {
     rx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
     rx_buffer->buffer.addr = ops->buffers[i];
     rx_buffer->buffer.capacity = ops->buffer_capacity;
+    pthread_mutex_init(&rx_buffer->lock, NULL);
   }
 
   /* alloc receive message region including metadata, send messages are inlined */
@@ -173,6 +180,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                 idx = msg->buf_meta.buf_idx;
                 dbg("%s(%s), buffer %u meta received\n", __func__, ctx->ops_name, idx);
                 rx_buffer = &ctx->rx_buffers[idx];
+                pthread_mutex_lock(&rx_buffer->lock);
                 rx_buffer->buffer.user_meta =
                     (void*)(msg + 1); /* this msg buffer in use by meta */
                 rx_buffer->buffer.user_meta_size = msg->buf_meta.meta_size;
@@ -188,17 +196,21 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                     }
                   }
                 } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
+                  rx_buffer->buffer.seq_num = msg->buf_meta.seq_num;
                   rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
                 } else {
                   err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name,
                       idx, rx_buffer->status);
+                  pthread_mutex_unlock(&rx_buffer->lock);
                   goto out;
                 }
+                pthread_mutex_unlock(&rx_buffer->lock);
                 break;
               case MT_RDMA_MSG_BUFFER_READY:
                 idx = msg->buf_ready.buf_idx;
                 dbg("%s(%s), buffer %u ready received\n", __func__, ctx->ops_name, idx);
                 rx_buffer = &ctx->rx_buffers[idx];
+                pthread_mutex_lock(&rx_buffer->lock);
                 if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
                   rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
                   ctx->stat_buffer_received++;
@@ -211,12 +223,15 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                     }
                   }
                 } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
+                  rx_buffer->buffer.seq_num = msg->buf_ready.seq_num;
                   rx_buffer->status = MT_RDMA_BUFFER_STATUS_WAIT_META;
                 } else {
                   err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name,
                       idx, rx_buffer->status);
+                  pthread_mutex_unlock(&rx_buffer->lock);
                   goto out;
                 }
+                pthread_mutex_unlock(&rx_buffer->lock);
                 msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
                 break;
               case MT_RDMA_MSG_BYE:
@@ -400,10 +415,13 @@ struct mtl_rdma_buffer* mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle) {
   /* find a ready buffer */
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[i];
+    pthread_mutex_lock(&rx_buffer->lock);
     if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_READY) {
       rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
+      pthread_mutex_unlock(&rx_buffer->lock);
       return &rx_buffer->buffer;
     }
+    pthread_mutex_unlock(&rx_buffer->lock);
   }
 
   return NULL;
@@ -417,17 +435,21 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* bu
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[i];
+    pthread_mutex_lock(&rx_buffer->lock);
     if (&rx_buffer->buffer == buffer) {
       if (rx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
         err("%s(%s), buffer %p not in consumption\n", __func__, ctx->ops_name, buffer);
+        pthread_mutex_unlock(&rx_buffer->lock);
         return -EIO;
       }
       /* recycle meta in use receive msg */
       struct mt_rdma_message* meta_msg =
           (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
       meta_msg->type = MT_RDMA_MSG_NONE;
+      pthread_mutex_unlock(&rx_buffer->lock);
       return rdma_rx_send_buffer_done(ctx, rx_buffer->idx);
     }
+    pthread_mutex_unlock(&rx_buffer->lock);
   }
 
   err("%s(%s), buffer %p not found\n", __func__, ctx->ops_name, buffer);

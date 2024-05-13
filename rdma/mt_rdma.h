@@ -115,6 +115,7 @@ struct mt_rdma_tx_buffer {
   uint32_t remote_key;
   uint64_t remote_addr;
   uint32_t ref_count;
+  pthread_mutex_t lock;
 };
 
 struct mt_rdma_tx_ctx {
@@ -153,6 +154,7 @@ struct mt_rdma_rx_buffer {
   enum mt_rdma_buffer_status status;
   struct mtl_rdma_buffer buffer;
   struct ibv_mr* mr;
+  pthread_mutex_t lock;
 };
 
 struct mt_rdma_rx_ctx {

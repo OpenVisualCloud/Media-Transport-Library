@@ -58,6 +58,9 @@ static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
   rdma_tx_uinit_mrs(ctx);
   MT_SAFE_FREE(ctx->send_msgs, free);
   MT_SAFE_FREE(ctx->recv_msgs, free);
+  for (int i = 0; i < ctx->buffer_cnt; i++) {
+    pthread_mutex_destroy(&ctx->tx_buffers[i].lock);
+  }
   MT_SAFE_FREE(ctx->tx_buffers, free);
   return 0;
 }
@@ -80,6 +83,7 @@ static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
     tx_buffer->ref_count = 1;
     tx_buffer->buffer.addr = ops->buffers[i];
     tx_buffer->buffer.capacity = ops->buffer_capacity;
+    pthread_mutex_init(&tx_buffer->lock, NULL);
   }
 
   /* alloc receive message region */
@@ -158,12 +162,14 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           if (msg->magic == MT_RDMA_MSG_MAGIC) {
             if (msg->type == MT_RDMA_MSG_BUFFER_DONE) {
               uint16_t idx = msg->buf_done.buf_idx;
-              dbg("%s(%s), received buffer %u done message\n", __func__, ctx->ops_name,
-                  idx);
+              dbg("%s(%s), received buffer %u done message, seq %u\n", __func__,
+                  ctx->ops_name, idx, msg->buf_done.seq_num);
               struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[idx];
+              pthread_mutex_lock(&tx_buffer->lock);
               if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
                 err("%s(%s), received buffer done message with invalid status %d\n",
                     __func__, ctx->ops_name, tx_buffer->status);
+                pthread_mutex_unlock(&tx_buffer->lock);
                 goto out;
               }
               tx_buffer->remote_addr = msg->buf_done.rx_buf_addr;
@@ -179,6 +185,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
                   }
                 }
               }
+              pthread_mutex_unlock(&tx_buffer->lock);
               ctx->stat_buffer_acked++;
             }
           } else if (msg->type == MT_RDMA_MSG_BYE) {
@@ -196,17 +203,19 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           }
         } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
           struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc.wr_id;
-          /* send ready message to rx, todo add user meta with sgl */
+          pthread_mutex_lock(&tx_buffer->lock);
+          /* send ready message to rx */
           struct mt_rdma_message msg = {
               .magic = MT_RDMA_MSG_MAGIC,
               .type = MT_RDMA_MSG_BUFFER_READY,
               .buf_ready.buf_idx = tx_buffer->idx,
-              .buf_ready.seq_num = 0, /* todo */
+              .buf_ready.seq_num = ctx->buffer_seq_num++,
           };
           ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
           if (ret) {
             err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
                 strerror(errno));
+            pthread_mutex_unlock(&tx_buffer->lock);
             goto out;
           }
           dbg("%s(%s), send buffer %d ready message\n", __func__, ctx->ops_name,
@@ -220,6 +229,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
               /* todo: error handle */
             }
           }
+          pthread_mutex_unlock(&tx_buffer->lock);
           ctx->stat_buffer_sent++;
         } else if (wc.opcode == IBV_WC_SEND) {
           if (wc.wr_id == MT_RDMA_MSG_BYE) {
@@ -376,10 +386,13 @@ struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle) {
   /* change to use buffer_producer_idx to act as a queue */
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    pthread_mutex_lock(&tx_buffer->lock);
     if (tx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_PRODUCTION;
+      pthread_mutex_unlock(&tx_buffer->lock);
       return &tx_buffer->buffer;
     }
+    pthread_mutex_unlock(&tx_buffer->lock);
   }
   return NULL;
 }
@@ -390,6 +403,11 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
     return -EIO;
   }
 
+  if (buffer->size > buffer->capacity) {
+    err("%s(%s), buffer size is too large\n", __func__, ctx->ops_name);
+    return -EIO;
+  }
+
   if (buffer->user_meta_size > MT_RDMA_USER_META_MAX_SIZE) {
     err("%s(%s), user meta size is too large\n", __func__, ctx->ops_name);
     return -EIO;
@@ -397,9 +415,11 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    pthread_mutex_lock(&tx_buffer->lock);
     if (&tx_buffer->buffer == buffer) {
       if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_PRODUCTION) {
         err("%s(%s), buffer %p is not in production\n", __func__, ctx->ops_name, buffer);
+        pthread_mutex_unlock(&tx_buffer->lock);
         return -EIO;
       }
       /* write to rx immediately */
@@ -409,6 +429,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
       if (ret) {
         err("%s(%s), rdma_post_write failed: %s\n", __func__, ctx->ops_name,
             strerror(errno));
+        pthread_mutex_unlock(&tx_buffer->lock);
         return -EIO;
       }
       /* send user metadata to rx */
@@ -416,6 +437,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
       msg->magic = MT_RDMA_MSG_MAGIC;
       msg->type = MT_RDMA_MSG_BUFFER_META;
       msg->buf_meta.buf_idx = i;
+      msg->buf_meta.seq_num = ctx->buffer_seq_num;
       msg->buf_meta.meta_size = buffer->user_meta_size;
       memcpy(&msg[1], buffer->user_meta, buffer->user_meta_size);
       ret = rdma_post_send(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE, ctx->send_msgs_mr,
@@ -428,8 +450,10 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
       dbg("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
 
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
+      pthread_mutex_unlock(&tx_buffer->lock);
       return 0;
     }
+    pthread_mutex_unlock(&tx_buffer->lock);
   }
 
   err("%s(%s), buffer %p not found\n", __func__, ctx->ops_name, buffer);
