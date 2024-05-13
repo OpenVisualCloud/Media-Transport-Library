@@ -390,6 +390,11 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
     return -EIO;
   }
 
+  if (buffer->user_meta_size > MT_RDMA_USER_META_MAX_SIZE) {
+    err("%s(%s), user meta size is too large\n", __func__, ctx->ops_name);
+    return -EIO;
+  }
+
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
     if (&tx_buffer->buffer == buffer) {
