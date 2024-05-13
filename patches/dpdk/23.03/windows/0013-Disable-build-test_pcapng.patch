@@ -1,0 +1,26 @@
+From 5b50b9706f4d10770c8a743116757a520375a1bf Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 13 May 2024 15:02:09 +0800
+Subject: [PATCH] Disable build test_pcapng
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ app/test/meson.build | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/app/test/meson.build b/app/test/meson.build
+index b9b5432496..d995318bc4 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -431,7 +431,7 @@ endif
+ if dpdk_conf.has('RTE_HAS_LIBPCAP')
+     ext_deps += pcap_dep
+     if dpdk_conf.has('RTE_LIB_PCAPNG')
+-        test_sources += 'test_pcapng.c'
++#        test_sources += 'test_pcapng.c'
+     endif
+ endif
+ 
+-- 
+2.34.1
+

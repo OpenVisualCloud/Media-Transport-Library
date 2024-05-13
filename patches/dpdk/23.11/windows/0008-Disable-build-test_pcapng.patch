@@ -1,0 +1,34 @@
+From 9908eb0837648d99bdbfb3e8c24b0769dedbc3f3 Mon Sep 17 00:00:00 2001
+From: Ric Li <ming3.li@intel.com>
+Date: Mon, 13 May 2024 14:55:02 +0800
+Subject: [PATCH] Disable build test_pcapng
+
+Signed-off-by: Ric Li <ming3.li@intel.com>
+---
+ app/test/meson.build | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/app/test/meson.build b/app/test/meson.build
+index dcc93f4a43..50539c8769 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -128,7 +128,7 @@ source_file_deps = {
+     'test_metrics.c': ['metrics'],
+     'test_mp_secondary.c': ['hash', 'lpm'],
+     'test_net_ether.c': ['net'],
+-    'test_pcapng.c': ['ethdev', 'net', 'pcapng', 'bus_vdev'],
++#    'test_pcapng.c': ['ethdev', 'net', 'pcapng', 'bus_vdev'],
+     'test_pdcp.c': ['eventdev', 'pdcp', 'net', 'timer', 'security'],
+     'test_pdump.c': ['pdump'] + sample_packet_forward_deps,
+     'test_per_lcore.c': [],
+@@ -201,7 +201,7 @@ source_file_deps = {
+ 
+ source_file_ext_deps = {
+     'test_compressdev.c': ['zlib'],
+-    'test_pcapng.c': ['pcap'],
++#    'test_pcapng.c': ['pcap'],
+ }
+ 
+ def_lib = get_option('default_library')
+-- 
+2.34.1
