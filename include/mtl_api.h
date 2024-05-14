@@ -395,6 +395,8 @@ enum mtl_init_flag {
    * directly
    */
   MTL_FLAG_NO_MULTICAST = (MTL_BIT64(19)),
+  /** Dedicated lcore for system CNI tasks. */
+  MTL_FLAG_DEDICATED_SYS_LCORE = (MTL_BIT64(20)),
   /**
    * dedicate thread for cni message
    */

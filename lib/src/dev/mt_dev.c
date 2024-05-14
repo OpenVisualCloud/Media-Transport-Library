@@ -1881,7 +1881,9 @@ int mt_dev_create(struct mtl_main_impl* impl) {
   }
 
   /* create system sch */
-  impl->main_sch = mt_sch_get(impl, 0, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+  enum mt_sch_type type =
+      mt_user_dedicated_sys_lcore(impl) ? MT_SCH_TYPE_SYSTEM : MT_SCH_TYPE_DEFAULT;
+  impl->main_sch = mt_sch_get(impl, 0, type, MT_SCH_MASK_ALL);
   if (!impl->main_sch) {
     err("%s, get sch fail\n", __func__);
     ret = -EIO;

@@ -367,15 +367,16 @@ If it failed to run the sample, please help to collect the system setup status b
 --ptp                                : Enable the built-in PTP implementation, default is disabled and system time is selected as PTP time source.
 --lcores <lcore list>                : the DPDK lcore list for this run, e.g. --lcores 28,29,30,31. If not assigned, lib will allocate lcore from system socket cores.
 --test_time <seconds>                : the run duration, unit: seconds
---rx_separate_lcore                  : If enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
 --dma_dev <DMA1,DMA2,DMA3...>        : DMA dev list to offload the packet memory copy for RX video frame session.
---runtime_session                    : start instance before create video/audio/anc sessions, similar to runtime tx/rx create.
 --log_level <level>                  : set log level. e.g. debug, info, notice, warning, error.
 --log_file <file path>               : set log file for mtl log. If you're initiating multiple RxTxApp processes simultaneously, please ensure each process has a unique filename path. Default the log is writing to stderr.
---arp_timeout_s <sec>                : set the arp timeout in seconds if using unicast address. Default timeout value is 60 seconds.
---allow_across_numa_core             : allow the usage of cores across NUMA nodes
---no_multicast                       : disable the multicast join message, usually for the SDN switch case.
 
+--arp_timeout_s <sec>                : debug option, set the arp timeout in seconds if using unicast address. Default timeout value is 60 seconds.
+--allow_across_numa_core             : debug option, allow the usage of cores across NUMA nodes
+--no_multicast                       : debug option, disable the multicast join message, usually for the SDN switch case.
+--rx_separate_lcore                  : debug option, if enabled, RX video session will run on dedicated lcores, it means TX video and RX video is not running on the same core.
+--rx_mix_lcore                       : debug option, if enabled, it means TX video and RX video are possible to run on the same core.
+--runtime_session                    : debug option, start instance before create video/audio/anc sessions, similar to runtime tx/rx create.
 --rx_timing_parser                   : debug option, enable timing check for video rx streams.
 --pcapng_dump <n>                    : debug option, dump n packets from rx video streams to pcapng files.
 --rx_video_file_frames <n>           : debug option, dump the received video frames to a yuv file, n is dump file size in frame unit.
@@ -413,6 +414,7 @@ packet egresses from the sender.
 --log_time_ms                        : debug option, enable a ms accuracy log printer by the api mtl_set_log_prefix_formatter.
 --rx_video_file_frames <count>       : debug option, dump the received video frames to one yuv file
 --rx_audio_dump_time_s <seconds>     : debug option, dump the received audio frames to one pcm file
+--dedicated_sys_lcore                : debug option, run MTL system tasks(CNI, PTP, etc...) in a dedicated lcore
 ```
 
 ## 6. Tests

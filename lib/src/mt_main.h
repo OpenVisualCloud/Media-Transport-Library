@@ -484,6 +484,8 @@ enum mt_sch_type {
   MT_SCH_TYPE_DEFAULT = 0,
   MT_SCH_TYPE_RX_VIDEO_ONLY,
   MT_SCH_TYPE_APP, /* created by user */
+  /* dedicated for system task */
+  MT_SCH_TYPE_SYSTEM,
   MT_SCH_TYPE_MAX,
 };
 
@@ -1488,6 +1490,14 @@ static inline bool mt_user_hw_timestamp(struct mtl_main_impl* impl) {
 /* if user enable separate sch for rx video session */
 static inline bool mt_user_rxv_separate_sch(struct mtl_main_impl* impl) {
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_SEPARATE_VIDEO_LCORE)
+    return true;
+  else
+    return false;
+}
+
+/* if user enable dedicated lcore for system tasks(CNI, PTP, etc...) */
+static inline bool mt_user_dedicated_sys_lcore(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_DEDICATED_SYS_LCORE)
     return true;
   else
     return false;

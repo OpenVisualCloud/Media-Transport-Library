@@ -91,6 +91,7 @@ enum st_args_cmd {
   ST_ARG_DMA_DEV,
   ST_ARG_RX_SEPARATE_VIDEO_LCORE,
   ST_ARG_RX_MIX_VIDEO_LCORE,
+  ST_ARG_DEDICATE_SYS_LCORE,
   ST_ARG_TSC_PACING,
   ST_ARG_PCAPNG_DUMP,
   ST_ARG_RUNTIME_SESSION,
@@ -224,6 +225,7 @@ static struct option st_app_args_options[] = {
     {"rx_pool_data_size", required_argument, 0, ST_ARG_RX_POOL_DATA_SIZE},
     {"rx_separate_lcore", no_argument, 0, ST_ARG_RX_SEPARATE_VIDEO_LCORE},
     {"rx_mix_lcore", no_argument, 0, ST_ARG_RX_MIX_VIDEO_LCORE},
+    {"dedicated_sys_lcore", no_argument, 0, ST_ARG_DEDICATE_SYS_LCORE},
     {"nb_tx_desc", required_argument, 0, ST_ARG_NB_TX_DESC},
     {"nb_rx_desc", required_argument, 0, ST_ARG_NB_RX_DESC},
     {"dma_dev", required_argument, 0, ST_ARG_DMA_DEV},
@@ -629,6 +631,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_MIX_VIDEO_LCORE:
         p->flags &= ~MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        break;
+      case ST_ARG_DEDICATE_SYS_LCORE:
+        p->flags |= MTL_FLAG_DEDICATED_SYS_LCORE;
         break;
       case ST_ARG_TSC_PACING:
         p->pacing = ST21_TX_PACING_WAY_TSC;
