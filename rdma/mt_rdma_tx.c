@@ -114,39 +114,42 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
   struct ibv_cq* cq = ctx->cq;
   void* cq_ctx = NULL;
   int ms_timeout = 10;
+  struct pollfd pfd = {0};
 
   /* change completion channel fd to non blocking mode */
-  int flags = fcntl(ctx->cc->fd, F_GETFL);
-  ret = fcntl(ctx->cc->fd, F_SETFL, flags | O_NONBLOCK);
-  if (ret) {
-    err("%s(%s), fcntl failed\n", __func__, ctx->ops_name);
-    goto out;
+  if (!ctx->cq_poll_only) {
+    int flags = fcntl(ctx->cc->fd, F_GETFL);
+    ret = fcntl(ctx->cc->fd, F_SETFL, flags | O_NONBLOCK);
+    if (ret) {
+      err("%s(%s), fcntl failed\n", __func__, ctx->ops_name);
+      goto out;
+    }
+    pfd.fd = ctx->cc->fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
   }
-  struct pollfd pfd = {
-      .fd = ctx->cc->fd,
-      .events = POLLIN,
-      .revents = 0,
-  };
 
   info("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->cq_poll_stop) {
-    ret = poll(&pfd, 1, ms_timeout);
+    ret = ctx->cq_poll_only ? 1 : poll(&pfd, 1, ms_timeout);
     if (ret < 0) {
       err("%s(%s), poll failed\n", __func__, ctx->ops_name);
       goto out;
     } else if (ret == 0) {
       /* timeout */
     } else {
-      ret = ibv_get_cq_event(ctx->cc, &cq, &cq_ctx);
-      if (ret) {
-        err("%s(%s), ibv_get_cq_event failed\n", __func__, ctx->ops_name);
-        goto out;
-      }
-      ibv_ack_cq_events(cq, 1);
-      ret = ibv_req_notify_cq(cq, 0);
-      if (ret) {
-        err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
-        goto out;
+      if (!ctx->cq_poll_only) {
+        ret = ibv_get_cq_event(ctx->cc, &cq, &cq_ctx);
+        if (ret) {
+          err("%s(%s), ibv_get_cq_event failed\n", __func__, ctx->ops_name);
+          goto out;
+        }
+        ibv_ack_cq_events(cq, 1);
+        ret = ibv_req_notify_cq(cq, 0);
+        if (ret) {
+          err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
+          goto out;
+        }
       }
       while (ibv_poll_cq(cq, 1, &wc)) {
         if (wc.status != IBV_WC_SUCCESS) {
@@ -245,7 +248,9 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
             }
           }
         }
+        ctx->stat_cq_poll_done++;
       }
+      ctx->stat_cq_poll_empty++;
     }
   }
 
@@ -282,20 +287,24 @@ static void* rdma_tx_connect_thread(void* arg) {
               err("%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
               goto connect_err;
             }
-            ctx->cc = ibv_create_comp_channel(event->id->verbs);
-            if (!ctx->cc) {
-              err("%s(%s), ibv_create_comp_channel failed\n", __func__, ctx->ops_name);
-              goto connect_err;
+            if (!ctx->cq_poll_only) {
+              ctx->cc = ibv_create_comp_channel(event->id->verbs);
+              if (!ctx->cc) {
+                err("%s(%s), ibv_create_comp_channel failed\n", __func__, ctx->ops_name);
+                goto connect_err;
+              }
             }
             ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
             if (!ctx->cq) {
               err("%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
               goto connect_err;
             }
-            ret = ibv_req_notify_cq(ctx->cq, 0);
-            if (ret) {
-              err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
-              goto connect_err;
+            if (!ctx->cq_poll_only) {
+              ret = ibv_req_notify_cq(ctx->cq, 0);
+              if (ret) {
+                err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
+                goto connect_err;
+              }
             }
             struct ibv_qp_init_attr init_qp_attr = {
                 .cap.max_send_wr = ctx->buffer_cnt * 2,
@@ -480,6 +489,10 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
     ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
     ctx->cq_poll_thread = 0;
+
+    /* print cq poll stat */
+    dbg("%s(%s), cq poll done: %lu, cq poll empty: %lu\n", __func__, ctx->ops_name,
+        ctx->stat_cq_poll_done, ctx->stat_cq_poll_empty);
   }
 
   if (ctx->connect_thread) {
@@ -516,6 +529,7 @@ mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_op
   ctx->ops = *ops;
   ctx->buffer_seq_num = 0;
   snprintf(ctx->ops_name, 32, "%s", ops->name);
+  ctx->cq_poll_only = mt_rdma_low_latency(mrh);
 
   ret = rdma_tx_alloc_buffers(ctx);
   if (ret) {

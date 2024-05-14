@@ -237,7 +237,7 @@ enum mtl_rdma_init_flag {
   MTL_RDMA_FLAG_BIND_NUMA = (MTL_RDMA_BIT64(0)),
   /**
    * Enable low latency mode for buffer transport.
-   * The TX and RX will poll for RDMA write work completion.
+   * The TX and RX will poll for work completions.
    * It will cause extra CPU usage.
    */
   MTL_RDMA_FLAG_LOW_LATENCY = (MTL_RDMA_BIT64(1)),

@@ -82,6 +82,7 @@ int main(int argc, char** argv) {
   mtl_rdma_tx_handle tx = NULL;
   struct mtl_rdma_init_params p = {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
+      //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
   };
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
@@ -152,7 +153,13 @@ int main(int argc, char** argv) {
       }
     }
 
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    uint64_t send_time_ns = ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
+
     buffer->size = frame_size;
+    buffer->user_meta = &send_time_ns;
+    buffer->user_meta_size = sizeof(uint64_t);
 
     ret = mtl_rdma_tx_put_buffer(tx, buffer);
     if (ret < 0) {

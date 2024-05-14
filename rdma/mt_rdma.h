@@ -139,6 +139,7 @@ struct mt_rdma_tx_ctx {
   uint16_t buffer_cnt;
   pthread_t connect_thread;
   pthread_t cq_poll_thread;
+  bool cq_poll_only;
 
   atomic_bool connected;
   atomic_bool connect_stop;
@@ -147,6 +148,8 @@ struct mt_rdma_tx_ctx {
   uint64_t stat_buffer_sent;
   uint64_t stat_buffer_acked;
   uint64_t stat_buffer_error;
+  uint64_t stat_cq_poll_done;
+  uint64_t stat_cq_poll_empty;
 };
 
 struct mt_rdma_rx_buffer {
@@ -174,6 +177,7 @@ struct mt_rdma_rx_ctx {
   uint16_t buffer_cnt;
   pthread_t connect_thread;
   pthread_t cq_poll_thread;
+  bool cq_poll_only;
 
   atomic_bool connected;
   atomic_bool connect_stop;
@@ -181,10 +185,24 @@ struct mt_rdma_rx_ctx {
 
   uint64_t stat_buffer_received;
   uint64_t stat_buffer_error;
+  uint64_t stat_cq_poll_done;
+  uint64_t stat_cq_poll_empty;
 };
 
 struct mt_rdma_impl {
   int init;
+  struct mtl_rdma_init_params para;
 };
+
+static inline struct mtl_rdma_init_params* mt_rdma_get_params(struct mt_rdma_impl* impl) {
+  return &impl->para;
+}
+
+static inline bool mt_rdma_low_latency(struct mt_rdma_impl* impl) {
+  if (mt_rdma_get_params(impl)->flags & MTL_RDMA_FLAG_LOW_LATENCY)
+    return true;
+  else
+    return false;
+}
 
 #endif /* _MT_RDMA_HEAD_H_ */
