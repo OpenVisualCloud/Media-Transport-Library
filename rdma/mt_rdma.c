@@ -24,6 +24,7 @@ mtl_rdma_handle mtl_rdma_init(struct mtl_rdma_init_params* p) {
   }
   impl->init = 1;
   mt_rdma_set_log_level(p->log_level);
+  impl->para = *p;
   return impl;
 }
 

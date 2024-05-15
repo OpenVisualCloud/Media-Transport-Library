@@ -17,6 +17,8 @@
 #include <SDL2/SDL.h>
 #endif
 
+#define NANOSECONDS_IN_SECOND 1000000000
+
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static volatile int keep_running = 1;
@@ -111,6 +113,7 @@ int main(int argc, char** argv) {
   mtl_rdma_rx_handle rx = NULL;
   struct mtl_rdma_init_params p = {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
+      //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
   };
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
@@ -166,6 +169,15 @@ int main(int argc, char** argv) {
       pthread_cond_wait(&cond, &mtx);
       pthread_mutex_unlock(&mtx);
       continue;
+    }
+
+    if (buffer->user_meta && buffer->user_meta_size) {
+      struct timespec now;
+      clock_gettime(CLOCK_REALTIME, &now);
+      uint64_t recv_time_ns =
+          ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
+      uint64_t send_time_ns = *(uint64_t*)buffer->user_meta;
+      printf("Latency: %.2f us\n", (recv_time_ns - send_time_ns) / 1000.0);
     }
 
 #ifdef APP_HAS_SDL2
