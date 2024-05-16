@@ -576,6 +576,10 @@ enum st20p_rx_flag {
    * st20p_rx_get_frame
    */
   ST20P_RX_FLAG_TIMING_PARSER_META = (MTL_BIT32(22)),
+  /**
+   * Force to use multi(only two now) threads for the rx packet processing
+   */
+  ST20P_RX_FLAG_USE_MULTI_THREADS = (MTL_BIT32(23)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */

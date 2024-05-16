@@ -626,7 +626,8 @@ struct st_app_context {
   int rx_video_fb_cnt;
   int rx_video_rtp_ring_size; /* the ring size for rx video rtp type */
   bool has_sdl;               /* has SDL device or not*/
-  int rx_audio_dump_time_s;   /* the audio dump time */
+  bool rx_video_multi_thread;
+  int rx_audio_dump_time_s; /* the audio dump time */
 
   struct st_app_rx_audio_session* rx_audio_sessions;
   int rx_audio_session_cnt;

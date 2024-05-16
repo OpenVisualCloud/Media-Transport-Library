@@ -43,6 +43,7 @@ enum st_args_cmd {
   ST_ARG_RX_VIDEO_FILE_FRAMES,
   ST_ARG_RX_VIDEO_FB_CNT,
   ST_ARG_RX_VIDEO_RTP_RING_SIZE,
+  ST_ARG_RX_VIDEO_MULTI_THREADS,
   ST_ARG_RX_AUDIO_SESSIONS_CNT,
   ST_ARG_RX_AUDIO_RTP_RING_SIZE,
   ST_ARG_RX_AUDIO_DUMP_TIME_S,
@@ -61,6 +62,8 @@ enum st_args_cmd {
   ST_ARG_TX_DISPLAY,
   ST_ARG_RX_DISPLAY,
   ST_ARG_DISABLE_MIGRATE,
+  ST_ARG_BIND_NUMA,
+  ST_ARG_NOT_BIND_NUMA,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -181,6 +184,7 @@ static struct option st_app_args_options[] = {
     {"rx_video_file_frames", required_argument, 0, ST_ARG_RX_VIDEO_FILE_FRAMES},
     {"rx_video_fb_cnt", required_argument, 0, ST_ARG_RX_VIDEO_FB_CNT},
     {"rx_video_rtp_ring_size", required_argument, 0, ST_ARG_RX_VIDEO_RTP_RING_SIZE},
+    {"rx_video_multi_thread", no_argument, 0, ST_ARG_RX_VIDEO_MULTI_THREADS},
     {"rx_audio_sessions_count", required_argument, 0, ST_ARG_RX_AUDIO_SESSIONS_CNT},
     {"rx_audio_rtp_ring_size", required_argument, 0, ST_ARG_RX_AUDIO_RTP_RING_SIZE},
     {"rx_audio_dump_time_s", required_argument, 0, ST_ARG_RX_AUDIO_DUMP_TIME_S},
@@ -198,6 +202,8 @@ static struct option st_app_args_options[] = {
     {"tx_display", no_argument, 0, ST_ARG_TX_DISPLAY},
     {"rx_display", no_argument, 0, ST_ARG_RX_DISPLAY},
     {"disable_migrate", no_argument, 0, ST_ARG_DISABLE_MIGRATE},
+    {"bind_numa", no_argument, 0, ST_ARG_BIND_NUMA},
+    {"not_bind_numa", no_argument, 0, ST_ARG_NOT_BIND_NUMA},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -507,6 +513,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_RX_VIDEO_RTP_RING_SIZE:
         ctx->rx_video_rtp_ring_size = atoi(optarg);
         break;
+      case ST_ARG_RX_VIDEO_MULTI_THREADS:
+        ctx->rx_video_multi_thread = true;
+        break;
       case ST_ARG_RX_AUDIO_SESSIONS_CNT:
         ctx->rx_audio_session_cnt = atoi(optarg);
         break;
@@ -579,6 +588,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_DISABLE_MIGRATE:
         p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
         p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
+        break;
+      case ST_ARG_BIND_NUMA:
+        p->flags |= MTL_FLAG_BIND_NUMA;
+        break;
+      case ST_ARG_NOT_BIND_NUMA:
+        p->flags &= ~MTL_FLAG_BIND_NUMA;
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))

@@ -415,6 +415,8 @@ packet egresses from the sender.
 --rx_video_file_frames <count>       : debug option, dump the received video frames to one yuv file
 --rx_audio_dump_time_s <seconds>     : debug option, dump the received audio frames to one pcm file
 --dedicated_sys_lcore                : debug option, run MTL system tasks(CNI, PTP, etc...) in a dedicated lcore
+--bind_numa                          : debug option, all MTL threads bind to same numa of NIC
+--not_bind_numa                      : debug option, MTL threads runs without NIC numa aware
 ```
 
 ## 6. Tests
