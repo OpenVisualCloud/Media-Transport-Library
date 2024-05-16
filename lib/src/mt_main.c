@@ -604,6 +604,11 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     }
   }
 
+  if (!(p->flags & MTL_FLAG_BIND_NUMA)) {
+    warn("%s, numa bind is not enabled, performance may limited as across numa access\n",
+         __func__);
+  }
+
   info("%s, succ, tsc_hz %" PRIu64 "\n", __func__, impl->tsc_hz);
   info("%s, simd level %s, flags 0x%" PRIx64 "\n", __func__,
        mtl_get_simd_level_name(mtl_get_simd_level()), p->flags);

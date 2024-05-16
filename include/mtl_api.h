@@ -313,7 +313,7 @@ enum st21_tx_pacing_way {
 
 /** MTL init flag */
 enum mtl_init_flag {
-  /** lib will call numa_bind to bind app thread and memory to NIC socket also.*/
+  /** lib will bind all app and pin threads, memory to NIC socket */
   MTL_FLAG_BIND_NUMA = (MTL_BIT64(0)),
   /** Enable built-in PTP implementation */
   MTL_FLAG_PTP_ENABLE = (MTL_BIT64(1)),

@@ -2426,6 +2426,11 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     if ((bps / (1000 * 1000)) > (40 * 1000)) {
       if (!s->dma_dev) pkt_handle_lcore = true;
     }
+
+    if (ops->flags & ST20_RX_FLAG_USE_MULTI_THREADS) {
+      info("%s(%d), user enable ST20_RX_FLAG_USE_MULTI_THREADS\n", __func__, idx);
+      pkt_handle_lcore = true;
+    }
   }
 
   /* only one core for hdr split mode */
@@ -2434,6 +2439,12 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   if (pkt_handle_lcore) {
     if (type == ST20_TYPE_SLICE_LEVEL) {
       err("%s(%d), additional pkt lcore not support slice type\n", __func__, idx);
+      rv_uinit_sw(impl, s);
+      return -EINVAL;
+    }
+    if (ops->num_port > 1) {
+      err("%s(%d), additional pkt lcore not support redundant, num_port %u\n", __func__,
+          idx, ops->num_port);
       rv_uinit_sw(impl, s);
       return -EINVAL;
     }

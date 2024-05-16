@@ -200,6 +200,12 @@ extern "C" {
  * Enable the timing analyze info in the st20_rx_frame_meta
  */
 #define ST20_RX_FLAG_TIMING_PARSER_META (MTL_BIT32(22))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Only for ST20_TYPE_FRAME_LEVEL.
+ * Force to use multi(only two now) threads for the rx packet processing
+ */
+#define ST20_RX_FLAG_USE_MULTI_THREADS (MTL_BIT32(23))
 
 /**
  * Flag bit in flags of struct st22_rx_ops, for non MTL_PMD_DPDK_USER.
