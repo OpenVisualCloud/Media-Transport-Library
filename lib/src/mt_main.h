@@ -1431,9 +1431,9 @@ static inline bool mt_user_ptp_service(struct mtl_main_impl* impl) {
     return false;
 }
 
-/* if user enable the numa bind for lcore thread and memory */
-static inline bool mt_user_bind_numa(struct mtl_main_impl* impl) {
-  if (mt_get_user_params(impl)->flags & MTL_FLAG_BIND_NUMA)
+/* if user enable the not numa bind for lcore thread */
+static inline bool mt_user_not_bind_numa(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_NOT_BIND_NUMA)
     return true;
   else
     return false;

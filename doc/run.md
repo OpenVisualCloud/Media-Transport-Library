@@ -417,6 +417,7 @@ packet egresses from the sender.
 --dedicated_sys_lcore                : debug option, run MTL system tasks(CNI, PTP, etc...) in a dedicated lcore
 --bind_numa                          : debug option, all MTL threads bind to same numa of NIC
 --not_bind_numa                      : debug option, MTL threads runs without NIC numa aware
+--force_numa <id>                    : debug option, force the NIC port numa id instead of reading from PCIE topology
 ```
 
 ## 6. Tests

@@ -640,7 +640,7 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
   bool skip_numa_check = false;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
 
-  if (!mt_user_bind_numa(impl)) skip_numa_check = true;
+  if (mt_user_not_bind_numa(impl)) skip_numa_check = true;
 
 again:
   cur_lcore = 0;

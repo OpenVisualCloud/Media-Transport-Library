@@ -10,6 +10,10 @@ fn main() {
         for i in 0..12 {
             port_p[i] = *port_str.add(i);
         }
+        let mut port_param = mtl_port_init_params {
+            flags: 0,
+            socket_id: 0,
+        };
         let mut param = mtl_init_params {
             port: [port_p; 8],
             num_ports: 1,
@@ -49,6 +53,7 @@ fn main() {
             ptp_sync_notify: None,
             rss_sch_nb: [0; 8],
             memzone_max: 0,
+            port_params: [port_param; 8],
         };
 
         /* initialize dev handle */
