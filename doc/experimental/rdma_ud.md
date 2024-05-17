@@ -85,8 +85,6 @@ Configure the network interface in the JSON file:
 
 Refer to the [Run Guide](run.md) for more usage details.
 
-RDMA UD supports unicast IP only.
-
 ### 5.2 API Usage
 
 For configuring the network interface in your application, use the following code snippet:
@@ -98,3 +96,8 @@ p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
 ...
 mtl_init(p);
 ```
+
+### 5.3 Multicast (experimental)
+
+Multicast is also supported for RDMA UD. In the configurations IPv4 multicast address can be set as the session IP.
+This is still at experimental status. Notice only one session with one multicast address can be created.
