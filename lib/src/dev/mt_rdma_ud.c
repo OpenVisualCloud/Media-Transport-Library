@@ -18,6 +18,7 @@ struct mt_rdma_tx_queue {
   enum mtl_port port;
   uint16_t q;
   uint8_t* sip;
+  bool multicast;
 
   struct rdma_event_channel* ec;
   struct rdma_cm_id* cma_id;
@@ -53,6 +54,7 @@ struct mt_rdma_rx_queue {
   struct rte_mempool* mbuf_pool;
   uint16_t q;
   uint8_t* sip;
+  bool multicast;
 
   struct rdma_event_channel* ec;
   struct rdma_cm_id* listen_id;
@@ -61,6 +63,7 @@ struct mt_rdma_rx_queue {
   struct ibv_cq* cq;
   struct ibv_qp* qp;
   struct ibv_mr* recv_mr;
+  struct rdma_addrinfo* rai;
   void* recv_buffer;
   size_t recv_len;
   size_t recv_buffer_size;
@@ -559,6 +562,68 @@ static int rdma_tx_mrs_init(struct mt_rdma_tx_queue* txq) {
   return 0;
 }
 
+static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
+  txq->stop = true;
+  pthread_join(txq->connect_thread, NULL);
+  MT_SAFE_FREE(txq->ah, ibv_destroy_ah);
+  if (txq->cma_id && txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
+  MT_SAFE_FREE(txq->cq, ibv_destroy_cq);
+  if (!txq->cma_id->pd) MT_SAFE_FREE(txq->pd, ibv_dealloc_pd);
+  MT_SAFE_FREE(txq->rai, rdma_freeaddrinfo);
+  MT_SAFE_FREE(txq->cma_id, rdma_destroy_id);
+  MT_SAFE_FREE(txq->ec, rdma_destroy_event_channel);
+
+  return 0;
+}
+
+static int rdma_tx_queue_post_init(struct mt_rdma_tx_queue* txq) {
+  int ret = 0;
+  enum mtl_port port = txq->port;
+  uint16_t q = txq->q;
+
+  if (!txq->pd) {
+    txq->pd = ibv_alloc_pd(txq->cma_id->verbs);
+    if (!txq->pd) {
+      err("%s(%d, %u), ibv_alloc_pd fail\n", __func__, port, q);
+      rdma_tx_queue_uinit(txq);
+      return -ENOMEM;
+    }
+  }
+
+  txq->cq = ibv_create_cq(txq->cma_id->verbs, MT_RDMA_MAX_WR, txq, NULL, 0);
+  if (!txq->cq) {
+    err("%s(%d, %u), ibv_create_cq fail\n", __func__, port, q);
+    rdma_tx_queue_uinit(txq);
+    return -EIO;
+  }
+
+  struct ibv_qp_init_attr init_qp_attr = {};
+  init_qp_attr.cap.max_send_wr = MT_RDMA_MAX_WR;
+  init_qp_attr.cap.max_recv_wr = 1;
+  init_qp_attr.cap.max_send_sge = 2;
+  init_qp_attr.cap.max_recv_sge = 1;
+  init_qp_attr.qp_context = txq;
+  init_qp_attr.send_cq = txq->cq;
+  init_qp_attr.recv_cq = txq->cq;
+  init_qp_attr.qp_type = IBV_QPT_UD;
+  init_qp_attr.sq_sig_all = 0;
+  ret = rdma_create_qp(txq->cma_id, txq->pd, &init_qp_attr);
+  if (ret) {
+    err("%s(%d, %u), rdma_create_qp fail %d\n", __func__, port, q, ret);
+    rdma_tx_queue_uinit(txq);
+    return -EIO;
+  }
+
+  ret = rdma_tx_mrs_init(txq);
+  if (ret) {
+    err("%s(%d, %u), rdma_tx_mrs_init fail %d\n", __func__, port, q, ret);
+    rdma_tx_queue_uinit(txq);
+    return -EIO;
+  }
+
+  return 0;
+}
+
 static void* rdma_tx_connect_thread(void* arg) {
   struct mt_rdma_tx_queue* txq = arg;
   enum mtl_port port = txq->port;
@@ -569,66 +634,59 @@ static void* rdma_tx_connect_thread(void* arg) {
   pfd.events = POLLIN;
 
   info("%s(%d, %u), start\n", __func__, port, q);
-  while (!txq->stop && !txq->connected) {
+  while (!txq->stop) {
     int ret = poll(&pfd, 1, 200);
     if (ret > 0) {
       ret = rdma_get_cm_event(txq->ec, &event);
       if (!ret) {
         switch (event->event) {
           case RDMA_CM_EVENT_ADDR_RESOLVED:
-            ret = rdma_resolve_route(txq->cma_id, 2000);
-            if (ret) {
-              err("%s(%d, %u), rdma_resolve_route fail\n", __func__, port, q);
-              goto connect_err;
+            if (!txq->multicast) {
+              ret = rdma_resolve_route(txq->cma_id, 2000);
+              if (ret) {
+                err("%s(%d, %u), rdma_resolve_route fail\n", __func__, port, q);
+                goto connect_err;
+              }
+            } else {
+              ret = rdma_tx_queue_post_init(txq);
+              if (ret) {
+                err("%s(%d, %u), rdma_tx_queue_post_init fail\n", __func__, port, q);
+                goto connect_err;
+              }
+              struct rdma_cm_join_mc_attr_ex attr = {
+                  .addr = txq->rai->ai_dst_addr,
+                  .comp_mask =
+                      RDMA_CM_JOIN_MC_ATTR_ADDRESS | RDMA_CM_JOIN_MC_ATTR_JOIN_FLAGS,
+                  .join_flags = RDMA_MC_JOIN_FLAG_SENDONLY_FULLMEMBER,
+              };
+              ret = rdma_join_multicast_ex(txq->cma_id, &attr, NULL);
+              if (ret) {
+                err("%s(%d, %u), rdma_join_multicast fail\n", __func__, port, q);
+                goto connect_err;
+              }
             }
             break;
           case RDMA_CM_EVENT_ROUTE_RESOLVED:
             dbg("%s(%d, %u), route resolved\n", __func__, port, q);
-            struct rdma_conn_param conn_param = {};
-            txq->pd = ibv_alloc_pd(txq->cma_id->verbs);
-            if (!txq->pd) {
-              ret = -ENOMEM;
-              err("%s(%d, %u), ibv_alloc_pd fail\n", __func__, port, q);
-              goto connect_err;
-            }
-
-            txq->cq = ibv_create_cq(txq->cma_id->verbs, MT_RDMA_MAX_WR, txq, NULL, 0);
-            if (!txq->cq) {
-              err("%s(%d, %u), ibv_create_cq fail\n", __func__, port, q);
-              goto connect_err;
-            }
-
-            struct ibv_qp_init_attr init_qp_attr = {};
-            init_qp_attr.cap.max_send_wr = MT_RDMA_MAX_WR;
-            init_qp_attr.cap.max_recv_wr = 1;
-            init_qp_attr.cap.max_send_sge = 2;
-            init_qp_attr.cap.max_recv_sge = 1;
-            init_qp_attr.qp_context = txq;
-            init_qp_attr.send_cq = txq->cq;
-            init_qp_attr.recv_cq = txq->cq;
-            init_qp_attr.qp_type = IBV_QPT_UD;
-            init_qp_attr.sq_sig_all = 0;
-            ret = rdma_create_qp(txq->cma_id, txq->pd, &init_qp_attr);
-            if (ret) {
-              err("%s(%d, %u), rdma_create_qp fail %d\n", __func__, port, q, ret);
-              goto connect_err;
-            }
-
-            ret = rdma_tx_mrs_init(txq);
-            if (ret) {
-              err("%s(%d, %u), rdma_tx_mrs_init fail %d\n", __func__, port, q, ret);
-              goto connect_err;
-            }
-
-            conn_param.private_data = txq->rai->ai_connect;
-            conn_param.private_data_len = txq->rai->ai_connect_len;
-            ret = rdma_connect(txq->cma_id, &conn_param);
-            if (ret) {
-              err("%s(%d, %u), rdma connect fail %d\n", __func__, port, q, ret);
-              goto connect_err;
+            if (!txq->multicast) {
+              ret = rdma_tx_queue_post_init(txq);
+              if (ret) {
+                err("%s(%d, %u), rdma_tx_queue_post_init fail\n", __func__, port, q);
+                goto connect_err;
+              }
+              struct rdma_conn_param conn_param = {
+                  .private_data = txq->rai->ai_connect,
+                  .private_data_len = txq->rai->ai_connect_len,
+              };
+              ret = rdma_connect(txq->cma_id, &conn_param);
+              if (ret) {
+                err("%s(%d, %u), rdma connect fail %d\n", __func__, port, q, ret);
+                goto connect_err;
+              }
             }
             break;
           case RDMA_CM_EVENT_ESTABLISHED:
+          case RDMA_CM_EVENT_MULTICAST_JOIN:
             dbg("%s(%d, %u), rdma connection established\n", __func__, port, q);
             txq->remote_qpn = event->param.ud.qp_num;
             txq->ah = ibv_create_ah(txq->pd, &event->param.ud.ah_attr);
@@ -639,15 +697,9 @@ static void* rdma_tx_connect_thread(void* arg) {
             info("%s(%d, %u), rdma connected\n", __func__, port, q);
             txq->connected = true;
             break;
-          case RDMA_CM_EVENT_ADDR_ERROR:
-          case RDMA_CM_EVENT_ROUTE_ERROR:
-          case RDMA_CM_EVENT_CONNECT_ERROR:
-          case RDMA_CM_EVENT_UNREACHABLE:
-          case RDMA_CM_EVENT_REJECTED:
-            err("%s(%d, %u), event: %s, error: %d\n", __func__, port, q,
-                rdma_event_str(event->event), event->status);
-            goto connect_err;
           default:
+            err("%s(%d, %u), unexpected event: %s, error: %d\n", __func__, port, q,
+                rdma_event_str(event->event), event->status);
             goto connect_err;
         }
         rdma_ack_cm_event(event);
@@ -669,20 +721,6 @@ connect_err:
   return NULL;
 }
 
-static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
-  txq->stop = true;
-  pthread_join(txq->connect_thread, NULL);
-  MT_SAFE_FREE(txq->ah, ibv_destroy_ah);
-  if (txq->cma_id && txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
-  MT_SAFE_FREE(txq->cq, ibv_destroy_cq);
-  MT_SAFE_FREE(txq->pd, ibv_dealloc_pd);
-  MT_SAFE_FREE(txq->rai, rdma_freeaddrinfo);
-  MT_SAFE_FREE(txq->cma_id, rdma_destroy_id);
-  MT_SAFE_FREE(txq->ec, rdma_destroy_event_channel);
-
-  return 0;
-}
-
 static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
   int ret = 0;
   enum mtl_port port = txq->port;
@@ -702,35 +740,47 @@ static int rdma_tx_queue_init(struct mt_rdma_tx_queue* txq) {
   }
 
   struct rdma_addrinfo hints = {};
-  struct rdma_addrinfo *res, *rai;
+  struct rdma_addrinfo *local_rai, *remote_rai;
   hints.ai_port_space = RDMA_PS_UDP;
   hints.ai_flags = RAI_PASSIVE;
   char ip[16];
   snprintf(ip, 16, "%d.%d.%d.%d", txq->sip[0], txq->sip[1], txq->sip[2], txq->sip[3]);
-  ret = rdma_getaddrinfo(ip, NULL, &hints, &res);
+  ret = rdma_getaddrinfo(ip, NULL, &hints, &local_rai);
   if (ret) {
     err("%s(%d, %u), rdma_getaddrinfo fail %d\n", __func__, port, q, ret);
     rdma_tx_queue_uinit(txq);
     return ret;
   }
-  hints.ai_src_addr = res->ai_src_addr;
-  hints.ai_src_len = res->ai_src_len;
+
+  ret = rdma_bind_addr(txq->cma_id, local_rai->ai_src_addr);
+  if (ret) {
+    err("%s(%d, %u), rdma_bind_addr fail %d\n", __func__, port, q, ret);
+    rdma_tx_queue_uinit(txq);
+    return ret;
+  }
+  /* a default pd will be created */
+  txq->pd = txq->cma_id->pd;
+
+  hints.ai_src_addr = local_rai->ai_src_addr;
+  hints.ai_src_len = local_rai->ai_src_len;
   hints.ai_flags &= ~RAI_PASSIVE;
   uint8_t* dip = txq->tx_entry->flow.dip_addr;
+  txq->multicast = mt_is_multicast_ip(dip) ? true : false;
   snprintf(ip, 16, "%d.%d.%d.%d", dip[0], dip[1], dip[2], dip[3]);
   char dport[6];
   snprintf(dport, 6, "%d", txq->tx_entry->flow.dst_port);
-  ret = rdma_getaddrinfo(ip, dport, &hints, &rai);
-  rdma_freeaddrinfo(res);
+  ret = rdma_getaddrinfo(ip, dport, &hints, &remote_rai);
+  rdma_freeaddrinfo(local_rai);
   if (ret) {
     err("%s(%d, %u), rdma_getaddrinfo fail %d\n", __func__, port, q, ret);
     rdma_tx_queue_uinit(txq);
     return ret;
   }
-  txq->rai = rai;
+  txq->rai = remote_rai;
 
-  /* connect to server */
-  ret = rdma_resolve_addr(txq->cma_id, rai->ai_src_addr, rai->ai_dst_addr, 2000);
+  /* resolve rx/multicast addr */
+  ret = rdma_resolve_addr(txq->cma_id, remote_rai->ai_src_addr, remote_rai->ai_dst_addr,
+                          2000);
   if (ret) {
     err("%s(%d, %u), rdma_resolve_addr fail %d\n", __func__, port, q, ret);
     rdma_tx_queue_uinit(txq);
@@ -769,6 +819,84 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
   return 0;
 }
 
+static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
+  rxq->stop = true;
+  pthread_join(rxq->connect_thread, NULL);
+  MT_SAFE_FREE(rxq->recv_mr, ibv_dereg_mr);
+  if (rxq->cma_id && rxq->cma_id->qp) rdma_destroy_qp(rxq->cma_id);
+  MT_SAFE_FREE(rxq->cq, ibv_destroy_cq);
+  if (!rxq->multicast) MT_SAFE_FREE(rxq->pd, ibv_dealloc_pd);
+  MT_SAFE_FREE(rxq->rai, rdma_freeaddrinfo);
+  MT_SAFE_FREE(rxq->listen_id, rdma_destroy_id);
+  MT_SAFE_FREE(rxq->ec, rdma_destroy_event_channel);
+
+  return 0;
+}
+
+static int rdma_rx_queue_post_init(struct mt_rdma_rx_queue* rxq) {
+  int ret = 0;
+  enum mtl_port port = rxq->port;
+  uint16_t q = rxq->q;
+
+  if (!rxq->pd) {
+    rxq->pd = ibv_alloc_pd(rxq->cma_id->verbs);
+    if (!rxq->pd) {
+      err("%s(%d, %u), ibv_alloc_pd fail\n", __func__, port, q);
+      rdma_rx_queue_uinit(rxq);
+      return -ENOMEM;
+    }
+  }
+
+  rxq->cq = ibv_create_cq(rxq->cma_id->verbs, MT_RDMA_MAX_WR, rxq, NULL, 0);
+  if (!rxq->cq) {
+    err("%s(%d, %u), ibv_create_cq fail\n", __func__, port, q);
+    rdma_rx_queue_uinit(rxq);
+    return -EIO;
+  }
+
+  struct ibv_qp_init_attr init_qp_attr = {};
+  init_qp_attr.cap.max_send_wr = 1;
+  init_qp_attr.cap.max_recv_wr = MT_RDMA_MAX_WR;
+  init_qp_attr.cap.max_send_sge = 1;
+  init_qp_attr.cap.max_recv_sge = 1;
+  init_qp_attr.qp_context = rxq;
+  init_qp_attr.send_cq = rxq->cq;
+  init_qp_attr.recv_cq = rxq->cq;
+  init_qp_attr.qp_type = IBV_QPT_UD;
+  init_qp_attr.sq_sig_all = 0;
+  ret = rdma_create_qp(rxq->cma_id, rxq->pd, &init_qp_attr);
+  if (ret) {
+    err("%s(%d, %u), rdma_create_qp fail %d\n", __func__, port, q, ret);
+    rdma_rx_queue_uinit(rxq);
+    return ret;
+  }
+  rxq->qp = rxq->cma_id->qp;
+
+  ret = rdma_rx_mr_init(rxq);
+  if (ret) {
+    err("%s(%d, %u), rdma_rx_mr_init fail %d\n", __func__, port, q, ret);
+    rdma_rx_queue_uinit(rxq);
+    return ret;
+  }
+
+  struct rte_mbuf* mbufs[MT_RDMA_MAX_WR / 2];
+  ret = rte_pktmbuf_alloc_bulk(rxq->mbuf_pool, mbufs, MT_RDMA_MAX_WR / 2);
+  if (ret) {
+    err("%s(%d, %u), mbuf alloc fail %d\n", __func__, port, q, ret);
+    rdma_rx_queue_uinit(rxq);
+    return ret;
+  }
+
+  ret = rdma_rx_post_recv(rxq, mbufs, MT_RDMA_MAX_WR / 2);
+  if (ret) {
+    err("%s(%d, %u), rdma_rx_post_recv fail %d\n", __func__, port, q, ret);
+    rdma_rx_queue_uinit(rxq);
+    return ret;
+  }
+
+  return 0;
+}
+
 static void* rdma_rx_connect_thread(void* arg) {
   struct mt_rdma_rx_queue* rxq = arg;
   enum mtl_port port = rxq->port;
@@ -779,60 +907,22 @@ static void* rdma_rx_connect_thread(void* arg) {
   pfd.events = POLLIN;
 
   info("%s(%d, %u), start\n", __func__, port, q);
-  while (!rxq->stop && !rxq->connected) {
+  while (!rxq->stop) {
     int ret = poll(&pfd, 1, 200);
     if (ret > 0) {
       ret = rdma_get_cm_event(rxq->ec, &event);
       if (!ret) {
         switch (event->event) {
           case RDMA_CM_EVENT_CONNECT_REQUEST:
-            rxq->pd = ibv_alloc_pd(event->id->verbs);
-            if (!rxq->pd) {
-              err("%s(%d, %u), ibv_alloc_pd fail\n", __func__, port, q);
-              goto connect_err;
-            }
-
-            rxq->cq = ibv_create_cq(event->id->verbs, MT_RDMA_MAX_WR, rxq, NULL, 0);
-            if (!rxq->cq) {
-              err("%s(%d, %u), ibv_create_cq fail\n", __func__, port, q);
-              goto connect_err;
-            }
-
-            struct ibv_qp_init_attr init_qp_attr = {};
-            init_qp_attr.cap.max_send_wr = 1;
-            init_qp_attr.cap.max_recv_wr = MT_RDMA_MAX_WR;
-            init_qp_attr.cap.max_send_sge = 1;
-            init_qp_attr.cap.max_recv_sge = 1;
-            init_qp_attr.qp_context = rxq;
-            init_qp_attr.send_cq = rxq->cq;
-            init_qp_attr.recv_cq = rxq->cq;
-            init_qp_attr.qp_type = IBV_QPT_UD;
-            init_qp_attr.sq_sig_all = 0;
-            ret = rdma_create_qp(event->id, rxq->pd, &init_qp_attr);
-            if (ret) {
-              err("%s(%d, %u), rdma_create_qp fail %d\n", __func__, port, q, ret);
-              goto connect_err;
-            }
-            rxq->qp = event->id->qp;
             rxq->cma_id = event->id;
-
-            ret = rdma_rx_mr_init(rxq);
+            ret = rdma_rx_queue_post_init(rxq);
             if (ret) {
-              err("%s(%d, %u), rdma_rx_mr_init fail %d\n", __func__, port, q, ret);
+              err("%s(%d, %u), rdma_rx_queue_post_init fail\n", __func__, port, q);
               goto connect_err;
             }
-
-            struct rte_mbuf* mbufs[MT_RDMA_MAX_WR / 2];
-            ret = rte_pktmbuf_alloc_bulk(rxq->mbuf_pool, mbufs, MT_RDMA_MAX_WR / 2);
-            if (ret) {
-              err("%s(%d, %u), mbuf alloc fail %d\n", __func__, port, q, ret);
-              goto connect_err;
-            }
-
-            rdma_rx_post_recv(rxq, mbufs, MT_RDMA_MAX_WR / 2);
-
-            struct rdma_conn_param conn_param = {};
-            conn_param.qp_num = event->id->qp->qp_num;
+            struct rdma_conn_param conn_param = {
+                .qp_num = event->id->qp->qp_num,
+            };
             ret = rdma_accept(event->id, &conn_param);
             if (ret) {
               err("%s(%d, %u), rdma_accept fail %d\n", __func__, port, q, ret);
@@ -841,8 +931,30 @@ static void* rdma_rx_connect_thread(void* arg) {
             info("%s(%d, %u), rdma connected\n", __func__, port, q);
             rxq->connected = true;
             break;
+          case RDMA_CM_EVENT_ADDR_RESOLVED:
+            if (!rxq->multicast) {
+              err("%s(%d, %u), unexpected event: %s, error: %d\n", __func__, port, q,
+                  rdma_event_str(event->event), event->status);
+              goto connect_err;
+            }
+            rxq->cma_id = rxq->listen_id;
+            ret = rdma_rx_queue_post_init(rxq);
+            if (ret) {
+              err("%s(%d, %u), rdma_rx_queue_post_init fail\n", __func__, port, q);
+              goto connect_err;
+            }
+            ret = rdma_join_multicast(rxq->cma_id, rxq->rai->ai_dst_addr, NULL);
+            if (ret) {
+              err("%s(%d, %u), rdma_join_multicast fail\n", __func__, port, q);
+              goto connect_err;
+            }
+            break;
+          case RDMA_CM_EVENT_MULTICAST_JOIN:
+            info("%s(%d, %u), rdma multicast connected\n", __func__, port, q);
+            rxq->connected = true;
+            break;
           default:
-            err("%s(%d, %u), event: %s, error: %d\n", __func__, port, q,
+            err("%s(%d, %u), unexpected event: %s, error: %d\n", __func__, port, q,
                 rdma_event_str(event->event), event->status);
             goto connect_err;
         }
@@ -864,19 +976,6 @@ connect_err:
   return NULL;
 }
 
-static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
-  rxq->stop = true;
-  pthread_join(rxq->connect_thread, NULL);
-  MT_SAFE_FREE(rxq->recv_mr, ibv_dereg_mr);
-  MT_SAFE_FREE(rxq->qp, ibv_destroy_qp);
-  MT_SAFE_FREE(rxq->cq, ibv_destroy_cq);
-  MT_SAFE_FREE(rxq->pd, ibv_dealloc_pd);
-  MT_SAFE_FREE(rxq->listen_id, rdma_destroy_id);
-  MT_SAFE_FREE(rxq->ec, rdma_destroy_event_channel);
-
-  return 0;
-}
-
 static int rdma_rx_queue_init(struct mt_rdma_rx_queue* rxq) {
   int ret = 0;
   enum mtl_port port = rxq->port;
@@ -893,36 +992,63 @@ static int rdma_rx_queue_init(struct mt_rdma_rx_queue* rxq) {
     rdma_rx_queue_uinit(rxq);
     return ret;
   }
+  info("%s(%d, %u), rxq->listen_id %p\n", __func__, port, q, rxq->listen_id);
 
-  struct rdma_addrinfo hints = {};
-  hints.ai_port_space = RDMA_PS_UDP;
-  hints.ai_flags = RAI_PASSIVE;
+  struct rdma_addrinfo hints = {
+      .ai_port_space = RDMA_PS_UDP,
+      .ai_flags = RAI_PASSIVE,
+  };
   char ip[16];
   snprintf(ip, 16, "%d.%d.%d.%d", rxq->sip[0], rxq->sip[1], rxq->sip[2], rxq->sip[3]);
   char dport[6];
   snprintf(dport, 6, "%d", rxq->rx_entry->flow.dst_port);
-  struct rdma_addrinfo* rai;
-  ret = rdma_getaddrinfo(ip, dport, &hints, &rai);
+  struct rdma_addrinfo* local_rai;
+  ret = rdma_getaddrinfo(ip, dport, &hints, &local_rai);
   if (ret) {
     err("%s(%d, %u), rdma_getaddrinfo fail %d\n", __func__, port, q, ret);
     rdma_rx_queue_uinit(rxq);
     return ret;
   }
 
-  ret = rdma_bind_addr(rxq->listen_id, rai->ai_src_addr);
+  ret = rdma_bind_addr(rxq->listen_id, local_rai->ai_src_addr);
   if (ret) {
     err("%s(%d, %u), rdma_bind_addr fail %d\n", __func__, port, q, ret);
     rdma_rx_queue_uinit(rxq);
-    rdma_freeaddrinfo(rai);
+    rdma_freeaddrinfo(local_rai);
     return ret;
   }
-  rdma_freeaddrinfo(rai);
 
-  ret = rdma_listen(rxq->listen_id, 0);
-  if (ret) {
-    err("%s(%d, %u), rdma_listen fail %d\n", __func__, port, q, ret);
-    rdma_rx_queue_uinit(rxq);
-    return ret;
+  uint8_t* dip = rxq->rx_entry->flow.dip_addr;
+  rxq->multicast = mt_is_multicast_ip(dip) ? true : false;
+  if (rxq->multicast) {
+    rxq->pd = rxq->listen_id->pd;
+    hints.ai_flags = 0;
+    struct rdma_addrinfo* mcast_rai;
+    snprintf(ip, 16, "%d.%d.%d.%d", dip[0], dip[1], dip[2], dip[3]);
+    ret = rdma_getaddrinfo(ip, dport, &hints, &mcast_rai);
+    if (ret) {
+      err("%s(%d, %u), rdma_getaddrinfo fail %d\n", __func__, port, q, ret);
+      rdma_rx_queue_uinit(rxq);
+      rdma_freeaddrinfo(local_rai);
+      return ret;
+    }
+    rxq->rai = mcast_rai;
+    ret = rdma_resolve_addr(rxq->listen_id, local_rai->ai_src_addr,
+                            mcast_rai->ai_dst_addr, 2000);
+    rdma_freeaddrinfo(local_rai);
+    if (ret) {
+      err("%s(%d, %u), rdma_resolve_addr fail %d\n", __func__, port, q, ret);
+      rdma_rx_queue_uinit(rxq);
+      return ret;
+    }
+  } else {
+    rdma_freeaddrinfo(local_rai);
+    ret = rdma_listen(rxq->listen_id, 0);
+    if (ret) {
+      err("%s(%d, %u), rdma_listen fail %d\n", __func__, port, q, ret);
+      rdma_rx_queue_uinit(rxq);
+      return ret;
+    }
   }
 
   rxq->connected = false;
