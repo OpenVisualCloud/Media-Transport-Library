@@ -61,29 +61,11 @@ sudo ip link set dev ens785f0 mtu 2100
 
 ### 4.3 Configure netns for testing on the same machine
 
-Create netns and assign ports to different namespaces:
+For local ports, local arp is needed for rdma_cm to build the connection between them:
 
 ```bash
-sudo ip netns add rdma0
-sudo ip netns add rdma1
-sudo ip netns list
-
-sudo ip link set ens785f0 netns rdma0
-sudo ip link set ens785f1 netns rdma1
-
-sudo ip netns exec rdma1 ip link list
-
-sudo ip netns exec rdma0 ip addr add 192.168.96.101/24 dev ens785f0
-sudo ip netns exec rdma1 ip addr add 192.168.96.102/24 dev ens785f1
-
-sudo ip netns exec rdma0 ip link set dev ens785f0 up
-sudo ip netns exec rdma1 ip link set dev ens785f1 up
-
-sudo ip netns exec rdma0 ifconfig ens785f0 mtu 2100
-sudo ip netns exec rdma1 ifconfig ens785f1 mtu 2100
+sudo sysctl net.ipv4.conf.ens785f0.accept_local=1
 ```
-
-Run applications with different namespaces using `sudo ip netns exec <ns>` before your commands.
 
 ## 5. Run
 
@@ -103,8 +85,6 @@ Configure the network interface in the JSON file:
 
 Refer to the [Run Guide](run.md) for more usage details.
 
-RDMA UD supports unicast IP only.
-
 ### 5.2 API Usage
 
 For configuring the network interface in your application, use the following code snippet:
@@ -116,3 +96,8 @@ p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
 ...
 mtl_init(p);
 ```
+
+### 5.3 Multicast (experimental)
+
+Multicast is also supported for RDMA UD. In the configurations IPv4 multicast address can be set as the session IP.
+This is still at experimental status. Notice only one session with one multicast address can be created.
