@@ -565,10 +565,12 @@ static int rdma_tx_mrs_init(struct mt_rdma_tx_queue* txq) {
 static int rdma_tx_queue_uinit(struct mt_rdma_tx_queue* txq) {
   txq->stop = true;
   pthread_join(txq->connect_thread, NULL);
+  if (txq->multicast && txq->cma_id && txq->rai)
+    rdma_leave_multicast(txq->cma_id, txq->rai->ai_dst_addr);
   MT_SAFE_FREE(txq->ah, ibv_destroy_ah);
   if (txq->cma_id && txq->cma_id->qp) rdma_destroy_qp(txq->cma_id);
   MT_SAFE_FREE(txq->cq, ibv_destroy_cq);
-  if (!txq->cma_id->pd) MT_SAFE_FREE(txq->pd, ibv_dealloc_pd);
+  if (txq->cma_id && !txq->cma_id->pd) MT_SAFE_FREE(txq->pd, ibv_dealloc_pd);
   MT_SAFE_FREE(txq->rai, rdma_freeaddrinfo);
   MT_SAFE_FREE(txq->cma_id, rdma_destroy_id);
   MT_SAFE_FREE(txq->ec, rdma_destroy_event_channel);
@@ -667,34 +669,33 @@ static void* rdma_tx_connect_thread(void* arg) {
             }
             break;
           case RDMA_CM_EVENT_ROUTE_RESOLVED:
-            dbg("%s(%d, %u), route resolved\n", __func__, port, q);
-            if (!txq->multicast) {
-              ret = rdma_tx_queue_post_init(txq);
-              if (ret) {
-                err("%s(%d, %u), rdma_tx_queue_post_init fail\n", __func__, port, q);
-                goto connect_err;
-              }
-              struct rdma_conn_param conn_param = {
-                  .private_data = txq->rai->ai_connect,
-                  .private_data_len = txq->rai->ai_connect_len,
-              };
-              ret = rdma_connect(txq->cma_id, &conn_param);
-              if (ret) {
-                err("%s(%d, %u), rdma connect fail %d\n", __func__, port, q, ret);
-                goto connect_err;
-              }
+            ret = rdma_tx_queue_post_init(txq);
+            if (ret) {
+              err("%s(%d, %u), rdma_tx_queue_post_init fail\n", __func__, port, q);
+              goto connect_err;
+            }
+            struct rdma_conn_param conn_param = {
+                .private_data = txq->rai->ai_connect,
+                .private_data_len = txq->rai->ai_connect_len,
+            };
+            ret = rdma_connect(txq->cma_id, &conn_param);
+            if (ret) {
+              err("%s(%d, %u), rdma connect fail %d\n", __func__, port, q, ret);
+              goto connect_err;
             }
             break;
           case RDMA_CM_EVENT_ESTABLISHED:
           case RDMA_CM_EVENT_MULTICAST_JOIN:
-            dbg("%s(%d, %u), rdma connection established\n", __func__, port, q);
             txq->remote_qpn = event->param.ud.qp_num;
             txq->ah = ibv_create_ah(txq->pd, &event->param.ud.ah_attr);
             if (!txq->ah) {
               err("%s(%d, %u), ibv_create_ah fail\n", __func__, port, q);
               goto connect_err;
             }
-            info("%s(%d, %u), rdma connected\n", __func__, port, q);
+            if (txq->multicast)
+              info("%s(%d, %u), rdma multicast connected\n", __func__, port, q);
+            else
+              info("%s(%d, %u), rdma connected\n", __func__, port, q);
             txq->connected = true;
             break;
           default:
@@ -822,6 +823,8 @@ static int rdma_rx_mr_init(struct mt_rdma_rx_queue* rxq) {
 static int rdma_rx_queue_uinit(struct mt_rdma_rx_queue* rxq) {
   rxq->stop = true;
   pthread_join(rxq->connect_thread, NULL);
+  if (rxq->multicast && rxq->cma_id && rxq->rai)
+    rdma_leave_multicast(rxq->cma_id, rxq->rai->ai_dst_addr);
   MT_SAFE_FREE(rxq->recv_mr, ibv_dereg_mr);
   if (rxq->cma_id && rxq->cma_id->qp) rdma_destroy_qp(rxq->cma_id);
   MT_SAFE_FREE(rxq->cq, ibv_destroy_cq);
@@ -932,12 +935,7 @@ static void* rdma_rx_connect_thread(void* arg) {
             rxq->connected = true;
             break;
           case RDMA_CM_EVENT_ADDR_RESOLVED:
-            if (!rxq->multicast) {
-              err("%s(%d, %u), unexpected event: %s, error: %d\n", __func__, port, q,
-                  rdma_event_str(event->event), event->status);
-              goto connect_err;
-            }
-            rxq->cma_id = rxq->listen_id;
+            rxq->cma_id = event->id;
             ret = rdma_rx_queue_post_init(rxq);
             if (ret) {
               err("%s(%d, %u), rdma_rx_queue_post_init fail\n", __func__, port, q);
