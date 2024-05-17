@@ -69,7 +69,6 @@ enum mtl_rdma_log_level mt_rdma_get_log_level(void);
 enum mt_rdma_message_type {
   MT_RDMA_MSG_NONE = 0,
   MT_RDMA_MSG_BUFFER_META,
-  MT_RDMA_MSG_BUFFER_READY,
   MT_RDMA_MSG_BUFFER_DONE,
   MT_RDMA_MSG_BYE,
   MT_RDMA_MSG_MAX,
@@ -84,10 +83,6 @@ struct mt_rdma_message {
       uint32_t seq_num;
       size_t meta_size;
     } buf_meta;
-    struct {
-      uint16_t buf_idx;
-      uint32_t seq_num;
-    } buf_ready;
     struct {
       uint16_t buf_idx;
       uint32_t seq_num;
