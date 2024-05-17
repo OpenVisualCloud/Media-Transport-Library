@@ -423,14 +423,15 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];
     if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP ||
-        pmd == MTL_PMD_RDMA_UD)
+        pmd == MTL_PMD_RDMA_UD) {
       socket[i] = mt_socket_get_numa(kport_info.kernel_if[i]);
-    else if (pmd != MTL_PMD_DPDK_USER)
+    } else if (pmd != MTL_PMD_DPDK_USER) {
       socket[i] = mt_dev_get_socket_id(kport_info.dpdk_port[i]);
-    else
+    } else {
       socket[i] = mt_dev_get_socket_id(p->port[i]);
+    }
     if (socket[i] < 0) {
-      err("%s, get socket fail %d for pmd %d\n", __func__, socket[i], p->pmd[i]);
+      err("%s(%d), get socket fail %d for pmd %d\n", __func__, i, socket[i], p->pmd[i]);
 #ifndef WINDOWSENV
       if (pmd == MTL_PMD_DPDK_USER) {
         err("Run \"dpdk-devbind.py -s | grep Ethernet\" to check if other port driver is "
@@ -439,12 +440,17 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 #endif
       goto err_exit;
     }
+
+    if (p->port_params[i].flags & MTL_PORT_FLAG_FORCE_NUMA) {
+      socket[i] = p->port_params[i].socket_id;
+      warn("%s(%d), user force the numa id to %d\n", __func__, i, socket[i]);
+    }
   }
 
 #ifndef WINDOWSENV
   int numa_nodes = 0;
   if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
-  if ((p->flags & MTL_FLAG_BIND_NUMA) && (numa_nodes > 1)) {
+  if (!(p->flags & MTL_FLAG_NOT_BIND_NUMA) && (numa_nodes > 1)) {
     /* bind current thread and its children to socket node */
     struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
 
@@ -461,7 +467,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 #endif
 
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
-  if (!impl) goto err_exit;
+  if (!impl) {
+    err("%s, impl malloc fail on socket %d\n", __func__, socket[MTL_PORT_P]);
+    goto err_exit;
+  }
 
   mt_user_info_init(&impl->u_info);
 
@@ -518,7 +527,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
         impl->user_para.netmask[i][3] = 0;
       }
     }
-    /* update socket */
+    /* update socket id */
     mt_if(impl, i)->socket_id = socket[i];
     info("%s(%d), socket_id %d port %s\n", __func__, i, socket[i], p->port[i]);
   }
@@ -604,9 +613,8 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     }
   }
 
-  if (!(p->flags & MTL_FLAG_BIND_NUMA)) {
-    warn("%s, numa bind is not enabled, performance may limited as across numa access\n",
-         __func__);
+  if (p->flags & MTL_FLAG_NOT_BIND_NUMA) {
+    warn("%s, performance may limited as possible across numa access\n", __func__);
   }
 
   info("%s, succ, tsc_hz %" PRIu64 "\n", __func__, impl->tsc_hz);

@@ -313,7 +313,7 @@ enum st21_tx_pacing_way {
 
 /** MTL init flag */
 enum mtl_init_flag {
-  /** lib will bind all app and pin threads, memory to NIC socket */
+  /** lib will bind all process threads to NIC numa socket, default behavior */
   MTL_FLAG_BIND_NUMA = (MTL_BIT64(0)),
   /** Enable built-in PTP implementation */
   MTL_FLAG_PTP_ENABLE = (MTL_BIT64(1)),
@@ -397,6 +397,9 @@ enum mtl_init_flag {
   MTL_FLAG_NO_MULTICAST = (MTL_BIT64(19)),
   /** Dedicated lcore for system CNI tasks. */
   MTL_FLAG_DEDICATED_SYS_LCORE = (MTL_BIT64(20)),
+  /** not bind all process threads to NIC numa socket */
+  MTL_FLAG_NOT_BIND_NUMA = (MTL_BIT64(21)),
+
   /**
    * dedicate thread for cni message
    */
@@ -454,11 +457,30 @@ enum mtl_init_flag {
   MTL_FLAG_RX_UDP_PORT_ONLY = (MTL_BIT64(46)),
 };
 
+/** MTL port init flag */
+enum mtl_port_init_flag {
+  /** user force the NUMA id instead reading from NIC PCIE topology */
+  MTL_PORT_FLAG_FORCE_NUMA = (MTL_BIT64(0)),
+};
+
 struct mtl_ptp_sync_notify_meta {
   /** offset to UTC of current master PTP */
   int16_t master_utc_offset;
   /* phc delta of current sync */
   int64_t delta;
+};
+
+/**
+ * The structure describing how to init a mtl port device.
+ */
+struct mtl_port_init_params {
+  /** Optional. Flags to control MTL port. See MTL_PORT_FLAG_* for possible value */
+  uint64_t flags;
+  /** Lib will force assign the numa for current port to this numa id if
+   * MTL_PORT_FLAG_FORCE_NUMA is set. Not set MTL_PORT_FLAG_FORCE_NUMA if you don't know
+   * the detail.
+   */
+  int socket_id;
 };
 
 /**
@@ -626,6 +648,9 @@ struct mtl_init_params {
   double kp;
   /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller integral gain. */
   double ki;
+
+  /** Optional, all future port params should be placed into this struct */
+  struct mtl_port_init_params port_params[MTL_PORT_MAX];
 
   /**
    * deprecated for MTL_TRANSPORT_ST2110.

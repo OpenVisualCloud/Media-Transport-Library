@@ -64,6 +64,7 @@ enum st_args_cmd {
   ST_ARG_DISABLE_MIGRATE,
   ST_ARG_BIND_NUMA,
   ST_ARG_NOT_BIND_NUMA,
+  ST_ARG_FORCE_NUMA,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -204,6 +205,7 @@ static struct option st_app_args_options[] = {
     {"disable_migrate", no_argument, 0, ST_ARG_DISABLE_MIGRATE},
     {"bind_numa", no_argument, 0, ST_ARG_BIND_NUMA},
     {"not_bind_numa", no_argument, 0, ST_ARG_NOT_BIND_NUMA},
+    {"force_numa", required_argument, 0, ST_ARG_FORCE_NUMA},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -593,7 +595,13 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         p->flags |= MTL_FLAG_BIND_NUMA;
         break;
       case ST_ARG_NOT_BIND_NUMA:
-        p->flags &= ~MTL_FLAG_BIND_NUMA;
+        p->flags |= MTL_FLAG_NOT_BIND_NUMA;
+        break;
+      case ST_ARG_FORCE_NUMA:
+        for (int port = 0; port < MTL_PORT_MAX; port++) {
+          p->port_params[port].flags |= MTL_PORT_FLAG_FORCE_NUMA;
+          p->port_params[port].socket_id = atoi(optarg);
+        }
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))
