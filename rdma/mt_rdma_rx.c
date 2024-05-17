@@ -123,6 +123,8 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
   int ret = 0;
   struct mt_rdma_rx_ctx* ctx = arg;
   struct mtl_rdma_rx_ops* ops = &ctx->ops;
+  uint16_t idx;
+  struct mt_rdma_rx_buffer* rx_buffer;
   struct ibv_wc wc;
   struct ibv_cq* cq = ctx->cq;
   void* cq_ctx = NULL;
@@ -176,8 +178,6 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
         if (wc.opcode == IBV_WC_RECV) {
           struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
           if (msg->magic == MT_RDMA_MSG_MAGIC) {
-            uint16_t idx;
-            struct mt_rdma_rx_buffer* rx_buffer;
             switch (msg->type) {
               case MT_RDMA_MSG_BUFFER_META:
                 idx = msg->buf_meta.buf_idx;
@@ -209,34 +209,6 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                 }
                 pthread_mutex_unlock(&rx_buffer->lock);
                 break;
-              case MT_RDMA_MSG_BUFFER_READY:
-                idx = msg->buf_ready.buf_idx;
-                dbg("%s(%s), buffer %u ready received\n", __func__, ctx->ops_name, idx);
-                rx_buffer = &ctx->rx_buffers[idx];
-                pthread_mutex_lock(&rx_buffer->lock);
-                if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
-                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
-                  ctx->stat_buffer_received++;
-                  if (ops->notify_buffer_ready) {
-                    ret = ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
-                    if (ret) {
-                      err("%s(%s), notify_buffer_ready failed\n", __func__,
-                          ctx->ops_name);
-                      /* todo: error handle */
-                    }
-                  }
-                } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
-                  rx_buffer->buffer.seq_num = msg->buf_ready.seq_num;
-                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_WAIT_META;
-                } else {
-                  err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name,
-                      idx, rx_buffer->status);
-                  pthread_mutex_unlock(&rx_buffer->lock);
-                  goto out;
-                }
-                pthread_mutex_unlock(&rx_buffer->lock);
-                msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
-                break;
               case MT_RDMA_MSG_BYE:
                 info("%s(%s), received bye message\n", __func__, ctx->ops_name);
                 /* todo: handle tx bye, notice that cq poll thread may stop before
@@ -251,6 +223,40 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
             err("%s(%s), received invalid message\n", __func__, ctx->ops_name);
             goto out;
           }
+          void* r_msg = rdma_rx_get_recv_msg(ctx);
+          ret = rdma_post_recv(ctx->id, r_msg, r_msg, MT_RDMA_MSG_MAX_SIZE,
+                               ctx->recv_msgs_mr);
+          if (ret) {
+            err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
+                strerror(errno));
+            goto out;
+          }
+        } else if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) { /* write done */
+          struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
+          msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
+          idx = ntohl(wc.imm_data);
+          dbg("%s(%s), buffer %u write done\n", __func__, ctx->ops_name, idx);
+          rx_buffer = &ctx->rx_buffers[idx];
+          pthread_mutex_lock(&rx_buffer->lock);
+          if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
+            rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
+            ctx->stat_buffer_received++;
+            if (ops->notify_buffer_ready) {
+              ret = ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
+              if (ret) {
+                err("%s(%s), notify_buffer_ready failed\n", __func__, ctx->ops_name);
+                /* todo: error handle */
+              }
+            }
+          } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
+            rx_buffer->status = MT_RDMA_BUFFER_STATUS_WAIT_META;
+          } else {
+            err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name, idx,
+                rx_buffer->status);
+            pthread_mutex_unlock(&rx_buffer->lock);
+            goto out;
+          }
+          pthread_mutex_unlock(&rx_buffer->lock);
           void* r_msg = rdma_rx_get_recv_msg(ctx);
           ret = rdma_post_recv(ctx->id, r_msg, r_msg, MT_RDMA_MSG_MAX_SIZE,
                                ctx->recv_msgs_mr);

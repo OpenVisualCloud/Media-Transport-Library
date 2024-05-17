@@ -207,22 +207,13 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
         } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
           struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc.wr_id;
           pthread_mutex_lock(&tx_buffer->lock);
-          /* send ready message to rx */
-          struct mt_rdma_message msg = {
-              .magic = MT_RDMA_MSG_MAGIC,
-              .type = MT_RDMA_MSG_BUFFER_READY,
-              .buf_ready.buf_idx = tx_buffer->idx,
-              .buf_ready.seq_num = ctx->buffer_seq_num++,
-          };
-          ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
-          if (ret) {
-            err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
-                strerror(errno));
+          if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
+            err("%s(%s), buffer write done with invalid status %d\n", __func__,
+                ctx->ops_name, tx_buffer->status);
             pthread_mutex_unlock(&tx_buffer->lock);
             goto out;
           }
-          dbg("%s(%s), send buffer %d ready message\n", __func__, ctx->ops_name,
-              tx_buffer->idx);
+          dbg("%s(%s), buffer %d write done\n", __func__, ctx->ops_name, tx_buffer->idx);
           tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
           tx_buffer->ref_count++;
           if (ops->notify_buffer_sent) {
@@ -432,11 +423,25 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
         return -EIO;
       }
       /* write to rx immediately */
-      int ret = rdma_post_write(ctx->id, tx_buffer, buffer->addr, buffer->size,
-                                tx_buffer->mr, IBV_SEND_SIGNALED, tx_buffer->remote_addr,
-                                tx_buffer->remote_key);
+      struct ibv_sge sge = {
+          .addr = (uint64_t)(uintptr_t)buffer->addr,
+          .length = (uint32_t)buffer->size,
+          .lkey = tx_buffer->mr->lkey,
+      };
+      struct ibv_send_wr wr, *bad;
+      wr.wr_id = (uintptr_t)tx_buffer;
+      wr.next = NULL;
+      wr.sg_list = &sge;
+      wr.num_sge = 1;
+      wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+      wr.send_flags = IBV_SEND_SIGNALED;
+      wr.imm_data = htonl(tx_buffer->idx);
+      wr.wr.rdma.remote_addr = tx_buffer->remote_addr;
+      wr.wr.rdma.rkey = tx_buffer->remote_key;
+
+      int ret = ibv_post_send(ctx->qp, &wr, &bad);
       if (ret) {
-        err("%s(%s), rdma_post_write failed: %s\n", __func__, ctx->ops_name,
+        err("%s(%s), ibv_post_send failed: %s\n", __func__, ctx->ops_name,
             strerror(errno));
         pthread_mutex_unlock(&tx_buffer->lock);
         return -EIO;
@@ -446,7 +451,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
       msg->magic = MT_RDMA_MSG_MAGIC;
       msg->type = MT_RDMA_MSG_BUFFER_META;
       msg->buf_meta.buf_idx = i;
-      msg->buf_meta.seq_num = ctx->buffer_seq_num;
+      msg->buf_meta.seq_num = ctx->buffer_seq_num++;
       msg->buf_meta.meta_size = buffer->user_meta_size;
       memcpy(&msg[1], buffer->user_meta, buffer->user_meta_size);
       ret = rdma_post_send(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE, ctx->send_msgs_mr,
