@@ -8,7 +8,7 @@
 #include "mt_rdma.h"
 
 static int rdma_tx_uinit_mrs(struct mt_rdma_tx_ctx* ctx) {
-  MT_SAFE_FREE(ctx->send_msgs_mr, ibv_dereg_mr);
+  MT_SAFE_FREE(ctx->meta_mr, ibv_dereg_mr);
   MT_SAFE_FREE(ctx->recv_msgs_mr, ibv_dereg_mr);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
@@ -42,21 +42,21 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
   }
   ctx->recv_msgs_mr = mr;
 
-  mr = ibv_reg_mr(ctx->pd, ctx->send_msgs, ctx->buffer_cnt * MT_RDMA_MSG_MAX_SIZE,
-                  IBV_ACCESS_LOCAL_WRITE);
+  mr = ibv_reg_mr(ctx->pd, ctx->meta_region, ctx->buffer_cnt * MT_RDMA_MSG_MAX_SIZE,
+                  IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
   if (!mr) {
-    err("%s(%s), ibv_reg_mr send messages failed\n", __func__, ctx->ops_name);
+    err("%s(%s), ibv_reg_mr meta region failed\n", __func__, ctx->ops_name);
     rdma_tx_uinit_mrs(ctx);
     return -ENOMEM;
   }
-  ctx->send_msgs_mr = mr;
+  ctx->meta_mr = mr;
 
   return 0;
 }
 
 static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
   rdma_tx_uinit_mrs(ctx);
-  MT_SAFE_FREE(ctx->send_msgs, free);
+  MT_SAFE_FREE(ctx->meta_region, free);
   MT_SAFE_FREE(ctx->recv_msgs, free);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     pthread_mutex_destroy(&ctx->tx_buffers[i].lock);
@@ -68,10 +68,27 @@ static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
 static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
   struct mtl_rdma_tx_ops* ops = &ctx->ops;
   ctx->buffer_cnt = ops->num_buffers;
-  ctx->tx_buffers = (struct mt_rdma_tx_buffer*)calloc(ctx->buffer_cnt,
-                                                      sizeof(struct mt_rdma_tx_buffer));
+
+  /* alloc receive message region */
+  ctx->recv_msgs = calloc(ctx->buffer_cnt, sizeof(struct mt_rdma_message));
+  if (!ctx->recv_msgs) {
+    err("%s(%s), messages calloc failed\n", __func__, ctx->ops_name);
+    rdma_tx_free_buffers(ctx);
+    return -ENOMEM;
+  }
+
+  /* alloc metadata region */
+  ctx->meta_region = calloc(ctx->buffer_cnt, MT_RDMA_MSG_MAX_SIZE);
+  if (!ctx->meta_region) {
+    err("%s(%s), meta region calloc failed\n", __func__, ctx->ops_name);
+    rdma_tx_free_buffers(ctx);
+    return -ENOMEM;
+  }
+
+  ctx->tx_buffers = calloc(ctx->buffer_cnt, sizeof(struct mt_rdma_tx_buffer));
   if (!ctx->tx_buffers) {
     err("%s(%s), tx_buffers calloc failed\n", __func__, ctx->ops_name);
+    rdma_tx_free_buffers(ctx);
     return -ENOMEM;
   }
 
@@ -83,23 +100,8 @@ static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
     tx_buffer->ref_count = 1;
     tx_buffer->buffer.addr = ops->buffers[i];
     tx_buffer->buffer.capacity = ops->buffer_capacity;
+    tx_buffer->meta = ctx->meta_region + i * MT_RDMA_MSG_MAX_SIZE;
     pthread_mutex_init(&tx_buffer->lock, NULL);
-  }
-
-  /* alloc receive message region */
-  ctx->recv_msgs = calloc(ctx->buffer_cnt, sizeof(struct mt_rdma_message));
-  if (!ctx->recv_msgs) {
-    err("%s(%s), messages calloc failed\n", __func__, ctx->ops_name);
-    rdma_tx_free_buffers(ctx);
-    return -ENOMEM;
-  }
-
-  /* alloc send messages region including metadata */
-  ctx->send_msgs = (char*)calloc(ctx->buffer_cnt, MT_RDMA_MSG_MAX_SIZE);
-  if (!ctx->send_msgs) {
-    err("%s(%s), message calloc failed\n", __func__, ctx->ops_name);
-    rdma_tx_free_buffers(ctx);
-    return -ENOMEM;
   }
 
   return 0;
@@ -175,8 +177,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
                 pthread_mutex_unlock(&tx_buffer->lock);
                 goto out;
               }
-              tx_buffer->remote_addr = msg->buf_done.rx_buf_addr;
-              tx_buffer->remote_key = msg->buf_done.rx_buf_key;
+              tx_buffer->remote_buffer = msg->buf_done.remote_buffer;
               tx_buffer->ref_count--;
               if (tx_buffer->ref_count == 0) {
                 tx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
@@ -191,11 +192,6 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
               pthread_mutex_unlock(&tx_buffer->lock);
               ctx->stat_buffer_acked++;
             }
-          } else if (msg->type == MT_RDMA_MSG_BYE) {
-            info("%s(%s), received bye message\n", __func__, ctx->ops_name);
-            /* todo: handle rx bye, notice that cq poll thread may stop before receiving
-             * bye message */
-            goto out;
           }
 
           ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
@@ -225,19 +221,6 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           }
           pthread_mutex_unlock(&tx_buffer->lock);
           ctx->stat_buffer_sent++;
-        } else if (wc.opcode == IBV_WC_SEND) {
-          if (wc.wr_id == MT_RDMA_MSG_BYE) {
-            info("%s(%s), sent bye message, shut down cq thread\n", __func__,
-                 ctx->ops_name);
-            goto out;
-          } else if (wc.wr_id == 0) {
-            dbg("%s(%s), sent ready message\n", __func__, ctx->ops_name);
-          } else {
-            struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
-            if (msg->magic == MT_RDMA_MSG_MAGIC) {
-              dbg("%s(%s), sent message type %d\n", __func__, ctx->ops_name, msg->type);
-            }
-          }
         }
         ctx->stat_cq_poll_done++;
       }
@@ -303,7 +286,7 @@ static void* rdma_tx_connect_thread(void* arg) {
                 .cap.max_send_sge = 1,
                 .cap.max_recv_sge = 1,
                 .cap.max_inline_data = sizeof(struct mt_rdma_message),
-                .sq_sig_all = 1,
+                .sq_sig_all = 0,
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
@@ -422,11 +405,23 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
         pthread_mutex_unlock(&tx_buffer->lock);
         return -EIO;
       }
-      /* write to rx immediately */
+      /* write buffer to rx immediately */
+      int ret = rdma_post_write(ctx->id, tx_buffer, buffer->addr, buffer->size,
+                                tx_buffer->mr, 0, tx_buffer->remote_buffer.remote_addr,
+                                tx_buffer->remote_buffer.remote_key);
+      if (ret) {
+        err("%s(%s), rdma_post_write failed: %s\n", __func__, ctx->ops_name,
+            strerror(errno));
+        pthread_mutex_unlock(&tx_buffer->lock);
+        return -EIO;
+      }
+
+      /* write metadata to rx */
+      memcpy(tx_buffer->meta, buffer->user_meta, buffer->user_meta_size);
       struct ibv_sge sge = {
-          .addr = (uint64_t)(uintptr_t)buffer->addr,
-          .length = (uint32_t)buffer->size,
-          .lkey = tx_buffer->mr->lkey,
+          .addr = (uint64_t)(uintptr_t)tx_buffer->meta,
+          .length = (uint32_t)buffer->user_meta_size,
+          .lkey = ctx->meta_mr->lkey,
       };
       struct ibv_send_wr wr, *bad;
       wr.wr_id = (uintptr_t)tx_buffer;
@@ -435,32 +430,18 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
       wr.num_sge = 1;
       wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
       wr.send_flags = IBV_SEND_SIGNALED;
-      wr.imm_data = htonl(tx_buffer->idx);
-      wr.wr.rdma.remote_addr = tx_buffer->remote_addr;
-      wr.wr.rdma.rkey = tx_buffer->remote_key;
-
-      int ret = ibv_post_send(ctx->qp, &wr, &bad);
+      wr.imm_data =
+          htonl((uint32_t)tx_buffer->idx << 16 | tx_buffer->buffer.user_meta_size);
+      wr.wr.rdma.remote_addr = tx_buffer->remote_buffer.remote_meta_addr;
+      wr.wr.rdma.rkey = tx_buffer->remote_buffer.remote_meta_key;
+      ret = ibv_post_send(ctx->qp, &wr, &bad);
       if (ret) {
         err("%s(%s), ibv_post_send failed: %s\n", __func__, ctx->ops_name,
             strerror(errno));
         pthread_mutex_unlock(&tx_buffer->lock);
         return -EIO;
       }
-      /* send user metadata to rx */
-      struct mt_rdma_message* msg = ctx->send_msgs + i * MT_RDMA_MSG_MAX_SIZE;
-      msg->magic = MT_RDMA_MSG_MAGIC;
-      msg->type = MT_RDMA_MSG_BUFFER_META;
-      msg->buf_meta.buf_idx = i;
-      msg->buf_meta.seq_num = ctx->buffer_seq_num++;
-      msg->buf_meta.meta_size = buffer->user_meta_size;
-      memcpy(&msg[1], buffer->user_meta, buffer->user_meta_size);
-      ret = rdma_post_send(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE, ctx->send_msgs_mr,
-                           IBV_SEND_SIGNALED);
-      if (ret) {
-        err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
-            strerror(errno));
-        return -EIO;
-      }
+
       dbg("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
 
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
@@ -481,16 +462,6 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
   }
 
   if (ctx->cq_poll_thread) {
-    struct mt_rdma_message msg = {
-        .magic = MT_RDMA_MSG_MAGIC,
-        .type = MT_RDMA_MSG_BYE,
-    };
-    /* send bye to rx? and wake up cq event */
-    if (rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
-                       IBV_SEND_INLINE)) {
-      err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
-          strerror(errno));
-    }
     ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
     ctx->cq_poll_thread = 0;

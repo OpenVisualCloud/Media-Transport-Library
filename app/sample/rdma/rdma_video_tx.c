@@ -175,6 +175,8 @@ int main(int argc, char** argv) {
 
 out:
 
+  if (yuv_file) fclose(yuv_file);
+
   if (tx) mtl_rdma_tx_free(tx);
 
   for (int i = 0; i < 3; i++) {

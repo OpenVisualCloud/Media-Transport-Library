@@ -7,19 +7,6 @@
 
 #include "mt_rdma.h"
 
-static struct mt_rdma_message* rdma_rx_get_recv_msg(struct mt_rdma_rx_ctx* ctx) {
-  for (int i = 0; i < ctx->buffer_cnt * 2; i++) {
-    struct mt_rdma_message* msg =
-        (struct mt_rdma_message*)(ctx->recv_msgs + i * MT_RDMA_MSG_MAX_SIZE);
-    if (msg->type == MT_RDMA_MSG_NONE) {
-      msg->type = MT_RDMA_MSG_MAX;
-      return msg;
-    }
-  }
-  err("%s(%s), no free recv msg\n", __func__, ctx->ops_name);
-  return NULL;
-}
-
 static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
   struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[idx];
   pthread_mutex_lock(&rx_buffer->lock);
@@ -28,10 +15,14 @@ static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
       .type = MT_RDMA_MSG_BUFFER_DONE,
       .buf_done.buf_idx = idx,
       .buf_done.seq_num = rx_buffer->buffer.seq_num,
-      .buf_done.rx_buf_addr = (uint64_t)rx_buffer->buffer.addr,
-      .buf_done.rx_buf_key = rx_buffer->mr->rkey,
-  };
-  int ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL, IBV_SEND_INLINE);
+      .buf_done.remote_buffer = {
+          .remote_addr = (uint64_t)rx_buffer->buffer.addr,
+          .remote_key = rx_buffer->mr->rkey,
+          .remote_meta_addr = (uint64_t)rx_buffer->buffer.user_meta,
+          .remote_meta_key = ctx->meta_mr->rkey,
+      }};
+  int ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL,
+                           IBV_SEND_INLINE | IBV_SEND_SIGNALED);
   if (ret) {
     err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name, strerror(errno));
     pthread_mutex_unlock(&rx_buffer->lock);
@@ -43,6 +34,7 @@ static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx* ctx, uint16_t idx) {
 }
 
 static int rdma_rx_uinit_mrs(struct mt_rdma_rx_ctx* ctx) {
+  MT_SAFE_FREE(ctx->meta_mr, ibv_dereg_mr);
   MT_SAFE_FREE(ctx->recv_msgs_mr, ibv_dereg_mr);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_rx_buffer* rx_buffer = &ctx->rx_buffers[i];
@@ -65,9 +57,9 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx* ctx) {
     rx_buffer->mr = mr;
   }
 
-  struct ibv_mr* mr =
-      ibv_reg_mr(ctx->pd, ctx->recv_msgs, ctx->buffer_cnt * 2 * MT_RDMA_MSG_MAX_SIZE,
-                 IBV_ACCESS_LOCAL_WRITE);
+  struct ibv_mr* mr = ibv_reg_mr(ctx->pd, ctx->recv_msgs,
+                                 ctx->buffer_cnt * sizeof(struct mt_rdma_message),
+                                 IBV_ACCESS_LOCAL_WRITE);
   if (!mr) {
     err("%s(%s), ibv_reg_mr message failed\n", __func__, ctx->ops_name);
     rdma_rx_uinit_mrs(ctx);
@@ -75,11 +67,21 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx* ctx) {
   }
   ctx->recv_msgs_mr = mr;
 
+  mr = ibv_reg_mr(ctx->pd, ctx->meta_region, ctx->buffer_cnt * MT_RDMA_MSG_MAX_SIZE,
+                  IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+  if (!mr) {
+    err("%s(%s), ibv_reg_mr meta region failed\n", __func__, ctx->ops_name);
+    rdma_rx_uinit_mrs(ctx);
+    return -ENOMEM;
+  }
+  ctx->meta_mr = mr;
+
   return 0;
 }
 
 static int rdma_rx_free_buffers(struct mt_rdma_rx_ctx* ctx) {
   rdma_rx_uinit_mrs(ctx);
+  MT_SAFE_FREE(ctx->meta_region, free);
   MT_SAFE_FREE(ctx->recv_msgs, free);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     pthread_mutex_destroy(&ctx->rx_buffers[i].lock);
@@ -91,10 +93,27 @@ static int rdma_rx_free_buffers(struct mt_rdma_rx_ctx* ctx) {
 static int rdma_rx_alloc_buffers(struct mt_rdma_rx_ctx* ctx) {
   struct mtl_rdma_rx_ops* ops = &ctx->ops;
   ctx->buffer_cnt = ops->num_buffers;
-  ctx->rx_buffers = (struct mt_rdma_rx_buffer*)calloc(ctx->buffer_cnt,
-                                                      sizeof(struct mt_rdma_rx_buffer));
+
+  /* alloc receive message region, send messages are inlined */
+  ctx->recv_msgs = calloc(ctx->buffer_cnt, sizeof(struct mt_rdma_message));
+  if (!ctx->recv_msgs) {
+    err("%s(%s), message calloc failed\n", __func__, ctx->ops_name);
+    rdma_rx_free_buffers(ctx);
+    return -ENOMEM;
+  }
+
+  /* alloc metadata region */
+  ctx->meta_region = calloc(ctx->buffer_cnt, MT_RDMA_MSG_MAX_SIZE);
+  if (!ctx->meta_region) {
+    err("%s(%s), meta region calloc failed\n", __func__, ctx->ops_name);
+    rdma_rx_free_buffers(ctx);
+    return -ENOMEM;
+  }
+
+  ctx->rx_buffers = calloc(ctx->buffer_cnt, sizeof(struct mt_rdma_rx_buffer));
   if (!ctx->rx_buffers) {
     err("%s(%s), rx_buffers calloc failed\n", __func__, ctx->ops_name);
+    rdma_rx_free_buffers(ctx);
     return -ENOMEM;
   }
 
@@ -104,15 +123,8 @@ static int rdma_rx_alloc_buffers(struct mt_rdma_rx_ctx* ctx) {
     rx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
     rx_buffer->buffer.addr = ops->buffers[i];
     rx_buffer->buffer.capacity = ops->buffer_capacity;
+    rx_buffer->buffer.user_meta = ctx->meta_region + i * MT_RDMA_MSG_MAX_SIZE;
     pthread_mutex_init(&rx_buffer->lock, NULL);
-  }
-
-  /* alloc receive message region including metadata, send messages are inlined */
-  ctx->recv_msgs = (char*)calloc(ctx->buffer_cnt * 2, MT_RDMA_MSG_MAX_SIZE);
-  if (!ctx->recv_msgs) {
-    err("%s(%s), message calloc failed\n", __func__, ctx->ops_name);
-    rdma_rx_free_buffers(ctx);
-    return -ENOMEM;
   }
 
   return 0;
@@ -175,70 +187,13 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
               __func__, ctx->ops_name, wc.opcode, wc.vendor_err, wc.qp_num);
           goto out;
         }
-        if (wc.opcode == IBV_WC_RECV) {
-          struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
-          if (msg->magic == MT_RDMA_MSG_MAGIC) {
-            switch (msg->type) {
-              case MT_RDMA_MSG_BUFFER_META:
-                idx = msg->buf_meta.buf_idx;
-                dbg("%s(%s), buffer %u meta received\n", __func__, ctx->ops_name, idx);
-                rx_buffer = &ctx->rx_buffers[idx];
-                pthread_mutex_lock(&rx_buffer->lock);
-                rx_buffer->buffer.user_meta =
-                    (void*)(msg + 1); /* this msg buffer in use by meta */
-                rx_buffer->buffer.user_meta_size = msg->buf_meta.meta_size;
-                if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_WAIT_META) {
-                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
-                  ctx->stat_buffer_received++;
-                  if (ops->notify_buffer_ready) {
-                    ret = ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
-                    if (ret) {
-                      err("%s(%s), notify_buffer_ready failed\n", __func__,
-                          ctx->ops_name);
-                      /* todo: error handle */
-                    }
-                  }
-                } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
-                  rx_buffer->buffer.seq_num = msg->buf_meta.seq_num;
-                  rx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
-                } else {
-                  err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name,
-                      idx, rx_buffer->status);
-                  pthread_mutex_unlock(&rx_buffer->lock);
-                  goto out;
-                }
-                pthread_mutex_unlock(&rx_buffer->lock);
-                break;
-              case MT_RDMA_MSG_BYE:
-                info("%s(%s), received bye message\n", __func__, ctx->ops_name);
-                /* todo: handle tx bye, notice that cq poll thread may stop before
-                 * receiving bye message */
-                goto out;
-              default:
-                err("%s(%s), unknown message type: %d\n", __func__, ctx->ops_name,
-                    msg->type);
-                goto out;
-            }
-          } else {
-            err("%s(%s), received invalid message\n", __func__, ctx->ops_name);
-            goto out;
-          }
-          void* r_msg = rdma_rx_get_recv_msg(ctx);
-          ret = rdma_post_recv(ctx->id, r_msg, r_msg, MT_RDMA_MSG_MAX_SIZE,
-                               ctx->recv_msgs_mr);
-          if (ret) {
-            err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
-                strerror(errno));
-            goto out;
-          }
-        } else if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) { /* write done */
-          struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
-          msg->type = MT_RDMA_MSG_NONE; /* recycle receive msg */
-          idx = ntohl(wc.imm_data);
+        if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) { /* write done */
+          idx = ntohl(wc.imm_data) >> 16;
           dbg("%s(%s), buffer %u write done\n", __func__, ctx->ops_name, idx);
           rx_buffer = &ctx->rx_buffers[idx];
           pthread_mutex_lock(&rx_buffer->lock);
-          if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
+          if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
+            rx_buffer->buffer.user_meta_size = ntohl(wc.imm_data) & 0x0000FFFF;
             rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
             ctx->stat_buffer_received++;
             if (ops->notify_buffer_ready) {
@@ -248,8 +203,6 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
                 /* todo: error handle */
               }
             }
-          } else if (rx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
-            rx_buffer->status = MT_RDMA_BUFFER_STATUS_WAIT_META;
           } else {
             err("%s(%s), buffer %u unexpected status %d\n", __func__, ctx->ops_name, idx,
                 rx_buffer->status);
@@ -257,20 +210,17 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
             goto out;
           }
           pthread_mutex_unlock(&rx_buffer->lock);
-          void* r_msg = rdma_rx_get_recv_msg(ctx);
-          ret = rdma_post_recv(ctx->id, r_msg, r_msg, MT_RDMA_MSG_MAX_SIZE,
-                               ctx->recv_msgs_mr);
+          struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
+          ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
           if (ret) {
             err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
                 strerror(errno));
             goto out;
           }
-        } else if (wc.opcode == IBV_WC_SEND) {
-          if (wc.wr_id == MT_RDMA_MSG_BYE) {
-            dbg("%s(%s), sent bye message, shutdown cq thread\n", __func__,
-                ctx->ops_name);
-            goto out;
-          }
+        } else if (wc.opcode == IBV_WC_SEND) { /* send done */
+        } else {
+          err("%s(%s), unexpected opcode %d\n", __func__, ctx->ops_name, wc.opcode);
+          goto out;
         }
         ctx->stat_cq_poll_done++;
       }
@@ -343,7 +293,7 @@ static void* rdma_rx_connect_thread(void* arg) {
                 .cap.max_send_sge = 1,
                 .cap.max_recv_sge = 1,
                 .cap.max_inline_data = sizeof(struct mt_rdma_message),
-                .sq_sig_all = 1,
+                .sq_sig_all = 0,
                 .send_cq = ctx->cq,
                 .recv_cq = ctx->cq,
                 .qp_type = IBV_QPT_RC,
@@ -372,10 +322,8 @@ static void* rdma_rx_connect_thread(void* arg) {
             break;
           case RDMA_CM_EVENT_ESTABLISHED:
             for (uint16_t i = 0; i < ctx->buffer_cnt; i++) { /* start receiving */
-              /* post recv for meta/ready msg */
-              void* msg = rdma_rx_get_recv_msg(ctx);
-              ret = rdma_post_recv(ctx->id, msg, msg, MT_RDMA_MSG_MAX_SIZE,
-                                   ctx->recv_msgs_mr);
+              struct mt_rdma_message* msg = &ctx->recv_msgs[i];
+              ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
               if (ret) {
                 err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
                     strerror(errno));
@@ -457,10 +405,6 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* bu
         pthread_mutex_unlock(&rx_buffer->lock);
         return -EIO;
       }
-      /* recycle meta in use receive msg */
-      struct mt_rdma_message* meta_msg =
-          (struct mt_rdma_message*)rx_buffer->buffer.user_meta - 1;
-      meta_msg->type = MT_RDMA_MSG_NONE;
       pthread_mutex_unlock(&rx_buffer->lock);
       return rdma_rx_send_buffer_done(ctx, rx_buffer->idx);
     }
@@ -479,16 +423,6 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
   }
 
   if (ctx->cq_poll_thread) {
-    struct mt_rdma_message msg = {
-        .magic = MT_RDMA_MSG_MAGIC,
-        .type = MT_RDMA_MSG_BYE,
-    };
-    /* send bye to tx? and wake up cq event */
-    if (rdma_post_send(ctx->id, (void*)MT_RDMA_MSG_BYE, &msg, sizeof(msg), NULL,
-                       IBV_SEND_INLINE)) {
-      err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
-          strerror(errno));
-    }
     ctx->cq_poll_stop = true;
     pthread_join(ctx->cq_poll_thread, NULL);
     ctx->cq_poll_thread = 0;
