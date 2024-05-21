@@ -59,9 +59,9 @@ Check the current and maximum MTU supported on the device with `ibv_devinfo`. Th
 sudo ip link set dev ens785f0 mtu 2100
 ```
 
-### 4.3 Configure netns for testing on the same machine
+### 4.3 Configure local arp for loopback testing
 
-For local ports, local arp is needed for rdma_cm to build the connection between them:
+For loopback connections between different ports on the same system, local arp must be enabled:
 
 ```bash
 sudo sysctl net.ipv4.conf.ens785f0.accept_local=1
@@ -99,5 +99,5 @@ mtl_init(p);
 
 ### 5.3 Multicast (experimental)
 
-Multicast is also supported for RDMA UD. In the configurations IPv4 multicast address can be set as the session IP.
-This is still at experimental status. Notice only one session with one multicast address can be created.
+Multicast is also supported for RDMA UD. In the configurations, an IPv4 multicast address can be set as the session IP.
+This is still under experimental status. Note that only one session with one multicast address can be created.

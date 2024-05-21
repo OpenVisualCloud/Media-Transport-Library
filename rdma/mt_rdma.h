@@ -66,11 +66,16 @@ enum mtl_rdma_log_level mt_rdma_get_log_level(void);
     printf(__VA_ARGS__); \
   } while (0)
 
+struct mt_rdma_remote_buffer {
+  uint32_t remote_key;
+  uint64_t remote_addr;
+  uint32_t remote_meta_key;
+  uint64_t remote_meta_addr;
+};
+
 enum mt_rdma_message_type {
   MT_RDMA_MSG_NONE = 0,
-  MT_RDMA_MSG_BUFFER_META,
   MT_RDMA_MSG_BUFFER_DONE,
-  MT_RDMA_MSG_BYE,
   MT_RDMA_MSG_MAX,
 };
 
@@ -81,13 +86,7 @@ struct mt_rdma_message {
     struct {
       uint16_t buf_idx;
       uint32_t seq_num;
-      size_t meta_size;
-    } buf_meta;
-    struct {
-      uint16_t buf_idx;
-      uint32_t seq_num;
-      uint64_t rx_buf_addr;
-      uint32_t rx_buf_key;
+      struct mt_rdma_remote_buffer remote_buffer;
     } buf_done;
   };
 };
@@ -96,7 +95,6 @@ enum mt_rdma_buffer_status {
   MT_RDMA_BUFFER_STATUS_FREE, /* done */
   MT_RDMA_BUFFER_STATUS_IN_PRODUCTION,
   MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION,
-  MT_RDMA_BUFFER_STATUS_WAIT_META,
   MT_RDMA_BUFFER_STATUS_READY,
   MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION,
   MT_RDMA_BUFFER_STATUS_MAX,
@@ -107,8 +105,8 @@ struct mt_rdma_tx_buffer {
   enum mt_rdma_buffer_status status;
   struct mtl_rdma_buffer buffer;
   struct ibv_mr* mr;
-  uint32_t remote_key;
-  uint64_t remote_addr;
+  void* meta;
+  struct mt_rdma_remote_buffer remote_buffer;
   uint32_t ref_count;
   pthread_mutex_t lock;
 };
@@ -123,12 +121,12 @@ struct mt_rdma_tx_ctx {
   struct rdma_cm_id* id;
   struct ibv_pd* pd;
   struct ibv_qp* qp;
-  struct ibv_mr* send_msgs_mr;
+  struct ibv_mr* meta_mr;
   struct ibv_mr* recv_msgs_mr;
   struct rdma_cm_id* listen_id;
 
   uint32_t buffer_seq_num;
-  void* send_msgs; /* 1024 bytes * buf_cnt, space reserved for metadata */
+  void* meta_region; /* 1024 bytes * buf_cnt */
   struct mt_rdma_message* recv_msgs;
   struct mt_rdma_tx_buffer* tx_buffers;
   uint16_t buffer_cnt;
@@ -165,9 +163,11 @@ struct mt_rdma_rx_ctx {
   struct rdma_cm_id* id;
   struct ibv_pd* pd;
   struct ibv_qp* qp;
+  struct ibv_mr* meta_mr;
   struct ibv_mr* recv_msgs_mr;
 
-  void* recv_msgs; /* 1024 bytes * buf_cnt * 2, space reserved for metadata */
+  void* meta_region; /* 1024 bytes * buf_cnt */
+  struct mt_rdma_message* recv_msgs;
   struct mt_rdma_rx_buffer* rx_buffers;
   uint16_t buffer_cnt;
   pthread_t connect_thread;
