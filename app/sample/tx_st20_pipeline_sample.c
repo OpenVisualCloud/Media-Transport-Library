@@ -247,6 +247,11 @@ int main(int argc, char** argv) {
          app[i]->fb_send_done);
 
     tx_st20p_close_source(app[i]);
+
+    if (app[i]->handle) {
+      st20p_tx_free(app[i]->handle);
+      app[i]->handle = NULL;
+    }
   }
 
   // stop tx
