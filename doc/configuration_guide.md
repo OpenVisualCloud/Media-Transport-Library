@@ -105,7 +105,7 @@ Items in each element of the "video" array
 
 ​ **pacing (string):** `"narrow", "wide", "linear"` pacing type
 
-​ **packing (string):** `"BPM", "GPM", "GPM_SL"` packing mode, default is "BPM" single line mode
+​ **packing (string):** `"BPM", "GPM", "GPM_SL"` packing mode, default is "BPM" mode (1260 bytes in payload)
 
 ​ **start_port (int):** `0~65535` start udp port for copies of sessions
 

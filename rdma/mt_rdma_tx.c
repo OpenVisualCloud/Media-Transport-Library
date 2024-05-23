@@ -153,7 +153,7 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
           goto out;
         }
       }
-      while (ibv_poll_cq(cq, 1, &wc)) {
+      while (!ctx->cq_poll_stop && ibv_poll_cq(cq, 1, &wc)) {
         if (wc.status != IBV_WC_SUCCESS) {
           err("%s(%s), work completion error: %s\n", __func__, ctx->ops_name,
               ibv_wc_status_str(wc.status));
@@ -341,7 +341,9 @@ static void* rdma_tx_connect_thread(void* arg) {
           case RDMA_CM_EVENT_DISCONNECTED:
             info("%s(%s), RX disconnected.\n", __func__, ctx->ops_name);
             ctx->connected = false;
-            /* todo: handle resources clearing */
+            ctx->cq_poll_stop = true;
+            ctx->connect_stop = true;
+            /* todo: handle resources clearing and notifying */
             break;
           default:
             break;
@@ -391,7 +393,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
     return -EIO;
   }
 
-  if (buffer->user_meta_size > MT_RDMA_USER_META_MAX_SIZE) {
+  if (buffer->user_meta_size > MT_RDMA_MSG_MAX_SIZE) {
     err("%s(%s), user meta size is too large\n", __func__, ctx->ops_name);
     return -EIO;
   }
@@ -419,7 +421,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
       /* write metadata to rx */
       memcpy(tx_buffer->meta, buffer->user_meta, buffer->user_meta_size);
       struct ibv_sge sge = {
-          .addr = (uint64_t)(uintptr_t)tx_buffer->meta,
+          .addr = (uint64_t)tx_buffer->meta,
           .length = (uint32_t)buffer->user_meta_size,
           .lkey = ctx->meta_mr->lkey,
       };

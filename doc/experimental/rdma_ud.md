@@ -30,7 +30,9 @@ sudo pacman -Syu --needed rdma-core
 
 ## 3. Build IMTL with RDMA UD backend
 
-Refer to the [Build Guide](../build.md) for detailed instructions. Ensure that the libibverbs and librdmacm dependencies are recognized:
+Refer to the [Build Guide](../build.md) for detailed instructions.
+
+Ensure that the libibverbs and librdmacm dependencies are recognized:
 
 ```bash
 # Output from 'meson setup build'
@@ -46,14 +48,20 @@ Verify that the `irdma` driver is loaded using `lsmod`.
 
 ### 4.2 Configure IP and MTU
 
-The interface should have an IP configured. Use `ifconfig` or `ip a` to check. To set a static IP, use the following commands:
+The interface should have an IP configured. Use `ifconfig` or `ip a` to check.
+
+To set a static IP, use the following commands:
 
 ```bash
 sudo nmcli dev set ens785f0 managed no
 sudo ip addr add 192.168.96.101/24 dev ens785f0
 ```
 
-Check the current and maximum MTU supported on the device with `ibv_devinfo`. The recommended MTU is 2100 (2048). To set the MTU:
+Check the current and maximum MTU supported on the device with `ibv_devinfo`.
+The recommended MTU is 2100 (2048) since the 1024 MTU is not enough to contain a ST2110-20 RTP packet.
+The whole RoCEv2 packet length is still within the 1500 MTU limit of common switch when using BPM (block packing mode) for video.
+
+To set the MTU:
 
 ```bash
 sudo ip link set dev ens785f0 mtu 2100
