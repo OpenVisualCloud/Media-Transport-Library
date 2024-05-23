@@ -1,5 +1,7 @@
 # Changelog
 
+## Changelog for 24.12
+
 ## Changelog for 24.06
 
 * dpdk: upgrade dpdk version to 23.11.
