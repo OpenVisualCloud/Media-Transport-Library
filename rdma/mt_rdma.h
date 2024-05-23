@@ -21,8 +21,6 @@
 
 #define MT_RDMA_MSG_MAX_SIZE (1024)
 
-#define MT_RDMA_USER_META_MAX_SIZE (MT_RDMA_MSG_MAX_SIZE - sizeof(struct mt_rdma_message))
-
 #define MT_SAFE_FREE(obj, free_fn) \
   do {                             \
     if (obj) {                     \

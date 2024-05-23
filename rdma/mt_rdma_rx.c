@@ -178,7 +178,7 @@ static void* rdma_rx_cq_poll_thread(void* arg) {
           goto out;
         }
       }
-      while (ibv_poll_cq(ctx->cq, 1, &wc)) {
+      while (!ctx->cq_poll_stop && ibv_poll_cq(ctx->cq, 1, &wc)) {
         if (wc.status != IBV_WC_SUCCESS) {
           err("%s(%s), work completion error: %s\n", __func__, ctx->ops_name,
               ibv_wc_status_str(wc.status));
