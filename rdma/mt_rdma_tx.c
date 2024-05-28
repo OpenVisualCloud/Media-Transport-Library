@@ -2,9 +2,6 @@
  * Copyright(c) 2024 Intel Corporation
  */
 
-#include <rdma/rdma_cma.h>
-#include <rdma/rdma_verbs.h>
-
 #include "mt_rdma.h"
 
 static int rdma_tx_uinit_mrs(struct mt_rdma_tx_ctx* ctx) {
@@ -107,14 +104,99 @@ static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
   return 0;
 }
 
+static int rdma_tx_handle_wc_recv(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
+  int ret = 0;
+  struct mtl_rdma_tx_ops* ops = &ctx->ops;
+  struct mt_rdma_message* msg = (struct mt_rdma_message*)wc->wr_id;
+  if (msg->magic != MT_RDMA_MSG_MAGIC) {
+    err("%s(%s), received invalid magic %u\n", __func__, ctx->ops_name, msg->magic);
+    return -EINVAL;
+  }
+
+  switch (msg->type) {
+    case MT_RDMA_MSG_BUFFER_DONE:
+      uint16_t idx = msg->buf_done.buf_idx;
+      dbg("%s(%s), received buffer %u done message, seq %u\n", __func__, ctx->ops_name,
+          idx, msg->buf_done.seq_num);
+      struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[idx];
+      pthread_mutex_lock(&tx_buffer->lock);
+      if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
+        err("%s(%s), received buffer done message with invalid status %d\n", __func__,
+            ctx->ops_name, tx_buffer->status);
+        pthread_mutex_unlock(&tx_buffer->lock);
+        return -EINVAL;
+      }
+      tx_buffer->remote_buffer = msg->buf_done.remote_buffer;
+      tx_buffer->ref_count--;
+      if (tx_buffer->ref_count == 0) {
+        tx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
+        if (ops->notify_buffer_done)
+          ops->notify_buffer_done(ops->priv, &tx_buffer->buffer);
+      }
+      pthread_mutex_unlock(&tx_buffer->lock);
+      ctx->stat_buffer_acked++;
+      break;
+
+    default:
+      err("%s(%s), received unknown message type %d\n", __func__, ctx->ops_name,
+          msg->type);
+      return -EIO;
+  }
+
+  ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
+  if (ret) {
+    err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name, strerror(errno));
+    return -EIO;
+  }
+
+  return 0;
+}
+
+static int rdma_tx_handle_wc_write(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
+  struct mtl_rdma_tx_ops* ops = &ctx->ops;
+  struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc->wr_id;
+  pthread_mutex_lock(&tx_buffer->lock);
+  if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
+    err("%s(%s), buffer write done with invalid status %d\n", __func__, ctx->ops_name,
+        tx_buffer->status);
+    pthread_mutex_unlock(&tx_buffer->lock);
+    return -EINVAL;
+  }
+  dbg("%s(%s), buffer %d write done\n", __func__, ctx->ops_name, tx_buffer->idx);
+  tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
+  tx_buffer->ref_count++;
+  if (ops->notify_buffer_sent) ops->notify_buffer_sent(ops->priv, &tx_buffer->buffer);
+  pthread_mutex_unlock(&tx_buffer->lock);
+  ctx->stat_buffer_sent++;
+  return 0;
+}
+
+static int rdma_tx_handle_wc(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
+  if (wc->status != IBV_WC_SUCCESS) {
+    err("%s(%s), work completion error: %s\n", __func__, ctx->ops_name,
+        ibv_wc_status_str(wc->status));
+    err("%s(%s), opcode = %d, vendor_error = 0x%x, qp_num = %u\n", __func__,
+        ctx->ops_name, wc->opcode, wc->vendor_err, wc->qp_num);
+    return -EIO;
+  }
+
+  switch (wc->opcode) {
+    case IBV_WC_RECV:
+      return rdma_tx_handle_wc_recv(ctx, wc);
+    case IBV_WC_RDMA_WRITE:
+      return rdma_tx_handle_wc_write(ctx, wc);
+    default:
+      err("%s(%s), unexpected opcode: %d\n", __func__, ctx->ops_name, wc->opcode);
+      return -EIO;
+  }
+}
+
 /* cq poll thread */
 static void* rdma_tx_cq_poll_thread(void* arg) {
   int ret = 0;
   struct mt_rdma_tx_ctx* ctx = arg;
-  struct mtl_rdma_tx_ops* ops = &ctx->ops;
   struct ibv_wc wc;
   struct ibv_cq* cq = ctx->cq;
-  void* cq_ctx = NULL;
   int ms_timeout = 10;
   struct pollfd pfd = {0};
 
@@ -133,99 +215,28 @@ static void* rdma_tx_cq_poll_thread(void* arg) {
 
   info("%s(%s), started\n", __func__, ctx->ops_name);
   while (!ctx->cq_poll_stop) {
-    ret = ctx->cq_poll_only ? 1 : poll(&pfd, 1, ms_timeout);
-    if (ret < 0) {
-      err("%s(%s), poll failed\n", __func__, ctx->ops_name);
-      goto out;
-    } else if (ret == 0) {
-      /* timeout */
-    } else {
-      if (!ctx->cq_poll_only) {
-        ret = ibv_get_cq_event(ctx->cc, &cq, &cq_ctx);
-        if (ret) {
-          err("%s(%s), ibv_get_cq_event failed\n", __func__, ctx->ops_name);
-          goto out;
-        }
-        ibv_ack_cq_events(cq, 1);
-        ret = ibv_req_notify_cq(cq, 0);
-        if (ret) {
-          err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
-          goto out;
-        }
+    if (!ctx->cq_poll_only) {
+      ret = poll(&pfd, 1, ms_timeout);
+      if (ret < 0) {
+        err("%s(%s), poll failed\n", __func__, ctx->ops_name);
+        goto out;
+      } else if (ret == 0) {
+        /* timeout */
+        continue;
       }
-      while (!ctx->cq_poll_stop && ibv_poll_cq(cq, 1, &wc)) {
-        if (wc.status != IBV_WC_SUCCESS) {
-          err("%s(%s), work completion error: %s\n", __func__, ctx->ops_name,
-              ibv_wc_status_str(wc.status));
-          /* check more info */
-          err("%s(%s), wc.opcode = %d, wc.vendor_error = 0x%x, wc.qp_num = %u\n",
-              __func__, ctx->ops_name, wc.opcode, wc.vendor_err, wc.qp_num);
-          goto out;
-        }
-        if (wc.opcode == IBV_WC_RECV) {
-          struct mt_rdma_message* msg = (struct mt_rdma_message*)wc.wr_id;
-          if (msg->magic == MT_RDMA_MSG_MAGIC) {
-            if (msg->type == MT_RDMA_MSG_BUFFER_DONE) {
-              uint16_t idx = msg->buf_done.buf_idx;
-              dbg("%s(%s), received buffer %u done message, seq %u\n", __func__,
-                  ctx->ops_name, idx, msg->buf_done.seq_num);
-              struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[idx];
-              pthread_mutex_lock(&tx_buffer->lock);
-              if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
-                err("%s(%s), received buffer done message with invalid status %d\n",
-                    __func__, ctx->ops_name, tx_buffer->status);
-                pthread_mutex_unlock(&tx_buffer->lock);
-                goto out;
-              }
-              tx_buffer->remote_buffer = msg->buf_done.remote_buffer;
-              tx_buffer->ref_count--;
-              if (tx_buffer->ref_count == 0) {
-                tx_buffer->status = MT_RDMA_BUFFER_STATUS_FREE;
-                if (ops->notify_buffer_done) {
-                  ret = ops->notify_buffer_done(ops->priv, &tx_buffer->buffer);
-                  if (ret) {
-                    err("%s(%s), notify_buffer_done failed\n", __func__, ctx->ops_name);
-                    /* todo error handle */
-                  }
-                }
-              }
-              pthread_mutex_unlock(&tx_buffer->lock);
-              ctx->stat_buffer_acked++;
-            }
-          }
-
-          ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
-          if (ret) {
-            err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
-                strerror(errno));
-            goto out;
-          }
-        } else if (wc.opcode == IBV_WC_RDMA_WRITE) {
-          struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc.wr_id;
-          pthread_mutex_lock(&tx_buffer->lock);
-          if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
-            err("%s(%s), buffer write done with invalid status %d\n", __func__,
-                ctx->ops_name, tx_buffer->status);
-            pthread_mutex_unlock(&tx_buffer->lock);
-            goto out;
-          }
-          dbg("%s(%s), buffer %d write done\n", __func__, ctx->ops_name, tx_buffer->idx);
-          tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION;
-          tx_buffer->ref_count++;
-          if (ops->notify_buffer_sent) {
-            ret = ops->notify_buffer_sent(ops->priv, &tx_buffer->buffer);
-            if (ret) {
-              err("%s(%s), notify_buffer_sent failed\n", __func__, ctx->ops_name);
-              /* todo: error handle */
-            }
-          }
-          pthread_mutex_unlock(&tx_buffer->lock);
-          ctx->stat_buffer_sent++;
-        }
-        ctx->stat_cq_poll_done++;
+      if (mt_rdma_handle_cq_events(ctx->cc, cq)) {
+        err("%s(%s), handle cq events failed\n", __func__, ctx->ops_name);
+        goto out;
       }
-      ctx->stat_cq_poll_empty++;
     }
+
+    while (ibv_poll_cq(cq, 1, &wc)) {
+      if (ctx->cq_poll_stop) break;
+      if (rdma_tx_handle_wc(ctx, &wc)) goto out;
+      ctx->stat_cq_poll_done++;
+    }
+
+    ctx->stat_cq_poll_empty++;
   }
 
 out:
@@ -251,105 +262,104 @@ static void* rdma_tx_connect_thread(void* arg) {
       goto connect_err;
     } else if (ret == 0) {
       /* timeout */
-    } else {
-      ret = rdma_get_cm_event(ctx->ec, &event);
-      if (!ret) {
-        switch (event->event) {
-          case RDMA_CM_EVENT_CONNECT_REQUEST:
-            ctx->pd = ibv_alloc_pd(event->id->verbs);
-            if (!ctx->pd) {
-              err("%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
+      continue;
+    }
+    ret = rdma_get_cm_event(ctx->ec, &event);
+    if (!ret) {
+      switch (event->event) {
+        case RDMA_CM_EVENT_CONNECT_REQUEST:
+          ctx->pd = ibv_alloc_pd(event->id->verbs);
+          if (!ctx->pd) {
+            err("%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          if (!ctx->cq_poll_only) {
+            ctx->cc = ibv_create_comp_channel(event->id->verbs);
+            if (!ctx->cc) {
+              err("%s(%s), ibv_create_comp_channel failed\n", __func__, ctx->ops_name);
               goto connect_err;
             }
-            if (!ctx->cq_poll_only) {
-              ctx->cc = ibv_create_comp_channel(event->id->verbs);
-              if (!ctx->cc) {
-                err("%s(%s), ibv_create_comp_channel failed\n", __func__, ctx->ops_name);
-                goto connect_err;
-              }
-            }
-            ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
-            if (!ctx->cq) {
-              err("%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            if (!ctx->cq_poll_only) {
-              ret = ibv_req_notify_cq(ctx->cq, 0);
-              if (ret) {
-                err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
-                goto connect_err;
-              }
-            }
-            struct ibv_qp_init_attr init_qp_attr = {
-                .cap.max_send_wr = ctx->buffer_cnt * 2,
-                .cap.max_recv_wr = ctx->buffer_cnt * 2,
-                .cap.max_send_sge = 1,
-                .cap.max_recv_sge = 1,
-                .cap.max_inline_data = sizeof(struct mt_rdma_message),
-                .sq_sig_all = 0,
-                .send_cq = ctx->cq,
-                .recv_cq = ctx->cq,
-                .qp_type = IBV_QPT_RC,
-            };
-            ret = rdma_create_qp(event->id, ctx->pd, &init_qp_attr);
+          }
+          ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
+          if (!ctx->cq) {
+            err("%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          if (!ctx->cq_poll_only) {
+            ret = ibv_req_notify_cq(ctx->cq, 0);
             if (ret) {
-              err("%s(%s), rdma_create_qp failed\n", __func__, ctx->ops_name);
+              err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
               goto connect_err;
             }
-            ctx->qp = event->id->qp;
+          }
+          struct ibv_qp_init_attr init_qp_attr = {
+              .cap.max_send_wr = ctx->buffer_cnt * 2,
+              .cap.max_recv_wr = ctx->buffer_cnt * 2,
+              .cap.max_send_sge = 1,
+              .cap.max_recv_sge = 1,
+              .cap.max_inline_data = sizeof(struct mt_rdma_message),
+              .sq_sig_all = 0,
+              .send_cq = ctx->cq,
+              .recv_cq = ctx->cq,
+              .qp_type = IBV_QPT_RC,
+          };
+          ret = rdma_create_qp(event->id, ctx->pd, &init_qp_attr);
+          if (ret) {
+            err("%s(%s), rdma_create_qp failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          ctx->qp = event->id->qp;
 
-            ret = rdma_tx_init_mrs(ctx);
+          ret = rdma_tx_init_mrs(ctx);
+          if (ret) {
+            err("%s(%s), rdma_tx_init_mrs failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+
+          struct rdma_conn_param conn_param = {
+              .initiator_depth = 1,
+              .responder_resources = 1,
+              .rnr_retry_count = 7,
+          };
+          ret = rdma_accept(event->id, &conn_param);
+          if (ret) {
+            err("%s(%s), rdma_accept failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          ctx->id = event->id;
+          break;
+        case RDMA_CM_EVENT_ESTABLISHED:
+          for (int i = 0; i < ctx->buffer_cnt; i++) { /* post receive done msg */
+            struct mt_rdma_message* msg = &ctx->recv_msgs[i];
+            ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
             if (ret) {
-              err("%s(%s), rdma_tx_init_mrs failed\n", __func__, ctx->ops_name);
+              err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
+                  strerror(errno));
               goto connect_err;
             }
-
-            struct rdma_conn_param conn_param = {
-                .initiator_depth = 1,
-                .responder_resources = 1,
-                .rnr_retry_count = 7,
-            };
-            ret = rdma_accept(event->id, &conn_param);
-            if (ret) {
-              err("%s(%s), rdma_accept failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-            ctx->id = event->id;
-
-            for (int i = 0; i < ctx->buffer_cnt; i++) { /* post receive done msg */
-              struct mt_rdma_message* msg = &ctx->recv_msgs[i];
-              ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
-              if (ret) {
-                err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
-                    strerror(errno));
-                goto connect_err;
-              }
-            }
-            ctx->connected = true;
-
-            /* create poll thread */
-            ctx->cq_poll_stop = false;
-            ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_tx_cq_poll_thread, ctx);
-            if (ret) {
-              err("%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
-              goto connect_err;
-            }
-
-            info("%s(%s), connected\n", __func__, ctx->ops_name);
-
-            break;
-          case RDMA_CM_EVENT_DISCONNECTED:
-            info("%s(%s), RX disconnected.\n", __func__, ctx->ops_name);
-            ctx->connected = false;
-            ctx->cq_poll_stop = true;
-            ctx->connect_stop = true;
-            /* todo: handle resources clearing and notifying */
-            break;
-          default:
-            break;
-        }
-        rdma_ack_cm_event(event);
+          }
+          ctx->connected = true;
+          ctx->cq_poll_stop = false;
+          ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_tx_cq_poll_thread, ctx);
+          if (ret) {
+            err("%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          info("%s(%s), connected\n", __func__, ctx->ops_name);
+          break;
+        case RDMA_CM_EVENT_DISCONNECTED:
+          info("%s(%s), RX disconnected.\n", __func__, ctx->ops_name);
+          ctx->connected = false;
+          ctx->cq_poll_stop = true;
+          ctx->connect_stop = true;
+          /* todo: handle resources clearing and notifying */
+          break;
+        default:
+          err("%s(%s), event: %s, error: %d\n", __func__, ctx->ops_name,
+              rdma_event_str(event->event), event->status);
+          goto connect_err;
       }
+      rdma_ack_cm_event(event);
     }
   }
 
@@ -358,6 +368,7 @@ static void* rdma_tx_connect_thread(void* arg) {
 
 connect_err:
   rdma_ack_cm_event(event);
+  err("%s(%s), exited with error\n", __func__, ctx->ops_name);
   /* add more error handling */
   return NULL;
 }
@@ -400,57 +411,47 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    if (&tx_buffer->buffer != buffer) continue;
+
     pthread_mutex_lock(&tx_buffer->lock);
-    if (&tx_buffer->buffer == buffer) {
-      if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_PRODUCTION) {
-        err("%s(%s), buffer %p is not in production\n", __func__, ctx->ops_name, buffer);
-        pthread_mutex_unlock(&tx_buffer->lock);
-        return -EIO;
-      }
-      /* write buffer to rx immediately */
-      int ret = rdma_post_write(ctx->id, tx_buffer, buffer->addr, buffer->size,
-                                tx_buffer->mr, 0, tx_buffer->remote_buffer.remote_addr,
-                                tx_buffer->remote_buffer.remote_key);
-      if (ret) {
-        err("%s(%s), rdma_post_write failed: %s\n", __func__, ctx->ops_name,
-            strerror(errno));
-        pthread_mutex_unlock(&tx_buffer->lock);
-        return -EIO;
-      }
 
-      /* write metadata to rx */
-      memcpy(tx_buffer->meta, buffer->user_meta, buffer->user_meta_size);
-      struct ibv_sge sge = {
-          .addr = (uint64_t)tx_buffer->meta,
-          .length = (uint32_t)buffer->user_meta_size,
-          .lkey = ctx->meta_mr->lkey,
-      };
-      struct ibv_send_wr wr, *bad;
-      wr.wr_id = (uintptr_t)tx_buffer;
-      wr.next = NULL;
-      wr.sg_list = &sge;
-      wr.num_sge = 1;
-      wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
-      wr.send_flags = IBV_SEND_SIGNALED;
-      wr.imm_data =
-          htonl((uint32_t)tx_buffer->idx << 16 | tx_buffer->buffer.user_meta_size);
-      wr.wr.rdma.remote_addr = tx_buffer->remote_buffer.remote_meta_addr;
-      wr.wr.rdma.rkey = tx_buffer->remote_buffer.remote_meta_key;
-      ret = ibv_post_send(ctx->qp, &wr, &bad);
-      if (ret) {
-        err("%s(%s), ibv_post_send failed: %s\n", __func__, ctx->ops_name,
-            strerror(errno));
-        pthread_mutex_unlock(&tx_buffer->lock);
-        return -EIO;
-      }
-
-      dbg("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
-
-      tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
+    if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_PRODUCTION) {
+      err("%s(%s), buffer %p is not in production\n", __func__, ctx->ops_name, buffer);
       pthread_mutex_unlock(&tx_buffer->lock);
-      return 0;
+      return -EIO;
     }
+
+    /* write buffer to rx immediately */
+    int ret = rdma_post_write(ctx->id, tx_buffer, buffer->addr, buffer->size,
+                              tx_buffer->mr, 0, tx_buffer->remote_buffer.remote_addr,
+                              tx_buffer->remote_buffer.remote_key);
+    if (ret) {
+      err("%s(%s), rdma_post_write failed: %s\n", __func__, ctx->ops_name,
+          strerror(errno));
+      pthread_mutex_unlock(&tx_buffer->lock);
+      return -EIO;
+    }
+
+    /* write metadata to rx with imm data */
+    memcpy(tx_buffer->meta, buffer->user_meta, buffer->user_meta_size);
+    uint32_t imm_data =
+        htonl((uint32_t)tx_buffer->idx << 16 | tx_buffer->buffer.user_meta_size);
+    ret = mt_rdma_post_write_imm(ctx->id, tx_buffer, tx_buffer->meta,
+                                 buffer->user_meta_size, ctx->meta_mr, IBV_SEND_SIGNALED,
+                                 tx_buffer->remote_buffer.remote_meta_addr,
+                                 tx_buffer->remote_buffer.remote_meta_key, imm_data);
+    if (ret) {
+      err("%s(%s), mt_rdma_post_write_imm failed: %s\n", __func__, ctx->ops_name,
+          strerror(errno));
+      pthread_mutex_unlock(&tx_buffer->lock);
+      return -EIO;
+    }
+
+    dbg("%s(%s), send meta for buffer %d\n", __func__, ctx->ops_name, i);
+
+    tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION;
     pthread_mutex_unlock(&tx_buffer->lock);
+    return 0;
   }
 
   err("%s(%s), buffer %p not found\n", __func__, ctx->ops_name, buffer);
