@@ -3,7 +3,6 @@
  */
 
 #include "mt_rdma.h"
-#include "mt_rdma_util.h"
 
 static int rdma_tx_uinit_mrs(struct mt_rdma_tx_ctx* ctx) {
   MT_SAFE_FREE(ctx->meta_mr, ibv_dereg_mr);
@@ -328,7 +327,8 @@ static void* rdma_tx_connect_thread(void* arg) {
             goto connect_err;
           }
           ctx->id = event->id;
-
+          break;
+        case RDMA_CM_EVENT_ESTABLISHED:
           for (int i = 0; i < ctx->buffer_cnt; i++) { /* post receive done msg */
             struct mt_rdma_message* msg = &ctx->recv_msgs[i];
             ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
@@ -339,17 +339,13 @@ static void* rdma_tx_connect_thread(void* arg) {
             }
           }
           ctx->connected = true;
-
-          /* create poll thread */
           ctx->cq_poll_stop = false;
           ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_tx_cq_poll_thread, ctx);
           if (ret) {
             err("%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
             goto connect_err;
           }
-
           info("%s(%s), connected\n", __func__, ctx->ops_name);
-
           break;
         case RDMA_CM_EVENT_DISCONNECTED:
           info("%s(%s), RX disconnected.\n", __func__, ctx->ops_name);
@@ -359,7 +355,9 @@ static void* rdma_tx_connect_thread(void* arg) {
           /* todo: handle resources clearing and notifying */
           break;
         default:
-          break;
+          err("%s(%s), event: %s, error: %d\n", __func__, ctx->ops_name,
+              rdma_event_str(event->event), event->status);
+          goto connect_err;
       }
       rdma_ack_cm_event(event);
     }
@@ -370,6 +368,7 @@ static void* rdma_tx_connect_thread(void* arg) {
 
 connect_err:
   rdma_ack_cm_event(event);
+  err("%s(%s), exited with error\n", __func__, ctx->ops_name);
   /* add more error handling */
   return NULL;
 }

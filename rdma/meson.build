@@ -43,12 +43,7 @@ endif
 mtl_rdma_header_file = files('mtl_rdma_api.h')
 install_headers(mtl_rdma_header_file, subdir: meson.project_name())
 
-mtl_rdma_sources = files(
-    'mt_rdma.c',
-    'mt_rdma_rx.c',
-    'mt_rdma_tx.c',
-    'mt_rdma_util.c',
-)
+mtl_rdma_sources = files('mt_rdma.c', 'mt_rdma_rx.c', 'mt_rdma_tx.c')
 
 mtl_rdma_lib = shared_library(
     meson.project_name(),
