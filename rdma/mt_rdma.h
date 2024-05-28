@@ -6,9 +6,10 @@
 #define _MT_RDMA_HEAD_H_
 
 #include <fcntl.h>
-#include <infiniband/verbs.h>
 #include <poll.h>
 #include <pthread.h>
+#include <rdma/rdma_cma.h>
+#include <rdma/rdma_verbs.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
