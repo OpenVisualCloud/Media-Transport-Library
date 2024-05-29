@@ -191,7 +191,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
 int main(int argc, char** argv) {
   int session_num = 4;
   struct st_sample_context ctx;
-  int ret;
+  int ret = -EIO;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
