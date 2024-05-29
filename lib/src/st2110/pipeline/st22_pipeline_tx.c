@@ -421,6 +421,12 @@ static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
         }
       }
     }
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      if (ctx->framebuffs[i].stat != ST22P_TX_FRAME_FREE) {
+        warn("%s(%d), frame %u are still in %s\n", __func__, ctx->idx, i,
+             tx_st22p_stat_name(ctx->framebuffs[i].stat));
+      }
+    }
     mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
@@ -572,6 +578,34 @@ static int tx_st22p_usdt_dump_frame(struct st22p_tx_ctx* ctx, struct st_frame* f
        usdt_dump_path, fd, (float)(mt_get_tsc(impl) - tsc_s) / NS_PER_MS);
   close(fd);
   return 0;
+}
+
+static void tx_st22p_framebuffs_flush(struct st22p_tx_ctx* ctx) {
+  /* wait all frame are in free or in transmitting(flushed by transport) */
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st22p_tx_frame* framebuff = &ctx->framebuffs[i];
+    int retry = 0;
+
+    while (1) {
+      if (framebuff->stat == ST22P_TX_FRAME_FREE) break;
+      if (framebuff->stat == ST22P_TX_FRAME_IN_TRANSMITTING) {
+        /* make sure transport to finish the transmit */
+        /* WA to use sleep here, todo: add a transport API to query the stat */
+        mt_sleep_ms(50);
+        break;
+      }
+
+      dbg("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
+          tx_st22p_stat_name(framebuff->stat), retry);
+      retry++;
+      if (retry > 100) {
+        info("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
+             tx_st22p_stat_name(framebuff->stat), retry);
+        break;
+      }
+      mt_sleep_ms(10);
+    }
+  }
 }
 
 struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
@@ -852,6 +886,10 @@ int st22p_tx_free(st22p_tx_handle handle) {
   if (ctx->type != MT_ST22_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
     return -EIO;
+  }
+
+  if (ctx->framebuffs && mt_started(impl)) {
+    tx_st22p_framebuffs_flush(ctx);
   }
 
   if (ctx->encode_impl) {

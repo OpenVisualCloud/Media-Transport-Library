@@ -191,7 +191,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
 int main(int argc, char** argv) {
   int session_num = 4;
   struct st_sample_context ctx;
-  int ret;
+  int ret = -EIO;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
@@ -202,6 +202,8 @@ int main(int argc, char** argv) {
   struct st20_pgroup st20_pg;
   st20_get_pgroup(ctx.fmt, &st20_pg);
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -287,15 +289,10 @@ int main(int argc, char** argv) {
 
   app.ready = true;
 
-  // start dev
-  ret = mtl_start(ctx.st);
-
   while (!ctx.exit) {
     sleep(1);
   }
 
-  // stop dev
-  ret = mtl_stop(ctx.st);
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
   app.ready = false;
 

@@ -194,6 +194,12 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
 
 static int tx_st30p_uinit_fbs(struct st30p_tx_ctx* ctx) {
   if (ctx->framebuffs) {
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      if (ctx->framebuffs[i].stat != ST30P_TX_FRAME_FREE) {
+        warn("%s(%d), frame %u are still in %s\n", __func__, ctx->idx, i,
+             tx_st30p_stat_name(ctx->framebuffs[i].stat));
+      }
+    }
     mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
@@ -314,6 +320,34 @@ static int tx_st30p_usdt_dump_frame(struct st30p_tx_ctx* ctx, struct st30_frame*
   return 0;
 }
 
+static void tx_st30p_framebuffs_flush(struct st30p_tx_ctx* ctx) {
+  /* wait all frame are in free or in transmitting(flushed by transport) */
+  for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+    struct st30p_tx_frame* framebuff = &ctx->framebuffs[i];
+    int retry = 0;
+
+    while (1) {
+      if (framebuff->stat == ST30P_TX_FRAME_FREE) break;
+      if (framebuff->stat == ST30P_TX_FRAME_IN_TRANSMITTING) {
+        /* make sure transport to finish the transmit */
+        /* WA to use sleep here, todo: add a transport API to query the stat */
+        mt_sleep_ms(50);
+        break;
+      }
+
+      dbg("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
+          tx_st30p_stat_name(framebuff->stat), retry);
+      retry++;
+      if (retry > 100) {
+        info("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
+             tx_st30p_stat_name(framebuff->stat), retry);
+        break;
+      }
+      mt_sleep_ms(10);
+    }
+  }
+}
+
 struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   struct st30p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
@@ -397,6 +431,10 @@ int st30p_tx_free(st30p_tx_handle handle) {
   }
 
   notice("%s(%d), start\n", __func__, ctx->idx);
+
+  if (ctx->framebuffs && mt_started(impl)) {
+    tx_st30p_framebuffs_flush(ctx);
+  }
 
   if (ctx->ready) {
     mt_stat_unregister(impl, tx_st30p_stat, ctx);
