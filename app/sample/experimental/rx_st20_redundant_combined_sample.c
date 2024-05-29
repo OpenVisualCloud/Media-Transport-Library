@@ -116,13 +116,15 @@ static void* rx_video_frame_thread(void* arg) {
 
 int main(int argc, char** argv) {
   struct st_sample_context ctx;
-  int ret;
+  int ret = -EIO;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   sample_parse_args(&ctx, argc, argv, true, false, false);
   ctx.param.num_ports = 2; /* force to 2 */
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -201,9 +203,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // start dev
-  ret = mtl_start(ctx.st);
-
   // rx run
   sart_time_ns = mtl_ptp_read_time(ctx.st);
   while (!ctx.exit) {
@@ -231,9 +230,6 @@ int main(int argc, char** argv) {
     pthread_join(app[i]->app_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_rec);
   }
-
-  // stop rx
-  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {

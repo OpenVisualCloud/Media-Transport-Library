@@ -134,6 +134,8 @@ int main(int argc, char** argv) {
   ctx.param.flags |=
       MTL_FLAG_RX_SEPARATE_VIDEO_LCORE; /* use separate lcores for tx and rx */
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -227,9 +229,6 @@ int main(int argc, char** argv) {
 
   app.ready = true;
 
-  // start dev
-  ret = mtl_start(ctx.st);
-
   while (!ctx.exit) {
     sleep(1);
   }
@@ -247,8 +246,6 @@ int main(int argc, char** argv) {
   }
   pthread_join(app.fwd_thread, NULL);
 
-  // stop dev
-  ret = mtl_stop(ctx.st);
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
   app.ready = false;
 

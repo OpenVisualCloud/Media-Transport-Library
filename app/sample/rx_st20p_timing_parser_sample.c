@@ -157,6 +157,8 @@ int main(int argc, char** argv) {
   /* enable hw offload timestamp */
   ctx.param.flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -229,9 +231,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // start rx
-  ret = mtl_start(ctx.st);
-
   int cnt = 0;
   while (!ctx.exit) {
     sleep(1);
@@ -257,9 +256,6 @@ int main(int argc, char** argv) {
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
   }
-
-  // stop rx
-  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {

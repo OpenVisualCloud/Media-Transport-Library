@@ -74,6 +74,8 @@ int main(int argc, char** argv) {
   ctx.sessions = session_num;
   sample_tx_queue_cnt_set(&ctx, session_num);
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -194,15 +196,9 @@ int main(int argc, char** argv) {
   app[2]->fb_offset = app[0]->frame_size * 2;
   app[3]->fb_offset = app[2]->fb_offset + app[1]->fb_offset;
 
-  // start tx
-  ret = mtl_start(ctx.st);
-
   while (!ctx.exit) {
     sleep(1);
   }
-
-  // stop tx
-  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
