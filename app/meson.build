@@ -513,4 +513,16 @@ executable('RdmaVideoRxSample', rdma_video_rx_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
 )
+executable('RdmaVideoTxMultiSample', rdma_video_tx_multi_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, libpthread, mtl_rdma]
+)
+executable('RdmaVideoRxMultiSample', rdma_video_rx_multi_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
+)
 endif

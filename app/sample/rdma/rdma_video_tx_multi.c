@@ -72,16 +72,18 @@ void int_handler(int dummy) {
 }
 
 int main(int argc, char** argv) {
-  if (argc != 4) {
-    printf("Usage: %s <ip> <port> <yuv_file>\n", argv[0]);
+  if (argc != 5) {
+    printf("Usage: %s <ip> <port> <port1> <yuv_file>\n", argv[0]);
     return -1;
   }
   signal(SIGINT, int_handler);
 
   int ret = 0;
   void* buffers[3] = {};
+  void* buffers1[3] = {};
   mtl_rdma_handle mrh = NULL;
-  mtl_rdma_tx_handle tx = NULL;
+  mtl_rdma_tx_handle tx0 = NULL;
+  mtl_rdma_tx_handle tx1 = NULL;
   struct mtl_rdma_init_params p = {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
@@ -102,6 +104,7 @@ int main(int argc, char** argv) {
       ret = -1;
       goto out;
     }
+    buffers1[i] = buffers[i] + frame_size / 2;
   }
 
   struct mtl_rdma_tx_ops tx_ops = {
@@ -110,19 +113,30 @@ int main(int argc, char** argv) {
       .port = argv[2],
       .num_buffers = 3,
       .buffers = buffers,
-      .buffer_capacity = frame_size,
+      .buffer_capacity = frame_size / 2,
       .notify_buffer_done = tx_notify_buffer_done,
       .notify_buffer_sent = tx_notify_buffer_sent,
   };
 
-  tx = mtl_rdma_tx_create(mrh, &tx_ops);
-  if (!tx) {
-    printf("Failed to create RDMA TX\n");
+  tx0 = mtl_rdma_tx_create(mrh, &tx_ops);
+  if (!tx0) {
+    printf("Failed to create RDMA TX 0\n");
     ret = -1;
     goto out;
   }
 
-  FILE* yuv_file = fopen(argv[3], "rb");
+  tx_ops.name = "rdma_tx1";
+  tx_ops.buffers = buffers1;
+  tx_ops.port = argv[3];
+
+  tx1 = mtl_rdma_tx_create(mrh, &tx_ops);
+  if (!tx1) {
+    printf("Failed to create RDMA TX 1\n");
+    ret = -1;
+    goto out;
+  }
+
+  FILE* yuv_file = fopen(argv[4], "rb");
   if (!yuv_file) {
     printf("Failed to open YUV file\n");
     ret = -1;
@@ -133,9 +147,19 @@ int main(int argc, char** argv) {
 
   struct timespec start_time;
   clock_gettime(CLOCK_MONOTONIC, &start_time);
+  struct mtl_rdma_buffer* buffer = NULL;
+  struct mtl_rdma_buffer* buffer1 = NULL;
   while (keep_running) {
-    struct mtl_rdma_buffer* buffer = mtl_rdma_tx_get_buffer(tx);
+    if (!buffer) buffer = mtl_rdma_tx_get_buffer(tx0);
     if (!buffer) {
+      /* wait for buffer done */
+      pthread_mutex_lock(&mtx);
+      pthread_cond_wait(&cond, &mtx);
+      pthread_mutex_unlock(&mtx);
+      continue;
+    }
+    if (!buffer1) buffer1 = mtl_rdma_tx_get_buffer(tx1);
+    if (!buffer1) {
       /* wait for buffer done */
       pthread_mutex_lock(&mtx);
       pthread_cond_wait(&cond, &mtx);
@@ -159,16 +183,29 @@ int main(int argc, char** argv) {
     clock_gettime(CLOCK_REALTIME, &now);
     uint64_t send_time_ns = ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
 
-    buffer->size = frame_size;
+    buffer->size = frame_size / 2;
     buffer->user_meta = &send_time_ns;
     buffer->user_meta_size = sizeof(uint64_t);
 
-    ret = mtl_rdma_tx_put_buffer(tx, buffer);
+    ret = mtl_rdma_tx_put_buffer(tx0, buffer);
     if (ret < 0) {
       printf("Failed to put buffer\n");
       ret = -1;
       goto out;
     }
+    buffer = NULL;
+
+    buffer1->size = frame_size / 2;
+    buffer1->user_meta = &frames_sent;
+    buffer1->user_meta_size = sizeof(int);
+
+    ret = mtl_rdma_tx_put_buffer(tx1, buffer1);
+    if (ret < 0) {
+      printf("Failed to put buffer\n");
+      ret = -1;
+      goto out;
+    }
+    buffer1 = NULL;
 
     control_fps(&start_time);
   }
@@ -177,7 +214,8 @@ int main(int argc, char** argv) {
 
 out:
 
-  if (tx) mtl_rdma_tx_free(tx);
+  if (tx0) mtl_rdma_tx_free(tx0);
+  if (tx1) mtl_rdma_tx_free(tx1);
 
   for (int i = 0; i < 3; i++) {
     if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
