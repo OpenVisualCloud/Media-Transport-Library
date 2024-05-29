@@ -1555,6 +1555,9 @@ static inline int mtl_memcpy_action(struct mtl_memcpy_ops* ops) {
   return 0;
 }
 
+/** Helper function to check if MTL Manager is alive */
+bool mtl_is_manager_alive(void);
+
 #if defined(__cplusplus)
 }
 #endif
