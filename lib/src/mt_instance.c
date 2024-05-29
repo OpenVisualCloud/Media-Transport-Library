@@ -252,6 +252,26 @@ int mt_instance_uinit(struct mtl_main_impl* impl) {
   return close(sock);
 }
 
+bool mtl_is_manager_alive(void) {
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    err("%s, create socket fail %d\n", __func__, sock);
+    return false;
+  }
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, MTL_MANAGER_SOCK_PATH, sizeof(addr.sun_path) - 1);
+  int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
+  if (ret < 0) {
+    err("%s, MTL manager is not alive\n", __func__);
+    close(sock);
+    return false;
+  }
+
+  close(sock);
+  return true;
+}
+
 #else /* not supported on Windows */
 
 int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
@@ -317,6 +337,10 @@ int mt_instance_del_flow(struct mtl_main_impl* impl, unsigned int ifindex,
   MTL_MAY_UNUSED(ifindex);
   MTL_MAY_UNUSED(flow_id);
   return -ENOTSUP;
+}
+
+bool mtl_is_manager_alive(void) {
+  return false;
 }
 
 #endif
