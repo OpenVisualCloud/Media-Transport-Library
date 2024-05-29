@@ -106,6 +106,8 @@ static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
 
 static int rdma_tx_handle_wc_recv(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
   int ret = 0;
+  uint16_t idx = 0;
+  struct mt_rdma_tx_buffer* tx_buffer = NULL;
   struct mtl_rdma_tx_ops* ops = &ctx->ops;
   struct mt_rdma_message* msg = (struct mt_rdma_message*)wc->wr_id;
   if (msg->magic != MT_RDMA_MSG_MAGIC) {
@@ -115,10 +117,10 @@ static int rdma_tx_handle_wc_recv(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc)
 
   switch (msg->type) {
     case MT_RDMA_MSG_BUFFER_DONE:
-      uint16_t idx = msg->buf_done.buf_idx;
+      idx = msg->buf_done.buf_idx;
       dbg("%s(%s), received buffer %u done message, seq %u\n", __func__, ctx->ops_name,
           idx, msg->buf_done.seq_num);
-      struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[idx];
+      tx_buffer = &ctx->tx_buffers[idx];
       pthread_mutex_lock(&tx_buffer->lock);
       if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
         err("%s(%s), received buffer done message with invalid status %d\n", __func__,
