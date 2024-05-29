@@ -165,6 +165,8 @@ int main(int argc, char** argv) {
   ret = fwd_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -252,9 +254,6 @@ int main(int argc, char** argv) {
 
   app.ready = true;
 
-  // start dev
-  ret = mtl_start(ctx.st);
-
   while (!ctx.exit) {
     sleep(1);
   }
@@ -266,9 +265,6 @@ int main(int argc, char** argv) {
   st_pthread_mutex_unlock(&app.wake_mutex);
   pthread_join(app.fwd_thread, NULL);
   info("%s, fb_fwd %d\n", __func__, app.fb_fwd);
-
-  // stop dev
-  ret = mtl_stop(ctx.st);
 
   // check result
   if (app.fb_fwd <= 0) {

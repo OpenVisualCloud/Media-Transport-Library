@@ -48,6 +48,8 @@ int main() {
   param.tx_queues_cnt[MTL_PORT_P] = 1;
   param.rx_queues_cnt[MTL_PORT_P] = 0;
 
+  /* enable auto start/stop */
+  param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   /* init mtl */
   mtl_handle st = mtl_init(&param);
   if (st == NULL) {
@@ -111,8 +113,6 @@ int main() {
 
   std::thread frame_thread(sample_frame_thread);
 
-  ret = mtl_start(st);
-
   while (!stop) {
     Sleep(1000);
   }
@@ -120,8 +120,6 @@ int main() {
   cv.notify_one();
   frame_thread.join();
   if (tx_handle) st20p_tx_free(tx_handle);
-
-  ret = mtl_stop(st);
 
   /* uninit mtl */
   if (st != NULL) {
