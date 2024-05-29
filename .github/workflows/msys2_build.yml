@@ -78,12 +78,6 @@ jobs:
             SDL2_ttf:p
             dlfcn:p
 
-      - name: Install npcap-sdk
-        run: |
-          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
-          unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
-
       - name: Checkout IMTL code
         uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
 
