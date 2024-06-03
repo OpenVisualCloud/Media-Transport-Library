@@ -128,6 +128,7 @@ struct st_sample_context {
   off_t gddr_pa;
   off_t gddr_offset;
   bool use_cpu_copy;
+  bool profiling_gddr;
 
   bool has_user_meta; /* if provide user meta data with the st2110-20 frame */
 
