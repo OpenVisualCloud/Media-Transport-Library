@@ -23,7 +23,7 @@ jobs:
     outputs:
       changed: ${{ steps.filter.outputs.ffmpeg_plugin == 'true' }}
     steps:
-      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v2
         id: filter
@@ -58,10 +58,10 @@ jobs:
           git config --global user.name "Your Name"
 
       - name: checkout kahawai repo
-        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
 
       - name: checkout openh264 repo
-        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           repository: 'cisco/openh264'
           ref: openh264v2.4.0
@@ -69,7 +69,7 @@ jobs:
 
 
       - name: checkout FFmpeg repo
-        uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           repository: 'FFmpeg/FFmpeg'
           path: FFmpeg
