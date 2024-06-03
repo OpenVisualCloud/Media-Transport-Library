@@ -60,6 +60,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_TRANSPORT_FMT,
   SAMPLE_ARG_PACKING,
   SAMPLE_ARG_GDDR_PA,
+  SAMPLE_ARG_PROFILING_GDDR,
   SAMPLE_ARG_RX_DUMP,
   SAMPLE_ARG_USE_CPU_COPY,
   SAMPLE_ARG_USER_META,
@@ -138,6 +139,7 @@ static struct option sample_args_options[] = {
     {"udp_tx_bps_g", required_argument, 0, SAMPLE_ARG_UDP_TX_BPS_G},
     {"gddr_pa", required_argument, 0, SAMPLE_ARG_GDDR_PA},
     {"use_cpu_copy", no_argument, 0, SAMPLE_ARG_USE_CPU_COPY},
+    {"profiling_gddr", no_argument, 0, SAMPLE_ARG_PROFILING_GDDR},
     {"rx_dump", no_argument, 0, SAMPLE_ARG_RX_DUMP},
     {"user_meta", no_argument, 0, SAMPLE_ARG_USER_META},
     {"perf_frames", required_argument, 0, SAMPLE_ARG_PERF_FRAMES},
@@ -443,6 +445,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_USE_CPU_COPY:
         ctx->use_cpu_copy = true;
+        break;
+      case SAMPLE_ARG_PROFILING_GDDR:
+        ctx->profiling_gddr = true;
         break;
       case SAMPLE_ARG_PERF_FRAMES:
         ctx->perf_frames = atoi(optarg);

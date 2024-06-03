@@ -38,6 +38,51 @@ struct rx_st20p_hg_ctx {
   off_t cpu_copy_offset;
 };
 
+static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
+  clock_t start, end;
+  float sec;
+  struct st_ext_frame* frame = &ctx->gddr_frame;
+  int loop_cnt;
+  float throughput_bit;
+  uint8_t buf[256];
+
+  info("%s, start on %p, size %" PRIu64 "\n", __func__, frame->addr[0], frame->size);
+  /* read */
+  loop_cnt = 3;
+  start = clock();
+  /* read is very slow, not known why */
+  size_t r_sz = 0x100000;
+  if (frame->size < r_sz) r_sz = frame->size;
+  for (int loop = 0; loop < loop_cnt; loop++) {
+    uint8_t* addr = (uint8_t*)frame->addr[0];
+    for (size_t i = 0; i < r_sz; i++) {
+      buf[i & 0xFF] = addr[i];
+      dbg("%s, value %u at %d\n", __func__, addr[i], (int)i);
+    }
+  }
+  end = clock();
+  sec = (float)(end - start) / CLOCKS_PER_SEC;
+  throughput_bit = (float)r_sz * 8 * loop_cnt;
+  info("%s, read throughput: %f Mbps, time %fs\n", __func__,
+       throughput_bit / sec / 1000 / 1000, sec);
+
+  /* write */
+  loop_cnt = 20;
+  start = clock();
+  for (int loop = 0; loop < loop_cnt; loop++) {
+    uint8_t* addr = (uint8_t*)frame->addr[0];
+    for (size_t i = 0; i < frame->size; i++) {
+      addr[i] = buf[i & 0xFF];
+    }
+  }
+  end = clock();
+  sec = (float)(end - start) / CLOCKS_PER_SEC;
+  throughput_bit = (float)frame->size * 8 * loop_cnt;
+  info("%s, write throughput: %f Mbps, time %fs\n", __func__,
+       throughput_bit / sec / 1000 / 1000, sec);
+  return 0;
+}
+
 static int gddr_map(struct st_sample_context* ctx, struct st_ext_frame* frame, size_t sz,
                     int fd) {
   off_t off = ctx->gddr_pa + ctx->gddr_offset;
@@ -255,6 +300,7 @@ int main(int argc, char** argv) {
     fb_sz = mtl_size_page_align(fb_sz, app[i]->pg_sz);
     ret = gddr_map(&ctx, &app[i]->gddr_frame, fb_sz, dev_mem_fd);
     if (ret < 0) goto error;
+    if (ctx.profiling_gddr) gaddr_profiling(app[i]);
 
     if (!ctx.use_cpu_copy) {
       ops_rx.flags |= ST20P_RX_FLAG_HDR_SPLIT;
