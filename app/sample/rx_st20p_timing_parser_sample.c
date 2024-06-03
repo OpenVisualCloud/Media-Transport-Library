@@ -52,7 +52,7 @@ static void rx_st20p_tp_stat_init(struct rx_tp_stat* stat) {
   stat->vrx_min = INT_MAX;
   stat->ipt_max = INT_MIN;
   stat->ipt_min = INT_MAX;
-  stat->fpt_min = INT_MIN;
+  stat->fpt_max = INT_MIN;
   stat->fpt_min = INT_MAX;
   stat->latency_max = INT_MIN;
   stat->latency_min = INT_MAX;
