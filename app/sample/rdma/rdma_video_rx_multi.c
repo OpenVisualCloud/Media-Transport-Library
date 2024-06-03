@@ -103,16 +103,18 @@ int main(int argc, char** argv) {
   }
 #endif
 
-  if (argc != 4) {
-    printf("Usage: %s <local_ip> <ip> <port>\n", argv[0]);
+  if (argc != 5) {
+    printf("Usage: %s <local_ip> <ip> <port> <port1>\n", argv[0]);
     return -1;
   }
   signal(SIGINT, int_handler);
 
   int ret = 0;
   void* buffers[3] = {};
+  void* buffers1[3] = {};
   mtl_rdma_handle mrh = NULL;
-  mtl_rdma_rx_handle rx = NULL;
+  mtl_rdma_rx_handle rx0 = NULL;
+  mtl_rdma_rx_handle rx1 = NULL;
   struct mtl_rdma_init_params p = {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
@@ -133,6 +135,7 @@ int main(int argc, char** argv) {
       ret = -1;
       goto out;
     }
+    buffers1[i] = buffers[i] + frame_size / 2;
   }
 
   struct mtl_rdma_rx_ops rx_ops = {
@@ -142,13 +145,24 @@ int main(int argc, char** argv) {
       .port = argv[3],
       .num_buffers = 3,
       .buffers = buffers,
-      .buffer_capacity = frame_size,
+      .buffer_capacity = frame_size / 2,
       .notify_buffer_ready = rx_notify_buffer_ready,
   };
 
-  rx = mtl_rdma_rx_create(mrh, &rx_ops);
-  if (!rx) {
-    printf("Failed to create RDMA RX\n");
+  rx0 = mtl_rdma_rx_create(mrh, &rx_ops);
+  if (!rx0) {
+    printf("Failed to create RDMA RX0\n");
+    ret = -1;
+    goto out;
+  }
+
+  rx_ops.name = "rdma_rx1";
+  rx_ops.buffers = buffers1;
+  rx_ops.port = argv[4];
+
+  rx1 = mtl_rdma_rx_create(mrh, &rx_ops);
+  if (!rx1) {
+    printf("Failed to create RDMA RX1\n");
     ret = -1;
     goto out;
   }
@@ -163,9 +177,18 @@ int main(int argc, char** argv) {
 
   int frames_consumed = 0;
   struct mtl_rdma_buffer* buffer = NULL;
+  struct mtl_rdma_buffer* buffer1 = NULL;
   while (keep_running) {
-    buffer = mtl_rdma_rx_get_buffer(rx);
+    if (!buffer) buffer = mtl_rdma_rx_get_buffer(rx0);
     if (!buffer) {
+      /* wait for buffer ready */
+      pthread_mutex_lock(&mtx);
+      pthread_cond_wait(&cond, &mtx);
+      pthread_mutex_unlock(&mtx);
+      continue;
+    }
+    if (!buffer1) buffer1 = mtl_rdma_rx_get_buffer(rx1);
+    if (!buffer1) {
       /* wait for buffer ready */
       pthread_mutex_lock(&mtx);
       pthread_cond_wait(&cond, &mtx);
@@ -182,17 +205,31 @@ int main(int argc, char** argv) {
       printf("Latency: %.2f us\n", (recv_time_ns - send_time_ns) / 1000.0);
     }
 
+    if (buffer1->user_meta && buffer1->user_meta_size) {
+      int sent = *(int*)buffer1->user_meta;
+      printf("Buffer sent: %d\n", sent);
+    }
+
 #ifdef APP_HAS_SDL2
     /* display frame */
     sdl_display_frame(buffer->addr, 1920, 1080);
 #endif
 
-    ret = mtl_rdma_rx_put_buffer(rx, buffer);
+    ret = mtl_rdma_rx_put_buffer(rx0, buffer);
     if (ret < 0) {
       printf("Failed to put buffer\n");
       ret = -1;
       break;
     }
+    buffer = NULL;
+
+    ret = mtl_rdma_rx_put_buffer(rx1, buffer1);
+    if (ret < 0) {
+      printf("Failed to put buffer\n");
+      ret = -1;
+      break;
+    }
+    buffer1 = NULL;
 
     frames_consumed++;
     frame_count++;
@@ -211,7 +248,8 @@ int main(int argc, char** argv) {
   printf("Received %d frames\n", frames_consumed);
 
 out:
-  if (rx) mtl_rdma_rx_free(rx);
+  if (rx0) mtl_rdma_rx_free(rx0);
+  if (rx1) mtl_rdma_rx_free(rx1);
 
   for (int i = 0; i < 3; i++) {
     if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);

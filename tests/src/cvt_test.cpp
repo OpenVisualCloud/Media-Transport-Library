@@ -4043,8 +4043,9 @@ static int frame_compare_each_line(struct st_frame* old_frame,
           (uint8_t*)old_frame->addr[plane] + old_frame->linesize[plane] * line;
       uint8_t* new_addr =
           (uint8_t*)new_frame->addr[plane] + new_frame->linesize[plane] * line;
-      ret += memcmp(old_addr, new_addr,
-                    st_frame_least_linesize(old_frame->fmt, old_frame->width, plane));
+      if (memcmp(old_addr, new_addr,
+                 st_frame_least_linesize(old_frame->fmt, old_frame->width, plane)))
+        ret += -EIO;
     }
   }
 

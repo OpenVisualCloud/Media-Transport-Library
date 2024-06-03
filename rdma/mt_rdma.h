@@ -65,11 +65,19 @@ enum mtl_rdma_log_level mt_rdma_get_log_level(void);
     printf(__VA_ARGS__); \
   } while (0)
 
+/* Remote buffer info for RDMA write */
 struct mt_rdma_remote_buffer {
   uint32_t remote_key;
   uint64_t remote_addr;
   uint32_t remote_meta_key;
   uint64_t remote_meta_addr;
+};
+
+/* Private data for RDMA CM handshake */
+struct mt_rdma_connect_priv {
+  uint16_t buf_cnt;
+  size_t buf_capacity;
+  bool dual_qp;
 };
 
 enum mt_rdma_message_type {
@@ -150,6 +158,7 @@ struct mt_rdma_rx_buffer {
   struct mtl_rdma_buffer buffer;
   struct ibv_mr* mr;
   pthread_mutex_t lock;
+  uint8_t recv_mask;
 };
 
 struct mt_rdma_rx_ctx {

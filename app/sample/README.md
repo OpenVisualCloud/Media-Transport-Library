@@ -201,3 +201,15 @@ The dir include the simple sample code for how to develop application quickly ba
 ```bash
 ./build/app/RdmaVideoRxSample 192.168.75.11 192.168.75.10 20000
 ```
+
+[rdma_video_tx_multi.c](rdma/rdma_video_tx_multi.c): A tx video application based on rdma interface using multiple queue pair, just for experimental use. The default video format is 1920x1080 UYVY frame, and the default video frame rate is 30.
+
+```bash
+numactl -m 0 ./build/app/RdmaVideoTxMultiSample 192.168.75.10 20000 20001 test.yuv
+```
+
+[rdma_video_rx_multi.c](rdma/rdma_video_rx_multi.c): A rx video application based on rdma interface using multiple queue pair, just for experimental use. SDL display is enabled by default.
+
+```bash
+numactl -m 0 ./build/app/RdmaVideoRxMultiSample 192.168.75.11 192.168.75.10 20000 20001
+```
