@@ -2,16 +2,16 @@
 
 ## Introduction
 
-With the expansion of the Media Transport Library (IMTL) to cloud and edge environments, maintaining high-quality media streaming amidst the potential for packet loss becomes paramount.
+With the expansion of the Media Transport Library (MTL) to cloud and edge environments, maintaining high-quality media streaming amidst the potential for packet loss becomes paramount.
 In these distributed environments, network conditions can be highly variable, leading to increased risk of packet drops.
 Traditional techniques such as SMPTE ST2022-7 hitless switching for redundant paths or implementation of Forward Error Correction (FEC) protocols, although effective, bring additional complexity or require significantly more bandwidth.
 
-To address these challenges while adapting to the versatile deployment scenarios, IMTL has been enhanced with an RTCP (Real-time Transport Control Protocol) retransmission feature.
+To address these challenges while adapting to the versatile deployment scenarios, MTL has been enhanced with an RTCP (Real-time Transport Control Protocol) retransmission feature.
 This software-driven approach provides a flexible solution for handling packet loss that can complement or even take the place of traditional methods in cloud and edge computing contexts.
 
 ## RTCP Design and Workflow
 
-The RTCP retransmission mechanism within IMTL is designed with the cloud and edge paradigm in mind, ensuring that media streams can be reliably transmitted even in the face of adverse network conditions.
+The RTCP retransmission mechanism within MTL is designed with the cloud and edge paradigm in mind, ensuring that media streams can be reliably transmitted even in the face of adverse network conditions.
 The workflow leverages RTCP to monitor the status of each packet, and in the event of packet loss, an RTCP NACK (Negative Acknowledgment) is promptly generated to request the retransmission of the lost packet(s).
 This real-time detection and correction process serves to maintain the continuity and quality of the media stream.
 
@@ -19,7 +19,7 @@ This real-time detection and correction process serves to maintain the continuit
 
 ## RTCP Configuration Code Example
 
-To enable and configure RTCP in IMTL for packet loss handling, the following code snippet provides a template:
+To enable and configure RTCP in MTL for packet loss handling, the following code snippet provides a template:
 
 ```cpp
 ops_tx.flags |= ST20P_TX_FLAG_ENABLE_RTCP;  // Enabling RTCP on the transmitter side
@@ -39,7 +39,7 @@ In this configuration:
 - The `seq_bitmap_size` determines the range of sequence numbers the receiver will monitor for loss detection. The total number of packets for tracking is `seq_bitmap_size * 8`.
 - The `seq_skip_window` configures the permissible range within which out-of-order packets will be accepted without triggering a NACK.
 
-By integrating RTCP retransmission within IMTL, the robustness and reliability of media streaming over IP in varied deployment scenarios are significantly enhanced, solidifying IMTL's role in modern media transport solutions.
+By integrating RTCP retransmission within MTL, the robustness and reliability of media streaming over IP in varied deployment scenarios are significantly enhanced, solidifying MTL's role in modern media transport solutions.
 
 ## Performance Evaluation
 

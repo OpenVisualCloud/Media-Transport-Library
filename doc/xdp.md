@@ -1,6 +1,6 @@
 # XDP Guide
 
-This guide provides a comprehensive overview of XDP (eXpress Data Path) and its application within IMTL, which utilizes AF_XDP as its new network backend.
+This guide provides a comprehensive overview of XDP (eXpress Data Path) and its application within MTL, which utilizes AF_XDP as its new network backend.
 
 ## Understanding XDP and AF_XDP
 
@@ -29,17 +29,17 @@ Once the TX ring is filled, the Network Interface Card (NIC) driver takes over, 
 On the receiving end, the user space application fills the Fill ring with packet descriptors which tell the driver where it should dma/copy the packet buffers.
 The NIC driver, upon receiving packets from the network, fills the populated descriptors in the RX ring.
 
-### XDP in IMTL
+### XDP in MTL
 
-![XDP in IMTL](png/xdp-imtl.svg)
+![XDP in MTL](png/xdp-mtl.svg)
 
-With AF_XDP, IMTL can send and receive packets directly with the network driver, bypassing the kernel stack. This makes deployment more efficient and convenient for cloud and edge environments compared to the DPDK backend.
+With AF_XDP, MTL can send and receive packets directly with the network driver, bypassing the kernel stack. This makes deployment more efficient and convenient for cloud and edge environments compared to the DPDK backend.
 
-IMTL also uses an XDP program to filter data path packets. This XDP program is built with our MTL Manager and is loaded along with the libxdp built-in xsk XDP program that is for AF_XDP. Thanks to libxdp's xdp-dispatcher, we can run multiple XDP programs on the same network interface. For the XDP code, please see [mtl.xdp.c](../manager/mtl.xdp.c).
+MTL also uses an XDP program to filter data path packets. This XDP program is built with our MTL Manager and is loaded along with the libxdp built-in xsk XDP program that is for AF_XDP. Thanks to libxdp's xdp-dispatcher, we can run multiple XDP programs on the same network interface. For the XDP code, please see [mtl.xdp.c](../manager/mtl.xdp.c).
 
 ## Building Guide
 
-To enable XDP support, you need to check some configurations for eBPF and XDP on your system, then re-build IMTL with libbpf and libxdp dependencies.
+To enable XDP support, you need to check some configurations for eBPF and XDP on your system, then re-build MTL with libbpf and libxdp dependencies.
 
 ### Kernel Config
 
@@ -84,7 +84,7 @@ make
 sudo make install
 ```
 
-### Building IMTL
+### Building MTL
 
 See [Build Guide](build.md).
 
@@ -111,7 +111,7 @@ find /usr/ -name libbpf.pc
 
 ## Running Guide
 
-Before running IMTL apps, you need to start MTL Manager as a daemon, see [MTL Manager](../manager/README.md).
+Before running MTL apps, you need to start MTL Manager as a daemon, see [MTL Manager](../manager/README.md).
 
 ### Network Interface Setup
 

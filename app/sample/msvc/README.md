@@ -8,7 +8,7 @@ The is sample code for how to develop MSVC application quickly based on Media Tr
 
 ### 2.1 Prepare latest .lib file
 
-* Build IMTL library in MSYS2, see [WIN build guide](../../../doc/build_WIN.md), also need to add MSYS2 binary PATH to system environment variables.
+* Build MTL library in MSYS2, see [WIN build guide](../../../doc/build_WIN.md), also need to add MSYS2 binary PATH to system environment variables.
 
 * After build, in the build folder, you will get `libmtl.def` file.
 

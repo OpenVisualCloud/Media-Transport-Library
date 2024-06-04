@@ -179,7 +179,7 @@ struct upl_ctx {
   enum mtl_log_level log_level;
   /*
    * All rte_malloc memory is shared by processes as it's mapped with shared during DPDK
-   * memory init, and IMTL always use DPDK memory.
+   * memory init, and MTL always use DPDK memory.
    * The easiest way for multi-process sharing is parent process to create/free the
    * resource, child only access the data path */
   pid_t pid;

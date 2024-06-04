@@ -71,7 +71,7 @@ runs:
         ./configure --prefix=$MSYSTEM_PREFIX
         make && make install
 
-    - name: Checkout IMTL repo
+    - name: Checkout MTL repo
       uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       with:
         repository: 'OpenVisualCloud/Media-Transport-Library'
@@ -110,34 +110,34 @@ runs:
         meson setup build
         meson install -C build
 
-    - name: Build IMTL lib
+    - name: Build MTL lib
       shell: msys2 {0}
       run: |
         meson setup build
         meson install -C build
 
-    - name: Build IMTL app
+    - name: Build MTL app
       shell: msys2 {0}
       run: |
         cd app
         meson setup build
         meson compile -C build
 
-    - name: Build IMTL test
+    - name: Build MTL test
       shell: msys2 {0}
       run: |
         cd tests
         meson setup build
         meson compile -C build
 
-    - name: Build IMTL plugins
+    - name: Build MTL plugins
       shell: msys2 {0}
       run: |
         cd plugins
         meson setup build
         meson install -C build
 
-    - name: Build IMTL lib with TAP
+    - name: Build MTL lib with TAP
       shell: msys2 {0}
       run: |
         meson setup tap_build -Denable_tap=${{inputs.tap}}

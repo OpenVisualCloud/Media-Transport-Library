@@ -123,7 +123,7 @@ Download Media Transport Library to top folder Directory
 
 ```bash
 git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
-export imtl_source_code=${PWD}/Media-Transport-Library
+export mtl_source_code=${PWD}/Media-Transport-Library
 ```
 
 ## 2. DPDK build and install
@@ -140,11 +140,11 @@ cd ..
 
 ### 2.2 Apply the DPDK patches required to run Media Transport Library
 
-Note: $imtl_source_code should be pointed to top source code tree of Media Transport Library.
+Note: $mtl_source_code should be pointed to top source code tree of Media Transport Library.
 
 ```bash
 cd dpdk
-git am $imtl_source_code/patches/dpdk/23.11/*.patch
+git am $mtl_source_code/patches/dpdk/23.11/*.patch
 ```
 
 ### 2.3 Build and install DPDK library
@@ -171,7 +171,7 @@ sudo: ninja: command not found
 ## 3. Build Media Transport Library and app
 
 ```bash
-cd $imtl_source_code
+cd $mtl_source_code
 ./build.sh
 ```
 
@@ -217,10 +217,10 @@ sudo ninja install -C build
 cd ..
 ```
 
-Next, rebuild the Media Transport Library. IMTL will reuse the build flags from DPDK.
+Next, rebuild the Media Transport Library. MTL will reuse the build flags from DPDK.
 
 ```bash
-cd $imtl_source_code
+cd $mtl_source_code
 rm build -rf
 ./build.sh
 ```

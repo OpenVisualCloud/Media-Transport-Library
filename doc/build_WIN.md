@@ -50,17 +50,17 @@ make && make install
 
 ## 5. Build DPDK
 
-* Clone the IMTL repository if not:
+* Clone the MTL repository if not:
 
 ```bash
 git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
-export imtl_source_code=${PWD}/Media-Transport-Library
+export mtl_source_code=${PWD}/Media-Transport-Library
 ```
 
 * Convert symlink patch files to real file:
 
 ```bash
-cd $imtl_source_code/patches/dpdk/23.11
+cd $mtl_source_code/patches/dpdk/23.11
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 cd windows
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -69,7 +69,7 @@ ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]];
 * Clone the DPDK repository and apply patches:
 
 ```bash
-cd $imtl_source_code
+cd $mtl_source_code
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
 git checkout v23.11
@@ -77,8 +77,8 @@ git switch -c v23.11
 
 git config user.name "Your Name"        # config if not
 git config user.email "you@example.com" # config if not
-git am $imtl_source_code/patches/dpdk/23.11/*.patch
-git am $imtl_source_code/patches/dpdk/23.11/windows/*.patch
+git am $mtl_source_code/patches/dpdk/23.11/*.patch
+git am $mtl_source_code/patches/dpdk/23.11/windows/*.patch
 ```
 
 * Build and install DPDK:
@@ -91,13 +91,13 @@ meson install -C build
 ## 6. Build Media Transport Library and app
 
 ```bash
-cd $imtl_source_code
+cd $mtl_source_code
 ./build.sh
 ```
 
 ## 7. Add MSYS2 binary PATH to system environment variables (Optional)
 
-The MSYS2 path is not in Windows system environment variables by default, if you want to run IMTL apps in PowerShell/CMD, you need to add the paths first. For example, MSYS2 is installed in `C:\msys64`.
+The MSYS2 path is not in Windows system environment variables by default, if you want to run MTL apps in PowerShell/CMD, you need to add the paths first. For example, MSYS2 is installed in `C:\msys64`.
 
 * (optional)Add MSYS2 common toolchain path: `C:\msys64\usr\bin`
 

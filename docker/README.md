@@ -26,7 +26,7 @@ docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_pro
 
 ### 3.1 Run MTL Manager
 
-Before running any IMTL container, please refer to [MTL Manager](../manager/README.md) to run the Manager daemon server.
+Before running any MTL container, please refer to [MTL Manager](../manager/README.md) to run the Manager daemon server.
 
 For legacy way of running multiple containers without MTL Manager, please add the following arguments to the docker run commands in below sections:
 

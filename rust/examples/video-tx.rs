@@ -12,7 +12,7 @@ use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
 use imtl::video::{Fps, FrameFmt, TransportFmt, VideoTxBuilder};
 
-/// Simple program to use IMTL to send raw YUV frame from file
+/// Simple program to use MTL to send raw YUV frame from file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -136,7 +136,7 @@ fn main() -> Result<()> {
         sdl_context = sdl2::init().unwrap();
         video_subsystem = sdl_context.video().unwrap();
         window = video_subsystem
-            .window("IMTL TX Video", args.width / 4, args.height / 4)
+            .window("MTL TX Video", args.width / 4, args.height / 4)
             .position_centered()
             .opengl()
             .build()?;
