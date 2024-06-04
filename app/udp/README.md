@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-The dir include the simple sample code for how to develop application quickly based on UDP API of Intel® Media Transport Library.
+The dir include the simple sample code for how to develop application quickly based on UDP API of Media Transport Library.
 
 ## 2. Samples with POSIX socket compatible(file descriptor) API
 

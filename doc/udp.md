@@ -1,14 +1,14 @@
 # Introduction
 
-Starting from version 23.04, the Intel® Media Transport Library provides an efficient user-space UDP stack that is POSIX-compatible, enabling users to adopt it without any changes to their code logic. The stack features an LD preload layer that intercepts UDP socket API calls and replaces them with our implementation, allowing for deployment without code changes or the need for rebuilding.
+Starting from version 23.04, the Media Transport Library provides an efficient user-space UDP stack that is POSIX-compatible, enabling users to adopt it without any changes to their code logic. The stack features an LD preload layer that intercepts UDP socket API calls and replaces them with our implementation, allowing for deployment without code changes or the need for rebuilding.
 
-In the Intel® Media Transport Library, data plane traffic is handled directly within the socket API under the current thread context, resulting in extremely high performance and low latency. Other user-space UDP stacks typically use a client-service architecture, which introduces cross-core message costs that can negatively impact performance and add extra latency.
+In the Media Transport Library, data plane traffic is handled directly within the socket API under the current thread context, resulting in extremely high performance and low latency. Other user-space UDP stacks typically use a client-service architecture, which introduces cross-core message costs that can negatively impact performance and add extra latency.
 
-Another major benefit of the Intel® Media Transport Library is data affinity, where the LLC is kept between the call and UDP stack as they share both the CPU and data context.
+Another major benefit of the Media Transport Library is data affinity, where the LLC is kept between the call and UDP stack as they share both the CPU and data context.
 
 ## 1. LibOS design
 
-LibOS is commonly used in cloud computing environments, where it provides a lightweight and efficient platform for running containers and microservices. The Intel® Media Transport Library provides UDP protocol support to replace the kernel network stack, offering a lightweight and modular approach to building and running UDP-based applications.
+LibOS is commonly used in cloud computing environments, where it provides a lightweight and efficient platform for running containers and microservices. The Media Transport Library provides UDP protocol support to replace the kernel network stack, offering a lightweight and modular approach to building and running UDP-based applications.
 
 This approach offers greater flexibility and efficiency, as applications can be customized to include the required functionality and can be run on a variety of platforms without the need for significant modifications.
 
@@ -16,7 +16,7 @@ This approach offers greater flexibility and efficiency, as applications can be 
 
 LD_PRELOAD is an environment variable used in Linux and other Unix-like operating systems to specify additional shared libraries to be loaded before the standard system libraries. This allows users to override or extend the functionality of existing libraries without modifying the original source code.
 
-The Intel® Media Transport Library has an LD preload layer to intercept many network APIs, and the implementation can be found in the [UDP libos code](../lib/src/udp/).
+The Media Transport Library has an LD preload layer to intercept many network APIs, and the implementation can be found in the [UDP libos code](../lib/src/udp/).
 
 ### 2.1. Interception of UDP APIs
 

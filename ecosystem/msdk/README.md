@@ -22,7 +22,7 @@ Args information:
    [-lip]                          - Local IP address
    [-mtlfps]                       - MTL FPS
    [-pt]                           - RTP payload type (eg: 112)
-   [-i::imtl]                      - To enable IMTL option
+   [-i::imtl]                      - To enable MTL option
 ```
 
 More information refer to : [samples/readme-encode_linux.md](https://github.com/Intel-Media-SDK/MediaSDK/blob/master/doc/samples/readme-encode_linux.md)

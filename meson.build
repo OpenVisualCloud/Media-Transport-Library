@@ -55,5 +55,5 @@ pkg.generate(
   version : meson.project_version(),
   libraries : mtl_lib,
   filebase : meson.project_name(),
-  description : 'Intel® Media Transport Library'
+  description : 'Media Transport Library'
 )

@@ -4,7 +4,7 @@
 
 @section det_arch Solution overview
 \n
-Architecture of Intel® Media Transport Library is based on a two sided communication scheme. There are three major parts to create a whole solution.
+Architecture of Media Transport Library is based on a two sided communication scheme. There are three major parts to create a whole solution.
 
 1. Application part <span style="color:green"><b>(green color blocks)</b></span>
 2. Library part <span style="color:blue"><b>(blue color blocks)</b></span>

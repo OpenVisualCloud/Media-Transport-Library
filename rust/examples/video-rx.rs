@@ -13,7 +13,7 @@ use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
 use imtl::video::{Fps, FrameFmt, TransportFmt, VideoRxBuilder};
 
-/// Simple program to use IMTL to receive raw YUV frame and save the latest one to file
+/// Simple program to use MTL to receive raw YUV frame and save the latest one to file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -138,7 +138,7 @@ fn main() -> Result<()> {
         sdl_context = sdl2::init().unwrap();
         video_subsystem = sdl_context.video().unwrap();
         window = video_subsystem
-            .window("IMTL RX Video", args.width / 4, args.height / 4)
+            .window("MTL RX Video", args.width / 4, args.height / 4)
             .position_centered()
             .opengl()
             .build()?;

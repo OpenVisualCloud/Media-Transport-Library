@@ -1,6 +1,6 @@
 # Run Guide on Windows
 
-Intel® Media Transport Library requires Windows netuio driver Windows virt2phys driver and huge page to run.
+Media Transport Library requires Windows netuio driver Windows virt2phys driver and huge page to run.
 
 ## 1. System setup
 
@@ -128,11 +128,11 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 ![Image](./png/netuio.png)
 
-### 4.5 Get the PCI port name used for IMTL
+### 4.5 Get the PCI port name used for MTL
 
 In contrast to Linux, Windows does not support the use of the nicctl.sh script, lspci, and dpdk-devbind.py. Once the driver is installed in the Windows UIO section, the NIC is automatically bound to PMD in the Device Manager.
 
-The port name can be obtained from the same location. For instance, as shown in the previous figure, the PCI number in the Location field is `bus 175, device 0, function 0`. When converted to hexadecimal format, this becomes `0000:af:00.0`, which is usable for IMTL.
+The port name can be obtained from the same location. For instance, as shown in the previous figure, the PCI number in the Location field is `bus 175, device 0, function 0`. When converted to hexadecimal format, this becomes `0000:af:00.0`, which is usable for MTL.
 
 ### 4.6 Install driver for DMA devices
 
@@ -165,7 +165,7 @@ Once you have installed the driver, you can use Device Manager to check the PCI 
 
 ## 5. Run and test
 
-Use the following command to execute the program on socket 0. Append `1>log.txt 2>&1` to redirect all logs to a file. This is recommended because on Windows, console output is treated as a high-priority UI task and could interfere with the IMTL tasklet.
+Use the following command to execute the program on socket 0. Append `1>log.txt 2>&1` to redirect all logs to a file. This is recommended because on Windows, console output is treated as a high-priority UI task and could interfere with the MTL tasklet.
 
 ```powershell
 start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json 1>log.txt 2>&1

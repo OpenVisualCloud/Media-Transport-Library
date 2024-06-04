@@ -1,4 +1,4 @@
-# Intel® Media Transport Library
+# Media Transport Library
 
 [![Ubuntu](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
 [![Windows](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml)
@@ -10,9 +10,9 @@ Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualClou
 
 ## 1. Overview
 
-The Intel® Media Transport Library(IMTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
+The Media Transport Library(MTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
-The Intel® Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
+The Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
 If you find value in our project, please consider giving it a star. Your support helps us grow and reach more people in the open-source community. Every star counts and is greatly appreciated.
 
@@ -41,7 +41,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.2 Architecture
 
-The Intel® Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
+The Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
 
 The library incorporates a virtual data path backend layer, designed to abstract various NIC implementation and provide a unified packet TX/RX interface to the upper network layer. It currently supports three types of NIC devices:
 
@@ -53,7 +53,7 @@ The library introduces a tasklet-based asynchronous scheduler that optimizes CPU
 
 Additionally, the packet pacing module offers support for various pacing algorithms, including RL (Rate Limit), which is partially hardware-offloaded, and TSC (timestamp Counter), which is fully software-based.
 
-IMTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Space Format Conversion) of the big-endian and little-endian, DMA (Direct Memory Access), and plugin interfaces, enabling the creation of a comprehensive video production ecosystem.
+MTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Space Format Conversion) of the big-endian and little-endian, DMA (Direct Memory Access), and plugin interfaces, enabling the creation of a comprehensive video production ecosystem.
 
 For the detail design, please refer to [design guide](doc/design.md).
 
@@ -63,11 +63,11 @@ For the detail design, please refer to [design guide](doc/design.md).
 
 ### 1.3 Ethernet supported
 
-IMTL offers versatile Ethernet support, thanks to its compatibility with DPDK PMD, kernel socket, and AF_XDP backends.
+MTL offers versatile Ethernet support, thanks to its compatibility with DPDK PMD, kernel socket, and AF_XDP backends.
 
 For DPDK PMD support, you can refer to the DPDK PMD site <https://doc.dpdk.org/guides/nics/> for a comprehensive list of supported Ethernet hardware.
 
-In cases where your NIC is not supported by DPDK, IMTL provides a fallback option with kernel (Linux) socket transport support.
+In cases where your NIC is not supported by DPDK, MTL provides a fallback option with kernel (Linux) socket transport support.
 
 However, please note that our daily development and validation is primarily conducted on the Intel E810 series and AWS ENA, so we can't guarantee the status for other network interface cards (NICs).
 
@@ -93,12 +93,12 @@ To run this library on the kernel network stack with the built-in kernel NIC dri
 
 ## 4. ST2110 Programmers guide
 
-To quickly develop applications based on the Intel® Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
+To quickly develop applications based on the Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
 
 ## 5. User space LibOS UDP stack guide
 
-IMTL has support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
-IMTL's stack allows the NIC transmission and reception functions to run directly from the sendto/recvfrom API, eliminating the need for cross-core calls and maintaining data affinity (LLC) to the UDP consumer, thereby optimizing performance.
+MTL has support for a LD preload POSIX-compatible user-space UDP stack that operates directly within the current process context. This enhancement significantly boosts performance by eliminating the cross-core message costs typically associated with client-service architectures used in other user-space UDP stacks.
+MTL's stack allows the NIC transmission and reception functions to run directly from the sendto/recvfrom API, eliminating the need for cross-core calls and maintaining data affinity (LLC) to the UDP consumer, thereby optimizing performance.
 
 To learn how to use the LibOS UDP stack, please refer to the [udp doc](doc/udp.md).
 
@@ -112,7 +112,7 @@ Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https
 
 ## 7. How to Contribute
 
-We welcome community contributions to the Intel® Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
+We welcome community contributions to the Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
 
 ### 7.1 Fork this repository
 

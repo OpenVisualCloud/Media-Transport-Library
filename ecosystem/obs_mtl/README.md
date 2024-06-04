@@ -1,10 +1,10 @@
 # obs-mtl
 
-obs source plugin for Intel® Media Transport Library
+obs source plugin for Media Transport Library
 
 ## Build and Use
 
-### build Intel® Media Transport Library library
+### build Media Transport Library library
 
 refer to: [build guide](../../doc/build.md)
 

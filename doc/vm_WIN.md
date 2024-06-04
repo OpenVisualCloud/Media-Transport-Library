@@ -2,7 +2,7 @@
 
 ## 1. Host machine setup
 
-We use the same CentOS 8 host setup as [vm guide](vm.md). Notice that PTP_KVM is not woking for Windows VM, IMTL uses VM system time by default.
+We use the same CentOS 8 host setup as [vm guide](vm.md). Notice that PTP_KVM is not woking for Windows VM, MTL uses VM system time by default.
 
 ### 1.1 Create Windows VM
 
@@ -65,7 +65,7 @@ In Windows VM, go to File Explorer->This PC->virtio-win, Click virtio-win-gt-x64
 
 After the installation, you can detach the virtio iso and windows iso from cdrom in virt-manager.
 
-### 2.2 Build and run IMTL
+### 2.2 Build and run MTL
 
 See [Windows build guide](build_WIN.md) and [Windows run guide](run_WIN.md).
 

@@ -13,8 +13,8 @@ cd dpdk
 # checkout v23.03 version
 git checkout v23.03
 git switch -c v23.03
-git am $imtl_source_code/patches/dpdk/23.03/*.patch
-git am $imtl_source_code/patches/dpdk/23.03/hdr_split/0001-net-ice-support-hdr-split-mbuf-callback.patch
+git am $mtl_source_code/patches/dpdk/23.03/*.patch
+git am $mtl_source_code/patches/dpdk/23.03/hdr_split/0001-net-ice-support-hdr-split-mbuf-callback.patch
 
 # build dpdk
 rm build -rf
