@@ -1,6 +1,6 @@
-# eBPF based tools for IMTL
+# eBPF based tools for MTL
 
-This directory contains eBPF based tools for IMTL.
+This directory contains eBPF based tools for MTL.
 
 ## 1. Dependencies
 
@@ -12,8 +12,8 @@ If you has problems to install the dependencies for libbpf, bpftool, or libxdp, 
 
 ### 2.1 lcore_monitor
 
-lcore_monitor: a eBPF based tool to monitor the scheduler and interrupt event on one MTL lcore. The IMTL achieves high data packet throughput and low latency by defaulting to busy polling, also referred to as busy-waiting or spinning.
-To ensure peak performance, it is crucial to verify that no other tasks are running on the same logical core (lcore) that IMTL utilizes. For debugging purposes, the tool provides a status overview via an eBPF (extended Berkeley Packet Filter) trace point hook, which monitors the activities on a single core.
+lcore_monitor: a eBPF based tool to monitor the scheduler and interrupt event on one MTL lcore. The MTL achieves high data packet throughput and low latency by defaulting to busy polling, also referred to as busy-waiting or spinning.
+To ensure peak performance, it is crucial to verify that no other tasks are running on the same logical core (lcore) that MTL utilizes. For debugging purposes, the tool provides a status overview via an eBPF (extended Berkeley Packet Filter) trace point hook, which monitors the activities on a single core.
 
 Build:
 
@@ -34,7 +34,7 @@ lm_event_handler: sched out 7.789us as comm: migration/30
 lm_event_handler: sched out 7.405us as comm: migration/30
 ```
 
-The `lcore` and `t_pid` can be get from IMTL running log.
+The `lcore` and `t_pid` can be get from MTL running log.
 
 ```bash
 MT: MT: 2024-01-17 15:45:14, * *    M T    D E V   S T A T E   * *

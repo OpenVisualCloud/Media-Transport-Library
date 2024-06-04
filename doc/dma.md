@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-The Intel® Media Transport Library features DMA support to enhance RX video session density by offloading memory copy operations from the CPU, thereby reducing CPU usage.
+The Media Transport Library features DMA support to enhance RX video session density by offloading memory copy operations from the CPU, thereby reducing CPU usage.
 
 ## 2. DMA driver bind to PMD(vfio-pci) mode
 

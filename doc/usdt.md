@@ -1,6 +1,6 @@
 # USDT
 
-In eBPF, User Statically-Defined Tracing (USDT) probes bring the flexibility of kernel trace points to user-space applications. IMTL provide USDT support by the SystemTap's API and the collection of DTRACE_PROBE() macros to help troubleshoot your applications in production with minimal runtime overhead.
+In eBPF, User Statically-Defined Tracing (USDT) probes bring the flexibility of kernel trace points to user-space applications. MTL provide USDT support by the SystemTap's API and the collection of DTRACE_PROBE() macros to help troubleshoot your applications in production with minimal runtime overhead.
 
 ## 1. Build
 
@@ -16,7 +16,7 @@ For Centos:
 sudo yum install systemtap-sdt-devel
 ```
 
-Then rebuild IMTL:
+Then rebuild MTL:
 
 ```bash
 rm build
@@ -30,7 +30,7 @@ Has header "sys/sdt.h" : YES
 Message: usdt tools check ok, build with USDT support
 ```
 
-Then please find all USDT probes available in IMTL by the `bpftrace` tool, the `bpftrace` installation please follow <https://github.com/bpftrace/bpftrace/blob/master/INSTALL.md>.
+Then please find all USDT probes available in MTL by the `bpftrace` tool, the `bpftrace` installation please follow <https://github.com/bpftrace/bpftrace/blob/master/INSTALL.md>.
 
 ```bash
 # customize the so path as your setup
@@ -70,7 +70,7 @@ provider sys {
 
 #### 2.1.1 log_msg USDT
 
-The `log_msg` USDT is strategically positioned within the `MT_LOG` macro, enabling it to trace all log messages within IMTL. It operates independently from the IMTL Logging system, offering a means to monitor the system's status in production, where typically, the `enum mtl_log_level` is configured to `MTL_LOG_LEVEL_ERR`.
+The `log_msg` USDT is strategically positioned within the `MT_LOG` macro, enabling it to trace all log messages within MTL. It operates independently from the MTL Logging system, offering a means to monitor the system's status in production, where typically, the `enum mtl_log_level` is configured to `MTL_LOG_LEVEL_ERR`.
 
 usage: customize the application process name as your setup
 
@@ -104,9 +104,9 @@ Example output like below:
 
 #### 2.1.2 tasklet_time_measure USDT
 
-IMTL provides a flag named `MTL_FLAG_TASKLET_TIME_MEASURE` which enables the time measurement tracing feature, as the tasklet loop time is critical to our polling mode design. When this feature is activated during the initialization routine, IMTL will report the tasklet execution information through the status dump thread.
+MTL provides a flag named `MTL_FLAG_TASKLET_TIME_MEASURE` which enables the time measurement tracing feature, as the tasklet loop time is critical to our polling mode design. When this feature is activated during the initialization routine, MTL will report the tasklet execution information through the status dump thread.
 
-Typically, this flag is disabled in a production system since the time measurement tracing logic may incur additional CPU overhead. However, the USDT probe offers alternative methods to activate tracing at any time. The time measurement tracing becomes active when IMTL detects that a tasklet_time_measure USDT probe is attached.
+Typically, this flag is disabled in a production system since the time measurement tracing logic may incur additional CPU overhead. However, the USDT probe offers alternative methods to activate tracing at any time. The time measurement tracing becomes active when MTL detects that a tasklet_time_measure USDT probe is attached.
 
 Usage: Execute the following sample command to enable the probe, replacing "RxTxApp" with the name of your application process:
 
@@ -426,13 +426,13 @@ Example output like below:
 
 #### 2.3.9 rx_frame_incomplete USDT
 
-This tracking point is engineered to detect any instances of packet loss and failures in constructing a complete frame by IMTL. The underlying causes can vary widely, for example, the sender might not transmit all pixels, packets could be lost due to switch issues, or the NIC might discard packets if the receiver's queue is full.
+This tracking point is engineered to detect any instances of packet loss and failures in constructing a complete frame by MTL. The underlying causes can vary widely, for example, the sender might not transmit all pixels, packets could be lost due to switch issues, or the NIC might discard packets if the receiver's queue is full.
 
 ```bash
 sudo bpftrace -e 'usdt::st20:rx_frame_incomplete { printf("%s m%d,s%d: incomplete frame %d(tmstamp:%u, recv size:%u, expect full size: %u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3, arg4, arg5); }' -p $(pidof RxTxApp)
 ```
 
-Example output like below if IMTL failed to constructed one full frame:
+Example output like below if MTL failed to constructed one full frame:
 
 ```bash
 11:05:54 m0,s0: incomplete frame 1(tmstamp:1167274660, recv size:2891700, expect full size: 5184000)

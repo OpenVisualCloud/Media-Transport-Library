@@ -483,7 +483,7 @@ static int upl_pselect(struct upl_ctx* ctx, int nfds, fd_set* readfds, fd_set* w
   struct pollfd poll_ufds[nfds];
   int poll_ufds_kfd[nfds];
   int poll_ufds_cnt = 0;
-  /* split fd with kernel and imtl */
+  /* split fd with kernel and mtl */
   for (int i = 0; i < nfds; i++) {
     if (!upl_is_ufd_entry(ctx, i)) continue;
     if (readfds && FD_ISSET(i, readfds)) {

@@ -10,7 +10,7 @@ use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
 
-/// Simple program to use IMTL to receive audio and save to file
+/// Simple program to use MTL to receive audio and save to file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {

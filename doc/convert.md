@@ -2,7 +2,7 @@
 
 ## Introduction
 
-Starting from version 22.06, the Intel® Media Transport Library introduces a color format SIMD convert API, which can be used to convert between RFC4175 YUV422 10-bit BE and common LE formats.
+Starting from version 22.06, the Media Transport Library introduces a color format SIMD convert API, which can be used to convert between RFC4175 YUV422 10-bit BE and common LE formats.
 
 ### The SIMD API
 

@@ -5,7 +5,7 @@
 /**
  * @file mtl_api.h
  *
- * This header define the public interfaces of Intel® Media Transport Library.
+ * This header define the public interfaces of Media Transport Library.
  *
  */
 

@@ -1,4 +1,4 @@
-# Intel® Media Transport Library
+# Media Transport Library
 
 Component: json-c</br>
 Repository: <https://github.com/json-c/json-c></br>

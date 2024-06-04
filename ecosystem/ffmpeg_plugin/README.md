@@ -20,17 +20,17 @@ cd ../
 
 ### 1.2 Build ffmpeg with MTL patches
 
-Note: $imtl_source_code should be pointed to top source code tree of Intel® Media Transport Library.
+Note: $mtl_source_code should be pointed to top source code tree of Media Transport Library.
 
 ```bash
 git clone https://github.com/FFmpeg/FFmpeg.git
 cd FFmpeg
 git checkout release/6.1
 # apply the build patch
-git am $imtl_source_code/ecosystem/ffmpeg_plugin/6.1/*.patch
+git am $mtl_source_code/ecosystem/ffmpeg_plugin/6.1/*.patch
 # copy the mtl in/out implementation code
-cp $imtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
-cp $imtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
+cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
+cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
 # build with --enable-mtl, customize the option as your setup
 ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
 make -j "$(nproc)"
@@ -42,7 +42,7 @@ Note, for ffmpeg 4.4 version, replace 6.1 with 4.4 for above example commands.
 
 ## 2. ST20P raw video run guide
 
-The IMTL ST20P plugin is implemented as an FFMpeg input/output device, enabling direct reading from or sending raw video via the ST2110-20 stream.
+The MTL ST20P plugin is implemented as an FFMpeg input/output device, enabling direct reading from or sending raw video via the ST2110-20 stream.
 
 ### 2.1 St20p input
 
@@ -84,8 +84,8 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i
 
 ## 3. ST22 compressed video run guide
 
-A typical workflow for processing an IMTL ST22 compressed stream with FFMpeg is outlined in the following steps: Initially, FFMpeg reads a YUV frame from the input source, then forwards the frame to a codec to encode the raw video into a compressed codec stream. Finally, the codec stream is sent to the IMTL ST22 plugin.
-The IMTL ST22 plugin constructs the codec stream and transmits it as ST2110-22 RTP packets, adhering to the standard. In addition to the JPEG XS stream, the IMTL ST22 plugin is capable of supporting various other common compressed codecs, including H264, H265, and HEVC, among others.
+A typical workflow for processing an MTL ST22 compressed stream with FFMpeg is outlined in the following steps: Initially, FFMpeg reads a YUV frame from the input source, then forwards the frame to a codec to encode the raw video into a compressed codec stream. Finally, the codec stream is sent to the MTL ST22 plugin.
+The MTL ST22 plugin constructs the codec stream and transmits it as ST2110-22 RTP packets, adhering to the standard. In addition to the JPEG XS stream, the MTL ST22 plugin is capable of supporting various other common compressed codecs, including H264, H265, and HEVC, among others.
 
 <div align="center">
 <img src="ffmpeg_st22_flow.png" align="center" alt="Tasklet">
@@ -109,7 +109,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 ### 3.3 SVT-JPEGXS
 
-Make sure the FFMpeg is build with both IMTL and SVT-JPEGXS plugin:
+Make sure the FFMpeg is build with both MTL and SVT-JPEGXS plugin:
 
 ```bash
 # start rx
@@ -120,7 +120,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.4 SVT-HEVC
 
-Make sure the FFMpeg is build with both IMTL and SVT-HEVC plugin:
+Make sure the FFMpeg is build with both MTL and SVT-HEVC plugin:
 
 ```bash
 # start rx
@@ -131,7 +131,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.5 St22p support
 
-Another option involves utilizing the IMTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the IMTL ST22P plugin. IMTL will then internally decode or encode the codec stream.
+Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream.
 
 Reading a st2110-22 pipeline jpegxs codestream on "239.168.85.20:20000" with payload_type 112:
 

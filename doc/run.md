@@ -154,7 +154,7 @@ pci@0000:af:00.1  ens801f1     network        Ethernet Controller E810-C for QSF
 Below is the command to create VF for BDF 0000:af:00.0, and bind the VFs to DPDK PMD.
 
 ```bash
-cd $imtl_source_code
+cd $mtl_source_code
 sudo ./script/nicctl.sh create_vf 0000:af:00.0
 ```
 
@@ -192,7 +192,7 @@ sudo dmesg
 If your Network Interface Card (NIC) is not from the Intel® E810 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
 
 ```bash
-cd $imtl_source_code
+cd $mtl_source_code
 sudo ./script/nicctl.sh bind_pmd 0000:32:00.0
 ```
 
@@ -584,7 +584,7 @@ sudo ip link set enp24s0f0 vf 0 trust on
 dpdk-devbind.py -s
 ```
 
-### 8.11 How to find the BDF number which is ready for IMTL usage
+### 8.11 How to find the BDF number which is ready for MTL usage
 
 ```bash
 dpdk-devbind.py -s

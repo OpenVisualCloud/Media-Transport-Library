@@ -31,7 +31,7 @@ void signalHandler(int signum) {
 
 int main() {
   int ret = 0;
-  std::cout << "Starting IMTL sample..." << std::endl << mtl_version() << std::endl;
+  std::cout << "Starting MTL sample..." << std::endl << mtl_version() << std::endl;
 
   std::signal(SIGINT, signalHandler);
 

@@ -1,5 +1,5 @@
 /*!
- * Querying IMTL Version
+ * Querying MTL Version
  */
 
 use std::fmt;

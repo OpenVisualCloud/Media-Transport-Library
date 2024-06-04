@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-Starting from version 22.06, the Intel® Media Transport Library introduced plugin library support. With plugins, it's possible to add third-party add-ons to the running system, such as a CPU/GPU/FPGA-based JPEG-XS codec, a color space format conversion acceleration, or other functionalities.
+Starting from version 22.06, the Media Transport Library introduced plugin library support. With plugins, it's possible to add third-party add-ons to the running system, such as a CPU/GPU/FPGA-based JPEG-XS codec, a color space format conversion acceleration, or other functionalities.
 
 The library will attempt to load plugin libraries during the mtl_init routine by searching for plugins in the user JSON config file and parsing the plugin version and symbol. If all the sanity checks are fine, the plugin is added to the list, and the create function exported by the plugin library is called.
 
