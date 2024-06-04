@@ -1,8 +1,8 @@
-# Intel® Media Transport Library compilation and build on Windows OS (MSYS2)
+# Media Transport Library compilation and build on Windows OS (MSYS2)
 
 ## 1. Introduction
 
-This document contains instructions for installing and configuring the Intel® Media Transport Library for Windows Operation System in MSYS2 environment.
+This document contains instructions for installing and configuring the Media Transport Library for Windows Operation System in MSYS2 environment.
 
 ## 2. Prerequisites
 
@@ -88,7 +88,7 @@ meson setup build
 meson install -C build
 ```
 
-## 6. Build Intel® Media Transport Library and app
+## 6. Build Media Transport Library and app
 
 ```bash
 cd $imtl_source_code

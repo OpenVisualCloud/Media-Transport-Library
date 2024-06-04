@@ -1,6 +1,6 @@
 # Build Guide
 
-Building the Intel® Media Transport Library requires three parts: building the DPDK library, building the Intel® Media Transport Library on top of DPDK, and building the sample application.
+Building the Media Transport Library requires three parts: building the DPDK library, building the Media Transport Library on top of DPDK, and building the sample application.
 
 Please note that the DPDK dependency remains necessary when utilizing the XDP/kernel socket data path backend. We leverage numerous DPDK APIs, including those for CPU, memory, queues, and mbufs, to construct a highly efficient network processing implementation.
 
@@ -117,9 +117,9 @@ Defaults    secure_path = /sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
 
 Reboot the system to let change take effect.
 
-### 1.4 Clone Intel® Media Transport Library code
+### 1.4 Clone Media Transport Library code
 
-Download Intel® Media Transport Library to top folder Directory
+Download Media Transport Library to top folder Directory
 
 ```bash
 git clone https://github.com/OpenVisualCloud/Media-Transport-Library.git
@@ -138,9 +138,9 @@ git switch -c v23.11
 cd ..
 ```
 
-### 2.2 Apply the DPDK patches required to run Intel® Media Transport Library
+### 2.2 Apply the DPDK patches required to run Media Transport Library
 
-Note: $imtl_source_code should be pointed to top source code tree of Intel® Media Transport Library.
+Note: $imtl_source_code should be pointed to top source code tree of Media Transport Library.
 
 ```bash
 cd dpdk
@@ -168,7 +168,7 @@ If you see below log from `sudo ninja install -C build`, it seems you're encount
 sudo: ninja: command not found
 ```
 
-## 3. Build Intel® Media Transport Library and app
+## 3. Build Media Transport Library and app
 
 ```bash
 cd $imtl_source_code
@@ -217,7 +217,7 @@ sudo ninja install -C build
 cd ..
 ```
 
-Next, rebuild the Intel® Media Transport Library. IMTL will reuse the build flags from DPDK.
+Next, rebuild the Media Transport Library. IMTL will reuse the build flags from DPDK.
 
 ```bash
 cd $imtl_source_code

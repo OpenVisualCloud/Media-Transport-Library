@@ -6,7 +6,7 @@ This guide is outdated and should only be referenced if the use of the Manager s
 
 In DPDK (Data Plane Development Kit), an "lcore" stands for "logical core," and it represents a logical CPU core on a multi-core processor. Binding a thread to a specific logical core (lcore) is a technique used to achieve better control over the execution of packet processing tasks and to optimize the performance of networking applications.
 
-It minimizes the impact of OS scheduler decisions, reduces cache-related issues, and allows for fine-grained control over CPU resources, all of which are critical for meeting the stringent performance requirements of networking workloads. Intel® Media Transport Library scheduler used pinned lcore also as performance consideration.
+It minimizes the impact of OS scheduler decisions, reduces cache-related issues, and allows for fine-grained control over CPU resources, all of which are critical for meeting the stringent performance requirements of networking workloads. Media Transport Library scheduler used pinned lcore also as performance consideration.
 
 ## 2. Lcore manager for multi process
 

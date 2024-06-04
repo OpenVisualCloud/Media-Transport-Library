@@ -2,7 +2,7 @@
 
 ## Introduction
 
-With the expansion of the Intel® Media Transport Library (IMTL) to cloud and edge environments, maintaining high-quality media streaming amidst the potential for packet loss becomes paramount.
+With the expansion of the Media Transport Library (IMTL) to cloud and edge environments, maintaining high-quality media streaming amidst the potential for packet loss becomes paramount.
 In these distributed environments, network conditions can be highly variable, leading to increased risk of packet drops.
 Traditional techniques such as SMPTE ST2022-7 hitless switching for redundant paths or implementation of Forward Error Correction (FEC) protocols, although effective, bring additional complexity or require significantly more bandwidth.
 

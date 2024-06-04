@@ -1,4 +1,4 @@
-# Intel® Media Transport Library
+# Media Transport Library
 
 [![Ubuntu](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
 [![Windows](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml)
@@ -10,9 +10,9 @@ Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualClou
 
 ## 1. Overview
 
-The Intel® Media Transport Library(IMTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
+The Media Transport Library(IMTL) is a software based solution designed for high-throughput, low-latency transmission and reception of media data. It features an efficient user-space LibOS UDP stack specifically crafted for media transport, and comes equipped with a built-in SMPTE ST 2110-compliant implementation for Professional Media over Managed IP Networks.
 
-The Intel® Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
+The Media Transport Library solves the strict timing challenges of transporting ST2110 compliant media streams using a software library and through IP networks. Instead of specialized hardware, this library leverages existing  commonly available CPU platforms with conventional NICs that incorporate rate limiting to meet the strict timing challenges in the SMPTE ST 2110 standard.
 
 If you find value in our project, please consider giving it a star. Your support helps us grow and reach more people in the open-source community. Every star counts and is greatly appreciated.
 
@@ -41,7 +41,7 @@ If you find value in our project, please consider giving it a star. Your support
 
 ### 1.2 Architecture
 
-The Intel® Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
+The Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
 
 The library incorporates a virtual data path backend layer, designed to abstract various NIC implementation and provide a unified packet TX/RX interface to the upper network layer. It currently supports three types of NIC devices:
 
@@ -93,7 +93,7 @@ To run this library on the kernel network stack with the built-in kernel NIC dri
 
 ## 4. ST2110 Programmers guide
 
-To quickly develop applications based on the Intel® Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
+To quickly develop applications based on the Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
 
 ## 5. User space LibOS UDP stack guide
 
@@ -112,7 +112,7 @@ Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https
 
 ## 7. How to Contribute
 
-We welcome community contributions to the Intel® Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
+We welcome community contributions to the Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
 
 ### 7.1 Fork this repository
 

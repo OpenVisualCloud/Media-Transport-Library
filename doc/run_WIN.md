@@ -1,6 +1,6 @@
 # Run Guide on Windows
 
-Intel® Media Transport Library requires Windows netuio driver Windows virt2phys driver and huge page to run.
+Media Transport Library requires Windows netuio driver Windows virt2phys driver and huge page to run.
 
 ## 1. System setup
 

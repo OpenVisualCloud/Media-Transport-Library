@@ -4,7 +4,7 @@
 
 AF_XDP is an address family that is optimized for high-performance packet processing inside the kernel stack based on BPF and XDP. AF_XDP sockets enable XDP programs to redirect packets to a memory buffer in userspace. DPDK has built-in AF_XDP poll mode driver support. For details, please refer to <https://www.kernel.org/doc/HTML/latest/networking/af_xdp.html> and <https://doc.dpdk.org/guides/nics/af_xdp.html>.
 
-By using AF_XDP, the Intel® Media Transport Library can leverage the full support of the Linux network stack. However, it's worth noting that there is a slight performance discrepancy compared to the full DPDK user PMD.
+By using AF_XDP, the Media Transport Library can leverage the full support of the Linux network stack. However, it's worth noting that there is a slight performance discrepancy compared to the full DPDK user PMD.
 
 ## 2. DPDK build with AF_XDP PMD
 

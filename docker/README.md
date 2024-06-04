@@ -1,6 +1,6 @@
 # Docker guide
 
-Docker guide for Intel® Media Transport Library.
+Docker guide for Media Transport Library.
 
 Please note that the Dockerfile provided is intended for development use only. It has been tested for functionality, but not for security. Users are advised to review and modify it as necessary before using it in a production environment.
 

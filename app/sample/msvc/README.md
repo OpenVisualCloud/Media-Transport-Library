@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-The is sample code for how to develop MSVC application quickly based on Intel® Media Transport Library. The guide is verified with Visual Studio 2022 (v143).
+The is sample code for how to develop MSVC application quickly based on Media Transport Library. The guide is verified with Visual Studio 2022 (v143).
 
 ## 2. Steps
 

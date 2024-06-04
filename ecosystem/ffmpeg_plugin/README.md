@@ -20,7 +20,7 @@ cd ../
 
 ### 1.2 Build ffmpeg with MTL patches
 
-Note: $imtl_source_code should be pointed to top source code tree of Intel® Media Transport Library.
+Note: $imtl_source_code should be pointed to top source code tree of Media Transport Library.
 
 ```bash
 git clone https://github.com/FFmpeg/FFmpeg.git

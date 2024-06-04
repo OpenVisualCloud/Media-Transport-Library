@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-This section provides a detailed design concept of the Intel® Media Transport Library, offering an in-depth dive into the technology used.
+This section provides a detailed design concept of the Media Transport Library, offering an in-depth dive into the technology used.
 
 Similar to other network processing libraries, it consists of a control plane and a data plane. In the data plane, a lockless design is adopted to achieve ultra-high performance.
 
