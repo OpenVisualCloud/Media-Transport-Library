@@ -1,8 +1,8 @@
 # The Python support
 
-IMTL leverage SWIG, found at <https://github.com/swig/swig/tree/master>, to transform C APIs into a binding layer that Python can utilize.
+MTL leverage SWIG, found at <https://github.com/swig/swig/tree/master>, to transform C APIs into a binding layer that Python can utilize.
 
-Before using the Python binding, please ensure that IMTL is [built](../doc/build.md) and the NIC is [set up](../doc/run.md) correctly.
+Before using the Python binding, please ensure that MTL is [built](../doc/build.md) and the NIC is [set up](../doc/run.md) correctly.
 
 ## 1. Installation of SWIG Dependency
 
@@ -34,12 +34,12 @@ make
 sudo make install
 ```
 
-## 2. Build and install IMTL python binding layer
+## 2. Build and install MTL python binding layer
 
-### 2.1 Create IMTL binding layer code based on swig
+### 2.1 Create MTL binding layer code based on swig
 
 ```bash
-cd $imtl_source_code/python/swig/
+cd $mtl_source_code/python/swig/
 swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
 ```
 
@@ -70,7 +70,7 @@ creating /usr/local/lib/python3.10/dist-packages/pymtl-0.1-py3.10-linux-x86_64.e
 Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-packages
 ```
 
-Note: remember to rebuild the python binding if any change to the public API of IMTL.
+Note: remember to rebuild the python binding if any change to the public API of MTL.
 
 ## 3. Run python example code
 

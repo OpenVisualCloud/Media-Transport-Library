@@ -7,7 +7,7 @@ It's essential for high-performance computing and media transport applications r
 RDMA over Converged Ethernet (RoCE) carries RDMA operations over Ethernet networks.
 Unreliable Datagram (UD) is a transport protocol suitable for applications that can tolerate data loss or ensure data integrity independently.
 
-The Intel® Media Transport Library (IMTL) supports RDMA UD backend with IRDMA NICs based on RoCEv2.
+The Media Transport Library (MTL) supports RDMA UD backend with IRDMA NICs based on RoCEv2.
 This feature is similar to the XDP backend, both bypassing the kernel network stack for data transport.
 It is currently experimental and not recommended for production use.
 
@@ -28,7 +28,7 @@ Arch Linux:
 sudo pacman -Syu --needed rdma-core
 ```
 
-## 3. Build IMTL with RDMA UD backend
+## 3. Build MTL with RDMA UD backend
 
 Refer to the [Build Guide](../build.md) for detailed instructions.
 

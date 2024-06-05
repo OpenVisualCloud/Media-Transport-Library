@@ -1,6 +1,6 @@
 # JSON Configuration Guide
 
-Intel® Media Transport Library sample app can use json file to configure sessions. this documentation explains how to write the json files.
+Media Transport Library sample app can use json file to configure sessions. this documentation explains how to write the json files.
 
 ## Examples
 

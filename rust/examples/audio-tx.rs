@@ -9,7 +9,7 @@ use imtl::mtl::{Flags, LogLevel, MtlBuilder};
 use imtl::netdev::*;
 use imtl::session::RtpSessionBuilder;
 
-/// Simple program to use IMTL to send raw audio from file
+/// Simple program to use MTL to send raw audio from file
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {

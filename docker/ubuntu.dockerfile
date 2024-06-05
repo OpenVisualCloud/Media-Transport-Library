@@ -47,7 +47,7 @@ WORKDIR /xdp-tools/lib/libbpf/src
 RUN make install && \
     DESTDIR=/install make install
 
-# Build IMTL
+# Build MTL
 WORKDIR /$MTL_REPO
 RUN ./build.sh && \
     DESTDIR=/install meson install -C build && \

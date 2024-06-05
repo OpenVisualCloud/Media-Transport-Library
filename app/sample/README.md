@@ -2,7 +2,7 @@
 
 ## 1. Introduction
 
-The dir include the simple sample code for how to develop application quickly based on Intel® Media Transport Library.
+The dir include the simple sample code for how to develop application quickly based on Media Transport Library.
 
 ## 2. Pipeline samples which based on get/put APIs
 
