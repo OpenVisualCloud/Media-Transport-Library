@@ -153,6 +153,11 @@ int main(int argc, char** argv) {
                ctx.param.port[MTL_PORT_R]);
       ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.audio_udp_port + i * 2;
     }
+    if (ctx.multi_inc_addr) {
+      /* use a new ip addr instead of a new udp port for multi sessions */
+      ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
+      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] += i;
+    }
     ops_rx.port.payload_type = ctx.audio_payload_type;
     ops_rx.framebuff_cnt = ctx.framebuff_cnt;
     ops_rx.flags = ST30P_TX_FLAG_BLOCK_GET;

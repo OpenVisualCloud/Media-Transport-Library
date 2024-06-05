@@ -34,8 +34,8 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
     }
-    if ((end >= i_start) && (end <= i_end)) {
-      err("%s, invalid end %p i_start %p i_end %p\n", __func__, start, i_start, i_end);
+    if ((end > i_start) && (end <= i_end)) {
+      err("%s, invalid end %p i_start %p i_end %p\n", __func__, end, i_start, i_end);
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
     }
