@@ -900,7 +900,7 @@ int mt_tap_init(struct mtl_main_impl* impl) {
 
   rte_atomic32_set(&cni->stop_tap, 0);
   tap_ctx->has_lcore = false;
-  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_TAP);
+  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_TAP, mt_socket_id(impl, MTL_PORT_P));
   if (ret < 0) {
     err("%s, get lcore fail %d\n", __func__, ret);
     mt_tap_uinit(impl);
