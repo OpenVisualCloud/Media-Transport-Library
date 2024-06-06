@@ -101,6 +101,8 @@ struct st_sample_context {
   bool hdr_split;
   bool rx_dump;
   uint16_t rx_burst_size;
+  /* use a new ip addr instead of a new udp port for multi sessions */
+  bool multi_inc_addr;
 
   char tx_audio_url[ST_SAMPLE_URL_MAX_LEN];
   char rx_audio_url[ST_SAMPLE_URL_MAX_LEN];

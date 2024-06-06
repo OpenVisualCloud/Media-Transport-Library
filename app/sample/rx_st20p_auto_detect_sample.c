@@ -178,6 +178,11 @@ int main(int argc, char** argv) {
                ctx.param.port[MTL_PORT_R]);
       ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
     }
+    if (ctx.multi_inc_addr) {
+      /* use a new ip addr instead of a new udp port for multi sessions */
+      ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;
+      ops_rx.port.ip_addr[MTL_SESSION_PORT_P][3] += i;
+    }
     ops_rx.port.payload_type = ctx.payload_type;
     /* not set width, height, fps as not known now */
     ops_rx.interlaced = ctx.interlaced;
