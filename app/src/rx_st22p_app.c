@@ -167,6 +167,10 @@ static int app_rx_st22p_init(struct st_app_context* ctx,
   ops.flags |= ST22P_RX_FLAG_BLOCK_GET;
   ops.framebuff_cnt = s->framebuff_cnt;
   if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_RX_FLAG_ENABLE_RTCP;
+  if (ctx->force_rx_video_numa >= 0) {
+    ops.flags |= ST22P_RX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_rx_video_numa;
+  }
 
   s->width = ops.width;
   s->height = ops.height;

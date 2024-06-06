@@ -464,11 +464,10 @@ int mt_mempool_dump(struct rte_mempool* mp) {
   return 0;
 }
 
-struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
-                                             enum mtl_port port, const char* name,
+struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const char* name,
                                              unsigned int n, unsigned int cache_size,
                                              uint16_t priv_size, uint16_t element_size,
-                                             const char* ops_name) {
+                                             const char* ops_name, int socket_id) {
   if (cache_size && (element_size % cache_size)) { /* align to cache size */
     element_size = (element_size / cache_size + 1) * cache_size;
   }
@@ -476,15 +475,14 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
                              use concise names so it won't exceed this length */
   snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, impl->mempool_idx++);
   uint16_t data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
-  struct rte_mempool* mbuf_pool =
-      rte_pktmbuf_pool_create_by_ops(name_with_idx, n, cache_size, priv_size,
-                                     data_room_size, mt_socket_id(impl, port), ops_name);
+  struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
+      name_with_idx, n, cache_size, priv_size, data_room_size, socket_id, ops_name);
   if (!mbuf_pool) {
-    err("%s(%d), fail(%s) for %s, n %u\n", __func__, port, rte_strerror(rte_errno), name,
-        n);
+    err("%s(%d), fail(%s) for %s, n %u\n", __func__, socket_id, rte_strerror(rte_errno),
+        name, n);
   } else {
     float size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
-    info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, port, mbuf_pool,
+    info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, socket_id, mbuf_pool,
          size_m, n, element_size, name_with_idx);
 #ifdef MTL_HAS_ASAN
     g_mt_mempool_create_cnt++;

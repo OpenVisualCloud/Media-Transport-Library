@@ -29,6 +29,7 @@ struct st22p_tx_frame {
 struct st22p_tx_ctx {
   struct mtl_main_impl* impl;
   int idx;
+  int socket_id;
   enum mt_handle_type type; /* for sanity check */
   enum st_frame_fmt codestream_fmt;
 

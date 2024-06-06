@@ -89,8 +89,8 @@ static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session 
     info("%s(%d), input fmt: %s, output fmt: %s, scan: %s\n", __func__, i,
          st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt),
          req->interlaced ? "interlaced" : "progressive");
-    info("%s(%d), max_codestream_size %" PRIu64 "\n", __func__, i,
-         session->req.max_codestream_size);
+    info("%s(%d), max_codestream_size %" PRIu64 ", socket_id %d\n", __func__, i,
+         session->req.max_codestream_size, req->socket_id);
     return session;
   }
 
@@ -187,9 +187,9 @@ static st22_decode_priv decoder_create_session(void* priv, st22p_decode_session 
     }
 
     ctx->decoder_sessions[i] = session;
-    info("%s(%d), input fmt: %s, output fmt: %s, scan: %s\n", __func__, i,
+    info("%s(%d), input fmt: %s, output fmt: %s, scan: %s, socket id: %d\n", __func__, i,
          st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt),
-         req->interlaced ? "interlaced" : "progressive");
+         req->interlaced ? "interlaced" : "progressive", req->socket_id);
     return session;
   }
 

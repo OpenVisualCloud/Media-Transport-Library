@@ -250,6 +250,7 @@ struct st_vsync_info {
 struct st_tx_video_session_impl {
   struct mtl_main_impl* impl;
   struct st_tx_video_sessions_mgr* mgr;
+  int socket_id;
   bool active;
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct rte_mempool* mbuf_mempool_hdr[MTL_SESSION_PORT_MAX];
@@ -554,6 +555,7 @@ struct st_rx_video_tp {
 struct st_rx_video_session_impl {
   struct mtl_main_impl* impl;
   int idx; /* index for current session */
+  int socket_id;
   bool attached;
   struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];

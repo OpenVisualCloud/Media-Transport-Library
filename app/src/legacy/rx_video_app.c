@@ -565,6 +565,10 @@ static int app_rx_video_init(struct st_app_context* ctx, st_json_video_session_t
   if (ctx->enable_timing_parser) ops.flags |= ST20_RX_FLAG_TIMING_PARSER_STAT;
   if (ctx->rx_video_multi_thread) ops.flags |= ST20_RX_FLAG_USE_MULTI_THREADS;
   ops.rx_burst_size = ctx->rx_burst_size;
+  if (ctx->force_rx_video_numa >= 0) {
+    ops.flags |= ST20_RX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_rx_video_numa;
+  }
 
   st_pthread_mutex_init(&s->st20_wake_mutex, NULL);
   st_pthread_cond_init(&s->st20_wake_cond, NULL);

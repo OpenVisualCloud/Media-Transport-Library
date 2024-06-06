@@ -29,6 +29,10 @@ static inline bool mt_sch_started(struct mtl_sch_impl* sch) {
     return false;
 }
 
+static inline int mt_sch_socket_id(struct mtl_sch_impl* sch) {
+  return sch->socket_id;
+}
+
 static inline void mt_sch_enable_allow_sleep(struct mtl_sch_impl* sch, bool enable) {
   sch->allow_sleep = enable;
 }

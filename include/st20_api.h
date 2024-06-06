@@ -87,6 +87,11 @@ extern "C" {
  * performance since the object enqueue/dequeue will be acted one by one.
  */
 #define ST20_TX_FLAG_DISABLE_BULK (MTL_BIT32(10))
+/**
+ * Flag bit in flags of struct st20_tx_ops.
+ * Force the numa of the created session, both CPU and memory.
+ */
+#define ST20_TX_FLAG_FORCE_NUMA (MTL_BIT32(11))
 
 /**
  * Flag bit in flags of struct st22_tx_ops.
@@ -131,6 +136,11 @@ extern "C" {
  * performance since the object enqueue/dequeue will be acted one by one.
  */
 #define ST22_TX_FLAG_DISABLE_BULK (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st22_tx_ops.
+ * Force the numa of the created session, both CPU and memory.
+ */
+#define ST22_TX_FLAG_FORCE_NUMA (MTL_BIT32(8))
 
 /**
  * Flag bit in flags of struct st20_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -153,6 +163,11 @@ extern "C" {
  * If enabled, simulate random packet loss, test usage only.
  */
 #define ST20_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(3))
+/**
+ * Flag bit in flags of struct st20_rx_ops.
+ * Force the numa of the created session, both CPU and memory.
+ */
+#define ST20_RX_FLAG_FORCE_NUMA (MTL_BIT32(4))
 
 /**
  * Flag bit in flags of struct st20_rx_ops.
@@ -233,6 +248,11 @@ extern "C" {
  * If enabled, simulate random packet loss, test usage only.
  */
 #define ST22_RX_FLAG_SIMULATE_PKT_LOSS (MTL_BIT32(4))
+/**
+ * Flag bit in flags of struct st22_rx_ops.
+ * Force the numa of the created session, both CPU and memory.
+ */
+#define ST22_RX_FLAG_FORCE_NUMA (MTL_BIT32(5))
 
 /**
  * Flag bit in flags of struct st22_rx_ops.
@@ -1213,6 +1233,8 @@ struct st20_tx_ops {
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
+  /**  Use this socket if ST20_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**
@@ -1327,6 +1349,8 @@ struct st22_tx_ops {
    * tasklet routine.
    */
   int (*notify_rtp_done)(void* priv);
+  /**  Use this socket if ST22_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**
@@ -1542,6 +1566,8 @@ struct st20_rx_ops {
    * routine.
    */
   int (*notify_rtp_ready)(void* priv);
+  /**  Use this socket if ST20_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**
@@ -1640,6 +1666,8 @@ struct st22_rx_ops {
    * routine.
    */
   int (*notify_rtp_ready)(void* priv);
+  /**  Use this socket if ST22_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**

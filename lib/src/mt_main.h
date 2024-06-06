@@ -502,7 +502,8 @@ struct mtl_sch_impl {
   /* max tasklet index */
   volatile int max_tasklet_idx;
   unsigned int lcore;
-  int socket;
+  /* the socket id this sch attached to */
+  int socket_id;
   bool run_in_thread; /* Run the tasklet inside one thread instead of a pinned lcore. */
   pthread_t tid;      /* thread id for run_in_thread */
   int t_pid;          /* gettid */

@@ -568,6 +568,8 @@ struct st_app_context {
   bool tx_display;
   bool rx_display;
   uint16_t rx_burst_size;
+  int force_tx_video_numa;
+  int force_rx_video_numa;
 
   bool ptp_systime_sync;
   int ptp_sync_cnt;
