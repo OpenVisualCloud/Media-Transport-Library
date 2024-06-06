@@ -231,13 +231,10 @@ static int rv_uinit_hdr_split_frame(struct st_rx_video_session_impl* s) {
   return 0;
 }
 
-static int rv_init_hdr_split_frame(struct mtl_main_impl* impl,
-                                   struct st_rx_video_session_impl* s) {
+static int rv_init_hdr_split_frame(struct st_rx_video_session_impl* s) {
   int num_port = s->ops.num_port;
   int idx = s->idx;
   size_t frame_size = s->st20_frame_size;
-
-  enum mtl_port port;
   int soc_id;
   uint32_t mbufs_per_frame;
   uint32_t mbufs_total;
@@ -249,8 +246,7 @@ static int rv_init_hdr_split_frame(struct mtl_main_impl* impl,
   mbufs_total += (mbufs_per_frame - 1);
 
   for (int i = 0; i < num_port; i++) {
-    port = mt_port_logic2phy(s->port_maps, i);
-    soc_id = mt_socket_id(impl, port);
+    soc_id = s->socket_id;
     size_t frames_size = mbufs_total * ST_VIDEO_BPM_SIZE;
 
     if (s->hdr_split_info[i].frames) {
@@ -340,8 +336,7 @@ static rte_iova_t rv_frame_get_offset_iova(struct st_rx_video_session_impl* s,
   return MTL_BAD_IOVA;
 }
 
-static int rv_frame_create_page_table(struct mtl_main_impl* impl,
-                                      struct st_rx_video_session_impl* s,
+static int rv_frame_create_page_table(struct st_rx_video_session_impl* s,
                                       struct st_frame_trans* frame_info) {
   struct rte_memseg* mseg = rte_mem_virt2memseg(frame_info->addr, NULL);
   if (mseg == NULL) {
@@ -358,8 +353,7 @@ static int rv_frame_create_page_table(struct mtl_main_impl* impl,
                    RTE_PTR_ALIGN_FLOOR(frame_info->addr, hugepage_sz)) /
       hugepage_sz;
 
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-  int soc_id = mt_socket_id(impl, port);
+  int soc_id = s->socket_id;
   struct st_page_info* pages = mt_rte_zmalloc_socket(sizeof(*pages) * num_pages, soc_id);
   if (pages == NULL) {
     err("%s(%d,%d), pages info malloc fail\n", __func__, s->idx, frame_info->idx);
@@ -395,8 +389,7 @@ static inline bool rv_frame_payload_cross_page(struct st_rx_video_session_impl* 
 
 static int rv_alloc_frames(struct mtl_main_impl* impl,
                            struct st_rx_video_session_impl* s) {
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-  int soc_id = mt_socket_id(impl, port);
+  int soc_id = s->socket_id;
   int idx = s->idx;
   size_t size = s->st20_uframe_size ? s->st20_uframe_size : s->st20_fb_size;
   struct st_frame_trans* st20_frame;
@@ -417,7 +410,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
   }
 
   if (rv_is_hdr_split(s)) {
-    ret = rv_init_hdr_split_frame(impl, s);
+    ret = rv_init_hdr_split_frame(s);
     if (ret < 0) {
       rv_free_frames(s);
       return ret;
@@ -464,7 +457,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->addr = frame;
       st20_frame->iova = rte_malloc_virt2iova(frame);
       if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
-        ret = rv_frame_create_page_table(impl, s, st20_frame);
+        ret = rv_frame_create_page_table(s, st20_frame);
         if (ret < 0) {
           rv_free_frames(s);
           return ret;
@@ -498,13 +491,12 @@ static int rv_free_rtps(struct st_rx_video_session_impl* s) {
   return 0;
 }
 
-static int rv_alloc_rtps(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
+static int rv_alloc_rtps(struct st_rx_video_sessions_mgr* mgr,
                          struct st_rx_video_session_impl* s) {
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "%sM%dS%d_RTP", ST_RX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
@@ -513,7 +505,7 @@ static int rv_alloc_rtps(struct mtl_main_impl* impl, struct st_rx_video_sessions
     err("%s(%d,%d), invalid rtp_ring_size %d\n", __func__, mgr_idx, idx, count);
     return -ENOMEM;
   }
-  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, s->socket_id, flags);
   if (!ring) {
     err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
     return -ENOMEM;
@@ -635,9 +627,8 @@ static int rv_uinit_slot(struct st_rx_video_session_impl* s) {
   return 0;
 }
 
-static int rv_init_slot(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
-  int soc_id = mt_socket_id(impl, port);
+static int rv_init_slot(struct st_rx_video_session_impl* s) {
+  int soc_id = s->socket_id;
   int idx = s->idx;
   size_t bitmap_size = s->st20_frame_bitmap_size;
   struct st_rx_video_slot_impl* slot;
@@ -1246,7 +1237,6 @@ static int rv_slice_dma_drop_mbuf(void* priv, struct rte_mbuf* mbuf) {
 }
 
 static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   int idx = s->idx;
   enum st20_type type = s->ops.type;
 
@@ -1254,7 +1244,7 @@ static int rv_init_dma(struct mtl_main_impl* impl, struct st_rx_video_session_im
   req.nb_desc = s->dma_nb_desc;
   req.max_shared = MT_DMA_MAX_SESSIONS;
   req.sch_idx = s->parent->idx;
-  req.socket_id = mt_socket_id(impl, port);
+  req.socket_id = s->socket_id;
   req.priv = s;
   if (type == ST20_TYPE_SLICE_LEVEL)
     req.drop_mbuf_cb = rv_slice_dma_drop_mbuf;
@@ -2274,20 +2264,18 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   struct rte_ring* ring;
   unsigned int flags, count, lcore;
   int mgr_idx = mgr->idx, idx = s->idx, ret;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_RX_VIDEO_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->rx_burst_size;
-  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, s->socket_id, flags);
   if (!ring) {
     err("%s(%d,%d), ring create fail\n", __func__, mgr_idx, idx);
     return -ENOMEM;
   }
   s->pkt_lcore_ring = ring;
 
-  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_RXV_RING_LCORE,
-                         mt_socket_id(impl, port));
+  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_RXV_RING_LCORE, s->socket_id);
   if (ret < 0) {
     err("%s(%d,%d), get lcore fail %d\n", __func__, mgr_idx, idx, ret);
     rv_uinit_pkt_lcore(impl, s);
@@ -2308,11 +2296,11 @@ static int rv_init_pkt_lcore(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rv_init_st22(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s,
+static int rv_init_st22(struct st_rx_video_session_impl* s,
                         struct st22_rx_ops* st22_frame_ops) {
   struct st22_rx_video_info* st22_info;
 
-  st22_info = mt_rte_zmalloc_socket(sizeof(*st22_info), mt_socket_id(impl, MTL_PORT_P));
+  st22_info = mt_rte_zmalloc_socket(sizeof(*st22_info), s->socket_id);
   if (!st22_info) return -ENOMEM;
 
   st22_info->notify_frame_ready = st22_frame_ops->notify_frame_ready;
@@ -2358,7 +2346,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   }
 
   if (st22_ops) {
-    ret = rv_init_st22(impl, s, st22_ops);
+    ret = rv_init_st22(s, st22_ops);
     if (ret < 0) {
       err("%s(%d), st22 frame init fail %d\n", __func__, idx, ret);
       return ret;
@@ -2368,7 +2356,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
   if (st20_is_frame_type(type)) {
     ret = rv_alloc_frames(impl, s);
   } else if (type == ST20_TYPE_RTP_LEVEL) {
-    ret = rv_alloc_rtps(impl, mgr, s);
+    ret = rv_alloc_rtps(mgr, s);
   } else {
     err("%s(%d), error type %d\n", __func__, idx, type);
     return -EIO;
@@ -2378,7 +2366,7 @@ static int rv_init_sw(struct mtl_main_impl* impl, struct st_rx_video_sessions_mg
     return ret;
   }
 
-  ret = rv_init_slot(impl, s);
+  ret = rv_init_slot(s);
   if (ret < 0) {
     rv_uinit_sw(impl, s);
     return ret;
@@ -3660,24 +3648,26 @@ static int rvs_mgr_uinit(struct st_rx_video_sessions_mgr* mgr) {
   return 0;
 }
 
-static struct st_rx_video_session_impl* rv_mgr_attach(
-    struct st_rx_video_sessions_mgr* mgr, struct st20_rx_ops* ops,
-    struct st22_rx_ops* st22_ops) {
+static struct st_rx_video_session_impl* rv_mgr_attach(struct mtl_sch_impl* sch,
+                                                      struct st20_rx_ops* ops,
+                                                      struct st22_rx_ops* st22_ops) {
+  struct st_rx_video_sessions_mgr* mgr = &sch->rx_video_mgr;
   int midx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   struct st_rx_video_session_impl* s;
+  int socket = mt_sch_socket_id(sch);
 
   /* find one empty slot in the mgr */
   for (int i = 0; i < ST_SCH_MAX_RX_VIDEO_SESSIONS; i++) {
     if (!rx_video_session_get_empty(mgr, i)) continue;
 
-    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), socket);
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       rx_video_session_put(mgr, i);
       return NULL;
     }
+    s->socket_id = socket;
     ret = rv_init(mgr, s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
@@ -3961,6 +3951,8 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   struct st_rx_video_session_impl* s;
   int quota_mbs, ret, quota_mbs_wo_dma = 0;
   uint64_t bps;
+  /* default use MTL_PORT_P */
+  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -3996,15 +3988,20 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
     }
   }
 
-  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  if (ops->flags & ST20_RX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST20_RX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), socket);
   if (!s_impl) {
-    err("%s, s_impl malloc fail\n", __func__);
+    err("%s, s_impl malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 
   enum mt_sch_type type =
       mt_user_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
-  sch = mt_sch_get(impl, quota_mbs, type, sch_mask);
+  sch = mt_sch_get_by_socket(impl, quota_mbs, type, sch_mask, socket);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -4022,7 +4019,7 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   }
 
   mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
-  s = rv_mgr_attach(&sch->rx_video_mgr, ops, NULL);
+  s = rv_mgr_attach(sch, ops, NULL);
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), rv_mgr_attach fail\n", __func__, sch->idx);
@@ -4341,6 +4338,8 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   int quota_mbs, ret;
   uint64_t bps;
   struct st20_rx_ops st20_ops;
+  /* default use MTL_PORT_P */
+  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -4374,15 +4373,20 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
     quota_mbs *= ops->num_port;
   }
 
-  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  if (ops->flags & ST22_RX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST22_RX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), socket);
   if (!s_impl) {
-    err("%s, s_impl malloc fail\n", __func__);
+    err("%s, s_impl malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 
   enum mt_sch_type type =
       mt_user_rxv_separate_sch(impl) ? MT_SCH_TYPE_RX_VIDEO_ONLY : MT_SCH_TYPE_DEFAULT;
-  sch = mt_sch_get(impl, quota_mbs, type, MT_SCH_MASK_ALL);
+  sch = mt_sch_get_by_socket(impl, quota_mbs, type, MT_SCH_MASK_ALL, socket);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -4438,7 +4442,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   st20_ops.framebuff_cnt = ops->framebuff_cnt;
   st20_ops.notify_event = ops->notify_event;
   mt_pthread_mutex_lock(&sch->rx_video_mgr_mutex);
-  s = rv_mgr_attach(&sch->rx_video_mgr, &st20_ops, ops);
+  s = rv_mgr_attach(sch, &st20_ops, ops);
   mt_pthread_mutex_unlock(&sch->rx_video_mgr_mutex);
   if (!s) {
     err("%s(%d), rv_mgr_attach fail\n", __func__, sch->idx);

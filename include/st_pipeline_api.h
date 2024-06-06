@@ -405,7 +405,7 @@ enum st22p_tx_flag {
    */
   ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
   /** Force the numa of the created session, both CPU and memory */
-  ST22P_TX_FLAG_FORCE_NUMA = MTL_BIT32(9),
+  ST22P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(9)),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
   ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -464,7 +464,7 @@ enum st20p_tx_flag {
    */
   ST20P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(10)),
   /** Force the numa of the created session, both CPU and memory */
-  ST20P_TX_FLAG_FORCE_NUMA = MTL_BIT32(11),
+  ST20P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(11)),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -495,6 +495,8 @@ enum st22p_rx_flag {
    * callback(query_ext_frame in st22p_rx_ops) to let MTL can get the frame when needed.
    */
   ST22P_RX_FLAG_EXT_FRAME = (MTL_BIT32(4)),
+  /** Force the numa of the created session, both CPU and memory */
+  ST22P_RX_FLAG_FORCE_NUMA = MTL_BIT32(5),
 
   /** Enable the st22p_rx_get_frame block behavior to wait until a frame becomes
      available or timeout(default: 1s, use st22p_rx_set_block_timeout to customize) */
@@ -539,6 +541,8 @@ enum st20p_rx_flag {
    * If enabled, simulate random packet loss, test usage only.
    */
   ST20P_RX_FLAG_SIMULATE_PKT_LOSS = (MTL_BIT32(5)),
+  /** Force the numa of the created session, both CPU and memory */
+  ST20P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(6)),
 
   /** Enable the st20p_rx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_rx_set_block_timeout to customize) */
@@ -624,13 +628,12 @@ struct st22_encoder_create_req {
   uint16_t framebuff_cnt;
   /** thread count, set by lib */
   uint32_t codec_thread_cnt;
-  /** numa socket id, set by lib */
-  int socket_id;
-
   /** max size for frame(encoded code stream), set by plugin */
   size_t max_codestream_size;
   /** the flag indicated by plugin to customize the behavior */
   uint32_t resp_flag;
+  /** numa socket id, set by lib */
+  int socket_id;
 };
 
 /** The structure info for st22 encoder dev. */
@@ -685,6 +688,8 @@ struct st22_decoder_create_req {
   uint32_t codec_thread_cnt;
   /** the flag indicated by plugin to customize the behavior */
   uint32_t resp_flag;
+  /** numa socket id, set by lib */
+  int socket_id;
 };
 
 /** The structure info for st22 decoder dev. */
@@ -972,6 +977,8 @@ struct st20p_rx_ops {
    */
   int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
                          struct st20_detect_reply* reply);
+  /**  Use this socket if ST20P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
@@ -1105,6 +1112,8 @@ struct st22p_rx_ops {
    */
   int (*query_ext_frame)(void* priv, struct st_ext_frame* ext_frame,
                          struct st22_rx_frame_meta* meta);
+  /**  Use this socket if ST22P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**

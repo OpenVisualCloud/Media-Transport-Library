@@ -32,6 +32,7 @@ struct st20p_rx_frame {
 struct st20p_rx_ctx {
   struct mtl_main_impl* impl;
   int idx;
+  int socket_id;
   enum mt_handle_type type; /* for sanity check */
 
   char ops_name[ST_MAX_NAME_LEN];

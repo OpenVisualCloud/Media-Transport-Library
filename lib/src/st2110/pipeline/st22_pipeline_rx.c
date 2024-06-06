@@ -365,6 +365,10 @@ static int rx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_rx
   }
   if (ops->flags & ST22P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME)
     ops_rx.flags |= ST22_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+  if (ops->flags & ST22P_RX_FLAG_FORCE_NUMA) {
+    ops_rx.socket_id = ops->socket_id;
+    ops_rx.flags |= ST22_RX_FLAG_FORCE_NUMA;
+  }
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
@@ -421,10 +425,9 @@ static int rx_st22p_uinit_dst_fbs(struct st22p_rx_ctx* ctx) {
   return 0;
 }
 
-static int rx_st22p_init_dst_fbs(struct mtl_main_impl* impl, struct st22p_rx_ctx* ctx,
-                                 struct st22p_rx_ops* ops) {
+static int rx_st22p_init_dst_fbs(struct st22p_rx_ctx* ctx, struct st22p_rx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = mt_socket_id(impl, MTL_PORT_P);
+  int soc_id = ctx->socket_id;
   struct st22p_rx_frame* frames;
   void* dst;
   size_t dst_size = ctx->dst_size;
@@ -497,6 +500,7 @@ static int rx_st22p_get_decoder(struct mtl_main_impl* impl, struct st22p_rx_ctx*
   req.req.framebuff_cnt = ops->framebuff_cnt;
   req.req.codec_thread_cnt = ops->codec_thread_cnt;
   req.req.interlaced = ops->interlaced;
+  req.req.socket_id = ctx->socket_id;
   req.priv = ctx;
   req.get_frame = rx_st22p_decode_get_frame;
   req.wake_block = rx_st22p_decode_wake_block;
@@ -650,6 +654,8 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   int idx = st22p_rx_idx;
   size_t dst_size;
   enum st_frame_fmt codestream_fmt;
+  /* default use MTL_PORT_P */
+  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -671,9 +677,14 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  if (ops->flags & ST22P_RX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST22P_RX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
-    err("%s, ctx malloc fail\n", __func__);
+    err("%s, ctx malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 
@@ -739,7 +750,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   }
 
   /* init fbs */
-  ret = rx_st22p_init_dst_fbs(impl, ctx, ops);
+  ret = rx_st22p_init_dst_fbs(ctx, ops);
   if (ret < 0) {
     err("%s(%d), init fbs fail %d\n", __func__, idx, ret);
     st22p_rx_free(ctx);

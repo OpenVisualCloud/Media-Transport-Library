@@ -803,7 +803,7 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 
   ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
-    err("%s, ctx malloc fail\n", __func__);
+    err("%s, ctx malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 

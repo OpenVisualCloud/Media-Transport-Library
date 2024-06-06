@@ -225,6 +225,10 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
   if (ctx->enable_timing_parser) ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
   if (ctx->rx_video_multi_thread) ops.flags |= ST20P_RX_FLAG_USE_MULTI_THREADS;
+  if (ctx->force_rx_video_numa >= 0) {
+    ops.flags |= ST20P_RX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_rx_video_numa;
+  }
 
   s->width = ops.width;
   s->height = ops.height;

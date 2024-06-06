@@ -801,7 +801,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
 
   ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
-    err("%s(%d), ctx malloc fail\n", __func__, idx);
+    err("%s(%d), ctx malloc fail on socket %d\n", __func__, idx, socket);
     return NULL;
   }
   ctx->socket_id = socket;

@@ -555,6 +555,7 @@ struct st_rx_video_tp {
 struct st_rx_video_session_impl {
   struct mtl_main_impl* impl;
   int idx; /* index for current session */
+  int socket_id;
   bool attached;
   struct st_rx_video_sessions_mgr* parent;
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
