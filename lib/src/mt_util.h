@@ -111,17 +111,23 @@ int mt_macaddr_get(struct mtl_main_impl* impl, enum mtl_port port,
 /* default with stack */
 #define MT_MEMPOOL_OPS_DEFAULT ("stack")
 
-struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl,
-                                             enum mtl_port port, const char* name,
+struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const char* name,
                                              unsigned int n, unsigned int cache_size,
                                              uint16_t priv_size, uint16_t element_size,
-                                             const char* ops_name);
+                                             const char* ops_name, int socket_id);
 
 static inline struct rte_mempool* mt_mempool_create(
     struct mtl_main_impl* impl, enum mtl_port port, const char* name, unsigned int n,
     unsigned int cache_size, uint16_t priv_size, uint16_t element_size) {
-  return mt_mempool_create_by_ops(impl, port, name, n, cache_size, priv_size,
-                                  element_size, MT_MEMPOOL_OPS_DEFAULT);
+  return mt_mempool_create_by_ops(impl, name, n, cache_size, priv_size, element_size,
+                                  MT_MEMPOOL_OPS_DEFAULT, mt_socket_id(impl, port));
+}
+
+static inline struct rte_mempool* mt_mempool_create_by_socket(
+    struct mtl_main_impl* impl, const char* name, unsigned int n, unsigned int cache_size,
+    uint16_t priv_size, uint16_t element_size, int socket_id) {
+  return mt_mempool_create_by_ops(impl, name, n, cache_size, priv_size, element_size,
+                                  MT_MEMPOOL_OPS_DEFAULT, socket_id);
 }
 
 static inline struct rte_mempool* mt_mempool_create_common(struct mtl_main_impl* impl,
