@@ -237,7 +237,7 @@ static int sch_start(struct mtl_sch_impl* sch) {
     ret = mt_sch_get_lcore(
         sch->parent, &sch->lcore,
         (sch->type == MT_SCH_TYPE_APP) ? MT_LCORE_TYPE_SCH_USER : MT_LCORE_TYPE_SCH,
-        sch->socket);
+        mt_sch_socket_id(sch));
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -255,7 +255,8 @@ static int sch_start(struct mtl_sch_impl* sch) {
 
   rte_atomic32_set(&sch->started, 1);
   if (!sch->run_in_thread)
-    info("%s(%d), succ on lcore %u socket %d\n", __func__, idx, sch->lcore, sch->socket);
+    info("%s(%d), succ on lcore %u socket %d\n", __func__, idx, sch->lcore,
+         mt_sch_socket_id(sch));
   else
     info("%s(%d), succ on tid %" PRIu64 "\n", __func__, idx, sch->tid);
   sch_unlock(sch);
@@ -863,7 +864,7 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
-    tasklet = mt_rte_zmalloc_socket(sizeof(*tasklet), sch->socket);
+    tasklet = mt_rte_zmalloc_socket(sizeof(*tasklet), mt_sch_socket_id(sch));
     if (!tasklet) {
       err("%s(%d), tasklet malloc fail on %d\n", __func__, idx, i);
       sch_unlock(sch);
@@ -1063,7 +1064,7 @@ struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_
   /* first try to find one sch capable with quota */
   for (idx = 0; idx < MT_MAX_SCH_NUM; idx++) {
     sch = mt_sch_instance(impl, idx);
-    if (socket != sch->socket) continue;
+    if (socket != mt_sch_socket_id(sch)) continue;
     /* mask check */
     if (!(mask & MTL_BIT64(idx))) continue;
     /* active and busy check */
@@ -1088,7 +1089,7 @@ struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_
     return NULL;
   }
   /* set the socket id */
-  sch->socket = socket;
+  sch->socket_id = socket;
   idx = sch->idx;
   ret = mt_sch_add_quota(sch, quota_mbs);
   if (ret < 0) {

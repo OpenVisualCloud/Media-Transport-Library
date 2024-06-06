@@ -404,6 +404,8 @@ enum st22p_tx_flag {
    * st22p_tx_put_ext_frame.
    */
   ST22P_TX_FLAG_EXT_FRAME = (MTL_BIT32(8)),
+  /** Force the numa of the created session, both CPU and memory */
+  ST22P_TX_FLAG_FORCE_NUMA = MTL_BIT32(9),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
   ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -461,6 +463,8 @@ enum st20p_tx_flag {
    * performance since the object enqueue/dequeue will be acted one by one.
    */
   ST20P_TX_FLAG_DISABLE_BULK = (MTL_BIT32(10)),
+  /** Force the numa of the created session, both CPU and memory */
+  ST20P_TX_FLAG_FORCE_NUMA = MTL_BIT32(11),
   /** Enable the st20p_tx_get_frame block behavior to wait until a frame becomes
      available or (default: 1s, use st20p_tx_set_block_timeout to customize) */
   ST20P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -620,6 +624,8 @@ struct st22_encoder_create_req {
   uint16_t framebuff_cnt;
   /** thread count, set by lib */
   uint32_t codec_thread_cnt;
+  /** numa socket id, set by lib */
+  int socket_id;
 
   /** max size for frame(encoded code stream), set by plugin */
   size_t max_codestream_size;
@@ -894,6 +900,8 @@ struct st20p_tx_ops {
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
+  /**  Use this socket if ST20P_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /** The structure describing how to create a rx st2110-20 pipeline session. */
@@ -1033,6 +1041,8 @@ struct st22p_tx_ops {
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
   int (*notify_event)(void* priv, enum st_event event, void* args);
+  /**  Use this socket if ST22P_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /** The structure describing how to create a rx st2110-22 pipeline session. */

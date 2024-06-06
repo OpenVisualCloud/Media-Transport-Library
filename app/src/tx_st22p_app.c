@@ -239,6 +239,10 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   ops.flags |= ST22P_TX_FLAG_BLOCK_GET;
   if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
   if (ctx->tx_no_bulk) ops.flags |= ST22P_TX_FLAG_DISABLE_BULK;
+  if (ctx->force_tx_video_numa >= 0) {
+    ops.flags |= ST22P_TX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_tx_video_numa;
+  }
 
   s->width = ops.width;
   s->height = ops.height;

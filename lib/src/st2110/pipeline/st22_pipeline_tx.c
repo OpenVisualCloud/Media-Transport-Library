@@ -364,6 +364,10 @@ static int tx_st22p_create_transport(struct mtl_main_impl* impl, struct st22p_tx
     ops_tx.rtcp = ops->rtcp;
   }
   if (ops->flags & ST22P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST22_TX_FLAG_DISABLE_BULK;
+  if (ops->flags & ST22P_TX_FLAG_FORCE_NUMA) {
+    ops_tx.socket_id = ops->socket_id;
+    ops_tx.flags |= ST22_TX_FLAG_FORCE_NUMA;
+  }
   ops_tx.pacing = ST21_PACING_NARROW;
   ops_tx.width = ops->width;
   ops_tx.height = ops->height;
@@ -434,10 +438,9 @@ static int tx_st22p_uinit_src_fbs(struct st22p_tx_ctx* ctx) {
   return 0;
 }
 
-static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx* ctx,
-                                 struct st22p_tx_ops* ops) {
+static int tx_st22p_init_src_fbs(struct st22p_tx_ctx* ctx, struct st22p_tx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = mt_socket_id(impl, MTL_PORT_P);
+  int soc_id = ctx->socket_id;
   struct st22p_tx_frame* frames;
   void* src;
   size_t src_size = ctx->src_size;
@@ -486,6 +489,7 @@ static int tx_st22p_init_src_fbs(struct mtl_main_impl* impl, struct st22p_tx_ctx
         tx_st22p_uinit_src_fbs(ctx);
         return -EINVAL;
       }
+      dbg("%s(%d), src frame malloc succ at %u\n", __func__, idx, i);
     }
   }
 
@@ -512,6 +516,7 @@ static int tx_st22p_get_encoder(struct mtl_main_impl* impl, struct st22p_tx_ctx*
   req.req.framebuff_cnt = ops->framebuff_cnt;
   req.req.codec_thread_cnt = ops->codec_thread_cnt;
   req.req.interlaced = ops->interlaced;
+  req.req.socket_id = ctx->socket_id;
   req.priv = ctx;
   req.get_frame = tx_st22p_encode_get_frame;
   req.wake_block = tx_st22p_encode_wake_block;
@@ -651,6 +656,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle) {
   }
   ctx->stat_get_frame_succ++;
   struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);
+  dbg("%s(%d), frame %u addr %p\n", __func__, idx, framebuff->idx, frame->addr[0]);
   MT_USDT_ST22P_TX_FRAME_GET(idx, framebuff->idx, frame->addr[0]);
   return frame;
 }
@@ -772,6 +778,8 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   int idx = st22p_tx_idx;
   size_t src_size;
   enum st_frame_fmt codestream_fmt;
+  /* default use MTL_PORT_P */
+  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -786,11 +794,17 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     return NULL;
   }
 
-  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  if (ops->flags & ST22P_TX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST22P_TX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
     err("%s(%d), ctx malloc fail\n", __func__, idx);
     return NULL;
   }
+  ctx->socket_id = socket;
 
   if (codestream_fmt == ops->input_fmt) {
     ctx->derive = true;
@@ -850,7 +864,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   }
 
   /* init fbs */
-  ret = tx_st22p_init_src_fbs(impl, ctx, ops);
+  ret = tx_st22p_init_src_fbs(ctx, ops);
   if (ret < 0) {
     err("%s(%d), init fbs fail %d\n", __func__, idx, ret);
     st22p_tx_free(ctx);

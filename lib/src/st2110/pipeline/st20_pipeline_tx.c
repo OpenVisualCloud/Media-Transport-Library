@@ -303,6 +303,10 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ops->flags & ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH)
     ops_tx.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ops->flags & ST20P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST20_TX_FLAG_DISABLE_BULK;
+  if (ops->flags & ST20P_TX_FLAG_FORCE_NUMA) {
+    ops_tx.socket_id = ops->socket_id;
+    ops_tx.flags |= ST20_TX_FLAG_FORCE_NUMA;
+  }
 
   transport = st20_tx_create(impl, &ops_tx);
   if (!transport) {
@@ -369,7 +373,7 @@ static int tx_st20p_uinit_src_fbs(struct st20p_tx_ctx* ctx) {
 static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx* ctx,
                                  struct st20p_tx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = mt_socket_id(impl, MTL_PORT_P);
+  int soc_id = ctx->socket_id;
   struct st20p_tx_frame* frames;
   void* src = NULL;
   size_t src_size = ctx->src_size;
@@ -455,7 +459,7 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   struct st20_convert_session_impl* convert_impl = st20_get_converter(impl, &req);
   if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL || !convert_impl) {
     struct st_frame_converter* converter = NULL;
-    converter = mt_rte_zmalloc_socket(sizeof(*converter), mt_socket_id(impl, MTL_PORT_P));
+    converter = mt_rte_zmalloc_socket(sizeof(*converter), ctx->socket_id);
     if (!converter) {
       err("%s, converter malloc fail\n", __func__);
       return -ENOMEM;
@@ -776,6 +780,8 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   int ret;
   int idx = st20p_tx_idx;
   size_t src_size;
+  /* default use MTL_PORT_P */
+  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -790,13 +796,19 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     return NULL;
   }
 
-  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  if (ops->flags & ST20P_TX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST20P_TX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
     err("%s, ctx malloc fail\n", __func__);
     return NULL;
   }
 
   ctx->idx = idx;
+  ctx->socket_id = socket;
   ctx->ready = false;
   ctx->derive = st_frame_fmt_equal_transport(ops->input_fmt, ops->transport_fmt);
   ctx->impl = impl;

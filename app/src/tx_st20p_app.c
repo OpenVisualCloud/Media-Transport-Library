@@ -291,6 +291,10 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   if (ctx->tx_ts_first_pkt) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
   if (ctx->tx_ts_epoch) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20P_TX_FLAG_DISABLE_BULK;
+  if (ctx->force_tx_video_numa >= 0) {
+    ops.flags |= ST20P_TX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_tx_video_numa;
+  }
 
   s->width = ops.width;
   s->height = ops.height;
