@@ -50,8 +50,15 @@ static inline void mt_tasklet_set_sleep(struct mt_sch_tasklet_impl* tasklet,
 
 int mt_sch_add_quota(struct mtl_sch_impl* sch, int quota_mbs);
 
-struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
-                                enum mt_sch_type type, mt_sch_mask_t mask);
+struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_mbs,
+                                          enum mt_sch_type type, mt_sch_mask_t mask,
+                                          int socket);
+static inline struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
+                                              enum mt_sch_type type, mt_sch_mask_t mask) {
+  /* use the default socket of MTL_PORT_P */
+  return mt_sch_get_by_socket(impl, quota_mbs, type, mask,
+                              mt_socket_id(impl, MTL_PORT_P));
+}
 int mt_sch_put(struct mtl_sch_impl* sch, int quota_mbs);
 
 int mt_sch_start_all(struct mtl_main_impl* impl);
@@ -67,7 +74,7 @@ static inline uint64_t mt_sch_avg_ns_loop(struct mtl_sch_impl* sch) {
 
 int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore);
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
-                     enum mt_lcore_type type);
+                     enum mt_lcore_type type, int socket);
 bool mt_sch_lcore_valid(struct mtl_main_impl* impl, unsigned int lcore);
 
 #endif

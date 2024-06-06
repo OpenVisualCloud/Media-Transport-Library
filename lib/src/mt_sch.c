@@ -236,7 +236,8 @@ static int sch_start(struct mtl_sch_impl* sch) {
   if (!sch->run_in_thread) {
     ret = mt_sch_get_lcore(
         sch->parent, &sch->lcore,
-        (sch->type == MT_SCH_TYPE_APP) ? MT_LCORE_TYPE_SCH_USER : MT_LCORE_TYPE_SCH);
+        (sch->type == MT_SCH_TYPE_APP) ? MT_LCORE_TYPE_SCH_USER : MT_LCORE_TYPE_SCH,
+        sch->socket);
     if (ret < 0) {
       err("%s(%d), get lcore fail %d\n", __func__, idx, ret);
       sch_unlock(sch);
@@ -254,7 +255,7 @@ static int sch_start(struct mtl_sch_impl* sch) {
 
   rte_atomic32_set(&sch->started, 1);
   if (!sch->run_in_thread)
-    info("%s(%d), succ on lcore %u\n", __func__, idx, sch->lcore);
+    info("%s(%d), succ on lcore %u socket %d\n", __func__, idx, sch->lcore, sch->socket);
   else
     info("%s(%d), succ on tid %" PRIu64 "\n", __func__, idx, sch->tid);
   sch_unlock(sch);
@@ -292,7 +293,8 @@ static int sch_stop(struct mtl_sch_impl* sch) {
 }
 
 static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_type type,
-                                        mt_sch_mask_t mask, struct mtl_sch_ops* ops) {
+                                        mt_sch_mask_t mask, struct mtl_sch_ops* ops,
+                                        int socket) {
   struct mtl_sch_impl* sch;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
@@ -313,8 +315,8 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
         sch->nb_tasklets = ops->nb_tasklets;
       else
         sch->nb_tasklets = impl->tasklets_nb_per_sch;
-      sch->tasklet = mt_rte_zmalloc_socket(sizeof(*sch->tasklet) * sch->nb_tasklets,
-                                           mt_socket_id(impl, MTL_PORT_P));
+      sch->tasklet =
+          mt_rte_zmalloc_socket(sizeof(*sch->tasklet) * sch->nb_tasklets, socket);
       if (!sch->tasklet) {
         err("%s(%d), %u tasklet malloc fail\n", __func__, sch_idx, sch->nb_tasklets);
         sch_unlock(sch);
@@ -323,8 +325,8 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
-      info("%s(%d), name %s with %u tasklets, type %d\n", __func__, sch_idx, sch->name,
-           sch->nb_tasklets, type);
+      info("%s(%d), name %s with %u tasklets, type %d socket %d\n", __func__, sch_idx,
+           sch->name, sch->nb_tasklets, type, socket);
       return sch;
     }
     sch_unlock(sch);
@@ -634,7 +636,7 @@ static inline bool sch_socket_match(int cpu_socket, int dev_socket,
 }
 
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
-                     enum mt_lcore_type type) {
+                     enum mt_lcore_type type, int socket) {
   unsigned int cur_lcore;
   int ret;
   bool skip_numa_check = false;
@@ -648,8 +650,7 @@ again:
     do {
       cur_lcore = rte_get_next_lcore(cur_lcore, 1, 0);
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          sch_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                           mt_socket_id(impl, MTL_PORT_P), skip_numa_check)) {
+          sch_socket_match(rte_lcore_to_socket_id(cur_lcore), socket, skip_numa_check)) {
         ret = mt_instance_get_lcore(impl, cur_lcore);
         if (ret == 0) {
           *lcore = cur_lcore;
@@ -657,8 +658,8 @@ again:
           /* set local lcores info */
           mgr->local_lcores_active[cur_lcore] = true;
           mgr->local_lcores_type[cur_lcore] = type;
-          info("%s, succ on manager lcore %d for %s\n", __func__, cur_lcore,
-               lcore_type_name(type));
+          info("%s, succ on manager lcore %d for %s socket %d\n", __func__, cur_lcore,
+               lcore_type_name(type), socket);
           return 0;
         }
       }
@@ -680,8 +681,7 @@ again:
       shm_entry = &lcore_shm->lcores_info[cur_lcore];
 
       if ((cur_lcore < RTE_MAX_LCORE) &&
-          sch_socket_match(rte_lcore_to_socket_id(cur_lcore),
-                           mt_socket_id(impl, MTL_PORT_P), skip_numa_check)) {
+          sch_socket_match(rte_lcore_to_socket_id(cur_lcore), socket, skip_numa_check)) {
         if (!shm_entry->active) {
           *lcore = cur_lcore;
           shm_entry->active = true;
@@ -697,8 +697,8 @@ again:
           mgr->local_lcores_active[cur_lcore] = true;
           mgr->local_lcores_type[cur_lcore] = type;
           ret = sch_filelock_unlock(mgr);
-          info("%s, succ on shm lcore %d for %s\n", __func__, cur_lcore,
-               lcore_type_name(type));
+          info("%s, succ on shm lcore %d for %s socket %d\n", __func__, cur_lcore,
+               lcore_type_name(type), socket);
           if (ret < 0) {
             err("%s, sch_filelock_unlock fail\n", __func__);
             return ret;
@@ -713,7 +713,7 @@ again:
 
   if (!skip_numa_check && mt_user_across_numa_core(impl)) {
     warn("%s, can't find available lcore from socket %d, try with other numa cpu\n",
-         __func__, mt_socket_id(impl, MTL_PORT_P));
+         __func__, socket);
     skip_numa_check = true;
     goto again;
   }
@@ -854,7 +854,6 @@ int mtl_sch_unregister_tasklet(mtl_tasklet_handle tasklet) {
 mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
                                             struct mtl_tasklet_ops* tasklet_ops) {
   int idx = sch->idx;
-  struct mtl_main_impl* impl = sch->parent;
   struct mt_sch_tasklet_impl* tasklet;
 
   sch_lock(sch);
@@ -864,7 +863,7 @@ mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
     if (sch->tasklet[i]) continue;
 
     /* find one empty tasklet slot */
-    tasklet = mt_rte_zmalloc_socket(sizeof(*tasklet), mt_socket_id(impl, MTL_PORT_P));
+    tasklet = mt_rte_zmalloc_socket(sizeof(*tasklet), sch->socket);
     if (!tasklet) {
       err("%s(%d), tasklet malloc fail on %d\n", __func__, idx, i);
       sch_unlock(sch);
@@ -1052,8 +1051,9 @@ int mt_sch_put(struct mtl_sch_impl* sch, int quota_mbs) {
   return 0;
 }
 
-struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
-                                enum mt_sch_type type, mt_sch_mask_t mask) {
+struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_mbs,
+                                          enum mt_sch_type type, mt_sch_mask_t mask,
+                                          int socket) {
   int ret, idx;
   struct mtl_sch_impl* sch;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
@@ -1063,6 +1063,7 @@ struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
   /* first try to find one sch capable with quota */
   for (idx = 0; idx < MT_MAX_SCH_NUM; idx++) {
     sch = mt_sch_instance(impl, idx);
+    if (socket != sch->socket) continue;
     /* mask check */
     if (!(mask & MTL_BIT64(idx))) continue;
     /* active and busy check */
@@ -1071,7 +1072,8 @@ struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
     if (!sch_is_capable(sch, quota_mbs, type)) continue;
     ret = mt_sch_add_quota(sch, quota_mbs);
     if (ret >= 0) {
-      info("%s(%d), succ with quota_mbs %d\n", __func__, idx, quota_mbs);
+      info("%s(%d), succ with quota_mbs %d socket %d\n", __func__, idx, quota_mbs,
+           socket);
       rte_atomic32_inc(&sch->ref_cnt);
       sch_mgr_unlock(mgr);
       return sch;
@@ -1079,12 +1081,14 @@ struct mtl_sch_impl* mt_sch_get(struct mtl_main_impl* impl, int quota_mbs,
   }
 
   /* no quota, try to create one */
-  sch = sch_request(impl, type, mask, NULL);
+  sch = sch_request(impl, type, mask, NULL, socket);
   if (!sch) {
     err("%s, no free sch\n", __func__);
     sch_mgr_unlock(mgr);
     return NULL;
   }
+  /* set the socket id */
+  sch->socket = socket;
   idx = sch->idx;
   ret = mt_sch_add_quota(sch, quota_mbs);
   if (ret < 0) {
@@ -1316,7 +1320,9 @@ mtl_sch_handle mtl_sch_create(mtl_handle mt, struct mtl_sch_ops* ops) {
     return NULL;
   }
 
-  struct mtl_sch_impl* sch = sch_request(impl, MT_SCH_TYPE_APP, MT_SCH_MASK_ALL, ops);
+  /* request sch on the MTL_PORT_P socket */
+  struct mtl_sch_impl* sch = sch_request(impl, MT_SCH_TYPE_APP, MT_SCH_MASK_ALL, ops,
+                                         mt_socket_id(impl, MTL_PORT_P));
   if (!sch) {
     err("%s, sch request fail\n", __func__);
     return NULL;
