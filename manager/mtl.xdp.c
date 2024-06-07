@@ -13,10 +13,10 @@
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 struct {
-  __uint(type, BPF_MAP_TYPE_ARRAY);
-  __uint(max_entries, 65536);
-  __type(key, int);
-  __type(value, int);
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 256); /* max 256 filters */
+  __type(key, __u16);       /* udp port: 16bit */
+  __type(value, __u8);      /* only 1 or 0 */
 } udp4_dp_filter SEC(".maps");
 
 struct {
@@ -25,8 +25,8 @@ struct {
   __uint(XDP_DROP, 1);
 } XDP_RUN_CONFIG(mtl_dp_filter);
 
-static int __always_inline lookup_udp4_dp(int dp) {
-  int* value;
+static int __always_inline lookup_udp4_dp(__u16 dp) {
+  __u8* value;
 
   value = bpf_map_lookup_elem(&udp4_dp_filter, &dp);
   if (value && *value != 0) return 1;
@@ -56,7 +56,7 @@ int mtl_dp_filter(struct xdp_md* ctx) {
   ret = parse_udphdr(&nh, data_end, &udphdr);
   if (ret < 0) return XDP_PASS;
 
-  int dst_port = bpf_ntohs(udphdr->dest);
+  __u16 dst_port = bpf_ntohs(udphdr->dest);
   if (lookup_udp4_dp(dst_port) == 0) return XDP_PASS;
 
   /* go to next program: xsk_def_prog */
