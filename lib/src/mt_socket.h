@@ -31,4 +31,10 @@ int mt_socket_add_flow(struct mtl_main_impl* impl, enum mtl_port port, uint16_t 
 int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int flow_id,
                           uint16_t dst_port);
 
+int mt_socket_fd_join_multicast(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rxq_flow* flow, int fd);
+
+int mt_socket_get_multicast_fd(struct mtl_main_impl* impl, enum mtl_port port,
+                               struct mt_rxq_flow* flow);
+
 #endif

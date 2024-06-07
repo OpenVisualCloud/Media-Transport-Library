@@ -562,6 +562,8 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sour
     return 0;
   }
 
+  if (mt_drv_mcast_in_dp(impl, port)) return 0;
+
   if (mcast->group_num >= MT_MCAST_GROUP_MAX) {
     err("%s(%d), reach max multicast group number!\n", __func__, port);
     return -EIO;
@@ -659,6 +661,8 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sou
   if (mt_user_no_multicast(impl)) {
     return 0;
   }
+
+  if (mt_drv_mcast_in_dp(impl, port)) return 0;
 
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
   int group_num = mcast->group_num;

@@ -6,6 +6,7 @@
 #include "mt_dp_socket.h"
 
 #include "../mt_log.h"
+#include "../mt_socket.h"
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #ifndef WINDOWSENV
@@ -479,26 +480,11 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reus
 
   /* join multicast group, will drop automatically when socket fd closed */
   if (mt_is_multicast_ip(flow->dip_addr)) {
-    uint32_t source = *(uint32_t*)flow->sip_addr;
-    if (source == 0) {
-      struct ip_mreq mreq;
-      memset(&mreq, 0, sizeof(mreq));
-      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-      ret = setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
-    } else {
-      struct ip_mreq_source mreq;
-      memset(&mreq, 0, sizeof(mreq));
-      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-      memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
-      ret = setsockopt(fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
-    }
+    ret = mt_socket_fd_join_multicast(impl, port, flow, fd);
     if (ret < 0) {
       err("%s(%d,%d), join multicast fail %d\n", __func__, port, fd, ret);
       return ret;
     }
-    info("%s(%d,%d), join multicast succ\n", __func__, port, fd);
   }
 
   return 0;

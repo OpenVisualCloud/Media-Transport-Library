@@ -13,6 +13,7 @@
 #include "../mt_flow.h"
 #include "../mt_instance.h"
 #include "../mt_log.h"
+#include "../mt_socket.h"
 #include "../mt_stat.h"
 #include "../mt_util.h"
 
@@ -943,6 +944,7 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
   }
   entry->parent = impl;
   entry->port = port;
+  entry->mcast_fd = -1;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
@@ -1000,35 +1002,12 @@ struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port 
   /* join multicast group, will drop automatically when socket fd closed */
   int mcast_fd = -1;
   if (mt_is_multicast_ip(flow->dip_addr)) {
-    int ret;
-    mcast_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    mcast_fd = mt_socket_get_multicast_fd(impl, port, flow);
     if (mcast_fd < 0) {
-      err("%s(%d,%u), create multicast socket fail\n", __func__, port, q);
+      err("%s(%d,%u), get multicast socket fd fail\n", __func__, port, q);
       mt_rx_xdp_put(entry);
       return NULL;
     }
-    uint32_t source = *(uint32_t*)flow->sip_addr;
-    if (source == 0) {
-      struct ip_mreq mreq;
-      memset(&mreq, 0, sizeof(mreq));
-      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-      ret = setsockopt(mcast_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
-    } else {
-      struct ip_mreq_source mreq;
-      memset(&mreq, 0, sizeof(mreq));
-      memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-      memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-      memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
-      ret =
-          setsockopt(mcast_fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
-    }
-    if (ret < 0) {
-      err("%s(%d), join multicast fail %d\n", __func__, port, ret);
-      mt_rx_xdp_put(entry);
-      return NULL;
-    }
-    info("%s(%d), join multicast succ\n", __func__, port);
   }
   entry->mcast_fd = mcast_fd;
 
@@ -1048,6 +1027,7 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
 
   if (entry->mcast_fd > 0) {
     close(entry->mcast_fd);
+    entry->mcast_fd = -1;
   }
 
   if (entry->flow_rsp) {

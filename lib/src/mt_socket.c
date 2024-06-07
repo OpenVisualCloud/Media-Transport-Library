@@ -420,6 +420,57 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
 
   return mt_instance_del_flow(impl, if_nametoindex(if_name), flow_id);
 }
+
+int mt_socket_fd_join_multicast(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rxq_flow* flow, int fd) {
+  uint32_t source = *(uint32_t*)flow->sip_addr;
+  int ret;
+
+  if (!mt_is_multicast_ip(flow->dip_addr)) {
+    err("%s(%d), not multicast dip\n", __func__, port);
+    return -EIO;
+  }
+
+  if (source == 0) {
+    struct ip_mreq mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    ret = setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+  } else {
+    struct ip_mreq_source mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+    memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
+    ret = setsockopt(fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
+  }
+
+  return ret;
+}
+
+int mt_socket_get_multicast_fd(struct mtl_main_impl* impl, enum mtl_port port,
+                               struct mt_rxq_flow* flow) {
+  int ret;
+  int mcast_fd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (mcast_fd < 0) {
+    err("%s(%d), create multicast socket fail\n", __func__, port);
+    return mcast_fd;
+  }
+
+  ret = mt_socket_fd_join_multicast(impl, port, flow, mcast_fd);
+  if (ret < 0) {
+    err("%s(%d), setsockopt fail %d\n", __func__, port, ret);
+    close(mcast_fd);
+    return ret;
+  } else {
+    /* return the fd */
+    uint8_t* ip = flow->dip_addr;
+    info("%s(%d), join %u.%u.%u.%u succ\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
+    return mcast_fd;
+  }
+}
+
 #else
 int mt_socket_get_if_ip(const char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                         uint8_t netmask[MTL_IP_ADDR_LEN]) {
@@ -472,6 +523,23 @@ int mt_socket_remove_flow(struct mtl_main_impl* impl, enum mtl_port port, int fl
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(flow_id);
   MTL_MAY_UNUSED(dst_port);
+  return -ENOTSUP;
+}
+
+int mt_socket_get_multicast_fd(struct mtl_main_impl* impl, enum mtl_port port,
+                               struct mt_rxq_flow* flow) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(flow);
+  return -ENOTSUP;
+}
+
+int mt_socket_fd_join_multicast(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rxq_flow* flow, int fd) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(port);
+  MTL_MAY_UNUSED(flow);
+  MTL_MAY_UNUSED(fd);
   return -ENOTSUP;
 }
 #endif

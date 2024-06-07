@@ -214,7 +214,7 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   /* no flow if MT_DRV_F_RX_NO_FLOW */
   if (inf->drv_info.flags & MT_DRV_F_RX_NO_FLOW) return rsp;
 
-  if (inf->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL) {
+  if (mt_drv_use_kernel_ctl(impl, port)) {
     ret = mt_socket_add_flow(impl, port, q, flow);
     if (ret < 0) {
       err("%s(%d), socket add flow fail for queue %d\n", __func__, port, q);
