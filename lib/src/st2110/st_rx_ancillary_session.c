@@ -319,7 +319,6 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
   for (int i = 0; i < ops->num_port; i++) {
     if (!mt_is_multicast_ip(ops->ip_addr[i])) continue;
     port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_drv_mcast_in_dp(impl, port)) continue;
     if (ops->flags & ST20_RX_FLAG_DATA_PATH_ONLY) {
       info("%s(%d), skip mcast join for port %d\n", __func__, s->idx, i);
       return 0;

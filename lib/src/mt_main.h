@@ -916,6 +916,8 @@ struct mt_rsq_entry {
   struct mt_rx_flow_rsp* flow_rsp;
   struct mt_rsq_impl* parent;
   struct rte_ring* ring;
+  /* wa for MTL_PMD_DPDK_AF_PACKET */
+  int mcast_fd;
   uint32_t stat_enqueue_cnt;
   uint32_t stat_dequeue_cnt;
   uint32_t stat_enqueue_fail_cnt;

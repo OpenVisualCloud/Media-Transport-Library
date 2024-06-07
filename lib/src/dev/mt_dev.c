@@ -82,7 +82,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .drv_type = MT_DRV_DPDK_AF_PKT,
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_USE_KERNEL_CTL | MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_RX_NO_FLOW |
-                 MT_DRV_F_KERNEL_BASED,
+                 MT_DRV_F_KERNEL_BASED | MT_DRV_F_MCAST_IN_DP,
     },
     {
         .name = "kernel_socket",

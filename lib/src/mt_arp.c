@@ -358,11 +358,10 @@ int mt_arp_uinit(struct mtl_main_impl* impl) {
 int mt_arp_get_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
                    struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
   int ret;
-  struct mt_interface* inf = mt_if(impl, port);
 
   dbg("%s(%d), start to get mac for ip %d.%d.%d.%d\n", __func__, port, dip[0], dip[1],
       dip[2], dip[3]);
-  if ((inf->drv_info.flags & MT_DRV_F_USE_KERNEL_CTL) || mt_has_virtio_user(impl, port)) {
+  if (mt_drv_use_kernel_ctl(impl, port) || mt_has_virtio_user(impl, port)) {
     ret = mt_socket_get_mac(impl, mt_kernel_if_name(impl, port), dip, ea, timeout_ms);
     if (ret < 0) {
       dbg("%s(%d), failed to get mac from socket %d\n", __func__, port, ret);

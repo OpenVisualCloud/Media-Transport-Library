@@ -8,6 +8,7 @@
 #include "../dev/mt_dev.h"
 #include "../mt_flow.h"
 #include "../mt_log.h"
+#include "../mt_socket.h"
 #include "../mt_stat.h"
 #include "../mt_util.h"
 
@@ -78,6 +79,10 @@ static int rsq_entry_free(struct mt_rsq_entry* entry) {
   if (entry->ring) {
     mt_ring_dequeue_clean(entry->ring);
     rte_ring_free(entry->ring);
+  }
+  if (entry->mcast_fd) {
+    close(entry->mcast_fd);
+    entry->mcast_fd = -1;
   }
   info("%s(%d), succ on q %u idx %d\n", __func__, rsqm->port, entry->queue_id,
        entry->idx);
@@ -181,6 +186,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   entry->queue_id = q;
   entry->idx = idx;
   entry->parent = rsqm;
+  entry->mcast_fd = -1;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   if (rsqm->queue_mode == MT_QUEUE_MODE_XDP) {
@@ -222,6 +228,17 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
     err("%s(%d,%d), ring %s create fail\n", __func__, port, idx, ring_name);
     rsq_entry_free(entry);
     return NULL;
+  }
+
+  if (mt_pmd_is_dpdk_af_packet(impl, port) && mt_is_multicast_ip(flow->dip_addr)) {
+    /* join multicast group, will drop automatically when socket fd closed */
+    entry->mcast_fd = mt_socket_get_multicast_fd(impl, port, flow);
+    if (entry->mcast_fd < 0) {
+      err("%s(%d,%d), get multicast socket fd fail %d\n", __func__, port, idx,
+          entry->mcast_fd);
+      rsq_entry_free(entry);
+      return NULL;
+    }
   }
 
   rsq_lock(rsq_queue);
