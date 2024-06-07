@@ -119,10 +119,12 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
     return 0;
   }
 
-  int value = add ? 1 : 0;
-  if (bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY) < 0) {
+  uint8_t value = add ? 1 : 0;
+  int ret = bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY);
+  if (ret < 0) {
     log(log_level::ERROR,
-        "Failed to update udp4_dp_filter map, dst_port: " + std::to_string(dst_port));
+        "Failed to update udp4_dp_filter map, dst_port: " + std::to_string(dst_port) +
+            ", error: " + std::to_string(ret));
     return -1;
   }
 
@@ -440,7 +442,8 @@ int mtl_interface::load_xdp() {
     return -1;
   }
 
-  log(log_level::INFO, "Loaded xdp prog.");
+  log(log_level::INFO,
+      "Loaded xdp prog succ, udp4_dp_filter_fd: " + std::to_string(udp4_dp_filter_fd));
   return 0;
 }
 
