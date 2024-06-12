@@ -401,9 +401,13 @@ enum mtl_init_flag {
   MTL_FLAG_NOT_BIND_NUMA = (MTL_BIT64(21)),
 
   /**
-   * dedicate thread for cni message
+   * use thread for cni message handling
    */
   MTL_FLAG_CNI_THREAD = (MTL_BIT64(32)),
+  /**
+   * use lcore tasklet for cni message handling
+   */
+  MTL_FLAG_CNI_TASKLET = (MTL_BIT64(33)),
   /**
    * Enable NIC promiscuous mode for RX
    */
