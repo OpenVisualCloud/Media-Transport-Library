@@ -447,21 +447,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     }
   }
 
-#ifndef WINDOWSENV
-  int numa_nodes = 0;
-  if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
-  if (!(p->flags & MTL_FLAG_NOT_BIND_NUMA) && (numa_nodes > 1)) {
-    /* bind current thread and its children to socket node */
-    struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
-
-    info("%s, bind to socket %d, numa_nodes %d\n", __func__, socket[MTL_PORT_P],
-         numa_nodes);
-    numa_bitmask_setbit(mask, socket[MTL_PORT_P]);
-    numa_bind(mask);
-    numa_bitmask_free(mask);
-  }
-#endif
-
 #ifdef MTL_HAS_ASAN
   mt_asan_init();
 #endif
@@ -1334,4 +1319,20 @@ int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name)
 
 int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name) {
   return snprintf(p->dma_dev_port[port], MTL_PORT_MAX_LEN, "%s", name);
+}
+
+int mtl_get_numa_id(mtl_handle mt, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
+
+  if (impl->type != MT_HANDLE_MAIN) {
+    err("%s, invalid type %d\n", __func__, impl->type);
+    return -EIO;
+  }
+  if (port >= mt_num_ports(impl)) {
+    err("%s, invalid port %d\n", __func__, port);
+    return -EIO;
+  }
+
+  struct mt_interface* inf = mt_if(impl, port);
+  return inf->socket_id;
 }

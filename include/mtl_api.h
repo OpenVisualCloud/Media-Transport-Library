@@ -782,6 +782,19 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
  */
 int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
 
+/**
+ * Get the numa socket id for a MTL port.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param port
+ *   The port index.
+ * @return
+ *   >= 0 The numa socket ID.
+ *   - <0: Error code if fail.
+ */
+int mtl_get_numa_id(mtl_handle mt, enum mtl_port port);
+
 /** Helper to set the port for struct mtl_init_params */
 int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
 /** Helper to set the sip for struct mtl_init_params */
