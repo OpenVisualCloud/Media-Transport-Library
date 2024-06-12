@@ -780,8 +780,6 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
   int ret;
   int idx = st20p_tx_idx;
   size_t src_size;
-  /* default use MTL_PORT_P */
-  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -795,6 +793,10 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
     err("%s(%d), get src size fail\n", __func__, idx);
     return NULL;
   }
+
+  enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST20P_TX_FLAG_FORCE_NUMA) {
     socket = ops->socket_id;

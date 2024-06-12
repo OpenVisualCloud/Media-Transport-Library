@@ -66,6 +66,7 @@ int mt_audio_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port p
 int mt_audio_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
                                         uint64_t input_bps, uint64_t* profiled_bps);
 
+enum mtl_port mt_port_by_name(struct mtl_main_impl* impl, const char* name);
 int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
                       int num_ports);
 

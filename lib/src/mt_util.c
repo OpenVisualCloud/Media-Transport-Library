@@ -194,6 +194,25 @@ void mt_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag) {
   }
 }
 
+enum mtl_port mt_port_by_name(struct mtl_main_impl* impl, const char* name) {
+  struct mtl_init_params* p = mt_get_user_params(impl);
+  int main_num_ports = p->num_ports;
+
+  if (!name) {
+    err("%s, name is NULL\n", __func__);
+    return MTL_PORT_MAX;
+  }
+
+  for (enum mtl_port i = 0; i < main_num_ports; i++) {
+    if (0 == strncmp(p->port[i], name, MTL_PORT_MAX_LEN)) {
+      return i;
+    }
+  }
+
+  err("%s, %s is not valid\n", __func__, name);
+  return MTL_PORT_MAX;
+}
+
 int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
                       int num_ports) {
   struct mtl_init_params* p = mt_get_user_params(impl);

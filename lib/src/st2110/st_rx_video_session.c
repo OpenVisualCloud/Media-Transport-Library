@@ -3950,8 +3950,6 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
   struct st_rx_video_session_impl* s;
   int quota_mbs, ret, quota_mbs_wo_dma = 0;
   uint64_t bps;
-  /* default use MTL_PORT_P */
-  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -3986,6 +3984,10 @@ st20_rx_handle st20_rx_create_with_mask(struct mtl_main_impl* impl,
       quota_mbs = quota_mbs * ST_QUOTA_TX1080P_PER_SCH / ST_QUOTA_RX1080P_PER_SCH;
     }
   }
+
+  enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST20_RX_FLAG_FORCE_NUMA) {
     socket = ops->socket_id;
@@ -4337,8 +4339,6 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
   int quota_mbs, ret;
   uint64_t bps;
   struct st20_rx_ops st20_ops;
-  /* default use MTL_PORT_P */
-  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -4371,6 +4371,10 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops) {
     quota_mbs = bps / (1000 * 1000);
     quota_mbs *= ops->num_port;
   }
+
+  enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST22_RX_FLAG_FORCE_NUMA) {
     socket = ops->socket_id;
