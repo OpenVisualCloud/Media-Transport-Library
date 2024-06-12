@@ -389,11 +389,12 @@ static int cni_traffic(struct mtl_main_impl* impl) {
 static void* cni_traffic_thread(void* arg) {
   struct mtl_main_impl* impl = arg;
   struct mt_cni_impl* cni = mt_get_cni(impl);
+  int ret;
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
-    cni_traffic(impl);
-    mt_sleep_ms(1);
+    ret = cni_traffic(impl);
+    if (MTL_TASKLET_ALL_DONE == ret) mt_sleep_ms(1);
   }
   info("%s, stop\n", __func__);
 
@@ -561,7 +562,21 @@ int mt_cni_init(struct mtl_main_impl* impl) {
 
   cni_impl->parent = impl;
 
-  cni_impl->lcore_tasklet = (p->flags & MTL_FLAG_CNI_THREAD) ? false : true;
+  if (p->flags & MTL_FLAG_CNI_THREAD) {
+    cni_impl->lcore_tasklet = false;
+    info("%s, MTL_FLAG_CNI_THREAD is set\n", __func__);
+  } else if (p->flags & MTL_FLAG_CNI_TASKLET) {
+    cni_impl->lcore_tasklet = true;
+    info("%s, MTL_FLAG_CNI_TASKLET is set\n", __func__);
+  } else {
+    /* auto detect */
+    if (mt_user_ptp_service(impl)) {
+      cni_impl->lcore_tasklet = true;
+      info("%s, use tasklet as ptp is required\n", __func__);
+    } else {
+      cni_impl->lcore_tasklet = false;
+    }
+  }
   rte_atomic32_set(&cni_impl->stop_thread, 0);
 
   for (int i = 0; i < num_ports; i++) {

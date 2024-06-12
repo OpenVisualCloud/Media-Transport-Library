@@ -370,6 +370,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
+  p->flags |= MTL_FLAG_CNI_TASKLET; /* for rtcp test */
   p->log_level = MTL_LOG_LEVEL_ERR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
