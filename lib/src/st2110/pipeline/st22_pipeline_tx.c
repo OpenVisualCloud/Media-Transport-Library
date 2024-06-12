@@ -778,8 +778,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   int idx = st22p_tx_idx;
   size_t src_size;
   enum st_frame_fmt codestream_fmt;
-  /* default use MTL_PORT_P */
-  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -793,6 +791,10 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     err("%s(%d), unknow codec %d\n", __func__, idx, ops->codec);
     return NULL;
   }
+
+  enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST22P_TX_FLAG_FORCE_NUMA) {
     socket = ops->socket_id;

@@ -929,8 +929,6 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   int idx = st20p_rx_idx;
   size_t dst_size = 0;
   bool auto_detect = ops->flags & ST20P_RX_FLAG_AUTO_DETECT ? true : false;
-  /* default use MTL_PORT_P */
-  int socket = mt_socket_id(impl, MTL_PORT_P);
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
@@ -955,6 +953,10 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
       return NULL;
     }
   }
+
+  enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST20P_RX_FLAG_FORCE_NUMA) {
     socket = ops->socket_id;
