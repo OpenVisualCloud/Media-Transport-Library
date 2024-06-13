@@ -41,6 +41,8 @@ enum st30p_tx_flag {
    * If use dedicated queue for TX.
    */
   ST30P_TX_FLAG_DEDICATE_QUEUE = (MTL_BIT32(7)),
+  /** Force the numa of the created session, both CPU and memory */
+  ST30P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(8)),
 
   /** Enable the st30p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_tx_set_block_timeout to customize)*/
@@ -141,6 +143,8 @@ struct st30p_tx_ops {
   uint32_t rl_accuracy_ns;
   /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check point */
   int32_t rl_offset_ns;
+  /**  Use this socket if ST30P_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**
@@ -174,6 +178,8 @@ enum st30p_rx_flag {
    * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
    */
   ST30P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
+  /** Force the numa of the created session, both CPU and memory */
+  ST30P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
 
   /** Enable the st30p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_rx_set_block_timeout to customize) */
@@ -214,6 +220,8 @@ struct st30p_rx_ops {
    * tasklet routine.
    */
   int (*notify_frame_available)(void* priv);
+  /**  Use this socket if ST30P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 };
 
 /**

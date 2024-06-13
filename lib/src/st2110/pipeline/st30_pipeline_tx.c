@@ -159,6 +159,10 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
   }
   if (ops->flags & ST30P_TX_FLAG_DEDICATE_QUEUE)
     ops_tx.flags |= ST30_TX_FLAG_DEDICATE_QUEUE;
+  if (ops->flags & ST30P_TX_FLAG_FORCE_NUMA) {
+    ops_tx.socket_id = ops->socket_id;
+    ops_tx.flags |= ST30_TX_FLAG_FORCE_NUMA;
+  }
   ops_tx.pacing_way = ops->pacing_way;
 
   ops_tx.fmt = ops->fmt;
@@ -207,10 +211,9 @@ static int tx_st30p_uinit_fbs(struct st30p_tx_ctx* ctx) {
   return 0;
 }
 
-static int tx_st30p_init_fbs(struct mtl_main_impl* impl, struct st30p_tx_ctx* ctx,
-                             struct st30p_tx_ops* ops) {
+static int tx_st30p_init_fbs(struct st30p_tx_ctx* ctx, struct st30p_tx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = mt_socket_id(impl, MTL_PORT_P);
+  int soc_id = ctx->socket_id;
   struct st30p_tx_frame* frames;
 
   frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
@@ -471,13 +474,23 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
     return NULL;
   }
 
-  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
+
+  if (ops->flags & ST30P_RX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST30P_RX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
-    err("%s, ctx malloc fail\n", __func__);
+    err("%s, ctx malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 
   ctx->idx = idx;
+  ctx->socket_id = socket;
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST30_HANDLE_PIPELINE_TX;
@@ -501,7 +514,7 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops) {
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
   /* init fbs */
-  ret = tx_st30p_init_fbs(impl, ctx, ops);
+  ret = tx_st30p_init_fbs(ctx, ops);
   if (ret < 0) {
     err("%s(%d), init fbs fail %d\n", __func__, idx, ret);
     st30p_tx_free(ctx);

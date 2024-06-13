@@ -785,6 +785,7 @@ struct st_tx_audio_session_rl_info {
 
 struct st_tx_audio_session_impl {
   int idx; /* index for current session */
+  int socket_id;
   struct st30_tx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];
   int recovery_idx;
@@ -872,6 +873,7 @@ struct st_tx_audio_session_impl {
 
 struct st_tx_audio_sessions_mgr {
   struct mtl_main_impl* parent;
+  int socket_id;
   int idx;     /* index for current sessions mgr */
   int max_idx; /* max session index */
   struct mt_sch_tasklet_impl* tasklet;
@@ -955,6 +957,7 @@ struct st_rx_audio_tp {
 struct st_rx_audio_session_impl {
   int idx; /* index for current session */
   struct st_rx_audio_sessions_mgr* mgr;
+  int socket_id;
   bool attached;
   struct st30_rx_ops ops;
   char ops_name[ST_MAX_NAME_LEN];

@@ -67,6 +67,8 @@ enum st_args_cmd {
   ST_ARG_FORCE_NUMA,
   ST_ARG_FORCE_TX_VIDEO_NUMA,
   ST_ARG_FORCE_RX_VIDEO_NUMA,
+  ST_ARG_FORCE_TX_AUDIO_NUMA,
+  ST_ARG_FORCE_RX_AUDIO_NUMA,
 
   ST_ARG_CONFIG_FILE = 0x300,
   ST_ARG_TEST_TIME,
@@ -211,6 +213,8 @@ static struct option st_app_args_options[] = {
     {"force_numa", required_argument, 0, ST_ARG_FORCE_NUMA},
     {"force_tx_video_numa", required_argument, 0, ST_ARG_FORCE_TX_VIDEO_NUMA},
     {"force_rx_video_numa", required_argument, 0, ST_ARG_FORCE_RX_VIDEO_NUMA},
+    {"force_tx_audio_numa", required_argument, 0, ST_ARG_FORCE_TX_AUDIO_NUMA},
+    {"force_rx_audio_numa", required_argument, 0, ST_ARG_FORCE_RX_AUDIO_NUMA},
 
     {"config_file", required_argument, 0, ST_ARG_CONFIG_FILE},
     {"test_time", required_argument, 0, ST_ARG_TEST_TIME},
@@ -614,6 +618,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_FORCE_RX_VIDEO_NUMA:
         ctx->force_rx_video_numa = atoi(optarg);
+        break;
+      case ST_ARG_FORCE_TX_AUDIO_NUMA:
+        ctx->force_tx_audio_numa = atoi(optarg);
+        break;
+      case ST_ARG_FORCE_RX_AUDIO_NUMA:
+        ctx->force_rx_audio_numa = atoi(optarg);
         break;
       case ST_ARG_SHAPING:
         if (!strcmp(optarg, "narrow"))

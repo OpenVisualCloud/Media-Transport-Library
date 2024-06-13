@@ -3,6 +3,8 @@
 ## Changelog for 24.12
 
 * ice: update driver to 1.14.9
+* st2110/20: add force numa option support on session level, see ST20_TX_FLAG_FORCE_NUMA/ST20_RX_FLAG_FORCE_NUMA
+* st2110/30: add force numa option support on session level, see ST30_TX_FLAG_FORCE_NUMA/ST30_RX_FLAG_FORCE_NUMA
 
 ## Changelog for 24.06
 

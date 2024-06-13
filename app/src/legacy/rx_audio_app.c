@@ -384,6 +384,11 @@ static int app_rx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
     s->enable_timing_parser_meta = true;
   }
 
+  if (ctx->force_rx_audio_numa >= 0) {
+    ops.flags |= ST30_RX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_rx_audio_numa;
+  }
+
   st_pthread_mutex_init(&s->st30_wake_mutex, NULL);
   st_pthread_cond_init(&s->st30_wake_cond, NULL);
 
