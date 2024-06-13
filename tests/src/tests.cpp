@@ -549,6 +549,23 @@ TEST(Misc, log_level) {
   EXPECT_GE(ret, 0);
 }
 
+TEST(Misc, get_numa_id) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto handle = ctx->handle;
+  int ret;
+
+  ret = mtl_get_numa_id(handle, MTL_PORT_P);
+  EXPECT_GE(ret, 0);
+
+  if (ctx->para.num_ports > 1) {
+    ret = mtl_get_numa_id(handle, MTL_PORT_R);
+    EXPECT_GE(ret, 0);
+  }
+
+  ret = mtl_get_numa_id(handle, (enum mtl_port)MTL_PORT_MAX);
+  EXPECT_LT(ret, 0);
+}
+
 static void st10_timestamp_test(uint32_t sampling_rate) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
   auto handle = ctx->handle;

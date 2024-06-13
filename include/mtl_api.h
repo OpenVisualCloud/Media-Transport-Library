@@ -313,7 +313,7 @@ enum st21_tx_pacing_way {
 
 /** MTL init flag */
 enum mtl_init_flag {
-  /** lib will bind all process threads to NIC numa socket, default behavior */
+  /** lib will bind all MTL threads to NIC numa socket, default behavior */
   MTL_FLAG_BIND_NUMA = (MTL_BIT64(0)),
   /** Enable built-in PTP implementation */
   MTL_FLAG_PTP_ENABLE = (MTL_BIT64(1)),
@@ -397,7 +397,7 @@ enum mtl_init_flag {
   MTL_FLAG_NO_MULTICAST = (MTL_BIT64(19)),
   /** Dedicated lcore for system CNI tasks. */
   MTL_FLAG_DEDICATED_SYS_LCORE = (MTL_BIT64(20)),
-  /** not bind all process threads to NIC numa socket */
+  /** not bind all MTL threads to NIC numa socket */
   MTL_FLAG_NOT_BIND_NUMA = (MTL_BIT64(21)),
 
   /**
@@ -459,6 +459,8 @@ enum mtl_init_flag {
    * streams have unique UDP port numbers.
    */
   MTL_FLAG_RX_UDP_PORT_ONLY = (MTL_BIT64(46)),
+  /** not bind current process to NIC numa socket */
+  MTL_FLAG_NOT_BIND_PROCESS_NUMA = (MTL_BIT64(47)),
 };
 
 /** MTL port init flag */
@@ -781,6 +783,19 @@ int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status
  *   - <0: Error code if fail.
  */
 int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
+
+/**
+ * Get the numa socket id for a MTL port.
+ *
+ * @param mt
+ *   The handle to MTL instance.
+ * @param port
+ *   The port index.
+ * @return
+ *   >= 0 The numa socket ID.
+ *   - <0: Error code if fail.
+ */
+int mtl_get_numa_id(mtl_handle mt, enum mtl_port port);
 
 /** Helper to set the port for struct mtl_init_params */
 int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
