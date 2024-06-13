@@ -447,10 +447,6 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     }
   }
 
-#ifdef MTL_HAS_ASAN
-  mt_asan_init();
-#endif
-
 #ifndef WINDOWSENV
   int numa_nodes = 0;
   if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
@@ -464,6 +460,10 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     numa_bind(mask);
     numa_bitmask_free(mask);
   }
+#endif
+
+#ifdef MTL_HAS_ASAN
+  mt_asan_init();
 #endif
 
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
