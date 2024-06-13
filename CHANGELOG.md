@@ -2,6 +2,8 @@
 
 ## Changelog for 24.12
 
+* ice: update driver to 1.14.9
+
 ## Changelog for 24.06
 
 * dpdk: upgrade dpdk version to 23.11.
