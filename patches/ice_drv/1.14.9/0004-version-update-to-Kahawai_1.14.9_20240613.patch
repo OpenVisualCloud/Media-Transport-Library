@@ -1,0 +1,26 @@
+From e444a61d379f7d18fdae4e3051403c6ec099ef80 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Thu, 13 Jun 2024 10:11:29 +0800
+Subject: [PATCH 4/4] version: update to Kahawai_1.14.9_20240613
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ src/ice_main.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ice_main.c b/src/ice_main.c
+index 95e18ea..3a5df55 100644
+--- a/src/ice_main.c
++++ b/src/ice_main.c
+@@ -32,7 +32,7 @@
+ #define DRV_VERSION_MINOR 14
+ #define DRV_VERSION_BUILD 9
+ 
+-#define DRV_VERSION	"1.14.9"
++#define DRV_VERSION	"Kahawai_1.14.9_20240613"
+ #define DRV_SUMMARY	"Intel(R) Ethernet Connection E800 Series Linux Driver"
+ #ifdef ICE_ADD_PROBES
+ #define DRV_VERSION_EXTRA "_probes"
+-- 
+2.34.1
+
