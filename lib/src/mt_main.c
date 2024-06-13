@@ -451,6 +451,21 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
   mt_asan_init();
 #endif
 
+#ifndef WINDOWSENV
+  int numa_nodes = 0;
+  if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
+  if (!(p->flags & MTL_FLAG_NOT_BIND_PROCESS_NUMA) && (numa_nodes > 1)) {
+    /* bind current thread and its children to socket node */
+    struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
+
+    info("%s, bind to socket %d, numa_nodes %d\n", __func__, socket[MTL_PORT_P],
+         numa_nodes);
+    numa_bitmask_setbit(mask, socket[MTL_PORT_P]);
+    numa_bind(mask);
+    numa_bitmask_free(mask);
+  }
+#endif
+
   impl = mt_rte_zmalloc_socket(sizeof(*impl), socket[MTL_PORT_P]);
   if (!impl) {
     err("%s, impl malloc fail on socket %d\n", __func__, socket[MTL_PORT_P]);
