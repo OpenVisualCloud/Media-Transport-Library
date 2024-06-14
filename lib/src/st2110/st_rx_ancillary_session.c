@@ -332,19 +332,17 @@ static int rx_ancillary_session_init_mcast(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_ancillary_session_init_sw(struct mtl_main_impl* impl,
-                                        struct st_rx_ancillary_sessions_mgr* mgr,
+static int rx_ancillary_session_init_sw(struct st_rx_ancillary_sessions_mgr* mgr,
                                         struct st_rx_ancillary_session_impl* s) {
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
-  enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
 
   snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_RX_ANCILLARY_PREFIX, mgr_idx, idx);
   flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = s->ops.rtp_ring_size;
-  ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
+  ring = rte_ring_create(ring_name, count, s->socket_id, flags);
   if (count <= 0) {
     err("%s(%d,%d), invalid rtp_ring_size %d\n", __func__, mgr_idx, idx, count);
     return -ENOMEM;
@@ -413,7 +411,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
-  ret = rx_ancillary_session_init_sw(impl, mgr, s);
+  ret = rx_ancillary_session_init_sw(mgr, s);
   if (ret < 0) {
     err("%s(%d), rx_ancillary_session_init_rtps fail %d\n", __func__, idx, ret);
     rx_ancillary_session_uinit(impl, s);
@@ -611,22 +609,24 @@ static int rx_ancillary_sessions_mgr_init(struct mtl_main_impl* impl,
 }
 
 static struct st_rx_ancillary_session_impl* rx_ancillary_sessions_mgr_attach(
-    struct st_rx_ancillary_sessions_mgr* mgr, struct st40_rx_ops* ops) {
+    struct mtl_sch_impl* sch, struct st40_rx_ops* ops) {
+  struct st_rx_ancillary_sessions_mgr* mgr = &sch->rx_anc_mgr;
   int midx = mgr->idx;
-  struct mtl_main_impl* impl = mgr->parent;
   int ret;
   struct st_rx_ancillary_session_impl* s;
+  int socket = mt_sch_socket_id(sch);
 
   /* find one empty slot in the mgr */
   for (int i = 0; i < ST_MAX_RX_ANC_SESSIONS; i++) {
     if (!rx_ancillary_session_get_empty(mgr, i)) continue;
 
-    s = mt_rte_zmalloc_socket(sizeof(*s), mt_socket_id(impl, MTL_PORT_P));
+    s = mt_rte_zmalloc_socket(sizeof(*s), socket);
     if (!s) {
       err("%s(%d), session malloc fail on %d\n", __func__, midx, i);
       rx_ancillary_session_put(mgr, i);
       return NULL;
     }
+    s->socket_id = socket;
     ret = rx_ancillary_session_init(mgr, s, i);
     if (ret < 0) {
       err("%s(%d), init fail on %d\n", __func__, midx, i);
@@ -796,14 +796,19 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
     return NULL;
   }
 
-  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), mt_socket_id(impl, MTL_PORT_P));
+  enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
+
+  s_impl = mt_rte_zmalloc_socket(sizeof(*s_impl), socket);
   if (!s_impl) {
-    err("%s, s_impl malloc fail\n", __func__);
+    err("%s, s_impl malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 
   quota_mbs = 0;
-  sch = mt_sch_get(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL);
+  sch =
+      mt_sch_get_by_socket(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL, socket);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -821,7 +826,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops) {
   }
 
   mt_pthread_mutex_lock(&sch->rx_anc_mgr_mutex);
-  s = rx_ancillary_sessions_mgr_attach(&sch->rx_anc_mgr, ops);
+  s = rx_ancillary_sessions_mgr_attach(sch, ops);
   mt_pthread_mutex_unlock(&sch->rx_anc_mgr_mutex);
   if (!s) {
     err("%s, rx_ancillary_sessions_mgr_attach fail\n", __func__);
