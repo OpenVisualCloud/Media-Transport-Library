@@ -59,6 +59,8 @@ static int ufd_free_slot(struct ufd_mt_ctx* ctx, struct ufd_slot* slot) {
 }
 
 static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
+  struct mtl_main_impl* mt = ctx->mt;
+
   if (ctx->slots) {
     for (int i = 0; i < ufd_max_slot(ctx); i++) {
       /* check if any not free slot */
@@ -69,15 +71,18 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
     mt_rte_free(ctx->slots);
     ctx->slots = NULL;
   }
-  if (ctx->mt) {
-    mtl_uninit(ctx->mt);
-    ctx->mt = NULL;
-  }
   mt_pthread_mutex_destroy(&ctx->slots_lock);
   if (ctx->alloc_with_rte)
     mt_rte_free(ctx);
   else
     mt_free(ctx);
+
+  /* always mtl_uninit at the last */
+  if (mt) {
+    mtl_uninit(mt);
+    mt = NULL;
+  }
+
   return 0;
 }
 
