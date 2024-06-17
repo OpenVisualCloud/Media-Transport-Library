@@ -128,6 +128,11 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
   ops.flags |= ST30P_RX_FLAG_BLOCK_GET;
   ops.framebuff_cnt = 3;
 
+  if (ctx->force_rx_audio_numa >= 0) {
+    ops.flags |= ST30P_RX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_rx_audio_numa;
+  }
+
   s->num_port = ops.port.num_port;
 
   handle = st30p_rx_create(ctx->st, &ops);

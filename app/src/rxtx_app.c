@@ -214,6 +214,8 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
 
   ctx->force_tx_video_numa = -1;
   ctx->force_rx_video_numa = -1;
+  ctx->force_tx_audio_numa = -1;
+  ctx->force_rx_audio_numa = -1;
 
   ctx->last_stat_time_ns = st_app_get_monotonic_time();
 }

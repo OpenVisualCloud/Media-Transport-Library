@@ -131,6 +131,13 @@ static int rx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_rx
   ops_rx.type = ST30_TYPE_FRAME_LEVEL;
   ops_rx.notify_frame_ready = rx_st30p_frame_ready;
 
+  if (ops->flags & ST30P_RX_FLAG_DATA_PATH_ONLY)
+    ops_rx.flags |= ST30_RX_FLAG_DATA_PATH_ONLY;
+  if (ops->flags & ST30P_RX_FLAG_FORCE_NUMA) {
+    ops_rx.socket_id = ops->socket_id;
+    ops_rx.flags |= ST30_RX_FLAG_FORCE_NUMA;
+  }
+
   transport = st30_rx_create(impl, &ops_rx);
   if (!transport) {
     err("%s(%d), transport create fail\n", __func__, idx);
@@ -151,10 +158,9 @@ static int rx_st30p_uinit_fbs(struct st30p_rx_ctx* ctx) {
   return 0;
 }
 
-static int rx_st30p_init_fbs(struct mtl_main_impl* impl, struct st30p_rx_ctx* ctx,
-                             struct st30p_rx_ops* ops) {
+static int rx_st30p_init_fbs(struct st30p_rx_ctx* ctx, struct st30p_rx_ops* ops) {
   int idx = ctx->idx;
-  int soc_id = mt_socket_id(impl, MTL_PORT_P);
+  int soc_id = ctx->socket_id;
   struct st30p_rx_frame* frames;
 
   frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
@@ -392,13 +398,23 @@ st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops) {
     return NULL;
   }
 
-  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), mt_socket_id(impl, MTL_PORT_P));
+  enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
+  int socket = mt_socket_id(impl, port);
+
+  if (ops->flags & ST30P_RX_FLAG_FORCE_NUMA) {
+    socket = ops->socket_id;
+    info("%s, ST30P_RX_FLAG_FORCE_NUMA to socket %d\n", __func__, socket);
+  }
+
+  ctx = mt_rte_zmalloc_socket(sizeof(*ctx), socket);
   if (!ctx) {
-    err("%s, ctx malloc fail\n", __func__);
+    err("%s, ctx malloc fail on socket %d\n", __func__, socket);
     return NULL;
   }
 
   ctx->idx = idx;
+  ctx->socket_id = socket;
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST30_HANDLE_PIPELINE_RX;
@@ -420,7 +436,7 @@ st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops) {
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
   /* init fbs */
-  ret = rx_st30p_init_fbs(impl, ctx, ops);
+  ret = rx_st30p_init_fbs(ctx, ops);
   if (ret < 0) {
     err("%s(%d), init fbs fail %d\n", __func__, idx, ret);
     st30p_rx_free(ctx);

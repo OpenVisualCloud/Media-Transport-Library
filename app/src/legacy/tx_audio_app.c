@@ -476,6 +476,11 @@ static int app_tx_audio_init(struct st_app_context* ctx, st_json_audio_session_t
   ops.rl_accuracy_ns = ctx->tx_audio_rl_accuracy_us * 1000;
   ops.rl_offset_ns = ctx->tx_audio_rl_offset_us * 1000;
 
+  if (ctx->force_tx_audio_numa >= 0) {
+    ops.flags |= ST30_TX_FLAG_FORCE_NUMA;
+    ops.socket_id = ctx->force_tx_audio_numa;
+  }
+
   handle = st30_tx_create(ctx->st, &ops);
   if (!handle) {
     err("%s(%d), st30_tx_create fail\n", __func__, idx);

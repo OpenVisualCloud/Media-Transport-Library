@@ -65,6 +65,8 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * If use dedicated queue for TX.
  */
 #define ST30_TX_FLAG_DEDICATE_QUEUE (MTL_BIT32(7))
+/** Force the numa of the created session, both CPU and memory */
+#define ST30_TX_FLAG_FORCE_NUMA (MTL_BIT32(8))
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -77,6 +79,8 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
  * If enable the rtcp.
  */
 #define ST30_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
+/** Force the numa of the created session, both CPU and memory */
+#define ST30_RX_FLAG_FORCE_NUMA (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st30_rx_ops.
  * Enable the timing analyze in the stat dump
@@ -404,6 +408,8 @@ struct st30_tx_ops {
   uint32_t rl_accuracy_ns;
   /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check point */
   int32_t rl_offset_ns;
+  /**  Use this socket if ST30_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 
   /**
    * size for each sample group,
@@ -499,6 +505,8 @@ struct st30_rx_ops {
    */
   int (*notify_timing_parser_result)(void* priv, enum mtl_session_port port,
                                      struct st30_rx_tp_meta* tp);
+  /**  Use this socket if ST30_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int socket_id;
 
   /**
    * size for each sample group,
