@@ -267,8 +267,19 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   flow.dst_port = dst_port;
   q->rxq = mt_rxq_get(impl, port, &flow);
   if (!q->rxq) {
-    err("%s(%d,%u), get rxq fail\n", __func__, port, dst_port);
-    goto out_unlock_fail;
+    /* wa for e810 pf mode since it doesn't support MT_RXQ_FLOW_F_NO_IP */
+    warn("%s(%d,%u), get rxq fail with no ip flow, try cni queue\n", __func__, port,
+         dst_port);
+    flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
+    q->rxq = mt_rxq_get(impl, port, &flow);
+    if (!q->rxq) {
+      err("%s(%d,%u), get rxq fail with CNI also\n", __func__, port, dst_port);
+      goto out_unlock_fail;
+    }
+    /* start mtl sch with CNI tasklet mode */
+    if (!mt_started(impl)) {
+      mtl_start(impl);
+    }
   }
   q->rxq_id = mt_rxq_queue_id(q->rxq);
 
