@@ -71,6 +71,7 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
     mt_rte_free(ctx->slots);
     ctx->slots = NULL;
   }
+  mt_pthread_mutex_destroy(&ctx->slots_lock);
   if (ctx->alloc_with_rte)
     mt_rte_free(ctx);
   else
@@ -81,7 +82,6 @@ static int ufd_free_mt_ctx(struct ufd_mt_ctx* ctx) {
     mtl_uninit(mt);
     mt = NULL;
   }
-  mt_pthread_mutex_destroy(&ctx->slots_lock);
 
   return 0;
 }
