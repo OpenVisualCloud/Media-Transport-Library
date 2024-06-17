@@ -389,6 +389,7 @@ struct mt_cni_impl {
   rte_atomic32_t stop_thread;
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
+  int thread_sleep_ms;
 
   struct mt_cni_entry entries[MTL_PORT_MAX];
 
