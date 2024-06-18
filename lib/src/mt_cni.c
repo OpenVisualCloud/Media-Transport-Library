@@ -393,7 +393,7 @@ static void* cni_traffic_thread(void* arg) {
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
     cni_traffic(impl);
-    mt_sleep_ms(1);
+    mt_sleep_ms(cni->thread_sleep_ms);
   }
   info("%s, stop\n", __func__);
 
@@ -563,6 +563,7 @@ int mt_cni_init(struct mtl_main_impl* impl) {
 
   cni_impl->lcore_tasklet = (p->flags & MTL_FLAG_CNI_THREAD) ? false : true;
   rte_atomic32_set(&cni_impl->stop_thread, 0);
+  cni_impl->thread_sleep_ms = 1;
 
   for (int i = 0; i < num_ports; i++) {
     struct mt_cni_entry* cni = cni_get_entry(impl, i);
@@ -718,6 +719,9 @@ struct mt_csq_entry* mt_csq_get(struct mtl_main_impl* impl, enum mtl_port port,
   MT_TAILQ_INSERT_HEAD(&cni->csq_queues, entry, next);
   cni->csq_idx++;
   csq_unlock(cni);
+
+  /* csq enabled, disable the sleep */
+  mt_get_cni(impl)->thread_sleep_ms = 0;
 
   uint8_t* ip = flow->dip_addr;
   info("%s(%d), ip %u.%u.%u.%u port %u on %d\n", __func__, port, ip[0], ip[1], ip[2],

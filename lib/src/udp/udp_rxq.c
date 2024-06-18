@@ -231,6 +231,7 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   if (q) {
     if (!q->reuse_port || !create->reuse_port) {
       err("%s(%d,%u), already used\n", __func__, port, dst_port);
+      q = NULL;
       goto out_unlock_fail;
     }
 
@@ -257,6 +258,7 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   q->rx_burst_pkts = 128;
   MT_TAILQ_INIT(&q->client_head);
   mt_pthread_mutex_init(&q->mutex, NULL);
+  rte_atomic32_inc(&q->refcnt);
 
   /* create flow */
   struct mt_rxq_flow flow;
@@ -265,21 +267,29 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
   flow.dst_port = dst_port;
   q->rxq = mt_rxq_get(impl, port, &flow);
   if (!q->rxq) {
-    err("%s(%d,%u), get rxq fail\n", __func__, port, dst_port);
-    urq_put(q);
-    goto out_unlock_fail;
+    /* wa for e810 pf mode since it doesn't support MT_RXQ_FLOW_F_NO_IP */
+    warn("%s(%d,%u), get rxq fail with no ip flow, try cni queue\n", __func__, port,
+         dst_port);
+    flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
+    q->rxq = mt_rxq_get(impl, port, &flow);
+    if (!q->rxq) {
+      err("%s(%d,%u), get rxq fail with CNI also\n", __func__, port, dst_port);
+      goto out_unlock_fail;
+    }
+    /* start mtl sch with CNI tasklet mode */
+    if (!mt_started(impl)) {
+      mtl_start(impl);
+    }
   }
   q->rxq_id = mt_rxq_queue_id(q->rxq);
 
   ret = urq_mgr_add(mgr, q);
   if (ret < 0) {
     err("%s(%d,%u), urq mgr add fail %d\n", __func__, port, dst_port, ret);
-    urq_put(q);
     goto out_unlock_fail;
   }
 
   *idx = 0;
-  rte_atomic32_inc(&q->refcnt);
   urq_mgr_unlock(mgr);
 
   info("%s(%d,%u), new q %p\n", __func__, port, dst_port, q);
@@ -287,6 +297,7 @@ static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
 
 out_unlock_fail:
   urq_mgr_unlock(mgr);
+  if (q) urq_put(q);
   return NULL;
 }
 
