@@ -207,21 +207,26 @@ typedef void (*mtl_log_prefix_formatter_t)(char* buf, size_t buf_sz);
 typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char* format, ...);
 
 /**
- * Poll mode driver type
+ * Poll mode driver type, not change the enum value any more if one PMD type is marked as
+ * production quality.
  */
 enum mtl_pmd_type {
   /** DPDK user driver PMD */
   MTL_PMD_DPDK_USER = 0,
-  /** address family(kernel) high performance packet processing */
-  MTL_PMD_DPDK_AF_XDP,
-  /** allows a DPDK application to send and receive raw packets through the kernel */
-  MTL_PMD_DPDK_AF_PACKET,
-  /** Run MTL directly on kernel socket APIs */
-  MTL_PMD_KERNEL_SOCKET,
   /** Run MTL directly on AF_XDP, CAP_NET_RAW is needed for UMEM creation */
-  MTL_PMD_NATIVE_AF_XDP,
-  /** Run MTL directly on RDMA UD */
-  MTL_PMD_RDMA_UD,
+  MTL_PMD_NATIVE_AF_XDP = 4,
+
+  MTL_PMD_EXPERIMENTAL = 16,
+  /** Below PMDs are only for experimental usage, not for production usage. */
+  /** experimental, Run MTL directly on kernel socket APIs */
+  MTL_PMD_KERNEL_SOCKET = 17,
+  /** experimental, Run MTL directly on RDMA UD with ST2110 packing method */
+  MTL_PMD_RDMA_UD = 18,
+  /** experimental, DPDK PMD with address family(kernel) high performance packet
+     processing */
+  MTL_PMD_DPDK_AF_XDP = 19,
+  /** experimental, DPDK PMD send and receive raw packets through the kernel */
+  MTL_PMD_DPDK_AF_PACKET = 20,
   /** max value of this enum */
   MTL_PMD_TYPE_MAX,
 };
@@ -496,10 +501,13 @@ struct mtl_port_init_params {
 struct mtl_init_params {
   /**
    * Mandatory. PCIE BDF port, ex: 0000:af:01.0.
-   * For MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex: dpdk_af_xdp:enp175s0f0.
-   *  MTL_PMD_KERNEL_SOCKET, use kernel + ifname, ex: kernel:enp175s0f0.
-   *  MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
-   *  MTL_PMD_NATIVE_AF_XDP, use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
+   * MTL_PMD_NATIVE_AF_XDP, use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
+   *
+   * Below PMDs are only for experimental usage, not for production usage.
+   * MTL_PMD_KERNEL_SOCKET, use kernel + ifname, ex: kernel:enp175s0f0.
+   * MTL_PMD_RDMA_UD with ST2110 packing, use rdma_ud + ifname, ex: rdma_ud:enp175s0f0.
+   * MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex: dpdk_af_xdp:enp175s0f0.
+   * MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
    */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
