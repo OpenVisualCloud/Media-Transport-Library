@@ -246,12 +246,12 @@ static int udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   int idx = s->idx;
   int ret;
 
-    // Ensure pkts_nb is greater than 0
+  // Ensure pkts_nb is greater than 0
   if (pkts_nb == 0) {
     err("%s(%d): pkts_nb is 0\n", __func__, idx);
     return -EINVAL;  // Invalid argument
   }
-  
+
   /* get the dst mac address */
   struct rte_ether_addr d_addr;
   uint8_t* dip = (uint8_t*)&addr_in->sin_addr;
