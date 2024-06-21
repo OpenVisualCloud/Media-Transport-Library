@@ -1463,7 +1463,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   dbg("%s(%d,%d): line info %u %u %u\n", __func__, s->idx, s_port, line1_number,
       line1_offset, line1_length);
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->stat_pkts_wrong_pt_dropped++;
@@ -1714,7 +1714,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   uint8_t payload_type = rtp->payload_type;
   int pkt_idx = -1;
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->stat_pkts_wrong_pt_dropped++;
@@ -1871,7 +1871,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   int pkt_idx = -1;
   int ret;
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->stat_pkts_wrong_pt_dropped++;
@@ -2053,7 +2053,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   struct st_rx_video_hdr_split_info* hdr_split = &s->hdr_split_info[s_port];
   struct rte_mbuf* mbuf_next = mbuf->next;
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->stat_pkts_wrong_pt_dropped++;
@@ -2527,7 +2527,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
   /* only detect on the main port */
   if (MTL_SESSION_PORT_P != s_port) return 0;
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s, payload_type mismatch %d %d\n", __func__, payload_type, ops->payload_type);
     s->stat_pkts_wrong_pt_dropped++;
     return -EINVAL;
@@ -3871,6 +3871,7 @@ static int rv_ops_check(struct st20_rx_ops* ops) {
     }
   }
 
+  /* Zero means disable the payload_type check */
   if (!st_is_valid_payload_type(ops->payload_type)) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;
@@ -3935,6 +3936,7 @@ static int rv_st22_ops_check(struct st22_rx_ops* ops) {
     }
   }
 
+  /* Zero means disable the payload_type check */
   if (!st_is_valid_payload_type(ops->payload_type)) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;

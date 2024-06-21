@@ -262,7 +262,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   uint8_t payload_type = rtp->payload_type;
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr);
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->st30_stat_pkts_wrong_pt_dropped++;
@@ -408,7 +408,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->st30_stat_pkts_wrong_pt_dropped++;
@@ -1199,6 +1199,7 @@ static int rx_audio_ops_check(struct st30_rx_ops* ops) {
     }
   }
 
+  /* Zero means disable the payload_type check */
   if (!st_is_valid_payload_type(ops->payload_type)) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;

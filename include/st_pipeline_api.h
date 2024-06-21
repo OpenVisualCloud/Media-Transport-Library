@@ -808,7 +808,8 @@ struct st_rx_port {
   char port[MTL_SESSION_PORT_MAX][MTL_PORT_MAX_LEN];
   /** Mandatory. UDP destination port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
-  /** Mandatory. 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
+   * payload_type check on the RX pkt path */
   uint8_t payload_type;
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */

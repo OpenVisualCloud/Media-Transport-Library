@@ -638,6 +638,7 @@ struct st20p_rx_digest_test_para {
   bool block_get;
   bool rx_timing_parser;
   bool rx_auto_detect;
+  bool zero_payload_type;
 };
 
 static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* para) {
@@ -666,6 +667,7 @@ static void test_st20p_init_rx_digest_para(struct st20p_rx_digest_test_para* par
   para->ssrc = 0;
   para->block_get = false;
   para->rx_auto_detect = false;
+  para->zero_payload_type = false;
 }
 
 static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
@@ -766,7 +768,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
-    ops_tx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+    ops_tx.port.payload_type = para->zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.width = width[i];
     ops_tx.height = height[i];
@@ -996,7 +998,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST20P_TEST_UDP_PORT + i * 2;
-    ops_rx.port.payload_type = ST20P_TEST_PAYLOAD_TYPE;
+    ops_rx.port.payload_type = para->zero_payload_type ? 0 : ST20P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.width = width[i];
     ops_rx.height = height[i];
@@ -1175,6 +1177,7 @@ TEST(St20p, digest_1080p_s1) {
   para.check_fps = false;
   para.rx_timing_parser = true;
   para.rx_auto_detect = true;
+  para.zero_payload_type = true;
 
   st20p_rx_digest_test(fps, width, height, tx_fmt, t_fmt, rx_fmt, &para);
 }

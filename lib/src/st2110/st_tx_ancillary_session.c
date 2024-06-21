@@ -181,9 +181,8 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   rtp->base.padding = 0;
   rtp->base.version = ST_RVRTP_VERSION_2;
   rtp->base.marker = 0;
-  rtp->base.payload_type = st_is_valid_payload_type(ops->payload_type)
-                               ? ops->payload_type
-                               : ST_RANCRTP_PAYLOAD_TYPE_ANCILLARY;
+  rtp->base.payload_type =
+      ops->payload_type ? ops->payload_type : ST_RANCRTP_PAYLOAD_TYPE_ANCILLARY;
   uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st40_seq_id = 0;
@@ -1584,8 +1583,8 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     rte_atomic32_inc(&mgr->transmitter_clients);
   }
 
-  info("%s(%d), type %d flags 0x%x, %s\n", __func__, idx, ops->type, ops->flags,
-       ops->interlaced ? "interlace" : "progressive");
+  info("%s(%d), type %d flags 0x%x pt %u, %s\n", __func__, idx, ops->type, ops->flags,
+       ops->payload_type, ops->interlaced ? "interlace" : "progressive");
   return 0;
 }
 

@@ -452,7 +452,8 @@ struct st30_rx_ops {
   enum st30_ptime ptime;
   /** Mandatory. Session streaming type, frame or RTP */
   enum st30_type type;
-  /** Mandatory. 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
+   * payload_type check on the RX pkt path */
   uint8_t payload_type;
 
   /** Optional. source filter IP address of multicast */

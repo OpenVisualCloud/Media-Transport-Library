@@ -91,7 +91,8 @@ struct st20rc_rx_ops {
   enum st20_fmt fmt;
   /** interlace or not, false: non-interlaced: true: interlaced */
   bool interlaced;
-  /** 7 bits payload type define in RFC3550 */
+  /** 7 bits payload type define in RFC3550. Zero means disable the
+   * payload_type check on the RX pkt path */
   uint8_t payload_type;
   /** Optional. Synchronization source defined in RFC3550, RX session will check the
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
