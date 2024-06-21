@@ -98,7 +98,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
 
-  if (payload_type != ops->payload_type) {
+  if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     s->st40_stat_pkts_wrong_pt_dropped++;
@@ -426,7 +426,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
   }
 
   s->attached = true;
-  info("%s(%d), flags 0x%x, %s\n", __func__, idx, ops->flags,
+  info("%s(%d), flags 0x%x pt %u, %s\n", __func__, idx, ops->flags, ops->payload_type,
        ops->interlaced ? "interlace" : "progressive");
   return 0;
 }
@@ -742,6 +742,7 @@ static int rx_ancillary_ops_check(struct st40_rx_ops* ops) {
     return -EINVAL;
   }
 
+  /* Zero means disable the payload_type check */
   if (!st_is_valid_payload_type(ops->payload_type)) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
     return -EINVAL;

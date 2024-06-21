@@ -1447,7 +1447,8 @@ struct st20_rx_ops {
   bool interlaced;
   /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
-  /** Mandatory. 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
+   * payload_type check on the RX pkt path */
   uint8_t payload_type;
 
   /** Optional. source filter IP address of multicast */
@@ -1605,7 +1606,8 @@ struct st22_rx_ops {
   bool interlaced;
   /** Mandatory. Session resolution format */
   enum st20_fmt fmt;
-  /** Mandatory. 7 bits payload type define in RFC3550 */
+  /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
+   * payload_type check on the RX pkt path */
   uint8_t payload_type;
 
   /** Optional. source filter IP address of multicast */

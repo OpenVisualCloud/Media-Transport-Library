@@ -182,9 +182,8 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   rtp->padding = 0;
   rtp->version = ST_RVRTP_VERSION_2;
   rtp->marker = 0;
-  rtp->payload_type = st_is_valid_payload_type(ops->payload_type)
-                          ? ops->payload_type
-                          : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
+  rtp->payload_type =
+      ops->payload_type ? ops->payload_type : ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO;
   uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x223450;
   rtp->ssrc = htonl(ssrc);
 
@@ -2158,8 +2157,8 @@ static int tx_audio_session_attach(struct mtl_main_impl* impl,
   s->frames_per_sec = (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts;
   s->active = true;
 
-  info("%s(%d), fmt %d channel %u sampling %d ptime %d\n", __func__, idx, ops->fmt,
-       ops->channel, ops->sampling, ops->ptime);
+  info("%s(%d), fmt %d channel %u sampling %d ptime %d pt %u\n", __func__, idx, ops->fmt,
+       ops->channel, ops->sampling, ops->ptime, ops->payload_type);
   info("%s(%d), pkt_len %u frame_size %u frames %u fps %f, pacing_way %s\n", __func__,
        idx, s->pkt_len, s->st30_frame_size, s->st30_frames_cnt,
        (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,

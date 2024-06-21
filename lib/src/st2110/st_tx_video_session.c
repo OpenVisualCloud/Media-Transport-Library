@@ -833,9 +833,8 @@ static int tv_init_hdr(struct mtl_main_impl* impl, struct st_tx_video_session_im
   rtp->base.padding = 0;
   rtp->base.version = ST_RVRTP_VERSION_2;
   rtp->base.marker = 0;
-  rtp->base.payload_type = st_is_valid_payload_type(ops->payload_type)
-                               ? ops->payload_type
-                               : ST_RVRTP_PAYLOAD_TYPE_RAW_VIDEO;
+  rtp->base.payload_type =
+      ops->payload_type ? ops->payload_type : ST_RVRTP_PAYLOAD_TYPE_RAW_VIDEO;
   uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x123450;
   rtp->base.ssrc = htonl(ssrc);
   rtp->row_length = htons(s->st20_pkt_len);

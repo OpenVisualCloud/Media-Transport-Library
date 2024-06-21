@@ -254,6 +254,7 @@ struct st30p_rx_digest_test_para {
   uint32_t ssrc;
   bool block_get;
   bool dedicated_tx_queue;
+  bool zero_payload_type;
 };
 
 static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para* para) {
@@ -266,6 +267,7 @@ static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para* par
   para->ssrc = 0;
   para->block_get = false;
   para->dedicated_tx_queue = false;
+  para->zero_payload_type = false;
 }
 
 static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
@@ -335,7 +337,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ST30P_TEST_UDP_PORT + i * 2;
-    ops_tx.port.payload_type = ST30P_TEST_PAYLOAD_TYPE;
+    ops_tx.port.payload_type = para->zero_payload_type ? 0 : ST30P_TEST_PAYLOAD_TYPE;
     ops_tx.port.ssrc = para->ssrc;
     ops_tx.fmt = fmt[i];
     ops_tx.channel = channel[i];
@@ -414,7 +416,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
     snprintf(ops_rx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx->para.port[MTL_PORT_R]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ST30P_TEST_UDP_PORT + i * 2;
-    ops_rx.port.payload_type = ST30P_TEST_PAYLOAD_TYPE;
+    ops_rx.port.payload_type = para->zero_payload_type ? 0 : ST30P_TEST_PAYLOAD_TYPE;
     ops_rx.port.ssrc = para->ssrc;
     ops_rx.fmt = fmt[i];
     ops_rx.channel = channel[i];
@@ -508,6 +510,7 @@ TEST(St30p, digest_s3) {
   para.check_fps = true;
   para.sessions = 3;
   para.dedicated_tx_queue = true;
+  para.zero_payload_type = true;
 
   st30p_rx_digest_test(f, c, s, pt, &para);
 }
