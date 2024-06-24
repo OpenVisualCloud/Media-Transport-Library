@@ -24,6 +24,7 @@ fn main() {
             tx_sessions_cnt_max: 1,
             rx_sessions_cnt_max: 1,
             lcores: null_mut(),
+            main_lcore: 0,
             dma_dev_port: [[0; 64]; 8],
             num_dma_dev_port: 0,
             log_level: mtl_log_level_MTL_LOG_LEVEL_INFO,
