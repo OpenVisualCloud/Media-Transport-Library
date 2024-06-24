@@ -409,11 +409,22 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
+  /* --main-lcore */
+  char main_lcore[64];
+  argv[argc] = "--main-lcore";
+  argc++;
+  info("%s, main_lcore: %u\n", __func__, p->main_lcore);
+  snprintf(main_lcore, sizeof(main_lcore), "%u", p->main_lcore);
+  argv[argc] = main_lcore;
+  argc++;
+
+  char lcores[128];
   if (p->lcores) {
     argv[argc] = "-l";
     argc++;
     info("%s, lcores: %s\n", __func__, p->lcores);
-    argv[argc] = p->lcores;
+    snprintf(lcores, sizeof(lcores), "%u,%s", p->main_lcore, p->lcores);
+    argv[argc] = lcores;
     argc++;
   }
 
