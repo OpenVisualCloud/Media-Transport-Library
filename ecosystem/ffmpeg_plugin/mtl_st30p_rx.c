@@ -180,6 +180,13 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st30p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
   info(ctx, "%s(%d), rx handle %p\n", __func__, s->idx, s->rx_handle);
   return 0;
 }

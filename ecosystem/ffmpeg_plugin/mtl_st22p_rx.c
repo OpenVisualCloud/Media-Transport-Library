@@ -180,6 +180,13 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
   info(ctx, "%s(%d), rx handle %p\n", __func__, s->idx, s->rx_handle);
   return 0;
 }
@@ -286,6 +293,13 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
   ctx->packet_size = img_buf_size;
   st->codecpar->bit_rate =
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
+
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(EIO);
+  }
 
   info(ctx, "%s(%d), rx handle %p, max packet_size %u\n", __func__, s->idx, s->rx_handle,
        ctx->packet_size);
