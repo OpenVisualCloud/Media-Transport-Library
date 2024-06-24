@@ -642,6 +642,7 @@ int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
   int ret;
   bool skip_numa_check = false;
   struct mt_sch_mgr* mgr = mt_sch_get_mgr(impl);
+  int tried = 0;
 
   if (mt_user_not_bind_numa(impl)) skip_numa_check = true;
 
@@ -664,6 +665,7 @@ again:
           return 0;
         }
       }
+      tried++;
     } while (cur_lcore < RTE_MAX_LCORE);
   } else {
     struct mt_user_info* info = &impl->u_info;
@@ -707,6 +709,7 @@ again:
           return 0;
         }
       }
+      tried++;
     } while (cur_lcore < RTE_MAX_LCORE);
 
     sch_filelock_unlock(mgr);
@@ -719,7 +722,8 @@ again:
     goto again;
   }
 
-  err("%s, no available lcore, type %s\n", __func__, lcore_type_name(type));
+  err("%s, no available lcore, type %s tried %d\n", __func__, lcore_type_name(type),
+      tried);
   return -EIO;
 }
 

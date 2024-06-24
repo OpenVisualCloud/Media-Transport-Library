@@ -69,6 +69,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_PERF_FRAMES,
   SAMPLE_ARG_PERF_FB_CNT,
   SAMPLE_ARG_MULTI_INC_ADDR,
+  SAMPLE_ARG_LCORES,
   /* audio */
   SAMPLE_ARG_AUDIO_FMT,
   SAMPLE_ARG_AUDIO_CHANNEL,
@@ -146,6 +147,7 @@ static struct option sample_args_options[] = {
     {"perf_frames", required_argument, 0, SAMPLE_ARG_PERF_FRAMES},
     {"perf_fb_cnt", required_argument, 0, SAMPLE_ARG_PERF_FB_CNT},
     {"multi_inc_addr", no_argument, 0, SAMPLE_ARG_MULTI_INC_ADDR},
+    {"lcores", required_argument, 0, SAMPLE_ARG_LCORES},
 
     {0, 0, 0, 0}};
 
@@ -459,6 +461,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
         break;
       case SAMPLE_ARG_MULTI_INC_ADDR:
         ctx->multi_inc_addr = true;
+        break;
+      case SAMPLE_ARG_LCORES:
+        p->lcores = optarg;
         break;
       case '?':
         break;
