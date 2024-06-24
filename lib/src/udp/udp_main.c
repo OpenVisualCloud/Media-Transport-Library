@@ -246,12 +246,6 @@ static int udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   int idx = s->idx;
   int ret;
 
-  // Ensure pkts_nb is greater than 0
-  if (pkts_nb == 0) {
-    err("%s(%d): pkts_nb is 0\n", __func__, idx);
-    return -EINVAL;  // Invalid argument
-  }
-
   /* get the dst mac address */
   struct rte_ether_addr d_addr;
   uint8_t* dip = (uint8_t*)&addr_in->sin_addr;
@@ -269,6 +263,8 @@ static int udp_build_tx_msg_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   }
 
   void* payloads[pkts_nb];
+  memset(payloads, 0, sizeof(payloads)); /* prvents maybe-uninitialized error */
+
   /* fill hdr info for all pkts */
   for (unsigned int i = 0; i < pkts_nb; i++) {
     struct rte_mbuf* pkt = pkts[i];
@@ -1475,6 +1471,13 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   size_t sz_per_pkt = s->gso_segment_sz;
   size_t total_len = udp_msg_len(msg);
   unsigned int pkts_nb = total_len / sz_per_pkt;
+
+  /* Ensure pkts_nb is greater than 0 */
+  if (pkts_nb == 0) {
+    err("%s(%d): pkts_nb is 0\n", __func__, idx);
+    return -EINVAL;  /* Invalid argument */
+  }
+
   if (total_len % sz_per_pkt) pkts_nb++;
   struct rte_mbuf* pkts[pkts_nb];
   dbg("%s(%d), pkts_nb %u total_len %" PRId64 "\n", __func__, idx, pkts_nb, total_len);
