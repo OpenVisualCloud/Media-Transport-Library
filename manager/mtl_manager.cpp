@@ -15,10 +15,22 @@
 #include "logging.hpp"
 #include "mtl_instance.hpp"
 #include "mtl_mproto.h"
+#include "mtlm_build_config.h"
 
 namespace fs = std::filesystem;
 
 static const int MAX_CLIENTS = 10;
+
+static const char* mtlm_version(void) {
+  static char version[128];
+  if (version[0] != 0) return version;
+
+  snprintf(version, sizeof(version), "%d.%d.%d.%s %s %s %s", MTLM_VERSION_MAJOR,
+           MTLM_VERSION_MINOR, MTLM_VERSION_LAST, MTLM_VERSION_EXTRA, __TIMESTAMP__,
+           __MTLM_GIT__, MTLM_COMPILER);
+
+  return version;
+}
 
 int main() {
   int ret = 0;
@@ -27,6 +39,7 @@ int main() {
   std::vector<std::unique_ptr<mtl_instance>> clients;
 
   logger::set_log_level(log_level::INFO);
+  logger::log(log_level::INFO, "MTL Manager version: " + std::string(mtlm_version()));
 
   fs::path directory_path(MTL_MANAGER_SOCK_PATH);
   directory_path.remove_filename();
@@ -116,6 +129,9 @@ int main() {
 
   logger::log(log_level::INFO,
               "MTL Manager is running. Press Ctrl+C or use SIGINT to stop it.");
+#ifndef MTL_HAS_XDP_BACKEND
+  logger::log(log_level::WARNING, "No XDP support for this build");
+#endif
 
   while (is_running) {
     std::vector<struct epoll_event> events(clients.size() + 2);
