@@ -8,6 +8,7 @@ src: &src
   - 'tests/src/**'
   - tests/meson.build
   - tests/meson_options.txt
+  - 'manager/**'
 
 app_src: &app_src
   - 'app/**'

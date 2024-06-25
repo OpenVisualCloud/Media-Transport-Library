@@ -79,6 +79,8 @@ mtl_interface::mtl_interface(unsigned int ifindex)
   udp4_dp_filter_fd = -1;
   xdp_mode = XDP_MODE_UNSPEC;
   if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
+#else
+  throw std::runtime_error("No XDP support for this build");
 #endif
   if (parse_combined_info() < 0)
     throw std::runtime_error("Failed to parse combined info.");

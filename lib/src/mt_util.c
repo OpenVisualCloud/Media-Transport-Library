@@ -65,8 +65,7 @@ int mt_asan_check(void) {
   mt_pthread_mutex_destroy(&g_bt_mutex);
 
   if (g_mt_mempool_create_cnt != 0) {
-    rte_panic("%s, detect not free mempool, leak cnt %d\n", __func__,
-              g_mt_mempool_create_cnt);
+    err("%s, detect not free mempool, leak cnt %d\n", __func__, g_mt_mempool_create_cnt);
   }
 
   return 0;
@@ -514,7 +513,7 @@ int mt_mempool_free(struct rte_mempool* mp) {
   unsigned int in_use_count = rte_mempool_in_use_count(mp);
   if (in_use_count) {
     /* failed to free the mempool, caused by the mbuf is still in nix tx queues? */
-    err("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
+    warn("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
     return 0;
   }
 
