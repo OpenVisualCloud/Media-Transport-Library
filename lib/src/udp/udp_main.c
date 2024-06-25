@@ -1471,14 +1471,13 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   size_t sz_per_pkt = s->gso_segment_sz;
   size_t total_len = udp_msg_len(msg);
   unsigned int pkts_nb = total_len / sz_per_pkt;
-
+  if (total_len % sz_per_pkt) pkts_nb++;
   /* Ensure pkts_nb is greater than 0 */
   if (pkts_nb == 0) {
     err("%s(%d): pkts_nb is 0\n", __func__, idx);
     return -EINVAL; /* Invalid argument */
   }
 
-  if (total_len % sz_per_pkt) pkts_nb++;
   struct rte_mbuf* pkts[pkts_nb];
   dbg("%s(%d), pkts_nb %u total_len %" PRId64 "\n", __func__, idx, pkts_nb, total_len);
   if (pkts_nb > 1) s->stat_tx_gso_count++;
