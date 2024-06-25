@@ -1475,7 +1475,7 @@ ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags) {
   /* Ensure pkts_nb is greater than 0 */
   if (pkts_nb == 0) {
     err("%s(%d): pkts_nb is 0\n", __func__, idx);
-    return -EINVAL;  /* Invalid argument */
+    return -EINVAL; /* Invalid argument */
   }
 
   if (total_len % sz_per_pkt) pkts_nb++;
