@@ -204,7 +204,7 @@ static void xdp_queue_clean_mbuf(struct mt_xdp_queue* xq) {
   xsk_ring_prod__reserve(rpq, 0, &idx);
   for (uint32_t i = 0; i < size; i++) {
     __u64* fq_addr = xsk_ring_prod__fill_addr(rpq, idx--);
-    if (!fq_addr) break;
+    if (!fq_addr || !(*fq_addr)) continue;
     struct rte_mbuf* m = *fq_addr + xq->umem_buffer + mp->header_size;
     rte_pktmbuf_free(m);
   }
