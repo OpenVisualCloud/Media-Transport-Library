@@ -334,8 +334,8 @@ TEST(Dma, fill_async) {
   test_dma_copy_fill_async(ctx, true);
 }
 
-static void _temtl_dma_map(mtl_handle st, const void* vaddr, size_t size,
-                           bool expect_succ) {
+static void _test_dma_map(mtl_handle st, const void* vaddr, size_t size,
+                          bool expect_succ) {
   mtl_iova_t iova = mtl_dma_map(st, vaddr, size);
   if (expect_succ) {
     EXPECT_TRUE(iova != MTL_BAD_IOVA);
@@ -345,7 +345,7 @@ static void _temtl_dma_map(mtl_handle st, const void* vaddr, size_t size,
     EXPECT_FALSE(iova != MTL_BAD_IOVA);
 }
 
-static void temtl_dma_map(struct st_tests_context* ctx, size_t size) {
+static void test_dma_map(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
@@ -353,7 +353,7 @@ static void temtl_dma_map(struct st_tests_context* ctx, size_t size) {
   ASSERT_TRUE(p != NULL);
 
   uint8_t* align = (uint8_t*)MTL_ALIGN((uint64_t)p, pg_sz);
-  _temtl_dma_map(st, align, size, true);
+  _test_dma_map(st, align, size, true);
 
   free(p);
 }
@@ -367,8 +367,8 @@ TEST(Dma, map) {
     return;
   }
 
-  temtl_dma_map(ctx, 64 * mtl_page_size(st));
-  temtl_dma_map(ctx, 512 * mtl_page_size(st));
+  test_dma_map(ctx, 64 * mtl_page_size(st));
+  test_dma_map(ctx, 512 * mtl_page_size(st));
 }
 
 TEST(Dma, map_fail) {
@@ -377,9 +377,45 @@ TEST(Dma, map_fail) {
   size_t pg_sz = mtl_page_size(st);
   uint8_t* p = (uint8_t*)malloc(pg_sz / 2);
 
-  _temtl_dma_map(st, p, pg_sz / 2, false);
+  _test_dma_map(st, p, pg_sz / 2, false);
 
   free(p);
+}
+
+static void test_dma_map_continues(struct st_tests_context* ctx, size_t size, int count) {
+  auto st = ctx->handle;
+  size_t pg_sz = mtl_page_size(st);
+  /* 2 more pages to hold the head and tail */
+  uint8_t* p = (uint8_t*)malloc((size + 2 * pg_sz) * count);
+  ASSERT_TRUE(p != NULL);
+
+  uint8_t* align = (uint8_t*)MTL_ALIGN((uint64_t)p, pg_sz);
+  mtl_iova_t* iovas = new mtl_iova_t[count];
+  int ret;
+
+  for (int i = 0; i < count; i++) {
+    iovas[i] = mtl_dma_map(st, align + i * size, size);
+    EXPECT_TRUE(iovas[i] != MTL_BAD_IOVA);
+  }
+  for (int i = 0; i < count; i++) {
+    ret = mtl_dma_unmap(st, align + i * size, iovas[i], size);
+    EXPECT_TRUE(ret >= 0);
+  }
+
+  delete[] iovas;
+  free(p);
+}
+
+TEST(Dma, map_continues) {
+  struct st_tests_context* ctx = st_test_ctx();
+  auto st = ctx->handle;
+
+  if (ctx->iova == MTL_IOVA_MODE_PA) {
+    info("%s, skip as it's IOVA PA mode\n", __func__);
+    return;
+  }
+
+  test_dma_map_continues(ctx, 64 * mtl_page_size(st), 10);
 }
 
 static void test_dma_remap(struct st_tests_context* ctx, size_t size) {
@@ -426,7 +462,7 @@ TEST(Dma, map_remap) {
   test_dma_remap(ctx, 64 * mtl_page_size(st));
 }
 
-static void temtl_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_size) {
+static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_size) {
   void *dst = NULL, *src = NULL;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
@@ -477,13 +513,13 @@ TEST(Dma, map_copy) {
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   ASSERT_TRUE(dma != NULL);
 
-  temtl_dma_map_copy(st, dma, 64 * mtl_page_size(st));
+  test_dma_map_copy(st, dma, 64 * mtl_page_size(st));
 
   int ret = mtl_udma_free(dma);
   EXPECT_GE(ret, 0);
 }
 
-static void temtl_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size) {
+static void test_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
   mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(st, size);
   ASSERT_TRUE(dma_mem != NULL);
@@ -502,8 +538,8 @@ TEST(Dma, mem_alloc_free) {
     return;
   }
 
-  temtl_dma_mem_alloc_free(ctx, 111);
-  temtl_dma_mem_alloc_free(ctx, 2222);
-  temtl_dma_mem_alloc_free(ctx, 33333);
-  temtl_dma_mem_alloc_free(ctx, 444444);
+  test_dma_mem_alloc_free(ctx, 111);
+  test_dma_mem_alloc_free(ctx, 2222);
+  test_dma_mem_alloc_free(ctx, 33333);
+  test_dma_mem_alloc_free(ctx, 444444);
 }
