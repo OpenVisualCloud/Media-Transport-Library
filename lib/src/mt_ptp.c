@@ -1559,8 +1559,12 @@ static int ptp_stat(void* priv) {
 int mt_ptp_init(struct mtl_main_impl* impl) {
   int socket = mt_socket_id(impl, MTL_PORT_P);
   int ret;
+  int num_port = mt_num_ports(impl);
 
-  for (int i = 0; i < 1; i++) { /* only probe on the MTL_PORT_P */
+  for (int i = 0; i < num_port; i++) {
+    /* only probe on the MTL_PORT_P */
+    if ((i != MTL_PORT_P) && !mt_if_has_offload_timestamp(impl, i)) continue;
+
     struct mt_ptp_impl* ptp = mt_rte_zmalloc_socket(sizeof(*ptp), socket);
     if (!ptp) {
       err("%s(%d), ptp malloc fail\n", __func__, i);
