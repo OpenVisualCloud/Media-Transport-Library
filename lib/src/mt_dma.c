@@ -29,7 +29,7 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
     if (!i_item) continue;
     i_start = i_item->vaddr;
     i_end = i_start + i_item->size;
-    if ((start >= i_start) && (start <= i_end)) {
+    if ((start >= i_start) && (start < i_end)) {
       err("%s, invalid start %p i_start %p i_end %p\n", __func__, start, i_start, i_end);
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
