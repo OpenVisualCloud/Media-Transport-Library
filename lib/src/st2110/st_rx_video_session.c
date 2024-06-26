@@ -2568,7 +2568,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
         ops->fps = meta->fps;
         ops->packing = meta->packing;
         ops->interlaced = meta->interlaced;
-        if (ops->notify_detected) {
+        if (ops->notify_detected && (ops->flags & ST20_RX_FLAG_AUTO_DETECT)) {
           struct st20_detect_reply reply = {0};
           ret = ops->notify_detected(ops->priv, meta, &reply);
           if (ret < 0) {
