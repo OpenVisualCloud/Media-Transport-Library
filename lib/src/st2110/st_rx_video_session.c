@@ -1123,6 +1123,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     struct st20_ext_frame ext_frame;
     struct st20_rx_ops* ops = &s->ops;
     struct st20_rx_frame_meta* meta = &slot->meta;
+    size_t fb_size = s->st20_uframe_size ? s->st20_uframe_size : s->st20_fb_size;
 
     meta->width = ops->width;
     meta->height = ops->height;
@@ -1135,6 +1136,13 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     if (s->ops.query_ext_frame(s->ops.priv, &ext_frame, meta) < 0) {
       s->stat_slot_query_ext_fail++;
       dbg("%s(%d): query ext frame fail\n", __func__, s->idx);
+      rte_atomic32_dec(&frame_info->refcnt);
+      return NULL;
+    }
+    if (ext_frame.buf_len < fb_size) {
+      s->stat_slot_query_ext_fail++;
+      err("%s(%d): ext frame size too small, required %" PRIu64 " but get %" PRIu64 "\n",
+          __func__, s->idx, fb_size, ext_frame.buf_len);
       rte_atomic32_dec(&frame_info->refcnt);
       return NULL;
     }
