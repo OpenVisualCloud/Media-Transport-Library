@@ -32,6 +32,7 @@ typedef struct MtlSt30pDemuxerContext {
   /* arguments for session */
   int fb_cnt;
   int timeout_sec;
+  int session_init_retry;
   int sample_rate;
   int channels;
   enum st30_fmt fmt;
@@ -197,7 +198,20 @@ static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   struct st30_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st30p_rx_get_frame(s->rx_handle);
+
+  if (0 == s->frame_counter) {
+    /*
+     * for unicast scenarios, retries may be necessary
+     * if the transmitter is not yet initialized.
+     */
+    for (int i = 1; i <= s->session_init_retry; i++) {
+      frame = st30p_rx_get_frame(s->rx_handle);
+      if (frame) break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+    }
+  } else
+    frame = st30p_rx_get_frame(s->rx_handle);
+
   if (!frame) {
     info(ctx, "%s(%d), st30p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
@@ -248,6 +262,14 @@ static const AVOption mtl_st30p_rx_options[] = {
      {.i64 = 0},
      0,
      60 * 10,
+     DEC},
+    {"init_retry",
+     "Number of retries to the initial read packet",
+     OFFSET(session_init_retry),
+     AV_OPT_TYPE_INT,
+     {.i64 = 5},
+     0,
+     60,
      DEC},
     {"ar",
      "audio sampling rate",

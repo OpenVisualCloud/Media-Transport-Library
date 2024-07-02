@@ -35,6 +35,7 @@ typedef struct MtlSt22pDemuxerContext {
   int fb_cnt;
   int codec_thread_cnt;
   int timeout_sec;
+  int session_init_retry;
 
   mtl_handle dev_handle;
   st22p_rx_handle rx_handle;
@@ -312,7 +313,20 @@ static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   struct st_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st22p_rx_get_frame(s->rx_handle);
+
+  if (0 == s->frame_counter) {
+    /*
+     * for unicast scenarios, retries may be necessary
+     * if the transmitter is not yet initialized.
+     */
+    for (int i = 1; i <= s->session_init_retry; i++) {
+      frame = st22p_rx_get_frame(s->rx_handle);
+      if (frame) break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+    }
+  } else
+    frame = st22p_rx_get_frame(s->rx_handle);
+
   if (!frame) {
     info(ctx, "%s(%d), st22p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
@@ -422,6 +436,14 @@ static const AVOption mtl_st22p_rx_options[] = {
      {.i64 = 0},
      0,
      60 * 10,
+     DEC},
+    {"init_retry",
+     "Number of retries to the initial read packet",
+     OFFSET(session_init_retry),
+     AV_OPT_TYPE_INT,
+     {.i64 = 5},
+     0,
+     60,
      DEC},
     {"fb_cnt",
      "Frame buffer count",
