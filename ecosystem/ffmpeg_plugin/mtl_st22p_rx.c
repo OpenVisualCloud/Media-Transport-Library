@@ -312,7 +312,17 @@ static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   struct st_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st22p_rx_get_frame(s->rx_handle);
+
+  if (0 == s->frame_counter) {
+    for (int i = 1; i <= 10; i++) {
+      frame = st22p_rx_get_frame(s->rx_handle);
+      if (frame)
+        break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+    }
+  } else
+    frame = st22p_rx_get_frame(s->rx_handle);
+
   if (!frame) {
     info(ctx, "%s(%d), st22p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
