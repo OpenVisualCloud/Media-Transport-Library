@@ -141,6 +141,13 @@ static int mtl_st22p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st22p_write_close(ctx);
+    return AVERROR(EIO);
+  }
+
   s->frame_size = st22p_tx_frame_size(s->tx_handle);
   info(ctx, "%s(%d), tx_handle %p\n", __func__, s->idx, s->tx_handle);
   return 0;
@@ -208,6 +215,13 @@ static int mtl_st22_write_header(AVFormatContext* ctx) {
   s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
   if (!s->dev_handle) {
     err(ctx, "%s, mtl dev get fail\n", __func__);
+    return AVERROR(EIO);
+  }
+
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st22p_write_close(ctx);
     return AVERROR(EIO);
   }
 

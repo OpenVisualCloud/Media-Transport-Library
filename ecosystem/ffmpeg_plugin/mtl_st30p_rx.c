@@ -180,6 +180,13 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st30p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
   info(ctx, "%s(%d), rx handle %p\n", __func__, s->idx, s->rx_handle);
   return 0;
 }
@@ -190,7 +197,17 @@ static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   struct st30_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st30p_rx_get_frame(s->rx_handle);
+
+  if (0 == s->frame_counter) {
+    for (int i = 1; i <= 10; i++) {
+      frame = st30p_rx_get_frame(s->rx_handle);
+      if (frame)
+        break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+    }
+  } else
+    frame = st30p_rx_get_frame(s->rx_handle);
+
   if (!frame) {
     info(ctx, "%s(%d), st30p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);

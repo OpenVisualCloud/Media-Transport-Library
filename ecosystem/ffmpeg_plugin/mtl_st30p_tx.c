@@ -146,6 +146,13 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st30p_write_close(ctx);
+    return AVERROR(EIO);
+  }
+
   s->tx_handle = st30p_tx_create(s->dev_handle, &ops_tx);
   if (!s->tx_handle) {
     err(ctx, "%s, st30p_tx_create failed\n", __func__);

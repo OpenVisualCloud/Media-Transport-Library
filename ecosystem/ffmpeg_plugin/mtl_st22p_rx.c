@@ -180,6 +180,13 @@ static int mtl_st22p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
   info(ctx, "%s(%d), rx handle %p\n", __func__, s->idx, s->rx_handle);
   return 0;
 }
@@ -287,6 +294,13 @@ static int mtl_st22_read_header(AVFormatContext* ctx) {
   st->codecpar->bit_rate =
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st22p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
   info(ctx, "%s(%d), rx handle %p, max packet_size %u\n", __func__, s->idx, s->rx_handle,
        ctx->packet_size);
   return 0;
@@ -298,7 +312,17 @@ static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   struct st_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st22p_rx_get_frame(s->rx_handle);
+
+  if (0 == s->frame_counter) {
+    for (int i = 1; i <= 10; i++) {
+      frame = st22p_rx_get_frame(s->rx_handle);
+      if (frame)
+        break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+    }
+  } else
+    frame = st22p_rx_get_frame(s->rx_handle);
+
   if (!frame) {
     info(ctx, "%s(%d), st22p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
