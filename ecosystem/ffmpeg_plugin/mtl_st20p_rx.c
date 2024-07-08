@@ -33,6 +33,7 @@ typedef struct MtlSt20pDemuxerContext {
   AVRational framerate;
   int fb_cnt;
   int timeout_sec;
+  int session_init_retry;
 
   mtl_handle dev_handle;
   st20p_rx_handle rx_handle;
@@ -168,6 +169,13 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     return AVERROR(EIO);
   }
 
+  ret = mtl_start(s->dev_handle);
+  if (ret < 0) {
+    err(ctx, "%s, mtl start fail %d\n", __func__, ret);
+    mtl_st20p_read_close(ctx);
+    return AVERROR(EIO);
+  }
+
   info(ctx, "%s(%d), rx handle %p\n", __func__, s->idx, s->rx_handle);
   return 0;
 }
@@ -178,7 +186,20 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   struct st_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
-  frame = st20p_rx_get_frame(s->rx_handle);
+
+  if (0 == s->frame_counter) {
+    /*
+     * for unicast scenarios, retries may be necessary
+     * if the transmitter is not yet initialized.
+     */
+    for (int i = 1; i <= s->session_init_retry; i++) {
+      frame = st20p_rx_get_frame(s->rx_handle);
+      if (frame) break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+    }
+  } else
+    frame = st20p_rx_get_frame(s->rx_handle);
+
   if (!frame) {
     info(ctx, "%s(%d), st20p_rx_get_frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
@@ -254,6 +275,14 @@ static const AVOption mtl_st20p_rx_options[] = {
      {.i64 = 0},
      0,
      60 * 10,
+     DEC},
+    {"init_retry",
+     "Number of retries to the initial read packet",
+     OFFSET(session_init_retry),
+     AV_OPT_TYPE_INT,
+     {.i64 = 5},
+     0,
+     60,
      DEC},
     {"fb_cnt",
      "Frame buffer count",
