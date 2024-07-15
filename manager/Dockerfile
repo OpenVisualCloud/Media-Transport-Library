@@ -6,11 +6,13 @@
 # Please review and modify as necessary before using in a production environment.
 
 # Build stage, ubuntu 22.04
-FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 as builder
+FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS builder
 
 LABEL maintainer="ming3.li@intel.com"
 
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
+
+ARG VERSION
 
 # Install build dependencies
 RUN apt-get update -y && \
@@ -27,6 +29,11 @@ RUN make install && \
     DESTDIR=/install make install
 
 COPY . /manager
+RUN \
+    if [ -z "${VERSION}" ]; then \
+        VERSION="0.0.1.DOCKER"; \
+    fi; \
+    echo "$VERSION" > /VERSION
 
 # Build the MTL Manager
 WORKDIR /manager
