@@ -66,8 +66,8 @@ Please note that the Dockerfile provided is intended for development use only. I
 Build the Docker image:
 
 ```bash
-docker build -t mtl-manager:latest .
-# docker build -t mtl-manager:latest --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy .
+docker build --build-arg VERSION=$(cat ../VERSION) -t mtl-manager:latest .
+# docker build --build-arg VERSION=$(cat ../VERSION) -t mtl-manager:latest --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy .
 ```
 
 Run the Docker container as a daemon:
