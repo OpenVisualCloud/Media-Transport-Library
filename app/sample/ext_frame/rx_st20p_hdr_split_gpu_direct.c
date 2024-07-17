@@ -188,6 +188,8 @@ int main(int argc, char** argv) {
     ctx.param.nb_rx_hdr_split_queues = ctx.sessions;
   }
 
+  /* enable auto start/stop */
+  ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
     err("%s: mtl_init fail\n", __func__);
@@ -282,9 +284,6 @@ int main(int argc, char** argv) {
     }
   }
 
-  // start rx
-  ret = mtl_start(ctx.st);
-
   while (!ctx.exit) {
     sleep(1);
   }
@@ -300,9 +299,6 @@ int main(int argc, char** argv) {
 
     rx_st20p_close_source(app[i]);
   }
-
-  // stop rx
-  ret = mtl_stop(ctx.st);
 
   // check result
   for (int i = 0; i < session_num; i++) {
