@@ -542,7 +542,14 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   impl->tx_audio_sessions_max_per_sch = p->tx_audio_sessions_max_per_sch;
   if (!impl->tx_audio_sessions_max_per_sch) {
-    impl->tx_audio_sessions_max_per_sch = 300; /* default 300 */
+    /**
+     * This modification is essential for audio streams that do not share queues
+     * to operate more effectively.
+     * Queue sharing is discouraged for scenarios managing more than 1000 streams.
+     *
+     * Default value: 300
+     */
+    impl->tx_audio_sessions_max_per_sch = 150;
   }
   impl->rx_audio_sessions_max_per_sch = p->rx_audio_sessions_max_per_sch;
   if (!impl->rx_audio_sessions_max_per_sch) {

@@ -140,6 +140,29 @@ int main(int argc, char** argv) {
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
+
+  ctx.sessions = 2000; // increase the number of created sessions
+
+  /**
+   * For scenarios involving this number of streams, additional memory is required.
+   * Safe margin assumed to be 10 times the default amount.
+   *
+   * Default amount: 2560
+   */
+  ctx.param.memzone_max = 25600;
+
+  /**
+   * With 2000 streams, the statistics will generate a substantial volume of logs.
+   * To manage this, the frequency of logs is reduced.
+   *
+   * Default value: 10
+   */
+  ctx.param.dump_period_s = 60;
+
+  /**
+   * For optimal management, 18 queues are required to accommodate up to 18 schedulers.
+   */
+  ctx.param.tx_queues_cnt[0] = 18;
   ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
 
