@@ -1274,7 +1274,9 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
           mbuf_pool = mt_mempool_create_common(impl, inf->port, pool_name, mbuf_elements);
         else {
           uint16_t data_room_sz = ST_PKT_MAX_ETHER_BYTES;
-          if (inf->drv_info.drv_type == MT_DRV_IGC || inf->drv_info.drv_type == MT_DRV_IXGBE)/* to avoid igc/igxbe nic split mbuf */
+          /* to avoid igc/igxbe nic split mbuf */
+          if (inf->drv_info.drv_type == MT_DRV_IGC ||
+              inf->drv_info.drv_type == MT_DRV_IXGBE)
             data_room_sz = MT_MBUF_DEFAULT_DATA_SIZE;
           if (impl->rx_pool_data_size) /* user suggested data room size */
             data_room_sz = impl->rx_pool_data_size;

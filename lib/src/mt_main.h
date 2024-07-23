@@ -142,10 +142,10 @@ enum mt_rl_type {
 
 enum mt_driver_type {
   MT_DRV_DEFAULT = 0,
-  MT_DRV_ICE,  /* ice pf, net_ice */
-  MT_DRV_IXGBE,  /* ixgbe pf, net_ixgbe */
-  MT_DRV_I40E, /* flv pf, net_i40e */
-  MT_DRV_IAVF, /* IA vf, net_iavf */
+  MT_DRV_ICE,   /* ice pf, net_ice */
+  MT_DRV_IXGBE, /* ixgbe pf, net_ixgbe */
+  MT_DRV_I40E,  /* flv pf, net_i40e */
+  MT_DRV_IAVF,  /* IA vf, net_iavf */
   /* dpdk af xdp, net_af_xdp */
   MT_DRV_DPDK_AF_XDP,
   MT_DRV_E1000_IGB, /* e1000 igb, net_e1000_igb */
