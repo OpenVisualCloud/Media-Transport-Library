@@ -326,8 +326,11 @@ static struct mtl_sch_impl* sch_request(struct mtl_main_impl* impl, enum mt_sch_
       rte_atomic32_inc(&sch->active);
       rte_atomic32_inc(&mt_sch_get_mgr(impl)->sch_cnt);
       sch_unlock(sch);
+
+      /* set the socket id */
+      sch->socket_id = socket;
       info("%s(%d), name %s with %u tasklets, type %d socket %d\n", __func__, sch_idx,
-           sch->name, sch->nb_tasklets, type, socket);
+           sch->name, sch->nb_tasklets, type, sch->socket_id);
       return sch;
     }
     sch_unlock(sch);
@@ -1092,8 +1095,7 @@ struct mtl_sch_impl* mt_sch_get_by_socket(struct mtl_main_impl* impl, int quota_
     sch_mgr_unlock(mgr);
     return NULL;
   }
-  /* set the socket id */
-  sch->socket_id = socket;
+
   idx = sch->idx;
   ret = mt_sch_add_quota(sch, quota_mbs);
   if (ret < 0) {
