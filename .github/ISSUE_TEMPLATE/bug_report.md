@@ -19,8 +19,8 @@ Please provide steps to reproduce the behavior.
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**Configuration and command line**
-Please provide the command line and configuration files of MTL execution.
+**Configuration and command-line**
+Please provide the command-line and configuration files of MTL execution.
 
 **Status report**
 Please execute and provide [status report](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/script/status_report.sh).
