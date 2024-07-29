@@ -742,6 +742,9 @@ int mt_sch_put_lcore(struct mtl_main_impl* impl, unsigned int lcore) {
       info("%s, succ on manager lcore %d for %s\n", __func__, lcore,
            lcore_type_name(mgr->local_lcores_type[lcore]));
       return 0;
+    } else if (lcore >= RTE_MAX_LCORE) {
+      err("%s, err %d on manager invalid lcore %d\n", __func__, ret, lcore);
+      return -EIO;
     } else {
       err("%s, err %d on manager lcore %d for %s\n", __func__, ret, lcore,
           lcore_type_name(mgr->local_lcores_type[lcore]));
