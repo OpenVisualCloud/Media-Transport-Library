@@ -26,7 +26,7 @@ Please provide the command-line and configuration files of MTL execution.
 Please execute and provide [status report](https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/script/status_report.sh).
 
 **Logs**
-Please provide logs from the application
+Please provide logs from the application with `MTL_LOG_LEVEL_INFO`.
 
 **HW specification (please complete the following information):**
 
