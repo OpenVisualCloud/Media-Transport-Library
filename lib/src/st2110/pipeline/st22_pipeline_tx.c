@@ -594,10 +594,12 @@ static void tx_st22p_framebuffs_flush(struct st22p_tx_ctx* ctx) {
     while (1) {
       if (framebuff->stat == ST22P_TX_FRAME_FREE) break;
       if (framebuff->stat == ST22P_TX_FRAME_IN_TRANSMITTING) {
-        /* make sure transport to finish the transmit */
-        /* WA to use sleep here, todo: add a transport API to query the stat */
+        /*
+         * make sure to wait when the frame is in transmit
+         * without we will stop before encoder takes the frame
+         * WA to use sleep here, todo: add a transport API to query the stat
+         */
         mt_sleep_ms(50);
-        break;
       }
 
       dbg("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
