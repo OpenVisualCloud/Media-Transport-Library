@@ -486,26 +486,45 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const c
                                              unsigned int n, unsigned int cache_size,
                                              uint16_t priv_size, uint16_t element_size,
                                              const char* ops_name, int socket_id) {
-  if (cache_size && (element_size % cache_size)) { /* align to cache size */
-    element_size = (element_size / cache_size + 1) * cache_size;
-  }
   char name_with_idx[32]; /* 32 is the max length allowed by mempool api, in our lib we
                              use concise names so it won't exceed this length */
+  struct rte_mempool* mbuf_pool;
+  uint16_t data_room_size;
+  unsigned int ret = 1;
+  float size_m;
+
+  /*
+   * https://doc.dpdk.org/api-21.05/rte__mbuf_8h.html#a9e4bd0ae9e01d0f4dfe7d27cfb0d9a7f
+   * rte_pktmbuf_pool_create_by_ops api describes
+   * optimum size (in terms of memory usage) for a mempool
+   * is when n is a power of two minus one: n = (2^q - 1).
+   */
+  while (ret - 1 <= n && ret) ret <<= 1;
+
+  dbg("%s(%d), optimize number of elements in the mbuf pool from %d to %d\n ", __func__,
+      socket_id, n, ret - 1);
+  n = ret - 1;
+
+  if (cache_size && (element_size % cache_size)) /* align to cache size */
+    element_size = (element_size / cache_size + 1) * cache_size;
+
   snprintf(name_with_idx, sizeof(name_with_idx), "%s_%d", name, impl->mempool_idx++);
-  uint16_t data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
-  struct rte_mempool* mbuf_pool = rte_pktmbuf_pool_create_by_ops(
-      name_with_idx, n, cache_size, priv_size, data_room_size, socket_id, ops_name);
+  data_room_size = element_size + MT_MBUF_HEADROOM_SIZE; /* include head room */
+  mbuf_pool = rte_pktmbuf_pool_create_by_ops(name_with_idx, n, cache_size, priv_size,
+                                             data_room_size, socket_id, ops_name);
+
   if (!mbuf_pool) {
     err("%s(%d), fail(%s) for %s, n %u\n", __func__, socket_id, rte_strerror(rte_errno),
         name, n);
   } else {
-    float size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
+    size_m = (float)n * (data_room_size + priv_size) / (1024 * 1024);
     info("%s(%d), succ at %p size %fm n %u d %u for %s\n", __func__, socket_id, mbuf_pool,
          size_m, n, element_size, name_with_idx);
 #ifdef MTL_HAS_ASAN
     g_mt_mempool_create_cnt++;
 #endif
   }
+
   return mbuf_pool;
 }
 
