@@ -2,9 +2,17 @@
 
 ## Introduction
 
-The Media Transport Library (MTL) was developed to streamline the process of sending and receiving media over standard network interfaces, specifically focusing on the ST2110 standard. ST2110 is crucial for transmitting high-quality, uncompressed video and audio over IP networks. Traditionally, cameras used Serial Digital Interface (SDI) to send footage for processing. However, with the emergence of ST2110, media data can now be encapsulated in RTP packets and transmitted via Ethernet, making the process more straightforward and less reliant on specialized hardware. With MTL, you can transmit or receive ST2110 standard-compliant streams, eliminating the need for specialized and expensive ST2110 hardware. This technology can also transport raw video/audio data between data center machines.
+The Media Transport Library (MTL) was developed to streamline the process of sending and receiving media over standard network interfaces, specifically focusing on the ST2110 standard.
+ST2110 is crucial for transmitting high-quality, uncompressed video and audio over IP networks.
+Traditionally, cameras used Serial Digital Interface (SDI) to send footage for processing.
+However, with the emergence of ST2110, media data can now be encapsulated in RTP packets and transmitted via Ethernet, making the process more straightforward and less reliant on specialized hardware.
+With MTL, you can transmit or receive ST2110 standard-compliant streams, eliminating the need for specialized and expensive ST2110 hardware.
+This technology can also transport raw video/audio data between data center machines.
 
-One challenge with MTL's ST2110 stack is its reliance on DPDK (Data Plane Development Kit), which demands dedicated CPU resources for network packet handling. This is where RDMA comes into play, offering a solution to offload these tasks from the CPU. Specifically, the Intel E810 Network Interface Card (NIC) supports RoCEv2, an RDMA implementation that uses the UDP protocol. By leveraging RDMA and its interrupt mode, significant CPU resources can be conserved, which is particularly advantageous in cloud computing environments where resource optimization is critical.
+One challenge with MTL's ST2110 stack is its reliance on DPDK (Data Plane Development Kit), which demands dedicated CPU resources for network packet handling.
+This is where RDMA comes into play, offering a solution to offload these tasks from the CPU.
+Specifically, the Intel E810 Network Interface Card (NIC) supports RoCEv2, an RDMA implementation that uses the UDP protocol.
+By leveraging RDMA and its interrupt mode, significant CPU resources can be conserved, which is particularly advantageous in cloud computing environments where resource optimization is critical.
 
 ## Enable IRDMA driver
 
