@@ -58,6 +58,13 @@ static const struct st20_pgroup st20_pgroups[] = {
         .name = "ST20_FMT_YUV_420_12BIT",
     },
     {
+        /* ST20_FMT_YUV_420_16BIT */
+        .fmt = ST20_FMT_YUV_420_16BIT,
+        .size = 12,
+        .coverage = 4,
+        .name = "ST20_FMT_YUV_420_16BIT",
+    },
+    {
         /* ST20_FMT_RGB_8BIT */
         .fmt = ST20_FMT_RGB_8BIT,
         .size = 3,
