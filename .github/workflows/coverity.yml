@@ -1,0 +1,83 @@
+name: Coverity Scan
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+  MTL_BUILD_DISABLE_PCAPNG: true
+  GRPC_VERSION: v1.58.0
+  GRPC_DIR: /tmp/grpc
+  PREFIX_DIR: /usr/local
+  DEBIAN_FRONTEND: noninteractive
+
+permissions:
+  contents: read
+
+jobs:
+  coverity:
+    runs-on: 'ubuntu-22.04'
+    timeout-minutes: 90
+    steps:
+    - name: 'Harden Runner'
+      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+      with:
+        egress-policy: audit
+
+    - name: 'Checkout repository'
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+    - name: 'Install dependencies'
+      run: |
+        sudo apt-get update -y && \
+        sudo apt-get install -y --no-install-recommends \
+            git build-essential meson python3 python3-pyelftools pkg-config \
+            libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev \
+            libsdl2-ttf-dev libssl-dev ca-certificates m4 clang llvm zlib1g-dev \
+            libelf-dev libcap-ng-dev libcap2-bin gcc-multilib systemtap-sdt-dev ninja-build \
+            nasm dpdk-dev librdmacm-dev && \
+        sudo apt-get clean && \
+        sudo rm -rf /var/lib/apt/lists/*
+
+    - name: 'Install MTL'
+      run: |
+        git clone --depth 1 https://github.com/OpenVisualCloud/Media-Transport-Library.git ${{ github.workspace }}/imtl
+
+    - name: 'Restore cached for gRPC build'
+      id: grpc-cache-restore
+      uses: actions/cache/restore@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+      with:
+        path: ${{ env.GRPC_DIR }}
+        key: Linux-grpc${{ env.GRPC_VERSION }}
+
+    - name: 'Build gRPC'
+      if: steps.grpc-cache-restore.outputs.cache-hit != 'true'
+      run: |
+          git clone --branch ${GRPC_VERSION} --recurse-submodules --depth 1 --shallow-submodules https://github.com/grpc/grpc "${GRPC_DIR}" && \
+          cmake -DgRPC_INSTALL=ON -DgRPC_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${PREFIX_DIR} \
+            -B "${GRPC_DIR}/cmake/build" -S "${GRPC_DIR}" && \
+          cmake --build "${GRPC_DIR}/cmake/build" -j `nproc`
+
+    - name: 'Save cache for gRPC build'
+      id: grpc-cache-save
+      if: steps.grpc-cache-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4.0.2
+      with:
+        path: ${{ env.GRPC_DIR }}
+        key: ${{ steps.grpc-cache-restore.outputs.cache-primary-key }}
+
+    - name: 'Install gRPC'
+      run: sudo cmake --install "${GRPC_DIR}/cmake/build"
+
+    - name: 'Run coverity'
+      uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1.8.0
+      with:
+        project: 'Media-transport-Library'
+        email: ${{ secrets.COVERITY_EMAIL }}
+        token: ${{ secrets.COVERITY_TOKEN }}
+        build_language: 'cxx'
+        build_platform: 'linux64'
+        command: |
+            ${{ github.workspace }}imtl/build.sh 
