@@ -1307,7 +1307,7 @@ static int parse_st22p_codec(json_object* st22p_obj, st_json_st22p_session_t* st
     st22p->info.codec = ST22_CODEC_H265_CBR;
   } else if (strcmp(codec, "H265") == 0) {
     st22p->info.codec = ST22_CODEC_H265;
-  } else{
+  } else {
     err("%s, invalid codec %s\n", __func__, codec);
     return -ST_JSON_NOT_VALID;
   }
