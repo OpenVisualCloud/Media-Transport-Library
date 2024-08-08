@@ -80,4 +80,4 @@ jobs:
         build_language: 'cxx'
         build_platform: 'linux64'
         command: |
-            ${{ github.workspace }}imtl/build.sh 
+            ${{ github.workspace }}/imtl/build.sh 
