@@ -1297,7 +1297,7 @@ static int parse_st22p_codec(json_object* st22p_obj, st_json_st22p_session_t* st
   const char* codec =
       json_object_get_string(st_json_object_object_get(st22p_obj, "codec"));
   REQUIRED_ITEM(codec);
-  if (strcmp(codec, "JPEGXS") == 0) {
+  if (strcmp(codec, "JPEGXS") == 0 || strcmp(codec, "JPEG-XS") == 0) {
     st22p->info.codec = ST22_CODEC_JPEGXS;
   } else if (strcmp(codec, "H264_CBR") == 0) {
     st22p->info.codec = ST22_CODEC_H264_CBR;
