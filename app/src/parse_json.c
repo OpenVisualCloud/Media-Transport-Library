@@ -650,16 +650,22 @@ static int parse_video_pg_format(json_object* video_obj, st_json_video_session_t
     video->info.pg_format = ST20_FMT_YUV_422_12BIT;
   } else if (strcmp(pg_format, "YUV_422_16bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_422_16BIT;
+  } else if (strcmp(pg_format, "YUV_444_8bit") == 0) {
+    video->info.pg_format = ST20_FMT_YUV_444_8BIT;
   } else if (strcmp(pg_format, "YUV_444_10bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_444_10BIT;
   } else if (strcmp(pg_format, "YUV_444_12bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_444_12BIT;
+  } else if (strcmp(pg_format, "YUV_444_16bit") == 0) {
+    video->info.pg_format = ST20_FMT_YUV_444_16BIT;
   } else if (strcmp(pg_format, "YUV_420_8bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_420_8BIT;
   } else if (strcmp(pg_format, "YUV_420_10bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_420_10BIT;
   } else if (strcmp(pg_format, "YUV_420_12bit") == 0) {
     video->info.pg_format = ST20_FMT_YUV_420_12BIT;
+  } else if (strcmp(pg_format, "YUV_420_16bit") == 0) {
+    video->info.pg_format = ST20_FMT_YUV_420_16BIT;
   } else if (strcmp(pg_format, "RGB_8bit") == 0) {
     video->info.pg_format = ST20_FMT_RGB_8BIT;
   } else if (strcmp(pg_format, "RGB_10bit") == 0) {
@@ -1141,10 +1147,24 @@ static int st_json_parse_tx_anc(int idx, json_object* anc_obj,
     anc->info.anc_fps = ST_FPS_P59_94;
   } else if (strcmp(anc_fps, "p50") == 0) {
     anc->info.anc_fps = ST_FPS_P50;
-  } else if (strcmp(anc_fps, "p25") == 0) {
-    anc->info.anc_fps = ST_FPS_P25;
   } else if (strcmp(anc_fps, "p29") == 0) {
     anc->info.anc_fps = ST_FPS_P29_97;
+  } else if (strcmp(anc_fps, "p25") == 0) {
+    anc->info.anc_fps = ST_FPS_P25;
+  } else if (strcmp(anc_fps, "p119") == 0) {
+    anc->info.anc_fps = ST_FPS_P119_88;
+  } else if (strcmp(anc_fps, "p120") == 0) {
+    anc->info.anc_fps = ST_FPS_P120;
+  } else if (strcmp(anc_fps, "p100") == 0) {
+    anc->info.anc_fps = ST_FPS_P100;
+  } else if (strcmp(anc_fps, "p60") == 0) {
+    anc->info.anc_fps = ST_FPS_P60;
+  } else if (strcmp(anc_fps, "p30") == 0) {
+    anc->info.anc_fps = ST_FPS_P30;
+  } else if (strcmp(anc_fps, "p24") == 0) {
+    anc->info.anc_fps = ST_FPS_P24;
+  } else if (strcmp(anc_fps, "p23") == 0) {
+    anc->info.anc_fps = ST_FPS_P23_98;
   } else {
     err("%s, invalid anc fps %s\n", __func__, anc_fps);
     return -ST_JSON_NOT_VALID;
@@ -1226,10 +1246,24 @@ static int parse_st22p_fps(json_object* st22p_obj, st_json_st22p_session_t* st22
     st22p->info.fps = ST_FPS_P59_94;
   } else if (strcmp(fps, "p50") == 0) {
     st22p->info.fps = ST_FPS_P50;
-  } else if (strcmp(fps, "p25") == 0) {
-    st22p->info.fps = ST_FPS_P25;
   } else if (strcmp(fps, "p29") == 0) {
     st22p->info.fps = ST_FPS_P29_97;
+  } else if (strcmp(fps, "p25") == 0) {
+    st22p->info.fps = ST_FPS_P25;
+  } else if (strcmp(fps, "p119") == 0) {
+    st22p->info.fps = ST_FPS_P119_88;
+  } else if (strcmp(fps, "p120") == 0) {
+    st22p->info.fps = ST_FPS_P120;
+  } else if (strcmp(fps, "p100") == 0) {
+    st22p->info.fps = ST_FPS_P100;
+  } else if (strcmp(fps, "p60") == 0) {
+    st22p->info.fps = ST_FPS_P60;
+  } else if (strcmp(fps, "p30") == 0) {
+    st22p->info.fps = ST_FPS_P30;
+  } else if (strcmp(fps, "p24") == 0) {
+    st22p->info.fps = ST_FPS_P24;
+  } else if (strcmp(fps, "p23") == 0) {
+    st22p->info.fps = ST_FPS_P23_98;
   } else {
     err("%s, invalid anc fps %s\n", __func__, fps);
     return -ST_JSON_NOT_VALID;
@@ -1263,8 +1297,16 @@ static int parse_st22p_codec(json_object* st22p_obj, st_json_st22p_session_t* st
   const char* codec =
       json_object_get_string(st_json_object_object_get(st22p_obj, "codec"));
   REQUIRED_ITEM(codec);
-  if (strcmp(codec, "JPEG-XS") == 0) {
+  if (strcmp(codec, "JPEGXS") == 0 || strcmp(codec, "JPEG-XS") == 0) {
     st22p->info.codec = ST22_CODEC_JPEGXS;
+  } else if (strcmp(codec, "H264_CBR") == 0) {
+    st22p->info.codec = ST22_CODEC_H264_CBR;
+  } else if (strcmp(codec, "H264") == 0) {
+    st22p->info.codec = ST22_CODEC_H264;
+  } else if (strcmp(codec, "H265_CBR") == 0) {
+    st22p->info.codec = ST22_CODEC_H265_CBR;
+  } else if (strcmp(codec, "H265") == 0) {
+    st22p->info.codec = ST22_CODEC_H265;
   } else {
     err("%s, invalid codec %s\n", __func__, codec);
     return -ST_JSON_NOT_VALID;
@@ -1316,42 +1358,58 @@ static int parse_st22p_format(json_object* st22p_obj, st_json_st22p_session_t* s
   REQUIRED_ITEM(format);
   if (strcmp(format, "YUV422PLANAR10LE") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422PLANAR10LE;
-  } else if (strcmp(format, "YUV422PLANAR12LE") == 0) {
-    st22p->info.format = ST_FRAME_FMT_YUV422PLANAR12LE;
-  } else if (strcmp(format, "ARGB") == 0) {
-    st22p->info.format = ST_FRAME_FMT_ARGB;
-  } else if (strcmp(format, "BGRA") == 0) {
-    st22p->info.format = ST_FRAME_FMT_BGRA;
   } else if (strcmp(format, "V210") == 0) {
     st22p->info.format = ST_FRAME_FMT_V210;
+  } else if (strcmp(format, "Y210") == 0) {
+    st22p->info.format = ST_FRAME_FMT_Y210;
   } else if (strcmp(format, "YUV422PLANAR8") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
   } else if (strcmp(format, "UYVY") == 0) {
     st22p->info.format = ST_FRAME_FMT_UYVY;
-  } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
-    st22p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
-  } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
-    st22p->info.format = ST_FRAME_FMT_YUV444PLANAR12LE;
-  } else if (strcmp(format, "GBRPLANAR10LE") == 0) {
-    st22p->info.format = ST_FRAME_FMT_GBRPLANAR10LE;
-  } else if (strcmp(format, "GBRPLANAR12LE") == 0) {
-    st22p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
   } else if (strcmp(format, "YUV422RFC4175PG2BE10") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  } else if (strcmp(format, "YUV422PLANAR12LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV422PLANAR12LE;
   } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
+  } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
   } else if (strcmp(format, "YUV444RFC4175PG4BE10") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV444RFC4175PG4BE10;
+  } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV444PLANAR12LE;
   } else if (strcmp(format, "YUV444RFC4175PG2BE12") == 0) {
     st22p->info.format = ST_FRAME_FMT_YUV444RFC4175PG2BE12;
-  } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
-    st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
-  } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
-    st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
+  } else if (strcmp(format, "YUV420CUSTOM8") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV420CUSTOM8;
+  } else if (strcmp(format, "YUV422CUSTOM8") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV422CUSTOM8;
+  } else if (strcmp(format, "YUV420PLANAR8") == 0) {
+    st22p->info.format = ST_FRAME_FMT_YUV420PLANAR8;
+  } else if (strcmp(format, "ARGB") == 0) {
+    st22p->info.format = ST_FRAME_FMT_ARGB;
+  } else if (strcmp(format, "BGRA") == 0) {
+    st22p->info.format = ST_FRAME_FMT_BGRA;
   } else if (strcmp(format, "RGB8") == 0) {
     st22p->info.format = ST_FRAME_FMT_RGB8;
+  } else if (strcmp(format, "GBRPLANAR10LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_GBRPLANAR10LE;
+  } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
+    st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
+  } else if (strcmp(format, "GBRPLANAR12LE") == 0) {
+    st22p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
+  } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
+    st22p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
   } else if (strcmp(format, "JPEGXS_CODESTREAM") == 0) {
     st22p->info.format = ST_FRAME_FMT_JPEGXS_CODESTREAM;
+  } else if (strcmp(format, "H264_CBR_CODESTREAM") == 0) {
+    st22p->info.format = ST_FRAME_FMT_H264_CBR_CODESTREAM;
+  } else if (strcmp(format, "H264_CODESTREAM") == 0) {
+    st22p->info.format = ST_FRAME_FMT_H264_CODESTREAM;
+  } else if (strcmp(format, "H265_CBR_CODESTREAM") == 0) {
+    st22p->info.format = ST_FRAME_FMT_H265_CBR_CODESTREAM;
+  } else if (strcmp(format, "H265_CODESTREAM") == 0) {
+    st22p->info.format = ST_FRAME_FMT_H265_CODESTREAM;
   } else {
     err("%s, invalid output format %s\n", __func__, format);
     return -ST_JSON_NOT_VALID;
@@ -1534,10 +1592,24 @@ static int parse_st20p_fps(json_object* st20p_obj, st_json_st20p_session_t* st20
     st20p->info.fps = ST_FPS_P59_94;
   } else if (strcmp(fps, "p50") == 0) {
     st20p->info.fps = ST_FPS_P50;
-  } else if (strcmp(fps, "p25") == 0) {
-    st20p->info.fps = ST_FPS_P25;
   } else if (strcmp(fps, "p29") == 0) {
     st20p->info.fps = ST_FPS_P29_97;
+  } else if (strcmp(fps, "p25") == 0) {
+    st20p->info.fps = ST_FPS_P25;
+  } else if (strcmp(fps, "p119") == 0) {
+    st20p->info.fps = ST_FPS_P119_88;
+  } else if (strcmp(fps, "p120") == 0) {
+    st20p->info.fps = ST_FPS_P120;
+  } else if (strcmp(fps, "p100") == 0) {
+    st20p->info.fps = ST_FPS_P100;
+  } else if (strcmp(fps, "p60") == 0) {
+    st20p->info.fps = ST_FPS_P60;
+  } else if (strcmp(fps, "p30") == 0) {
+    st20p->info.fps = ST_FPS_P30;
+  } else if (strcmp(fps, "p24") == 0) {
+    st20p->info.fps = ST_FPS_P24;
+  } else if (strcmp(fps, "p23") == 0) {
+    st20p->info.fps = ST_FPS_P23_98;
   } else {
     err("%s, invalid anc fps %s\n", __func__, fps);
     return -ST_JSON_NOT_VALID;
@@ -1620,12 +1692,6 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
   REQUIRED_ITEM(format);
   if (strcmp(format, "YUV422PLANAR10LE") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422PLANAR10LE;
-  } else if (strcmp(format, "YUV422PLANAR12LE") == 0) {
-    st20p->info.format = ST_FRAME_FMT_YUV422PLANAR12LE;
-  } else if (strcmp(format, "ARGB") == 0) {
-    st20p->info.format = ST_FRAME_FMT_ARGB;
-  } else if (strcmp(format, "BGRA") == 0) {
-    st20p->info.format = ST_FRAME_FMT_BGRA;
   } else if (strcmp(format, "V210") == 0) {
     st20p->info.format = ST_FRAME_FMT_V210;
   } else if (strcmp(format, "Y210") == 0) {
@@ -1634,28 +1700,40 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_YUV422PLANAR8;
   } else if (strcmp(format, "UYVY") == 0) {
     st20p->info.format = ST_FRAME_FMT_UYVY;
-  } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
-    st20p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
-  } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
-    st20p->info.format = ST_FRAME_FMT_YUV444PLANAR12LE;
-  } else if (strcmp(format, "GBRPLANAR10LE") == 0) {
-    st20p->info.format = ST_FRAME_FMT_GBRPLANAR10LE;
-  } else if (strcmp(format, "GBRPLANAR12LE") == 0) {
-    st20p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
   } else if (strcmp(format, "YUV422RFC4175PG2BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  } else if (strcmp(format, "YUV422PLANAR12LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV422PLANAR12LE;
   } else if (strcmp(format, "YUV422RFC4175PG2BE12") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV422RFC4175PG2BE12;
+  } else if (strcmp(format, "YUV444PLANAR10LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV444PLANAR10LE;
   } else if (strcmp(format, "YUV444RFC4175PG4BE10") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444RFC4175PG4BE10;
+  } else if (strcmp(format, "YUV444PLANAR12LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV444PLANAR12LE;
   } else if (strcmp(format, "YUV444RFC4175PG2BE12") == 0) {
     st20p->info.format = ST_FRAME_FMT_YUV444RFC4175PG2BE12;
-  } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
-    st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
-  } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
-    st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
+  } else if (strcmp(format, "YUV420CUSTOM8") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV420CUSTOM8;
+  } else if (strcmp(format, "YUV422CUSTOM8") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV422CUSTOM8;
+  } else if (strcmp(format, "YUV420PLANAR8") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV420PLANAR8;
+  } else if (strcmp(format, "ARGB") == 0) {
+    st20p->info.format = ST_FRAME_FMT_ARGB;
+  } else if (strcmp(format, "BGRA") == 0) {
+    st20p->info.format = ST_FRAME_FMT_BGRA;
   } else if (strcmp(format, "RGB8") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGB8;
+  } else if (strcmp(format, "GBRPLANAR10LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_GBRPLANAR10LE;
+  } else if (strcmp(format, "RGBRFC4175PG4BE10") == 0) {
+    st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG4BE10;
+  } else if (strcmp(format, "GBRPLANAR12LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
+  } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
+    st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
   } else {
     err("%s, invalid output format %s\n", __func__, format);
     return -ST_JSON_NOT_VALID;
@@ -1676,16 +1754,22 @@ static int parse_st20p_transport_format(json_object* st20p_obj,
     st20p->info.transport_format = ST20_FMT_YUV_422_12BIT;
   } else if (strcmp(t_format, "YUV_422_16bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_422_16BIT;
+  } else if (strcmp(t_format, "YUV_444_8bit") == 0) {
+    st20p->info.transport_format = ST20_FMT_YUV_444_8BIT;
   } else if (strcmp(t_format, "YUV_444_10bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_444_10BIT;
   } else if (strcmp(t_format, "YUV_444_12bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_444_12BIT;
+  } else if (strcmp(t_format, "YUV_444_16bit") == 0) {
+    st20p->info.transport_format = ST20_FMT_YUV_444_16BIT;
   } else if (strcmp(t_format, "YUV_420_8bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_420_8BIT;
   } else if (strcmp(t_format, "YUV_420_10bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_420_10BIT;
   } else if (strcmp(t_format, "YUV_420_12bit") == 0) {
     st20p->info.transport_format = ST20_FMT_YUV_420_12BIT;
+  } else if (strcmp(t_format, "YUV_420_16bit") == 0) {
+    st20p->info.transport_format = ST20_FMT_YUV_420_16BIT;
   } else if (strcmp(t_format, "RGB_8bit") == 0) {
     st20p->info.transport_format = ST20_FMT_RGB_8BIT;
   } else if (strcmp(t_format, "RGB_10bit") == 0) {

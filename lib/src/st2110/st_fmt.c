@@ -9,18 +9,18 @@
 
 static const struct st20_pgroup st20_pgroups[] = {
     {
-        /* ST20_FMT_YUV_422_8BIT */
-        .fmt = ST20_FMT_YUV_422_8BIT,
-        .size = 4,
-        .coverage = 2,
-        .name = "ST20_FMT_YUV_422_8BIT",
-    },
-    {
         /* ST20_FMT_YUV_422_10BIT */
         .fmt = ST20_FMT_YUV_422_10BIT,
         .size = 5,
         .coverage = 2,
         .name = "ST20_FMT_YUV_422_10BIT",
+    },
+    {
+        /* ST20_FMT_YUV_422_8BIT */
+        .fmt = ST20_FMT_YUV_422_8BIT,
+        .size = 4,
+        .coverage = 2,
+        .name = "ST20_FMT_YUV_422_8BIT",
     },
     {
         /* ST20_FMT_YUV_422_12BIT */
@@ -56,6 +56,13 @@ static const struct st20_pgroup st20_pgroups[] = {
         .size = 9,
         .coverage = 4,
         .name = "ST20_FMT_YUV_420_12BIT",
+    },
+    {
+        /* ST20_FMT_YUV_420_16BIT */
+        .fmt = ST20_FMT_YUV_420_16BIT,
+        .size = 12,
+        .coverage = 4,
+        .name = "ST20_FMT_YUV_420_16BIT",
     },
     {
         /* ST20_FMT_RGB_8BIT */
