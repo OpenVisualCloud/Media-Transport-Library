@@ -7,6 +7,7 @@
 Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)
 [![CodeQL](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/codeql.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/codeql.yml)
 [![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
+[![Coverity Scan Build Status](https://scan.coverity.com/projects/30596/badge.svg)](https://scan.coverity.com/projects/media-transport-library)
 
 ## 1. Overview
 
