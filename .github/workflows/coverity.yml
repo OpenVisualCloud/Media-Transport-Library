@@ -54,6 +54,5 @@ jobs:
     - name: 'fetch results'
       uses: actions/download-artifact@v4
       with:
-        path: ${{ github.workspace }}/cov-int/**
         merge-multiple: true
         
