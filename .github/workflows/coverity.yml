@@ -27,18 +27,12 @@ jobs:
     - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       
 
-    #- name: 'Install dependencies'
-    #  run: |
-     #   sudo apt-get update -y && \
-     #   sudo apt-get install -y --no-install-recommends \
-     #       git build-essential meson python3 python3-pyelftools pkg-config \
-     #       libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev \
-     #       libsdl2-ttf-dev libssl-dev ca-certificates m4 clang llvm zlib1g-dev \
-     #       libelf-dev libcap-ng-dev libcap2-bin gcc-multilib systemtap-sdt-dev ninja-build \
-     
-     # nasm dpdk-dev librdmacm-dev && \
-     #   sudo apt-get clean && \
-     #   sudo rm -rf /var/lib/apt/lists/*
+    - name: 'Install dependencies'
+      run: |
+        sudo apt-get update
+        sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev\
+          libjson-c-dev libpcap-dev libgtest-dev libssl-dev systemtap-sdt-dev llvm clang
+        sudo pip install pyelftools ninja
 
     - name: 'Run coverity'
       uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1.8.0
