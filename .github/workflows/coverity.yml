@@ -51,9 +51,5 @@ jobs:
         build_platform: 'linux64'
         working-directory: '${{ github.workspace }}'
         command: ./build.sh 
-    - name: 'fetch results'
-      uses: actions/download-artifact@v4
-      with:
-        path: '${{ github.workspace }}/cov-int'
-        merge-multiple: true
+    - uses: actions/download-artifact@v4
         
