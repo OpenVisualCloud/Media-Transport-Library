@@ -51,5 +51,8 @@ jobs:
         build_platform: 'linux64'
         working-directory: '${{ github.workspace }}'
         command: ./build.sh 
-    - uses: actions/download-artifact@v4
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coverity-reports
+        path: '${{ github.workspace }}/cov-int'
         
