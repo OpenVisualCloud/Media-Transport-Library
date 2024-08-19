@@ -89,7 +89,7 @@ void mt_eth_link_dump(uint16_t port_id);
 /* 7 bits payload type define in RFC3550 */
 static inline bool st_is_valid_payload_type(int payload_type) {
   /* Zero means disable the payload_type check */
-  if (payload_type >= 0 && payload_type < 0x7F)
+  if (payload_type >= 0 && payload_type <= 0x7F)
     return true;
   else
     return false;
