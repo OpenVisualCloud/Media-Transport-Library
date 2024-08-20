@@ -464,7 +464,7 @@ static const struct st_video_fmt_desc st_video_fmt_descs[] = {
 
 /* 7 bits payload type define in RFC3550 */
 static inline bool st_json_is_valid_payload_type(int payload_type) {
-  if (payload_type > 0 && payload_type < 0x7F)
+  if (payload_type > 0 && payload_type <= 0x7F)
     return true;
   else
     return false;
