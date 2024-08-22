@@ -176,6 +176,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
   ops_tx.notify_frame_done = tx_st30p_frame_done;
   ops_tx.rl_accuracy_ns = ops->rl_accuracy_ns;
   ops_tx.rl_offset_ns = ops->rl_offset_ns;
+  ops_tx.fifo_size = ops->fifo_size;
 
   transport = st30_tx_create(impl, &ops_tx);
   if (!transport) {
