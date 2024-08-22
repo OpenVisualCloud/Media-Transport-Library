@@ -6,6 +6,7 @@
 #include <math.h>
 #include <mtl/st30_api.h>
 #include <mtl/st40_api.h>
+#include <mtl/st41_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -104,6 +105,11 @@ enum anc_format {
   ANC_FORMAT_MAX,
 };
 
+enum fmd_format {
+  FMD_FORMAT_CLOSED_CAPTION,
+  FMD_FORMAT_MAX,
+};  // skolelis tbd: I don't think closed caption is relevant here in st41. The enum to be removed or changed.
+
 struct st_video_fmt_desc {
   enum video_format fmt;
   char* name;
@@ -126,6 +132,8 @@ typedef struct st_json_interface {
   int rx_audio_sessions_cnt; /* st30 on interface level */
   int tx_anc_sessions_cnt;   /* st40 on interface level */
   int rx_anc_sessions_cnt;   /* st40 on interface level */
+  int tx_fmd_sessions_cnt;   /* st41 on interface level */
+  int rx_fmd_sessions_cnt;   /* st41 on interface level */
 } st_json_interface_t;
 
 enum st_json_ip_type {
@@ -176,6 +184,15 @@ typedef struct st_json_ancillary_info {
 
   char anc_url[ST_APP_URL_MAX_LEN];
 } st_json_ancillary_info_t;
+
+typedef struct st_json_fastmetadata_info {
+  enum st41_type type;
+  enum fmd_format fmd_format;
+  enum st_fps fmd_fps;
+  bool interlaced;
+
+  char fmd_url[ST_APP_URL_MAX_LEN];
+} st_json_fastmetadata_info_t;
 
 typedef struct st_json_st22p_info {
   enum st_frame_fmt format;
@@ -238,6 +255,13 @@ typedef struct st_json_ancillary_session {
   bool enable_rtcp;
 } st_json_ancillary_session_t;
 
+typedef struct st_json_fastmetadata_session {
+  st_json_session_base_t base;
+  st_json_fastmetadata_info_t info;
+
+  bool enable_rtcp;
+} st_json_fastmetadata_session_t;
+
 typedef struct st_json_st22p_session {
   st_json_session_base_t base;
   st_json_st22p_info_t info;
@@ -275,6 +299,8 @@ typedef struct st_json_context {
   int tx_audio_session_cnt;
   st_json_ancillary_session_t* tx_anc_sessions;
   int tx_anc_session_cnt;
+  st_json_fastmetadata_session_t* tx_fmd_sessions;
+  int tx_fmd_session_cnt;
   st_json_st22p_session_t* tx_st22p_sessions;
   int tx_st22p_session_cnt;
   st_json_st20p_session_t* tx_st20p_sessions;
@@ -288,6 +314,8 @@ typedef struct st_json_context {
   int rx_audio_session_cnt;
   st_json_ancillary_session_t* rx_anc_sessions;
   int rx_anc_session_cnt;
+  st_json_fastmetadata_session_t* rx_fmd_sessions;
+  int rx_fmd_session_cnt;
   st_json_st22p_session_t* rx_st22p_sessions;
   int rx_st22p_session_cnt;
   st_json_st20p_session_t* rx_st20p_sessions;

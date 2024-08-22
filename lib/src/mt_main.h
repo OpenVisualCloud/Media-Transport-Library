@@ -556,6 +556,17 @@ struct mtl_sch_impl {
   bool rx_anc_init;
   pthread_mutex_t rx_anc_mgr_mutex; /* protect rx_anc_mgr */
 
+  /* one tx fast metadata sessions mgr/transmitter for one sch */
+  struct st_tx_fastmetadata_sessions_mgr tx_fmd_mgr;
+  struct st_fastmetadata_transmitter_impl fmd_trs;
+  bool tx_fmd_init;
+  pthread_mutex_t tx_fmd_mgr_mutex; /* protect tx_fmd_mgr */
+
+  /* one rx fast metadata sessions mgr for one sch */
+  struct st_rx_fastmetadata_sessions_mgr rx_fmd_mgr;
+  bool rx_fmd_init;
+  pthread_mutex_t rx_fmd_mgr_mutex; /* protect rx_fmd_mgr */
+
   /* sch sleep info */
   bool allow_sleep;
   pthread_cond_t sleep_wake_cond;
@@ -1248,10 +1259,12 @@ struct mtl_main_impl {
   rte_atomic32_t st22_tx_sessions_cnt;
   rte_atomic32_t st30_tx_sessions_cnt;
   rte_atomic32_t st40_tx_sessions_cnt;
+  rte_atomic32_t st41_tx_sessions_cnt;
   rte_atomic32_t st20_rx_sessions_cnt;
   rte_atomic32_t st22_rx_sessions_cnt;
   rte_atomic32_t st30_rx_sessions_cnt;
   rte_atomic32_t st40_rx_sessions_cnt;
+  rte_atomic32_t st41_rx_sessions_cnt;
   /* active lcore cnt */
   rte_atomic32_t lcore_cnt;
 

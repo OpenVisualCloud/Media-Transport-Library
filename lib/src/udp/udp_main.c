@@ -1021,7 +1021,7 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
     rte_memcpy(msg->msg_name, &addr_in, RTE_MIN(msg->msg_namelen, sizeof(addr_in)));
   }
 
-  if (msg->msg_control) { /* Ancillary data */
+  if (msg->msg_control) { /* Ancillary data */ // skolelis tbd: how to operate around this to add st41 (fast metadata) functionality?
     struct cmsghdr chdr;
     memset(&chdr, 0, sizeof(chdr));
     chdr.cmsg_len = sizeof(chdr);
