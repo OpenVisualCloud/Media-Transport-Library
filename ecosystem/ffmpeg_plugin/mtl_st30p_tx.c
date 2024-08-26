@@ -114,7 +114,7 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
     ops_tx.sampling = ST30_SAMPLING_48K;
   } else if (codecpar->sample_rate == 96000) {
     ops_tx.sampling = ST30_SAMPLING_96K;
-  } else if (codecpar->sample_rate == 44000) {
+  } else if (codecpar->sample_rate == 44100) {
     ops_tx.sampling = ST31_SAMPLING_44K;
   } else {
     err(ctx, "%s, unknown sample_rate %d\n", __func__, codecpar->sample_rate);

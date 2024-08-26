@@ -122,7 +122,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     ops_rx.sampling = ST30_SAMPLING_48K;
   else if (s->sample_rate == 96000)
     ops_rx.sampling = ST30_SAMPLING_96K;
-  else if (s->sample_rate == 44000)
+  else if (s->sample_rate == 44100)
     ops_rx.sampling = ST31_SAMPLING_44K;
   else {
     err(ctx, "%s, invalid sample_rate: %d\n", __func__, s->sample_rate);
