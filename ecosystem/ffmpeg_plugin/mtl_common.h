@@ -26,16 +26,21 @@
 #include "libavdevice/version.h"
 #if LIBAVDEVICE_VERSION_MAJOR <= 58
 #define MTL_FFMPEG_4_4
-#else
+#elif LIBAVDEVICE_VERSION_MAJOR <= 60
 #define MTL_FFMPEG_6_1
+#else
+#define MTL_FFMPEG_7_0
 #endif
 // clang-format on
 
 #include "libavcodec/codec_desc.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
-#ifdef MTL_FFMPEG_6_1
+#if (defined(MTL_FFMPEG_6_1) || defined(MTL_FFMPEG_7_0))
 #include "libavformat/mux.h"
+#endif
+#ifdef MTL_FFMPEG_7_0
+#include "libavformat/demux.h"
 #endif
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
