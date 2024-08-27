@@ -19,6 +19,7 @@
 
 #include <arpa/inet.h>
 #include <mtl/st_pipeline_api.h>
+#include <mtl/st30_api.h>
 
 // clang-format off
 /* MTL FFMPEG version */
@@ -164,3 +165,4 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StRxSessionPortArgs* args, struct st_rx_port* port);
 int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StTxSessionPortArgs* args, struct st_tx_port* port);
+int mtl_parse_st30_sample_rate(enum st30_sampling *sample_rate, int value);
