@@ -118,15 +118,10 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   }
   ops_rx.ptime = s->ptime;
   ops_rx.channel = s->channels;
-  if (s->sample_rate == 48000)
-    ops_rx.sampling = ST30_SAMPLING_48K;
-  else if (s->sample_rate == 96000)
-    ops_rx.sampling = ST30_SAMPLING_96K;
-  else if (s->sample_rate == 44100)
-    ops_rx.sampling = ST31_SAMPLING_44K;
-  else {
+  ret = mtl_parse_st30_sample_rate(&ops_rx.sampling, s->sample_rate);
+  if (!ret) {
     err(ctx, "%s, invalid sample_rate: %d\n", __func__, s->sample_rate);
-    return AVERROR(EINVAL);
+    return ret;
   }
   frame_buf_size = st30_calculate_framebuff_size(
       ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);

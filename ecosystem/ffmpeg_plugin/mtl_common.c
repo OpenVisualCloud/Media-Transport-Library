@@ -171,3 +171,20 @@ int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
 
   return 0;
 }
+
+int mtl_parse_st30_sample_rate(enum st30_sampling *sample_rate, int value)
+{
+  switch (value) {
+  case 48000:
+    *sample_rate = ST30_SAMPLING_48K;
+    return 0;
+  case 96000:
+    *sample_rate = ST30_SAMPLING_96K;
+    return 0;
+  case 44100:
+    *sample_rate = ST31_SAMPLING_44K;
+    return 0;
+  default:
+    return AVERROR(EINVAL);
+  }
+}

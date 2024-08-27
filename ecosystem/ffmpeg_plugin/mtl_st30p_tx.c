@@ -110,15 +110,10 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
   info(ctx, "%s, nb_channels %d\n", __func__, codecpar->ch_layout.nb_channels);
   ops_tx.channel = codecpar->ch_layout.nb_channels;
 #endif
-  if (codecpar->sample_rate == 48000) {
-    ops_tx.sampling = ST30_SAMPLING_48K;
-  } else if (codecpar->sample_rate == 96000) {
-    ops_tx.sampling = ST30_SAMPLING_96K;
-  } else if (codecpar->sample_rate == 44100) {
-    ops_tx.sampling = ST31_SAMPLING_44K;
-  } else {
+  ret = mtl_parse_st30_sample_rate(&ops_tx.sampling, codecpar->sample_rate);
+  if (!ret) {
     err(ctx, "%s, unknown sample_rate %d\n", __func__, codecpar->sample_rate);
-    return AVERROR(EINVAL);
+    return ret;
   }
   if (codecpar->codec_id == AV_CODEC_ID_PCM_S24BE) {
     ops_tx.fmt = ST30_FMT_PCM24;
