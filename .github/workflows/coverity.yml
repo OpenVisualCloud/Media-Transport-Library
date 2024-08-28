@@ -10,8 +10,6 @@ env:
   MTL_BUILD_DISABLE_PCAPNG: true
   PREFIX_DIR: /usr/local
   DEBIAN_FRONTEND: noninteractive
-  GRPC_VERSION: v1.58.0
-  GRPC_DIR: /tmp/grpc
 
 permissions:
   contents: read
