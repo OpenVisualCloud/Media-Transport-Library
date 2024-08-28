@@ -6,7 +6,7 @@ on:
   workflow_dispatch: # trigger manually
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   sync_latest_from_upstream:
