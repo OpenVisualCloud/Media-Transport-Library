@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  trivy:
     name: Build
     runs-on: ubuntu-20.04
     steps:
@@ -46,3 +46,8 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
+          output: '${{ github.workspace }}/Trivy-image-scan-results.txt'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trivy-output
+          path: '${{ github.workspace }}/Trivy-image-scan-results.txt'
