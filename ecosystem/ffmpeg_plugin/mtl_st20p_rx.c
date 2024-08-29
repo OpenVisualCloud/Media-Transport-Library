@@ -129,7 +129,11 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   }
 
   st->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+#ifdef MTL_FFMPEG_7_0
+  st->codecpar->codec_id = ffifmt(ctx->iformat)->raw_codec_id;
+#else
   st->codecpar->codec_id = ctx->iformat->raw_codec_id;
+#endif
   st->codecpar->format = pix_fmt;
   st->codecpar->width = s->width;
   st->codecpar->height = s->height;
@@ -303,6 +307,20 @@ static const AVClass mtl_st20p_demuxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_INPUT,
 };
 
+#ifdef MTL_FFMPEG_7_0
+FFInputFormat ff_mtl_st20p_demuxer = {
+    .p.name = "mtl_st20p",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st20p input device"),
+    .priv_data_size = sizeof(MtlSt20pDemuxerContext),
+    .read_header = mtl_st20p_read_header,
+    .read_packet = mtl_st20p_read_packet,
+    .read_close = mtl_st20p_read_close,
+    .p.flags = AVFMT_NOFILE,
+    .p.extensions = "mtl",
+    .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
+    .p.priv_class = &mtl_st20p_demuxer_class,
+};
+#else  // MTL_FFMPEG_7_0
 #ifndef MTL_FFMPEG_4_4
 const AVInputFormat ff_mtl_st20p_demuxer =
 #else
@@ -320,3 +338,4 @@ AVInputFormat ff_mtl_st20p_demuxer =
         .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
         .priv_class = &mtl_st20p_demuxer_class,
 };
+#endif  // MTL_FFMPEG_7_0

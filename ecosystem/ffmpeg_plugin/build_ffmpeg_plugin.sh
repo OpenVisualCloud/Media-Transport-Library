@@ -8,8 +8,8 @@ set -e
 if [ -n "$1" ]; then
 	ffmpeg_ver=$1
 else
-	# default to latest 6.1
-	ffmpeg_ver=6.1
+	# default to latest 7.0
+	ffmpeg_ver=7.0
 fi
 
 build_openh264() {
