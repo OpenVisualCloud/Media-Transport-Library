@@ -4,6 +4,10 @@
 
 #include "tx_fastmetadata_app.h"
 
+
+#define ST_PKT_ST41_PAYLOAD_MAX_BYTES \
+  (1460 - sizeof(struct st41_rtp_hdr))
+
 static int app_tx_fmd_next_frame(void* priv, uint16_t* next_frame_idx,
                                  struct st41_tx_frame_meta* meta) {
   struct st_app_tx_fmd_session* s = priv;
@@ -72,22 +76,12 @@ static int app_tx_fmd_rtp_done(void* priv) {
 
 static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
                                    struct st41_frame* dst) {
-  uint16_t udw_size = s->st41_source_end - s->st41_frame_cursor > 255
-                          ? 255
+  uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
+                          ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
                           : s->st41_source_end - s->st41_frame_cursor;
-  dst->meta[0].c = 0;
-  dst->meta[0].line_number = 10;
-  dst->meta[0].hori_offset = 0;
-  dst->meta[0].s = 0;
-  dst->meta[0].stream_num = 0;
-  dst->meta[0].did = 0x43;
-  dst->meta[0].sdid = 0x02;
-  dst->meta[0].udw_size = udw_size;
-  dst->meta[0].udw_offset = 0;
+  dst->data_item_length_bytes = data_item_length_bytes;
   dst->data = s->st41_frame_cursor;
-  dst->data_size = udw_size;
-  dst->meta_num = 1;
-  s->st41_frame_cursor += udw_size;
+  s->st41_frame_cursor += data_item_length_bytes;
   if (s->st41_frame_cursor == s->st41_source_end)
     s->st41_frame_cursor = s->st41_source_begin;
 }
@@ -195,54 +189,38 @@ static void* app_tx_fmd_pcap_thread(void* arg) {
 static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
                                  uint16_t* mbuf_len) {
   /* generate one fmd rtp for test purpose */
-  struct st41_rfc8331_rtp_hdr* hdr = (struct st41_rfc8331_rtp_hdr*)usrptr;
-  struct st41_rfc8331_payload_hdr* payload_hdr =
-      (struct st41_rfc8331_payload_hdr*)(&hdr[1]);
-  uint16_t udw_size = s->st41_source_end - s->st41_frame_cursor > 255
-                          ? 255
+  struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
+  uint8_t* payload_hdr = (uint8_t*)(&hdr[1]);
+  uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
+                          ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
                           : s->st41_source_end - s->st41_frame_cursor;
-  uint16_t check_sum, total_size, payload_len;
+  uint16_t data_item_length;
+  data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
   hdr->base.marker = 1;
-  hdr->fmd_count = 1;
   hdr->base.payload_type = ST_APP_PAYLOAD_TYPE_FASTMETADATA;
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
   hdr->base.csrc_count = 0;
-  hdr->f = 0b00;
   hdr->base.tmstamp = s->st41_rtp_tmstamp;
   hdr->base.ssrc = htonl(0x88888888 + s->idx);
   /* update rtp seq*/
   hdr->base.seq_number = htons((uint16_t)s->st41_seq_id);
-  hdr->seq_number_ext = htons((uint16_t)(s->st41_seq_id >> 16));
   s->st41_seq_id++;
   s->st41_rtp_tmstamp++;
-  payload_hdr->first_hdr_chunk.c = 0;
-  payload_hdr->first_hdr_chunk.line_number = 10;
-  payload_hdr->first_hdr_chunk.horizontal_offset = 0;
-  payload_hdr->first_hdr_chunk.s = 0;
-  payload_hdr->first_hdr_chunk.stream_num = 0;
-  payload_hdr->second_hdr_chunk.did = st41_add_parity_bits(0x43);
-  payload_hdr->second_hdr_chunk.sdid = st41_add_parity_bits(0x02);
-  payload_hdr->second_hdr_chunk.data_count = st41_add_parity_bits(udw_size);
-  payload_hdr->swaped_first_hdr_chunk = htonl(payload_hdr->swaped_first_hdr_chunk);
-  payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
-  for (int i = 0; i < udw_size; i++) {
-    st41_set_udw(i + 3, st41_add_parity_bits(s->st41_frame_cursor[i]),
-                 (uint8_t*)&payload_hdr->second_hdr_chunk);
+
+  // skolelis what for we have her this htonl() ??? payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+  for (int i = 0; i < data_item_length_bytes; i++) {
+    payload_hdr[i] = s->st41_frame_cursor[i]; //skolelis tu ustal dobrze wskaznik na start paylodu a moze nawet 4-bajtowy?
   }
-  check_sum = st41_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  st41_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
-  total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                               // 10-bit words: DID, SDID, DATA_COUNT
-                                               // + size of buffer with data + checksum
-  total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                   // word of FMD data packet
-  payload_len =
-      sizeof(struct st41_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one FMD
-  *mbuf_len = payload_len + sizeof(struct st41_rfc8331_rtp_hdr);
-  hdr->length = htons(payload_len);
-  s->st41_frame_cursor += udw_size;
+  /* filling with 0's the remianing bytes of last 4-byte word */
+  for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
+    payload_hdr[i] = 0;
+  }
+
+  *mbuf_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
+  hdr->data_item_length = htons(data_item_length); //tbd skolelis htons() ???
+  s->st41_frame_cursor += data_item_length_bytes;
   if (s->st41_frame_cursor == s->st41_source_end)
     s->st41_frame_cursor = s->st41_source_begin;
 }
@@ -481,7 +459,7 @@ static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_sess
 
   handle = st41_tx_create(ctx->st, &ops);
   if (!handle) {
-    err("%s(%d), st30_tx_create fail\n", __func__, idx);
+    err("%s(%d), st41_tx_create fail\n", __func__, idx);
     app_tx_fmd_uinit(s);
     return -EIO;
   }
@@ -492,14 +470,14 @@ static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_sess
 
   ret = app_tx_fmd_open_source(s);
   if (ret < 0) {
-    err("%s(%d), app_tx_audio_session_open_source fail\n", __func__, idx);
+    err("%s(%d), app_tx_fmd_session_open_source fail\n", __func__, idx);
     app_tx_fmd_uinit(s);
     return ret;
   }
 
   ret = app_tx_fmd_start_source(s);
   if (ret < 0) {
-    err("%s(%d), app_tx_audio_session_start_source fail %d\n", __func__, idx, ret);
+    err("%s(%d), app_tx_fmd_session_start_source fail %d\n", __func__, idx, ret);
     app_tx_fmd_uinit(s);
     return ret;
   }

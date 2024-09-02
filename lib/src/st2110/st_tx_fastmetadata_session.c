@@ -126,11 +126,11 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct st41_tx_ops* ops = &s->ops;
   int ret;
-  struct st_rfc8331_fmd_hdr* hdr = &s->hdr[s_port];
+  struct st41_fmd_hdr* hdr = &s->hdr[s_port];
   struct rte_ether_hdr* eth = &hdr->eth;
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
-  struct st41_rfc8331_rtp_hdr* rtp = &hdr->rtp;
+  struct st41_rtp_hdr* rtp = &hdr->rtp;
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
@@ -186,7 +186,6 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st41_seq_id = 0;
-  s->st41_ext_seq_id = 0;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st41_src_port[s_port], s->st41_dst_port[s_port]);
@@ -384,17 +383,17 @@ static int tx_fastmetadata_session_update_redundant(struct st_tx_fastmetadata_se
   return 0;
 }
 
-static int tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_session_impl* s,
+static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_session_impl* s,
                                              struct rte_mbuf* pkt) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
-  struct st41_rfc8331_rtp_hdr* rtp;
+  struct st41_rtp_hdr* rtp;
 
   hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
-  rtp = (struct st41_rfc8331_rtp_hdr*)&udp[1];
+  rtp = (struct st41_rtp_hdr*)&udp[1];
 
   /* copy the hdr: eth, ip, udp */
   rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
@@ -410,8 +409,6 @@ static int tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessio
 
   /* update rtp */
   rtp->base.seq_number = htons(s->st41_seq_id);
-  rtp->seq_number_ext = htons(s->st41_ext_seq_id);
-  if (s->st41_seq_id == 0xFFFF) s->st41_ext_seq_id++;
   s->st41_seq_id++;
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
@@ -421,62 +418,27 @@ static int tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessio
   uint32_t offset = s->st41_pkt_idx * s->max_pkt_len;
   void* src_addr = frame_info->addr + offset;
   struct st41_frame* src = src_addr;
-  int fmd_count = src->meta_num;
-  int total_udw = 0;
-  int idx = 0;
-  for (idx = s->st41_pkt_idx; idx < fmd_count; idx++) {
-    uint16_t udw_size = src->meta[idx].udw_size;
-    total_udw += udw_size;
-    if ((total_udw * 10 / 8) > s->max_pkt_len) break;
-    struct st41_rfc8331_payload_hdr* pktBuff =
-        (struct st41_rfc8331_payload_hdr*)(payload);
-    pktBuff->first_hdr_chunk.c = src->meta[idx].c;
-    pktBuff->first_hdr_chunk.line_number = src->meta[idx].line_number;
-    pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
-    pktBuff->first_hdr_chunk.s = src->meta[idx].s;
-    pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
-    pktBuff->second_hdr_chunk.did = st41_add_parity_bits(src->meta[idx].did);
-    pktBuff->second_hdr_chunk.sdid = st41_add_parity_bits(src->meta[idx].sdid);
-    pktBuff->second_hdr_chunk.data_count = st41_add_parity_bits(udw_size);
+  uint16_t data_item_length_bytes = src->data_item_length_bytes;
+  uint16_t data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
-    pktBuff->swaped_first_hdr_chunk = htonl(pktBuff->swaped_first_hdr_chunk);
-    pktBuff->swaped_second_hdr_chunk = htonl(pktBuff->swaped_second_hdr_chunk);
-    int i = 0;
-    int offset = src->meta[idx].udw_offset;
-    for (; i < udw_size; i++) {
-      st41_set_udw(i + 3, st41_add_parity_bits(src->data[offset++]),
-                   (uint8_t*)&pktBuff->second_hdr_chunk);
+  if (!(data_item_length_bytes > s->max_pkt_len)) {
+    // skolelis what for we have her this htonl() ???      payload->swaped_second_hdr_chunk = htonl(payload->swaped_second_hdr_chunk);
+    int offset = 0;
+    for (int i = 0; i < data_item_length_bytes; i++) {
+      payload[i] = src->data[offset++]; //skolelis tu ustal dobrze wskaznik na start paylodu a moze nawet 4-bajtowy?
     }
-    uint16_t checksum = 0;
-    checksum = st41_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
-    st41_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
+    /* filling with 0's the remianing bytes of last 4-byte word */
+    for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
+      payload[i] = 0;
+    }
+  } 
 
-    uint16_t total_size =
-        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                        // 10-bit words: DID, SDID, DATA_COUNT
-                                        // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of FMD data packet
-    uint16_t size_to_send =
-        sizeof(struct st41_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one FMD
-    payload = payload + size_to_send;
-  }
-  int payload_size = payload - (uint8_t*)&rtp[1];
-  pkt->data_len += payload_size + sizeof(struct st41_rfc8331_rtp_hdr);
+  pkt->data_len += sizeof(struct st41_rtp_hdr) + data_item_length * 4;
   pkt->pkt_len = pkt->data_len;
-  rtp->length = htons(payload_size);
-  rtp->fmd_count = idx - s->st41_pkt_idx;
-  if (s->ops.interlaced) {
-    if (frame_info->tf_meta.second_field)
-      rtp->f = 0b11;
-    else
-      rtp->f = 0b10;
-  } else {
-    rtp->f = 0b00;
-  }
-  if (idx == fmd_count) rtp->base.marker = 1;
-  dbg("%s(%d), fmd_count %d, payload_size %d\n", __func__, s->idx, fmd_count,
-      payload_size);
+  rtp->data_item_length = htons(data_item_length); //tbd skolelis what is the proper calculation?
+  // skolelis tbd: czy zoistawic te linie? rtp->base.marker = 1;
+  dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
+      data_item_length_bytes);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -486,20 +448,18 @@ static int tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessio
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 
-  return idx;
+  return;
 }
 
-static int tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_session_impl* s,
-                                                 struct rte_mbuf* pkt, int fmd_idx) {
-  struct st41_rfc8331_rtp_hdr* rtp;
+static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_session_impl* s,
+                                                 struct rte_mbuf* pkt) {
+  struct st41_rtp_hdr* rtp;
 
-  rtp = rte_pktmbuf_mtod(pkt, struct st41_rfc8331_rtp_hdr*);
+  rtp = rte_pktmbuf_mtod(pkt, struct st41_rtp_hdr*);
   rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
   /* update rtp */
   rtp->base.seq_number = htons(s->st41_seq_id);
-  rtp->seq_number_ext = htons(s->st41_ext_seq_id);
-  if (s->st41_seq_id == 0xFFFF) s->st41_ext_seq_id++;
   s->st41_seq_id++;
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
@@ -509,63 +469,29 @@ static int tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_se
   uint32_t offset = s->st41_pkt_idx * s->max_pkt_len;
   void* src_addr = frame_info->addr + offset;
   struct st41_frame* src = src_addr;
-  int fmd_count = src->meta_num;
-  int total_udw = 0;
-  int idx = 0;
-  for (idx = fmd_idx; idx < fmd_count; idx++) {
-    uint16_t udw_size = src->meta[idx].udw_size;
-    total_udw += udw_size;
-    if ((total_udw * 10 / 8) > s->max_pkt_len) break;
-    struct st41_rfc8331_payload_hdr* pktBuff =
-        (struct st41_rfc8331_payload_hdr*)(payload);
-    pktBuff->first_hdr_chunk.c = src->meta[idx].c;
-    pktBuff->first_hdr_chunk.line_number = src->meta[idx].line_number;
-    pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
-    pktBuff->first_hdr_chunk.s = src->meta[idx].s;
-    pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
-    pktBuff->second_hdr_chunk.did = st41_add_parity_bits(src->meta[idx].did);
-    pktBuff->second_hdr_chunk.sdid = st41_add_parity_bits(src->meta[idx].sdid);
-    pktBuff->second_hdr_chunk.data_count = st41_add_parity_bits(udw_size);
+  uint16_t data_item_length_bytes = src->data_item_length_bytes;
+  uint16_t data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
-    pktBuff->swaped_first_hdr_chunk = htonl(pktBuff->swaped_first_hdr_chunk);
-    pktBuff->swaped_second_hdr_chunk = htonl(pktBuff->swaped_second_hdr_chunk);
-    int i = 0;
-    int offset = src->meta[idx].udw_offset;
-    for (; i < udw_size; i++) {
-      st41_set_udw(i + 3, st41_add_parity_bits(src->data[offset++]),
-                   (uint8_t*)&pktBuff->second_hdr_chunk);
+  if (!(data_item_length_bytes > s->max_pkt_len)) {
+    // skolelis what for we have her this htonl() ???      payload->swaped_second_hdr_chunk = htonl(payload->swaped_second_hdr_chunk);
+    int offset = 0;
+    for (int i = 0; i < data_item_length_bytes; i++) {
+      payload[i] = src->data[offset++]; //skolelis tu ustal dobrze wskaznik na start paylodu a moze nawet 4-bajtowy?
     }
-    uint16_t checksum = 0;
-    checksum = st41_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
-    st41_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
+    /* filling with 0's the remianing bytes of last 4-byte word */
+    for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
+      payload[i] = 0;
+    }
+  }
 
-    uint16_t total_size =
-        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                        // 10-bit words: DID, SDID, DATA_COUNT
-                                        // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of FMD data packet
-    uint16_t size_to_send =
-        sizeof(struct st41_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one FMD
-    payload = payload + size_to_send;
-  }
-  int payload_size = payload - (uint8_t*)&rtp[1];
-  pkt->data_len = payload_size + sizeof(struct st41_rfc8331_rtp_hdr);
+  pkt->data_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
   pkt->pkt_len = pkt->data_len;
-  rtp->length = htons(payload_size);
-  rtp->fmd_count = idx - fmd_idx;
-  if (s->ops.interlaced) {
-    if (frame_info->tf_meta.second_field)
-      rtp->f = 0b11;
-    else
-      rtp->f = 0b10;
-  } else {
-    rtp->f = 0b00;
-  }
-  if (idx == fmd_count) rtp->base.marker = 1;
-  dbg("%s(%d), fmd_count %d, payload_size %d\n", __func__, s->idx, fmd_count,
-      payload_size);
-  return idx;
+  rtp->data_item_length = htons(data_item_length); //tbd skolelis what is the proper calculation?
+   /// skolelis tbd czy to zostawic    rtp->base.marker = 1;
+  dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
+      data_item_length_bytes);
+
+  return ;
 }
 
 static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
@@ -592,11 +518,8 @@ static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
     s->st41_pkt_idx = 0;
     rte_atomic32_inc(&s->st41_stat_frame_cnt);
     s->st41_rtp_time = rtp->tmstamp;
-    bool second_field = false;
-    if (s->ops.interlaced) {
-      struct st41_rfc8331_rtp_hdr* rfc8331 = (struct st41_rfc8331_rtp_hdr*)rtp;
-      second_field = (rfc8331->f == 0b11) ? true : false;
-    }
+    bool second_field = false; //skolelis tbd decide if it should be true or false (interlaced?)
+    
     tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
   }
   if (s->ops.flags & ST41_TX_FLAG_USER_TIMESTAMP) {
@@ -641,18 +564,14 @@ static int tx_fastmetadata_session_build_packet_chain(struct mtl_main_impl* impl
   if (s_port == MTL_SESSION_PORT_P) {
     /* update rtp time for rtp path */
     if (ops->type == ST41_TYPE_RTP_LEVEL) {
-      struct st41_rfc8331_rtp_hdr* rtp =
-          rte_pktmbuf_mtod(pkt_rtp, struct st41_rfc8331_rtp_hdr*);
+      struct st41_rtp_hdr* rtp =
+          rte_pktmbuf_mtod(pkt_rtp, struct st41_rtp_hdr*);
       if (rtp->base.tmstamp != s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
         rte_atomic32_inc(&s->st41_stat_frame_cnt);
         s->st41_rtp_time = rtp->base.tmstamp;
-        bool second_field = false;
-        if (s->ops.interlaced) {
-          struct st41_rfc8331_rtp_hdr* rfc8331 = (struct st41_rfc8331_rtp_hdr*)&udp[1];
-          second_field = (rfc8331->f == 0b11) ? true : false;
-        }
+        bool second_field = false;  // skolelis tbd decide if true or false (interlaced)?
         tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
       }
       if (s->ops.flags & ST41_TX_FLAG_USER_TIMESTAMP) {
@@ -753,7 +672,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
 
   if (ST41_TX_STAT_WAIT_FRAME == s->st41_frame_stat) {
     uint16_t next_frame_idx;
-    int total_udw = 0;
+    int data_item_length_bytes = 0;
     struct st41_tx_frame_meta meta;
 
     if (s->check_frame_done_time) {
@@ -795,14 +714,14 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
     dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
     s->st41_frame_stat = ST41_TX_STAT_SENDING_PKTS;
     struct st41_frame* src = (struct st41_frame*)frame->addr;
-    for (int i = 0; i < src->meta_num; i++) total_udw += src->meta[i].udw_size;
-    int total_size = total_udw * 10 / 8;
+    data_item_length_bytes += src->data_item_length_bytes;
+    int total_size = data_item_length_bytes;
     s->st41_pkt_idx = 0;
     s->st41_total_pkts = total_size / s->max_pkt_len;
     if (total_size % s->max_pkt_len) s->st41_total_pkts++;
     /* how do we split if it need two or more pkts? */
-    dbg("%s(%d), st41_total_pkts %d total_udw %d meta_num %u src %p\n", __func__, idx,
-        s->st41_total_pkts, total_udw, src->meta_num, src);
+    dbg("%s(%d), st41_total_pkts %d data_item_length_bytes %d src %p\n", __func__, idx,
+        s->st41_total_pkts, data_item_length_bytes,  src);
     if (s->st41_total_pkts > 1) {
       err("%s(%d), frame %u invalid st41_total_pkts %d\n", __func__, idx, next_frame_idx,
           s->st41_total_pkts);
@@ -811,7 +730,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
     }
 
     MT_USDT_ST41_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
-                               src->meta_num, total_udw);
+                               0, data_item_length_bytes);
   }
 
   /* sync pacing */
@@ -870,7 +789,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       return MTL_TASKLET_ALL_DONE;
     }
-    tx_fastmetadata_session_build_rtp_packet(s, pkt_rtp, s->st41_pkt_idx);
+    tx_fastmetadata_session_build_rtp_packet(s, pkt_rtp);
     tx_fastmetadata_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
 
     if (send_r) {
@@ -1530,7 +1449,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_fastmetadata_session_has_chain_buf(s);
   if (rdma_ud) s->tx_no_chain = true;
-  s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc8331_fmd_hdr);
+  s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st41_fmd_hdr);
 
   s->st41_frames_cnt = ops->framebuff_cnt;
 
@@ -1743,7 +1662,7 @@ static int tx_fastmetadata_sessions_mgr_init(struct mtl_main_impl* impl,
   struct mtl_tasklet_ops ops;
   int i;
 
-  RTE_BUILD_BUG_ON(sizeof(struct st_rfc8331_fmd_hdr) != 62);
+  RTE_BUILD_BUG_ON(sizeof(struct st41_fmd_hdr) != 58); //skolelis tbd used to be 62 for ANC, and IMHO should be 58!!!
 
   mgr->parent = impl;
   mgr->idx = idx;

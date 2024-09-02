@@ -92,9 +92,8 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
       rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
-  struct st41_rfc8331_rtp_hdr* rfc8331 = (struct st41_rfc8331_rtp_hdr*)rtp;
   MTL_MAY_UNUSED(s_port);
-  uint32_t pkt_len = mbuf->data_len - sizeof(struct st41_rfc8331_rtp_hdr);
+  uint32_t pkt_len = mbuf->data_len - sizeof(struct st41_rtp_hdr);
   MTL_MAY_UNUSED(pkt_len);
   uint32_t tmstamp = ntohl(rtp->tmstamp);
 
@@ -110,23 +109,6 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
       s->st41_stat_pkts_wrong_ssrc_dropped++;
-      return -EINVAL;
-    }
-  }
-
-  /* check interlace */
-  if (s->ops.interlaced) {
-    if (!(rfc8331->f & 0x2)) {
-      s->stat_pkts_wrong_interlace_dropped++;
-      return -EINVAL;
-    }
-    if (rfc8331->f & 0x1)
-      s->stat_interlace_second_field++;
-    else
-      s->stat_interlace_first_field++;
-  } else {
-    if (rfc8331->f) {
-      s->stat_pkts_wrong_interlace_dropped++;
       return -EINVAL;
     }
   }

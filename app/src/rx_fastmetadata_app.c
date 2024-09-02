@@ -4,53 +4,14 @@
 
 #include "rx_fastmetadata_app.h"
 
-static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr) {
-  struct st41_rfc8331_rtp_hdr* hdr = (struct st41_rfc8331_rtp_hdr*)usrptr;
-  struct st41_rfc8331_payload_hdr* payload_hdr =
-      (struct st41_rfc8331_payload_hdr*)(&hdr[1]);
-  int fmd_count = hdr->fmd_count;
-  int idx, total_size, payload_len;
-  dbg("%s(%d), fmd_count %d\n", __func__, s->idx, fmd_count);
+static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s) { //skolelis tbd remove }, void* usrptr) {
+  // skolelis tbd remove this line struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
+  // skolelis tbd remove this line struct st41_rfc8331_payload_hdr* payload_hdr =
+  // skolelis tbd remove this line       (struct st41_rfc8331_payload_hdr*)(&hdr[1]);
+  dbg("%s(%d).\n", __func__, s->idx);
 
-  for (idx = 0; idx < fmd_count; idx++) {
-    payload_hdr->swaped_first_hdr_chunk = ntohl(payload_hdr->swaped_first_hdr_chunk);
-    payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
-    if (!st41_check_parity_bits(payload_hdr->second_hdr_chunk.did) ||
-        !st41_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
-        !st41_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
-      err("%s(%d), fmd RTP checkParityBits error\n", __func__, s->idx);
-      return;
-    }
-    int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
-
-    // verify checksum
-    uint16_t checksum = 0;
-    checksum = st41_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-    payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
-    if (checksum !=
-        st41_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
-      err("%s(%d), fmd frame checksum error\n", __func__, s->idx);
-      return;
-    }
-    // get payload
-#ifdef DEBUG
-    uint16_t data;
-    for (int i = 0; i < udw_size; i++) {
-      data = st41_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-      if (!st41_check_parity_bits(data)) err("fmd udw checkParityBits error\n");
-      dbg("%c", data & 0xff);
-    }
-    dbg("\n");
-#endif
-    total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                                 // 10-bit words: DID, SDID, DATA_COUNT
-                                                 // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of FMD data packet
-    payload_len =
-        sizeof(struct st41_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one FMD
-    payload_hdr = (struct st41_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
-  }
+  // skolelis what for this nthol() 2x ? payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
+  // skolelis what for this nthol() 2x ? payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
 
   s->stat_frame_total_received++;
   if (!s->stat_frame_first_rx_time)
@@ -76,7 +37,7 @@ static void* app_rx_fmd_read_thread(void* arg) {
       continue;
     }
     /* parse the packet */
-    app_rx_fmd_handle_rtp(s, usrptr);
+    app_rx_fmd_handle_rtp(s); // skolelis tbd remove: , usrptr);
     st41_rx_put_mbuf(s->handle, mbuf);
   }
   info("%s(%d), stop\n", __func__, idx);

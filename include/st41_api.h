@@ -82,134 +82,26 @@ enum st41_type {
 };
 
 /**
- * A structure describing a st2110-41(fast metadata) rfc8331 rtp header
+ * A structure describing a st2110-41 (fast metadata framework) rtp header
  */
-MTL_PACK(struct st41_rfc8331_rtp_hdr {
+MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian (double) versions struct to this structure (like in other places)?
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
-  /** Extended Sequence Number */
-  uint16_t seq_number_ext;
-  /** Number of octets of the FMD data RTP payload */
-  uint16_t length;
 
-  struct {
-    /** the count of the total number of FMD data packets carried in the RTP payload */
-    uint32_t fmd_count : 8;
-    /** signaling the field specified by the RTP timestamp in an interlaced SDI raster */
-    uint32_t f : 2;
-    /** reserved */
-    uint32_t reserved : 22;
-  };
+  /** Data Item Type */
+  uint32_t data_item_type : 22;
+  /** Data Item K-bit */
+  uint8_t data_item_k_bit : 1;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+  /** Data Item Contents - Number of 32-bit data elements that follow */
+  uint16_t data_item_length : 9;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
 });
-
-/**
- * A structure describing a st2110-41(fast metadata) rfc8331 payload header
- */
-#ifdef MTL_LITTLE_ENDIAN
-MTL_PACK(struct st41_rfc8331_payload_hdr {
-  union {
-    struct {
-      /** the source data stream number of the FMD data packet */
-      uint32_t stream_num : 7;
-      /** whether the data stream number of a multi-stream data mapping */
-      uint32_t s : 1;
-      /** the location of the FMD data packet in the SDI raster */
-      uint32_t horizontal_offset : 12;
-      /** line number corresponds to the location (vertical) of the FMD data packet */
-      uint32_t line_number : 11;
-      /** the FMD data uses luma (Y) data channel */
-      uint32_t c : 1;
-    } first_hdr_chunk;
-    /** Handle to make operating on first_hdr_chunk buffer easier */
-    uint32_t swaped_first_hdr_chunk;
-  };
-  union {
-    struct {
-      /** Starting point of the UDW (user data words) */
-      uint32_t rsvd_for_udw : 2;
-      /** Data Count */
-      uint32_t data_count : 10;
-      /** Secondary Data Identification Word */
-      uint32_t sdid : 10;
-      /** Data Identification Word */
-      uint32_t did : 10;
-    } second_hdr_chunk;
-    /** Handle to make operating on second_hdr_chunk buffer easier */
-    uint32_t swaped_second_hdr_chunk;
-  };
-});
-#else
-MTL_PACK(struct st41_rfc8331_payload_hdr {
-  union {
-    struct {
-      /** the FMD data uses luma (Y) data channel */
-      uint32_t c : 1;
-      /** line number corresponds to the location (vertical) of the FMD data packet */
-      uint32_t line_number : 11;
-      /** the location of the FMD data packet in the SDI raster */
-      uint32_t horizontal_offset : 12;
-      /** whether the data stream number of a multi-stream data mapping */
-      uint32_t s : 1;
-      /** the source data stream number of the FMD data packet */
-      uint32_t stream_num : 7;
-    } first_hdr_chunk;
-    /** Handle to make operating on first_hdr_chunk buffer easier */
-    uint32_t swaped_first_hdr_chunk;
-  };
-  union {
-    struct {
-      /** Data Identification Word */
-      uint32_t did : 10;
-      /** Secondary Data Identification Word */
-      uint32_t sdid : 10;
-      /** Data Count */
-      uint32_t data_count : 10;
-      /** Starting point of the UDW (user data words) */
-      uint32_t rsvd_for_udw : 2;
-    } second_hdr_chunk;
-    /** Handle to make operating on second_hdr_chunk buffer easier */
-    uint32_t swaped_second_hdr_chunk;
-  };
-});
-#endif
-
-/**
- * Structure for ST2110-41(fast metadata) meta
- */
-struct st41_meta {
-  /** the FMD data uses luma (Y) data channel */
-  uint16_t c;
-  /** line number corresponds to the location (vertical) of the FMD data packet */
-  uint16_t line_number;
-  /** the location of the FMD data packet in the SDI raster */
-  uint16_t hori_offset;
-  /** whether the data stream number of a multi-stream data mapping */
-  uint16_t s;
-  /** the source data stream number of the FMD data packet */
-  uint16_t stream_num;
-  /** Data Identification Word */
-  uint16_t did;
-  /** Secondary Data Identification Word */
-  uint16_t sdid;
-  /** Size of the User Data Words  */
-  uint16_t udw_size;
-  /** Offset of the User Data Words  */
-  uint16_t udw_offset;
-};
-
-/**
- * Max number of meta in one ST2110-41(fast metadata) frame
- */
-#define ST41_MAX_META (20)
 
 /**
  * Structure for ST2110-41(fast metadata) frame
  */
 struct st41_frame {
-  struct st41_meta meta[ST41_MAX_META]; /**<  Meta data  */
+  uint16_t data_item_length_bytes;      /** Size of the User Data Words  */
   uint8_t* data;                        /**<  Handle to data buffer  */
-  uint32_t data_size;                   /**<  Size of content data  */
-  uint32_t meta_num;                    /**<  number of meta data  */
 };
 
 /**
@@ -511,63 +403,6 @@ void st41_rx_put_mbuf(st41_rx_handle handle, void* mbuf);
  *   - <0: Error code.
  */
 int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta);
-
-/**
- * Get udw from from st2110-41(fast metadata) payload.
- *
- * @param idx
- *   Index.
- * @param data
- *   The pointer to st2110-41 payload.
- * @return
- *   - udw
- */
-uint16_t st41_get_udw(uint32_t idx, uint8_t* data);
-
-/**
- * Set udw from for st2110-41(fast metadata) payload.
- *
- * @param idx
- *   Index.
- * @param udw
- *   udw value to set.
- * @param data
- *   The pointer to st2110-41 payload.
- */
-void st41_set_udw(uint32_t idx, uint16_t udw, uint8_t* data);
-
-/**
- * Calculate checksum from st2110-41(fast metadata) payload.
- *
- * @param data_num
- *   Index.
- * @param data
- *   The pointer to st2110-41 payload.
- * @return
- *   - checksum
- */
-uint16_t st41_calc_checksum(uint32_t data_num, uint8_t* data);
-
-/**
- * Add parity from st2110-41(fast metadata) payload.
- *
- * @param val
- *   value.
- * @return
- *   - parity
- */
-uint16_t st41_add_parity_bits(uint16_t val);
-
-/**
- * Check parity for st2110-41(fast metadata) payload.
- *
- * @param val
- *   value.
- * @return
- *   - 0: Success.
- *   - <0: Error code.
- */
-int st41_check_parity_bits(uint16_t val);
 
 #if defined(__cplusplus)
 }

@@ -1266,7 +1266,7 @@ struct st_tx_fastmetadata_session_impl {
 
   uint16_t st41_src_port[MTL_SESSION_PORT_MAX]; /* udp port */
   uint16_t st41_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
-  struct st_rfc8331_fmd_hdr hdr[MTL_SESSION_PORT_MAX];
+  struct st41_fmd_hdr hdr[MTL_SESSION_PORT_MAX];
 
   struct st_tx_fastmetadata_session_pacing pacing;
   bool calculate_time_cursor;
@@ -1274,7 +1274,6 @@ struct st_tx_fastmetadata_session_impl {
   struct st_fps_timing fps_tm;
 
   uint16_t st41_seq_id;     /* seq id for each pkt */
-  uint16_t st41_ext_seq_id; /* ext seq id for each pkt */
   int st41_total_pkts;      /* total pkts in one frame */
   int st41_pkt_idx;         /* pkt index in current frame */
   int st41_rtp_time;        /* record rtp time */
