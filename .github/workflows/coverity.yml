@@ -24,8 +24,8 @@ jobs:
       with:
         egress-policy: audit
 
-    - name: 'Checkout repository'
-      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      
 
     - name: 'Install dependencies'
       run: |
@@ -47,5 +47,10 @@ jobs:
         token: ${{ secrets.COVERITY_TOKEN }}
         build_language: 'cxx'
         build_platform: 'linux64'
-        command: |
-            ${{ github.workspace }}/build.sh 
+        working-directory: '${{ github.workspace }}'
+        command: ./build.sh 
+    - uses: actions/upload-artifact@v4
+      with:
+        name: coverity-reports
+        path: '${{ github.workspace }}/cov-int'
+        
