@@ -11,6 +11,9 @@
 #include "datapath/mt_queue.h"
 #include "mt_log.h"
 #include "mt_main.h"
+#ifdef MTL_GPU_DIRECT_ENABLED
+#include <mtl_gpu_direct/gpu.h>
+#endif
 
 #ifdef MTL_HAS_ASAN
 #include <execinfo.h>
@@ -851,8 +854,9 @@ int st_rx_source_info_check(struct st_rx_source_info* src, int num_ports) {
   return 0;
 }
 
-int st_frame_trans_uinit(struct st_frame_trans* frame) {
+int st_frame_trans_uinit(struct st_frame_trans* frame, void* device) {
   int idx = frame->idx;
+  MTL_MAY_UNUSED(device);
 
   /* check if it's still shared */
   uint16_t sh_info_refcnt = rte_mbuf_ext_refcnt_read(&frame->sh_info);
@@ -861,12 +865,18 @@ int st_frame_trans_uinit(struct st_frame_trans* frame) {
 
   int refcnt = rte_atomic32_read(&frame->refcnt);
   if (refcnt) warn("%s(%d), refcnt not zero %d\n", __func__, idx, refcnt);
-
   if (frame->addr) {
     if (frame->flags & ST_FT_FLAG_RTE_MALLOC) {
       dbg("%s(%d), free rte mem\n", __func__, idx);
       mt_rte_free(frame->addr);
     }
+#ifdef MTL_GPU_DIRECT_ENABLED
+    else if (frame->flags & ST_FT_FLAG_GPU_MALLOC) {
+      GpuContext* GpuDevice = device;
+      gpu_free_buf(GpuDevice, frame->addr);
+    }
+#endif
+
     frame->addr = NULL;
   }
   frame->iova = 0;

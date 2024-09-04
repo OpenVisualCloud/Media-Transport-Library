@@ -588,6 +588,10 @@ enum st20p_rx_flag {
    * Force to use multi(only two now) threads for the rx packet processing
    */
   ST20P_RX_FLAG_USE_MULTI_THREADS = (MTL_BIT32(23)),
+  /**
+   * Use gpu_direct vram for framebuffers
+   */
+  ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS = (MTL_BIT32(24)),
 };
 
 /** Bit define for flag_resp of struct st22_decoder_create_req. */
@@ -980,6 +984,9 @@ struct st20p_rx_ops {
                          struct st20_detect_reply* reply);
   /**  Use this socket if ST20P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
+
+  /* use to store framebuffers on vram */
+  void* gpuContext;
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
