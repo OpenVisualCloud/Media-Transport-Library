@@ -49,18 +49,19 @@ static inline bool rx_fastmetadata_session_get_empty(
   }
 }
 
-static inline void rx_fastmetadata_session_put(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                            int idx) {
+static inline void rx_fastmetadata_session_put(
+    struct st_rx_fastmetadata_sessions_mgr* mgr, int idx) {
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
 static inline uint16_t rx_fastmetadata_queue_id(struct st_rx_fastmetadata_session_impl* s,
-                                             enum mtl_session_port s_port) {
+                                                enum mtl_session_port s_port) {
   return mt_rxq_queue_id(s->rxq[s_port]);
 }
 
 static int rx_fastmetadata_session_init(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                     struct st_rx_fastmetadata_session_impl* s, int idx) {
+                                        struct st_rx_fastmetadata_session_impl* s,
+                                        int idx) {
   MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
@@ -83,9 +84,9 @@ static int rx_fastmetadata_sessions_tasklet_stop(void* priv) {
 }
 
 static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
-                                           struct st_rx_fastmetadata_session_impl* s,
-                                           struct rte_mbuf* mbuf,
-                                           enum mtl_session_port s_port) {
+                                              struct st_rx_fastmetadata_session_impl* s,
+                                              struct rte_mbuf* mbuf,
+                                              enum mtl_session_port s_port) {
   struct st41_rx_ops* ops = &s->ops;
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
@@ -159,7 +160,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
-                                            uint16_t nb) {
+                                               uint16_t nb) {
   struct st_rx_session_priv* s_priv = priv;
   struct st_rx_fastmetadata_session_impl* s = s_priv->session;
   struct mtl_main_impl* impl = s_priv->impl;
@@ -236,7 +237,7 @@ static int rx_fastmetadata_session_uinit_hw(struct st_rx_fastmetadata_session_im
 }
 
 static int rx_fastmetadata_session_init_hw(struct mtl_main_impl* impl,
-                                        struct st_rx_fastmetadata_session_impl* s) {
+                                           struct st_rx_fastmetadata_session_impl* s) {
   int idx = s->idx, num_port = s->ops.num_port;
   struct mt_rxq_flow flow;
   enum mtl_port port;
@@ -277,8 +278,8 @@ static int rx_fastmetadata_session_init_hw(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_fastmetadata_session_uinit_mcast(struct mtl_main_impl* impl,
-                                            struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_uinit_mcast(
+    struct mtl_main_impl* impl, struct st_rx_fastmetadata_session_impl* s) {
   struct st41_rx_ops* ops = &s->ops;
   enum mtl_port port;
 
@@ -293,7 +294,7 @@ static int rx_fastmetadata_session_uinit_mcast(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_session_init_mcast(struct mtl_main_impl* impl,
-                                           struct st_rx_fastmetadata_session_impl* s) {
+                                              struct st_rx_fastmetadata_session_impl* s) {
   struct st41_rx_ops* ops = &s->ops;
   int ret;
   enum mtl_port port;
@@ -315,7 +316,7 @@ static int rx_fastmetadata_session_init_mcast(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_session_init_sw(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                        struct st_rx_fastmetadata_session_impl* s) {
+                                           struct st_rx_fastmetadata_session_impl* s) {
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count;
@@ -349,7 +350,7 @@ static int rx_fastmetadata_session_uinit_sw(struct st_rx_fastmetadata_session_im
 }
 
 static int rx_fastmetadata_session_uinit(struct mtl_main_impl* impl,
-                                      struct st_rx_fastmetadata_session_impl* s) {
+                                         struct st_rx_fastmetadata_session_impl* s) {
   rx_fastmetadata_session_uinit_mcast(impl, s);
   rx_fastmetadata_session_uinit_sw(s);
   rx_fastmetadata_session_uinit_hw(s);
@@ -357,9 +358,9 @@ static int rx_fastmetadata_session_uinit(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
-                                       struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                       struct st_rx_fastmetadata_session_impl* s,
-                                       struct st41_rx_ops* ops) {
+                                          struct st_rx_fastmetadata_sessions_mgr* mgr,
+                                          struct st_rx_fastmetadata_session_impl* s,
+                                          struct st41_rx_ops* ops) {
   int ret;
   int idx = s->idx, num_port = ops->num_port;
   char* ports[MTL_SESSION_PORT_MAX];
@@ -482,7 +483,7 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
 }
 
 static int rx_fastmetadata_session_detach(struct mtl_main_impl* impl,
-                                       struct st_rx_fastmetadata_session_impl* s) {
+                                          struct st_rx_fastmetadata_session_impl* s) {
   s->attached = false;
   rx_fastmetadata_session_stat(s);
   rx_fastmetadata_session_uinit(impl, s);
@@ -490,8 +491,8 @@ static int rx_fastmetadata_session_detach(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
-                                           struct st_rx_fastmetadata_session_impl* s,
-                                           struct st_rx_source_info* src) {
+                                              struct st_rx_fastmetadata_session_impl* s,
+                                              struct st_rx_source_info* src) {
   int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
   struct st41_rx_ops* ops = &s->ops;
@@ -524,9 +525,9 @@ static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_fastmetadata_sessions_mgr_update_src(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                                struct st_rx_fastmetadata_session_impl* s,
-                                                struct st_rx_source_info* src) {
+static int rx_fastmetadata_sessions_mgr_update_src(
+    struct st_rx_fastmetadata_sessions_mgr* mgr,
+    struct st_rx_fastmetadata_session_impl* s, struct st_rx_source_info* src) {
   int ret = -EIO, midx = mgr->idx, idx = s->idx;
 
   s = rx_fastmetadata_session_get(mgr, idx); /* get the lock */
@@ -559,9 +560,9 @@ static int st_rx_fastmetadata_sessions_stat(void* priv) {
   return 0;
 }
 
-static int rx_fastmetadata_sessions_mgr_init(struct mtl_main_impl* impl,
-                                          struct mtl_sch_impl* sch,
-                                          struct st_rx_fastmetadata_sessions_mgr* mgr) {
+static int rx_fastmetadata_sessions_mgr_init(
+    struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
+    struct st_rx_fastmetadata_sessions_mgr* mgr) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 
@@ -634,8 +635,9 @@ static struct st_rx_fastmetadata_session_impl* rx_fastmetadata_sessions_mgr_atta
   return NULL;
 }
 
-static int rx_fastmetadata_sessions_mgr_detach(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                            struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_sessions_mgr_detach(
+    struct st_rx_fastmetadata_sessions_mgr* mgr,
+    struct st_rx_fastmetadata_session_impl* s) {
   int midx = mgr->idx;
   int idx = s->idx;
 
@@ -654,7 +656,8 @@ static int rx_fastmetadata_sessions_mgr_detach(struct st_rx_fastmetadata_session
   return 0;
 }
 
-static int rx_fastmetadata_sessions_mgr_update(struct st_rx_fastmetadata_sessions_mgr* mgr) {
+static int rx_fastmetadata_sessions_mgr_update(
+    struct st_rx_fastmetadata_sessions_mgr* mgr) {
   int max_idx = 0;
 
   for (int i = 0; i < ST_MAX_RX_FMD_SESSIONS; i++) {
@@ -665,7 +668,8 @@ static int rx_fastmetadata_sessions_mgr_update(struct st_rx_fastmetadata_session
   return 0;
 }
 
-static int rx_fastmetadata_sessions_mgr_uinit(struct st_rx_fastmetadata_sessions_mgr* mgr) {
+static int rx_fastmetadata_sessions_mgr_uinit(
+    struct st_rx_fastmetadata_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct st_rx_fastmetadata_session_impl* s;
 

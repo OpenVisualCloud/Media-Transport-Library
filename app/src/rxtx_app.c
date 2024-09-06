@@ -407,8 +407,9 @@ int main(int argc, char** argv) {
                                      ctx->json_ctx->interfaces[i].tx_anc_sessions_cnt,
                                      ctx->json_ctx->interfaces[i].tx_fmd_sessions_cnt);
       } else {
-        ctx->para.tx_queues_cnt[i] = st_tx_sessions_queue_cnt(
-            tx_st20_sessions, ctx->tx_audio_session_cnt, ctx->tx_anc_session_cnt, ctx->tx_fmd_session_cnt);
+        ctx->para.tx_queues_cnt[i] =
+            st_tx_sessions_queue_cnt(tx_st20_sessions, ctx->tx_audio_session_cnt,
+                                     ctx->tx_anc_session_cnt, ctx->tx_fmd_session_cnt);
       }
       if (ctx->para.tx_queues_cnt[i] && (ctx->para.pmd[i] == MTL_PMD_DPDK_USER)) {
         ctx->para.tx_queues_cnt[i] += 4; /* add extra 4 queues for recovery */
@@ -423,8 +424,9 @@ int main(int argc, char** argv) {
                                      ctx->json_ctx->interfaces[i].rx_anc_sessions_cnt,
                                      ctx->json_ctx->interfaces[i].rx_fmd_sessions_cnt);
       } else {
-        ctx->para.rx_queues_cnt[i] = st_rx_sessions_queue_cnt(
-            rx_st20_sessions, ctx->rx_audio_session_cnt, ctx->rx_anc_session_cnt, ctx->rx_fmd_session_cnt);
+        ctx->para.rx_queues_cnt[i] =
+            st_rx_sessions_queue_cnt(rx_st20_sessions, ctx->rx_audio_session_cnt,
+                                     ctx->rx_anc_session_cnt, ctx->rx_fmd_session_cnt);
       }
     }
   }

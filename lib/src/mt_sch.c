@@ -11,12 +11,12 @@
 #include "mt_stat.h"
 #include "mtl_lcore_shm_api.h"
 #include "st2110/st_rx_ancillary_session.h"
-#include "st2110/st_rx_fastmetadata_session.h"
 #include "st2110/st_rx_audio_session.h"
+#include "st2110/st_rx_fastmetadata_session.h"
 #include "st2110/st_rx_video_session.h"
 #include "st2110/st_tx_ancillary_session.h"
-#include "st2110/st_tx_fastmetadata_session.h"
 #include "st2110/st_tx_audio_session.h"
+#include "st2110/st_tx_fastmetadata_session.h"
 #include "st2110/st_tx_video_session.h"
 
 static inline void sch_mgr_lock(struct mt_sch_mgr* mgr) {

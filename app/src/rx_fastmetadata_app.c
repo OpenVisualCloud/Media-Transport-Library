@@ -5,7 +5,6 @@
 #include "rx_fastmetadata_app.h"
 
 static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s) {
-
   dbg("%s(%d).\n", __func__, s->idx);
 
   s->stat_frame_total_received++;
@@ -71,7 +70,8 @@ static int app_rx_fmd_uinit(struct st_app_rx_fmd_session* s) {
   return 0;
 }
 
-static int app_rx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_session_t* fmd,
+static int app_rx_fmd_init(struct st_app_context* ctx,
+                           st_json_fastmetadata_session_t* fmd,
                            struct st_app_rx_fmd_session* s) {
   int idx = s->idx, ret;
   struct st41_rx_ops ops;

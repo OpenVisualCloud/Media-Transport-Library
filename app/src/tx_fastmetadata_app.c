@@ -74,9 +74,10 @@ static int app_tx_fmd_rtp_done(void* priv) {
 
 static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
                                    struct st41_frame* dst) {
-  uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
-                          ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
-                          : s->st41_source_end - s->st41_frame_cursor;
+  uint16_t data_item_length_bytes =
+      s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
+          ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
+          : s->st41_source_end - s->st41_frame_cursor;
   dst->data_item_length_bytes = data_item_length_bytes;
   dst->data = s->st41_frame_cursor;
   s->st41_frame_cursor += data_item_length_bytes;
@@ -189,11 +190,13 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   /* generate one fmd rtp for test purpose */
   struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
   uint8_t* payload_hdr = (uint8_t*)(&hdr[1]);
-  uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > (MTL_PKT_MAX_RTP_BYTES-16) 
-                          ? (MTL_PKT_MAX_RTP_BYTES-16)
-                          : s->st41_source_end - s->st41_frame_cursor;
+  uint16_t data_item_length_bytes =
+      s->st41_source_end - s->st41_frame_cursor > (MTL_PKT_MAX_RTP_BYTES - 16)
+          ? (MTL_PKT_MAX_RTP_BYTES - 16)
+          : s->st41_source_end - s->st41_frame_cursor;
   uint16_t data_item_length;
-  data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+  data_item_length =
+      (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
   hdr->base.marker = 1;
   hdr->base.payload_type = ST_APP_PAYLOAD_TYPE_FASTMETADATA;
   hdr->base.version = 2;
@@ -220,7 +223,7 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   hdr->st41_hdr_chunk.data_item_type = s->st41_dit;
   hdr->st41_hdr_chunk.data_item_k_bit = s->st41_k_bit;
   hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk);
-  
+
   s->st41_frame_cursor += data_item_length_bytes;
   if (s->st41_frame_cursor == s->st41_source_end)
     s->st41_frame_cursor = s->st41_source_begin;
@@ -376,7 +379,8 @@ int app_tx_fmd_uinit(struct st_app_tx_fmd_session* s) {
   return 0;
 }
 
-static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_session_t* fmd,
+static int app_tx_fmd_init(struct st_app_context* ctx,
+                           st_json_fastmetadata_session_t* fmd,
                            struct st_app_tx_fmd_session* s) {
   int idx = s->idx, ret;
   struct st41_tx_ops ops;

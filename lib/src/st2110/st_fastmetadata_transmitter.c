@@ -48,9 +48,9 @@ static int st_fastmetadata_trs_tasklet_stop(void* priv) {
 }
 
 /* pacing handled by session itself */
-static int st_fastmetadata_trs_session_tasklet(struct st_fastmetadata_transmitter_impl* trs,
-                                            struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                            enum mtl_port port) {
+static int st_fastmetadata_trs_session_tasklet(
+    struct st_fastmetadata_transmitter_impl* trs,
+    struct st_tx_fastmetadata_sessions_mgr* mgr, enum mtl_port port) {
   struct rte_ring* ring = mgr->ring[port];
   int ret;
   uint16_t n;
@@ -109,8 +109,8 @@ static int st_fastmetadata_trs_tasklet_handler(void* priv) {
 }
 
 int st_fastmetadata_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
-                                  struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                  struct st_fastmetadata_transmitter_impl* trs) {
+                                     struct st_tx_fastmetadata_sessions_mgr* mgr,
+                                     struct st_fastmetadata_transmitter_impl* trs) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 

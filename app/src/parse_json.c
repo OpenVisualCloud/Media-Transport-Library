@@ -1251,7 +1251,8 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
   }
 
   /* parse fmd data item type */
-  json_object* fmd_dit_obj = st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
+  json_object* fmd_dit_obj =
+      st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
   if (fmd_dit_obj) {
     uint32_t fmd_dit = json_object_get_int(fmd_dit_obj);
     if (fmd_dit < 0 || fmd_dit > 0x3fffff) {
@@ -3032,7 +3033,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
           }
         }
       }
-      
+
       /* parse rx st22p sessions */
       json_object* st22p_array = st_json_object_object_get(rx_group, "st22p");
       if (st22p_array != NULL && json_object_get_type(st22p_array) == json_type_array) {

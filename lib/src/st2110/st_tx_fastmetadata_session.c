@@ -7,8 +7,8 @@
 #include "../datapath/mt_queue.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
-#include "st_fastmetadata_transmitter.h"
 #include "st_err.h"
+#include "st_fastmetadata_transmitter.h"
 
 /* call tx_fastmetadata_session_put always if get successfully */
 static inline struct st_tx_fastmetadata_session_impl* tx_fastmetadata_session_get(
@@ -50,12 +50,13 @@ static inline bool tx_fastmetadata_session_get_empty(
   }
 }
 
-static inline void tx_fastmetadata_session_put(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                            int idx) {
+static inline void tx_fastmetadata_session_put(
+    struct st_tx_fastmetadata_sessions_mgr* mgr, int idx) {
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
-static int tx_fastmetadata_session_free_frames(struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_free_frames(
+    struct st_tx_fastmetadata_session_impl* s) {
   if (s->st41_frames) {
     struct st_frame_trans* frame;
 
@@ -76,7 +77,8 @@ static int tx_fastmetadata_session_free_frames(struct st_tx_fastmetadata_session
   return 0;
 }
 
-static int tx_fastmetadata_session_alloc_frames(struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_alloc_frames(
+    struct st_tx_fastmetadata_session_impl* s) {
   int soc_id = s->socket_id;
   int idx = s->idx;
   struct st_frame_trans* frame_info;
@@ -118,9 +120,9 @@ static int tx_fastmetadata_session_alloc_frames(struct st_tx_fastmetadata_sessio
 }
 
 static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
-                                         struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                         struct st_tx_fastmetadata_session_impl* s,
-                                         enum mtl_session_port s_port) {
+                                            struct st_tx_fastmetadata_sessions_mgr* mgr,
+                                            struct st_tx_fastmetadata_session_impl* s,
+                                            enum mtl_session_port s_port) {
   MTL_MAY_UNUSED(mgr);
   int idx = s->idx;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
@@ -195,7 +197,8 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_fastmetadata_session_init_pacing(struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_init_pacing(
+    struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
   double frame_time = (double)1000000000.0 * s->fps_tm.den / s->fps_tm.mul;
@@ -232,9 +235,9 @@ static inline uint32_t tx_fastmetadata_pacing_time_stamp(
   return tmstamp32;
 }
 
-static uint64_t tx_fastmetadata_pacing_required_tai(struct st_tx_fastmetadata_session_impl* s,
-                                                 enum st10_timestamp_fmt tfmt,
-                                                 uint64_t timestamp) {
+static uint64_t tx_fastmetadata_pacing_required_tai(
+    struct st_tx_fastmetadata_session_impl* s, enum st10_timestamp_fmt tfmt,
+    uint64_t timestamp) {
   uint64_t required_tai = 0;
 
   if (!(s->ops.flags & ST41_TX_FLAG_USER_PACING)) return 0;
@@ -253,9 +256,9 @@ static uint64_t tx_fastmetadata_pacing_required_tai(struct st_tx_fastmetadata_se
 }
 
 static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
-                                            struct st_tx_fastmetadata_session_impl* s,
-                                            bool sync, uint64_t required_tai,
-                                            bool second_field) {
+                                               struct st_tx_fastmetadata_session_impl* s,
+                                               bool sync, uint64_t required_tai,
+                                               bool second_field) {
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
@@ -323,8 +326,8 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_fastmetadata_session_init_next_meta(struct st_tx_fastmetadata_session_impl* s,
-                                               struct st41_tx_frame_meta* meta) {
+static int tx_fastmetadata_session_init_next_meta(
+    struct st_tx_fastmetadata_session_impl* s, struct st41_tx_frame_meta* meta) {
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
   struct st41_tx_ops* ops = &s->ops;
 
@@ -341,7 +344,8 @@ static int tx_fastmetadata_session_init_next_meta(struct st_tx_fastmetadata_sess
 }
 
 static int tx_fastmetadata_session_init(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                     struct st_tx_fastmetadata_session_impl* s, int idx) {
+                                        struct st_tx_fastmetadata_session_impl* s,
+                                        int idx) {
   MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
@@ -363,8 +367,8 @@ static int tx_fastmetadata_sessions_tasklet_start(void* priv) {
   return 0;
 }
 
-static int tx_fastmetadata_session_update_redundant(struct st_tx_fastmetadata_session_impl* s,
-                                                 struct rte_mbuf* pkt_r) {
+static int tx_fastmetadata_session_update_redundant(
+    struct st_tx_fastmetadata_session_impl* s, struct rte_mbuf* pkt_r) {
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt_r, struct mt_udp_hdr*);
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
@@ -383,8 +387,8 @@ static int tx_fastmetadata_session_update_redundant(struct st_tx_fastmetadata_se
   return 0;
 }
 
-static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_session_impl* s,
-                                             struct rte_mbuf* pkt) {
+static void tx_fastmetadata_session_build_packet(
+    struct st_tx_fastmetadata_session_impl* s, struct rte_mbuf* pkt) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
@@ -419,7 +423,8 @@ static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessi
   void* src_addr = frame_info->addr + offset;
   struct st41_frame* src = src_addr;
   uint16_t data_item_length_bytes = src->data_item_length_bytes;
-  uint16_t data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+  uint16_t data_item_length =
+      (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
   if (!(data_item_length_bytes > s->max_pkt_len)) {
     int offset = 0;
@@ -430,7 +435,7 @@ static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessi
     for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
       payload[i] = 0;
     }
-  } 
+  }
 
   pkt->data_len += sizeof(struct st41_rtp_hdr) + data_item_length * 4;
   pkt->pkt_len = pkt->data_len;
@@ -438,7 +443,7 @@ static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessi
   rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit;
   rtp->st41_hdr_chunk.data_item_length = data_item_length;
   rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
-  dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
+  dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx,
       data_item_length_bytes);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
@@ -452,8 +457,8 @@ static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessi
   return;
 }
 
-static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_session_impl* s,
-                                                 struct rte_mbuf* pkt) {
+static void tx_fastmetadata_session_build_rtp_packet(
+    struct st_tx_fastmetadata_session_impl* s, struct rte_mbuf* pkt) {
   struct st41_rtp_hdr* rtp;
 
   rtp = rte_pktmbuf_mtod(pkt, struct st41_rtp_hdr*);
@@ -471,7 +476,8 @@ static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_s
   void* src_addr = frame_info->addr + offset;
   struct st41_frame* src = src_addr;
   uint16_t data_item_length_bytes = src->data_item_length_bytes;
-  uint16_t data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+  uint16_t data_item_length =
+      (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
   if (!(data_item_length_bytes > s->max_pkt_len)) {
     int offset = 0;
@@ -491,15 +497,15 @@ static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_s
   rtp->st41_hdr_chunk.data_item_length = data_item_length;
   rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
 
-  dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
+  dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx,
       data_item_length_bytes);
 
   return;
 }
 
-static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
-                                                  struct st_tx_fastmetadata_session_impl* s,
-                                                  struct rte_mbuf* pkt) {
+static int tx_fastmetadata_session_rtp_update_packet(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_session_impl* s,
+    struct rte_mbuf* pkt) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct st_rfc3550_rtp_hdr* rtp;
@@ -522,7 +528,7 @@ static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
     rte_atomic32_inc(&s->st41_stat_frame_cnt);
     s->st41_rtp_time = rtp->tmstamp;
     bool second_field = false;
-    
+
     tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
   }
   if (s->ops.flags & ST41_TX_FLAG_USER_TIMESTAMP) {
@@ -544,11 +550,9 @@ static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_fastmetadata_session_build_packet_chain(struct mtl_main_impl* impl,
-                                                   struct st_tx_fastmetadata_session_impl* s,
-                                                   struct rte_mbuf* pkt,
-                                                   struct rte_mbuf* pkt_rtp,
-                                                   enum mtl_session_port s_port) {
+static int tx_fastmetadata_session_build_packet_chain(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_session_impl* s,
+    struct rte_mbuf* pkt, struct rte_mbuf* pkt_rtp, enum mtl_session_port s_port) {
   struct mt_udp_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
@@ -567,8 +571,7 @@ static int tx_fastmetadata_session_build_packet_chain(struct mtl_main_impl* impl
   if (s_port == MTL_SESSION_PORT_P) {
     /* update rtp time for rtp path */
     if (ops->type == ST41_TYPE_RTP_LEVEL) {
-      struct st41_rtp_hdr* rtp =
-          rte_pktmbuf_mtod(pkt_rtp, struct st41_rtp_hdr*);
+      struct st41_rtp_hdr* rtp = rte_pktmbuf_mtod(pkt_rtp, struct st41_rtp_hdr*);
       if (rtp->base.tmstamp != s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
@@ -606,10 +609,10 @@ static int tx_fastmetadata_session_build_packet_chain(struct mtl_main_impl* impl
   return 0;
 }
 
-static inline int tx_fastmetadata_session_send_pkt(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                                struct st_tx_fastmetadata_session_impl* s,
-                                                enum mtl_session_port s_port,
-                                                struct rte_mbuf* pkt) {
+static inline int tx_fastmetadata_session_send_pkt(
+    struct st_tx_fastmetadata_sessions_mgr* mgr,
+    struct st_tx_fastmetadata_session_impl* s, enum mtl_session_port s_port,
+    struct rte_mbuf* pkt) {
   int ret;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_ring* ring = mgr->ring[port];
@@ -626,9 +629,9 @@ static inline int tx_fastmetadata_session_send_pkt(struct st_tx_fastmetadata_ses
   return ret;
 }
 
-static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
-                                              struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                              struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_tasklet_frame(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_sessions_mgr* mgr,
+    struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
   struct st41_tx_ops* ops = &s->ops;
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
@@ -653,7 +656,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
   /* check if any inflight pkts */
   if (s->inflight[MTL_SESSION_PORT_P]) {
     ret = tx_fastmetadata_session_send_pkt(mgr, s, MTL_SESSION_PORT_P,
-                                        s->inflight[MTL_SESSION_PORT_P]);
+                                           s->inflight[MTL_SESSION_PORT_P]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_P] = NULL;
     } else {
@@ -664,7 +667,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
 
   if (send_r && s->inflight[MTL_SESSION_PORT_R]) {
     ret = tx_fastmetadata_session_send_pkt(mgr, s, MTL_SESSION_PORT_R,
-                                        s->inflight[MTL_SESSION_PORT_R]);
+                                           s->inflight[MTL_SESSION_PORT_R]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_R] = NULL;
     } else {
@@ -724,7 +727,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
     if (total_size % s->max_pkt_len) s->st41_total_pkts++;
     /* how do we split if it need two or more pkts? */
     dbg("%s(%d), st41_total_pkts %d data_item_length_bytes %d src %p\n", __func__, idx,
-        s->st41_total_pkts, data_item_length_bytes,  src);
+        s->st41_total_pkts, data_item_length_bytes, src);
     if (s->st41_total_pkts > 1) {
       err("%s(%d), frame %u invalid st41_total_pkts %d\n", __func__, idx, next_frame_idx,
           s->st41_total_pkts);
@@ -732,8 +735,8 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
       return MTL_TASKLET_ALL_DONE;
     }
 
-    MT_USDT_ST41_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
-                               0, data_item_length_bytes);
+    MT_USDT_ST41_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr, 0,
+                               data_item_length_bytes);
   }
 
   /* sync pacing */
@@ -741,7 +744,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
     struct st_frame_trans* frame = &s->st41_frames[s->st41_frame_idx];
     /* user timestamp control if any */
     uint64_t required_tai = tx_fastmetadata_pacing_required_tai(s, frame->tf_meta.tfmt,
-                                                             frame->tf_meta.timestamp);
+                                                                frame->tf_meta.timestamp);
     bool second_field = frame->tf_meta.second_field;
     tx_fastmetadata_session_sync_pacing(impl, s, false, required_tai, second_field);
     if (ops->flags & ST41_TX_FLAG_USER_TIMESTAMP &&
@@ -805,7 +808,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
         return MTL_TASKLET_ALL_DONE;
       }
       tx_fastmetadata_session_build_packet_chain(impl, s, pkt_r, pkt_rtp,
-                                              MTL_SESSION_PORT_R);
+                                                 MTL_SESSION_PORT_R);
     }
   } else {
     tx_fastmetadata_session_build_packet(s, pkt);
@@ -879,9 +882,9 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
-static int tx_fastmetadata_session_tasklet_rtp(struct mtl_main_impl* impl,
-                                            struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                            struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_tasklet_rtp(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_sessions_mgr* mgr,
+    struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
   int ret;
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
@@ -904,7 +907,7 @@ static int tx_fastmetadata_session_tasklet_rtp(struct mtl_main_impl* impl,
   /* check if any inflight pkts */
   if (s->inflight[MTL_SESSION_PORT_P]) {
     ret = tx_fastmetadata_session_send_pkt(mgr, s, MTL_SESSION_PORT_P,
-                                        s->inflight[MTL_SESSION_PORT_P]);
+                                           s->inflight[MTL_SESSION_PORT_P]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_P] = NULL;
     } else {
@@ -915,7 +918,7 @@ static int tx_fastmetadata_session_tasklet_rtp(struct mtl_main_impl* impl,
 
   if (send_r && s->inflight[MTL_SESSION_PORT_R]) {
     ret = tx_fastmetadata_session_send_pkt(mgr, s, MTL_SESSION_PORT_R,
-                                        s->inflight[MTL_SESSION_PORT_R]);
+                                           s->inflight[MTL_SESSION_PORT_R]);
     if (ret == 0) {
       s->inflight[MTL_SESSION_PORT_R] = NULL;
     } else {
@@ -994,7 +997,7 @@ static int tx_fastmetadata_session_tasklet_rtp(struct mtl_main_impl* impl,
       tx_fastmetadata_session_update_redundant(s, pkt_r);
     } else {
       tx_fastmetadata_session_build_packet_chain(impl, s, pkt_r, pkt_rtp,
-                                              MTL_SESSION_PORT_R);
+                                                 MTL_SESSION_PORT_R);
     }
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
@@ -1051,8 +1054,8 @@ static int tx_fastmetadata_sessions_tasklet_handler(void* priv) {
   return pending;
 }
 
-static int tx_fastmetadata_sessions_mgr_uinit_hw(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                              enum mtl_port port) {
+static int tx_fastmetadata_sessions_mgr_uinit_hw(
+    struct st_tx_fastmetadata_sessions_mgr* mgr, enum mtl_port port) {
   if (mgr->ring[port]) {
     rte_ring_free(mgr->ring[port]);
     mgr->ring[port] = NULL;
@@ -1069,9 +1072,9 @@ static int tx_fastmetadata_sessions_mgr_uinit_hw(struct st_tx_fastmetadata_sessi
   return 0;
 }
 
-static int tx_fastmetadata_sessions_mgr_init_hw(struct mtl_main_impl* impl,
-                                             struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                             enum mtl_port port) {
+static int tx_fastmetadata_sessions_mgr_init_hw(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_sessions_mgr* mgr,
+    enum mtl_port port) {
   unsigned int flags, count;
   struct rte_ring* ring;
   char ring_name[32];
@@ -1102,8 +1105,8 @@ static int tx_fastmetadata_sessions_mgr_init_hw(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_fastmetadata_session_sq_flush_port(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                              enum mtl_port port) {
+static int tx_fastmetadata_session_sq_flush_port(
+    struct st_tx_fastmetadata_sessions_mgr* mgr, enum mtl_port port) {
   struct mtl_main_impl* impl = mgr->parent;
   int ret;
   int burst_pkts = mt_if_nb_tx_desc(impl, port);
@@ -1131,7 +1134,7 @@ static int tx_fastmetadata_session_sq_flush_port(struct st_tx_fastmetadata_sessi
 
 /* wa to flush the fastmetadata transmitter tx queue */
 static int tx_fastmetadata_session_flush(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                      struct st_tx_fastmetadata_session_impl* s) {
+                                         struct st_tx_fastmetadata_session_impl* s) {
   int mgr_idx = mgr->idx, s_idx = s->idx;
 
   if (!s->shared_queue) return 0; /* skip as not shared queue */
@@ -1175,7 +1178,8 @@ int tx_fastmetadata_session_mempool_free(struct st_tx_fastmetadata_session_impl*
   return 0;
 }
 
-static bool tx_fastmetadata_session_has_chain_buf(struct st_tx_fastmetadata_session_impl* s) {
+static bool tx_fastmetadata_session_has_chain_buf(
+    struct st_tx_fastmetadata_session_impl* s) {
   struct st41_tx_ops* ops = &s->ops;
   int num_ports = ops->num_port;
 
@@ -1187,9 +1191,9 @@ static bool tx_fastmetadata_session_has_chain_buf(struct st_tx_fastmetadata_sess
   return true;
 }
 
-static int tx_fastmetadata_session_mempool_init(struct mtl_main_impl* impl,
-                                             struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                             struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_mempool_init(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_sessions_mgr* mgr,
+    struct st_tx_fastmetadata_session_impl* s) {
   struct st41_tx_ops* ops = &s->ops;
   int num_port = ops->num_port, idx = s->idx;
   enum mtl_port port;
@@ -1258,7 +1262,7 @@ static int tx_fastmetadata_session_mempool_init(struct mtl_main_impl* impl,
 }
 
 static int tx_fastmetadata_session_init_rtp(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                         struct st_tx_fastmetadata_session_impl* s) {
+                                            struct st_tx_fastmetadata_session_impl* s) {
   char ring_name[32];
   struct rte_ring* ring;
   unsigned int flags, count = s->ops.rtp_ring_size;
@@ -1278,7 +1282,7 @@ static int tx_fastmetadata_session_init_rtp(struct st_tx_fastmetadata_sessions_m
 }
 
 static int tx_fastmetadata_session_uinit_sw(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                         struct st_tx_fastmetadata_session_impl* s) {
+                                            struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx, num_port = s->ops.num_port;
 
   for (int port = 0; port < num_port; port++) {
@@ -1304,8 +1308,8 @@ static int tx_fastmetadata_session_uinit_sw(struct st_tx_fastmetadata_sessions_m
 }
 
 static int tx_fastmetadata_session_init_sw(struct mtl_main_impl* impl,
-                                        struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                        struct st_tx_fastmetadata_session_impl* s) {
+                                           struct st_tx_fastmetadata_sessions_mgr* mgr,
+                                           struct st_tx_fastmetadata_session_impl* s) {
   struct st41_tx_ops* ops = &s->ops;
   int idx = s->idx, ret;
 
@@ -1332,8 +1336,8 @@ static int tx_fastmetadata_session_init_sw(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_fastmetadata_session_uinit_queue(struct mtl_main_impl* impl,
-                                            struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_session_uinit_queue(
+    struct mtl_main_impl* impl, struct st_tx_fastmetadata_session_impl* s) {
   MTL_MAY_UNUSED(impl);
 
   for (int i = 0; i < s->ops.num_port; i++) {
@@ -1349,7 +1353,7 @@ static int tx_fastmetadata_session_uinit_queue(struct mtl_main_impl* impl,
 }
 
 static int tx_fastmetadata_session_init_queue(struct mtl_main_impl* impl,
-                                           struct st_tx_fastmetadata_session_impl* s) {
+                                              struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
   enum mtl_port port;
   uint16_t queue_id;
@@ -1391,16 +1395,16 @@ static int tx_fastmetadata_session_init_queue(struct mtl_main_impl* impl,
 }
 
 static int tx_fastmetadata_session_uinit(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                      struct st_tx_fastmetadata_session_impl* s) {
+                                         struct st_tx_fastmetadata_session_impl* s) {
   tx_fastmetadata_session_uinit_queue(mgr->parent, s);
   tx_fastmetadata_session_uinit_sw(mgr, s);
   return 0;
 }
 
 static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
-                                       struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                       struct st_tx_fastmetadata_session_impl* s,
-                                       struct st41_tx_ops* ops) {
+                                          struct st_tx_fastmetadata_sessions_mgr* mgr,
+                                          struct st_tx_fastmetadata_session_impl* s,
+                                          struct st41_tx_ops* ops) {
   int ret;
   int idx = s->idx, num_port = ops->num_port;
   char* ports[MTL_SESSION_PORT_MAX];
@@ -1576,7 +1580,7 @@ static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl*
 }
 
 static int tx_fastmetadata_session_detach(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                       struct st_tx_fastmetadata_session_impl* s) {
+                                          struct st_tx_fastmetadata_session_impl* s) {
   tx_fastmetadata_session_stat(s);
   tx_fastmetadata_session_uinit(mgr, s);
   if (s->shared_queue) {
@@ -1586,9 +1590,9 @@ static int tx_fastmetadata_session_detach(struct st_tx_fastmetadata_sessions_mgr
 }
 
 static int tx_fastmetadata_session_update_dst(struct mtl_main_impl* impl,
-                                           struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                           struct st_tx_fastmetadata_session_impl* s,
-                                           struct st_tx_dest_info* dest) {
+                                              struct st_tx_fastmetadata_sessions_mgr* mgr,
+                                              struct st_tx_fastmetadata_session_impl* s,
+                                              struct st_tx_dest_info* dest) {
   int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
   struct st41_tx_ops* ops = &s->ops;
@@ -1612,9 +1616,9 @@ static int tx_fastmetadata_session_update_dst(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tx_fastmetadata_sessions_mgr_update_dst(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                                struct st_tx_fastmetadata_session_impl* s,
-                                                struct st_tx_dest_info* dest) {
+static int tx_fastmetadata_sessions_mgr_update_dst(
+    struct st_tx_fastmetadata_sessions_mgr* mgr,
+    struct st_tx_fastmetadata_session_impl* s, struct st_tx_dest_info* dest) {
   int ret = -EIO, midx = mgr->idx, idx = s->idx;
 
   s = tx_fastmetadata_session_get(mgr, idx); /* get the lock */
@@ -1658,9 +1662,9 @@ static int st_tx_fastmetadata_sessions_stat(void* priv) {
   return 0;
 }
 
-static int tx_fastmetadata_sessions_mgr_init(struct mtl_main_impl* impl,
-                                          struct mtl_sch_impl* sch,
-                                          struct st_tx_fastmetadata_sessions_mgr* mgr) {
+static int tx_fastmetadata_sessions_mgr_init(
+    struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
+    struct st_tx_fastmetadata_sessions_mgr* mgr) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
   int i;
@@ -1736,8 +1740,9 @@ static struct st_tx_fastmetadata_session_impl* tx_fastmetadata_sessions_mgr_atta
   return NULL;
 }
 
-static int tx_fastmetadata_sessions_mgr_detach(struct st_tx_fastmetadata_sessions_mgr* mgr,
-                                            struct st_tx_fastmetadata_session_impl* s) {
+static int tx_fastmetadata_sessions_mgr_detach(
+    struct st_tx_fastmetadata_sessions_mgr* mgr,
+    struct st_tx_fastmetadata_session_impl* s) {
   int midx = mgr->idx;
   int idx = s->idx;
 
@@ -1756,7 +1761,8 @@ static int tx_fastmetadata_sessions_mgr_detach(struct st_tx_fastmetadata_session
   return 0;
 }
 
-static int tx_fastmetadata_sessions_mgr_update(struct st_tx_fastmetadata_sessions_mgr* mgr) {
+static int tx_fastmetadata_sessions_mgr_update(
+    struct st_tx_fastmetadata_sessions_mgr* mgr) {
   int max_idx = 0;
 
   for (int i = 0; i < ST_MAX_TX_FMD_SESSIONS; i++) {
@@ -1767,7 +1773,8 @@ static int tx_fastmetadata_sessions_mgr_update(struct st_tx_fastmetadata_session
   return 0;
 }
 
-static int tx_fastmetadata_sessions_mgr_uinit(struct st_tx_fastmetadata_sessions_mgr* mgr) {
+static int tx_fastmetadata_sessions_mgr_uinit(
+    struct st_tx_fastmetadata_sessions_mgr* mgr) {
   int m_idx = mgr->idx;
   struct mtl_main_impl* impl = mgr->parent;
   struct st_tx_fastmetadata_session_impl* s;

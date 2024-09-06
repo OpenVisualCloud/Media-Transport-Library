@@ -1273,10 +1273,10 @@ struct st_tx_fastmetadata_session_impl {
   bool check_frame_done_time;
   struct st_fps_timing fps_tm;
 
-  uint16_t st41_seq_id;     /* seq id for each pkt */
-  int st41_total_pkts;      /* total pkts in one frame */
-  int st41_pkt_idx;         /* pkt index in current frame */
-  int st41_rtp_time;        /* record rtp time */
+  uint16_t st41_seq_id; /* seq id for each pkt */
+  int st41_total_pkts;  /* total pkts in one frame */
+  int st41_pkt_idx;     /* pkt index in current frame */
+  int st41_rtp_time;    /* record rtp time */
 
   int stat_build_ret_code;
 

@@ -124,8 +124,8 @@ MTL_PACK(struct st41_rtp_hdr {
  * Structure for ST2110-41(fast metadata) frame
  */
 struct st41_frame {
-  uint16_t data_item_length_bytes;      /** Size of the User Data Words  */
-  uint8_t* data;                        /**<  Handle to data buffer  */
+  uint16_t data_item_length_bytes; /** Size of the User Data Words  */
+  uint8_t* data;                   /**<  Handle to data buffer  */
 };
 
 /**
@@ -324,9 +324,9 @@ int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info* ds
 void* st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx);
 
 /**
- * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-41(fast metadata) session.
- * For ST41_TYPE_RTP_LEVEL.
- * Must call st41_tx_put_mbuf to return the mbuf after rtp pack done.
+ * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-41(fast metadata)
+ * session. For ST41_TYPE_RTP_LEVEL. Must call st41_tx_put_mbuf to return the mbuf after
+ * rtp pack done.
  *
  * @param handle
  *   The handle to the tx st2110-41(fast metadata) session.
@@ -339,8 +339,8 @@ void* st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx);
 void* st41_tx_get_mbuf(st41_tx_handle handle, void** usrptr);
 
 /**
- * Put back the mbuf which get by st41_tx_get_mbuf to the tx st2110-41(fast metadata) session.
- * For ST41_TYPE_RTP_LEVEL.
+ * Put back the mbuf which get by st41_tx_get_mbuf to the tx st2110-41(fast metadata)
+ * session. For ST41_TYPE_RTP_LEVEL.
  *
  * @param handle
  *   The handle to the tx st2110-41(fast metadata) session.
@@ -393,9 +393,9 @@ int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info* src);
 int st41_rx_free(st41_rx_handle handle);
 
 /**
- * Get the mbuf pointer and usrptr of the mbuf from the rx st2110-41(fast metadata) session.
- * For ST41_TYPE_RTP_LEVEL.
- * Must call st41_rx_put_mbuf to return the mbuf after consume it.
+ * Get the mbuf pointer and usrptr of the mbuf from the rx st2110-41(fast metadata)
+ * session. For ST41_TYPE_RTP_LEVEL. Must call st41_rx_put_mbuf to return the mbuf after
+ * consume it.
  *
  * @param handle
  *   The handle to the tx st2110-41(fast metadata) session.
@@ -410,8 +410,8 @@ int st41_rx_free(st41_rx_handle handle);
 void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len);
 
 /**
- * Put back the mbuf which get by st41_rx_get_mbuf to the rx st2110-41(fast metadata) session.
- * For ST41_TYPE_RTP_LEVEL.
+ * Put back the mbuf which get by st41_rx_get_mbuf to the rx st2110-41(fast metadata)
+ * session. For ST41_TYPE_RTP_LEVEL.
  *
  * @param handle
  *   The handle to the rx st2110-41(fast metadata) session.
