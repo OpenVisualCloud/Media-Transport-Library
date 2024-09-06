@@ -15,7 +15,6 @@ sources += files(
   'st_tx_fastmetadata_session.c',
   'st_rx_fastmetadata_session.c',
   'st_fastmetadata_transmitter.c',
-  'st_fastmetadata.c',
   'st_avx2.c',
   'st_avx512.c',
   'st_avx512_vbmi.c',
