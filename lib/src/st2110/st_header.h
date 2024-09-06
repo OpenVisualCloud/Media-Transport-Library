@@ -156,7 +156,7 @@ struct st_frame_trans {
     struct st30_tx_frame_meta ta_meta;
     struct st30_rx_frame_meta ra_meta; /* not use now */
     struct st40_tx_frame_meta tc_meta;
-    struct st41_tx_frame_meta tf_meta; // skolelis tbd: - field for st41 transport ? (fast meta data -> "f") !!!
+    struct st41_tx_frame_meta tf_meta;
   };
 };
 

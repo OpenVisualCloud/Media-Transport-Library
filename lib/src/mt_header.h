@@ -30,8 +30,8 @@ enum mt_handle_type {
   MT_ST20_HANDLE_DEV_CONVERT = 29,
   MT_ST30_HANDLE_PIPELINE_TX = 30,
   MT_ST30_HANDLE_PIPELINE_RX = 31,
-  MT_HANDLE_TX_FMD = 32, // skolelis tbd: maybe put FMD constants just immediately after ANC constants later for consistency
-  MT_HANDLE_RX_FMD = 33, // skolelis tbd: maybe put FMD constants just immediately after ANC constants later for consistency
+  MT_HANDLE_TX_FMD = 32,
+  MT_HANDLE_RX_FMD = 33,
 
   MT_HANDLE_UDMA = 40,
   MT_HANDLE_UDP = 41,

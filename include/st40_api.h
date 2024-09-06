@@ -200,7 +200,7 @@ struct st40_meta {
 /**
  * Max number of meta in one ST2110-40(ancillary) frame
  */
-#define ST40_MAX_META (20) // skolelis tbd: according to rf8331 the limit is 255 (if it is the proper field for that) !!!
+#define ST40_MAX_META (20)
 
 /**
  * Structure for ST2110-40(ancillary) frame
