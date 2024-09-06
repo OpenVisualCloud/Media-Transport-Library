@@ -120,7 +120,6 @@ MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian 
 });
 #endif
 
-
 /**
  * Structure for ST2110-41(fast metadata) frame
  */
@@ -262,7 +261,6 @@ struct st41_rx_ops {
   void* priv;
   /** Optional. see ST41_RX_FLAG_* for possible flags */
   uint32_t flags;
-
 
   /** Mandatory. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;

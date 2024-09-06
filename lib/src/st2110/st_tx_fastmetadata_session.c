@@ -490,12 +490,10 @@ static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_s
 
   pkt->data_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
   pkt->pkt_len = pkt->data_len;
-
   rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit;
   rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit;
   rtp->st41_hdr_chunk.data_item_length = data_item_length; // htons(data_item_length); // skolelis tbd: what is the proper calculation?
   rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
-
 
    /// skolelis tbd: should this line be kept?   rtp->base.marker = 1;
   dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
@@ -679,7 +677,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
       return MTL_TASKLET_ALL_DONE;
     }
   }
-  
+
   if (ST41_TX_STAT_WAIT_FRAME == s->st41_frame_stat) {
     uint16_t next_frame_idx;
     int data_item_length_bytes = 0;
@@ -742,7 +740,7 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
     MT_USDT_ST41_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                0, data_item_length_bytes);
   }
-  
+
   /* sync pacing */
   if (s->calculate_time_cursor) {
     struct st_frame_trans* frame = &s->st41_frames[s->st41_frame_idx];
@@ -799,7 +797,6 @@ static int tx_fastmetadata_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       return MTL_TASKLET_ALL_DONE;
     }
-
     tx_fastmetadata_session_build_rtp_packet(s, pkt_rtp);
     tx_fastmetadata_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
 
@@ -1673,7 +1670,7 @@ static int tx_fastmetadata_sessions_mgr_init(struct mtl_main_impl* impl,
   struct mtl_tasklet_ops ops;
   int i;
 
-  RTE_BUILD_BUG_ON(sizeof(struct st41_fmd_hdr) != 58); // skolelis tbd: used to be 62 for ANC, and IMHO should be 58!!!
+  RTE_BUILD_BUG_ON(sizeof(struct st41_fmd_hdr) != 58);
 
   mgr->parent = impl;
   mgr->idx = idx;

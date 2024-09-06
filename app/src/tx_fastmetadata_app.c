@@ -79,7 +79,6 @@ static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
   uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
                           ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
                           : s->st41_source_end - s->st41_frame_cursor;
-  
   dst->data_item_length_bytes = data_item_length_bytes;
   dst->data = s->st41_frame_cursor;
   s->st41_frame_cursor += data_item_length_bytes;
@@ -109,7 +108,7 @@ static void* app_tx_fmd_frame_thread(void* arg) {
 
     struct st41_frame* frame_addr = st41_tx_get_framebuffer(s->handle, producer_idx);
     app_tx_fmd_build_frame(s, frame_addr);
-  
+
     st_pthread_mutex_lock(&s->st41_wake_mutex);
     framebuff->size = sizeof(*frame_addr);
     framebuff->stat = ST_TX_FRAME_READY;
@@ -196,7 +195,6 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
                           ? (MTL_PKT_MAX_RTP_BYTES-16)
                           : s->st41_source_end - s->st41_frame_cursor;
   // skolelis tbd: (MTL_PKT_MAX_RTP_BYTES-16) - this is limit found in experimental way. no ST_PKT_ST41_PAYLOAD_MAX_BYTES !!!
-
   uint16_t data_item_length;
   data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
   hdr->base.marker = 1;
@@ -328,7 +326,7 @@ static int app_tx_fmd_close_source(struct st_app_tx_fmd_session* s) {
 static int app_tx_fmd_start_source(struct st_app_tx_fmd_session* s) {
   int ret = -EINVAL;
   int idx = s->idx;
-  
+
   s->st41_app_thread_stop = false;
   if (s->st41_pcap_input)
     ret = pthread_create(&s->st41_app_thread, NULL, app_tx_fmd_pcap_thread, (void*)s);
@@ -474,7 +472,7 @@ static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_sess
     return -EIO;
   }
 
-  /* added this s... = fmd... for RTP mode to function (by skolelis)*/
+  /* added this s->... = fmd->... for RTP mode to function (by skolelis)*/
   s->fmd_dit = fmd->info.fmd_dit;
   s->fmd_k_bit = fmd->info.fmd_k_bit;
 
@@ -522,7 +520,6 @@ int st_app_tx_fmd_sessions_init(struct st_app_context* ctx) {
     s->idx = i;
     ret = app_tx_fmd_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_fmd_sessions[i] : NULL,
                           s);
-
     if (ret < 0) {
       err("%s(%d), app_tx_fmd_session_init fail %d\n", __func__, i, ret);
       return ret;
