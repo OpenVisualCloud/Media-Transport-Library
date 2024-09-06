@@ -4,9 +4,7 @@
 
 #include "tx_fastmetadata_app.h"
 
-// skolelis tbd: where it shoud be defined?
-#define ST_PKT_ST41_PAYLOAD_MAX_BYTES \
-  (1460 - sizeof(struct st41_rtp_hdr) - 8) // skolelis tbd: why here we have "-8" ? (value found experimentally. "-7" would be not enough!)
+#define ST_PKT_ST41_PAYLOAD_MAX_BYTES (1460 - sizeof(struct st41_rtp_hdr) - 8)
 
 static int app_tx_fmd_next_frame(void* priv, uint16_t* next_frame_idx,
                                  struct st41_tx_frame_meta* meta) {
@@ -194,7 +192,6 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > (MTL_PKT_MAX_RTP_BYTES-16) 
                           ? (MTL_PKT_MAX_RTP_BYTES-16)
                           : s->st41_source_end - s->st41_frame_cursor;
-  // skolelis tbd: (MTL_PKT_MAX_RTP_BYTES-16) - this is limit found in experimental way. no ST_PKT_ST41_PAYLOAD_MAX_BYTES !!!
   uint16_t data_item_length;
   data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
   hdr->base.marker = 1;
@@ -210,9 +207,8 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   s->st41_seq_id++;
   s->st41_rtp_tmstamp++;
 
-  // skolelis tbd: what for we have her this htonl() ??? payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
   for (int i = 0; i < data_item_length_bytes; i++) {
-    payload_hdr[i] = s->st41_frame_cursor[i]; // skolelis tbd: here have the proper pointer on payload start, and maybe even 4-byte word?
+    payload_hdr[i] = s->st41_frame_cursor[i];
   }
   /* filling with 0's the remianing bytes of last 4-byte word */
   for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
@@ -220,11 +216,10 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   }
 
   *mbuf_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
-  hdr->st41_hdr_chunk.data_item_length = data_item_length; // skolelis tbd: htons() ???
-  hdr->st41_hdr_chunk.data_item_type = s->fmd_dit;
-  hdr->st41_hdr_chunk.data_item_k_bit = s->fmd_k_bit;
-
-  hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk); // skolelis tbd: and I added it instead of htons() 1 line above
+  hdr->st41_hdr_chunk.data_item_length = data_item_length;
+  hdr->st41_hdr_chunk.data_item_type = s->st41_dit;
+  hdr->st41_hdr_chunk.data_item_k_bit = s->st41_k_bit;
+  hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk);
   
   s->st41_frame_cursor += data_item_length_bytes;
   if (s->st41_frame_cursor == s->st41_source_end)
@@ -472,9 +467,9 @@ static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_sess
     return -EIO;
   }
 
-  /* added this s->... = fmd->... for RTP mode to function (by skolelis)*/
-  s->fmd_dit = fmd->info.fmd_dit;
-  s->fmd_k_bit = fmd->info.fmd_k_bit;
+  /* copying frame fields for RTP mode to function*/
+  s->st41_dit = fmd->info.fmd_dit;
+  s->st41_k_bit = fmd->info.fmd_k_bit;
 
   s->handle = handle;
   snprintf(s->st41_source_url, sizeof(s->st41_source_url), "%s",

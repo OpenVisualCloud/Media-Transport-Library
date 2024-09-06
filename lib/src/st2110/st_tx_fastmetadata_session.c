@@ -422,10 +422,9 @@ static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessi
   uint16_t data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
   if (!(data_item_length_bytes > s->max_pkt_len)) {
-    // skolelis tbd: what for we have here this htonl() ???      payload->swaped_second_hdr_chunk = htonl(payload->swaped_second_hdr_chunk);
     int offset = 0;
     for (int i = 0; i < data_item_length_bytes; i++) {
-      payload[i] = src->data[offset++]; // skolelis tbd: here take care about proper pointer on paylod start and maybe even as  4-byte word ?
+      payload[i] = src->data[offset++];
     }
     /* filling with 0's the remianing bytes of last 4-byte word */
     for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
@@ -437,10 +436,8 @@ static void tx_fastmetadata_session_build_packet(struct st_tx_fastmetadata_sessi
   pkt->pkt_len = pkt->data_len;
   rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit;
   rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit;
-  rtp->st41_hdr_chunk.data_item_length = data_item_length; // skolelis tbd: I added this line without htons() (line below)
-  //rtp->st41_hdr_chunk.data_item_length = htons(data_item_length); // skolelis tbd: what is the proper calculation?
-  rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk); // skolelis tbd: and I added it instead of line up
-  // skolelis tbd: should this line be kept? rtp->base.marker = 1;
+  rtp->st41_hdr_chunk.data_item_length = data_item_length;
+  rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
   dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
       data_item_length_bytes);
 
@@ -477,10 +474,9 @@ static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_s
   uint16_t data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
   if (!(data_item_length_bytes > s->max_pkt_len)) {
-    // skolelis tbd: what for we have here this htonl() ???      payload->swaped_second_hdr_chunk = htonl(payload->swaped_second_hdr_chunk);
     int offset = 0;
     for (int i = 0; i < data_item_length_bytes; i++) {
-      payload[i] = src->data[offset++]; // skolelis tbd: here take care about proper pointer on paylod start and maybe even as 4-byte word ?
+      payload[i] = src->data[offset++];
     }
     /* filling with 0's the remianing bytes of last 4-byte word */
     for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
@@ -492,14 +488,13 @@ static void tx_fastmetadata_session_build_rtp_packet(struct st_tx_fastmetadata_s
   pkt->pkt_len = pkt->data_len;
   rtp->st41_hdr_chunk.data_item_type = s->ops.fmd_dit;
   rtp->st41_hdr_chunk.data_item_k_bit = s->ops.fmd_k_bit;
-  rtp->st41_hdr_chunk.data_item_length = data_item_length; // htons(data_item_length); // skolelis tbd: what is the proper calculation?
+  rtp->st41_hdr_chunk.data_item_length = data_item_length;
   rtp->swaped_st41_hdr_chunk = htonl(rtp->swaped_st41_hdr_chunk);
 
-   /// skolelis tbd: should this line be kept?   rtp->base.marker = 1;
   dbg("%s(%d), payload_size (data_item_length_bytes) %d\n", __func__, s->idx, 
       data_item_length_bytes);
 
-  return ;
+  return;
 }
 
 static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
@@ -526,7 +521,7 @@ static int tx_fastmetadata_session_rtp_update_packet(struct mtl_main_impl* impl,
     s->st41_pkt_idx = 0;
     rte_atomic32_inc(&s->st41_stat_frame_cnt);
     s->st41_rtp_time = rtp->tmstamp;
-    bool second_field = false; // skolelis tbd: decide if it should be true or false (interlaced?)
+    bool second_field = false;
     
     tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
   }
@@ -579,7 +574,7 @@ static int tx_fastmetadata_session_build_packet_chain(struct mtl_main_impl* impl
         s->st41_pkt_idx = 0;
         rte_atomic32_inc(&s->st41_stat_frame_cnt);
         s->st41_rtp_time = rtp->base.tmstamp;
-        bool second_field = false;  // skolelis tbd: decide if true or false (interlaced)?
+        bool second_field = false;
         tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
       }
       if (s->ops.flags & ST41_TX_FLAG_USER_TIMESTAMP) {

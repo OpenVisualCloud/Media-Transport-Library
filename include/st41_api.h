@@ -85,15 +85,15 @@ enum st41_type {
  * A structure describing a st2110-41(fast metadata) rtp header
  */
 #ifdef MTL_LITTLE_ENDIAN
-MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian (double) versions struct to this structure (like in other places)?
+MTL_PACK(struct st41_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
   union {
     struct {
       /** Data Item Contents - Number of 32-bit data elements that follow */
-      uint32_t data_item_length : 9;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      uint32_t data_item_length : 9;
       /** Data Item K-bit */
-      uint32_t data_item_k_bit : 1;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      uint32_t data_item_k_bit : 1;
       /** Data Item Type */
       uint32_t data_item_type : 22;
     } st41_hdr_chunk;
@@ -102,7 +102,7 @@ MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian 
   };
 });
 #else
-MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian (double) versions struct to this structure (like in other places)?
+MTL_PACK(struct st41_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
   union {
@@ -110,9 +110,9 @@ MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian 
       /** Data Item Type */
       uint32_t data_item_type : 22;
       /** Data Item K-bit */
-      uint32_t data_item_k_bit : 1;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      uint32_t data_item_k_bit : 1;
       /** Data Item Contents - Number of 32-bit data elements that follow */
-      uint32_t data_item_length : 9;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      uint32_t data_item_length : 9;
     } st41_hdr_chunk;
     /** Handle to make operating on st41_hdr_chunk buffer easier */
     uint32_t swaped_st41_hdr_chunk;

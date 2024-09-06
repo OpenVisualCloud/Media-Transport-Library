@@ -184,7 +184,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   ctx->tx_audio_session_cnt = 0;
   snprintf(ctx->tx_anc_url, sizeof(ctx->tx_anc_url), "%s", "test.txt");
   ctx->tx_anc_session_cnt = 0;
-  snprintf(ctx->tx_fmd_url, sizeof(ctx->tx_fmd_url), "%s", "test.txt"); // skolelis tbd: another name of the file?
+  snprintf(ctx->tx_fmd_url, sizeof(ctx->tx_fmd_url), "%s", "test.txt");
   ctx->tx_fmd_session_cnt = 0;
   snprintf(ctx->tx_st22_url, sizeof(ctx->tx_st22_url), "%s", "test.raw");
   ctx->tx_st22_session_cnt = 0;
