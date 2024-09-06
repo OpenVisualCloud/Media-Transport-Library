@@ -5,4 +5,4 @@
 #include "../mt_log.h"
 
 
-//skolelis tbd remove this file if empty
+// skolelis tbd: remove this file if empty

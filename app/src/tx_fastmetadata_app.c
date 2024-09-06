@@ -4,9 +4,9 @@
 
 #include "tx_fastmetadata_app.h"
 
-
+// skolelis tbd: where it shoud be defined?
 #define ST_PKT_ST41_PAYLOAD_MAX_BYTES \
-  (1460 - sizeof(struct st41_rtp_hdr))
+  (1460 - sizeof(struct st41_rtp_hdr) - 8) // skolelis tbd: why here we have "-8" ? (value found experimentally. "-7" would be not enough!)
 
 static int app_tx_fmd_next_frame(void* priv, uint16_t* next_frame_idx,
                                  struct st41_tx_frame_meta* meta) {
@@ -79,6 +79,7 @@ static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
   uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
                           ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
                           : s->st41_source_end - s->st41_frame_cursor;
+  
   dst->data_item_length_bytes = data_item_length_bytes;
   dst->data = s->st41_frame_cursor;
   s->st41_frame_cursor += data_item_length_bytes;
@@ -108,7 +109,7 @@ static void* app_tx_fmd_frame_thread(void* arg) {
 
     struct st41_frame* frame_addr = st41_tx_get_framebuffer(s->handle, producer_idx);
     app_tx_fmd_build_frame(s, frame_addr);
-
+  
     st_pthread_mutex_lock(&s->st41_wake_mutex);
     framebuff->size = sizeof(*frame_addr);
     framebuff->stat = ST_TX_FRAME_READY;
@@ -191,9 +192,11 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   /* generate one fmd rtp for test purpose */
   struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
   uint8_t* payload_hdr = (uint8_t*)(&hdr[1]);
-  uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > ST_PKT_ST41_PAYLOAD_MAX_BYTES
-                          ? ST_PKT_ST41_PAYLOAD_MAX_BYTES
+  uint16_t data_item_length_bytes = s->st41_source_end - s->st41_frame_cursor > (MTL_PKT_MAX_RTP_BYTES-16) 
+                          ? (MTL_PKT_MAX_RTP_BYTES-16)
                           : s->st41_source_end - s->st41_frame_cursor;
+  // skolelis tbd: (MTL_PKT_MAX_RTP_BYTES-16) - this is limit found in experimental way. no ST_PKT_ST41_PAYLOAD_MAX_BYTES !!!
+
   uint16_t data_item_length;
   data_item_length = (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
   hdr->base.marker = 1;
@@ -209,9 +212,9 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   s->st41_seq_id++;
   s->st41_rtp_tmstamp++;
 
-  // skolelis what for we have her this htonl() ??? payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+  // skolelis tbd: what for we have her this htonl() ??? payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
   for (int i = 0; i < data_item_length_bytes; i++) {
-    payload_hdr[i] = s->st41_frame_cursor[i]; //skolelis tu ustal dobrze wskaznik na start paylodu a moze nawet 4-bajtowy?
+    payload_hdr[i] = s->st41_frame_cursor[i]; // skolelis tbd: here have the proper pointer on payload start, and maybe even 4-byte word?
   }
   /* filling with 0's the remianing bytes of last 4-byte word */
   for (int i = data_item_length_bytes; i < data_item_length * 4; i++) {
@@ -219,7 +222,12 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   }
 
   *mbuf_len = sizeof(struct st41_rtp_hdr) + data_item_length * 4;
-  hdr->data_item_length = htons(data_item_length); //tbd skolelis htons() ???
+  hdr->st41_hdr_chunk.data_item_length = data_item_length; // skolelis tbd: htons() ???
+  hdr->st41_hdr_chunk.data_item_type = s->fmd_dit;
+  hdr->st41_hdr_chunk.data_item_k_bit = s->fmd_k_bit;
+
+  hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk); // skolelis tbd: and I added it instead of htons() 1 line above
+  
   s->st41_frame_cursor += data_item_length_bytes;
   if (s->st41_frame_cursor == s->st41_source_end)
     s->st41_frame_cursor = s->st41_source_begin;
@@ -320,7 +328,7 @@ static int app_tx_fmd_close_source(struct st_app_tx_fmd_session* s) {
 static int app_tx_fmd_start_source(struct st_app_tx_fmd_session* s) {
   int ret = -EINVAL;
   int idx = s->idx;
-
+  
   s->st41_app_thread_stop = false;
   if (s->st41_pcap_input)
     ret = pthread_create(&s->st41_app_thread, NULL, app_tx_fmd_pcap_thread, (void*)s);
@@ -435,6 +443,8 @@ static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_sess
   ops.notify_rtp_done = app_tx_fmd_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.fps = fmd ? fmd->info.fmd_fps : ST_FPS_P59_94;
+  ops.fmd_dit = fmd->info.fmd_dit;
+  ops.fmd_k_bit = fmd->info.fmd_k_bit;
   s->st41_pcap_input = false;
   ops.type = fmd ? fmd->info.type : ST41_TYPE_FRAME_LEVEL;
   ops.interlaced = fmd ? fmd->info.interlaced : false;
@@ -463,6 +473,10 @@ static int app_tx_fmd_init(struct st_app_context* ctx, st_json_fastmetadata_sess
     app_tx_fmd_uinit(s);
     return -EIO;
   }
+
+  /* added this s... = fmd... for RTP mode to function (by skolelis)*/
+  s->fmd_dit = fmd->info.fmd_dit;
+  s->fmd_k_bit = fmd->info.fmd_k_bit;
 
   s->handle = handle;
   snprintf(s->st41_source_url, sizeof(s->st41_source_url), "%s",
@@ -508,6 +522,7 @@ int st_app_tx_fmd_sessions_init(struct st_app_context* ctx) {
     s->idx = i;
     ret = app_tx_fmd_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_fmd_sessions[i] : NULL,
                           s);
+
     if (ret < 0) {
       err("%s(%d), app_tx_fmd_session_init fail %d\n", __func__, i, ret);
       return ret;

@@ -358,6 +358,7 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
     ctx->json_ctx = NULL;
     return ret;
   }
+
   ctx->tx_video_session_cnt = ctx->json_ctx->tx_video_session_cnt;
   ctx->tx_audio_session_cnt = ctx->json_ctx->tx_audio_session_cnt;
   ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;

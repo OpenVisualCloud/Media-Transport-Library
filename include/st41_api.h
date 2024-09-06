@@ -82,19 +82,44 @@ enum st41_type {
 };
 
 /**
- * A structure describing a st2110-41 (fast metadata framework) rtp header
+ * A structure describing a st2110-41(fast metadata) rtp header
  */
+#ifdef MTL_LITTLE_ENDIAN
 MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian (double) versions struct to this structure (like in other places)?
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
-
-  /** Data Item Type */
-  uint32_t data_item_type : 22;
-  /** Data Item K-bit */
-  uint8_t data_item_k_bit : 1;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
-  /** Data Item Contents - Number of 32-bit data elements that follow */
-  uint16_t data_item_length : 9;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+  union {
+    struct {
+      /** Data Item Contents - Number of 32-bit data elements that follow */
+      uint32_t data_item_length : 9;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      /** Data Item K-bit */
+      uint32_t data_item_k_bit : 1;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      /** Data Item Type */
+      uint32_t data_item_type : 22;
+    } st41_hdr_chunk;
+    /** Handle to make operating on st41_hdr_chunk buffer easier */
+    uint32_t swaped_st41_hdr_chunk;
+  };
 });
+#else
+MTL_PACK(struct st41_rtp_hdr { // skolelis tbd: should we add little/big endian (double) versions struct to this structure (like in other places)?
+  /** Rtp rfc3550 base hdr */
+  struct st_rfc3550_rtp_hdr base;
+  union {
+    struct {
+      /** Data Item Type */
+      uint32_t data_item_type : 22;
+      /** Data Item K-bit */
+      uint32_t data_item_k_bit : 1;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+      /** Data Item Contents - Number of 32-bit data elements that follow */
+      uint32_t data_item_length : 9;  // skolelis tbd: is it not better to have here uint_32_t type for compatibility with other 22 bits?
+    } st41_hdr_chunk;
+    /** Handle to make operating on st41_hdr_chunk buffer easier */
+    uint32_t swaped_st41_hdr_chunk;
+  };
+});
+#endif
+
 
 /**
  * Structure for ST2110-41(fast metadata) frame
@@ -142,6 +167,11 @@ struct st41_tx_ops {
   enum st_fps fps;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
+  /** Mandatory. 22 bits data item type */
+  uint32_t fmd_dit;
+  /** Mandatory. 1 bit data item K-bit */
+  uint8_t fmd_k_bit;
+
   /** Mandatory. interlaced or not */
   bool interlaced;
 
@@ -232,6 +262,7 @@ struct st41_rx_ops {
   void* priv;
   /** Optional. see ST41_RX_FLAG_* for possible flags */
   uint32_t flags;
+
 
   /** Mandatory. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;

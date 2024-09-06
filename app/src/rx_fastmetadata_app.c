@@ -4,15 +4,23 @@
 
 #include "rx_fastmetadata_app.h"
 
-static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s) { //skolelis tbd remove }, void* usrptr) {
-  // skolelis tbd remove this line struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
-  // skolelis tbd remove this line struct st41_rfc8331_payload_hdr* payload_hdr =
-  // skolelis tbd remove this line       (struct st41_rfc8331_payload_hdr*)(&hdr[1]);
+static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s) { // skolelis tbd: remove }, void* usrptr) {
+  // skolelis tbd: struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
+  // skolelis tbd: struct st41_rfc8331_payload_hdr* payload_hdr = (struct st41_rfc8331_payload_hdr*)(&hdr[1]);
+  
   dbg("%s(%d).\n", __func__, s->idx);
 
-  // skolelis what for this nthol() 2x ? payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
-  // skolelis what for this nthol() 2x ? payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+  // skolelis tbd: payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
 
+/* // skolelis tbd: some checking should be done. in st40 here we were checking if checksums and parities are correct. 
+   // skolelis tbd: here in st41 we dont have such mechanisms to verify. so what else?
+  if (!st41_check_parity_bits(payload_hdr->second_hdr_chunk.did) ||
+      !st41_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
+      !st41_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
+    err("%s(%d), fmd RTP checkParityBits error\n", __func__, s->idx);
+    return;
+  }
+*/
   s->stat_frame_total_received++;
   if (!s->stat_frame_first_rx_time)
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
@@ -37,7 +45,7 @@ static void* app_rx_fmd_read_thread(void* arg) {
       continue;
     }
     /* parse the packet */
-    app_rx_fmd_handle_rtp(s); // skolelis tbd remove: , usrptr);
+    app_rx_fmd_handle_rtp(s); // skolelis tbd: remove: , usrptr);
     st41_rx_put_mbuf(s->handle, mbuf);
   }
   info("%s(%d), stop\n", __func__, idx);

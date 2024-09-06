@@ -105,11 +105,6 @@ enum anc_format {
   ANC_FORMAT_MAX,
 };
 
-enum fmd_format {
-  FMD_FORMAT_CLOSED_CAPTION,
-  FMD_FORMAT_MAX,
-};  // skolelis tbd: I don't think closed caption is relevant here in st41. The enum to be removed or changed.
-
 struct st_video_fmt_desc {
   enum video_format fmt;
   char* name;
@@ -187,7 +182,8 @@ typedef struct st_json_ancillary_info {
 
 typedef struct st_json_fastmetadata_info {
   enum st41_type type;
-  enum fmd_format fmd_format;
+  uint32_t fmd_dit;
+  uint8_t fmd_k_bit;
   enum st_fps fmd_fps;
   bool interlaced;
 

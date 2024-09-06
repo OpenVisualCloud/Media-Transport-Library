@@ -1249,15 +1249,35 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
     err("%s, invalid fmd type %s\n", __func__, type);
     return -ST_JSON_NOT_VALID;
   }
-  /* parse fmd format */
-  const char* fmd_format =
-      json_object_get_string(st_json_object_object_get(fmd_obj, "fastmetadata_format"));
-  REQUIRED_ITEM(fmd_format);
-  if (strcmp(fmd_format, "closed_caption") == 0) {
-    fmd->info.fmd_format = FMD_FORMAT_CLOSED_CAPTION;
+
+  /* parse fmd data item type */
+  json_object* fmd_dit_obj = st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
+  if (fmd_dit_obj) {
+    uint32_t fmd_dit = json_object_get_int(fmd_dit_obj);
+    if (fmd_dit < 0 || fmd_dit > 0x3fffff) {
+      err("%s, invalid fastmetadata_data_item_type 0x%x\n", __func__, fmd_dit);
+      return -ST_JSON_NOT_VALID;
+    }
+    fmd->info.fmd_dit = fmd_dit;
+    info("%s, fastmetadata_data_item_type = 0x%x\n", __func__, fmd_dit);
   } else {
-    err("%s, invalid fmd format %s\n", __func__, fmd_format);
-    return -ST_JSON_NOT_VALID;
+    err("%s, No fastmetadata_data_item_type !\n", __func__);
+    return -ST_JSON_NULL;
+  }
+
+  /* parse fmd data item K-bit */
+  json_object* fmd_k_bit_obj = st_json_object_object_get(fmd_obj, "fastmetadata_k_bit");
+  if (fmd_k_bit_obj) {
+    uint8_t fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
+    if (fmd_k_bit < 0 || fmd_k_bit > 1) {
+      err("%s, invalid fastmetadata_k_bit 0x%x\n", __func__, fmd_k_bit);
+      return -ST_JSON_NOT_VALID;
+    }
+    fmd->info.fmd_k_bit = fmd_k_bit;
+    info("%s, fastmetadata_k_bit = 0x%x\n", __func__, fmd_k_bit);
+  } else {
+    err("%s, No fastmetadata_k_bit !\n", __func__);
+    return -ST_JSON_NULL;
   }
 
   /* parse fmd fps */
@@ -1372,7 +1392,7 @@ static int parse_st22p_fps(json_object* st22p_obj, st_json_st22p_session_t* st22
   } else if (strcmp(fps, "p23") == 0) {
     st22p->info.fps = ST_FPS_P23_98;
   } else {
-    err("%s, invalid anc fps %s\n", __func__, fps); //skolelis tbd: here I dont see corelation for st41(fmd), but why there is st40(anc) actually?
+    err("%s, invalid st22 fps %s\n", __func__, fps);
     return -ST_JSON_NOT_VALID;
   }
   return ST_JSON_SUCCESS;
@@ -1718,7 +1738,7 @@ static int parse_st20p_fps(json_object* st20p_obj, st_json_st20p_session_t* st20
   } else if (strcmp(fps, "p23") == 0) {
     st20p->info.fps = ST_FPS_P23_98;
   } else {
-    err("%s, invalid anc fps %s\n", __func__, fps); //skolelis tbd: here I dont see corelation for st41(fmd), but why there is st40(anc) actually?
+    err("%s, invalid st20 fps %s\n", __func__, fps);
     return -ST_JSON_NOT_VALID;
   }
   return ST_JSON_SUCCESS;
