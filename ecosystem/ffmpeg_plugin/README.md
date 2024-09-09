@@ -172,3 +172,33 @@ ffmpeg -stream_loop -1 -i test.wav -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_t
 
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 30000 -payload_type 111 -pcm_fmt pcm16 -at 1ms -ac 2 -f mtl_st30p -i "0" dump_pcm16.wav -y
 ```
+
+### Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
+
+The MTL_GPU_DIRECT experimental feature plans on enhancing FFmpeg's performance by allowing direct access to GPU memory, which can be particularly beneficial when working with high-throughput video streams such as those handled by the MTL ST20 codec plugin.
+
+#### Building FFmpeg with MTL_GPU_DIRECT Enabled
+To take advantage of the MTL_GPU_DIRECT feature, you must compile FFmpeg with this option enabled. Here’s how to do it:
+
+1. Clone the FFmpeg Repository: Ensure you have the latest version of FFmpeg source code from the official repository:
+```bash
+./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-cflags="-DMTL_GPU_DIRECT_ENABLED"
+```
+or use
+```bash
+./build_ffmpeg_plugin.sh -g
+```
+
+1. Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112 and
+enabled gpu_direct:
+
+```bash
+./ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -gpu_direct 1 -gpu_driver 0 -gpu_device 0 -f mtl_st20p -i "k" -f rawvideo /dev/null -y
+```
+
+#### Additional Notes
+GPU Direct Flag: When compiling FFmpeg with the MTL_GPU_DIRECT feature, ensure that your system's GPU drivers and hardware support direct GPU memory access.
+
+[GPU Documentation](../docs/gpu.md)
+
+By following these steps, you can effectively build and utilize FFmpeg with the MTL_GPU_DIRECT feature enabled.

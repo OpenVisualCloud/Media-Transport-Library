@@ -18,6 +18,9 @@
  */
 
 #include "mtl_common.h"
+#ifdef MTL_GPU_DIRECT_ENABLED
+#include <mtl_gpu_direct/gpu.h>
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
 typedef struct MtlSt20pDemuxerContext {
   const AVClass* class; /**< Class for private options. */
@@ -39,6 +42,13 @@ typedef struct MtlSt20pDemuxerContext {
   st20p_rx_handle rx_handle;
 
   int64_t frame_counter;
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  bool gpu_direct_enabled;
+  int gpu_driver_index;
+  int gpu_device_index;
+  void* gpu_context;
+#endif /* MTL_GPU_DIRECT_ENABLED */
 } MtlSt20pDemuxerContext;
 
 static int mtl_st20p_read_close(AVFormatContext* ctx) {
@@ -57,6 +67,12 @@ static int mtl_st20p_read_close(AVFormatContext* ctx) {
     mtl_instance_put(ctx, s->dev_handle);
     s->dev_handle = NULL;
   }
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  if (s->gpu_direct_enabled) {
+    free_gpu_context(s->gpu_context);
+  }
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
   info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
@@ -147,6 +163,21 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
   dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_rx.framebuff_cnt = s->fb_cnt;
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  if (s->gpu_direct_enabled) {
+    // create contex for one gpu device
+    GpuContext gpu_ctx = {0};
+
+    int res = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
+    if (res < 0) {
+      err(ctx, "%s, app gpu initialization failed %d\n", __func__, res);
+      return -ENXIO;
+    }
+    ops_rx.gpu_context = (void*)(&gpu_ctx);
+    ops_rx.flags |= ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS;
+  }
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
   // get mtl dev
   s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
@@ -296,6 +327,32 @@ static const AVOption mtl_st20p_rx_options[] = {
      3,
      8,
      DEC},
+#ifdef MTL_GPU_DIRECT_ENABLED
+    {"gpu_direct",
+     "Store frames in framebuffer directly on GPU",
+     OFFSET(gpu_direct_enabled),
+     AV_OPT_TYPE_BOOL,
+     {.i64 = 0},
+     0,
+     1,
+     DEC},
+    {"gpu_driver",
+     "Index of the gpu driver",
+     OFFSET(gpu_driver_index),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     60,
+     DEC},
+    {"gpu_device",
+     "Index of the gpu device",
+     OFFSET(gpu_device_index),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     60,
+     DEC},
+#endif /* MTL_GPU_DIRECT_ENABLED */
     {NULL},
 };
 
