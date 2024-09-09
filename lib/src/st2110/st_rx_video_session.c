@@ -17,7 +17,7 @@
 
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
-#endif
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
 static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
@@ -461,7 +461,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
         GpuContext* gpu = s->ops.gpuContext;
         ret = gpu_allocate_shared_buffer(gpu, &frame, size);
       } else
-#endif
+#endif /* MTL_GPU_DIRECT_ENABLED */
         frame = mt_rte_zmalloc_socket(size, soc_id);
 
       if (!frame) {

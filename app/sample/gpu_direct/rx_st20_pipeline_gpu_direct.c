@@ -4,6 +4,7 @@
 
 #include "../sample_util.h"
 
+/* struct to handle st20p rx session */
 struct rx_st20p_sample_ctx {
   int idx;
   st20p_rx_handle handle;
@@ -74,9 +75,12 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
 static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
                                    struct st_frame* frame) {
   s->fb_recv++;
-  if (s->dst_fd < 0) return; /* no dump */
+  if (s->dst_fd < 0) /* no dump */
+    return;
 
-  if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
+  if (s->dst_cursor + s->frame_size > s->dst_end)
+    s->dst_cursor = s->dst_begin;
+
   mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
 }
@@ -116,7 +120,7 @@ int main(int argc, char** argv) {
   int gpu_driver_index = 0;
   int gpu_device_index = 0;
 
-  get_gpu_drivers_and_devices();
+  print_gpu_drivers_and_devices();
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));

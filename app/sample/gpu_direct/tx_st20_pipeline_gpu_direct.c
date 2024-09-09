@@ -4,6 +4,7 @@
 
 #include "../sample_util.h"
 
+/* struct to handle st20p tx session */
 struct tx_st20p_sample_ctx {
   mtl_handle st;
   int idx;
@@ -143,11 +144,10 @@ static void* tx_st20p_frame_thread(void* arg) {
 }
 
 int main(int argc, char** argv) {
-  struct st_sample_context ctx;
+  struct st_sample_context ctx = {0};
   int ret;
 
   /* init sample(st) dev */
-  memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
 
@@ -162,15 +162,15 @@ int main(int argc, char** argv) {
   uint32_t session_num = ctx.sessions;
   struct tx_st20p_sample_ctx* app[session_num];
 
-  // create and register tx session
+  /* create and register tx session */
   for (int i = 0; i < session_num; i++) {
-    app[i] = malloc(sizeof(struct tx_st20p_sample_ctx));
+    app[i] = calloc(1, sizeof(struct tx_st20p_sample_ctx));
     if (!app[i]) {
-      err("%s(%d), app context malloc failed\n", __func__, i);
+      err("%s(%d), app context memory allocation failed\n", __func__, i);
       ret = -ENOMEM;
       goto error;
     }
-    memset(app[i], 0, sizeof(struct tx_st20p_sample_ctx));
+
     app[i]->st = ctx.st;
     app[i]->idx = i;
     app[i]->stop = false;
@@ -274,5 +274,6 @@ error:
     mtl_uninit(ctx.st);
     ctx.st = NULL;
   }
+
   return ret;
 }

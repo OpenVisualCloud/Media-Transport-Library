@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Intel Corporation
+ */
+
 #include "gpu.h"
 
 // Macros for error checking
@@ -32,7 +36,7 @@
 /**
  * @brief Init level zero lib
  * Must be called before calling level zero API.
- * @return int - 0 if successfull. If error, return -1
+ * @return int - 0 if successfull, < 0 else.
  */
 int init_level_zero_lib() {
   ZE_CHECK_ERROR(zeInit(ZE_INIT_FLAG_GPU_ONLY));
@@ -43,9 +47,9 @@ int init_level_zero_lib() {
 /**
  * @brief Print drivers and devices indexes
  *
- * @return int - 0 if successfull. If error, return -1
+ * @return int - 0 if successfull, < 0 else.
  */
-int get_gpu_drivers_and_devices() {
+int print_gpu_drivers_and_devices() {
   // init level-zero lib
   INIT_CHECK_ERROR(init_level_zero_lib());
 
@@ -56,7 +60,7 @@ int get_gpu_drivers_and_devices() {
   ze_driver_handle_t* drivers = calloc(driversCount, sizeof(ze_driver_handle_t));
   if (!drivers) {
     fprintf(stderr, "Memory allocation for drivers failed\n");
-    return -1;
+    return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDriverGet(&driversCount, drivers));
   for (int i = 0; i < driversCount; i++) {
@@ -72,7 +76,7 @@ int get_gpu_drivers_and_devices() {
     if (!devices) {
       fprintf(stderr, "Memory allocation for devices failed\n");
       free(drivers);
-      return -1;
+      return -ENOMEM;
     }
     ZE_CHECK_ERROR(zeDeviceGet(driver, &devicesCount, devices));
     for (int j = 0; j < devicesCount; j++) {
@@ -101,12 +105,12 @@ int get_gpu_drivers_and_devices() {
  * initialization.
  * @param driverIndex - [in] driver index.
  * @param deviceIndex - [in] device index.
- * @return int. 0 if successfull, if error occured -1.
+ * @return int. 0 if successfull, < 0 else.
  */
 int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex) {
   if (ctx->initialized) {
     fprintf(stderr, "Context is already initialized\n");
-    return -1;
+    return -EINVAL;
   }
 
   // Init level-zero lib
@@ -116,14 +120,14 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
   ZE_CHECK_ERROR(zeDriverGet(&ctx->driverCount, NULL));
   if (driverIndex >= ctx->driverCount) {
     fprintf(stderr, "Init error: provided driver index is out of range\n");
-    return -1;
+    return -EINVAL;
   }
 
   // Allocate and retrieve driver handlers
   ctx->drivers = calloc(ctx->driverCount, sizeof(ze_driver_handle_t));
   if (ctx->drivers == NULL) {
     fprintf(stderr, "Can't allocation memory for drivers handlers\n");
-    return -1;
+    return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDriverGet(&ctx->driverCount, ctx->drivers));
   ctx->currentDriverIndex = driverIndex;
@@ -138,15 +142,16 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
   printf("Number of devices: %d\n", ctx->deviceCount);
   if (deviceIndex >= ctx->deviceCount) {
     fprintf(stderr, "Init error: provided device index is out of range\n");
-    return -1;
+    return -EINVAL;
   }
 
   // Allocate and retrieve device handlers
   ctx->devices = calloc(ctx->deviceCount, sizeof(ze_device_handle_t));
-  if (ctx->devices == NULL) {
+
+  if (!ctx->devices) {
     fprintf(stderr, "Can't allocate memory for devices handlers\n");
     free(ctx->drivers);
-    return -1;
+    return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDeviceGet(ctx->driverHandle, &ctx->deviceCount, ctx->devices));
   ctx->currectDeviceIndex = deviceIndex;
@@ -188,7 +193,7 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
  * @param ctx - GPU context of the device.
  * @param buf in/out - buf pointer to be filled
  * @param size
- * @return int. 0 if successfull, if error occured -1.
+ * @return int. 0 if successfull, < 0 else.
  */
 int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size) {
   // check if ctx is initialized
@@ -201,7 +206,10 @@ int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size) {
       .ordinal = 0 /* this must be less than count of zeDeviceGetMemoryProperties */
   };
   ze_host_mem_alloc_desc_t hostMemDesc = {
-      .stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC, .pNext = NULL, .flags = 0};
+      .stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC,
+      .pNext = NULL,
+      .flags = 0
+  };
   ZE_CHECK_ERROR(zeMemAllocShared(ctx->deviceContext, &deviceMemDesc, &hostMemDesc, size,
                                   16, ctx->deviceHandler, buf));
   printf("shared memory allocated (ptr = %p, size = 0x%lx, device_handle = %p)\n", *buf,
@@ -216,7 +224,7 @@ int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size) {
  * @param ctx [in].GPU context of the device.
  * @param buf [in/out] - buf pointer to be filled
  * @param size [in]. Buf size
- * @return int. 0 if successfull, if error occured -1.
+ * @return int. 0 if successfull, < 0 else.
  */
 int gpu_allocate_device_buffer(GpuContext* ctx, void** buf, size_t size) {
   // check if ctx is initialized
@@ -302,7 +310,7 @@ void gpu_free_buf(GpuContext* ctx, void* buf) {
  * @brief Free Gpu Context.
  *
  * @param ctx
- * @return int. 0 if succesffull, if error occured -1.
+ * @return int. 0 if succesffull, < 0 else.
  */
 int free_gpu_context(GpuContext* ctx) {
   if (ctx == NULL) {

@@ -11,9 +11,10 @@
 #include "datapath/mt_queue.h"
 #include "mt_log.h"
 #include "mt_main.h"
+
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
-#endif
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
 #ifdef MTL_HAS_ASAN
 #include <execinfo.h>
@@ -875,7 +876,7 @@ int st_frame_trans_uinit(struct st_frame_trans* frame, void* device) {
       GpuContext* GpuDevice = device;
       gpu_free_buf(GpuDevice, frame->addr);
     }
-#endif
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
     frame->addr = NULL;
   }

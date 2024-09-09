@@ -1,6 +1,11 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Intel Corporation
+ */
+
 #ifndef GPU
 #define GPU
 
+#include <errno.h>
 #include <level_zero/ze_api.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -31,7 +36,7 @@ typedef struct GpuContext {
 } GpuContext;
 
 int init_level_zero_lib();
-int get_gpu_drivers_and_devices();
+int print_gpu_drivers_and_devices();
 int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex);
 int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size);
 int gpu_allocate_device_buffer(GpuContext* ctx, void** buf, size_t size);
@@ -40,4 +45,4 @@ int gpu_memset(GpuContext* ctx, void* dst, char byte, size_t sz);
 void gpu_free_buf(GpuContext* ctx, void* buf);
 int free_gpu_context(GpuContext* ctx);
 
-#endif /*include guard*/
+#endif /* GPU */

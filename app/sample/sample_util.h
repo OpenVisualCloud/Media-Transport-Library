@@ -25,7 +25,7 @@
 
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
-#endif
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
 #include "../src/app_platform.h"
 
@@ -145,7 +145,7 @@ struct st_sample_context {
 #ifdef MTL_GPU_DIRECT_ENABLED
   /* gpu direct */
   GpuContext* gpuCtx;
-#endif
+#endif /* MTL_GPU_DIRECT_ENABLED */
 };
 
 struct st_frame_user_meta {
