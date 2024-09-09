@@ -43,7 +43,7 @@
 #define ST_APP_MAX_RX_ANC_SESSIONS (180)
 
 /* FMD = Fast Metadata (ST2110-41) */
-#define ST_APP_MAX_TX_FMD_SESSIONS (180) 
+#define ST_APP_MAX_TX_FMD_SESSIONS (180)
 #define ST_APP_MAX_RX_FMD_SESSIONS (180)
 
 #define ST_APP_MAX_LCORES (32)
