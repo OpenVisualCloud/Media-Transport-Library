@@ -13,6 +13,7 @@
 #define ST_APP_PAYLOAD_TYPE_AUDIO (111)
 #define ST_APP_PAYLOAD_TYPE_ANCILLARY (113)
 #define ST_APP_PAYLOAD_TYPE_ST22 (114)
+#define ST_APP_PAYLOAD_TYPE_FASTMETADATA (115)
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(arr[0]))
 

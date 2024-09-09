@@ -2,7 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 mtl_header_files = files('mtl_api.h', 'st_api.h', 'st_convert_api.h', 'st_convert_internal.h',
-  'st_pipeline_api.h', 'st20_api.h', 'st30_api.h', 'st40_api.h',
+  'st_pipeline_api.h', 'st20_api.h', 'st30_api.h', 'st40_api.h', 'st41_api.h',
   'mudp_api.h', 'mudp_sockfd_api.h', 'mudp_sockfd_internal.h', 'mtl_lcore_shm_api.h',
   'mtl_sch_api.h', 'st30_pipeline_api.h')
 

@@ -14,6 +14,7 @@
 #include <mtl/st30_api.h>
 #include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
+#include <mtl/st41_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <pcap.h>
 #include <pthread.h>
@@ -40,6 +41,10 @@
 
 #define ST_APP_MAX_TX_ANC_SESSIONS (180)
 #define ST_APP_MAX_RX_ANC_SESSIONS (180)
+
+/* FMD = Fast Metadata (ST2110-41) */
+#define ST_APP_MAX_TX_FMD_SESSIONS (180)
+#define ST_APP_MAX_RX_FMD_SESSIONS (180)
 
 #define ST_APP_MAX_LCORES (32)
 
@@ -226,6 +231,37 @@ struct st_app_tx_anc_session {
   uint32_t st40_seq_id;
 };
 
+struct st_app_tx_fmd_session {
+  int idx;
+  st41_tx_handle handle;
+
+  uint16_t framebuff_cnt;
+
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_consumer_idx;
+  struct st_tx_frame* framebuffs;
+
+  uint32_t st41_frame_done_cnt;
+  uint32_t st41_packet_done_cnt;
+
+  char st41_source_url[ST_APP_URL_MAX_LEN + 1];
+  int st41_source_fd;
+  pcap_t* st41_pcap;
+  bool st41_pcap_input;
+  uint32_t st41_dit;
+  uint32_t st41_k_bit;
+  bool st41_rtp_input;
+  uint8_t* st41_source_begin;
+  uint8_t* st41_source_end;
+  uint8_t* st41_frame_cursor; /* cursor to current frame */
+  pthread_t st41_app_thread;
+  bool st41_app_thread_stop;
+  pthread_cond_t st41_wake_cond;
+  pthread_mutex_t st41_wake_mutex;
+  uint32_t st41_rtp_tmstamp;
+  uint32_t st41_seq_id;
+};
+
 struct st_app_rx_video_session {
   int idx;
   mtl_handle st;
@@ -321,6 +357,19 @@ struct st_app_rx_anc_session {
   pthread_cond_t st40_wake_cond;
   pthread_mutex_t st40_wake_mutex;
   bool st40_app_thread_stop;
+
+  /* stat */
+  int stat_frame_total_received;
+  uint64_t stat_frame_first_rx_time;
+};
+
+struct st_app_rx_fmd_session {
+  int idx;
+  st41_rx_handle handle;
+  pthread_t st41_app_thread;
+  pthread_cond_t st41_wake_cond;
+  pthread_mutex_t st41_wake_mutex;
+  bool st41_app_thread_stop;
 
   /* stat */
   int stat_frame_total_received;
@@ -610,6 +659,12 @@ struct st_app_context {
   int tx_anc_rtp_ring_size; /* the ring size for tx anc rtp type */
   bool tx_anc_dedicate_queue;
 
+  struct st_app_tx_fmd_session* tx_fmd_sessions;
+  char tx_fmd_url[ST_APP_URL_MAX_LEN];
+  int tx_fmd_session_cnt;
+  int tx_fmd_rtp_ring_size; /* the ring size for tx fmd rtp type */
+  bool tx_fmd_dedicate_queue;
+
   char tx_st22p_url[ST_APP_URL_MAX_LEN]; /* send st22p content url*/
   struct st_app_tx_st22p_session* tx_st22p_sessions;
   int tx_st22p_session_cnt;
@@ -639,6 +694,9 @@ struct st_app_context {
 
   struct st_app_rx_anc_session* rx_anc_sessions;
   int rx_anc_session_cnt;
+
+  struct st_app_rx_fmd_session* rx_fmd_sessions;
+  int rx_fmd_session_cnt;
 
   struct st_app_rx_st22p_session* rx_st22p_sessions;
   int rx_st22p_session_cnt;

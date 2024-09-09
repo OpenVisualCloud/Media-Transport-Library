@@ -1029,10 +1029,12 @@ int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
   info->st22_tx_sessions_cnt = rte_atomic32_read(&impl->st22_tx_sessions_cnt);
   info->st30_tx_sessions_cnt = rte_atomic32_read(&impl->st30_tx_sessions_cnt);
   info->st40_tx_sessions_cnt = rte_atomic32_read(&impl->st40_tx_sessions_cnt);
+  info->st41_tx_sessions_cnt = rte_atomic32_read(&impl->st41_tx_sessions_cnt);
   info->st20_rx_sessions_cnt = rte_atomic32_read(&impl->st20_rx_sessions_cnt);
   info->st22_rx_sessions_cnt = rte_atomic32_read(&impl->st22_rx_sessions_cnt);
   info->st30_rx_sessions_cnt = rte_atomic32_read(&impl->st30_rx_sessions_cnt);
   info->st40_rx_sessions_cnt = rte_atomic32_read(&impl->st40_rx_sessions_cnt);
+  info->st41_rx_sessions_cnt = rte_atomic32_read(&impl->st41_rx_sessions_cnt);
 
   return 0;
 }
