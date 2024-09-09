@@ -522,6 +522,12 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
     ops_rx.socket_id = ops->socket_id;
     ops_rx.flags |= ST20_RX_FLAG_FORCE_NUMA;
   }
+
+  if (ops->flags & ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS) {
+    ops_rx.gpu_direct_framebuffer_in_vram_device_address = true;
+    ops_rx.gpu_context = ops->gpu_context;
+  }
+
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;

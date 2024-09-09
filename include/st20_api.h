@@ -1569,6 +1569,10 @@ struct st20_rx_ops {
   int (*notify_rtp_ready)(void* priv);
   /**  Use this socket if ST20_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
+
+  /* use to store framebuffers on vram */
+  bool gpu_direct_framebuffer_in_vram_device_address;
+  void* gpu_context;
 };
 
 /**

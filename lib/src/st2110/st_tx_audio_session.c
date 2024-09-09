@@ -64,7 +64,7 @@ static int tx_audio_session_free_frames(struct st_tx_audio_session_impl* s) {
 
     for (int i = 0; i < s->st30_frames_cnt; i++) {
       frame = &s->st30_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, NULL);
     }
 
     mt_rte_free(s->st30_frames);

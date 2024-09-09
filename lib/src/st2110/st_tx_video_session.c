@@ -268,7 +268,7 @@ static int tv_free_frames(struct st_tx_video_session_impl* s) {
     struct st_frame_trans* frame;
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       frame = &s->st20_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, NULL);
     }
 
     mt_rte_free(s->st20_frames);

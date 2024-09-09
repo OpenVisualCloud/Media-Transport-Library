@@ -109,6 +109,8 @@ struct st_rx_muf_priv_data {
 #define ST_FT_FLAG_RTE_MALLOC (MTL_BIT32(0))
 /* ext frame by application */
 #define ST_FT_FLAG_EXT (MTL_BIT32(1))
+/* the frame is malloc by gpu zero-level api */
+#define ST_FT_FLAG_GPU_MALLOC (MTL_BIT32(2))
 
 /* IOVA mapping info of each page in frame, used for IOVA:PA mode */
 struct st_page_info {
