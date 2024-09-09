@@ -144,7 +144,7 @@ struct st_sample_context {
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   /* gpu direct */
-  GpuContext* gpuCtx;
+  GpuContext* gpu_ctx;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 };
 

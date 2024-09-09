@@ -986,7 +986,7 @@ struct st20p_rx_ops {
   int socket_id;
 
   /* use to store framebuffers on vram */
-  void* gpuContext;
+  void* gpu_context;
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */

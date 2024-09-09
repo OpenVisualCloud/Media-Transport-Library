@@ -1572,7 +1572,7 @@ struct st20_rx_ops {
 
   /* use to store framebuffers on vram */
   bool gpu_direct_framebuffer_in_vram_device_address;
-  void* gpuContext;
+  void* gpu_context;
 };
 
 /**

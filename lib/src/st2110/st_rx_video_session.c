@@ -315,7 +315,7 @@ static int rv_free_frames(struct st_rx_video_session_impl* s) {
     struct st_frame_trans* frame;
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       frame = &s->st20_frames[i];
-      st_frame_trans_uinit(frame, s->ops.gpuContext);
+      st_frame_trans_uinit(frame, s->ops.gpu_context);
     }
     mt_rte_free(s->st20_frames);
     s->st20_frames = NULL;
@@ -458,7 +458,7 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
 #ifdef MTL_GPU_DIRECT_ENABLED
       if (rv_framebuffer_in_gpu_direct_vram(s)) {
         info("%s rv_framebuffer_in_gpu_direct_vram \n", __func__);
-        GpuContext* gpu = s->ops.gpuContext;
+        GpuContext* gpu = s->ops.gpu_context;
         ret = gpu_allocate_shared_buffer(gpu, &frame, size);
       } else
 #endif /* MTL_GPU_DIRECT_ENABLED */

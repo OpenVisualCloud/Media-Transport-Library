@@ -525,7 +525,7 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
 
   if (ops->flags & ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS) {
     ops_rx.gpu_direct_framebuffer_in_vram_device_address = true;
-    ops_rx.gpuContext = ops->gpuContext;
+    ops_rx.gpu_context = ops->gpu_context;
   }
 
   ops_rx.pacing = ST21_PACING_NARROW;

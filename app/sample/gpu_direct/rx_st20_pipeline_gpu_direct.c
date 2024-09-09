@@ -139,14 +139,14 @@ int main(int argc, char** argv) {
   struct rx_st20p_sample_ctx* app[session_num];
 
   // create contex for one gpu device
-  GpuContext gpuCtx = {};
+  GpuContext gpu_ctx = {};
 
-  int res = init_gpu_device(&gpuCtx, gpu_driver_index, gpu_device_index);
+  int res = init_gpu_device(&gpu_ctx, gpu_driver_index, gpu_device_index);
   if (res < 0) {
     err("%s, app gpu initialization failed %d\n", __func__, res);
     return -ENXIO;
   }
-  ctx.gpuCtx = (void*)(&gpuCtx);
+  ctx.gpu_ctx = (void*)(&gpu_ctx);
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
     ops_rx.framebuff_cnt = app[i]->fb_cnt;
     ops_rx.flags = ST20P_RX_FLAG_BLOCK_GET;
     ops_rx.flags |= ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS;
-    ops_rx.gpuContext = ctx.gpuCtx;
+    ops_rx.gpu_context = ctx.gpu_ctx;
 
     st20p_rx_handle rx_handle = st20p_rx_create(ctx.st, &ops_rx);
     if (!rx_handle) {
@@ -258,6 +258,6 @@ error:
     ctx.st = NULL;
   }
 
-  free_gpu_context(&gpuCtx);
+  free_gpu_context(&gpu_ctx);
   return ret;
 }
