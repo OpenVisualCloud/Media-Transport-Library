@@ -65,7 +65,7 @@ Additionally, you must initialize the GPU device in your application using this 
 Pass the address of the device with the gpu_context parameter:  
 `gpu_context` to the st20p rx flags during session initalization.
 
-**Warning:** Direct memory access functionality is disabled when using this flag. Memory allocated in VRAM cannot be accessed directly using dpdk api.
+**Warning:** Direct memory access functionality is disabled when using this flag. Memory allocated in VRAM cannot be accessed directly using dpdk API.
 
 ### Links
 

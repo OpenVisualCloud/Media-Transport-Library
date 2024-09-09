@@ -78,8 +78,7 @@ static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
   if (s->dst_fd < 0) /* no dump */
     return;
 
-  if (s->dst_cursor + s->frame_size > s->dst_end)
-    s->dst_cursor = s->dst_begin;
+  if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
 
   mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
@@ -139,7 +138,7 @@ int main(int argc, char** argv) {
   struct rx_st20p_sample_ctx* app[session_num];
 
   // create contex for one gpu device
-  GpuContext gpu_ctx = {};
+  GpuContext gpu_ctx = {0};
 
   int res = init_gpu_device(&gpu_ctx, gpu_driver_index, gpu_device_index);
   if (res < 0) {

@@ -206,10 +206,7 @@ int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size) {
       .ordinal = 0 /* this must be less than count of zeDeviceGetMemoryProperties */
   };
   ze_host_mem_alloc_desc_t hostMemDesc = {
-      .stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC,
-      .pNext = NULL,
-      .flags = 0
-  };
+      .stype = ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC, .pNext = NULL, .flags = 0};
   ZE_CHECK_ERROR(zeMemAllocShared(ctx->deviceContext, &deviceMemDesc, &hostMemDesc, size,
                                   16, ctx->deviceHandler, buf));
   printf("shared memory allocated (ptr = %p, size = 0x%lx, device_handle = %p)\n", *buf,
