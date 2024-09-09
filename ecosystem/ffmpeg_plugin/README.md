@@ -25,9 +25,9 @@ Note: $mtl_source_code should be pointed to top source code tree of Media Transp
 ```bash
 git clone https://github.com/FFmpeg/FFmpeg.git
 cd FFmpeg
-git checkout release/6.1
+git checkout release/7.0
 # apply the build patch
-git am $mtl_source_code/ecosystem/ffmpeg_plugin/6.1/*.patch
+git am $mtl_source_code/ecosystem/ffmpeg_plugin/7.0/*.patch
 # copy the mtl in/out implementation code
 cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
 cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
@@ -38,7 +38,7 @@ sudo make install
 sudo ldconfig
 ```
 
-Note, for ffmpeg 4.4 version, replace 6.1 with 4.4 for above example commands.
+Note, for ffmpeg 4.4 or 6.1 version, replace 7.0 with 4.4/6.1 for above example commands.
 
 ## 2. ST20P raw video run guide
 

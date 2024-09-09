@@ -305,6 +305,19 @@ static const AVClass mtl_st30p_demuxer_class = {
     .category = AV_CLASS_CATEGORY_DEVICE_INPUT,
 };
 
+#ifdef MTL_FFMPEG_7_0
+const FFInputFormat ff_mtl_st30p_demuxer = {
+    .p.name = "mtl_st30p",
+    .p.long_name = NULL_IF_CONFIG_SMALL("mtl st30p input device"),
+    .priv_data_size = sizeof(MtlSt30pDemuxerContext),
+    .read_header = mtl_st30p_read_header,
+    .read_packet = mtl_st30p_read_packet,
+    .read_close = mtl_st30p_read_close,
+    .p.flags = AVFMT_NOFILE,
+    .p.extensions = "mtl",
+    .p.priv_class = &mtl_st30p_demuxer_class,
+};
+#else  // MTL_FFMPEG_7_0
 #ifndef MTL_FFMPEG_4_4
 const AVInputFormat ff_mtl_st30p_demuxer =
 #else
@@ -321,3 +334,4 @@ AVInputFormat ff_mtl_st30p_demuxer =
         .extensions = "mtl",
         .priv_class = &mtl_st30p_demuxer_class,
 };
+#endif  // MTL_FFMPEG_7_0

@@ -18,24 +18,29 @@
  */
 
 #include <arpa/inet.h>
-#include <mtl/st_pipeline_api.h>
 #include <mtl/st30_api.h>
+#include <mtl/st_pipeline_api.h>
 
 // clang-format off
 /* MTL FFMPEG version */
 #include "libavdevice/version.h"
 #if LIBAVDEVICE_VERSION_MAJOR <= 58
 #define MTL_FFMPEG_4_4
-#else
+#elif LIBAVDEVICE_VERSION_MAJOR <= 60
 #define MTL_FFMPEG_6_1
+#else
+#define MTL_FFMPEG_7_0
 #endif
 // clang-format on
 
 #include "libavcodec/codec_desc.h"
 #include "libavformat/avformat.h"
 #include "libavformat/internal.h"
-#ifdef MTL_FFMPEG_6_1
+#if (defined(MTL_FFMPEG_6_1) || defined(MTL_FFMPEG_7_0))
 #include "libavformat/mux.h"
+#endif
+#ifdef MTL_FFMPEG_7_0
+#include "libavformat/demux.h"
 #endif
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
@@ -165,4 +170,4 @@ int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StRxSessionPortArgs* args, struct st_rx_port* port);
 int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
                       const StTxSessionPortArgs* args, struct st_tx_port* port);
-int mtl_parse_st30_sample_rate(enum st30_sampling *sample_rate, int value);
+int mtl_parse_st30_sample_rate(enum st30_sampling* sample_rate, int value);

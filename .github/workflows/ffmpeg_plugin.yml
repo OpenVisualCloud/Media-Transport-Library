@@ -101,6 +101,20 @@ jobs:
           sudo ldconfig
           cd ../
 
+      - name: Build ffmpeg 7.0 plugin
+        run: |
+          cd FFmpeg/
+          git checkout release/7.0
+          cp -f ../ecosystem/ffmpeg_plugin/mtl_*.c ./libavdevice/
+          cp -f ../ecosystem/ffmpeg_plugin/mtl_*.h ./libavdevice/
+          git am ../ecosystem/ffmpeg_plugin/7.0/*.patch
+          make clean || true
+          ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+          make -j "$(nproc)"
+          sudo make install
+          sudo ldconfig
+          cd ../
+
       - name: Build ffmpeg 6.1 plugin
         run: |
           cd FFmpeg/
