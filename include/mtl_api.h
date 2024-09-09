@@ -131,12 +131,12 @@ typedef struct mtl_dma_mem* mtl_dma_mem_handle;
 /**
  * Bad IOVA address
  */
-#define MTL_BAD_IOVA ((mtl_iova_t)-1)
+#define MTL_BAD_IOVA ((mtl_iova_t) - 1)
 
 /**
  * Macro to align a value, align should be a power-of-two value.
  */
-#define MTL_ALIGN(val, align) (((val) + ((align)-1)) & ~((align)-1))
+#define MTL_ALIGN(val, align) (((val) + ((align) - 1)) & ~((align) - 1))
 
 #ifdef __MTL_PYTHON_BUILD__
 /** swig not support __deprecated__ */

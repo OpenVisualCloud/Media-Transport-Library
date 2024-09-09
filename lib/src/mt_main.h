@@ -494,7 +494,7 @@ enum mt_sch_type {
 typedef uint64_t mt_sch_mask_t;
 
 /* all sch */
-#define MT_SCH_MASK_ALL ((mt_sch_mask_t)-1)
+#define MT_SCH_MASK_ALL ((mt_sch_mask_t) - 1)
 
 struct mtl_sch_impl {
   char name[32];
