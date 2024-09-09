@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2022 Intel Corporation
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Intel Corporation
  */
 
 /**
@@ -437,4 +437,4 @@ int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta);
 }
 #endif
 
-#endif
+#endif /* _ST41_API_HEAD_H_ */

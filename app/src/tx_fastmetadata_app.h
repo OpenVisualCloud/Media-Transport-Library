@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2022 Intel Corporation
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Intel Corporation
  */
 
 #include <fcntl.h>
@@ -16,4 +16,4 @@ int st_app_tx_fmd_sessions_init(struct st_app_context* ctx);
 
 int st_app_tx_fmd_sessions_uinit(struct st_app_context* ctx);
 int st_app_tx_fmd_sessions_stop(struct st_app_context* ctx);
-#endif
+#endif /* _TX_APP_FMD_HEAD_H_ */
