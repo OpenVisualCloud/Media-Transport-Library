@@ -66,7 +66,7 @@ static int tx_fastmetadata_session_free_frames(
 
     for (int i = 0; i < s->st41_frames_cnt; i++) {
       frame = &s->st41_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, NULL);
     }
 
     mt_rte_free(s->st41_frames);
