@@ -12,7 +12,7 @@ LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
 
 # Install build dependencies and debug tools
 RUN apt-get update -y && \
-    apt-get install -y systemtap-sdt-dev && \
+    apt-get install -y --no-install-recommends systemtap-sdt-dev && \
     apt-get install -y --no-install-recommends git build-essential meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev ca-certificates && \
     apt-get install -y --no-install-recommends m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
     apt-get clean && \
