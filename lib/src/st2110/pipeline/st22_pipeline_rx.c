@@ -706,6 +706,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   }
 
   ctx->idx = idx;
+  ctx->socket_id = socket;
   ctx->ready = false;
   ctx->ext_frame = (ops->flags & ST22P_RX_FLAG_EXT_FRAME) ? true : false;
   ctx->codestream_fmt = codestream_fmt;
