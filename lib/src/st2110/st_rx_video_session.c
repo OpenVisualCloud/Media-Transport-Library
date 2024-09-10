@@ -15,6 +15,10 @@
 #include "st_fmt.h"
 #include "st_rx_timing_parser.h"
 
+#ifdef MTL_GPU_DIRECT_ENABLED
+#include <mtl_gpu_direct/gpu.h>
+#endif /* MTL_GPU_DIRECT_ENABLED */
+
 static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
 static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
 
@@ -191,6 +195,10 @@ static bool inline rv_is_dynamic_ext_frame(struct st_rx_video_session_impl* s) {
   return s->ops.query_ext_frame != NULL;
 }
 
+static bool inline rv_framebuffer_in_gpu_direct_vram(struct st_rx_video_session_impl* s) {
+  return s->ops.gpu_direct_framebuffer_in_vram_device_address;
+}
+
 static struct st_frame_trans* rv_get_frame(struct st_rx_video_session_impl* s) {
   struct st_frame_trans* st20_frame;
 
@@ -307,7 +315,7 @@ static int rv_free_frames(struct st_rx_video_session_impl* s) {
     struct st_frame_trans* frame;
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       frame = &s->st20_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, s->ops.gpu_context);
     }
     mt_rte_free(s->st20_frames);
     s->st20_frames = NULL;
@@ -447,15 +455,30 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
       st20_frame->addr = NULL;
       st20_frame->flags = 0;
     } else {
-      frame = mt_rte_zmalloc_socket(size, soc_id);
+#ifdef MTL_GPU_DIRECT_ENABLED
+      if (rv_framebuffer_in_gpu_direct_vram(s)) {
+        info("%s rv_framebuffer_in_gpu_direct_vram \n", __func__);
+        GpuContext* gpu = s->ops.gpu_context;
+        ret = gpu_allocate_shared_buffer(gpu, &frame, size);
+      } else
+#endif /* MTL_GPU_DIRECT_ENABLED */
+        frame = mt_rte_zmalloc_socket(size, soc_id);
+
       if (!frame) {
         err("%s(%d), frame malloc %" PRIu64 " fail for %d\n", __func__, idx, size, i);
         rv_free_frames(s);
         return -ENOMEM;
       }
-      st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
+
+      if (rv_framebuffer_in_gpu_direct_vram(s)) {
+        st20_frame->flags = ST_FT_FLAG_GPU_MALLOC;
+      } else {
+        st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
+        st20_frame->iova = rte_malloc_virt2iova(frame);
+      }
+
       st20_frame->addr = frame;
-      st20_frame->iova = rte_malloc_virt2iova(frame);
+
       if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
         ret = rv_frame_create_page_table(s, st20_frame);
         if (ret < 0) {

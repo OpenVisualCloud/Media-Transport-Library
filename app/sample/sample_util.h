@@ -23,6 +23,10 @@
 #include <time.h>
 #include <unistd.h>
 
+#ifdef MTL_GPU_DIRECT_ENABLED
+#include <mtl_gpu_direct/gpu.h>
+#endif /* MTL_GPU_DIRECT_ENABLED */
+
 #include "../src/app_platform.h"
 
 /* log define */
@@ -137,6 +141,11 @@ struct st_sample_context {
   /* perf */
   int perf_frames;
   int perf_fb_cnt;
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  /* gpu direct */
+  GpuContext* gpu_ctx;
+#endif /* MTL_GPU_DIRECT_ENABLED */
 };
 
 struct st_frame_user_meta {

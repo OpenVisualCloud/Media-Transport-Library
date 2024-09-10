@@ -808,7 +808,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
     err("%s(%d), ctx malloc fail on socket %d\n", __func__, idx, socket);
     return NULL;
   }
-  ctx->socket_id = socket;
 
   if (codestream_fmt == ops->input_fmt) {
     ctx->derive = true;
@@ -831,6 +830,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   }
 
   ctx->idx = idx;
+  ctx->socket_id = socket;
   ctx->codestream_fmt = codestream_fmt;
   ctx->ready = false;
   ctx->ext_frame = (ops->flags & ST22P_TX_FLAG_EXT_FRAME) ? true : false;

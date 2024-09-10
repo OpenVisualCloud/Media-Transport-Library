@@ -37,6 +37,9 @@ enum st_args_cmd {
   ST_ARG_TX_ANC_URL,
   ST_ARG_TX_ANC_SESSIONS_CNT,
   ST_ARG_TX_ANC_RTP_RING_SIZE,
+  ST_ARG_TX_FMD_URL,
+  ST_ARG_TX_FMD_SESSIONS_CNT,
+  ST_ARG_TX_FMD_RTP_RING_SIZE,
   ST22_ARG_TX_SESSIONS_CNT,
   ST22_ARG_TX_URL,
   ST_ARG_RX_VIDEO_SESSIONS_CNT,
@@ -48,6 +51,7 @@ enum st_args_cmd {
   ST_ARG_RX_AUDIO_RTP_RING_SIZE,
   ST_ARG_RX_AUDIO_DUMP_TIME_S,
   ST_ARG_RX_ANC_SESSIONS_CNT,
+  ST_ARG_RX_FMD_SESSIONS_CNT,
   ST22_ARG_RX_SESSIONS_CNT,
   ST_ARG_HDR_SPLIT,
   ST_ARG_PACING_WAY,
@@ -134,6 +138,7 @@ enum st_args_cmd {
   ST_ARG_AUDIO_RL_OFFSET_US,
   ST_ARG_AUDIO_FIFO_SIZE,
   ST_ARG_ANC_DEDICATE_QUEUE,
+  ST_ARG_FMD_DEDICATE_QUEUE,
   ST_ARG_TX_NO_BURST_CHECK,
   ST_ARG_DHCP,
   ST_ARG_IOVA_MODE,
@@ -183,6 +188,9 @@ static struct option st_app_args_options[] = {
     {"tx_anc_url", required_argument, 0, ST_ARG_TX_ANC_URL},
     {"tx_anc_sessions_count", required_argument, 0, ST_ARG_TX_ANC_SESSIONS_CNT},
     {"tx_anc_rtp_ring_size", required_argument, 0, ST_ARG_TX_ANC_RTP_RING_SIZE},
+    {"tx_fmd_url", required_argument, 0, ST_ARG_TX_FMD_URL},
+    {"tx_fmd_sessions_count", required_argument, 0, ST_ARG_TX_FMD_SESSIONS_CNT},
+    {"tx_fmd_rtp_ring_size", required_argument, 0, ST_ARG_TX_FMD_RTP_RING_SIZE},
     {"tx_st22_sessions_count", required_argument, 0, ST22_ARG_TX_SESSIONS_CNT},
     {"tx_st22_url", required_argument, 0, ST22_ARG_TX_URL},
 
@@ -195,6 +203,7 @@ static struct option st_app_args_options[] = {
     {"rx_audio_rtp_ring_size", required_argument, 0, ST_ARG_RX_AUDIO_RTP_RING_SIZE},
     {"rx_audio_dump_time_s", required_argument, 0, ST_ARG_RX_AUDIO_DUMP_TIME_S},
     {"rx_anc_sessions_count", required_argument, 0, ST_ARG_RX_ANC_SESSIONS_CNT},
+    {"rx_fmd_sessions_count", required_argument, 0, ST_ARG_RX_FMD_SESSIONS_CNT},
     {"rx_st22_sessions_count", required_argument, 0, ST22_ARG_RX_SESSIONS_CNT},
     {"hdr_split", no_argument, 0, ST_ARG_HDR_SPLIT},
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
@@ -277,6 +286,7 @@ static struct option st_app_args_options[] = {
     {"audio_rl_offset", required_argument, 0, ST_ARG_AUDIO_RL_OFFSET_US},
     {"audio_fifo_size", required_argument, 0, ST_ARG_AUDIO_FIFO_SIZE},
     {"anc_dedicate_queue", no_argument, 0, ST_ARG_ANC_DEDICATE_QUEUE},
+    {"fmd_dedicate_queue", no_argument, 0, ST_ARG_FMD_DEDICATE_QUEUE},
     {"tx_no_burst_check", no_argument, 0, ST_ARG_TX_NO_BURST_CHECK},
     {"dhcp", no_argument, 0, ST_ARG_DHCP},
     {"iova_mode", required_argument, 0, ST_ARG_IOVA_MODE},
@@ -351,12 +361,14 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   ctx->tx_video_session_cnt = ctx->json_ctx->tx_video_session_cnt;
   ctx->tx_audio_session_cnt = ctx->json_ctx->tx_audio_session_cnt;
   ctx->tx_anc_session_cnt = ctx->json_ctx->tx_anc_session_cnt;
+  ctx->tx_fmd_session_cnt = ctx->json_ctx->tx_fmd_session_cnt;
   ctx->tx_st22p_session_cnt = ctx->json_ctx->tx_st22p_session_cnt;
   ctx->tx_st20p_session_cnt = ctx->json_ctx->tx_st20p_session_cnt;
   ctx->tx_st30p_session_cnt = ctx->json_ctx->tx_st30p_session_cnt;
   ctx->rx_video_session_cnt = ctx->json_ctx->rx_video_session_cnt;
   ctx->rx_audio_session_cnt = ctx->json_ctx->rx_audio_session_cnt;
   ctx->rx_anc_session_cnt = ctx->json_ctx->rx_anc_session_cnt;
+  ctx->rx_fmd_session_cnt = ctx->json_ctx->rx_fmd_session_cnt;
   ctx->rx_st22p_session_cnt = ctx->json_ctx->rx_st22p_session_cnt;
   ctx->rx_st20p_session_cnt = ctx->json_ctx->rx_st20p_session_cnt;
   ctx->rx_st30p_session_cnt = ctx->json_ctx->rx_st30p_session_cnt;
@@ -513,6 +525,15 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_TX_ANC_SESSIONS_CNT:
         ctx->tx_anc_session_cnt = atoi(optarg);
         break;
+      case ST_ARG_TX_FMD_URL:
+        snprintf(ctx->tx_fmd_url, sizeof(ctx->tx_fmd_url), "%s", optarg);
+        break;
+      case ST_ARG_TX_FMD_RTP_RING_SIZE:
+        ctx->tx_fmd_rtp_ring_size = atoi(optarg);
+        break;
+      case ST_ARG_TX_FMD_SESSIONS_CNT:
+        ctx->tx_fmd_session_cnt = atoi(optarg);
+        break;
       case ST_ARG_RX_VIDEO_SESSIONS_CNT:
         ctx->rx_video_session_cnt = atoi(optarg);
         break;
@@ -539,6 +560,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_RX_ANC_SESSIONS_CNT:
         ctx->rx_anc_session_cnt = atoi(optarg);
+        break;
+      case ST_ARG_RX_FMD_SESSIONS_CNT:
+        ctx->rx_fmd_session_cnt = atoi(optarg);
         break;
       case ST22_ARG_TX_SESSIONS_CNT:
         ctx->tx_st22_session_cnt = atoi(optarg);
@@ -855,6 +879,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_ANC_DEDICATE_QUEUE:
         ctx->tx_anc_dedicate_queue = true;
+        break;
+      case ST_ARG_FMD_DEDICATE_QUEUE:
+        ctx->tx_fmd_dedicate_queue = true;
         break;
       case ST_ARG_DHCP:
         for (int port = 0; port < MTL_PORT_MAX; ++port)

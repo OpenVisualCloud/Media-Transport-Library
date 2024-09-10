@@ -481,7 +481,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
 
   handle = st40_tx_create(ctx->st, &ops);
   if (!handle) {
-    err("%s(%d), st30_tx_create fail\n", __func__, idx);
+    err("%s(%d), st40_tx_create fail\n", __func__, idx);
     app_tx_anc_uinit(s);
     return -EIO;
   }
@@ -492,14 +492,14 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
 
   ret = app_tx_anc_open_source(s);
   if (ret < 0) {
-    err("%s(%d), app_tx_audio_session_open_source fail\n", __func__, idx);
+    err("%s(%d), app_tx_anc_session_open_source fail\n", __func__, idx);
     app_tx_anc_uinit(s);
     return ret;
   }
 
   ret = app_tx_anc_start_source(s);
   if (ret < 0) {
-    err("%s(%d), app_tx_audio_session_start_source fail %d\n", __func__, idx, ret);
+    err("%s(%d), app_tx_anc_session_start_source fail %d\n", __func__, idx, ret);
     app_tx_anc_uinit(s);
     return ret;
   }
