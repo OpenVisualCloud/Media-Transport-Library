@@ -180,7 +180,6 @@ The MTL_GPU_DIRECT experimental feature plans on enhancing FFmpeg's performance 
 #### Building FFmpeg with MTL_GPU_DIRECT Enabled
 To take advantage of the MTL_GPU_DIRECT feature, you must compile FFmpeg with this option enabled. Here’s how to do it:
 
-1. Clone the FFmpeg Repository: Ensure you have the latest version of FFmpeg source code from the official repository:
 ```bash
 ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-cflags="-DMTL_GPU_DIRECT_ENABLED"
 ```
@@ -189,7 +188,7 @@ or use
 ./build_ffmpeg_plugin.sh -g
 ```
 
-1. Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112 and
+Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112 and
 enabled gpu_direct:
 
 ```bash
