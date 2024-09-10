@@ -196,7 +196,21 @@ enabled gpu_direct:
 ```
 
 #### Additional Notes
-GPU Direct Flag: When compiling FFmpeg with the MTL_GPU_DIRECT feature enabled, ensure that your system's GPU drivers and hardware support direct GPU memory access.
+**GPU Direct Flag:** When compiling FFmpeg with the MTL_GPU_DIRECT feature enabled, ensure that your system's GPU drivers and hardware support direct GPU memory access.  
+GPU device IDs and GPU driver IDs are printed during initialization.
+
+**Options:**
+1. `-gpu_device`
+1. `-gpu_driver`
+
+Both default to 0, but if your device doesn't initialize, adjust it using the information printed during initialization.
+
+**Example:**
+```plaintext
+Drivers count: 1
+Driver: 0: Device: 0: Name: Intel(R) Data Center GPU Flex 170, Type: 1, VendorID: 8086, DeviceID: 22208
+```
+
 
 [GPU Documentation](../../doc/gpu.md)
 

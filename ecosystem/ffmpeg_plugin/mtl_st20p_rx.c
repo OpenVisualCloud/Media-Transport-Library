@@ -169,9 +169,12 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     /* create context for one gpu device */
     GpuContext gpu_ctx = {0};
 
-    int res = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
-    if (res < 0) {
-      err(ctx, "%s, app gpu initialization failed %d\n", __func__, res);
+    /* print GPU device and driver IDs */
+    print_gpu_drivers_and_devices();
+
+    ret = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
+    if (ret < 0) {
+      err(ctx, "%s, app gpu initialization failed %d\n", __func__, ret);
       return -ENXIO;
     }
     ops_rx.gpu_context = (void*)(&gpu_ctx);
