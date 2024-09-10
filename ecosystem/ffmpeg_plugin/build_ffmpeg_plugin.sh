@@ -14,7 +14,7 @@ script_path="$(dirname "$(readlink -f "$0")")"
 usage() {
 	echo "Usage: $0 [options]"
 	echo "Options:"
-	echo "  -v <version>    Specify the FFmpeg version to build (default is 7.0)"
+	echo "  -v <version>    Specify the FFmpeg version to build (default is $ffmpeg_ver)"
 	echo "  -g              Enable GPU direct mode during compilation"
 	echo "  -h              Display this help and exit"
 }

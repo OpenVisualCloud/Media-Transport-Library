@@ -166,7 +166,7 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
 
 #ifdef MTL_GPU_DIRECT_ENABLED
   if (s->gpu_direct_enabled) {
-    // create contex for one gpu device
+    /* create context for one gpu device */
     GpuContext gpu_ctx = {0};
 
     int res = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
@@ -337,7 +337,7 @@ static const AVOption mtl_st20p_rx_options[] = {
      1,
      DEC},
     {"gpu_driver",
-     "Index of the gpu driver",
+     "Index of the GPU driver",
      OFFSET(gpu_driver_index),
      AV_OPT_TYPE_INT,
      {.i64 = 0},
@@ -345,7 +345,7 @@ static const AVOption mtl_st20p_rx_options[] = {
      60,
      DEC},
     {"gpu_device",
-     "Index of the gpu device",
+     "Index of the GPU device",
      OFFSET(gpu_device_index),
      AV_OPT_TYPE_INT,
      {.i64 = 0},

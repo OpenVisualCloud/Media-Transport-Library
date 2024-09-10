@@ -175,10 +175,10 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 ### Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
 
-The MTL_GPU_DIRECT experimental feature plans on enhancing FFmpeg's performance by allowing direct access to GPU memory, which can be particularly beneficial when working with high-throughput video streams such as those handled by the MTL ST20 codec plugin.
+The MTL_GPU_DIRECT experimental feature aims at enhancing FFmpeg's performance by allowing direct access to GPU memory, which can be particularly beneficial when working with high-throughput video streams such as those handled by the MTL ST20 codec plugin.
 
 #### Building FFmpeg with MTL_GPU_DIRECT Enabled
-To take advantage of the MTL_GPU_DIRECT feature, you must compile FFmpeg with this option enabled. Here’s how to do it:
+To take advantage of the MTL_GPU_DIRECT feature FFmpeg has to be built with this option enabled. Here’s how to do it:
 
 ```bash
 ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-cflags="-DMTL_GPU_DIRECT_ENABLED"
@@ -188,7 +188,7 @@ or use
 ./build_ffmpeg_plugin.sh -g
 ```
 
-Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112 and
+Reading a ST2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112 and
 enabled gpu_direct:
 
 ```bash
@@ -196,8 +196,8 @@ enabled gpu_direct:
 ```
 
 #### Additional Notes
-GPU Direct Flag: When compiling FFmpeg with the MTL_GPU_DIRECT feature, ensure that your system's GPU drivers and hardware support direct GPU memory access.
+GPU Direct Flag: When compiling FFmpeg with the MTL_GPU_DIRECT feature enabled, ensure that your system's GPU drivers and hardware support direct GPU memory access.
 
-[GPU Documentation](../docs/gpu.md)
+[GPU Documentation](../../doc/gpu.md)
 
 By following these steps, you can effectively build and utilize FFmpeg with the MTL_GPU_DIRECT feature enabled.
