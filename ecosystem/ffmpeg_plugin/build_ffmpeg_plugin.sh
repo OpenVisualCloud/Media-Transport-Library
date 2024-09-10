@@ -22,25 +22,25 @@ usage() {
 # Parse command-line options
 while getopts ":v:hg" opt; do
 	case "${opt}" in
-		v)
-			ffmpeg_ver=${OPTARG}
-			;;
-		g)
-			enable_gpu=true
-			;;
-		h)
-			usage
-			exit 0
-			;;
-		\?)
-			echo "Invalid option: -$OPTARG" >&2
-			usage
-			exit 1
-			;;
-		:)
-			echo "Option -$OPTARG requires an argument." >&2
-			exit 1
-			;;
+	v)
+		ffmpeg_ver=${OPTARG}
+		;;
+	g)
+		enable_gpu=true
+		;;
+	h)
+		usage
+		exit 0
+		;;
+	\?)
+		echo "Invalid option: -$OPTARG" >&2
+		usage
+		exit 1
+		;;
+	:)
+		echo "Option -$OPTARG requires an argument." >&2
+		exit 1
+		;;
 	esac
 done
 
