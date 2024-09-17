@@ -1255,7 +1255,7 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
       st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
   if (fmd_dit_obj) {
     uint32_t fmd_dit = json_object_get_int(fmd_dit_obj);
-    if (fmd_dit < 0 || fmd_dit > 0x3fffff) {
+    if (fmd_dit > 0x3fffff) {
       err("%s, invalid fastmetadata_data_item_type 0x%x\n", __func__, fmd_dit);
       return -ST_JSON_NOT_VALID;
     }
@@ -1269,8 +1269,10 @@ static int st_json_parse_tx_fmd(int idx, json_object* fmd_obj,
   /* parse fmd data item K-bit */
   json_object* fmd_k_bit_obj = st_json_object_object_get(fmd_obj, "fastmetadata_k_bit");
   if (fmd_k_bit_obj) {
+    /* assign to uint and check if the value more then 1
+     * (the value should be in range of [0,1]) */
     uint8_t fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
-    if (fmd_k_bit < 0 || fmd_k_bit > 1) {
+    if (fmd_k_bit > 1) {
       err("%s, invalid fastmetadata_k_bit 0x%x\n", __func__, fmd_k_bit);
       return -ST_JSON_NOT_VALID;
     }
