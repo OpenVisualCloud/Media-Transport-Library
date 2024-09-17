@@ -457,9 +457,13 @@ static int rv_alloc_frames(struct mtl_main_impl* impl,
     } else {
 #ifdef MTL_GPU_DIRECT_ENABLED
       if (rv_framebuffer_in_gpu_direct_vram(s)) {
-        info("%s rv_framebuffer_in_gpu_direct_vram \n", __func__);
+        info("%s: using gpu direct feature.\n", __func__);
         GpuContext* gpu = s->ops.gpu_context;
         ret = gpu_allocate_shared_buffer(gpu, &frame, size);
+        if (ret < 0) {
+          err("%s: failed to allocate gpu memory on vram. ret: %d\n", __func__, ret);
+          return -ENOMEM;
+        }
       } else
 #endif /* MTL_GPU_DIRECT_ENABLED */
         frame = mt_rte_zmalloc_socket(size, soc_id);
