@@ -389,15 +389,20 @@ static int tx_fastmetadata_session_update_redundant(
 
 static void tx_fastmetadata_session_build_packet(
     struct st_tx_fastmetadata_session_impl* s, struct rte_mbuf* pkt) {
-  struct mt_udp_hdr* hdr;
+  struct st41_fmd_hdr* hdr;
   struct rte_ipv4_hdr* ipv4;
   struct rte_udp_hdr* udp;
   struct st41_rtp_hdr* rtp;
 
-  hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  if (rte_pktmbuf_data_len(pkt) < sizeof(*hdr)) {
+    err("%s: packet is less than fmd hdr size", __func__);
+    return;
+  }
+
+  hdr = rte_pktmbuf_mtod(pkt, struct st41_fmd_hdr*);
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
-  rtp = (struct st41_rtp_hdr*)&udp[1];
+  rtp = &hdr->rtp;
 
   /* copy the hdr: eth, ip, udp */
   rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
@@ -417,7 +422,6 @@ static void tx_fastmetadata_session_build_packet(
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
   /* Set place for payload just behind rtp header */
-  uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st41_frames[s->st41_frame_idx];
   uint32_t offset = s->st41_pkt_idx * s->max_pkt_len;
   void* src_addr = frame_info->addr + offset;
@@ -426,6 +430,12 @@ static void tx_fastmetadata_session_build_packet(
   uint16_t data_item_length =
       (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
+  if (rte_pktmbuf_data_len(pkt) < sizeof(*hdr) + data_item_length_bytes) {
+    err("%s: packet doesn't contain RTP payload", __func__);
+    return;
+  }
+
+  uint8_t* payload = (uint8_t*)(rtp + 1);
   if (!(data_item_length_bytes > s->max_pkt_len)) {
     int offset = 0;
     for (int i = 0; i < data_item_length_bytes; i++) {

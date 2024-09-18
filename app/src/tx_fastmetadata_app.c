@@ -94,21 +94,29 @@ static void* app_tx_fmd_frame_thread(void* arg) {
   info("%s(%d), start\n", __func__, idx);
   while (!s->st41_app_thread_stop) {
     st_pthread_mutex_lock(&s->st41_wake_mutex);
-    producer_idx = s->framebuff_producer_idx;
-    framebuff = &s->framebuffs[producer_idx];
-    if (ST_TX_FRAME_FREE != framebuff->stat) {
-      /* not in free */
-      if (!s->st41_app_thread_stop)
+    framebuff = &s->framebuffs[s->framebuff_producer_idx];
+
+    if (framebuff->stat != ST_TX_FRAME_FREE) {
+      if (!s->st41_app_thread_stop) {
         st_pthread_cond_wait(&s->st41_wake_cond, &s->st41_wake_mutex);
+      }
       st_pthread_mutex_unlock(&s->st41_wake_mutex);
       continue;
     }
+
+    producer_idx = s->framebuff_producer_idx;
     st_pthread_mutex_unlock(&s->st41_wake_mutex);
 
     struct st41_frame* frame_addr = st41_tx_get_framebuffer(s->handle, producer_idx);
     app_tx_fmd_build_frame(s, frame_addr);
 
     st_pthread_mutex_lock(&s->st41_wake_mutex);
+    if (producer_idx != s->framebuff_producer_idx) {
+      err("%s(%d), Apps can't share the context app structure\n", __func__, idx);
+      st_pthread_mutex_unlock(&s->st41_wake_mutex);
+      return NULL;
+    }
+
     framebuff->size = sizeof(*frame_addr);
     framebuff->stat = ST_TX_FRAME_READY;
     /* point to next */
@@ -440,8 +448,8 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
   ops.notify_rtp_done = app_tx_fmd_rtp_done;
   ops.framebuff_cnt = s->framebuff_cnt;
   ops.fps = fmd ? fmd->info.fmd_fps : ST_FPS_P59_94;
-  ops.fmd_dit = fmd->info.fmd_dit;
-  ops.fmd_k_bit = fmd->info.fmd_k_bit;
+  ops.fmd_dit = fmd ? fmd->info.fmd_dit : 0;
+  ops.fmd_k_bit = fmd ? fmd->info.fmd_k_bit : 0;
   s->st41_pcap_input = false;
   ops.type = fmd ? fmd->info.type : ST41_TYPE_FRAME_LEVEL;
   ops.interlaced = fmd ? fmd->info.interlaced : false;
