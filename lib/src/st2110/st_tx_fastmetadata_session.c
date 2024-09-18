@@ -430,7 +430,7 @@ static void tx_fastmetadata_session_build_packet(
   uint16_t data_item_length =
       (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
-  if (rte_pktmbuf_data_len(pkt) < sizeof(*hdr) + data_item_length_bytes ) {
+  if (rte_pktmbuf_data_len(pkt) < sizeof(*hdr) + data_item_length_bytes) {
     err("%s: packet doesn't contain RTP payload", __func__);
     return;
   }
