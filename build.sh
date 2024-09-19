@@ -6,7 +6,6 @@
 set -e
 
 user=$(whoami)
-## test
 
 function usage() {
 	echo "Usage: $0 [debug/debugoptimized/plain/release]"
