@@ -47,8 +47,9 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: DoozyX/clang-format-lint-action@a83a8fb7d371f66da7dd1c4f33a193023899494b # v0.16
+      - uses: DoozyX/clang-format-lint-action@v0.18.2
         with:
+          clangFormatVersion: '14'
           source: '.'
           extensions: 'hpp,h,cpp,c,cc'
 
