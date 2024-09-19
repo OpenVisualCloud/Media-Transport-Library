@@ -50,6 +50,7 @@ jobs:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: DoozyX/clang-format-lint-action@v0.18.2
         with:
+          clangFormatVersion: '14'
           source: '.'
           extensions: 'hpp,h,cpp,c,cc'
 
