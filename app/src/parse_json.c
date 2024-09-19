@@ -1332,8 +1332,16 @@ static int st_json_parse_rx_fmd(int idx, json_object* fmd_obj,
   /* parse payload type */
   ret = parse_base_payload_type(fmd_obj, &fmd->base);
   if (ret < 0) {
-    err("%s, use default pt %u\n", __func__, ST_APP_PAYLOAD_TYPE_FASTMETADATA);
+    err("%s, using default expected payload type %u.\n", __func__,
+        ST_APP_PAYLOAD_TYPE_FASTMETADATA);
     fmd->base.payload_type = ST_APP_PAYLOAD_TYPE_FASTMETADATA;
+  } else {
+    if (fmd->base.payload_type == 0) {
+      /* if value = 0, no expected payload type value */
+      info("%s, No expected payload type.\n", __func__);
+    } else {
+      info("%s, using expected payload type %u.\n", __func__, fmd->base.payload_type);
+    }
   }
 
   /* parse fmd interlaced */
@@ -1345,6 +1353,43 @@ static int st_json_parse_rx_fmd(int idx, json_object* fmd_obj,
   /* parse enable rtcp */
   fmd->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(fmd_obj, "enable_rtcp"));
+
+  /* parse fmd data item type */
+  json_object* fmd_dit_obj =
+      st_json_object_object_get(fmd_obj, "fastmetadata_data_item_type");
+  if (fmd_dit_obj) {
+    uint32_t fmd_dit = json_object_get_int(fmd_dit_obj);
+    if (fmd_dit < 0 || fmd_dit > 0x3fffff) {
+      err("%s, invalid fastmetadata_data_item_type 0x%x.\n", __func__, fmd_dit);
+      return -ST_JSON_NOT_VALID;
+    }
+    fmd->info.fmd_dit = fmd_dit;
+    info("%s, expected fastmetadata_data_item_type = 0x%x.\n", __func__, fmd_dit);
+  } else {
+    info("%s, No expected fastmetadata_data_item_type set.\n", __func__);
+    fmd->info.fmd_dit = 0xffffffff; /* No expected fmd data item type */
+  }
+
+  /* parse fmd data item K-bit */
+  json_object* fmd_k_bit_obj = st_json_object_object_get(fmd_obj, "fastmetadata_k_bit");
+  if (fmd_k_bit_obj) {
+    uint8_t fmd_k_bit = json_object_get_int(fmd_k_bit_obj);
+    if (fmd_k_bit < 0 || fmd_k_bit > 1) {
+      err("%s, invalid fastmetadata_k_bit 0x%x.\n", __func__, fmd_k_bit);
+      return -ST_JSON_NOT_VALID;
+    }
+    fmd->info.fmd_k_bit = fmd_k_bit;
+    info("%s, expected fastmetadata_k_bit = 0x%x.\n", __func__, fmd_k_bit);
+  } else {
+    info("%s, No expected fastmetadata_k_bit set.\n", __func__);
+    fmd->info.fmd_k_bit = 0xff; /* No expected fmd K-bit */
+  }
+
+  /* parse fmd url */
+  ret = parse_url(fmd_obj, "fastmetadata_url", fmd->info.fmd_url);
+  if (ret < 0) {
+    info("%s, no fastmetadata reference file.\n", __func__);
+  }
 
   return ST_JSON_SUCCESS;
 }
