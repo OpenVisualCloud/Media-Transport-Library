@@ -5,13 +5,13 @@
 
 # Based on clang-format
 # For ubuntu, pls "apt-get install clang-format"
-# When updating clang format version, remeber to update also GHA clang lister version in
-#  - uses: DoozyX/clang-format-lint-action@v0.18.2 
+# When updating clang format version, remeber to update also GHA clang lister version:
+#  - uses: DoozyX/clang-format-lint-action@v0.18.2
 #     with:
 #       clangFormatVersion: '14'
 #       source: '.'
 #       extensions: 'hpp,h,cpp,c,cc'
-# in 
+# in
 # .github/workflows/afxdp_build.yml
 # .github/workflows/centos_build.yml
 # .github/workflows/tools_build.yml
