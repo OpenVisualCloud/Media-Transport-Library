@@ -4,7 +4,6 @@
 
 #include "mt_admin.h"
 
-
 #include "mt_log.h"
 #include "mt_sch.h"
 #include "st2110/st_rx_video_session.h"
