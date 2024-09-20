@@ -383,6 +383,8 @@ struct st_app_rx_fmd_session {
   uint32_t st41_dit;
   uint32_t st41_k_bit;
 
+  uint32_t errors_count;
+
   /* stat */
   int stat_frame_total_received;
   uint64_t stat_frame_first_rx_time;

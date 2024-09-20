@@ -54,18 +54,22 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
 
   if (frame_size <= st41_ref_remaining_length) {
     ret = memcmp(frame, session->st41_ref_cursor, frame_size);
-    if (ret)
+    if (ret) {
+      session->errors_count++;
       err("%s() FAIL: reference file comparison (1).\n", __func__);
-    else
+    } else {
       dbg("%s() PASS: reference file comparison (1).\n", __func__);
+    }
   } else {
     if (frame_size - st41_ref_remaining_length > 3) {
       ret = -1;
+      session->errors_count++;
       err("%s() FAIL: frame_size > ref_remaining_length by %d.\n", __func__,
           frame_size - st41_ref_remaining_length);
     } else {
       ret = memcmp(frame, session->st41_ref_cursor, st41_ref_remaining_length);
       if (ret) {
+        session->errors_count++;
         err("%s() FAIL: reference file comparison (2).\n", __func__);
       } else {
         dbg("%s() PASS: reference file comparison (2).\n", __func__);
@@ -74,6 +78,7 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
         ret = memcmp(&(((uint8_t*)frame)[st41_ref_remaining_length]), (void*)&last_zeros,
                      frame_size - st41_ref_remaining_length);
         if (ret) {
+          session->errors_count++;
           err("%s() FAIL: reference file comparison (3).\n", __func__);
         } else {
           dbg("%s() PASS: reference file comparison (3).\n", __func__);
@@ -115,6 +120,7 @@ static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr)
   /* Testing data_item_type */
   if (s->st41_dit != 0xffffffff) {
     if (hdr->st41_hdr_chunk.data_item_type != s->st41_dit) {
+      s->errors_count++;
       err("%s(%d) FAIL: hdr->st41_hdr_chunk.data_item_type=%u, expected to be %u.\n",
           __func__, s->idx, hdr->st41_hdr_chunk.data_item_type, s->st41_dit);
     } else {
@@ -126,6 +132,7 @@ static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr)
   /* Testing data_item K-bit */
   if (s->st41_k_bit != 0xff) {
     if (hdr->st41_hdr_chunk.data_item_k_bit != s->st41_k_bit) {
+      s->errors_count++;
       err("%s(%d) FAIL: hdr->st41_hdr_chunk.data_item_k_bit=%u, expected to be %u.\n",
           __func__, s->idx, hdr->st41_hdr_chunk.data_item_k_bit, s->st41_k_bit);
     } else {
@@ -250,6 +257,7 @@ static int app_rx_fmd_init(struct st_app_context* ctx,
   st_pthread_mutex_init(&s->st41_wake_mutex, NULL);
   st_pthread_cond_init(&s->st41_wake_cond, NULL);
 
+  s->errors_count = 0;
   s->st41_ref_fd = -1;
   if (fmd) {
     if (strcmp(fmd->info.fmd_url, "")) {
@@ -304,9 +312,9 @@ static int app_rx_fmd_result(struct st_app_rx_fmd_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           app_rx_fmd_fps_check(framerate) ? "OK" : "FAILED", framerate,
-           s->stat_frame_total_received);
+  critical("%s(%d), %s, fps %f, %d frame received, %d counted errors.\n", __func__, idx,
+           (app_rx_fmd_fps_check(framerate) && (s->errors_count == 0)) ? "OK" : "FAILED",
+           framerate, s->stat_frame_total_received, s->errors_count);
   return 0;
 }
 
