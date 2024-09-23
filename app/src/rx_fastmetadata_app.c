@@ -56,9 +56,9 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
     ret = memcmp(frame, session->st41_ref_cursor, frame_size);
     if (ret) {
       session->errors_count++;
-      err("%s() FAIL: reference file comparison (1).\n", __func__);
+      err("%s() FAIL: reference file comparison with frame.\n", __func__);
     } else {
-      dbg("%s() PASS: reference file comparison (1).\n", __func__);
+      dbg("%s() PASS: reference file comparison with frame.\n", __func__);
     }
   } else {
     if (frame_size - st41_ref_remaining_length > 3) {
@@ -70,18 +70,18 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
       ret = memcmp(frame, session->st41_ref_cursor, st41_ref_remaining_length);
       if (ret) {
         session->errors_count++;
-        err("%s() FAIL: reference file comparison (2).\n", __func__);
+        err("%s() FAIL: reference file comparison with ending frame.\n", __func__);
       } else {
-        dbg("%s() PASS: reference file comparison (2).\n", __func__);
+        dbg("%s() PASS: reference file comparison with ending frame.\n", __func__);
 
         /* Verify last 0-3 bytes of frame (filled with zero's) */
         ret = memcmp(&(((uint8_t*)frame)[st41_ref_remaining_length]), (void*)&last_zeros,
                      frame_size - st41_ref_remaining_length);
         if (ret) {
           session->errors_count++;
-          err("%s() FAIL: reference file comparison (3).\n", __func__);
+          err("%s() FAIL: frame comparison with ending zeros.\n", __func__);
         } else {
-          dbg("%s() PASS: reference file comparison (3).\n", __func__);
+          dbg("%s() PASS: frame comparison with ending zeros.\n", __func__);
         }
       }
     }
@@ -113,7 +113,7 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
 
 static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr) {
   struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
-  uint8_t* payload = (uint8_t*)(&hdr[1]);
+  void* payload = (void*)(&hdr[1]);
 
   hdr->swaped_st41_hdr_chunk = ntohl(hdr->swaped_st41_hdr_chunk);
 
@@ -146,8 +146,11 @@ static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr)
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 
   /* Compare each packet with reference (part by part) */
-  if (s->st41_ref_fd > 0)
+  if (s->st41_ref_fd > 0) {
     app_rx_fmd_compare_with_ref(s, payload, hdr->st41_hdr_chunk.data_item_length * 4);
+    /* (field hdr->st41_hdr_chunk.data_item_length is expressed in 4-byte words, thus
+     * multiplying by 4) */
+  }
 
   hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk);
 }
