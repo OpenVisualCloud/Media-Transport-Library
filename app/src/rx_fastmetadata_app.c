@@ -4,12 +4,155 @@
 
 #include "rx_fastmetadata_app.h"
 
-static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s) {
-  dbg("%s(%d).\n", __func__, s->idx);
+static void app_rx_fmd_close_source(struct st_app_rx_fmd_session* session) {
+  if (session->st41_ref_fd >= 0) {
+    munmap(session->st41_ref_begin, session->st41_ref_end - session->st41_ref_begin);
+    close(session->st41_ref_fd);
+    session->st41_ref_fd = -1;
+  }
+}
+
+static int app_rx_fmd_open_ref(struct st_app_rx_fmd_session* session) {
+  int fd, idx = session->idx;
+  struct stat i;
+  session->st41_ref_fd = -1;
+
+  fd = st_open(session->st41_ref_url, O_RDONLY);
+  if (fd < 0) {
+    info("%s(%d), open file '%s' fail.\n", __func__, idx, session->st41_ref_url);
+    return -EIO;
+  }
+
+  if (fstat(fd, &i) < 0) {
+    err("%s, fstat '%s' fail.\n", __func__, session->st41_ref_url);
+    close(fd);
+    return -EIO;
+  }
+
+  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  if (MAP_FAILED == m) {
+    err("%s(%d), mmap '%s' fail.\n", __func__, idx, session->st41_ref_url);
+    close(fd);
+    return -EIO;
+  }
+
+  session->st41_ref_begin = m;
+  session->st41_ref_cursor = m;
+  session->st41_ref_end = m + i.st_size;
+  session->st41_ref_fd = fd;
+
+  info("%s, opening file '%s' success.\n", __func__, session->st41_ref_url);
+  return 0;
+}
+
+static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, void* frame,
+                                       int frame_size) {
+  int ret = -1;
+  uint32_t last_zeros = 0; /* 4 bytes with 0 */
+  uint32_t st41_ref_remaining_length =
+      session ? session->st41_ref_end - session->st41_ref_cursor : 0;
+
+  if (frame_size <= st41_ref_remaining_length) {
+    ret = memcmp(frame, session->st41_ref_cursor, frame_size);
+    if (ret) {
+      session->errors_count++;
+      err("%s() FAIL: reference file comparison with frame.\n", __func__);
+    } else {
+      dbg("%s() PASS: reference file comparison with frame.\n", __func__);
+    }
+  } else {
+    if (frame_size - st41_ref_remaining_length > 3) {
+      ret = -1;
+      session->errors_count++;
+      err("%s() FAIL: frame_size > ref_remaining_length by %d.\n", __func__,
+          frame_size - st41_ref_remaining_length);
+    } else {
+      ret = memcmp(frame, session->st41_ref_cursor, st41_ref_remaining_length);
+      if (ret) {
+        session->errors_count++;
+        err("%s() FAIL: reference file comparison with ending frame.\n", __func__);
+      } else {
+        dbg("%s() PASS: reference file comparison with ending frame.\n", __func__);
+
+        /* Verify last 0-3 bytes of frame (filled with zero's) */
+        ret = memcmp(&(((uint8_t*)frame)[st41_ref_remaining_length]), (void*)&last_zeros,
+                     frame_size - st41_ref_remaining_length);
+        if (ret) {
+          session->errors_count++;
+          err("%s() FAIL: frame comparison with ending zeros.\n", __func__);
+        } else {
+          dbg("%s() PASS: frame comparison with ending zeros.\n", __func__);
+        }
+      }
+    }
+  }
+
+#ifdef DEBUG /* print out of frame and reference file if error */
+  if (ret) {
+    err("%s() FRAME START>>", __func__);
+    for (int i = 0; i < frame_size; i++) {
+      err("%c", ((char*)frame)[i]);
+    }
+    err("<<END FRAME.\n\n");
+
+    err("%s() REFERENCE START>>", __func__);
+    for (int i = 0; i < frame_size; i++) {
+      err("%c", ((char*)(session->st41_ref_cursor))[i]);
+    }
+    err("<<END REFERENCE.\n\n");
+  }
+#endif /* DEBUG */
+
+  /* calculate new reference frame */
+  session->st41_ref_cursor += frame_size;
+  if (session->st41_ref_cursor >= session->st41_ref_end)
+    session->st41_ref_cursor = session->st41_ref_begin;
+
+  return ret;
+}
+
+static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr) {
+  struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
+  void* payload = (void*)(&hdr[1]);
+
+  hdr->swaped_st41_hdr_chunk = ntohl(hdr->swaped_st41_hdr_chunk);
+
+  /* Testing data_item_type */
+  if (s->st41_dit != 0xffffffff) {
+    if (hdr->st41_hdr_chunk.data_item_type != s->st41_dit) {
+      s->errors_count++;
+      err("%s(%d) FAIL: hdr->st41_hdr_chunk.data_item_type=%u, expected to be %u.\n",
+          __func__, s->idx, hdr->st41_hdr_chunk.data_item_type, s->st41_dit);
+    } else {
+      dbg("%s(%d) PASS: hdr->st41_hdr_chunk.data_item_type=%u, expected to be %u.\n",
+          __func__, s->idx, hdr->st41_hdr_chunk.data_item_type, s->st41_dit);
+    }
+  }
+
+  /* Testing data_item K-bit */
+  if (s->st41_k_bit != 0xff) {
+    if (hdr->st41_hdr_chunk.data_item_k_bit != s->st41_k_bit) {
+      s->errors_count++;
+      err("%s(%d) FAIL: hdr->st41_hdr_chunk.data_item_k_bit=%u, expected to be %u.\n",
+          __func__, s->idx, hdr->st41_hdr_chunk.data_item_k_bit, s->st41_k_bit);
+    } else {
+      dbg("%s(%d) PASS: hdr->st41_hdr_chunk.data_item_k_bit=%u, expected to be %u.\n",
+          __func__, s->idx, hdr->st41_hdr_chunk.data_item_k_bit, s->st41_k_bit);
+    }
+  }
 
   s->stat_frame_total_received++;
   if (!s->stat_frame_first_rx_time)
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
+
+  /* Compare each packet with reference (part by part) */
+  if (s->st41_ref_fd > 0) {
+    app_rx_fmd_compare_with_ref(s, payload, hdr->st41_hdr_chunk.data_item_length * 4);
+    /* (field hdr->st41_hdr_chunk.data_item_length is expressed in 4-byte words, thus
+     * multiplying by 4) */
+  }
+
+  hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk);
 }
 
 static void* app_rx_fmd_read_thread(void* arg) {
@@ -31,7 +174,7 @@ static void* app_rx_fmd_read_thread(void* arg) {
       continue;
     }
     /* parse the packet */
-    app_rx_fmd_handle_rtp(s);
+    app_rx_fmd_handle_rtp(s, usrptr);
     st41_rx_put_mbuf(s->handle, mbuf);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -66,6 +209,8 @@ static int app_rx_fmd_uinit(struct st_app_rx_fmd_session* s) {
   }
   st_pthread_mutex_destroy(&s->st41_wake_mutex);
   st_pthread_cond_destroy(&s->st41_wake_cond);
+
+  app_rx_fmd_close_source(s);
 
   return 0;
 }
@@ -107,11 +252,29 @@ static int app_rx_fmd_init(struct st_app_context* ctx,
   }
   ops.rtp_ring_size = 1024;
   ops.payload_type = fmd ? fmd->base.payload_type : ST_APP_PAYLOAD_TYPE_FASTMETADATA;
+  s->st41_dit = fmd ? fmd->info.fmd_dit : 0xffffffff;
+  s->st41_k_bit = fmd ? fmd->info.fmd_k_bit : 0xff;
   ops.interlaced = fmd ? fmd->info.interlaced : false;
   ops.notify_rtp_ready = app_rx_fmd_rtp_ready;
   if (fmd && fmd->enable_rtcp) ops.flags |= ST41_RX_FLAG_ENABLE_RTCP;
   st_pthread_mutex_init(&s->st41_wake_mutex, NULL);
   st_pthread_cond_init(&s->st41_wake_cond, NULL);
+
+  s->errors_count = 0;
+  s->st41_ref_fd = -1;
+  if (fmd) {
+    if (strcmp(fmd->info.fmd_url, "")) {
+      snprintf(s->st41_ref_url, sizeof(s->st41_ref_url), "%s",
+               fmd ? fmd->info.fmd_url : "null");
+
+      ret = app_rx_fmd_open_ref(s);
+      if (ret < 0) {
+        err("%s(%d), app_rx_fmd_open_ref fail %d.\n", __func__, idx, ret);
+        app_rx_fmd_uinit(s);
+        return -EIO;
+      }
+    }
+  }
 
   handle = st41_rx_create(ctx->st, &ops);
   if (!handle) {
@@ -152,9 +315,9 @@ static int app_rx_fmd_result(struct st_app_rx_fmd_session* s) {
 
   if (!s->stat_frame_total_received) return -EINVAL;
 
-  critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           app_rx_fmd_fps_check(framerate) ? "OK" : "FAILED", framerate,
-           s->stat_frame_total_received);
+  critical("%s(%d), %s, fps %f, %d frame received, %d counted errors.\n", __func__, idx,
+           (app_rx_fmd_fps_check(framerate) && (s->errors_count == 0)) ? "OK" : "FAILED",
+           framerate, s->stat_frame_total_received, s->errors_count);
   return 0;
 }
 

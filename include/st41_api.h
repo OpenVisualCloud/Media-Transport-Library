@@ -244,9 +244,15 @@ struct st41_rx_ops {
   /** Mandatory. UDP dest port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
 
-  /** Mandatory. 7 bits payload type define in RFC3550. Zero means disable the
-   * payload_type check on the RX pkt path */
+  /** Mandatory. 7 bits payload type define in RFC3550. Value zero (0) means disable the
+   *  payload_type check on the RX pkt path */
   uint8_t payload_type;
+  /** Optional. Expected 22 bits data item type. Value 0xffffffff means disable the
+   *  data item type check on the RX pkt path  */
+  uint32_t fmd_dit;
+  /** Optional. Expected 1 bit K-bit. Value 0xff means disable the
+   *  K-bit check on the RX pkt path  */
+  uint8_t fmd_k_bit;
   /** Mandatory. interlaced or not */
   bool interlaced;
 
