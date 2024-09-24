@@ -366,10 +366,24 @@ struct st_app_rx_anc_session {
 struct st_app_rx_fmd_session {
   int idx;
   st41_rx_handle handle;
+
+  /* Reference file handling */
+  char st41_ref_url[ST_APP_URL_MAX_LEN + 1];
+  int st41_ref_fd;
+  uint8_t* st41_ref_begin;
+  uint8_t* st41_ref_end;
+  uint8_t* st41_ref_cursor;
+
   pthread_t st41_app_thread;
   pthread_cond_t st41_wake_cond;
   pthread_mutex_t st41_wake_mutex;
   bool st41_app_thread_stop;
+
+  /* Expected values */
+  uint32_t st41_dit;
+  uint32_t st41_k_bit;
+
+  uint32_t errors_count;
 
   /* stat */
   int stat_frame_total_received;
