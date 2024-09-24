@@ -119,7 +119,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   ops_rx.ptime = s->ptime;
   ops_rx.channel = s->channels;
   ret = mtl_parse_st30_sample_rate(&ops_rx.sampling, s->sample_rate);
-  if (!ret) {
+  if (ret) {
     err(ctx, "%s, invalid sample_rate: %d\n", __func__, s->sample_rate);
     return ret;
   }
