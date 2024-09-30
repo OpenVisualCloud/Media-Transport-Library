@@ -230,7 +230,7 @@ static const AVOption mtl_st30p_tx_options[] = {
      3,
      8000,
      ENC},
-    {"at",
+    {"ptime",
      "audio packet time",
      OFFSET(ptime_str),
      AV_OPT_TYPE_STRING,
