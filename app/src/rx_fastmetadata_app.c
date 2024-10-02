@@ -49,8 +49,7 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, vo
                                        int frame_size) {
   int ret = -1;
   uint32_t last_zeros = 0; /* 4 bytes with 0 */
-  uint32_t st41_ref_remaining_length =
-      session ? session->st41_ref_end - session->st41_ref_cursor : 0;
+  uint32_t st41_ref_remaining_length = session->st41_ref_end - session->st41_ref_cursor;
 
   if (frame_size <= st41_ref_remaining_length) {
     ret = memcmp(frame, session->st41_ref_cursor, frame_size);
@@ -264,8 +263,7 @@ static int app_rx_fmd_init(struct st_app_context* ctx,
   s->st41_ref_fd = -1;
   if (fmd) {
     if (strcmp(fmd->info.fmd_url, "")) {
-      snprintf(s->st41_ref_url, sizeof(s->st41_ref_url), "%s",
-               fmd ? fmd->info.fmd_url : "null");
+      snprintf(s->st41_ref_url, sizeof(s->st41_ref_url), "%s", fmd->info.fmd_url);
 
       ret = app_rx_fmd_open_ref(s);
       if (ret < 0) {
