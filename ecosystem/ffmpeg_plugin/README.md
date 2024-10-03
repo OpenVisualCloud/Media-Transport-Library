@@ -173,17 +173,20 @@ ffmpeg -stream_loop -1 -i test.wav -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_t
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 30000 -payload_type 111 -pcm_fmt pcm16 -ptime 1ms -channels 2 -f mtl_st30p -i "0" dump_pcm16.wav -y
 ```
 
-### Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
+## 5. St20 GPU direct guide
 
 The MTL_GPU_DIRECT experimental feature aims at enhancing FFmpeg's performance by allowing direct access to GPU memory, which can be particularly beneficial when working with high-throughput video streams such as those handled by the MTL ST20 codec plugin.
 
-#### Building FFmpeg with MTL_GPU_DIRECT Enabled
+### 5.1 Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
+
 To take advantage of the MTL_GPU_DIRECT feature FFmpeg has to be built with this option enabled. Here’s how to do it:
 
 ```bash
 ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl --extra-cflags="-DMTL_GPU_DIRECT_ENABLED"
 ```
+
 or use
+
 ```bash
 ./build_ffmpeg_plugin.sh -g
 ```
@@ -195,17 +198,20 @@ enabled gpu_direct:
 ./ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -gpu_direct 1 -gpu_driver 0 -gpu_device 0 -f mtl_st20p -i "k" -f rawvideo /dev/null -y
 ```
 
-#### Additional Notes
+### 5.2 Additional Notes
+
 **GPU Direct Flag:** When compiling FFmpeg with the MTL_GPU_DIRECT feature enabled, ensure that your system's GPU drivers and hardware support direct GPU memory access.  
 GPU device IDs and GPU driver IDs are printed during initialization.
 
 **Options:**
+
 1. `-gpu_device`
 1. `-gpu_driver`
 
 Both default to 0, but if your device doesn't initialize, adjust it using the information printed during initialization.
 
 **Example:**
+
 ```plaintext
 Drivers count: 1
 Driver: 0: Device: 0: Name: Intel(R) Data Center GPU Flex 170, Type: 1, VendorID: 8086, DeviceID: 22208
