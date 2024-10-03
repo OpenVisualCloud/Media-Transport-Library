@@ -480,8 +480,8 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
   }
 
   /* copying frame fields for RTP mode to function*/
-  s->st41_dit = fmd->info.fmd_dit;
-  s->st41_k_bit = fmd->info.fmd_k_bit;
+  s->st41_dit = ops.fmd_dit;
+  s->st41_k_bit = ops.fmd_k_bit;
 
   s->handle = handle;
   snprintf(s->st41_source_url, sizeof(s->st41_source_url), "%s",
