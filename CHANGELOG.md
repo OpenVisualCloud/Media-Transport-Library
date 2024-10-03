@@ -1,10 +1,27 @@
 # Changelog
 
-## Changelog for 24.12
+## Changelog for 24.09
 
 * ice: update driver to 1.14.9
-* st2110/20: add force numa option support on session level, see ST20_TX_FLAG_FORCE_NUMA/ST20_RX_FLAG_FORCE_NUMA
-* st2110/30: add force numa option support on session level, see ST30_TX_FLAG_FORCE_NUMA/ST30_RX_FLAG_FORCE_NUMA
+* st2110/20: add force NUMA option support on session level, see ST20_TX_FLAG_FORCE_NUMA/ST20_RX_FLAG_FORCE_NUMA
+* st2110/30: add force NUMA option support on session level, see ST30_TX_FLAG_FORCE_NUMA/ST30_RX_FLAG_FORCE_NUMA
+* ffmpeg: fix RX side dropping frames at the beginning of the session with st20/st22/st30.
+* st22: fix last frame dropping in TX. Ensure that last frame status changed to FREE.
+* dpdk: optimizing memory pool size.
+* manager: fix docker build.
+* ffmpeg: improve unicast initialization, reduce amount of dropping frames in the beginning of the session.
+* ixgbe: add driver support. Tested on 10-Gigabit X540-AT2 (1528) and Intel 10G X550T (1563).
+* sch/tasklet: fix API correct NUMA assigned when `mtl_sch_create` is used.
+* sch/tasklet: fix segfault when lcore out of `RTE_MAX_LCORE` assigned.
+* app: add new video formats to sample app - YUV_420_16bit, YUV_422_8BIT, YUV_444_8bit, YUV_444_16bit.
+* RTP: fix checking for valid payload type.
+* st30: add `fifo_size` parameter parsing from user.
+* st41: add `St2110-41` format for 'Fast Metadata Framework' standard.
+* ffmpeg: add support of `44100` rate for `st30` format.
+* ffmpeg: add support for v7.0 version
+* st22: fix correct NUMA assigned `socket_id` with pipeline when creating a new session.
+* GPU: add support for GPU direct buffers in ST2110/20. See `app/sample/gpu_direct` for usage.
+* ffmpeg: add support for GPU buffers.
 
 ## Changelog for 24.06
 
