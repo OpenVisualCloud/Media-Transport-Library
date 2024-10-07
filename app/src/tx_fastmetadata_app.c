@@ -205,8 +205,11 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   uint16_t data_item_length;
   data_item_length =
       (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
+
+
+err("skolelis: file: %s, %s(), line: %d.\n", __FILE__, __func__, __LINE__); // skolelis tbd: remove    
   hdr->base.marker = 1;
-  hdr->base.payload_type = ST_APP_PAYLOAD_TYPE_FASTMETADATA;
+  hdr->base.payload_type = 117; //ST_APP_PAYLOAD_TYPE_FASTMETADATA; // skolelis
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
@@ -482,6 +485,7 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
   /* copying frame fields for RTP mode to function*/
   s->st41_dit = ops.fmd_dit;
   s->st41_k_bit = ops.fmd_k_bit;
+  s->st41_payload_type = ops.payload_type;
 
   s->handle = handle;
   snprintf(s->st41_source_url, sizeof(s->st41_source_url), "%s",

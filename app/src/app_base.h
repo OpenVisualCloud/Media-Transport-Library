@@ -248,6 +248,7 @@ struct st_app_tx_fmd_session {
   int st41_source_fd;
   pcap_t* st41_pcap;
   bool st41_pcap_input;
+  uint8_t st41_payload_type;
   uint32_t st41_dit;
   uint32_t st41_k_bit;
   bool st41_rtp_input;
