@@ -81,3 +81,7 @@ mtl_system_status_*
 *.mp4
 *.pcm
 *.wav
+
+# Gpu direct files
+gpu_direct/subprojects/*
+!gpu_direct/subprojects/gtest.wrap
