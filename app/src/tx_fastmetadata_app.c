@@ -206,10 +206,8 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   data_item_length =
       (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
 
-
-err("skolelis: file: %s, %s(), line: %d.\n", __FILE__, __func__, __LINE__); // skolelis tbd: remove    
   hdr->base.marker = 1;
-  hdr->base.payload_type = 117; //ST_APP_PAYLOAD_TYPE_FASTMETADATA; // skolelis
+  hdr->base.payload_type = s->st41_payload_type;
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
