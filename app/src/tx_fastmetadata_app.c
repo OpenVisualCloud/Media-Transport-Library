@@ -205,7 +205,6 @@ static void app_tx_fmd_build_rtp(struct st_app_tx_fmd_session* s, void* usrptr,
   uint16_t data_item_length;
   data_item_length =
       (data_item_length_bytes + 3) / 4; /* expressed in number of 4-byte words */
-
   hdr->base.marker = 1;
   hdr->base.payload_type = s->st41_payload_type;
   hdr->base.version = 2;
