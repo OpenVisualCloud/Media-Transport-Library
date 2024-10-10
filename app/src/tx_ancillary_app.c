@@ -204,7 +204,7 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   uint16_t check_sum, total_size, payload_len;
   hdr->base.marker = 1;
   hdr->anc_count = 1;
-  hdr->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  hdr->base.payload_type = s->st40_payload_type;
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
@@ -461,6 +461,7 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
   ops.type = anc ? anc->info.type : ST40_TYPE_FRAME_LEVEL;
   ops.interlaced = anc ? anc->info.interlaced : false;
   ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  s->st40_payload_type = ops.payload_type;
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st40_source_url, ".pcap")) {
     ops.type = ST40_TYPE_RTP_LEVEL;

@@ -220,6 +220,7 @@ struct st_app_tx_anc_session {
   pcap_t* st40_pcap;
   bool st40_pcap_input;
   bool st40_rtp_input;
+  uint8_t st40_payload_type;
   uint8_t* st40_source_begin;
   uint8_t* st40_source_end;
   uint8_t* st40_frame_cursor; /* cursor to current frame */
@@ -248,9 +249,10 @@ struct st_app_tx_fmd_session {
   int st41_source_fd;
   pcap_t* st41_pcap;
   bool st41_pcap_input;
+  bool st41_rtp_input;
+  uint8_t st41_payload_type;
   uint32_t st41_dit;
   uint32_t st41_k_bit;
-  bool st41_rtp_input;
   uint8_t* st41_source_begin;
   uint8_t* st41_source_end;
   uint8_t* st41_frame_cursor; /* cursor to current frame */
