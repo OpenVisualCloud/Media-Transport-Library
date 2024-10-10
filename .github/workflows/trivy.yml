@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'branch to run scans on'
+        default: 'main'
+        type: string  
 
 env:
   BUILD_TYPE: Release
@@ -20,6 +25,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.branch }}
       - name: 'Install dependencies'
         run: |
           sudo apt-get update -y && \
