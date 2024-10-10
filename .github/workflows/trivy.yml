@@ -43,8 +43,6 @@ jobs:
           image-ref: 'mtl:latest'
           format: 'table'
           exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
           output: 'Trivy-image-scan-results.txt'
       - uses: actions/upload-artifact@v4
