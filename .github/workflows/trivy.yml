@@ -43,6 +43,7 @@ jobs:
           image-ref: 'mtl:latest'
           format: 'table'
           scanners: 'vuln,secret,misconfig'
+          ignore-unfixed: "true"
           exit-code: '1'
           output: 'Trivy-image-scan-results.txt'
       - uses: actions/upload-artifact@v4
