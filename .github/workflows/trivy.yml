@@ -42,8 +42,8 @@ jobs:
         with:
           image-ref: 'mtl:latest'
           format: 'table'
+          scanners: 'vuln,secret,misconfig'
           exit-code: '1'
-          severity: 'CRITICAL,HIGH'
           output: 'Trivy-image-scan-results.txt'
       - uses: actions/upload-artifact@v4
         with:
