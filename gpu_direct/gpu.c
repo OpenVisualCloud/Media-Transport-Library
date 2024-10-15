@@ -36,7 +36,7 @@
 /**
  * @brief Init level zero lib
  * Must be called before calling level zero API.
- * @return int - 0 if successfull, < 0 else.
+ * @return int - 0 if successful, < 0 else.
  */
 int init_level_zero_lib() {
   ZE_CHECK_ERROR(zeInit(ZE_INIT_FLAG_GPU_ONLY));
@@ -57,6 +57,10 @@ int print_gpu_drivers_and_devices() {
   uint32_t driversCount = 0;
   ZE_CHECK_ERROR(zeDriverGet(&driversCount, NULL));
   printf("Drivers count: %d\n", driversCount);
+  if (driversCount == 0) {
+    return 0;
+  }
+  
   ze_driver_handle_t* drivers = calloc(driversCount, sizeof(ze_driver_handle_t));
   if (!drivers) {
     fprintf(stderr, "Memory allocation for drivers failed\n");
@@ -105,7 +109,7 @@ int print_gpu_drivers_and_devices() {
  * initialization.
  * @param driverIndex - [in] driver index.
  * @param deviceIndex - [in] device index.
- * @return int. 0 if successfull, < 0 else.
+ * @return int. 0 if successful, < 0 else.
  */
 int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex) {
   if (ctx->initialized) {

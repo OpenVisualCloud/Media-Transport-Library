@@ -22,8 +22,6 @@ if is_windows
 endif
 
 # gpu_direct dependencies check
-
-
 mtl_gpu_direct_c_args = []
 if get_option('buildtype') != 'debug'
     mtl_gpu_direct_c_args += ['-Werror']
@@ -34,7 +32,6 @@ mtl_gpu_direct_header_file = files('gpu.h')
 install_headers(mtl_gpu_direct_header_file, subdir: meson.project_name())
 
 mtl_gpu_direct_sources = files('gpu.c')
-
 mtl_gpu_direct_lib = shared_library(
     meson.project_name(),
     mtl_gpu_direct_sources,
@@ -60,6 +57,7 @@ gmock_dep = gtest_proj.get_variable('gmock_dep')
 
 tests_src = [
   'tests/negative_tests.cpp',
+  'tests/gpu_tests.cpp'
 ]  
 gtest_e = executable(
   'gtest-all',
