@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'branch to run scans on'
+        default: 'main'
+        type: string
 
 env:
   BUILD_TYPE: Release
@@ -20,6 +25,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.branch }}
       - name: 'Install dependencies'
         run: |
           sudo apt-get update -y && \
@@ -36,9 +43,20 @@ jobs:
         run: |
           cd docker
           docker build -t mtl:latest -f ubuntu.dockerfile ../
-          
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.20.0
+
+      - name: Run Trivy vulnerability scanner with sarif output
+        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
+        with:
+          image-ref: 'mtl:latest'
+          format: 'sarif'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          output: 'Trivy-image-scan-results.sarif'
+      - name: Run Trivy vulnerability scanner with with table output
+        if: always()
+        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
         with:
           image-ref: 'mtl:latest'
           format: 'table'
@@ -47,7 +65,13 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
           output: 'Trivy-image-scan-results.txt'
-      - uses: actions/upload-artifact@v4
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # v3.25.11
         with:
-          name: trivy-output
+          sarif_file: 'Trivy-image-scan-results.sarif'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-results
           path: 'Trivy-image-scan-results.txt'
