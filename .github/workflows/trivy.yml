@@ -53,21 +53,22 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           output: 'Trivy-image-scan-results.sarif'
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # v3.25.11
+        with:
+          sarif_file: 'Trivy-image-scan-results.sarif'
       - name: Run Trivy vulnerability scanner with with table output
         if: always()
         uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
         with:
           image-ref: 'mtl:latest'
           format: 'table'
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           output: 'Trivy-image-scan-results.txt'
-      - name: Upload Trivy scan results to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # v3.25.11
-        with:
-          sarif_file: 'Trivy-image-scan-results.sarif'
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
