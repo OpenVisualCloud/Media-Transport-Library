@@ -83,5 +83,6 @@ mtl_system_status_*
 *.wav
 
 # Gpu direct files
+gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap

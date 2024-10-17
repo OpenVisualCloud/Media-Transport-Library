@@ -151,7 +151,6 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
 
   // Allocate and retrieve device handlers
   ctx->devices = calloc(ctx->deviceCount, sizeof(ze_device_handle_t));
-
   if (!ctx->devices) {
     fprintf(stderr, "Can't allocate memory for devices handlers\n");
     free(ctx->drivers);
