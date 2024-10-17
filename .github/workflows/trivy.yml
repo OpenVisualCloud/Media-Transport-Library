@@ -52,7 +52,6 @@ jobs:
           exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
           output: 'Trivy-image-scan-results.sarif'
       - name: Run Trivy vulnerability scanner with with table output
         if: always()
@@ -63,7 +62,6 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
           output: 'Trivy-image-scan-results.txt'
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
