@@ -87,7 +87,6 @@ TEST_F(GpuTest, init_level_zero_lib_success_ERROR) {
 
     int result = init_level_zero_lib();
     ASSERT_EQ(zeInit_fake.call_count, 1);
-    ASSERT_EQ(free_fake.call_count, 0);
     EXPECT_EQ(result, -1);
     VerifyCallCountsAreZero({"zeInit"});
 }
@@ -98,7 +97,7 @@ TEST_F(GpuTest, init_level_zero_lib_OK) {
     int result = init_level_zero_lib();
     ASSERT_EQ(1, zeInit_fake.call_count);
     EXPECT_EQ(0, result);
-    VerifyCallCountsAreZero({"zeInit", "free"});
+    VerifyCallCountsAreZero({"zeInit"});
 }
 
 //
@@ -110,7 +109,7 @@ TEST_F(GpuTest, print_gpu_drivers_and_devices_ERROR_init) {
     int result = print_gpu_drivers_and_devices();
     ASSERT_EQ(1, zeInit_fake.call_count);
     EXPECT_EQ(-1, result);
-    VerifyCallCountsAreZero({"zeInit", "free"});
+    VerifyCallCountsAreZero({"zeInit"});
 }
 
 TEST_F(GpuTest, print_gpu_drivers_and_devices_no_drivers_OK) {
@@ -124,7 +123,7 @@ TEST_F(GpuTest, print_gpu_drivers_and_devices_no_drivers_OK) {
     ASSERT_EQ(1, zeInit_fake.call_count);
     ASSERT_EQ(1, zeDriverGet_fake.call_count);
     EXPECT_EQ(0, result);
-    VerifyCallCountsAreZero({"zeInit", "zeDriverGet", "free"});
+    VerifyCallCountsAreZero({"zeInit", "zeDriverGet"});
 }
 
 TEST_F(GpuTest, PrintGpuDriversAndDevices_ERROR_CallocDrivers) {
