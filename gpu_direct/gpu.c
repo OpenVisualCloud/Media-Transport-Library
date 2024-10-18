@@ -60,7 +60,7 @@ int print_gpu_drivers_and_devices() {
   if (driversCount == 0) {
     return 0;
   }
-  
+
   ze_driver_handle_t* drivers = calloc(driversCount, sizeof(ze_driver_handle_t));
   if (!drivers) {
     fprintf(stderr, "Memory allocation for drivers failed\n");
