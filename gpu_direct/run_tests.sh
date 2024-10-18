@@ -8,4 +8,3 @@ meson build && cd build || exit
 
 echo "Running the tests"
 meson test
-

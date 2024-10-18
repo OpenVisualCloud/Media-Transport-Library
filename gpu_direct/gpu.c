@@ -162,8 +162,8 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
 
   // Get properties of the selected device
   ZE_CHECK_ERROR(zeDeviceGetProperties(ctx->deviceHandler, &ctx->deviceProperties));
-  printf("Device initialized: Index: %d, Name: %s, Type: %d, VendorID: %x\n",
-         deviceIndex, ctx->deviceProperties.name, ctx->deviceProperties.type,
+  printf("Device initialized: Index: %d, Name: %s, Type: %d, VendorID: %x\n", deviceIndex,
+         ctx->deviceProperties.name, ctx->deviceProperties.type,
          ctx->deviceProperties.vendorId);
 
   // Create device command queue
