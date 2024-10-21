@@ -28,11 +28,17 @@ FAKE_VALUE_FUNC(ze_result_t, zeCommandListCreate, ze_context_handle_t, ze_device
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListAppendMemoryCopy, ze_command_list_handle_t,
                 void*, const void*, size_t, ze_event_handle_t, uint32_t,
                 ze_event_handle_t*);
+FAKE_VALUE_FUNC(ze_result_t, zeCommandListAppendMemoryFill, ze_command_list_handle_t,
+                void*, const void*, size_t, size_t, ze_event_handle_t, uint32_t,
+                ze_event_handle_t*);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListClose, ze_command_list_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueExecuteCommandLists, ze_command_queue_handle_t,
                 uint32_t, ze_command_list_handle_t*, ze_fence_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueSynchronize, ze_command_queue_handle_t,
                 uint64_t);
+FAKE_VALUE_FUNC(ze_result_t, zeCommandListReset, ze_command_list_handle_t);
+FAKE_VALUE_FUNC(ze_result_t, zeCommandListDestroy, ze_command_list_handle_t);
+FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueDestroy, ze_command_queue_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeMemFree, ze_context_handle_t, void*);
 
 // Memory allocation mocks
@@ -51,9 +57,13 @@ class GpuTest : public testing::Test {
     RESET_FAKE(zeCommandQueueCreate);
     RESET_FAKE(zeCommandListCreate);
     RESET_FAKE(zeCommandListAppendMemoryCopy);
+    RESET_FAKE(zeCommandListAppendMemoryFill);
     RESET_FAKE(zeCommandListClose);
     RESET_FAKE(zeCommandQueueExecuteCommandLists);
     RESET_FAKE(zeCommandQueueSynchronize);
+    RESET_FAKE(zeCommandListReset);
+    RESET_FAKE(zeCommandListDestroy);
+    RESET_FAKE(zeCommandQueueDestroy);
     RESET_FAKE(zeMemFree);
     RESET_FAKE(calloc);
     RESET_FAKE(free);
@@ -70,10 +80,14 @@ class GpuTest : public testing::Test {
         {"zeCommandQueueCreate", zeCommandQueueCreate_fake.call_count},
         {"zeCommandListCreate", zeCommandListCreate_fake.call_count},
         {"zeCommandListAppendMemoryCopy", zeCommandListAppendMemoryCopy_fake.call_count},
+        {"zeCommandListAppendMemoryFill", zeCommandListAppendMemoryFill_fake.call_count},
         {"zeCommandListClose", zeCommandListClose_fake.call_count},
         {"zeCommandQueueExecuteCommandLists",
          zeCommandQueueExecuteCommandLists_fake.call_count},
         {"zeCommandQueueSynchronize", zeCommandQueueSynchronize_fake.call_count},
+        {"zeCommandListReset", zeCommandListReset_fake.call_count},
+        {"zeCommandListDestroy", zeCommandListDestroy_fake.call_count},
+        {"zeCommandQueueDestroy", zeCommandQueueDestroy_fake.call_count},
         {"zeMemFree", zeMemFree_fake.call_count},
         {"calloc", calloc_fake.call_count},
         {"free", free_fake.call_count},
@@ -336,21 +350,154 @@ TEST_F(GpuTest, InitGpuDevice_Success) {
                            "zeCommandListCreate", "calloc", "free"});
 }
 
-// TEST_F(GpuTest, GpuAllocateSharedBuffer_ContextNotInitialized) {
-//     GpuContext ctx = {};
-//     void* buf;
-//     int result = gpu_allocate_shared_buffer(&ctx, &buf, 1024);
-//     EXPECT_EQ(result, -1);
-//     VerifyCallCountsAreZero();
-// }
+//
+// gpu_allocate_shared_buffer tests
+//
 
-// TEST_F(GpuTest, GpuAllocateSharedBuffer_Success) {
-//     GpuContext ctx = {.initialized = 1};
-//     zeMemAllocShared_fake.return_val = ZE_RESULT_SUCCESS;
+TEST_F(GpuTest, GpuAllocateSharedBuffer_ERROR_UninitializedContext) {
+  GpuContext ctx = {};  // Not initialized
+  int result = gpu_allocate_shared_buffer(&ctx, NULL, 1024);
+  EXPECT_EQ(result, -1);
+  VerifyCallCountsAreZero();
+}
 
-//     void* buf;
-//     int result = gpu_allocate_shared_buffer(&ctx, &buf, 1024);
-//     EXPECT_EQ(result, 0);
-//     EXPECT_EQ(zeMemAllocShared_fake.call_count, 1);
-//     VerifyCallCountsAreZero({"zeMemAllocShared"});
-// }
+TEST_F(GpuTest, GpuAllocateSharedBuffer_ERROR_AllocationFailed) {
+  GpuContext ctx = {.initialized = 1,
+                    .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
+  zeMemAllocShared_fake.return_val = ZE_RESULT_ERROR_OUT_OF_HOST_MEMORY;
+  int result = gpu_allocate_shared_buffer(&ctx, NULL, 1024);
+  EXPECT_EQ(result, -1);
+  EXPECT_EQ(zeMemAllocShared_fake.call_count, 1);
+  VerifyCallCountsAreZero({"zeMemAllocShared"});
+}
+
+TEST_F(GpuTest, GpuAllocateSharedBuffer_Success) {
+  GpuContext ctx = {.initialized = 1,
+                    .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
+  void* buf = NULL;
+  zeMemAllocShared_fake.custom_fake = [](ze_context_handle_t,
+                                         const ze_device_mem_alloc_desc_t*,
+                                         const ze_host_mem_alloc_desc_t*, size_t, size_t,
+                                         ze_device_handle_t, void** buffer) {
+    static int dummyValue = 42;  // Example value to write
+    *buffer = &dummyValue;
+    return ZE_RESULT_SUCCESS;
+  };
+  int result = gpu_allocate_shared_buffer(&ctx, &buf, 1024);
+  EXPECT_EQ(result, 0);
+  EXPECT_EQ(zeMemAllocShared_fake.call_count, 1);
+  EXPECT_EQ(*static_cast<int*>(buf), 42);
+  VerifyCallCountsAreZero({"zeMemAllocShared"});
+}
+
+//
+// gpu_memcpy tests
+//
+
+TEST_F(GpuTest, GpuMemcpy_ERROR_UninitializedContext) {
+  GpuContext ctx = {};  // Not initialized
+  int result = gpu_memcpy(&ctx, (void*)1, (void*)2, 1024);
+  EXPECT_EQ(result, -1);
+  VerifyCallCountsAreZero();
+}
+
+TEST_F(GpuTest, GpuMemcpy_ERROR_CommandListAppendMemoryCopy) {
+  GpuContext ctx = {.initialized = 1,
+                    .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
+  zeCommandListAppendMemoryCopy_fake.return_val = ZE_RESULT_ERROR_UNKNOWN;
+  int result = gpu_memcpy(&ctx, (void*)1, (void*)2, 1024);
+  EXPECT_EQ(result, -1);
+  EXPECT_EQ(zeCommandListAppendMemoryCopy_fake.call_count, 1);
+  VerifyCallCountsAreZero({"zeCommandListAppendMemoryCopy"});
+}
+
+TEST_F(GpuTest, GpuMemcpy_OK) {
+  GpuContext ctx = {.initialized = 1,
+                    .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
+  zeCommandListAppendMemoryCopy_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandListClose_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandQueueExecuteCommandLists_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandQueueSynchronize_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandListReset_fake.return_val = ZE_RESULT_SUCCESS;
+  int result = gpu_memcpy(&ctx, (void*)1, (void*)2, 1024);
+  EXPECT_EQ(result, 0);
+  EXPECT_EQ(zeCommandListAppendMemoryCopy_fake.call_count, 1);
+  EXPECT_EQ(zeCommandListClose_fake.call_count, 1);
+  EXPECT_EQ(zeCommandQueueExecuteCommandLists_fake.call_count, 1);
+  EXPECT_EQ(zeCommandQueueSynchronize_fake.call_count, 1);
+  EXPECT_EQ(zeCommandListReset_fake.call_count, 1);
+  VerifyCallCountsAreZero({"zeCommandListAppendMemoryCopy", "zeCommandListClose",
+                           "zeCommandQueueExecuteCommandLists",
+                           "zeCommandQueueSynchronize", "zeCommandListReset"});
+}
+
+//
+// gpu_memset tests
+//
+
+TEST_F(GpuTest, GpuMemset_ERROR_UninitializedContext) {
+  GpuContext ctx = {};  // Not initialized
+  int result = gpu_memset(&ctx, (void*)1, 0, 1024);
+  EXPECT_EQ(result, -1);
+  VerifyCallCountsAreZero();
+}
+
+TEST_F(GpuTest, GpuMemset_ERROR_CommandListAppendMemoryFill) {
+  GpuContext ctx = {.initialized = 1,
+                    .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
+  zeCommandListAppendMemoryFill_fake.return_val = ZE_RESULT_ERROR_UNKNOWN;
+  int result = gpu_memset(&ctx, (void*)1, 0, 1024);
+  EXPECT_EQ(result, -1);
+  EXPECT_EQ(zeCommandListAppendMemoryFill_fake.call_count, 1);
+  VerifyCallCountsAreZero({"zeCommandListAppendMemoryFill"});
+}
+
+TEST_F(GpuTest, GpuMemset_OK) {
+  GpuContext ctx = {.initialized = 1,
+                    .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
+  zeCommandListAppendMemoryFill_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandListClose_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandQueueExecuteCommandLists_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandQueueSynchronize_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandListReset_fake.return_val = ZE_RESULT_SUCCESS;
+  int result = gpu_memset(&ctx, (void*)1, 0, 1024);
+  EXPECT_EQ(result, 0);
+  EXPECT_EQ(zeCommandListAppendMemoryFill_fake.call_count, 1);
+  EXPECT_EQ(zeCommandListClose_fake.call_count, 1);
+  EXPECT_EQ(zeCommandQueueExecuteCommandLists_fake.call_count, 1);
+  EXPECT_EQ(zeCommandQueueSynchronize_fake.call_count, 1);
+  EXPECT_EQ(zeCommandListReset_fake.call_count, 1);
+  VerifyCallCountsAreZero({"zeCommandListAppendMemoryFill", "zeCommandListClose",
+                           "zeCommandQueueExecuteCommandLists",
+                           "zeCommandQueueSynchronize", "zeCommandListReset"});
+}
+
+//
+// free_gpu_context tests
+//
+
+TEST_F(GpuTest, FreeGpuContext_OK_NullContext) {
+  int result = free_gpu_context(NULL);
+  EXPECT_EQ(result, 0);
+  VerifyCallCountsAreZero();
+}
+
+TEST_F(GpuTest, FreeGpuContext_OK) {
+  GpuContext ctx = {
+      .initialized = 1,
+      .deviceCommandQueue = reinterpret_cast<ze_command_queue_handle_t>(1),
+      .deviceCommandList = reinterpret_cast<ze_command_list_handle_t>(1),
+  };
+
+  zeCommandListDestroy_fake.return_val = ZE_RESULT_SUCCESS;
+  zeCommandQueueDestroy_fake.return_val = ZE_RESULT_SUCCESS;
+  int result = free_gpu_context(&ctx);
+  EXPECT_EQ(result, 0);
+  EXPECT_EQ(ctx.initialized, 0);
+  EXPECT_EQ(ctx.deviceCommandQueue, nullptr);
+  EXPECT_EQ(ctx.deviceCommandList, nullptr);
+  EXPECT_EQ(zeCommandListDestroy_fake.call_count, 1);
+  EXPECT_EQ(zeCommandQueueDestroy_fake.call_count, 1);
+  EXPECT_EQ(free_fake.call_count, 2);
+  VerifyCallCountsAreZero({"zeCommandListDestroy", "zeCommandQueueDestroy", "free"});
+}
