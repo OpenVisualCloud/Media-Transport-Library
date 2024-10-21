@@ -166,7 +166,7 @@ TEST_F(GpuTest, PrintGpuDriversAndDevices_ERROR_CallocDrivers) {
   VerifyCallCountsAreZero({"zeInit", "zeDriverGet", "calloc"});
 }
 
-TEST_F(GpuTest, TestPrintGpuDriversAndDevices_Success) {
+TEST_F(GpuTest, TestPrintGpuDriversAndDevices_OK) {
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
   zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t* handle) {
     *count = 1;  // Set driversCount to 1
@@ -303,7 +303,7 @@ TEST_F(GpuTest, InitGpuDevice_ERROR_InvalidDeviceIndex) {
       {"zeInit", "zeDriverGet", "zeContextCreate", "zeDeviceGet", "calloc", "free"});
 }
 
-TEST_F(GpuTest, InitGpuDevice_Success) {
+TEST_F(GpuTest, InitGpuDevice_OK) {
   GpuContext ctx = {};
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
   zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t* handle) {
@@ -371,7 +371,7 @@ TEST_F(GpuTest, GpuAllocateSharedBuffer_ERROR_AllocationFailed) {
   VerifyCallCountsAreZero({"zeMemAllocShared"});
 }
 
-TEST_F(GpuTest, GpuAllocateSharedBuffer_Success) {
+TEST_F(GpuTest, GpuAllocateSharedBuffer_OK) {
   GpuContext ctx = {.initialized = 1,
                     .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
   void* buf = NULL;
