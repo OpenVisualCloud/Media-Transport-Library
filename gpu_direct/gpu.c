@@ -36,7 +36,7 @@
 /**
  * @brief Init level zero lib
  * Must be called before calling level zero API.
- * @return int - 0 if successfull, < 0 else.
+ * @return int - 0 if successful, < 0 else.
  */
 int init_level_zero_lib() {
   ZE_CHECK_ERROR(zeInit(ZE_INIT_FLAG_GPU_ONLY));
@@ -47,7 +47,7 @@ int init_level_zero_lib() {
 /**
  * @brief Print drivers and devices indexes
  *
- * @return int - 0 if successfull, < 0 else.
+ * @return int - 0 if successful, < 0 else.
  */
 int print_gpu_drivers_and_devices() {
   // init level-zero lib
@@ -57,6 +57,10 @@ int print_gpu_drivers_and_devices() {
   uint32_t driversCount = 0;
   ZE_CHECK_ERROR(zeDriverGet(&driversCount, NULL));
   printf("Drivers count: %d\n", driversCount);
+  if (driversCount == 0) {
+    return 0;
+  }
+
   ze_driver_handle_t* drivers = calloc(driversCount, sizeof(ze_driver_handle_t));
   if (!drivers) {
     fprintf(stderr, "Memory allocation for drivers failed\n");
@@ -105,7 +109,7 @@ int print_gpu_drivers_and_devices() {
  * initialization.
  * @param driverIndex - [in] driver index.
  * @param deviceIndex - [in] device index.
- * @return int. 0 if successfull, < 0 else.
+ * @return int. 0 if successful, < 0 else.
  */
 int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex) {
   if (ctx->initialized) {
@@ -137,7 +141,7 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
   ze_context_desc_t ctxDesc = {.stype = ZE_STRUCTURE_TYPE_CONTEXT_DESC};
   ZE_CHECK_ERROR(zeContextCreate(ctx->driverHandle, &ctxDesc, &ctx->deviceContext));
 
-  // Get decive count
+  // Get device count
   ZE_CHECK_ERROR(zeDeviceGet(ctx->driverHandle, &ctx->deviceCount, NULL));
   printf("Number of devices: %d\n", ctx->deviceCount);
   if (deviceIndex >= ctx->deviceCount) {
@@ -147,20 +151,19 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
 
   // Allocate and retrieve device handlers
   ctx->devices = calloc(ctx->deviceCount, sizeof(ze_device_handle_t));
-
   if (!ctx->devices) {
     fprintf(stderr, "Can't allocate memory for devices handlers\n");
     free(ctx->drivers);
     return -ENOMEM;
   }
   ZE_CHECK_ERROR(zeDeviceGet(ctx->driverHandle, &ctx->deviceCount, ctx->devices));
-  ctx->currectDeviceIndex = deviceIndex;
+  ctx->currentDeviceIndex = deviceIndex;
   ctx->deviceHandler = ctx->devices[deviceIndex];
 
   // Get properties of the selected device
   ZE_CHECK_ERROR(zeDeviceGetProperties(ctx->deviceHandler, &ctx->deviceProperties));
-  printf("Devicie initialized: Index: %d, Name: %s, Type: %d, VendorID: %x\n",
-         deviceIndex, ctx->deviceProperties.name, ctx->deviceProperties.type,
+  printf("Device initialized: Index: %d, Name: %s, Type: %d, VendorID: %x\n", deviceIndex,
+         ctx->deviceProperties.name, ctx->deviceProperties.type,
          ctx->deviceProperties.vendorId);
 
   // Create device command queue
@@ -193,7 +196,7 @@ int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex)
  * @param ctx - GPU context of the device.
  * @param buf in/out - buf pointer to be filled
  * @param size
- * @return int. 0 if successfull, < 0 else.
+ * @return int. 0 if successful, < 0 else.
  */
 int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size) {
   // check if ctx is initialized
@@ -221,7 +224,7 @@ int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size) {
  * @param ctx [in].GPU context of the device.
  * @param buf [in/out] - buf pointer to be filled
  * @param size [in]. Buf size
- * @return int. 0 if successfull, < 0 else.
+ * @return int. 0 if successful, < 0 else.
  */
 int gpu_allocate_device_buffer(GpuContext* ctx, void** buf, size_t size) {
   // check if ctx is initialized
@@ -248,7 +251,7 @@ int gpu_allocate_device_buffer(GpuContext* ctx, void** buf, size_t size) {
  * @param dst
  * @param src
  * @param sz
- * @return int. 0 if succefull. -1 if error occured
+ * @return int. 0 if successful. -1 if error occurred
  */
 int gpu_memcpy(GpuContext* ctx, void* dst, const void* src, size_t sz) {
   // check if ctx is initialized
@@ -267,7 +270,7 @@ int gpu_memcpy(GpuContext* ctx, void* dst, const void* src, size_t sz) {
 }
 
 /**
- * @brief GPU memstet
+ * @brief GPU memset
  *
  * @param ctx
  * @param dst
@@ -307,7 +310,7 @@ void gpu_free_buf(GpuContext* ctx, void* buf) {
  * @brief Free Gpu Context.
  *
  * @param ctx
- * @return int. 0 if succesffull, < 0 else.
+ * @return int. 0 if successful, < 0 else.
  */
 int free_gpu_context(GpuContext* ctx) {
   if (ctx == NULL) {

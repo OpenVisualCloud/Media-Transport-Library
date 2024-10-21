@@ -1,0 +1,2 @@
+# Add a new option for running unit tests
+option('enable_tests', type: 'boolean', value: false, description: 'Enable running unit tests')
