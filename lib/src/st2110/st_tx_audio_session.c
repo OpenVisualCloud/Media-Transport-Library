@@ -317,7 +317,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
       pacing->rtp_time_stamp);
 
   if (sync) {
-    dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, s->idx,
+    dbg("%s(%d), delay to epoch_time %" PRIu64 ", cur %" PRIu64 "\n", __func__, s->idx,
         pacing->tsc_time_cursor, mt_get_tsc(impl));
     mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
   }
@@ -1317,8 +1317,8 @@ static void tx_audio_session_rl_inc_pkt_idx(struct st_tx_audio_session_rl_info* 
                                             struct st_tx_audio_session_rl_port* rl_port) {
   rl_port->cur_pkt_idx++;
   if (rl_port->cur_pkt_idx >= rl->pkts_per_sync) {
-    dbg("%s(%d,%d), switch to next queue, cur queue %d pkts %d send\n", __func__, idx,
-        s_port, cur_queue, rl_port->cur_pkt_idx);
+    dbg("%s, switch to next queue, cur queue %d pkts %d send\n", __func__,
+        rl_port->cur_queue, rl_port->cur_pkt_idx);
     rl_port->cur_pkt_idx = 0;
     tx_audio_session_rl_switch_queue(rl_port);
   }
@@ -1420,16 +1420,16 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
   uint32_t trs = s->pacing.trs;
   uint32_t delta_pkts = delta_tsc / trs;
   if (delta_pkts > rl->max_warmup_trs) {
-    dbg("%s(%d,%d), delta_pkts %u too large\n", __func__, idx, s_port, delta_pkts);
+    dbg("%s(%d,%d), delta_pkts %u too large\n", __func__, s->idx, s_port, delta_pkts);
     return 0;
   }
   uint32_t accuracy = delta_tsc % trs;
   if (accuracy > rl->required_accuracy_ns) {
-    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__, idx, s_port,
+    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__, s->idx, s_port,
         accuracy, delta_tsc, trs);
     return 0;
   }
-  dbg("%s(%d,%d), accuracy %u succ\n", __func__, idx, s_port, accuracy);
+  dbg("%s(%d,%d), accuracy %u succ\n", __func__, s->idx, s_port, accuracy);
   if (delta_pkts != rl->max_warmup_trs) {
     /* hit on backup check point */
     rl_port->stat_hit_backup_cp++;

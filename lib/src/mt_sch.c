@@ -99,9 +99,9 @@ static int sch_tasklet_sleep(struct mtl_main_impl* impl, struct mtl_sch_impl* sc
   sch->sleep_ratio_sleep_ns += delta;
   uint64_t sleep_ratio_dur_ns = end - sch->sleep_ratio_start_ns;
   if (sleep_ratio_dur_ns > (5 * (uint64_t)NS_PER_S)) {
-    dbg("%s(%d), sleep %" PRIu64 "ns, total %" PRIu64 "ns\n", __func__, idx,
+    dbg("%s(%d), sleep %" PRIu64 "ns, total %" PRIu64 "ns\n", __func__, sch->idx,
         sch->sleep_ratio_sleep_ns, sleep_ratio_dur_ns);
-    dbg("%s(%d), end %" PRIu64 "ns, start %" PRIu64 "ns\n", __func__, idx, end,
+    dbg("%s(%d), end %" PRIu64 "ns, start %" PRIu64 "ns\n", __func__, sch->idx, end,
         sch->sleep_ratio_start_ns);
     sch->sleep_ratio_score =
         (float)sch->sleep_ratio_sleep_ns * 100.0 / sleep_ratio_dur_ns;

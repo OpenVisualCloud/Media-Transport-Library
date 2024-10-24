@@ -1396,7 +1396,7 @@ static int tv_build_st22(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
     rtp->base.marker = 1;
     rtp->last_packet = 1;
     dbg("%s(%d), maker on pkt %d(total %d)\n", __func__, s->idx, s->st20_pkt_idx,
-        s->st22_total_pkts);
+        s->st20_total_pkts);
   }
   rtp->base.seq_number = htons((uint16_t)s->st20_seq_id);
   s->st20_seq_id++;
@@ -1425,7 +1425,7 @@ static int tv_build_st22(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   uint32_t offset = s->st20_pkt_idx * s->st20_pkt_len;
   uint16_t left_len = RTE_MIN(s->st20_pkt_len, st22_info->cur_frame_size - offset);
   dbg("%s(%d), data len %u on pkt %d(total %d)\n", __func__, s->idx, left_len,
-      s->st20_pkt_idx, s->st22_total_pkts);
+      s->st20_pkt_idx, s->st20_total_pkts);
 
   /* copy payload */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
@@ -1470,7 +1470,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
     rtp->base.marker = 1;
     rtp->last_packet = 1;
     dbg("%s(%d), maker on pkt %d(total %d)\n", __func__, s->idx, s->st20_pkt_idx,
-        s->st22_total_pkts);
+        s->st20_total_pkts);
   }
   rtp->base.seq_number = htons((uint16_t)s->st20_seq_id);
   s->st20_seq_id++;
@@ -1501,7 +1501,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   uint32_t offset = s->st20_pkt_idx * s->st20_pkt_len;
   uint16_t left_len = RTE_MIN(s->st20_pkt_len, st22_info->cur_frame_size - offset);
   dbg("%s(%d), data len %u on pkt %d(total %d)\n", __func__, s->idx, left_len,
-      s->st20_pkt_idx, s->st22_total_pkts);
+      s->st20_pkt_idx, s->st20_total_pkts);
 
   /* attach payload to chainbuf */
   struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
@@ -1965,6 +1965,8 @@ static int tv_tasklet_rtp(struct mtl_main_impl* impl,
   struct rte_mempool* hdr_pool_r = NULL;
   struct rte_ring* ring_p = s->ring[MTL_SESSION_PORT_P];
   struct rte_ring* ring_r = NULL;
+
+  ret = -1;
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
@@ -3898,9 +3900,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
 /* only st20 frame mode has this callback */
 int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
                         enum mtl_session_port s_port, struct st_frame_trans* frame) {
-  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
   if (!frame->user_meta_data_size) return 0;
-
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   /* tx the user meta */
   struct rte_mbuf* pkt;
@@ -3912,7 +3912,10 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
   struct rte_mempool* pool = mt_drv_no_sys_txq(impl, port)
                                  ? s->mbuf_mempool_hdr[s_port]
                                  : mt_sys_tx_mempool(impl, port);
+  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
   pkt = rte_pktmbuf_alloc(pool);
+
+  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;
