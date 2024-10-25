@@ -524,7 +524,7 @@ static void xdp_tx_wakeup(struct mt_xdp_queue* xq) {
   if (xsk_ring_prod__needs_wakeup(&xq->tx_prod)) {
     int ret = send(xq->socket_fd, NULL, 0, MSG_DONTWAIT);
     xq->stat_tx_wakeup++;
-    dbg("%s(%d, %u), wake up %d\n", __func__, port, q, ret);
+    dbg("%s(%d, %u), wake up %d\n", __func__, xq->port, xq->q, ret);
     if (ret < 0) {
       dbg("%s(%d, %u), wake up fail %d(%s)\n", __func__, xq->port, xq->q, ret,
           strerror(errno));
@@ -555,14 +555,14 @@ static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
     struct rte_mbuf* m = tx_pkts[i];
     struct rte_mbuf* local = rte_pktmbuf_alloc(mbuf_pool);
     if (!local) {
-      dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, q);
+      dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, xq->q);
       xq->stat_tx_mbuf_alloc_fail++;
       goto exit;
     }
 
     uint32_t idx;
     if (!xsk_ring_prod__reserve(pd, 1, &idx)) {
-      dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
+      dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, xq->q);
       xq->stat_tx_prod_reserve_fail++;
       rte_pktmbuf_free(local);
       xdp_tx_wakeup(xq);
