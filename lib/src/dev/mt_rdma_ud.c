@@ -380,7 +380,7 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
     }
     uint32_t flow_hash = ntohl(wc[i].imm_data);
     if (flow_hash != rxq->flow_hash) {
-      dbg("%s(%d, %u), flow_hash mismatch %u %u\n", __func__, port, q, flow_hash,
+      dbg("%s(%d, %u), flow_hash mismatch %u %u\n", __func__, port, rxq->q, flow_hash,
           rxq->flow_hash);
       rxq->stat_rx_pkt_invalid++;
       rte_pktmbuf_free(pkt);
