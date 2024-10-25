@@ -1425,8 +1425,8 @@ static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl* impl,
   }
   uint32_t accuracy = delta_tsc % trs;
   if (accuracy > rl->required_accuracy_ns) {
-    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__, s->idx, s_port,
-        accuracy, delta_tsc, trs);
+    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__, s->idx,
+        s_port, accuracy, delta_tsc, trs);
     return 0;
   }
   dbg("%s(%d,%d), accuracy %u succ\n", __func__, s->idx, s_port, accuracy);

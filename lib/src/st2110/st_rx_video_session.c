@@ -1795,7 +1795,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     }
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
-      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port, pkt_idx);
+      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
+          pkt_idx);
       s->stat_pkts_redundant_dropped++;
       return 0;
     }
@@ -1825,8 +1826,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->rtps_ring, (void*)mbuf);
   if (ret < 0) {
-    dbg("%s(%d,%d), drop as rtps ring full, pkt_idx %d base %u\n", __func__, s->idx, s_port,
-        pkt_idx, slot->seq_id_base);
+    dbg("%s(%d,%d), drop as rtps ring full, pkt_idx %d base %u\n", __func__, s->idx,
+        s_port, pkt_idx, slot->seq_id_base);
     s->stat_pkts_rtp_ring_full++;
     return -EIO;
   }
@@ -2671,7 +2672,8 @@ static bool rv_simulate_pkt_loss(struct st_rx_video_session_impl* s) {
   }
   /* continue drop pkt in current burst */
   s->burst_loss_cnt--;
-  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s->stat_pkts_simulate_loss);
+  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx,
+      s->stat_pkts_simulate_loss);
   s->stat_pkts_simulate_loss++;
   return true;
 }

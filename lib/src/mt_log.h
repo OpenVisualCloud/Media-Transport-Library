@@ -41,8 +41,8 @@ mtl_log_printer_t mt_get_usdt_log_printer(void);
 
 /* Debug-level messages */
 #ifdef DEBUG
-#define dbg(...)                    \
-  do {                              \
+#define dbg(...)                     \
+  do {                               \
     MT_LOG(DEBUG, MTL, __VA_ARGS__); \
   } while (0)
 #else
