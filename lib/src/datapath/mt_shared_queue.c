@@ -308,8 +308,8 @@ static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
     rsq_entry = NULL;
 
     hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
-    dbg("%s(%u), pkt %u ip %u.%u.%u.%u, port dst %u src %u\n", __func__, q, i,
-        ntohs(hdr->udp.dst_port), ntohs(hdr->udp.src_port));
+    dbg("%s, pkt %u ip %u, port dst %u src %u\n", __func__, q, i,
+        (unsigned int)ntohs(hdr->udp.dst_port), (unsigned int)ntohs(hdr->udp.src_port));
 
     MT_TAILQ_FOREACH(rsq_entry, &rsq_queue->head, next) {
       bool matched = mt_udp_matched(&rsq_entry->flow, hdr);
