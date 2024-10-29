@@ -24,7 +24,7 @@ typedef struct GpuContext {
 
   // handlers for the current device and drivers
   int currentDriverIndex;
-  int currectDeviceIndex;
+  int currentDeviceIndex;
 
   // level zero api structs
   ze_driver_handle_t driverHandle;
