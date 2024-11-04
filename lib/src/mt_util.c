@@ -688,7 +688,7 @@ int mt_u64_fifo_read_any(struct mt_u64_fifo* fifo, uint64_t* item, int skip) {
     return -EIO;
   }
   if (skip < 0 || skip >= fifo->used) {
-    dbg("%s, fail as idx(%d) is invalid\n", __func__, idx);
+    dbg("%s, fail as idx(%d) is invalid\n", __func__, skip);
     return -EIO;
   }
   int read_idx = fifo->read_idx + skip;

@@ -191,7 +191,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     struct st30_frame* frame = &frames[i].frame;
 
     frame->addr = st30_tx_get_framebuffer(transport, i);
-    dbg("%s(%d), fb %p on %u\n", __func__, idx, frame->addr);
+    dbg("%s(%d), fb %p\n", __func__, idx, frame->addr);
   }
 
   return 0;

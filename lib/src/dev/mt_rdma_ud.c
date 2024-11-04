@@ -364,7 +364,7 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
   struct rte_mbuf* fill[rx];
   int ret = rte_pktmbuf_alloc_bulk(rxq->mbuf_pool, fill, rx);
   if (ret < 0) {
-    dbg("%s(%d, %u), mbuf alloc bulk %u fail\n", __func__, port, q, rx);
+    dbg("%s(%d, %u), mbuf alloc bulk %u fail\n", __func__, port, rxq->q, rx);
     rxq->stat_rx_mbuf_alloc_fail++;
     return 0;
   }
@@ -380,7 +380,7 @@ static uint16_t rdma_rx(struct mt_rx_rdma_entry* entry, struct rte_mbuf** rx_pkt
     }
     uint32_t flow_hash = ntohl(wc[i].imm_data);
     if (flow_hash != rxq->flow_hash) {
-      dbg("%s(%d, %u), flow_hash mismatch %u %u\n", __func__, port, q, flow_hash,
+      dbg("%s(%d, %u), flow_hash mismatch %u %u\n", __func__, port, rxq->q, flow_hash,
           rxq->flow_hash);
       rxq->stat_rx_pkt_invalid++;
       rte_pktmbuf_free(pkt);
@@ -577,7 +577,7 @@ static int rdma_tx_mrs_init(struct mt_rdma_tx_queue* txq) {
     }
     mrs[i] = mr;
     dbg("%s(%d, %u), mr registered, buffer %p size %" PRIu64 " mr_lkey %u\n", __func__,
-        port, q, buffers[i], sizes[i], mr->lkey);
+        port, q, buffer, sz, mr->lkey);
   }
 
   txq->send_mrs = mrs;

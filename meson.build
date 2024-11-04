@@ -9,6 +9,11 @@ exec_env = host_machine.system()
 set_variable('is_windows', exec_env == 'windows')
 message('BUILD Environment: ' + exec_env)
 
+# enable debug logging
+if get_option('buildtype') == 'debug'
+  add_global_arguments('-DDEBUG=DEBUG', language : 'c')
+endif
+
 # enable BSD_SOURCE
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
 

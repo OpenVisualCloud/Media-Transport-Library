@@ -1101,7 +1101,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     /* still in progress of previous frame, drop current pkt */
     rte_atomic32_inc(&s->dma_previous_busy_cnt);
     dbg("%s(%d): still has dma inflight %u\n", __func__, s->idx,
-        s->dma_dev->nb_borrowed[s->dma_lender]);
+        s->dma_dev->nb_borrowed[s->dma_dev].nb_borrowed);
     return NULL;
   }
 
@@ -1795,7 +1795,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
     }
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
-      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, idx, s_port, pkt_idx);
+      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
+          pkt_idx);
       s->stat_pkts_redundant_dropped++;
       return 0;
     }
@@ -1811,7 +1812,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       s->port_user_stats[MTL_SESSION_PORT_P].frames++;
       mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
-      dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, idx, s_port, seq_id,
+      dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id,
           tmstamp);
     } else {
       dbg("%s(%d,%d), drop seq_id %d as base seq id %d not got\n", __func__, s->idx,
@@ -1825,8 +1826,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->rtps_ring, (void*)mbuf);
   if (ret < 0) {
-    dbg("%s(%d,%d), drop as rtps ring full, pkt_idx %d base %u\n", __func__, idx, s_port,
-        pkt_idx, slot->seq_id_base);
+    dbg("%s(%d,%d), drop as rtps ring full, pkt_idx %d base %u\n", __func__, s->idx,
+        s_port, pkt_idx, slot->seq_id_base);
     s->stat_pkts_rtp_ring_full++;
     return -EIO;
   }
@@ -2196,7 +2197,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
     hdr_split->cur_frame_mbuf_idx =
         (payload - RTE_PKTMBUF_HEADROOM - hdr_split->frames) / ST_VIDEO_BPM_SIZE;
     dbg("%s(%d,%d), cur_frame_addr %p cur_frame_idx %u\n", __func__, s->idx, s_port,
-        hdr_split->cur_frame_addr, slot->cur_frame_mbuf_idx);
+        hdr_split->cur_frame_addr, hdr_split->cur_frame_mbuf_idx);
     if (hdr_split->cur_frame_mbuf_idx % hdr_split->mbufs_per_frame) {
       s->stat_mismatch_hdr_split_frame++;
       dbg("%s(%d,%d), cur_frame_addr %p cur_frame_idx %u mbufs_per_frame %u\n", __func__,
@@ -2236,7 +2237,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   /* check if frame is full */
   size_t frame_recv_size = rv_slot_get_frame_size(slot);
   if (frame_recv_size >= s->st20_frame_size) {
-    dbg("%s(%d,%d): full frame on %p(%d)\n", __func__, s->idx, s_port, slot->frame->addr,
+    dbg("%s(%d,%d): full frame on %p(%zu)\n", __func__, s->idx, s_port, slot->frame->addr,
         frame_recv_size);
     dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
@@ -2671,7 +2672,8 @@ static bool rv_simulate_pkt_loss(struct st_rx_video_session_impl* s) {
   }
   /* continue drop pkt in current burst */
   s->burst_loss_cnt--;
-  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
+  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx,
+      s->stat_pkts_simulate_loss);
   s->stat_pkts_simulate_loss++;
   return true;
 }
