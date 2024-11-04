@@ -46,7 +46,7 @@ jobs:
           docker build -t mtl:latest -f ubuntu.dockerfile ../
 
       - name: Run Trivy vulnerability scanner with sarif output
-        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
           format: 'sarif'
@@ -61,7 +61,7 @@ jobs:
           sarif_file: 'Trivy-image-scan-results.sarif'
       - name: Run Trivy vulnerability scanner with with table output
         if: always()
-        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
           format: 'sarif'
