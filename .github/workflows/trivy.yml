@@ -8,7 +8,8 @@ on:
       branch:
         description: 'branch to run scans on'
         default: 'main'
-        type: string
+        type: string  
+
 
 env:
   BUILD_TYPE: Release
@@ -63,6 +64,18 @@ jobs:
         uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
         with:
           image-ref: 'mtl:latest'
+          format: 'sarif'
+          scanners: 'vuln,secret,misconfig'
+          exit-code: '1'
+          output: 'Trivy-image-scan-results.sarif'
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # v3.25.11
+        with:
+          sarif_file: 'Trivy-image-scan-results.sarif'
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: trivy-results
+          path: 'trivy-results.sarif'
           format: 'table'
           exit-code: '0'
           ignore-unfixed: true
@@ -74,3 +87,4 @@ jobs:
         with:
           name: trivy-results
           path: 'Trivy-image-scan-results.txt'
+
