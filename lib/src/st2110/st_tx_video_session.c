@@ -1793,9 +1793,9 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       uint32_t offset = s->st20_pkt_len * (s->st20_pkt_idx + bulk);
       line_number = offset / s->st20_bytes_in_line + 1;
     }
-    
+
     uint32_t height = ops->interlaced ? (ops->height >> 1) : ops->height;
-    if (line_number >= height) { 
+    if (line_number >= height) {
       line_number = height - 1;
     }
     if (line_number >= s->st20_frame_lines_ready) {
