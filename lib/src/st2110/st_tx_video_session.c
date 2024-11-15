@@ -2903,7 +2903,8 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
          sizeof(struct st20_packet_group_info) * ST20_PKT_TYPE_MAX);
 
   /* 4800 if 1080p yuv422 */
-  s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  size_t raw_bytes_size = ops->width * s->st20_pg.size;
+  s->st20_bytes_in_line = (raw_bytes_size / s->st20_pg.coverage) + ((raw_bytes_size % s->st20_pg.coverage != 0) ? 1 : 0);
   /* rtp mode only  */
   s->rtp_pkt_max_size = ops->rtp_pkt_size;
 
@@ -3065,7 +3066,8 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   else
     s->tx_hang_detect_time_thresh = NS_PER_S;
 
-  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  size_t raw_bytes_size = ops->width * s->st20_pg.size;
+  s->st20_linesize = (raw_bytes_size / s->st20_pg.coverage) + ((raw_bytes_size % s->st20_pg.coverage != 0) ? 1 : 0);
   if (ops->linesize > s->st20_linesize)
     s->st20_linesize = ops->linesize;
   else if (ops->linesize) {
