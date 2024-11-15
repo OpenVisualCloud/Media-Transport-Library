@@ -350,7 +350,7 @@ static int app_tx_video_init_rtp(struct st_app_tx_video_session* s,
   struct st20_rfc4175_rtp_hdr* rtp = &s->st20_rtp_base;
 
   /* 4800 if 1080p yuv422 */
-  size_t raw_bytes_size = ops->width * s->st20_pg.size;
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
   s->st20_bytes_in_line = (raw_bytes_size / s->st20_pg.coverage) +
                           ((raw_bytes_size % s->st20_pg.coverage != 0) ? 1 : 0);
   s->st20_pkt_idx = 0;

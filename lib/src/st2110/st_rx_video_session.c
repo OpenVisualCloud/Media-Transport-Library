@@ -2624,7 +2624,7 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl* s, struct rte_m
         s->st20_frame_size =
             ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
         if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
-        size_t raw_bytes_size = ops->width * s->st20_pg.size;
+        size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
         s->st20_bytes_in_line = (raw_bytes_size / s->st20_pg.coverage) +
                                 ((raw_bytes_size % s->st20_pg.coverage != 0) ? 1 : 0);
         s->st20_linesize = s->st20_bytes_in_line;
@@ -3056,7 +3056,7 @@ static int rv_attach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr
   s->impl = impl;
   s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
   s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
-  size_t raw_bytes_size = ops->width * s->st20_pg.size;
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
   s->st20_bytes_in_line = (raw_bytes_size / s->st20_pg.coverage) +
                           ((raw_bytes_size % s->st20_pg.coverage != 0) ? 1 : 0);
   s->st20_linesize = s->st20_bytes_in_line;
