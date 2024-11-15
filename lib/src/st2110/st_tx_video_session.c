@@ -3081,13 +3081,12 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
       s->st22_box_hdr_length = sizeof(struct st22_boxes);
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
-    s->st20_fb_size = s->st20_frame_size;
     info("%s(%d), st22 max codestream size %" PRId64 ", box len %u\n", __func__, idx,
          s->st22_codestream_size, s->st22_box_hdr_length);
   } else {
     s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
-    s->st20_fb_size = s->st20_linesize * height;
   }
+  s->st20_fb_size = s->st20_frame_size;
   s->st20_frames_cnt = ops->framebuff_cnt;
 
   ret = tv_init_pkt(impl, s, ops, st22_frame_ops);
