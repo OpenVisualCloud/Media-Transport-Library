@@ -2907,7 +2907,10 @@ static int tv_init_pkt(struct mtl_main_impl* impl, struct st_tx_video_session_im
          sizeof(struct st20_packet_group_info) * ST20_PKT_TYPE_MAX);
 
   /* 4800 if 1080p yuv422 */
-  s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  /* Calculate bytes per line, rounding up if there's a remainder */
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
+  s->st20_bytes_in_line =
+      (raw_bytes_size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
   /* rtp mode only  */
   s->rtp_pkt_max_size = ops->rtp_pkt_size;
 
@@ -3069,7 +3072,9 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   else
     s->tx_hang_detect_time_thresh = NS_PER_S;
 
-  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  /* Calculate bytes per line, rounding up if there's a remainder */
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
+  s->st20_linesize = (raw_bytes_size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
   if (ops->linesize > s->st20_linesize)
     s->st20_linesize = ops->linesize;
   else if (ops->linesize) {
@@ -3085,13 +3090,12 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
       s->st22_box_hdr_length = sizeof(struct st22_boxes);
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
-    s->st20_fb_size = s->st20_frame_size;
     info("%s(%d), st22 max codestream size %" PRId64 ", box len %u\n", __func__, idx,
          s->st22_codestream_size, s->st22_box_hdr_length);
   } else {
     s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
-    s->st20_fb_size = s->st20_linesize * height;
   }
+  s->st20_fb_size = s->st20_frame_size;
   s->st20_frames_cnt = ops->framebuff_cnt;
 
   ret = tv_init_pkt(impl, s, ops, st22_frame_ops);
