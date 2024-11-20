@@ -84,6 +84,7 @@ int main(int argc, char** argv) {
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_tx_handle tx0 = NULL;
   mtl_rdma_tx_handle tx1 = NULL;
+  size_t frame_size = 1920 * 1080 * 2;
   struct mtl_rdma_init_params p = {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
     goto out;
   }
 
-  size_t frame_size = 1920 * 1080 * 2; /* UYVY */
+ /* UYVY */
   for (int i = 0; i < 3; i++) {
     buffers[i] = mmap(NULL, frame_size, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);

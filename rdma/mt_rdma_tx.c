@@ -250,7 +250,7 @@ out:
 static void* rdma_tx_connect_thread(void* arg) {
   int ret = 0;
   struct mt_rdma_tx_ctx* ctx = arg;
-  struct rdma_cm_event* event;
+  struct rdma_cm_event* event = NULL;
   struct pollfd pfd = {
       .fd = ctx->ec->fd,
       .events = POLLIN,

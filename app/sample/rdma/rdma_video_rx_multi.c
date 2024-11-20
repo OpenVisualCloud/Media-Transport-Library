@@ -20,6 +20,9 @@
 #endif
 
 #define NANOSECONDS_IN_SECOND 1000000000
+#define FRAME_WIDTH 1920
+#define FRAME_HEIGHT 1080
+#define FRAME_SIZE (FRAME_WIDTH * FRAME_HEIGHT * 2) // UYVY format
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -102,7 +105,6 @@ int main(int argc, char** argv) {
     return -1;
   }
 #endif
-
   if (argc != 5) {
     printf("Usage: %s <local_ip> <ip> <port> <port1>\n", argv[0]);
     return -1;
@@ -110,8 +112,8 @@ int main(int argc, char** argv) {
   signal(SIGINT, int_handler);
 
   int ret = 0;
-  void* buffers[3] = {};
-  void* buffers1[3] = {};
+  void* buffers[3] = {NULL};
+  void* buffers1[3] = {NULL};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_rx_handle rx0 = NULL;
   mtl_rdma_rx_handle rx1 = NULL;
@@ -119,23 +121,23 @@ int main(int argc, char** argv) {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
   };
+
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
-    printf("Failed to initialize RDMA\n");
-    ret = -1;
-    goto out;
+    fprintf(stderr, "Failed to initialize RDMA\n");
+    ret = -EXIT_FAILURE;
+    goto cleanup;
   }
 
-  size_t frame_size = 1920 * 1080 * 2; /* UYVY */
   for (int i = 0; i < 3; i++) {
-    buffers[i] = mmap(NULL, frame_size, PROT_READ | PROT_WRITE,
+    buffers[i] = mmap(NULL, FRAME_SIZE, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
     if (buffers[i] == MAP_FAILED) {
-      printf("Failed to allocate buffer\n");
-      ret = -1;
-      goto out;
+      fprintf(stderr, "Failed to allocate buffer\n");
+      ret = -EXIT_FAILURE;
+      goto cleanup;
     }
-    buffers1[i] = buffers[i] + frame_size / 2;
+    buffers1[i] = buffers[i] + FRAME_SIZE / 2;
   }
 
   struct mtl_rdma_rx_ops rx_ops = {
@@ -145,15 +147,15 @@ int main(int argc, char** argv) {
       .port = argv[3],
       .num_buffers = 3,
       .buffers = buffers,
-      .buffer_capacity = frame_size / 2,
+      .buffer_capacity = FRAME_SIZE / 2,
       .notify_buffer_ready = rx_notify_buffer_ready,
   };
 
   rx0 = mtl_rdma_rx_create(mrh, &rx_ops);
   if (!rx0) {
-    printf("Failed to create RDMA RX0\n");
-    ret = -1;
-    goto out;
+    fprintf(stderr, "Failed to create RDMA RX0\n");
+    ret = -EXIT_FAILURE;
+    goto cleanup;
   }
 
   rx_ops.name = "rdma_rx1";
@@ -162,9 +164,9 @@ int main(int argc, char** argv) {
 
   rx1 = mtl_rdma_rx_create(mrh, &rx_ops);
   if (!rx1) {
-    printf("Failed to create RDMA RX1\n");
-    ret = -1;
-    goto out;
+    fprintf(stderr,"Failed to create RDMA RX1\n");
+    ret = -EXIT_FAILURE;
+    goto cleanup;
   }
 
   struct timespec start_time, current_time;
@@ -174,10 +176,10 @@ int main(int argc, char** argv) {
   double fps = 0.0;
 
   printf("Starting to receive frames\n");
-
   int frames_consumed = 0;
   struct mtl_rdma_buffer* buffer = NULL;
   struct mtl_rdma_buffer* buffer1 = NULL;
+
   while (keep_running) {
     if (!buffer) buffer = mtl_rdma_rx_get_buffer(rx0);
     if (!buffer) {
@@ -217,16 +219,16 @@ int main(int argc, char** argv) {
 
     ret = mtl_rdma_rx_put_buffer(rx0, buffer);
     if (ret < 0) {
-      printf("Failed to put buffer\n");
-      ret = -1;
+      fprintf(stderr, "Failed to put buffer\n");
+      ret = -EXIT_FAILURE;
       break;
     }
     buffer = NULL;
 
     ret = mtl_rdma_rx_put_buffer(rx1, buffer1);
     if (ret < 0) {
-      printf("Failed to put buffer\n");
-      ret = -1;
+      fprintf(stderr, "Failed to put buffer\n");
+      ret = -EXIT_FAILURE;
       break;
     }
     buffer1 = NULL;
@@ -247,12 +249,12 @@ int main(int argc, char** argv) {
 
   printf("Received %d frames\n", frames_consumed);
 
-out:
+cleanup:
   if (rx0) mtl_rdma_rx_free(rx0);
   if (rx1) mtl_rdma_rx_free(rx1);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], FRAME_SIZE);
   }
 
   if (mrh) mtl_rdma_uinit(mrh);

@@ -117,6 +117,8 @@ int main(int argc, char** argv) {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
   };
+  size_t frame_size = 1920 * 1080 * 2; /* UYVY */
+  
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
     printf("Failed to initialize RDMA\n");
@@ -124,7 +126,6 @@ int main(int argc, char** argv) {
     goto out;
   }
 
-  size_t frame_size = 1920 * 1080 * 2; /* UYVY */
   for (int i = 0; i < 3; i++) {
     buffers[i] = mmap(NULL, frame_size, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
