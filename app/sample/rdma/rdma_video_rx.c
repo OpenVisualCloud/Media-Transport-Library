@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
   };
   size_t frame_size = 1920 * 1080 * 2; /* UYVY */
-  
+
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
     printf("Failed to initialize RDMA\n");

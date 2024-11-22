@@ -22,7 +22,7 @@
 #define NANOSECONDS_IN_SECOND 1000000000
 #define FRAME_WIDTH 1920
 #define FRAME_HEIGHT 1080
-#define FRAME_SIZE (FRAME_WIDTH * FRAME_HEIGHT * 2) // UYVY format
+#define FRAME_SIZE (FRAME_WIDTH * FRAME_HEIGHT * 2)  // UYVY format
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
 
   rx1 = mtl_rdma_rx_create(mrh, &rx_ops);
   if (!rx1) {
-    fprintf(stderr,"Failed to create RDMA RX1\n");
+    fprintf(stderr, "Failed to create RDMA RX1\n");
     ret = -EXIT_FAILURE;
     goto cleanup;
   }
