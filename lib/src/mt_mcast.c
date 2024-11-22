@@ -675,7 +675,6 @@ int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sou
     return 0;
   }
   /* find existing group */
-  bool found = false;
   struct mt_mcast_group_entry* group = NULL;
   TAILQ_FOREACH(group, &mcast->group_list, entries) {
     if (group->group_ip == group_addr) {
