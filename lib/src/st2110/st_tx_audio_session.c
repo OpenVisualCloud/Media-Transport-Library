@@ -395,7 +395,7 @@ static int tx_audio_session_build_packet(struct st_tx_audio_session_impl* s,
   hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
   ipv4 = &hdr->ipv4;
   udp = &hdr->udp;
-  rtp = (struct st_rfc3550_rtp_hdr*)&udp[1];
+  rtp = (struct st_rfc3550_rtp_hdr*)((uint8_t*)udp + sizeof(struct rte_udp_hdr));
 
   /* copy the hdr: eth, ip, udp */
   rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
