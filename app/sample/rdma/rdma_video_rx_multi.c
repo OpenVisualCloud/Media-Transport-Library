@@ -112,8 +112,8 @@ int main(int argc, char** argv) {
   signal(SIGINT, int_handler);
 
   int ret = 0;
-  void* buffers[3] = {NULL};
-  void* buffers1[3] = {NULL};
+  void* buffers[3] = {};
+  void* buffers1[3] = {};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_rx_handle rx0 = NULL;
   mtl_rdma_rx_handle rx1 = NULL;
