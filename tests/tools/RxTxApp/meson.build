@@ -2,7 +2,7 @@
 # Copyright 2022 Intel Corporation
 
 project('mtl_app', 'c', default_options: ['buildtype=release'],
-  version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),)
+  version: run_command(find_program('cat'), files('../../../VERSION'), check: true).stdout().strip(),)
 
 gpu_direct = dependency('mtl_gpu_direct', required: false)
 if gpu_direct.found()
@@ -75,16 +75,6 @@ if is_windows
 else
   ws2_32_dep = [] # add this when the code uses hton/ntoh
   mman_dep = [] # add this when the code uses mmap/munmap
-endif
-
-mtl_has_RxSt20TxSt20SplitFwd = true
-if (toolchain == 'clang' and cc.version().version_compare('<9.0.0'))
-  message('Disable RxSt20TxSt20SplitFwd as no stdatomic for this clang version')
-  mtl_has_RxSt20TxSt20SplitFwd = false
-endif
-if is_windows
-  message('Disable RxSt20TxSt20SplitFwd as no <sys/queue.h> for windows')
-  mtl_has_RxSt20TxSt20SplitFwd = false
 endif
 
 # default no asan dep
