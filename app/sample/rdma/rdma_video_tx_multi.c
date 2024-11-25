@@ -98,7 +98,6 @@ int main(int argc, char** argv) {
     goto out;
   }
 
-  /* UYVY */
   for (int i = 0; i < 3; i++) {
     buffers[i] = mmap(NULL, FRAME_SIZE, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
