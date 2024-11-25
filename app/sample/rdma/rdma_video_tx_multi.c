@@ -15,9 +15,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#define TARGET_FPS 30
 #define NANOSECONDS_IN_SECOND 1000000000
+#define TARGET_FPS 30
 #define DESIRED_FRAME_DURATION (NANOSECONDS_IN_SECOND / TARGET_FPS)
+#define FRAME_WIDTH 1920
+#define FRAME_HEIGHT 1080
+#define FRAME_SIZE (FRAME_WIDTH * FRAME_HEIGHT * 2)  // UYVY format
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -84,7 +87,6 @@ int main(int argc, char** argv) {
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_tx_handle tx0 = NULL;
   mtl_rdma_tx_handle tx1 = NULL;
-  size_t frame_size = 1920 * 1080 * 2;
   struct mtl_rdma_init_params p = {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
@@ -98,14 +100,14 @@ int main(int argc, char** argv) {
 
   /* UYVY */
   for (int i = 0; i < 3; i++) {
-    buffers[i] = mmap(NULL, frame_size, PROT_READ | PROT_WRITE,
+    buffers[i] = mmap(NULL, FRAME_SIZE, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
     if (buffers[i] == MAP_FAILED) {
       printf("Failed to allocate buffer\n");
       ret = -1;
       goto out;
     }
-    buffers1[i] = buffers[i] + frame_size / 2;
+    buffers1[i] = buffers[i] + FRAME_SIZE / 2;
   }
 
   struct mtl_rdma_tx_ops tx_ops = {
@@ -114,7 +116,7 @@ int main(int argc, char** argv) {
       .port = argv[2],
       .num_buffers = 3,
       .buffers = buffers,
-      .buffer_capacity = frame_size / 2,
+      .buffer_capacity = FRAME_SIZE / 2,
       .notify_buffer_done = tx_notify_buffer_done,
       .notify_buffer_sent = tx_notify_buffer_sent,
   };
@@ -168,7 +170,7 @@ int main(int argc, char** argv) {
       continue;
     }
 
-    while (fread(buffer->addr, 1, frame_size, yuv_file) != frame_size) {
+    while (fread(buffer->addr, 1, FRAME_SIZE, yuv_file) != FRAME_SIZE) {
       if (feof(yuv_file)) {
         /* restart from the beginning if the end of file is reached */
         fseek(yuv_file, 0, SEEK_SET);
@@ -184,7 +186,7 @@ int main(int argc, char** argv) {
     clock_gettime(CLOCK_REALTIME, &now);
     uint64_t send_time_ns = ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
 
-    buffer->size = frame_size / 2;
+    buffer->size = FRAME_SIZE / 2;
     buffer->user_meta = &send_time_ns;
     buffer->user_meta_size = sizeof(uint64_t);
 
@@ -196,7 +198,7 @@ int main(int argc, char** argv) {
     }
     buffer = NULL;
 
-    buffer1->size = frame_size / 2;
+    buffer1->size = FRAME_SIZE / 2;
     buffer1->user_meta = &frames_sent;
     buffer1->user_meta_size = sizeof(int);
 
@@ -219,7 +221,7 @@ out:
   if (tx1) mtl_rdma_tx_free(tx1);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], FRAME_SIZE);
   }
 
   if (mrh) mtl_rdma_uinit(mrh);
