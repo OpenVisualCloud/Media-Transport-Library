@@ -658,80 +658,74 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sour
 /* delete a group address with/without source address from the group ip list */
 int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t source_addr,
                    enum mtl_port port) {
-  if (mt_user_no_multicast(impl)) {
+  if (mt_user_no_multicast(impl) || mt_drv_mcast_in_dp(impl, port)) {
     return 0;
   }
 
-  if (mt_drv_mcast_in_dp(impl, port)) return 0;
-
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
-  int group_num = mcast->group_num;
   struct mt_interface* inf = mt_if(impl, port);
   uint8_t* ip = (uint8_t*)&group_addr;
   struct rte_ether_addr mcast_mac;
 
-  if (group_num == 0) return 0;
-
+  /* Lock the multicast group list to ensure thread safety*/
   mt_pthread_mutex_lock(&mcast->group_mutex);
+  /* No groups to proceed*/
+  if (mcast->group_num == 0) {
+    mt_pthread_mutex_unlock(&mcast->group_mutex);
+    return 0;
+  }
   /* find existing group */
-  bool found = false;
-  bool gdelete = false;
-  struct mt_mcast_group_entry* group;
+  struct mt_mcast_group_entry* group = NULL;
   TAILQ_FOREACH(group, &mcast->group_list, entries) {
     if (group->group_ip == group_addr) {
-      found = true;
       break;
     }
   }
 
-  if (!found) {
+  if (!group) {
     mt_pthread_mutex_unlock(&mcast->group_mutex);
     warn("%s(%d), group ip not found, nothing to delete\n", __func__, port);
     return 0;
   }
 
   /* delete source */
-  bool sdelete = false;
+  bool source_deleted = false;
   if (source_addr != 0) {
-    found = false;
-    struct mt_mcast_src_entry* src;
+    struct mt_mcast_src_entry* src = NULL;
     TAILQ_FOREACH(src, &group->src_list, entries) {
       if (src->src_ip == source_addr) {
-        found = true;
+        // Decrement the source reference count atomically
+        if (__sync_sub_and_fetch(&src->src_ref_cnt, 1) == 0) {
+          info("%s(%d), delete source %x\n", __func__, port, source_addr);
+          TAILQ_REMOVE(&group->src_list, src, entries);
+          mt_rte_free(src);
+          source_deleted = true;
+        }
         break;
-      }
-    }
-    if (found) {
-      src->src_ref_cnt--;
-      if (src->src_ref_cnt == 0) {
-        info("%s(%d), delete source %x\n", __func__, port, source_addr);
-        TAILQ_REMOVE(&group->src_list, src, entries);
-        mt_rte_free(src);
-        sdelete = true;
       }
     }
   }
 
-  group->group_ref_cnt--;
-  if (group->group_ref_cnt == 0) {
+  /* Decrement group reference count atomically and possibly delete the group */
+  bool group_deleted = false;
+  if (__sync_sub_and_fetch(&group->group_ref_cnt, 1) == 0) {
     info("%s(%d), delete group %x\n", __func__, port, group_addr);
     TAILQ_REMOVE(&mcast->group_list, group, entries);
+    group_deleted = true;
     mt_rte_free(group);
-    gdelete = true;
 
     mcast->group_num--;
-
+    // If we are not using kernel control, remove multicast MAC from interface
     if (!mt_drv_use_kernel_ctl(impl, port)) {
-      /* remove mcast mac from interface */
       mt_mcast_ip_to_mac(ip, &mcast_mac);
       mcast_inf_remove_mac(inf, &mcast_mac);
     }
   }
-
+  /* Unlock the mutex after all operations */
   mt_pthread_mutex_unlock(&mcast->group_mutex);
 
   /* send leave report */
-  if (gdelete || sdelete) {
+  if (group_deleted || source_deleted) {
     int ret = mcast_membership_report_on_action(impl, port, group_addr, source_addr,
                                                 MCAST_LEAVE);
     if (ret < 0) {
