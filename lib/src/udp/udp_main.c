@@ -188,7 +188,7 @@ static int udp_build_tx_pkt(struct mtl_main_impl* impl, struct mudp_impl* s,
   pkt->pkt_len = pkt->data_len;
 
   /* copy payload */
-  void* payload = &udp[1];
+  void* payload = (uint8_t*)udp + sizeof(struct rte_udp_hdr);
   mtl_memcpy(payload, buf, len);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);

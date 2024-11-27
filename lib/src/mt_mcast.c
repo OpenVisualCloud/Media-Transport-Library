@@ -564,12 +564,13 @@ int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t sour
 
   if (mt_drv_mcast_in_dp(impl, port)) return 0;
 
+  mt_pthread_mutex_lock(&mcast->group_mutex);
+
   if (mcast->group_num >= MT_MCAST_GROUP_MAX) {
+    mt_pthread_mutex_unlock(&mcast->group_mutex);
     err("%s(%d), reach max multicast group number!\n", __func__, port);
     return -EIO;
   }
-
-  mt_pthread_mutex_lock(&mcast->group_mutex);
 
   /* find existing group */
   bool found = false;
