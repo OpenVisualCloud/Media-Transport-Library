@@ -1030,7 +1030,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   if (e_rtp)
     payload = &e_rtp[1];
   else
-    payload = &rtp[1];
+    payload = (void*)((uint8_t*)rtp + sizeof(*rtp));
   if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
     /* cross lines with padding case */
     mtl_memcpy(payload, frame_info->addr + offset, line1_length);
@@ -3090,12 +3090,13 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
       s->st22_box_hdr_length = sizeof(struct st22_boxes);
     s->st22_codestream_size = st22_frame_ops->framebuff_max_size;
     s->st20_frame_size = s->st22_codestream_size + s->st22_box_hdr_length;
+    s->st20_fb_size = s->st20_frame_size;
     info("%s(%d), st22 max codestream size %" PRId64 ", box len %u\n", __func__, idx,
          s->st22_codestream_size, s->st22_box_hdr_length);
   } else {
     s->st20_frame_size = ops->width * height * s->st20_pg.size / s->st20_pg.coverage;
+    s->st20_fb_size = s->st20_linesize * height;
   }
-  s->st20_fb_size = s->st20_frame_size;
   s->st20_frames_cnt = ops->framebuff_cnt;
 
   ret = tv_init_pkt(impl, s, ops, st22_frame_ops);
@@ -3946,7 +3947,7 @@ int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_i
   mt_mbuf_init_ipv4(pkt);
 
   /* copy user meta */
-  void* payload = &rtp[1];
+  void* payload = (uint8_t*)rtp + sizeof(struct st20_rfc4175_rtp_hdr);
   mtl_memcpy(payload, frame->user_meta, frame->user_meta_data_size);
 
   pkt->data_len = sizeof(struct st_rfc4175_video_hdr) + frame->user_meta_data_size;
