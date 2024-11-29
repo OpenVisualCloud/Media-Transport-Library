@@ -216,7 +216,8 @@ static int cni_rx_handle(struct mt_cni_entry* cni, struct rte_mbuf* m) {
   /* vlan check */
   ether_type = ntohs(eth_hdr->ether_type);
   if (ether_type == RTE_ETHER_TYPE_VLAN) {
-    vlan_header = (struct rte_vlan_hdr*)((void*)&eth_hdr->ether_type + 2);
+    vlan_header =
+        (struct rte_vlan_hdr*)((uint8_t*)eth_hdr + sizeof(struct rte_ether_hdr));
     ether_type = ntohs(vlan_header->eth_proto);
     vlan = true;
     hdr_offset += sizeof(struct rte_vlan_hdr);
