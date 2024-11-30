@@ -1030,6 +1030,7 @@ static int video_alloc_buffers(struct device* dev, int nbufs, unsigned int offse
 
     ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
     if (ret < 0) {
+      free(buffers);
       printf("Unable to query buffer %u: %s (%d).\n", i, strerror(errno), errno);
       return ret;
     }
