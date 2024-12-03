@@ -12,10 +12,7 @@ import os
 
 import pytest
 import tests.Engine.RxTxApp as rxtxapp
-from tests.Engine.media_files import (
-    yuv_files,
-    yuv_files_422rfc10,
-)
+from tests.Engine.media_files import yuv_files, yuv_files_422rfc10
 
 
 @pytest.mark.parametrize("standard_mode", ["st20p", "st22p"])
