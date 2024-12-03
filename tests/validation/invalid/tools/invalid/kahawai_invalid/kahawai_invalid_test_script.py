@@ -16,7 +16,7 @@ if platform.system().lower() == "windows":
     test_path = work_path + r"\libraries.media.st2110.kahawai\app\build"
     build_path = work_path + r"\libraries.media.st2110.kahawai"
     yuv_path = r"Z:\kahawai\yuvs"
-    mount_cmd = "net use z: \\10.67.116.200\datadisk\streams intel123 /user:media"
+    mount_cmd = "net use z: \\10.67.116.200\\datadisk\\streams intel123 /user:media"
     nic_port_list = ["0000:b1:00.0", "0000:b1:00.1"]
     cmd_prefix = r"start /Node 1 /B .\RxTxApp.exe "
 else:

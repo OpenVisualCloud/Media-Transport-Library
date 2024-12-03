@@ -111,8 +111,14 @@ def execute_test_librist(
     receive_env["LD_PRELOAD"] = "/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so"
     receive_env["MUFD_CFG"] = os.path.join(os.getcwd(), receive_config_file)
 
-    send_command = f"./ecosystem/librist/librist/build/test/rist/test_send --sleep_us={sleep_us} --sleep_step={sleep_step} --dip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
-    receive_command = f"./ecosystem/librist/librist/build/test/rist/test_receive --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
+    send_command = (
+        f"./ecosystem/librist/librist/build/test/rist/test_send --sleep_us={sleep_us}"
+        + f" --sleep_step={sleep_step} --dip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
+    )
+    receive_command = (
+        "./ecosystem/librist/librist/build/test/rist/test_receive"
+        + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
+    )
 
     send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
     receive_proc = call(receive_command, build, test_time, sigint=True, env=receive_env)

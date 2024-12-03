@@ -31,7 +31,16 @@ else:
     bind_binary = "/home/gta/IMTL/Media-Transport-Library/script/nicctl.sh"
     dpdk_binary = "/home/gta/IMTL/dpdk/usertools/dpdk-devbind.py"
     nic_port_list, dam_port_list = bind_card(dpdk_binary, bind_binary)
-    # nic_port_list, dam_port_list = ['0000:4b:11.0', '0000:4b:11.1'], ['0000:00:01.0', '0000:00:01.1', '0000:00:01.2', '0000:00:01.3', '0000:00:01.4', '0000:00:01.5', '0000:00:01.6', '0000:00:01.7']
+    # nic_port_list, dam_port_list = ["0000:4b:11.0", "0000:4b:11.1"], [
+    #     "0000:00:01.0",
+    #     "0000:00:01.1",
+    #     "0000:00:01.2",
+    #     "0000:00:01.3",
+    #     "0000:00:01.4",
+    #     "0000:00:01.5",
+    #     "0000:00:01.6",
+    #     "0000:00:01.7",
+    # ]
     cmd_prefix = ""
     init_cmd = " --p_port " + nic_port_list[0] + " --r_port " + nic_port_list[1] + " "
     dma_port = "--dma_dev " + dam_port_list[0] + "," + dam_port_list[1] + " "

@@ -42,7 +42,8 @@ def test_fps(
     fps,
 ):
     """
-    Test the functionality of different frame rates (fps) fastmetadata_fps to ensure the system handles various frame rates correctly.
+    Test the functionality of different frame rates (fps) fastmetadata_fps to ensure the system handles various
+    frame rates correctly.
     """
     st41_file = st41_files["st41_p29_long_file"]["filename"]
     payload_type = payload_type_mapping["pt115"]
