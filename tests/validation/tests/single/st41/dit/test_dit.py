@@ -29,6 +29,7 @@ k_bit_mapping = {
     "k1": 1,
 }
 
+
 @pytest.mark.parametrize("dit", ["dit0", "dit1"])
 def test_dit(build, media, nic_port_list, test_time, dit):
     """
@@ -54,8 +55,4 @@ def test_dit(build, media, nic_port_list, test_time, dit):
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    rxtxapp.execute_test(
-        config=config, 
-        build=build, 
-        test_time=test_time
-    )
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time)

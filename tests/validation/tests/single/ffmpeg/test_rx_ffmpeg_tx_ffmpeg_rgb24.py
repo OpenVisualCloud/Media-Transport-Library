@@ -27,7 +27,9 @@ from tests.Engine.media_files import yuv_files
         ("i2160p60", 6),
     ],
 )
-def test_rx_ffmpeg_tx_ffmpeg_rgb24(test_time, build, media, nic_port_list, video_format, test_time_mutlipler):
+def test_rx_ffmpeg_tx_ffmpeg_rgb24(
+    test_time, build, media, nic_port_list, video_format, test_time_mutlipler
+):
     video_file = yuv_files[video_format]
 
     ffmpeg_app.execute_test_rgb24(

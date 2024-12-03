@@ -38,7 +38,9 @@ pg_formats = [
 
 @pytest.mark.parametrize("pg_format", pg_formats)
 @pytest.mark.parametrize("video_format", ["i720p50", "i1080p30", "i2160p60"])
-def test_pg_format(build, media, nic_port_list, test_time, video_format, pg_format, request):
+def test_pg_format(
+    build, media, nic_port_list, test_time, video_format, pg_format, request
+):
     SDBQ1002_pg_format_error_check(video_format, pg_format, request)
 
     config = rxtxapp.create_empty_config()

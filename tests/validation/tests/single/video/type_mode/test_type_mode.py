@@ -16,7 +16,10 @@ from tests.Engine.media_files import yuv_files
 
 
 @pytest.mark.parametrize("type_mode", ["rtp", "slice"])
-@pytest.mark.parametrize("video_format", ["i720p50", "i1080p30", "i2160p60", "i4320p30", "i480i59", "i576i50", "i1080i59"])
+@pytest.mark.parametrize(
+    "video_format",
+    ["i720p50", "i1080p30", "i2160p60", "i4320p30", "i480i59", "i576i50", "i1080i59"],
+)
 def test_type_mode(
     build,
     media,

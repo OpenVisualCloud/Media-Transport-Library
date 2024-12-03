@@ -15,7 +15,9 @@ import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.media_files import yuv_files
 
 
-@pytest.mark.parametrize("video_format", ["i720p50", "i1080p30", "i2160p60", "i4320p30"])
+@pytest.mark.parametrize(
+    "video_format", ["i720p50", "i1080p30", "i2160p60", "i4320p30"]
+)
 def test_multicast(
     build,
     media,

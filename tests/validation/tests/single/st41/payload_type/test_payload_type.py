@@ -29,11 +29,12 @@ k_bit_mapping = {
     "k1": 1,
 }
 
+
 @pytest.mark.parametrize("payload_type", ["pt115", "pt120"])
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_payload_type(build, media, nic_port_list, test_time, payload_type, type_mode):
     """
-    Test the functionality of different payload types payload_type (115, 120) 
+    Test the functionality of different payload types payload_type (115, 120)
     in both transmission modes (RTP, frame) to ensure proper handling.
     """
     st41_file = st41_files["st41_p29_long_file"]["filename"]
@@ -54,9 +55,4 @@ def test_payload_type(build, media, nic_port_list, test_time, payload_type, type
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    rxtxapp.execute_test(
-        config=config, 
-        build=build, 
-        test_time=test_time
-    )
-
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time)

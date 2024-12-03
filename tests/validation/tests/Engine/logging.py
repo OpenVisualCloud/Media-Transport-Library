@@ -19,8 +19,14 @@ import pytest
 
 from .const import LOG_FOLDER
 from .csv_report import csv_add_test, csv_write_report
-from .stash import (clear_issue, clear_result_log, clear_result_note,
-                    get_issue, get_result_log, get_result_note)
+from .stash import (
+    clear_issue,
+    clear_result_log,
+    clear_result_note,
+    get_issue,
+    get_result_log,
+    get_result_note,
+)
 
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
@@ -180,7 +186,11 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     logging.banner("")
 
     with subprocess.Popen(
-        "exec dmesg -H", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True, text=True
+        "exec dmesg -H",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        shell=True,
+        text=True,
     ) as proc:
         dmesg = "".join(proc.stdout)
 
@@ -225,7 +235,11 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
             commands.append(record.message)
 
     csv_add_test(
-        test_case=case_id, commands="\n".join(commands), result=result, issue=get_issue(), result_note=get_result_note()
+        test_case=case_id,
+        commands="\n".join(commands),
+        result=result,
+        issue=get_issue(),
+        result_note=get_result_note(),
     )
 
     clear_result_note()

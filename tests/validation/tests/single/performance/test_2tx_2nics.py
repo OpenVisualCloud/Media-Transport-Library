@@ -19,7 +19,17 @@ from tests.Engine.media_files import yuv_files
 
 @pytest.mark.parametrize(
     "video_format",
-    ["i1080p29", "i1080p50", "i1080p59", "i2160p29", "i2160p50", "i2160p59", "i4320p29", "i4320p50", "i4320p59"],
+    [
+        "i1080p29",
+        "i1080p50",
+        "i1080p59",
+        "i2160p29",
+        "i2160p50",
+        "i2160p59",
+        "i4320p29",
+        "i4320p50",
+        "i4320p59",
+    ],
 )
 def test_perf_2tx_2nics(build, media, nic_port_list, test_time, video_format):
     # Increase time for 4k and 8k streams
@@ -54,8 +64,12 @@ def test_perf_2tx_2nics(build, media, nic_port_list, test_time, video_format):
 
     # find upper bound
     while True:
-        config = rxtxapp.change_replicas(config=config, session_type="video", replicas=replicas_b, rx=False)
-        passed = rxtxapp.execute_perf_test(config=config, build=build, test_time=test_time, fail_on_error=False)
+        config = rxtxapp.change_replicas(
+            config=config, session_type="video", replicas=replicas_b, rx=False
+        )
+        passed = rxtxapp.execute_perf_test(
+            config=config, build=build, test_time=test_time, fail_on_error=False
+        )
 
         if passed:
             log_info(f"{__name__} {video_format} passed with {replicas_b} replicas")
@@ -76,12 +90,20 @@ def test_perf_2tx_2nics(build, media, nic_port_list, test_time, video_format):
             log_result_note(f"{replicas_a} replicas")
             break
 
-        config = rxtxapp.change_replicas(config=config, session_type="video", replicas=replicas_midpoint, rx=False)
-        passed = rxtxapp.execute_perf_test(config=config, build=build, test_time=test_time, fail_on_error=False)
+        config = rxtxapp.change_replicas(
+            config=config, session_type="video", replicas=replicas_midpoint, rx=False
+        )
+        passed = rxtxapp.execute_perf_test(
+            config=config, build=build, test_time=test_time, fail_on_error=False
+        )
 
         if passed:
-            log_info(f"{__name__} {video_format} passed with {replicas_midpoint} replicas")
+            log_info(
+                f"{__name__} {video_format} passed with {replicas_midpoint} replicas"
+            )
             replicas_a = replicas_midpoint
         else:
-            log_info(f"{__name__} {video_format} failed with {replicas_midpoint} replicas")
+            log_info(
+                f"{__name__} {video_format} failed with {replicas_midpoint} replicas"
+            )
             replicas_b = replicas_midpoint

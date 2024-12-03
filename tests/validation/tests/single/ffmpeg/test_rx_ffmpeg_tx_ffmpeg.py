@@ -27,7 +27,15 @@ from tests.Engine.media_files import yuv_files
     ],
 )
 @pytest.mark.parametrize("output_format", ["yuv", "h264"])
-def test_rx_ffmpeg_tx_ffmpeg(test_time, build, media, nic_port_list, video_format, test_time_multipler, output_format):
+def test_rx_ffmpeg_tx_ffmpeg(
+    test_time,
+    build,
+    media,
+    nic_port_list,
+    video_format,
+    test_time_multipler,
+    output_format,
+):
     video_file = yuv_files[video_format]
 
     ffmpeg_app.execute_test(

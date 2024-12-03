@@ -29,16 +29,17 @@ k_bit_mapping = {
     "k1": 1,
 }
 
+
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_no_chain(
-        build, 
-        media, 
-        nic_port_list, 
-        test_time,
-        type_mode,
-    ):
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    type_mode,
+):
     """
-    Test the functionality with the tx_no_chain configuration set to True 
+    Test the functionality with the tx_no_chain configuration set to True
     to ensure proper handling of unchained sessions for type modes rtp and frame.
     """
     payload_type = payload_type_mapping["pt115"]
@@ -60,8 +61,4 @@ def test_no_chain(
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    rxtxapp.execute_test(
-        config=config, 
-        build=build, 
-        test_time=test_time
-    )
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time)

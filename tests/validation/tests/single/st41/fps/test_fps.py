@@ -29,14 +29,18 @@ k_bit_mapping = {
     "k1": 1,
 }
 
-@pytest.mark.parametrize("fps", ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"])
+
+@pytest.mark.parametrize(
+    "fps",
+    ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
+)
 def test_fps(
-        build, 
-        media, 
-        nic_port_list, 
-        test_time,
-        fps,
-    ):
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    fps,
+):
     """
     Test the functionality of different frame rates (fps) fastmetadata_fps to ensure the system handles various frame rates correctly.
     """
@@ -60,8 +64,4 @@ def test_fps(
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    rxtxapp.execute_test(
-        config=config, 
-        build=build, 
-        test_time=test_time
-    )
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time)

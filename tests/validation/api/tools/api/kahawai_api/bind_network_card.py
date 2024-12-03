@@ -9,20 +9,20 @@ def check_socket(bound_list, dma_bound_list):
     dma_socket_0_list = []
     dma_socket_1_list = []
     for nic_port in bound_list:
-        nic_file_name = '/sys/bus/pci/devices/' + nic_port + '/numa_node'
-        with open(nic_file_name, 'r') as nic_file_handle_r:
+        nic_file_name = "/sys/bus/pci/devices/" + nic_port + "/numa_node"
+        with open(nic_file_name, "r") as nic_file_handle_r:
             socket_num = nic_file_handle_r.read()
-        if '1' in socket_num:
+        if "1" in socket_num:
             socket_1_list.append(nic_port)
-        elif '0' in socket_num:
+        elif "0" in socket_num:
             socket_0_list.append(nic_port)
     for dma_port in dma_bound_list:
-        dma_file_name = '/sys/bus/pci/devices/' + dma_port + '/numa_node'
-        with open(dma_file_name, 'r') as dma_file_handle_r:
+        dma_file_name = "/sys/bus/pci/devices/" + dma_port + "/numa_node"
+        with open(dma_file_name, "r") as dma_file_handle_r:
             dma_socket = dma_file_handle_r.read()
-        if '1' in dma_socket:
+        if "1" in dma_socket:
             dma_socket_1_list.append(dma_port)
-        elif '0' in dma_socket:
+        elif "0" in dma_socket:
             dma_socket_0_list.append(dma_port)
 
     if len(socket_0_list) >= 2:
@@ -76,9 +76,8 @@ def bind_card(dpdk_path, build_path):
     return nic_port_list, dma_port_list
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dpdk_path_g = "/home/gta/IMTL/dpdk/usertools/dpdk-devbind.py"
     build_path_g = "/home/gta/IMTL/Media-Transport-Library/script/nicctl.sh"
     nic_port_list_g, dma_port_list_g = bind_card(dpdk_path_g, build_path_g)
     print(nic_port_list_g, dma_port_list_g)
-

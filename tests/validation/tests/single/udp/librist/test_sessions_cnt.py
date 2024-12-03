@@ -28,7 +28,9 @@ from tests.Engine import udp_app
         (10, 1, 28),
     ],
 )
-def test_udp_sessions_cnt(build, nic_port_list, test_time, sleep_us, sleep_step, sessions_cnt):
+def test_udp_sessions_cnt(
+    build, nic_port_list, test_time, sleep_us, sleep_step, sessions_cnt
+):
     udp_app.execute_test_librist(
         build=build,
         nic_port_list=nic_port_list,

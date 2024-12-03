@@ -29,11 +29,12 @@ k_bit_mapping = {
     "k1": 1,
 }
 
+
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_type_mode(build, media, nic_port_list, test_time, test_mode, type_mode):
     """
-    Test the functionality of different transmission modes (unicast, multicast) 
+    Test the functionality of different transmission modes (unicast, multicast)
     and data types (RTP, frame) to ensure proper handling of long files and frame splitting.
     """
     st41_file = st41_files["st41_p29_long_file"]["filename"]
@@ -55,8 +56,4 @@ def test_type_mode(build, media, nic_port_list, test_time, test_mode, type_mode)
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    rxtxapp.execute_test(
-        config=config, 
-        build=build, 
-        test_time=test_time
-    )
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time)

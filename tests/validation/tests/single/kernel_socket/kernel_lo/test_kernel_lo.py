@@ -19,12 +19,7 @@ from tests.Engine.media_files import anc_files, audio_files, yuv_files
 @pytest.mark.parametrize("video_format", ["i1080p59"])
 @pytest.mark.parametrize("replicas", [1, 3])
 def test_kernello_mixed_format(
-    build,
-    media,
-    test_time,
-    test_mode,
-    video_format,
-    replicas
+    build, media, test_time, test_mode, video_format, replicas
 ):
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
@@ -40,7 +35,9 @@ def test_kernello_mixed_format(
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
     )
-    config = rxtxapp.change_replicas(config=config, session_type="video", replicas=replicas)
+    config = rxtxapp.change_replicas(
+        config=config, session_type="video", replicas=replicas
+    )
     config = rxtxapp.add_audio_sessions(
         config=config,
         nic_port_list=["kernel:lo", "kernel:lo"],
@@ -52,7 +49,9 @@ def test_kernello_mixed_format(
         audio_ptime="1",
         audio_url=os.path.join(media, audio_file["filename"]),
     )
-    config = rxtxapp.change_replicas(config=config, session_type="audio", replicas=replicas)
+    config = rxtxapp.change_replicas(
+        config=config, session_type="audio", replicas=replicas
+    )
     config = rxtxapp.add_ancillary_sessions(
         config=config,
         nic_port_list=["kernel:lo", "kernel:lo"],
@@ -62,5 +61,7 @@ def test_kernello_mixed_format(
         ancillary_fps=ancillary_file["fps"],
         ancillary_url=os.path.join(media, ancillary_file["filename"]),
     )
-    config = rxtxapp.change_replicas(config=config, session_type="ancillary", replicas=replicas)
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time*replicas*3)
+    config = rxtxapp.change_replicas(
+        config=config, session_type="ancillary", replicas=replicas
+    )
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time * replicas * 3)

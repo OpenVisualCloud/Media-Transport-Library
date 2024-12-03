@@ -32,7 +32,9 @@ librist_ip_dict = {
 }
 
 
-def execute_test_sample(build: str, test_time: int, nic_port_list: list, sessions_cnt: int) -> None:
+def execute_test_sample(
+    build: str, test_time: int, nic_port_list: list, sessions_cnt: int
+) -> None:
     clinet_config = create_config(
         config=copy.deepcopy(udp_app_config.config_client),
         port=nic_port_list[0],
@@ -70,12 +72,19 @@ def execute_test_sample(build: str, test_time: int, nic_port_list: list, session
     wait(client_proc)
     wait(server_proc)
 
-    if not check_received_packets(client_proc.output) or not check_received_packets(server_proc.output):
+    if not check_received_packets(client_proc.output) or not check_received_packets(
+        server_proc.output
+    ):
         log_fail("Received less than 99% sent packets")
 
 
 def execute_test_librist(
-    build: str, test_time: int, nic_port_list: list, sleep_us: int, sleep_step: int, sessions_cnt: int
+    build: str,
+    test_time: int,
+    nic_port_list: list,
+    sleep_us: int,
+    sleep_step: int,
+    sessions_cnt: int,
 ) -> None:
     send_config = create_config(
         config=copy.deepcopy(udp_app_config.config_librist_send),
@@ -114,9 +123,9 @@ def execute_test_librist(
     wait(send_proc)
     wait(receive_proc)
 
-    if not check_connected_receivers(send_proc.output, sessions_cnt) or not check_connected_receivers(
-        receive_proc.output, sessions_cnt
-    ):
+    if not check_connected_receivers(
+        send_proc.output, sessions_cnt
+    ) or not check_connected_receivers(receive_proc.output, sessions_cnt):
         log_fail("Wrong number of connected receivers")
 
 

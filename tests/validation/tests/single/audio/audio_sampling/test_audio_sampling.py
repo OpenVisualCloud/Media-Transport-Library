@@ -17,7 +17,9 @@ from tests.Engine.media_files import audio_files
 
 @pytest.mark.parametrize("audio_sampling", ["48kHz", "96kHz"])
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
-def test_audio_sampling(build, media, nic_port_list, test_time, audio_format, audio_sampling):
+def test_audio_sampling(
+    build, media, nic_port_list, test_time, audio_format, audio_sampling
+):
     audio_file = audio_files[audio_format]
 
     config = rxtxapp.create_empty_config()

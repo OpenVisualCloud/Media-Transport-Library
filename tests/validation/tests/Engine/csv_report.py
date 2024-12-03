@@ -13,15 +13,31 @@ import csv
 report = []
 
 
-def csv_add_test(test_case: str, commands: str, result: str, issue: str, result_note: str = None):
+def csv_add_test(
+    test_case: str, commands: str, result: str, issue: str, result_note: str = None
+):
     report.append(
-        {"Test case": test_case, "Commands": commands, "Result": result, "Issue": issue, "Result note": result_note}
+        {
+            "Test case": test_case,
+            "Commands": commands,
+            "Result": result,
+            "Issue": issue,
+            "Result note": result_note,
+        }
     )
 
 
 def csv_write_report(filename: str):
     with open(filename, "w", newline="") as csvfile:
-        fieldnames = ["ID", "Test case", "Commands", "Status", "Result", "Issue", "Result note"]
+        fieldnames = [
+            "ID",
+            "Test case",
+            "Commands",
+            "Status",
+            "Result",
+            "Issue",
+            "Result note",
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 

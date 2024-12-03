@@ -45,9 +45,15 @@ def test_422p10le(
     )
 
     stdout = rxtxapp.execute_test(config=config, build=build, test_time=test_time)
-    if not re.search("st20p_tx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+YUV422PLANAR10LE", stdout):
+    if not re.search(
+        "st20p_tx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+YUV422PLANAR10LE",
+        stdout,
+    ):
         log_fail("Could not find expected TX pixel formats")
-    if not re.search("st20p_rx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+YUV422PLANAR10LE", stdout):
+    if not re.search(
+        "st20p_rx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+YUV422PLANAR10LE",
+        stdout,
+    ):
         log_fail("Could not find expected RX pixel formats")
 
 
@@ -103,9 +109,14 @@ def convert_on_rx(
     )
 
     stdout = rxtxapp.execute_test(config=config, build=build, test_time=test_time)
-    if not re.search("st20p_tx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+YUV422RFC4175PG2BE10", stdout):
+    if not re.search(
+        "st20p_tx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+YUV422RFC4175PG2BE10",
+        stdout,
+    ):
         log_fail("Could not find expected TX pixel formats")
-    if not re.search(f"st20p_rx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+{format}", stdout):
+    if not re.search(
+        f"st20p_rx_create.+transport fmt ST20_FMT_YUV_422_10BIT.+{format}", stdout
+    ):
         log_fail("Could not find expected RX pixel formats")
 
 
@@ -113,9 +124,21 @@ def convert_on_rx(
 convert2_formats = dict(
     V210=("ST20_FMT_YUV_422_10BIT", "YUV_422_10bit", "YUV422RFC4175PG2BE10"),
     Y210=("ST20_FMT_YUV_422_10BIT", "YUV_422_10bit", "YUV422RFC4175PG2BE10"),
-    YUV422PLANAR12LE=("ST20_FMT_YUV_422_12BIT", "YUV_422_12bit", "YUV422RFC4175PG2BE12"),
-    YUV444PLANAR10LE=("ST20_FMT_YUV_444_10BIT", "YUV_444_10bit", "YUV444RFC4175PG4BE10"),
-    YUV444PLANAR12LE=("ST20_FMT_YUV_444_12BIT", "YUV_444_12bit", "YUV444RFC4175PG2BE12"),
+    YUV422PLANAR12LE=(
+        "ST20_FMT_YUV_422_12BIT",
+        "YUV_422_12bit",
+        "YUV422RFC4175PG2BE12",
+    ),
+    YUV444PLANAR10LE=(
+        "ST20_FMT_YUV_444_10BIT",
+        "YUV_444_10bit",
+        "YUV444RFC4175PG4BE10",
+    ),
+    YUV444PLANAR12LE=(
+        "ST20_FMT_YUV_444_12BIT",
+        "YUV_444_12bit",
+        "YUV444RFC4175PG2BE12",
+    ),
     GBRPLANAR10LE=("ST20_FMT_RGB_10BIT", "RGB_10bit", "RGBRFC4175PG4BE10"),
     GBRPLANAR12LE=("ST20_FMT_RGB_12BIT", "RGB_12bit", "RGBRFC4175PG2BE12"),
 )
@@ -183,7 +206,11 @@ def test_formats(
     )
 
     stdout = rxtxapp.execute_test(config=config, build=build, test_time=test_time)
-    if not re.search(f"st20p_tx_create.+transport fmt {text_format}.+{file_format}", stdout):
+    if not re.search(
+        f"st20p_tx_create.+transport fmt {text_format}.+{file_format}", stdout
+    ):
         log_fail("Could not find expected TX pixel formats")
-    if not re.search(f"st20p_rx_create.+transport fmt {text_format}.+{file_format}", stdout):
+    if not re.search(
+        f"st20p_rx_create.+transport fmt {text_format}.+{file_format}", stdout
+    ):
         log_fail("Could not find expected RX pixel formats")

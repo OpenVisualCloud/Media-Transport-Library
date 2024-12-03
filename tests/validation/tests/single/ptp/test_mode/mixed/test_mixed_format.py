@@ -17,14 +17,11 @@ from tests.Engine.media_files import anc_files, audio_files, yuv_files
 
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize(
-    "video_format", ["i1080p30", "i1080p50", "i1080p59", "i2160p30", "i2160p50", "i2160p59"])
+    "video_format",
+    ["i1080p30", "i1080p50", "i1080p59", "i2160p30", "i2160p50", "i2160p59"],
+)
 def test_ptp_mixed_format(
-    build,
-    media,
-    nic_port_list,
-    test_time,
-    test_mode,
-    video_format
+    build, media, nic_port_list, test_time, test_mode, video_format
 ):
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]

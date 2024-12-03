@@ -63,7 +63,9 @@ def execute_test(
         if tx_is_ffmpeg:
             tx_cmd = f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le -i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} -p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 -payload_type 112 -f mtl_st20p -"
         else:  # tx is rxtxapp
-            tx_config_file = generate_rxtxapp_tx_config(nic_port_list[1], type_, video_format, pg_format, video_url)
+            tx_config_file = generate_rxtxapp_tx_config(
+                nic_port_list[1], type_, video_format, pg_format, video_url
+            )
             tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
 
     else:  # multiple sessions
@@ -112,7 +114,9 @@ def execute_test_rgb24(
 ):
     video_size, fps = decode_video_format_16_9(video_format)
 
-    rx_config_file = generate_rxtxapp_rx_config(nic_port_list[0], type_, [video_format], pg_format)
+    rx_config_file = generate_rxtxapp_rx_config(
+        nic_port_list[0], type_, [video_format], pg_format
+    )
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file}"
 
     tx_cmd = f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 -i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} -p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -208,7 +212,12 @@ def create_empty_output_files(output_format: str, number_of_files: int = 1) -> s
     output_files = []
 
     for i in range(number_of_files):
-        output_file = os.path.join(os.getcwd(), LOG_FOLDER, "latest", f"{get_case_id()}_out_{i}.{output_format}")
+        output_file = os.path.join(
+            os.getcwd(),
+            LOG_FOLDER,
+            "latest",
+            f"{get_case_id()}_out_{i}.{output_format}",
+        )
         output_files.append(output_file)
 
         with open(output_file, "w"):
@@ -237,7 +246,11 @@ def get_case_id() -> str:
 
 
 def generate_rxtxapp_rx_config(
-    nic_port: str, type_: str, video_format_list: list, pg_format: str, multiple_sessions: bool = False
+    nic_port: str,
+    type_: str,
+    video_format_list: list,
+    pg_format: str,
+    multiple_sessions: bool = False,
 ) -> str:
     config = copy.deepcopy(rxtxapp_config.config_empty_rx)
     config["interfaces"][0]["name"] = nic_port
@@ -265,7 +278,11 @@ def generate_rxtxapp_rx_config(
 
 
 def generate_rxtxapp_rx_config_rgb24_multiple(
-    nic_port_list: list, type_: str, video_format_list: list, pg_format: str, multiple_sessions: bool = False
+    nic_port_list: list,
+    type_: str,
+    video_format_list: list,
+    pg_format: str,
+    multiple_sessions: bool = False,
 ) -> str:
     config = copy.deepcopy(rxtxapp_config.config_empty_rx_rgb24_multiple)
     config["interfaces"][0]["name"] = nic_port_list[0]
@@ -295,7 +312,12 @@ def generate_rxtxapp_rx_config_rgb24_multiple(
 
 
 def generate_rxtxapp_tx_config(
-    nic_port: str, type_: str, video_format: str, pg_format: str, video_url: str, multiple_sessions: bool = False
+    nic_port: str,
+    type_: str,
+    video_format: str,
+    pg_format: str,
+    video_url: str,
+    multiple_sessions: bool = False,
 ) -> str:
     config = copy.deepcopy(rxtxapp_config.config_empty_tx)
     config["interfaces"][0]["name"] = nic_port

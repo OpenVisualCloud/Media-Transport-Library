@@ -17,7 +17,7 @@ from tests.Engine.media_files import audio_files
 
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
 def test_st30p_format(build, media, nic_port_list, test_time, audio_format):
-    
+
     audio_file = audio_files[audio_format]
 
     config = rxtxapp.create_empty_config()

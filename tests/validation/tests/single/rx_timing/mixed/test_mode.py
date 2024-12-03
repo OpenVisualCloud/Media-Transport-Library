@@ -58,4 +58,6 @@ def test_rx_timing_mode(
         ancillary_url=os.path.join(media, ancillary_file["filename"]),
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, rx_timing_parser=True)
+    rxtxapp.execute_test(
+        config=config, build=build, test_time=test_time, rx_timing_parser=True
+    )

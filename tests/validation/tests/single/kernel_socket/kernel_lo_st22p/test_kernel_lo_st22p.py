@@ -19,12 +19,7 @@ from tests.Engine.media_files import yuv_files_422rfc10
 @pytest.mark.parametrize("file", ["Penguin_1080p"])
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st22p_video_format(
-    build,
-    media,
-    test_time,
-    test_mode,
-    file,
-    replicas
+    build, media, test_time, test_mode, file, replicas
 ):
     st22p_file = yuv_files_422rfc10[file]
 
@@ -44,5 +39,7 @@ def test_kernello_st22p_video_format(
         codec_thread_count=2,
         st22p_url=os.path.join(media, st22p_file["filename"]),
     )
-    config = rxtxapp.change_replicas(config=config, session_type="st22p", replicas=replicas)
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time*replicas)
+    config = rxtxapp.change_replicas(
+        config=config, session_type="st22p", replicas=replicas
+    )
+    rxtxapp.execute_test(config=config, build=build, test_time=test_time * replicas)

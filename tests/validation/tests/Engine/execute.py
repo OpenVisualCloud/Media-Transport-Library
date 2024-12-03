@@ -49,7 +49,12 @@ class RaisingThread(threading.Thread):
 
 
 class AsyncProcess:
-    def __init__(self, process: subprocess.Popen, reader: threading.Thread, timer: threading.Timer):
+    def __init__(
+        self,
+        process: subprocess.Popen,
+        reader: threading.Thread,
+        timer: threading.Timer,
+    ):
         self.process = process
         self.reader = reader
         self.timer = timer
@@ -100,13 +105,19 @@ def readproc(process: subprocess.Popen):
     return "".join(output)
 
 
-def call(command: str, cwd: str, timeout: int = 60, sigint: bool = False, env: dict = None) -> AsyncProcess:
+def call(
+    command: str, cwd: str, timeout: int = 60, sigint: bool = False, env: dict = None
+) -> AsyncProcess:
     processes = calls([command], cwd=cwd, timeout=timeout, sigint=sigint, env=env)
     return processes[0]
 
 
 def calls(
-    commands: List[str], cwd: str = None, timeout: int = 60, sigint: bool = False, env: dict = None
+    commands: List[str],
+    cwd: str = None,
+    timeout: int = 60,
+    sigint: bool = False,
+    env: dict = None,
 ) -> List[AsyncProcess]:
     ret = []
     for command in commands:
@@ -145,7 +156,9 @@ def wait(ap: AsyncProcess) -> str:
         ap.timer.cancel()
         ap.timer.join(30)
         ap.output = ap.reader.join(30)
-        logging.debug(f"Process {ap.process.pid} finished with RC: {ap.process.returncode}")
+        logging.debug(
+            f"Process {ap.process.pid} finished with RC: {ap.process.returncode}"
+        )
     return ap.output
 
 
@@ -155,7 +168,9 @@ def waitall(aps=List[AsyncProcess]):
     return
 
 
-def run(command: str, cwd: str = None, testcmd: bool = False, timeout: int = 60) -> subprocess.CompletedProcess:
+def run(
+    command: str, cwd: str = None, testcmd: bool = False, timeout: int = 60
+) -> subprocess.CompletedProcess:
     """Run single command and store logs."""
     if testcmd:
         logging.testcmd(command)
@@ -182,7 +197,9 @@ def run(command: str, cwd: str = None, testcmd: bool = False, timeout: int = 60)
     return cp
 
 
-def run_in_background(command: str, cwd: str, env: dict, result_queue: Queue, timeout: int = 60) -> None:
+def run_in_background(
+    command: str, cwd: str, env: dict, result_queue: Queue, timeout: int = 60
+) -> None:
     logging.debug(command)
 
     args = ["exec"]
