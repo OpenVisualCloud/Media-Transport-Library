@@ -16,13 +16,9 @@ from tests.Engine.media_files import audio_files
 from tests.xfail import SDBQ1001_audio_channel_check
 
 
-@pytest.mark.parametrize(
-    "audio_channel", ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
-)
+@pytest.mark.parametrize("audio_channel", ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"])
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
-def test_audio_channel(
-    build, media, nic_port_list, test_time, audio_format, audio_channel, request
-):
+def test_audio_channel(build, media, nic_port_list, test_time, audio_format, audio_channel, request):
     SDBQ1001_audio_channel_check(audio_channel, audio_format, request)
 
     audio_file = audio_files[audio_format]
@@ -35,7 +31,7 @@ def test_audio_channel(
         audio_format=audio_format,
         audio_channel=[audio_channel],
         audio_sampling="48kHz",
-        audio_ptime=audio_ptime,
+        audio_ptime="1",
         audio_url=os.path.join(media, audio_file["filename"]),
     )
 

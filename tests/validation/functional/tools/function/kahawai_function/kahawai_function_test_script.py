@@ -7,7 +7,6 @@ import sys
 from collections import OrderedDict
 from multiprocessing import Process
 
-from bind_network_card import bind_card
 from check_yuv_mount_path import check_yuv_mount_path
 from modify_json_file_script import modify_json_file as deep_modify_json_file
 
@@ -34,15 +33,7 @@ else:
     # dma_port_list = [""]
     # nic_port_list, dam_port_list = ['0000:4b:11.0', '0000:4b:11.1'], ['0000:00:01.0', '0000:00:01.1', '0000:00:01.2', '0000:00:01.3', '0000:00:01.4', '0000:00:01.5', '0000:00:01.6', '0000:00:01.7']
 
-result_file = (
-    default_path
-    + slash
-    + "logs"
-    + slash
-    + "kahawai_function_test"
-    + slash
-    + "kahawai_function_test.log"
-)
+result_file = default_path + slash + "logs" + slash + "kahawai_function_test" + slash + "kahawai_function_test.log"
 per_case_output_path = default_path + slash + "logs" + slash + "case_log"
 
 yuv_dict = dict(
@@ -163,37 +154,21 @@ type_mode_list = ["frame", "rtp"]
 
 def check_test_result():
     os.chdir(default_path)
-    print(
-        "++++++++++++++++++++++++++Checking the test result+++++++++++++++++++++++++++"
-    )
+    print("++++++++++++++++++++++++++Checking the test result+++++++++++++++++++++++++++")
     if json_file_mode == "1_json_file":
         result_log = per_case_output_path + slash + case_name + ".log"
     else:
-        tx_result_log = (
-            per_case_output_path
-            + slash
-            + str(os.path.splitext(json_file_list[0])[0])
-            + ".log"
-        )
-        rx_result_log = (
-            per_case_output_path
-            + slash
-            + str(os.path.splitext(json_file_list[1])[0])
-            + ".log"
-        )
+        tx_result_log = per_case_output_path + slash + str(os.path.splitext(json_file_list[0])[0]) + ".log"
+        rx_result_log = per_case_output_path + slash + str(os.path.splitext(json_file_list[1])[0]) + ".log"
         result_log = per_case_output_path + slash + case_name + ".log"
         with open(tx_result_log, "r") as tx_result_log_handle:
             tx_result_content = tx_result_log_handle.read()
         with open(rx_result_log, "r") as rx_result_log_handle:
             rx_result_content = rx_result_log_handle.read()
         with open(result_log, "a") as result_log_handle:
-            result_log_handle.write(
-                "+++++++++++++++++++++++tx test result++++++++++++++++\n"
-            )
+            result_log_handle.write("+++++++++++++++++++++++tx test result++++++++++++++++\n")
             result_log_handle.write(tx_result_content)
-            result_log_handle.write(
-                "+++++++++++++++++++++++rx test result++++++++++++++++\n"
-            )
+            result_log_handle.write("+++++++++++++++++++++++rx test result++++++++++++++++\n")
             result_log_handle.write(rx_result_content)
 
     with open(result_log, "r") as result_log_handle_r:
@@ -273,9 +248,7 @@ def modify_json_file():
 
     if json_file_mode == "1_json_file":
         with open(json_file_list[0], "r") as json_file_handle_r:
-            json_content_dict = json.load(
-                json_file_handle_r, object_pairs_hook=OrderedDict
-            )
+            json_content_dict = json.load(json_file_handle_r, object_pairs_hook=OrderedDict)
         json_content_dict["interfaces"][0]["ip"] = tx_interfaces_ip
         json_content_dict["interfaces"][1]["ip"] = rx_interfaces_ip
         json_content_dict["interfaces"][0]["name"] = port_dict["p_port"]
@@ -286,21 +259,15 @@ def modify_json_file():
         json_content_dict["rx_sessions"][0]["video"][0]["type"] = type_mode
         json_content_dict["tx_sessions"][0]["video"][0]["video_format"] = video_format
         json_content_dict["rx_sessions"][0]["video"][0]["video_format"] = video_format
-        json_content_dict["tx_sessions"][0]["video"][0]["video_url"] = (
-            yuv_path + slash + yuv_dict[video_format]
-        )
+        json_content_dict["tx_sessions"][0]["video"][0]["video_url"] = yuv_path + slash + yuv_dict[video_format]
 
         with open(json_file_list[0], "w") as json_file_handle_w:
             json.dump(json_content_dict, json_file_handle_w, indent=4)
     else:
         with open(json_file_list[0], "r") as tx_json_file_handle_r:
-            tx_json_content_dict = json.load(
-                tx_json_file_handle_r, object_pairs_hook=OrderedDict
-            )
+            tx_json_content_dict = json.load(tx_json_file_handle_r, object_pairs_hook=OrderedDict)
         with open(json_file_list[1], "r") as rx_json_file_handle_r:
-            rx_json_content_dict = json.load(
-                rx_json_file_handle_r, object_pairs_hook=OrderedDict
-            )
+            rx_json_content_dict = json.load(rx_json_file_handle_r, object_pairs_hook=OrderedDict)
         tx_json_content_dict["interfaces"][0]["ip"] = tx_interfaces_ip
         rx_json_content_dict["interfaces"][0]["ip"] = rx_interfaces_ip
         tx_json_content_dict["interfaces"][0]["name"] = port_dict["p_port"]
@@ -309,15 +276,9 @@ def modify_json_file():
         rx_json_content_dict["rx_sessions"][0]["ip"][0] = rx_sessions_ip
         tx_json_content_dict["tx_sessions"][0]["video"][0]["type"] = type_mode
         rx_json_content_dict["rx_sessions"][0]["video"][0]["type"] = type_mode
-        tx_json_content_dict["tx_sessions"][0]["video"][0][
-            "video_format"
-        ] = video_format
-        rx_json_content_dict["rx_sessions"][0]["video"][0][
-            "video_format"
-        ] = video_format
-        tx_json_content_dict["tx_sessions"][0]["video"][0]["video_url"] = (
-            yuv_path + slash + yuv_dict[video_format]
-        )
+        tx_json_content_dict["tx_sessions"][0]["video"][0]["video_format"] = video_format
+        rx_json_content_dict["rx_sessions"][0]["video"][0]["video_format"] = video_format
+        tx_json_content_dict["tx_sessions"][0]["video"][0]["video_url"] = yuv_path + slash + yuv_dict[video_format]
 
         with open(json_file_list[0], "w") as tx_json_file_handle_w:
             json.dump(tx_json_content_dict, tx_json_file_handle_w, indent=4)
@@ -436,30 +397,18 @@ if __name__ == "__main__":
                         parameter_name,
                         value_list,
                     )
-                print(
-                    '+++++++++++++++++++The "%s" is running++++++++++++++++ '
-                    % case_name
-                )
+                print('+++++++++++++++++++The "%s" is running++++++++++++++++ ' % case_name)
                 if json_file_mode == "1_json_file":
-                    txrx_process = Process(
-                        target=run_test, args=(json_file_list[0], "txrx")
-                    )
+                    txrx_process = Process(target=run_test, args=(json_file_list[0], "txrx"))
                     txrx_process.start()
                     txrx_process.join()
                 else:
-                    tx_process = Process(
-                        target=run_test, args=(json_file_list[0], "tx")
-                    )
-                    rx_process = Process(
-                        target=run_test, args=(json_file_list[1], "rx")
-                    )
+                    tx_process = Process(target=run_test, args=(json_file_list[0], "tx"))
+                    rx_process = Process(target=run_test, args=(json_file_list[1], "rx"))
                     tx_process.start()
                     rx_process.start()
                     tx_process.join()
                     rx_process.join()
 
-                print(
-                    '+++++++++++++++++++++++++++++++The "%s" is finished++++++++++++++++++++++++'
-                    % case_name
-                )
+                print('+++++++++++++++++++++++++++++++The "%s" is finished++++++++++++++++++++++++' % case_name)
                 check_test_result()

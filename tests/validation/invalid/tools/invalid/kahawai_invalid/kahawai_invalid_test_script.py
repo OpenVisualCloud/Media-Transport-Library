@@ -1,12 +1,8 @@
-import json
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
-import time
-from collections import OrderedDict
 from multiprocessing import Process
 
 from bind_network_card import bind_card
@@ -30,9 +26,7 @@ else:
     build_path = work_path + "/libraries.media.st2110.kahawai"
     yuv_path = "/home/media/ws/yuvs_do_not_delete"
     dpdk_script = "/home/media/ws/workspace/dpdk/usertools/dpdk-devbind.py"
-    bind_script = (
-        "/home/media/ws/workspace/libraries.media.st2110.kahawai/script/nicctl.sh"
-    )
+    bind_script = "/home/media/ws/workspace/libraries.media.st2110.kahawai/script/nicctl.sh"
     mount_cmd = "sudo mount -o vers=3 10.67.116.200:/datadisk/streams/kahawai/yuvs /home/media/ws/yuvs_do_not_delete"
     nic_port_list, dma_port_list = bind_card(dpdk_script, bind_script)
     print(nic_port_list)
@@ -42,9 +36,7 @@ log_path = default_path + slash + "logs"
 per_case_log_path = log_path + slash + "case_log"
 result_log_path = log_path + slash + "kahawai_invalid_test"
 
-default_yuv_name = (
-    "Netflix_Crosswalk_1920x1080_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv"
-)
+default_yuv_name = "Netflix_Crosswalk_1920x1080_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv"
 rxtx_default_json_file = "1080p59_1v_slice.json"
 rx_default_json_file = "test_rx_1port_1v.json"
 tx_default_json_file = "test_tx_1port_1v.json"
@@ -101,42 +93,22 @@ def gather_result_log():
             per_case_log_path + slash + final_log_name,
         )
     else:
-        with open(
-            per_case_log_path + slash + final_log_name, "a"
-        ) as final_log_name_handle_a:
-            with open(
-                per_case_log_path + slash + tx_log_file_name, "r"
-            ) as tx_log_file_name_handle_r:
+        with open(per_case_log_path + slash + final_log_name, "a") as final_log_name_handle_a:
+            with open(per_case_log_path + slash + tx_log_file_name, "r") as tx_log_file_name_handle_r:
                 for line in tx_log_file_name_handle_r.readlines():
                     final_log_name_handle_a.write(line)
-            final_log_name_handle_a.write(
-                "+++++++++++++++++++++++++++++Below is Rx logs+++++++++++++++++++\n"
-            )
-            with open(
-                per_case_log_path + slash + rx_log_file_name, "r"
-            ) as rx_json_file_name_handle_r:
+            final_log_name_handle_a.write("+++++++++++++++++++++++++++++Below is Rx logs+++++++++++++++++++\n")
+            with open(per_case_log_path + slash + rx_log_file_name, "r") as rx_json_file_name_handle_r:
                 for line in rx_json_file_name_handle_r.readlines():
                     final_log_name_handle_a.write(line)
 
 
 def check_test_result():
-    if (
-        test_mode == "wrong_value_in_json"
-        and parameter == "video_url"
-        and value_list[0] == "tx_nonexistent_yuv"
-    ):
+    if test_mode == "wrong_value_in_json" and parameter == "video_url" and value_list[0] == "tx_nonexistent_yuv":
         result_keyword = get_keyword(test_mode, "video_url_nonexistent")
-    elif (
-        test_mode == "wrong_value_in_json"
-        and parameter == "video_url"
-        and value_list[0] == "tx_txt_file"
-    ):
+    elif test_mode == "wrong_value_in_json" and parameter == "video_url" and value_list[0] == "tx_txt_file":
         result_keyword = get_keyword(test_mode, "video_url_txt_file")
-    elif (
-        test_mode == "wrong_value_in_command"
-        and parameter == "config_file"
-        and "config.txt" in value_list[0]
-    ):
+    elif test_mode == "wrong_value_in_command" and parameter == "config_file" and "config.txt" in value_list[0]:
         result_keyword = get_keyword(test_mode, "config_file_txt")
     else:
         result_keyword = get_keyword(test_mode, parameter)
@@ -154,18 +126,12 @@ def check_test_result():
             final_result = "pass"
         else:
             final_result = "failed"
-        with open(
-            result_log_path + slash + "kahawai_invalid_test_result.log", "a"
-        ) as result_log_handle_a:
-            result_log_handle_a.write(
-                suite_name + "-1_json_file" + ":" + final_result + "\n"
-            )
+        with open(result_log_path + slash + "kahawai_invalid_test_result.log", "a") as result_log_handle_a:
+            result_log_handle_a.write(suite_name + "-1_json_file" + ":" + final_result + "\n")
     else:
         rx_test_result = "none"
         tx_test_result = "none"
-        with open(
-            per_case_log_path + slash + tx_log_file_name, "r"
-        ) as tx_log_file_handle_r:
+        with open(per_case_log_path + slash + tx_log_file_name, "r") as tx_log_file_handle_r:
             for line in tx_log_file_handle_r.readlines():
                 if result_keyword in line:
                     tx_test_result = "pass"
@@ -173,9 +139,7 @@ def check_test_result():
                     break
                 else:
                     continue
-        with open(
-            per_case_log_path + slash + rx_log_file_name, "r"
-        ) as rx_log_file_handle_r:
+        with open(per_case_log_path + slash + rx_log_file_name, "r") as rx_log_file_handle_r:
             for line in rx_log_file_handle_r.readlines():
                 if result_keyword in line:
                     rx_test_result = "pass"
@@ -187,12 +151,8 @@ def check_test_result():
             final_result = "pass"
         else:
             final_result = "failed"
-        with open(
-            result_log_path + slash + "kahawai_invalid_test_result.log", "a"
-        ) as result_log_handle_a:
-            result_log_handle_a.write(
-                suite_name + "-2_json_file" + ":" + final_result + "\n"
-            )
+        with open(result_log_path + slash + "kahawai_invalid_test_result.log", "a") as result_log_handle_a:
+            result_log_handle_a.write(suite_name + "-2_json_file" + ":" + final_result + "\n")
     print(final_result)
 
 
@@ -257,14 +217,7 @@ def prepare_commandline_test_command():
     test_command_list = []
     tmp_test_command = ""
     shutil.move(json_file_name, per_case_log_path)
-    init_command = (
-        cmd_prefix
-        + "--config_file "
-        + per_case_log_path
-        + slash
-        + json_file_name
-        + " --test_time 60"
-    )
+    init_command = cmd_prefix + "--config_file " + per_case_log_path + slash + json_file_name + " --test_time 60"
     if "parameter" in test_mode:
         if parameter in ["test_time"]:
             init_command = init_command.replace("_rxtx.json", ".json")
@@ -281,14 +234,7 @@ def prepare_commandline_test_command():
         else:
             if len(value_list) == 1:
                 test_command = (
-                    init_command
-                    + " --"
-                    + value_list[0]
-                    + " > "
-                    + per_case_log_path
-                    + slash
-                    + log_file_name
-                    + " 2>&1"
+                    init_command + " --" + value_list[0] + " > " + per_case_log_path + slash + log_file_name + " 2>&1"
                 )
             else:
                 test_command = (
@@ -312,19 +258,11 @@ def prepare_commandline_test_command():
 
         for line in init_command.split("--")[1:]:
             if parameter + " " in line:
-                tmp_test_command = (
-                    tmp_test_command + "--" + parameter + " " + value_list[0] + " "
-                )
+                tmp_test_command = tmp_test_command + "--" + parameter + " " + value_list[0] + " "
                 continue
             tmp_test_command = tmp_test_command + "--" + line + " "
         test_command = (
-            init_command.split("--")[0]
-            + tmp_test_command
-            + " > "
-            + per_case_log_path
-            + slash
-            + log_file_name
-            + " 2>&1"
+            init_command.split("--")[0] + tmp_test_command + " > " + per_case_log_path + slash + log_file_name + " 2>&1"
         )
         test_command_list.append(test_command)
     return test_command_list
@@ -355,15 +293,7 @@ if __name__ == "__main__":
             json_file_name = suite_name + "-1_json_file_rxtx.json"
             log_file_name = suite_name + "-1_json_file_rxtx.log"
             final_log_name = suite_name + "-1_json_file.log"
-            sample_json_file = (
-                build_path
-                + slash
-                + "tests"
-                + slash
-                + "script"
-                + slash
-                + rxtx_default_json_file
-            )
+            sample_json_file = build_path + slash + "tests" + slash + "script" + slash + rxtx_default_json_file
             shutil.copy(sample_json_file, json_file_name)
             json_file_list.append(json_file_name)
         else:
@@ -377,12 +307,8 @@ if __name__ == "__main__":
                 final_log_name = suite_name + "-2_json_file.log"
                 json_file_list.append(tx_json_file_name)
                 json_file_list.append(rx_json_file_name)
-                rx_sample_json_file = (
-                    build_path + slash + "config" + slash + rx_default_json_file
-                )
-                tx_sample_json_file = (
-                    build_path + slash + "config" + slash + tx_default_json_file
-                )
+                rx_sample_json_file = build_path + slash + "config" + slash + rx_default_json_file
+                tx_sample_json_file = build_path + slash + "config" + slash + tx_default_json_file
                 shutil.copy(rx_sample_json_file, rx_json_file_name)
                 shutil.copy(tx_sample_json_file, tx_json_file_name)
         # Modify json file
@@ -395,14 +321,9 @@ if __name__ == "__main__":
             if test_mode == "wrong_value_in_json" and parameter == "video_url":
                 pass
             else:
-                modify_json_file(
-                    json_file_list, json_file_mode, test_mode, parameter, value_list
-                )
+                modify_json_file(json_file_list, json_file_mode, test_mode, parameter, value_list)
             test_command_list_g = prepare_json_test_command()
-        print(
-            "----------------------------%s--------------------------------"
-            % json_file_mode
-        )
+        print("----------------------------%s--------------------------------" % json_file_mode)
         # Execute test
         for test_command_g in test_command_list_g:
             rxtx_process = Process(target=run_test, args=(test_command_g,))

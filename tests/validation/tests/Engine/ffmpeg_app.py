@@ -10,7 +10,6 @@
 # other than those that are expressly stated in the License.
 
 import copy
-import logging
 import os
 import re
 import time
@@ -63,9 +62,7 @@ def execute_test(
         if tx_is_ffmpeg:
             tx_cmd = f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le -i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} -p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 -payload_type 112 -f mtl_st20p -"
         else:  # tx is rxtxapp
-            tx_config_file = generate_rxtxapp_tx_config(
-                nic_port_list[1], type_, video_format, pg_format, video_url
-            )
+            tx_config_file = generate_rxtxapp_tx_config(nic_port_list[1], type_, video_format, pg_format, video_url)
             tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
 
     else:  # multiple sessions
@@ -114,9 +111,7 @@ def execute_test_rgb24(
 ):
     video_size, fps = decode_video_format_16_9(video_format)
 
-    rx_config_file = generate_rxtxapp_rx_config(
-        nic_port_list[0], type_, [video_format], pg_format
-    )
+    rx_config_file = generate_rxtxapp_rx_config(nic_port_list[0], type_, [video_format], pg_format)
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file}"
 
     tx_cmd = f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 -i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} -p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 -payload_type 112 -f mtl_st20p -"

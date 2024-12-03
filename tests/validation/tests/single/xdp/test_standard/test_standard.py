@@ -13,8 +13,6 @@ import os
 import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.media_files import (
-    anc_files,
-    audio_files,
     yuv_files,
     yuv_files_422rfc10,
 )
@@ -24,9 +22,7 @@ from tests.Engine.media_files import (
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize("video_format", ["i1080p59"])
 @pytest.mark.parametrize("replicas", [1, 2])
-def test_xdp_standard(
-    build, media, test_time, test_mode, video_format, replicas, standard_mode
-):
+def test_xdp_standard(build, media, test_time, test_mode, video_format, replicas, standard_mode):
     video_file = yuv_files[video_format]
 
     st22p_file = yuv_files_422rfc10["Crosswalk_1080p"]
@@ -42,9 +38,7 @@ def test_xdp_standard(
             pg_format=video_file["format"],
             video_url=os.path.join(media, video_file["filename"]),
         )
-        config = rxtxapp.change_replicas(
-            config=config, session_type="st20p", replicas=replicas
-        )
+        config = rxtxapp.change_replicas(config=config, session_type="st20p", replicas=replicas)
     elif standard_mode == "st22p":
         config = rxtxapp.add_st22p_sessions(
             config=config,
@@ -61,7 +55,5 @@ def test_xdp_standard(
             codec_thread_count=2,
             st22p_url=os.path.join(media, st22p_file["filename"]),
         )
-        config = rxtxapp.change_replicas(
-            config=config, session_type="st22p", replicas=replicas
-        )
+        config = rxtxapp.change_replicas(config=config, session_type="st22p", replicas=replicas)
     rxtxapp.execute_test(config=config, build=build, test_time=test_time)
