@@ -36,7 +36,11 @@ class BaseTest(object):
             print(lines)
             print(retcode)
             result = "FAILED"
-            if retcode == "0" and self.expect_result != "null" and self.expect_result in lines:
+            if (
+                retcode == "0"
+                and self.expect_result != "null"
+                and self.expect_result in lines
+            ):
                 result = "PASSED"
             if retcode == "0" and self.expect_result == "null":
                 result = "PASSED"

@@ -11,7 +11,9 @@ else:
 yaml_file = "configs" + slash + "kahawai_invalid_test.yaml"
 config_file_path = os.path.join(os.getcwd(), yaml_file)
 running_test_path = "tools" + slash + "invalid" + slash + "kahawai_invalid"
-log_file = "logs" + slash + "kahawai_invalid_test" + slash + "kahawai_invalid_test_result.log"
+log_file = (
+    "logs" + slash + "kahawai_invalid_test" + slash + "kahawai_invalid_test_result.log"
+)
 
 
 class ConnTest(BaseTest):
@@ -53,7 +55,9 @@ class ConnTest(BaseTest):
         if self.command:
             print("Identify test")
             # self.command = 'bash {} {}'.format(os.path.join(os.getcwd(), shell_script),self.command)
-            self.command = "python {} {}".format(os.path.join(os.getcwd(), shell_script), self.command)
+            self.command = "python {} {}".format(
+                os.path.join(os.getcwd(), shell_script), self.command
+            )
         else:
             print("Full test")
             # self.command = 'bash %s ' % os.path.join(os.getcwd(), shell_script)

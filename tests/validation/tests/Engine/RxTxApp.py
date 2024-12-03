@@ -62,7 +62,10 @@ def read_ip_addresses_from_json(filename: str):
                     "default was set."
                 )
     except Exception:
-        print(f"File {filename} could not be loaded properly! " "Default values are set for all IPs.")
+        print(
+            f"File {filename} could not be loaded properly! "
+            "Default values are set for all IPs."
+        )
 
 
 def create_empty_config() -> dict:
@@ -155,7 +158,9 @@ def add_video_sessions(
     pg_format: str,
     video_url: str,
 ) -> dict:
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
 
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_video_session)
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_video_session)
@@ -191,7 +196,9 @@ def add_st20p_sessions(
     enable_rtcp: bool = False,
     measure_latency: bool = False,
 ) -> dict:
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_st20p_session)
     config["tx_sessions"][0]["st20p"].append(tx_session)
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_st20p_session)
@@ -237,7 +244,9 @@ def add_st22p_sessions(
     interlaced: bool = False,
     measure_latency: bool = False,
 ) -> dict:
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
 
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_st22p_session)
     config["tx_sessions"][0]["st22p"].append(tx_session)
@@ -278,7 +287,9 @@ def add_st30p_sessions(
     audio_sampling: str = "96kHz",
     audio_ptime: str = "1",
 ) -> dict:
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_st30p_session)
     config["tx_sessions"][0]["st30p"].append(tx_session)
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_st30p_session)
@@ -308,7 +319,9 @@ def add_audio_sessions(
     audio_ptime: str,
     audio_url: str,
 ) -> dict:
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_audio_session)
     config["tx_sessions"][0]["audio"].append(tx_session)
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_audio_session)
@@ -339,7 +352,9 @@ def add_ancillary_sessions(
     ancillary_fps: str,
     ancillary_url: str,
 ) -> dict:
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_ancillary_session)
     config["tx_sessions"][0]["ancillary"].append(tx_session)
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_ancillary_session)
@@ -366,7 +381,9 @@ def add_st41_sessions(
     fastmetadata_url: str,
 ) -> dict:
     config = set_tx_no_chain(config, no_chain)
-    config = add_interfaces(config=config, nic_port_list=nic_port_list, test_mode=test_mode)
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_st41_session)
     config["tx_sessions"][0]["fastmetadata"].append(tx_session)
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_st41_session)
@@ -374,14 +391,22 @@ def add_st41_sessions(
 
     config["tx_sessions"][0]["fastmetadata"][0]["payload_type"] = payload_type
     config["tx_sessions"][0]["fastmetadata"][0]["type"] = type_
-    config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_data_item_type"] = fastmetadata_data_item_type
-    config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_k_bit"] = fastmetadata_k_bit
+    config["tx_sessions"][0]["fastmetadata"][0][
+        "fastmetadata_data_item_type"
+    ] = fastmetadata_data_item_type
+    config["tx_sessions"][0]["fastmetadata"][0][
+        "fastmetadata_k_bit"
+    ] = fastmetadata_k_bit
     config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_fps"] = fastmetadata_fps
     config["tx_sessions"][0]["fastmetadata"][0]["fastmetadata_url"] = fastmetadata_url
 
     config["rx_sessions"][0]["fastmetadata"][0]["payload_type"] = payload_type
-    config["rx_sessions"][0]["fastmetadata"][0]["fastmetadata_data_item_type"] = fastmetadata_data_item_type
-    config["rx_sessions"][0]["fastmetadata"][0]["fastmetadata_k_bit"] = fastmetadata_k_bit
+    config["rx_sessions"][0]["fastmetadata"][0][
+        "fastmetadata_data_item_type"
+    ] = fastmetadata_data_item_type
+    config["rx_sessions"][0]["fastmetadata"][0][
+        "fastmetadata_k_bit"
+    ] = fastmetadata_k_bit
     config["rx_sessions"][0]["fastmetadata"][0]["fastmetadata_url"] = fastmetadata_url
 
     return config
@@ -402,7 +427,10 @@ def execute_test(
 
     save_as_json(json_file=config_file, content=config)
 
-    if "video" in config["tx_sessions"][0] and len(config["tx_sessions"][0]["video"]) > 0:
+    if (
+        "video" in config["tx_sessions"][0]
+        and len(config["tx_sessions"][0]["video"]) > 0
+    ):
         video_format = config["tx_sessions"][0]["video"][0]["video_format"]
         if any(format in video_format for format in ["4320", "2160"]):
             test_time = test_time * 2
@@ -410,7 +438,10 @@ def execute_test(
                 test_time = test_time * 2
             test_time = test_time * config["tx_sessions"][0]["video"][0]["replicas"]
 
-    if "st20p" in config["tx_sessions"][0] and len(config["tx_sessions"][0]["st20p"]) > 0:
+    if (
+        "st20p" in config["tx_sessions"][0]
+        and len(config["tx_sessions"][0]["st20p"]) > 0
+    ):
         video_format = config["tx_sessions"][0]["st20p"][0]["height"]
         video_fps = config["tx_sessions"][0]["st20p"][0]["fps"]
         if any(format == video_format for format in [4320, 2160]):
@@ -531,7 +562,9 @@ def execute_perf_test(
     cp = run(command, cwd=build, timeout=test_time + 120, testcmd=True)
     output = cp.stdout.splitlines()
 
-    return check_tx_output(config=config, output=output, session_type="video", fail_on_error=fail_on_error)
+    return check_tx_output(
+        config=config, output=output, session_type="video", fail_on_error=fail_on_error
+    )
 
 
 def save_as_json(json_file: str, content: dict):
@@ -561,7 +594,9 @@ def change_rss_mode(content: dict, rss_mode: str) -> dict:
     return content
 
 
-def change_replicas(config: dict, session_type: str, replicas: int, rx: bool = True) -> dict:
+def change_replicas(
+    config: dict, session_type: str, replicas: int, rx: bool = True
+) -> dict:
     for i in range(len(config["tx_sessions"])):
         if config["tx_sessions"][i][session_type]:
             for j in range(len(config["tx_sessions"][i][session_type])):
@@ -575,7 +610,9 @@ def change_replicas(config: dict, session_type: str, replicas: int, rx: bool = T
     return config
 
 
-def check_tx_output(config: dict, output: list, session_type: str, fail_on_error: bool) -> bool:
+def check_tx_output(
+    config: dict, output: list, session_type: str, fail_on_error: bool
+) -> bool:
     ok_cnt = 0
 
     for line in output:
@@ -602,7 +639,9 @@ def check_tx_output(config: dict, output: list, session_type: str, fail_on_error
     return False
 
 
-def check_rx_output(config: dict, output: list, session_type: str, fail_on_error: bool) -> bool:
+def check_rx_output(
+    config: dict, output: list, session_type: str, fail_on_error: bool
+) -> bool:
     ok_cnt = 0
 
     pattern = re.compile(r"app_rx_.*_result")
@@ -625,7 +664,9 @@ def check_rx_output(config: dict, output: list, session_type: str, fail_on_error
     return False
 
 
-def check_tx_converter_output(config: dict, output: list, session_type: str, fail_on_error: bool) -> bool:
+def check_tx_converter_output(
+    config: dict, output: list, session_type: str, fail_on_error: bool
+) -> bool:
     ok_cnt = 0
     transport_format = config["tx_sessions"][0]["st20p"][0]["transport_format"]
     input_format = config["tx_sessions"][0]["st20p"][0]["input_format"]
@@ -650,7 +691,9 @@ def check_tx_converter_output(config: dict, output: list, session_type: str, fai
     return False
 
 
-def check_rx_converter_output(config: dict, output: list, session_type: str, fail_on_error: bool) -> bool:
+def check_rx_converter_output(
+    config: dict, output: list, session_type: str, fail_on_error: bool
+) -> bool:
     ok_cnt = 0
 
     transport_format = config["rx_sessions"][0]["st20p"][0]["transport_format"]
@@ -679,9 +722,13 @@ def check_rx_converter_output(config: dict, output: list, session_type: str, fai
 
 def check_and_set_ip(interface_name: str, ip_adress="192.168.17.102/24"):
     try:
-        result = subprocess.run(["ip", "addr", "show", interface_name], stdout=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            ["ip", "addr", "show", interface_name], stdout=subprocess.PIPE, text=True
+        )
         if ip_adress.split("/")[0] not in result.stdout:
-            subprocess.run(["sudo", "ip", "addr", "add", ip_adress, "dev", interface_name])
+            subprocess.run(
+                ["sudo", "ip", "addr", "add", ip_adress, "dev", interface_name]
+            )
             subprocess.run(["sudo", "ip", "link", "set", interface_name, "up"])
     except Exception:
         print(f"An error occured while trying to bind ip address to {interface_name}")

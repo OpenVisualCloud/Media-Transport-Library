@@ -80,7 +80,9 @@ class Exect(object):
         print("expect_result: %s" % self.expect_result)
         if self.test_type == "cmd":
             test_module = importlib.import_module("scripts.BaseTest")
-            test_module.running_test(command=self.test_cmd, expect_result=self.expect_result)
+            test_module.running_test(
+                command=self.test_cmd, expect_result=self.expect_result
+            )
         else:
             test_module = importlib.import_module("scripts.%s" % self.test_type)
             test_module.running_test(command=self.test_cmd)
