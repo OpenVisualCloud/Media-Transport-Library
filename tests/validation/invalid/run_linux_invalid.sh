@@ -1,9 +1,9 @@
 #!/bin/bash
 
-for i in $(cat invalid_case_list.txt)
+while IFS= read -r line
 do
-	echo "$i"
-	python Execut.py -t function_kahawai_invalid -c $i >> run.log 2>&1
+	echo "$line"
+	python Execut.py -t function_kahawai_invalid -c "$line" >> run.log 2>&1
 
-	mv logs logs_$i
-done
+	mv logs logs_"$line"
+done < invalid_case_list.txt

@@ -31,7 +31,7 @@ fi
 
 tar xvf libraries.media.st2110.kahawai.tgz -C ${work_path} > /dev/null 2>&1
 function get_json_file(){
-    cd ${work_path}/libraries.media.st2110.kahawai
+    cd ${work_path}/libraries.media.st2110.kahawai || exit
     if [ -e ${tx_json_file} ]
     then
         cp ${tx_json_file} ${json_config_path}/tx_sample.json
@@ -58,14 +58,23 @@ function get_json_file(){
 
 
 function get_ice_package(){
-	cd ${work_path}
+	cd ${work_path} || exit
 	wget https://ubit-artifactory-sh.intel.com/artifactory/NPG_VCD-local/Kahawai/ICE/Release_27_6.zip > /dev/null 2>&1
 	#wget https://downloadmirror.intel.com/739627/Release_27_6.zip  > /dev/null 2>&1
 	unzip -d tmp Release_27_6.zip > /dev/null 2>&1
 	cp -rp ./tmp/PROCGB/Linux/ice-*.tar.gz ./
 	rm -rf tmp
-	if [ ! -e ice-*.tar.gz ]
+	found=false
+	for file in ice-*.tar.gz
+	do
+	if [ -e "$file" ]
 	then
+		found=true
+		break
+	fi
+	done
+	if [ "$found" = false ]
+		then
 		echo "No ice*.tar.gz related package! please check it"
 		exit 1
 	fi
@@ -81,9 +90,9 @@ function precondition(){
 
 ##Check the VT-D and VT-X option in BIOS
 function check_iommu_status(){
-	count=$(ls /sys/kernel/iommu_groups | wc -l)
-	echo $count
-	if [ ${count} -eq 0 ]
+	count=$(find /sys/kernel/iommu_groups -mindepth 1 -maxdepth 1 -type d | wc -l)
+	echo "$count"
+	if [ "${count}" -eq 0 ]
 	then
 		echo "VT-D and VT-X are not enabled in BOIS"
 		exit 1
@@ -99,34 +108,34 @@ function build_install_dpdk(){
 	rm -rf  /usr/local/share/dpdk
 
 	##Git clond DPDK driver
-	cd ${work_path}
+	cd ${work_path} || exit
 	git clone https://github.com/DPDK/dpdk.git
-	cd dpdk
+	cd dpdk || exit
 	git checkout v${expect_dpdk_version}
 	git switch -c v${expect_dpdk_version}
 
 	##Check DPDK version
-	dpdk_version=$(git branch | grep "*" | grep "v${expect_dpdk_version}")
+	dpdk_version=$(git branch | grep "\*" | grep "v${expect_dpdk_version}")
 	if [ -z "${dpdk_version}" ]
 	then
-		echo "DPDK version is fialed, current is $(git branch | grep "*")"
+		echo "DPDK version is fialed, current is $(git branch | grep "\*")"
 		exit 1
 	else
-		echo "DPDK git clone passed, current is $(git branch | grep "*")"
+		echo "DPDK git clone passed, current is $(git branch | grep "\*")"
 	fi
 	
 	##Patch Kahawai patches
-	patch_list=($(ls ${work_path}/libraries.media.st2110.kahawai*/patches/dpdk/${expect_dpdk_version}/*.patch | sort -n -k 10 -t /))
-	for patch in ${patch_list[*]}
+	mapfile -t patch_list < <(find ${work_path}/libraries.media.st2110.kahawai*/patches/dpdk/${expect_dpdk_version} -name '*.patch' -type f | sort -n -k 10 -t /)
+	for patch in "${patch_list[@]}"
 	do
 		echo "git am $patch"
-		git am $patch
+		git am "$patch"
 	done
 
 	##Buid and install DPDK driver
 	meson build
 	ninja -C build
-	cd build
+	cd build || exit
 	sudo ninja install
 	pkg-config --cflags libdpdk
 	pkg-config --libs libdpdk
@@ -142,7 +151,7 @@ function build_install_dpdk(){
 	fi
 
 	##Build Kahawai Sample
-	cd ${work_path}/libraries.media.st2110.kahawai
+	cd ${work_path}/libraries.media.st2110.kahawai || exit
 	./build.sh
 
 	##Check Kahawai Sample
@@ -165,7 +174,7 @@ function build_install_dpdk(){
 ##Install ICE driver
 function install_ice(){
 	##Install ICE
-	cd ${work_path}/ice*/src
+	cd ${work_path}/ice*/src || exit
 	make
 	sudo make install
 	rmmod ice
@@ -173,9 +182,9 @@ function install_ice(){
 
 	##check ICE version
 	ice_tab=0
-	ice_version=$(ls -d ${work_path}/ice* | cut -d "-" -f 2)
-	ice_actual_version=($(dmesg | grep ice | grep E8 | awk -F "version " '{print $2}' | sort -u))
-	for ice_loop in ${ice_actual_version[*]}
+	ice_version=$(find ${work_path} -maxdepth 1 -name 'ice*' -type d | cut -d "-" -f 2)
+	mapfile -t ice_actual_version < <(dmesg | grep ice | grep E8 | awk -F "version " '{print $2}' | sort -u)
+	for ice_loop in "${ice_actual_version[@]}"
 	do
 		if [ "${ice_version}" == "${ice_loop}" ]
 		then
@@ -193,31 +202,31 @@ function install_ice(){
 	fi
 
 	##Install DDP
-	cd ${work_path}/ice*/ddp
+	cd ${work_path}/ice*/ddp || exit
 	ice_pkg=$(ls ice*.pkg)
 
-	if [ -e /usr/lib/firmware/updates/intel/ice/ddp/${ice_pkg} ]
+	if [ -e /usr/lib/firmware/updates/intel/ice/ddp/"${ice_pkg}" ]
 	then
-		rm -rf /usr/lib/firmware/updates/intel/ice/ddp/${ice_pkg}
+		rm -rf /usr/lib/firmware/updates/intel/ice/ddp/"${ice_pkg}"
 	fi
 
-	cp ${ice_pkg} /usr/lib/firmware/updates/intel/ice/ddp
+	cp "${ice_pkg}" /usr/lib/firmware/updates/intel/ice/ddp
 
-	cd /usr/lib/firmware/updates/intel/ice/ddp
+	cd /usr/lib/firmware/updates/intel/ice/ddp || exit
 	if [ -e ice.pkg ]
 	then
 		rm -rf ice.pkg
 	fi
-	chmod 755 ${ice_pkg}
-        ln -s ${ice_pkg} ice.pkg
+	chmod 755 "${ice_pkg}"
+        ln -s "${ice_pkg}" ice.pkg
 	rmmod ice
 	modprobe ice
 
 	##Check DDP version
 	ddp_tab=0
 	ddp_version=$(echo "$ice_pkg" | awk -F "ice-" '{print $2}' | awk -F ".pkg" '{print $1}')
-	ddp_actual_version=($(dmesg | grep "DDP" | grep "successfully" | awk -F "version " '{print $2}' | sort -u))
-	for ddp_loop in ${ddp_actual_version[*]}
+	mapfile -t ddp_actual_version < <(dmesg | grep "DDP" | grep "successfully" | awk -F "version " '{print $2}' | sort -u)
+	for ddp_loop in "${ddp_actual_version[@]}"
 	do
 		if [ "${ddp_version}" == "${ddp_loop}" ]
 		then
@@ -253,13 +262,13 @@ function check_ice_version(){
 
 ##Bind network card to DPDK driver
 function bind_nic_pf(){
-	cd ${work_path}/libraries.media.st2110.kahawai*
-	port_list=($(${work_path}/dpdk/usertools/dpdk-devbind.py -s | grep E8 | awk '{print$1}'))
-	for port in ${port_list[*]}
+	cd ${work_path}/libraries.media.st2110.kahawai* || exit
+	mapfile -t port_list < <(${work_path}/dpdk/usertools/dpdk-devbind.py -s | grep E8 | awk '{print $1}')
+	for port in "${port_list[@]}"
 	do
         echo "$port"
 		##./script/nicctl.sh disable_vf $port
-		./script/nicctl.sh bind_pmd $port
+		./script/nicctl.sh bind_pmd "$port"
 	done
 }
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-for i in $(cat linux_function_case_list.txt)
+while IFS= read -r line
 do
-	echo "$i"
-	python2 Execut.py -t kahawai_function_test -c $i >> run.log 2>&1
+	echo "$line"
+	python2 Execut.py -t kahawai_function_test -c "$line" >> run.log 2>&1
 
-	mv logs logs_$i
-done
+	mv logs logs_"$line"
+done < linux_function_case_list.txt
