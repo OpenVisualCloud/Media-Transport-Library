@@ -1,9 +1,10 @@
-import platform
 import os
-import sys
-import subprocess
+import platform
 import shutil
-from bind_network_card import bind_card 
+import subprocess
+import sys
+
+from bind_network_card import bind_card
 
 os_format = platform.system()
 suite_execute_name = sys.argv[1]

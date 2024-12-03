@@ -10,7 +10,6 @@
 # other than those that are expressly stated in the License.
 
 import pytest
-
 from tests.Engine import udp_app
 
 

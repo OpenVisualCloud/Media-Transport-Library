@@ -9,10 +9,11 @@
 # This software and the related documents are provided as is, with no express or implied warranties,
 # other than those that are expressly stated in the License.
 import os
-import pytest
 
+import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.media_files import audio_files
+
 
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
 def test_st30p_format(build, media, nic_port_list, test_time, audio_format):

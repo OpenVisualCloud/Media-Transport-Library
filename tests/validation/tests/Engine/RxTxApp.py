@@ -11,9 +11,9 @@
 import copy
 import json
 import os
-import sys
 import re
 import subprocess
+import sys
 
 from tests.Engine import rxtxapp_config
 from tests.Engine.const import LOG_FOLDER

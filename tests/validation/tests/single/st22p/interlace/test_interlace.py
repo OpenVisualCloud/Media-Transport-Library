@@ -10,8 +10,8 @@
 # other than those that are expressly stated in the License.
 
 import os
-import pytest
 
+import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.media_files import yuv_files_interlace
 

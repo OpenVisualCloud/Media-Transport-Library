@@ -15,8 +15,7 @@ import os
 import re
 import time
 
-from tests.Engine import RxTxApp
-from tests.Engine import rxtxapp_config
+from tests.Engine import RxTxApp, rxtxapp_config
 from tests.Engine.const import LOG_FOLDER
 from tests.Engine.execute import call, log_fail, run, wait
 

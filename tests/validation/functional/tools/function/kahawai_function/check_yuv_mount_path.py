@@ -1,6 +1,7 @@
 import platform
 import subprocess
 
+
 def check_yuv_mount_path():
     if platform.system().lower() == "windows":
         check_yuv_cmd = r'net use | findstr "10.67.116.200" | findstr "OK"'

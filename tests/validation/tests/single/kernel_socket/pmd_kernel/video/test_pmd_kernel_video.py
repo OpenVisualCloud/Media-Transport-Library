@@ -9,8 +9,8 @@
 # This software and the related documents are provided as is, with no express or implied warranties,
 # other than those that are expressly stated in the License.
 import os
-import pytest
 
+import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.media_files import yuv_files
 

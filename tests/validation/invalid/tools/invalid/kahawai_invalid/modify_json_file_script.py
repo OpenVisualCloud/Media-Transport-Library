@@ -1,6 +1,6 @@
-import re
 import json
 import os
+import re
 from collections import OrderedDict
 
 special_case_list = ['interfaces_ip', 'interfaces_name', "sessions_ip"]

@@ -9,8 +9,8 @@
 # This software and the related documents are provided as is, with no express or implied warranties,
 # other than those that are expressly stated in the License.
 import logging
-import pytest
 
+import pytest
 from tests.Engine.stash import set_issue
 
 

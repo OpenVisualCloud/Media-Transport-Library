@@ -11,14 +11,16 @@
 import datetime
 import logging
 import os
-import pytest
 import shutil
 import subprocess
 from typing import Dict
 
+import pytest
+
 from .const import LOG_FOLDER
 from .csv_report import csv_add_test, csv_write_report
-from .stash import clear_result_log, get_result_log, clear_issue, get_issue, clear_result_note, get_result_note
+from .stash import (clear_issue, clear_result_log, clear_result_note,
+                    get_issue, get_result_log, get_result_note)
 
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 

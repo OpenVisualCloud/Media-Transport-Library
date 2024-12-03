@@ -8,9 +8,10 @@
 #
 # This software and the related documents are provided as is, with no express or implied warranties,
 # other than those that are expressly stated in the License.
-import pytest
 import os
 from typing import Dict
+
+import pytest
 
 from .stash import clear_result_media, remove_result_media
 

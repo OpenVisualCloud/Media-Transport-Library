@@ -9,10 +9,12 @@
 # This software and the related documents are provided as is, with no express or implied warranties,
 # other than those that are expressly stated in the License.
 import os
-import pytest
 
+import pytest
 import tests.Engine.RxTxApp as rxtxapp
-from tests.Engine.media_files import anc_files, audio_files, yuv_files, yuv_files_422rfc10
+from tests.Engine.media_files import (anc_files, audio_files, yuv_files,
+                                      yuv_files_422rfc10)
+
 
 @pytest.mark.parametrize("standard_mode", ["st20p", "st22p"])
 @pytest.mark.parametrize("test_mode", ["multicast"])

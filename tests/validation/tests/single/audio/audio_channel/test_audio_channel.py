@@ -9,11 +9,12 @@
 # This software and the related documents are provided as is, with no express or implied warranties,
 # other than those that are expressly stated in the License.
 import os
-import pytest
 
+import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.media_files import audio_files
 from tests.xfail import SDBQ1001_audio_channel_check
+
 
 @pytest.mark.parametrize("audio_channel", ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"])
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])

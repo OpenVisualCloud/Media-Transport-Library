@@ -1,8 +1,8 @@
-import sys
-import os
-import importlib
 import getopt
+import importlib
+import os
 import platform
+import sys
 
 if platform.system() == "Linux":
     slash = "/"

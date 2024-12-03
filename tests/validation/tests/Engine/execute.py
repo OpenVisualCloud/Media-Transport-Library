@@ -10,13 +10,14 @@
 # other than those that are expressly stated in the License.
 import logging
 import os
-import pytest
 import subprocess
 import threading
 import time
-from pytest_check import check
 from queue import Queue
-from typing import List, Any
+from typing import Any, List
+
+import pytest
+from pytest_check import check
 
 from .const import LOG_FOLDER
 from .stash import add_result_log, set_result_note

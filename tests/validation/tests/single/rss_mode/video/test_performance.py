@@ -11,8 +11,8 @@
 
 import math
 import os
-import pytest
 
+import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.execute import log_info, log_result_note
 from tests.Engine.media_files import yuv_files

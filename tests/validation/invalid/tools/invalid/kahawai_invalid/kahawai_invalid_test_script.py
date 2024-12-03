@@ -1,17 +1,17 @@
-import sys
-import os
-import shutil
 import json
-import re
+import os
 import platform
+import re
+import shutil
 import subprocess
+import sys
 import time
 from collections import OrderedDict
 from multiprocessing import Process
+
+from bind_network_card import bind_card
 from modify_json_file_script import init_json_file, modify_json_file
 from result_keyword_library import get_keyword
-from bind_network_card import bind_card
-
 
 default_path = os.getcwd()
 if platform.system().lower() == "windows":

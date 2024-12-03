@@ -1,14 +1,15 @@
+import json
 import os
-import sys
 import platform
 import shutil
-import json
 import subprocess
+import sys
 from collections import OrderedDict
 from multiprocessing import Process
+
 from bind_network_card import bind_card
-from modify_json_file_script import modify_json_file as deep_modify_json_file
 from check_yuv_mount_path import check_yuv_mount_path
+from modify_json_file_script import modify_json_file as deep_modify_json_file
 
 default_path = os.getcwd()
 
