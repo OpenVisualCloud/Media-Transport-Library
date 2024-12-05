@@ -48,7 +48,6 @@ else
 endif
 
 # add source file
-subdir('src')
 subdir('tools')
 subdir('sample')
 subdir('perf')
@@ -99,14 +98,6 @@ if get_option('enable_asan') == true
   app_c_args += ['-fsanitize=address']
   asan_dep = cc.find_library('asan', required : true)
 endif
-
-# build executable
-executable('RxTxApp', sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libjson_c, libpcap, libsdl2, libsdl2_ttf, libm, libpthread, ws2_32_dep, mman_dep, libopenssl]
-)
 
 # Color convert tool for raw yuv file
 executable('ConvApp', conv_sources,
