@@ -4,7 +4,7 @@
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2020 Niels De Graef <niels.degraef@gmail.com>
  * Copyright (C) 2024 Intel Corporation
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -47,12 +47,11 @@
 #ifndef __GST_MTL_TX_SINK_H__
 #define __GST_MTL_TX_SINK_H__
 
+#include <arpa/inet.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
-#include <arpa/inet.h>
-#include <mtl/st_pipeline_api.h>
 #include <mtl/mtl_api.h>
-
+#include <mtl/st_pipeline_api.h>
 
 G_BEGIN_DECLS
 
@@ -64,67 +63,65 @@ G_BEGIN_DECLS
 #define NS_PER_S (1000 * NS_PER_MS)
 #endif
 
-
 #define GST_TYPE_MTL_TX_SINK (gst_mtltxsink_get_type())
-G_DECLARE_FINAL_TYPE (GstMtlTxSink, gst_mtltxsink,
-    GST, MTL_TX_SINK, GstVideoSink)
+G_DECLARE_FINAL_TYPE(GstMtlTxSink, gst_mtltxsink, GST, MTL_TX_SINK, GstVideoSink)
 
-
-// main handle arguments
 typedef struct StDevArgs {
-  gchar   port[MTL_PORT_MAX_LEN];
-  gchar   local_ip_string[MTL_PORT_MAX_LEN];
-  gint    tx_queues_cnt[MTL_PORT_MAX];
-  gint    rx_queues_cnt[MTL_PORT_MAX];
-  gchar   dma_dev[MTL_PORT_MAX_LEN];
+  gchar port[MTL_PORT_MAX_LEN];
+  gchar local_ip_string[MTL_PORT_MAX_LEN];
+  gint tx_queues_cnt[MTL_PORT_MAX];
+  gint rx_queues_cnt[MTL_PORT_MAX];
+  gchar dma_dev[MTL_PORT_MAX_LEN];
 } StDevArgs;
 
 typedef struct StTxSessionPortArgs {
-  gchar   tx_ip_string[MTL_PORT_MAX_LEN];
-  gchar   port[MTL_PORT_MAX_LEN];
-  gint    udp_port;
-  gint    payload_type;
+  gchar tx_ip_string[MTL_PORT_MAX_LEN];
+  gchar port[MTL_PORT_MAX_LEN];
+  gint udp_port;
+  gint payload_type;
 } StTxSessionPortArgs;
 
 typedef struct StFpsDecs {
-  enum          st_fps st_fps;
-  unsigned int  min;
-  unsigned int  max;
+  enum st_fps st_fps;
+  guint min;
+  guint max;
 } StFpsDecs;
-struct _GstMtlTxSink
-{
-  GstVideoSink        element;
-  GstElement*         child;
-  gboolean            silent;
+struct _GstMtlTxSink {
+  GstVideoSink element;
+  GstElement* child;
+  gboolean silent;
 
-  mtl_handle          mtl_lib_handle;
-  st20p_tx_handle     tx_handle;
-  gint                frame_size;
-  struct st_frame*    frame_in_tranmission;
-  gint                frame_in_tranmission_data_pointer;
+  mtl_handle mtl_lib_handle;
+  st20p_tx_handle tx_handle;
 
-  /* arguments for devices */
-  StDevArgs           devArgs;
-  /* arguments for session port */
+  /* arguments for incomplete frame buffers */
+  gboolean wait_for_frame;
+  gint retry_frame;
+  gint frame_size;
+  struct st_frame* frame_in_tranmission;
+  gint frame_in_tranmission_data_pointer;
+
+  /* arguments for imtl initialization device */
+  StDevArgs devArgs;
+  /* arguments for imtl tx session */
   StTxSessionPortArgs portArgs;
-  /* arguments for session */
-  gint                width;
-  gint                height;
-  void*               pixel_format;
-  void*               framerate;
-  gint                fb_cnt;
-  gint                timeout_sec;
-  gint                session_init_retry;
 
+  /* arguments for session for now taken from src pads */
+  /* TODO Add support for direct src reading */
+  gint width;
+  gint height;
+  void* pixel_format;
+  void* framerate;
+  gint fb_cnt;
+  gint timeout_sec;
+  gint session_init_retry;
 
-
-  int64_t             frame_counter;
-
+  /* TODO add support for gpu direct */
 #ifdef MTL_GPU_DIRECT_ENABLED
-  bool                gpu_direct_enabled;
-  int                 gpu_driver_index;
-  int                 gpu_device_index;
-  void*               gpu_context;
+  gboolean gpu_direct_enabled;
+  gint gpu_driver_index;
+  gint gpu_device_index;
+  gboolean* gpu_context;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 };
 

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2024 Intel Corporation
 
-project('gstreamer-mtl-st20tx', 'c', default_options: ['buildtype=release'],
+project('gstreamer-mtl-st20tx', 'c',
         version: run_command(find_program('cat'), files('../../VERSION'), check: true).stdout().strip(), license : 'LGPL')
 
 cc = meson.get_compiler('c')
@@ -28,10 +28,6 @@ inc_dirs = include_directories(
     '/usr/lib/x86_64-linux-gnu/glib-2.0/include',
     '/usr/local/include/mtl'
 )
-
-
-
-
 
 gstreamer_video_dep = dependency('gstreamer-video-1.0')
 mtl_dep             = dependency('mtl')
