@@ -115,7 +115,7 @@ static GstStaticPadTemplate gst_mtltxsink_sink_pad_template =
 #define gst_mtltxsink_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE(GstMtlTxSink, gst_mtltxsink, GST_TYPE_VIDEO_SINK,
                         GST_DEBUG_CATEGORY_INIT(gst_mtltxsink_debug, "mtltxsink", 0,
-                                                "Mtl St2110 st20 transmition sink"));
+                                                "MTL St2110 st20 transmission sink"));
 
 GST_ELEMENT_REGISTER_DEFINE(mtltxsink, "mtltxsink", GST_RANK_NONE, GST_TYPE_MTL_TX_SINK);
 
@@ -150,9 +150,10 @@ static gboolean gst_mtltxsink_parse_input_fmt(GstVideoInfo* info,
   return TRUE;
 }
 
+// TODO add support for the partial fps
 static gboolean gst_mtltxsink_parse_fps(GstVideoInfo* info, enum st_fps* fps) {
   gint fps_div;
-  if (info->fps_n == 0 || info->fps_d == 0) {
+  if (info->fps_n <= 0 || info->fps_d <= 0) {
     return FALSE;
   }
 
@@ -195,7 +196,7 @@ static void gst_mtltxsink_class_init(GstMtlTxSinkClass* klass) {
 
   gst_element_class_set_metadata(
       gstelement_class, "MtlTxSt20Sink", "Sink/Video",
-      "Mtl transmition plugin for st2110 standard rawvideo st20",
+      "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
       "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
@@ -208,19 +209,19 @@ static void gst_mtltxsink_class_init(GstMtlTxSinkClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_SILENT,
-      g_param_spec_boolean("silent", "Silent", "Produce verbose output ?", FALSE,
+      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
                            G_PARAM_READWRITE));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_DEV_ARGS_PORT,
-      g_param_spec_string("dev-port", "Dpdk device port",
-                          "DPDK port for synchronous ST2110 ST20 raw video "
-                          "transmission, bound to the VFIO DPDK driver. ",
+      g_param_spec_string("dev-port", "DPDK device port",
+                          "DPDK port for synchronous ST 2110-20 uncompressed"
+                          "video transmission, bound to the VFIO DPDK driver. ",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_DEV_ARGS_SIP,
-      g_param_spec_string("dev-ip", "Local device ip",
+      g_param_spec_string("dev-ip", "Local device IP",
                           "Local IP address that the port will be "
                           "identified by. This is the address from which ARP "
                           "responses will be sent.",
@@ -228,41 +229,39 @@ static void gst_mtltxsink_class_init(GstMtlTxSinkClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_TX_DEV_ARGS_DMA_DEV,
-      g_param_spec_string("dma-dev", "Dpdk dma port",
-                          "DPDK port for direct memory access for the MTL "
-                          "direct memory access functionality.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_string("dma-dev", "DPDK DMA port",
+                          "DPDK port for the MTL direct memory functionality.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_PORT_PORT,
       g_param_spec_string("tx-port", "Transmission Device Port",
-                          "Initialized device port for the transmission"
-                          "to go to.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                          "DPDK device port initialized for the transmission.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_PORT_IP,
-      g_param_spec_string("tx-ip", "Transmission Goal IP",
-                          "IP of the port/node you want the transmission "
-                          "to go to.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_string("tx-ip", "Receiving node's IP",
+                          "Receiving MTL node IP address.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_PORT_UDP_PORT,
-      g_param_spec_uint("tx-udp-port", "UDP Port Transmission Goal",
-                        "UDP port to which the transmission will be going.", 0, G_MAXUINT,
-                        20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_uint("tx-udp-port", "Receiver's UDP port",
+                        "Receiving MTL node UDP port.", 0, G_MAXUINT, 20000,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_PORT_PAYLOAD_TYPE,
-      g_param_spec_uint("tx-payload-type", "St2110 payload type", "St2110 payload type",
-                        0, G_MAXUINT, 112, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_uint("tx-payload-type", "ST 2110 payload type",
+                        "SMPTE ST 2110 payload type.", 0, G_MAXUINT, 112,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_TX_PORT_TX_QUEUES,
       g_param_spec_uint("tx-queues", "Number of TX queues",
-                        "Number of TX queues to initialize in DPDK backend", 0, G_MAXUINT,
-                        16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        "Number of TX queues to initialize in DPDK backend.", 0,
+                        G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtltxsink_start(GstBaseSink* bsink) {
@@ -309,13 +308,13 @@ static gboolean gst_mtltxsink_start(GstBaseSink* bsink) {
   }
 
   if (sink->mtl_lib_handle) {
-    GST_ERROR("Mtl already initialized");
+    GST_ERROR("MTL already initialized");
     return false;
   }
 
   sink->mtl_lib_handle = mtl_init(&mtl_init_params);
   if (!sink->mtl_lib_handle) {
-    GST_ERROR("Mtl Couldn't initialize");
+    GST_ERROR("Could not initialize MTL");
     return false;
   }
 
@@ -493,7 +492,7 @@ static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent,
 
       ret = mtl_start(sink->mtl_lib_handle);
       if (ret < 0) {
-        GST_ERROR("Failed to start mtl library");
+        GST_ERROR("Failed to start MTL library");
         return FALSE;
       }
 
@@ -564,7 +563,7 @@ static struct st_frame* gst_mtltxsink_get_frame(GstMtlTxSink* sink) {
     sink->wait_for_frame = false;
     gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PAUSED);
   } else if (*frame_progress) {
-    GST_ERROR("Frame progress mismatch");
+    GST_ERROR("Frame progress missmatch");
     /* reset the progression state and hope for the best */
     *frame_progress = 0;
   }
@@ -575,7 +574,7 @@ static struct st_frame* gst_mtltxsink_get_frame(GstMtlTxSink* sink) {
 /*
  * Takes the buffer from the source pad and sends it to the mtl library via
  * frame buffers, supports incomplete frames. But buffers needs to add up to the
- * actucal frame size.
+ * actual frame size.
  */
 static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuffer* buf) {
   void* frame_buffer_pointer;
@@ -602,7 +601,7 @@ static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuff
     }
 
     if ((buffer_size + *frame_progress) > frame_size) {
-      GST_ERROR("Frame size missmatch");
+      GST_ERROR("Frame size mismatch");
       st20p_tx_put_frame(sink->tx_handle, *frame);
       *frame = NULL;
       *frame_progress = 0;
@@ -649,5 +648,6 @@ static gboolean plugin_init(GstPlugin* mtltxsink) {
 }
 
 GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtltxsink,
-                  "software based solution designed for high-throughput", plugin_init,
-                  PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME, GST_PACKAGE_ORIGIN)
+                  "software-based solution designed for high-throughput transmission",
+                  plugin_init, PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME,
+                  GST_PACKAGE_ORIGIN)

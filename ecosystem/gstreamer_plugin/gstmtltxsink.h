@@ -86,6 +86,7 @@ typedef struct StFpsDecs {
   guint min;
   guint max;
 } StFpsDecs;
+
 struct _GstMtlTxSink {
   GstVideoSink element;
   GstElement* child;
