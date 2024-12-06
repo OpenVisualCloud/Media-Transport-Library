@@ -11,6 +11,7 @@ struct rx_ctx {
   pthread_mutex_t rx_wake_mutex;
   void* app;
   int fb_rcv;
+  bool frame_available;
 };
 
 struct merge_fwd_sample_ctx {
@@ -21,13 +22,14 @@ struct merge_fwd_sample_ctx {
   size_t fb_size;
 
   bool ready;
-  bool stop;
+  volatile bool stop;
   pthread_t fwd_thread;
   pthread_cond_t tx_wake_cond;
   pthread_mutex_t tx_wake_mutex;
 
   int fb_fwd;
   bool sync_tmstamp;
+  bool frame_available;
 };
 
 static int tx_st20p_frame_available(void* priv) {
@@ -36,6 +38,7 @@ static int tx_st20p_frame_available(void* priv) {
   if (!s->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->tx_wake_mutex);
+  s->frame_available = true;
   st_pthread_cond_signal(&s->tx_wake_cond);
   st_pthread_mutex_unlock(&s->tx_wake_mutex);
 
@@ -49,10 +52,32 @@ static int rx_st20p_frame_available(void* priv) {
   if (!app->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->rx_wake_mutex);
+  s->frame_available = true;
   st_pthread_cond_signal(&s->rx_wake_cond);
   st_pthread_mutex_unlock(&s->rx_wake_mutex);
 
   return 0;
+}
+
+
+static void wait_frame_rx_available(struct rx_ctx* s) {
+  struct merge_fwd_sample_ctx* app = s->app;
+
+  st_pthread_mutex_lock(&s->rx_wake_mutex);
+  while (!s->frame_available && !app->stop) {
+    st_pthread_cond_wait(&s->rx_wake_cond, &s->rx_wake_mutex);
+  }
+  s->frame_available = false;
+  st_pthread_mutex_unlock(&s->rx_wake_mutex);
+}
+
+static void wait_frame_tx_available(struct merge_fwd_sample_ctx* s) {
+  st_pthread_mutex_lock(&s->tx_wake_mutex);
+  while (!s->frame_available && !s->stop) {
+    st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
+  }
+  s->frame_available = false;
+  st_pthread_mutex_unlock(&s->tx_wake_mutex);
 }
 
 static void* tx_st20p_fwd_thread(void* args) {
@@ -69,9 +94,7 @@ loop_entry:
     uint64_t tx_tmstamp = 0;
     frame = st20p_tx_get_frame(tx_handle);
     if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->tx_wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
-      st_pthread_mutex_unlock(&s->tx_wake_mutex);
+      wait_frame_tx_available(s);
       continue;
     }
 
@@ -86,9 +109,7 @@ loop_entry:
         } else {
           rx_frame = st20p_rx_get_frame(rx_handle);
           if (!rx_frame) { /* no frame */
-            st_pthread_mutex_lock(&rx->rx_wake_mutex);
-            if (!s->stop) st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
-            st_pthread_mutex_unlock(&rx->rx_wake_mutex);
+            wait_frame_rx_available(rx);
             continue;
           }
         }
@@ -276,8 +297,8 @@ int main(int argc, char** argv) {
   }
 
   // stop fwd thread
-  app.stop = true;
   st_pthread_mutex_lock(&app.tx_wake_mutex);
+  app.stop = true;
   st_pthread_cond_signal(&app.tx_wake_cond);
   st_pthread_mutex_unlock(&app.tx_wake_mutex);
   for (int i = 0; i < 4; i++) {

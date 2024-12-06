@@ -8,7 +8,7 @@ struct rx_st20p_sample_ctx {
   int idx;
   st20p_rx_handle handle;
 
-  bool stop;
+  volatile bool stop;
   pthread_t frame_thread;
 
   int fb_recv;
@@ -25,12 +25,14 @@ struct rx_st20p_sample_ctx {
   struct st20_ext_frame* ext_frames;
   int ext_idx;
   int fb_cnt;
+  bool frame_available;
 };
 
 static int rx_st20p_frame_available(void* priv) {
   struct rx_st20p_sample_ctx* s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
+  s->frame_available = true;
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
 
@@ -119,6 +121,15 @@ static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
   s->fb_recv++;
 }
 
+static void wait_frame_available(struct rx_st20p_sample_ctx* s) {
+  st_pthread_mutex_lock(&s->wake_mutex);
+  while (!s->frame_available && !s->stop) {
+    st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+  }
+  s->frame_available = false;
+  st_pthread_mutex_unlock(&s->wake_mutex);
+}
+
 static void* rx_st20p_frame_thread(void* arg) {
   struct rx_st20p_sample_ctx* s = arg;
   st20p_rx_handle handle = s->handle;
@@ -126,11 +137,10 @@ static void* rx_st20p_frame_thread(void* arg) {
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
+    /* get available frame */
     frame = st20p_rx_get_frame(handle);
-    if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+    if (!frame) {
+      wait_frame_available(s);
       continue;
     }
     rx_st20p_consume_frame(s, frame);
@@ -177,6 +187,7 @@ int main(int argc, char** argv) {
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->dst_fd = -1;
     app[i]->fb_cnt = ctx.framebuff_cnt;
+    app[i]->frame_available = false;
 
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
@@ -255,8 +266,8 @@ int main(int argc, char** argv) {
 
   // stop app thread
   for (int i = 0; i < session_num; i++) {
-    app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
+    app[i]->stop = true;
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
     pthread_join(app[i]->frame_thread, NULL);

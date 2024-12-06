@@ -257,7 +257,8 @@ struct st_app_tx_fmd_session {
   uint8_t* st41_source_end;
   uint8_t* st41_frame_cursor; /* cursor to current frame */
   pthread_t st41_app_thread;
-  bool st41_app_thread_stop;
+  volatile bool st41_app_thread_stop;
+  bool frame_available;
   pthread_cond_t st41_wake_cond;
   pthread_mutex_t st41_wake_mutex;
   uint32_t st41_rtp_tmstamp;

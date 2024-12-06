@@ -9,7 +9,7 @@ struct tx_st20p_sample_ctx {
   int idx;
   st20p_tx_handle handle;
 
-  bool stop;
+  volatile bool stop;
   pthread_t frame_thread;
 
   int fb_send;
@@ -23,6 +23,7 @@ struct tx_st20p_sample_ctx {
   uint8_t* frame_cursor;
 
   mtl_dma_mem_handle dma_mem;
+  bool frame_available;
 };
 
 static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
@@ -111,6 +112,7 @@ static int tx_st20p_frame_available(void* priv) {
   struct tx_st20p_sample_ctx* s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
+  s->frame_available = true;
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
 
@@ -127,6 +129,15 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   return 0;
 }
 
+static void wait_frame_available(struct tx_st20p_sample_ctx* s) {
+  st_pthread_mutex_lock(&s->wake_mutex);
+  while (!s->frame_available && !s->stop) {
+    st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+  }
+  s->frame_available = false;
+  st_pthread_mutex_unlock(&s->wake_mutex);
+}
+
 static void* tx_st20p_frame_thread(void* arg) {
   struct tx_st20p_sample_ctx* s = arg;
   st20p_tx_handle handle = s->handle;
@@ -135,10 +146,8 @@ static void* tx_st20p_frame_thread(void* arg) {
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20p_tx_get_frame(handle);
-    if (!frame) { /* no frame */
-      st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
-      st_pthread_mutex_unlock(&s->wake_mutex);
+    if (!frame) {
+      wait_frame_available(s);
       continue;
     }
     struct st_ext_frame ext_frame;
@@ -205,6 +214,7 @@ int main(int argc, char** argv) {
     app[i]->stop = false;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
+    app[i]->frame_available = false;
 
     struct st20p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));

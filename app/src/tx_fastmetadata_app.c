@@ -31,6 +31,7 @@ static int app_tx_fmd_next_frame(void* priv, uint16_t* next_frame_idx,
     dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
     ret = -EIO;
   }
+  s->frame_available = true;
   st_pthread_cond_signal(&s->st41_wake_cond);
   st_pthread_mutex_unlock(&s->st41_wake_mutex);
   return ret;
@@ -55,6 +56,7 @@ static int app_tx_fmd_frame_done(void* priv, uint16_t frame_idx,
     err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
         frame_idx);
   }
+  s->frame_available = true;
   st_pthread_cond_signal(&s->st41_wake_cond);
   st_pthread_mutex_unlock(&s->st41_wake_mutex);
 
@@ -66,6 +68,7 @@ static int app_tx_fmd_frame_done(void* priv, uint16_t frame_idx,
 static int app_tx_fmd_rtp_done(void* priv) {
   struct st_app_tx_fmd_session* s = priv;
   st_pthread_mutex_lock(&s->st41_wake_mutex);
+  s->frame_available = true;
   st_pthread_cond_signal(&s->st41_wake_cond);
   st_pthread_mutex_unlock(&s->st41_wake_mutex);
   s->st41_packet_done_cnt++;
@@ -85,6 +88,15 @@ static void app_tx_fmd_build_frame(struct st_app_tx_fmd_session* s,
     s->st41_frame_cursor = s->st41_source_begin;
 }
 
+static void wait_frame_available(struct st_app_tx_fmd_session* s) {
+  st_pthread_mutex_lock(&s->st41_wake_mutex);
+  while (!s->frame_available && !s->st41_app_thread_stop) {
+    st_pthread_cond_wait(&s->st41_wake_cond, &s->st41_wake_mutex);
+  }
+  s->frame_available = false;
+  st_pthread_mutex_unlock(&s->st41_wake_mutex);
+}
+
 static void* app_tx_fmd_frame_thread(void* arg) {
   struct st_app_tx_fmd_session* s = arg;
   int idx = s->idx;
@@ -93,14 +105,10 @@ static void* app_tx_fmd_frame_thread(void* arg) {
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st41_app_thread_stop) {
-    st_pthread_mutex_lock(&s->st41_wake_mutex);
     framebuff = &s->framebuffs[s->framebuff_producer_idx];
 
     if (framebuff->stat != ST_TX_FRAME_FREE) {
-      if (!s->st41_app_thread_stop) {
-        st_pthread_cond_wait(&s->st41_wake_cond, &s->st41_wake_mutex);
-      }
-      st_pthread_mutex_unlock(&s->st41_wake_mutex);
+      wait_frame_available(s);
       continue;
     }
 
@@ -147,17 +155,8 @@ static void* app_tx_fmd_pcap_thread(void* arg) {
     /* get available buffer*/
     mbuf = st41_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      st_pthread_mutex_lock(&s->st41_wake_mutex);
-      /* try again */
-      mbuf = st41_tx_get_mbuf(s->handle, &usrptr);
-      if (mbuf) {
-        st_pthread_mutex_unlock(&s->st41_wake_mutex);
-      } else {
-        if (!s->st41_app_thread_stop)
-          st_pthread_cond_wait(&s->st41_wake_cond, &s->st41_wake_mutex);
-        st_pthread_mutex_unlock(&s->st41_wake_mutex);
-        continue;
-      }
+      wait_frame_available(s);
+      continue;
     }
     udp_data_len = 0;
     packet = (uint8_t*)pcap_next(s->st41_pcap, &hdr);
@@ -166,8 +165,7 @@ static void* app_tx_fmd_pcap_thread(void* arg) {
       if (ntohs(eth_hdr->ether_type) == ETHERTYPE_IP) {
         ip_hdr = (struct ip*)(packet + sizeof(struct ether_header));
         if (ip_hdr->ip_p == IPPROTO_UDP) {
-          udp_hdr =
-              (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
+          udp_hdr = (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
@@ -249,17 +247,8 @@ static void* app_tx_fmd_rtp_thread(void* arg) {
     /* get available buffer*/
     mbuf = st41_tx_get_mbuf(s->handle, &usrptr);
     if (!mbuf) {
-      st_pthread_mutex_lock(&s->st41_wake_mutex);
-      /* try again */
-      mbuf = st41_tx_get_mbuf(s->handle, &usrptr);
-      if (mbuf) {
-        st_pthread_mutex_unlock(&s->st41_wake_mutex);
-      } else {
-        if (!s->st41_app_thread_stop)
-          st_pthread_cond_wait(&s->st41_wake_cond, &s->st41_wake_mutex);
-        st_pthread_mutex_unlock(&s->st41_wake_mutex);
-        continue;
-      }
+      wait_frame_available(s);
+      continue;
     }
 
     /* build the rtp pkt */
@@ -354,9 +343,9 @@ static int app_tx_fmd_start_source(struct st_app_tx_fmd_session* s) {
 
 static void app_tx_fmd_stop_source(struct st_app_tx_fmd_session* s) {
   if (s->st41_source_fd >= 0) {
-    s->st41_app_thread_stop = true;
     /* wake up the thread */
     st_pthread_mutex_lock(&s->st41_wake_mutex);
+    s->st41_app_thread_stop = true;
     st_pthread_cond_signal(&s->st41_wake_cond);
     st_pthread_mutex_unlock(&s->st41_wake_mutex);
     if (s->st41_app_thread) (void)pthread_join(s->st41_app_thread, NULL);
@@ -412,6 +401,8 @@ static int app_tx_fmd_init(struct st_app_context* ctx,
   s->st41_source_fd = -1;
   st_pthread_mutex_init(&s->st41_wake_mutex, NULL);
   st_pthread_cond_init(&s->st41_wake_cond, NULL);
+
+  s->frame_available = false;
 
   snprintf(name, 32, "app_tx_fastmetadata%d", idx);
   ops.name = name;
