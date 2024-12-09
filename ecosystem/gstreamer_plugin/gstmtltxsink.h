@@ -89,7 +89,6 @@ typedef struct StFpsDecs {
 
 struct _GstMtlTxSink {
   GstVideoSink element;
-  GstElement* child;
   gboolean silent;
 
   mtl_handle mtl_lib_handle;
