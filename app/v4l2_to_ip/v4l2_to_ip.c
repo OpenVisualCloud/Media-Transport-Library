@@ -768,7 +768,11 @@ static void video_close(struct device* dev) {
 }
 
 static void video_log_status(struct device* dev) {
-  ioctl(dev->fd, VIDIOC_LOG_STATUS);
+  int ret;
+  ret = ioctl(dev->fd, VIDIOC_LOG_STATUS);
+  if (ret < 0) {
+    printf("Failed to log status: %s (%d).\n", strerror(errno), errno);
+  }
 }
 
 static int video_get_format(struct device* dev) {

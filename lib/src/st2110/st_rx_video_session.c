@@ -1325,14 +1325,9 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, enum mtl_session_po
     err("%s(%d,%d), pcap dump already started\n", __func__, idx, s_port);
     return -EIO;
   }
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
+                idx, s_port, max_dump_packets);
 
-  if (s->st22_info) {
-    snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-             idx, s_port, max_dump_packets);
-  } else {
-    snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-             idx, s_port, max_dump_packets);
-  }
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
     err("%s(%d,%d), failed to create pcap file %s\n", __func__, idx, s_port,
@@ -3337,7 +3332,8 @@ static int rv_migrate_dma(struct mtl_main_impl* impl,
 
 static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
                     struct st_rx_video_session_impl* s) {
-  int m_idx = mgr ? mgr->idx : 0, idx = s->idx;
+  int m_idx = mgr->idx;
+  int idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->stat_frames_received);
@@ -3560,6 +3556,8 @@ static int rvs_pkt_rx_tasklet_start(void* priv) {
 
 static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
                      struct st_rx_video_session_impl* s) {
+  if (!mgr || !s)
+    return -EINVAL;
   s->attached = false;
   rv_stat(mgr, s);
   rv_uinit(impl, s);
@@ -3775,6 +3773,9 @@ static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr) {
 static int rv_sessions_stat(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct st_rx_video_session_impl* s;
+
+  if (!mgr)
+    return -EINVAL;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = rx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
