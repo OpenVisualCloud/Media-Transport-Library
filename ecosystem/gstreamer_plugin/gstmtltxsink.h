@@ -63,6 +63,8 @@ G_BEGIN_DECLS
 #define NS_PER_S (1000 * NS_PER_MS)
 #endif
 
+#define PIXEL_FORMAT_LEN 32
+
 #define GST_TYPE_MTL_TX_SINK (gst_mtltxsink_get_type())
 G_DECLARE_FINAL_TYPE(GstMtlTxSink, gst_mtltxsink, GST, MTL_TX_SINK, GstVideoSink)
 
@@ -93,13 +95,17 @@ struct _GstMtlTxSink {
 
   mtl_handle mtl_lib_handle;
   st20p_tx_handle tx_handle;
-
-  /* arguments for incomplete frame buffers */
-  gboolean wait_for_frame;
   gint retry_frame;
   gint frame_size;
+
+  /* arguments for incomplete frame buffers */
+  gboolean incomplete_frame;
   struct st_frame* frame_in_tranmission;
-  gint frame_in_tranmission_data_pointer;
+  gint frame_in_tranmission_progres;
+  gint buffer_idx;
+  GstMemory* buffer_in_tranmission;
+  gint buffer_in_tranmission_progress;
+
 
   /* arguments for imtl initialization device */
   StDevArgs devArgs;
@@ -107,14 +113,14 @@ struct _GstMtlTxSink {
   StTxSessionPortArgs portArgs;
 
   /* arguments for session for now taken from src pads */
-  /* TODO Add support for direct src reading */
   gint width;
   gint height;
-  void* pixel_format;
-  void* framerate;
-  gint fb_cnt;
+  char pixel_format[PIXEL_FORMAT_LEN];
+  gint framerate;
+  gint framebuffer_num;
   gint timeout_sec;
   gint session_init_retry;
+  gboolean interlaced;
 
   /* TODO add support for gpu direct */
 #ifdef MTL_GPU_DIRECT_ENABLED

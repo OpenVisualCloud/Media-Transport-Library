@@ -100,6 +100,12 @@ enum {
   PROP_TX_PORT_UDP_PORT,
   PROP_TX_PORT_PAYLOAD_TYPE,
   PROP_TX_PORT_TX_QUEUES,
+  PROP_TX_WIDTH,
+  PROP_TX_HEIGHT,
+  PROP_TX_INTERLACED,
+  PROP_TX_PIXEL_FORMAT,
+  PROP_TX_FRAMERATE,
+  PROP_TX_FRAMEBUFF_NUM,
   PROP_MAX
 };
 
@@ -132,7 +138,9 @@ static gboolean gst_mtltxsink_start(GstBaseSink* bsink);
 static gboolean gst_mtltxsink_stop(GstBaseSink* bsink);
 
 static gboolean gst_mtltxsink_parse_input_fmt(GstVideoInfo* info, enum st_frame_fmt* fmt);
+static gboolean gst_mtltxsink_parse_input_fmt_code(const char* format, enum st_frame_fmt* fmt);
 static gboolean gst_mtltxsink_parse_fps(GstVideoInfo* info, enum st_fps* fps);
+static gboolean gst_mtltxsink_parse_fps_code(gint info, enum st_fps* fps);
 static struct st_frame* gst_mtltxsink_get_frame(GstMtlTxSink* sink);
 
 static gboolean gst_mtltxsink_parse_input_fmt(GstVideoInfo* info,
@@ -150,7 +158,7 @@ static gboolean gst_mtltxsink_parse_input_fmt(GstVideoInfo* info,
   return TRUE;
 }
 
-static gboolean parse_st20p_format(const char* format, enum st_frame_fmt* fmt) {
+static gboolean gst_mtltxsink_parse_input_fmt_code(const char* format, enum st_frame_fmt* fmt) {
   if (!fmt || !format) {
     GST_ERROR("%s, invalid input\n", __func__);
     return FALSE;
@@ -201,7 +209,7 @@ static gboolean parse_st20p_format(const char* format, enum st_frame_fmt* fmt) {
   } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
     *fmt = ST_FRAME_FMT_RGBRFC4175PG2BE12;
   } else {
-    err("%s, invalid output format %s\n", __func__, format);
+    GST_ERROR("invalid output format %s\n", format);
     return FALSE;
   }
   return TRUE;
@@ -247,7 +255,7 @@ static gboolean gst_mtltxsink_parse_fps(GstVideoInfo* info, enum st_fps* fps) {
   return TRUE;
 }
 
-static gboolean gst_mtltxsink_parse_fps(gint fps_code, enum st_fps* fps) {
+static gboolean gst_mtltxsink_parse_fps_code(gint fps_code, enum st_fps* fps) {
 
   if (!fps) {
     GST_ERROR("Invalid fps pointer");
@@ -257,36 +265,37 @@ static gboolean gst_mtltxsink_parse_fps(gint fps_code, enum st_fps* fps) {
   switch (fps_code) {
     case 120:
       *fps = ST_FPS_P120;
-      return;
+      break;
     case 11988:
       *fps = ST_FPS_P119_88;
-      return;
+      break;
     case 100:
       *fps = ST_FPS_P100;
-      return;
+      break;
     case 60:
       *fps = ST_FPS_P60;
-      return;
+      break;
     case 5994:
       *fps = ST_FPS_P59_94;
-      return;
+      break;
     case 50:
       *fps = ST_FPS_P50;
-      return;
+      break;
     case 30:
       *fps = ST_FPS_P30;
-      return;
+      break;
     case 2997:
       *fps = ST_FPS_P29_97;
-      return;
+      break;
     case 25:
       *fps = ST_FPS_P25;
-      return;
+      break;
     case 24:
       *fps = ST_FPS_P24;
-      return;
+      break;
     case 2398:
       *fps = ST_FPS_P23_98;
+      break;
     default:
       return FALSE;
   }
@@ -370,6 +379,43 @@ static void gst_mtltxsink_class_init(GstMtlTxSinkClass* klass) {
       g_param_spec_uint("tx-queues", "Number of TX queues",
                         "Number of TX queues to initialize in DPDK backend.", 0,
                         G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_TX_WIDTH,
+      g_param_spec_uint("tx-width", "Video Width",
+                        "Width of the video frame to be transmitted.", 0, G_MAXUINT, 1920,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_TX_HEIGHT,
+      g_param_spec_uint("tx-height", "Video Height",
+                        "Height of the video frame to be transmitted.", 0, G_MAXUINT, 1080,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_TX_INTERLACED,
+      g_param_spec_boolean("tx-interlaced", "Interlaced mode",
+                           "Whether the video frame is interlaced.", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_TX_PIXEL_FORMAT,
+      g_param_spec_string("tx-pixel-format", "Pixel Format",
+                          "Pixel format of the video frame to be transmitted.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_TX_FRAMERATE,
+      g_param_spec_uint("tx-fps", "Video framerate",
+                        "Framerate of the video.", 0, G_MAXUINT, 0,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_TX_FRAMEBUFF_NUM,
+      g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
+                        "Number of framebuffers to be used for transmission.", 0, G_MAXUINT, 3,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
 }
 
 static gboolean gst_mtltxsink_start(GstBaseSink* bsink) {
@@ -490,6 +536,21 @@ static void gst_mtltxsink_set_property(GObject* object, guint prop_id,
     case PROP_TX_PORT_TX_QUEUES:
       self->devArgs.tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
       break;
+    case PROP_TX_WIDTH:
+      self->width = g_value_get_uint(value);
+      break;
+    case PROP_TX_HEIGHT:
+      self->height = g_value_get_uint(value);
+      break;
+    case PROP_TX_INTERLACED:
+      self->interlaced = g_value_get_boolean(value);
+      break;
+    case PROP_TX_PIXEL_FORMAT:
+      strncpy(self->pixel_format, g_value_get_string(value), PIXEL_FORMAT_LEN);
+      break;
+    case PROP_TX_FRAMERATE:
+      self->framerate = g_value_get_uint(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -524,6 +585,24 @@ static void gst_mtltxsink_get_property(GObject* object, guint prop_id, GValue* v
       break;
     case PROP_TX_PORT_PAYLOAD_TYPE:
       g_value_set_uint(value, sink->portArgs.payload_type);
+      break;
+    case PROP_TX_PORT_TX_QUEUES:
+      g_value_set_uint(value, sink->devArgs.tx_queues_cnt[MTL_PORT_P]);
+      break;
+    case PROP_TX_WIDTH:
+      g_value_set_uint(value, sink->width);
+      break;
+    case PROP_TX_HEIGHT:
+      g_value_set_uint(value, sink->height);
+      break;
+    case PROP_TX_INTERLACED:
+      g_value_set_boolean(value, sink->interlaced);
+      break;
+    case PROP_TX_PIXEL_FORMAT:
+      g_value_set_string(value, sink->pixel_format);
+      break;
+    case PROP_TX_FRAMERATE:
+      g_value_set_uint(value, sink->framerate);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -635,13 +714,25 @@ static gboolean gst_mtltxsink_session_create (GstMtlTxSink *sink) {
   ops_tx.width = sink->width;
   ops_tx.height = sink->height;
   ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-  ops_tx.framebuff_cnt = 3;
   ops_tx.port.num_port = 1;
-  ops_tx.interlaced = 0;
+  ops_tx.interlaced = sink->interlaced;
   ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
 
-  ops_tx.input_fmt = ST_FRAME_FMT_V210;
-  ops_tx.fps = ST_FPS_P60;
+  if (sink->framebuffer_num) {
+    ops_tx.framebuff_cnt = sink->framebuffer_num;
+  } else {
+    ops_tx.framebuff_cnt = 3;
+  }
+
+  if (! gst_mtltxsink_parse_input_fmt_code(sink->pixel_format, &ops_tx.input_fmt) ) {
+    GST_ERROR("Failed to parse input format");
+    return FALSE;
+  }
+
+  if (! gst_mtltxsink_parse_fps_code(sink->framerate, &ops_tx.fps) ) {
+    GST_ERROR("Failed to parse fps");
+    return FALSE;
+  }
 
   if (inet_pton(AF_INET, sink->portArgs.tx_ip_string,
                 ops_tx.port.dip_addr[MTL_PORT_P]) != 1) {
@@ -682,6 +773,10 @@ static gboolean gst_mtltxsink_session_create (GstMtlTxSink *sink) {
     return FALSE;
   }
 
+  sink->incomplete_frame = TRUE;
+  sink->frame_size = st20p_tx_frame_size(sink->tx_handle);
+
+  return TRUE;
 }
 
 
@@ -689,7 +784,6 @@ static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent,
                                          GstEvent* event) {
   GstMtlTxSink* sink;
   GstCaps* caps;
-  GstVideoInfo* info;
   gint ret;
 
   sink = GST_MTL_TX_SINK(parent);
@@ -711,8 +805,12 @@ static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent,
       break;
     case GST_EVENT_SEGMENT:
       if (!sink->tx_handle) {
-        GST_ERROR("Tx handle not initialized");
-        return FALSE;
+        ret = gst_mtltxsink_session_create(sink);
+        if (!ret) {
+          GST_ERROR("Failed to create TX session from caps negotiation");
+          return FALSE;
+        }
+        ret = gst_pad_event_default(pad, parent, event);
       }
       ret = gst_pad_event_default(pad, parent, event);
       break;
@@ -736,7 +834,7 @@ static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent,
  */
 static struct st_frame* gst_mtltxsink_get_frame(GstMtlTxSink* sink) {
   struct st_frame** frame = &sink->frame_in_tranmission;
-  gint* frame_progress = &sink->frame_in_tranmission_data_pointer;
+
   if (*frame) {
     return *frame;
   }
@@ -744,35 +842,92 @@ static struct st_frame* gst_mtltxsink_get_frame(GstMtlTxSink* sink) {
   *frame = st20p_tx_get_frame(sink->tx_handle);
 
   if (!*frame) {
-    /* processing the frames in mtl halt the sink */
-    gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
-    GST_WARNING("Get frame timeout");
-
     for (int j = 0; j < sink->retry_frame; j++) {
       *frame = st20p_tx_get_frame(sink->tx_handle);
       if (*frame) {
-        /* pipeline can resume as the framebuffers are available again */
-        gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PAUSED);
         return *frame;
       }
     }
 
     if (!*frame) {
       GST_ERROR("Failed to get frame");
-      sink->wait_for_frame = TRUE;
       return NULL;
     }
-
-  } else if (sink->wait_for_frame) {
-    sink->wait_for_frame = FALSE;;
-    gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PAUSED);
-  } else if (*frame_progress) {
-    GST_ERROR("Frame progress missmatch");
-    /* reset the progression state and hope for the best */
-    *frame_progress = 0;
   }
 
+
   return *frame;
+}
+
+static gboolean gst_mtltxsink_peek_memory(GstBuffer* buf, GstMtlTxSink* sink, void** gst_buffer_memory, gint* buffer_copy_size) {
+  void* memory = sink->buffer_in_tranmission;
+  gint buffer_n = gst_buffer_n_memory(buf);
+  gint buffer_size = gst_buffer_get_size(buf);
+
+  if (!memory || sink->buffer_in_tranmission_progress >= buffer_size) {
+    if (sink->buffer_idx >= buffer_n) {
+      sink->buffer_idx = 0;
+      return FALSE;
+    }
+
+    memory = gst_buffer_peek_memory(buf, sink->buffer_idx);
+    sink->buffer_idx++;
+  }
+
+  if (!memory) {
+    GST_ERROR("Failed to get memory from buffer");
+    return FALSE;
+  }
+
+  if (sink->frame_in_tranmission_progres + buffer_size > sink->frame_size) {
+    *buffer_copy_size = sink->frame_size - sink->frame_in_tranmission_progres;
+  } else {
+    *buffer_copy_size = buffer_size;
+  }
+  sink->buffer_in_tranmission_progress += *buffer_copy_size;
+  *gst_buffer_memory = memory;
+
+  return TRUE;
+}
+
+static GstFlowReturn gst_mtltxsink_process_incomplete_frame(GstMtlTxSink* sink, GstBuffer* buf) {
+  void* frame_buffer_pointer = sink->frame_in_tranmission;;
+  void* gst_buffer_memory = NULL;
+  struct st_frame** frame = &sink->frame_in_tranmission;
+  gint buffer_copy_size = 0;
+  gint buffer_size = gst_buffer_get_size(buf);
+  gint frame_size = sink->frame_size;
+  gint* frame_progress = &sink->frame_in_tranmission_progres;
+
+  /* itarate over the size of the data in the buffer and copy it to the frame buffers */
+  while (gst_mtltxsink_peek_memory(buf, sink, &gst_buffer_memory, &buffer_copy_size)) {
+
+    *frame = gst_mtltxsink_get_frame(sink);
+    if (!*frame) {
+      GST_ERROR("Failed to get frame");
+      return GST_FLOW_ERROR;
+    }
+
+    /* progress the frame pointer */
+    frame_buffer_pointer = (*frame)->addr[0] + *frame_progress;
+
+    /* gst_buffer_peek_memory provides memory chunks that fit within the frame */
+    mtl_memcpy(frame_buffer_pointer, gst_buffer_memory, buffer_copy_size);
+    *frame_progress += buffer_copy_size;
+
+
+    if (*frame_progress > frame_size) {
+      GST_ERROR("Frame size %d, buffer size mismatch %d\n", frame_size, buffer_size);
+    }
+
+    if (*frame_progress >= frame_size) {
+      st20p_tx_put_frame(sink->tx_handle, *frame);
+      *frame = NULL;
+      *frame_progress = 0;
+    }
+  }
+
+  return GST_FLOW_OK;
 }
 
 /*
@@ -781,47 +936,51 @@ static struct st_frame* gst_mtltxsink_get_frame(GstMtlTxSink* sink) {
  * actual frame size.
  */
 static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuffer* buf) {
-  void* frame_buffer_pointer;
   GstMtlTxSink* sink = GST_MTL_TX_SINK(parent);
   gint buffer_size = gst_buffer_get_size(buf);
   gint buffer_n = gst_buffer_n_memory(buf);
+
   struct st_frame** frame = &sink->frame_in_tranmission;
-  gint* frame_progress = &sink->frame_in_tranmission_data_pointer;
   gint frame_size = sink->frame_size;
-  void* gst_buffer_memory;
+  void* gst_buffer_memory = NULL;
 
   if (!sink->tx_handle) {
     GST_ERROR("Tx handle not initialized");
+    gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
     return GST_FLOW_ERROR;
   }
 
+  if (buffer_size == 0) {
+    GST_ERROR("Buffer size is 0");
+    return GST_FLOW_ERROR;
+  }
+
+  /* partial frames mode */
+  if (buffer_size != frame_size && sink->incomplete_frame) {
+    return gst_mtltxsink_process_incomplete_frame(sink, buf);
+  } else if (buffer_size != frame_size) {
+    GST_ERROR("Frame size %d, buffer size %d\n", frame_size, buffer_size);
+    return GST_FLOW_ERROR;
+  }
+
+  /* complete frames mode */
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
-
     *frame = gst_mtltxsink_get_frame(sink);
-    if (!*frame) {
-      GST_ERROR("Failed to get frame");
+
+    if (!*frame || !gst_buffer_memory) {
+      GST_ERROR("Failed to get frame or memory");
       return GST_FLOW_ERROR;
     }
 
-    if ((buffer_size + *frame_progress) > frame_size) {
-      GST_ERROR("Frame size mismatch");
-      st20p_tx_put_frame(sink->tx_handle, *frame);
-      *frame = NULL;
-      *frame_progress = 0;
+    mtl_memcpy(frame, gst_buffer_memory, buffer_size);
+    if (st20p_tx_put_frame(sink->tx_handle, *frame) < 0) {
+      GST_ERROR("Failed to put frame");
       return GST_FLOW_ERROR;
     }
-
-    frame_buffer_pointer = (*frame)->addr[0] + *frame_progress;
-    *frame_progress += buffer_size;
-
-    mtl_memcpy(frame_buffer_pointer, gst_buffer_memory, buffer_size);
-    if (*frame_progress == frame_size) {
-      st20p_tx_put_frame(sink->tx_handle, *frame);
-      *frame = NULL;
-      *frame_progress = 0;
-    }
+    *frame = NULL;
   }
+
   return GST_FLOW_OK;
 }
 
