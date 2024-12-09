@@ -5,6 +5,11 @@
 
 set -e
 
+script_name=$(basename "$0")
+script_path=$(readlink -qe "$0")
+script_folder=${script_path/$script_name/}
+cd "${script_folder}"
+
 if [ -n "$1" ]; then
 	dpdk_ver=$1
 else
