@@ -937,12 +937,12 @@ static GstFlowReturn gst_mtltxsink_process_incomplete_frame(GstMtlTxSink* sink, 
  */
 static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuffer* buf) {
   GstMtlTxSink* sink = GST_MTL_TX_SINK(parent);
-  gint buffer_size = gst_buffer_get_size(buf);
-  gint buffer_n = gst_buffer_n_memory(buf);
-
+  GstMemory* gst_buffer_memory = NULL;
+  GstMapInfo map_info;
   struct st_frame** frame = &sink->frame_in_tranmission;
   gint frame_size = sink->frame_size;
-  void* gst_buffer_memory = NULL;
+  gint buffer_size = gst_buffer_get_size(buf);
+  gint buffer_n = gst_buffer_n_memory(buf);
 
   if (!sink->tx_handle) {
     GST_ERROR("Tx handle not initialized");
@@ -966,14 +966,22 @@ static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuff
   /* complete frames mode */
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
-    *frame = gst_mtltxsink_get_frame(sink);
-
-    if (!*frame || !gst_buffer_memory) {
-      GST_ERROR("Failed to get frame or memory");
+    if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
+      GST_ERROR("Failed to map memory");
       return GST_FLOW_ERROR;
     }
 
-    mtl_memcpy(frame, gst_buffer_memory, buffer_size);
+    *frame = gst_mtltxsink_get_frame(sink);
+    *frame = *(frame)->addr[0];
+
+    if (!*frame) {
+      GST_ERROR("Failed to get frame");
+      return GST_FLOW_ERROR;
+    }
+    void* d = gst_buffer_memory;
+    gst_memory_unmap(d, &map_info);
+    mtl_memcpy(frame, (void*)gst_buffer_memory, buffer_size);
+    
     if (st20p_tx_put_frame(sink->tx_handle, *frame) < 0) {
       GST_ERROR("Failed to put frame");
       return GST_FLOW_ERROR;
