@@ -80,8 +80,7 @@ static int rsq_entry_free(struct mt_rsq_entry* entry) {
     mt_ring_dequeue_clean(entry->ring);
     rte_ring_free(entry->ring);
   }
-  if (entry->mcast_fd > 0)
-    close(entry->mcast_fd);
+  if (entry->mcast_fd > 0) close(entry->mcast_fd);
 
   entry->mcast_fd = -1;
 

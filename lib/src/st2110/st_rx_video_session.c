@@ -1326,7 +1326,7 @@ static int rv_start_pcap(struct st_rx_video_session_impl* s, enum mtl_session_po
     return -EIO;
   }
   snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-                idx, s_port, max_dump_packets);
+           idx, s_port, max_dump_packets);
 
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
@@ -3556,8 +3556,7 @@ static int rvs_pkt_rx_tasklet_start(void* priv) {
 
 static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
                      struct st_rx_video_session_impl* s) {
-  if (!mgr || !s)
-    return -EINVAL;
+  if (!mgr || !s) return -EINVAL;
   s->attached = false;
   rv_stat(mgr, s);
   rv_uinit(impl, s);
@@ -3774,8 +3773,7 @@ static int rv_sessions_stat(void* priv) {
   struct st_rx_video_sessions_mgr* mgr = priv;
   struct st_rx_video_session_impl* s;
 
-  if (!mgr)
-    return -EINVAL;
+  if (!mgr) return -EINVAL;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = rx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
