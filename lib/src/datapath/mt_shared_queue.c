@@ -80,10 +80,10 @@ static int rsq_entry_free(struct mt_rsq_entry* entry) {
     mt_ring_dequeue_clean(entry->ring);
     rte_ring_free(entry->ring);
   }
-  if (entry->mcast_fd) {
-    close(entry->mcast_fd);
-    entry->mcast_fd = -1;
-  }
+  if (entry->mcast_fd > 0) close(entry->mcast_fd);
+
+  entry->mcast_fd = -1;
+
   info("%s(%d), succ on q %u idx %d\n", __func__, rsqm->port, entry->queue_id,
        entry->idx);
   mt_rte_free(entry);
