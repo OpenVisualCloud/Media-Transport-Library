@@ -133,7 +133,6 @@ static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuff
 static gboolean gst_mtltxsink_start(GstBaseSink* bsink);
 static gboolean gst_mtltxsink_stop(GstBaseSink* bsink);
 
-
 static gboolean gst_mtltxsink_parse_input_fmt(GstVideoInfo* info, enum st_frame_fmt* fmt);
 static gboolean gst_mtltxsink_parse_fps(GstVideoInfo* info, enum st_fps* fps);
 static gboolean gst_mtltxsink_parse_fps_code(gint fps_code, enum st_fps* fps);
@@ -256,8 +255,6 @@ static void gst_mtltxsink_class_init(GstMtlTxSinkClass* klass) {
   gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtltxsink_finalize);
   gstvideosinkelement_class->parent_class.start = GST_DEBUG_FUNCPTR(gst_mtltxsink_start);
 
-  //gstvideosinkelement_class->parent_class.stop = GST_DEBUG_FUNCPTR(gst_mtltxsink_stop);
-
   g_object_class_install_property(
       gobject_class, PROP_SILENT,
       g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
@@ -334,7 +331,7 @@ static gboolean gst_mtltxsink_start(GstBaseSink* bsink) {
 
   GST_DEBUG_OBJECT(sink, "start");
   GST_DEBUG("Media Transport Initialization start");
-  gst_base_sink_set_async_enabled (bsink, FALSE);
+  gst_base_sink_set_async_enabled(bsink, FALSE);
 
   /* mtl is already initialzied */
   if (sink->mtl_lib_handle) {
@@ -626,8 +623,7 @@ static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent,
     case GST_EVENT_EOS:
       gst_mtltxsink_stop(GST_BASE_SINK(sink));
       ret = gst_pad_event_default(pad, parent, event);
-      gst_element_post_message(GST_ELEMENT(sink),
-                               gst_message_new_eos(GST_OBJECT(sink)));
+      gst_element_post_message(GST_ELEMENT(sink), gst_message_new_eos(GST_OBJECT(sink)));
       break;
     default:
       ret = gst_pad_event_default(pad, parent, event);
@@ -682,11 +678,10 @@ static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuff
   return GST_FLOW_OK;
 }
 
-
-static void gst_mtltxsink_finalize(GObject * object) {
+static void gst_mtltxsink_finalize(GObject* object) {
   GstMtlTxSink* sink = GST_MTL_TX_SINK(object);
 
-  if(sink->tx_handle) {
+  if (sink->tx_handle) {
     if (st20p_tx_free(sink->tx_handle)) {
       GST_ERROR("Failed to free tx handle");
       return;
@@ -699,7 +694,6 @@ static void gst_mtltxsink_finalize(GObject * object) {
       return;
     }
   }
-
 }
 
 static gboolean gst_mtltxsink_stop(GstBaseSink* bsink) {
