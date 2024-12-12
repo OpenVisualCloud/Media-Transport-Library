@@ -125,13 +125,14 @@ static void gst_mtltxsink_set_property(GObject* object, guint prop_id,
                                        const GValue* value, GParamSpec* pspec);
 static void gst_mtltxsink_get_property(GObject* object, guint prop_id, GValue* value,
                                        GParamSpec* pspec);
+static void gst_mtltxsink_finalize(GObject* object);
 
 static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent, GstEvent* event);
 static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuffer* buf);
-static gboolean gst_mtltxsink_query(GstPad* pad, GstObject* parent, GstQuery* query);
 
 static gboolean gst_mtltxsink_start(GstBaseSink* bsink);
 static gboolean gst_mtltxsink_stop(GstBaseSink* bsink);
+
 
 static gboolean gst_mtltxsink_parse_input_fmt(GstVideoInfo* info, enum st_frame_fmt* fmt);
 static gboolean gst_mtltxsink_parse_fps(GstVideoInfo* info, enum st_fps* fps);
@@ -252,8 +253,10 @@ static void gst_mtltxsink_class_init(GstMtlTxSinkClass* klass) {
 
   gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_mtltxsink_set_property);
   gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_mtltxsink_get_property);
+  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtltxsink_finalize);
   gstvideosinkelement_class->parent_class.start = GST_DEBUG_FUNCPTR(gst_mtltxsink_start);
-  gstvideosinkelement_class->parent_class.stop = GST_DEBUG_FUNCPTR(gst_mtltxsink_stop);
+
+  //gstvideosinkelement_class->parent_class.stop = GST_DEBUG_FUNCPTR(gst_mtltxsink_stop);
 
   g_object_class_install_property(
       gobject_class, PROP_SILENT,
@@ -331,6 +334,17 @@ static gboolean gst_mtltxsink_start(GstBaseSink* bsink) {
 
   GST_DEBUG_OBJECT(sink, "start");
   GST_DEBUG("Media Transport Initialization start");
+  gst_base_sink_set_async_enabled (bsink, FALSE);
+
+  /* mtl is already initialzied */
+  if (sink->mtl_lib_handle) {
+    GST_INFO("Mtl already initialized");
+    if (mtl_start(sink->mtl_lib_handle)) {
+      GST_ERROR("Failed to start MTL");
+      return FALSE;
+    }
+    return TRUE;
+  }
 
   strncpy(mtl_init_params.port[MTL_PORT_P], sink->devArgs.port, MTL_PORT_MAX_LEN);
 
@@ -377,6 +391,8 @@ static gboolean gst_mtltxsink_start(GstBaseSink* bsink) {
     return false;
   }
 
+  gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
+
   return true;
 }
 
@@ -390,23 +406,9 @@ static void gst_mtltxsink_init(GstMtlTxSink* sink) {
     return;
   }
 
-  gst_pad_set_query_function(sinkpad, gst_mtltxsink_query);
-
   gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtltxsink_sink_event));
 
   gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtltxsink_chain));
-}
-
-static gboolean gst_mtltxsink_query(GstPad* pad, GstObject* parent, GstQuery* query) {
-  gboolean ret = FALSE;
-
-  switch (GST_QUERY_TYPE(query)) {
-    default:
-      ret = gst_pad_query_default(pad, parent, query);
-      break;
-  }
-
-  return ret;
 }
 
 static void gst_mtltxsink_set_property(GObject* object, guint prop_id,
@@ -622,10 +624,10 @@ static gboolean gst_mtltxsink_sink_event(GstPad* pad, GstObject* parent,
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
-      gst_element_set_state(GST_ELEMENT(sink), GST_STATE_CHANGE_READY_TO_NULL);
       gst_mtltxsink_stop(GST_BASE_SINK(sink));
       ret = gst_pad_event_default(pad, parent, event);
-      gst_element_set_state(GST_ELEMENT(sink), GST_STATE_NULL);
+      gst_element_post_message(GST_ELEMENT(sink),
+                               gst_message_new_eos(GST_OBJECT(sink)));
       break;
     default:
       ret = gst_pad_event_default(pad, parent, event);
@@ -680,18 +682,31 @@ static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuff
   return GST_FLOW_OK;
 }
 
-static gboolean gst_mtltxsink_stop(GstBaseSink* bsink) {
-  GstMtlTxSink* sink = GST_MTL_TX_SINK(bsink);
 
-  if (sink->tx_handle) {
-    st20p_tx_free(sink->tx_handle);
-    sink->tx_handle = NULL;
+static void gst_mtltxsink_finalize(GObject * object) {
+  GstMtlTxSink* sink = GST_MTL_TX_SINK(object);
+
+  if(sink->tx_handle) {
+    if (st20p_tx_free(sink->tx_handle)) {
+      GST_ERROR("Failed to free tx handle");
+      return;
+    }
   }
 
   if (sink->mtl_lib_handle) {
+    if (mtl_stop(sink->mtl_lib_handle) || mtl_uninit(sink->mtl_lib_handle)) {
+      GST_ERROR("Failed to uninitialize MTL library");
+      return;
+    }
+  }
+
+}
+
+static gboolean gst_mtltxsink_stop(GstBaseSink* bsink) {
+  GstMtlTxSink* sink = GST_MTL_TX_SINK(bsink);
+
+  if (sink->mtl_lib_handle) {
     mtl_stop(sink->mtl_lib_handle);
-    mtl_uninit(sink->mtl_lib_handle);
-    sink->mtl_lib_handle = NULL;
   }
 
   return true;
