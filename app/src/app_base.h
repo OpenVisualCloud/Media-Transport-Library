@@ -593,6 +593,8 @@ struct st_app_rx_st30p_session {
 
   uint8_t num_port;
   uint64_t last_stat_time_ns;
+  char st30p_destination_url[ST_APP_URL_MAX_LEN];
+  FILE* st30p_destination_file;
 
   /* stat */
   int stat_frame_received;

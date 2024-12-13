@@ -145,6 +145,11 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
     s->handle = NULL;
   }
 
+  if (s->st20p_destination_file) {
+    fclose(s->st20p_destination_file);
+    s->st20p_destination_file = NULL;
+  }
+
   return 0;
 }
 
