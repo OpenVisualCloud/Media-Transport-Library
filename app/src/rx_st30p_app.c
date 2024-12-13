@@ -6,10 +6,14 @@
 
 static void app_rx_st30p_consume_frame(struct st_app_rx_st30p_session* s,
                                        struct st30_frame* frame) {
-  // int idx = s->idx;
-  // todo
-  MTL_MAY_UNUSED(s);
-  MTL_MAY_UNUSED(frame);
+  int idx = s->idx;
+
+  if (s->st30p_destination_file) {
+    if (!fwrite(frame->addr, 1, s->st30p_frame_size, s->st30p_destination_file)) {
+      err("%s(%d), failed to write frame to file %s\n", __func__, idx,
+          s->st30p_destination_url);
+    }
+  }
 }
 
 static void* app_rx_st30p_frame_thread(void* arg) {
@@ -69,6 +73,11 @@ static int app_rx_st30p_uinit(struct st_app_rx_st30p_session* s) {
     s->handle = NULL;
   }
 
+  if (s->st30p_destination_file) {
+    fclose(s->st30p_destination_file);
+    s->st30p_destination_file = NULL;
+  }
+
   return 0;
 }
 
@@ -113,6 +122,17 @@ static int app_rx_st30p_init(struct st_app_context* ctx,
         st30p ? st30p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
         st30p ? st30p->base.udp_port : (10000 + s->idx);
+  }
+  if (st30p && st30p->info.audio_url[0] != '\0') {
+    memcpy(s->st30p_destination_url, st30p->info.audio_url, ST_APP_URL_MAX_LEN);
+    s->st30p_destination_file = fopen(s->st30p_destination_url, "wb");
+
+    if (!s->st30p_destination_file) {
+      err("%s(%d), failed to open destination file %s\n", __func__, idx,
+          s->st30p_destination_url);
+      app_rx_st30p_uinit(s);
+      return -EIO;
+    }
   }
   ops.port.payload_type = st30p ? st30p->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 
