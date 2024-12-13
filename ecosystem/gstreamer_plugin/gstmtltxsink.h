@@ -81,41 +81,25 @@ typedef struct StTxSessionPortArgs {
   gint payload_type;
 } StTxSessionPortArgs;
 
-typedef struct StFpsDecs {
-  enum st_fps st_fps;
-  guint min;
-  guint max;
-} StFpsDecs;
-
 struct _GstMtlTxSink {
   GstVideoSink element;
   GstElement* child;
   gboolean silent;
-
   mtl_handle mtl_lib_handle;
   st20p_tx_handle tx_handle;
 
   /* arguments for incomplete frame buffers */
-  gboolean wait_for_frame;
-  gint retry_frame;
-  gint frame_size;
-  struct st_frame* frame_in_tranmission;
-  gint frame_in_tranmission_data_pointer;
+  guint retry_frame;
+  guint frame_size;
 
   /* arguments for imtl initialization device */
   StDevArgs devArgs;
   /* arguments for imtl tx session */
   StTxSessionPortArgs portArgs;
 
-  /* arguments for session for now taken from src pads */
-  /* TODO Add support for direct src reading */
-  gint width;
-  gint height;
-  void* pixel_format;
-  void* framerate;
-  gint fb_cnt;
-  gint timeout_sec;
-  gint session_init_retry;
+  /* arguments for session */
+  guint framebuffer_num;
+  guint framerate;
 
   /* TODO add support for gpu direct */
 #ifdef MTL_GPU_DIRECT_ENABLED
