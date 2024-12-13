@@ -675,7 +675,7 @@ static GstFlowReturn gst_mtltxsink_chain(GstPad* pad, GstObject* parent, GstBuff
     gst_memory_unmap(gst_buffer_memory, &map_info);
     st20p_tx_put_frame(sink->tx_handle, frame);
   }
-  gst_buffer_unref (buf);
+  gst_buffer_unref(buf);
   return GST_FLOW_OK;
 }
 
