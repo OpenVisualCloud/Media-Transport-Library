@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2024 Intel Corporation
 
+<<<<<<< HEAD
 project('gstreamer_mtl_plugins', 'c',
+=======
+project('gstreamer-mtl', 'c',
+>>>>>>> 9e27a15f (Add: Gstreamer plugin for ST30TX)
         version: run_command(find_program('cat'), files('../../VERSION'), check: true).stdout().strip(), license : 'LGPL')
 
 cc = meson.get_compiler('c')
@@ -22,14 +26,21 @@ plugin_c_args = [
   '-Wno-stringop-truncation'
 ]
 
+if run_command('test', '-d', '/usr/local/include/gstreamer-1.0').returncode() == 0
+    gstreamer_inc_dir = '/usr/local/include/gstreamer-1.0'
+else
+    gstreamer_inc_dir = '/usr/include/gstreamer-1.0'
+endif
+
 inc_dirs = include_directories(
     '/usr/include/glib-2.0',
-    '/usr/include/gstreamer-1.0',
     '/usr/lib/x86_64-linux-gnu/glib-2.0/include',
-    '/usr/local/include/mtl'
+    '/usr/local/include/mtl',
+    gstreamer_inc_dir
 )
 
 gstreamer_video_dep = dependency('gstreamer-video-1.0')
+gstreamer_audio_dep = dependency('gstreamer-audio-1.0')
 mtl_dep             = dependency('mtl')
 
 gst_mtl_common_sources = [
@@ -66,3 +77,16 @@ gst_mtl_st20p_rx = library('gstmtl_st20p_rx',
 )
 
 
+# The mtl_st30p_tx Plugin
+gstmtl_st30p_tx_sources = [
+    'gstmtlst30tx.c',
+]
+
+gstmtl_st30p_tx = library('gstmtlst30tx',
+    gstmtl_st30p_tx_sources,
+    dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
+    install : true,
+    install_dir : plugins_install_dir,
+    include_directories: inc_dirs,
+    c_args: plugin_c_args
+)
