@@ -71,6 +71,7 @@ PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
 RDMA_BUILD_DIR=${WORKSPACE}/build/rdma
+RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
 
 # build lib
 meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt"
@@ -156,3 +157,11 @@ if [ "$OS" != "Windows_NT" ]; then
 	fi
 	popd
 fi
+
+# build RxTxApp
+pushd tests/tools/RxTxApp/
+meson setup "${RXTXAPP_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
+popd
+pushd "${RXTXAPP_BUILD_DIR}"
+ninja
+popd
