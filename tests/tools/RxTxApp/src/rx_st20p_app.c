@@ -9,6 +9,13 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
   struct st_display* d = s->display;
   int idx = s->idx;
 
+  if (s->st20p_destination_file) {
+    if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
+      err("%s(%d), failed to write frame to file %s\n", __func__, idx,
+          s->st20p_destination_url);
+    }
+  }
+
   if (s->num_port > 1) {
     dbg("%s(%d): pkts_total %u, pkts per port P %u R %u\n", __func__, idx,
         frame->pkts_total, frame->pkts_recv[MTL_SESSION_PORT_P],
@@ -138,6 +145,11 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
     s->handle = NULL;
   }
 
+  if (s->st20p_destination_file) {
+    fclose(s->st20p_destination_file);
+    s->st20p_destination_file = NULL;
+  }
+
   return 0;
 }
 
@@ -207,6 +219,18 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
         st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
         st20p ? st20p->base.udp_port : (10000 + s->idx);
+  }
+
+  if (st20p && st20p->info.st20p_url[0] != '\0') {
+    memcpy(s->st20p_destination_url, st20p->info.st20p_url, ST_APP_URL_MAX_LEN);
+    s->st20p_destination_file = fopen(s->st20p_destination_url, "wb");
+
+    if (!s->st20p_destination_file) {
+      err("%s(%d), failed to open destination file %s\n", __func__, idx,
+          s->st20p_destination_url);
+      app_rx_st20p_uinit(s);
+      return -EIO;
+    }
   }
 
   ops.width = st20p ? st20p->info.width : 1920;

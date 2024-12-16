@@ -156,12 +156,16 @@ void mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
   int ret = mtl_lcore::get_instance().get_lcore(lcore_id);
   if (ret < 0) {
-    send_response(ret);
+    if (send_response(ret) < 0) {
+      log(log_level::ERROR, "Failed to send response for get_lcore");
+    }
     return;
   }
   lcore_ids.insert(lcore_id);
   log(log_level::INFO, "Added lcore " + std::to_string(lcore_id));
-  send_response(0);
+  if (send_response(0) < 0) {
+    log(log_level::ERROR, "Failed to send response for get_lcore");
+  }
 }
 
 void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
@@ -172,12 +176,16 @@ void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
   uint16_t lcore_id = ntohs(lcore_msg->lcore);
   int ret = mtl_lcore::get_instance().put_lcore(lcore_id);
   if (ret < 0) {
-    send_response(ret);
+    if (send_response(ret) < 0) {
+      log(log_level::ERROR, "Failed to send response for put_lcore");
+    }
     return;
   }
   lcore_ids.erase(lcore_id);
   log(log_level::INFO, "Removed lcore " + std::to_string(lcore_id));
-  send_response(0);
+  if (send_response(0) < 0) {
+    log(log_level::ERROR, "Failed to send response for put_lcore");
+  }
 }
 
 void mtl_instance::handle_message_register(mtl_register_message_t* register_msg) {
@@ -190,7 +198,9 @@ void mtl_instance::handle_message_register(mtl_register_message_t* register_msg)
     auto interface = get_interface(ifindex);
     if (interface == nullptr) {
       log(log_level::ERROR, "Could not get interface " + std::to_string(ifindex));
-      send_response(-1);
+      if (send_response(-1) < 0) {
+        log(log_level::ERROR, "Failed to send response for register");
+      }
       return;
     }
   }
@@ -198,7 +208,9 @@ void mtl_instance::handle_message_register(mtl_register_message_t* register_msg)
   log(log_level::INFO, "Registered.");
 
   is_registered = true;
-  send_response(0);
+  if (send_response(0) < 0) {
+    log(log_level::ERROR, "Failed to send response for register");
+  }
 }
 
 std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int ifindex) {
@@ -265,11 +277,15 @@ void mtl_instance::handle_message_udp_dp_filter(
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(-1);
+    if (send_response(-1) < 0) {
+      log(log_level::ERROR, "Failed to send response for udp_dp_filter");
+    }
     return;
   }
   int ret = interface->update_udp_dp_filter(port, add);
-  send_response(ret);
+  if (send_response(ret) < 0) {
+    log(log_level::ERROR, "Failed to send response for udp_dp_filter");
+  }
 }
 
 void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
@@ -277,12 +293,16 @@ void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(-1, MTL_MSG_TYPE_IF_QUEUE_ID);
+    if (send_response(-1, MTL_MSG_TYPE_IF_QUEUE_ID) < 0) {
+      log(log_level::ERROR, "Failed to send response for if_get_queue");
+    }
     return;
   }
   int ret = interface->get_queue();
   if (ret > 0) if_queue_ids[ifindex].insert(ret);
-  send_response(ret, MTL_MSG_TYPE_IF_QUEUE_ID);
+  if (send_response(ret, MTL_MSG_TYPE_IF_QUEUE_ID) < 0) {
+    log(log_level::ERROR, "Failed to send response for if_get_queue");
+  }
 }
 
 void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
@@ -290,13 +310,17 @@ void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(-1);
+    if (send_response(-1) < 0) {
+      log(log_level::ERROR, "Failed to send response for if_put_queue");
+    }
     return;
   }
   uint16_t queue_id = ntohs(if_msg->queue_id);
   int ret = interface->put_queue(queue_id);
   if (ret == 0) if_queue_ids[ifindex].erase(queue_id);
-  send_response(ret);
+  if (send_response(ret) < 0) {
+    log(log_level::ERROR, "Failed to send response for if_put_queue");
+  }
 }
 
 void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
@@ -304,14 +328,18 @@ void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(-1);
+    if (send_response(-1) < 0) {
+      log(log_level::ERROR, "Failed to send response for if_add_flow");
+    }
     return;
   }
   int ret = interface->add_flow(ntohs(if_msg->queue_id), ntohl(if_msg->flow_type),
                                 ntohl(if_msg->src_ip), ntohl(if_msg->dst_ip),
                                 ntohs(if_msg->src_port), ntohs(if_msg->dst_port));
   if (ret > 0) if_flow_ids[ifindex].insert(ret);
-  send_response(ret, MTL_MSG_TYPE_IF_FLOW_ID);
+  if (send_response(ret, MTL_MSG_TYPE_IF_FLOW_ID) < 0) {
+    log(log_level::ERROR, "Failed to send response for if_add_flow");
+  }
 }
 
 void mtl_instance::handle_message_if_del_flow(mtl_if_message_t* if_msg) {
@@ -319,13 +347,17 @@ void mtl_instance::handle_message_if_del_flow(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    send_response(-1);
+    if (send_response(-1) < 0) {
+      log(log_level::ERROR, "Failed to send response for if_del_flow");
+    }
     return;
   }
   unsigned int flow_id = ntohl(if_msg->flow_id);
   int ret = interface->del_flow(flow_id);
   if (ret == 0) if_flow_ids[ifindex].erase(flow_id);
-  send_response(ret);
+  if (send_response(ret) < 0) {
+    log(log_level::ERROR, "Failed to send response for if_del_flow");
+  }
 }
 
 #endif

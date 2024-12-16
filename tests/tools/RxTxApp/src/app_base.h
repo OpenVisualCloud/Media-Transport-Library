@@ -551,6 +551,8 @@ struct st_app_rx_st20p_session {
   pthread_t st20p_app_thread;
   bool st20p_app_thread_stop;
 
+  char st20p_destination_url[ST_APP_URL_MAX_LEN];
+  FILE* st20p_destination_file;
   struct st_display* display;
   uint32_t pcapng_max_pkts;
 
@@ -591,6 +593,8 @@ struct st_app_rx_st30p_session {
 
   uint8_t num_port;
   uint64_t last_stat_time_ns;
+  char st30p_destination_url[ST_APP_URL_MAX_LEN];
+  FILE* st30p_destination_file;
 
   /* stat */
   int stat_frame_received;
@@ -717,6 +721,7 @@ struct st_app_context {
   struct st_app_rx_st22p_session* rx_st22p_sessions;
   int rx_st22p_session_cnt;
 
+  char rx_st20p_url[ST_APP_URL_MAX_LEN]; /* save st20p content url*/
   struct st_app_rx_st20p_session* rx_st20p_sessions;
   int rx_st20p_session_cnt;
 

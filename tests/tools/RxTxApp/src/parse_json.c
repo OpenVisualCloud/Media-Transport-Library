@@ -2089,6 +2089,10 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
   ret = parse_st20p_transport_format(st20p_obj, st20p);
   if (ret < 0) return ret;
 
+  /* parse st20p url */
+  ret = parse_url(st20p_obj, "st20p_url", st20p->info.st20p_url);
+  if (ret < 0) return ret;
+
   /* parse display option */
   st20p->display =
       json_object_get_boolean(st_json_object_object_get(st20p_obj, "display"));
