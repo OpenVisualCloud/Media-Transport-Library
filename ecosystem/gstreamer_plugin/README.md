@@ -62,5 +62,56 @@ Supported values: 24, 25, 30, 50, 60, 120
 If you use the `fps` property to overwrite the caps, you can use the following framerates:
 120 119.88 100 60 59.94 50 30 29.97 25 24 23.98
 
-
 Framebuffers passed need to be the size of the frame
+
+## Supported parameters for the plugin 
+
+- **dev-port** (Required)
+  - **Type:** String
+  - **Description:** DPDK device port for synchronous ST 2110-20 uncompressed video transmission, bound to the VFIO DPDK driver.
+  - **Default Value:** NULL
+
+- **dev-ip** (Required)
+  - **Type:** String
+  - **Description:** Local IP address that the port will be identified by. This is the address from which ARP responses will be sent.
+  - **Default Value:** NULL
+
+- **tx-ip** (Required)
+  - **Type:** String
+  - **Description:** Receiving MTL node IP address.
+  - **Default Value:** NULL
+
+- **tx-udp-port** (Required)
+  - **Type:** Unsigned Integer
+  - **Description:** Receiving MTL node UDP port.
+  - **Default Value:** 20000
+  - **Range:** 0 to G_MAXUINT
+
+- **tx-payload-type** (Required)
+  - **Type:** Unsigned Integer
+  - **Description:** SMPTE ST 2110 payload type.
+  - **Default Value:** 112
+  - **Range:** 0 to G_MAXUINT
+
+- **silent**
+  - **Type:** Boolean
+  - **Description:** Turn on silent mode.
+  - **Default Value:** FALSE
+
+- **tx-queues**
+  - **Type:** Unsigned Integer
+  - **Description:** Number of TX queues to initialize in DPDK backend.
+  - **Default Value:** 16
+  - **Range:** 0 to G_MAXUINT
+
+- **tx-fps**
+  - **Type:** Unsigned Integer
+  - **Description:** Framerate of the video.
+  - **Default Value:** 0
+  - **Range:** 0 to G_MAXUINT
+
+- **tx-framebuff-num**
+  - **Type:** Unsigned Integer
+  - **Description:** Number of framebuffers to be used for transmission.
+  - **Default Value:** 3
+  - **Range:** 0 to G_MAXUINT
