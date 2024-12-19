@@ -133,7 +133,7 @@ Execute the `st22p_rx.py` to receive a compressed ST2110-22 stream stream and di
 python3 python/example/st22p_rx.py --p_port 0000:af:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422PLANAR10LE --st22_codec jpegxs --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display
 ```
 
-### 3.7. interlaced
+### 3.7. Interlaced
 
 For TX, interlaced yuv file is used and `--interlaced` is enabled.
 
