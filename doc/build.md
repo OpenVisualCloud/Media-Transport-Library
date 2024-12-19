@@ -44,7 +44,7 @@ sudo yum install git gcc gcc-c++ python3 python3-pip pkg-config SDL2-devel opens
 sudo pip3 install meson ninja pyelftools
 ```
 
-RHEL 9 doesn't provide `json-c-devel libpcap-devel gtest-devel` package as default, it has to build these three libs from source code, install below dependency and follow `### 1.2.` to build.
+RHEL 9 doesn't provide `json-c-devel libpcap-devel gtest-devel` package as default, it has to build these three libs from source code, install below dependency and follow section [1.2. Build dependency from source code](#12-build-dependency-from-source-code) to build.
 
 ```bash
 sudo yum install cmake flex bison
