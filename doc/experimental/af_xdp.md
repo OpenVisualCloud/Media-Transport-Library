@@ -8,11 +8,11 @@ By using AF_XDP, the Media Transport Library can leverage the full support of th
 
 ## 2. DPDK build with AF_XDP PMD
 
-### 2.1 Install libxdp and libbpf
+### 2.1. Install libxdp and libbpf
 
 Get latest source code release from <https://github.com/libbpf/libbpf/releases> and <https://github.com/xdp-project/xdp-tools/releases>, and follow the instructions to build and install from source. Use “pkg-config --libs libxdp” and “pkg-config --libs libbpf” to check if the packages are correctly installed.
 
-#### 2.2 Rebuild DPDK and and make sure af_xdp pmd driver is built
+#### 2.2. Rebuild DPDK and and make sure af_xdp pmd driver is built
 
 Check <https://github.com/DPDK/dpdk/blob/main/drivers/net/af_xdp/meson.build>.
 
@@ -61,7 +61,7 @@ Customize the kernel network interface name `enp175s0f0np0` as your setup
 
 ## 5. FAQs
 
-### 5.1 No IP assigned
+### 5.1. No IP assigned
 
 If you see below error while running RxTxApp with AF_XDP json, please assign an IP for the port.
 

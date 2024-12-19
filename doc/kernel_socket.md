@@ -33,7 +33,7 @@ Config the `interfaces` item in the json file to use the kernel network interfac
 
 Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../tests/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/script/kernel_socket_json/rx.json) respectively.
 
-Refer to sections "5. Run the sample application" in the [linux run guide](run.md) for the detail commands on how to run the sample application.
+Refer to sections "5. Run the sample application" in the [Linux run guide](run.md) for the detail commands on how to run the sample application.
 
 If you want to select kernel socket data path from the API level, please follow below example:
 

@@ -42,11 +42,11 @@ Run-time dependency librdmacm found: YES 1.3.50.0
 
 ## 4. Setup
 
-### 4.1 Enable kernel module
+### 4.1. Enable kernel module
 
 Verify that the `irdma` driver is loaded using `lsmod`.
 
-### 4.2 Configure IP and MTU
+### 4.2. Configure IP and MTU
 
 The interface should have an IP configured. Use `ifconfig` or `ip a` to check.
 
@@ -67,7 +67,7 @@ To set the MTU:
 sudo ip link set dev ens785f0 mtu 2100
 ```
 
-### 4.3 Configure local arp for loopback testing
+### 4.3. Configure local arp for loopback testing
 
 For loopback connections between different ports on the same system, local arp must be enabled:
 
@@ -77,7 +77,7 @@ sudo sysctl net.ipv4.conf.ens785f0.accept_local=1
 
 ## 5. Run
 
-### 5.1 Running RxTxApp
+### 5.1. Running RxTxApp
 
 Configure the network interface in the JSON file:
 
@@ -93,7 +93,7 @@ Configure the network interface in the JSON file:
 
 Refer to the [Run Guide](run.md) for more usage details.
 
-### 5.2 API Usage
+### 5.2. API Usage
 
 For configuring the network interface in your application, use the following code snippet:
 
@@ -105,7 +105,7 @@ p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
 mtl_init(p);
 ```
 
-### 5.3 Multicast (experimental)
+### 5.3. Multicast (experimental)
 
 Multicast is also supported for RDMA UD. In the configurations, an IPv4 multicast address can be set as the session IP.
 This is still under experimental status. Note that only one session with one multicast address can be created.

@@ -102,7 +102,7 @@
 
 ## Changelog for 23.04
 
-* dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.
+* dpdk: upgrade dpdk version to latest 22.11 for both Windows and Linux.
 * ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
 * mtl_init_params: add gateway and netmask support for wan.
 * udp: introduce a highly efficient udp stack support, see mudp_api.h

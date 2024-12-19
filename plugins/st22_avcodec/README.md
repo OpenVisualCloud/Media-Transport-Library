@@ -2,13 +2,13 @@
 
 ## 1. Install the build dependency
 
-### 1.1 Ubuntu/Debian
+### 1.1. Ubuntu/Debian
 
 ```bash
 sudo apt-get install libavcodec-dev
 ```
 
-### 1.2 Centos
+### 1.2. Centos
 
 ```bash
 sudo yum install libavcodec-devel
@@ -26,15 +26,15 @@ Follow the guide in ffmpeg site.
 
 ## 3. Test
 
-### 3.1 Prepare a yuv420p file
+### 3.1. Prepare a yuv420p file
 
 ```bash
-wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc.mkv
+wget https://larmoire.org/jellyfish/media/jellyfish-3-mbps-hd-hevc.mkv
 ffmpeg -i jellyfish-3-mbps-hd-hevc.mkv -vframes 150 -c:v rawvideo yuv420p_1080p.yuv
 ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p_1080p.yuv -pix_fmt yuv422p yuv422p_1080p.yuv
 ```
 
-### 3.2 Edit kahawai.json to enable the st22 avcodec plugin
+### 3.2. Edit kahawai.json to enable the st22 avcodec plugin
 
 ```bash
         {
@@ -49,7 +49,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p_1080p.yuv -pix_fmt yuv422p yuv42
         },
 ```
 
-### 3.3 Run the sample with tx and rx based on h264
+### 3.3. Run the sample with tx and rx based on h264
 
 Customize the p_port as the setup.
 

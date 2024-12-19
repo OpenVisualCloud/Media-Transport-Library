@@ -8,7 +8,7 @@ The Media Transport Library features DMA support to enhance RX video session den
 
 > For how to install DMA device driver on Windows, please refer to [here](./run_WIN.md#46-install-driver-for-dma-devices).
 
-### 2.1 Locate the available DMA port
+### 2.1. Locate the available DMA port
 
 ```bash
 dpdk-devbind.py -s | grep CBDMA
@@ -41,7 +41,7 @@ Please review the output below to locate the Virtual Function's Bus/Device/Funct
 0000:80:04.7 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
 ```
 
-### 2.2 Bind ports to PMD(vfio-pci)
+### 2.2. Bind ports to PMD(vfio-pci)
 
 The example below demonstrates binding the devices '0000:80:04.0', '0000:80:04.1', and '0000:80:04.2' to Poll Mode Driver (PMD) using the vfio-pci module.
 
@@ -53,7 +53,7 @@ dpdk-devbind.py -b vfio-pci 0000:80:04.2
 
 ## 3. Pass the DMA configuration to lib
 
-### 3.1 DMA configuration in RxTxApp
+### 3.1. DMA configuration in RxTxApp
 
 When utilizing the built-in application, simply use the `--dma_dev` argument to specify the DMA setup configuration. The following example demonstrates how to pass three DMA ports to the application:
 
@@ -61,7 +61,7 @@ When utilizing the built-in application, simply use the `--dma_dev` argument to 
 --dma_dev 0000:80:04.0,0000:80:04.1,0000:80:04.2
 ```
 
-### 3.2 DMA configuration in API
+### 3.2. DMA configuration in API
 
 If you're directly interfacing with the API, the initial step involves incorporating DMA information into the `struct mtl_init_params` before making the `mtl_init` call. Subsequently, the initialization routine will attempt to parse and initialize the DMA device, and if the DMA is prepared, it will be added to the DMA list.
 
@@ -80,7 +80,7 @@ If you're directly interfacing with the API, the initial step involves incorpora
 To enable DMA offloading, set the `ST20_RX_FLAG_DMA_OFFLOAD` flag in the `st20_rx_create` function, or `ST20P_RX_FLAG_DMA_OFFLOAD` when operating in pipeline mode. During the creation of the RX session, the system will attempt to locate a DMA device.
 However, be aware that this process may fail if a suitable DMA device is not available, due to various reasons. For detailed information in case of failure, please consult the logs.
 
-### 3.3 DMA logs
+### 3.3. DMA logs
 
 The logs below indicate that the PCI driver for the DMA device has been loaded successfully.
 
@@ -109,11 +109,11 @@ ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000
 ST: DMA(0), s 2589313 c 2589313 e 0 avg q 1
 ```
 
-### 3.4 DMA socket
+### 3.4. DMA socket
 
 In a multi-socket system, each socket possesses its own DMA device, similar to NICs. Cross-socket traffic incurs significant latency; therefore, during MTL RX sessions, the system will attempt to utilize a DMA only if it resides on the same socket as the NICs.
 
-### 3.5 DMA per core
+### 3.5. DMA per core
 
 To maximize the utilization of DMA resources, the MTL architecture is designed to use the same DMA device for all sessions running within the same core. Sharing the DMA device is safe in this context because the sessions within a single core share CPU resources, eliminating the need for spin locks.
 

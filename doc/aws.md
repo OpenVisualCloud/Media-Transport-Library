@@ -16,11 +16,11 @@ Instance example:
 
 ## 2. Install Media Transport Library and other software
 
-### 2.1 Build and install DPDK & Media Transport Library
+### 2.1. Build and install DPDK & Media Transport Library
 
 Refer to CentOS part of [build.md](./build.md).
 
-### 2.2 Apply vfio-pci patches
+### 2.2. Apply vfio-pci patches
 
 Since the default vfio driver does not support WC(Write Combining), patches should be applied for the kernel.
 
@@ -45,19 +45,19 @@ sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 
 > If you attach extra interfaces before starting the instance, you may not get the public DNS for ssh. The best practice is to **attach after** / **detach before** start.
 
-### 4.1 Create interfaces
+### 4.1. Create interfaces
 
 Go to `EC2 > Network interfaces > Create network interface`.
 
 Choose same subnet for all new interfaces, set the right security groups for your RTP/UDP streams. (Usually allow all traffic from same subnet.)
 
-### 4.2 Attach interfaces
+### 4.2. Attach interfaces
 
 Right-click on your running instance, go to `Networking > Attach network interface`, choose an idle interface.
 
 After attaching the interface, remember the Private IPv4 address allocated by AWS, this will be used by Media Transport Library as interface IP.
 
-### 4.3 Bind interface to DPDK PMD
+### 4.3. Bind interface to DPDK PMD
 
 Unbind the interface from kernel driver and bind to PMD.
 
@@ -76,7 +76,7 @@ Refer to [run.md](./run.md) after section 3.2.
 
 For single video stream whose bandwidth is grater than 5 Gbps (4k 30fps), arg `--multi_src_port` is needed in Tx app, see 7.3.
 
-### 5.1 IP configuration
+### 5.1. IP configuration
 
 Configure the AWS reserved private IP in json.
 
@@ -103,7 +103,7 @@ Or you can manually set the IPs(which should work with current security group). 
     ],
 ```
 
-### 5.2 Features not supported on ENA
+### 5.2. Features not supported on ENA
 
 | Feature| Solution / work around |
 | :--- | :--- |
@@ -127,11 +127,11 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 
 ## 7. Known issues
 
-### 7.1 No IOMMU support for VM(.nxlarge) instance
+### 7.1. No IOMMU support for VM(.nxlarge) instance
 
 To use the ENA PMD, IOMMU support is required. However, the .nxlarge instance does not support IOMMU, so the vfio driver must be run in no-IOMMU mode. **Running the app under the root user is necessary.**
 
-### 7.2 No ptype support
+### 7.2. No ptype support
 
 ```bash
 MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
@@ -139,7 +139,7 @@ MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
 
 This is ENA PMD limitation, can be ignored for now.
 
-### 7.3 Setting RSS hash fields is not supported (WA fixed)
+### 7.3. Setting RSS hash fields is not supported (WA fixed)
 
 ```bash
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
@@ -149,7 +149,7 @@ The ENA HW does not support RSS hash fields modification, the app will require k
 
 To workaround this limitation, the library uses shared rss mode on ENA by default which will receive and handle packets in one thread.
 
-### 7.4 The max single video stream supported is 4k 30fps / 1080p 120fps (WA fixed)
+### 7.4. The max single video stream supported is 4k 30fps / 1080p 120fps (WA fixed)
 
 The bandwidth for single flow (udp ip:port->ip:port 5 tuple) is limited to 5 / 10(same placement group) Gbps.
 

@@ -10,7 +10,7 @@ If you have already enabled IOMMU, you can skip this step. To check if IOMMU is 
 ls -l /sys/kernel/iommu_groups/
 ```
 
-### 1.1 Enable IOMMU(VT-D and VT-X) in BIOS
+### 1.1. Enable IOMMU(VT-D and VT-X) in BIOS
 
 The steps to enable IOMMU in your BIOS/UEFI may vary depending on the manufacturer and model of your motherboard. Here are general steps that should guide you:
 
@@ -22,11 +22,11 @@ The steps to enable IOMMU in your BIOS/UEFI may vary depending on the manufactur
 
 4. Save your changes and exit. There will typically be an option to "Save & Exit" or "Save Changes and Reset". Select this to save your changes and restart the computer.
 
-### 1.2 Enable IOMMU in kernel
+### 1.2. Enable IOMMU in kernel
 
 After enabling IOMMU in the BIOS, you need to enable it in your operating system as well.
 
-#### 1.2.1 Ubuntu/Debian
+#### 1.2.1. Ubuntu/Debian
 
 Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item if it's not there.
 
@@ -42,16 +42,16 @@ sudo update-grub
 sudo reboot
 ```
 
-#### 1.2.2 Centos/RHEL9
+#### 1.2.2. Centos/RHEL9
 
 ```bash
 sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
 sudo reboot
 ```
 
-For non-intel device, contact vender for how to enable iommu.
+For non Intel device, contact vendor for how to enable iommu.
 
-### 1.3 Double check iommu_groups is created by kernel after reboot
+### 1.3. Double check iommu_groups is created by kernel after reboot
 
 ```bash
 ls -l /sys/kernel/iommu_groups/
@@ -66,7 +66,7 @@ cat /proc/cmdline
 lscpu | grep vmx
 ```
 
-### 1.4 Unlock RLIMIT_MEMLOCK for non-root run
+### 1.4. Unlock RLIMIT_MEMLOCK for non-root run
 
 Skip this step for Ubuntu since default RLIMIT_MEMLOCK is set to unlimited already.
 
@@ -81,14 +81,14 @@ Reboot the system to let the settings take effect.
 
 ## 2. Kernel mode NIC driver setup
 
-For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the DPDK site <http://doc.dpdk.org/guides/nics/overview.html>.
+For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NIC, you may need follow the steps on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html).
 
 ## 3. DPDK PMD setup
 
 DPDK utilizes the Linux kernel's VFIO module to enable direct NIC hardware access from user space with the assistance of an IOMMU (Input/Output Memory Management Unit).
 To use DPDK's Poll Mode Drivers (PMDs), NICs must be bound to the `vfio-pci` driver. Before manipulating VFIO devices, it's necessary to configure user permissions and system rules to allow the current user to access VFIO devices.
 
-### 3.1 Allow current user to access /dev/vfio/* devices
+### 3.1. Allow current user to access /dev/vfio/* devices
 
 This section guides you through creating a dedicated group, granting the appropriate permissions, and setting up udev rules to maintain these settings across system reboots and devices re-creations.
 
@@ -125,7 +125,7 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### 3.2 Bind NICs to DPDK PMD
+### 3.2. Bind NICs to DPDK PMD
 
 Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
 
@@ -136,7 +136,7 @@ For other Network Interface Cards (NICs), please verify if your NIC is supported
 If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel.
 Please refer to [kernel tx config](../tests/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/script/kernel_socket_json/rx.json) for how to config the kernel transport in json config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
 
-#### 3.2.1 Create Intel® E810 VFs and bind to DPDK PMD
+#### 3.2.1. Create Intel® E810 VFs and bind to DPDK PMD
 
 Get Device to Bus info mapping
 
@@ -155,7 +155,7 @@ Below is the command to create VF for BDF 0000:af:00.0, and bind the VFs to DPDK
 
 ```bash
 cd $mtl_source_code
-sudo ./script/nicctl.sh create_vf 0000:af:00.0
+sudo -E ./script/nicctl.sh create_vf 0000:af:00.0
 ```
 
 To find the VF BDF (Bus Device Function) information, please check the output below. In this example, the VF BDFs range from 0000:af:01.0 to 0000:af:01.5. Remember these VF BDFs as you will need them when running the sample application.
@@ -187,7 +187,7 @@ If the creation of VF BDFs fails, you can check the kernel dmesg log to find pos
 sudo dmesg
 ```
 
-#### 3.2.2 Bind PF to DPDK PMD
+#### 3.2.2. Bind PF to DPDK PMD
 
 If your Network Interface Card (NIC) is not from the Intel® E810 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
 
@@ -210,21 +210,21 @@ The number is dependent on the workloads you wish to execute. Consider increasin
 
 ## 5. Run the sample application
 
-### 5.1 Prepare source files
+### 5.1. Prepare source files
 
 Please note that the input YUV source file for the sample application is in the RFC4175 YUV422BE10 (big-endian 10-bit) pixel group format, which is defined in the ST2110 specification. This project includes a simple tool to convert the format from YUV422 planar 10-bit little-endian format.
 
-#### 5.1.1 Prepare a yuv422p10le file
+#### 5.1.1. Prepare a yuv422p10le file
 
 The following command shows how to decode two frames from the encoder file and convert it from 420 to 422 planar file. Change the 'vframes' value if you want to generate more frames.
 
 ```bash
-wget https://www.larmoire.info/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
+wget https://larmoire.org/jellyfish/media/jellyfish-3-mbps-hd-hevc-10bit.mkv
 ffmpeg -i jellyfish-3-mbps-hd-hevc-10bit.mkv -vframes 2 -c:v rawvideo yuv420p10le_1080p.yuv
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p10le yuv422p10le_1080p.yuv
 ```
 
-#### 5.1.2 Convert yuv422p10le to yuv422rfc4175be10
+#### 5.1.2. Convert yuv422p10le to yuv422rfc4175be10
 
 Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit)
 
@@ -232,12 +232,12 @@ Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o yuv422rfc4175be10_1080p.yuv
 ```
 
-The yuv422rfc4175be10 files can be viewed by YUV Viewer tools(<https://github.com/IENT/YUView>), below is the custom layout.
+The yuv422rfc4175be10 files can be viewed by [YUV Viewer tools](https://github.com/IENT/YUView). Below is the custom layout.
 <div align="center">
 <img src="png/yuview_yuv422rfc4175be10_layout.png" align="center" alt="yuview yuv422rfc4175be10 custom layout">
 </div>
 
-#### 5.1.3 Convert yuv422rfc4175be10 back to yuv422p10le
+#### 5.1.3. Convert yuv422rfc4175be10 back to yuv422p10le
 
 Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported pg format for 422 10bit) to yuv422p10le file
 
@@ -245,7 +245,7 @@ Below is the command to convert yuv422rfc4175be10 pg format(ST2110-20 supported 
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be10 -i yuv422rfc4175be10_1080p.yuv -out_pix_fmt yuv422p10le -o out_yuv422p10le_1080p.yuv
 ```
 
-#### 5.1.4 v210 support
+#### 5.1.4. v210 support
 
 This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt args instead.
 
@@ -254,7 +254,7 @@ This tools also support v210 format, use "v210" for the in_pix_fmt/out_pix_fmt a
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt v210 -i v210_1080p.yuv -out_pix_fmt yuv422rfc4175be10 -o out_yuv422rfc4175be10_1080p.yuv
 ```
 
-#### 5.1.5 yuv422 12bit support
+#### 5.1.5. yuv422 12bit support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv422p12le yuv422p12le_1080p.yuv
@@ -262,7 +262,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv42
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv422rfc4175be12 -i yuv422rfc4175be12_1080p.yuv -out_pix_fmt yuv422p12le -o out_yuv422p12le_1080p.yuv
 ```
 
-#### 5.1.6 yuv444 10bit support
+#### 5.1.6. yuv444 10bit support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p10le yuv444p10le_1080p.yuv
@@ -270,7 +270,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be10 -i yuv444rfc4175be10_1080p.yuv -out_pix_fmt yuv444p10le -o out_yuv444p10le_1080p.yuv
 ```
 
-#### 5.1.7 yuv444 12bit support
+#### 5.1.7. yuv444 12bit support
 
 ```bash
 ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv444p12le yuv444p12le_1080p.yuv
@@ -278,7 +278,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p10le -i yuv420p10le_1080p.yuv -pix_fmt yuv44
 ./build/app/ConvApp -width 1920 -height 1080 -in_pix_fmt yuv444rfc4175be12 -i yuv444rfc4175be12_1080p.yuv -out_pix_fmt yuv444p12le -o out_yuv444p12le_1080p.yuv
 ```
 
-#### 5.1.8 Interlaced support
+#### 5.1.8. Interlaced support
 
 ConvApp offers a `frame2field` option to convert a progressive YUV file into an interlaced file. The interlaced YUV file stores the first field followed by the second field, repeating this sequence.
 
@@ -294,7 +294,7 @@ For yuv422rfc4175be10:
 ./build/app/ConvApp --in_pix_fmt yuv422rfc4175be10 --width 1920 --height 1080 --i yuv422rfc4175be10_1080p.yuv --o yuv422rfc4175be10_1080i.yuv --frame2field
 ```
 
-### 5.2 Run RxTxApp with json config
+### 5.2. Run RxTxApp with json config
 
 Before running samples the JSON configuration files must be modified. The "name" tag in "interfaces" must be updated to VF BDF, e.g 0000:af:01.0.  No other changes are required to run samples.
 
@@ -306,7 +306,7 @@ Before running samples the JSON configuration files must be modified. The "name"
         }
 ```
 
-For the supported parameters in the json, please refer to [JSON configuration guide](configuration_guide.md) for detail.
+For the supported parameters in the json, please refer to [JSON Configuration Guide](configuration_guide.md) for detail.
 
 Below is the command to run one video tx/rx session with json config.
 
@@ -352,15 +352,15 @@ app_rx_st20p_stat(0), avrage latency 18.263382ms
 MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 ```
 
-This project also provide many loop test(1 port as tx, 1 port as rx) config file , pls refer to [loop config](../tests/script/).
+This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../tests/script/).
 
-If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and shared the log for further analyses.
+If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and share the log for further analysis.
 
 ```bash
 ./script/status_report.sh
 ```
 
-### 5.3 Available parameters in RxTxApp
+### 5.3. Available parameters in RxTxApp
 
 ```bash
 --config_file <URL>                  : the json config file path
@@ -422,13 +422,13 @@ packet egresses from the sender.
 
 ## 6. Tests
 
-This project include many automate test cases based on gtest, below is the example command to run, customize the argument as your setup.
+This project includes many automated test cases based on gtest. Below there is an example command to run. Customize the argument according to your setup.
 
 ```bash
 ./build/tests/KahawaiTest --p_port 0000:af:01.0 --r_port 0000:af:01.1
 ```
 
-BTW, the test required large huge page settings, pls expend it to 8g.
+In case the test requires large huge page settings, please expend it to 8GB.
 
 ```bash
 sudo sysctl -w vm.nr_hugepages=4096
@@ -438,13 +438,13 @@ sudo sysctl -w vm.nr_hugepages=4096
 
 This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
 
-### 7.1 PTP setup
+### 7.1. PTP setup
 
-The Precision Time Protocol (PTP) facilitates global timing accuracy in the microsecond range for all essences. Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l. This library includes its own PTP implementation, and a sample application offers the option to enable it. Please refer to section 7.1.2 for instructions on how to enable it.
+The Precision Time Protocol (PTP) facilitates global timing accuracy in the microsecond range for all essences. Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l. This library includes its own PTP implementation, and a sample application offers the option to enable it. Please refer to section [7.1.2](#712-built-in-ptp) for instructions on how to enable it.
 
 By default, the built-in PTP feature is disabled, and the PTP clock relies on the system time source of the user application (clock_gettime). However, if the built-in PTP is enabled, the internal NIC time will be selected as the PTP source.
 
-#### 7.1.1 Linux ptp4l setup to sync system time with grandmaster
+#### 7.1.1. Linux ptp4l setup to sync system time with grandmaster
 
 Firstly run ptp4l to sync the PHC time with grandmaster, customize the interface as your setup.
 
@@ -458,7 +458,7 @@ Then run phc2sys to sync the PHC time to system time, please make sure NTP servi
 sudo phc2sys -s ens801f2 -m -w
 ```
 
-#### 7.1.2 Built-in PTP
+#### 7.1.2. Built-in PTP
 
 This project includes built-in support for the Precision Time Protocol (PTP) protocol, which is also based on the hardware Network Interface Card (NIC) timesync feature. This combination allows for achieving a PTP time clock source with an accuracy of approximately 30ns.
 
@@ -468,7 +468,7 @@ Note: Currently, the VF (Virtual Function) does not support the hardware timesyn
 
 ## 8. FAQs
 
-### 8.1 Notes after reboot
+### 8.1. Notes after reboot
 
 You need to repeat below steps to create Virtual Functions (VF), bind the VF to DPDK PMD, and set up the hugepages configuration again since it's lost after reboot.
 
@@ -481,11 +481,11 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 And, sometimes after a system reboot, it is possible for the operating system to update to a new kernel version. In such cases, it is important to remember to rebuild the NIC driver to ensure compatibility with the new kernel version.
 
-### 8.2 Notes for non-root run
+### 8.2. Notes for non-root run
 
 When running as non-root user, there may be some additional resource limits that are imposed by the system.
 
-### 8.2.1 RLIMIT_MEMLOCK
+### 8.2.1. RLIMIT_MEMLOCK
 
 RLIMIT_MEMLOCK (amount of pinned pages the process is allowed to have), if you see below error at start up, it's likely caused by too small RLIMIT_MEMLOCK settings.
 
@@ -511,7 +511,7 @@ ulimit -a | grep "max locked memory"
 max locked memory       (kbytes, -l) unlimited
 ```
 
-### 8.3 BDF port not bind to DPDK PMD mode
+### 8.3. BDF port not bind to DPDK PMD mode
 
 The following error indicates that the port driver is not configured to DPDK PMD mode. Please run nicctl.sh to configure it:
 
@@ -520,7 +520,7 @@ ST: st_dev_get_socket, failed to locate 0000:86:20.0
 ST: st_dev_get_socket, please make sure the driver of 0000:86:20.0 is configured to DPDK PMD
 ```
 
-### 8.4 Hugepage not available
+### 8.4. Hugepage not available
 
 If you encounter the following hugepage error while running, it is likely caused by the absence of 1G or 2M huge pages in the current setup.
 
@@ -535,7 +535,7 @@ This error message usually indicates that the mbuf pool creation has failed due 
 ST: st_init, mbuf_pool create fail
 ```
 
-### 8.5 No access to vfio device
+### 8.5. No access to vfio device
 
 If you encounter the following error message, please check section 3.1 to create a group vfio and add the current user to the group:
 
@@ -544,7 +544,7 @@ EAL: Cannot open /dev/vfio/147: Permission denied
 EAL: Failed to open VFIO group 147
 ```
 
-### 8.6 Link not connected
+### 8.6. Link not connected
 
 The following error indicates that the physical port link is not connected to a network. Please confirm that the cable link is working properly.
 
@@ -552,19 +552,19 @@ The following error indicates that the physical port link is not connected to a 
 ST: dev_create_port(0), link not connected
 ```
 
-### 8.7 Bind BDF port back to kernel mode
+### 8.7. Bind BDF port back to kernel mode
 
 ```bash
 sudo ./script/nicctl.sh bind_kernel 0000:af:00.0
 ```
 
-### 8.8 Bind BDF port to pure DPDK PF mode
+### 8.8. Bind BDF port to pure DPDK PF mode
 
 ```bash
 sudo ./script/nicctl.sh bind_pmd 0000:af:00.0
 ```
 
-### 8.9 Create trusted VFs
+### 8.9. Create trusted VFs
 
 To allow privileged usage in use cases that require Trusted Virtual Functions (VFs), you can utilize the following command:
 
@@ -578,13 +578,13 @@ If you need to control the Trusted setting on a per-VF basis, you can use the fo
 sudo ip link set enp24s0f0 vf 0 trust on
 ```
 
-### 8.10 How to find the BDF number for NICs
+### 8.10. How to find the BDF number for NICs
 
 ```bash
 dpdk-devbind.py -s
 ```
 
-### 8.11 How to find the BDF number which is ready for MTL usage
+### 8.11. How to find the BDF number which is ready for MTL usage
 
 ```bash
 dpdk-devbind.py -s
@@ -603,7 +603,7 @@ Network devices using DPDK-compatible driver
 0000:af:01.5 'Ethernet Adaptive Virtual Function 1889' drv=vfio-pci unused=iavf
 ```
 
-### 8.12 Lower fps if ptp4l&phc2sys is enabled
+### 8.12. Lower fps if ptp4l&phc2sys is enabled
 
 You may have noticed a similar epoch drop log, which is likely caused by both NTP and phc2sys adjusting the system. To address this issue, please disable the NTP service.
 
@@ -617,7 +617,7 @@ MT: TX_VIDEO_SESSION(0,0): mismatch epoch troffset 275
 MT: TX_VIDEO_SESSION(0,0): epoch drop 275
 ```
 
-### 8.13 NO-IOMMU mode for vfio
+### 8.13. NO-IOMMU mode for vfio
 
 The VFIO driver can run without the IOMMU feature, enable it with below command to bypass IOMMU. As the name suggests, `enable_unsafe_noiommu_mode` is considered unsafe, and should only be used if you understand the risks.
 
@@ -625,7 +625,7 @@ The VFIO driver can run without the IOMMU feature, enable it with below command 
 sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 ```
 
-### 8.14 Fail to load shared libraries
+### 8.14. Fail to load shared libraries
 
 If you get below similar message when runing the RxTxApp, it's likely a ld library path problem.
 
@@ -647,7 +647,7 @@ export LD_LIBRARY_PATH=/usr/local/lib64/
 sudo ldconfig
 ```
 
-### 8.15 Fail to init lcore
+### 8.15. Fail to init lcore
 
 This might happen after commit `4f46e49`, because the lcore_shm structure is [changed](https://github.com/OpenVisualCloud/Media-Transport-Library/commit/4f46e493b79451c7ca564d82e1be56c7916b0722#diff-7ff8a138885ebda032ff57250ff81174b30722cc168a26fe39d9a4ff501d48d0L710).
 
