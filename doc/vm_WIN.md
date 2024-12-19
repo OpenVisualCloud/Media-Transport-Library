@@ -4,7 +4,7 @@
 
 We use the same CentOS 8 host setup as [vm guide](vm.md). Notice that PTP_KVM is not woking for Windows VM, MTL uses VM system time by default.
 
-### 1.1 Create Windows VM
+### 1.1. Create Windows VM
 
 ```bash
 # install if not
@@ -34,7 +34,7 @@ The VFs created are passed into VM by specifying `--hostdev pci_0000_xx_xx_x`.
 
 After running `virt-install` command, the viewer will pop up and you can normally install Windows in the GUI.
 
-### 1.2 Setup remote desktop access
+### 1.2. Setup remote desktop access
 
 In virt-viewer window, logon to Windows, go to Start->Settings->System->Remote Desktop, set `Enable Remote Desktop` to `On`.
 
@@ -53,7 +53,7 @@ On you local Windows PC, use `Remote Desktop Connection` or `Remote Desktop (Sto
 
 ## 2. VM setup
 
-### 2.1 Install virtio-win inside VM
+### 2.1. Install virtio-win inside VM
 
 Attach the iso drive to VM:
 
@@ -63,9 +63,9 @@ sudo virt-xml win_vm0 --add-device --disk /usr/share/virtio-win/virtio-win.iso,d
 
 In Windows VM, go to File Explorer->This PC->virtio-win, Click virtio-win-gt-x64.msi to install.
 
-After the installation, you can detach the virtio iso and windows iso from cdrom in virt-manager.
+After the installation, you can detach the virtio iso and Windows iso from cdrom in virt-manager.
 
-### 2.2 Build and run MTL
+### 2.2. Build and run MTL
 
 See [Windows build guide](build_WIN.md) and [Windows run guide](run_WIN.md).
 

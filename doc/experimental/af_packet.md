@@ -27,7 +27,7 @@ Customize the kernel network interface name `enp175s0f0np0` as your setup
 
 ## 3. FAQs
 
-### 3.1 No IP assigned
+### 3.1. No IP assigned
 
 If you see below error while running RxTxApp with AF_PACKET json, please assign an IP for the port.
 

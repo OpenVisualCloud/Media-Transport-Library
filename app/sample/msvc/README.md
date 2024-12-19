@@ -6,7 +6,7 @@ The is sample code for how to develop MSVC application quickly based on Media Tr
 
 ## 2. Steps
 
-### 2.1 Prepare latest .lib file
+### 2.1. Prepare latest .lib file
 
 * Build MTL library in MSYS2, see [WIN build guide](../../../doc/build_WIN.md), also need to add MSYS2 binary PATH to system environment variables.
 
@@ -20,7 +20,7 @@ The is sample code for how to develop MSVC application quickly based on Media Tr
 
 * Copy `libmtl.lib` to project folder.
 
-### 2.2 Set project properties
+### 2.2. Set project properties
 
 * Double-click `imtl_sample.sln` to launch VS or create a console app in VS with the `imtl_sample.cpp`.
 
@@ -32,7 +32,7 @@ The is sample code for how to develop MSVC application quickly based on Media Tr
 
 * Click `OK` or `Apply` to save properties.
 
-### 2.3 Build and run
+### 2.3. Build and run
 
 * Inside IDE: Click Run button (Local Windows Debugger/ Start Without Debugging) to build and run the application.
 

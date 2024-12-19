@@ -1,4 +1,4 @@
-# Media Transport Library compilation and build on Windows OS (MSYS2)
+# Media Transport Library compilation and build Guide on Windows OS (MSYS2)
 
 ## 1. Introduction
 
@@ -39,7 +39,7 @@ unzip -d npcap-sdk npcap-sdk-1.12.zip
 cp npcap-sdk/Lib/x64/* $MSYSTEM_PREFIX/lib/
 ```
 
-* Install mman (mmap for windows):
+* Install mman (mmap for Windows):
 
 ```bash
 git clone https://github.com/alitrack/mman-win32

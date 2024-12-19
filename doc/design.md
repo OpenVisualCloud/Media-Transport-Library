@@ -20,20 +20,20 @@ The drawbacks is it can lead to 100% CPU usage because the cores are always acti
 
 With this PMD design, it is expected that a CPU thread will always be utilized to 100%, even with only one stream active. In our configuration, one core can handle up to a maximum of 16 1080p transmission sessions, although the actual density may vary depending on the hardware configuration.
 
-BTW, we provide a option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
+By the way, we provide an option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
 Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
 
 <div align="center">
 <img src="png/tasklet.png" align="center" alt="Tasklet">
 </div>
 
-### 2.1 Tasklet design
+### 2.1. Tasklet design
 
 To efficient utilize the pinned polling thread, MTL has developed asynchronous scheduler called tasklet. A tasklet is a small, lightweight function that runs in the context of the pinned polling thread and is scheduled by MTL scheduler. Tasklets are used for performing quick, non-blocking operations that can't go to sleep.
 The operation of MTL's internal jobs is typically triggered by the availability of packets in the NIC's RX queue, space in the TX queue, or available data in the ring. Consequently, the tasklet design is highly suitable for these processes.
 One primary advantage of using tasklets is that all tasklets associated with a single stream session are bound to one thread, allowing for more efficient use of the Last Level Cache (LLC) at different stages of processing.
 
-### 2.2 Scheduler quota
+### 2.2. Scheduler quota
 
 A single scheduler (pinned polling thread) can have numerous tasklets registered. To manage the distribution of tasklets across schedulers, a 'quota' system has been implemented in each scheduler, indicating the total data traffic each core can handle.
 Sessions will submit a request to the scheduler manager for a scheduler to manage their jobs. Upon receiving a request, the scheduler manager will assess whether the recent scheduler has enough quota to service this new request.
@@ -41,12 +41,12 @@ If not, a new scheduler will be created and allocated to the session for the upc
 
 The performance of the setup can vary, so the data traffic quota for each scheduler is customizable by the application through the `data_quota_mbs_per_sch` parameter.
 
-### 2.3 Session migrate
+### 2.3. Session migrate
 
 Additionally, MTL has introduced support for session migration with the `MTL_FLAG_TX_VIDEO_MIGRATE` and `MTL_FLAG_RX_VIDEO_MIGRATE` flags. This feature enables runtime CPU usage calculations. When the system detects that a scheduler is operating at 100% capacity, that overloaded scheduler will attempt to redistribute its last few sessions to other underutilized schedulers.
 This migration capability adds flexibility to deployment, accommodating the often unpredictable capacity of a system.
 
-### 2.4 Multi process support
+### 2.4. Multi process support
 
 MTL supports multi-process deployment through the use of SR-IOV. Each process operates with its own perspective on core usage, to prevent conflicts that arise when multiple processes attempt to use the same core, MTL utilizes a Manager service which ensures that each MTL instance is allocated a distinct and unused core.
 Each instance sends a request to the Manager service, which in return assigns a free core to the instance. The Manager service is also responsible for detecting when an instance disconnects and will subsequently release the associated resources. For more details, please consult the [Manager guide](../manager/README.md)
@@ -54,7 +54,7 @@ Each instance sends a request to the Manager service, which in return assigns a 
 If the background Manager service is not practical for your setup, there is a fallback method: managing the logical core (lcore) via shared memory. In this approach, all MTL instances loop through a shared memory structure to locate an unused core.
 The instructions for this deprecated method can still be accessed in the [shm_lcore guide](./shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
 
-### 2.5 The tasklet API for application
+### 2.5. The tasklet API for application
 
 Applications can also leverage the efficient tasklet framework. An important note is that the callback tasklet function cannot use any blocking methods, as the thread resource is shared among many tasklets. For more information, please refer to the [mtl_sch_api](../include/mtl_sch_api.h). Example usage is provided below:
 
@@ -67,7 +67,7 @@ Applications can also leverage the efficient tasklet framework. An important not
     mtl_sch_free
 ```
 
-### 2.6 Runtime session
+### 2.6. Runtime session
 
 The session creation and release APIs can be invoked at any time, even while the MTL instance is running.
 
@@ -106,7 +106,7 @@ MTL also supports session creation after the MTL instance has started; therefore
   ...
 ```
 
-### 2.7 Manual assigned lcores
+### 2.7. Manual assigned lcores
 
 By default, the lcore resources for each MTL instance are automatically assigned by the manager service. However, in certain scenarios, applications may need to manage lcore usage directly.
 
@@ -116,7 +116,7 @@ For user convenience, the built-in RxTxApp also offers a command-line option `--
 
 ## 3. Memory management
 
-### 3.1 Huge Page
+### 3.1. Huge Page
 
 MTL utilizes hugepages for performance optimization when processing packets at high speed.
 
@@ -127,11 +127,11 @@ MTL utilizes hugepages for performance optimization when processing packets at h
 HugePages come in two sizes: 2MB and 1GB. MTL recommends using the 2MB pages because they are easier to configure in the system; typically, 1GB pages require many additional settings in the OS. Moreover, according to our performance measurements, the benefits provided by 2MB pages are sufficient.
 The hugepages size is dependent on the workloads you wish to execute on the system, usually a 2G huge page is a good start point, consider increasing the value if memory allocation failures occur during runtime.
 
-### 3.2 Memory API
+### 3.2. Memory API
 
 In MTL, memory management is directly handled through DPDK's memory-related APIs, including mempool and mbuf. In fact, all internal data objects are constructed based on mbuf/mempool to ensure efficient lifecycle management.
 
-### 3.3 Public Memory API for application usage
+### 3.3. Public Memory API for application usage
 
 Applications can allocate hugepage memory through the following public APIs:
 
@@ -144,7 +144,7 @@ Applications can allocate hugepage memory through the following public APIs:
 
 ## 4. Data path
 
-### 4.1 Backend layer
+### 4.1. Backend layer
 
 The library incorporates a virtual data path backend layer, designed to abstract various NIC implementation and provide a unified packet TX/RX interface to the upper network layer. It currently supports three types of NIC devices:
 
@@ -165,11 +165,11 @@ MTL selects the backend NIC based on input from the application. Users should sp
   enum mtl_pmd_type pmd[MTL_PORT_MAX];
 ```
 
-### 4.2 Queue Manager
+### 4.2. Queue Manager
 
 The library incorporates a queue manager layer, designed to abstract various queue implementation. Code please refer to [mt_queue.c](../lib/src/datapath/mt_queue.c) for detail.
 
-#### 4.2.1 Tx
+#### 4.2.1. TX
 
 For transmitting (TX) data, there are two queue modes available:
 
@@ -178,7 +178,7 @@ Dedicated Mode: In this mode, each session exclusively occupies one TX queue res
 Shared Mode: In contrast, shared mode allows multiple sessions to utilize the same TX queue. To ensure there is no conflict in the packet output path, a spin lock is employed. While this mode enables more efficient use of resources by sharing them, there can be a performance trade-off due to the overhead of acquiring and releasing the lock.
 The TX queue shared mode is enabled by `MTL_FLAG_SHARED_TX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
 
-#### 4.2.2 RX
+#### 4.2.2. RX
 
 For RX data, there are three queue modes available:
 
@@ -190,18 +190,18 @@ The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Code ple
 RSS mode: Not all NICs support Flow Director. For those that don't, we employs Receive Side Scaling (RSS) to enable the efficient distribution of network receive processing across multiple queues. This is based on a hash calculated from fields in packet headers, such as source and destination IP addresses, and port numbers.
 Code please refer to [mt_shared_rss.c](../lib/src/datapath/mt_shared_rss.c) for detail.
 
-#### 4.2.3 Queues resource allocated
+#### 4.2.3. Queues resource allocated
 
 The `mtl_init_params` structure offers two configuration options: `tx_queues_cnt` and `rx_queues_cnt`, which specify the number of transmit and receive queues, respectively, that MTL should use for an instance.
 The number of queues typically depends on the anticipated number of sessions to be created, with each video session usually requiring one dedicated queue for packet transmission and reception over the network.
 
 If the requested number of queues exceeds the maximum allowed by the hardware resources, then only the maximum permissible number of queues will be created.
 
-### 4.3 ST2110 TX
+### 4.3. ST2110 TX
 
 After receiving a frame from an application, MTL constructs a network packet from the frame in accordance with RFC 4175 <https://datatracker.ietf.org/doc/rfc4175/> and ST2110-21 timing requirement.
 
-#### 4.3.1 Zero Copy Packet Build
+#### 4.3.1. Zero Copy Packet Build
 
 Most modern Network Interface Cards (NICs) support a multi-buffer descriptor feature, enabling the programming of the NIC to dispatch a packet to the network from multiple data segments. The MTL utilizes this capability to achieve zero-copy transmission when a DPDK Poll Mode Driver (PMD) is utilized, thereby delivering unparalleled performance.
 In one typical setup, capable of sending approximately 50 Gbps(equivalent to 16 streams of 1080p YUV422 at 10-bit color depth and 59.94 fps) only requires a single core.
@@ -214,7 +214,7 @@ Note that if the currently used NIC does not support the multi-buffer feature, t
 <img src="png/tx_zero_copy.png" align="center" alt="TX Zero Copy">
 </div>
 
-#### 4.3.2 ST2110-21 pacing
+#### 4.3.2. ST2110-21 pacing
 
 The specific standard ST2110-21 deals with the traffic shaping and delivery timing of uncompressed video. It defines how the video data packets should be paced over the network to maintain consistent timing and bandwidth utilization.
 
@@ -231,12 +231,12 @@ In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counte
 <img src="png/tx_pacing.png" align="center" alt="TX Pacing">
 </div>
 
-### 4.4 ST2110 RX
+### 4.4. ST2110 RX
 
 The RX (Receive) packet classification in MTL includes two types: Flow Director and RSS (Receive Side Scaling). Flow Director is preferred if the NIC is capable, as it can directly feed the desired packet into the RX session packet handling function.
 Once the packet is received and validated as legitimate, the RX session will copy the payload to the frame and notify the application if it is the last packet.
 
-#### 4.4.1 RX DMA offload
+#### 4.4.1. RX DMA offload
 
 The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA guide](./dma.md)
 
@@ -248,15 +248,15 @@ The process of copying data between packets and frames consumes a significant am
 
 For the DPDK Poll Mode Driver backend, given its nature of fully bypassing the kernel, it is necessary to implement specific control protocols within MTL."
 
-### 5.1 ARP
+### 5.1. ARP
 
 Address Resolution Protocol is a communication protocol used for discovering the link layer address, such as a MAC address, associated with a given internet layer address, typically an IPv4 address. This mapping is critical for local area network communication. The code can be found from [mt_arp.c](../lib/src/mt_arp.c)
 
-### 5.2 IGMP
+### 5.2. IGMP
 
 The internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found from [mt_mcast.c](../lib/src/mt_mcast.c)
 
-### 5.3 DHCP
+### 5.3. DHCP
 
 Dynamic Host Configuration Protocol is a network management protocol used on IP networks whereby a DHCP server dynamically assigns an IP address and other network configuration parameters to each device on a network, so they can communicate with other IP networks.
 DHCP allows devices known as clients to get an IP address automatically, reducing the need for a network administrator or a user to manually assign IP addresses to all networked devices.
@@ -265,14 +265,14 @@ The DHCP option is not default on, enable it by set `net_proto` in `struct mtl_i
 
 The code implementation can be found from [mt_dhcp.c](../lib/src/mt_dhcp.c).
 
-### 5.4 PTP
+### 5.4. PTP
 
 Precision Time Protocol, also known as IEEE 1588, is designed for accurate clock synchronization between devices on a network. PTP is capable of clock accuracy in the sub-microsecond range, making it ideal for systems where precise timekeeping is vital. PTP uses a master-slave architecture for time synchronization.
 Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l.
 
 MTL support two type of PTP client settings, the built-in PTP client implementation inside MTL or using a external PTP time source.
 
-#### 5.4.1 Built-in PTP
+#### 5.4.1. Built-in PTP
 
 This project includes a built-in support for the PTP client protocol, which is also based on the hardware offload timesync feature. This combination allows for achieving a PTP time clock source with an accuracy of approximately 30ns.
 
@@ -285,12 +285,12 @@ Applications can set a `ptp_sync_notify` callback within `mtl_init_params` to re
 Additionally, MTL exports two APIs: `mtl_ptp_read_time` and `mtl_ptp_read_time_raw`, which enable applications to retrieve the current built-in PTP time. The primary difference is that `mtl_ptp_read_time_raw` accesses the NIC's memory-mapped I/O (MMIO) registers directly, providing the most accurate time at the expense of increased CPU usage due to the MMIO read operation.
 In contrast, `mtl_ptp_read_time` returns the cached software time, avoiding hardware overhead.
 
-#### 5.4.2 Customized PTP time source by Application
+#### 5.4.2. Customized PTP time source by Application
 
 Some setups may utilize external tools, such as `ptp4l`, for synchronization with a grandmaster clock. MTL provides an option `ptp_get_time_fn` within `struct mtl_init_params`, allowing applications to customize the PTP time source. In this mode, whenever MTL requires a PTP time, it will invoke this function to acquire the actual PTP time.
 Consequently, it is the application's responsibility to retrieve the time from the PTP client configuration.
 
-#### 5.4.3 37 seconds offset between UTC and TAI time
+#### 5.4.3. 37 seconds offset between UTC and TAI time
 
 There's actually a difference of 37 seconds between Coordinated Universal Time (UTC) and International Atomic Time (TAI). This discrepancy is due to the number of leap seconds that have been added to UTC to keep it synchronized with Earth's rotation, which is gradually slowing down.
 
@@ -301,7 +301,7 @@ While PTP grandmasters disseminate the offset in their announce messages, this o
 
 The API between MTL and application are 3 different types:
 
-### 6.1 Frame mode
+### 6.1. Frame mode
 
 MTL orchestrates the packet processing from the frame level to L2 network packets and vice versa, with the frame buffer serving as the interface for video context exchange between MTL and the application.
 
@@ -312,20 +312,20 @@ For reception, the MTL RX session will process packets received from the network
 
 Sample application code can be find at [tx_video_sample.c](../app/sample/legacy/tx_video_sample.c) and [rx_video_sample.c](../app/sample/legacy/rx_video_sample.c)
 
-#### 6.1.1 Slice mode
+#### 6.1.1. Slice mode
 
 Slice mode is an enhancement of frame mode that provides applications with more granular control at the slice level, enabling the achievement of ultra-low latency. In transmission, MTL slices use `query_frame_lines_ready` to determine the number of lines available for transmission to the network.
 For reception, the application specifies the slice size using the `slice_lines` field in the `struct st20_rx_ops`. MTL will then inform the application via the `notify_slice_ready` callback when all packets of any slice have been received and are ready for the application to process.
 
 Sample application code can be find at [tx_slice_video_sample.c](../app/sample/low_level/tx_slice_video_sample.c) and [rx_slice_video_sample.c](../app/sample/low_level/rx_slice_video_sample.c)
 
-### 6.2 RTP passthrough mode
+### 6.2. RTP passthrough mode
 
 MTL manages the processing from RTP to L2 packet and vice versa, but it is the responsibility of the application to encapsulate/decapsulate RTP with various upper-layer protocols. This approach is commonly employed to implement support for ST2022-6, given that MTL natively supports only ST2110.
 
 Sample application code can be find at [tx_rtp_video_sample.c](../app/sample/low_level/tx_rtp_video_sample.c) and [rx_rtp_video_sample.c](../app/sample/low_level/rx_rtp_video_sample.c)
 
-### 6.3 Pipeline mode
+### 6.3. Pipeline mode
 
 An enhancement over frame mode, this feature provides more user-friendly get/put APIs with built-in frame cycle management and inherent SIMD color format converter. Given that the ST2110 format operates in network big-endian mode, and typically the CPU/GPU uses little endian, such functionality is essential for seamless integration. The implementation can be found from [pipeline code](../lib/src/st2110/pipeline/).
 
@@ -346,12 +346,12 @@ Sample application code can be find at [tx_st20_pipeline_sample.c](../app/sample
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
 
-### 6.4 ST22 support
+### 6.4. ST22 support
 
 The support for ST 2110-22 JPEG XS can be categorized into two modes: ST 2110-22 raw codestream mode and ST 2110-22 pipeline mode. The pipeline mode leverages an MTL plugin to handle the decoding/encoding between the raw video buffer and the codestream.
 We recommend using the pipeline mode, as it allows the application to concentrate on video content processing without needing to manage codec-specific differences. In contrast, the ST 2110-22 codestream mode requires the application to handle the codec operations directly.
 
-#### 6.4.1 ST22 pipeline
+#### 6.4.1. ST22 pipeline
 
 Thanks to the plugin, the application can implement ST22 support using the following simplified example:
 
@@ -372,13 +372,13 @@ Sample application code can be find at [tx_st22_pipeline_sample.c](../app/sample
 By default, the `st22p_tx_get_frame` and `st22p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST22P_TX_FLAG_BLOCK_GET` or `ST22P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st22p_tx_wake_block`/`st22p_rx_wake_block` to wake up the waiting directly.
 
-#### 6.4.2 ST22 codestream mode
+#### 6.4.2. ST22 codestream mode
 
 The API is similar to the frame mode of ST 2110-20, with the codestream utilizing the same frame concept. It is the application's responsibility to manage both the codec and the codestream frame buffer lifecycle. We recommend to use ST22 pipeline if possible.
 
 Sample application code can be find at [tx_st22_video_sample.c](../app/sample/legacy/tx_st22_video_sample.c) and [rx_st22_video_sample.c](../app/sample/legacy/rx_st22_video_sample.c)
 
-### 6.5 2022-7 redundant support
+### 6.5. 2022-7 redundant support
 
 All sessions within MTL incorporate redundancy support through a software-based approach. For transmission (TX), MTL replicates packets onto a redundant path once they have been assembled from a frame; these duplicates are then sent to the TX queue of a secondary network device.
 For reception (RX), MTL concurrently captures packets from both primary and secondary network devices within the same tasklet, examining the RTP headers to ascertain each packet's position within a frame.
@@ -397,7 +397,7 @@ Enabling redundancy is straightforward with the setup parameters in the `st**_tx
   }
 ```
 
-### 6.6 Interlaced support
+### 6.6. Interlaced support
 
 In MTL, each field is treated as an individual frame, with fields being transmitted separately over the network, to avoid the need for new APIs specifically for fields. It is the application’s responsibility to recombine the fields into a full frame.
 
@@ -407,12 +407,12 @@ However, keep in mind that the buffer for each field (or frame) will only contai
 For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st20_tx_frame_meta`. Similarly, for reception (RX), applications can determine the field order with the `second_field` flag present in the `struct st20_rx_frame_meta`.
 In the case of pipeline mode, the bool `second_field` within the `struct st_frame` also communicates field information between the application and MTL.
 
-### 6.7 Get incomplete frame
+### 6.7. Get incomplete frame
 
 By default, the RX session will only deliver complete frames, where all packets have been successfully received, to the application. Frames that are incomplete due to missing packets are discarded by MTL. However, in certain scenarios, an application may need to be aware of incomplete frames to apply its own logic for frame processing.
 This behavior can be activated by setting the flag `ST**_RX_FLAG_RECEIVE_INCOMPLETE_FRAME` during session creation.
 
-### 6.8 RTCP re-transmission
+### 6.8. RTCP re-transmission
 
 In cloud or edge computing environments, where network management can be challenging and packet loss may occur due to complex routing, ensuring reliable data transmission is critical. SMPTE ST 2110 utilizes the SMPTE 2022-7 redundancy standard for enhanced reliability, but this approach demands double the bandwidth, which can be costly.
 
@@ -425,7 +425,7 @@ It can be enabled by `ST**_TX_FLAG_ENABLE_RTCP` and `ST**_RX_FLAG_ENABLE_RTCP`, 
 
 For more details, please refer to [RTCP doc](rtcp.md).
 
-### 6.9 External frame
+### 6.9. External frame
 
 By default, the frame buffer is allocated by MTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves—especially applications that utilize GPU-based memory for additional video frame processing. MTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
 MTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because MTL only recognizes the frame address.
@@ -433,12 +433,12 @@ Additionally, it's important to note that if a DPDK-based PMD backend is utilize
 
 For more comprehensive information and instructions on using these converters, please refer to the [external_frame](./external_frame.md).
 
-### 6.10 VSync
+### 6.10. VSync
 
 VSync events can be generated by MTL sessions, leveraging their tasklet-based scheduling which synchronizes with the PTP time source. Some applications may require VSync events to drive their video frame processing logic. This feature can be enabled using the `ST**_TX_FLAG_ENABLE_VSYNC` and `ST**_RX_FLAG_ENABLE_VSYNC` flags.
 Consequently, the application will receive notifications through `notify_event` callback, containing `ST_EVENT_VSYNC`, which indicate the commencement of each epoch.
 
-### 6.11 User timestamp and pacing control for TX
+### 6.11. User timestamp and pacing control for TX
 
 By default, applications simply push frames into MTL TX sessions, where the MTL TX session automatically assigns timestamps and epochs based on timing.
 
@@ -446,12 +446,12 @@ The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP times
 
 The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use their own timestamp values for each frame. Consequently, the RTP timestamp for all packets that belong to that frame will be assigned the customized value.
 
-### 6.12 SIMD for color space convert
+### 6.12. SIMD for color space convert
 
 MTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the MTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c).
 The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [convert guide](./convert.md).
 
-### 6.13 Runtime update source and destination
+### 6.13. Runtime update source and destination
 
 To offer significant flexibility in switch/forward scenarios, it is advantageous for a session to be able to dynamically change the source or destination address at runtime, thereby obviating the need for applications to recreate a session. The MTL API below provides the capability to reconfigure the target address during runtime:
 
@@ -470,7 +470,7 @@ To offer significant flexibility in switch/forward scenarios, it is advantageous
   st22p_rx_update_source
 ```
 
-### 6.14 Ecosystem
+### 6.14. Ecosystem
 
 The MTL provides comprehensive documentation that includes reference code, demonstrating the seamless integration with popular media frameworks. Currently, MTL supports the following plugins and SDKs:
 
@@ -480,11 +480,11 @@ OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software
 
 Intel® Media SDK: Leverage MTL's robust capabilities within Intel® Media SDK projects to unlock advanced media functionalities on Intel platforms. Detail please refer to [Intel®_Media_SDK_guide](../ecosystem/msdk/).
 
-### 6.15 Sample code
+### 6.15. Sample code
 
 In addition to the built-in RxTxApp, MTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, detail can be found at [fwd](../app/sample/fwd/).
 
-### 6.16 RX Timing Parser
+### 6.16. RX Timing Parser
 
 To verify the compliance of incoming ST2110-20 RX streams with the ST2110 standard, MTL provides several utilities for analysis.
 To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, MTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing. And please set `MTL_FLAG_ENABLE_HW_TIMESTAMP` flag to enable HW offload timestamp for all RX packets.
@@ -500,7 +500,7 @@ It also features a sample timing parser UI constructed using the MTL Python bind
 To increase the reliability of parsed results, it is recommended to use the `isocpus` kernel boot parameter to isolate a subset of dedicated CPUs specifically for time-sensitive parsing tasks. Isolating CPUs can help ensure that these tasks are not preempted by other processes, thus maintaining a high level of reliability.
 After isolating the CPUs, you can manually assign these dedicated cores to an MTL instance. For detailed instructions on this manual assignment process, please refer to the section: `#### 2.7 Manual Assigned lcores`
 
-### 6.17 ST40(ancillary) Interlaced support
+### 6.17. ST40(ancillary) Interlaced support
 
 In MTL, similar to st20 video, each field is treated as an individual frame, with fields being transmitted separately over the network, to avoid the need for new APIs specifically for fields.
 
@@ -510,7 +510,7 @@ For transmission (TX), users can specify whether the current field is the first 
 
 ## 7. Misc
 
-### 7.1 Logging
+### 7.1. Logging
 
 By default, MTL uses the DPDK `RTE_LOG` for outputting logs.
 
@@ -551,6 +551,6 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
 
 And in a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ERR` usually, in this cast USDT probes can be used to fetching the logging, detail see [usdt](usdt.md) doc, `#### 2.1.1 log_msg USDT` part.
 
-### 7.2 USDT
+### 7.2. USDT
 
 MTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, detail see [usdt](usdt.md) doc.

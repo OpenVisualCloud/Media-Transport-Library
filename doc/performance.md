@@ -3,7 +3,7 @@
 ## 1. benchmark server setup
 
 Server Model: M50CYP2SBSTD  
-Processor Information: Intel(R) Xeon(R) Platinum 8358 CPU @ 2.60GHz
+Processor Information: Intel® Xeon® Platinum 8358 CPU @ 2.60GHz
                        2 Processor, 64 Cores  
 Memory: 16 x 32G (DIMM DDR4 Synchronous 3200 MHz)  
 NIC: CVL 100G  
@@ -11,7 +11,7 @@ APP used: RxTxApp reference app.
 
 ## 2. benchmark result
 
-### 2.1 transmitter in frame mode
+### 2.1. transmitter in frame mode
 
 following table shows the benchmark of max tx session number.
 format | 1 port with 1 NIC | 2 port with 2 NIC
@@ -27,7 +27,7 @@ format | 1 port with 1 NIC | 2 port with 2 NIC
 2160p59.94 | 9 | 9 x 2
 4320p59.94 | 2 | 2 x 2
 
-#### 2.2 transmitter + Receiver in frame mode for 8K & 4k
+### 2.2. transmitter + Receiver in frame mode for 8K & 4k
 
 config | max-sessions | comment
 --- | --- | ---
