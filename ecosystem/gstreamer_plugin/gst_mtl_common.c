@@ -8,9 +8,8 @@
 
 #include "gst_mtl_common.h"
 
-gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo *finfo,
-                                              enum st_frame_fmt* fmt) {
-
+gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
+                                          enum st_frame_fmt* fmt) {
   if (finfo->format == GST_VIDEO_FORMAT_v210) {
     *fmt = ST_FRAME_FMT_V210;
   } else if (finfo->format == GST_VIDEO_FORMAT_I420_10LE) {
@@ -102,7 +101,6 @@ gboolean gst_mtl_common_parse_fps(GstVideoInfo* info, enum st_fps* fps) {
 
   return TRUE;
 }
-
 
 /* includes all formats supported by the library for future support */
 gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt* fmt) {

@@ -119,16 +119,19 @@ G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St20p_Tx, gst_mtl_st20p_tx, GST_TYPE_VIDEO_SINK,
                         GST_DEBUG_CATEGORY_INIT(gst_mtl_st20p_tx_debug, "mtl_st20p_tx", 0,
                                                 "MTL St2110 st20 transmission sink"));
 
-GST_ELEMENT_REGISTER_DEFINE(mtl_st20p_tx, "mtl_st20p_tx", GST_RANK_NONE, GST_TYPE_MTL_ST20P_TX);
+GST_ELEMENT_REGISTER_DEFINE(mtl_st20p_tx, "mtl_st20p_tx", GST_RANK_NONE,
+                            GST_TYPE_MTL_ST20P_TX);
 
 static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
-                                       const GValue* value, GParamSpec* pspec);
+                                          const GValue* value, GParamSpec* pspec);
 static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue* value,
-                                       GParamSpec* pspec);
+                                          GParamSpec* pspec);
 static void gst_mtl_st20p_tx_finalize(GObject* object);
 
-static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent, GstEvent* event);
-static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent, GstBuffer* buf);
+static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
+                                            GstEvent* event);
+static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
+                                            GstBuffer* buf);
 
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink);
 static gboolean gst_mtl_st20p_tx_stop(GstBaseSink* bsink);
@@ -153,7 +156,8 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_set_property);
   gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_get_property);
   gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_finalize);
-  gstvideosinkelement_class->parent_class.start = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_start);
+  gstvideosinkelement_class->parent_class.start =
+      GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_start);
 
   g_object_class_install_property(
       gobject_class, PROP_SILENT,
@@ -309,7 +313,7 @@ static void gst_mtl_st20p_tx_init(Gst_Mtl_St20p_Tx* sink) {
 }
 
 static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
-                                       const GValue* value, GParamSpec* pspec) {
+                                          const GValue* value, GParamSpec* pspec) {
   Gst_Mtl_St20p_Tx* self = GST_MTL_ST20P_TX(object);
 
   switch (prop_id) {
@@ -329,7 +333,8 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
       strncpy(self->portArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_TX_PORT_IP:
-      strncpy(self->portArgs.session_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(self->portArgs.session_ip_string, g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_TX_PORT_UDP_PORT:
       self->portArgs.udp_port = g_value_get_uint(value);
@@ -353,7 +358,7 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
 }
 
 static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue* value,
-                                       GParamSpec* pspec) {
+                                          GParamSpec* pspec) {
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
 
   switch (prop_id) {
@@ -447,8 +452,8 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  if (inet_pton(AF_INET, sink->portArgs.session_ip_string, ops_tx.port.dip_addr[MTL_PORT_P]) !=
-      1) {
+  if (inet_pton(AF_INET, sink->portArgs.session_ip_string,
+                ops_tx.port.dip_addr[MTL_PORT_P]) != 1) {
     GST_ERROR("Invalid destination IP address: %s", sink->portArgs.session_ip_string);
     return FALSE;
   }
@@ -491,7 +496,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
 }
 
 static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
-                                         GstEvent* event) {
+                                            GstEvent* event) {
   Gst_Mtl_St20p_Tx* sink;
   GstCaps* caps;
   gint ret;
@@ -538,7 +543,8 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
  * frame buffers, supports incomplete frames. But buffers needs to add up to the
  * actual frame size.
  */
-static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent, GstBuffer* buf) {
+static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
+                                            GstBuffer* buf) {
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(parent);
   gint buffer_size = gst_buffer_get_size(buf);
   gint buffer_n = gst_buffer_n_memory(buf);

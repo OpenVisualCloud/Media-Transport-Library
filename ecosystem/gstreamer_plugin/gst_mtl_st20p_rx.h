@@ -47,8 +47,9 @@
 #ifndef __GST_MTL_ST20P_RX_H__
 #define __GST_MTL_ST20P_RX_H__
 
-#include "gst_mtl_common.h"
 #include <gst/base/gstbasesrc.h>
+
+#include "gst_mtl_common.h"
 
 G_BEGIN_DECLS
 
@@ -57,7 +58,7 @@ G_DECLARE_FINAL_TYPE(Gst_Mtl_St20p_Rx, gst_mtl_st20p_rx, GST, MTL_ST20P_RX, GstB
 
 struct _Gst_Mtl_St20p_Rx {
   GstBaseSrc element;
-  GstBuffer *buffer;
+  GstBuffer* buffer;
 
   /*< private >*/
   struct st20p_rx_ops ops_rx;
