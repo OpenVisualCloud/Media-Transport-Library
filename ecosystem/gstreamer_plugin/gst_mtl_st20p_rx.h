@@ -44,49 +44,27 @@
  * Boston, MA 02111-1307, USA.
  */
 
-#ifndef __GST_MTL_TX_SINK_H__
-#define __GST_MTL_TX_SINK_H__
+#ifndef __GST_MTL_ST20P_RX_H__
+#define __GST_MTL_ST20P_RX_H__
 
-#include <arpa/inet.h>
-#include <gst/gst.h>
-#include <gst/video/video.h>
-#include <mtl/mtl_api.h>
-#include <mtl/st_pipeline_api.h>
+#include <gst/base/gstbasesrc.h>
+
+#include "gst_mtl_common.h"
 
 G_BEGIN_DECLS
 
-#ifndef NS_PER_MS
-#define NS_PER_MS (1000 * 1000)
-#endif
+#define GST_TYPE_MTL_ST20P_RX (gst_mtl_st20p_rx_get_type())
+G_DECLARE_FINAL_TYPE(Gst_Mtl_St20p_Rx, gst_mtl_st20p_rx, GST, MTL_ST20P_RX, GstBaseSrc)
 
-#ifndef NS_PER_S
-#define NS_PER_S (1000 * NS_PER_MS)
-#endif
+struct _Gst_Mtl_St20p_Rx {
+  GstBaseSrc element;
+  GstBuffer* buffer;
 
-#define GST_TYPE_MTL_TX_SINK (gst_mtltxsink_get_type())
-G_DECLARE_FINAL_TYPE(GstMtlTxSink, gst_mtltxsink, GST, MTL_TX_SINK, GstVideoSink)
-
-typedef struct StDevArgs {
-  gchar port[MTL_PORT_MAX_LEN];
-  gchar local_ip_string[MTL_PORT_MAX_LEN];
-  gint tx_queues_cnt[MTL_PORT_MAX];
-  gint rx_queues_cnt[MTL_PORT_MAX];
-  gchar dma_dev[MTL_PORT_MAX_LEN];
-} StDevArgs;
-
-typedef struct StTxSessionPortArgs {
-  gchar tx_ip_string[MTL_PORT_MAX_LEN];
-  gchar port[MTL_PORT_MAX_LEN];
-  gint udp_port;
-  gint payload_type;
-} StTxSessionPortArgs;
-
-struct _GstMtlTxSink {
-  GstVideoSink element;
-  GstElement* child;
+  /*< private >*/
+  struct st20p_rx_ops ops_rx;
   gboolean silent;
   mtl_handle mtl_lib_handle;
-  st20p_tx_handle tx_handle;
+  st20p_rx_handle rx_handle;
 
   /* arguments for incomplete frame buffers */
   guint retry_frame;
@@ -94,10 +72,14 @@ struct _GstMtlTxSink {
 
   /* arguments for imtl initialization device */
   StDevArgs devArgs;
-  /* arguments for imtl tx session */
-  StTxSessionPortArgs portArgs;
+  /* arguments for imtl rx session */
+  SessionPortArgs portArgs;
 
   /* arguments for session */
+  guint width;
+  guint height;
+  gboolean interlaced;
+  gchar pixel_format[MTL_PORT_MAX_LEN];
   guint framebuffer_num;
   guint framerate;
 
@@ -106,10 +88,10 @@ struct _GstMtlTxSink {
   gboolean gpu_direct_enabled;
   gint gpu_driver_index;
   gint gpu_device_index;
-  gboolean* gpu_context;
+  guint8* gpu_context;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 };
 
 G_END_DECLS
 
-#endif /* __GST_MTL_TX_SINK_H__ */
+#endif /* __GST_MTL_ST20P_RX_H__ */
