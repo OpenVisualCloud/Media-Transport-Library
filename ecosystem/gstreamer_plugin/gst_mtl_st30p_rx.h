@@ -66,7 +66,7 @@ struct _Gst_Mtl_St30p_Rx {
   mtl_handle mtl_lib_handle;
   st30p_rx_handle rx_handle;
 
-  /* arguments for incomplete frame buffers */
+  /* arguments for mtl frame buffers */
   guint retry_frame;
   guint frame_size;
 

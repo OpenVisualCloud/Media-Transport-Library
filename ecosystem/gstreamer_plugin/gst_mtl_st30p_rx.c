@@ -110,7 +110,7 @@ enum {
 
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st30p_rx_src_pad_template =
-    GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SINK, GST_PAD_ALWAYS,
+    GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
                             GST_STATIC_CAPS("audio/x-raw, "
                                             "format = (string) {S8, S16LE, S24LE},"
                                             "channels = (int) [1, 2], "
@@ -311,11 +311,14 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
 
   ops_rx->name = "st30src";
   ops_rx->channel = src->channel;
-  ops_rx->sampling = src->sampling;
   ops_rx->port.num_port = 1;
   ops_rx->ptime = ST30_PTIME_1MS;
   ops_rx->flags |= ST30P_RX_FLAG_BLOCK_GET;
 
+  if (!gst_mtlst30tx_parse_sampling(src->sampling, &ops_rx->sampling)) {
+    GST_ERROR("Failed to parse ops_rx sampling %d", src->sampling);
+    return FALSE;
+  }
 
   if (!gst_mtl_common_parse_audio_format(src->audio_format, &ops_rx->fmt)) {
     GST_ERROR("Failed to parse ops_rx audio format %s", src->audio_format);
@@ -324,6 +327,18 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
 
   ops_rx->framebuff_size = st30_calculate_framebuff_size(
       ops_rx->fmt, ops_rx->ptime, ops_rx->sampling, ops_rx->channel, 10 * NS_PER_MS, NULL);
+  
+  if (!ops_rx->framebuff_size) {
+    GST_ERROR("Failed to calculate framebuff size");
+    return FALSE;
+  }
+
+
+  if (src->framebuffer_num) {
+    ops_rx->framebuff_cnt = src->framebuffer_num;
+  } else {
+    ops_rx->framebuff_cnt = 3;
+  }
 
   if (inet_pton(AF_INET, src->portArgs.session_ip_string,
                 ops_rx->port.ip_addr[MTL_PORT_P]) != 1) {
