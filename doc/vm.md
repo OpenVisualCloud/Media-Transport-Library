@@ -40,11 +40,11 @@ echo <num> > /sys/class/net/<interface>/device/sriov_numvfs
 #### 1.6.1. Manually create
 
 * Open virt-manager with GUI
-* Add a vm, choose ubuntu 20.04 minimal iso
+* Add a vm, choose Ubuntu 20.04 minimal iso
 * Use bridged network or NAT for default NIC
 * Specify cpu core, memory, recommend 8 cpus and 8G memory (experimental)
 * Configure before install, add a pci passthrough device, choose the created vf
-* Start to install vm as normal ubuntu
+* Start to install vm as normal Ubuntu
 
 #### 1.6.2. Or create using virt-install
 

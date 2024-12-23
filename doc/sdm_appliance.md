@@ -18,7 +18,7 @@ Depicted below are 2 use-case scenario:
 
 2. Intel® Smart Display Module (SDM) devkit (Codenamed Alder Valley) - Receiving Device (NIC=i225-LMvP)
 
-3. Synchronous scenario - 1x HDMI-to-USB video capture device (e.g [Mukose SDI2USB3.0](https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.amazon.com%2FMOKOSE-USB3-0-Capture-Windows-Grabber%2Fdp%2FB071KPW3PH&psig=AOvVaw0JInBE6gygffG2clmni8sH&ust=1684225637669000&source=images&cd=vfe&ved=0CBIQjhxqFwoTCMjo9cnz9v4CFQAAAAAdAAAAABAE))
+3. Synchronous scenario - 1x HDMI-to-USB video capture device (e.g [Mukose SDI2USB3.0](https://www.amazon.com/MOKOSE-USB3-0-Capture-Windows-Grabber/dp/B071KPW3PH))
 
 4. 10GbE Switch and few Cat6/7 cables
 
@@ -26,9 +26,9 @@ Depicted below are 2 use-case scenario:
 
 1. Ubuntu 22.03 LTS
 
-2. Media Transport Library (MTL codenamed Kahawai)
+2. Media Transport Library (MTL)
 
-3. FFmpeg with Kahawai encoder and decoder [patches](https://google.com)
+3. FFmpeg with [MTL encoder and decoder patches](../ecosystem/ffmpeg_plugin/README.md)
 
 ## 2. Installation and configuration
 
@@ -38,9 +38,9 @@ The demo currently works only on Linux. Follow the steps below to install all th
 
 - See [build.md](./build.md) to build libmtl on Linux.
 
-### Build ffmpeg (with Kahawai encoder and decoder)
+### Build ffmpeg (with MTL encoder and decoder)
 
-- See [readme](../ecosystem/ffmpeg_plugin/README.md) to build ffmpeg with Kahawai's encoder/decoder on Ubuntu.
+- See [dedicated README.md](../ecosystem/ffmpeg_plugin/README.md) to build ffmpeg with MTL encoder/decoder on Ubuntu.
 
 - Follow instruction below (TBD)
 

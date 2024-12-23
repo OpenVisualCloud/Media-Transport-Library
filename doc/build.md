@@ -245,4 +245,23 @@ Use below command to check the detail compiler flags of one `march`:
 echo | gcc -dM -E - -march=haswell
 ```
 
-## (Continue with [Running ST2110](../README.md#3-run-st2110))
+### 4.4. Older kernel installed on the OS
+
+In case older kernel installed on the OS throws the “Kernel header files not in any of expected locations”
+and causes build errors, you can try to fix it with installation of kernel specific packet `kernel-devel`.
+
+```bash
+sudo yum install "kernel-devel-$(uname -r)"
+```
+
+For older kernel version on Red Hat, the issue is that Red Hat uses vault repos. Older versions are stored in the vaults and the correct repo needs to be enabled to install the targeted version.
+
+For example for Rocky Linux the location is:
+
+https://dl.rockylinux.org/vault/rocky/
+
+And the kernel-devel package for e.g. Rocky Linux 9.3 is stored here:
+
+https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/
+
+## (Next, proceed to [Running ST2110](../README.md#3-run-st2110) for further instructions)
