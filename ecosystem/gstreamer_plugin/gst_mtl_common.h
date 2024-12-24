@@ -6,13 +6,13 @@
 #define __GST_MTL_COMMON_H__
 
 #include <arpa/inet.h>
+#include <gst/audio/audio-info.h>
+#include <gst/audio/audio.h>
 #include <gst/gst.h>
 #include <gst/video/video.h>
-#include <gst/audio/audio.h>
-#include <gst/audio/audio-info.h>
 #include <mtl/mtl_api.h>
-#include <mtl/st_pipeline_api.h>
 #include <mtl/st30_pipeline_api.h>
+#include <mtl/st_pipeline_api.h>
 
 #define NS_PER_MS (1000 * 1000)
 
@@ -58,7 +58,6 @@ gboolean gst_mtl_common_parse_fps_code(gint fps_code, enum st_fps* fps);
 gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt* fmt);
 
 gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio);
-gboolean gst_mtlst30tx_parse_sampling(gint sampling,
-                                             enum st30_sampling* st_sampling);
+gboolean gst_mtlst30tx_parse_sampling(gint sampling, enum st30_sampling* st_sampling);
 
 #endif /* __GST_MTL_COMMON_H__ */

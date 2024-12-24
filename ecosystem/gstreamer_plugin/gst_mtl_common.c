@@ -183,8 +183,7 @@ gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* au
   return TRUE;
 }
 
-gboolean gst_mtlst30tx_parse_sampling(gint sampling,
-                                             enum st30_sampling* st_sampling) {
+gboolean gst_mtlst30tx_parse_sampling(gint sampling, enum st30_sampling* st_sampling) {
   if (!st_sampling) {
     GST_ERROR("Invalid st_sampling pointer");
     return FALSE;

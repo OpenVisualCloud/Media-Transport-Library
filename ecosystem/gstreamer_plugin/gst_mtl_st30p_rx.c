@@ -77,13 +77,13 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_rx_debug);
 #define GST_API_VERSION "1.0"
 #endif
 #ifndef GST_PACKAGE_NAME
-#define GST_PACKAGE_NAME "Media Transport Library st2110 st20 rx plugin"
+#define GST_PACKAGE_NAME "Media Transport Library st2110 st30 rx plugin"
 #endif
 #ifndef GST_PACKAGE_ORIGIN
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
 #endif
 #ifndef PACKAGE
-#define PACKAGE "gst-mtl-rx-st20"
+#define PACKAGE "gst-mtl-rx-st30"
 #endif
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "1.19.0.1"
@@ -119,7 +119,7 @@ static GstStaticPadTemplate gst_mtl_st30p_rx_src_pad_template =
 #define gst_mtl_st30p_rx_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St30p_Rx, gst_mtl_st30p_rx, GST_TYPE_BASE_SRC,
                         GST_DEBUG_CATEGORY_INIT(gst_mtl_st30p_rx_debug, "mtl_st30p_rx", 0,
-                                                "MTL St2110 st20 transmission src"));
+                                                "MTL St2110 st30 transmission src"));
 
 GST_ELEMENT_REGISTER_DEFINE(mtl_st30p_rx, "mtl_st30p_rx", GST_RANK_NONE,
                             GST_TYPE_MTL_ST30P_RX);
@@ -146,7 +146,7 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
 
   gst_element_class_set_metadata(
-      gstelement_class, "MtlRxSt20Src", "Src/Audio",
+      gstelement_class, "MtlRxSt30Src", "Src/Audio",
       "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
       "Dawid Wesierski <dawid.wesierski@intel.com>");
 
@@ -230,7 +230,7 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_RX_CHANNEL,
       g_param_spec_uint("rx-channel", "Audio channel", "Audio channel number.", 0,
-                            G_MAXUINT, 2, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT, 2, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_RX_SAMPLING,
@@ -325,14 +325,14 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  ops_rx->framebuff_size = st30_calculate_framebuff_size(
-      ops_rx->fmt, ops_rx->ptime, ops_rx->sampling, ops_rx->channel, 10 * NS_PER_MS, NULL);
-  
+  ops_rx->framebuff_size =
+      st30_calculate_framebuff_size(ops_rx->fmt, ops_rx->ptime, ops_rx->sampling,
+                                    ops_rx->channel, 10 * NS_PER_MS, NULL);
+
   if (!ops_rx->framebuff_size) {
     GST_ERROR("Failed to calculate framebuff size");
     return FALSE;
   }
-
 
   if (src->framebuffer_num) {
     ops_rx->framebuff_cnt = src->framebuffer_num;
@@ -516,13 +516,16 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
 
   switch (ops_rx->fmt) {
     case ST30_FMT_PCM24:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, info->rate, info->channels, NULL);
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, info->rate, info->channels,
+                                NULL);
       break;
     case ST30_FMT_PCM16:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, info->rate, info->channels, NULL);
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, info->rate, info->channels,
+                                NULL);
       break;
     case ST30_FMT_PCM8:
-            gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S8, info->rate, info->channels, NULL);
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S8, info->rate, info->channels,
+                                NULL);
       break;
     default:
       GST_ERROR("Unsupported pixel format %d", ops_rx->fmt);
@@ -532,13 +535,10 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
   info->rate = ops_rx->sampling;
   info->channels = ops_rx->channel;
 
-  caps = gst_caps_new_simple("audio/x-raw", "format", G_TYPE_STRING, gst_audio_format_to_string(info->finfo->format), "channels",
-                             G_TYPE_INT, info->channels, "rate", G_TYPE_INT, info->rate, NULL);
-
-  // caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "v210", "width",
-  //                            G_TYPE_INT, info->width, "height", G_TYPE_INT, info->height,
-  //                            "framerate", GST_TYPE_FRACTION, info->fps_n, 1,
-  //                            "interlace-mode", G_TYPE_BOOLEAN, src->interlaced, NULL);
+  caps = gst_caps_new_simple("audio/x-raw", "format", G_TYPE_STRING,
+                             gst_audio_format_to_string(info->finfo->format), "channels",
+                             G_TYPE_INT, info->channels, "rate", G_TYPE_INT, info->rate,
+                             NULL);
 
   if (!caps) caps = gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(basesrc));
 
