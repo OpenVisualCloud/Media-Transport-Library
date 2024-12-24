@@ -58,6 +58,6 @@ gboolean gst_mtl_common_parse_fps_code(gint fps_code, enum st_fps* fps);
 gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt* fmt);
 
 gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio);
-gboolean gst_mtlst30tx_parse_sampling(gint sampling, enum st30_sampling* st_sampling);
+gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sampling);
 
 #endif /* __GST_MTL_COMMON_H__ */

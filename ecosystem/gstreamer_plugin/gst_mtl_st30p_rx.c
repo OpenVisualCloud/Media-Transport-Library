@@ -277,10 +277,10 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
       mtl_init_params.rx_queues_cnt[MTL_PORT_P] = src->devArgs.rx_queues_cnt[MTL_PORT_P];
     } else {
       mtl_init_params.rx_queues_cnt[MTL_PORT_P] = 16;
-      mtl_init_params.tx_queues_cnt[MTL_PORT_P] = 16;
     }
+    mtl_init_params.tx_queues_cnt[MTL_PORT_P] = 16;
 
-    mtl_init_params.num_ports++;
+    mtl_init_params.num_ports = 1;
 
     mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
     if (src->silent) {
@@ -315,7 +315,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   ops_rx->ptime = ST30_PTIME_1MS;
   ops_rx->flags |= ST30P_RX_FLAG_BLOCK_GET;
 
-  if (!gst_mtlst30tx_parse_sampling(src->sampling, &ops_rx->sampling)) {
+  if (!gst_mtl_common_parse_sampling(src->sampling, &ops_rx->sampling)) {
     GST_ERROR("Failed to parse ops_rx sampling %d", src->sampling);
     return FALSE;
   }
@@ -429,11 +429,8 @@ static void gst_mtl_st30p_rx_set_property(GObject* object, guint prop_id,
     case PROP_RX_PORT_RX_QUEUES:
       self->devArgs.rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
       break;
-    case PROP_RX_FRAMERATE:
-      self->channel = g_value_get_uint(value);
-      break;
     case PROP_RX_FRAMEBUFF_NUM:
-      self->sampling = g_value_get_uint(value);
+      self->framebuffer_num = g_value_get_uint(value);
       break;
     case PROP_RX_CHANNEL:
       self->channel = g_value_get_uint(value);
@@ -567,7 +564,7 @@ static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset
   gint ret;
   gsize fill_size;
 
-  buf = gst_buffer_new_allocate(NULL, src->frame_size + 1, NULL);
+  buf = gst_buffer_new_allocate(NULL, src->frame_size, NULL);
   if (!buf) {
     GST_ERROR("Failed to allocate buffer");
     return GST_FLOW_ERROR;
@@ -592,6 +589,7 @@ static GstFlowReturn gst_mtl_st30p_rx_create(GstBaseSrc* basesrc, guint64 offset
 
   gst_buffer_map(buf, &dest_info, GST_MAP_WRITE);
   fill_size = gst_buffer_fill(buf, 0, frame->addr, src->frame_size);
+  GST_BUFFER_PTS(buf) = frame->timestamp;
   gst_buffer_unmap(buf, &dest_info);
 
   if (fill_size != src->frame_size) {
