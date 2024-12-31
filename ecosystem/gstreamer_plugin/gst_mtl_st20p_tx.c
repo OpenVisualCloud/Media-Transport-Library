@@ -82,11 +82,11 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_tx_debug);
 #ifndef GST_PACKAGE_ORIGIN
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
 #endif
-#ifndef PACKAGE
-#define PACKAGE "gst-mtl-st20-tx"
+#ifndef PACKAGEf
+#define PACKAGE "gst-mtl-st20p-tx"
 #endif
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.1"
+#define PACKAGE_VERSION "1.0"
 #endif
 
 enum {
@@ -134,7 +134,6 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf);
 
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink);
-static gboolean gst_mtl_st20p_tx_stop(GstBaseSink* bsink);
 
 static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   GObjectClass* gobject_class;
@@ -526,7 +525,6 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
-      gst_mtl_st20p_tx_stop(GST_BASE_SINK(sink));
       ret = gst_pad_event_default(pad, parent, event);
       gst_element_post_message(GST_ELEMENT(sink), gst_message_new_eos(GST_OBJECT(sink)));
       break;
@@ -601,16 +599,6 @@ static void gst_mtl_st20p_tx_finalize(GObject* object) {
       return;
     }
   }
-}
-
-static gboolean gst_mtl_st20p_tx_stop(GstBaseSink* bsink) {
-  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(bsink);
-
-  if (sink->mtl_lib_handle) {
-    mtl_stop(sink->mtl_lib_handle);
-  }
-
-  return true;
 }
 
 static gboolean plugin_init(GstPlugin* mtl_st20p_tx) {

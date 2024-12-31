@@ -83,10 +83,10 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_rx_debug);
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
 #endif
 #ifndef PACKAGE
-#define PACKAGE "gst-mtl-rx-st20"
+#define PACKAGE "gst-mtl-st20p-rx"
 #endif
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.19.0.1"
+#define PACKAGE_VERSION "1.0"
 #endif
 
 enum {
@@ -529,6 +529,10 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
   GstCaps* caps;
 
   info = gst_video_info_new();
+  if (!info) {
+    GST_ERROR("Failed to allocate video info");
+    return FALSE;
+  }
 
   /*
    * Convert boolean interlaced value to integer,
@@ -540,15 +544,17 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
     case ST_FRAME_FMT_V210:
       info->finfo = gst_video_format_get_info(GST_VIDEO_FORMAT_v210);
       break;
-    case ST20_FMT_YUV_420_10BIT:
+    case ST20_FMT_YUV_422_10BIT:
       info->finfo = gst_video_format_get_info(GST_VIDEO_FORMAT_I422_10LE);
       break;
     default:
       GST_ERROR("Unsupported pixel format");
+      gst_video_info_free(info);
       return FALSE;
   }
 
-  caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "v210", "width",
+  caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING,
+                             gst_video_format_to_string(info->finfo->format), "width",
                              G_TYPE_INT, info->width, "height", G_TYPE_INT, info->height,
                              "framerate", GST_TYPE_FRACTION, info->fps_n, 1,
                              "interlace-mode", G_TYPE_BOOLEAN, src->interlaced, NULL);
@@ -556,6 +562,8 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
   if (!caps) caps = gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(basesrc));
 
   if (gst_caps_is_empty(caps)) {
+    GST_ERROR("Failed to set caps: caps are empty");
+    gst_video_info_free(info);
     gst_caps_unref(caps);
     return FALSE;
   }
@@ -563,7 +571,8 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
   ret = gst_pad_set_caps(GST_BASE_SRC_PAD(basesrc), caps);
   gst_caps_unref(caps);
   if (!ret) {
-    GST_ERROR("Failed to set caps");
+    GST_ERROR("Failed to set caps error %d", ret);
+    gst_video_info_free(info);
     return FALSE;
   }
 
@@ -580,7 +589,7 @@ static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset
   gint ret;
   gsize fill_size;
 
-  buf = gst_buffer_new_allocate(NULL, src->frame_size + 1, NULL);
+  buf = gst_buffer_new_allocate(NULL, src->frame_size, NULL);
   if (!buf) {
     GST_ERROR("Failed to allocate buffer");
     return GST_FLOW_ERROR;
@@ -604,7 +613,10 @@ static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset
   }
 
   gst_buffer_map(buf, &dest_info, GST_MAP_WRITE);
+
   fill_size = gst_buffer_fill(buf, 0, frame->addr[0], src->frame_size);
+  GST_BUFFER_PTS(buf) = frame->timestamp;
+
   gst_buffer_unmap(buf, &dest_info);
 
   if (fill_size != src->frame_size) {

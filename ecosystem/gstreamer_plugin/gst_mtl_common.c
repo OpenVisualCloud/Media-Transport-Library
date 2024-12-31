@@ -12,7 +12,7 @@ gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
                                           enum st_frame_fmt* fmt) {
   if (finfo->format == GST_VIDEO_FORMAT_v210) {
     *fmt = ST_FRAME_FMT_V210;
-  } else if (finfo->format == GST_VIDEO_FORMAT_I420_10LE) {
+  } else if (finfo->format == GST_VIDEO_FORMAT_I422_10LE) {
     *fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   } else {
     return FALSE;
