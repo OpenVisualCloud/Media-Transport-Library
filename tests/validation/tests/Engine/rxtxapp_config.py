@@ -189,6 +189,7 @@ config_rx_st20p_session = {
     "measure_latency": False,
     "display": False,
     "enable_rtcp": False,
+    "st20p_url": "",
 }
 
 # st22p
