@@ -2,7 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2024 Intel Corporation
+ * Copyright (C) 2025 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -83,10 +83,10 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_rx_debug);
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
 #endif
 #ifndef PACKAGE
-#define PACKAGE "gst-mtl-rx-st30"
+#define PACKAGE "gst-mtl-st30-rx"
 #endif
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.19.0.1"
+#define PACKAGE_VERSION "1.0"
 #endif
 
 enum {
@@ -147,7 +147,7 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
 
   gst_element_class_set_metadata(
       gstelement_class, "MtlRxSt30Src", "Src/Audio",
-      "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
+      "MTL transmission plugin for SMPTE ST 2110-30 standard (uncompressed audio)",
       "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
@@ -170,8 +170,8 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_RX_DEV_ARGS_PORT,
       g_param_spec_string("dev-port", "DPDK device port",
-                          "DPDK port for synchronous ST 2110-20 uncompressed"
-                          "video transmission, bound to the VFIO DPDK driver. ",
+                          "DPDK port for synchronous ST 2110-30 uncompressed"
+                          "audio transmission, bound to the VFIO DPDK driver. ",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -218,7 +218,7 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_RX_FRAMERATE,
-      g_param_spec_uint("rx-fps", "Audio framerate", "Framerate of the video.", 0,
+      g_param_spec_uint("rx-fps", "Audio framerate", "Framerate of the audio.", 0,
                         G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -254,14 +254,14 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
 
-  /* mtl is already initialzied */
+  /* mtl is already initialzied
+  TODO: add support for initialization of multiple pipelines from one handle */
   if (src->mtl_lib_handle) {
     GST_INFO("Mtl already initialized");
     if (mtl_start(src->mtl_lib_handle)) {
       GST_ERROR("Failed to start MTL");
       return FALSE;
     }
-    return TRUE;
   } else {
     strncpy(mtl_init_params.port[MTL_PORT_P], src->devArgs.port, MTL_PORT_MAX_LEN);
 
@@ -526,6 +526,7 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
       break;
     default:
       GST_ERROR("Unsupported pixel format %d", ops_rx->fmt);
+      gst_audio_info_free(info);
       return FALSE;
   }
 
@@ -540,6 +541,7 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
   if (!caps) caps = gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(basesrc));
 
   if (gst_caps_is_empty(caps)) {
+    gst_audio_info_free(info);
     gst_caps_unref(caps);
     return FALSE;
   }
