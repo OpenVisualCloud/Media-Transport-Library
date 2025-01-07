@@ -67,10 +67,10 @@
 #include <gst/gst.h>
 #include <unistd.h>
 
-#include "gstmtlst30tx.h"
+#include "gst_mtl_st30p_tx.h"
 
-GST_DEBUG_CATEGORY_STATIC(gst_mtlst30tx_debug);
-#define GST_CAT_DEFAULT gst_mtlst30tx_debug
+GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_tx_debug);
+#define GST_CAT_DEFAULT gst_mtl_st30p_tx_debug
 #ifndef GST_LICENSE
 #define GST_LICENSE "LGPL"
 #endif
@@ -84,10 +84,10 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtlst30tx_debug);
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
 #endif
 #ifndef PACKAGE
-#define PACKAGE "gst-mtl-tx-st30"
+#define PACKAGE "gst-mtl-st30-tx"
 #endif
 #ifndef PACKAGE_VERSION
-#define PACKAGE_VERSION "1.19.0.1"
+#define PACKAGE_VERSION "1.0"
 #endif
 
 enum {
@@ -107,46 +107,50 @@ enum {
 };
 
 /* pad template */
-static GstStaticPadTemplate gst_mtlst30tx_sink_pad_template =
+static GstStaticPadTemplate gst_mtl_st30p_tx_sink_pad_template =
     GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
                             GST_STATIC_CAPS("audio/x-raw, "
                                             "format = (string) {S8, S16LE, S24LE},"
                                             "channels = (int) [1, 2], "
                                             "rate = (int) {44100, 48000, 96000}"));
 
-#define gst_mtlst30tx_parent_class parent_class
-G_DEFINE_TYPE_WITH_CODE(GstMtlSt30Tx, gst_mtlst30tx, GST_TYPE_AUDIO_SINK,
-                        GST_DEBUG_CATEGORY_INIT(gst_mtlst30tx_debug, "gst_mtlst30tx", 0,
+#define gst_mtl_st30p_tx_parent_class parent_class
+G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St30p_Tx, gst_mtl_st30p_tx, GST_TYPE_AUDIO_SINK,
+                        GST_DEBUG_CATEGORY_INIT(gst_mtl_st30p_tx_debug,
+                                                "gst_mtl_st30p_tx", 0,
                                                 "MTL St2110 st30 transmission sink"));
 
-GST_ELEMENT_REGISTER_DEFINE(mtlst30tx, "mtlst30tx", GST_RANK_NONE, GST_TYPE_MTL_ST30TX);
+GST_ELEMENT_REGISTER_DEFINE(mtl_st30p_tx, "mtl_st30p_tx", GST_RANK_NONE,
+                            GST_TYPE_MTL_ST30P_TX);
 
-static void gst_mtlst30tx_set_property(GObject* object, guint prop_id,
-                                       const GValue* value, GParamSpec* pspec);
-static void gst_mtlst30tx_get_property(GObject* object, guint prop_id, GValue* value,
-                                       GParamSpec* pspec);
-static void gst_mtlst30tx_finalize(GObject* object);
+static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec);
+static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue* value,
+                                          GParamSpec* pspec);
+static void gst_mtl_st30p_tx_finalize(GObject* object);
 
-static gboolean gst_mtlst30tx_sink_event(GstPad* pad, GstObject* parent, GstEvent* event);
-static GstFlowReturn gst_mtlst30tx_chain(GstPad* pad, GstObject* parent, GstBuffer* buf);
+static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
+                                            GstEvent* event);
+static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
+                                            GstBuffer* buf);
 
-static gboolean gst_mtlst30tx_start(GstBaseSink* bsink);
-static gboolean gst_mtlst30tx_cur_frame_flush(GstMtlSt30Tx* sink);
+static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink);
+static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink);
 
-static gboolean gst_mtlst30tx_parse_sampling(gint sampling,
-                                             enum st30_sampling* st_sampling) {
+static gboolean gst_mtl_st30p_tx_parse_sampling(gint sampling,
+                                                enum st30_sampling* st_sampling) {
   if (!st_sampling) {
     GST_ERROR("Invalid st_sampling pointer");
     return FALSE;
   }
   switch (sampling) {
-    case 44100:
+    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K:
       *st_sampling = ST31_SAMPLING_44K;
       return TRUE;
-    case 48000:
+    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K:
       *st_sampling = ST30_SAMPLING_48K;
       return TRUE;
-    case 96000:
+    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K:
       *st_sampling = ST30_SAMPLING_96K;
       return TRUE;
     default:
@@ -154,7 +158,7 @@ static gboolean gst_mtlst30tx_parse_sampling(gint sampling,
   }
 }
 
-static void gst_mtlst30tx_class_init(GstMtlSt30TxClass* klass) {
+static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
   GstBaseSinkClass* gstbasesink_class;
@@ -169,12 +173,12 @@ static void gst_mtlst30tx_class_init(GstMtlSt30TxClass* klass) {
       "Marek Kasiewicz <marek.kasiewicz@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
-                                            &gst_mtlst30tx_sink_pad_template);
+                                            &gst_mtl_st30p_tx_sink_pad_template);
 
-  gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_mtlst30tx_set_property);
-  gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_mtlst30tx_get_property);
-  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtlst30tx_finalize);
-  gstbasesink_class->start = GST_DEBUG_FUNCPTR(gst_mtlst30tx_start);
+  gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_set_property);
+  gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_get_property);
+  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_finalize);
+  gstbasesink_class->start = GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_start);
 
   g_object_class_install_property(
       gobject_class, PROP_SILENT,
@@ -184,8 +188,8 @@ static void gst_mtlst30tx_class_init(GstMtlSt30TxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_TX_DEV_ARGS_PORT,
       g_param_spec_string("dev-port", "DPDK device port",
-                          "DPDK port for synchronous ST 2110-20 uncompressed"
-                          "video transmission, bound to the VFIO DPDK driver. ",
+                          "DPDK port for synchronous ST 2110-30 uncompressed"
+                          "audio transmission, bound to the VFIO DPDK driver. ",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -239,11 +243,11 @@ static void gst_mtlst30tx_class_init(GstMtlSt30TxClass* klass) {
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
-static gboolean gst_mtlst30tx_start(GstBaseSink* bsink) {
+static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
   struct mtl_init_params mtl_init_params = {0};
   gint ret;
 
-  GstMtlSt30Tx* sink = GST_MTL_ST30TX(bsink);
+  Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(bsink);
 
   GST_DEBUG_OBJECT(sink, "start");
   GST_DEBUG("Media Transport Initialization start");
@@ -309,7 +313,7 @@ static gboolean gst_mtlst30tx_start(GstBaseSink* bsink) {
   return true;
 }
 
-static void gst_mtlst30tx_init(GstMtlSt30Tx* sink) {
+static void gst_mtl_st30p_tx_init(Gst_Mtl_St30p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
 
@@ -319,14 +323,14 @@ static void gst_mtlst30tx_init(GstMtlSt30Tx* sink) {
     return;
   }
 
-  gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtlst30tx_sink_event));
+  gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_sink_event));
 
-  gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtlst30tx_chain));
+  gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_chain));
 }
 
-static void gst_mtlst30tx_set_property(GObject* object, guint prop_id,
-                                       const GValue* value, GParamSpec* pspec) {
-  GstMtlSt30Tx* self = GST_MTL_ST30TX(object);
+static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec) {
+  Gst_Mtl_St30p_Tx* self = GST_MTL_ST30P_TX(object);
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -368,9 +372,9 @@ static void gst_mtlst30tx_set_property(GObject* object, guint prop_id,
   }
 }
 
-static void gst_mtlst30tx_get_property(GObject* object, guint prop_id, GValue* value,
-                                       GParamSpec* pspec) {
-  GstMtlSt30Tx* sink = GST_MTL_ST30TX(object);
+static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue* value,
+                                          GParamSpec* pspec) {
+  Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(object);
 
   switch (prop_id) {
     case PROP_SILENT:
@@ -416,7 +420,7 @@ static void gst_mtlst30tx_get_property(GObject* object, guint prop_id, GValue* v
  * Create MTL session tx handle and initialize the session with the parameters
  * from caps negotiated by the pipeline.
  */
-static gboolean gst_mtlst30tx_session_create(GstMtlSt30Tx* sink, GstCaps* caps) {
+static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps* caps) {
   GstAudioInfo* info;
   struct st30p_tx_ops ops_tx = {0};
   gint ret;
@@ -432,6 +436,10 @@ static gboolean gst_mtlst30tx_session_create(GstMtlSt30Tx* sink, GstCaps* caps) 
   }
 
   info = gst_audio_info_new_from_caps(caps);
+  if (!info) {
+    GST_ERROR("Failed to get audio info from caps");
+    return FALSE;
+  }
   ops_tx.name = "st30sink";
   ops_tx.fmt = ST30_FMT_PCM16;
   if (!info->finfo) {
@@ -444,13 +452,14 @@ static gboolean gst_mtlst30tx_session_create(GstMtlSt30Tx* sink, GstCaps* caps) 
     } else if (info->finfo->format == GST_AUDIO_FORMAT_S8) {
       ops_tx.fmt = ST30_FMT_PCM8;
     } else {
+      gst_audio_info_free(info);
       GST_ERROR(" invalid format audio");
       return FALSE;
     }
   }
   ops_tx.channel = info->channels;
 
-  if (!gst_mtlst30tx_parse_sampling(info->rate, &ops_tx.sampling)) {
+  if (!gst_mtl_st30p_tx_parse_sampling(info->rate, &ops_tx.sampling)) {
     GST_ERROR("Failed to parse sampling rate");
     gst_audio_info_free(info);
     return FALSE;
@@ -462,6 +471,10 @@ static gboolean gst_mtlst30tx_session_create(GstMtlSt30Tx* sink, GstCaps* caps) 
 
   ops_tx.framebuff_size = st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
+  if (ops_tx.framebuff_size <= 0) {
+    GST_ERROR("Failed to calculate framebuff size");
+    return FALSE;
+  }
 
   if (sink->framebuffer_num) {
     ops_tx.framebuff_cnt = sink->framebuffer_num;
@@ -512,13 +525,13 @@ static gboolean gst_mtlst30tx_session_create(GstMtlSt30Tx* sink, GstCaps* caps) 
   return TRUE;
 }
 
-static gboolean gst_mtlst30tx_sink_event(GstPad* pad, GstObject* parent,
-                                         GstEvent* event) {
-  GstMtlSt30Tx* sink;
+static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
+                                            GstEvent* event) {
+  Gst_Mtl_St30p_Tx* sink;
   GstCaps* caps;
   gint ret;
 
-  sink = GST_MTL_ST30TX(parent);
+  sink = GST_MTL_ST30P_TX(parent);
 
   GST_LOG_OBJECT(sink, "Received %s event: %" GST_PTR_FORMAT, GST_EVENT_TYPE_NAME(event),
                  event);
@@ -535,7 +548,7 @@ static gboolean gst_mtlst30tx_sink_event(GstPad* pad, GstObject* parent,
       break;
     case GST_EVENT_CAPS:
       gst_event_parse_caps(event, &caps);
-      ret = gst_mtlst30tx_session_create(sink, caps);
+      ret = gst_mtl_st30p_tx_session_create(sink, caps);
       if (!ret) {
         GST_ERROR("Failed to create TX session");
         return FALSE;
@@ -543,7 +556,7 @@ static gboolean gst_mtlst30tx_sink_event(GstPad* pad, GstObject* parent,
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
-      gst_mtlst30tx_cur_frame_flush(sink);
+      gst_mtl_st30p_tx_cur_frame_flush(sink);
       ret = gst_pad_event_default(pad, parent, event);
       gst_element_post_message(GST_ELEMENT(sink), gst_message_new_eos(GST_OBJECT(sink)));
       break;
@@ -555,7 +568,7 @@ static gboolean gst_mtlst30tx_sink_event(GstPad* pad, GstObject* parent,
   return ret;
 }
 
-static struct st30_frame* mtl_st30p_fetch_frame(GstMtlSt30Tx* sink) {
+static struct st30_frame* mtl_st30p_fetch_frame(Gst_Mtl_St30p_Tx* sink) {
   if (!sink->cur_frame) {
     sink->cur_frame = st30p_tx_get_frame(sink->tx_handle);
     sink->cur_frame_available_size = sink->frame_size;
@@ -568,8 +581,9 @@ static struct st30_frame* mtl_st30p_fetch_frame(GstMtlSt30Tx* sink) {
  * frame buffers, supports incomplete frames. But buffers needs to add up to the
  * actual frame size.
  */
-static GstFlowReturn gst_mtlst30tx_chain(GstPad* pad, GstObject* parent, GstBuffer* buf) {
-  GstMtlSt30Tx* sink = GST_MTL_ST30TX(parent);
+static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
+                                            GstBuffer* buf) {
+  Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(parent);
   gint buffer_n = gst_buffer_n_memory(buf);
   struct st30_frame* frame = NULL;
   GstMemory* gst_buffer_memory;
@@ -620,8 +634,8 @@ static GstFlowReturn gst_mtlst30tx_chain(GstPad* pad, GstObject* parent, GstBuff
   return GST_FLOW_OK;
 }
 
-static void gst_mtlst30tx_finalize(GObject* object) {
-  GstMtlSt30Tx* sink = GST_MTL_ST30TX(object);
+static void gst_mtl_st30p_tx_finalize(GObject* object) {
+  Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(object);
 
   if (sink->tx_handle) {
     if (st30p_tx_free(sink->tx_handle)) {
@@ -638,7 +652,7 @@ static void gst_mtlst30tx_finalize(GObject* object) {
   }
 }
 
-static gboolean gst_mtlst30tx_cur_frame_flush(GstMtlSt30Tx* sink) {
+static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink) {
   if (sink->cur_frame) {
     if (st30p_tx_put_frame(sink->tx_handle, sink->cur_frame)) {
       GST_ERROR("Failed to put frame");
@@ -649,12 +663,12 @@ static gboolean gst_mtlst30tx_cur_frame_flush(GstMtlSt30Tx* sink) {
   return TRUE;
 }
 
-static gboolean plugin_init(GstPlugin* mtlst30tx) {
-  return gst_element_register(mtlst30tx, "mtlst30tx", GST_RANK_SECONDARY,
-                              GST_TYPE_MTL_ST30TX);
+static gboolean plugin_init(GstPlugin* mtl_st30p_tx) {
+  return gst_element_register(mtl_st30p_tx, "mtl_st30p_tx", GST_RANK_SECONDARY,
+                              GST_TYPE_MTL_ST30P_TX);
 }
 
-GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtlst30tx,
+GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st30p_tx,
                   "software-based solution designed for high-throughput transmission",
                   plugin_init, PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME,
                   GST_PACKAGE_ORIGIN)

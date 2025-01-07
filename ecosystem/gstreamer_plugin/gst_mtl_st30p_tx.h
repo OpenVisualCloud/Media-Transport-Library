@@ -51,7 +51,6 @@
 #include <gst/audio/audio.h>
 #include <gst/gst.h>
 #include <mtl/mtl_api.h>
-// #include <mtl/st_pipeline_api.h>
 #include <mtl/st30_pipeline_api.h>
 
 G_BEGIN_DECLS
@@ -64,8 +63,8 @@ G_BEGIN_DECLS
 #define NS_PER_S (1000 * NS_PER_MS)
 #endif
 
-#define GST_TYPE_MTL_ST30TX (gst_mtlst30tx_get_type())
-G_DECLARE_FINAL_TYPE(GstMtlSt30Tx, gst_mtlst30tx, GST, MTL_ST30TX, GstAudioSink)
+#define GST_TYPE_MTL_ST30P_TX (gst_mtl_st30p_tx_get_type())
+G_DECLARE_FINAL_TYPE(Gst_Mtl_St30p_Tx, gst_mtl_st30p_tx, GST, MTL_ST30P_TX, GstAudioSink)
 
 typedef struct StDevArgs {
   gchar port[MTL_PORT_MAX_LEN];
@@ -82,9 +81,8 @@ typedef struct StTxSessionPortArgs {
   gint payload_type;
 } StTxSessionPortArgs;
 
-struct _GstMtlSt30Tx {
+struct _Gst_Mtl_St30p_Tx {
   GstAudioSink element;
-  GstElement* child;
   gboolean silent;
   mtl_handle mtl_lib_handle;
   st30p_tx_handle tx_handle;
@@ -104,14 +102,12 @@ struct _GstMtlSt30Tx {
   /* arguments for session */
   guint framebuffer_num;
   guint framerate;
+};
 
-  /* TODO add support for gpu direct */
-#ifdef MTL_GPU_DIRECT_ENABLED
-  gboolean gpu_direct_enabled;
-  gint gpu_driver_index;
-  gint gpu_device_index;
-  gboolean* gpu_context;
-#endif /* MTL_GPU_DIRECT_ENABLED */
+enum gst_mtl_supported_audio_sampling {
+  GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K = 44100,
+  GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K = 48000,
+  GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K = 96000
 };
 
 G_END_DECLS

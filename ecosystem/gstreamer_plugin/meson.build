@@ -1,11 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2024 Intel Corporation
 
-<<<<<<< HEAD
 project('gstreamer_mtl_plugins', 'c',
-=======
-project('gstreamer-mtl', 'c',
->>>>>>> 9e27a15f (Add: Gstreamer plugin for ST30TX)
         version: run_command(find_program('cat'), files('../../VERSION'), check: true).stdout().strip(), license : 'LGPL')
 
 cc = meson.get_compiler('c')
@@ -79,10 +75,10 @@ gst_mtl_st20p_rx = library('gstmtl_st20p_rx',
 
 # The mtl_st30p_tx Plugin
 gstmtl_st30p_tx_sources = [
-    'gstmtlst30tx.c',
+    'gst_mtl_st30p_tx.c',
 ]
 
-gstmtl_st30p_tx = library('gstmtlst30tx',
+gstmtl_st30p_tx = library('gstmtl_st30p_tx',
     gstmtl_st30p_tx_sources,
     dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
     install : true,
