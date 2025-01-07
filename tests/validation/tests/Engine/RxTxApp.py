@@ -288,6 +288,7 @@ def add_st30p_sessions(
     audio_channel: list = ["U02"],
     audio_sampling: str = "96kHz",
     audio_ptime: str = "1",
+    out_url: str = "",
 ) -> dict:
     config = add_interfaces(
         config=config, nic_port_list=nic_port_list, test_mode=test_mode
@@ -306,7 +307,8 @@ def add_st30p_sessions(
     config["tx_sessions"][0]["st30p"][0]["audio_ptime"] = audio_ptime
     config["rx_sessions"][0]["st30p"][0]["audio_ptime"] = audio_ptime
     config["tx_sessions"][0]["st30p"][0]["audio_url"] = filename
-    config["rx_sessions"][0]["st30p"][0]["audio_url"] = filename
+    config["rx_sessions"][0]["st30p"][0]["audio_url"] = out_url
+
     return config
 
 
