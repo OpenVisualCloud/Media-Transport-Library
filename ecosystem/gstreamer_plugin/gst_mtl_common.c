@@ -160,3 +160,46 @@ gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt
 
   return TRUE;
 }
+
+gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio) {
+  if (!audio || !format) {
+    GST_ERROR("%s, invalid input\n", __func__);
+    return FALSE;
+  }
+
+  if (strcmp(format, "PCM8") == 0) {
+    *audio = ST30_FMT_PCM8;
+  } else if (strcmp(format, "PCM16") == 0) {
+    *audio = ST30_FMT_PCM16;
+  } else if (strcmp(format, "PCM24") == 0) {
+    *audio = ST30_FMT_PCM24;
+  } else if (strcmp(format, "AM824") == 0) {
+    *audio = ST31_FMT_AM824;
+  } else {
+    GST_ERROR("%s, invalid audio format %s\n", __func__, format);
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
+gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sampling) {
+  if (!st_sampling) {
+    GST_ERROR("Invalid st_sampling pointer");
+    return FALSE;
+  }
+
+  switch (sampling) {
+    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K:
+      *st_sampling = ST31_SAMPLING_44K;
+      return TRUE;
+    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K:
+      *st_sampling = ST30_SAMPLING_48K;
+      return TRUE;
+    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K:
+      *st_sampling = ST30_SAMPLING_96K;
+      return TRUE;
+    default:
+      return FALSE;
+  }
+}

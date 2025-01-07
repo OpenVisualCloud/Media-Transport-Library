@@ -22,7 +22,7 @@ plugin_c_args = [
   '-Wno-stringop-truncation'
 ]
 
-if run_command('test', '-d', '/usr/local/include/gstreamer-1.0').returncode() == 0
+if run_command('test', '-d', '/usr/local/include/gstreamer-1.0', check: false).returncode() == 0
     gstreamer_inc_dir = '/usr/local/include/gstreamer-1.0'
 else
     gstreamer_inc_dir = '/usr/include/gstreamer-1.0'
@@ -72,6 +72,20 @@ gst_mtl_st20p_rx = library('gstmtl_st20p_rx',
   c_args: plugin_c_args
 )
 
+
+# mtl_st30p_rx Plugin
+gst_mtl_st30p_rx_sources = [
+  'gst_mtl_st30p_rx.c'
+]
+
+gst_mtl_st30p_rx = library('gstmtl_st30p_rx',
+  gst_mtl_common_sources + gst_mtl_st30p_rx_sources,
+  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
+  install : true,
+  install_dir : plugins_install_dir,
+  include_directories: inc_dirs,
+  c_args: plugin_c_args
+)
 
 # The mtl_st30p_tx Plugin
 gstmtl_st30p_tx_sources = [
