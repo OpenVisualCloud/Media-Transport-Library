@@ -256,15 +256,8 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
 
   /* mtl is already initialzied
   TODO: add support for initialization of multiple pipelines from one handle */
-  if (src->mtl_lib_handle) {
-    GST_INFO("Mtl already initialized");
-    if (mtl_start(src->mtl_lib_handle)) {
-      GST_ERROR("Failed to start MTL");
-      return FALSE;
-    }
-  } else {
+  if (!src->mtl_lib_handle) {
     strncpy(mtl_init_params.port[MTL_PORT_P], src->devArgs.port, MTL_PORT_MAX_LEN);
-
     ret = inet_pton(AF_INET, src->devArgs.local_ip_string,
                     mtl_init_params.sip_addr[MTL_PORT_P]);
     if (ret != 1) {
@@ -549,6 +542,7 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
   ret = gst_pad_set_caps(GST_BASE_SRC_PAD(basesrc), caps);
   gst_caps_unref(caps);
   if (!ret) {
+    gst_audio_info_free(info);
     GST_ERROR("Failed to set caps");
     return FALSE;
   }

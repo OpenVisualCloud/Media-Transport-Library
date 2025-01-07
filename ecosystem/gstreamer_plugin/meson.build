@@ -22,7 +22,7 @@ plugin_c_args = [
   '-Wno-stringop-truncation'
 ]
 
-if run_command('test', '-d', '/usr/local/include/gstreamer-1.0').returncode() == 0
+if run_command('test', '-d', '/usr/local/include/gstreamer-1.0', check: false).returncode() == 0
     gstreamer_inc_dir = '/usr/local/include/gstreamer-1.0'
 else
     gstreamer_inc_dir = '/usr/include/gstreamer-1.0'
