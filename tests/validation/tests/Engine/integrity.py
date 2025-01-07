@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 
-from tests.Engine.execute import log_fail, LOG_FOLDER
+from tests.Engine.execute import LOG_FOLDER, log_fail
 
 
 def check_st20p_integrity(src_url: str, out_url: str, size: str):
