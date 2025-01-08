@@ -215,7 +215,7 @@ void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_PORT,
       g_param_spec_string("dev-port", "DPDK device port",
-                          "DPDK port for synchronous ST 2110-20 uncompressed"
+                          "DPDK port for synchronous ST 2110 data"
                           "video transmission, bound to the VFIO DPDK driver. ",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 

@@ -60,18 +60,15 @@ struct _Gst_Mtl_St40_Rx {
   GstBaseSrc element;
   GstBuffer* buffer;
 
-  pthread_mutex_t get_mbuff_mutex;
-  pthread_cond_t get_mbuff_cond;
+  pthread_mutex_t mbuff_mutex;
+  pthread_cond_t mbuff_cond;
   /*< private >*/
-  struct st40_rx_ops ops_rx;
   guint log_level;
   mtl_handle mtl_lib_handle;
   st40_rx_handle rx_handle;
 
   /* arguments for mtl mbuf buffers */
   guint timeout_mbuf_get_seconds;
-  /* final size of the ring would be mbuff_size * mbuff_ring_amount */
-  guint mbuff_ring_amount;
   guint16 mbuff_size;
   guint16 udw_size;
   char* anc_data;
