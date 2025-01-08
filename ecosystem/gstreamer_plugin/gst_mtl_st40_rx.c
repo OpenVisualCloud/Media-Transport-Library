@@ -392,11 +392,6 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     src->anc_data = (char*)malloc(udw_size);
   }
 
-  if (udw_size == 0) {
-    GST_ERROR("Ancillary data size is 0");
-    return GST_FLOW_ERROR;
-  }
-
   *buffer = gst_buffer_new_allocate(NULL, src->udw_size, NULL);
   if (!*buffer) {
     GST_ERROR("Failed to allocate space for the buffer");
