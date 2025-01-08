@@ -12,9 +12,29 @@
 #include <gst/video/video.h>
 #include <mtl/mtl_api.h>
 #include <mtl/st30_pipeline_api.h>
+#include <mtl/st40_api.h>
 #include <mtl/st_pipeline_api.h>
 
+#define PAYLOAD_TYPE_AUDIO (111)
+#define PAYLOAD_TYPE_VIDEO (112)
+#define PAYLOAD_TYPE_ANCILLARY (113)
+
 #define NS_PER_MS (1000 * 1000)
+
+enum {
+  PROP_GENERAL_0,
+  PROP_GENERAL_LOG_LEVEL,
+  PROP_GENERAL_DEV_ARGS_PORT,
+  PROP_GENERAL_DEV_ARGS_SIP,
+  PROP_GENERAL_DEV_ARGS_DMA_DEV,
+  PROP_GENERAL_PORT_PORT,
+  PROP_GENERAL_PORT_IP,
+  PROP_GENERAL_PORT_UDP_PORT,
+  PROP_GENERAL_PORT_PAYLOAD_TYPE,
+  PROP_GENERAL_PORT_RX_QUEUES,
+  PROP_GENERAL_PORT_TX_QUEUES,
+  PROP_GENERAL_MAX
+};
 
 enum gst_mtl_supported_fps {
   GST_MTL_SUPPORTED_FPS_23_98 = 2398,
@@ -59,5 +79,20 @@ gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt
 
 gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio);
 gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sampling);
+
+gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
+                                            StDevArgs* devArgs);
+
+void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class);
+
+void gst_mtl_common_set_general_argumetns(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec,
+                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
+                                          guint* log_level);
+
+void gst_mtl_common_get_general_argumetns(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec,
+                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
+                                          guint* log_level);
 
 #endif /* __GST_MTL_COMMON_H__ */

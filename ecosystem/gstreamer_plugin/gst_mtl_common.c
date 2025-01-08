@@ -8,6 +8,8 @@
 
 #include "gst_mtl_common.h"
 
+guint gst_mtl_port_idx = MTL_PORT_P;
+
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
                                           enum st_frame_fmt* fmt) {
   if (finfo->format == GST_VIDEO_FORMAT_v210) {
@@ -202,4 +204,190 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
     default:
       return FALSE;
   }
+}
+
+void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_LOG_LEVEL,
+      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
+                           G_PARAM_READWRITE));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_DEV_ARGS_PORT,
+      g_param_spec_string("dev-port", "DPDK device port",
+                          "DPDK port for synchronous ST 2110 data"
+                          "video transmission, bound to the VFIO DPDK driver. ",
+                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_DEV_ARGS_SIP,
+      g_param_spec_string("dev-ip", "Local device IP",
+                          "Local IP address that the port will be "
+                          "identified by. This is the address from which ARP "
+                          "responses will be sent.",
+                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_DEV_ARGS_DMA_DEV,
+      g_param_spec_string("dma-dev", "DPDK DMA port",
+                          "DPDK port for the MTL direct memory functionality.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_PORT,
+      g_param_spec_string("port", "Transmission Device Port",
+                          "DPDK device port initialized for the transmission.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_IP,
+      g_param_spec_string("ip", "Sender node's IP", "Receiving MTL node IP address.",
+                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_UDP_PORT,
+      g_param_spec_uint("udp-port", "Sender UDP port", "Receiving MTL node UDP port.", 0,
+                        G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_TX_QUEUES,
+      g_param_spec_uint("tx-queues", "Number of TX queues",
+                        "Number of TX queues to initialize in DPDK backend.", 0,
+                        G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_RX_QUEUES,
+      g_param_spec_uint("rx-queues", "Number of RX queues",
+                        "Number of RX queues to initialize in DPDK backend.", 0,
+                        G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_PAYLOAD_TYPE,
+      g_param_spec_uint("payload-type", "ST 2110 payload type",
+                        "SMPTE ST 2110 payload type.", 0, G_MAXUINT, 112,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+}
+
+void gst_mtl_common_set_general_argumetns(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec,
+                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
+                                          guint* log_level) {
+  switch (prop_id) {
+    case PROP_GENERAL_LOG_LEVEL:
+      *log_level = g_value_get_uint(value);
+      break;
+    case PROP_GENERAL_DEV_ARGS_PORT:
+      strncpy(devArgs->port, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_DEV_ARGS_SIP:
+      strncpy(devArgs->local_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_DEV_ARGS_DMA_DEV:
+      strncpy(devArgs->dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_PORT_PORT:
+      strncpy(portArgs->port, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_PORT_IP:
+      strncpy(portArgs->session_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_PORT_UDP_PORT:
+      portArgs->udp_port = g_value_get_uint(value);
+      break;
+    case PROP_GENERAL_PORT_PAYLOAD_TYPE:
+      portArgs->payload_type = g_value_get_uint(value);
+      break;
+    case PROP_GENERAL_PORT_RX_QUEUES:
+      devArgs->rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      break;
+    case PROP_GENERAL_PORT_TX_QUEUES:
+      devArgs->tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+      break;
+  }
+}
+
+void gst_mtl_common_get_general_argumetns(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec,
+                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
+                                          guint* log_level) {
+  switch (prop_id) {
+    case PROP_GENERAL_LOG_LEVEL:
+      g_value_set_uint(value, *log_level);
+      break;
+    case PROP_GENERAL_DEV_ARGS_PORT:
+      g_value_set_string(value, devArgs->port);
+      break;
+    case PROP_GENERAL_DEV_ARGS_SIP:
+      g_value_set_string(value, devArgs->local_ip_string);
+      break;
+    case PROP_GENERAL_DEV_ARGS_DMA_DEV:
+      g_value_set_string(value, devArgs->dma_dev);
+      break;
+    case PROP_GENERAL_PORT_PORT:
+      g_value_set_string(value, portArgs->port);
+      break;
+    case PROP_GENERAL_PORT_IP:
+      g_value_set_string(value, portArgs->session_ip_string);
+      break;
+    case PROP_GENERAL_PORT_UDP_PORT:
+      g_value_set_uint(value, portArgs->udp_port);
+      break;
+    case PROP_GENERAL_PORT_PAYLOAD_TYPE:
+      g_value_set_uint(value, portArgs->payload_type);
+      break;
+    case PROP_GENERAL_PORT_RX_QUEUES:
+      g_value_set_uint(value, devArgs->rx_queues_cnt[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_PORT_TX_QUEUES:
+      g_value_set_uint(value, devArgs->tx_queues_cnt[MTL_PORT_P]);
+      break;
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
+      break;
+  }
+}
+
+gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
+                                            StDevArgs* devArgs) {
+  gint ret;
+
+  if (gst_mtl_port_idx > MTL_PORT_R) {
+    GST_ERROR("%s, invalid port number %d\n", __func__, gst_mtl_port_idx);
+    return FALSE;
+  }
+
+  strncpy(mtl_init_params->port[gst_mtl_port_idx], devArgs->port, MTL_PORT_MAX_LEN);
+
+  ret = inet_pton(AF_INET, devArgs->local_ip_string,
+                  mtl_init_params->sip_addr[gst_mtl_port_idx]);
+  if (ret != 1) {
+    GST_ERROR("%s, sip %s is not valid ip address\n", __func__, devArgs->local_ip_string);
+    return FALSE;
+  }
+
+  if (devArgs->rx_queues_cnt[gst_mtl_port_idx]) {
+    mtl_init_params->rx_queues_cnt[gst_mtl_port_idx] =
+        devArgs->rx_queues_cnt[gst_mtl_port_idx];
+  } else {
+    mtl_init_params->rx_queues_cnt[gst_mtl_port_idx] = 16;
+  }
+
+  if (devArgs->tx_queues_cnt[gst_mtl_port_idx]) {
+    mtl_init_params->tx_queues_cnt[gst_mtl_port_idx] =
+        devArgs->tx_queues_cnt[gst_mtl_port_idx];
+  } else {
+    mtl_init_params->tx_queues_cnt[gst_mtl_port_idx] = 16;
+  }
+
+  mtl_init_params->num_ports++;
+
+  if (devArgs->dma_dev && strlen(devArgs->dma_dev)) {
+    strncpy(mtl_init_params->dma_dev_port[0], devArgs->dma_dev, MTL_PORT_MAX_LEN);
+  }
+
+  gst_mtl_port_idx++;
+  return ret;
 }
