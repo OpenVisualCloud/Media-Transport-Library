@@ -65,16 +65,15 @@ def check_st20p_integrity(src_url: str, out_url: str, size: str):
 
 def check_st30p_integrity(src_url: str, out_url: str):
     src_chunks = []
-    frame_size = 1  # Placeholder! TODO Calculate actual frame size
 
     with open(src_url, "rb") as f:
-        while chunk := f.read(frame_size):
+        while chunk := f.read(1):
             src_chunks.append(chunk)
 
     out_chunks = []
 
     with open(out_url, "rb") as f:
-        while chunk := f.read(frame_size):
+        while chunk := f.read(1):
             out_chunks.append(chunk)
 
     if len(src_chunks) < len(out_chunks):
