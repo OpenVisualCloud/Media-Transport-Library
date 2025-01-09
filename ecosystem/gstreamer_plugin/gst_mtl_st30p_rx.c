@@ -90,21 +90,11 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_rx_debug);
 #endif
 
 enum {
-  PROP_0,
-  PROP_SILENT,
-  PROP_RX_DEV_ARGS_PORT,
-  PROP_RX_DEV_ARGS_SIP,
-  PROP_RX_DEV_ARGS_DMA_DEV,
-  PROP_RX_PORT_PORT,
-  PROP_RX_PORT_IP,
-  PROP_RX_PORT_UDP_PORT,
-  PROP_RX_PORT_PAYLOAD_TYPE,
-  PROP_RX_PORT_RX_QUEUES,
-  PROP_RX_FRAMERATE,
-  PROP_RX_FRAMEBUFF_NUM,
-  PROP_RX_CHANNEL,
-  PROP_RX_SAMPLING,
-  PROP_RX_AUDIO_FORMAT,
+  PROP_ST30P_RX_FRAMERATE = PROP_GENERAL_MAX,
+  PROP_ST30P_RX_FRAMEBUFF_NUM,
+  PROP_ST30P_RX_CHANNEL,
+  PROP_ST30P_RX_SAMPLING,
+  PROP_ST30P_RX_AUDIO_FORMAT,
   PROP_MAX
 };
 
@@ -162,83 +152,31 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR(gst_mtl_st30p_rx_negotiate);
   gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st30p_rx_create);
 
-  g_object_class_install_property(
-      gobject_class, PROP_SILENT,
-      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
-                           G_PARAM_READWRITE));
+  gst_mtl_common_init_general_argumetns(gobject_class);
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_DEV_ARGS_PORT,
-      g_param_spec_string("dev-port", "DPDK device port",
-                          "DPDK port for synchronous ST 2110-30 uncompressed"
-                          "audio transmission, bound to the VFIO DPDK driver. ",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_DEV_ARGS_SIP,
-      g_param_spec_string("dev-ip", "Local device IP",
-                          "Local IP address that the port will be "
-                          "identified by. This is the address from which ARP "
-                          "responses will be sent.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_DEV_ARGS_DMA_DEV,
-      g_param_spec_string("dma-dev", "DPDK DMA port",
-                          "DPDK port for the MTL direct memory functionality.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_PORT,
-      g_param_spec_string("rx-port", "Transmission Device Port",
-                          "DPDK device port initialized for the transmission.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_IP,
-      g_param_spec_string("rx-ip", "Sender node's IP", "Receiving MTL node IP address.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_UDP_PORT,
-      g_param_spec_uint("rx-udp-port", "Sender UDP port", "Receiving MTL node UDP port.",
-                        0, G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_PAYLOAD_TYPE,
-      g_param_spec_uint("rx-payload-type", "ST 2110 payload type",
-                        "SMPTE ST 2110 payload type.", 0, G_MAXUINT, 112,
-                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_RX_QUEUES,
-      g_param_spec_uint("rx-queues", "Number of RX queues",
-                        "Number of RX queues to initialize in DPDK backend.", 0,
-                        G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_FRAMERATE,
+      gobject_class, PROP_ST30P_RX_FRAMERATE,
       g_param_spec_uint("rx-fps", "Audio framerate", "Framerate of the audio.", 0,
                         G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_FRAMEBUFF_NUM,
+      gobject_class, PROP_ST30P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_CHANNEL,
+      gobject_class, PROP_ST30P_RX_CHANNEL,
       g_param_spec_uint("rx-channel", "Audio channel", "Audio channel number.", 0,
                         G_MAXUINT, 2, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_SAMPLING,
+      gobject_class, PROP_ST30P_RX_SAMPLING,
       g_param_spec_uint("rx-sampling", "Audio sampling rate", "Audio sampling rate.", 0,
                         G_MAXUINT, 48000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_AUDIO_FORMAT,
+      gobject_class, PROP_ST30P_RX_AUDIO_FORMAT,
       g_param_spec_string("rx-audio-format", "Audio format", "Audio format type.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
@@ -254,47 +192,21 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
 
-  /* mtl is already initialzied
-  TODO: add support for initialization of multiple pipelines from one handle */
+  /* Check for future support of multiple plugins initialized from the same handle.
+   * TODO: Add support for initializing multiple pipelines from a single handle. */
   if (!src->mtl_lib_handle) {
-    strncpy(mtl_init_params.port[MTL_PORT_P], src->devArgs.port, MTL_PORT_MAX_LEN);
-    ret = inet_pton(AF_INET, src->devArgs.local_ip_string,
-                    mtl_init_params.sip_addr[MTL_PORT_P]);
-    if (ret != 1) {
-      GST_ERROR("%s, sip %s is not valid ip address\n", __func__,
-                src->devArgs.local_ip_string);
+    if (!gst_mtl_common_parse_dev_arguments(&mtl_init_params, &(src->devArgs))) {
+      GST_ERROR("Failed to parse dev arguments");
       return FALSE;
     }
 
-    if (src->devArgs.rx_queues_cnt[MTL_PORT_P]) {
-      mtl_init_params.rx_queues_cnt[MTL_PORT_P] = src->devArgs.rx_queues_cnt[MTL_PORT_P];
-    } else {
-      mtl_init_params.rx_queues_cnt[MTL_PORT_P] = 16;
-    }
-    mtl_init_params.tx_queues_cnt[MTL_PORT_P] = 16;
-
-    mtl_init_params.num_ports = 1;
-
-    mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-    if (src->silent) {
-      mtl_init_params.log_level = MTL_LOG_LEVEL_ERROR;
+    if (src->log_level && src->log_level < MTL_LOG_LEVEL_MAX) {
+      mtl_init_params.log_level = src->log_level;
     } else {
       mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
     }
 
-    src->retry_frame = 10;
-
     mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-
-    if (src->devArgs.dma_dev) {
-      strncpy(mtl_init_params.dma_dev_port[0], src->devArgs.dma_dev, MTL_PORT_MAX_LEN);
-    }
-
-    if (src->mtl_lib_handle) {
-      GST_ERROR("MTL already initialized");
-      return FALSE;
-    }
-
     src->mtl_lib_handle = mtl_init(&mtl_init_params);
     if (!src->mtl_lib_handle) {
       GST_ERROR("Could not initialize MTL");
@@ -393,45 +305,23 @@ static void gst_mtl_st30p_rx_set_property(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec) {
   Gst_Mtl_St30p_Rx* self = GST_MTL_ST30P_RX(object);
 
+  if (prop_id < PROP_GENERAL_MAX) {
+    gst_mtl_common_set_general_argumetns(object, prop_id, value, pspec, &(self->devArgs),
+                                         &(self->portArgs), &self->log_level);
+    return;
+  }
+
   switch (prop_id) {
-    case PROP_SILENT:
-      self->silent = g_value_get_boolean(value);
-      break;
-    case PROP_RX_DEV_ARGS_PORT:
-      strncpy(self->devArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_DEV_ARGS_SIP:
-      strncpy(self->devArgs.local_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_DEV_ARGS_DMA_DEV:
-      strncpy(self->devArgs.dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_PORT_PORT:
-      strncpy(self->portArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_PORT_IP:
-      strncpy(self->portArgs.session_ip_string, g_value_get_string(value),
-              MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_PORT_UDP_PORT:
-      self->portArgs.udp_port = g_value_get_uint(value);
-      break;
-    case PROP_RX_PORT_PAYLOAD_TYPE:
-      self->portArgs.payload_type = g_value_get_uint(value);
-      break;
-    case PROP_RX_PORT_RX_QUEUES:
-      self->devArgs.rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
-      break;
-    case PROP_RX_FRAMEBUFF_NUM:
+    case PROP_ST30P_RX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
-    case PROP_RX_CHANNEL:
+    case PROP_ST30P_RX_CHANNEL:
       self->channel = g_value_get_uint(value);
       break;
-    case PROP_RX_SAMPLING:
+    case PROP_ST30P_RX_SAMPLING:
       self->sampling = g_value_get_uint(value);
       break;
-    case PROP_RX_AUDIO_FORMAT:
+    case PROP_ST30P_RX_AUDIO_FORMAT:
       strncpy(self->audio_format, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     default:
@@ -444,44 +334,23 @@ static void gst_mtl_st30p_rx_get_property(GObject* object, guint prop_id, GValue
                                           GParamSpec* pspec) {
   Gst_Mtl_St30p_Rx* src = GST_MTL_ST30P_RX(object);
 
+  if (prop_id < PROP_GENERAL_MAX) {
+    gst_mtl_common_get_general_argumetns(object, prop_id, value, pspec, &(src->devArgs),
+                                         &(src->portArgs), &src->log_level);
+    return;
+  }
+
   switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean(value, src->silent);
-      break;
-    case PROP_RX_DEV_ARGS_PORT:
-      g_value_set_string(value, src->devArgs.port);
-      break;
-    case PROP_RX_DEV_ARGS_SIP:
-      g_value_set_string(value, src->devArgs.local_ip_string);
-      break;
-    case PROP_RX_DEV_ARGS_DMA_DEV:
-      g_value_set_string(value, src->devArgs.dma_dev);
-      break;
-    case PROP_RX_PORT_PORT:
-      g_value_set_string(value, src->portArgs.port);
-      break;
-    case PROP_RX_PORT_IP:
-      g_value_set_string(value, src->portArgs.session_ip_string);
-      break;
-    case PROP_RX_PORT_UDP_PORT:
-      g_value_set_uint(value, src->portArgs.udp_port);
-      break;
-    case PROP_RX_PORT_PAYLOAD_TYPE:
-      g_value_set_uint(value, src->portArgs.payload_type);
-      break;
-    case PROP_RX_PORT_RX_QUEUES:
-      g_value_set_uint(value, src->devArgs.rx_queues_cnt[MTL_PORT_P]);
-      break;
-    case PROP_RX_FRAMEBUFF_NUM:
+    case PROP_ST30P_RX_FRAMEBUFF_NUM:
       g_value_set_uint(value, src->framebuffer_num);
       break;
-    case PROP_RX_CHANNEL:
+    case PROP_ST30P_RX_CHANNEL:
       g_value_set_uint(value, src->channel);
       break;
-    case PROP_RX_SAMPLING:
+    case PROP_ST30P_RX_SAMPLING:
       g_value_set_uint(value, src->sampling);
       break;
-    case PROP_RX_AUDIO_FORMAT:
+    case PROP_ST30P_RX_AUDIO_FORMAT:
       g_value_set_string(value, src->audio_format);
       break;
     default:

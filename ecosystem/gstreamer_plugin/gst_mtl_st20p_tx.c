@@ -90,18 +90,9 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_tx_debug);
 #endif
 
 enum {
-  PROP_0,
-  PROP_SILENT,
-  PROP_TX_DEV_ARGS_PORT,
-  PROP_TX_DEV_ARGS_SIP,
-  PROP_TX_DEV_ARGS_DMA_DEV,
-  PROP_TX_PORT_PORT,
-  PROP_TX_PORT_IP,
-  PROP_TX_PORT_UDP_PORT,
-  PROP_TX_PORT_PAYLOAD_TYPE,
-  PROP_TX_PORT_TX_QUEUES,
-  PROP_TX_FRAMERATE,
-  PROP_TX_FRAMEBUFF_NUM,
+  PROP_ST20P_TX_RETRY = PROP_GENERAL_MAX,
+  PROP_ST20P_TX_FRAMERATE,
+  PROP_ST20P_TX_FRAMEBUFF_NUM,
   PROP_MAX
 };
 
@@ -158,69 +149,21 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   gstvideosinkelement_class->parent_class.start =
       GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_start);
 
-  g_object_class_install_property(
-      gobject_class, PROP_SILENT,
-      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
-                           G_PARAM_READWRITE));
+  gst_mtl_common_init_general_argumetns(gobject_class);
 
   g_object_class_install_property(
-      gobject_class, PROP_TX_DEV_ARGS_PORT,
-      g_param_spec_string("dev-port", "DPDK device port",
-                          "DPDK port for synchronous ST 2110-20 uncompressed"
-                          "video transmission, bound to the VFIO DPDK driver. ",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gobject_class, PROP_ST20P_TX_RETRY,
+      g_param_spec_uint("retry", "Retry Count",
+                        "Number of times the MTL will try to get a frame.", 0, G_MAXUINT,
+                        10, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_TX_DEV_ARGS_SIP,
-      g_param_spec_string("dev-ip", "Local device IP",
-                          "Local IP address that the port will be "
-                          "identified by. This is the address from which ARP "
-                          "responses will be sent.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_DEV_ARGS_DMA_DEV,
-      g_param_spec_string("dma-dev", "DPDK DMA port",
-                          "DPDK port for the MTL direct memory functionality.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_PORT_PORT,
-      g_param_spec_string("tx-port", "Transmission Device Port",
-                          "DPDK device port initialized for the transmission.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_PORT_IP,
-      g_param_spec_string("tx-ip", "Receiving node's IP",
-                          "Receiving MTL node IP address.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_PORT_UDP_PORT,
-      g_param_spec_uint("tx-udp-port", "Receiver's UDP port",
-                        "Receiving MTL node UDP port.", 0, G_MAXUINT, 20000,
-                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_PORT_PAYLOAD_TYPE,
-      g_param_spec_uint("tx-payload-type", "ST 2110 payload type",
-                        "SMPTE ST 2110 payload type.", 0, G_MAXUINT, 112,
-                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_PORT_TX_QUEUES,
-      g_param_spec_uint("tx-queues", "Number of TX queues",
-                        "Number of TX queues to initialize in DPDK backend.", 0,
-                        G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_TX_FRAMERATE,
+      gobject_class, PROP_ST20P_TX_FRAMERATE,
       g_param_spec_uint("tx-fps", "Video framerate", "Framerate of the video.", 0,
                         G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_TX_FRAMEBUFF_NUM,
+      gobject_class, PROP_ST20P_TX_FRAMEBUFF_NUM,
       g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -228,7 +171,6 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
 
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   struct mtl_init_params mtl_init_params = {0};
-  gint ret;
 
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(bsink);
 
@@ -236,59 +178,33 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   GST_DEBUG("Media Transport Initialization start");
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
-  /* mtl is already initialzied */
-  if (sink->mtl_lib_handle) {
-    GST_INFO("Mtl already initialized");
-    if (mtl_start(sink->mtl_lib_handle)) {
-      GST_ERROR("Failed to start MTL");
+  /* Check for future support of multiple plugins initialized from the same handle.
+   * TODO: Add support for initializing multiple pipelines from a single handle. */
+  if (!sink->mtl_lib_handle) {
+    if (!gst_mtl_common_parse_dev_arguments(&mtl_init_params, &(sink->devArgs))) {
+      GST_ERROR("Failed to parse dev arguments");
       return FALSE;
     }
-    return TRUE;
+
+    if (sink->log_level && sink->log_level < MTL_LOG_LEVEL_MAX) {
+      mtl_init_params.log_level = sink->log_level;
+    } else {
+      mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
+    }
+
+    mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
+    sink->mtl_lib_handle = mtl_init(&mtl_init_params);
+    if (!sink->mtl_lib_handle) {
+      GST_ERROR("Could not initialize MTL");
+      return FALSE;
+    }
   }
 
-  strncpy(mtl_init_params.port[MTL_PORT_P], sink->devArgs.port, MTL_PORT_MAX_LEN);
-
-  ret = inet_pton(AF_INET, sink->devArgs.local_ip_string,
-                  mtl_init_params.sip_addr[MTL_PORT_P]);
-  if (ret != 1) {
-    GST_ERROR("%s, sip %s is not valid ip address\n", __func__,
-              sink->devArgs.local_ip_string);
-    return false;
-  }
-
-  if (sink->devArgs.tx_queues_cnt[MTL_PORT_P]) {
-    mtl_init_params.tx_queues_cnt[MTL_PORT_P] = sink->devArgs.tx_queues_cnt[MTL_PORT_P];
-  } else {
-    mtl_init_params.tx_queues_cnt[MTL_PORT_P] = 16;
-  }
-
-  mtl_init_params.rx_queues_cnt[MTL_PORT_P] = 0;
-  mtl_init_params.num_ports++;
-
-  mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-  if (sink->silent) {
-    mtl_init_params.log_level = MTL_LOG_LEVEL_ERROR;
-  } else {
-    mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
-  }
-
-  sink->retry_frame = 10;
-
-  mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-
-  if (sink->devArgs.dma_dev) {
-    strncpy(mtl_init_params.dma_dev_port[0], sink->devArgs.dma_dev, MTL_PORT_MAX_LEN);
-  }
-
-  if (sink->mtl_lib_handle) {
-    GST_ERROR("MTL already initialized");
-    return false;
-  }
-
-  sink->mtl_lib_handle = mtl_init(&mtl_init_params);
-  if (!sink->mtl_lib_handle) {
-    GST_ERROR("Could not initialize MTL");
-    return false;
+  if (sink->retry_frame == 0)
+    sink->retry_frame = 10;
+  else if (sink->retry_frame < 3) {
+    GST_WARNING("Retry count is too low, setting to 3");
+    sink->retry_frame = 3;
   }
 
   gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
@@ -315,39 +231,17 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec) {
   Gst_Mtl_St20p_Tx* self = GST_MTL_ST20P_TX(object);
 
+  if (prop_id < PROP_GENERAL_MAX) {
+    gst_mtl_common_set_general_argumetns(object, prop_id, value, pspec, &(self->devArgs),
+                                         &(self->portArgs), &self->log_level);
+    return;
+  }
+
   switch (prop_id) {
-    case PROP_SILENT:
-      self->silent = g_value_get_boolean(value);
-      break;
-    case PROP_TX_DEV_ARGS_PORT:
-      strncpy(self->devArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_TX_DEV_ARGS_SIP:
-      strncpy(self->devArgs.local_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_TX_DEV_ARGS_DMA_DEV:
-      strncpy(self->devArgs.dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_TX_PORT_PORT:
-      strncpy(self->portArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_TX_PORT_IP:
-      strncpy(self->portArgs.session_ip_string, g_value_get_string(value),
-              MTL_PORT_MAX_LEN);
-      break;
-    case PROP_TX_PORT_UDP_PORT:
-      self->portArgs.udp_port = g_value_get_uint(value);
-      break;
-    case PROP_TX_PORT_PAYLOAD_TYPE:
-      self->portArgs.payload_type = g_value_get_uint(value);
-      break;
-    case PROP_TX_PORT_TX_QUEUES:
-      self->devArgs.tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
-      break;
-    case PROP_TX_FRAMERATE:
+    case PROP_ST20P_TX_FRAMERATE:
       self->framerate = g_value_get_uint(value);
       break;
-    case PROP_TX_FRAMEBUFF_NUM:
+    case PROP_ST20P_TX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
     default:
@@ -360,38 +254,17 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
                                           GParamSpec* pspec) {
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
 
+  if (prop_id < PROP_GENERAL_MAX) {
+    gst_mtl_common_get_general_argumetns(object, prop_id, value, pspec, &(sink->devArgs),
+                                         &(sink->portArgs), &sink->log_level);
+    return;
+  }
+
   switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean(value, sink->silent);
-      break;
-    case PROP_TX_DEV_ARGS_PORT:
-      g_value_set_string(value, sink->devArgs.port);
-      break;
-    case PROP_TX_DEV_ARGS_SIP:
-      g_value_set_string(value, sink->devArgs.local_ip_string);
-      break;
-    case PROP_TX_DEV_ARGS_DMA_DEV:
-      g_value_set_string(value, sink->devArgs.dma_dev);
-      break;
-    case PROP_TX_PORT_PORT:
-      g_value_set_string(value, sink->portArgs.port);
-      break;
-    case PROP_TX_PORT_IP:
-      g_value_set_string(value, sink->portArgs.session_ip_string);
-      break;
-    case PROP_TX_PORT_UDP_PORT:
-      g_value_set_uint(value, sink->portArgs.udp_port);
-      break;
-    case PROP_TX_PORT_PAYLOAD_TYPE:
-      g_value_set_uint(value, sink->portArgs.payload_type);
-      break;
-    case PROP_TX_PORT_TX_QUEUES:
-      g_value_set_uint(value, sink->devArgs.tx_queues_cnt[MTL_PORT_P]);
-      break;
-    case PROP_TX_FRAMERATE:
+    case PROP_ST20P_TX_FRAMERATE:
       g_value_set_uint(value, sink->framerate);
       break;
-    case PROP_TX_FRAMEBUFF_NUM:
+    case PROP_ST20P_TX_FRAMEBUFF_NUM:
       g_value_set_uint(value, sink->framebuffer_num);
       break;
     default:

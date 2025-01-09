@@ -209,8 +209,8 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
 void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_LOG_LEVEL,
-      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
-                           G_PARAM_READWRITE));
+      g_param_spec_int("log-level", "Log Level", "Set the log level.", 0, G_MAXUINT, 0,
+                       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_PORT,

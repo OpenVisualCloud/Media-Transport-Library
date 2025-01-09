@@ -56,21 +56,15 @@ G_DECLARE_FINAL_TYPE(Gst_Mtl_St20p_Tx, gst_mtl_st20p_tx, GST, MTL_ST20P_TX, GstV
 
 struct _Gst_Mtl_St20p_Tx {
   GstVideoSink element;
-  GstElement* child;
-  gboolean silent;
   mtl_handle mtl_lib_handle;
   st20p_tx_handle tx_handle;
-
-  /* arguments for incomplete frame buffers */
-  guint retry_frame;
   guint frame_size;
 
-  /* arguments for imtl initialization device */
-  StDevArgs devArgs;
-  /* arguments for imtl tx session */
-  SessionPortArgs portArgs;
-
-  /* arguments for session */
+  /* arguments */
+  guint log_level;
+  guint retry_frame;
+  StDevArgs devArgs;        /* imtl initialization device */
+  SessionPortArgs portArgs; /* imtl session device */
   guint framebuffer_num;
   guint framerate;
 
@@ -79,7 +73,7 @@ struct _Gst_Mtl_St20p_Tx {
   gboolean gpu_direct_enabled;
   gint gpu_driver_index;
   gint gpu_device_index;
-  gboolean* gpu_context;
+  guint8* gpu_context;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 };
 

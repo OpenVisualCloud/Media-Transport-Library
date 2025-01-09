@@ -61,19 +61,15 @@ struct _Gst_Mtl_St20p_Rx {
   GstBuffer* buffer;
 
   /*< private >*/
-  struct st20p_rx_ops ops_rx;
-  gboolean silent;
+  struct st20p_rx_ops ops_rx; /* needed for caps negotiation */
+  guint log_level;
   mtl_handle mtl_lib_handle;
   st20p_rx_handle rx_handle;
-
-  /* arguments for incomplete frame buffers */
   guint retry_frame;
   guint frame_size;
 
-  /* arguments for imtl initialization device */
-  StDevArgs devArgs;
-  /* arguments for imtl rx session */
-  SessionPortArgs portArgs;
+  StDevArgs devArgs;        /* imtl initialization device */
+  SessionPortArgs portArgs; /* imtl session device */
 
   /* arguments for session */
   guint width;

@@ -90,22 +90,12 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_rx_debug);
 #endif
 
 enum {
-  PROP_0,
-  PROP_SILENT,
-  PROP_RX_DEV_ARGS_PORT,
-  PROP_RX_DEV_ARGS_SIP,
-  PROP_RX_DEV_ARGS_DMA_DEV,
-  PROP_RX_PORT_PORT,
-  PROP_RX_PORT_IP,
-  PROP_RX_PORT_UDP_PORT,
-  PROP_RX_PORT_PAYLOAD_TYPE,
-  PROP_RX_PORT_RX_QUEUES,
-  PROP_RX_FRAMERATE,
-  PROP_RX_FRAMEBUFF_NUM,
-  PROP_RX_WIDTH,
-  PROP_RX_HEIGHT,
-  PROP_RX_INTERLACED,
-  PROP_RX_PIXEL_FORMAT,
+  PROP_ST20P_RX_FRAMERATE = PROP_GENERAL_MAX,
+  PROP_ST20P_RX_FRAMEBUFF_NUM,
+  PROP_ST20P_RX_WIDTH,
+  PROP_ST20P_RX_HEIGHT,
+  PROP_ST20P_RX_INTERLACED,
+  PROP_ST20P_RX_PIXEL_FORMAT,
   PROP_MAX
 };
 
@@ -164,89 +154,37 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR(gst_mtl_st20p_rx_negotiate);
   gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st20p_rx_create);
 
-  g_object_class_install_property(
-      gobject_class, PROP_SILENT,
-      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
-                           G_PARAM_READWRITE));
+  gst_mtl_common_init_general_argumetns(gobject_class);
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_DEV_ARGS_PORT,
-      g_param_spec_string("dev-port", "DPDK device port",
-                          "DPDK port for synchronous ST 2110-20 uncompressed"
-                          "video transmission, bound to the VFIO DPDK driver. ",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_DEV_ARGS_SIP,
-      g_param_spec_string("dev-ip", "Local device IP",
-                          "Local IP address that the port will be "
-                          "identified by. This is the address from which ARP "
-                          "responses will be sent.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_DEV_ARGS_DMA_DEV,
-      g_param_spec_string("dma-dev", "DPDK DMA port",
-                          "DPDK port for the MTL direct memory functionality.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_PORT,
-      g_param_spec_string("rx-port", "Transmission Device Port",
-                          "DPDK device port initialized for the transmission.", NULL,
-                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_IP,
-      g_param_spec_string("rx-ip", "Sender node's IP", "Receiving MTL node IP address.",
-                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_UDP_PORT,
-      g_param_spec_uint("rx-udp-port", "Sender UDP port", "Receiving MTL node UDP port.",
-                        0, G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_PAYLOAD_TYPE,
-      g_param_spec_uint("rx-payload-type", "ST 2110 payload type",
-                        "SMPTE ST 2110 payload type.", 0, G_MAXUINT, 112,
-                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_PORT_RX_QUEUES,
-      g_param_spec_uint("rx-queues", "Number of RX queues",
-                        "Number of RX queues to initialize in DPDK backend.", 0,
-                        G_MAXUINT, 16, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_RX_FRAMERATE,
+      gobject_class, PROP_ST20P_RX_FRAMERATE,
       g_param_spec_uint("rx-fps", "Video framerate", "Framerate of the video.", 0,
                         G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_FRAMEBUFF_NUM,
+      gobject_class, PROP_ST20P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_WIDTH,
+      gobject_class, PROP_ST20P_RX_WIDTH,
       g_param_spec_uint("rx-width", "Video width", "Width of the video.", 0, G_MAXUINT,
                         1920, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_HEIGHT,
+      gobject_class, PROP_ST20P_RX_HEIGHT,
       g_param_spec_uint("rx-height", "Video height", "Height of the video.", 0, G_MAXUINT,
                         1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_INTERLACED,
+      gobject_class, PROP_ST20P_RX_INTERLACED,
       g_param_spec_boolean("rx-interlaced", "Interlaced video",
                            "Whether the video is interlaced.", FALSE,
                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_RX_PIXEL_FORMAT,
+      gobject_class, PROP_ST20P_RX_PIXEL_FORMAT,
       g_param_spec_string("rx-pixel-format", "Pixel format", "Pixel format of the video.",
                           "v210", G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
@@ -262,54 +200,21 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
 
-  /* mtl is already initialzied */
-  if (src->mtl_lib_handle) {
-    GST_INFO("Mtl already initialized");
-    if (mtl_start(src->mtl_lib_handle)) {
-      GST_ERROR("Failed to start MTL");
-      return FALSE;
-    }
-    return TRUE;
-  } else {
-    strncpy(mtl_init_params.port[MTL_PORT_P], src->devArgs.port, MTL_PORT_MAX_LEN);
-
-    ret = inet_pton(AF_INET, src->devArgs.local_ip_string,
-                    mtl_init_params.sip_addr[MTL_PORT_P]);
-    if (ret != 1) {
-      GST_ERROR("%s, sip %s is not valid ip address\n", __func__,
-                src->devArgs.local_ip_string);
+  /* Check for future support of multiple plugins initialized from the same handle.
+   * TODO: Add support for initializing multiple pipelines from a single handle. */
+  if (!src->mtl_lib_handle) {
+    if (!gst_mtl_common_parse_dev_arguments(&mtl_init_params, &(src->devArgs))) {
+      GST_ERROR("Failed to parse dev arguments");
       return FALSE;
     }
 
-    if (src->devArgs.rx_queues_cnt[MTL_PORT_P]) {
-      mtl_init_params.rx_queues_cnt[MTL_PORT_P] = src->devArgs.rx_queues_cnt[MTL_PORT_P];
-    } else {
-      mtl_init_params.rx_queues_cnt[MTL_PORT_P] = 16;
-      mtl_init_params.tx_queues_cnt[MTL_PORT_P] = 16;
-    }
-
-    mtl_init_params.num_ports++;
-
-    mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-    if (src->silent) {
-      mtl_init_params.log_level = MTL_LOG_LEVEL_ERROR;
+    if (src->log_level && src->log_level < MTL_LOG_LEVEL_MAX) {
+      mtl_init_params.log_level = src->log_level;
     } else {
       mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
     }
 
-    src->retry_frame = 10;
-
     mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-
-    if (src->devArgs.dma_dev) {
-      strncpy(mtl_init_params.dma_dev_port[0], src->devArgs.dma_dev, MTL_PORT_MAX_LEN);
-    }
-
-    if (src->mtl_lib_handle) {
-      GST_ERROR("MTL already initialized");
-      return FALSE;
-    }
-
     src->mtl_lib_handle = mtl_init(&mtl_init_params);
     if (!src->mtl_lib_handle) {
       GST_ERROR("Could not initialize MTL");
@@ -407,51 +312,29 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec) {
   Gst_Mtl_St20p_Rx* self = GST_MTL_ST20P_RX(object);
 
+  if (prop_id < PROP_GENERAL_MAX) {
+    gst_mtl_common_set_general_argumetns(object, prop_id, value, pspec, &(self->devArgs),
+                                         &(self->portArgs), &self->log_level);
+    return;
+  }
+
   switch (prop_id) {
-    case PROP_SILENT:
-      self->silent = g_value_get_boolean(value);
-      break;
-    case PROP_RX_DEV_ARGS_PORT:
-      strncpy(self->devArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_DEV_ARGS_SIP:
-      strncpy(self->devArgs.local_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_DEV_ARGS_DMA_DEV:
-      strncpy(self->devArgs.dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_PORT_PORT:
-      strncpy(self->portArgs.port, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_PORT_IP:
-      strncpy(self->portArgs.session_ip_string, g_value_get_string(value),
-              MTL_PORT_MAX_LEN);
-      break;
-    case PROP_RX_PORT_UDP_PORT:
-      self->portArgs.udp_port = g_value_get_uint(value);
-      break;
-    case PROP_RX_PORT_PAYLOAD_TYPE:
-      self->portArgs.payload_type = g_value_get_uint(value);
-      break;
-    case PROP_RX_PORT_RX_QUEUES:
-      self->devArgs.rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
-      break;
-    case PROP_RX_FRAMERATE:
+    case PROP_ST20P_RX_FRAMERATE:
       self->framerate = g_value_get_uint(value);
       break;
-    case PROP_RX_FRAMEBUFF_NUM:
+    case PROP_ST20P_RX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
-    case PROP_RX_WIDTH:
+    case PROP_ST20P_RX_WIDTH:
       self->width = g_value_get_uint(value);
       break;
-    case PROP_RX_HEIGHT:
+    case PROP_ST20P_RX_HEIGHT:
       self->height = g_value_get_uint(value);
       break;
-    case PROP_RX_INTERLACED:
+    case PROP_ST20P_RX_INTERLACED:
       self->interlaced = g_value_get_boolean(value);
       break;
-    case PROP_RX_PIXEL_FORMAT:
+    case PROP_ST20P_RX_PIXEL_FORMAT:
       strncpy(self->pixel_format, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     default:
@@ -464,50 +347,29 @@ static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue
                                           GParamSpec* pspec) {
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(object);
 
+  if (prop_id < PROP_GENERAL_MAX) {
+    gst_mtl_common_get_general_argumetns(object, prop_id, value, pspec, &(src->devArgs),
+                                         &(src->portArgs), &src->log_level);
+    return;
+  }
+
   switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean(value, src->silent);
-      break;
-    case PROP_RX_DEV_ARGS_PORT:
-      g_value_set_string(value, src->devArgs.port);
-      break;
-    case PROP_RX_DEV_ARGS_SIP:
-      g_value_set_string(value, src->devArgs.local_ip_string);
-      break;
-    case PROP_RX_DEV_ARGS_DMA_DEV:
-      g_value_set_string(value, src->devArgs.dma_dev);
-      break;
-    case PROP_RX_PORT_PORT:
-      g_value_set_string(value, src->portArgs.port);
-      break;
-    case PROP_RX_PORT_IP:
-      g_value_set_string(value, src->portArgs.session_ip_string);
-      break;
-    case PROP_RX_PORT_UDP_PORT:
-      g_value_set_uint(value, src->portArgs.udp_port);
-      break;
-    case PROP_RX_PORT_PAYLOAD_TYPE:
-      g_value_set_uint(value, src->portArgs.payload_type);
-      break;
-    case PROP_RX_PORT_RX_QUEUES:
-      g_value_set_uint(value, src->devArgs.rx_queues_cnt[MTL_PORT_P]);
-      break;
-    case PROP_RX_FRAMERATE:
+    case PROP_ST20P_RX_FRAMERATE:
       g_value_set_uint(value, src->framerate);
       break;
-    case PROP_RX_FRAMEBUFF_NUM:
+    case PROP_ST20P_RX_FRAMEBUFF_NUM:
       g_value_set_uint(value, src->framebuffer_num);
       break;
-    case PROP_RX_WIDTH:
+    case PROP_ST20P_RX_WIDTH:
       g_value_set_uint(value, src->width);
       break;
-    case PROP_RX_HEIGHT:
+    case PROP_ST20P_RX_HEIGHT:
       g_value_set_uint(value, src->height);
       break;
-    case PROP_RX_INTERLACED:
+    case PROP_ST20P_RX_INTERLACED:
       g_value_set_boolean(value, src->interlaced);
       break;
-    case PROP_RX_PIXEL_FORMAT:
+    case PROP_ST20P_RX_PIXEL_FORMAT:
       g_value_set_string(value, src->pixel_format);
       break;
     default:

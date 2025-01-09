@@ -62,25 +62,22 @@ struct _Gst_Mtl_St30p_Rx {
 
   /*< private >*/
   struct st30p_rx_ops ops_rx;
-  gboolean silent;
   mtl_handle mtl_lib_handle;
   st30p_rx_handle rx_handle;
-
-  /* arguments for mtl frame buffers */
-  guint retry_frame;
   guint frame_size;
 
-  /* arguments for imtl initialization device */
-  StDevArgs devArgs;
-  /* arguments for imtl rx session */
-  SessionPortArgs portArgs;
+  /* arguments */
+  guint log_level;
+  guint retry_frame;
+  StDevArgs devArgs;        /* imtl initialization device */
+  SessionPortArgs portArgs; /* imtl session device */
+  gint framebuffer_num;
 
-  /* arguments for session */
+  /* audio (st30p) specific arguments */
   guint channel;
   guint sampling;
   gboolean ptime;
   gchar audio_format[MTL_PORT_MAX_LEN];
-  gint framebuffer_num;
 };
 
 G_END_DECLS

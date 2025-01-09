@@ -205,6 +205,7 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
       mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
     }
 
+    mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
     src->mtl_lib_handle = mtl_init(&mtl_init_params);
     if (!src->mtl_lib_handle) {
       GST_ERROR("Could not initialize MTL");
