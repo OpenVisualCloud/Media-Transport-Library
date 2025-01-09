@@ -393,8 +393,8 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
   return ret;
 }
 
-mtl_handle gst_mtl_common_mtl_init(struct mtl_init_params* p, StDevArgs* devArgs,
-                                   guint* log_level) {
+mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
+                                      guint* log_level) {
   struct mtl_init_params mtl_init_params = {0};
 
   if (!p || !devArgs || !log_level) {

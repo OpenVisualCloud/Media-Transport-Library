@@ -90,7 +90,8 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_rx_debug);
 #endif
 
 enum {
-  PROP_ST30P_RX_FRAMERATE = PROP_GENERAL_MAX,
+  PROP_ST30P_RX_RETRY = PROP_GENERAL_MAX,
+  PROP_ST30P_RX_FRAMERATE,
   PROP_ST30P_RX_FRAMEBUFF_NUM,
   PROP_ST30P_RX_CHANNEL,
   PROP_ST30P_RX_SAMPLING,
@@ -193,12 +194,14 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_mtl_init(&mtl_init_params, &(src->devArgs), &(src->log_level));
+      gst_mtl_common_init_handle(&mtl_init_params, &(src->devArgs), &(src->log_level));
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
     return FALSE;
   }
+
+  src->retry_frame = 10; /* TODO add support for parameter */
 
   ops_rx->name = "st30src";
   ops_rx->channel = src->channel;

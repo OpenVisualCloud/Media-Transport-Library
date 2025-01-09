@@ -90,7 +90,12 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_tx_debug);
 #define PACKAGE_VERSION "1.0"
 #endif
 
-enum { PROP_TX_FRAMERATE = PROP_GENERAL_MAX, PROP_TX_FRAMEBUFF_NUM, PROP_MAX };
+enum {
+  PROP_ST30P_TX_RETRY = PROP_GENERAL_MAX,
+  PROP_ST30P_TX_FRAMERATE,
+  PROP_ST30P_TX_FRAMEBUFF_NUM,
+  PROP_MAX
+};
 
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st30p_tx_sink_pad_template =
@@ -169,7 +174,7 @@ static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
   gst_mtl_common_init_general_argumetns(gobject_class);
 
   g_object_class_install_property(
-      gobject_class, PROP_TX_FRAMEBUFF_NUM,
+      gobject_class, PROP_ST30P_TX_FRAMEBUFF_NUM,
       g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -185,7 +190,7 @@ static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_mtl_init(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -224,10 +229,13 @@ static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
   }
 
   switch (prop_id) {
-    case PROP_TX_FRAMERATE:
+    case PROP_ST30P_TX_RETRY:
+      self->retry_frame = g_value_get_uint(value);
+      break;
+    case PROP_ST30P_TX_FRAMERATE:
       self->framerate = g_value_get_uint(value);
       break;
-    case PROP_TX_FRAMEBUFF_NUM:
+    case PROP_ST30P_TX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
     default:
@@ -247,10 +255,13 @@ static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue
   }
 
   switch (prop_id) {
-    case PROP_TX_FRAMERATE:
+    case PROP_ST30P_TX_RETRY:
+      g_value_set_uint(value, sink->retry_frame);
+      break;
+    case PROP_ST30P_TX_FRAMERATE:
       g_value_set_uint(value, sink->framerate);
       break;
-    case PROP_TX_FRAMEBUFF_NUM:
+    case PROP_ST30P_TX_FRAMEBUFF_NUM:
       g_value_set_uint(value, sink->framebuffer_num);
       break;
     default:

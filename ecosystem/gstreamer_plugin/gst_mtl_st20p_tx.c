@@ -179,7 +179,7 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_mtl_init(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -224,6 +224,9 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
   }
 
   switch (prop_id) {
+    case PROP_ST20P_TX_RETRY:
+      self->retry_frame = g_value_get_uint(value);
+      break;
     case PROP_ST20P_TX_FRAMERATE:
       self->framerate = g_value_get_uint(value);
       break;
@@ -247,6 +250,9 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
   }
 
   switch (prop_id) {
+    case PROP_ST20P_TX_RETRY:
+      g_value_set_uint(value, sink->retry_frame);
+      break;
     case PROP_ST20P_TX_FRAMERATE:
       g_value_set_uint(value, sink->framerate);
       break;

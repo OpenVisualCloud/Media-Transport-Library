@@ -90,7 +90,8 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_rx_debug);
 #endif
 
 enum {
-  PROP_ST20P_RX_FRAMERATE = PROP_GENERAL_MAX,
+  PROP_ST20P_RX_RETRY = PROP_GENERAL_MAX,
+  PROP_ST20P_RX_FRAMERATE,
   PROP_ST20P_RX_FRAMEBUFF_NUM,
   PROP_ST20P_RX_WIDTH,
   PROP_ST20P_RX_HEIGHT,
@@ -157,6 +158,12 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
   gst_mtl_common_init_general_argumetns(gobject_class);
 
   g_object_class_install_property(
+      gobject_class, PROP_ST20P_RX_RETRY,
+      g_param_spec_uint("retry", "Retry Count",
+                        "Number of times the MTL will try to get a frame.", 0, G_MAXUINT,
+                        10, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
       gobject_class, PROP_ST20P_RX_FRAMERATE,
       g_param_spec_uint("rx-fps", "Video framerate", "Framerate of the video.", 0,
                         G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -201,11 +208,18 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_mtl_init(&mtl_init_params, &(src->devArgs), &(src->log_level));
+      gst_mtl_common_init_handle(&mtl_init_params, &(src->devArgs), &(src->log_level));
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
     return FALSE;
+  }
+
+  if (src->retry_frame == 0)
+    src->retry_frame = 10;
+  else if (src->retry_frame < 3) {
+    GST_WARNING("Retry count is too low, setting to 3");
+    src->retry_frame = 3;
   }
 
   if (src->width == 0 || src->height == 0) {
@@ -305,6 +319,9 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
   }
 
   switch (prop_id) {
+    case PROP_ST20P_RX_RETRY:
+      self->retry_frame = g_value_get_uint(value);
+      break;
     case PROP_ST20P_RX_FRAMERATE:
       self->framerate = g_value_get_uint(value);
       break;
@@ -340,6 +357,9 @@ static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue
   }
 
   switch (prop_id) {
+    case PROP_ST20P_RX_RETRY:
+      g_value_set_uint(value, src->retry_frame);
+      break;
     case PROP_ST20P_RX_FRAMERATE:
       g_value_set_uint(value, src->framerate);
       break;
