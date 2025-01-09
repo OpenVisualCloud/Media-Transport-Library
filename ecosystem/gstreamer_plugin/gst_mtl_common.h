@@ -101,4 +101,7 @@ void gst_mtl_common_get_general_argumetns(GObject* object, guint prop_id,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level);
 
+mtl_handle gst_mtl_common_mtl_init(struct mtl_init_params* p, StDevArgs* devArgs,
+                                   guint* log_level);
+
 #endif /* __GST_MTL_COMMON_H__ */

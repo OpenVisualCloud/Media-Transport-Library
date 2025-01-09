@@ -178,26 +178,12 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   GST_DEBUG("Media Transport Initialization start");
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
-  /* Check for future support of multiple plugins initialized from the same handle.
-   * TODO: Add support for initializing multiple pipelines from a single handle. */
+  sink->mtl_lib_handle =
+      gst_mtl_common_mtl_init(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+
   if (!sink->mtl_lib_handle) {
-    if (!gst_mtl_common_parse_dev_arguments(&mtl_init_params, &(sink->devArgs))) {
-      GST_ERROR("Failed to parse dev arguments");
-      return FALSE;
-    }
-
-    if (sink->log_level && sink->log_level < MTL_LOG_LEVEL_MAX) {
-      mtl_init_params.log_level = sink->log_level;
-    } else {
-      mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
-    }
-
-    mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-    sink->mtl_lib_handle = mtl_init(&mtl_init_params);
-    if (!sink->mtl_lib_handle) {
-      GST_ERROR("Could not initialize MTL");
-      return FALSE;
-    }
+    GST_ERROR("Could not initialize MTL");
+    return FALSE;
   }
 
   if (sink->retry_frame == 0)

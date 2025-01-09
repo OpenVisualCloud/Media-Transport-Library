@@ -191,26 +191,12 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
 
-  /* Check for future support of multiple plugins initialized from the same handle.
-   * TODO: Add support for initializing multiple pipelines from a single handle. */
+  src->mtl_lib_handle =
+      gst_mtl_common_mtl_init(&mtl_init_params, &(src->devArgs), &(src->log_level));
+
   if (!src->mtl_lib_handle) {
-    if (!gst_mtl_common_parse_dev_arguments(&mtl_init_params, &(src->devArgs))) {
-      GST_ERROR("Failed to parse dev arguments");
-      return FALSE;
-    }
-
-    if (src->log_level && src->log_level < MTL_LOG_LEVEL_MAX) {
-      mtl_init_params.log_level = src->log_level;
-    } else {
-      mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
-    }
-
-    mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
-    src->mtl_lib_handle = mtl_init(&mtl_init_params);
-    if (!src->mtl_lib_handle) {
-      GST_ERROR("Could not initialize MTL");
-      return FALSE;
-    }
+    GST_ERROR("Could not initialize MTL");
+    return FALSE;
   }
 
   if (src->timeout_mbuf_get_seconds <= 0) {
