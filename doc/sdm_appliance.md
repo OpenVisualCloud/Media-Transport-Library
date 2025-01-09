@@ -60,7 +60,7 @@ sudo LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -f video4linux2 -video_size 128
 sudo DISPLAY=$DISPLAY LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -f x11grab -i $DISPLAY -framerate 30 -vcodec rawvideo -pix_fmt rgb24 -video_size 1920x1080 -vf scale=1280:720 -udp_port 20000 -port 0000:02:00.0 -local_addr 192.168.100.55 -dst_addr 239.168.85.20 -f kahawai_mux -
 ```
 
-Video transmission will begin once command is executed. Press CTRL-C to terminate.
+Video transmission will begin once command is executed. Press `Ctrl-C` to terminate.
 
 At the receiver (Intel® SDM), run:
 
@@ -68,7 +68,7 @@ At the receiver (Intel® SDM), run:
 sudo LD_LIBRARY_PATH=path/to/ffmpeg/lib ./ffmpeg -framerate 30 -pixel_format rgb24 -width 1280 -height 720 -udp_port 20000 -port 0000:58:00.0 -local_addr 192.168.100.55 -src_addr 239.168.85.20 -ext_frames_mode 0 -f kahawai -i k -f sdl2 -
 ```
 
-An SDL2 window will pop-up at the receiver screen. Press CTRL-C to terminate.
+An SDL2 window will pop-up at the receiver screen. Press `Ctrl-C` to terminate.
 
 **Note**:
 

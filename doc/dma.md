@@ -22,7 +22,7 @@ dpdk-devbind.py -s | grep idxd
 
 Please review the output below to locate the Virtual Function's Bus/Device/Function (BDF) information, such as '0000:80:04.0' for socket 1 or '0000:00:04.0' for socket 0, as illustrated in the example.
 
-```bash
+```text
 0000:00:04.0 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
 0000:00:04.1 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
 0000:00:04.2 'Sky Lake-E CBDMA Registers 2021' drv=ioatdma unused=vfio-pci
@@ -65,7 +65,7 @@ When utilizing the built-in application, simply use the `--dma_dev` argument to 
 
 If you're directly interfacing with the API, the initial step involves incorporating DMA information into the `struct mtl_init_params` before making the `mtl_init` call. Subsequently, the initialization routine will attempt to parse and initialize the DMA device, and if the DMA is prepared, it will be added to the DMA list.
 
-```bash
+```c
   /**
    * Optional. Dma(CBDMA or DSA) device can be used in the MTL.
    * DMA can be used to offload the CPU for copy the payload for video rx sessions.
@@ -84,27 +84,27 @@ However, be aware that this process may fail if a suitable DMA device is not ava
 
 The logs below indicate that the PCI driver for the DMA device has been loaded successfully.
 
-```bash
+```text
 EAL: Probe PCI driver: dmadev_ioat (8086:b00) device: 0000:80:04.0 (socket 1)
 IOAT: ioat_dmadev_probe(): Init 0000:80:04.0 on NUMA node 1
 ```
 
 Below log shows the `0000:80:04.0` is registered into MTL.
 
-```bash
+```text
 MT: mt_dma_init(0), dma dev id 0 name 0000:80:04.0 capa 0x500000041 numa 1 desc 32:4096
 ```
 
 Below log shows the RX session is correctly attached to a DMA device.
 
-```bash
+```text
 MT: mt_dma_request_dev(0), dma created with max share 16 nb_desc 128
 MT: rv_init_dma(0), succ, dma 0 lender id 0
 ```
 
 Below logs display the DMA usage information.
 
-```bash
+```text
 ST: RX_VIDEO_SESSION(1,0): pkts 2589325 by dma copy, dma busy 0.000000
 ST: DMA(0), s 2589313 c 2589313 e 0 avg q 1
 ```
@@ -124,7 +124,7 @@ To learn how to utilize DMA in your application, refer to the sample code in [dm
 
 The major DMA APIs listed below:
 
-```bash
+```c
 mtl_udma_create
 mtl_udma_free
 mtl_udma_copy

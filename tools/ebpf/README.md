@@ -28,7 +28,7 @@ sudo ./lcore_monitor --lcore 30 --t_pid 194145
 
 The output is like below, inspect the time to check if the lcore is suspending for a long time.
 
-```bash
+```text
 main, load bpf object lcore_monitor_kern.o succ
 lm_event_handler: sched out 7.789us as comm: migration/30
 lm_event_handler: sched out 7.405us as comm: migration/30
@@ -36,7 +36,7 @@ lm_event_handler: sched out 7.405us as comm: migration/30
 
 The `lcore` and `t_pid` can be get from MTL running log.
 
-```bash
+```text
 MT: MT: 2024-01-17 15:45:14, * *    M T    D E V   S T A T E   * *
 MT: MT: 2024-01-17 15:45:14, DEV(0): Avr rate, tx: 2610.440314 Mb/s, rx: 0.000278 Mb/s, pkts, tx: 2465879, rx: 6
 MT: MT: 2024-01-17 15:45:14, DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2602.470600 Mb/s, pkts, tx: 0, rx: 2465811
@@ -62,7 +62,7 @@ sudo ./udp_monitor --interface enp175s0f0np0 --dump_period_s 5
 
 The dump output is like below:
 
-```bash
+```text
 ----- DUMP UDP STAT EVERY 5s -----
 192.168.17.101:19873 -> 239.168.17.101:20000, 2610.896736 Mb/s pkts 1233168
 192.168.17.102:19941 -> 239.168.17.102:20000, 2610.922137 Mb/s pkts 1233180

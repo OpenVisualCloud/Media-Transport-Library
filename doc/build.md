@@ -22,7 +22,7 @@ Install below SDL2 packages if you want the display support for RxTxApp.
 sudo apt-get install libsdl2-dev libsdl2-ttf-dev
 ```
 
-#### 1.1.2. Centos stream
+#### 1.1.2. CentOS stream
 
 ```bash
 sudo yum install -y dnf-plugins-core
@@ -158,7 +158,7 @@ cd ..
 
 Note, please make sure libnuma is installed, confirm it from the log of `meson setup build` command.
 
-```bash
+```text
 Library numa found: YES
 ```
 
@@ -181,7 +181,7 @@ cd $mtl_source_code
 
 It may get below error caused by PKG_CONFIG_PATH path problem.
 
-```bash
+```text
 lib/meson.build:10:0: ERROR: Dependency "libdpdk" not found, tried pkgconfig
 ```
 
@@ -264,4 +264,5 @@ And the kernel-devel package for e.g. Rocky Linux 9.3 is stored here:
 
 https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/
 
-## (Next, proceed to [Running ST2110](../README.md#3-run-st2110) for further instructions)
+## Next Steps
+Proceed to [Running ST2110](../README.md#3-run-st2110) for further instructions.

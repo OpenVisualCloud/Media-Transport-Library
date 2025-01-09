@@ -54,7 +54,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 Below error indicate MTL don't detect a video stream on the listening address.
 
-```bash
+```text
 [mtl_st20p @ 0x55634f8b3c80] mtl_st20p_read_packet(0), st20p_rx_get_frame timeout
 [in#0/mtl_st20p @ 0x55634f8b3b40] Error during demuxing: Input/output error
 [in#0/mtl_st20p @ 0x55634f8b3b40] Error retrieving a packet from demuxer: Input/output error

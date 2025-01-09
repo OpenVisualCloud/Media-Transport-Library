@@ -21,9 +21,9 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 ## 3. Run
 
-Config the `interfaces` item in the json file to use the kernel network interface, below is an example which use `enp24s0f0` interface.
+Config the `interfaces` item in the JSON file to use the kernel network interface, below is an example which use `enp24s0f0` interface.
 
-```bash
+```json
     "interfaces": [
         {
             "name": "kernel:enp24s0f0",
@@ -37,7 +37,7 @@ Refer to sections "5. Run the sample application" in the [Linux run guide](run.m
 
 If you want to select kernel socket data path from the API level, please follow below example:
 
-```bash
+```c
   struct mtl_init_params* p;
   ...
   p->pmd[MTL_PORT_P] = MTL_PMD_KERNEL_SOCKET;

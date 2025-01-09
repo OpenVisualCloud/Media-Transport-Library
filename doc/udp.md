@@ -56,7 +56,7 @@ MUFD_CFG=app/udp/ufd_server.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libm
 
 ### 2.3. MUFD_CFG configuration
 
-The json file define all the required info for port instance detail. Example json can be found at [sample](../app/udp/ufd_server.json).
+The JSON file defines all the required info for port instance detail. Example JSON can be found at [sample](../app/udp/ufd_server.json).
 
 #### 2.3.1. Interfaces
 

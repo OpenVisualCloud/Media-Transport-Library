@@ -50,7 +50,8 @@ Below is the output from Intel® MLC Bandwidths on our reference setup:
 
 ```bash
 ./Linux/mlc
-
+```
+```text
 Measuring Peak Injection Memory Bandwidths for the system
 Bandwidths are in MB/sec (1 MB/sec = 1,000,000 Bytes/sec)
 Using all the threads from each core if Hyper-threading is enabled

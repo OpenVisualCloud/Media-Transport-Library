@@ -11,7 +11,7 @@ For Ubuntu:
 sudo apt-get install systemtap-sdt-dev
 ```
 
-For Centos:
+For CentOS:
 ```bash
 sudo yum install systemtap-sdt-devel
 ```
@@ -24,7 +24,7 @@ rm build
 ```
 
 Check the build log and below build messages indicate the USDT support is enabled successfully.
-```bash
+```text
 Program dtrace found: YES (/usr/bin/dtrace)
 Has header "sys/sdt.h" : YES
 Message: usdt tools check ok, build with USDT support
@@ -38,7 +38,7 @@ sudo bpftrace -l 'usdt:/usr/local/lib/x86_64-linux-gnu/libmtl.so:*'
 ```
 
 The example output:
-```bash
+```text
 usdt:/usr/local/lib/x86_64-linux-gnu/libmtl.so:ptp:ptp_msg
 usdt:/usr/local/lib/x86_64-linux-gnu/libmtl.so:ptp:ptp_result
 ```
@@ -55,7 +55,7 @@ All USDT probes is defined in [mt_usdt_provider.d](../lib/src/mt_usdt_provider.d
 ### 2.1. sys tracing
 
 Available probes:
-```bash
+```c
 provider sys {
   /* attach to enable the usdt log msg at runtime */
   probe log_msg(int level, char* msg);
@@ -80,7 +80,7 @@ sudo BPFTRACE_STRLEN=128 bpftrace -e 'usdt::sys:log_msg { printf("%s l%d: %s", s
 
 Example output like below:
 
-```bash
+```text
 10:58:51 l2: * *    M T    D E V   S T A T E   * *
 10:58:51 l2: DEV(0): Avr rate, tx: 2610.318120 Mb/s, rx: 0.009552 Mb/s, pkts, tx: 2465803, rx: 127
 10:58:51 l2: DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2602.483541 Mb/s, pkts, tx: 0, rx: 2465819
@@ -116,7 +116,7 @@ sudo bpftrace -e 'usdt::sys:tasklet_time_measure { printf("%s", strftime("%H:%M:
 
 Then you can then monitor the tasklet execution time by reviewing the relevant log entries.
 
-```bash
+```text
 MTL: 2024-03-26 16:00:19, * *    M T    D E V   S T A T E   * *
 MTL: 2024-03-26 16:00:19, DEV(0): Avr rate, tx: 2612.232158 Mb/s, rx: 0.000000 Mb/s, pkts, tx: 2476211, rx: 0
 MTL: 2024-03-26 16:00:19, DEV(1): Avr rate, tx: 0.000000 Mb/s, rx: 2604.192667 Mb/s, pkts, tx: 0, rx: 2476103
@@ -159,7 +159,7 @@ sudo bpftrace -e 'usdt::sys:sessions_time_measure { printf("%s", strftime("%H:%M
 
 Then you can then monitor the sessions tasklet execution time by reviewing the relevant log entries.
 
-```bash
+```text
 MTL: 2024-03-27 10:53:59, TX_VIDEO_SESSION(0,0:app_tx_video_0): fps 59.999419, frame 600 pkts 2467064:2466461 inflight 147929:148040
 MTL: 2024-03-27 10:53:59, TX_VIDEO_SESSION(0,0): throughput 2611.029471 Mb/s: 0.000000 Mb/s, cpu busy 2.395878
 MTL: 2024-03-27 10:53:59, TX_VIDEO_SESSION(0,0): tasklet time avg 0.01us max 56.88us min 0.00us
@@ -205,7 +205,7 @@ sudo bpftrace -e 'usdt::sys:cni_pcap_dump { printf("%s p%d: dumped pcap file %s 
 
 Example output like below:
 
-```bash
+```text
 16:10:07 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 81
 16:10:07 p1: dumped pcap file cni_p1_10000_Grf8CU.pcapng pkts 0
 16:10:17 p0: dumped pcap file cni_p0_10000_G8iOd6.pcapng pkts 206
@@ -216,7 +216,7 @@ Example output like below:
 
 Available probes:
 
-```bash
+```c
 provider ptp {
   probe ptp_msg(int port, int stage, uint64_t value);
   probe ptp_result(int port, int64_t delta, int64_t correct);
@@ -233,7 +233,7 @@ sudo bpftrace -e 'usdt::ptp:ptp_msg { printf("%s p%u,t%u:%llu\n", strftime("%H:%
 
 Example output like below:
 
-```bash
+```text
 11:00:37 p0,t2:1711077318712839835
 11:00:37 p0,t1:1711077318712861878
 11:00:37 p0,t3:1711077318719139980
@@ -250,7 +250,7 @@ sudo bpftrace -e 'usdt::ptp:ptp_result { printf("%s p%d,delta:%d,correct_delta:%
 
 Example output like below:
 
-```bash
+```text
 11:00:45 p0,delta:24622,correct_delta:470
 11:00:45 p0,delta:25426,correct_delta:633
 ```
@@ -258,7 +258,7 @@ Example output like below:
 ### 2.3. st20 tracing
 
 Available probes:
-```bash
+```c
 provider st20 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp);
@@ -288,7 +288,7 @@ sudo bpftrace -e 'usdt::st20:tx_frame_next { printf("%s m%d,s%d: next frame %d(a
 
 Example output like below:
 
-```bash
+```text
 15:49:13 m0,s0: next frame 0(addr:0x3206b0e600, tmstamp:2464858558)
 15:49:13 m0,s0: next frame 1(addr:0x320710e600, tmstamp:2464860060)
 15:49:13 m0,s0: next frame 0(addr:0x3206b0e600, tmstamp:2464861561)
@@ -305,7 +305,7 @@ sudo bpftrace -e 'usdt::st20:tx_frame_done { printf("%s m%d,s%d: done frame %d(t
 
 Example output like below:
 
-```bash
+```text
 15:49:43 m0,s0: done frame 0(tmstamp:2467616814)
 15:49:43 m0,s0: done frame 1(tmstamp:2467618315)
 15:49:44 m0,s0: done frame 0(tmstamp:2467619817)
@@ -335,7 +335,7 @@ sudo bpftrace -e 'usdt::st20:rx_frame_available { printf("%s m%d,s%d: available 
 
 Example output like below:
 
-```bash
+```text
 09:42:25 m1,s0: available frame 0(addr:0x3209f0e600, tmstamp:2339234963, data size:5184000)
 09:42:25 m1,s0: available frame 0(addr:0x3209f0e600, tmstamp:2339236465, data size:5184000)
 09:42:25 m1,s0: available frame 0(addr:0x3209f0e600, tmstamp:2339237966, data size:5184000)
@@ -352,7 +352,7 @@ sudo bpftrace -e 'usdt::st20:rx_frame_put { printf("%s m%d,s%d: put frame %d(add
 
 Example output like below:
 
-```bash
+```text
 10:42:08 m1,s0: put frame 0(addr:0x3209f0e600)
 10:42:08 m1,s0: put frame 0(addr:0x3209f0e600)
 10:42:08 m1,s0: put frame 0(addr:0x3209f0e600)
@@ -390,7 +390,7 @@ sudo bpftrace -e 'usdt::st20:tx_frame_dump { printf("%s m%d,s%d: dump frame %p s
 
 Example output like below:
 
-```bash
+```text
 15:55:15 m0,s0: dump frame 0x320850e600 size 5184000 to imtl_usdt_st20tx_m0s0_1920_1080_5T6CWy.yuv
 15:55:20 m0,s0: dump frame 0x3207f0e600 size 5184000 to imtl_usdt_st20tx_m0s0_1920_1080_uI7c3W.yuv
 ```
@@ -405,7 +405,7 @@ sudo bpftrace -e 'usdt::st20:rx_frame_dump { printf("%s m%d,s%d: dump frame %p s
 
 Example output like below:
 
-```bash
+```text
 15:57:35 m1,s0: dump frame 0x320bb0e600 size 5184000 to imtl_usdt_st20rx_m1s0_1920_1080_MEFuOW.yuv
 15:57:40 m1,s0: dump frame 0x320bb0e600 size 5184000 to imtl_usdt_st20rx_m1s0_1920_1080_ehmjPp.yuv
 ```
@@ -420,7 +420,7 @@ sudo bpftrace -e 'usdt::st20:rx_pcap_dump { printf("%s m%d,s%dp%d: dumped pcap f
 
 Example output like below:
 
-```bash
+```text
 13:53:27 m1,s0p0: dumped pcap file st22rx_s0p0_20570_C9ErTF.pcapng pkts 20570
 ```
 
@@ -434,7 +434,7 @@ sudo bpftrace -e 'usdt::st20:rx_frame_incomplete { printf("%s m%d,s%d: incomplet
 
 Example output like below if MTL failed to constructed one full frame:
 
-```bash
+```text
 11:05:54 m0,s0: incomplete frame 1(tmstamp:1167274660, recv size:2891700, expect full size: 5184000)
 11:06:45 m0,s0: incomplete frame 1(tmstamp:1172316697, recv size:4956840, expect full size: 5184000)
 ```
@@ -442,7 +442,7 @@ Example output like below if MTL failed to constructed one full frame:
 ### 2.4. st30 tracing
 
 Available probes:
-```bash
+```c
 provider st30 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va);
@@ -468,7 +468,7 @@ sudo bpftrace -e 'usdt::st30:tx_frame_next { printf("%s m%d,s%d: next frame %d(a
 
 Example output like below:
 
-```bash
+```text
 11:13:38 m0,s0: next frame 0(addr:0x3202400100)
 11:13:38 m0,s0: next frame 1(addr:0x3207e07e80)
 11:13:38 m0,s0: next frame 0(addr:0x3202400100)
@@ -485,7 +485,7 @@ sudo bpftrace -e 'usdt::st30:tx_frame_done { printf("%s m%d,s%d: done frame %d(t
 
 Example output like below:
 
-```bash
+```text
 11:14:06 m0,s0: done frame 0(tmstamp:2750348096)
 11:14:06 m0,s0: done frame 1(tmstamp:2750348144)
 11:14:06 m0,s0: done frame 0(tmstamp:2750348192)
@@ -515,7 +515,7 @@ sudo bpftrace -e 'usdt::st30:rx_frame_available { printf("%s m%d,s%d: available 
 
 Example output like below:
 
-```bash
+```text
 13:07:46 m0,s0: available frame 0(addr:0x320b60dbc0, tmstamp:3077715200, data size:192)
 13:07:46 m0,s0: available frame 0(addr:0x320b60dbc0, tmstamp:3077715248, data size:192)
 13:07:46 m0,s0: available frame 0(addr:0x320b60dbc0, tmstamp:3077715296, data size:192)
@@ -532,7 +532,7 @@ sudo bpftrace -e 'usdt::st30:rx_frame_put { printf("%s m%d,s%d: put frame %d(add
 
 Example output like below:
 
-```bash
+```text
 13:08:11 m0,s0: put frame 0(addr:0x320b60dbc0)
 13:08:11 m0,s0: put frame 0(addr:0x320b60dbc0)
 13:08:11 m0,s0: put frame 0(addr:0x320b60dbc0)
@@ -570,7 +570,7 @@ sudo bpftrace -e 'usdt::st30:tx_frame_dump { printf("%s m%d,s%d: dump %d frames 
 
 Example output like below:
 
-```bash
+```text
 17:17:35 m0,s0: dump 1000 frames to imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm
 17:17:36 m0,s0: dump 2000 frames to imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm
 17:17:37 m0,s0: dump 3000 frames to imtl_usdt_st30tx_m0s0_48000_24_c2_eNlkQk.pcm
@@ -592,7 +592,7 @@ sudo bpftrace -e 'usdt::st30:rx_frame_dump { printf("%s m%d,s%d: dump %d frames 
 
 Example output like below:
 
-```bash
+```text
 10:26:07 m0,s0: dump 1000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
 10:26:08 m0,s0: dump 2000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
 10:26:09 m0,s0: dump 3000 frames to imtl_usdt_st30rx_m0s0_48000_24_c2_qeITcK.pcm
@@ -614,14 +614,14 @@ sudo bpftrace -e 'usdt::st30:rx_pcap_dump { printf("%s m%d,s%dp%d: dumped pcap f
 
 Example output like below:
 
-```bash
+```text
 14:46:02 m0,s0p0: dumped pcap file st30rx_s0p0_5000_FxX2r5.pcapng pkts 5000
 ```
 
 ### 2.5. st40 tracing
 
 Available probes:
-```bash
+```c
 provider st40 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t meta_num, int total_udw);
@@ -643,7 +643,7 @@ sudo bpftrace -e 'usdt::st40:tx_frame_next { printf("%s m%d,s%d: next frame %d(a
 
 Example output like below:
 
-```bash
+```text
 13:33:04 m0,s0: next frame 0(addr:0x3207e01c40), meta:1 udw:114
 13:33:04 m0,s0: next frame 1(addr:0x3207e01a40), meta:1 udw:114
 13:33:04 m0,s0: next frame 0(addr:0x3207e01c40), meta:1 udw:114
@@ -660,7 +660,7 @@ sudo bpftrace -e 'usdt::st40:tx_frame_done { printf("%s m%d,s%d: done frame %d(t
 
 Example output like below:
 
-```bash
+```text
 13:34:41 m0,s0: done frame 0(tmstamp:2694872452)
 13:34:41 m0,s0: done frame 1(tmstamp:2694873954)
 13:34:41 m0,s0: done frame 0(tmstamp:2694875455)
@@ -690,7 +690,7 @@ sudo bpftrace -e 'usdt::st40:rx_mbuf_available { printf("%s m%d,s%d: available m
 
 Example output like below:
 
-```bash
+```text
 14:01:35 m0,s0: available mbuf:0x3207786e80, tmstamp:2840073508, data size:194
 14:01:35 m0,s0: available mbuf:0x32077866c0, tmstamp:2840075010, data size:194
 14:01:35 m0,s0: available mbuf:0x3207785f00, tmstamp:2840076511, data size:194
@@ -707,7 +707,7 @@ sudo bpftrace -e 'usdt::st40:rx_mbuf_put { printf("%s m%d,s%d: put mbuf:%p\n", s
 
 Example output like below:
 
-```bash
+```text
 14:03:15 m0,s0: put mbuf:0x3207882cc0
 14:03:15 m0,s0: put mbuf:0x3207882500
 14:03:15 m0,s0: put mbuf:0x3207881d40
@@ -737,7 +737,7 @@ sudo bpftrace -e 'usdt::st40:rx_mbuf_enqueue_fail { printf("%s m%d,s%d: mbuf %p 
 ### 2.6. st20p tracing
 
 Available probes:
-```bash
+```c
 provider st20p {
   /* tx */
   probe tx_frame_get(int idx, int f_idx, void* va);
@@ -764,7 +764,7 @@ sudo bpftrace -e 'usdt::st20p:tx_frame_get { printf("%s s%d: get frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 09:20:25 s0: get frame 0(addr:0x3205f0e600)
 09:20:25 s0: get frame 1(addr:0x320650e600)
 09:20:25 s0: get frame 0(addr:0x3205f0e600)
@@ -781,7 +781,7 @@ sudo bpftrace -e 'usdt::st20p:tx_frame_put { printf("%s s%d: put frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 09:21:10 s0: put frame 0(addr:0x3205f0e600,stat:3)
 09:21:10 s0: put frame 1(addr:0x320650e600,stat:3)
 09:21:10 s0: put frame 0(addr:0x3205f0e600,stat:3)
@@ -798,7 +798,7 @@ sudo bpftrace -e 'usdt::st20p:tx_frame_next { printf("%s s%d: next frame %d\n", 
 
 Example output like below:
 
-```bash
+```text
 09:21:55 s0: next frame 0
 09:21:55 s0: next frame 1
 09:21:55 s0: next frame 0
@@ -815,7 +815,7 @@ sudo bpftrace -e 'usdt::st20p:tx_frame_done { printf("%s s%d: done frame %d(time
 
 Example output like below:
 
-```bash
+```text
 09:22:58 s0: done frame 0(timestamp:3639347793)
 09:22:58 s0: done frame 1(timestamp:3639349294)
 09:22:58 s0: done frame 0(timestamp:3639350796)
@@ -843,7 +843,7 @@ sudo bpftrace -e 'usdt::st20p:rx_frame_get { printf("%s s%d: get frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 10:37:16 s0: get frame 0(addr:0x3208a17000)
 10:37:16 s0: get frame 1(addr:0x3209217000)
 10:37:16 s0: get frame 2(addr:0x3209a17000)
@@ -859,7 +859,7 @@ sudo bpftrace -e 'usdt::st20p:rx_frame_put { printf("%s s%d: put frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 10:37:33 s0: put frame 0(addr:0x3208a17000)
 10:37:33 s0: put frame 1(addr:0x3209217000)
 10:37:33 s0: put frame 2(addr:0x3209a17000)
@@ -875,7 +875,7 @@ sudo bpftrace -e 'usdt::st20p:rx_frame_available { printf("%s s%d: available fra
 
 Example output like below:
 
-```bash
+```text
 10:37:57 s0: available frame 0(addr:0x320a30e600, tmstamp:4044186727, data size:5184000)
 10:37:57 s0: available frame 1(addr:0x320a90e600, tmstamp:4044188229, data size:5184000)
 10:37:57 s0: available frame 2(addr:0x320a30e600, tmstamp:4044189730, data size:5184000)
@@ -901,7 +901,7 @@ sudo bpftrace -e 'usdt::st20p:tx_frame_dump { printf("%s s%d: dump frame %p size
 
 Example output like below:
 
-```bash
+```text
 13:26:41 s0: dump frame 0x3205a17000 size 8294400 to imtl_usdt_st20ptx_s0_1920_1080_I0y9V0.yuv
 13:26:46 s0: dump frame 0x3206217000 size 8294400 to imtl_usdt_st20ptx_s0_1920_1080_CzYDQe.yuv
 ```
@@ -916,7 +916,7 @@ sudo bpftrace -e 'usdt::st20p:rx_frame_dump { printf("%s s%d: dump frame %p size
 
 Example output like below:
 
-```bash
+```text
 13:27:24 s0: dump frame 0x3209a17000 size 8294400 to imtl_usdt_st20prx_s0_1920_1080_rKtpGn.yuv
 13:27:29 s0: dump frame 0x3209217000 size 8294400 to imtl_usdt_st20prx_s0_1920_1080_UKWN27.yuv
 ```
@@ -924,7 +924,7 @@ Example output like below:
 ### 2.7. st22 tracing
 
 Available probes:
-```bash
+```c
 provider st22 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp);
@@ -950,7 +950,7 @@ sudo bpftrace -e 'usdt::st22:tx_frame_next { printf("%s m%d,s%d: next frame %d(a
 
 Example output like below:
 
-```bash
+```text
 10:08:04 m0,s0: next frame 0(addr:0x32042400c0, tmstamp:3519515195, size:777600)
 10:08:04 m0,s0: next frame 1(addr:0x3203a400c0, tmstamp:3519516696, size:777600)
 10:08:04 m0,s0: next frame 0(addr:0x32042400c0, tmstamp:3519518198, size:777600)
@@ -967,7 +967,7 @@ sudo bpftrace -e 'usdt::st22:tx_frame_done { printf("%s m%d,s%d: done frame %d(t
 
 Example output like below:
 
-```bash
+```text
 13:57:31 m0,s0: done frame 0(tmstamp:12993706)
 13:57:31 m0,s0: done frame 1(tmstamp:12995207)
 13:57:31 m0,s0: done frame 0(tmstamp:12996709)
@@ -997,7 +997,7 @@ sudo bpftrace -e 'usdt::st22:rx_frame_available { printf("%s m%d,s%d: available 
 
 Example output like below:
 
-```bash
+```text
 14:20:13 m1,s0: available frame 0(addr:0x320890e600, tmstamp:135541631, data size:777600)
 14:20:13 m1,s0: available frame 1(addr:0x3208f0e600, tmstamp:135543133, data size:777600)
 14:20:13 m1,s0: available frame 0(addr:0x320890e600, tmstamp:135544634, data size:777600)
@@ -1014,7 +1014,7 @@ sudo bpftrace -e 'usdt::st22:rx_frame_put { printf("%s m%d,s%d: put frame %d(add
 
 Example output like below:
 
-```bash
+```text
 14:20:43 m1,s0: put frame 0(addr:0x320890e600)
 14:20:43 m1,s0: put frame 1(addr:0x3208f0e600)
 14:20:43 m1,s0: put frame 0(addr:0x320890e600)
@@ -1052,7 +1052,7 @@ sudo bpftrace -e 'usdt::st22:tx_frame_dump { printf("%s m%d,s%d: dump frame %p s
 
 Example output like below:
 
-```bash
+```text
 14:12:14 m0,s0: dump frame 0x3203a400c0 size 777660 to imtl_usdt_st22tx_m0s0_1920_1080_OP9MbJ.raw
 14:12:19 m0,s0: dump frame 0x32032400c0 size 777660 to imtl_usdt_st22tx_m0s0_1920_1080_rAt7U8.raw
 ```
@@ -1067,7 +1067,7 @@ sudo bpftrace -e 'usdt::st22:rx_frame_dump { printf("%s m%d,s%d: dump frame %p s
 
 Example output like below:
 
-```bash
+```text
 14:26:18 m1,s0: dump frame 0x3208f0e600 size 777600 to imtl_usdt_st22rx_m1s0_1920_1080_ctwWDR.raw
 14:26:23 m1,s0: dump frame 0x320890e600 size 777600 to imtl_usdt_st22rx_m1s0_1920_1080_G5EWrj.raw
 ```
@@ -1075,7 +1075,7 @@ Example output like below:
 ### 2.8. st22p tracing
 
 Available probes:
-```bash
+```c
 provider st22p {
   /* tx */
   probe tx_frame_get(int idx, int f_idx, void* va);
@@ -1103,7 +1103,7 @@ sudo bpftrace -e 'usdt::st22p:tx_frame_get { printf("%s s%d: get frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:01:15 s0: get frame 0(addr:0x3205b0e600)
 15:01:15 s0: get frame 1(addr:0x320610e600)
 15:01:15 s0: get frame 0(addr:0x3205b0e600)
@@ -1120,7 +1120,7 @@ sudo bpftrace -e 'usdt::st22p:tx_frame_put { printf("%s s%d: put frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:02:34 s0: put frame 0(addr:0x3205b0e600)
 15:02:34 s0: put frame 1(addr:0x320610e600)
 15:02:34 s0: put frame 0(addr:0x3205b0e600)
@@ -1137,7 +1137,7 @@ sudo bpftrace -e 'usdt::st22p:tx_frame_next { printf("%s s%d: next frame %d\n", 
 
 Example output like below:
 
-```bash
+```text
 15:04:37 s0: next frame 0
 15:04:37 s0: next frame 1
 15:04:37 s0: next frame 0
@@ -1154,7 +1154,7 @@ sudo bpftrace -e 'usdt::st22p:tx_frame_done { printf("%s s%d: done frame %d(time
 
 Example output like below:
 
-```bash
+```text
 15:05:38 s0: done frame 0(timestamp:380829674)
 15:05:38 s0: done frame 1(timestamp:380831176)
 15:05:38 s0: done frame 0(timestamp:380832677)
@@ -1182,7 +1182,7 @@ sudo bpftrace -e 'usdt::st22p:rx_frame_get { printf("%s s%d: get frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:10:54 s0: get frame 0(addr:0x320770e600)
 15:10:54 s0: get frame 1(addr:0x3207d0e600)
 15:10:54 s0: get frame 2(addr:0x320830e600)
@@ -1198,7 +1198,7 @@ sudo bpftrace -e 'usdt::st22p:rx_frame_put { printf("%s s%d: put frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:11:08 s0: put frame 0(addr:0x320770e600)
 15:11:08 s0: put frame 1(addr:0x3207d0e600)
 15:11:08 s0: put frame 2(addr:0x320830e600)
@@ -1214,7 +1214,7 @@ sudo bpftrace -e 'usdt::st22p:rx_frame_available { printf("%s s%d: available fra
 
 Example output like below:
 
-```bash
+```text
 15:11:24 s0: available frame 0(addr:0x320890e600, tmstamp:411970784, data size:777600)
 15:11:24 s0: available frame 1(addr:0x3208f0e600, tmstamp:411972286, data size:777600)
 15:11:24 s0: available frame 2(addr:0x320890e600, tmstamp:411973787, data size:777600)
@@ -1240,7 +1240,7 @@ sudo bpftrace -e 'usdt::st22p:tx_frame_dump { printf("%s s%d: dump frame %p size
 
 Example output like below:
 
-```bash
+```text
 15:21:59 s0: dump frame 0x320610e600 size 5184000 to imtl_usdt_st22ptx_s0_1920_1080_2XVMPQ.yuv
 15:22:04 s0: dump frame 0x3205b0e600 size 5184000 to imtl_usdt_st22ptx_s0_1920_1080_oOJwjO.yuv
 ```
@@ -1255,7 +1255,7 @@ sudo bpftrace -e 'usdt::st22p:rx_frame_dump { printf("%s s%d: dump frame %p size
 
 Example output like below:
 
-```bash
+```text
 15:22:59 s0: dump frame 0x320830e600 size 5184000 to imtl_usdt_st22prx_s0_1920_1080_gwSetx.yuv
 15:23:04 s0: dump frame 0x3207d0e600 size 5184000 to imtl_usdt_st22prx_s0_1920_1080_N72BCd.yuv
 ```
@@ -1270,7 +1270,7 @@ sudo bpftrace -e 'usdt::st22p:tx_encode_get { printf("%s s%d: get encode %d(src:
 
 Example output like below:
 
-```bash
+```text
 16:20:25 s0: get encode 0(src:0x3205b0e600,dst:0x3203a400fc)
 16:20:25 s0: get encode 1(src:0x320610e600,dst:0x32032400fc)
 ```
@@ -1285,7 +1285,7 @@ sudo bpftrace -e 'usdt::st22p:tx_encode_put { printf("%s s%d: put encode %d(src:
 
 Example output like below:
 
-```bash
+```text
 16:20:45 s0: put encode 0(src:0x3205b0e600,dst:0x3203a400fc), result: 0, codestream size: 777600
 16:20:45 s0: put encode 1(src:0x320610e600,dst:0x32032400fc), result: 0, codestream size: 777600
 ```
@@ -1309,7 +1309,7 @@ sudo bpftrace -e 'usdt::st22p:rx_decode_get { printf("%s s%d: get decode %d(src:
 
 Example output like below:
 
-```bash
+```text
 16:18:43 s0: get decode 0(src:0x3208f0e600,dst:0x320770e600), codestream size: 777600
 16:18:43 s0: get decode 1(src:0x320890e600,dst:0x3207d0e600), codestream size: 777600
 16:18:43 s0: get decode 2(src:0x3208f0e600,dst:0x320830e600), codestream size: 777600
@@ -1325,7 +1325,7 @@ sudo bpftrace -e 'usdt::st22p:rx_decode_put { printf("%s s%d: put decode %d(src:
 
 Example output like below:
 
-```bash
+```text
 16:22:03 s0: put decode 0(src:0x320890e600,dst:0x320770e600), result: 0
 16:22:03 s0: put decode 1(src:0x3208f0e600,dst:0x3207d0e600), result: 0
 16:22:03 s0: put decode 2(src:0x320890e600,dst:0x320830e600), result: 0
@@ -1343,7 +1343,7 @@ usdt::st22p:rx_decode_put { printf("%s s%d: put decode %d(src:%p,dst:%p), result
 ### 2.9. st30p tracing
 
 Available probes:
-```bash
+```c
 provider st30p {
   /* tx */
   probe tx_frame_get(int idx, int f_idx, void* va);
@@ -1371,7 +1371,7 @@ sudo bpftrace -e 'usdt::st30p:tx_frame_get { printf("%s s%d: get frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:50:45 s0: get frame 0(addr:0x3203405500)
 15:50:45 s0: get frame 1(addr:0x3203404940)
 15:50:45 s0: get frame 2(addr:0x3203403d80)
@@ -1387,7 +1387,7 @@ sudo bpftrace -e 'usdt::st30p:tx_frame_put { printf("%s s%d: put frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:51:27 s0: put frame 0(addr:0x3203405500)
 15:51:27 s0: put frame 1(addr:0x3203404940)
 15:51:27 s0: put frame 2(addr:0x3203403d80)
@@ -1403,7 +1403,7 @@ sudo bpftrace -e 'usdt::st30p:tx_frame_next { printf("%s s%d: next frame %d\n", 
 
 Example output like below:
 
-```bash
+```text
 15:51:45 s0: next frame 0
 15:51:45 s0: next frame 1
 15:51:45 s0: next frame 2
@@ -1419,7 +1419,7 @@ sudo bpftrace -e 'usdt::st30p:tx_frame_done { printf("%s s%d: done frame %d(time
 
 Example output like below:
 
-```bash
+```text
 15:51:58 s0: done frame 0(timestamp:447475136)
 15:51:58 s0: done frame 1(timestamp:447475616)
 15:51:58 s0: done frame 2(timestamp:447476096)
@@ -1446,7 +1446,7 @@ sudo bpftrace -e 'usdt::st30p:rx_frame_get { printf("%s s%d: get frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:57:50 s0: get frame 0(addr:0x3203402140)
 15:57:50 s0: get frame 1(addr:0x3203401580)
 15:57:50 s0: get frame 2(addr:0x32034009c0)
@@ -1462,7 +1462,7 @@ sudo bpftrace -e 'usdt::st30p:rx_frame_put { printf("%s s%d: put frame %d(addr:%
 
 Example output like below:
 
-```bash
+```text
 15:58:14 s0: put frame 0(addr:0x3203402140)
 15:58:14 s0: put frame 1(addr:0x3203401580)
 15:58:14 s0: put frame 2(addr:0x32034009c0)
@@ -1478,7 +1478,7 @@ sudo bpftrace -e 'usdt::st30p:rx_frame_available { printf("%s s%d: available fra
 
 Example output like below:
 
-```bash
+```text
 15:59:45 s0: available frame 0(addr:0x32034009c0, tmstamp:469935200, data size:2880)
 15:59:46 s0: available frame 1(addr:0x3203401580, tmstamp:469935728, data size:2880)
 15:59:46 s0: available frame 2(addr:0x3203402140, tmstamp:469936208, data size:2880)
@@ -1504,7 +1504,7 @@ sudo bpftrace -e 'usdt::st30p:tx_frame_dump { printf("%s s%d: dump %d frames to 
 
 Example output like below:
 
-```bash
+```text
 16:22:22 s0: dump 100 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
 16:22:23 s0: dump 200 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
 16:22:24 s0: dump 300 frames to imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm
@@ -1532,7 +1532,7 @@ sudo bpftrace -e 'usdt::st30p:rx_frame_dump { printf("%s s%d: dump %d frames to 
 
 Example output like below:
 
-```bash
+```text
 09:00:34 s0: dump 100 frames to imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm
 09:00:35 s0: dump 200 frames to imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm
 09:00:36 s0: dump 300 frames to imtl_usdt_st30prx_s0_48000_24_c2_X0ZwK2.pcm

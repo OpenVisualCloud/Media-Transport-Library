@@ -14,7 +14,7 @@ For Ubuntu:
 sudo apt-get install swig
 ```
 
-For Centos:
+For CentOS:
 
 ```bash
 sudo yum install swig
@@ -65,7 +65,7 @@ sudo python3 setup.py install
 
 Checking the log to see the path installed.
 
-```bash
+```text
 creating /usr/local/lib/python3.10/dist-packages/pymtl-0.1-py3.10-linux-x86_64.egg
 Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-packages
 ```

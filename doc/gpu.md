@@ -33,7 +33,7 @@ Prepare a file (test.yuv) of 1920x1080 UYVY frames to send. You can refer to [ru
 Run RX Sample App
 You need the SDL library to display the received frame.
 
-``` bash
+```bash
 ./build/app/GpuDirectVideoRxMultiSample 192.168.99.111 192.168.99.110 20000
 ```
 

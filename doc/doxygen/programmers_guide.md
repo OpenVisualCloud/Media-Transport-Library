@@ -12,7 +12,7 @@
 
  you could refer app/sample/tx_video_sample.c for the whole sample
 
-```bash
+```c
 //create device
 //set port interface and its ip. if two ports is use, seting num_port 2 and ST_PORT_R.
 struct st_init_params param;
@@ -74,7 +74,7 @@ st_uninit(dev_handle);
 
 app thread to get the frame buf and feed data to it, you could refer tx_video_app.c in app/src folder
 
-```bash
+```c
 static void* app_tx_video_frame_thread(void* arg) {
   //wait the frame tx done notification from notify_frame_done
 
@@ -90,8 +90,6 @@ static void* app_tx_video_frame_thread(void* arg) {
 }
 ```
 
-\n
-
 @subsection software_interactions_flow_tx_rtp Transmitter rtp mode
 
  app takes resposibilty of rtp encapsulation
@@ -102,7 +100,7 @@ static void* app_tx_video_frame_thread(void* arg) {
 
  you could refer app/sample/tx_rtp_video_sample.c for the whole sample of st22 case
 
-```bash
+```c
 //create device
 //set port interface and its ip. if two ports is use, seting num_port 2 and ST_PORT_R.
 struct st_init_params param;
@@ -163,7 +161,7 @@ st_uninit(dev_handle);
 
 app thread to feed encapsulated rtp buf, you could refer tx_video_app.c in app/src folder
 
-```bash
+```c
 static void* app_tx_video_rtp_thread(void* arg) {
   //wait the rtp tx done notification from notify_rtp_done if there is no available mbuf in the rte ring.
 
@@ -179,8 +177,6 @@ static void* app_tx_video_rtp_thread(void* arg) {
 }
 ```
 
-\n
-
 @subsection software_interactions_flow_rx_frame Receiver frame mode
 
  lib takes resposibilty of rtp decapsulation
@@ -189,7 +185,7 @@ static void* app_tx_video_rtp_thread(void* arg) {
 
  you could refer app/sample/rx_video_sample.c for the whole sample
 
-```bash
+```c
 //create device
 //set port interface and its ip. if two ports is use, seting num_port 2 and ST_PORT_R.
 struct st_init_params param;
@@ -247,7 +243,7 @@ st_uninit(dev_handle);
 
 app thread to get the frame buf, dispose it and return to lib.you could refer rx_video_app.c in app/src folder
 
-```bash
+```c
 static void* app_rx_video_frame_thread(void* arg) {
   //wait the frame rx done notification from rx_frame_ready
 
@@ -263,8 +259,6 @@ static void* app_rx_video_frame_thread(void* arg) {
 }
 ```
 
-\n
-
 @subsection software_interactions_flow_rx_rtp Receiver rtp mode
 
  app takes resposibilty of rtp decapsulation
@@ -273,7 +267,7 @@ static void* app_rx_video_frame_thread(void* arg) {
 
 you could refer app/sample/rx_rtp_video_sample.c for the whole sample of st22 case
 
-```bash
+```c
 //create device
 //set port interface and its ip. if two ports is use, seting num_port 2 and ST_PORT_R.
 struct st_init_params param;
@@ -330,7 +324,7 @@ st_uninit(dev_handle);
 
 app thread to consume rtp, you could refer rx_video_app.c in app/src folder
 
-```bash
+```c
 static void* app_rx_video_rtp_thread(void* arg) {
   //wait the rtp rx done notification from rx_rtp_ready if there is no mbuf in the rte_ring
 
@@ -346,4 +340,3 @@ static void* app_rx_video_rtp_thread(void* arg) {
 }
 ```
 
-\n

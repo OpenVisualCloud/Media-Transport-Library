@@ -44,11 +44,11 @@ sudo sysctl -w net.ipv4.conf.all.rp_filter=0
 
 ## 4. Run AF_XDP PMD with root user
 
-AF_XDP PMD rely on kernel AF_XDP support which need root access, and please refer to [dpdk_af_xdp config](../../tests/scripts/dpdk_af_xdp_json/) for how to config the AF_XDP pmd in json config.
+AF_XDP PMD rely on kernel AF_XDP support which need root access, and please refer to [dpdk_af_xdp config](../../tests/scripts/dpdk_af_xdp_json/) for how to config the AF_XDP pmd in JSONs config.
 
 Customize the kernel network interface name `enp175s0f0np0` as your setup
 
-```bash
+```json
     "interfaces": [
         {
             "name": "af_xdp:enp175s0f0np0",
@@ -63,9 +63,9 @@ Customize the kernel network interface name `enp175s0f0np0` as your setup
 
 ### 5.1. No IP assigned
 
-If you see below error while running RxTxApp with AF_XDP json, please assign an IP for the port.
+If you see below error while running RxTxApp with AF_XDP JSON, please assign an IP for the port.
 
-```bash
+```text
 st_app_parse_json, using json-c version: 0.13.1
 ST: st_socket_get_if_ip, SIOCGIFADDR fail -1 for if enp175s0f0np0
 ST: st_user_params_check, get ip fail, if enp175s0f0np0

@@ -56,7 +56,7 @@ sudo apt-get update
 sudo apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
 ```
 
-CentOS/Redhat:
+CentOS/Red Hat:
 
 ```bash
 sudo yum update
@@ -90,7 +90,7 @@ See [Build Guide](build.md).
 
 Ensure the libbpf and libxdp dependencies are found:
 
-```bash
+```text
 # output from 'meson setup build'
 Run-time dependency libxdp found: YES 1.4.1
 Run-time dependency libbpf found: YES 1.2.0
@@ -143,7 +143,7 @@ sudo setcap 'cap_net_raw+ep' ./build/app/RxTxApp
 
 ### Running RxTxApp
 
-Just configure the network interface in json file like this, then you can refer to [Run Guide](run.md) for more usage:
+Just configure the network interface in JSON file like this, then you can refer to [Run Guide](run.md) for more usage:
 
 ```json
     "interfaces": [

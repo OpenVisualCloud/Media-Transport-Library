@@ -14,7 +14,7 @@ LD_LIBRARY_PATH=. ./sample_encode h265 -i::imtl -o test_4kp30.hevc -w 3840 -h 21
 
 Args information:
 
-```bash
+```text
    [-d]                            - NIC port BDF (eg: 0000:4b:00.0)
    [-dma]                          - DMA device BDF (eg: 0000:01:00.0)
    [-port]                         - UDP port number (eg: 20000)

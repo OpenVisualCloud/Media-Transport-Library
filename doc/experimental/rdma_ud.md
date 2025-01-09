@@ -34,7 +34,7 @@ Refer to the [Build Guide](../build.md) for detailed instructions.
 
 Ensure that the libibverbs and librdmacm dependencies are recognized:
 
-```bash
+```text
 # Output from 'meson setup build'
 Run-time dependency libibverbs found: YES 1.14.50.0
 Run-time dependency librdmacm found: YES 1.3.50.0

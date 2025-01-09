@@ -89,7 +89,7 @@
 * st20p: add interlace format support, refer to tests/script/loop_json/st20p_2v_1080i50.json
 * CI: add ossf scorecard support.
 * gtest: support run with AWS ena driver.
-* dhcp: set proto to dhcp in interfaces segment of json to enable DHCP.
+* dhcp: set proto to dhcp in interfaces segment of JSON to enable DHCP.
 * rx/video: support out of sequence for both first and last(marker) packet.
 * udp: add gso(general segment offload) for tx
 * udp: add reuse port support.

@@ -47,7 +47,7 @@ To get the latest DDP file (ice-1.3.30.0.pkg), visit <https://www.intel.com/cont
 
 The Windows ICE driver will try to search for the DDP file with the path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg". Please place the latest DDP file in one of these locations and rename it to ice.pkg. Otherwise, you will see the following error when running the RxTxApp.
 
-```bash
+```text
 ice_load_pkg(): failed to search file path
 ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter Safe Mode
 ```

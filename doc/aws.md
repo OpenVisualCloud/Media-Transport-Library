@@ -78,7 +78,7 @@ For single video stream whose bandwidth is grater than 5 Gbps (4k 30fps), arg `-
 
 ### 5.1. IP configuration
 
-Configure the AWS reserved private IP in json.
+Configure the AWS reserved private IP in JSON.
 
 You can enable DHCP to automatically configure the IPs:
 
@@ -91,7 +91,7 @@ You can enable DHCP to automatically configure the IPs:
     ],
 ```
 
-Or you can manually set the IPs(which should work with current security group). For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 172.31.32.0/20, you can edit the interfaces in json:
+Or you can manually set the IPs(which should work with current security group). For example, the Private IPv4 address is 172.31.42.123, the subnet IPv4 CIDR is 172.31.32.0/20, you can edit the interfaces in JSON:
 
 ```json
     "interfaces": [
@@ -133,7 +133,7 @@ To use the ENA PMD, IOMMU support is required. However, the .nxlarge instance do
 
 ### 7.2. No ptype support
 
-```bash
+```text
 MT: Warn: dev_config_port(0), failed to setup all ptype, only 0 supported
 ```
 
@@ -141,7 +141,7 @@ This is ENA PMD limitation, can be ignored for now.
 
 ### 7.3. Setting RSS hash fields is not supported (WA fixed)
 
-```bash
+```text
 ena_rss_hash_set(): Setting RSS hash fields is not supported. Using default values: 0xc30
 ```
 

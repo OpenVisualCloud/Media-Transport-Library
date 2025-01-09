@@ -86,7 +86,8 @@ If you only need to pass specific PFs/VFs to the container, you can use the foll
 
 ```bash
 ../script/nicctl.sh list all
-
+```
+```text
 ID      PCI BDF         Driver          NUMA    IOMMU   IF Name
 0       0000:4b:01.0    vfio-pci        0       311     *
 1       0000:4b:01.1    vfio-pci        0       312     *
@@ -122,6 +123,6 @@ docker-compose run imtl
 ```bash
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
-# Edit and Run the loop json file.
+# Edit and Run the loop JSON file.
 ./app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
 ```

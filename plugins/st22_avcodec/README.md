@@ -8,7 +8,7 @@
 sudo apt-get install libavcodec-dev
 ```
 
-### 1.2. Centos
+### 1.2. CentOS
 
 ```bash
 sudo yum install libavcodec-devel
@@ -36,7 +36,7 @@ ffmpeg -s 1920x1080 -pix_fmt yuv420p -i yuv420p_1080p.yuv -pix_fmt yuv422p yuv42
 
 ### 3.2. Edit kahawai.json to enable the st22 avcodec plugin
 
-```bash
+```json
         {
             "enabled": 1,
             "name": "st22_avcodec",

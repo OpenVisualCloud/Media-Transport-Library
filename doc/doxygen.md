@@ -8,7 +8,7 @@
 sudo apt-get install doxygen
 ```
 
-### 1.2. Centos
+### 1.2. CentOS
 
 ```bash
 sudo yum install doxygen

@@ -28,7 +28,7 @@ cd ..
 
 Double check the DDP version is right from the log.
 
-```bash
+```text
 ice_load_pkg_type(): Active package is: 1.3.9.99, ICE Wireless Edge Package (double VLAN mode)
 ```
 
@@ -49,7 +49,7 @@ ln -s ice_wireless_edge-1.3.9.99_1.pkg ice.pkg
 
 Check log to see if header split is enabled.
 
-```bash
+```text
 MT: rv_attach(0), hdr_split enabled in ops
 ice_hdrs_mbuf_set_cb(): RX queue 1 register hdrs mbuf cb at 0x7f59f0b2a310
 MT: dev_rx_queue_create_flow_raw(1), queue 1 succ

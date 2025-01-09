@@ -58,7 +58,7 @@ The instructions for this deprecated method can still be accessed in the [shm_lc
 
 Applications can also leverage the efficient tasklet framework. An important note is that the callback tasklet function cannot use any blocking methods, as the thread resource is shared among many tasklets. For more information, please refer to the [mtl_sch_api](../include/mtl_sch_api.h). Example usage is provided below:
 
-```bash
+```c
     mtl_sch_create
     mtl_sch_register_tasklet
     mtl_sch_start
@@ -72,7 +72,7 @@ Applications can also leverage the efficient tasklet framework. An important not
 The session creation and release APIs can be invoked at any time, even while the MTL instance is running.
 
 The standard inital flow is like below:
-```bash
+```c
   /* init mtl instance */
   mtl_init
   /* create sessions before starting mtl instance */
@@ -87,7 +87,7 @@ The standard inital flow is like below:
 ```
 
 MTL also supports session creation after the MTL instance has started; therefore, the following workflow operates correctly as well.
-```bash
+```c
   /* init mtl instance */
   mtl_init
   /* start mtl instance */
@@ -135,7 +135,7 @@ In MTL, memory management is directly handled through DPDK's memory-related APIs
 
 Applications can allocate hugepage memory through the following public APIs:
 
-```bash
+```c
   mtl_hp_malloc
   mtl_hp_zmalloc
   mtl_hp_free
@@ -155,7 +155,7 @@ The library incorporates a virtual data path backend layer, designed to abstract
 
 MTL selects the backend NIC based on input from the application. Users should specify both of the following parameters in `struct mtl_init_params`, the port name should follow the format described below, and the pmd type can be fetched using `mtl_pmd_by_port_name`.
 
-```bash
+```c
   /**
    *  MTL_PMD_DPDK_USER. Use PCIE BDF port, ex: 0000:af:01.0.
    *  MTL_PMD_KERNEL_SOCKET. Use kernel + ifname, ex: kernel:enp175s0f0.
@@ -331,7 +331,7 @@ An enhancement over frame mode, this feature provides more user-friendly get/put
 
 The Get/Put API is straightforward to use; consider the following example:
 
-```bash
+```c
   st20p_tx_create
   while (active) {
     st20p_tx_get_frame
@@ -355,7 +355,7 @@ We recommend using the pipeline mode, as it allows the application to concentrat
 
 Thanks to the plugin, the application can implement ST22 support using the following simplified example:
 
-```bash
+```c
   st22p_tx_create
   while (active) {
     st22p_tx_get_frame
@@ -386,7 +386,7 @@ MTL identifies and flags any duplicate packets as redundant. Furthermore, applic
 
 Enabling redundancy is straightforward with the setup parameters in the `st**_tx_create` and `st**_rx_create` calls. Simply set `uint8_t num_port` to 2 and provide the appropriate configurations for the redundant port and IP.
 
-```bash
+```c
   ops_tx.port.num_port = 2;
   if (ops_tx.port.num_port > 1) {
     memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
@@ -455,7 +455,7 @@ The API for these converters is publicly documented in the header file [st_conve
 
 To offer significant flexibility in switch/forward scenarios, it is advantageous for a session to be able to dynamically change the source or destination address at runtime, thereby obviating the need for applications to recreate a session. The MTL API below provides the capability to reconfigure the target address during runtime:
 
-```bash
+```c
   st20_tx_update_destination
   st20_rx_update_source
   st22_tx_update_destination
@@ -520,7 +520,7 @@ To save the `RTE_LOG` output to a file, please use the `mtl_openlog_stream` API 
 
 MTL logging includes a timestamp prefix with each output to indicate the timing with second-level accuracy. If millisecond-level accuracy is required, use the `mtl_set_log_prefix_formatter` function to define a custom prefix. Below is an example of a user-defined prefix formatter that includes milliseconds:
 
-```bash
+```c
 static void log_prefix_time_ms(char* buf, size_t sz) {
   struct timespec ts;
   struct tm tm;
@@ -535,7 +535,7 @@ static void log_prefix_time_ms(char* buf, size_t sz) {
 
 Applications can register a custom log printer by utilizing the `mtl_set_log_printer` API. This ensures that whenever MTL requires logging, the specified callback function is executed. Below is an example of a callback implementation; note that a variadic argument list is passed using `va_list`, and `vprintf` is utilized to handle the logging:
 
-```bash
+```c
 static void log_user_printer(enum mtl_log_level level, const char* format, ...) {
   MTL_MAY_UNUSED(level);
   va_list args;

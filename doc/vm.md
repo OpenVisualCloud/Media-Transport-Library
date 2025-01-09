@@ -33,7 +33,7 @@ You can also refer to [Run Guide](run.md).
 ```bash
 # root
 echo <num> > /sys/class/net/<interface>/device/sriov_numvfs
-```  
+```
 
 ### 1.6. Create a VM
 
@@ -89,14 +89,14 @@ After running `virt-install` command, the viewer will pop up and you can normall
 
     ```bash
     sudo phc2sys -s ens801f2 -m -w
-    ```  
+    ```
 
 ### 1.8. Enable IOMMU for VM
 
 ```bash
 virsh --connect qemu:///system
 edit vm0
-```  
+```
 
 * Add iommu device to devices
 
@@ -164,7 +164,9 @@ edit vm0
 * Check the time sync status, error should be tens of nanoseconds when ready
 
     ```bash
-    $ chronyc sources
+    chronyc sources
+    ```
+    ```text
     210 Number of sources = 1
     MS Name/IP address         Stratum Poll Reach LastRx Lastsample
     ==============================================================================

@@ -1,6 +1,6 @@
 # JSON Configuration Guide
 
-Media Transport Library sample app can use json file to configure sessions. this documentation explains how to write the json files.
+Media Transport Library sample app can use JSON file to configure sessions. This documentation explains how to write the JSON files.
 
 ## Examples
 
