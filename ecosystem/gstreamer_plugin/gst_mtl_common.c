@@ -209,7 +209,8 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
 void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_LOG_LEVEL,
-      g_param_spec_uint("log-level", "Log Level", "Set the log level.", 0, G_MAXUINT, 0,
+      g_param_spec_uint("log-level", "Log Level", "Set the log level (INFO 1 to CRIT 5).",
+                        1, MTL_LOG_LEVEL_MAX, 1,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -401,7 +402,6 @@ mtl_handle gst_mtl_common_mtl_init(struct mtl_init_params* p, StDevArgs* devArgs
     return NULL;
   }
 
-  memset(&mtl_init_params, 0, sizeof(mtl_init_params));
   mtl_init_params.num_ports = 0;
 
   if (gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs) == FALSE) {
