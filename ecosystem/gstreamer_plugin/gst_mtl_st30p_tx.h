@@ -47,67 +47,32 @@
 #ifndef __GST_MTL_ST30P_TX_H__
 #define __GST_MTL_ST30P_TX_H__
 
-#include <arpa/inet.h>
-#include <gst/audio/audio.h>
-#include <gst/gst.h>
-#include <mtl/mtl_api.h>
-#include <mtl/st30_pipeline_api.h>
+#include "gst_mtl_common.h"
 
 G_BEGIN_DECLS
-
-#ifndef NS_PER_MS
-#define NS_PER_MS (1000 * 1000)
-#endif
-
-#ifndef NS_PER_S
-#define NS_PER_S (1000 * NS_PER_MS)
-#endif
 
 #define GST_TYPE_MTL_ST30P_TX (gst_mtl_st30p_tx_get_type())
 G_DECLARE_FINAL_TYPE(Gst_Mtl_St30p_Tx, gst_mtl_st30p_tx, GST, MTL_ST30P_TX, GstAudioSink)
 
-typedef struct StDevArgs {
-  gchar port[MTL_PORT_MAX_LEN];
-  gchar local_ip_string[MTL_PORT_MAX_LEN];
-  gint tx_queues_cnt[MTL_PORT_MAX];
-  gint rx_queues_cnt[MTL_PORT_MAX];
-  gchar dma_dev[MTL_PORT_MAX_LEN];
-} StDevArgs;
-
-typedef struct StTxSessionPortArgs {
-  gchar tx_ip_string[MTL_PORT_MAX_LEN];
-  gchar port[MTL_PORT_MAX_LEN];
-  gint udp_port;
-  gint payload_type;
-} StTxSessionPortArgs;
-
 struct _Gst_Mtl_St30p_Tx {
   GstAudioSink element;
-  gboolean silent;
   mtl_handle mtl_lib_handle;
   st30p_tx_handle tx_handle;
+  guint frame_size;
 
+  /*
+   * Handles incomplete frame buffers when their size does not match the expected size.
+   */
   struct st30_frame* cur_frame;
   guint cur_frame_available_size;
 
-  /* arguments for incomplete frame buffers */
+  /* arguments */
   guint retry_frame;
-  guint frame_size;
-
-  /* arguments for imtl initialization device */
-  StDevArgs devArgs;
-  /* arguments for imtl tx session */
-  StTxSessionPortArgs portArgs;
-
-  /* arguments for session */
+  guint log_level;
+  StDevArgs devArgs;        /* imtl initialization device */
+  SessionPortArgs portArgs; /* imtl tx session */
   guint framebuffer_num;
   guint framerate;
-};
-
-enum gst_mtl_supported_audio_sampling {
-  GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K = 44100,
-  GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K = 48000,
-  GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K = 96000
 };
 
 G_END_DECLS

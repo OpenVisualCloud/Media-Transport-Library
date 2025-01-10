@@ -19,7 +19,13 @@
 #define PAYLOAD_TYPE_VIDEO (112)
 #define PAYLOAD_TYPE_ANCILLARY (113)
 
+#ifndef NS_PER_MS
 #define NS_PER_MS (1000 * 1000)
+#endif
+
+#ifndef NS_PER_S
+#define NS_PER_S (1000 * NS_PER_MS)
+#endif
 
 enum {
   PROP_GENERAL_0,
@@ -94,5 +100,8 @@ void gst_mtl_common_get_general_argumetns(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level);
+
+mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
+                                      guint* log_level);
 
 #endif /* __GST_MTL_COMMON_H__ */
