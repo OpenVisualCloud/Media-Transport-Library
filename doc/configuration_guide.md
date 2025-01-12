@@ -4,7 +4,7 @@ Media Transport Library sample app can use JSON file to configure sessions. This
 
 ## Examples
 
-Example `tx_1v_1a_1anc.json` file, find more example config file in [example config](../config):
+Example `tx_1v_1a_1anc.json` file, find more examples config files in [example config directory](../config).
 
 ```json
 {

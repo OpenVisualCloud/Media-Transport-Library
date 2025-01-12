@@ -1,4 +1,4 @@
-# Header split guide
+# Header Split Guide
 
 ## 1. Background
 

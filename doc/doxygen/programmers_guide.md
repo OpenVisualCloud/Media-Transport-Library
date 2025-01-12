@@ -1,4 +1,4 @@
-# programmers_guide Programmer's Guide
+# Programmer's Guide
 
 @page programmers_guide Programmer's Guide
 

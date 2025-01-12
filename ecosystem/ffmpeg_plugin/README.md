@@ -1,4 +1,4 @@
-# The ffmpeg plugin for MTL
+# The Ffmpeg Plugin for MTL
 
 ## Notice
 

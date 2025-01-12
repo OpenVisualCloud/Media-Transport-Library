@@ -265,4 +265,4 @@ And the kernel-devel package for e.g. Rocky Linux 9.3 is stored here:
 https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/
 
 ## Next Steps
-Proceed to [Running ST2110](../README.md#3-run-st2110) for further instructions.
+Proceed to [Running ST2110](../README.md#run-st2110) for further instructions.

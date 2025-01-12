@@ -1,4 +1,4 @@
-# doxygen guide for APIs
+# Doxygen Guide for APIs
 
 ## 1. Install the doxygen tools
 

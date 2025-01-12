@@ -1,4 +1,4 @@
-# St22 encode/decode plugin based on ffmpeg libavcodec
+# St22 Encode / Decode Plugin Based on Ffmpeg libavcodec
 
 ## 1. Install the build dependency
 

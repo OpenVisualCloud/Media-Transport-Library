@@ -1,11 +1,11 @@
 # The librist support
 
-From 23.03.0 version, Media Transport Library add the support to user-space UDP stack which is POSIX socket compatible by the ld preload technology.
+From 23.03.0 version, Media Transport Library adds the support to user-space UDP stack which is POSIX socket compatible by the ld preload technology.
 To allow librist <https://code.videolan.org/rist/librist> running efficiently with the advantage from MTL UDP stack, below is the guide for how to enable this feature.
 
 ## Build
 
-Apply the patch which include a test routine and ufd JSON config on the latest librist open source code, and build librist and the test. Make sure Media Transport Library is build and installed already.
+Apply the patch which includes a test routine and ufd JSON config on the latest librist open source code, and build librist and the test. Make sure Media Transport Library is build and installed already.
 
 ```bash
 cd ecosystem/librist/

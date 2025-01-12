@@ -1,4 +1,4 @@
-# The ST2110 compliance result
+# The ST2110 Compliance Result
 
 The Media Transport Library implements many software novel algorithms to achieve ST 2110’s strict narrow timing requirements. It's verified using third-party test equipments, please check below detail result:
 

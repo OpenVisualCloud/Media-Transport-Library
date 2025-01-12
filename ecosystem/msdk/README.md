@@ -1,4 +1,4 @@
-# The MSDK sample encode
+# The MSDK Sample Encode
 
 ## Build
 

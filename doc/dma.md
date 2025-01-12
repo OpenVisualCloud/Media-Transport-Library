@@ -1,4 +1,4 @@
-# DMA setup for video RX offload
+# DMA Setup for Video RX Offload
 
 ## 1. Overview
 

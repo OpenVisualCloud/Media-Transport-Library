@@ -1,4 +1,4 @@
-# mainpage Overview
+# Mainpage Overview
 @mainpage Overview
 
 @section intro Introduction
