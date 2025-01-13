@@ -209,8 +209,9 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
 void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_LOG_LEVEL,
-      g_param_spec_boolean("silent", "Silent", "Turn on silent mode.", FALSE,
-                           G_PARAM_READWRITE));
+      g_param_spec_uint("log-level", "Log Level", "Set the log level (INFO 1 to CRIT 5).",
+                        1, MTL_LOG_LEVEL_MAX, 1,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_PORT,
@@ -390,4 +391,36 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
 
   gst_mtl_port_idx++;
   return ret;
+}
+
+mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
+                                      guint* log_level) {
+  struct mtl_init_params mtl_init_params = {0};
+
+  if (!p || !devArgs || !log_level) {
+    GST_ERROR("Invalid input");
+    return NULL;
+  }
+
+  mtl_init_params.num_ports = 0;
+
+  if (gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs) == FALSE) {
+    GST_ERROR("Failed to parse dev arguments");
+    return NULL;
+  }
+  mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
+
+  /*
+   * Log levels range from 1 to LOG_LEVEL_MAX.
+   * We avoid using 0 (DEBUG) in normal scenarios,
+   * so it's acceptable to use 0 as a placeholder.
+   */
+  if (*log_level && *log_level < MTL_LOG_LEVEL_MAX) {
+    mtl_init_params.log_level = *log_level;
+  } else {
+    mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
+  }
+  *log_level = mtl_init_params.log_level;
+
+  return mtl_init(&mtl_init_params);
 }

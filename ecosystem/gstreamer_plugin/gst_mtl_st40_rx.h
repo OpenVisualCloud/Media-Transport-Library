@@ -58,25 +58,21 @@ G_DECLARE_FINAL_TYPE(Gst_Mtl_St40_Rx, gst_mtl_st40_rx, GST, MTL_ST40_RX, GstBase
 
 struct _Gst_Mtl_St40_Rx {
   GstBaseSrc element;
-  GstBuffer* buffer;
 
+  /*< private >*/
   pthread_mutex_t mbuff_mutex;
   pthread_cond_t mbuff_cond;
-  /*< private >*/
-  guint log_level;
   mtl_handle mtl_lib_handle;
   st40_rx_handle rx_handle;
 
-  /* arguments for mtl mbuf buffers */
+  /* arguments */
+  StDevArgs devArgs;        /* imtl initialization device */
+  SessionPortArgs portArgs; /* imtl session device */
+  guint log_level;
   guint timeout_mbuf_get_seconds;
   guint16 mbuff_size;
   guint16 udw_size;
   char* anc_data;
-
-  /* arguments for imtl initialization device */
-  StDevArgs devArgs;
-  /* arguments for imtl rx session */
-  SessionPortArgs portArgs;
 };
 
 G_END_DECLS

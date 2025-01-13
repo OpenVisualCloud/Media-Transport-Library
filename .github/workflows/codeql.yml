@@ -28,12 +28,11 @@ permissions:
 jobs:
   analyze:
     name: Analyze
-    runs-on: ubuntu-latest
+    runs-on: 'ubuntu-22.04'
     permissions:
       actions: read
       contents: read
       security-events: write
-
     strategy:
       fail-fast: false
       matrix:
@@ -61,10 +60,9 @@ jobs:
 
       - name: Install the build dependency
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
-          sudo apt-get install -y dpdk-dev
-          sudo apt-get install -y systemtap-sdt-dev
+          sudo apt-get update --fix-missing -y
+          sudo apt-get install --no-install-recommends -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev llvm clang
+          sudo apt-get install --no-install-recommends -y dpdk-dev systemtap-sdt-dev software-properties-common
 
       - name: Git config
         run: |

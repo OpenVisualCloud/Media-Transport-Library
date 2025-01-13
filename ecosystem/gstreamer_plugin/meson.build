@@ -91,7 +91,7 @@ gstmtl_st30p_tx_sources = [
 ]
 
 gstmtl_st30p_tx = library('gstmtl_st30p_tx',
-    gstmtl_st30p_tx_sources,
+    gst_mtl_common_sources + gstmtl_st30p_tx_sources,
     dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
     install : true,
     install_dir : plugins_install_dir,
