@@ -1,7 +1,9 @@
 import os
 import subprocess
-import logging
 import time
+
+
+from tests.Engine.execute import log_fail, log_info
 
 def create_video_file(
     width: int,
@@ -30,7 +32,7 @@ def create_video_file(
         f"location={file_path}"
     ]
 
-    logging.info(f"Creating video file with command: {' '.join(command)}")
+    log_info(f"Creating video file with command: {' '.join(command)}")
 
     process = subprocess.Popen(command)
 
@@ -38,16 +40,50 @@ def create_video_file(
         time.sleep(duration)
         process.terminate()
         process.wait()
-        logging.info(f"Video file created at {file_path}")
+        log_info(f"Video file created at {file_path}")
     except subprocess.SubprocessError as e:
-        logging.error(f"Failed to create video file: {e}")
+        log_fail(f"Failed to create video file: {e}")
         raise
 
     return file_path
 
+def create_audio_file_sox(
+    sample_rate: int,
+    channels: int,
+    bit_depth: int,
+    frequency: int = 440,
+    output_path: str = "test.pcm",
+    duration: int = 10,
+):
+    """
+    Create an audio file with the provided arguments using sox.
+    """
+    command = [
+        "sox",
+        "-n",
+        "-r", str(sample_rate),
+        "-c", str(channels),
+        "-b", str(bit_depth),
+        "-t", "raw",
+        output_path,
+        "synth",
+        str(duration),
+        "sine",
+        str(frequency)
+    ]
+
+    log_info(f"Creating audio file with command: {' '.join(command)}")
+
+    try:
+        subprocess.run(command, check=True)
+        log_info(f"Audio file created at {output_path}")
+    except subprocess.CalledProcessError as e:
+        log_fail(f"Failed to create audio file: {e}")
+        raise
+
 def remove_file(file_path: str):
     if os.path.exists(file_path):
         os.remove(file_path)
-        logging.info(f"Removed file: {file_path}")
+        log_info(f"Removed file: {file_path}")
     else:
-        logging.warning(f"File not found: {file_path}")
+        log_info(f"File not found: {file_path}")

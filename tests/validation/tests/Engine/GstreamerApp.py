@@ -30,7 +30,7 @@ def create_connection_params(
         })
     return params
 
-def setup_gstreamer_tx_pipeline(
+def setup_gstreamer_st20p_tx_pipeline(
     build: str,
     nic_port_list: str,
     input_path: str,
@@ -72,7 +72,7 @@ def setup_gstreamer_tx_pipeline(
 
     return pipeline_command
 
-def setup_gstreamer_rx_pipeline(
+def setup_gstreamer_st20p_rx_pipeline(
     build: str,
     nic_port_list: str,
     output_path: str,
@@ -111,13 +111,87 @@ def setup_gstreamer_rx_pipeline(
 
     return pipeline_command
 
+def setup_gstreamer_st30_tx_pipeline(
+    build: str,
+    nic_port_list: str,
+    input_path: str,
+    tx_payload_type: int,
+    tx_queues: int,
+    audio_format: str,
+    channels: int,
+    sampling: int
+): 
+    connection_params = create_connection_params(dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=30000, is_tx=True)
+
+    # st30 tx GStreamer command line
+    pipeline_command = [
+        "gst-launch-1.0", 
+        "filesrc", 
+        f"location={input_path}", 
+        "blocksize=70000",
+        "!", 
+        "rawaudioparse",
+        f"format=pcm",
+        f"sample-rate={sampling}",
+        f"pcm-format={audio_format}",
+        f"num-channels={channels}",
+        "!", 
+        "mtl_st30p_tx",
+        f"tx-queues={tx_queues}"
+    ]
+
+    for key, value in connection_params.items():
+        pipeline_command.append(f"{key}={value}")
+
+    pipeline_command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
+
+    return pipeline_command
+
+def setup_gstreamer_st30_rx_pipeline(
+    build: str,
+    nic_port_list: str,
+    output_path: str,
+    rx_payload_type: int,
+    rx_queues: int,
+    rx_audio_format: str,
+    rx_channels: int,
+    rx_sampling: int
+): 
+    connection_params = create_connection_params(dev_port=nic_port_list, payload_type=rx_payload_type, udp_port=30000, is_tx=False)
+
+    # st30 rx GStreamer command line
+    pipeline_command = [
+        "gst-launch-1.0", 
+        "-v", 
+        "mtl_st30p_rx"
+    ]
+
+    for key, value in connection_params.items():
+        pipeline_command.append(f"{key}={value}")
+    
+    for x in [
+        f"rx-queues={rx_queues}",
+        f"rx-audio-format={rx_audio_format}",
+        f"rx-channel={rx_channels}",
+        f"rx-sampling={rx_sampling}",
+        "!", 
+        "filesink", 
+        f"location={output_path}"
+        ]:
+        pipeline_command.append(x)
+
+    pipeline_command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
+
+    return pipeline_command
+
 def execute_test(
         build: str,
         tx_command: list,
         rx_command: list,
-        fps: int,
         input_file: str,
         output_file: str,
+        type: str,
+        fps: int = None
         ):
 
     tx_process = call(' '.join(tx_command), cwd=build, timeout=120)
@@ -125,13 +199,17 @@ def execute_test(
 
     tx_output = wait(tx_process)
     rx_output = wait(rx_process)
-
-    tx_result = check_tx_output(fps=fps, output=tx_output.splitlines())
-    #rx_result = check_rx_output(fps=fps, output=rx_output.splitlines())
+    if type == "st20":
+        tx_result = check_tx_output(fps=fps, output=tx_output.splitlines())
+        #rx_result = check_rx_output(fps=fps, output=rx_output.splitlines())
+        if tx_result is False:
+            return False
 
     file_compare = compare_files(input_file, output_file)
 
-    if tx_result and file_compare:
+    log_info(f"File comparison: {file_compare}")
+
+    if file_compare:
         return True
     
     return False
@@ -171,6 +249,7 @@ def compare_files(input_file, output_file):
         log_info(f"Input file size: {input_file_size}")
         log_info(f"Output file size: {output_file_size}")
         if input_file_size != output_file_size:
+            log_fail("File size is different")
             return False
 
         with open(input_file, 'rb') as i_file, open(output_file, 'rb') as o_file:
@@ -184,8 +263,24 @@ def compare_files(input_file, output_file):
     log_fail("Comparison of files failed")
     return False
 
-def format_change(file_format):
+def video_format_change(file_format):
     if file_format in ["YUV422PLANAR10LE", "YUV_422_10bit"]:
         return "I422_10LE"
     else:
         return file_format
+    
+def audio_format_change(file_format, rx_side: bool = False):
+    if rx_side == True:
+        if file_format == "s8":
+            return "PCM8"
+        elif file_format == "s16le":
+            return "PCM16"
+        else:
+            return "PCM24"
+    else:      
+        if file_format == "s8":
+            return 8
+        elif file_format == "s16le":
+            return 16
+        else:
+            return 24
