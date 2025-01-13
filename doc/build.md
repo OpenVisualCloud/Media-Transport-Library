@@ -254,15 +254,11 @@ and causes build errors, you can try to fix it with installation of kernel speci
 sudo yum install "kernel-devel-$(uname -r)"
 ```
 
-For older kernel version on Red Hat, the issue is that Red Hat uses vault repos. Older versions are stored in the vaults and the correct repo needs to be enabled to install the targeted version.
+For older kernel version on Red Hat, the issue is that Red Hat uses vault repos. Older versions are stored in the vaults and the correct repository needs to be enabled to install the targeted version.
 
-For example for Rocky Linux the location is:
+[The exemplary location for Rocky Linux](https://dl.rockylinux.org/vault/rocky/)
 
-https://dl.rockylinux.org/vault/rocky/
-
-And the kernel-devel package for e.g. Rocky Linux 9.3 is stored here:
-
-https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/
+[The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
 
 ## Next Steps
 Proceed to [Running ST2110](../README.md#run-st2110) for further instructions.

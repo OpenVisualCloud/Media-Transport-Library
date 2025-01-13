@@ -57,8 +57,8 @@ myst_html_meta = {
     "keywords": "Intel®, Intel, Media Transport Library, MTL, st20, st22, ST 2110, ST2110",
     "property=og:locale":  "en_US"
 }
-myst_enable_extensions = [ "strikethrough" ]
-myst_fence_as_directive = [ "mermaid" ]
+myst_enable_extensions = ["strikethrough"]
+myst_fence_as_directive = ["mermaid"]
 
 suppress_warnings = ["myst.xref_missing", "myst.strikethrough"]
 

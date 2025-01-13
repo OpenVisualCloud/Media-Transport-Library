@@ -24,15 +24,15 @@ python3 -m pip install        \
         sphinx-copybutton
 ```
 
-## 2. Build documentation (html)
+## 2. Build documentation (HTML)
 
-Execute make build command to build html option
+Execute make build command to build HTML option
 
 ```bash
 make -C {project_dir}/doc/sphinx html
 ```
 
-## 3. Open built documentation (html)
+## 3. Open built documentation (HTML)
 
 ```bash
 cd {project_dir}/doc/_build/html
