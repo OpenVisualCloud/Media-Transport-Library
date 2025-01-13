@@ -66,17 +66,17 @@ def check_st20p_integrity(src_url: str, out_url: str, size: str):
     return True
 
 
-def check_st30p_integrity(src_url: str, out_url: str):
+def check_st30p_integrity(src_url: str, out_url: str, size: int):
     src_chunks = []
 
     with open(src_url, "rb") as f:
-        while chunk := f.read(1):
+        while chunk := f.read(size):
             src_chunks.append(chunk)
 
     out_chunks = []
 
     with open(out_url, "rb") as f:
-        while chunk := f.read(1):
+        while chunk := f.read(size):
             out_chunks.append(chunk)
 
     if len(src_chunks) < len(out_chunks):

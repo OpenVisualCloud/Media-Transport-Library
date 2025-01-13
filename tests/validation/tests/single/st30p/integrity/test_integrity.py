@@ -6,7 +6,7 @@ import os
 import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.execute import LOG_FOLDER, log_info
-from tests.Engine.integrity import check_st30p_integrity
+from tests.Engine.integrity import calculate_st30p_framebuff_size, check_st30p_integrity
 from tests.Engine.media_files import audio_files
 
 
@@ -32,7 +32,12 @@ def test_integrity(build, media, nic_port_list, test_time, audio_format):
 
     rxtxapp.execute_test(config=config, build=build, test_time=test_time)
 
-    result = check_st30p_integrity(src_url=st30p_file_url, out_url=out_file_url)
+    size = calculate_st30p_framebuff_size(
+        format=audio_format, ptime="1", sampling="48kHz", channel="U02"
+    )
+    result = check_st30p_integrity(
+        src_url=st30p_file_url, out_url=out_file_url, size=size
+    )
 
     if result:
         log_info("INTEGRITY PASS")
