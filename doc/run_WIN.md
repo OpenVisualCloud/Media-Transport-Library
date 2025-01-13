@@ -109,9 +109,9 @@ Compile the netuio project with latest dpdk-kmod code using VS 2019, see README 
 
 ### 4.2. Driver installation
 
-#### Option #1: use devcon to install driver
+#### Option #1: Use devcon to install driver
 
-execute command:
+Execute command:
 
 ```powershell
 devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
@@ -119,7 +119,7 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 "1592" is for E810, You can change it per your NIC type.
 
-#### Option #2: manually install netuio driver
+#### Option #2: Manually install netuio driver
 
 * Go to Device Manager -> Network Adapters.
 * Right Click on target E810 network adapter -> Select Update Driver.
