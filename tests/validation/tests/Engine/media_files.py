@@ -513,16 +513,16 @@ st41_files = dict(
 gstreamer_formats = dict(
     v210={
         "filename": "gstreamer_v210_1920x1080_60hz.yuv",
-        "format":"v210",
-        "width":1920,
-        "height":1080,
-        "fps":25
+        "format": "v210",
+        "width": 1920,
+        "height": 1080,
+        "fps": 25,
     },
     I422_10LE={
         "filename": "gstreamer_I42210LE_1920x1080_60hz.yuv",
-        "format":"I422_10LE",
-        "width":1920,
-        "height":1080,
-        "fps":25
-    }
+        "format": "I422_10LE",
+        "width": 1920,
+        "height": 1080,
+        "fps": 25,
+    },
 )

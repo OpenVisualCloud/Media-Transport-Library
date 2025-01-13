@@ -2,8 +2,8 @@ import os
 import subprocess
 import time
 
-
 from tests.Engine.execute import log_fail, log_info
+
 
 def create_video_file(
     width: int,
@@ -12,8 +12,8 @@ def create_video_file(
     format: str,
     media_path: str,
     output_path: str = "test.yuv",
-    pattern: str = 'ball',
-    duration: int = 10
+    pattern: str = "ball",
+    duration: int = 10,
 ):
     file_path = os.path.join(media_path, output_path)
     command = [
@@ -29,7 +29,7 @@ def create_video_file(
         "videoconvert",
         "!",
         "filesink",
-        f"location={file_path}"
+        f"location={file_path}",
     ]
 
     log_info(f"Creating video file with command: {' '.join(command)}")
@@ -47,6 +47,7 @@ def create_video_file(
 
     return file_path
 
+
 def create_audio_file_sox(
     sample_rate: int,
     channels: int,
@@ -61,15 +62,19 @@ def create_audio_file_sox(
     command = [
         "sox",
         "-n",
-        "-r", str(sample_rate),
-        "-c", str(channels),
-        "-b", str(bit_depth),
-        "-t", "raw",
+        "-r",
+        str(sample_rate),
+        "-c",
+        str(channels),
+        "-b",
+        str(bit_depth),
+        "-t",
+        "raw",
         output_path,
         "synth",
         str(duration),
         "sine",
-        str(frequency)
+        str(frequency),
     ]
 
     log_info(f"Creating audio file with command: {' '.join(command)}")
@@ -80,6 +85,7 @@ def create_audio_file_sox(
     except subprocess.CalledProcessError as e:
         log_fail(f"Failed to create audio file: {e}")
         raise
+
 
 def remove_file(file_path: str):
     if os.path.exists(file_path):

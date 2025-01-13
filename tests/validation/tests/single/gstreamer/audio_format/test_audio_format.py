@@ -1,19 +1,15 @@
 import os
-import pytest
 
+import pytest
 import tests.Engine.GstreamerApp as gstreamerapp
 import tests.Engine.media_creator as media_create
+
 
 @pytest.mark.parametrize("audio_format", ["s8", "s16le", "s24le"])
 @pytest.mark.parametrize("audio_channel", [1, 2])
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
 def test_audio_format(
-    build,
-    media,
-    nic_port_list,
-    audio_format,
-    audio_channel,
-    audio_rate
+    build, media, nic_port_list, audio_format, audio_channel, audio_rate
 ):
     input_file_path = os.path.join(media, "test.pcm")
 
@@ -23,7 +19,7 @@ def test_audio_format(
         bit_depth=gstreamerapp.audio_format_change(audio_format),
         duration=10,
         frequency=440,
-        output_path=input_file_path
+        output_path=input_file_path,
     )
 
     tx_config = gstreamerapp.setup_gstreamer_st30_tx_pipeline(
@@ -34,7 +30,7 @@ def test_audio_format(
         tx_queues=4,
         audio_format=audio_format,
         channels=audio_channel,
-        sampling=audio_rate
+        sampling=audio_rate,
     )
 
     rx_config = gstreamerapp.setup_gstreamer_st30_rx_pipeline(
@@ -45,7 +41,7 @@ def test_audio_format(
         rx_queues=4,
         rx_audio_format=gstreamerapp.audio_format_change(audio_format, rx_side=True),
         rx_channels=audio_channel,
-        rx_sampling=audio_rate
+        rx_sampling=audio_rate,
     )
 
     try:
@@ -55,7 +51,7 @@ def test_audio_format(
             rx_command=rx_config,
             input_file=input_file_path,
             output_file=os.path.join(media, "output.pcm"),
-            type="st30"
+            type="st30",
         )
     finally:
         media_create.remove_file(input_file_path)
