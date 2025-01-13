@@ -82,6 +82,9 @@ mtl_system_status_*
 *.pcm
 *.wav
 
+#Generated documentation
+doc/_build
+
 # Gpu direct files
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
