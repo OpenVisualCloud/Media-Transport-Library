@@ -23,7 +23,7 @@ extensions = [
     "myst_parser",
     "sphinx.ext.graphviz",
     "sphinxcontrib.mermaid",
-    "sphinx_copybutton"
+    "sphinx_copybutton",
 ]
 
 coverage_statistics_to_report = coverage_statistics_to_stdout = True
@@ -40,7 +40,7 @@ exclude_patterns = [
     ".DS_Store",
     "**/CMakeLists.txt",
     "*CMakeLists.txt",
-    "**/requirements.txt"
+    "**/requirements.txt",
 ]
 
 # -- Options for HTML output -------------------------------------------------
@@ -55,7 +55,7 @@ language = "en_US"
 myst_html_meta = {
     "description lang=en": "Media Transport Library",
     "keywords": "Intel®, Intel, Media Transport Library, MTL, st20, st22, ST 2110, ST2110",
-    "property=og:locale":  "en_US"
+    "property=og:locale": "en_US",
 }
 myst_enable_extensions = ["strikethrough"]
 myst_fence_as_directive = ["mermaid"]
