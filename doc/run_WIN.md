@@ -6,7 +6,7 @@ Media Transport Library requires Windows netuio driver Windows virt2phys driver 
 
 ### 1.1. Enable test sign in Windows if you choose to build non-signed drivers
 
-```powersehll
+```powershell
 bcdedit /set loadoptions DISABLE_INTEGRITY_CHECKS
 bcdedit /set TESTSIGNING ON
 ```
@@ -29,7 +29,7 @@ Privilege is applied upon next logon. In particular, if privilege has been grant
 
 * Open PowerShell, run:
 
-    ```powersehll
+    ```powershell
     ntrights.exe +r SeLockMemoryPrivilege -u Administrator
     ```
 

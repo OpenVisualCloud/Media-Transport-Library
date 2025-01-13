@@ -1,4 +1,4 @@
-The Precision Time Protocol (PTP) facilitates global timing accuracy in the microsecond range for all essences. Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l. This library includes its own PTP implementation, and a sample application offers the option to enable it. Please refer to section [7.1.2](#712-built-in-ptp) for instructions on how to enable it.
+The Precision Time Protocol (PTP) facilitates global timing accuracy in the microsecond range for all essences. Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l. This library includes its own PTP implementation, and a sample application offers the option to enable it. Please refer to section [Built-in PTP](#built-in-ptp) for instructions on how to enable it.
 
 By default, the built-in PTP feature is disabled, and the PTP clock relies on the system time source of the user application (clock_gettime). However, if the built-in PTP is enabled, the internal NIC time will be selected as the PTP source.
 

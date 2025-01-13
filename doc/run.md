@@ -4,7 +4,7 @@ The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supp
 
 ## 1. IOMMU Setup
 
-### 1.1. IOMMU Setup
+### 1.1. [IOMMU Setup](chunks/_iommu_setup.md)
 
 ```{include} chunks/_iommu_setup.md
 ```
@@ -370,7 +370,7 @@ sudo sysctl -w vm.nr_hugepages=4096
 
 This section includes some optional guides. If you are not familiar with the details or do not require this information, you can skip this part.
 
-### 7.1. PTP Setup
+### 7.1. [PTP Setup](chunks/_ptp_setup.md)
 
 ```{include} chunks/_ptp_setup.md
 ```

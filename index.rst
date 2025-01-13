@@ -55,7 +55,7 @@ Contents
    doc/performance.md
 
 Sample Application
---------------
+-------------------
 
 .. toctree::
    :maxdepth: 1
@@ -68,7 +68,7 @@ Sample Application
    doc/configuration_guide.md
 
 Ecosystem
-----
+----------
 
 .. toctree::
    :maxdepth: 1
@@ -81,7 +81,7 @@ Ecosystem
    OBS Studio <ecosystem/obs_mtl/README.md>
 
 Doxygen
-----
+--------
 
 .. toctree::
    :maxdepth: 1
@@ -94,7 +94,7 @@ Doxygen
    doc/doxygen/programmers_guide.md
 
 Other
---------
+------
 
 .. toctree::
    :maxdepth: 1
@@ -108,7 +108,7 @@ Other
 
 
 Experimental features
---------
+----------------------
 
 .. toctree::
    :maxdepth: 1

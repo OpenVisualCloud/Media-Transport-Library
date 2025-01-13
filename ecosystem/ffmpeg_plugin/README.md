@@ -216,7 +216,7 @@ Both default to 0, but if your device doesn't initialize, adjust it using the in
 
 **Example:**
 
-```plaintext
+```text
 Drivers count: 1
 Driver: 0: Device: 0: Name: Intel(R) Data Center GPU Flex 170, Type: 1, VendorID: 8086, DeviceID: 22208
 ```
