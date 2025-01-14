@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       matrix:
-        os: [ubuntu-latest]
+        os: ['ubuntu-22.04']
 
     steps:
       - name: Harden Runner
