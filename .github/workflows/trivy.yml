@@ -53,10 +53,10 @@ jobs:
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
-          format: 'sarif'
-          exit-code: '0'
-          vuln-type: 'os,library'
-          output: 'Trivy-image-scan-results.sarif'
+          format: sarif
+          exit-code: 0
+          vuln-type: os,library
+          output: Trivy-image-scan-results.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
@@ -69,10 +69,10 @@ jobs:
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
-          format: 'table'
-          exit-code: '0'
-          vuln-type: 'os,library'
-          output: 'Trivy-image-scan-results.txt'
+          format: table
+          exit-code: 0
+          vuln-type: os,library
+          output: Trivy-image-scan-results.txt
 
       - uses: actions/upload-artifact@v4
         if: always()
