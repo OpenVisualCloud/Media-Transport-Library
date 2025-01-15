@@ -46,7 +46,7 @@ jobs:
           docker build -t mtl:latest -f ubuntu.dockerfile ../
 
       - name: Run Trivy vulnerability scanner with sarif output
-        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
           format: 'sarif'
@@ -56,12 +56,12 @@ jobs:
           output: 'Trivy-image-scan-results.sarif'
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # v3.25.11
+        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
         with:
           sarif_file: 'Trivy-image-scan-results.sarif'
       - name: Run Trivy vulnerability scanner with with table output
         if: always()
-        uses: aquasecurity/trivy-action@7c2007bcb556501da015201bcba5aa14069b74e2 # v0.23.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
           format: 'sarif'
@@ -69,7 +69,7 @@ jobs:
           exit-code: '1'
           output: 'Trivy-image-scan-results.sarif'
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@b611370bb5703a7efb587f9d136a52ea24c5c38c # v3.25.11
+        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
         with:
           sarif_file: 'Trivy-image-scan-results.sarif'
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3

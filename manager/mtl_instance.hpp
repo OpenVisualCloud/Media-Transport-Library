@@ -198,9 +198,8 @@ void mtl_instance::handle_message_register(mtl_register_message_t* register_msg)
     auto interface = get_interface(ifindex);
     if (interface == nullptr) {
       log(log_level::ERROR, "Could not get interface " + std::to_string(ifindex));
-      if (send_response(-1) < 0) {
+      if (send_response(-1) < 0)
         log(log_level::ERROR, "Failed to send response for register");
-      }
       return;
     }
   }
@@ -267,7 +266,7 @@ void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
   cmsg->cmsg_len = CMSG_LEN(sizeof(int));
   *((int*)CMSG_DATA(cmsg)) = fd;
 
-  sendmsg(conn_fd, &msg, 0);
+  if (sendmsg(conn_fd, &msg, 0) < 0) log(log_level::ERROR, "Failed to send xsk map fd");
 }
 
 void mtl_instance::handle_message_udp_dp_filter(
@@ -277,9 +276,8 @@ void mtl_instance::handle_message_udp_dp_filter(
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    if (send_response(-1) < 0) {
+    if (send_response(-1) < 0)
       log(log_level::ERROR, "Failed to send response for udp_dp_filter");
-    }
     return;
   }
   int ret = interface->update_udp_dp_filter(port, add);
@@ -310,9 +308,8 @@ void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    if (send_response(-1) < 0) {
+    if (send_response(-1) < 0)
       log(log_level::ERROR, "Failed to send response for if_put_queue");
-    }
     return;
   }
   uint16_t queue_id = ntohs(if_msg->queue_id);
@@ -328,9 +325,8 @@ void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    if (send_response(-1) < 0) {
+    if (send_response(-1) < 0)
       log(log_level::ERROR, "Failed to send response for if_add_flow");
-    }
     return;
   }
   int ret = interface->add_flow(ntohs(if_msg->queue_id), ntohl(if_msg->flow_type),
@@ -347,9 +343,8 @@ void mtl_instance::handle_message_if_del_flow(mtl_if_message_t* if_msg) {
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
     log(log_level::ERROR, "Failed to get interface " + std::to_string(ifindex));
-    if (send_response(-1) < 0) {
+    if (send_response(-1) < 0)
       log(log_level::ERROR, "Failed to send response for if_del_flow");
-    }
     return;
   }
   unsigned int flow_id = ntohl(if_msg->flow_id);

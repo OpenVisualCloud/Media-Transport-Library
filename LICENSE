@@ -27,3 +27,23 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+FFmpeg is an open source project licensed under LGPL and GPL; GStreamer is an open source framework licensed under LGPL.
+
+Both FFmpeg and GStreamer is an unmodified dependency of Media Transport Library software and not distributed by Intel,
+You are solely responsible for determining if users use of FFmpeg or Gstreamer requires any additional licenses.
+Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due,
+in connection with your use of Ffmpeg or Gstreamer.
+
+In the case of FFmpeg:
+FFmpeg is an open source project licensed under LGPL and GPL. See https://www.ffmpeg.org/legal.html.
+You are solely responsible for determining if your use of FFmpeg requires any additional licenses.
+Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due,
+in connection with your use of FFmpeg.
+
+In the case of GStreamer:
+GStreamer is an open source framework licensed under LGPL.
+See https://gstreamer.freedesktop.org/documentation/frequently-asked-questions/licensing.html.
+You are solely responsible for determining if your use of GStreamer requires any additional licenses.
+Intel is not responsible for obtaining any such licenses, nor liable for any licensing fees due,
+in connection with your use of GStreamer.
