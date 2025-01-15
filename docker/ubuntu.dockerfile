@@ -8,7 +8,7 @@
 # Ubuntu 22.04, build stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS builder
 
-#LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
+LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 # Install build dependencies and debug tools
 RUN apt-get update -y && \
@@ -57,7 +57,7 @@ RUN ./build.sh && \
 # Ubuntu 22.04, runtime stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS final
 
-#LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
+LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 # Install runtime dependencies
 RUN apt-get update -y && \
