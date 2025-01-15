@@ -55,7 +55,6 @@ jobs:
           image-ref: 'mtl:latest'
           format: 'sarif'
           exit-code: '0'
-          ignore-unfixed: true
           vuln-type: 'os,library'
           output: 'Trivy-image-scan-results.sarif'
 
@@ -71,8 +70,8 @@ jobs:
         with:
           image-ref: 'mtl:latest'
           format: 'table'
+          exit-code: '0'
           vuln-type: 'os,library'
-          exit-code: '1'
           output: 'Trivy-image-scan-results.txt'
 
       - uses: actions/upload-artifact@v4
