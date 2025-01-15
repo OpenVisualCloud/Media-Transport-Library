@@ -52,7 +52,7 @@ RUN make install && \
 WORKDIR /$MTL_REPO
 RUN ./build.sh && \
     DESTDIR=/install meson install -C build && \
-    setcap 'cap_net_raw+ep' ./build/app/RxTxApp
+    setcap 'cap_net_raw+ep' ./tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 22.04, runtime stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS final
