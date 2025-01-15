@@ -71,7 +71,7 @@ jobs:
         with:
           image-ref: 'mtl:latest'
           format: 'table'
-          scanners: 'os,library'
+          vuln-type: 'os,library'
           exit-code: '1'
           output: 'Trivy-image-scan-results.txt'
 
