@@ -16,6 +16,8 @@ env:
   MTL_BUILD_DISABLE_PCAPNG: true
   PREFIX_DIR: /usr/local
   DEBIAN_FRONTEND: noninteractive
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+  TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
 permissions:
   contents: read
 
@@ -28,6 +30,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           ref: ${{ inputs.branch }}
+
       - name: 'Install dependencies'
         run: |
           sudo apt-get update -y && \
@@ -54,32 +57,21 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
           output: 'Trivy-image-scan-results.sarif'
+
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
         uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
         with:
           sarif_file: 'Trivy-image-scan-results.sarif'
+
       - name: Run Trivy vulnerability scanner with with table output
         if: always()
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: 'mtl:latest'
-          format: 'sarif'
+          format: 'table'
           scanners: 'vuln,secret,misconfig'
           exit-code: '1'
-          output: 'Trivy-image-scan-results.sarif'
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
-        with:
-          sarif_file: 'Trivy-image-scan-results.sarif'
-      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
-        with:
-          name: trivy-results
-          path: 'trivy-results.sarif'
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
           output: 'Trivy-image-scan-results.txt'
 
       - uses: actions/upload-artifact@v4
@@ -87,4 +79,3 @@ jobs:
         with:
           name: trivy-results
           path: 'Trivy-image-scan-results.txt'
-
