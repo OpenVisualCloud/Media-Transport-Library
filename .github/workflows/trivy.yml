@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   triv-security-tab:
-    name: config scan
+    name: sarif output scan
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
@@ -47,8 +47,8 @@ jobs:
         with:
           sarif_file: Trivy-dockerfile.sarif
 
-  triv-stdout:
-    name: config scan
+  trivy-stdout:
+    name: table output scan
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
