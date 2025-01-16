@@ -1,69 +1,52 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
-import os
+import hashlib
 import re
-import subprocess
 from math import floor
 
-from tests.Engine.execute import LOG_FOLDER, log_fail
+from tests.Engine.execute import log_fail
 
 
-def check_st20p_integrity(src_url: str, out_url: str, size: str):
-    logs_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
+def check_st20p_integrity(src_url: str, out_url: str, frame_size: int):
+    src_chunk_sums = []
 
-    out_sums_file = os.path.join(logs_dir, "out_sums.txt")
-    subprocess.run(
-        ["ffmpeg", "-s", size, "-i", out_url, "-f", "framemd5", out_sums_file]
-    )
+    with open(src_url, "rb") as f:
+        while chunk := f.read(frame_size):
+            chunk_sum = hashlib.md5(chunk).hexdigest()
+            src_chunk_sums.append(chunk_sum)
 
-    src_sums_file = os.path.join(logs_dir, "src_sums.txt")
-    subprocess.run(
-        ["ffmpeg", "-s", size, "-i", src_url, "-f", "framemd5", src_sums_file]
-    )
+    out_chunk_sums = []
 
-    sum_pattern = re.compile(r"[0-9a-f]{32}")
+    with open(out_url, "rb") as f:
+        while chunk := f.read(frame_size):
+            chunk_sum = hashlib.md5(chunk).hexdigest()
+            out_chunk_sums.append(chunk_sum)
 
-    src_sums = []
-
-    with open(src_sums_file, "r") as f:
-        for line in f:
-            match = sum_pattern.search(line)
-
-            if match:
-                src_sums.append(match.group(0))
-
-    out_sums = []
-
-    with open(out_sums_file, "r") as f:
-        for line in f:
-            match = sum_pattern.search(line)
-
-            if match:
-                out_sums.append(match.group(0))
-
-    if len(src_sums) < len(out_sums):
-        # received file is longer, so it contains all frames from sended
-        # iterating over sended frames
-
-        for i in range(len(src_sums)):
-            if src_sums[i] != out_sums[i]:
-                log_fail(
-                    f"Checksum of frame {i} is invalid. Sent {src_sums[i]}, received {out_sums[i]}"
-                )
+    if len(src_chunk_sums) < len(out_chunk_sums):
+        for i in range(len(src_chunk_sums)):
+            if src_chunk_sums[i] != out_chunk_sums[i]:
+                log_fail(f"Received frame {i} is invalid")
                 return False
     else:
-        # received file is shorter (so it contains part of sended frames) or equal to sended file
-        # iterating over received frames
-
-        for i in range(len(out_sums)):
-            if out_sums[i] != src_sums[i]:
-                log_fail(
-                    f"Checksum of frame {i} is invalid. Sent {src_sums[i]}, received {out_sums[i]}"
-                )
+        for i in range(len(out_chunk_sums)):
+            if out_chunk_sums[i] != src_chunk_sums[i]:
+                log_fail(f"Received frame {i} is invalid")
                 return False
 
     return True
+
+
+def calculate_yuv_frame_size(width: int, height: int, file_format: str):
+    match file_format:
+        case "YUV422RFC4175PG2BE10":
+            pixel_size = 2.5
+        case "YUV422PLANAR10LE":
+            pixel_size = 4
+        case _:
+            log_fail(f"Size of {file_format} pixel is not known")
+
+    return int(width * height * pixel_size)
 
 
 def check_st30p_integrity(src_url: str, out_url: str, size: int):

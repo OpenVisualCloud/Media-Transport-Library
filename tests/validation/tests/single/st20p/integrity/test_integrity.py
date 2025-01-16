@@ -6,15 +6,21 @@ import os
 import pytest
 import tests.Engine.RxTxApp as rxtxapp
 from tests.Engine.execute import log_info
-from tests.Engine.integrity import check_st20p_integrity
+from tests.Engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 from tests.Engine.logging import LOG_FOLDER
-from tests.Engine.media_files import yuv_files_422rfc10
+from tests.Engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 
-@pytest.mark.parametrize("file", ["Crosswalk_720p", "ParkJoy_1080p"])
-@pytest.mark.parametrize("fps", ["p30", "p60"])
-def test_integrity(build, media, nic_port_list, test_time, file, fps):
-    st20p_file = yuv_files_422rfc10[file]
+@pytest.mark.parametrize(
+    "st20p_file, fps",
+    [
+        (yuv_files_422rfc10["Penguin_720p"], "p25"),
+        (yuv_files_422rfc10["Penguin_1080p"], "p25"),
+        (yuv_files_422p10le["Penguin_720p"], "p25"),
+        (yuv_files_422p10le["Penguin_1080p"], "p25"),
+    ],
+)
+def test_integrity(build, media, nic_port_list, test_time, st20p_file, fps):
     st20p_file_url = os.path.join(media, st20p_file["filename"])
 
     out_file_url = os.path.join(os.getcwd(), LOG_FOLDER, "latest", "out.yuv")
@@ -36,9 +42,11 @@ def test_integrity(build, media, nic_port_list, test_time, file, fps):
 
     rxtxapp.execute_test(config=config, build=build, test_time=test_time)
 
-    size = f"{st20p_file['width']}x{st20p_file['height']}"
+    frame_size = calculate_yuv_frame_size(
+        st20p_file["width"], st20p_file["height"], st20p_file["file_format"]
+    )
     result = check_st20p_integrity(
-        src_url=st20p_file_url, out_url=out_file_url, size=size
+        src_url=st20p_file_url, out_url=out_file_url, frame_size=frame_size
     )
 
     if result:
