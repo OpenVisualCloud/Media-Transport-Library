@@ -20,12 +20,14 @@ env:
   TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
 permissions:
   contents: read
-  security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+
 
 jobs:
   triv-security-tab:
     name: sarif output scan
     runs-on: ubuntu-20.04
+    permissions:
+        security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
