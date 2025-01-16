@@ -23,8 +23,8 @@ permissions:
   security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
 
 jobs:
-  trivy:
-    name: Build
+  triv-security-tab:
+    name: config scan
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
@@ -37,7 +37,6 @@ jobs:
         with:
           scan-type: config
           scan-ref: ./docker
-          cache: false
           format: sarif
           exit-code: 0
           vuln-type: os,library
@@ -48,13 +47,21 @@ jobs:
         with:
           sarif_file: Trivy-dockerfile.sarif
 
-      # - name: Run Trivy vulnerability scanner with with table output
-      #   if: always()
-      #   uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
-      #   with:
-      #     scan-type: config
-      #     scan-ref: ./docker
-      #     format: table
-      #     exit-code: 0
-      #     vuln-type: os,library
-      #     cache: false
+  triv-stdout:
+    name: config scan
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Run Trivy vulnerability scanner with table output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./docker
+          cache: false
+          format: table
+          exit-code: 1
+          vuln-type: os,library
