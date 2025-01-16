@@ -37,6 +37,7 @@ jobs:
         with:
           scan-type: config
           scan-ref: ./docker
+          cache: false
           format: sarif
           exit-code: 0
           vuln-type: os,library
@@ -57,10 +58,4 @@ jobs:
           format: table
           exit-code: 0
           vuln-type: os,library
-          output: Trivy-dockerfile.txt
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: trivy-results
-          path: Trivy-dockerfile.txt
+          cache: false
