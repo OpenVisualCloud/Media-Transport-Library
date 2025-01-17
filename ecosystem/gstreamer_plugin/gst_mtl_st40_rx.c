@@ -151,7 +151,7 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
   gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
 
   gst_element_class_set_metadata(
-      gstelement_class, "MtlRxSt40Src", "Src/Audio",
+      gstelement_class, "MtlRxSt40Src", "Src/Metadata",
       "MTL transmission plugin for SMPTE ST 2110-40 standard (ancillary data))",
       "Dawid Wesierski <dawid.wesierski@intel.com>");
 
@@ -361,7 +361,9 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
+  payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
   udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
+  payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
 
   if (udw_size == 0) {
     GST_ERROR("Ancillary data size is 0");
