@@ -8,7 +8,7 @@ This option provides an opportunity for you to experiment with this library, eve
 
 ## 2. Run AF_PACKET PMD with root user
 
-AF_PACKET PMD rely on kernel AF_PACKET support which need root access, and please refer to [dpdk_af_packet config](../../tests/script/dpdk_af_packet_json/) for how to config the AF_PACKET pmd in JSON config.
+AF_PACKET PMD rely on kernel AF_PACKET support which need root access, and please refer to [dpdk_af_packet config](../../tests/tools/RxTxApp/script/dpdk_af_packet_json/) for how to config the AF_PACKET pmd in JSON config.
 
 Customize the kernel network interface name `enp175s0f0np0` as your setup
 

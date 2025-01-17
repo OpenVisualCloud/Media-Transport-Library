@@ -31,7 +31,7 @@ Config the `interfaces` item in the JSON file to use the kernel network interfac
     ],
 ```
 
-Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../tests/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/script/kernel_socket_json/rx.json) respectively.
+Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) respectively.
 
 Refer to sections "5. Run the sample application" in the [Linux run guide](run.md) for the detail commands on how to run the sample application.
 

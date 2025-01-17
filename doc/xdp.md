@@ -138,7 +138,7 @@ The application needs to be run with `CAP_NET_RAW` capability.
 For example, before running RxTxApp, you should run:
 
 ```bash
-sudo setcap 'cap_net_raw+ep' ./build/app/RxTxApp
+sudo setcap 'cap_net_raw+ep' ./tests/tools/RxTxApp/build/RxTxApp
 ```
 
 ### Running RxTxApp

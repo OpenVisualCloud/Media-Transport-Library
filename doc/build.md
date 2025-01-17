@@ -251,7 +251,14 @@ In case older kernel installed on the OS throws the “Kernel header files not i
 and causes build errors, you can try to fix it with installation of kernel specific packet `kernel-devel`.
 
 ```bash
+# e.g. for CentOS or RHEL
 sudo yum install "kernel-devel-$(uname -r)"
+```
+
+or with:
+```bash
+# e.g. for Ubuntu
+sudo apt-get install linux-headers-$(uname -r)
 ```
 
 For older kernel version on Red Hat, the issue is that Red Hat uses vault repos. Older versions are stored in the vaults and the correct repository needs to be enabled to install the targeted version.

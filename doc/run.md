@@ -29,14 +29,16 @@ getent group 2110 || sudo groupadd -g 2110 vfio
 sudo usermod -aG vfio $USER
 ```
 
-Re-login and check the group `vfio` successfully added using the `groups` command.
-
+Re-login and check the group `vfio` successfully added using the `groups` command:
 ```bash
 groups
-xxx sudo docker libvirt vfio
+```
+should result with:
+```text
+(...) sudo docker libvirt vfio
 ```
 
-Create or edit a udev rules file, for example, /etc/udev/rules.d/10-vfio.rules, with your preferred text editor. For instance, using vim:
+Create or edit a udev rules file, for example, `/etc/udev/rules.d/10-vfio.rules`, with your preferred text editor. For instance, using `vim`:
 
 ```bash
 sudo vim /etc/udev/rules.d/10-vfio.rules
@@ -64,11 +66,11 @@ For the Intel® E810 Series Ethernet Adapter, which supports Virtual Functions (
 For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
 
 If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel.
-Please refer to [kernel TX config](../tests/script/kernel_socket_json/tx.json) and [kernel RX config](../tests/script/kernel_socket_json/rx.json) for how to config the kernel transport in JSON config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
+Please refer to [kernel TX config](../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel RX config](../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) for how to config the kernel transport in JSON config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
 
 #### 3.2.1. Create Intel® E810 VFs and Bind to DPDK PMD
 
-Get Device to Bus info mapping
+Get Device to Bus info mapping:
 
 ```bash
 lshw -c network -businfo
@@ -81,7 +83,7 @@ pci@0000:af:00.0  ens801f0     network        Ethernet Controller E810-C for QSF
 pci@0000:af:00.1  ens801f1     network        Ethernet Controller E810-C for QSFP
 ```
 
-Below is the command to create VF for BDF 0000:af:00.0, and bind the VFs to DPDK PMD.
+Below is the command to create VF for BDF `0000:af:00.0`  (shown above in example), and bind the VFs to DPDK PMD.
 
 ```bash
 cd $mtl_source_code
@@ -101,16 +103,16 @@ Bind 0000:af:01.5(enp175s0f0v5) to vfio-pci success
 Create VFs on PF bdf: 0000:af:00.0 enp175s0f0 succ
 ```
 
-And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section `### 3.1 Allow current user to access /dev/vfio/* devices`, use the `ls -lg /dev/vfio/*` command and below is sample output:
-
+And please verify that the newly created VFIO device is correctly assigned to the vfio group as specified by your udev rules from section [3.1 Allow current user to access /dev/vfio/* devices](#31-allow-current-user-to-access-devvfio-devices). Use the command:
 ```bash
 ls -lg /dev/vfio/*
 ```
+and below is sample output:
 ```text
-crw-rw---- 1 vfio  235,   0 12月 12 09:34 /dev/vfio/162
-crw-rw---- 1 vfio  235,   2 12月 12 09:34 /dev/vfio/163
-crw-rw---- 1 vfio  235,   3 12月 12 09:34 /dev/vfio/164
-crw-rw---- 1 vfio  235,   4 12月 12 09:34 /dev/vfio/165
+crw-rw---- 1 vfio  235,   0 Dec 12 09:34 /dev/vfio/162
+crw-rw---- 1 vfio  235,   2 Dec 12 09:34 /dev/vfio/163
+crw-rw---- 1 vfio  235,   3 Dec 12 09:34 /dev/vfio/164
+crw-rw---- 1 vfio  235,   4 Dec 12 09:34 /dev/vfio/165
 ```
 
 If the creation of VF BDFs fails, you can check the kernel dmesg log to find possible reasons for the failure. The dmesg log contains valuable information that can help identify any issues or errors related to the VF creation process. Please review the dmesg log for any relevant messages or error codes that can provide insights into why the creation of VF BDFs was unsuccessful.
@@ -243,7 +245,7 @@ For the supported parameters in the JSON, please refer to [the JSON Configuratio
 Below is the command to run one video tx/rx session with JSON config.
 
 ```bash
-./build/app/RxTxApp --config_file config/tx_1v.json
+./tests/tools/RxTxApp/build/RxTxApp --config_file config/tx_1v.json
 ```
 
 If it runs well, you will see similar log output periodically:
@@ -264,7 +266,7 @@ MTL: 2024-04-16 15:38:31, * *    E N D    S T A T E   * *
 Then run a RX in another node/port.
 
 ```bash
-./build/app/RxTxApp --config_file config/rx_1v.json
+./tests/tools/RxTxApp/build/RxTxApp --config_file config/rx_1v.json
 ```
 
 If it runs well, you will see similar log output periodically:
@@ -284,7 +286,7 @@ app_rx_st20p_stat(0), avrage latency 18.263382ms
 MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 ```
 
-This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../tests/script/).
+This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../tests/tools/RxTxApp/script/).
 
 If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and share the log for further analysis.
 
@@ -339,9 +341,9 @@ packet egresses from the sender.
 --multi_src_port                     : debug option, use multiple src port for st20 tx stream.
 --audio_fifo_size <count>            : debug option, the audio fifo size between packet builder and pacing.
 --dhcp                               : debug option, enable DHCP for all ports.
---virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need to set capability for the app before running, `sudo setcap 'cap_net_admin+ep' ./build/app/RxTxApp`.
---phc2sys                            : debug option, enable the built-in phc2sys function to sync the system time to our internal synced PTP time. Linux only, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./build/app/RxTxApp`.
---ptp_sync_sys                       : debug option, enabling the synchronization of PTP time from MTL to the system time in the application. On Linux, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./build/app/RxTxApp`.
+--virtio_user                        : debug option, enable virtio_user ports for control plane packets. Linux only, need to set capability for the app before running, `sudo setcap 'cap_net_admin+ep' ./tests/tools/RxTxApp/build/RxTxApp`.
+--phc2sys                            : debug option, enable the built-in phc2sys function to sync the system time to our internal synced PTP time. Linux only, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./tests/tools/RxTxApp/build/RxTxApp`.
+--ptp_sync_sys                       : debug option, enabling the synchronization of PTP time from MTL to the system time in the application. On Linux, need to set capability for the app before running, `sudo setcap 'cap_sys_time+ep' ./tests/tools/RxTxApp/build/RxTxApp`.
 --rss_sch_nb <number>                : debug option, set the schedulers(lcores) number for the RSS dispatch.
 --log_time_ms                        : debug option, enable a ms accuracy log printer by the api mtl_set_log_prefix_formatter.
 --rx_video_file_frames <count>       : debug option, dump the received video frames to one yuv file
@@ -543,7 +545,7 @@ sudo bash -c 'echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode'
 If you get a similar message when running the RxTxApp, it's likely an `ld` library path problem.
 
 ```text
-./build/app/RxTxApp: error while loading shared libraries: librte_dmadev.so.23: cannot open shared object file: No such file or directory
+./tests/tools/RxTxApp/build/RxTxApp: error while loading shared libraries: librte_dmadev.so.23: cannot open shared object file: No such file or directory
 ```
 
 Try to find the path of this so and append it to `LD_LIBRARY_PATH`.

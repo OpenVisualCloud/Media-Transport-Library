@@ -1,7 +1,6 @@
 
-# SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
-# Media Transport Library
+# SPDX-License-Identifier: BSD-3-Clause
 
 # Minimal makefile for Sphinx documentation
 

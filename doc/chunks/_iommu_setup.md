@@ -23,7 +23,7 @@ After enabling IOMMU in the BIOS, you need to enable it in your operating system
 
 ##### Ubuntu/Debian
 
-Edit GRUB_CMDLINE_LINUX_DEFAULT item in /etc/default/grub file, append below parameters into GRUB_CMDLINE_LINUX_DEFAULT item if it's not there.
+Edit `GRUB_CMDLINE_LINUX_DEFAULT` item in `/etc/default/grub` file, append below parameters into `GRUB_CMDLINE_LINUX_DEFAULT` item if it's not there.
 
 ```bash
 sudo vim /etc/default/grub
