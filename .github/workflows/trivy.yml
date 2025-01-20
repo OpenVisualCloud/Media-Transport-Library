@@ -16,75 +16,54 @@ env:
   MTL_BUILD_DISABLE_PCAPNG: true
   PREFIX_DIR: /usr/local
   DEBIAN_FRONTEND: noninteractive
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+  TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
 permissions:
   contents: read
 
+
 jobs:
-  trivy:
-    name: Build
+  triv-security-tab:
+    name: sarif output scan
+    runs-on: ubuntu-20.04
+    permissions:
+        security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Run Trivy vulnerability scanner with sarif output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./docker
+          format: sarif
+          exit-code: 0
+          vuln-type: os,library
+          output: Trivy-dockerfile.sarif
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
+        with:
+          sarif_file: Trivy-dockerfile.sarif
+
+  trivy-stdout:
+    name: table output scan
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
           ref: ${{ inputs.branch }}
-      - name: 'Install dependencies'
-        run: |
-          sudo apt-get update -y && \
-          sudo apt-get install -y --no-install-recommends \
-              git build-essential meson python3 python3-pyelftools pkg-config \
-              libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev \
-              libsdl2-ttf-dev libssl-dev ca-certificates m4 clang llvm zlib1g-dev \
-              libelf-dev libcap-ng-dev libcap2-bin gcc-multilib systemtap-sdt-dev ninja-build \
-              nasm dpdk-dev librdmacm-dev && \
-          sudo apt-get clean && \
-          sudo rm -rf /var/lib/apt/lists/*
-          
-      - name: Build an image from Dockerfile
-        run: |
-          cd docker
-          docker build -t mtl:latest -f ubuntu.dockerfile ../
 
-      - name: Run Trivy vulnerability scanner with sarif output
+      - name: Run Trivy vulnerability scanner with table output
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
-          image-ref: 'mtl:latest'
-          format: 'sarif'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          output: 'Trivy-image-scan-results.sarif'
-      - name: Upload Trivy scan results to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
-        with:
-          sarif_file: 'Trivy-image-scan-results.sarif'
-      - name: Run Trivy vulnerability scanner with with table output
-        if: always()
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
-        with:
-          image-ref: 'mtl:latest'
-          format: 'sarif'
-          scanners: 'vuln,secret,misconfig'
-          exit-code: '1'
-          output: 'Trivy-image-scan-results.sarif'
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
-        with:
-          sarif_file: 'Trivy-image-scan-results.sarif'
-      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
-        with:
-          name: trivy-results
-          path: 'trivy-results.sarif'
-          format: 'table'
-          exit-code: '0'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          output: 'Trivy-image-scan-results.txt'
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: trivy-results
-          path: 'Trivy-image-scan-results.txt'
-
+          scan-type: config
+          scan-ref: ./docker
+          cache: false
+          format: table
+          exit-code: 1
+          vuln-type: os,library
