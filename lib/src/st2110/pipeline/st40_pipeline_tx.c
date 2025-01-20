@@ -385,7 +385,6 @@ int st40p_tx_free(st40p_tx_handle handle) {
   }
   tx_st40p_uinit_fbs(ctx);
 
-
   mt_pthread_mutex_destroy(&ctx->lock);
   mt_pthread_mutex_destroy(&ctx->block_wake_mutex);
   mt_pthread_cond_destroy(&ctx->block_wake_cond);

@@ -93,11 +93,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
 /* Maximum size for single User Data Words defined in st0291-1 */
 #define MAX_UDW_SIZE 255
 
-enum {
-  PROP_ST40P_TX_RETRY = PROP_GENERAL_MAX,
-  PROP_ST40P_TX_FRAMEBUFF_CNT,
-  PROP_MAX
-};
+enum { PROP_ST40P_TX_RETRY = PROP_GENERAL_MAX, PROP_ST40P_TX_FRAMEBUFF_CNT, PROP_MAX };
 
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st40p_tx_sink_pad_template =
@@ -105,8 +101,7 @@ static GstStaticPadTemplate gst_mtl_st40p_tx_sink_pad_template =
 
 #define gst_mtl_st40p_tx_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST_TYPE_BASE_SINK,
-                        GST_DEBUG_CATEGORY_INIT(gst_mtl_st40p_tx_debug,
-                                                "mtl_st40p_tx", 0,
+                        GST_DEBUG_CATEGORY_INIT(gst_mtl_st40p_tx_debug, "mtl_st40p_tx", 0,
                                                 "MTL St2110 st40 transmission sink"));
 
 GST_ELEMENT_REGISTER_DEFINE(mtl_st40p_tx, "mtl_st40p_tx", GST_RANK_NONE,
@@ -125,7 +120,6 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink);
 static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink);
-
 
 static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   GObjectClass* gobject_class;
@@ -150,7 +144,6 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   gstbasesink_class->start = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_start);
 
   gst_mtl_common_init_general_argumetns(gobject_class);
-
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
@@ -289,9 +282,9 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     return FALSE;
   }
   ops_tx.port.payload_type = sink->portArgs.payload_type;
-  ops_tx.fps = ST_FPS_P59_94; // TODO: parameterize
+  ops_tx.fps = ST_FPS_P59_94;  // TODO: parameterize
   ops_tx.interlaced = false;
-  sink->frame_size = MAX_UDW_SIZE; // Allow only single ANC data packet. ANC_Count = 1
+  sink->frame_size = MAX_UDW_SIZE; /* Allow only single ANC data packet. ANC_Count = 1 */
   ops_tx.max_udw_buff_size = MAX_UDW_SIZE;
 
   ret = mtl_start(sink->mtl_lib_handle);
@@ -341,14 +334,14 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
   return ret;
 }
 
-static void fill_st40_meta(struct st40_frame* frame, void *data, guint32 data_size) {
+static void fill_st40_meta(struct st40_frame* frame, void* data, guint32 data_size) {
   frame->meta[0].c = 0;
   frame->meta[0].line_number = 10;
   frame->meta[0].hori_offset = 0;
   frame->meta[0].s = 0;
   frame->meta[0].stream_num = 0;
-  frame->meta[0].did = 0x43; // TODO: parametrize
-  frame->meta[0].sdid = 0x02; // TODO: parametrize
+  frame->meta[0].did = 0x43;   // TODO: parametrize
+  frame->meta[0].sdid = 0x02;  // TODO: parametrize
   frame->meta[0].udw_size = data_size;
   frame->meta[0].udw_offset = 0;
   frame->data = data;
@@ -391,7 +384,8 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
         return GST_FLOW_ERROR;
       }
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
-      bytes_to_write_cur = bytes_to_write > sink->frame_size ? sink->frame_size : bytes_to_write;
+      bytes_to_write_cur =
+          bytes_to_write > sink->frame_size ? sink->frame_size : bytes_to_write;
       mtl_memcpy(frame->udw_buff_addr, cur_addr_buf, bytes_to_write_cur);
       fill_st40_meta(frame->anc_frame, frame->udw_buff_addr, bytes_to_write_cur);
       st40p_tx_put_frame(sink->tx_handle, frame);
@@ -402,7 +396,6 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
   gst_buffer_unref(buf);
   return GST_FLOW_OK;
 }
-
 
 static void gst_mtl_st40p_tx_finalize(GObject* object) {
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(object);

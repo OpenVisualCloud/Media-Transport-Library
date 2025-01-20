@@ -1,7 +1,6 @@
 #ifndef __ST40_PIPELINE_TX_H__
 #define __ST40_PIPELINE_TX_H__
 
-#include <mtl/st40_api.h>
 #include "../st_main.h"
 
 #if defined(__cplusplus)
@@ -24,8 +23,6 @@ struct st40_frame_info {
   void* udw_buff_addr;
   /** user data words buffer size */
   size_t udw_buffer_size;
-  /** frame valid data size, may <= buffer_size */
-//   size_t data_size;   !!!!!                               TODO remove!!
   /** frame timestamp format */
   enum st10_timestamp_fmt tfmt;
   /** frame timestamp value */
@@ -205,5 +202,3 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx);
 #endif
 
 #endif /* __ST40_PIPELINE_TX_H__ */
-
-

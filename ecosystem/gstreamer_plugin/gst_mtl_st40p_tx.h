@@ -47,8 +47,9 @@
 #ifndef __GST_MTL_ST40P_TX_H__
 #define __GST_MTL_ST40P_TX_H__
 
-#include "gst_mtl_common.h"
 #include <st40_pipeline_tx.h>
+
+#include "gst_mtl_common.h"
 
 G_BEGIN_DECLS
 
