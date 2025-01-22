@@ -17,12 +17,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <mtl/st_convert_api.h>
+#include "mtl_common.h"
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
 #endif /* MTL_GPU_DIRECT_ENABLED */
-#include <mtl/st_convert_api.h>
-
-#include "mtl_common.h"
 
 typedef struct MtlSt20pDemuxerContext {
   const AVClass* class; /**< Class for private options. */
