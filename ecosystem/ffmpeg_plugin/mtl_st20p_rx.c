@@ -17,11 +17,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "mtl_common.h"
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
 #endif /* MTL_GPU_DIRECT_ENABLED */
 #include <mtl/st_convert_api.h>
+
+#include "mtl_common.h"
 
 typedef struct MtlSt20pDemuxerContext {
   const AVClass* class; /**< Class for private options. */
@@ -263,12 +264,10 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
 
   if (s->pixel_format == AV_PIX_FMT_Y210LE) {
-    ret = st20_rfc4175_422be10_to_y210(
-        (struct st20_rfc4175_422_10_pg2_be*)frame, (uint16_t*)pkt->data,
-        s->width, s->height);
+    ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)frame,
+                                       (uint16_t*)pkt->data, s->width, s->height);
     if (ret != 0) {
-      av_log(ctx, AV_LOG_ERROR,
-          "st20_rfc4175_422be10_to_y210le failed with %d\n", ret);
+      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210le failed with %d\n", ret);
       return ret;
     }
   }
