@@ -18,7 +18,6 @@
  */
 
 #include <mtl/st_convert_api.h>
-
 #include "mtl_common.h"
 
 typedef struct mtlSt20pMuxerContext {
