@@ -3,7 +3,7 @@
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  * Copyright (C) 2020 Niels De Graef <niels.degraef@gmail.com>
- * Copyright (C) 2024 Intel Corporation
+ * Copyright (C) 2025 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -47,7 +47,7 @@
 #ifndef __GST_MTL_ST40P_TX_H__
 #define __GST_MTL_ST40P_TX_H__
 
-#include <st40_pipeline_tx.h>
+#include <experimental/st40_pipeline_api.h>
 
 #include "gst_mtl_common.h"
 
@@ -63,11 +63,13 @@ struct _Gst_Mtl_St40p_Tx {
   guint frame_size;
 
   /* arguments */
-  guint retry_frame;
   guint log_level;
   StDevArgs devArgs;        /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuff_cnt;
+  guint framerate;
+  guint did;
+  guint sdid;
 };
 
 G_END_DECLS

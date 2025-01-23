@@ -123,6 +123,6 @@ gst_mtl_st40p_tx = library('gstmtl_st40p_tx',
   dependencies : [gst_dep, gstbase_dep, mtl_dep],
   install : true,
   install_dir : plugins_install_dir,
-  include_directories: [inc_dirs, '../../lib/src/st2110/pipeline'],
+  include_directories: inc_dirs,
   c_args: plugin_c_args
 )

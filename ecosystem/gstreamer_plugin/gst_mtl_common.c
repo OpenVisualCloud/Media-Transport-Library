@@ -206,7 +206,7 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
   }
 }
 
-void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
+void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_LOG_LEVEL,
       g_param_spec_uint("log-level", "Log Level", "Set the log level (INFO 1 to CRIT 5).",
@@ -269,7 +269,7 @@ void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class) {
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
-void gst_mtl_common_set_general_argumetns(GObject* object, guint prop_id,
+void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level) {
@@ -310,7 +310,7 @@ void gst_mtl_common_set_general_argumetns(GObject* object, guint prop_id,
   }
 }
 
-void gst_mtl_common_get_general_argumetns(GObject* object, guint prop_id,
+void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level) {

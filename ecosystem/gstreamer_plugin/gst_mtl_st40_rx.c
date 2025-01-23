@@ -166,7 +166,7 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
   gstbasesrc_class->stop = GST_DEBUG_FUNCPTR(gst_mtl_st40_rx_stop);
   gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st40_rx_create);
 
-  gst_mtl_common_init_general_argumetns(gobject_class);
+  gst_mtl_common_init_general_arguments(gobject_class);
 
   g_object_class_install_property(
       gobject_class, PROP_ST40_RX_BUFFER_SIZE,
@@ -286,7 +286,7 @@ static void gst_mtl_st40_rx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St40_Rx* self = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_argumetns(object, prop_id, value, pspec, &(self->devArgs),
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
                                          &(self->portArgs), &self->log_level);
     return;
   }
@@ -309,7 +309,7 @@ static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue*
   Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_argumetns(object, prop_id, value, pspec, &(src->devArgs),
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->devArgs),
                                          &(src->portArgs), &src->log_level);
     return;
   }
@@ -372,7 +372,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     src->udw_size = udw_size;
     src->anc_data = (char*)malloc(udw_size);
   } else if (src->udw_size != udw_size) {
-    GST_WARNING("Size of recieved ancillary data has changed");
+    GST_INFO("Size of recieved ancillary data has changed");
     if (src->anc_data) {
       free(src->anc_data);
       src->anc_data = NULL;

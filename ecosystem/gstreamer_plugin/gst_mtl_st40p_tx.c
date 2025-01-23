@@ -2,7 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2024 Intel Corporation
+ * Copyright (C) 2025 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -78,7 +78,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
 #define GST_API_VERSION "1.0"
 #endif
 #ifndef GST_PACKAGE_NAME
-#define GST_PACKAGE_NAME "Media Transport Library st2110 st40 tx plugin"
+#define GST_PACKAGE_NAME "Media Transport Library SMPTE ST 2110-40 Tx plugin"
 #endif
 #ifndef GST_PACKAGE_ORIGIN
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
@@ -90,10 +90,16 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
 #define PACKAGE_VERSION "1.0"
 #endif
 
-/* Maximum size for single User Data Words defined in st0291-1 */
+/* Maximum size for single User Data Words defined in ST 0291-1  */
 #define MAX_UDW_SIZE 255
 
-enum { PROP_ST40P_TX_RETRY = PROP_GENERAL_MAX, PROP_ST40P_TX_FRAMEBUFF_CNT, PROP_MAX };
+enum {
+  PROP_ST40P_TX_FRAMEBUFF_CNT = PROP_GENERAL_MAX,
+  PROP_ST40P_TX_FRAMERATE,
+  PROP_ST40P_TX_DID,
+  PROP_ST40P_TX_SDID,
+  PROP_MAX
+};
 
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st40p_tx_sink_pad_template =
@@ -143,7 +149,31 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_finalize);
   gstbasesink_class->start = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_start);
 
-  gst_mtl_common_init_general_argumetns(gobject_class);
+  gst_mtl_common_init_general_arguments(gobject_class);
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_FRAMEBUFF_CNT,
+      g_param_spec_uint("tx-framebuff-cnt", "Number of framebuffers",
+                        "Number of framebuffers to be used for transmission.", 0,
+                        G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_FRAMERATE,
+      g_param_spec_uint(
+          "tx-fps", "framerate of the related video",
+          "Framerate of the video to witch the ancillary data is synchronized.", 0,
+          G_MAXUINT, 5994, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_DID,
+      g_param_spec_uint("tx-did", "Data ID", "Data ID for the ancillary data", 0, 0xff, 0,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_SDID,
+      g_param_spec_uint("tx-sdid", "Secondary Data ID",
+                        "Secondary Data ID for the ancillary data", 0, 0xff, 0,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
@@ -162,7 +192,6 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
     GST_ERROR("Could not initialize MTL");
     return FALSE;
   }
-  sink->retry_frame = 10;
 
   gst_mtl_st40p_tx_session_create(sink);
 
@@ -191,17 +220,23 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St40p_Tx* self = GST_MTL_ST40P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_argumetns(object, prop_id, value, pspec, &(self->devArgs),
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
                                          &(self->portArgs), &self->log_level);
     return;
   }
 
   switch (prop_id) {
-    case PROP_ST40P_TX_RETRY:
-      self->retry_frame = g_value_get_uint(value);
-      break;
     case PROP_ST40P_TX_FRAMEBUFF_CNT:
       self->framebuff_cnt = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_FRAMERATE:
+      self->framerate = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_DID:
+      self->did = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_SDID:
+      self->sdid = g_value_get_uint(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -214,17 +249,23 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_argumetns(object, prop_id, value, pspec, &(sink->devArgs),
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(sink->devArgs),
                                          &(sink->portArgs), &sink->log_level);
     return;
   }
 
   switch (prop_id) {
-    case PROP_ST40P_TX_RETRY:
-      g_value_set_uint(value, sink->retry_frame);
-      break;
     case PROP_ST40P_TX_FRAMEBUFF_CNT:
       g_value_set_uint(value, sink->framebuff_cnt);
+      break;
+    case PROP_ST40P_TX_FRAMERATE:
+      g_value_set_uint(value, sink->framerate);
+      break;
+    case PROP_ST40P_TX_DID:
+      g_value_set_uint(value, sink->did);
+      break;
+    case PROP_ST40P_TX_SDID:
+      g_value_set_uint(value, sink->sdid);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -282,9 +323,14 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     return FALSE;
   }
   ops_tx.port.payload_type = sink->portArgs.payload_type;
-  ops_tx.fps = ST_FPS_P59_94;  // TODO: parameterize
+
+  if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
+    GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
+    return FALSE;
+  }
   ops_tx.interlaced = false;
-  sink->frame_size = MAX_UDW_SIZE; /* Allow only single ANC data packet. ANC_Count = 1 */
+  /* Only single ANC data packet is possible per frame. ANC_Count = 1 TODO: allow more */
+  sink->frame_size = MAX_UDW_SIZE;
   ops_tx.max_udw_buff_size = MAX_UDW_SIZE;
 
   ret = mtl_start(sink->mtl_lib_handle);
@@ -334,14 +380,30 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
   return ret;
 }
 
-static void fill_st40_meta(struct st40_frame* frame, void* data, guint32 data_size) {
+/**
+ * @brief Fills the metadata for a st40 frame.
+ *
+ * This function initializes the metadata fields of a given st40 frame with the provided
+ * data and metadata values. It sets the first metadata entry with the specified DID,
+ * SDID, and data size, and assigns the data pointer to the frame.
+ * Note: Most of the fields are hardcoded, and only first metadata block is filled as
+ * only one ANC Data packet per frame is allowed.
+ *
+ * @param frame Pointer to the st40_frame structure to be filled. Cannot be NULL.
+ * @param data Pointer to the data to be associated with the frame.
+ * @param data_size Size of the data in bytes.
+ * @param did Data Identifier (DID) to be set in the metadata.
+ * @param sdid Secondary Data Identifier (SDID) to be set in the metadata.
+ */
+static void fill_st40_meta(struct st40_frame* frame, void* data, guint32 data_size,
+                           guint did, guint sdid) {
   frame->meta[0].c = 0;
-  frame->meta[0].line_number = 10;
+  frame->meta[0].line_number = 0;
   frame->meta[0].hori_offset = 0;
   frame->meta[0].s = 0;
   frame->meta[0].stream_num = 0;
-  frame->meta[0].did = 0x43;   // TODO: parametrize
-  frame->meta[0].sdid = 0x02;  // TODO: parametrize
+  frame->meta[0].did = did;
+  frame->meta[0].sdid = sdid;
   frame->meta[0].udw_size = data_size;
   frame->meta[0].udw_offset = 0;
   frame->data = data;
@@ -357,7 +419,7 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(parent);
   gint buffer_n = gst_buffer_n_memory(buf);
-  struct st40_frame_info* frame = NULL;
+  struct st40_frame_info* frame_info = NULL;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
   gint bytes_to_write, bytes_to_write_cur;
@@ -378,17 +440,18 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
     }
 
     while (bytes_to_write > 0) {
-      frame = st40p_tx_get_frame(sink->tx_handle);
-      if (!frame) {
+      frame_info = st40p_tx_get_frame(sink->tx_handle);
+      if (!frame_info) {
         GST_ERROR("Failed to get frame");
         return GST_FLOW_ERROR;
       }
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
       bytes_to_write_cur =
           bytes_to_write > sink->frame_size ? sink->frame_size : bytes_to_write;
-      mtl_memcpy(frame->udw_buff_addr, cur_addr_buf, bytes_to_write_cur);
-      fill_st40_meta(frame->anc_frame, frame->udw_buff_addr, bytes_to_write_cur);
-      st40p_tx_put_frame(sink->tx_handle, frame);
+      mtl_memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_to_write_cur);
+      fill_st40_meta(frame_info->anc_frame, frame_info->udw_buff_addr, bytes_to_write_cur,
+                     sink->did, sink->sdid);
+      st40p_tx_put_frame(sink->tx_handle, frame_info);
       bytes_to_write -= bytes_to_write_cur;
     }
     gst_memory_unmap(gst_buffer_memory, &map_info);

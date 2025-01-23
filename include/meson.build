@@ -13,7 +13,8 @@ endif
 install_headers(mtl_header_files, subdir : meson.project_name())
 
 # experimental features
-mtl_experimental_header_files = files('experimental/st20_combined_api.h')
+mtl_experimental_header_files = files('experimental/st20_combined_api.h',
+  'experimental/st40_pipeline_api.h')
 
 experimental_header_install_path = meson.project_name() + '/experimental'
 
