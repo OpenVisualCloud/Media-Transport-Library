@@ -15,7 +15,7 @@ Before you begin, ensure you have the following installed on your system:
 
 To install the required GStreamer packages on Ubuntu or Debian, run the following commands:
 
-```shell
+```bash
 sudo apt update
 
 sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev
@@ -27,7 +27,7 @@ sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreame
 
 To build the GStreamer plugins using the provided script, run the following commands:
 
-```shell
+```bash
 cd Media-Transport-Library/ecosystem/gstreamer_plugin
 ./build.sh
 ```
@@ -38,25 +38,25 @@ If you prefer to build the GStreamer plugins manually, follow these steps:
 
 1. Navigate to the GStreamer plugin directory:
 
-    ```shell
+    ```bash
     cd Media-Transport-Library/ecosystem/gstreamer_plugin
     ```
 
 2. Set up the build directory with debug build type:
 
-    ```shell
+    ```bash
     meson setup --buildtype=debug "$BUILD_DIR"
     ```
 
 3. Set up the build directory (if not already done):
 
-    ```shell
+    ```bash
     meson setup "$BUILD_DIR"
     ```
 
 4. Compile the project:
 
-    ```shell
+    ```bash
     meson compile -C "$BUILD_DIR"
     ```
 
@@ -71,7 +71,7 @@ To run GStreamer plugins, you need an application capable of using the GStreamer
 For first-time users, to use `gst-launch-1.0` with our plugins, you need to install the following packages from the package manager. For Ubuntu,
 this can be done by running the following command:
 
-```sh
+```bash
 sudo apt-get update
 sudo apt-get install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
 ```
@@ -88,7 +88,7 @@ To run plugins, you need to pass the path to the plugins to your GStreamer appli
 In the case of `gst-launch-1.0`, the argument for this is `--gst-plugin-path`.
 You can also move the plugins to the default plugin directory `$GSTREAMER_PLUGINS_PATH` instead (see [gstreamer-launch documentation](https://gstreamer.freedesktop.org/documentation/tools/gst-launch.html)).
 
-```sh
+```bash
 export GSTREAMER_PLUGINS_PATH=/path/to/your/compiled/plugins
 gst-inspect-1.0 --gst-plugin-path $GSTREAMER_PLUGINS_PATH mtl_st20p_rx
 ```
@@ -182,7 +182,7 @@ Here is how to generate an input video with `y210` format using GStreamer.
 
 In our pipelines, we will use the `$INPUT` variable to hold the path to the input video.
 
-```shell
+```bash
 export INPUT="path_to_the_input_v210_file"
 
 gst-launch-1.0 -v videotestsrc pattern=ball ! video/x-raw,width=1920,height=1080,format=v210,framerate=60/1 ! filesink location=$INPUT
@@ -195,7 +195,7 @@ To ensure the correct size of the buffer, we will use the `rawvideoparse` elemen
 
 
 The rest of rawvideo metadata will be passed via pad capabilities of the buffer.
-```shell
+```bash
 # If you don't know how to find VFIO PCI address of your device
 # refer to Media-Transport-Library/doc/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
@@ -239,7 +239,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 
 In our pipelines, we will use the `$OUTPUT` variable to hold the path to the video.
 
-```shell
+```bash
 export OUTPUT="path_to_the_file_we_want_to_save"
 ```
 
@@ -249,7 +249,7 @@ To run the `mtl_st20p_rx` plugin, use the following command to specify the input
 
 > **Warning**: To receive data, ensure that a transmission is running with the same parameters on the `239.168.75.30` address.
 
-```shell
+```bash
 # If you don't know how to find the VFIO PCI address of your device
 # refer to Media-Transport-Library/doc/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
@@ -287,7 +287,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 To run the `mtl_st30p_tx` plugin, you need to setup metadata (Here we are using pipeline capabilities).
 Instead of using input video we opted for build-in GStreamer audio files generator.
 
-```shell
+```bash
 # If you don't know how to find the VFIO PCI address of your device
 # refer to Media-Transport-Library/doc/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
@@ -321,7 +321,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 
 In our pipelines, we will use the `$OUTPUT` variable to hold the path to the audio file.
 
-```shell
+```bash
 export OUTPUT="path_to_the_file_we_want_to_save"
 ```
 
@@ -331,7 +331,7 @@ To run the `mtl_st30p_rx` audio plugin use the command below:
 
 > **Warning**: To receive data, ensure that a transmission is running with the same parameters on the `239.168.75.30` address.
 
-```shell
+```bash
 # If you don't know how to find the VFIO PCI address of your device
 # refer to Media-Transport-Library/doc/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
@@ -366,7 +366,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 
 To run the `mtl_st40p_tx` plugin, use the following command:
 
-```shell
+```bash
 # If you don't know how to find the VFIO PCI address of your device
 # refer to Media-Transport-Library/doc/run.md
 export VFIO_PORT_T="pci_address_of_the_device"
@@ -398,7 +398,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 To run the `mtl_st40p_rx` plugin, use the following command:
 > **Warning**: To receive ancillary data, ensure that a transmission is running on the `239.168.75.30` address.
 
-```shell
+```bash
 # If you don't know how to find the VFIO PCI address of your device
 # refer to Media-Transport-Library/doc/run.md
 export VFIO_PORT_R="pci_address_of_the_device"
