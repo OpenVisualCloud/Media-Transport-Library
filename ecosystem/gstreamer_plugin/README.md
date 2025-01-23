@@ -172,7 +172,7 @@ The `mtl_st20p_tx` plugin supports the following pad capabilities:
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
 | retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
-| tx-fps              | uint   | Framerate of the video.                               | [gst_mtl_supported_fps](#video-formats-gst_mtl_supported_fps) | 0 |
+| tx-fps              | uint   | Framerate of the video.                               | [gst_mtl_supported_fps](#231-supported-video-fps-codes-gst_mtl_supported_fps) | 0 |
 | tx-framebuff-num    | uint   | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
 
 #### 3.1.2. Preparing Input Video
@@ -228,7 +228,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 | Property Name       | Type    | Description                                         | Range                      | Default Value |
 |---------------------|---------|-----------------------------------------------------|----------------------------|---------------|
 | retry               | uint    | Number of times the MTL will try to get a frame.    | 0 to G_MAXUINT             | 10            |
-| rx-fps              | uint    | Framerate of the video.                             | [gst_mtl_supported_fps](#video-formats-gst_mtl_supported_fps) | 0 |
+| rx-fps              | uint    | Framerate of the video.                             | [gst_mtl_supported_fps](#231-supported-video-fps-codes-gst_mtl_supported_fps) | 0 |
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission. | 0 to 8                     | 3             |
 | rx-width            | uint    | Width of the video.                                 | 0 to G_MAXUINT             | 1920          |
 | rx-height           | uint    | Height of the video.                                | 0 to G_MAXUINT             | 1080          |
@@ -279,7 +279,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
 | retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
-| tx-samplerate       | uint   | Sample rate of the audio.                             | [gst_mtl_supported_audio_sampling](#supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 0 |
+| tx-samplerate       | uint   | Sample rate of the audio.                             | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 0 |
 | tx-channels         | uint   | Number of audio channels.                             | 1 to 8                  | 2             |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16LE format
@@ -314,7 +314,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 |---------------------|---------|-------------------------------------------------------|-------------------------|---------------|
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT          | 3             |
 | rx-channel          | uint    | Audio channel number.                                 | 0 to G_MAXUINT          | 2             |
-| rx-sampling         | uint    | Audio sampling rate.                                  | [gst_mtl_supported_audio_sampling](#supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 48000         |
+| rx-sampling         | uint    | Audio sampling rate.                                  | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 48000         |
 | rx-audio-format     | string  | Audio format type.                                    | `S8`, `S16LE`, `S24LE`  | `S16LE`       |
 
 #### 4.2.2. Preparing Output Path
