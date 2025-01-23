@@ -8,8 +8,6 @@ Before you begin, ensure you have the following installed on your system:
 - `Meson`
 - `gst-plugins-base`
 - `gst-plugins-good`
-- `gst-plugins-bad`
-- `gst-plugins-ugly`
 - `gstreamer`
 - `gstreamer-devel`
 
@@ -18,7 +16,7 @@ To install the required GStreamer packages on Ubuntu or Debian, run the followin
 ```bash
 sudo apt update
 
-sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev
+sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools gstreamer1.0-libav libgstreamer1.0-dev
 ```
 
 > For MTL installation instructions please refer to  [Build Documentation](../../doc/build.md).
@@ -73,15 +71,13 @@ this can be done by running the following command:
 
 ```bash
 sudo apt-get update
-sudo apt-get install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly
+sudo apt-get install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
 ```
 
 These packages include:
 - **gstreamer1.0-tools**: Provides the `gst-launch-1.0` tool and other GStreamer utilities.
 - **gstreamer1.0-plugins-base**: Contains the base set of plugins, which are essential for most GStreamer applications.
 - **gstreamer1.0-plugins-good**: Includes a set of well-supported plugins that are generally considered to be of good quality.
-- **gstreamer1.0-plugins-bad**: Contains a set of plugins that are still under development or testing.
-- **gstreamer1.0-plugins-ugly**: Includes plugins that might have licensing issues or are not considered to be of the highest quality.
 By installing these packages, you will have all the necessary tools and plugins to run GStreamer applications and use the `gst-launch-1.0` tool with our plugins.
 
 To run plugins, you need to pass the path to the plugins to your GStreamer application or load them directly.
