@@ -1,8 +1,8 @@
 # Gstreamer plugin for MTL
 
-## Building the GStreamer plugins
+## 1. Building the GStreamer plugins
 
-### Prerequisites
+### 1.1. Prerequisites
 Before you begin, ensure you have the following installed on your system:
 - `MTL`
 - `Meson`
@@ -23,7 +23,7 @@ sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreame
 
 > For MTL installation instructions please refer to  [Build Documentation](../../doc/build.md).
 
-### Automated Build
+### 1.2. Automated Build
 
 To build the GStreamer plugins using the provided script, run the following commands:
 
@@ -32,7 +32,7 @@ cd Media-Transport-Library/ecosystem/gstreamer_plugin
 ./build.sh
 ```
 
-### Manual Build Instructions
+### 1.3. Manual Build Instructions
 
 If you prefer to build the GStreamer plugins manually, follow these steps:
 
@@ -62,9 +62,9 @@ If you prefer to build the GStreamer plugins manually, follow these steps:
 
 By following these steps, you can manually build the GStreamer plugins.
 
-## Running the pipeline
+## 2. Running the pipeline
 
-### Prerequisites
+### 2.1. Prerequisites
 
 To run GStreamer plugins, you need an application capable of using the GStreamer plugin API. In the examples provided, we are using `gst-launch-1.0`.
 
@@ -93,7 +93,7 @@ export GSTREAMER_PLUGINS_PATH=/path/to/your/compiled/plugins
 gst-inspect-1.0 --gst-plugin-path $GSTREAMER_PLUGINS_PATH mtl_st20p_rx
 ```
 
-### General arguments
+### 2.2. General arguments
 In GStreamer plugins there are general arguments that apply to every plugin.
 
 | Property Name | Type   | Description                                                                                       | Range                    |
@@ -113,11 +113,11 @@ These are also general parameters accepted by plugins, but the functionality the
 | dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
 | port          | string | **RESERVED FOR FUTURE USE** DPDK device port. Utilized when multiple ports are passed to the MTL library to select the port for the session. | N/A |
 
-### General capabilities
+### 2.3. General capabilities
 
 Some structures describe the capabilities generally
 
-#### Supported video fps codes gst_mtl_supported_fps
+#### 2.3.1. Supported video fps codes gst_mtl_supported_fps
 ```c
 enum gst_mtl_supported_fps {
   GST_MTL_SUPPORTED_FPS_23_98 = 2398,   // 23.98 fps
@@ -134,7 +134,7 @@ enum gst_mtl_supported_fps {
 };
 ```
 
-#### Supported Audio Sampling Rates gst_mtl_supported_audio_sampling
+#### 2.3.2. Supported Audio Sampling Rates gst_mtl_supported_audio_sampling
 ```c
 enum gst_mtl_supported_audio_sampling {
   GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K = 44100,  // 44.1 kHz
@@ -143,7 +143,7 @@ enum gst_mtl_supported_audio_sampling {
 };
 ```
 
-### SMPTE ST 2110-20 Rawvideo plugins
+## 3. SMPTE ST 2110-20 Rawvideo plugins
 
 Video plugins for MTL that are able to send, receive synchronous video via the MTL pipeline API.
 
@@ -155,9 +155,9 @@ Video plugins for MTL that are able to send, receive synchronous video via the M
 > Keep in mind that raw video files are very large and saving / using them is I/O and memory space intensive.
 > Oftentimes pipeline choking point is the drive I/O speed limitation.
 
-### Running the SMPTE ST 2110-20 transmission plugin mtl_st20p_tx
+### 3.1. Running the SMPTE ST 2110-20 transmission plugin mtl_st20p_tx
 
-#### Supported parameters and pad capabilities
+#### 3.1.1. Supported parameters and pad capabilities
 
 The `mtl_st20p_tx` plugin supports the following pad capabilities:
 
@@ -175,7 +175,7 @@ The `mtl_st20p_tx` plugin supports the following pad capabilities:
 | tx-fps              | uint   | Framerate of the video.                               | [gst_mtl_supported_fps](#video-formats-gst_mtl_supported_fps) | 0 |
 | tx-framebuff-num    | uint   | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
 
-#### Preparing Input Video
+#### 3.1.2. Preparing Input Video
 
 To send the video, you need to have an input video ready.
 Here is how to generate an input video with `y210` format using GStreamer.
@@ -188,7 +188,7 @@ export INPUT="path_to_the_input_v210_file"
 gst-launch-1.0 -v videotestsrc pattern=ball ! video/x-raw,width=1920,height=1080,format=v210,framerate=60/1 ! filesink location=$INPUT
 ```
 
-#### Pipline example for multicast `y210`
+#### 3.1.3. Pipline example for multicast `y210`
 
 To run the raw video transmission plugin, we need to pass the MTL parameters responsible for initializing the MTL library.
 To ensure the correct size of the buffer, we will use the `rawvideoparse` element in the case of `y210`.
@@ -213,9 +213,9 @@ mtl_st20p_tx tx-queues=4 rx-queues=0 udp-port=20000 payload-type=112 dev-ip="192
 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
-### Running the SMPTE ST 2110-20 receiver plugin mtl_st20p_rx
+### 3.2. Running the SMPTE ST 2110-20 receiver plugin mtl_st20p_rx
 
-#### Supported Parameters and Pad Capabilities
+#### 3.2.1. Supported Parameters and Pad Capabilities
 
 The `mtl_st20p_rx` plugin supports the following pad capabilities:
 
@@ -235,7 +235,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 | rx-interlaced       | boolean | Whether the video is interlaced.                    | TRUE/FALSE                 | FALSE         |
 | rx-pixel-format     | string  | Pixel format of the video.                          | `v210`, `YUV444PLANAR10LE` | `v210`        |
 
-#### Preparing output path
+#### 3.2.2. Preparing output path
 
 In our pipelines, we will use the `$OUTPUT` variable to hold the path to the video.
 
@@ -243,7 +243,7 @@ In our pipelines, we will use the `$OUTPUT` variable to hold the path to the vid
 export OUTPUT="path_to_the_file_we_want_to_save"
 ```
 
-#### Pipline example for multicast with `y210` format
+#### 3.2.3. Pipline example for multicast with `y210` format
 
 To run the `mtl_st20p_rx` plugin, use the following command to specify the input parameters of the incoming stream.
 
@@ -261,13 +261,13 @@ filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 
 This command sets up the receiver pipeline with the specified parameters and saves the received video to the specified output path.
 
-### SMPTE ST 2110-30 Raw audio plugins
+## 4. SMPTE ST 2110-30 Raw audio plugins
 
 Audio plugins for MTL that are able to send, receive synchronous raw audio via the MTL pipeline API.
 
-### Running the SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
+### 4.1. Running the SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
 
-#### Supported Parameters and Pad Capabilities
+#### 4.1.1. Supported Parameters and Pad Capabilities
 
 The `mtl_st30p_tx` plugin supports the following pad capabilities:
 
@@ -282,7 +282,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 | tx-samplerate       | uint   | Sample rate of the audio.                             | [gst_mtl_supported_audio_sampling](#supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 0 |
 | tx-channels         | uint   | Number of audio channels.                             | 1 to 8                  | 2             |
 
-#### Example GStreamer Pipeline for Transmission with s16LE format
+#### 4.1.2. Example GStreamer Pipeline for Transmission with s16LE format
 
 To run the `mtl_st30p_tx` plugin, you need to setup metadata (Here we are using pipeline capabilities).
 Instead of using input video we opted for build-in GStreamer audio files generator.
@@ -299,9 +299,9 @@ mtl_st30p_tx tx-queues=4 rx-queues=0 udp-port=30000 payload-type=113 dev-ip="192
 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
-### Running the SMPTE ST 2110-30 Receiver Plugin `mtl_st30p_rx`
+### 4.2. Running the SMPTE ST 2110-30 Receiver Plugin `mtl_st30p_rx`
 
-#### Supported Parameters and Pad Capabilities
+#### 4.2.1. Supported Parameters and Pad Capabilities
 
 The `mtl_st30p_rx` plugin supports the following pad capabilities:
 
@@ -317,7 +317,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 | rx-sampling         | uint    | Audio sampling rate.                                  | [gst_mtl_supported_audio_sampling](#supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 48000         |
 | rx-audio-format     | string  | Audio format type.                                    | `S8`, `S16LE`, `S24LE`  | `S16LE`       |
 
-#### Preparing Output Path
+#### 4.2.2. Preparing Output Path
 
 In our pipelines, we will use the `$OUTPUT` variable to hold the path to the audio file.
 
@@ -325,7 +325,7 @@ In our pipelines, we will use the `$OUTPUT` variable to hold the path to the aud
 export OUTPUT="path_to_the_file_we_want_to_save"
 ```
 
-#### Example GStreamer pipeline for reception
+#### 4.2.3. Example GStreamer pipeline for reception
 
 To run the `mtl_st30p_rx` audio plugin use the command below:
 
@@ -344,13 +344,13 @@ gst-launch-1.0 -v mtl_st30p_rx rx-queues=4 udp-port=30000 payload-type=111 dev-i
 filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
-### SMPT SMPTE ST 2110-40 Ancillary Data Plugins
+## 5. SMPT SMPTE ST 2110-40 Ancillary Data Plugins
 
 Ancillary data plugins for MTL that are able to send and receive synchronous ancillary data via the MTL API.
 
-### Running the SMPTE ST 2110-40 Transmission Plugin `mtl_st40p_tx`
+### 5.1. Running the SMPTE ST 2110-40 Transmission Plugin `mtl_st40p_tx`
 
-#### Supported Parameters and Pad Capabilities
+#### 5.1.1. Supported Parameters and Pad Capabilities
 
 The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked):
 
@@ -362,7 +362,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
 | tx-framebuff-cnt    | uint   | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT          | 3             |
 
-#### Example GStreamer Pipeline for Transmission
+#### 5.1.2. Example GStreamer Pipeline for Transmission
 
 To run the `mtl_st40p_tx` plugin, use the following command:
 
@@ -379,14 +379,9 @@ gst-launch-1.0 -v mtl_st40p_tx tx-queues=4 rx-queues=0 udp-port=40000 payload-ty
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
 
+### 5.2. Running the SMPTE ST 2110-40 Receiver Plugin `mtl_st40p_rx`
 
-### SMPTE ST 2110-40 Ancillary Data Plugins
-
-Ancillary data plugins for MTL that are able to send and receive synchronous ancillary data via the MTL pipeline API.
-
-### Running the SMPTE ST 2110-40 Receiver Plugin `mtl_st40p_rx`
-
-#### Supported Parameters and Pad Capabilities
+#### 5.2.1. Supported Parameters and Pad Capabilities
 
 The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked):
 
@@ -398,7 +393,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 | buffer-size         | uint   | Size of the buffer used for receiving data            | 0 to G_MAXUINT (power of 2) | 1024          |
 | timeout             | uint   | Timeout in seconds for getting mbuf                   | 0 to G_MAXUINT              | 10            |
 
-#### Example GStreamer Pipeline for Reception
+#### 5.2.2. Example GStreamer Pipeline for Reception
 
 To run the `mtl_st40p_rx` plugin, use the following command:
 > **Warning**: To receive ancillary data, ensure that a transmission is running on the `239.168.75.30` address.
