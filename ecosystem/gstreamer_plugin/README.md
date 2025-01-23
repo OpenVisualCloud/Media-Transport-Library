@@ -2,12 +2,33 @@
 
 ## Building the gstreamer plugins
 
+Before you begin, ensure you have the following installed on your system:  
+``` Meson ```
+
+
 ```shell
 cd Media-Transport-Library/ecosystem/gstreamer_plugin
 ./build.sh
 ```
 
 ## Running the pipeline
+
+### General argumetns
+In gstreamer plugins there are general arguments that apply to every plugin
+
+| Property Name | Type   | Description                                                                                       | Default Value | Range                    |
+|---------------|--------|---------------------------------------------------------------------------------------------------|---------------|--------------------------|
+| log-level     | uint   | Set the log level (INFO 1 to CRIT 5).                                                             | 1             | 1 (INFO) TO 5 (CRITICAL) |
+| dev-port      | string | DPDK port for synchronous ST 2110 data video transmission, bound to the VFIO DPDK driver.         | NULL          | N/A                      |
+| dev-ip        | string | Local IP address that the port will be identified by. This is the address from which ARP responses will be sent. | NULL | N/A                |
+| dma-dev       | string | DPDK port for the MTL direct memory functionality.                                                | NULL          | N/A                      |
+| port          | string | DPDK device port initialized for the transmission.                                                | NULL          | N/A                      |
+| ip            | string | Receiving MTL node IP address.                                                                    | NULL          | N/A                      |
+| udp-port      | uint   | Receiving MTL node UDP port.                                                                      | 20000         | 0 to G_MAXUINT           |
+| tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 16            | 0 to G_MAXUINT           |
+| rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 16            | 0 to G_MAXUINT           |
+| payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 112           | 0 to G_MAXUINT           |
+
 
 ### St20 rawvideo plugin
 
