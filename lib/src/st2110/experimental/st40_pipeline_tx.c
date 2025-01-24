@@ -393,7 +393,7 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
 
   framebuff->stat = ST40P_TX_FRAME_READY;
   ctx->stat_put_frame++;
-  dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame->anc_frame);
+  dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame_info->anc_frame);
   return 0;
 }
 
