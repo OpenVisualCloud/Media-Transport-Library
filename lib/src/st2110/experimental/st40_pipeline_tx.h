@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 Intel Corporation
+ */
+
 #ifndef __ST40_PIPELINE_TX_H__
 #define __ST40_PIPELINE_TX_H__
 
