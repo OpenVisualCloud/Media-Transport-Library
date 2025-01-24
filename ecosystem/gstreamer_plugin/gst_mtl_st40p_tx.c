@@ -162,7 +162,7 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
       g_param_spec_uint(
           "tx-fps", "framerate of the related video",
           "Framerate of the video to witch the ancillary data is synchronized.", 0,
-          G_MAXUINT, 5994, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+          G_MAXUINT, 60, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_DID,
@@ -324,6 +324,18 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   }
   ops_tx.port.payload_type = sink->portArgs.payload_type;
 
+  if (sink->did > 0xFF) {
+    GST_ERROR("Invalid DID value: %d", sink->did);
+    return FALSE;
+  }
+  if (sink->sdid > 0xFF) {
+    GST_ERROR("Invalid SDID value: %d", sink->sdid);
+    return FALSE;
+  }
+  if (sink->framerate == 0) {
+    GST_INFO("Framerate not set, defaulting to 60");
+    sink->framerate = 60;
+  }
   if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
     GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
     return FALSE;
