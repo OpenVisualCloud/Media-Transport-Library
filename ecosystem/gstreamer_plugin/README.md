@@ -71,7 +71,7 @@ this can be done by running the following command:
 
 ```bash
 sudo apt-get update
-sudo apt-get install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
+sudo apt-get install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good
 ```
 
 These packages include:
@@ -90,7 +90,7 @@ gst-inspect-1.0 --gst-plugin-path $GSTREAMER_PLUGINS_PATH mtl_st20p_rx
 ```
 
 ### 2.2. General arguments
-In GStreamer plugins there are general arguments that apply to every plugin.
+In MTL GStreamer plugins there are general arguments that apply to every plugin.
 
 | Property Name | Type   | Description                                                                                       | Range                    |
 |---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
@@ -176,7 +176,7 @@ The `mtl_st20p_tx` plugin supports the following pad capabilities:
 To send the video, you need to have an input video ready.
 Here is how to generate an input video with `y210` format using GStreamer.
 
-In our pipelines, we will use the `$INPUT` variable to hold the path to the input video.
+In the following examples, we will use the `$INPUT` variable to hold the path to the input video.
 
 ```bash
 export INPUT="path_to_the_input_v210_file"
@@ -198,12 +198,6 @@ export VFIO_PORT_T="pci_address_of_the_device"
 
 # video pipeline y210 FHD 60fps on port 20000
 gst-launch-1.0 filesrc location=$INPUT ! \
-rawvideoparse format=v210 height=1080 width=1920 framerate=60/1 ! \
-mtl_st20p_tx tx-queues=4 rx-queues=0 udp-port=20000 payload-type=112 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T \
---gst-plugin-path $GSTREAMER_PLUGINS_PATH
-
-# video pipeline y210 FHD 60fps on port 20000
-gst-launch-1.0 multifilesrc location=$INPUT loop=true ! \
 rawvideoparse format=v210 height=1080 width=1920 framerate=60/1 ! \
 mtl_st20p_tx tx-queues=4 rx-queues=0 udp-port=20000 payload-type=112 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T \
 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
@@ -274,7 +268,6 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 **Arguments**
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
-| retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
 | tx-samplerate       | uint   | Sample rate of the audio.                             | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 0 |
 | tx-channels         | uint   | Number of audio channels.                             | 1 to 8                  | 2             |
 
@@ -353,10 +346,12 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name       | Type   | Description                                           | Range                   | Default Value |
-|---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
-| retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
-| tx-framebuff-cnt    | uint   | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT          | 3             |
+| Property Name     | Type | Description                                                        | Range         | Default Value |
+|-------------------|------|--------------------------------------------------------------------|---------------|---------------|
+| tx-framebuff-cnt  | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
+| tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| 0 to G_MAXUINT| 60            |
+| tx-did            | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
+| tx-sdid           | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 
@@ -368,10 +363,8 @@ To run the `mtl_st40p_tx` plugin, use the following command:
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Ancillary data pipeline on port 40000
-gst-launch-1.0 -v mtl_st40p_tx tx-queues=4 rx-queues=0 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T retry=10 tx-framebuff-cnt=3 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+gst-launch-1.0 -v mtl_st40p_tx tx-queues=4 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T  tx-framebuff-cnt=3 tx-fps=60 tx-did=67 tx-sdid=2 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
-
-> **Warning**: To transmit ancillary data, ensure that a receiver is running with the same parameters on the `239.168.75.30` address.
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
 
