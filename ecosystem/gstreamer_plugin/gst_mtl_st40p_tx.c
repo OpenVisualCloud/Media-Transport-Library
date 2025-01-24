@@ -2,7 +2,7 @@
  * GStreamer
  * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
  * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2024 Intel Corporation
+ * Copyright (C) 2025 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -65,11 +65,12 @@
 #endif
 
 #include <gst/gst.h>
+#include <unistd.h>
 
-#include "gst_mtl_st20p_tx.h"
+#include "gst_mtl_st40p_tx.h"
 
-GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_tx_debug);
-#define GST_CAT_DEFAULT gst_mtl_st20p_tx_debug
+GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
+#define GST_CAT_DEFAULT gst_mtl_st40p_tx_debug
 #ifndef GST_LICENSE
 #define GST_LICENSE "LGPL"
 #endif
@@ -77,102 +78,108 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_tx_debug);
 #define GST_API_VERSION "1.0"
 #endif
 #ifndef GST_PACKAGE_NAME
-#define GST_PACKAGE_NAME "Media Transport Library st2110 st20 tx plugin"
+#define GST_PACKAGE_NAME "Media Transport Library SMPTE ST 2110-40 Tx plugin"
 #endif
 #ifndef GST_PACKAGE_ORIGIN
 #define GST_PACKAGE_ORIGIN "https://github.com/OpenVisualCloud/Media-Transport-Library"
 #endif
-#ifndef PACKAGEf
-#define PACKAGE "gst-mtl-st20p-tx"
+#ifndef PACKAGE
+#define PACKAGE "gst-mtl-st40-tx"
 #endif
 #ifndef PACKAGE_VERSION
 #define PACKAGE_VERSION "1.0"
 #endif
 
+/* Maximum size for single User Data Words defined in ST 0291-1  */
+#define MAX_UDW_SIZE 255
+
 enum {
-  PROP_ST20P_TX_RETRY = PROP_GENERAL_MAX,
-  PROP_ST20P_TX_FRAMERATE,
-  PROP_ST20P_TX_FRAMEBUFF_NUM,
+  PROP_ST40P_TX_FRAMEBUFF_CNT = PROP_GENERAL_MAX,
+  PROP_ST40P_TX_FRAMERATE,
+  PROP_ST40P_TX_DID,
+  PROP_ST40P_TX_SDID,
   PROP_MAX
 };
 
 /* pad template */
-static GstStaticPadTemplate gst_mtl_st20p_tx_sink_pad_template =
-    GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
-                            GST_STATIC_CAPS("video/x-raw, "
-                                            "format = (string) {v210, I422_10LE},"
-                                            "width = (int) [64, 16384], "
-                                            "height = (int) [64, 8704], "
-                                            "framerate = (fraction) [0, MAX]"));
+static GstStaticPadTemplate gst_mtl_st40p_tx_sink_pad_template =
+    GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS_ANY);
 
-#define gst_mtl_st20p_tx_parent_class parent_class
-G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St20p_Tx, gst_mtl_st20p_tx, GST_TYPE_VIDEO_SINK,
-                        GST_DEBUG_CATEGORY_INIT(gst_mtl_st20p_tx_debug, "mtl_st20p_tx", 0,
-                                                "MTL St2110 st20 transmission sink"));
+#define gst_mtl_st40p_tx_parent_class parent_class
+G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST_TYPE_BASE_SINK,
+                        GST_DEBUG_CATEGORY_INIT(gst_mtl_st40p_tx_debug, "mtl_st40p_tx", 0,
+                                                "MTL St2110 st40 transmission sink"));
 
-GST_ELEMENT_REGISTER_DEFINE(mtl_st20p_tx, "mtl_st20p_tx", GST_RANK_NONE,
-                            GST_TYPE_MTL_ST20P_TX);
+GST_ELEMENT_REGISTER_DEFINE(mtl_st40p_tx, "mtl_st40p_tx", GST_RANK_NONE,
+                            GST_TYPE_MTL_ST40P_TX);
 
-static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
+static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec);
-static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue* value,
+static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue* value,
                                           GParamSpec* pspec);
-static void gst_mtl_st20p_tx_finalize(GObject* object);
+static void gst_mtl_st40p_tx_finalize(GObject* object);
 
-static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
+static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
                                             GstEvent* event);
-static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
+static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf);
 
-static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink);
+static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink);
+static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink);
 
-static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
+static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
-  GstVideoSinkClass* gstvideosinkelement_class;
+  GstBaseSinkClass* gstbasesink_class;
 
   gobject_class = G_OBJECT_CLASS(klass);
   gstelement_class = GST_ELEMENT_CLASS(klass);
-  gstvideosinkelement_class = GST_VIDEO_SINK_CLASS(klass);
+  gstbasesink_class = GST_BASE_SINK_CLASS(klass);
 
   gst_element_class_set_metadata(
-      gstelement_class, "MtlTxSt20Sink", "Sink/Video",
-      "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
-      "Dawid Wesierski <dawid.wesierski@intel.com>");
+      gstelement_class, "MtlTxSt40Sink", "Sink/Metadata",
+      "MTL transmission plugin for SMPTE ST 2110-40 standard (ancillary data)",
+      "Marek Kasiewicz <marek.kasiewicz@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
-                                            &gst_mtl_st20p_tx_sink_pad_template);
+                                            &gst_mtl_st40p_tx_sink_pad_template);
 
-  gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_set_property);
-  gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_get_property);
-  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_finalize);
-  gstvideosinkelement_class->parent_class.start =
-      GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_start);
+  gobject_class->set_property = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_set_property);
+  gobject_class->get_property = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_get_property);
+  gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_finalize);
+  gstbasesink_class->start = GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_start);
 
   gst_mtl_common_init_general_arguments(gobject_class);
 
   g_object_class_install_property(
-      gobject_class, PROP_ST20P_TX_RETRY,
-      g_param_spec_uint("retry", "Retry Count",
-                        "Number of times the MTL will try to get a frame.", 0, G_MAXUINT,
-                        10, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_ST20P_TX_FRAMERATE,
-      g_param_spec_uint("tx-fps", "Video framerate", "Framerate of the video.", 0,
-                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
-      gobject_class, PROP_ST20P_TX_FRAMEBUFF_NUM,
-      g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
+      gobject_class, PROP_ST40P_TX_FRAMEBUFF_CNT,
+      g_param_spec_uint("tx-framebuff-cnt", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_FRAMERATE,
+      g_param_spec_uint(
+          "tx-fps", "framerate of the related video",
+          "Framerate of the video to witch the ancillary data is synchronized.", 0,
+          G_MAXUINT, 60, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_DID,
+      g_param_spec_uint("tx-did", "Data ID", "Data ID for the ancillary data", 0, 0xff, 0,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_SDID,
+      g_param_spec_uint("tx-sdid", "Secondary Data ID",
+                        "Secondary Data ID for the ancillary data", 0, 0xff, 0,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
-static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
+static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
   struct mtl_init_params mtl_init_params = {0};
 
-  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(bsink);
+  Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(bsink);
 
   GST_DEBUG_OBJECT(sink, "start");
   GST_DEBUG("Media Transport Initialization start");
@@ -186,19 +193,14 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
     return FALSE;
   }
 
-  if (sink->retry_frame == 0)
-    sink->retry_frame = 10;
-  else if (sink->retry_frame < 3) {
-    GST_WARNING("Retry count is too low, setting to 3");
-    sink->retry_frame = 3;
-  }
+  gst_mtl_st40p_tx_session_create(sink);
 
   gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
 
   return true;
 }
 
-static void gst_mtl_st20p_tx_init(Gst_Mtl_St20p_Tx* sink) {
+static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
 
@@ -208,14 +210,14 @@ static void gst_mtl_st20p_tx_init(Gst_Mtl_St20p_Tx* sink) {
     return;
   }
 
-  gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_sink_event));
+  gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_sink_event));
 
-  gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st20p_tx_chain));
+  gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st40p_tx_chain));
 }
 
-static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
+static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec) {
-  Gst_Mtl_St20p_Tx* self = GST_MTL_ST20P_TX(object);
+  Gst_Mtl_St40p_Tx* self = GST_MTL_ST40P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
     gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
@@ -224,14 +226,17 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
   }
 
   switch (prop_id) {
-    case PROP_ST20P_TX_RETRY:
-      self->retry_frame = g_value_get_uint(value);
+    case PROP_ST40P_TX_FRAMEBUFF_CNT:
+      self->framebuff_cnt = g_value_get_uint(value);
       break;
-    case PROP_ST20P_TX_FRAMERATE:
+    case PROP_ST40P_TX_FRAMERATE:
       self->framerate = g_value_get_uint(value);
       break;
-    case PROP_ST20P_TX_FRAMEBUFF_NUM:
-      self->framebuffer_num = g_value_get_uint(value);
+    case PROP_ST40P_TX_DID:
+      self->did = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_SDID:
+      self->sdid = g_value_get_uint(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -239,9 +244,9 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
   }
 }
 
-static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue* value,
+static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue* value,
                                           GParamSpec* pspec) {
-  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
+  Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
     gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(sink->devArgs),
@@ -250,14 +255,17 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
   }
 
   switch (prop_id) {
-    case PROP_ST20P_TX_RETRY:
-      g_value_set_uint(value, sink->retry_frame);
+    case PROP_ST40P_TX_FRAMEBUFF_CNT:
+      g_value_set_uint(value, sink->framebuff_cnt);
       break;
-    case PROP_ST20P_TX_FRAMERATE:
+    case PROP_ST40P_TX_FRAMERATE:
       g_value_set_uint(value, sink->framerate);
       break;
-    case PROP_ST20P_TX_FRAMEBUFF_NUM:
-      g_value_set_uint(value, sink->framebuffer_num);
+    case PROP_ST40P_TX_DID:
+      g_value_set_uint(value, sink->did);
+      break;
+    case PROP_ST40P_TX_SDID:
+      g_value_set_uint(value, sink->sdid);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -269,53 +277,28 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
  * Create MTL session tx handle and initialize the session with the parameters
  * from caps negotiated by the pipeline.
  */
-static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps* caps) {
-  GstVideoInfo* info;
-  struct st20p_tx_ops ops_tx = {0};
+static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
+  struct st40p_tx_ops ops_tx = {0};
   gint ret;
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("MTL library not initialized");
     return FALSE;
   }
+  if (sink->tx_handle) {
+    /* TODO: old session should be removed if exists*/
+    GST_ERROR("Tx handle already initialized");
+    return FALSE;
+  }
 
-  info = gst_video_info_new_from_caps(caps);
-  ops_tx.name = "st20sink";
-  ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
-  ops_tx.width = info->width;
-  ops_tx.height = info->height;
-  ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_tx.name = "st40sink";
+  ops_tx.priv = sink;
   ops_tx.port.num_port = 1;
-  ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
-
-  if (sink->framebuffer_num) {
-    ops_tx.framebuff_cnt = sink->framebuffer_num;
+  if (sink->framebuff_cnt) {
+    ops_tx.framebuff_cnt = sink->framebuff_cnt;
   } else {
     ops_tx.framebuff_cnt = 3;
   }
-
-  if (info->interlace_mode == GST_VIDEO_INTERLACE_MODE_INTERLEAVED) {
-    ops_tx.interlaced = true;
-  } else if (info->interlace_mode) {
-    GST_ERROR("Unsupported interlace mode");
-    return FALSE;
-  }
-
-  if (!gst_mtl_common_parse_input_finfo(info->finfo, &ops_tx.input_fmt)) {
-    GST_ERROR("Failed to parse input format");
-    return FALSE;
-  }
-
-  if (sink->framerate) {
-    if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
-      GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
-      return FALSE;
-    }
-  } else if (!gst_mtl_common_parse_fps(info, &ops_tx.fps)) {
-    GST_ERROR("Failed to parse fps");
-    return FALSE;
-  }
-
   if (inet_pton(AF_INET, sink->portArgs.session_ip_string,
                 ops_tx.port.dip_addr[MTL_PORT_P]) != 1) {
     GST_ERROR("Invalid destination IP address: %s", sink->portArgs.session_ip_string);
@@ -339,33 +322,50 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     GST_ERROR("%s, invalid payload_type: %d\n", __func__, sink->portArgs.payload_type);
     return FALSE;
   }
-
   ops_tx.port.payload_type = sink->portArgs.payload_type;
-  gst_video_info_free(info);
+
+  if (sink->did > 0xFF) {
+    GST_ERROR("Invalid DID value: %d", sink->did);
+    return FALSE;
+  }
+  if (sink->sdid > 0xFF) {
+    GST_ERROR("Invalid SDID value: %d", sink->sdid);
+    return FALSE;
+  }
+  if (sink->framerate == 0) {
+    GST_INFO("Framerate not set, defaulting to 60");
+    sink->framerate = 60;
+  }
+  if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
+    GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
+    return FALSE;
+  }
+  ops_tx.interlaced = false;
+  /* Only single ANC data packet is possible per frame. ANC_Count = 1 TODO: allow more */
+  sink->frame_size = MAX_UDW_SIZE;
+  ops_tx.max_udw_buff_size = MAX_UDW_SIZE;
 
   ret = mtl_start(sink->mtl_lib_handle);
   if (ret < 0) {
     GST_ERROR("Failed to start MTL library");
     return FALSE;
   }
-
-  sink->tx_handle = st20p_tx_create(sink->mtl_lib_handle, &ops_tx);
+  ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
+  sink->tx_handle = st40p_tx_create(sink->mtl_lib_handle, &ops_tx);
   if (!sink->tx_handle) {
-    GST_ERROR("Failed to create st20p tx handle");
+    GST_ERROR("Failed to create st40p tx handle");
     return FALSE;
   }
 
-  sink->frame_size = st20p_tx_frame_size(sink->tx_handle);
   return TRUE;
 }
 
-static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
+static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
                                             GstEvent* event) {
-  Gst_Mtl_St20p_Tx* sink;
-  GstCaps* caps;
+  Gst_Mtl_St40p_Tx* sink;
   gint ret;
 
-  sink = GST_MTL_ST20P_TX(parent);
+  sink = GST_MTL_ST40P_TX(parent);
 
   GST_LOG_OBJECT(sink, "Received %s event: %" GST_PTR_FORMAT, GST_EVENT_TYPE_NAME(event),
                  event);
@@ -376,15 +376,6 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
     case GST_EVENT_SEGMENT:
       if (!sink->tx_handle) {
         GST_ERROR("Tx handle not initialized");
-        return FALSE;
-      }
-      ret = gst_pad_event_default(pad, parent, event);
-      break;
-    case GST_EVENT_CAPS:
-      gst_event_parse_caps(event, &caps);
-      ret = gst_mtl_st20p_tx_session_create(sink, caps);
-      if (!ret) {
-        GST_ERROR("Failed to create TX session");
         return FALSE;
       }
       ret = gst_pad_event_default(pad, parent, event);
@@ -401,32 +392,58 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
   return ret;
 }
 
+/**
+ * @brief Fills the metadata for a st40 frame.
+ *
+ * This function initializes the metadata fields of a given st40 frame with the provided
+ * data and metadata values. It sets the first metadata entry with the specified DID,
+ * SDID, and data size, and assigns the data pointer to the frame.
+ * Note: Most of the fields are hardcoded, and only first metadata block is filled as
+ * only one ANC Data packet per frame is allowed.
+ *
+ * @param frame Pointer to the st40_frame structure to be filled. Cannot be NULL.
+ * @param data Pointer to the data to be associated with the frame.
+ * @param data_size Size of the data in bytes.
+ * @param did Data Identifier (DID) to be set in the metadata.
+ * @param sdid Secondary Data Identifier (SDID) to be set in the metadata.
+ */
+static void fill_st40_meta(struct st40_frame* frame, void* data, guint32 data_size,
+                           guint did, guint sdid) {
+  frame->meta[0].c = 0;
+  frame->meta[0].line_number = 0;
+  frame->meta[0].hori_offset = 0;
+  frame->meta[0].s = 0;
+  frame->meta[0].stream_num = 0;
+  frame->meta[0].did = did;
+  frame->meta[0].sdid = sdid;
+  frame->meta[0].udw_size = data_size;
+  frame->meta[0].udw_offset = 0;
+  frame->data = data;
+  frame->meta_num = 1;
+}
+
 /*
  * Takes the buffer from the source pad and sends it to the mtl library via
  * frame buffers, supports incomplete frames. But buffers needs to add up to the
  * actual frame size.
  */
-static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
+static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
-  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(parent);
-  gint buffer_size = gst_buffer_get_size(buf);
+  Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(parent);
   gint buffer_n = gst_buffer_n_memory(buf);
-  struct st_frame* frame = NULL;
-  gint frame_size = sink->frame_size;
+  struct st40_frame_info* frame_info = NULL;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
+  gint bytes_to_write, bytes_to_write_cur;
+  void* cur_addr_buf;
 
   if (!sink->tx_handle) {
     GST_ERROR("Tx handle not initialized");
     return GST_FLOW_ERROR;
   }
 
-  if (buffer_size != frame_size) {
-    GST_ERROR("Buffer size %d does not match frame size %d", buffer_size, frame_size);
-    return GST_FLOW_ERROR;
-  }
-
   for (int i = 0; i < buffer_n; i++) {
+    bytes_to_write = gst_buffer_get_size(buf);
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
@@ -434,25 +451,32 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
       return GST_FLOW_ERROR;
     }
 
-    frame = st20p_tx_get_frame(sink->tx_handle);
-    if (!frame) {
-      GST_ERROR("Failed to get frame");
-      return GST_FLOW_ERROR;
+    while (bytes_to_write > 0) {
+      frame_info = st40p_tx_get_frame(sink->tx_handle);
+      if (!frame_info) {
+        GST_ERROR("Failed to get frame");
+        return GST_FLOW_ERROR;
+      }
+      cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
+      bytes_to_write_cur =
+          bytes_to_write > sink->frame_size ? sink->frame_size : bytes_to_write;
+      mtl_memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_to_write_cur);
+      fill_st40_meta(frame_info->anc_frame, frame_info->udw_buff_addr, bytes_to_write_cur,
+                     sink->did, sink->sdid);
+      st40p_tx_put_frame(sink->tx_handle, frame_info);
+      bytes_to_write -= bytes_to_write_cur;
     }
-
-    mtl_memcpy(frame->addr[0], map_info.data, buffer_size);
     gst_memory_unmap(gst_buffer_memory, &map_info);
-    st20p_tx_put_frame(sink->tx_handle, frame);
   }
   gst_buffer_unref(buf);
   return GST_FLOW_OK;
 }
 
-static void gst_mtl_st20p_tx_finalize(GObject* object) {
-  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
+static void gst_mtl_st40p_tx_finalize(GObject* object) {
+  Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(object);
 
   if (sink->tx_handle) {
-    if (st20p_tx_free(sink->tx_handle)) {
+    if (st40p_tx_free(sink->tx_handle)) {
       GST_ERROR("Failed to free tx handle");
       return;
     }
@@ -466,12 +490,12 @@ static void gst_mtl_st20p_tx_finalize(GObject* object) {
   }
 }
 
-static gboolean plugin_init(GstPlugin* mtl_st20p_tx) {
-  return gst_element_register(mtl_st20p_tx, "mtl_st20p_tx", GST_RANK_SECONDARY,
-                              GST_TYPE_MTL_ST20P_TX);
+static gboolean plugin_init(GstPlugin* mtl_st40p_tx) {
+  return gst_element_register(mtl_st40p_tx, "mtl_st40p_tx", GST_RANK_SECONDARY,
+                              GST_TYPE_MTL_ST40P_TX);
 }
 
-GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_tx,
+GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st40p_tx,
                   "software-based solution designed for high-throughput transmission",
                   plugin_init, PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME,
                   GST_PACKAGE_ORIGIN)

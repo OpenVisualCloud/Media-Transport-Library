@@ -89,14 +89,14 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
 gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
                                             StDevArgs* devArgs);
 
-void gst_mtl_common_init_general_argumetns(GObjectClass* gobject_class);
+void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class);
 
-void gst_mtl_common_set_general_argumetns(GObject* object, guint prop_id,
+void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level);
 
-void gst_mtl_common_get_general_argumetns(GObject* object, guint prop_id,
+void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level);
