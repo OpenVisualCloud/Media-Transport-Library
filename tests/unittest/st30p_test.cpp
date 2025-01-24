@@ -357,6 +357,15 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
 
     test_ctx_tx[i]->frame_size = ops_tx.framebuff_size;
 
+    tx_handle[i] = st30p_tx_create(NULL, &ops_tx);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    tx_handle[i] = st30p_tx_create(st, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    tx_handle[i] = st30p_tx_create(NULL, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
     tx_handle[i] = st30p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
@@ -428,6 +437,15 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
       ops_rx.flags |= ST30P_RX_FLAG_BLOCK_GET;
     else
       ops_rx.notify_frame_available = test_st30p_rx_frame_available;
+
+    rx_handle[i] = st30p_rx_create(NULL, &ops_rx);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    rx_handle[i] = st30p_rx_create(st, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    rx_handle[i] = st30p_rx_create(NULL, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
 
     rx_handle[i] = st30p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
