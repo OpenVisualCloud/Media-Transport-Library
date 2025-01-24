@@ -363,7 +363,7 @@ To run the `mtl_st40p_tx` plugin, use the following command:
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Ancillary data pipeline on port 40000
-gst-launch-1.0 -v mtl_st40p_tx tx-queues=4 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T  tx-framebuff-cnt=3 tx-fps=60 tx-did=67 tx-sdid=2 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T  tx-framebuff-cnt=3 tx-fps=60 tx-did=67 tx-sdid=2 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
@@ -396,6 +396,6 @@ export VFIO_PORT_R="pci_address_of_the_device"
 export OUTPUT="path_to_the_file_we_want_to_save"
 
 # Run the receiver pipeline
-gst-launch-1.0 -v mtl_st40p_rx rx-queues=4 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" timeout=61 dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+gst-launch-1.0 -v mtl_st40_rx rx-queues=4 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" timeout=61 dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
