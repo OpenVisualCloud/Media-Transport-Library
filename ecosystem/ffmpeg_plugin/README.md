@@ -20,7 +20,7 @@ cd ../
 
 ### 1.2 Build ffmpeg with MTL patches
 
-Note: $mtl_source_code should be pointed to top source code tree of Media Transport Library.
+Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
 
 ```bash
 git clone https://github.com/FFmpeg/FFmpeg.git
@@ -81,6 +81,10 @@ Reading from a yuv stream from a local file and sending a st2110-20 10bit YUV422
 ```bash
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st20p -
 ```
+
+### 2.3. y210 format
+
+Note: The format y210 is not supported by the Ffmpeg plugins for MTL.
 
 ## 3. ST22 compressed video run guide
 

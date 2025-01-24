@@ -122,7 +122,9 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
       break;
-    case AV_PIX_FMT_Y210LE:
+    case AV_PIX_FMT_Y210LE: /* This format is not supported by MTL plugin.
+                               This is workaround
+                               for Intel(R) Tiber(TM) Broadcast Suite */
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_Y210;
       break;
@@ -263,6 +265,8 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     return ret;
   }
 
+  /* This format is not supported by MTL plugin.
+     This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
   if (s->pixel_format == AV_PIX_FMT_Y210LE) {
     ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)frame,
                                        (uint16_t*)pkt->data, s->width, s->height);
