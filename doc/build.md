@@ -248,7 +248,7 @@ echo | gcc -dM -E - -march=haswell
 ### 4.4. Older kernel installed on the OS
 
 In case older kernel installed on the OS throws the “Kernel header files not in any of expected locations”
-and causes build errors, you can try to fix it with installation of kernel specific packet `kernel-devel`.
+and causes build errors, you can try to fix it with installation of kernel specific packet `kernel-devel`:
 
 ```bash
 # e.g. for CentOS or RHEL
