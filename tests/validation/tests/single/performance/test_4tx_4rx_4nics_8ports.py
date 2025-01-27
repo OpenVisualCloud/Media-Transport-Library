@@ -23,32 +23,82 @@ from tests.Engine.media_files import yuv_files
         "i4320p59",
     ],
 )
-def test_perf_2tx_2nics(build, media, nic_port_list, test_time, video_format):
-    # Increase time for 4k and 8k streams
-    if "2160" in video_format:
-        test_time = 60
-    elif "4320" in video_format:
-        test_time = 120
+def test_perf_4tx_4rx_4nics_8ports(
+    build, media, nic_port_list, test_time, video_format
+):
+    # For 4 NICs init time of the app is increased
+    test_time = 60
 
     video_file = yuv_files[video_format]
+
     config = rxtxapp.create_empty_performance_config()
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[0],
+        nic_port=nic_port_list[0],  # from NIC 0 to NIC 1
         ip="192.168.17.101",
-        dip="239.168.48.9",
+        dip="192.168.17.105",
         video_format=video_format,
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[1],
+        nic_port=nic_port_list[1],  # from NIC 1 to NIC 2
         ip="192.168.17.102",
-        dip="239.168.48.9",
+        dip="192.168.17.106",
         video_format=video_format,
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
+    )
+    config = rxtxapp.add_perf_video_session_tx(
+        config=config,
+        nic_port=nic_port_list[2],  # from NIC 2 to NIC 3
+        ip="192.168.17.103",
+        dip="192.168.17.107",
+        video_format=video_format,
+        pg_format=video_file["format"],
+        video_url=os.path.join(media, video_file["filename"]),
+    )
+    config = rxtxapp.add_perf_video_session_tx(
+        config=config,
+        nic_port=nic_port_list[3],  # from NIC 3 to NIC 0
+        ip="192.168.17.104",
+        dip="192.168.17.108",
+        video_format=video_format,
+        pg_format=video_file["format"],
+        video_url=os.path.join(media, video_file["filename"]),
+    )
+    config = rxtxapp.add_perf_video_session_rx(
+        config=config,
+        nic_port=nic_port_list[4],
+        ip="192.168.17.105",
+        sip="192.168.17.101",
+        video_format=video_format,
+        pg_format=video_file["format"],
+    )
+    config = rxtxapp.add_perf_video_session_rx(
+        config=config,
+        nic_port=nic_port_list[5],
+        ip="192.168.17.106",
+        sip="192.168.17.102",
+        video_format=video_format,
+        pg_format=video_file["format"],
+    )
+    config = rxtxapp.add_perf_video_session_rx(
+        config=config,
+        nic_port=nic_port_list[6],
+        ip="192.168.17.107",
+        sip="192.168.17.103",
+        video_format=video_format,
+        pg_format=video_file["format"],
+    )
+    config = rxtxapp.add_perf_video_session_rx(
+        config=config,
+        nic_port=nic_port_list[7],
+        ip="192.168.17.108",
+        sip="192.168.17.104",
+        video_format=video_format,
+        pg_format=video_file["format"],
     )
 
     # upper bound
