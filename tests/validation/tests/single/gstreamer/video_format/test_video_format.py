@@ -42,7 +42,7 @@ def test_video_format(
     rx_config = gstreamerapp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
         nic_port_list=nic_port_list[1],
-        output_path=os.path.join(media, "output.yuv"),
+        output_path=os.path.join(media, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
@@ -59,10 +59,10 @@ def test_video_format(
             rx_command=rx_config,
             fps=video_file["fps"],
             input_file=input_file_path,
-            output_file=os.path.join(media, "output.yuv"),
+            output_file=os.path.join(media, "output_video.yuv"),
             type="st20",
         )
     finally:
         # Remove the video file after the test
         media_create.remove_file(input_file_path)
-        media_create.remove_file(os.path.join(media, "output.yuv"))
+        media_create.remove_file(os.path.join(media, "output_video.yuv"))

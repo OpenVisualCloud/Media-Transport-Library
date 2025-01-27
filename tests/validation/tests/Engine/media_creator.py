@@ -14,7 +14,7 @@ def create_video_file(
     framerate: str,
     format: str,
     media_path: str,
-    output_path: str = "test.yuv",
+    output_path: str = "test_video.yuv",
     pattern: str = "ball",
     duration: int = 10,
 ):
@@ -56,7 +56,7 @@ def create_audio_file_sox(
     channels: int,
     bit_depth: int,
     frequency: int = 440,
-    output_path: str = "test.pcm",
+    output_path: str = "test_audio.pcm",
     duration: int = 10,
 ):
     """

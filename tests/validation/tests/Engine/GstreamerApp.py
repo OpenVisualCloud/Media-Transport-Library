@@ -17,23 +17,23 @@ def create_connection_params(
 ) -> dict:
     params = {
         "dev-port": dev_port,
+        "dev-ip": dev_ip,
+        "ip": ip,
+        "udp-port": udp_port,
+        "payload-type": payload_type,
     }
     if is_tx:
         params.update(
             {
                 "dev-ip": ip,
-                "tx-ip": dev_ip,
-                "tx-udp-port": udp_port,
-                "tx-payload-type": payload_type,
+                "ip": dev_ip,
             }
         )
     else:
         params.update(
             {
                 "dev-ip": dev_ip,
-                "rx-ip": ip,
-                "rx-udp-port": udp_port,
-                "rx-payload-type": payload_type,
+                "ip": ip,
             }
         )
     return params
@@ -53,7 +53,7 @@ def setup_gstreamer_st20p_tx_pipeline(
     tx_fps: int = None,
 ):
     connection_params = create_connection_params(
-        dev_port=nic_port_list, payload_type=tx_payload_type, is_tx=True
+        dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=20000, is_tx=True
     )
 
     # st20 tx GStreamer command line
@@ -62,9 +62,8 @@ def setup_gstreamer_st20p_tx_pipeline(
         "-v",
         "filesrc",
         f"location={input_path}",
-        "blocksize=5529600",
         "!",
-        f"video/x-raw,format={format},height={height},width={width},framerate={framerate}/1",
+        f"rawvideoparse format={format} height={height} width={width} framerate={framerate}/1",
         "!",
         "mtl_st20p_tx",
         f"tx-queues={tx_queues}",
@@ -100,7 +99,10 @@ def setup_gstreamer_st20p_rx_pipeline(
     rx_fps: int = None,
 ):
     connection_params = create_connection_params(
-        dev_port=nic_port_list, payload_type=rx_payload_type, is_tx=False
+        dev_port=nic_port_list,
+        payload_type=rx_payload_type,
+        udp_port=20000,
+        is_tx=False,
     )
 
     # st20 rx GStreamer command line
@@ -149,7 +151,6 @@ def setup_gstreamer_st30_tx_pipeline(
         "gst-launch-1.0",
         "filesrc",
         f"location={input_path}",
-        "blocksize=70000",
         "!",
         "rawaudioparse",
         "format=pcm",

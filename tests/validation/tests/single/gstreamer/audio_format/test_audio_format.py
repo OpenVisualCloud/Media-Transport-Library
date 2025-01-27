@@ -14,7 +14,7 @@ import tests.Engine.media_creator as media_create
 def test_audio_format(
     build, media, nic_port_list, audio_format, audio_channel, audio_rate
 ):
-    input_file_path = os.path.join(media, "test.pcm")
+    input_file_path = os.path.join(media, "test_audio.pcm")
 
     media_create.create_audio_file_sox(
         sample_rate=audio_rate,
@@ -39,7 +39,7 @@ def test_audio_format(
     rx_config = gstreamerapp.setup_gstreamer_st30_rx_pipeline(
         build=build,
         nic_port_list=nic_port_list[1],
-        output_path=os.path.join(media, "output.pcm"),
+        output_path=os.path.join(media, "output_audio.pcm"),
         rx_payload_type=111,
         rx_queues=4,
         rx_audio_format=gstreamerapp.audio_format_change(audio_format, rx_side=True),
@@ -53,9 +53,9 @@ def test_audio_format(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output.pcm"),
+            output_file=os.path.join(media, "output_audio.pcm"),
             type="st30",
         )
     finally:
         media_create.remove_file(input_file_path)
-        media_create.remove_file(os.path.join(media, "output.pcm"))
+        media_create.remove_file(os.path.join(media, "output_audio.pcm"))
