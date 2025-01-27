@@ -101,13 +101,16 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | udp-port      | uint   | Receiving MTL node UDP port.                                                                      | 0 to G_MAXUINT           |
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
-| payload-type  | uint   | SMPTE ST 2110 payload type.                                                                  | 0 to G_MAXUINT           |
+| payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
 | Property Name | Type   | Description                                                                                       | Range                    |
 |---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
 | dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
 | port          | string | **RESERVED FOR FUTURE USE** DPDK device port. Utilized when multiple ports are passed to the MTL library to select the port for the session. | N/A |
+
+> **Warning:**
+> Generally, the `log-level`, `dev-port`, `dev-ip`, `tx-queues`, and `rx-queues` are used to initialize the MTL library. As the MTL library handle is shared between MTL GStreamer plugins of the same pipeline, you only need to pass them once when specifying the arguments for the first pipeline. Nothing happens when you specify them elsewhere; they will just be ignored after the initialization of MTL has already happened.
 
 ### 2.3. General capabilities
 

@@ -9,7 +9,7 @@
 #include "gst_mtl_common.h"
 
 guint gst_mtl_port_idx = MTL_PORT_P;
-/* handles for the mtl libs */
+/* Shared handle for the MTL library used across plugins in the pipeline */
 mtl_handle gst_mtl_common_shared_handle;
 
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
@@ -395,18 +395,35 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
   return ret;
 }
 
-mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
-                                      guint* log_level, gboolean force_to_initialize_new) {
+/**
+ * Initializes the device with the given parameters.
+ *
+ * If the common handle (MTL instance already initialized in the pipeline)
+ * is already in use, the input parameters for the device
+ * (rx_queues, tx_queues, dev_ip, dev_port, and log_level) will be ignored.
+ * You can force to initialize another MTL instance to avoid this behavior with
+ * force_to_initialize_new_instance flag.
+ *
+ * @param force_to_initialize_new_instance Force the creation of a new MTL
+ *                                         instance, ignoring any existing one.
+ * @param devArgs Initialization parameters for the DPDK port
+ *                (ignored if using an existing MTL instance).
+ * @param log_level Log level for the library (ignored if using an
+ *                  existing MTL instance).
+ */
+mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+                                      gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
 
-  if (!p || !devArgs || !log_level) {
-    GST_ERROR("Invalid input");
-    return NULL;
+  if (!force_to_initialize_new_instance && gst_mtl_common_shared_handle) {
+    GST_INFO("Mtl is already initialized with shared handle %p",
+             gst_mtl_common_shared_handle);
+    return gst_mtl_common_shared_handle;
   }
 
-  if (gst_mtl_common_shared_handle) {
-    GST_INFO("Mtl is already initialized with shared handle %p", gst_mtl_common_shared_handle);
-    return gst_mtl_common_shared_handle;
+  if (!devArgs || !log_level) {
+    GST_ERROR("Invalid input");
+    return NULL;
   }
 
   mtl_init_params.num_ports = 0;
@@ -429,5 +446,11 @@ mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devA
   }
   *log_level = mtl_init_params.log_level;
 
-  return mtl_init(&mtl_init_params);
+  if (!gst_mtl_common_shared_handle) {
+    gst_mtl_common_shared_handle = mtl_init(&mtl_init_params);
+    return gst_mtl_common_shared_handle;
+  } else {
+    GST_INFO("MTL shared handle %p ignored", gst_mtl_common_shared_handle);
+    return mtl_init(&mtl_init_params);
+  }
 }

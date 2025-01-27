@@ -182,7 +182,6 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
 }
 
 static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
-  struct mtl_init_params mtl_init_params = {0};
   struct st40_rx_ops ops_rx = {0};
   gint ret;
 
@@ -192,7 +191,7 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(src->devArgs), &(src->log_level), FALSE);
+      gst_mtl_common_init_handle(&(src->devArgs), &(src->log_level), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
