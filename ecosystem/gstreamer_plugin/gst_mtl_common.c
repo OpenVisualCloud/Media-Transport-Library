@@ -9,6 +9,8 @@
 #include "gst_mtl_common.h"
 
 guint gst_mtl_port_idx = MTL_PORT_P;
+/* handles for the mtl libs */
+mtl_handle gst_mtl_common_shared_handle;
 
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
                                           enum st_frame_fmt* fmt) {
@@ -394,12 +396,17 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
 }
 
 mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
-                                      guint* log_level) {
+                                      guint* log_level, gboolean force_to_initialize_new) {
   struct mtl_init_params mtl_init_params = {0};
 
   if (!p || !devArgs || !log_level) {
     GST_ERROR("Invalid input");
     return NULL;
+  }
+
+  if (gst_mtl_common_shared_handle) {
+    GST_INFO("Mtl is already initialized with shared handle %p", gst_mtl_common_shared_handle);
+    return gst_mtl_common_shared_handle;
   }
 
   mtl_init_params.num_ports = 0;

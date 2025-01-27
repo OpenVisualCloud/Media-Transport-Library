@@ -194,7 +194,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(src->devArgs), &(src->log_level));
+      gst_mtl_common_init_handle(&mtl_init_params, &(src->devArgs), &(src->log_level), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");

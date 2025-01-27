@@ -179,7 +179,7 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
