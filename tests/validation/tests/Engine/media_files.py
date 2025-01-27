@@ -306,6 +306,7 @@ yuv_files_422p10le = dict(
         "fps": 25,
         "width": 1280,
         "height": 720,
+        "fps": 25,
     },
     Penguin_1080p={
         "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_P422_180frames.yuv",
@@ -314,6 +315,7 @@ yuv_files_422p10le = dict(
         "fps": 25,
         "width": 1920,
         "height": 1080,
+        "fps": 25,
     },
 )
 
@@ -349,6 +351,14 @@ yuv_files_interlace = dict(
 )
 
 yuv_files_422rfc10 = dict(
+    Penguin_720p={
+        "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 1280,
+        "height": 720,
+        "fps": 25,
+    },
     Penguin_1080p={
         "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_180frames_yuv422p10be_To_yuv422rfc4175be10.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
@@ -356,6 +366,7 @@ yuv_files_422rfc10 = dict(
         "fps": 25,
         "width": 1920,
         "height": 1080,
+        "fps": 25,
     },
     Penguin_4K={
         "filename": "HDR_BBC_v4_008_Penguin1_3840x2160_10bit_25Hz_P422_180frames_yuv422rfc4175be10.yuv",
@@ -364,6 +375,7 @@ yuv_files_422rfc10 = dict(
         "fps": 25,
         "width": 3840,
         "height": 2160,
+        "fps": 25,
     },
     Penguin_8K={
         "filename": "HDR_BBC_v4_008_Penguin1_7680x4320_10bit_25Hz_P422_To_yuv422rfc4175be10_180frames.yuv",
@@ -372,6 +384,7 @@ yuv_files_422rfc10 = dict(
         "fps": 25,
         "width": 7680,
         "height": 4320,
+        "fps": 25,
     },
     Crosswalk_720p={
         "filename": "Netflix_Crosswalk_1280x720_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -380,6 +393,7 @@ yuv_files_422rfc10 = dict(
         "fps": 60,
         "width": 1280,
         "height": 720,
+        "fps": 60,
     },
     Crosswalk_1080p={
         "filename": "Netflix_Crosswalk_1920x1080_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -388,6 +402,7 @@ yuv_files_422rfc10 = dict(
         "fps": 60,
         "width": 1920,
         "height": 1080,
+        "fps": 60,
     },
     Crosswalk_4K={
         "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -396,6 +411,7 @@ yuv_files_422rfc10 = dict(
         "fps": 60,
         "width": 3840,
         "height": 2160,
+        "fps": 60,
     },
     ParkJoy_720p={
         "filename": "ParkJoy_1280x720_10bit_50Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -404,6 +420,7 @@ yuv_files_422rfc10 = dict(
         "fps": 50,
         "width": 1280,
         "height": 720,
+        "fps": 50,
     },
     ParkJoy_1080p={
         "filename": "ParkJoy_1920x1080_10bit_50Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -412,6 +429,7 @@ yuv_files_422rfc10 = dict(
         "fps": 50,
         "width": 1920,
         "height": 1080,
+        "fps": 50,
     },
     ParkJoy_4K={
         "filename": "ParkJoy_3840x2160_10bit_50Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -420,6 +438,7 @@ yuv_files_422rfc10 = dict(
         "fps": 50,
         "width": 3840,
         "height": 2160,
+        "fps": 50,
     },
     Pedestrian_720p={
         "filename": "Plalaedit_Pedestrian_10bit_1280x720_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -428,6 +447,7 @@ yuv_files_422rfc10 = dict(
         "fps": 30,
         "width": 1280,
         "height": 720,
+        "fps": 30,
     },
     Pedestrian_1080p={
         "filename": "Plalaedit_Pedestrian_10bit_1920x1080_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -436,6 +456,7 @@ yuv_files_422rfc10 = dict(
         "fps": 30,
         "width": 1920,
         "height": 1080,
+        "fps": 30,
     },
     Pedestrian_4K={
         "filename": "Plalaedit_Pedestrian_10bit_3840x2160_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
@@ -444,6 +465,7 @@ yuv_files_422rfc10 = dict(
         "fps": 30,
         "width": 3840,
         "height": 2160,
+        "fps": 30,
     },
     test_4K={
         "filename": "test_3840x2160_for_25fps.yuv",
@@ -452,6 +474,7 @@ yuv_files_422rfc10 = dict(
         "fps": 25,
         "width": 3840,
         "height": 2160,
+        "fps": 25,
     },
     test_8K={
         "filename": "test_8k.yuv",

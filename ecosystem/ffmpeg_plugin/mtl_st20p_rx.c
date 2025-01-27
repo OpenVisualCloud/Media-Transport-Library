@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <mtl/st_convert_api.h>
+
 #include "mtl_common.h"
 #ifdef MTL_GPU_DIRECT_ENABLED
 #include <mtl_gpu_direct/gpu.h>
@@ -119,6 +121,12 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
     case AV_PIX_FMT_YUV422P10LE:
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+      break;
+    case AV_PIX_FMT_Y210LE: /* This format is not supported by MTL plugin.
+                               This is workaround
+                               for Intel(R) Tiber(TM) Broadcast Suite */
+      ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_Y210;
       break;
     case AV_PIX_FMT_RGB24:
       ops_rx.transport_fmt = ST20_FMT_RGB_8BIT;
@@ -256,6 +264,18 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
     st20p_rx_put_frame(s->rx_handle, frame);
     return ret;
   }
+
+  /* This format is not supported by MTL plugin.
+     This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
+  if (s->pixel_format == AV_PIX_FMT_Y210LE) {
+    ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)frame,
+                                       (uint16_t*)pkt->data, s->width, s->height);
+    if (ret != 0) {
+      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210le failed with %d\n", ret);
+      return ret;
+    }
+  }
+
   /* todo: zero copy with external frame mode */
   mtl_memcpy(pkt->data, frame->addr[0], ctx->packet_size);
   st20p_rx_put_frame(s->rx_handle, frame);

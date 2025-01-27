@@ -112,3 +112,17 @@ gst_mtl_st40_rx = library('gstmtl_st40_rx',
   include_directories: inc_dirs,
   c_args: plugin_c_args
 )
+
+# mtl_st40p_tx Plugin
+gst_mtl_st40p_tx_sources = [
+  'gst_mtl_st40p_tx.c'
+]
+
+gst_mtl_st40p_tx = library('gstmtl_st40p_tx',
+  gst_mtl_common_sources + gst_mtl_st40p_tx_sources,
+  dependencies : [gst_dep, gstbase_dep, mtl_dep],
+  install : true,
+  install_dir : plugins_install_dir,
+  include_directories: inc_dirs,
+  c_args: plugin_c_args
+)

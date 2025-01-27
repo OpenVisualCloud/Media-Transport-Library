@@ -1,13 +1,5 @@
-# INTEL CONFIDENTIAL
-# Copyright 2024-2024 Intel Corporation.
-#
-# This software and the related documents are Intel copyrighted materials, and your use of them is governed
-# by the express license under which they were provided to you ("License"). Unless the License provides otherwise,
-# you may not use, modify, copy, publish, distribute, disclose or transmit this software or the related documents
-# without Intel's prior written permission.
-#
-# This software and the related documents are provided as is, with no express or implied warranties,
-# other than those that are expressly stated in the License.
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright(c) 2024-2025 Intel Corporation
 import copy
 import json
 import os
@@ -195,6 +187,7 @@ def add_st20p_sessions(
     packing: str = "BPM",
     enable_rtcp: bool = False,
     measure_latency: bool = False,
+    out_url: str = "",
 ) -> dict:
     config = add_interfaces(
         config=config, nic_port_list=nic_port_list, test_mode=test_mode
@@ -224,6 +217,7 @@ def add_st20p_sessions(
     config["rx_sessions"][0]["st20p"][0]["enable_rtcp"] = enable_rtcp
     config["rx_sessions"][0]["st20p"][0]["measure_latency"] = measure_latency
     config["tx_sessions"][0]["st20p"][0]["st20p_url"] = st20p_url
+    config["rx_sessions"][0]["st20p"][0]["st20p_url"] = out_url
 
     return config
 
@@ -286,6 +280,7 @@ def add_st30p_sessions(
     audio_channel: list = ["U02"],
     audio_sampling: str = "96kHz",
     audio_ptime: str = "1",
+    out_url: str = "",
 ) -> dict:
     config = add_interfaces(
         config=config, nic_port_list=nic_port_list, test_mode=test_mode
@@ -304,7 +299,8 @@ def add_st30p_sessions(
     config["tx_sessions"][0]["st30p"][0]["audio_ptime"] = audio_ptime
     config["rx_sessions"][0]["st30p"][0]["audio_ptime"] = audio_ptime
     config["tx_sessions"][0]["st30p"][0]["audio_url"] = filename
-    config["rx_sessions"][0]["st30p"][0]["audio_url"] = filename
+    config["rx_sessions"][0]["st30p"][0]["audio_url"] = out_url
+
     return config
 
 
