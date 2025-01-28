@@ -128,27 +128,6 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
 static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink);
 static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink);
 
-static gboolean gst_mtl_st30p_tx_parse_sampling(gint sampling,
-                                                enum st30_sampling* st_sampling) {
-  if (!st_sampling) {
-    GST_ERROR("Invalid st_sampling pointer");
-    return FALSE;
-  }
-  switch (sampling) {
-    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K:
-      *st_sampling = ST31_SAMPLING_44K;
-      return TRUE;
-    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K:
-      *st_sampling = ST30_SAMPLING_48K;
-      return TRUE;
-    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K:
-      *st_sampling = ST30_SAMPLING_96K;
-      return TRUE;
-    default:
-      return FALSE;
-  }
-}
-
 static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
@@ -311,7 +290,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
   }
   ops_tx.channel = info->channels;
 
-  if (!gst_mtl_st30p_tx_parse_sampling(info->rate, &ops_tx.sampling)) {
+  if (!gst_mtl_common_gst_to_st_sampling(info->rate, &ops_tx.sampling)) {
     GST_ERROR("Failed to parse sampling rate");
     gst_audio_info_free(info);
     return FALSE;

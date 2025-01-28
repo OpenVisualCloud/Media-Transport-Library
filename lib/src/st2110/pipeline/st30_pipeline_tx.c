@@ -350,6 +350,13 @@ static void tx_st30p_framebuffs_flush(struct st30p_tx_ctx* ctx) {
       mt_sleep_ms(10);
     }
   }
+  /* Workaround: When tx_st30p_frame_done is called and subsequently framebuff->stat is
+   * set to ST30P_TX_FRAME_FREE, data from the framebuffer can still be in transport,
+   * already packetized and copied into rte_mbuf, waiting to be sent.
+   * TODO: add synchronization mechanism to ensure all data is sent before freeing the
+   * session.
+   */
+  mt_sleep_ms(50);
 }
 
 struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
