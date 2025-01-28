@@ -1,4 +1,4 @@
-# Introduction
+# UDP Introduction
 
 Starting from version 23.04, the Media Transport Library provides an efficient user-space UDP stack that is POSIX-compatible, enabling users to adopt it without any changes to their code logic. The stack features an LD preload layer that intercepts UDP socket API calls and replaces them with our implementation, allowing for deployment without code changes or the need for rebuilding.
 
@@ -56,9 +56,9 @@ MUFD_CFG=app/udp/ufd_server.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libm
 
 ### 2.3. MUFD_CFG configuration
 
-The json file define all the required info for port instance detail. Example json can be found at [sample](../app/udp/ufd_server.json).
+The JSON file defines all the required info for port instance detail. Example JSON can be found at [sample](../app/udp/ufd_server.json).
 
-#### 2.3.1 interfaces
+#### 2.3.1. Interfaces
 
 List the interface that can be used
 
@@ -72,7 +72,7 @@ List the interface that can be used
 
 ​ **gateway (string):** interface gateway(optional), for example: 172.16.10.1, use "route -n" to check the gateway address before binding port to DPDK PMD.
 
-#### 2.3.2 others
+#### 2.3.2. Others
 
  **nb_udp_sockets (int):** The max number of socket sessions supported.
 
@@ -96,7 +96,7 @@ List the interface that can be used
 
  **rss (bool):** If enable the shared rss mode or not.
 
-#### 2.3.3 experimental
+#### 2.3.3. Experimental
 
  **udp_lcore (bool):** If enable the lcore mode or not. The lcore mode will start a dedicated lcore to busy loop all rx queues to receive network packets and then deliver the packet to socket session ring.
 
@@ -106,11 +106,11 @@ List the interface that can be used
 
 ## 3. Workload tested
 
-### 3.1 librist
+### 3.1. librist
 
 Refer to [guide](../ecosystem/librist/) for detail.
 
-### 3.2 nginx-quic
+### 3.2. nginx-quic
 
 Get from <https://github.com/nginx-quic/nginx-quic>
 
@@ -129,7 +129,7 @@ quic_gso on; # gso is verified
 use epoll; # epoll or select, both are supported
 ```
 
-### 3.3 ngtcp2
+### 3.3. ngtcp2
 
 Get from <https://github.com/ngtcp2/ngtcp2>
 
@@ -139,7 +139,7 @@ Example command:
 MUFD_CFG=ufd_client.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ngtcp2/examples/client 192.168.85.80 443 https://example.com:443/5G_data -q
 ```
 
-### 3.4 picoquic
+### 3.4. picoquic
 
 Get from <https://github.com/private-octopus/picoquic>
 

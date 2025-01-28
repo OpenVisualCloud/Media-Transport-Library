@@ -1,11 +1,11 @@
-# The ST2110 compliance result
+# The ST2110 Compliance Result
 
 The Media Transport Library implements many software novel algorithms to achieve ST 2110’s strict narrow timing requirements. It's verified using third-party test equipments, please check below detail result:
 
 ## 1. Setup
 
 Server Model: M50CYP2SBSTD  
-Processor Information: Intel(R) Xeon(R) Platinum 8358 CPU @ 2.60GHz
+Processor Information: Intel® Xeon® Platinum 8358 CPU @ 2.60GHz
                        2 Processor, 64 Cores  
 Memory: 16 x 32G (DIMM DDR4 Synchronous 3200 MHz)  
 NIC: Intel® E810 Series Ethernet Adapter

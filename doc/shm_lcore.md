@@ -28,7 +28,7 @@ If you are deploying in a multi-container environment, the PID check becomes les
 Before using the `--clean_lcore` option, please ensure that you double-check the current lcore status by running `./build/app/LcoreMgr --info`. An example output list is provided below. Pay close attention to the lcore usage details, including user, host, PID, process name, allocation information, and, most importantly, CPU usage.
 Typically, an active lcore allocated by the MTL library should utilize 100% of the CPU resources.
 
-```bash
+```text
 MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, MTL used lcores 3
 MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 28 active by xxx@xxx, pid: 236759(comm: RxTxApp) type: app_allocated
 MT: 2023-11-14 15:00:03, mtl_lcore_shm_print, lcore 29 active by xxx@xxx, pid: 236759(comm: RxTxApp) type: lib_sch
