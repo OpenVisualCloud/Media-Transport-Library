@@ -14,7 +14,7 @@ refer to: <https://obsproject.com/wiki/build-instructions-for-linux>
 
 ### build linux-mtl
 
-``` shell
+```bash
 cd linux-mtl
 meson build
 meson complile -C build
@@ -23,7 +23,7 @@ sudo meson install -C build
 
 ### open obs-studio
 
-``` shell
+```bash
 obs
 ```
 

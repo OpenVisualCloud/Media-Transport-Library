@@ -1,4 +1,4 @@
-# The ffmpeg plugin for MTL
+# The Ffmpeg Plugin for MTL
 
 ## Notice
 
@@ -6,7 +6,7 @@ FFmpeg is an open source project licensed under LGPL and GPL. See <https://www.f
 
 ## 1. Build
 
-### 1.1 Build openh264
+### 1.1. Build openh264
 
 ```bash
 git clone https://github.com/cisco/openh264.git
@@ -18,7 +18,7 @@ sudo ldconfig
 cd ../
 ```
 
-### 1.2 Build ffmpeg with MTL patches
+### 1.2. Build ffmpeg with MTL patches
 
 Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
 
@@ -44,7 +44,7 @@ Note, for ffmpeg 4.4 or 6.1 version, replace 7.0 with 4.4/6.1 for above example 
 
 The MTL ST20P plugin is implemented as an FFMpeg input/output device, enabling direct reading from or sending raw video via the ST2110-20 stream.
 
-### 2.1 St20p input
+### 2.1. St20p input
 
 Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112:
 
@@ -54,7 +54,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 Below error indicate MTL don't detect a video stream on the listening address.
 
-```bash
+```text
 [mtl_st20p @ 0x55634f8b3c80] mtl_st20p_read_packet(0), st20p_rx_get_frame timeout
 [in#0/mtl_st20p @ 0x55634f8b3b40] Error during demuxing: Input/output error
 [in#0/mtl_st20p @ 0x55634f8b3b40] Error retrieving a packet from demuxer: Input/output error
@@ -74,7 +74,7 @@ Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_ty
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "k" -c:v libopenh264 out.264 -y
 ```
 
-### 2.2 St20p output
+### 2.2. St20p output
 
 Reading from a yuv stream from a local file and sending a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112:
 
@@ -95,7 +95,7 @@ The MTL ST22 plugin constructs the codec stream and transmits it as ST2110-22 RT
 <img src="ffmpeg_st22_flow.png" align="center" alt="Tasklet">
 </div>
 
-### 3.1 St22 output
+### 3.1. St22 output
 
 Reading from a yuv stream from local source file, encode with h264 codec and sending a st2110-22 codestream on "239.168.85.20:20000" with payload_type 112:
 
@@ -103,7 +103,7 @@ Reading from a yuv stream from local source file, encode with h264 codec and sen
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv420p_1080p.yuv -filter:v fps=59.94 -c:v libopenh264 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st22 -
 ```
 
-### 3.2 St22 input
+### 3.2. St22 input
 
 Reading a st2110-22 codestream on "239.168.85.20:20000" with payload_type 112, decode with ffmpeg h264 codec:
 
@@ -111,7 +111,7 @@ Reading a st2110-22 codestream on "239.168.85.20:20000" with payload_type 112, d
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -video_size 1920x1080 -st22_codec h264 -f mtl_st22 -i "k" -f rawvideo /dev/null -y
 ```
 
-### 3.3 SVT-JPEGXS
+### 3.3. SVT-JPEGXS
 
 Make sure the FFMpeg is build with both MTL and SVT-JPEGXS plugin:
 
@@ -122,7 +122,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv420p_1080p.yuv -filter:v fps=59.94 -c:v libsvt_jpegxs -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st22 -
 ```
 
-### 3.4 SVT-HEVC
+### 3.4. SVT-HEVC
 
 Make sure the FFMpeg is build with both MTL and SVT-HEVC plugin:
 
@@ -133,7 +133,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv420p_1080p.yuv -filter:v fps=59.94 -c:v libsvt_hevc -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st22 -
 ```
 
-### 3.5 St22p support
+### 3.5. St22p support
 
 Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream.
 
@@ -151,7 +151,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i
 
 ## 4. ST30P audio run guide
 
-### 4.1 St30p input
+### 4.1. St30p input
 
 Reading a st2110-30 stream(pcm24,1ms packet time,2 channels) on "239.168.85.20:30000" with payload_type 111 and encoded to a wav file:
 
@@ -159,7 +159,7 @@ Reading a st2110-30 stream(pcm24,1ms packet time,2 channels) on "239.168.85.20:3
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 30000 -payload_type 111 -pcm_fmt pcm24 -ptime 1ms -channels 2 -f mtl_st30p -i "0" dump.wav -y
 ```
 
-### 4.2 St30p output
+### 4.2. St30p output
 
 Reading from a wav file and sending a st2110-30 stream(pcm24,1ms packet time,2 channels) on "239.168.85.20:30000" with payload_type 111:
 
@@ -167,7 +167,7 @@ Reading from a wav file and sending a st2110-30 stream(pcm24,1ms packet time,2 c
 ffmpeg -stream_loop -1 -i test.wav -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 30000 -payload_type 111 -ptime 1ms -f mtl_st30p -
 ```
 
-### 4.3 St30p pcm16 example
+### 4.3. St30p pcm16 example
 
 For pcm16 audio, use `mtl_st30p_pcm16` muxer, set `pcm_fmt` to `pcm16` for demuxer.
 
@@ -181,7 +181,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 The MTL_GPU_DIRECT experimental feature aims at enhancing FFmpeg's performance by allowing direct access to GPU memory, which can be particularly beneficial when working with high-throughput video streams such as those handled by the MTL ST20 codec plugin.
 
-### 5.1 Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
+### 5.1. Enabling experimental MTL_GPU_DIRECT in FFmpeg with ST20p Support
 
 To take advantage of the MTL_GPU_DIRECT feature FFmpeg has to be built with this option enabled. Here’s how to do it:
 
@@ -202,7 +202,7 @@ enabled gpu_direct:
 ./ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -gpu_direct 1 -gpu_driver 0 -gpu_device 0 -f mtl_st20p -i "k" -f rawvideo /dev/null -y
 ```
 
-### 5.2 Additional Notes
+### 5.2. Additional Notes
 
 **GPU Direct Flag:** When compiling FFmpeg with the MTL_GPU_DIRECT feature enabled, ensure that your system's GPU drivers and hardware support direct GPU memory access.  
 GPU device IDs and GPU driver IDs are printed during initialization.
@@ -216,7 +216,7 @@ Both default to 0, but if your device doesn't initialize, adjust it using the in
 
 **Example:**
 
-```plaintext
+```text
 Drivers count: 1
 Driver: 0: Device: 0: Name: Intel(R) Data Center GPU Flex 170, Type: 1, VendorID: 8086, DeviceID: 22208
 ```

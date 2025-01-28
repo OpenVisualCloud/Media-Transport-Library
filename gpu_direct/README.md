@@ -6,7 +6,7 @@ This library provides a wrapper for Level Zero API to init GPU and provide funct
 
 ## Build
 
-Use meson to build the project
+Use `meson` to build the project
 
 ## How to use it
 

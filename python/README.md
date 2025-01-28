@@ -14,7 +14,7 @@ For Ubuntu:
 sudo apt-get install swig
 ```
 
-For Centos:
+For CentOS:
 
 ```bash
 sudo yum install swig
@@ -36,7 +36,7 @@ sudo make install
 
 ## 2. Build and install MTL python binding layer
 
-### 2.1 Create MTL binding layer code based on swig
+### 2.1. Create MTL binding layer code based on swig
 
 ```bash
 cd $mtl_source_code/python/swig/
@@ -51,13 +51,13 @@ find /usr/ -name mtl_api.h
 
 Once you have obtained the correct path, you can update your SWIG interface file or your build configuration to reference the correct location of `mtl_api.h`.
 
-### 2.2 Build
+### 2.2. Build
 
 ```bash
 python3 setup.py build_ext --inplace
 ```
 
-### 2.3 Install
+### 2.3. Install
 
 ```bash
 sudo python3 setup.py install
@@ -65,7 +65,7 @@ sudo python3 setup.py install
 
 Checking the log to see the path installed.
 
-```bash
+```text
 creating /usr/local/lib/python3.10/dist-packages/pymtl-0.1-py3.10-linux-x86_64.egg
 Extracting pymtl-0.1-py3.10-linux-x86_64.egg to /usr/local/lib/python3.10/dist-packages
 ```
@@ -85,7 +85,7 @@ sudo pip3 install av
 sudo pip3 install matplotlib
 ```
 
-### 3.1 st20p_tx.py
+### 3.1. st20p_tx.py
 
 Run the `st20p_tx.py`, which reads YUV video data from a file and transmits it over the network as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream.
 
@@ -93,7 +93,7 @@ Run the `st20p_tx.py`, which reads YUV video data from a file and transmits it o
 python3 python/example/st20p_tx.py --p_port 0000:af:01.0 --p_sip 192.168.108.101 --p_tx_ip 239.168.85.20 --tx_url yuv422p10le_1080p.yuv --pipeline_fmt YUV422PLANAR10LE --width 1920 --height 1080 --udp_port 20000 --payload_type 112
 ```
 
-### 3.2 st20p_rx.py
+### 3.2. st20p_rx.py
 
 Execute the `st20p_rx.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream and display it.
 
@@ -101,7 +101,7 @@ Execute the `st20p_rx.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 
 python3 python/example/st20p_rx.py --p_port 0000:af:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422PLANAR10LE --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display
 ```
 
-### 3.3 st20p_tx_decode.py
+### 3.3. st20p_tx_decode.py
 
 Use `st20p_tx_decode.py` to decode YUV video from an encoded file `jellyfish-3-mbps-hd-hevc-10bit.mkv` and transmit it as a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream across the network.
 
@@ -109,7 +109,7 @@ Use `st20p_tx_decode.py` to decode YUV video from an encoded file `jellyfish-3-m
 python3 python/example/st20p_tx_decode.py --p_port 0000:af:01.0 --p_sip 192.168.108.101 --p_tx_ip 239.168.85.20 --tx_url jellyfish-3-mbps-hd-hevc-10bit.mkv --udp_port 20000 --payload_type 112
 ```
 
-### 3.4 st20p_rx_encode.py
+### 3.4. st20p_rx_encode.py
 
 Run the `st20p_rx_encode.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE10 stream and encode it to a `.mp4` encoder file.
 
@@ -117,7 +117,7 @@ Run the `st20p_rx_encode.py` to receive a ST2110 ST_FRAME_FMT_YUV422RFC4175PG2BE
 python3 python/example/st20p_rx_encode.py --p_port 0000:af:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --rx_url test.mp4 --width 1920 --height 1080 --udp_port 20000 --payload_type 112
 ```
 
-### 3.5 st22p_tx.py
+### 3.5. st22p_tx.py
 
 Run the `st22p_tx.py`, which reads YUV video data from a file and transmits it over the network as a compressed ST2110-22 stream.
 
@@ -125,7 +125,7 @@ Run the `st22p_tx.py`, which reads YUV video data from a file and transmits it o
 python3 python/example/st22p_tx.py --p_port 0000:af:01.0 --p_sip 192.168.108.101 --p_tx_ip 239.168.85.20 --tx_url yuv422p10le_1080p.yuv --pipeline_fmt YUV422PLANAR10LE --st22_codec jpegxs --width 1920 --height 1080 --udp_port 20000 --payload_type 112
 ```
 
-### 3.6 st22p_rx.py
+### 3.6. st22p_rx.py
 
 Execute the `st22p_rx.py` to receive a compressed ST2110-22 stream stream and display it.
 
@@ -133,7 +133,7 @@ Execute the `st22p_rx.py` to receive a compressed ST2110-22 stream stream and di
 python3 python/example/st22p_rx.py --p_port 0000:af:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422PLANAR10LE --st22_codec jpegxs --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --display
 ```
 
-### 3.7 interlaced
+### 3.7. Interlaced
 
 For TX, interlaced yuv file is used and `--interlaced` is enabled.
 
@@ -163,7 +163,7 @@ st22p_rx:
 python3 python/example/st22p_rx.py --p_port 0000:af:01.1 --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422PLANAR10LE --st22_codec jpegxs --width 1920 --height 1080 --udp_port 20000 --payload_type 112 --interlaced --display
 ```
 
-### 3.8 rx_timing_parser
+### 3.8. rx_timing_parser
 
 ```bash
 python3 python/example/rx_timing_parser.py --p_port 0000:af:00.1 --ptp --p_sip 192.168.108.102 --p_rx_ip 239.168.85.20 --pipeline_fmt YUV422RFC4175PG2BE10 --width 3840 --height 2160 --udp_port 20000 --payload_type 112

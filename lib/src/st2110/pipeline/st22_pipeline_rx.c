@@ -655,6 +655,12 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops) {
   size_t dst_size;
   enum st_frame_fmt codestream_fmt;
 
+  /* validate the input parameters */
+  if (!mt || !ops) {
+    err("%s(%d), NULL input parameters \n", __func__, idx);
+    return NULL;
+  }
+
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
