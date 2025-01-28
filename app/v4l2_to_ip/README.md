@@ -29,7 +29,7 @@ sudo media-ctl -v -l "\"Intel IPU6 CSI2 BE SOC\":16 -> \"Intel IPU6 BE SOC captu
 sudo ./build/app/V4l2toIPApp /dev/video51 --log-status --ptp --tsn
 ```
 ## Expected Output
-```bash
+```text
 MT: * *    M T    D E V   S T A T E   * *
 MT: DEV(0): Avr rate, tx: 1743.150045 Mb/s, rx: 0.017576 Mb/s, pkts, tx: 1646228, rx: 245
 MT: CNI(0): eth_rx_rate 0 Mb/s, eth_rx_cnt 245
@@ -43,3 +43,4 @@ MT: PTP(0): rx time error 0, tx time error 0, delta result error 58
 MT: TX_VIDEO_SESSION(0,0:v4l2_st20_tx): fps 49.991044, frame 500 pkts 1646200:1646199 inflight 407057:411550
 MT: TX_VIDEO_SESSION(0,0): throughput 1742.887329 Mb/s: 0.000000 Mb/s, cpu busy 0.000000
 MT: * *    E N D    S T A T E   * *
+```

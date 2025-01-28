@@ -6,47 +6,47 @@ We use kvm as hypervisor, as the newer qemu-kvm and kernel support ptp_kvm featu
 
 (CentOS 8 recommended)
 
-### 1.1 Enable VT-d, VT-x in BIOS
+### 1.1. Enable VT-d, VT-x in BIOS
 
-### 1.2 Enable IOMMU
+### 1.2. Enable IOMMU
 
 ```bash
 sudo grubby --update-kernel=ALL --args="intel_iommu=on iommu=pt"
 sudo reboot
 ```
 
-### 1.3 Install qemu-kvm
+### 1.3. Install qemu-kvm
 
 ```bash
 sudo yum groupinstall "Virtualization Host"
 sudo yum install virt-manager
 ```
 
-### 1.4 Install latest ICE driver with patches
+### 1.4. Install latest ICE driver with patches
 
 Please refer to the driver update section in [Intel® E810 Series Ethernet Adapter driver guide](e810.md).
 
-### 1.5 Create VFs
+### 1.5. Create VFs
 
 You can also refer to [Run Guide](run.md).
 
 ```bash
 # root
 echo <num> > /sys/class/net/<interface>/device/sriov_numvfs
-```  
+```
 
-### 1.6 Create a VM
+### 1.6. Create a VM
 
-#### 1.6.1 Manually create
+#### 1.6.1. Manually create
 
 * Open virt-manager with GUI
-* Add a vm, choose ubuntu 20.04 minimal iso
+* Add a vm, choose Ubuntu 20.04 minimal iso
 * Use bridged network or NAT for default NIC
 * Specify cpu core, memory, recommend 8 cpus and 8G memory (experimental)
 * Configure before install, add a pci passthrough device, choose the created vf
-* Start to install vm as normal ubuntu
+* Start to install vm as normal Ubuntu
 
-#### 1.6.2 Or create using virt-install
+#### 1.6.2. Or create using virt-install
 
 ```bash
 sudo virt-install \
@@ -70,7 +70,7 @@ The VFs created are passed into VM by specifying `--hostdev pci_0000_xx_xx_x`.
 
 After running `virt-install` command, the viewer will pop up and you can normally install Ubuntu in the GUI.
 
-### 1.7 PTP setup
+### 1.7. PTP setup
 
 * Install linuxptp: `sudo yum install linuxptp`
 * Configure ptp4l daemon
@@ -89,14 +89,14 @@ After running `virt-install` command, the viewer will pop up and you can normall
 
     ```bash
     sudo phc2sys -s ens801f2 -m -w
-    ```  
+    ```
 
-### 1.8 Enable IOMMU for VM
+### 1.8. Enable IOMMU for VM
 
 ```bash
 virsh --connect qemu:///system
 edit vm0
-```  
+```
 
 * Add iommu device to devices
 
@@ -132,9 +132,9 @@ edit vm0
 
 (Ubuntu 20.04 )
 
-### 2.1 Setup build env, refer to build.md
+### 2.1. Setup build env, refer to build.md
 
-### 2.2 PTP setup for VM
+### 2.2. PTP setup for VM
 
 * Enable ptp-kvm kernel module, reboot vm
 
@@ -164,14 +164,16 @@ edit vm0
 * Check the time sync status, error should be tens of nanoseconds when ready
 
     ```bash
-    $ chronyc sources
+    chronyc sources
+    ```
+    ```text
     210 Number of sources = 1
     MS Name/IP address         Stratum Poll Reach LastRx Lastsample
     ==============================================================================
     #* PHC0                          0   2   377     5     -1n[   -2ns] +/-   27ns
     ```
 
-### 2.3 Run RxTxApp with `--utc_offset -37`, refer to run.md
+### 2.3. Run RxTxApp with `--utc_offset -37`, refer to run.md
 
 ## Reference link
 

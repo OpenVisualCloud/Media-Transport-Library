@@ -1,4 +1,4 @@
-# test script helper
+# Test Script Helper
 
 ## 1. Prepare the test resource files, copy to current folder
 
@@ -13,7 +13,7 @@
 
 ## 2. Loop test
 
-Loop test with all json files under loop_json dir.
+Loop test with all JSON files under loop_json directory.
 
 ### 2.1. Customize the port and IP(Optional)
 
@@ -27,7 +27,7 @@ Edit the port in change_port.sh as the setup, then run:
 ./change_port.sh
 ```
 
-Use the random IP for json config file, run:
+Use the random IP for JSON config file, run:
 
 ```bash
 ./random_ip.sh
@@ -47,7 +47,7 @@ Run below cmd for the software timing parser test with loop mode.
 
 ## 3. AFXDP loop test
 
-AFXDP loop test with all json files under afxdp_json dir.
+AFXDP loop test with all JSON files under afxdp_json directory.
 
 ### 3.1. Setup the env(Optional)
 
@@ -55,7 +55,7 @@ AFXDP loop test with all json files under afxdp_json dir.
 cd afxdp_json/
 ```
 
-Edit the setup.sh as the setup and also the json files, then run:
+Edit the setup.sh as the setup and also the JSON files, then run:
 
 ```bash
 ./setup.sh
@@ -83,7 +83,7 @@ export PATH=$PATH:/usr/local/bin/
 ../../script/nicctl.sh bind_pmd 0000:af:00.1
 ```
 
-### 5.2. Run the test with loop json
+### 5.2. Run the test with loop JSON
 
 ```bash
 ./hdr_split_test.sh

@@ -1,4 +1,4 @@
-# Docker guide
+# Docker Guide
 
 Docker guide for Media Transport Library.
 
@@ -24,7 +24,7 @@ docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_pro
 
 ## 3. Run and login into the docker container
 
-### 3.1 Run MTL Manager
+### 3.1. Run MTL Manager
 
 Before running any MTL container, please refer to [MTL Manager](../manager/README.md) to run the Manager daemon server.
 
@@ -36,9 +36,9 @@ For legacy way of running multiple containers without MTL Manager, please add th
   --ipc=host \
 ```
 
-### 3.2 Run the docker container
+### 3.2. Run the docker container
 
-#### 3.2.1 Run with docker command
+#### 3.2.1. Run with docker command
 
 For DPDK PMD backend, pass the VFIO devices:
 
@@ -80,13 +80,14 @@ Explanation of `docker run` arguments:
 | `--cap-add CAP_BPF` | For AF_XDP backend to update xsks_map |
 | `--cap-add SYS_TIME` | For systime adjustment if `--phc2sys` enabled |
 
-#### 3.2.2 Specify VFIO devices for container
+#### 3.2.2. Specify VFIO devices for container
 
 If you only need to pass specific PFs/VFs to the container, you can use the following command to list the IOMMU group:
 
 ```bash
 ../script/nicctl.sh list all
-
+```
+```text
 ID      PCI BDF         Driver          NUMA    IOMMU   IF Name
 0       0000:4b:01.0    vfio-pci        0       311     *
 1       0000:4b:01.1    vfio-pci        0       312     *
@@ -106,7 +107,7 @@ docker run -it \
   mtl:latest
 ```
 
-#### 3.2.3 Run with docker-compose
+#### 3.2.3. Run with docker-compose
 
 Edit the `docker-compose.yml` file to specify the configuration.
 
@@ -122,6 +123,6 @@ docker-compose run imtl
 ```bash
 # Run below command to generate a fake yuv file or follow "#### 3.3 Prepare source files:" in [run guide](../doc/run.md)
 # dd if=/dev/urandom of=test.yuv count=2160 bs=4800
-# Edit and Run the loop json file.
+# Edit and Run the loop JSON file.
 ./app/RxTxApp --config_file tests/script/loop_json/1080p60_1v.json
 ```

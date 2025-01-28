@@ -19,7 +19,9 @@ By leveraging RDMA and its interrupt mode, significant CPU resources can be cons
 To enable RoCEv2 support on Intel E810 NIC, first you need to make sure the irdma kernel module is installed and loaded.
 
 ```bash
-$ lsmod | grep rdma
+lsmod | grep rdma
+```
+```text
 irdma                 430080  0
 i40e                  638976  1 irdma
 ib_uverbs             196608  1 irdma
@@ -70,12 +72,18 @@ ping -I ens8np0 192.168.99.111
 ### Check active RDMA devices
 
 ```bash
-$ ibv_devices
+ibv_devices
+```
+```text
     device                 node GUID
     ------              ----------------
     irdma0              6a05cafffec1b900
     irdma1              6a05cafffec1b901
-$ ibstat
+```
+```bash
+ibstat
+```
+```text
 CA 'irdma0'
         CA type:
         Number of ports: 1
@@ -125,7 +133,9 @@ The test result will show the max write bandwidth with single queue pair.
 You can specify 8 queue pairs by adding `-q 8` to both sides.
 
 ```bash
-$ ib_write_bw -d irdma1 192.168.99.110
+ib_write_bw -d irdma1 192.168.99.110
+```
+```text
 ---------------------------------------------------------------------------------------
                     RDMA_Write BW Test
  Dual-port       : OFF          Device         : irdma1
