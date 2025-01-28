@@ -1,3 +1,4 @@
+<!-- markdownlint-disable MD001 MD041 -->
 The Precision Time Protocol (PTP) facilitates global timing accuracy in the microsecond range for all essences.
 Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l.
 This library includes its own PTP implementation, and a sample application offers the option to enable it.
