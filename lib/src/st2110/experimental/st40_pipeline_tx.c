@@ -439,13 +439,13 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
   enum mtl_port port;
   int ret;
 
-  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
-
   /* validate the input parameters */
   if (!mt || !ops) {
     err("%s(%d), NULL input parameters \n", __func__, idx);
     return NULL;
   }
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (MT_HANDLE_MAIN != impl->type) {
     err("%s, invalid type %d\n", __func__, impl->type);

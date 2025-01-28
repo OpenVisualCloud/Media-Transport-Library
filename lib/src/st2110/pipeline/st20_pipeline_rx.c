@@ -934,15 +934,16 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   int ret;
   int idx = st20p_rx_idx;
   size_t dst_size = 0;
-  bool auto_detect = ops->flags & ST20P_RX_FLAG_AUTO_DETECT ? true : false;
-
-  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
+  bool auto_detect;
 
   /* validate the input parameters */
   if (!mt || !ops) {
     err("%s(%d), NULL input parameters \n", __func__, idx);
     return NULL;
   }
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
+  auto_detect = ops->flags & ST20P_RX_FLAG_AUTO_DETECT ? true : false;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);

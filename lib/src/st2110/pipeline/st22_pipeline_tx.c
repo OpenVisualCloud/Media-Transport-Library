@@ -781,13 +781,13 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   size_t src_size;
   enum st_frame_fmt codestream_fmt;
 
-  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
-
   /* validate the input parameters */
   if (!mt || !ops) {
     err("%s(%d), NULL input parameters \n", __func__, idx);
     return NULL;
   }
+
+  notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
