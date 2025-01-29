@@ -2,7 +2,7 @@
 
 ## Overview
 
-![design](manager_design.svg)
+![MTL Manager Design](manager_design.svg)
 
 MTL Manager is a daemon server designed to operate with root privileges. Its primary role is to manage the lifecycle and configurations of MTL instances. It addresses a variety of administrative tasks, including:
 

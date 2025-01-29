@@ -167,9 +167,7 @@ Below is the command to convert yuv422p10le file to yuv422rfc4175be10 pg format(
 ```
 
 The yuv422rfc4175be10 files can be viewed by [YUV Viewer tools](https://github.com/IENT/YUView). Below is the custom layout.
-<div align="center">
-<img src="png/yuview_yuv422rfc4175be10_layout.png" align="center" alt="yuview yuv422rfc4175be10 custom layout">
-</div>
+![yuview yuv422rfc4175be10 custom layout](png/yuview_yuv422rfc4175be10_layout.png)
 
 #### 5.1.3. Convert yuv422rfc4175be10 Back to yuv422p10le
 

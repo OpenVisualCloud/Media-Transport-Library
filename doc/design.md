@@ -6,9 +6,7 @@ This section provides a detailed design concept of the Media Transport Library, 
 
 Similar to other network processing libraries, it consists of a control plane and a data plane. In the data plane, a lockless design is adopted to achieve ultra-high performance.
 
-<div align="center">
-<img src="png/software_stack.png" align="center" alt="Software Stack">
-</div>
+![Software Stack](png/software_stack.png)
 
 ## 2. Core management
 
@@ -23,9 +21,7 @@ With this PMD design, it is expected that a CPU thread will always be utilized t
 By the way, we provide an option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
 Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
 
-<div align="center">
-<img src="png/tasklet.png" align="center" alt="Tasklet">
-</div>
+![Tasklet](png/tasklet.png)
 
 ### 2.1. Tasklet design
 
@@ -52,7 +48,7 @@ MTL supports multi-process deployment through the use of SR-IOV. Each process op
 Each instance sends a request to the Manager service, which in return assigns a free core to the instance. The Manager service is also responsible for detecting when an instance disconnects and will subsequently release the associated resources. For more details, please consult the [Manager guide](../manager/README.md)
 
 If the background Manager service is not practical for your setup, there is a fallback method: managing the logical core (lcore) via shared memory. In this approach, all MTL instances loop through a shared memory structure to locate an unused core.
-The instructions for this deprecated method can still be accessed in the [shm_lcore guide](./shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
+The instructions for this deprecated method can still be accessed in the [shm_lcore Guide](shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
 
 ### 2.5. The tasklet API for application
 
@@ -210,9 +206,7 @@ During the packet construction process, only the RTP header is regenerated to re
 
 Note that if the currently used NIC does not support the multi-buffer feature, the MTL will need to copy the video frame into the descriptor, resulting in a loss of performance.
 
-<div align="center">
-<img src="png/tx_zero_copy.png" align="center" alt="TX Zero Copy">
-</div>
+![TX Zero Copy](png/tx_zero_copy.png)
 
 #### 4.3.2. ST2110-21 pacing
 
@@ -227,9 +221,7 @@ However, for a 4K 50fps session, the time for one packet is approximately ~1us, 
 
 In the case that the rate-limiting feature is unavailable, TSC (Timestamp Counter) based software pacing is provided as a fallback option.
 
-<div align="center">
-<img src="png/tx_pacing.png" align="center" alt="TX Pacing">
-</div>
+![TX Pacing](png/tx_pacing.png)
 
 ### 4.4. ST2110 RX
 
@@ -238,11 +230,9 @@ Once the packet is received and validated as legitimate, the RX session will cop
 
 #### 4.4.1. RX DMA offload
 
-The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA guide](./dma.md)
+The process of copying data between packets and frames consumes a significant amount of CPU resources. MTL can be configured to use DMA to offload this copy operation, thereby enhancing performance. For detailed usage instructions, please refer to [DMA Guide](dma.md)
 
-<div align="center">
-<img src="png/rx_dma_offload.png" align="center" alt="RX DMA Offload">
-</div>
+![RX DMA Offload](png/rx_dma_offload.png)
 
 ## 5. Control path
 
@@ -365,7 +355,7 @@ Thanks to the plugin, the application can implement ST22 support using the follo
   st22p_tx_free
 ```
 
-The plugin guide can be find at [plugin](./plugin.md), the pipeline detail implementation can be find from [st22_pipeline_tx.c](../lib/src/st2110/pipeline/st22_pipeline_tx.c) and [st22_pipeline_rx.c](../lib/src/st2110/pipeline/st22_pipeline_rx.c).
+The plugin guide can be find at [Plugin Guide](plugin.md), the pipeline detail implementation can be find from [st22_pipeline_tx.c](../lib/src/st2110/pipeline/st22_pipeline_tx.c) and [st22_pipeline_rx.c](../lib/src/st2110/pipeline/st22_pipeline_rx.c).
 
 Sample application code can be find at [tx_st22_pipeline_sample.c](../app/sample/tx_st22_pipeline_sample.c) and [rx_st22_pipeline_sample.c](../app/sample/rx_st22_pipeline_sample.c)
 
@@ -431,7 +421,7 @@ By default, the frame buffer is allocated by MTL using huge page memory, however
 MTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because MTL only recognizes the frame address.
 Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 
-For more comprehensive information and instructions on using these converters, please refer to the [external_frame](./external_frame.md).
+For more comprehensive information and instructions on using these converters, please refer to the [External Frame API Guide](external_frame.md).
 
 ### 6.10. VSync
 
@@ -449,7 +439,7 @@ The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use t
 ### 6.12. SIMD for color space convert
 
 MTL includes an array of built-in SIMD converters, providing high-performance data processing. The implementation details for these converters are available in the MTL library source files [st_avx512.c](../lib/src/st2110/st_avx512.c) and [st_avx512_vbmi.c](../lib/src/st2110/st_avx512_vbmi.c).
-The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [convert guide](./convert.md).
+The API for these converters is publicly documented in the header file [st_convert_api.h](../include/st_convert_api.h). For more comprehensive information and instructions on using these converters, please refer to the [Convert Guide](convert.md).
 
 ### 6.13. Runtime update source and destination
 

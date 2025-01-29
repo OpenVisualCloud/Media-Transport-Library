@@ -18,7 +18,7 @@ Instance example:
 
 ### 2.1. Build and install DPDK & Media Transport Library
 
-Refer to CentOS part of [build.md](./build.md).
+Refer to CentOS part of [build.md](build.md).
 
 ### 2.2. Apply vfio-pci patches
 
@@ -32,7 +32,7 @@ sudo get-vfio-with-wc.sh
 
 ## 3. IOMMU Setting
 
-If you use bare metal, you can turn on IOMMU refer to [run.md](./run.md).
+If you use bare metal, you can turn on IOMMU refer to [run.md](run.md).
 
 If you use VM, set NO-IOMMU mode for vfio after each boot.
 
@@ -72,7 +72,7 @@ dpdk-devbind.py -s
 
 > If no IOMMU support(.nxlarge instance), you have to run it under root user.
 
-Refer to [run.md](./run.md) after section 3.2.
+Refer to [run.md](run.md) after section 3.2.
 
 For single video stream whose bandwidth is grater than 5 Gbps (4k 30fps), arg `--multi_src_port` is needed in Tx app, see 7.3.
 
