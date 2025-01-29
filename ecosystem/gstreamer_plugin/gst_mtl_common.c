@@ -8,6 +8,14 @@
 
 #include "gst_mtl_common.h"
 
+/* Shared handle for the MTL library used across plugins in the pipeline */
+struct gst_common_handle {
+  mtl_handle mtl_handle;
+  int mtl_handle_reference_count;
+  pthread_mutex_t mutex;
+};
+
+static struct gst_common_handle common_handle = {0, 0, PTHREAD_MUTEX_INITIALIZER};
 guint gst_mtl_port_idx = MTL_PORT_P;
 
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
@@ -393,12 +401,40 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
   return ret;
 }
 
-mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
-                                      guint* log_level) {
+/**
+ * Initializes the device with the given parameters.
+ *
+ * If the common handle (MTL instance already initialized in the pipeline)
+ * is already in use, the input parameters for the device
+ * (rx_queues, tx_queues, dev_ip, dev_port, and log_level) will be ignored.
+ * You can force to initialize another MTL instance to avoid this behavior with
+ * force_to_initialize_new_instance flag.
+ *
+ * @param force_to_initialize_new_instance Force the creation of a new MTL
+ *                                         instance, ignoring any existing one.
+ * @param devArgs Initialization parameters for the DPDK port
+ *                (ignored if using an existing MTL instance).
+ * @param log_level Log level for the library (ignored if using an
+ *                  existing MTL instance).
+ */
+mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+                                      gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
+  mtl_handle ret;
+  pthread_mutex_lock(&common_handle.mutex);
 
-  if (!p || !devArgs || !log_level) {
+  if (!force_to_initialize_new_instance && common_handle.mtl_handle) {
+    GST_INFO("Mtl is already initialized with shared handle %p",
+             common_handle.mtl_handle);
+    common_handle.mtl_handle_reference_count++;
+
+    pthread_mutex_unlock(&common_handle.mutex);
+    return common_handle.mtl_handle;
+  }
+
+  if (!devArgs || !log_level) {
     GST_ERROR("Invalid input");
+    pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
 
@@ -406,6 +442,7 @@ mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devA
 
   if (gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs) == FALSE) {
     GST_ERROR("Failed to parse dev arguments");
+    pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
   mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
@@ -422,5 +459,53 @@ mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devA
   }
   *log_level = mtl_init_params.log_level;
 
-  return mtl_init(&mtl_init_params);
+  if (force_to_initialize_new_instance) {
+    GST_INFO("MTL shared handle ignored");
+
+    ret = mtl_init(&mtl_init_params);
+    pthread_mutex_unlock(&common_handle.mutex);
+
+    return ret;
+  }
+
+  common_handle.mtl_handle = mtl_init(&mtl_init_params);
+  common_handle.mtl_handle_reference_count++;
+  pthread_mutex_unlock(&common_handle.mutex);
+
+  return common_handle.mtl_handle;
+}
+
+/**
+ * Deinitializes the MTL handle.
+ * If the handle is the shared handle, the reference count is decremented.
+ * If the reference count reaches zero, the handle is deinitialized.
+ * If the handle is not the shared handle, it is deinitialized immediately.
+ *
+ * @param handle MTL handle to deinitialize (Null is an akceptable value then
+ * shared value will be used).
+ */
+gint gst_mtl_common_deinit_handle(mtl_handle handle) {
+  gint ret;
+
+  pthread_mutex_lock(&common_handle.mutex);
+
+  if (handle && handle != common_handle.mtl_handle) {
+    ret = mtl_uninit(handle);
+    pthread_mutex_unlock(&common_handle.mutex);
+    return ret;
+  }
+
+  common_handle.mtl_handle_reference_count--;
+
+  if (common_handle.mtl_handle_reference_count > 0) {
+    common_handle.mtl_handle_reference_count--;
+
+    pthread_mutex_unlock(&common_handle.mutex);
+    return 0;
+  }
+  ret = mtl_uninit(common_handle.mtl_handle);
+
+  pthread_mutex_unlock(&common_handle.mutex);
+  pthread_mutex_destroy(&common_handle.mutex);
+  return ret;
 }

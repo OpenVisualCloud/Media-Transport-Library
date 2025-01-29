@@ -39,9 +39,26 @@ gstreamer_video_dep = dependency('gstreamer-video-1.0')
 gstreamer_audio_dep = dependency('gstreamer-audio-1.0')
 mtl_dep             = dependency('mtl')
 
+# mtl_common_library
 gst_mtl_common_sources = [
   'gst_mtl_common.c'
 ]
+
+gst_mtl_common = library('gstmtl_common',
+  gst_mtl_common_sources,
+  dependencies : [gst_dep, gstbase_dep, mtl_dep],
+  install : true,
+  install_dir : plugins_install_dir,
+  include_directories: inc_dirs,
+  c_args: plugin_c_args
+)
+
+gst_mtl_common_dep = declare_dependency(
+  include_directories: inc_dirs,
+  dependencies : [gst_dep, gstbase_dep, mtl_dep],
+  link_with : gst_mtl_common,
+  link_args : ['-Wl,--no-as-needed']
+)
 
 # mtl_st20p_tx Plugin
 gst_mtl_st20p_tx_sources = [
@@ -49,8 +66,8 @@ gst_mtl_st20p_tx_sources = [
 ]
 
 gst_mtl_st20p_tx = library('gstmtl_st20p_tx',
-  gst_mtl_common_sources + gst_mtl_st20p_tx_sources,
-  dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep],
+  gst_mtl_st20p_tx_sources,
+  dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
   include_directories: inc_dirs,
@@ -63,8 +80,8 @@ gst_mtl_st20p_rx_sources = [
 ]
 
 gst_mtl_st20p_rx = library('gstmtl_st20p_rx',
-  gst_mtl_common_sources + gst_mtl_st20p_rx_sources,
-  dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep],
+  gst_mtl_st20p_rx_sources,
+  dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
   include_directories: inc_dirs,
@@ -77,8 +94,8 @@ gst_mtl_st30p_rx_sources = [
 ]
 
 gst_mtl_st30p_rx = library('gstmtl_st30p_rx',
-  gst_mtl_common_sources + gst_mtl_st30p_rx_sources,
-  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
+  gst_mtl_st30p_rx_sources,
+  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
   include_directories: inc_dirs,
@@ -91,8 +108,8 @@ gstmtl_st30p_tx_sources = [
 ]
 
 gstmtl_st30p_tx = library('gstmtl_st30p_tx',
-    gst_mtl_common_sources + gstmtl_st30p_tx_sources,
-    dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
+    gstmtl_st30p_tx_sources,
+    dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
     install : true,
     install_dir : plugins_install_dir,
     include_directories: inc_dirs,
@@ -105,8 +122,8 @@ gst_mtl_st40_rx_sources = [
 ]
 
 gst_mtl_st40_rx = library('gstmtl_st40_rx',
-  gst_mtl_common_sources + gst_mtl_st40_rx_sources,
-  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep],
+  gst_mtl_st40_rx_sources,
+  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
   include_directories: inc_dirs,
@@ -119,8 +136,8 @@ gst_mtl_st40p_tx_sources = [
 ]
 
 gst_mtl_st40p_tx = library('gstmtl_st40p_tx',
-  gst_mtl_common_sources + gst_mtl_st40p_tx_sources,
-  dependencies : [gst_dep, gstbase_dep, mtl_dep],
+  gst_mtl_st40p_tx_sources,
+  dependencies : [gst_dep, gstbase_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
   include_directories: inc_dirs,

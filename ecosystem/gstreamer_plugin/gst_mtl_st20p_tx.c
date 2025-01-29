@@ -170,8 +170,6 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
 }
 
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
-  struct mtl_init_params mtl_init_params = {0};
-
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(bsink);
 
   GST_DEBUG_OBJECT(sink, "start");
@@ -179,7 +177,7 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+      gst_mtl_common_init_handle(&(sink->devArgs), &(sink->log_level), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -459,7 +457,8 @@ static void gst_mtl_st20p_tx_finalize(GObject* object) {
   }
 
   if (sink->mtl_lib_handle) {
-    if (mtl_stop(sink->mtl_lib_handle) || mtl_uninit(sink->mtl_lib_handle)) {
+    if (mtl_stop(sink->mtl_lib_handle) ||
+        gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }
