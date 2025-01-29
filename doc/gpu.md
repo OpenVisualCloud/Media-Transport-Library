@@ -24,6 +24,7 @@ pkg-config --libs mtl_gpu_direct
 ```
 
 Run TX Sample App
+
 Prepare a file (test.yuv) of 1920x1080 UYVY frames to send. You can refer to [run guide](../doc/run.md) for more details.
 
 ```bash
@@ -31,9 +32,10 @@ Prepare a file (test.yuv) of 1920x1080 UYVY frames to send. You can refer to [ru
 ```
 
 Run RX Sample App
+
 You need the SDL library to display the received frame.
 
-``` bash
+```bash
 ./build/app/GpuDirectVideoRxMultiSample 192.168.99.111 192.168.99.110 20000
 ```
 
@@ -52,4 +54,4 @@ Additionally, you must initialize the GPU device in your application using gpu d
 Pass the address of the device with the gpu_context parameter:  
 `gpu_context` to the st20p rx flags during session initialization.
 
-**Warning:** Direct memory access functionality is disabled when using this flag. Memory allocated in VRAM cannot be accessed directly using dpdk API.
+**Warning:** Direct memory access functionality is disabled when using this flag. Memory allocated in VRAM cannot be accessed directly using DPDK API.

@@ -1,14 +1,14 @@
-# doxygen guide for APIs
+# Doxygen Guide for APIs
 
 ## 1. Install the doxygen tools
 
-### 1.1 Ubuntu/Debian
+### 1.1. Ubuntu/Debian
 
 ```bash
 sudo apt-get install doxygen
 ```
 
-### 1.2 Centos
+### 1.2. CentOS
 
 ```bash
 sudo yum install doxygen
