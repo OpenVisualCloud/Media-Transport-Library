@@ -463,7 +463,8 @@ static void gst_mtl_st40_rx_finalize(GObject* object) {
   pthread_cond_destroy(&src->mbuff_cond);
 
   if (src->mtl_lib_handle) {
-    if (mtl_stop(src->mtl_lib_handle) || mtl_uninit(src->mtl_lib_handle)) {
+    if (mtl_stop(src->mtl_lib_handle) ||
+        gst_mtl_common_deinit_handle(src->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
     }
   }
