@@ -99,7 +99,7 @@ The previously installed drivers will now be installed for the "Virtual to physi
 
 ### 3.4. Make sure that the driver was installed
 
-![Image](./png/virt2phy.png)
+![Device Manager picture](png/virt2phy.png)
 
 ## 4. Install netuio driver
 
@@ -130,7 +130,7 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 ### 4.3. Make sure that the driver was installed
 
-![Image](./png/netuio.png)
+![Driver picture](png/netuio.png)
 
 ### 4.4. Get the PCI port name used for MTL
 

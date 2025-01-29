@@ -17,41 +17,31 @@ Matrox VERO: narrow gapping
 
 VERO 1080p50 summary
 
-<div align="center">
-<img src="png/compliance/vero_1080p50_summary.png" align="center" alt="VERO 1080p50 summary">
-</div>
+![VERO 1080p50 summary](png/compliance/vero_1080p50_summary.png)
 
 </br>
 
 VERO 1080p50 analysis
 
-<div align="center">
-<img src="png/compliance/vero_1080p50_analysis.png" align="center" alt="VERO 1080p50 analysis">
-</div>
+![VERO 1080p50 analysis](png/compliance/vero_1080p50_analysis.png)
 
 </br>
 
 VERO 1080p50 Cinst per frame
 
-<div align="center">
-<img src="png/compliance/vero_1080p50_cinst_per_frame.png" align="center" alt="VERO 1080p50 Cinst per frame">
-</div>
+![VERO 1080p50 Cinst per frame](png/compliance/vero_1080p50_cinst_per_frame.png)
 
 </br>
 
 VERO 1080p50 VRX per frame
 
-<div align="center">
-<img src="png/compliance/vero_1080p50_vrx_per_frame.png" align="center" alt="VERO 1080p50 VRX per frame.png">
-</div>
+![VERO 1080p50 VRX per frame](png/compliance/vero_1080p50_vrx_per_frame.png)
 
 </br>
 
 Pharbrix 1080p50 analyser: gapping
 
-<div align="center">
-<img src="png/compliance/pharbrix_1080p50_analyser.png" align="center" alt="Pharbrix 1080p50 analyser">
-</div>
+![Pharbrix 1080p50 analyser](png/compliance/pharbrix_1080p50_analyser.png)
 
 </br>
 
@@ -61,40 +51,30 @@ Matrox VERO: narrow gapping
 
 VERO 2160p50 summary
 
-<div align="center">
-<img src="png/compliance/vero_2160p50_summary.png" align="center" alt="VERO 2160p50 summay">
-</div>
+![VERO 2160p50 summay](png/compliance/vero_2160p50_summary.png)
 
 </br>
 
 VERO 2160p50 analysis
 
-<div align="center">
-<img src="png/compliance/vero_2160p50_analysis.png" align="center" alt="VERO 2160p50 analysis">
-</div>
+![VERO 2160p50 analysis](png/compliance/vero_2160p50_analysis.png)
 
 </br>
 
 VERO 2160p50 Cinst per frame
 
-<div align="center">
-<img src="png/compliance/vero_2160p50_cinst_per_frame.png" align="center" alt="VERO 2160p50 Cinst per frame">
-</div>
+![VERO 2160p50 Cinst per frame](png/compliance/vero_2160p50_cinst_per_frame.png)
 
 </br>
 
 VERO 2160p50 VRX per frame.png
 
-<div align="center">
-<img src="png/compliance/vero_2160p50_vrx_per_frame.png" align="center" alt="VERO 2160p50 VRX per frame.png">
-</div>
+![VERO 2160p50 VRX per frame](png/compliance/vero_2160p50_vrx_per_frame.png)
 
 </br>
 
 Pharbrix 2160p50 analyser: gapping
 
-<div align="center">
-<img src="png/compliance/pharbrix_2160p50_analyser.png" align="center" alt="Pharbrix 2160p50 analyser">
-</div>
+![Pharbrix 2160p50 analyser](png/compliance/pharbrix_2160p50_analyser.png)
 
 </br>

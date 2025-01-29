@@ -91,9 +91,7 @@ Note: The format y210 is not supported by the Ffmpeg plugins for MTL.
 A typical workflow for processing an MTL ST22 compressed stream with FFMpeg is outlined in the following steps: Initially, FFMpeg reads a YUV frame from the input source, then forwards the frame to a codec to encode the raw video into a compressed codec stream. Finally, the codec stream is sent to the MTL ST22 plugin.
 The MTL ST22 plugin constructs the codec stream and transmits it as ST2110-22 RTP packets, adhering to the standard. In addition to the JPEG XS stream, the MTL ST22 plugin is capable of supporting various other common compressed codecs, including H264, H265, and HEVC, among others.
 
-<div align="center">
-<img src="ffmpeg_st22_flow.png" align="center" alt="Tasklet">
-</div>
+![Tasklet](ffmpeg_st22_flow.png)
 
 ### 3.1. St22 output
 

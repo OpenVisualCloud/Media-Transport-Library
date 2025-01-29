@@ -58,9 +58,7 @@ MTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Sp
 
 For the detail design, please refer to [Design Guide](doc/design.md).
 
-<div align="center">
-<img src="doc/png/arch.svg" align="center" alt="/Overall Architecture">
-</div>
+![Overall Architecture](doc/png/arch.svg)
 
 ### 1.3. Ethernet supported
 
