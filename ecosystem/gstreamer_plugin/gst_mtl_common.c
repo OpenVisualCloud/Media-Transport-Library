@@ -420,6 +420,7 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
 mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
                                       gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
+  mtl_handle ret;
   pthread_mutex_lock(&common_handle.mutex);
 
   if (!force_to_initialize_new_instance && common_handle.mtl_handle) {
@@ -460,9 +461,11 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
 
   if (force_to_initialize_new_instance) {
     GST_INFO("MTL shared handle ignored");
+
+    ret = mtl_init(&mtl_init_params);
     pthread_mutex_unlock(&common_handle.mutex);
 
-    return mtl_init(&mtl_init_params);
+    return ret;
   }
 
   common_handle.mtl_handle = mtl_init(&mtl_init_params);
@@ -482,7 +485,7 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
  * shared value will be used).
  */
 gint gst_mtl_common_deinit_handle(mtl_handle handle) {
-  int ret;
+  gint ret;
 
   pthread_mutex_lock(&common_handle.mutex);
 

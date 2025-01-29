@@ -111,7 +111,7 @@ These are also general parameters accepted by plugins, but the functionality the
 
 > **Warning:**
 > Generally, the `log-level`, `dev-port`, `dev-ip`, `tx-queues`, and `rx-queues` are used to initialize the MTLlibrary. As the MTL library handle is shared between MTL
-> GStreamer plugins of the same pipeline, you only need to pass them once when specifying the arguments for thefirst pipeline. Nothing happens when you specify them elsewhere;
+> GStreamer plugins of the same pipeline, you only need to pass them once when specifying the arguments for the firstly initialized pipeline. Nothing happens when you specify them elsewhere;
 > they will just be ignored after the initialization of MTL has already happened.
 
 ### 2.3. General capabilities
