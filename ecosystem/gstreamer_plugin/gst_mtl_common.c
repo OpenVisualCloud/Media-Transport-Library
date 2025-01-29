@@ -433,6 +433,7 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
 
   if (!devArgs || !log_level) {
     GST_ERROR("Invalid input");
+    pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
 
@@ -440,6 +441,7 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
 
   if (gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs) == FALSE) {
     GST_ERROR("Failed to parse dev arguments");
+    pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
   mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
@@ -485,8 +487,9 @@ gint gst_mtl_common_deinit_handle(mtl_handle handle) {
   pthread_mutex_lock(&common_handle.mutex);
 
   if (handle && handle != common_handle.mtl_handle) {
+    ret = mtl_uninit(handle);
     pthread_mutex_unlock(&common_handle.mutex);
-    return mtl_uninit(handle);
+    return ret;
   }
 
   common_handle.mtl_handle_reference_count--;
