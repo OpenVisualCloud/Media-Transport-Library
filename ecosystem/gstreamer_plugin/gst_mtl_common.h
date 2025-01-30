@@ -101,7 +101,8 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           StDevArgs* devArgs, SessionPortArgs* portArgs,
                                           guint* log_level);
 
-mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
-                                      guint* log_level);
+mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+                                      gboolean force_to_initialize_new_instance);
 
+gint gst_mtl_common_deinit_handle(mtl_handle handle);
 #endif /* __GST_MTL_COMMON_H__ */
