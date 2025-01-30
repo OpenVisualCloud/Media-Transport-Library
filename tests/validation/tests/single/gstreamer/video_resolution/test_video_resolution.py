@@ -33,7 +33,7 @@ def test_video_resolutions(
         input_path=input_file_path,
         width=video_file["width"],
         height=video_file["height"],
-        framerate=video_file["fps"],
+        framerate=gstreamerapp.fps_change(video_file["fps"]),
         format=gstreamerapp.video_format_change(video_file["format"]),
         tx_payload_type=112,
         tx_queues=4,
@@ -45,7 +45,7 @@ def test_video_resolutions(
         output_path=os.path.join(media, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
-        framerate=video_file["fps"],
+        framerate=gstreamerapp.fps_change(video_file["fps"]),
         format=gstreamerapp.video_format_change(video_file["format"]),
         rx_payload_type=112,
         rx_queues=4,
@@ -60,6 +60,8 @@ def test_video_resolutions(
             input_file=input_file_path,
             output_file=os.path.join(media, "output_video.yuv"),
             type="st20",
+            tx_first=True,
+            sleep_interval=0,
         )
     finally:
         # Remove the video file after the test

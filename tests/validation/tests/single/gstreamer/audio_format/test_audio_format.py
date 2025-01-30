@@ -55,6 +55,8 @@ def test_audio_format(
             input_file=input_file_path,
             output_file=os.path.join(media, "output_audio.pcm"),
             type="st30",
+            tx_first=True,
+            sleep_interval=0,
         )
     finally:
         media_create.remove_file(input_file_path)

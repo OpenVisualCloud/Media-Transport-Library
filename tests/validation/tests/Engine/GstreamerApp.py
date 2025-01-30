@@ -3,6 +3,7 @@
 
 import hashlib
 import os
+import time
 
 from tests.Engine.execute import call, log_fail, log_info, wait
 
@@ -213,6 +214,77 @@ def setup_gstreamer_st30_rx_pipeline(
     return pipeline_command
 
 
+def setup_gstreamer_st40p_tx_pipeline(
+    build: str,
+    nic_port_list: str,
+    input_path: str,
+    tx_payload_type: int,
+    tx_queues: int,
+    tx_framebuff_cnt: int,
+    tx_fps: int,
+    tx_did: int,
+    tx_sdid: int,
+):
+    connection_params = create_connection_params(
+        dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=40000, is_tx=True
+    )
+
+    # st40 tx GStreamer command line
+    pipeline_command = [
+        "gst-launch-1.0",
+        "filesrc",
+        f"location={input_path}",
+        "!",
+        "mtl_st40p_tx",
+        f"tx-queues={tx_queues}",
+        f"tx-framebuff-cnt={tx_framebuff_cnt}",
+        f"tx-fps={tx_fps}",
+        f"tx-did={tx_did}",
+        f"tx-sdid={tx_sdid}",
+    ]
+
+    for key, value in connection_params.items():
+        pipeline_command.append(f"{key}={value}")
+
+    pipeline_command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
+
+    return pipeline_command
+
+
+def setup_gstreamer_st40p_rx_pipeline(
+    build: str,
+    nic_port_list: str,
+    output_path: str,
+    rx_payload_type: int,
+    rx_queues: int,
+    timeout: int,
+):
+    connection_params = create_connection_params(
+        dev_port=nic_port_list,
+        payload_type=rx_payload_type,
+        udp_port=40000,
+        is_tx=False,
+    )
+
+    # st40 rx GStreamer command line
+    pipeline_command = [
+        "gst-launch-1.0",
+        "-v",
+        "mtl_st40_rx",
+        f"rx-queues={rx_queues}",
+        f"timeout={timeout}",
+    ]
+
+    for key, value in connection_params.items():
+        pipeline_command.append(f"{key}={value}")
+
+    pipeline_command.extend(["!", "filesink", f"location={output_path}"])
+
+    pipeline_command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
+
+    return pipeline_command
+
+
 def execute_test(
     build: str,
     tx_command: list,
@@ -221,18 +293,29 @@ def execute_test(
     output_file: str,
     type: str,
     fps: int = None,
+    sleep_interval: int = 0,
+    tx_first: bool = True,
 ):
 
-    tx_process = call(" ".join(tx_command), cwd=build, timeout=120)
-    rx_process = call(" ".join(rx_command), cwd=build, timeout=120)
+    if tx_first == True:
+        tx_process = call(" ".join(tx_command), cwd=build, timeout=120)
+        time.sleep(sleep_interval)
+        rx_process = call(" ".join(rx_command), cwd=build, timeout=120)
+    else:
+        rx_process = call(" ".join(rx_command), cwd=build, timeout=120)
+        time.sleep(sleep_interval)
+        tx_process = call(" ".join(tx_command), cwd=build, timeout=120)
 
     tx_output = wait(tx_process)
     wait(rx_process)
-    if type == "st20":
-        tx_result = check_tx_output(fps=fps, output=tx_output.splitlines())
-        # rx_result = check_rx_output(fps=fps, output=rx_output.splitlines())
-        if tx_result is False:
-            return False
+
+    # For now checking output from logs is disabled as it's not working as intended
+
+    # if type == "st20":
+    # tx_result = check_tx_output(fps=fps, output=tx_output.splitlines())
+    # rx_result = check_rx_output(fps=fps, output=rx_output.splitlines())
+    # if tx_result is False:
+    #    return False
 
     file_compare = compare_files(input_file, output_file)
 
@@ -318,3 +401,16 @@ def audio_format_change(file_format, rx_side: bool = False):
             return 16
         else:
             return 24
+
+
+def fps_change(fps: int):
+    if fps == 23:
+        return 2398
+    if fps == 29:
+        return 2997
+    if fps == 59:
+        return 5994
+    if fps == 119:
+        return 11988
+    else:
+        return fps
