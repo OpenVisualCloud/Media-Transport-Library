@@ -208,7 +208,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   ops_rx->ptime = ST30_PTIME_1MS;
   ops_rx->flags |= ST30P_RX_FLAG_BLOCK_GET;
 
-  if (!gst_mtl_common_parse_sampling(src->sampling, &ops_rx->sampling)) {
+  if (!gst_mtl_common_gst_to_st_sampling(src->sampling, &ops_rx->sampling)) {
     GST_ERROR("Failed to parse ops_rx sampling %d", src->sampling);
     return FALSE;
   }
@@ -353,25 +353,32 @@ static void gst_mtl_st30p_rx_get_property(GObject* object, guint prop_id, GValue
  */
 
 static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
-  GstAudioInfo* info;
   Gst_Mtl_St30p_Rx* src = GST_MTL_ST30P_RX(basesrc);
   struct st30p_rx_ops* ops_rx = &src->ops_rx;
-  gint ret;
+  GstAudioInfo* info;
+  gint sampling;
   GstCaps* caps;
+  gint ret;
 
   info = gst_audio_info_new();
 
+  if (!gst_mtl_common_st_to_gst_sampling(ops_rx->sampling, &sampling)) {
+    GST_ERROR("Failed to convert sampling rate");
+    gst_audio_info_free(info);
+    return FALSE;
+  }
+
   switch (ops_rx->fmt) {
     case ST30_FMT_PCM24:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, info->rate, info->channels,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, sampling, ops_rx->channel,
                                 NULL);
       break;
     case ST30_FMT_PCM16:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, info->rate, info->channels,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, sampling, ops_rx->channel,
                                 NULL);
       break;
     case ST30_FMT_PCM8:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S8, info->rate, info->channels,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S8, sampling, ops_rx->channel,
                                 NULL);
       break;
     default:
@@ -379,9 +386,6 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
       gst_audio_info_free(info);
       return FALSE;
   }
-
-  info->rate = ops_rx->sampling;
-  info->channels = ops_rx->channel;
 
   caps = gst_caps_new_simple("audio/x-raw", "format", G_TYPE_STRING,
                              gst_audio_format_to_string(info->finfo->format), "channels",

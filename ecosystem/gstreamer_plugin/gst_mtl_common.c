@@ -193,7 +193,8 @@ gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* au
   return TRUE;
 }
 
-gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sampling) {
+gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
+                                           enum st30_sampling* st_sampling) {
   if (!st_sampling) {
     GST_ERROR("Invalid st_sampling pointer");
     return FALSE;
@@ -210,6 +211,30 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
       *st_sampling = ST30_SAMPLING_96K;
       return TRUE;
     default:
+      GST_ERROR("Unsupported sampling value");
+      return FALSE;
+  }
+}
+
+gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
+                                           gint* gst_sampling) {
+  if (!gst_sampling) {
+    GST_ERROR("Invalid gst_sampling pointer");
+    return FALSE;
+  }
+
+  switch (st_sampling) {
+    case ST31_SAMPLING_44K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K;
+      return TRUE;
+    case ST30_SAMPLING_48K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K;
+      return TRUE;
+    case ST30_SAMPLING_96K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K;
+      return TRUE;
+    default:
+      GST_ERROR("Unsupported st_sampling value");
       return FALSE;
   }
 }
