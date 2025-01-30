@@ -32,7 +32,7 @@ static int tx_next_video_frame(void* priv, uint16_t* next_frame_idx,
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   ctx->fb_send++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  return 0;
+  return 1;
 }
 
 static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
@@ -60,7 +60,7 @@ static int tx_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   ctx->fb_send++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  return 0;
+  return 1;
 }
 
 static int tx_next_ext_video_frame(void* priv, uint16_t* next_frame_idx,
