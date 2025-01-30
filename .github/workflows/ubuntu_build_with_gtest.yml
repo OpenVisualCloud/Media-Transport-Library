@@ -20,10 +20,10 @@ env:
   # Customize the env if
   BUILD_TYPE: Release
   DPDK_VERSION: 23.11
-  TEST_PF_PORT_P: 0000:af:00.0
-  TEST_PF_PORT_R: 0000:af:00.0
-  TEST_PORT_P: 0000:af:01.2
-  TEST_PORT_R: 0000:af:01.3
+  TEST_PF_PORT_P: "0000:49:00.0"
+  TEST_PF_PORT_R: "0000:49:00.0"
+  TEST_PORT_P: "0000:49:01.2"
+  TEST_PORT_R: "0000:49:01.3"
   TEST_DMA_PORT_P: 0000:80:04.0
   TEST_DMA_PORT_R: 0000:80:04.1
 
@@ -39,7 +39,7 @@ jobs:
       changed: ${{ steps.filter.outputs.linux_gtest == 'true' }}
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      
+
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v2
         id: filter
         with:
@@ -57,7 +57,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Checkout IMTL
+      - name: Checkout MTL
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
 
       - name: Checkout DPDK
@@ -74,8 +74,7 @@ jobs:
 
       - name: Apply dpdk patches
         run: |
-          cd dpdk
-          git am ../patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch
+          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
 
       - name: Build dpdk
         run: |
@@ -135,7 +134,7 @@ jobs:
 
       - name: Run udp ld preload test case
         run: |
-          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.89.80 --r_sip 192.168.89.81
+          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.2.80 --r_sip 192.168.2.81
 
       - name: Run st2110 test case
         run: |
