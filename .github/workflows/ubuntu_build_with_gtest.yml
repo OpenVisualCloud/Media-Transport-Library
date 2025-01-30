@@ -74,8 +74,8 @@ jobs:
           sudo ldconfig
 
   Test:
-    needs: [changes, Build]
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    needs: [Build]
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
     runs-on: [Linux, self-hosted, DPDK]
     steps:
       - name: Harden Runner
