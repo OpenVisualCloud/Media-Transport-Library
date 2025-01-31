@@ -246,7 +246,9 @@ def setup_gstreamer_st40p_tx_pipeline(
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
 
-    pipeline_command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
+    pipeline_command.append(
+        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+    )
 
     return pipeline_command
 
@@ -280,7 +282,9 @@ def setup_gstreamer_st40p_rx_pipeline(
 
     pipeline_command.extend(["!", "filesink", f"location={output_path}"])
 
-    pipeline_command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
+    pipeline_command.append(
+        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+    )
 
     return pipeline_command
 
@@ -296,7 +300,7 @@ def execute_test(
     tx_first: bool = True,
 ):
 
-    if tx_first == True:
+    if tx_first:
         tx_process = call(" ".join(tx_command), cwd=build, timeout=120)
         time.sleep(sleep_interval)
         rx_process = call(" ".join(rx_command), cwd=build, timeout=120)
@@ -316,6 +320,7 @@ def execute_test(
         return True
 
     return False
+
 
 def compare_files(input_file, output_file):
     if os.path.exists(input_file) and os.path.exists(output_file):
