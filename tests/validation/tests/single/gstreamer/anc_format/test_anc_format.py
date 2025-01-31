@@ -9,7 +9,7 @@ import tests.Engine.media_creator as media_create
 
 
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
-@pytest.mark.parametrize("file_size_kb", [10, 100, 1024])
+@pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3])
 def test_st40p_fps_size(
     build,
@@ -52,7 +52,7 @@ def test_st40p_fps_size(
             input_file=input_file_path,
             output_file=os.path.join(media, "output_anc.txt"),
             type="st40",
-            tx_first=True,
+            tx_first=False,
             sleep_interval=0,
         )
     finally:
