@@ -97,7 +97,7 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
     }
   };
 
-  return 0;
+  return 1;
 }
 
 static void utest_random_ip(struct utest_ctx* ctx) {
@@ -346,7 +346,7 @@ out:
   if (rx_fd > 0) mufd_close(rx_fd);
   delete[] send_buf;
   delete[] recv_buf;
-  return ret;
+  return 1;
 }
 
 GTEST_API_ int main(int argc, char** argv) {
@@ -381,7 +381,7 @@ GTEST_API_ int main(int argc, char** argv) {
   ret = mufd_socket_port(AF_INET, SOCK_DGRAM, 0, MTL_PORT_P);
   if (ret < 0) {
     err("%s, socket port fail\n", __func__);
-    return ret;
+    return 1;
   }
   mufd_close(ret);
 
@@ -411,5 +411,5 @@ GTEST_API_ int main(int argc, char** argv) {
   }
 
   utest_ctx_uinit(ctx);
-  return ret;
+  return 1;
 }
