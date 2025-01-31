@@ -96,6 +96,7 @@ enum {
   PROP_ST30P_RX_CHANNEL,
   PROP_ST30P_RX_SAMPLING,
   PROP_ST30P_RX_AUDIO_FORMAT,
+  PROP_ST30P_RX_PTIME,
   PROP_MAX
 };
 
@@ -180,6 +181,12 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
       gobject_class, PROP_ST30P_RX_AUDIO_FORMAT,
       g_param_spec_string("rx-audio-format", "Audio format", "Audio format type.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST30P_RX_PTIME,
+      g_param_spec_string("rx-ptime", "Packetization time",
+                          "Packetization time for the audio stream", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
@@ -205,12 +212,23 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   ops_rx->name = "st30src";
   ops_rx->channel = src->channel;
   ops_rx->port.num_port = 1;
-  ops_rx->ptime = ST30_PTIME_1MS;
   ops_rx->flags |= ST30P_RX_FLAG_BLOCK_GET;
 
   if (!gst_mtl_common_gst_to_st_sampling(src->sampling, &ops_rx->sampling)) {
     GST_ERROR("Failed to parse ops_rx sampling %d", src->sampling);
     return FALSE;
+  }
+
+  if (src->ptime[0] != '\0') {
+    if (!gst_mtl_common_parse_ptime(src->ptime, &ops_rx->ptime)) {
+      GST_ERROR("Failed to parse ops_rx ptime %s", src->ptime);
+      return FALSE;
+    }
+  } else {
+    if (ops_rx->sampling == ST31_SAMPLING_44K)
+      ops_rx->ptime = ST31_PTIME_1_09MS;
+    else
+      ops_rx->ptime = ST30_PTIME_1MS;
   }
 
   if (!gst_mtl_common_parse_audio_format(src->audio_format, &ops_rx->fmt)) {
@@ -312,6 +330,9 @@ static void gst_mtl_st30p_rx_set_property(GObject* object, guint prop_id,
     case PROP_ST30P_RX_AUDIO_FORMAT:
       strncpy(self->audio_format, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
+    case PROP_ST30P_RX_PTIME:
+      g_strlcpy(self->ptime, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -340,6 +361,9 @@ static void gst_mtl_st30p_rx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST30P_RX_AUDIO_FORMAT:
       g_value_set_string(value, src->audio_format);
+      break;
+    case PROP_ST30P_RX_PTIME:
+      g_value_set_string(value, src->ptime);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
