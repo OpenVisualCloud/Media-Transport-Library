@@ -107,7 +107,7 @@ static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
-  return 0;
+  return 1;
 }
 
 static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params* p,
@@ -289,7 +289,7 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
     }
   };
 
-  return 0;
+  return 1;
 }
 
 static void test_random_ip(struct st_tests_context* ctx) {
@@ -680,7 +680,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   ctx->fb_send++;
   if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
-  return 0;
+  return 1;
 }
 
 void sha_frame_check(void* args) {
@@ -735,7 +735,7 @@ int tests_context_unit(tests_context* ctx) {
     ctx->ext_frames = NULL;
   }
 
-  return 0;
+  return 1;
 }
 
 int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
@@ -749,5 +749,5 @@ int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
         s->vsync_cnt);
 #endif
   }
-  return 0;
+  return 1;
 }
