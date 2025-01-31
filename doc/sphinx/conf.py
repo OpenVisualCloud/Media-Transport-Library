@@ -16,7 +16,6 @@ import sys
 project = "Media Transport Library"
 copyright = "2023-2025, Intel Corporation"
 author = "Intel Corporation"
-version = release = "24.09"
 
 extensions = [
     "myst_parser",
