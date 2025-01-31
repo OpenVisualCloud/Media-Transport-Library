@@ -292,7 +292,6 @@ def execute_test(
     input_file: str,
     output_file: str,
     type: str,
-    fps: int = None,
     sleep_interval: int = 0,
     tx_first: bool = True,
 ):
@@ -306,16 +305,8 @@ def execute_test(
         time.sleep(sleep_interval)
         tx_process = call(" ".join(tx_command), cwd=build, timeout=120)
 
-    tx_output = wait(tx_process)
+    wait(tx_process)
     wait(rx_process)
-
-    # For now checking output from logs is disabled as it's not working as intended
-
-    # if type == "st20":
-    # tx_result = check_tx_output(fps=fps, output=tx_output.splitlines())
-    # rx_result = check_rx_output(fps=fps, output=rx_output.splitlines())
-    # if tx_result is False:
-    #    return False
 
     file_compare = compare_files(input_file, output_file)
 
@@ -325,37 +316,6 @@ def execute_test(
         return True
 
     return False
-
-
-def check_tx_output(fps: int, output: list) -> bool:
-    tx_fps_result = None
-    for line in output:
-        if "TX_VIDEO_SESSION(0,0:st20sink): fps" in line:
-            tx_fps_result = line
-    if tx_fps_result is not None:
-        for x in range(fps, fps - 3, -1):
-            if f"fps {x}" in tx_fps_result:
-                log_info(f"FPS > {x}")
-                return True
-
-    log_fail("tx session failed")
-    return False
-
-
-def check_rx_output(fps: int, output: list) -> bool:
-    rx_fps_result = None
-    for line in output:
-        if "RX_VIDEO_SESSION(0,0:st20src): fps" in line:
-            rx_fps_result = line
-    if rx_fps_result is not None:
-        for x in range(fps, fps - 2, -1):
-            if f"fps {x}" in line:
-                log_info(f"FPS > {x}")
-                return True
-
-    log_fail("rx session failed")
-    return False
-
 
 def compare_files(input_file, output_file):
     if os.path.exists(input_file) and os.path.exists(output_file):

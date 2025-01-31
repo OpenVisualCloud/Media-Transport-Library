@@ -57,7 +57,6 @@ def test_video_format(
             build=build,
             tx_command=tx_config,
             rx_command=rx_config,
-            fps=video_file["fps"],
             input_file=input_file_path,
             output_file=os.path.join(media, "output_video.yuv"),
             type="st20",
