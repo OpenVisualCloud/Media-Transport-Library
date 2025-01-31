@@ -2,6 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import os
+import random
+import string
 import subprocess
 import time
 
@@ -88,6 +90,19 @@ def create_audio_file_sox(
     except subprocess.CalledProcessError as e:
         log_fail(f"Failed to create audio file: {e}")
         raise
+
+
+def create_text_file(size_kb: int, output_path: str = "test_anc.txt"):
+    size_bytes = size_kb * 1024
+    chars = string.ascii_letters + string.digits + string.punctuation
+    with open(output_path, "w") as f:
+        while size_bytes > 0:
+            chunk_size = min(size_bytes, 1024)
+            f.write("".join(random.choice(chars) for _ in range(chunk_size)))
+            size_bytes -= chunk_size
+
+    log_info(f"Text file created at {output_path} with size {size_kb} KB")
+    return output_path
 
 
 def remove_file(file_path: str):
