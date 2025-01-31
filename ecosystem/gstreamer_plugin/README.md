@@ -275,6 +275,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
 | tx-samplerate       | uint   | Sample rate of the audio.                             | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 0 |
 | tx-channels         | uint   | Number of audio channels.                             | 1 to 8                  | 2             |
+| tx-ptime            | string | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16LE format
 
@@ -310,6 +311,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 | rx-channel          | uint    | Audio channel number.                                 | 0 to G_MAXUINT          | 2             |
 | rx-sampling         | uint    | Audio sampling rate.                                  | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 48000         |
 | rx-audio-format     | string  | Audio format type.                                    | `S8`, `S16LE`, `S24LE`  | `S16LE`       |
+| rx-ptime            | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
 
 #### 4.2.2. Preparing Output Path
 
