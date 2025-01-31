@@ -76,7 +76,7 @@ struct _Gst_Mtl_St30p_Rx {
   /* audio (st30p) specific arguments */
   guint channel;
   guint sampling;
-  gboolean ptime;
+  gchar ptime[MTL_PORT_MAX_LEN];
   gchar audio_format[MTL_PORT_MAX_LEN];
 };
 
