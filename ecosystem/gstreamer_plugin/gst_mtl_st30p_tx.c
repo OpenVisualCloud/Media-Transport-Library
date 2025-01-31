@@ -94,6 +94,7 @@ enum {
   PROP_ST30P_TX_RETRY = PROP_GENERAL_MAX,
   PROP_ST30P_TX_FRAMERATE,
   PROP_ST30P_TX_FRAMEBUFF_NUM,
+  PROP_ST30P_TX_PTIME,
   PROP_MAX
 };
 
@@ -128,27 +129,6 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
 static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink);
 static gboolean gst_mtl_st30p_tx_cur_frame_flush(Gst_Mtl_St30p_Tx* sink);
 
-static gboolean gst_mtl_st30p_tx_parse_sampling(gint sampling,
-                                                enum st30_sampling* st_sampling) {
-  if (!st_sampling) {
-    GST_ERROR("Invalid st_sampling pointer");
-    return FALSE;
-  }
-  switch (sampling) {
-    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K:
-      *st_sampling = ST31_SAMPLING_44K;
-      return TRUE;
-    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K:
-      *st_sampling = ST30_SAMPLING_48K;
-      return TRUE;
-    case GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K:
-      *st_sampling = ST30_SAMPLING_96K;
-      return TRUE;
-    default:
-      return FALSE;
-  }
-}
-
 static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
@@ -178,6 +158,12 @@ static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
       g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
                         G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST30P_TX_PTIME,
+      g_param_spec_string("tx-ptime", "Packetization time",
+                          "Packetization time for the audio stream", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
@@ -236,6 +222,9 @@ static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST30P_TX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
+    case PROP_ST30P_TX_PTIME:
+      g_strlcpy(self->ptime, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -261,6 +250,9 @@ static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST30P_TX_FRAMEBUFF_NUM:
       g_value_set_uint(value, sink->framebuffer_num);
+      break;
+    case PROP_ST30P_TX_PTIME:
+      g_value_set_string(value, sink->ptime);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -311,13 +303,23 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
   }
   ops_tx.channel = info->channels;
 
-  if (!gst_mtl_st30p_tx_parse_sampling(info->rate, &ops_tx.sampling)) {
+  if (!gst_mtl_common_gst_to_st_sampling(info->rate, &ops_tx.sampling)) {
     GST_ERROR("Failed to parse sampling rate");
     gst_audio_info_free(info);
     return FALSE;
   }
   gst_audio_info_free(info);
-  ops_tx.ptime = ST30_PTIME_1MS;
+  if (sink->ptime[0] != '\0') {
+    if (!gst_mtl_common_parse_ptime(sink->ptime, &ops_tx.ptime)) {
+      GST_ERROR("Failed to parse ops_tx ptime %s", sink->ptime);
+      return FALSE;
+    }
+  } else {
+    if (ops_tx.sampling == ST31_SAMPLING_44K)
+      ops_tx.ptime = ST31_PTIME_1_09MS;
+    else
+      ops_tx.ptime = ST30_PTIME_1MS;
+  }
 
   ops_tx.port.num_port = 1;
 

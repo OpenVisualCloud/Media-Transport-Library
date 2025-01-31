@@ -171,6 +171,38 @@ gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt
   return TRUE;
 }
 
+gboolean gst_mtl_common_parse_ptime(const char* ptime_str, enum st30_ptime* ptime) {
+  if (!ptime_str || !ptime) {
+    GST_ERROR("%s, invalid input\n", __func__);
+    return FALSE;
+  }
+
+  if (strcmp(ptime_str, "1ms") == 0) {
+    *ptime = ST30_PTIME_1MS;
+  } else if (strcmp(ptime_str, "125us") == 0) {
+    *ptime = ST30_PTIME_125US;
+  } else if (strcmp(ptime_str, "250us") == 0) {
+    *ptime = ST30_PTIME_250US;
+  } else if (strcmp(ptime_str, "333us") == 0) {
+    *ptime = ST30_PTIME_333US;
+  } else if (strcmp(ptime_str, "4ms") == 0) {
+    *ptime = ST30_PTIME_4MS;
+  } else if (strcmp(ptime_str, "80us") == 0) {
+    *ptime = ST31_PTIME_80US;
+  } else if (strcmp(ptime_str, "1.09ms") == 0) {
+    *ptime = ST31_PTIME_1_09MS;
+  } else if (strcmp(ptime_str, "0.14ms") == 0) {
+    *ptime = ST31_PTIME_0_14MS;
+  } else if (strcmp(ptime_str, "0.09ms") == 0) {
+    *ptime = ST31_PTIME_0_09MS;
+  } else {
+    GST_ERROR("invalid packet time %s\n", ptime_str);
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
 gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio) {
   if (!audio || !format) {
     GST_ERROR("%s, invalid input\n", __func__);
@@ -193,7 +225,8 @@ gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* au
   return TRUE;
 }
 
-gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sampling) {
+gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
+                                           enum st30_sampling* st_sampling) {
   if (!st_sampling) {
     GST_ERROR("Invalid st_sampling pointer");
     return FALSE;
@@ -210,6 +243,30 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
       *st_sampling = ST30_SAMPLING_96K;
       return TRUE;
     default:
+      GST_ERROR("Unsupported sampling value");
+      return FALSE;
+  }
+}
+
+gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
+                                           gint* gst_sampling) {
+  if (!gst_sampling) {
+    GST_ERROR("Invalid gst_sampling pointer");
+    return FALSE;
+  }
+
+  switch (st_sampling) {
+    case ST31_SAMPLING_44K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K;
+      return TRUE;
+    case ST30_SAMPLING_48K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K;
+      return TRUE;
+    case ST30_SAMPLING_96K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K;
+      return TRUE;
+    default:
+      GST_ERROR("Unsupported st_sampling value");
       return FALSE;
   }
 }
