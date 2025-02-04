@@ -66,7 +66,7 @@ struct _Gst_Mtl_St20p_Tx {
   StDevArgs devArgs;        /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuffer_num;
-  guint framerate;
+  guint fps_n, fps_d;
 
   /* TODO add support for gpu direct */
 #ifdef MTL_GPU_DIRECT_ENABLED

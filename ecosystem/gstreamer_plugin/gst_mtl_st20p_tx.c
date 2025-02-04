@@ -159,8 +159,9 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_FRAMERATE,
-      g_param_spec_uint("tx-fps", "Video framerate", "Framerate of the video.", 0,
-                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gst_param_spec_fraction("tx-fps", "Video framerate", "Framerate of the video.", 1,
+                              1, G_MAXINT, G_MAXINT, 0, 1,
+                              G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_FRAMEBUFF_NUM,
@@ -226,7 +227,8 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
       self->retry_frame = g_value_get_uint(value);
       break;
     case PROP_ST20P_TX_FRAMERATE:
-      self->framerate = g_value_get_uint(value);
+      self->fps_n = gst_value_get_fraction_numerator(value);
+      self->fps_d = gst_value_get_fraction_denominator(value);
       break;
     case PROP_ST20P_TX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
@@ -252,7 +254,7 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
       g_value_set_uint(value, sink->retry_frame);
       break;
     case PROP_ST20P_TX_FRAMERATE:
-      g_value_set_uint(value, sink->framerate);
+      gst_value_set_fraction(value, sink->fps_n, sink->fps_d);
       break;
     case PROP_ST20P_TX_FRAMEBUFF_NUM:
       g_value_set_uint(value, sink->framebuffer_num);
@@ -304,14 +306,19 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  if (sink->framerate) {
-    if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
-      GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
+  if (sink->fps_n > 0 && sink->fps_d > 0) {
+    ops_tx.fps = st_frame_rate_to_st_fps((double)sink->fps_n / sink->fps_d);
+    if (ops_tx.fps == ST_FPS_MAX) {
+      GST_ERROR("Invalid framerate: %d/%d", sink->fps_n, sink->fps_d);
       return FALSE;
     }
-  } else if (!gst_mtl_common_parse_fps(info, &ops_tx.fps)) {
-    GST_ERROR("Failed to parse fps");
-    return FALSE;
+  } else {
+    ops_tx.fps = st_frame_rate_to_st_fps((double)info->fps_n / info->fps_d);
+    if (ops_tx.fps == ST_FPS_MAX) {
+      GST_ERROR("Failed to parse caps fps. Caps fps_n: %d, fps_d: %d", info->fps_n,
+                info->fps_d);
+      return FALSE;
+    }
   }
 
   if (inet_pton(AF_INET, sink->portArgs.session_ip_string,
