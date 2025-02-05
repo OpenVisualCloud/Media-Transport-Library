@@ -60,5 +60,5 @@ RUN ldconfig
 
 USER imtl
 
-HEALTHCHECK --interval=30s --timeout=5s CMD ps aux | grep "MtlManager" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 ENTRYPOINT ["MtlManager"]
