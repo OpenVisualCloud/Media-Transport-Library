@@ -54,5 +54,5 @@ COPY --from=builder /install /
 
 RUN ldconfig
 
-HEALTHCHECK -interval=30s -timeout=5s CMD ps aux | grep "MtlManager" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s CMD ps aux | grep "MtlManager" || exit 1
 ENTRYPOINT ["MtlManager"]
