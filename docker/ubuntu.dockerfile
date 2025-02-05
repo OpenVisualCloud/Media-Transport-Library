@@ -81,5 +81,5 @@ WORKDIR /home/imtl/
 RUN ldconfig
 
 USER imtl
-HEALTHCHECK -interval=30s -timeout=5s CMD ps aux | grep "bash" || exit 1
+HEALTHCHECK --interval=30s --timeout=5s CMD ps aux | grep "bash" || exit 1
 CMD ["/bin/bash"]
