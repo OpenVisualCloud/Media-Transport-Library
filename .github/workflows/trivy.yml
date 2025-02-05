@@ -3,6 +3,10 @@ name: Trivy
 on:
   schedule:
     - cron: "0 0 * * *"
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
   workflow_dispatch:
     inputs:
       branch:
