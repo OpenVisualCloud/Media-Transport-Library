@@ -47,7 +47,7 @@ jobs:
 
   gtest-build-mtl:
     needs: gtest-check-for-changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.gtest-check-for-changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
 
@@ -91,7 +91,7 @@ jobs:
 
   gtest-perform-tests:
     needs: [gtest-check-for-changes, gtest-build-mtl]
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.gtest-check-for-changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted, DPDK]
     steps:
       - name: Harden Runner
