@@ -30,9 +30,22 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
+        if: github.event.schedule != '0 0 * * '
         uses: actions/checkout@v2
         with:
-          ref: ${{ inputs.branch }}
+          ref: maint-25.02 # tmp branch
+      workflow_dispatch
+      - name: Checkout code
+        if: github.event.schedule == '0 0 * * '
+        uses: actions/checkout@v2
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event ==  workflow_dispatch
+        uses: actions/checkout@v2
+        with:
+          ref: main
 
       - name: Run Trivy vulnerability scanner with sarif output
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
