@@ -3,6 +3,7 @@ name: Trivy
 on:
   schedule:
     - cron: "0 0 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch:
     inputs:
       branch:
@@ -30,19 +31,18 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
-        if: github.event.schedule != '0 0 * * '
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * '
         uses: actions/checkout@v2
         with:
           ref: maint-25.02 # tmp branch
-      workflow_dispatch
       - name: Checkout code
-        if: github.event.schedule == '0 0 * * '
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * '
         uses: actions/checkout@v2
         with:
           ref: main
 
       - name: Checkout code
-        if: github.event ==  workflow_dispatch
+        if: github.event_name ==  workflow_dispatch
         uses: actions/checkout@v2
         with:
           ref: main
