@@ -92,7 +92,6 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_tx_debug);
 
 enum {
   PROP_ST30P_TX_RETRY = PROP_GENERAL_MAX,
-  PROP_ST30P_TX_FRAMERATE,
   PROP_ST30P_TX_FRAMEBUFF_NUM,
   PROP_ST30P_TX_PTIME,
   PROP_MAX
@@ -216,9 +215,6 @@ static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST30P_TX_RETRY:
       self->retry_frame = g_value_get_uint(value);
       break;
-    case PROP_ST30P_TX_FRAMERATE:
-      self->framerate = g_value_get_uint(value);
-      break;
     case PROP_ST30P_TX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
@@ -244,9 +240,6 @@ static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue
   switch (prop_id) {
     case PROP_ST30P_TX_RETRY:
       g_value_set_uint(value, sink->retry_frame);
-      break;
-    case PROP_ST30P_TX_FRAMERATE:
-      g_value_set_uint(value, sink->framerate);
       break;
     case PROP_ST30P_TX_FRAMEBUFF_NUM:
       g_value_set_uint(value, sink->framebuffer_num);
