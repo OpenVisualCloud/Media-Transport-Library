@@ -23,14 +23,28 @@ from tests.Engine.media_files import yuv_files
         "i4320p59",
     ],
 )
-def test_perf_1tx_1nic(build, media, nic_port_list, test_time, video_format):
-    video_file = yuv_files[video_format]
+def test_perf_2tx_2nics_2ports(build, media, nic_port_list, test_time, video_format):
+    # Increase time for 4k and 8k streams
+    if "2160" in video_format:
+        test_time = 60
+    elif "4320" in video_format:
+        test_time = 120
 
+    video_file = yuv_files[video_format]
     config = rxtxapp.create_empty_performance_config()
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
         nic_port=nic_port_list[0],
         ip="192.168.17.101",
+        dip="239.168.48.9",
+        video_format=video_format,
+        pg_format=video_file["format"],
+        video_url=os.path.join(media, video_file["filename"]),
+    )
+    config = rxtxapp.add_perf_video_session_tx(
+        config=config,
+        nic_port=nic_port_list[1],
+        ip="192.168.17.102",
         dip="239.168.48.9",
         video_format=video_format,
         pg_format=video_file["format"],
@@ -43,7 +57,7 @@ def test_perf_1tx_1nic(build, media, nic_port_list, test_time, video_format):
     # find upper bound
     while True:
         config = rxtxapp.change_replicas(
-            config=config, session_type="video", replicas=replicas_b
+            config=config, session_type="video", replicas=replicas_b, rx=False
         )
         passed = rxtxapp.execute_perf_test(
             config=config, build=build, test_time=test_time, fail_on_error=False
@@ -69,7 +83,7 @@ def test_perf_1tx_1nic(build, media, nic_port_list, test_time, video_format):
             break
 
         config = rxtxapp.change_replicas(
-            config=config, session_type="video", replicas=replicas_midpoint
+            config=config, session_type="video", replicas=replicas_midpoint, rx=False
         )
         passed = rxtxapp.execute_perf_test(
             config=config, build=build, test_time=test_time, fail_on_error=False

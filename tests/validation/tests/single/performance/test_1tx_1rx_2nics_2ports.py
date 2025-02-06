@@ -23,9 +23,14 @@ from tests.Engine.media_files import yuv_files
         "i4320p59",
     ],
 )
-def test_perf_4tx_4nics(build, media, nic_port_list, test_time, video_format):
-    # For 4 NICs init time of the app is increased
-    test_time = 60
+def test_perf_1tx_1rx_2nics_2ports(
+    build, media, nic_port_list, test_time, video_format
+):
+    # Increase time for 4k and 8k streams
+    if "2160" in video_format:
+        test_time = 60
+    elif "4320" in video_format:
+        test_time = 120
 
     video_file = yuv_files[video_format]
     config = rxtxapp.create_empty_performance_config()
@@ -38,32 +43,13 @@ def test_perf_4tx_4nics(build, media, nic_port_list, test_time, video_format):
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
     )
-    config = rxtxapp.add_perf_video_session_tx(
+    config = rxtxapp.add_perf_video_session_rx(
         config=config,
         nic_port=nic_port_list[1],
         ip="192.168.17.102",
-        dip="239.168.48.9",
+        sip="239.168.48.9",
         video_format=video_format,
         pg_format=video_file["format"],
-        video_url=os.path.join(media, video_file["filename"]),
-    )
-    config = rxtxapp.add_perf_video_session_tx(
-        config=config,
-        nic_port=nic_port_list[2],
-        ip="192.168.17.103",
-        dip="239.168.48.9",
-        video_format=video_format,
-        pg_format=video_file["format"],
-        video_url=os.path.join(media, video_file["filename"]),
-    )
-    config = rxtxapp.add_perf_video_session_tx(
-        config=config,
-        nic_port=nic_port_list[3],
-        ip="192.168.17.104",
-        dip="239.168.48.9",
-        video_format=video_format,
-        pg_format=video_file["format"],
-        video_url=os.path.join(media, video_file["filename"]),
     )
 
     # upper bound
