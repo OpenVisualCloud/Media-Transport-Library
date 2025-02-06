@@ -1,4 +1,4 @@
-name: gtest
+name: gtest-bare-metal
 
 on:
   # allow manually trigger
@@ -31,8 +31,8 @@ permissions:
   contents: read
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
+  gtest-check-for-changes:
+    runs-on: ubuntu-22.04
     permissions:
       pull-requests: read
     outputs:
@@ -45,9 +45,9 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  Build:
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+  gtest-build-mtl:
+    needs: gtest-check-for-changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.gtest-check-for-changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
 
@@ -89,9 +89,9 @@ jobs:
           ./build.sh
           sudo ldconfig
 
-  Test:
-    needs: [changes, Build]
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+  gtest-perform-tests:
+    needs: [gtest-check-for-changes, gtest-build-mtl]
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.gtest-check-for-changes.outputs.changed == 'true' }}
     runs-on: [Linux, self-hosted, DPDK]
     steps:
       - name: Harden Runner
