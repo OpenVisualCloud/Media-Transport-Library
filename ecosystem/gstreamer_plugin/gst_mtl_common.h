@@ -27,7 +27,9 @@
 #define NS_PER_S (1000 * NS_PER_MS)
 #endif
 
-#define DEFAULT_FRAMERATE 25
+/* The default value is set to 0 to indicate that this is a required parameter.
+   It must be passed either as an argument or (for TX) during negotiation.  */
+#define DEFAULT_FRAMERATE 0
 
 enum {
   PROP_GENERAL_0,

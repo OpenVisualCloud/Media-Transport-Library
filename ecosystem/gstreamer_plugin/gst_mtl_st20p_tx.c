@@ -309,19 +309,21 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  if (sink->fps_n > 0 && sink->fps_d > 0) {
+  if (sink->fps_n > 0 && sink->fps_d != 0) {
     ops_tx.fps = st_frame_rate_to_st_fps((double)sink->fps_n / sink->fps_d);
     if (ops_tx.fps == ST_FPS_MAX) {
-      GST_ERROR("Invalid framerate: %d/%d", sink->fps_n, sink->fps_d);
+      GST_ERROR("Unsupported framerate: %d/%d", sink->fps_n, sink->fps_d);
+      return FALSE;
+    }
+  } else if (info->fps_d != 0) {
+    ops_tx.fps = st_frame_rate_to_st_fps((double)info->fps_n / info->fps_d);
+    if (ops_tx.fps == ST_FPS_MAX) {
+      GST_ERROR("Unsupported framerate from caps: %d/%d", info->fps_n, info->fps_d);
       return FALSE;
     }
   } else {
-    ops_tx.fps = st_frame_rate_to_st_fps((double)info->fps_n / info->fps_d);
-    if (ops_tx.fps == ST_FPS_MAX) {
-      GST_ERROR("Failed to parse caps fps. Caps fps_n: %d, fps_d: %d", info->fps_n,
-                info->fps_d);
-      return FALSE;
-    }
+    GST_ERROR("Invalid framerate");
+    return FALSE;
   }
 
   if (inet_pton(AF_INET, sink->portArgs.session_ip_string,
