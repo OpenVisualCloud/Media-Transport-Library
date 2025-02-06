@@ -27,6 +27,8 @@
 #define NS_PER_S (1000 * NS_PER_MS)
 #endif
 
+#define DEFAULT_FRAMERATE 25
+
 enum {
   PROP_GENERAL_0,
   PROP_GENERAL_LOG_LEVEL,
@@ -40,20 +42,6 @@ enum {
   PROP_GENERAL_PORT_RX_QUEUES,
   PROP_GENERAL_PORT_TX_QUEUES,
   PROP_GENERAL_MAX
-};
-
-enum gst_mtl_supported_fps {
-  GST_MTL_SUPPORTED_FPS_23_98 = 2398,
-  GST_MTL_SUPPORTED_FPS_24 = 24,
-  GST_MTL_SUPPORTED_FPS_25 = 25,
-  GST_MTL_SUPPORTED_FPS_29_97 = 2997,
-  GST_MTL_SUPPORTED_FPS_30 = 30,
-  GST_MTL_SUPPORTED_FPS_50 = 50,
-  GST_MTL_SUPPORTED_FPS_59_94 = 5994,
-  GST_MTL_SUPPORTED_FPS_60 = 60,
-  GST_MTL_SUPPORTED_FPS_100 = 100,
-  GST_MTL_SUPPORTED_FPS_119_88 = 11988,
-  GST_MTL_SUPPORTED_FPS_120 = 120
 };
 
 enum gst_mtl_supported_audio_sampling {
@@ -79,8 +67,6 @@ typedef struct SessionPortArgs {
 
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
                                           enum st_frame_fmt* fmt);
-gboolean gst_mtl_common_parse_fps(GstVideoInfo* info, enum st_fps* fps);
-gboolean gst_mtl_common_parse_fps_code(gint fps_code, enum st_fps* fps);
 gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt* fmt);
 
 gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio);

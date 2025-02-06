@@ -21,13 +21,16 @@ def create_video_file(
     duration: int = 10,
 ):
     file_path = os.path.join(media_path, output_path)
+    if "/" not in framerate:
+        framerate += "/1"
+
     command = [
         "gst-launch-1.0",
         "-v",
         "videotestsrc",
         f"pattern={pattern}",
         "!",
-        f"video/x-raw,width={width},height={height},format={format},framerate={framerate}/1",
+        f"video/x-raw,width={width},height={height},format={format},framerate={framerate}",
         "!",
         "timeoverlay",
         "!",

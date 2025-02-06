@@ -72,6 +72,8 @@ RUN groupadd -g 2110 vfio && \
 # Copy libraries and binaries
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder /Media-Transport-Library/build /home/imtl
+COPY --chown=imtl --from=builder /Media-Transport-Library/tests/tools/RxTxApp/build/RxTxApp /home/imtl/RxTxApp
+COPY --chown=imtl --from=builder /Media-Transport-Library/tests/tools/RxTxApp/script /home/imtl/scripts
 
 WORKDIR /home/imtl/
 

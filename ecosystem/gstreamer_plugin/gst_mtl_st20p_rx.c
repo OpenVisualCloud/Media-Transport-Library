@@ -165,8 +165,9 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_RX_FRAMERATE,
-      g_param_spec_uint("rx-fps", "Video framerate", "Framerate of the video.", 0,
-                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gst_param_spec_fraction("rx-fps", "Video framerate", "Framerate of the video", 1, 1,
+                              G_MAXINT, 1, DEFAULT_FRAMERATE, 1,
+                              G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_RX_FRAMEBUFF_NUM,
@@ -235,8 +236,9 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   ops_rx->interlaced = src->interlaced;
   ops_rx->flags |= ST20P_RX_FLAG_BLOCK_GET;
 
-  if (!src->framerate || !gst_mtl_common_parse_fps_code(src->framerate, &ops_rx->fps)) {
-    GST_ERROR("Failed to parse custom ops_rx fps code %d", src->framerate);
+  ops_rx->fps = st_frame_rate_to_st_fps((double)src->fps_n / src->fps_d);
+  if (ops_rx->fps == ST_FPS_MAX) {
+    GST_ERROR("Invalid framerate: %d/%d", src->fps_n, src->fps_d);
     return FALSE;
   }
 
@@ -300,6 +302,9 @@ static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx* src) {
   GstElement* element = GST_ELEMENT(src);
   GstPad* srcpad;
 
+  src->fps_n = DEFAULT_FRAMERATE;
+  src->fps_d = 1;
+
   srcpad = gst_element_get_static_pad(element, "src");
   if (!srcpad) {
     GST_ERROR_OBJECT(src, "Failed to get src pad from child element");
@@ -322,7 +327,8 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
       self->retry_frame = g_value_get_uint(value);
       break;
     case PROP_ST20P_RX_FRAMERATE:
-      self->framerate = g_value_get_uint(value);
+      self->fps_n = gst_value_get_fraction_numerator(value);
+      self->fps_d = gst_value_get_fraction_denominator(value);
       break;
     case PROP_ST20P_RX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
@@ -360,7 +366,7 @@ static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue
       g_value_set_uint(value, src->retry_frame);
       break;
     case PROP_ST20P_RX_FRAMERATE:
-      g_value_set_uint(value, src->framerate);
+      gst_value_set_fraction(value, src->fps_n, src->fps_d);
       break;
     case PROP_ST20P_RX_FRAMEBUFF_NUM:
       g_value_set_uint(value, src->framebuffer_num);
@@ -407,6 +413,11 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
    */
   info->interlace_mode = src->interlaced;
 
+  info->width = src->width;
+  info->height = src->height;
+  info->fps_n = src->fps_n;
+  info->fps_d = src->fps_d;
+
   switch (ops_rx->output_fmt) {
     case ST_FRAME_FMT_V210:
       info->finfo = gst_video_format_get_info(GST_VIDEO_FORMAT_v210);
@@ -420,11 +431,11 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
       return FALSE;
   }
 
-  caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING,
-                             gst_video_format_to_string(info->finfo->format), "width",
-                             G_TYPE_INT, info->width, "height", G_TYPE_INT, info->height,
-                             "framerate", GST_TYPE_FRACTION, info->fps_n, 1,
-                             "interlace-mode", G_TYPE_BOOLEAN, src->interlaced, NULL);
+  caps = gst_caps_new_simple(
+      "video/x-raw", "format", G_TYPE_STRING,
+      gst_video_format_to_string(info->finfo->format), "width", G_TYPE_INT, info->width,
+      "height", G_TYPE_INT, info->height, "framerate", GST_TYPE_FRACTION, info->fps_n,
+      info->fps_d, "interlace-mode", G_TYPE_BOOLEAN, info->interlace_mode, NULL);
 
   if (!caps) caps = gst_pad_get_pad_template_caps(GST_BASE_SRC_PAD(basesrc));
 

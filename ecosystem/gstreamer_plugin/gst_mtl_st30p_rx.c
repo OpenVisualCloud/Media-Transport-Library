@@ -91,7 +91,6 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_rx_debug);
 
 enum {
   PROP_ST30P_RX_RETRY = PROP_GENERAL_MAX,
-  PROP_ST30P_RX_FRAMERATE,
   PROP_ST30P_RX_FRAMEBUFF_NUM,
   PROP_ST30P_RX_CHANNEL,
   PROP_ST30P_RX_SAMPLING,
@@ -155,11 +154,6 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st30p_rx_create);
 
   gst_mtl_common_init_general_arguments(gobject_class);
-
-  g_object_class_install_property(
-      gobject_class, PROP_ST30P_RX_FRAMERATE,
-      g_param_spec_uint("rx-fps", "Audio framerate", "Framerate of the audio.", 0,
-                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_RX_FRAMEBUFF_NUM,
