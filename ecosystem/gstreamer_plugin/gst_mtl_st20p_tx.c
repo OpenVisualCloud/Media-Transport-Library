@@ -160,7 +160,7 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_FRAMERATE,
       gst_param_spec_fraction("tx-fps", "Video framerate", "Framerate of the video.", 1,
-                              1, G_MAXINT, G_MAXINT, 0, 1,
+                              1, G_MAXINT, 1, DEFAULT_FRAMERATE, 1,
                               G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -200,6 +200,9 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
 static void gst_mtl_st20p_tx_init(Gst_Mtl_St20p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
+
+  sink->fps_n = DEFAULT_FRAMERATE;
+  sink->fps_d = 1;
 
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {

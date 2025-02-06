@@ -201,6 +201,9 @@ static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
 
+  sink->fps_n = DEFAULT_FRAMERATE;
+  sink->fps_d = 1;
+
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
     GST_ERROR_OBJECT(sink, "Failed to get sink pad from child element");

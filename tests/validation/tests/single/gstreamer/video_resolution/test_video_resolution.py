@@ -59,8 +59,8 @@ def test_video_resolutions(
             input_file=input_file_path,
             output_file=os.path.join(media, "output_video.yuv"),
             type="st20",
-            tx_first=False,
-            sleep_interval=1,
+            tx_first=True,
+            sleep_interval=0,
         )
     finally:
         # Remove the video file after the test

@@ -27,7 +27,7 @@
 #define NS_PER_S (1000 * NS_PER_MS)
 #endif
 
-#define DEFAULT_FRAMERATE 30
+#define DEFAULT_FRAMERATE 25
 
 enum {
   PROP_GENERAL_0,

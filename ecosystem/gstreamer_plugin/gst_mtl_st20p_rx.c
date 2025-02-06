@@ -302,6 +302,9 @@ static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx* src) {
   GstElement* element = GST_ELEMENT(src);
   GstPad* srcpad;
 
+  src->fps_n = DEFAULT_FRAMERATE;
+  src->fps_d = 1;
+
   srcpad = gst_element_get_static_pad(element, "src");
   if (!srcpad) {
     GST_ERROR_OBJECT(src, "Failed to get src pad from child element");
