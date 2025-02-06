@@ -45,7 +45,7 @@ jobs:
         if: github.event_name ==  workflow_dispatch
         uses: actions/checkout@v2
         with:
-          ref: main
+          ref: ${{ inputs.branch }}
 
       - name: Run Trivy vulnerability scanner with sarif output
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
