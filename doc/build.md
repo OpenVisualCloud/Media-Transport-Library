@@ -268,4 +268,4 @@ For older kernel version on Red Hat, the issue is that Red Hat uses vault repos.
 [The exemplary location for the kernel-devel package for Rocky Linux 9.3](https://dl.rockylinux.org/vault/rocky/9.3/BaseOS/x86_64/os/Packages/k/)
 
 ## Next Steps
-Proceed to [Running ST2110](../README.md#run-st2110) for further instructions.
+Proceed to [Running MTL](./run.md) for further instructions.
