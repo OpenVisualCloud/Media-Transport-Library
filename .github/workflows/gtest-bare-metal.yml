@@ -40,7 +40,6 @@ permissions:
 
 jobs:
   gtest-check-for-changes:
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-22.04
     permissions:
       pull-requests: read
