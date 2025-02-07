@@ -64,7 +64,7 @@ def setup_gstreamer_st20p_tx_pipeline(
         "filesrc",
         f"location={input_path}",
         "!",
-        f"rawvideoparse format={format} height={height} width={width} framerate={framerate}/1",
+        f"rawvideoparse format={format} height={height} width={width} framerate={framerate}",
         "!",
         "mtl_st20p_tx",
         f"tx-queues={tx_queues}",
@@ -366,16 +366,3 @@ def audio_format_change(file_format, rx_side: bool = False):
             return 16
         else:
             return 24
-
-
-def fps_change(fps: int):
-    if fps == 23:
-        return 2398
-    if fps == 29:
-        return 2997
-    if fps == 59:
-        return 5994
-    if fps == 119:
-        return 11988
-    else:
-        return fps

@@ -67,7 +67,7 @@ struct _Gst_Mtl_St40p_Tx {
   StDevArgs devArgs;        /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuff_cnt;
-  guint framerate;
+  guint fps_n, fps_d;
   guint did;
   guint sdid;
 };
