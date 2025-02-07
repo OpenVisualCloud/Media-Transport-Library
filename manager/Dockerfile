@@ -49,9 +49,16 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Add user: imtl(1001) with group vfio(2110)
+RUN groupadd -g 2110 vfio && \
+    useradd -m -G vfio -u 1001 imtl
+
 # Copy the necessary binaries and libraries from the builder
-COPY --from=builder /install /
+COPY --chown=imtl --from=builder /install /
 
 RUN ldconfig
 
+USER imtl
+
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 ENTRYPOINT ["MtlManager"]
