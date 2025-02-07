@@ -12,7 +12,7 @@ A plugin should do all the registration work in the create function and release 
 
 A plugin should implement three functions: st_plugin_get_meta, st_plugin_create, and st_plugin_free. Please see below for details.
 
-```bash
+```c
 /** Get meta function prototype of plugin */
 typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
 /** Get meta function name of plugin */

@@ -1,5 +1,8 @@
 # Media Transport Library
 
+> [!TIP]
+> [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/README.html) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/README.html).
+
 [![Ubuntu](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
 [![Windows](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/msys2_build.yml)
 [![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
@@ -17,7 +20,7 @@ The Media Transport Library solves the strict timing challenges of transporting 
 
 If you find value in our project, please consider giving it a star. Your support helps us grow and reach more people in the open-source community. Every star counts and is greatly appreciated.
 
-### 1.1 Features
+### 1.1. Features
 
 * Supported data path backend: DPDK PMD, native kernel socket, and AF_XDP with eBPF filter.
 * The User-space LibOS UDP stack features a POSIX socket compatible API.
@@ -28,7 +31,7 @@ If you find value in our project, please consider giving it a star. Your support
 * FFMPEG plugin, OBS(Open Broadcaster Software) plugin, and Intel® Media SDK support.
 * In addition to the native C/C++ API, it also offers bindings for [Python](python/README.md) and [Rust](rust/README.md).
 
-#### 1.1.1 ST2110 features
+#### 1.1.1. ST2110 features
 
 * Narrow and wide pacing. Please see [compliance](doc/compliance.md) page for the ST2110 narrow report on our software solution.
 * ST2110-10, ST2110-20, ST2110-21, ST2110-30, ST2110-40, ST2022-7.
@@ -40,7 +43,7 @@ If you find value in our project, please consider giving it a star. Your support
 * ST2022-6 by RTP passthrough interface.
 * ST2110-20 RX timing compliance parser with hardware RX timestamp offload.
 
-### 1.2 Architecture
+### 1.2. Architecture
 
 The Media Transport Library leverages DPDK (Data Plane Development Kit) EAL (Environment Abstraction Layer including the memory and core management) to implement a highly efficient, real-time, and low-latency media transport solution. This software-based media transport stack enables deployment on edge and cloud environments using COTS hardware.
 
@@ -56,13 +59,11 @@ Additionally, the packet pacing module offers support for various pacing algorit
 
 MTL also incorporates SIMD (Single Instruction, Multiple Data) for CSC (Color Space Format Conversion) of the big-endian and little-endian, DMA (Direct Memory Access), and plugin interfaces, enabling the creation of a comprehensive video production ecosystem.
 
-For the detail design, please refer to [design guide](doc/design.md).
+For the detail design, please refer to [Design Guide](doc/design.md).
 
-<div align="center">
-<img src="doc/png/arch.svg" align="center" alt="/Overall Architecture">
-</div>
+![Overall Architecture](doc/png/arch.svg)
 
-### 1.3 Ethernet supported
+### 1.3. Ethernet supported
 
 MTL offers versatile Ethernet support, thanks to its compatibility with DPDK PMD, kernel socket, and AF_XDP backends.
 
@@ -76,25 +77,25 @@ An important point to note is that narrow pacing of TX is only supported for the
 
 ## 2. Build
 
-Please refer to [build guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
+Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
 
-For Windows, please refer to the [Win build guide](doc/build_WIN.md) for instructions on how to build.
+For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
 
 ## 3. Run ST2110
 
-Please refer to [run guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
+Please refer to [Run Guide](doc/run.md) for instructions on how to set up and run the demo pipeline application based on DPDK PMD backend.
 
-For Windows, please refer to [Windows run guide](doc/run_WIN.md).
+For Windows, please refer to [Run Guide on Windows](doc/run_WIN.md).
 
-Additionally, please refer to the [VM guide](doc/vm.md) and [Windows VM guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
+Additionally, please refer to the [VM Guide](doc/vm.md) and [Windows VM Guide](doc/vm_WIN.md) for instructions on setting up Linux and Windows guest VMs based on VF passthrough.
 
-For AWS (cloud environment), please refer to [AWS run guide](doc/aws.md) for instructions on how to set up and run the demo.
+For AWS (cloud environment), please refer to [AWS Run Guide](doc/aws.md) for instructions on how to set up and run the demo.
 
 To run this library on the kernel network stack with the built-in kernel NIC driver, please follow the instructions provided in the [kernel socket guide](doc/kernel_socket.md).
 
 ## 4. ST2110 Programmers guide
 
-To quickly develop applications based on the Media Transport Library, please refer to `## 6. ST2110 API` from [design guide](doc/design.md).
+To quickly develop applications based on the Media Transport Library, please refer to section ["ST2110 API" in Design Guide](doc/design.md#6-st2110-api).
 
 ## 5. User space LibOS UDP stack guide
 
@@ -115,7 +116,7 @@ Whitepaper: Open Source Library Enables Real-Time Media over IP Networks. <https
 
 We welcome community contributions to the Media Transport Library project. If you have any ideas or issues, please share them with us by using GitHub issues or opening a pull request.
 
-### 7.1 Fork this repository
+### 7.1. Fork this repository
 
 Before opening a pull request, please follow these steps:
 
@@ -127,11 +128,11 @@ Before opening a pull request, please follow these steps:
 
 If you do not want the main branch automatically synced to the upstream, please go to `Actions` and disable the `Upstream Sync` workflow.
 
-### 7.2 Coding style
+### 7.2. Coding style
 
 We use the super-linter action for style checks.
 
-#### 7.2.1 C/C++
+#### 7.2.1. C/C++
 
 For C/C++ coding, you can run the following command to quickly fix the style:
 
@@ -139,7 +140,7 @@ For C/C++ coding, you can run the following command to quickly fix the style:
 ./format-coding.sh
 ```
 
-#### 7.2.2 Python
+#### 7.2.2. Python
 
 For Python, `black` and `isort` formatter is used.
 
@@ -155,7 +156,7 @@ isort python/
 find python/example/ -name "*.py" -exec pylint {} \;
 ```
 
-#### 7.2.3 Others
+#### 7.2.3. Others
 
 For other languages, please check with the following example command inside the Docker container:
 

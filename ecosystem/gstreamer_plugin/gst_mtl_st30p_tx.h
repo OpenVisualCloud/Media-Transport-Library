@@ -72,7 +72,7 @@ struct _Gst_Mtl_St30p_Tx {
   StDevArgs devArgs;        /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl tx session */
   guint framebuffer_num;
-  guint framerate;
+  gchar ptime[MTL_PORT_MAX_LEN];
 };
 
 G_END_DECLS

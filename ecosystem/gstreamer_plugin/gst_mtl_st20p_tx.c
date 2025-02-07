@@ -89,12 +89,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st20p_tx_debug);
 #define PACKAGE_VERSION "1.0"
 #endif
 
-enum {
-  PROP_ST20P_TX_RETRY = PROP_GENERAL_MAX,
-  PROP_ST20P_TX_FRAMERATE,
-  PROP_ST20P_TX_FRAMEBUFF_NUM,
-  PROP_MAX
-};
+enum { PROP_ST20P_TX_RETRY = PROP_GENERAL_MAX, PROP_ST20P_TX_FRAMEBUFF_NUM, PROP_MAX };
 
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st20p_tx_sink_pad_template =
@@ -103,7 +98,7 @@ static GstStaticPadTemplate gst_mtl_st20p_tx_sink_pad_template =
                                             "format = (string) {v210, I422_10LE},"
                                             "width = (int) [64, 16384], "
                                             "height = (int) [64, 8704], "
-                                            "framerate = (fraction) [0, MAX]"));
+                                            "framerate = (fraction) [1, MAX]"));
 
 #define gst_mtl_st20p_tx_parent_class parent_class
 G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St20p_Tx, gst_mtl_st20p_tx, GST_TYPE_VIDEO_SINK,
@@ -158,11 +153,6 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
                         10, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_ST20P_TX_FRAMERATE,
-      g_param_spec_uint("tx-fps", "Video framerate", "Framerate of the video.", 0,
-                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_FRAMEBUFF_NUM,
       g_param_spec_uint("tx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
@@ -170,8 +160,6 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
 }
 
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
-  struct mtl_init_params mtl_init_params = {0};
-
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(bsink);
 
   GST_DEBUG_OBJECT(sink, "start");
@@ -179,7 +167,7 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+      gst_mtl_common_init_handle(&(sink->devArgs), &(sink->log_level), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -227,9 +215,6 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST20P_TX_RETRY:
       self->retry_frame = g_value_get_uint(value);
       break;
-    case PROP_ST20P_TX_FRAMERATE:
-      self->framerate = g_value_get_uint(value);
-      break;
     case PROP_ST20P_TX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
       break;
@@ -252,9 +237,6 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
   switch (prop_id) {
     case PROP_ST20P_TX_RETRY:
       g_value_set_uint(value, sink->retry_frame);
-      break;
-    case PROP_ST20P_TX_FRAMERATE:
-      g_value_set_uint(value, sink->framerate);
       break;
     case PROP_ST20P_TX_FRAMEBUFF_NUM:
       g_value_set_uint(value, sink->framebuffer_num);
@@ -306,13 +288,14 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  if (sink->framerate) {
-    if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
-      GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
+  if (info->fps_d != 0) {
+    ops_tx.fps = st_frame_rate_to_st_fps((double)info->fps_n / info->fps_d);
+    if (ops_tx.fps == ST_FPS_MAX) {
+      GST_ERROR("Unsupported framerate from caps: %d/%d", info->fps_n, info->fps_d);
       return FALSE;
     }
-  } else if (!gst_mtl_common_parse_fps(info, &ops_tx.fps)) {
-    GST_ERROR("Failed to parse fps");
+  } else {
+    GST_ERROR("Invalid framerate, denominator is 0");
     return FALSE;
   }
 
@@ -459,7 +442,8 @@ static void gst_mtl_st20p_tx_finalize(GObject* object) {
   }
 
   if (sink->mtl_lib_handle) {
-    if (mtl_stop(sink->mtl_lib_handle) || mtl_uninit(sink->mtl_lib_handle)) {
+    if (mtl_stop(sink->mtl_lib_handle) ||
+        gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }

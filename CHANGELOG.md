@@ -7,7 +7,7 @@
 * st2110/30: add force NUMA option support on session level, see ST30_TX_FLAG_FORCE_NUMA/ST30_RX_FLAG_FORCE_NUMA
 * ffmpeg: fix RX side dropping frames at the beginning of the session with st20/st22/st30.
 * st22: fix last frame dropping in TX. Ensure that last frame status changed to FREE.
-* dpdk: optimizing memory pool size.
+* DPDK: optimizing memory pool size.
 * manager: fix docker build.
 * ffmpeg: improve unicast initialization, reduce amount of dropping frames in the beginning of the session.
 * ixgbe: add driver support. Tested on 10-Gigabit X540-AT2 (1528) and Intel 10G X550T (1563).
@@ -25,7 +25,7 @@
 
 ## Changelog for 24.06
 
-* dpdk: upgrade dpdk version to 23.11.
+* DPDK: upgrade DPDK version to 23.11.
 * st22: add interlaced support.
 * log: add custom log printer, see mtl_set_log_printer.
 * rx/timing_parser: add timing_parser stat report for RX video, `--rx_timing_parser` in RxTxApp to enable.
@@ -48,11 +48,11 @@
 ## Changelog for 23.12
 
 * log: add log to file support, see mtl_openlog_stream.
-* dpdk: upgrade dpdk version to 23.07.
+* DPDK: upgrade DPDK version to 23.07.
 * virtio_user: add virtio_user support for exception path, deprecate kni.
 * st22p/tx: add external frame support, see ST22P_TX_FLAG_EXT_FRAME.
 * backend: add kernel socket based backend, see doc/kernel_socket.md.
-* dpdk pmd: add AF_PACKET PMD support, see doc/experimental/af_packet.md.
+* DPDK pmd: add AF_PACKET PMD support, see doc/experimental/af_packet.md.
 * st22p/rx: add external frame support, see ST22P_RX_FLAG_EXT_FRAME.
 * ptp: add user callback for ptp sync message. See ptp_sync_notify in struct mtl_init_params.
 * api: add arp timeout parameter support for st2110 unicast address. See arp_timeout_s in struct mtl_init_params.
@@ -82,14 +82,14 @@
 * tx/st30: separate build and pacing stage.
 * tx/pacing: add epoch drop/onward stat.
 * tx/st2110: add epoch information in stxx_tx_frame_meta for get_next_frame callback.
-* dpdk: upgrade dpdk version to latest 23.03
+* DPDK: upgrade DPDK version to latest 23.03
 * Windows: add MSYS2 build guide and CI
 * vm: add Windows guest OS support, see vm_WIN.md.
 * rx/video: add fpt(first packet time to epoch) in struct st20_rx_frame_meta.
 * st20p: add interlace format support, refer to tests/script/loop_json/st20p_2v_1080i50.json
 * CI: add ossf scorecard support.
 * gtest: support run with AWS ena driver.
-* dhcp: set proto to dhcp in interfaces segment of json to enable DHCP.
+* dhcp: set proto to dhcp in interfaces segment of JSON to enable DHCP.
 * rx/video: support out of sequence for both first and last(marker) packet.
 * udp: add gso(general segment offload) for tx
 * udp: add reuse port support.
@@ -102,7 +102,7 @@
 
 ## Changelog for 23.04
 
-* dpdk: upgrade dpdk version to latest 22.11 for both windows and linux.
+* DPDK: upgrade DPDK version to latest 22.11 for both Windows and Linux.
 * ptp: add pi controller and software frequency adjust to improve the accuracy to ~100ns.
 * mtl_init_params: add gateway and netmask support for wan.
 * udp: introduce a highly efficient udp stack support, see mudp_api.h
@@ -149,7 +149,7 @@
 ## Changelog for 22.09
 
 * License: update to BSD-3
-* dpdk: update DPDK to v22.07
+* DPDK: update DPDK to v22.07
 * ice: update driver to 1.9.11
 * vf: add SRIOV based virtual NIC support, see vf.md.
 * vm: add SRIOV+KVM based virtualization support, see vm.md.

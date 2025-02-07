@@ -101,7 +101,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | udp-port      | uint   | Receiving MTL node UDP port.                                                                      | 0 to G_MAXUINT           |
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
-| payload-type  | uint   | SMPTE ST 2110 payload type.                                                                  | 0 to G_MAXUINT           |
+| payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
 | Property Name | Type   | Description                                                                                       | Range                    |
@@ -109,35 +109,36 @@ These are also general parameters accepted by plugins, but the functionality the
 | dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
 | port          | string | **RESERVED FOR FUTURE USE** DPDK device port. Utilized when multiple ports are passed to the MTL library to select the port for the session. | N/A |
 
+> **Warning:**
+> Generally, the `log-level`, `dev-port`, `dev-ip`, `tx-queues`, and `rx-queues` are used to initialize the MTLlibrary. As the MTL library handle is shared between MTL
+> GStreamer plugins of the same pipeline, you only need to pass them once when specifying the arguments for the firstly initialized pipeline. Nothing happens when you specify them elsewhere;
+> they will just be ignored after the initialization of MTL has already happened.
+
 ### 2.3. General capabilities
 
-Some structures describe the capabilities generally
+#### 2.3.1. Supported video fps fractions
 
-#### 2.3.1. Supported video fps codes gst_mtl_supported_fps
-```c
-enum gst_mtl_supported_fps {
-  GST_MTL_SUPPORTED_FPS_23_98 = 2398,   // 23.98 fps
-  GST_MTL_SUPPORTED_FPS_24 = 24,        // 24 fps
-  GST_MTL_SUPPORTED_FPS_25 = 25,        // 25 fps
-  GST_MTL_SUPPORTED_FPS_29_97 = 2997,   // 29.97 fps
-  GST_MTL_SUPPORTED_FPS_30 = 30,        // 30 fps
-  GST_MTL_SUPPORTED_FPS_50 = 50,        // 50 fps
-  GST_MTL_SUPPORTED_FPS_59_94 = 5994,   // 59.94 fps
-  GST_MTL_SUPPORTED_FPS_60 = 60,        // 60 fps
-  GST_MTL_SUPPORTED_FPS_100 = 100,      // 100 fps
-  GST_MTL_SUPPORTED_FPS_119_88 = 11988, // 119.88 fps
-  GST_MTL_SUPPORTED_FPS_120 = 120       // 120 fps
-};
-```
+| Frame Rate | Fraction    |
+|------------|-------------|
+| 23.98 fps  | `2398/100`  |
+| 24 fps     | `24`        |
+| 25 fps     | `25`        |
+| 29.97 fps  | `2997/100`  |
+| 30 fps     | `30`        |
+| 50 fps     | `50`        |
+| 59.94 fps  | `5994/100`  |
+| 60 fps     | `60`        |
+| 100 fps    | `100`       |
+| 119.88 fps | `11988/100` |
+| 120 fps    | `120`       |
 
-#### 2.3.2. Supported Audio Sampling Rates gst_mtl_supported_audio_sampling
-```c
-enum gst_mtl_supported_audio_sampling {
-  GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K = 44100,  // 44.1 kHz
-  GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K = 48000,    // 48 kHz
-  GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K = 96000     // 96 kHz
-};
-```
+#### 2.3.2. Supported Audio Sampling Rates
+
+| Sampling Rate | Value   |
+|---------------|---------|
+| 44.1 kHz      | `44100` |
+| 48 kHz        | `48000` |
+| 96 kHz        | `96000` |
 
 ## 3. SMPTE ST 2110-20 Rawvideo plugins
 
@@ -160,7 +161,8 @@ The `mtl_st20p_tx` plugin supports the following pad capabilities:
 - **Formats**: `v210`, `I422_10LE`
 - **Width Range**: 64 to 16384
 - **Height Range**: 64 to 8704
-- **Framerate Range**: 24, 25, 30, 50, 60, 100, 120
+- **Framerate Range**: `2398/100`, `24`, `25`, `2997/100`, `30`, `50`, `5994/100`, `60`, `100`,
+`11988/100`, `120`
 
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 
@@ -168,7 +170,6 @@ The `mtl_st20p_tx` plugin supports the following pad capabilities:
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
 | retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
-| tx-fps              | uint   | Framerate of the video.                               | [gst_mtl_supported_fps](#231-supported-video-fps-codes-gst_mtl_supported_fps) | 0 |
 | tx-framebuff-num    | uint   | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
 
 #### 3.1.2. Preparing Input Video
@@ -198,7 +199,7 @@ export VFIO_PORT_T="pci_address_of_the_device"
 
 # video pipeline y210 FHD 60fps on port 20000
 gst-launch-1.0 filesrc location=$INPUT ! \
-rawvideoparse format=v210 height=1080 width=1920 framerate=60/1 ! \
+rawvideoparse format=v210 height=1080 width=1920 framerate=25/1 ! \
 mtl_st20p_tx tx-queues=4 rx-queues=0 udp-port=20000 payload-type=112 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T \
 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
@@ -212,18 +213,19 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 - **Formats**: `v210`, `I422_10LE`
 - **Width Range**: 64 to 16384
 - **Height Range**: 64 to 8704
-- **Framerate Range**: 0 to MAX
+- **Framerate Range**: `2398/100`, `24`, `25`, `2997/100`, `30`, `50`, `5994/100`, `60`, `100`,
+`11988/100`, `120`
 
 **Arguments**
-| Property Name       | Type    | Description                                         | Range                      | Default Value |
-|---------------------|---------|-----------------------------------------------------|----------------------------|---------------|
-| retry               | uint    | Number of times the MTL will try to get a frame.    | 0 to G_MAXUINT             | 10            |
-| rx-fps              | uint    | Framerate of the video.                             | [gst_mtl_supported_fps](#231-supported-video-fps-codes-gst_mtl_supported_fps) | 0 |
-| rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission. | 0 to 8                     | 3             |
-| rx-width            | uint    | Width of the video.                                 | 0 to G_MAXUINT             | 1920          |
-| rx-height           | uint    | Height of the video.                                | 0 to G_MAXUINT             | 1080          |
-| rx-interlaced       | boolean | Whether the video is interlaced.                    | TRUE/FALSE                 | FALSE         |
-| rx-pixel-format     | string  | Pixel format of the video.                          | `v210`, `YUV444PLANAR10LE` | `v210`        |
+| Property Name       | Type     | Description                                         | Range                      | Default Value |
+|---------------------|----------|-----------------------------------------------------|----------------------------|---------------|
+| retry               | uint     | Number of times the MTL will try to get a frame.    | 0 to G_MAXUINT             | 10            |
+| rx-fps              | fraction | Framerate of the video.                             | [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| rx-framebuff-num    | uint     | Number of framebuffers to be used for transmission. | 0 to 8                     | 3             |
+| rx-width            | uint     | Width of the video.                                 | 0 to G_MAXUINT             | 1920          |
+| rx-height           | uint     | Height of the video.                                | 0 to G_MAXUINT             | 1080          |
+| rx-interlaced       | boolean  | Whether the video is interlaced.                    | TRUE/FALSE                 | FALSE         |
+| rx-pixel-format     | string   | Pixel format of the video.                          | `v210`, `YUV444PLANAR10LE` | `v210`        |
 
 #### 3.2.2. Preparing output path
 
@@ -245,7 +247,7 @@ To run the `mtl_st20p_rx` plugin, use the following command to specify the input
 export VFIO_PORT_R="pci_address_of_the_device"
 
 # Run the receiver pipeline y210 FHD 60fps on port 20000
-gst-launch-1.0 mtl_st20p_rx rx-queues=4 udp-port=20000 payload-type=112 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_R rx-pixel-format=v210 rx-height=1080 rx-width=1920 rx-fps=25 ! \
+gst-launch-1.0 mtl_st20p_rx rx-queues=4 udp-port=20000 payload-type=112 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_R rx-pixel-format=v210 rx-height=1080 rx-width=1920 rx-fps=25/1 ! \
 filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
@@ -268,8 +270,9 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 **Arguments**
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
-| tx-samplerate       | uint   | Sample rate of the audio.                             | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 0 |
+| tx-samplerate       | uint   | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
 | tx-channels         | uint   | Number of audio channels.                             | 1 to 8                  | 2             |
+| tx-ptime            | string | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16LE format
 
@@ -303,8 +306,9 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 |---------------------|---------|-------------------------------------------------------|-------------------------|---------------|
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT          | 3             |
 | rx-channel          | uint    | Audio channel number.                                 | 0 to G_MAXUINT          | 2             |
-| rx-sampling         | uint    | Audio sampling rate.                                  | [gst_mtl_supported_audio_sampling](#232-supported-audio-sampling-rates-gst_mtl_supported_audio_sampling) | 48000         |
+| rx-sampling         | uint    | Audio sampling rate.                                  | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 48000         |
 | rx-audio-format     | string  | Audio format type.                                    | `S8`, `S16LE`, `S24LE`  | `S16LE`       |
+| rx-ptime            | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
 
 #### 4.2.2. Preparing Output Path
 
@@ -349,7 +353,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | Property Name     | Type | Description                                                        | Range         | Default Value |
 |-------------------|------|--------------------------------------------------------------------|---------------|---------------|
 | tx-framebuff-cnt  | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
-| tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| 0 to G_MAXUINT| 60            |
+| tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
 | tx-did            | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
 | tx-sdid           | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
 
@@ -363,7 +367,7 @@ To run the `mtl_st40p_tx` plugin, use the following command:
 export VFIO_PORT_T="pci_address_of_the_device"
 
 # Ancillary data pipeline on port 40000
-gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T  tx-framebuff-cnt=3 tx-fps=60 tx-did=67 tx-sdid=2 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T  tx-framebuff-cnt=3 tx-fps=25/1 tx-did=67 tx-sdid=2 --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.

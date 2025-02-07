@@ -159,10 +159,9 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_FRAMERATE,
-      g_param_spec_uint(
-          "tx-fps", "framerate of the related video",
-          "Framerate of the video to witch the ancillary data is synchronized.", 0,
-          G_MAXUINT, 60, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gst_param_spec_fraction("tx-fps", "Video framerate", "Framerate of the video.", 1,
+                              1, G_MAXINT, 1, DEFAULT_FRAMERATE, 1,
+                              G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_DID,
@@ -177,8 +176,6 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
-  struct mtl_init_params mtl_init_params = {0};
-
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(bsink);
 
   GST_DEBUG_OBJECT(sink, "start");
@@ -186,7 +183,7 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(sink->devArgs), &(sink->log_level));
+      gst_mtl_common_init_handle(&(sink->devArgs), &(sink->log_level), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -203,6 +200,9 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
 static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
   GstElement* element = GST_ELEMENT(sink);
   GstPad* sinkpad;
+
+  sink->fps_n = DEFAULT_FRAMERATE;
+  sink->fps_d = 1;
 
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
@@ -230,7 +230,8 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
       self->framebuff_cnt = g_value_get_uint(value);
       break;
     case PROP_ST40P_TX_FRAMERATE:
-      self->framerate = g_value_get_uint(value);
+      self->fps_n = gst_value_get_fraction_numerator(value);
+      self->fps_d = gst_value_get_fraction_denominator(value);
       break;
     case PROP_ST40P_TX_DID:
       self->did = g_value_get_uint(value);
@@ -259,7 +260,7 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       g_value_set_uint(value, sink->framebuff_cnt);
       break;
     case PROP_ST40P_TX_FRAMERATE:
-      g_value_set_uint(value, sink->framerate);
+      gst_value_set_fraction(value, sink->fps_n, sink->fps_d);
       break;
     case PROP_ST40P_TX_DID:
       g_value_set_uint(value, sink->did);
@@ -332,14 +333,13 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     GST_ERROR("Invalid SDID value: %d", sink->sdid);
     return FALSE;
   }
-  if (sink->framerate == 0) {
-    GST_INFO("Framerate not set, defaulting to 60");
-    sink->framerate = 60;
-  }
-  if (!gst_mtl_common_parse_fps_code(sink->framerate, &ops_tx.fps)) {
-    GST_ERROR("Failed to parse custom ops_tx fps code %d", sink->framerate);
+
+  ops_tx.fps = st_frame_rate_to_st_fps((double)sink->fps_n / sink->fps_d);
+  if (ops_tx.fps == ST_FPS_MAX) {
+    GST_ERROR("Invalid framerate: %d/%d", sink->fps_n, sink->fps_d);
     return FALSE;
   }
+
   ops_tx.interlaced = false;
   /* Only single ANC data packet is possible per frame. ANC_Count = 1 TODO: allow more */
   sink->frame_size = MAX_UDW_SIZE;
@@ -483,7 +483,8 @@ static void gst_mtl_st40p_tx_finalize(GObject* object) {
   }
 
   if (sink->mtl_lib_handle) {
-    if (mtl_stop(sink->mtl_lib_handle) || mtl_uninit(sink->mtl_lib_handle)) {
+    if (mtl_stop(sink->mtl_lib_handle) ||
+        gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }

@@ -4,16 +4,16 @@ Media Transport Library requires Windows netuio driver Windows virt2phys driver 
 
 ## 1. System setup
 
-### 1.1 Enable test sign in Windows if you choose to build non-signed drivers
+### 1.1. Enable test sign in Windows if you choose to build non-signed drivers
 
-```powersehll
+```powershell
 bcdedit /set loadoptions DISABLE_INTEGRITY_CHECKS
 bcdedit /set TESTSIGNING ON
 ```
 
-### 1.2 Add huge page rights in Windows
+### 1.2. Add huge page rights in Windows
 
-#### 1.2.1  Option 1: Local Security Policy
+#### Option #1: Local Security Policy
 
 * Control Panel / Computer Management / Local Security Policy (
 or Win+R, type `secpol`, press Enter).
@@ -23,13 +23,13 @@ or Win+R, type `secpol`, press Enter).
 * Add desired users or groups to the list of grantees.
 Privilege is applied upon next logon. In particular, if privilege has been granted to current user, a logoff is required before it is available.
 
-#### 1.2.2  Option 2: ntright.exe (if Local Security Policy is not available)
+#### Option #2: ntright.exe (if Local Security Policy is not available)
 
 * Download and install rktools from <https://technlg.net/downloads/rktools.exe>
 
 * Open PowerShell, run:
 
-    ```powersehll
+    ```powershell
     ntrights.exe +r SeLockMemoryPrivilege -u Administrator
     ```
 
@@ -37,28 +37,28 @@ Privilege is applied upon next logon. In particular, if privilege has been grant
 
 ## 2. NIC setup
 
-### 2.1 Update NIC FW and driver to latest version
+### 2.1. Update NIC FW and driver to latest version
 
 Refer to <https://www.intel.com/content/www/us/en/download/15084/intel-ethernet-adapter-complete-driver-pack.html>.
 
-### 2.2 Update the ICE DDP package file: ice.pkg
+### 2.2. Update the ICE DDP package file: ice.pkg
 
 To get the latest DDP file (ice-1.3.30.0.pkg), visit <https://www.intel.com/content/www/us/en/download/19630/intel-network-adapter-driver-for-e810-series-devices-under-linux.html>, unzip the driver and go to the DDP directory.
 
 The Windows ICE driver will try to search for the DDP file with the path "c:\dpdk\lib\ice.pkg" or ".\ice.pkg". Please place the latest DDP file in one of these locations and rename it to ice.pkg. Otherwise, you will see the following error when running the RxTxApp.
 
-```bash
+```text
 ice_load_pkg(): failed to search file path
 ice_dev_init(): Failed to load the DDP package, Use safe-mode-support=1 to enter Safe Mode
 ```
 
-### 2.3 Create the temp folder in root directory c:\temp
+### 2.3. Create the temp folder in root directory c:\temp
 
 The library will generate or search for `kahawai.lcore` file in this path.
 
-## 3 Install virt2phys Driver
+## 3. Install virt2phys Driver
 
-### 3.1 Compile the driver
+### 3.1. Compile the driver
 
 Donwnload the source code from <git://dpdk.org/dpdk-kmods>.
 
@@ -66,7 +66,9 @@ Currently the virt2phy driver has a bug to get the valid iova (physical address)
 
 Compile the virt2phys project using VS(Visual Studio) 2019, see README in dpdk-kmods repository.
 
-### 3.2 Option 1: use devcon to install driver
+### 3.2. Driver installation
+
+#### Option #1: use devcon to install driver
 
 Get devcon.exe from Windows WDK package (if you don't want WDK, you can refer to <https://networchestration.wordpress.com/2016/07/11/how-to-obtain-device-console-utility-devcon-exe-without-downloading-and-installing-the-entire-windows-driver-kit-100-working-method/> for how to get devcon.exe), copy the devcon.exe to your netuio driver folder.
 
@@ -76,7 +78,7 @@ execute command:
 devcon.exe install virt2phys.inf root\virt2phys
 ```
 
-### 3.3 Option 2: manually install virt2phys driver
+#### Option #2: manually install virt2phys driver
 
 * From Device Manager, Action menu, select "Add legacy hardware".
 * It will launch the "Add Hardware Wizard". Click "Next".
@@ -89,25 +91,27 @@ devcon.exe install virt2phys.inf root\virt2phys
 
 The previously installed drivers will now be installed for the "Virtual to physical address translator" device. Here we just go through next and finish buttons.
 
-### 3.4 When there is a problem with driver installation are needed more steps
+### 3.3. When there is a problem with driver installation are needed more steps
 
 * Test sign the driver using a test certificate and then boot the Windows in "Test mode", or
 
 * Use the boot time option to "Disable driver signature enforcement".
 
-### 3.5 Make sure that the driver was installed
+### 3.4. Make sure that the driver was installed
 
-![Image](./png/virt2phy.png)
+![Device Manager picture](png/virt2phy.png)
 
 ## 4. Install netuio driver
 
-### 4.1 Compile the driver
+### 4.1. Compile the driver
 
 Compile the netuio project with latest dpdk-kmod code using VS 2019, see README in dpdk-kmods repository.
 
-### 4.2 Option 1: use devcon to install driver
+### 4.2. Driver installation
 
-execute command:
+#### Option #1: Use devcon to install driver
+
+Execute command:
 
 ```powershell
 devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
@@ -115,7 +119,7 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 
 "1592" is for E810, You can change it per your NIC type.
 
-### 4.3 Option 2: manually install netuio driver
+#### Option #2: Manually install netuio driver
 
 * Go to Device Manager -> Network Adapters.
 * Right Click on target E810 network adapter -> Select Update Driver.
@@ -124,17 +128,17 @@ devcon.exe update netuio.inf "PCI\VEN_8086&DEV_1592"
 * Select "DPDK netUIO for Network Adapter" from the list of drivers.
 * The NetUIO.sys driver is successfully installed.
 
-### 4.4 Make sure that the driver was installed
+### 4.3. Make sure that the driver was installed
 
-![Image](./png/netuio.png)
+![Driver picture](png/netuio.png)
 
-### 4.5 Get the PCI port name used for MTL
+### 4.4. Get the PCI port name used for MTL
 
 In contrast to Linux, Windows does not support the use of the nicctl.sh script, lspci, and dpdk-devbind.py. Once the driver is installed in the Windows UIO section, the NIC is automatically bound to PMD in the Device Manager.
 
 The port name can be obtained from the same location. For instance, as shown in the previous figure, the PCI number in the Location field is `bus 175, device 0, function 0`. When converted to hexadecimal format, this becomes `0000:af:00.0`, which is usable for MTL.
 
-### 4.6 Install driver for DMA devices
+### 4.5. Install driver for DMA devices
 
 If you want to use the DMA devices, you need to install the netuio driver for them too.
 
@@ -173,23 +177,23 @@ start /Node 0 /B .\build\app\RxTxApp --config_file config\test_tx_1port_1v.json 
 
 To determine the socket if you are not clear, access the NIC card driver's property page and locate the bus number. In a typical two socket system, if the number is greater than 0x80, the corresponding socket is Socket 1; otherwise, it is Socket 0.
 
-Please refer to sections "5. Run the sample application" in the [linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
+Please refer to sections "5. Run the sample application" in the [Linux run guide](run.md) for instructions on how to run the sample application. The Windows version shares the same codebase as the Linux version, and the application/library behavior is the same.
 
 ## 6. Windows TAP support (Optional)
 
-### 6.1 Download openVPN driver by searching "OpenVPN-2.5.6-I601-amd64.msi" and download the installation file
+### 6.1. Download openVPN driver by searching "OpenVPN-2.5.6-I601-amd64.msi" and download the installation file
 
-### 6.2 Install windows TAP driver
+### 6.2. Install Windows TAP driver
 
 In the Control Panel->Network and internet->Network Connections, find the "OpenVPN TAP-Windows6" device, set the adaptor IP address, such as `192.168.2.2`.
 
-### 6.3 Rebuild and install MTL lib with "-Denable_tap=true"
+### 6.3. Rebuild and install MTL lib with "-Denable_tap=true"
 
 ```bash
 meson tap_build -Ddpdk_root_dir=${DPDK_SRC_DIR} -Denable_tap=true
 ninja -C tap_build install
 ```
 
-### 6.4 Check if Ping is working
+### 6.4. Check if Ping is working
 
 Ping `192.168.2.2` from other machine in the same network such as `192.168.2.3`, if have reply, the TAP works.

@@ -8,6 +8,14 @@
 
 #include "gst_mtl_common.h"
 
+/* Shared handle for the MTL library used across plugins in the pipeline */
+struct gst_common_handle {
+  mtl_handle mtl_handle;
+  int mtl_handle_reference_count;
+  pthread_mutex_t mutex;
+};
+
+static struct gst_common_handle common_handle = {0, 0, PTHREAD_MUTEX_INITIALIZER};
 guint gst_mtl_port_idx = MTL_PORT_P;
 
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
@@ -18,87 +26,6 @@ gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
     *fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
   } else {
     return FALSE;
-  }
-
-  return TRUE;
-}
-
-gboolean gst_mtl_common_parse_fps_code(gint fps_code, enum st_fps* fps) {
-  if (!fps) {
-    GST_ERROR("Invalid fps pointer");
-    return FALSE;
-  }
-
-  switch (fps_code) {
-    case GST_MTL_SUPPORTED_FPS_120:
-      *fps = ST_FPS_P120;
-      break;
-    case GST_MTL_SUPPORTED_FPS_119_88:
-      *fps = ST_FPS_P119_88;
-      break;
-    case GST_MTL_SUPPORTED_FPS_100:
-      *fps = ST_FPS_P100;
-      break;
-    case GST_MTL_SUPPORTED_FPS_60:
-      *fps = ST_FPS_P60;
-      break;
-    case GST_MTL_SUPPORTED_FPS_59_94:
-      *fps = ST_FPS_P59_94;
-      break;
-    case GST_MTL_SUPPORTED_FPS_50:
-      *fps = ST_FPS_P50;
-      break;
-    case GST_MTL_SUPPORTED_FPS_30:
-      *fps = ST_FPS_P30;
-      break;
-    case GST_MTL_SUPPORTED_FPS_29_97:
-      *fps = ST_FPS_P29_97;
-      break;
-    case GST_MTL_SUPPORTED_FPS_25:
-      *fps = ST_FPS_P25;
-      break;
-    case GST_MTL_SUPPORTED_FPS_24:
-      *fps = ST_FPS_P24;
-      break;
-    case GST_MTL_SUPPORTED_FPS_23_98:
-      *fps = ST_FPS_P23_98;
-      break;
-    default:
-      return FALSE;
-  }
-
-  return TRUE;
-}
-
-gboolean gst_mtl_common_parse_fps(GstVideoInfo* info, enum st_fps* fps) {
-  gint fps_div;
-  if (info->fps_n <= 0 || info->fps_d <= 0) {
-    return FALSE;
-  }
-
-  fps_div = info->fps_n / info->fps_d;
-
-  switch (fps_div) {
-    case 24:
-      *fps = ST_FPS_P24;
-      break;
-    case 25:
-      *fps = ST_FPS_P25;
-      break;
-    case 30:
-      *fps = ST_FPS_P30;
-      break;
-    case 50:
-      *fps = ST_FPS_P50;
-      break;
-    case 60:
-      *fps = ST_FPS_P60;
-      break;
-    case 120:
-      *fps = ST_FPS_P120;
-      break;
-    default:
-      return FALSE;
   }
 
   return TRUE;
@@ -163,6 +90,38 @@ gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt
   return TRUE;
 }
 
+gboolean gst_mtl_common_parse_ptime(const char* ptime_str, enum st30_ptime* ptime) {
+  if (!ptime_str || !ptime) {
+    GST_ERROR("%s, invalid input\n", __func__);
+    return FALSE;
+  }
+
+  if (strcmp(ptime_str, "1ms") == 0) {
+    *ptime = ST30_PTIME_1MS;
+  } else if (strcmp(ptime_str, "125us") == 0) {
+    *ptime = ST30_PTIME_125US;
+  } else if (strcmp(ptime_str, "250us") == 0) {
+    *ptime = ST30_PTIME_250US;
+  } else if (strcmp(ptime_str, "333us") == 0) {
+    *ptime = ST30_PTIME_333US;
+  } else if (strcmp(ptime_str, "4ms") == 0) {
+    *ptime = ST30_PTIME_4MS;
+  } else if (strcmp(ptime_str, "80us") == 0) {
+    *ptime = ST31_PTIME_80US;
+  } else if (strcmp(ptime_str, "1.09ms") == 0) {
+    *ptime = ST31_PTIME_1_09MS;
+  } else if (strcmp(ptime_str, "0.14ms") == 0) {
+    *ptime = ST31_PTIME_0_14MS;
+  } else if (strcmp(ptime_str, "0.09ms") == 0) {
+    *ptime = ST31_PTIME_0_09MS;
+  } else {
+    GST_ERROR("invalid packet time %s\n", ptime_str);
+    return FALSE;
+  }
+
+  return TRUE;
+}
+
 gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio) {
   if (!audio || !format) {
     GST_ERROR("%s, invalid input\n", __func__);
@@ -185,7 +144,8 @@ gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* au
   return TRUE;
 }
 
-gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sampling) {
+gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
+                                           enum st30_sampling* st_sampling) {
   if (!st_sampling) {
     GST_ERROR("Invalid st_sampling pointer");
     return FALSE;
@@ -202,6 +162,30 @@ gboolean gst_mtl_common_parse_sampling(gint sampling, enum st30_sampling* st_sam
       *st_sampling = ST30_SAMPLING_96K;
       return TRUE;
     default:
+      GST_ERROR("Unsupported sampling value");
+      return FALSE;
+  }
+}
+
+gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
+                                           gint* gst_sampling) {
+  if (!gst_sampling) {
+    GST_ERROR("Invalid gst_sampling pointer");
+    return FALSE;
+  }
+
+  switch (st_sampling) {
+    case ST31_SAMPLING_44K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_44_1K;
+      return TRUE;
+    case ST30_SAMPLING_48K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_48K;
+      return TRUE;
+    case ST30_SAMPLING_96K:
+      *gst_sampling = GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K;
+      return TRUE;
+    default:
+      GST_ERROR("Unsupported st_sampling value");
       return FALSE;
   }
 }
@@ -393,12 +377,40 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
   return ret;
 }
 
-mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devArgs,
-                                      guint* log_level) {
+/**
+ * Initializes the device with the given parameters.
+ *
+ * If the common handle (MTL instance already initialized in the pipeline)
+ * is already in use, the input parameters for the device
+ * (rx_queues, tx_queues, dev_ip, dev_port, and log_level) will be ignored.
+ * You can force to initialize another MTL instance to avoid this behavior with
+ * force_to_initialize_new_instance flag.
+ *
+ * @param force_to_initialize_new_instance Force the creation of a new MTL
+ *                                         instance, ignoring any existing one.
+ * @param devArgs Initialization parameters for the DPDK port
+ *                (ignored if using an existing MTL instance).
+ * @param log_level Log level for the library (ignored if using an
+ *                  existing MTL instance).
+ */
+mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+                                      gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
+  mtl_handle ret;
+  pthread_mutex_lock(&common_handle.mutex);
 
-  if (!p || !devArgs || !log_level) {
+  if (!force_to_initialize_new_instance && common_handle.mtl_handle) {
+    GST_INFO("Mtl is already initialized with shared handle %p",
+             common_handle.mtl_handle);
+    common_handle.mtl_handle_reference_count++;
+
+    pthread_mutex_unlock(&common_handle.mutex);
+    return common_handle.mtl_handle;
+  }
+
+  if (!devArgs || !log_level) {
     GST_ERROR("Invalid input");
+    pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
 
@@ -406,6 +418,7 @@ mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devA
 
   if (gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs) == FALSE) {
     GST_ERROR("Failed to parse dev arguments");
+    pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
   mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
@@ -422,5 +435,53 @@ mtl_handle gst_mtl_common_init_handle(struct mtl_init_params* p, StDevArgs* devA
   }
   *log_level = mtl_init_params.log_level;
 
-  return mtl_init(&mtl_init_params);
+  if (force_to_initialize_new_instance) {
+    GST_INFO("MTL shared handle ignored");
+
+    ret = mtl_init(&mtl_init_params);
+    pthread_mutex_unlock(&common_handle.mutex);
+
+    return ret;
+  }
+
+  common_handle.mtl_handle = mtl_init(&mtl_init_params);
+  common_handle.mtl_handle_reference_count++;
+  pthread_mutex_unlock(&common_handle.mutex);
+
+  return common_handle.mtl_handle;
+}
+
+/**
+ * Deinitializes the MTL handle.
+ * If the handle is the shared handle, the reference count is decremented.
+ * If the reference count reaches zero, the handle is deinitialized.
+ * If the handle is not the shared handle, it is deinitialized immediately.
+ *
+ * @param handle MTL handle to deinitialize (Null is an akceptable value then
+ * shared value will be used).
+ */
+gint gst_mtl_common_deinit_handle(mtl_handle handle) {
+  gint ret;
+
+  pthread_mutex_lock(&common_handle.mutex);
+
+  if (handle && handle != common_handle.mtl_handle) {
+    ret = mtl_uninit(handle);
+    pthread_mutex_unlock(&common_handle.mutex);
+    return ret;
+  }
+
+  common_handle.mtl_handle_reference_count--;
+
+  if (common_handle.mtl_handle_reference_count > 0) {
+    common_handle.mtl_handle_reference_count--;
+
+    pthread_mutex_unlock(&common_handle.mutex);
+    return 0;
+  }
+  ret = mtl_uninit(common_handle.mtl_handle);
+
+  pthread_mutex_unlock(&common_handle.mutex);
+  pthread_mutex_destroy(&common_handle.mutex);
+  return ret;
 }

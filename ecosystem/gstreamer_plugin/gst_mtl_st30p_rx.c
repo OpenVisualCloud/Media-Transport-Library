@@ -91,11 +91,11 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st30p_rx_debug);
 
 enum {
   PROP_ST30P_RX_RETRY = PROP_GENERAL_MAX,
-  PROP_ST30P_RX_FRAMERATE,
   PROP_ST30P_RX_FRAMEBUFF_NUM,
   PROP_ST30P_RX_CHANNEL,
   PROP_ST30P_RX_SAMPLING,
   PROP_ST30P_RX_AUDIO_FORMAT,
+  PROP_ST30P_RX_PTIME,
   PROP_MAX
 };
 
@@ -156,11 +156,6 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   gst_mtl_common_init_general_arguments(gobject_class);
 
   g_object_class_install_property(
-      gobject_class, PROP_ST30P_RX_FRAMERATE,
-      g_param_spec_uint("rx-fps", "Audio framerate", "Framerate of the audio.", 0,
-                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property(
       gobject_class, PROP_ST30P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
@@ -180,10 +175,15 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
       gobject_class, PROP_ST30P_RX_AUDIO_FORMAT,
       g_param_spec_string("rx-audio-format", "Audio format", "Audio format type.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST30P_RX_PTIME,
+      g_param_spec_string("rx-ptime", "Packetization time",
+                          "Packetization time for the audio stream", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
-  struct mtl_init_params mtl_init_params = {0};
   struct st30p_rx_ops* ops_rx;
   gint ret;
 
@@ -194,7 +194,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&mtl_init_params, &(src->devArgs), &(src->log_level));
+      gst_mtl_common_init_handle(&(src->devArgs), &(src->log_level), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -206,12 +206,23 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   ops_rx->name = "st30src";
   ops_rx->channel = src->channel;
   ops_rx->port.num_port = 1;
-  ops_rx->ptime = ST30_PTIME_1MS;
   ops_rx->flags |= ST30P_RX_FLAG_BLOCK_GET;
 
-  if (!gst_mtl_common_parse_sampling(src->sampling, &ops_rx->sampling)) {
+  if (!gst_mtl_common_gst_to_st_sampling(src->sampling, &ops_rx->sampling)) {
     GST_ERROR("Failed to parse ops_rx sampling %d", src->sampling);
     return FALSE;
+  }
+
+  if (src->ptime[0] != '\0') {
+    if (!gst_mtl_common_parse_ptime(src->ptime, &ops_rx->ptime)) {
+      GST_ERROR("Failed to parse ops_rx ptime %s", src->ptime);
+      return FALSE;
+    }
+  } else {
+    if (ops_rx->sampling == ST31_SAMPLING_44K)
+      ops_rx->ptime = ST31_PTIME_1_09MS;
+    else
+      ops_rx->ptime = ST30_PTIME_1MS;
   }
 
   if (!gst_mtl_common_parse_audio_format(src->audio_format, &ops_rx->fmt)) {
@@ -313,6 +324,9 @@ static void gst_mtl_st30p_rx_set_property(GObject* object, guint prop_id,
     case PROP_ST30P_RX_AUDIO_FORMAT:
       strncpy(self->audio_format, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
+    case PROP_ST30P_RX_PTIME:
+      g_strlcpy(self->ptime, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -342,6 +356,9 @@ static void gst_mtl_st30p_rx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST30P_RX_AUDIO_FORMAT:
       g_value_set_string(value, src->audio_format);
       break;
+    case PROP_ST30P_RX_PTIME:
+      g_value_set_string(value, src->ptime);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -354,25 +371,32 @@ static void gst_mtl_st30p_rx_get_property(GObject* object, guint prop_id, GValue
  */
 
 static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
-  GstAudioInfo* info;
   Gst_Mtl_St30p_Rx* src = GST_MTL_ST30P_RX(basesrc);
   struct st30p_rx_ops* ops_rx = &src->ops_rx;
-  gint ret;
+  GstAudioInfo* info;
+  gint sampling;
   GstCaps* caps;
+  gint ret;
 
   info = gst_audio_info_new();
 
+  if (!gst_mtl_common_st_to_gst_sampling(ops_rx->sampling, &sampling)) {
+    GST_ERROR("Failed to convert sampling rate");
+    gst_audio_info_free(info);
+    return FALSE;
+  }
+
   switch (ops_rx->fmt) {
     case ST30_FMT_PCM24:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, info->rate, info->channels,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, sampling, ops_rx->channel,
                                 NULL);
       break;
     case ST30_FMT_PCM16:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, info->rate, info->channels,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, sampling, ops_rx->channel,
                                 NULL);
       break;
     case ST30_FMT_PCM8:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S8, info->rate, info->channels,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S8, sampling, ops_rx->channel,
                                 NULL);
       break;
     default:
@@ -380,9 +404,6 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
       gst_audio_info_free(info);
       return FALSE;
   }
-
-  info->rate = ops_rx->sampling;
-  info->channels = ops_rx->channel;
 
   caps = gst_caps_new_simple("audio/x-raw", "format", G_TYPE_STRING,
                              gst_audio_format_to_string(info->finfo->format), "channels",
@@ -469,7 +490,8 @@ static void gst_mtl_st30p_rx_finalize(GObject* object) {
   }
 
   if (src->mtl_lib_handle) {
-    if (mtl_stop(src->mtl_lib_handle) || mtl_uninit(src->mtl_lib_handle)) {
+    if (mtl_stop(src->mtl_lib_handle) ||
+        gst_mtl_common_deinit_handle(src->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }
