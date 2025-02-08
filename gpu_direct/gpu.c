@@ -2,7 +2,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2024 Intel Corporation
  */
 
-#include "gpu.h"
+#include "./gpu.h"
 
 // Macros for error checking
 #define ZE_CHECK_ERROR(fn_call)                                                   \

@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2022-2025 Intel Corporation
+
+set -e -o pipefail
+
 default_path=/home/media/ws
 work_path=${default_path}/workspace
 json_config_path="${work_path}/sample_config"
@@ -9,10 +14,6 @@ rxtx_json_file="./tests/script/1080p59_1v.json"
 expect_ice_version='1.9.11'
 expect_ddp_version='1.3.30.0'
 expect_dpdk_version='22.07'
-
-export http_proxy=http://proxy-prc.intel.com:913
-export https_proxy=http://proxy-prc.intel.com:913
-export no_proxy="127.0.0.1,localhost,intel.com"
 
 if [ -d ${work_path} ]; then
 	rm -rf ${work_path}
@@ -251,4 +252,4 @@ precondition
 check_ice_version
 build_install_dpdk
 bind_nic_pf
-echo "Set up enviroment successfully"
+echo "Set up environment successfully"
