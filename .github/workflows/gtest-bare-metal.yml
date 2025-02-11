@@ -118,9 +118,9 @@ jobs:
 
       - name: Binding network adapter
         run: |
-          sudo ./script/nicctl.sh create_vf ${{  env.TEST_PF_PORT_P  }} || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_P  }} || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci ${{  env.TEST_DMA_PORT_R  }} || true
+          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_P}" || true
+          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_R}" || true
 
       - name: Start MtlManager at background
         run: |
@@ -128,19 +128,19 @@ jobs:
 
       - name: Run ufd test case
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }}
+          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}"
 
       - name: Run shared ufd test case
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared
+          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --queue_mode shared
 
       - name: Run shared ufd test case with lcore
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --queue_mode shared --udp_lcore
+          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --queue_mode shared --udp_lcore
 
       - name: Run ufd test case with rss
         run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4
+          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --rss_mode l3_l4
 
       - name: Run udp ld preload test case
         run: |
@@ -148,11 +148,11 @@ jobs:
 
       - name: Run st2110 test case
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --dma_dev ${{  env.TEST_DMA_PORT_P  }},${{  env.TEST_DMA_PORT_R  }} --gtest_filter=-St22_?x.*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --dma_dev "${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}" --gtest_filter=-St22_?x.*
 
       - name: Run st2110 st20p test case in simulation ENA environment
         run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
+          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*
 
       - name: Run st2110 st20p test case with kernel loopback
         run: |
