@@ -9,23 +9,108 @@ on:
         default: 'main'
         required: false
         description: 'Branch name to use'
-      validation-tests:
+      validation-iface-binding:
+        type: choice
+        required: true
+        description: 'Type of iface binding to use'
+        options:
+          - "create_vf"
+          - "create_kvf"
+          - "create_tvf"
+          - "bind_pmd"
+          - "bind_kernel"
+      validation-test-port-p:
+        type: choice
+        required: true
+        description: 'Which to use as Test-Port-P'
+        options:
+          - TEST_VF_PORT_P_0
+          - TEST_VF_PORT_P_1
+          - TEST_VF_PORT_P_2
+          - TEST_VF_PORT_P_3
+          - TEST_PF_PORT_P
+          - TEST_VF_PORT_R_0
+          - TEST_VF_PORT_R_1
+          - TEST_VF_PORT_R_2
+          - TEST_VF_PORT_R_3
+          - TEST_PF_PORT_R
+          - TEST_DMA_PORT_P
+          - TEST_DMA_PORT_R
+      validation-test-port-r:
+        type: choice
+        required: true
+        description: 'Which to use as Test-Port-R'
+        options:
+          - TEST_VF_PORT_P_1
+          - TEST_VF_PORT_P_0
+          - TEST_VF_PORT_P_2
+          - TEST_VF_PORT_P_3
+          - TEST_PF_PORT_P
+          - TEST_VF_PORT_R_0
+          - TEST_VF_PORT_R_1
+          - TEST_VF_PORT_R_2
+          - TEST_VF_PORT_R_3
+          - TEST_PF_PORT_R
+          - TEST_DMA_PORT_P
+          - TEST_DMA_PORT_R
+      validation-no-fail-tests:
+        type: choice
+        required: false
+        description: 'Run all tests, non will fail'
+        options:
+          - "false"
+          - "true"
+      validation-tests-1:
         type: string
         default: 'tests/single/video/pacing'
         required: true
-        description: 'Validation tests to run'
+        description: '1st validation tests to run'
+      validation-tests-2:
+        type: string
+        default: ''
+        required: false
+        description: '2nd validation tests to run'
+      validation-pre-release-1:
+        description: 'Select from pre-release group tests nr-1'
+        required: false
+        type: choice
+        options:
+          - NONE
+          - ancillary
+          - kernel-socket
+          - rss-mode
+          - st20p
+          - st30p
+          - st41
+          - udp
+          - video
+          - xdp
+      validation-pre-release-2:
+        description: 'Select from pre-release group tests nr-2'
+        required: false
+        type: choice
+        options:
+          - NONE
+          - ffmpeg-plugin
+          - fuzzy-tests
+          - performance
+          - ptp
+          - rx-timing
+          - vero
+          - virtio-enable
+          - wrong-parameter
+      validation-pre-release-3:
+        description: 'Select from pre-release group tests nr-3'
+        required: false
+        type: choice
+        options:
+          - NONE
+          - gpu-direct
+          - gpu-enabling
 
 env:
-  # Customize the env if
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
-  # Bellow ENV variables are required to be defined on runner side:
-  # TEST_PF_PORT_P: '0000:49:00.0'
-  # TEST_PF_PORT_R: '0000:49:00.1'
-  # TEST_PORT_P: '0000:49:01.2'
-  # TEST_PORT_R: '0000:49:01.3'
-  # TEST_DMA_PORT_P: '0000:6a:01.0'
-  # TEST_DMA_PORT_R: '0000:6f:01.0'
 
 permissions:
   contents: read
@@ -34,78 +119,239 @@ jobs:
   validation-build-mtl:
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
-
+    outputs:
+      pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
     steps:
-      - name: Harden Runner
+      - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
           egress-policy: audit
 
-      - name: Checkout MTL
+      - name: 'preparation: Restore valid repository owner and print env'
+        if: always()
+        run: |
+          sudo chown -R "${USER}" "$(pwd)"
+          env
+
+      - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: '${{ inputs.branch-to-checkout }}'
 
-      - name: Checkout DPDK
+      - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DPDK/dpdk'
           ref: 'v${{  env.DPDK_VERSION  }}'
           path: 'dpdk'
 
-      - name: Install the build dependency
+      - name: 'configuration: Install the build dependency'
         run: |
-          sudo apt-get install -y git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
-          sudo apt-get install -y systemtap-sdt-dev pipenv
+          sudo apt update
+          sudo apt-get remove -y pipenv || true
+          sudo apt-get install -y \
+              git gcc meson \
+              pkg-config \
+              python3 \
+              python3-pyelftools \
+              python3-virtualenv \
+              python3-pip \
+              libnuma-dev \
+              libjson-c-dev \
+              libpcap-dev \
+              libgtest-dev \
+              libsdl2-dev \
+              libsdl2-ttf-dev \
+              libssl-dev \
+              systemtap-sdt-dev
 
-      - name: Apply dpdk patches
+      - name: 'configuration: Apply dpdk patches'
         run: |
           patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
 
-      - name: Build dpdk
+      - name: 'installation: Build dpdk'
+        working-directory: dpdk
         run: |
-          cd dpdk
           meson build
           ninja -C build
-          cd build
-          sudo ninja install
+          sudo ninja -C build install
 
-      - name: Build
+      - name: 'installation: Build mtl'
         run: |
           ./build.sh
           sudo ldconfig
 
-      - name: Prepare pipenv environment
+      - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
+        id: pipenv-install
         run: |
-          pipenv install -r requirements.txt
+          python3 -m pip install pipenv
+          python3 -m pipenv install -r requirements.txt
+          echo "VIRTUAL_ENV=$(python3 -m pipenv --venv)/bin/activate" >> "$GITHUB_ENV"
 
   validation-run-tests:
     needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
+    env:
+      PYTEST_ALIAS: 'sudo --preserve-env python3 -m pipenv run pytest'
+      PYTEST_PARAMS: '--media=/mnt/media --build="../.."'
+      PYTEST_RETRIES: '3'
     steps:
-      - name: Harden Runner
+      - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
           egress-policy: audit
 
-      - name: Kill previous pytest routine
+      - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
+        run: |
+          eval "export TEST_PORT_P=\$${{ inputs.validation-test-port-p }}"
+          eval "export TEST_PORT_R=\$${{ inputs.validation-test-port-r }}"
+          echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
+          echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
+          echo "TEST_PORT_P=${TEST_PORT_P}"
+          echo "TEST_PORT_R=${TEST_PORT_R}"
+
+      - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
 
-      - name: Binding network adapter
+      - name: 'preparation: Binding network adapter pf to kernel driver'
+        if: inputs.validation-iface-binding != 'bind_pmd'
         run: |
-          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_P}" || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_R}" || true
+          sudo rmmod irdma || true
+          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
+          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
 
-      - name: Start MtlManager at background
+      - name: 'preparation: Binding network adapter ${{ inputs.validation-iface-binding }}'
+        run: |
+          sudo rmmod irdma || true
+          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
+          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
+          sudo modprobe irdma || true
+
+      - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
 
-      - name: Run tests in pipenv environment
+      - name: 'execution: Run validation-tests-1 in pipenv environment'
+        if: inputs.validation-tests-1 != ''
         working-directory: tests/validation
         run: |
-          sudo pipenv run pytest '${{ inputs.validation-tests }}' --nic="${TEST_PORT_P},${TEST_PORT_R}" --media=/mnt/media
+          set +e
+          export TEST_PORT_P="${{ env.TEST_PORT_P }}"
+          export TEST_PORT_R="${{ env.TEST_PORT_R }}"
+          TESTS_TO_EXECUTE=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "${{ inputs.validation-tests-1 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
+          NUMBER_OF_TESTS="${#TESTS_TO_EXECUTE[@]}"
+          TESTS_FAIL=()
+          TESTS_SUCCESS=()
+          echo "## Starting ${{ inputs.validation-tests-1 }} (total ${NUMBER_OF_TESTS}) :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ? | Collected Test | Started | Ended | Took (s) | Result |"  >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | ---| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+
+          for test in ${TESTS_TO_EXECUTE[@]}; do
+            echo "::group::${test}"
+            PYTEST_START_HI="$(date '+%s')"
+            ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary
+            for retry in $(seq 1 "${{ env.PYTEST_RETRIES }}"); do
+              ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}"
+              PYTEST_RESULT="$?"
+              echo "RETRY: ${retry}"
+              [[ "${PYTEST_RESULT}" == "0" ]] && break
+            done
+            PYTEST_END_HI="$(date '+%s')"
+            if [[ "${PYTEST_RESULT}" == "0" ]]; then
+              PREFIX="✅"
+              SUFFIX="[OK]"
+              TESTS_SUCCESS+=( "${test}" )
+            else
+              PREFIX="❌"
+              SUFFIX="[Err]"
+              TESTS_FAIL+=( "${test}" )
+            fi
+            echo "| ${PREFIX} | ${test} | $(date --date=@${PYTEST_START_HI} '+%d%m%y_%H%M%S') | $(date --date=@${PYTEST_END_HI} '+%d%m%y_%H%M%S') | $((PYTEST_END_HI-PYTEST_START_HI))s | ${SUFFIX} |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          done
+          echo "### Total success ${#TESTS_SUCCESS[@]}/${NUMBER_OF_TESTS}:" >> "$GITHUB_STEP_SUMMARY"
+          echo "${TESTS_SUCCESS[@]}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Total failed ${#TESTS_FAIL[@]}/${NUMBER_OF_TESTS}:" >> "$GITHUB_STEP_SUMMARY"
+          echo "${TESTS_FAIL[@]}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${#TESTS_FAIL[@]}" == "0" ]] || [[ "${{ inputs.validation-no-fail-tests }}" == "true" ]]; then
+            exit 0
+          else
+            exit 1
+          fi
+
+      - name: 'execution: Run validation-tests-2 in pipenv environment'
+        if: inputs.validation-tests-2 != ''
+        working-directory: tests/validation
+        run: |
+          ${{ env.PYTEST_ALIAS }} '${{ inputs.validation-tests-2 }}' ${{ env.PYTEST_PARAMS }} || ${{ inputs.validation-no-fail-tests }}
+
+      - name: 'execution: Run validation-pre-release-1 in pipenv environment'
+        if: inputs.validation-pre-release-1 != 'NONE'
+        working-directory: tests/validation
+        run: |
+          echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-1 }} ==" || ${{ inputs.validation-no-fail-tests }}
+
+      - name: 'execution: Run validation-pre-release-2 in pipenv environment'
+        if: inputs.validation-pre-release-2 != 'NONE'
+        working-directory: tests/validation
+        run: |
+          echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-2 }} ==" || ${{ inputs.validation-no-fail-tests }}
+
+      - name: 'execution: Run validation-pre-release-3 in pipenv environment'
+        if: inputs.validation-pre-release-3 != 'NONE'
+        working-directory: tests/validation
+        run: |
+          echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-3 }} ==" || ${{ inputs.validation-no-fail-tests }}
+
+      - name: 'cleanup: Kill MtlManager and pytest routines'
+        if: always()
+        run: |
+          sudo killall -SIGINT pipenv || true
+          sudo killall -SIGINT pytest || true
+          sudo killall -SIGINT MtlManager || true
+
+      - name: 'cleanup: Restore valid owner to repository and directories'
+        if: always()
+        run: |
+          sudo chown -R "${USER}" "$(pwd)"
+
+      - name: 'cleanup: Bind pf to kernel driver'
+        if: always()
+        run: |
+          sudo rmmod irdma || true
+          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
+          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
+          sudo modprobe irdma || true
+
+      - name: 'cleanup: Validation execution logs'
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: validation-execution-logs
+          path: '${{ github.workspace }}/tests/validation/logs'
+
+      - name: 'cleanup: Generate runner summary'
+        if: always()
+        run: |
+          echo "## Runner ${{ runner.name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Bellow ENV variables are defined on the ${{ runner.name }} self-hosted runner side" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Variable | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_PF_PORT_P | ${TEST_PF_PORT_P} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_PF_PORT_R | ${TEST_PF_PORT_R} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_PORT_P | ${TEST_PORT_P} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_PORT_R | ${TEST_PORT_R} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_DMA_PORT_P | ${TEST_DMA_PORT_P} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_DMA_PORT_R | ${TEST_DMA_PORT_R} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_P_0 | ${TEST_VF_PORT_P_0} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_P_1 | ${TEST_VF_PORT_P_1} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_P_2 | ${TEST_VF_PORT_P_2} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_P_3 | ${TEST_VF_PORT_P_3} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_R_0 | ${TEST_VF_PORT_R_0} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_R_1 | ${TEST_VF_PORT_R_1} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_R_2 | ${TEST_VF_PORT_R_2} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| TEST_VF_PORT_R_3 | ${TEST_VF_PORT_R_3} |" >> "$GITHUB_STEP_SUMMARY"
