@@ -36,18 +36,18 @@ jobs:
     steps:
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * '
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
         if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * '
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: main
 
       - name: Checkout code
         if: github.event_name != 'schedule'
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
 
@@ -63,7 +63,7 @@ jobs:
           output: Trivy-dockerfile.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
         with:
           sarif_file: Trivy-dockerfile.sarif
 
@@ -74,7 +74,7 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
 
@@ -89,7 +89,7 @@ jobs:
           output: Trivy-manager-dockerfile.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
         with:
           sarif_file: Trivy-manager-dockerfile.sarif
 
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
 
