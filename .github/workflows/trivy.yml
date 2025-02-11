@@ -35,12 +35,12 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
-        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * '
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
         uses: actions/checkout@v4
         with:
           ref: maint-25.02 # tmp branch
       - name: Checkout code
-        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * '
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         uses: actions/checkout@v4
         with:
           ref: main
@@ -74,6 +74,18 @@ jobs:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
@@ -98,6 +110,18 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
