@@ -1108,7 +1108,14 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     dbg("%s(%d,%p), vsync_cnt %d vsyncrate %f\n", __func__, i, test_ctx_rx[i],
         test_ctx_rx[i]->vsync_cnt, vsyncrate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->vsync_cnt, 0);
-    EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
+
+    /* with kernel:lo interfaces we don't have enough single core performance to perform
+     * this test */
+    if ((strcmp(ctx->para.port[MTL_PORT_P], "kernel:lo") != 0) &&
+        (strcmp(ctx->para.port[MTL_PORT_R], "kernel:lo") != 0))
+      EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
+    else
+      info("%s, skip vsync check as it's kernel:lo\n", __func__);
 
     test_ctx_rx[i]->stop = true;
     if (para->block_get) st20p_rx_wake_block(rx_handle[i]);
