@@ -1,0 +1,96 @@
+From 0bc083e61673ff482427aa3e30c53b67790b4ee8 Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Fri, 7 Feb 2025 09:48:15 -0500
+Subject: [PATCH] Use new version of napi_alloc_skb
+
+---
+ src/ice_txrx.c           | 10 ++++------
+ src/ice_xsk.c            |  3 +--
+ src/kcompat-generator.sh |  1 +
+ src/kcompat_impl.h       |  9 +++++++++
+ 4 files changed, 15 insertions(+), 8 deletions(-)
+
+diff --git a/src/ice_txrx.c b/src/ice_txrx.c
+index 5fb23d2..e40d146 100644
+--- a/src/ice_txrx.c
++++ b/src/ice_txrx.c
+@@ -613,7 +613,7 @@ ice_alloc_mapped_skb(struct ice_rx_ring *rx_ring, struct ice_rx_buf *bi)
+ 	if (unlikely(skb))
+ 		return true;
+ 
+-	/* must not call __napi_alloc_skb with preemption enabled */
++	/* must not call napi_alloc_skb with preemption enabled */
+ 	preempt_disable();
+ 
+ 	/* there is one case where ethtool loopback test doesn't populate
+@@ -623,9 +623,8 @@ ice_alloc_mapped_skb(struct ice_rx_ring *rx_ring, struct ice_rx_buf *bi)
+ 		skb = __netdev_alloc_skb(rx_ring->netdev, rx_ring->rx_buf_len,
+ 					 GFP_ATOMIC | __GFP_NOWARN);
+ 	else
+-		skb = __napi_alloc_skb(&rx_ring->q_vector->napi,
+-				       rx_ring->rx_buf_len,
+-				       GFP_ATOMIC | __GFP_NOWARN);
++		skb = napi_alloc_skb(&rx_ring->q_vector->napi,
++				     rx_ring->rx_buf_len);
+ 	if (unlikely(!skb)) {
+ 		rx_ring->ring_stats->rx_stats.alloc_buf_failed++;
+ 		preempt_enable();
+@@ -1328,8 +1327,7 @@ ice_construct_skb(struct ice_rx_ring *rx_ring, struct ice_rx_buf *rx_buf,
+ 	net_prefetch(xdp->data);
+ 
+ 	/* allocate a skb to store the frags */
+-	skb = __napi_alloc_skb(&rx_ring->q_vector->napi, ICE_RX_HDR_SIZE,
+-			       GFP_ATOMIC | __GFP_NOWARN);
++	skb = napi_alloc_skb(&rx_ring->q_vector->napi, ICE_RX_HDR_SIZE);
+ 	if (unlikely(!skb))
+ 		return NULL;
+ 
+diff --git a/src/ice_xsk.c b/src/ice_xsk.c
+index 54a2472..56b6280 100644
+--- a/src/ice_xsk.c
++++ b/src/ice_xsk.c
+@@ -1026,8 +1026,7 @@ ice_construct_skb_zc(struct ice_rx_ring *rx_ring, struct ice_rx_buf *rx_buf,
+ 				     xdp->data_hard_start;
+ 	struct sk_buff *skb;
+ 
+-	skb = __napi_alloc_skb(&rx_ring->q_vector->napi, datasize_hard,
+-			       GFP_ATOMIC | __GFP_NOWARN);
++	skb = napi_alloc_skb(&rx_ring->q_vector->napi, datasize_hard);
+ 	if (unlikely(!skb))
+ 		return NULL;
+ 
+diff --git a/src/kcompat-generator.sh b/src/kcompat-generator.sh
+index ec533d8..c89bf32 100644
+--- a/src/kcompat-generator.sh
++++ b/src/kcompat-generator.sh
+@@ -299,6 +299,7 @@ function gen-other() {
+ 	gen NEED_SET_SCHED_FIFO if fun sched_set_fifo absent in include/linux/sched.h
+ 	gen NEED_RT_H if macro MAX_RT_PRIO absent in include/linux/sched/prio.h
+ 	gen NEED_DEV_PAGE_IS_REUSABLE if fun dev_page_is_reusable absent in include/linux/skbuff.h
++	gen NEED_NAPI_ALLOC_SKB if fun __napi_alloc_skb in include/linux/skbuff.h
+ 	gen NEED_NAPI_BUILD_SKB if fun napi_build_skb absent in include/linux/skbuff.h
+ 	gen NEED_KREALLOC_ARRAY if fun krealloc_array absent in include/linux/slab.h
+ 	gen NEED_SYSFS_MATCH_STRING if macro sysfs_match_string absent in include/linux/string.h
+diff --git a/src/kcompat_impl.h b/src/kcompat_impl.h
+index 77b3ca7..34c50ac 100644
+--- a/src/kcompat_impl.h
++++ b/src/kcompat_impl.h
+@@ -2219,6 +2219,15 @@ static inline bool dev_page_is_reusable(struct page *page)
+ }
+ #endif /* NEED_DEV_PAGE_IS_REUSABLE */
+ 
++#ifdef NEED_NAPI_ALLOC_SKB
++static inline
++struct sk_buff *kc_napi_alloc_skb(struct napi_struct *napi, unsigned int len)
++{
++	return __napi_alloc_skb(napi, len, GFP_ATOMIC | __GFP_NOWARN);
++}
++#define napi_alloc_skb(napi, len) kc_napi_alloc_skb(napi, len)
++#endif /* NEED_NAPI_ALLOC_SKB */
++
+ /* NEED_NAPI_BUILD_SKB
+  *
+  * napi_build_skb was introduced by
+-- 
+2.43.5
+
