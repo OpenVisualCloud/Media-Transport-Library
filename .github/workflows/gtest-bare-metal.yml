@@ -27,6 +27,7 @@ env:
   # Customize the env if
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
+  DPDK_REBUILD: 'false'
   # Bellow ENV variables are required to be defined on runner side:
   # TEST_PF_PORT_P: '0000:49:00.0'
   # TEST_PF_PORT_R: '0000:49:00.1'
@@ -71,6 +72,7 @@ jobs:
           ref: '${{ inputs.branch-to-checkout || github.head_ref || github.ref }}'
 
       - name: Checkout DPDK
+        if: env.DPDK_REBUILD == 'true'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: 'DPDK/dpdk'
@@ -83,10 +85,12 @@ jobs:
           sudo apt-get install -y systemtap-sdt-dev
 
       - name: Apply dpdk patches
+        if: env.DPDK_REBUILD == 'true'
         run: |
           patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
 
       - name: Build dpdk
+        if: env.DPDK_REBUILD == 'true'
         run: |
           cd dpdk
           meson build
@@ -119,8 +123,8 @@ jobs:
       - name: Binding network adapter
         run: |
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_P}" || true
-          sudo ./dpdk/usertools/dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_R}" || true
+          sudo dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_P}" || true
+          sudo dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_R}" || true
 
       - name: Start MtlManager at background
         run: |

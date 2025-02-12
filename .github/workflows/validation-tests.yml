@@ -27,12 +27,10 @@ on:
           - TEST_VF_PORT_P_0
           - TEST_VF_PORT_P_1
           - TEST_VF_PORT_P_2
-          - TEST_VF_PORT_P_3
           - TEST_PF_PORT_P
           - TEST_VF_PORT_R_0
           - TEST_VF_PORT_R_1
           - TEST_VF_PORT_R_2
-          - TEST_VF_PORT_R_3
           - TEST_PF_PORT_R
           - TEST_DMA_PORT_P
           - TEST_DMA_PORT_R
@@ -44,12 +42,10 @@ on:
           - TEST_VF_PORT_P_1
           - TEST_VF_PORT_P_0
           - TEST_VF_PORT_P_2
-          - TEST_VF_PORT_P_3
           - TEST_PF_PORT_P
           - TEST_VF_PORT_R_0
           - TEST_VF_PORT_R_1
           - TEST_VF_PORT_R_2
-          - TEST_VF_PORT_R_3
           - TEST_PF_PORT_R
           - TEST_DMA_PORT_P
           - TEST_DMA_PORT_R
@@ -111,6 +107,7 @@ on:
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
+  DPDK_REBUILD: 'false'
 
 permissions:
   contents: read
@@ -130,8 +127,8 @@ jobs:
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
-          sudo chown -R "${USER}" "$(pwd)"
-          env | grep TEST_
+          sudo chown -R "${USER}" "$(pwd)" || true
+          env | grep TEST_ || true
 
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -140,6 +137,7 @@ jobs:
 
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: env.DPDK_REBUILD == 'true'
         with:
           repository: 'DPDK/dpdk'
           ref: 'v${{  env.DPDK_VERSION  }}'
@@ -163,14 +161,18 @@ jobs:
               libsdl2-dev \
               libsdl2-ttf-dev \
               libssl-dev \
-              systemtap-sdt-dev
+              systemtap-sdt-dev \
+              libbpf-dev \
+              libelf1
 
       - name: 'configuration: Apply dpdk patches'
+        if: env.DPDK_REBUILD == 'true'
         run: |
           patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
 
       - name: 'installation: Build dpdk'
         working-directory: dpdk
+        if: env.DPDK_REBUILD == 'true'
         run: |
           meson build
           ninja -C build
@@ -189,9 +191,11 @@ jobs:
           python3 -m pipenv install -r requirements.txt
           echo "VIRTUAL_ENV=$(python3 -m pipenv --venv)/bin/activate" >> "$GITHUB_ENV"
 
+  # Timeout of this job is set to 12h [60m/h*12h=720m]
   validation-run-tests:
     needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
+    timeout-minutes: 720
     env:
       PYTEST_ALIAS: 'sudo --preserve-env python3 -m pipenv run pytest'
       PYTEST_PARAMS: '--media=/mnt/media --build="../.."'
@@ -229,64 +233,22 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
-          sudo modprobe irdma || true
 
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
 
-      - name: 'execution: Run validation-tests in pipenv environment'
+      - name: 'execution: Run validation-bare-metal tests in pipenv environment'
         working-directory: tests/validation
         run: |
-          set +e
-          export TEST_PORT_P="${{ env.TEST_PORT_P }}"
-          export TEST_PORT_R="${{ env.TEST_PORT_R }}"
-          TESTS_INCLUDED_IN_EXECUTION=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "tests/${{ inputs.validation-tests-1 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
-          SUMMARY_MAIN_HEADER="Starting tests/${{ inputs.validation-tests-1 }}"
-          if [[ -n "${{ inputs.validation-tests-2 }}" ]]; then
-            TESTS_INCLUDED_IN_EXECUTION+=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "tests/${{ inputs.validation-tests-2 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
-            SUMMARY_MAIN_HEADER="${SUMMARY_MAIN_HEADER}, tests/${{ inputs.validation-tests-2 }}"
-          fi
-
-          NUMBER_OF_TESTS="${#TESTS_INCLUDED_IN_EXECUTION[@]}"
-          TESTS_FAIL=()
-          TESTS_SUCCESS=()
-          echo "## ${SUMMARY_MAIN_HEADER} tests (total ${NUMBER_OF_TESTS}) :rocket:" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ❌/✅ | Collected Test | Started | Ended | Took (s) | Result |"  >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | ---| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-
-          for test in ${TESTS_INCLUDED_IN_EXECUTION[@]}; do
-            echo "::group::${test}"
-            PYTEST_START_HI="$(date '+%s')"
-            ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary
-            for retry in $(seq 1 "${{ env.PYTEST_RETRIES }}"); do
-              ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}"
-              PYTEST_RESULT="$?"
-              echo "RETRY: ${retry}"
-              [[ "${PYTEST_RESULT}" == "0" ]] && break
-            done
-            PYTEST_END_HI="$(date '+%s')"
-            if [[ "${PYTEST_RESULT}" == "0" ]]; then
-              PREFIX="✅"
-              SUFFIX="[OK]"
-              TESTS_SUCCESS+=( "${test}" )
-            else
-              PREFIX="❌"
-              SUFFIX="[Err]"
-              TESTS_FAIL+=( "${test}" )
-            fi
-            echo "| ${PREFIX} | ${test} | $(date --date=@${PYTEST_START_HI} '+%d%m%y_%H%M%S') | $(date --date=@${PYTEST_END_HI} '+%d%m%y_%H%M%S') | $((PYTEST_END_HI-PYTEST_START_HI))s | ${SUFFIX} |" >> "$GITHUB_STEP_SUMMARY"
-            echo "::endgroup::"
-          done
-          echo "### Total success ${#TESTS_SUCCESS[@]}/${NUMBER_OF_TESTS}:" >> "$GITHUB_STEP_SUMMARY"
-          echo "${TESTS_SUCCESS[@]}" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Total failed ${#TESTS_FAIL[@]}/${NUMBER_OF_TESTS}:" >> "$GITHUB_STEP_SUMMARY"
-          echo "${TESTS_FAIL[@]}" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${#TESTS_FAIL[@]}" == "0" ]] || [[ "${{ inputs.validation-no-fail-tests }}" == "true" ]]; then
-            exit 0
-          else
-            exit 1
-          fi
+          . "${{ github.workspace }}/.github/scripts/run_validation_tests.sh"
+        env:
+          TEST_PORT_P: ${{ env.TEST_PORT_P }}
+          TEST_PORT_R: ${{ env.TEST_PORT_R }}
+          PYTEST_RETRIES: '3'
+          VALIDATION_TESTS_1: ${{ inputs.validation-tests-1 }}
+          VALIDATION_TESTS_2: ${{ inputs.validation-tests-2 }}
+          VALIDATION_NO_FAIL_TESTS: ${{ inputs.validation-no-fail-tests }}
 
       - name: 'execution: Run validation-pre-release-1 in pipenv environment'
         if: inputs.validation-pre-release-1 != 'NONE'
@@ -313,11 +275,16 @@ jobs:
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
 
+      - name: 'cleanup: Create archive with logs from execution'
+        if: always()
+        working-directory: tests/validation
+        run: |
+          sudo tar -czf "validation-execution-logs.tar.gz" "./logs"
+          sudo rm -rf "./logs"
+
       - name: 'cleanup: Restore valid owner to repository and directories'
         if: always()
         run: |
-          sudo tar -czf "${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz" "${{ github.workspace }}/tests/validation/logs"
-          sudo rm -rf "${{ github.workspace }}/tests/validation/logs"
           sudo chown -R "${USER}" "$(pwd)"
 
       - name: 'cleanup: Bind pf to kernel driver'
@@ -326,33 +293,34 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
-          sudo modprobe irdma || true
 
       - name: 'cleanup: Validation execution logs'
         if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: 'validation-execution-logs'
+          name: 'validation-execution-logs.tar.gz'
           path: '${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz'
 
       - name: 'cleanup: Generate runner summary'
         if: always()
         run: |
-          echo "## Runner ${{ runner.name }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Bellow ENV variables are defined on the ${{ runner.name }} self-hosted runner side" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Variable | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_PF_PORT_P | ${TEST_PF_PORT_P} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_PF_PORT_R | ${TEST_PF_PORT_R} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_PORT_P | ${TEST_PORT_P} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_PORT_R | ${TEST_PORT_R} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_DMA_PORT_P | ${TEST_DMA_PORT_P} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_DMA_PORT_R | ${TEST_DMA_PORT_R} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_P_0 | ${TEST_VF_PORT_P_0} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_P_1 | ${TEST_VF_PORT_P_1} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_P_2 | ${TEST_VF_PORT_P_2} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_P_3 | ${TEST_VF_PORT_P_3} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_R_0 | ${TEST_VF_PORT_R_0} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_R_1 | ${TEST_VF_PORT_R_1} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_R_2 | ${TEST_VF_PORT_R_2} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| TEST_VF_PORT_R_3 | ${TEST_VF_PORT_R_3} |" >> "$GITHUB_STEP_SUMMARY"
+          {
+          echo "## Runner ${{ runner.name }}"
+          echo "Bellow ENV variables are defined on the ${{ runner.name }} self-hosted runner side"
+          echo "| Variable | Value |"
+          echo "| --- | --- |"
+          echo "| TEST_PF_PORT_P | ${TEST_PF_PORT_P} |"
+          echo "| TEST_PF_PORT_R | ${TEST_PF_PORT_R} |"
+          echo "| TEST_PORT_P | ${TEST_PORT_P} |"
+          echo "| TEST_PORT_R | ${TEST_PORT_R} |"
+          echo "| TEST_DMA_PORT_P | ${TEST_DMA_PORT_P} |"
+          echo "| TEST_DMA_PORT_R | ${TEST_DMA_PORT_R} |"
+          echo "| TEST_VF_PORT_P_0 | ${TEST_VF_PORT_P_0} |"
+          echo "| TEST_VF_PORT_P_1 | ${TEST_VF_PORT_P_1} |"
+          echo "| TEST_VF_PORT_P_2 | ${TEST_VF_PORT_P_2} |"
+          echo "| TEST_VF_PORT_P_3 | ${TEST_VF_PORT_P_3} |"
+          echo "| TEST_VF_PORT_R_0 | ${TEST_VF_PORT_R_0} |"
+          echo "| TEST_VF_PORT_R_1 | ${TEST_VF_PORT_R_1} |"
+          echo "| TEST_VF_PORT_R_2 | ${TEST_VF_PORT_R_2} |"
+          echo "| TEST_VF_PORT_R_3 | ${TEST_VF_PORT_R_3} |"
+          } >> "$GITHUB_STEP_SUMMARY"
