@@ -111,6 +111,7 @@ on:
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
+  DPDK_REBUILD: 'false'
 
 permissions:
   contents: read
@@ -130,8 +131,8 @@ jobs:
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
-          sudo chown -R "${USER}" "$(pwd)"
-          env | grep TEST_
+          sudo chown -R "${USER}" "$(pwd)" || true
+          env | grep TEST_ || true
 
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -140,6 +141,7 @@ jobs:
 
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: env.DPDK_REBUILD == 'true'
         with:
           repository: 'DPDK/dpdk'
           ref: 'v${{  env.DPDK_VERSION  }}'
@@ -163,14 +165,18 @@ jobs:
               libsdl2-dev \
               libsdl2-ttf-dev \
               libssl-dev \
-              systemtap-sdt-dev
+              systemtap-sdt-dev \
+              libbpf-dev \
+              libelf1
 
       - name: 'configuration: Apply dpdk patches'
+        if: env.DPDK_REBUILD == 'true'
         run: |
           patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
 
       - name: 'installation: Build dpdk'
         working-directory: dpdk
+        if: env.DPDK_REBUILD == 'true'
         run: |
           meson build
           ninja -C build
@@ -231,7 +237,6 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
-          sudo modprobe irdma || true
 
       - name: 'preparation: Start MtlManager at background'
         run: |
@@ -240,12 +245,10 @@ jobs:
       - name: 'execution: Run validation-bare-metal tests in pipenv environment'
         working-directory: tests/validation
         run: |
-          "${{ github.workspace }}/.github/scripts/run_validation_tests.sh"
+          . "${{ github.workspace }}/.github/scripts/run_validation_tests.sh"
         env:
           TEST_PORT_P: ${{ env.TEST_PORT_P }}
           TEST_PORT_R: ${{ env.TEST_PORT_R }}
-          PYTEST_ALIAS: 'sudo --preserve-env python3 -m pipenv run pytest'
-          PYTEST_PARAMS: '--media=/mnt/media --build="../.."'
           PYTEST_RETRIES: '3'
           VALIDATION_TESTS_1: ${{ inputs.validation-tests-1 }}
           VALIDATION_TESTS_2: ${{ inputs.validation-tests-2 }}
@@ -294,7 +297,6 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
-          sudo modprobe irdma || true
 
       - name: 'cleanup: Validation execution logs'
         if: always()
