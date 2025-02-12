@@ -1,4 +1,9 @@
 ﻿
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2022-2025 Intel Corporation
+
+# This script is for development purposes only, use on your own risk
+
 $defaultPath = (Get-Location)
 $workPath = "C:\ws\workspace"
 $dpdkPath = "$workPath\dpdk"
@@ -9,28 +14,33 @@ $dpdkVersion = "22.07"
 $libdpdkPc = 'Libs.private:'
 $libdpdkLibsPc = 'Libs:-L${libdir} -lrte_latencystats -lrte_gso -lrte_bus_pci -lrte_gro -lrte_cfgfile -lrte_bitratestats -lrte_timer -lrte_hash -lrte_metrics -lrte_cmdline -lrte_pci -lrte_ethdev -lrte_meter -lrte_net -lrte_net_ice -lrte_net_iavf -lrte_common_iavf -lrte_mbuf -lrte_mempool -lrte_stack -lrte_mempool_stack -lrte_mempool_ring -lrte_rcu -lrte_ring -lrte_eal -lrte_telemetry -lrte_kvargs -lrte_dmadev -lrte_dma_ioat'
 
-#Check the test enviroment
+# For proxy connections uncomment and fill below environment variables:
+# $Env:http_proxy='http://my-fancy-proxy.intel.com:123'
+# $Env:https_proxy='http://my-fancy-proxy.intel.com:123'
+# $Env:no_proxy='127.0.0.1,localhost,intel.com'
+
+# Check the test enviroment
 function checkEnviroment
 {
     $checkDPDKPath = (Test-Path 'C:\dpdk')
     if($checkDPDKPath -eq "True")
     {
-       echo "-----------------remove C:\dpdk-----------------" 
+       echo "-----------------remove C:\dpdk-----------------"
        Remove-Item 'C:\dpdk' -Recurse -Force
     }
     else
     {
-       echo "-----------------no C:\dpdk-----------------"  
+       echo "-----------------no C:\dpdk-----------------"
     }
     $checkLibDPDKPath = (Test-Path 'C:\libst_dpdk')
     if($checkLibDPDKPath -eq "True")
     {
-       echo "-----------------remove C:\libst_dpdk-----------------" 
+       echo "-----------------remove C:\libst_dpdk-----------------"
        Remove-Item 'C:\libst_dpdk' -Recurse -Force
     }
     else
     {
-       echo "-----------------no C:\libst_dpdk-----------------"  
+       echo "-----------------no C:\libst_dpdk-----------------"
     }
 
     $checkWorkpath = (Test-Path $workPath)
@@ -38,11 +48,11 @@ function checkEnviroment
     {
         echo "-----------------remove workspace-----------------"
         Remove-Item "$workPath\*" -Recurse -Force
-    } 
+    }
     else
     {
         echo "-----------------mkdir workspace-----------------"
-        New-Item -Path $workPath -ItemType Directory 
+        New-Item -Path $workPath -ItemType Directory
     }
 
     $checkKahwaiPackage = (Test-Path $kahawaiPackage)
@@ -54,17 +64,13 @@ function checkEnviroment
     {
         echo "-----------------No kahawai source package, please check it-----------------"
         exit
-    } 
-
+    }
 }
 
 
 function downloadDPDK
 {
     cd $workPath
-    $Env:http_proxy='http://proxy-prc.intel.com:913'
-    $Env:https_proxy='http://proxy-prc.intel.com:913'
-    $Env:no_proxy="127.0.0.1,localhost,intel.com"
     echo "-----------------The DPDK package is downloading...-----------------"
     git clone https://github.com/DPDK/dpdk.git
 	cd dpdk
@@ -81,7 +87,6 @@ function downloadDPDK
     {
         echo "-----------------The version($DPDKVersion) of DPDK is not v$dpdkVersion-----------------"
     }
-    
 }
 
 
@@ -89,7 +94,7 @@ function unzipKahawai
 {
     cd $workPath
     $CheckKahawaiPackage = (Test-Path $kahawaiPackage)
-    
+
     if($CheckKahawaiPackage -eq "True")
     {
         echo "-----------------Kahawai package is unzipping....-----------------"
@@ -138,7 +143,7 @@ function patchDPDK
         git am "$kahawaiPath\patches\dpdk\$dpdkVersion\$real_file"
         #echo "done"
     }
-	
+
 	$windowsPathType = file("$kahawaiPath\patches\dpdk\$dpdkVersion\windows").split(":")[1]
 	if($windowsPathType -like "*symbolic link*")
 	{
@@ -150,7 +155,7 @@ function patchDPDK
 		echo "The windows path is a normal path"
 		$windowsRealPath = "windows"
 	}
-	
+
     $windowsPatchList = Get-ChildItem -Path "$kahawaiPath\patches\dpdk\$dpdkVersion\$windowsRealPath\*.patch" -Name
     foreach($file2 in $windowsPatchList)
     {
@@ -181,7 +186,6 @@ function buildDPDK
     Remove-Item "C:\dpdk\lib\*.dll.a"
     (Get-Content "C:\dpdk\lib\pkgconfig\libdpdk.pc") | ForEach-Object {$_ -replace("Libs\..*","$libdpdkPc")} | Out-File -Encoding  ASCII "C:\dpdk\lib\pkgconfig\libdpdk.pc"
     (Get-Content "C:\dpdk\lib\pkgconfig\libdpdk-libs.pc") | ForEach-Object {$_ -replace("^Libs:.*","$libdpdkLibsPc")} | Out-File -Encoding ASCII "C:\dpdk\lib\pkgconfig\libdpdk-libs.pc"
-    
 }
 
 function buildKahawai
@@ -210,6 +214,6 @@ patchDPDK
 buildDPDK
 buildKahawai
 
-echo "copy library to execting path"
+echo "Copy library to execting path"
 cp C:\kahawai\lib_need_to_copy\* $kahawaiPath\tests\build
 cp C:\kahawai\lib_need_to_copy\* $kahawaiPath\app\build
