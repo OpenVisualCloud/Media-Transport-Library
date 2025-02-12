@@ -3,6 +3,11 @@ name: Trivy
 on:
   schedule:
     - cron: "0 0 * * *"
+    - cron: "0 23 * * *"
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
   workflow_dispatch:
     inputs:
       branch:
@@ -25,14 +30,27 @@ permissions:
 jobs:
   triv-security-tab:
     name: sarif output scan
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     permissions:
         security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
+
 
       - name: Run Trivy vulnerability scanner with sarif output
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
@@ -45,16 +63,66 @@ jobs:
           output: Trivy-dockerfile.sarif
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
         with:
           sarif_file: Trivy-dockerfile.sarif
 
-  trivy-stdout:
-    name: table output scan
-    runs-on: ubuntu-20.04
+  triv-security-tab-manager:
+    name: manager sarif output scan
+    runs-on: ubuntu-22.04
+    permissions:
+        security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Run Trivy vulnerability scanner with sarif output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./manager
+          format: sarif
+          exit-code: 0
+          vuln-type: os,library
+          output: Trivy-manager-dockerfile.sarif
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
+        with:
+          sarif_file: Trivy-manager-dockerfile.sarif
+
+  trivy-stdout:
+    name: table output scan
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@v4
         with:
           ref: ${{ inputs.branch }}
 
@@ -63,6 +131,16 @@ jobs:
         with:
           scan-type: config
           scan-ref: ./docker
+          cache: false
+          format: table
+          exit-code: 1
+          vuln-type: os,library
+
+      - name: Run Trivy manager vulnerability scanner with table output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./manager
           cache: false
           format: table
           exit-code: 1
