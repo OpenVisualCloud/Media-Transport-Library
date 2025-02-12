@@ -159,10 +159,13 @@ Video plugins for MTL that are able to send, receive synchronous video via the M
 The `mtl_st20p_tx` plugin supports the following pad capabilities:
 
 - **Formats**: `v210`, `I422_10LE`
-- **Width Range**: 64 to 16384
+- **Width Range**: 64 to 16384*
 - **Height Range**: 64 to 8704
 - **Framerate Range**: `2398/100`, `24`, `25`, `2997/100`, `30`, `50`, `5994/100`, `60`, `100`,
 `11988/100`, `120`
+
+\* Resolution width for v210 format has to be divisible by 3, so the plugin does not support 720p and 1440p.
+To be fixed in the future.
 
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 

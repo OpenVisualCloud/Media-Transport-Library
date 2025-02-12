@@ -7,6 +7,7 @@ import pytest
 import tests.Engine.GstreamerApp as gstreamerapp
 import tests.Engine.media_creator as media_create
 from tests.Engine.media_files import yuv_files
+from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
 @pytest.mark.parametrize("file", yuv_files.keys())
@@ -15,9 +16,16 @@ def test_video_resolutions(
     media,
     nic_port_list,
     file,
+    request,
 ):
     video_file = yuv_files[file]
     video_file["format"] = "v210"
+
+    SDBQ1971_conversion_v210_720p_error(
+        video_format=video_file["format"],
+        resolution_width=video_file["height"],
+        request=request,
+    )
 
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
