@@ -237,64 +237,19 @@ jobs:
         run: |
           sudo MtlManager &
 
-      - name: 'execution: Run validation-tests in pipenv environment'
+      - name: 'execution: Run validation-bare-metal tests in pipenv environment'
         working-directory: tests/validation
         run: |
-          set +e
-          echo "::group::pre-execution-summary"
-          export TEST_PORT_P="${{ env.TEST_PORT_P }}"
-          export TEST_PORT_R="${{ env.TEST_PORT_R }}"
-          TESTS_INCLUDED_IN_EXECUTION=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "tests/${{ inputs.validation-tests-1 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
-          SUMMARY_MAIN_HEADER="Starting tests/${{ inputs.validation-tests-1 }}"
-          if [[ -n "${{ inputs.validation-tests-2 }}" ]]; then
-            TESTS_INCLUDED_IN_EXECUTION+=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "tests/${{ inputs.validation-tests-2 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
-            SUMMARY_MAIN_HEADER="${SUMMARY_MAIN_HEADER}, tests/${{ inputs.validation-tests-2 }}"
-          fi
-
-          NUMBER_OF_TESTS="${#TESTS_INCLUDED_IN_EXECUTION[@]}"
-          TESTS_FAIL=()
-          TESTS_SUCCESS=()
-
-          echo "${SUMMARY_MAIN_HEADER} tests (total ${NUMBER_OF_TESTS}) :rocket:\n----------------------------------"
-          echo "Tests to be executed:\n${TESTS_INCLUDED_IN_EXECUTION[@]}"
-
-          echo "## ${SUMMARY_MAIN_HEADER} tests (total ${NUMBER_OF_TESTS}) :rocket:" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ❌/✅ | Collected Test | Started | Ended | Took (s) | Result |"  >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | ---| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "::endgroup::"
-
-          for test in ${TESTS_INCLUDED_IN_EXECUTION[@]}; do
-            echo "::group::${test}"
-            PYTEST_START_HI="$(date '+%s')"
-            ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary
-            for retry in $(seq 1 "${{ env.PYTEST_RETRIES }}"); do
-              ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}"
-              PYTEST_RESULT="$?"
-              echo "RETRY: ${retry}"
-              [[ "${PYTEST_RESULT}" == "0" ]] && break
-            done
-            PYTEST_END_HI="$(date '+%s')"
-            if [[ "${PYTEST_RESULT}" == "0" ]]; then
-              PREFIX="✅"
-              SUFFIX="[OK]"
-              TESTS_SUCCESS+=( "${test}" )
-            else
-              PREFIX="❌"
-              SUFFIX="[Err]"
-              TESTS_FAIL+=( "${test}" )
-            fi
-            echo "| ${PREFIX} | ${test} | $(date --date=@${PYTEST_START_HI} '+%d%m%y_%H%M%S') | $(date --date=@${PYTEST_END_HI} '+%d%m%y_%H%M%S') | $((PYTEST_END_HI-PYTEST_START_HI))s | ${SUFFIX} |" >> "$GITHUB_STEP_SUMMARY"
-            echo "::endgroup::"
-          done
-          echo "### Total success ${#TESTS_SUCCESS[@]}/${NUMBER_OF_TESTS}:" >> "$GITHUB_STEP_SUMMARY"
-          echo "${TESTS_SUCCESS[@]}" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Total failed ${#TESTS_FAIL[@]}/${NUMBER_OF_TESTS}:" >> "$GITHUB_STEP_SUMMARY"
-          echo "${TESTS_FAIL[@]}" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "${#TESTS_FAIL[@]}" == "0" ]] || [[ "${{ inputs.validation-no-fail-tests }}" == "true" ]]; then
-            exit 0
-          else
-            exit 1
-          fi
+          "${{ github.workspace }}/.github/scripts/run_validation_tests.sh"
+        env:
+          TEST_PORT_P: ${{ env.TEST_PORT_P }}
+          TEST_PORT_R: ${{ env.TEST_PORT_R }}
+          PYTEST_ALIAS: 'sudo --preserve-env python3 -m pipenv run pytest'
+          PYTEST_PARAMS: '--media=/mnt/media --build="../.."'
+          PYTEST_RETRIES: '3'
+          VALIDATION_TESTS_1: ${{ inputs.validation-tests-1 }}
+          VALIDATION_TESTS_2: ${{ inputs.validation-tests-2 }}
+          VALIDATION_NO_FAIL_TESTS: ${{ inputs.validation-no-fail-tests }}
 
       - name: 'execution: Run validation-pre-release-1 in pipenv environment'
         if: inputs.validation-pre-release-1 != 'NONE'
