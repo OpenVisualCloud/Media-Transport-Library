@@ -58,16 +58,16 @@ on:
         required: false
         description: 'Run all tests, non will fail'
         options:
-          - "false"
           - "true"
+          - "false"
       validation-tests-1:
         type: string
-        default: 'tests/single/video/pacing'
+        default: 'single/video/pacing'
         required: true
         description: '1st validation tests to run'
       validation-tests-2:
         type: string
-        default: ''
+        default: 'single/ancillary'
         required: false
         description: '2nd validation tests to run'
       validation-pre-release-1:
@@ -131,7 +131,7 @@ jobs:
         if: always()
         run: |
           sudo chown -R "${USER}" "$(pwd)"
-          env
+          env | grep TEST_
 
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -150,7 +150,7 @@ jobs:
           sudo apt update
           sudo apt-get remove -y pipenv || true
           sudo apt-get install -y \
-              git gcc meson \
+              git gcc meson tar zip \
               pkg-config \
               python3 \
               python3-pyelftools \
@@ -235,22 +235,27 @@ jobs:
         run: |
           sudo MtlManager &
 
-      - name: 'execution: Run validation-tests-1 in pipenv environment'
-        if: inputs.validation-tests-1 != ''
+      - name: 'execution: Run validation-tests in pipenv environment'
         working-directory: tests/validation
         run: |
           set +e
           export TEST_PORT_P="${{ env.TEST_PORT_P }}"
           export TEST_PORT_R="${{ env.TEST_PORT_R }}"
-          TESTS_TO_EXECUTE=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "${{ inputs.validation-tests-1 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
-          NUMBER_OF_TESTS="${#TESTS_TO_EXECUTE[@]}"
+          TESTS_INCLUDED_IN_EXECUTION=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "tests/${{ inputs.validation-tests-1 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
+          SUMMARY_MAIN_HEADER="Starting tests/${{ inputs.validation-tests-1 }}"
+          if [[ -n "${{ inputs.validation-tests-2 }}" ]]; then
+            TESTS_INCLUDED_IN_EXECUTION+=( $(grep -v "collected in" <(${{ env.PYTEST_ALIAS }} "tests/${{ inputs.validation-tests-2 }}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary 2>&1)) )
+            SUMMARY_MAIN_HEADER="${SUMMARY_MAIN_HEADER}, tests/${{ inputs.validation-tests-2 }}"
+          fi
+
+          NUMBER_OF_TESTS="${#TESTS_INCLUDED_IN_EXECUTION[@]}"
           TESTS_FAIL=()
           TESTS_SUCCESS=()
-          echo "## Starting ${{ inputs.validation-tests-1 }} (total ${NUMBER_OF_TESTS}) :rocket:" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ? | Collected Test | Started | Ended | Took (s) | Result |"  >> "$GITHUB_STEP_SUMMARY"
+          echo "## ${SUMMARY_MAIN_HEADER} tests (total ${NUMBER_OF_TESTS}) :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ❌/✅ | Collected Test | Started | Ended | Took (s) | Result |"  >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | ---| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
 
-          for test in ${TESTS_TO_EXECUTE[@]}; do
+          for test in ${TESTS_INCLUDED_IN_EXECUTION[@]}; do
             echo "::group::${test}"
             PYTEST_START_HI="$(date '+%s')"
             ${{ env.PYTEST_ALIAS }} "${test}" ${{ env.PYTEST_PARAMS }} --nic="${TEST_PORT_P},${TEST_PORT_R}" --collect-only -q --no-summary
@@ -283,12 +288,6 @@ jobs:
             exit 1
           fi
 
-      - name: 'execution: Run validation-tests-2 in pipenv environment'
-        if: inputs.validation-tests-2 != ''
-        working-directory: tests/validation
-        run: |
-          ${{ env.PYTEST_ALIAS }} '${{ inputs.validation-tests-2 }}' ${{ env.PYTEST_PARAMS }} || ${{ inputs.validation-no-fail-tests }}
-
       - name: 'execution: Run validation-pre-release-1 in pipenv environment'
         if: inputs.validation-pre-release-1 != 'NONE'
         working-directory: tests/validation
@@ -317,6 +316,8 @@ jobs:
       - name: 'cleanup: Restore valid owner to repository and directories'
         if: always()
         run: |
+          sudo tar -czf "${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz" "${{ github.workspace }}/tests/validation/logs"
+          sudo rm -rf "${{ github.workspace }}/tests/validation/logs"
           sudo chown -R "${USER}" "$(pwd)"
 
       - name: 'cleanup: Bind pf to kernel driver'
@@ -331,8 +332,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
-          name: validation-execution-logs
-          path: '${{ github.workspace }}/tests/validation/logs'
+          name: 'validation-execution-logs'
+          path: '${{ github.workspace }}/tests/validation/validation-execution-logs.tar.gz'
 
       - name: 'cleanup: Generate runner summary'
         if: always()
