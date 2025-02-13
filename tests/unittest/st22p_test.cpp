@@ -925,6 +925,15 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       ops_tx.codestream_size = test_ctx_tx[i]->frame_size / compress_ratio[i];
     }
 
+    tx_handle[i] = st22p_tx_create(NULL, &ops_tx);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    tx_handle[i] = st22p_tx_create(st, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    tx_handle[i] = st22p_tx_create(NULL, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
     tx_handle[i] = st22p_tx_create(st, &ops_tx);
     ASSERT_TRUE(tx_handle[i] != NULL);
 
@@ -1113,6 +1122,15 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     else
       test_ctx_rx[i]->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width,
                                                  ops_rx.height, ops_rx.interlaced);
+
+    rx_handle[i] = st22p_rx_create(NULL, &ops_rx);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    rx_handle[i] = st22p_rx_create(st, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
+
+    rx_handle[i] = st22p_rx_create(NULL, NULL);
+    ASSERT_TRUE(tx_handle[i] == NULL);
 
     rx_handle[i] = st22p_rx_create(st, &ops_rx);
     ASSERT_TRUE(rx_handle[i] != NULL);
