@@ -142,6 +142,16 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 The number is dependent on the workloads you wish to execute. Consider increasing the value if memory allocation failures occur during runtime.
 
+### 4.1 User hughpage limitations
+
+Some systems (mainly RHEL family) will limit the amout of memory user can allocate in hughpages you can add those in the following file
+```bash
+/etc/security/limits.d/24-memlock.conf 
+user_name   hard   memlock           unlimited
+user_name   soft   memlock           unlimited
+
+```
+
 ## 5. Run the Sample Application
 
 ### 5.1. Prepare Source Files
