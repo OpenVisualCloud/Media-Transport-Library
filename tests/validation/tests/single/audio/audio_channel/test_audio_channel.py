@@ -15,6 +15,15 @@ from tests.xfail import SDBQ1001_audio_channel_check
 def test_audio_channel(
     build, media, nic_port_list, test_time, audio_format, audio_channel, request
 ):
+    # The max frame size that could be sent in MTL is:
+    # ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr) = 1440 bytes
+    # "222" represents "22.2" which requires 24 channels
+    # with 24 channel size, 1ms ptime and audio_format PCM16 or PCM24 the packet size is too big (~2100 - ~2800 bytes)
+    # to send the packet with this size ptime should be changed to the lower value (0.33 ms)
+    audio_ptime = "1"  # 1ms
+    if audio_channel == "222" and (audio_format == "PCM16" or audio_format == "PCM24"):
+        audio_ptime = "0.33"  # 333 us
+
     SDBQ1001_audio_channel_check(audio_channel, audio_format, request)
 
     audio_file = audio_files[audio_format]
@@ -27,7 +36,7 @@ def test_audio_channel(
         audio_format=audio_format,
         audio_channel=[audio_channel],
         audio_sampling="48kHz",
-        audio_ptime="1",
+        audio_ptime=audio_ptime,
         audio_url=os.path.join(media, audio_file["filename"]),
     )
 
