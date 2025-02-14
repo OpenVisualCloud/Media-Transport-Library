@@ -238,6 +238,9 @@ Items in each element of the "audio" array
 ​ **audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
 
 ​ **audio_ptime (string):** `"1", "0.12", "0.25", "0.33", "4"` audio packet time, AES67(st30) supported: 1ms, 4ms, 125us(0.12), 250us(0.25) and 333us(0.33), AM824(st31) supported: 1ms
+> The maximum frame size that can be sent in the Media Transport Library (MTL) is
+> 1440 bytes. This means that the combination of channel size, packet time (ptime),
+> and audio channel should not exceed this limit.
 
 ​ **audio_url (string):** audio reference file
 
