@@ -86,6 +86,7 @@ mtl_system_status_*
 doc/_build
 
 # Gpu direct files
+ecosystem/msdk/_install
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap
