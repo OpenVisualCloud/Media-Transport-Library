@@ -89,3 +89,4 @@ doc/_build
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap
+_temp*
