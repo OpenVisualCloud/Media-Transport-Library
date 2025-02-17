@@ -2,11 +2,11 @@
 
 ## Changelog for 25.02
 
-*	Add plugins for GStreamer audio video and ancillary data.
-*	Add experimental st40 tx pipeline mode. 
-*	Correct the implementation of flow rules in DPDK.
-*	Add Sphinx documentation.
-*	General code improvements and optimizations.
+* Add plugins for GStreamer audio video and ancillary data
+* Add experimental st40 tx pipeline mode
+* Correct the implementation of flow rules in DPDK
+* Add Sphinx documentation
+* General code improvements and optimizations
 
 ## Changelog for 24.09
 
