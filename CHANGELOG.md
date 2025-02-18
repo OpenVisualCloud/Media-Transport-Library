@@ -1,5 +1,13 @@
 # Changelog
 
+## Changelog for 25.02
+
+* Add plugins for GStreamer audio video and ancillary data
+* Add experimental st40 tx pipeline mode
+* Correct the implementation of flow rules in DPDK
+* Add Sphinx documentation
+* General code improvements and optimizations
+
 ## Changelog for 24.09
 
 * ice: update driver to 1.14.9
