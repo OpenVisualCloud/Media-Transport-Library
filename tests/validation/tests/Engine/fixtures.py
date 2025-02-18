@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 import os
+import time
 from typing import Dict
 
 import pytest
@@ -96,3 +97,9 @@ def test_time(request):
     if test_time is None:
         return 30
     return int(test_time)
+
+
+@pytest.fixture(autouse=True)
+def delay_between_tests():
+    time.sleep(3)
+    yield
