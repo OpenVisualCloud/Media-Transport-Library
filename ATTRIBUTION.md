@@ -38,3 +38,10 @@
 | level-zero                      | [Level Zero](https://github.com/oneapi-src/level-zero)                       | MIT                                           |
 | level-zero-dev                  | [Level Zero Dev](https://github.com/oneapi-src/level-zero)                   | MIT                                           |
 | xpu-smi                         | [XPU SMI](https://github.com/intel/xpumanager)                               | MIT                                           |
+| ethtool                         | [ethtool](https://git.kernel.org/pub/scm/network/ethtool/ethtool.git)        | GNU Public License V2                         |
+| libelf                          | [libelf](https://sourceware.org/elfutils/)                                   | GNU Public License V2                         |
+| libnuma                         | [libnuma](https://github.com/numactl/numactl)                                | GNU Public License V2                         |
+| zlib1g                          | [zlib1g](https://zlib.net/)                                                  | zlib license                                  |
+| libatomic                       | [libatomic](https://gcc.gnu.org/git/?p=gcc.git)                              | GNU Public License V2                         |
+| python3                         | [CPython](https://github.com/python/cpython)                                 | PSF                                           |
+| pip                             | [pip](https://github.com/pypa/pip)                                           | MIT                                           |
