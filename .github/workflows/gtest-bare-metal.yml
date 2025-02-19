@@ -9,7 +9,6 @@ on:
         default: 'main'
         required: false
         description: 'Branch name to use'
-
   push:
     branches:
       - main
@@ -20,14 +19,13 @@ on:
       - 'maint-**'
 
 concurrency:
-  group: ${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 env:
   # Customize the env if
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
-  DPDK_REBUILD: 'false'
   # Bellow ENV variables are required to be defined on runner side:
   # TEST_PF_PORT_P: '0000:49:00.0'
   # TEST_PF_PORT_R: '0000:49:00.1'
@@ -69,34 +67,18 @@ jobs:
       - name: Checkout MTL
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: '${{ inputs.branch-to-checkout || github.head_ref || github.ref }}'
-
-      - name: Checkout DPDK
-        if: env.DPDK_REBUILD == 'true'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'DPDK/dpdk'
-          ref: 'v${{  env.DPDK_VERSION  }}'
-          path: 'dpdk'
+          ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
       - name: Install the build dependency
         run: |
-          sudo apt-get install -y git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev
-          sudo apt-get install -y systemtap-sdt-dev
-
-      - name: Apply dpdk patches
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
-
-      - name: Build dpdk
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          cd dpdk
-          meson build
-          ninja -C build
-          cd build
-          sudo ninja install
+          sudo apt-get install -y \
+              git gcc meson \
+              python3-dev \
+              python3-pyelftools \
+              libjson-c-dev libpcap-dev libgtest-dev \
+              libsdl2-dev libsdl2-ttf-dev libssl-dev \
+              pkg-config libnuma-dev \
+              systemtap-sdt-dev
 
       - name: Build
         run: |
@@ -122,7 +104,7 @@ jobs:
 
       - name: Binding network adapter
         run: |
-          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
+          sudo nicctl create_vf "${TEST_PF_PORT_P}" || true
           sudo dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_P}" || true
           sudo dpdk-devbind.py -b vfio-pci "${TEST_DMA_PORT_R}" || true
 
@@ -161,3 +143,11 @@ jobs:
       - name: Run st2110 st20p test case with kernel loopback
         run: |
           ./build/tests/KahawaiTest --p_port kernel:lo --r_port kernel:lo --auto_start_stop --gtest_filter=St20p*
+
+      - name: Kill gtest routines that could have been left
+        if: always()
+        run: |
+          sudo killall -SIGINT KahawaiTest || true
+          sudo killall -SIGINT KahawaiUfdTest || true
+          sudo killall -SIGINT KahawaiUplTest || true
+          sudo killall -SIGINT MtlManager || true
