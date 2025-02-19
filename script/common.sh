@@ -30,7 +30,7 @@ KERNEL_VERSION="${KERNEL_VERSION:-$(uname -r)}"
 TZ="${TZ:-Europe/Warsaw}"
 NPROC="${NPROC:-$(nproc)}"
 
-if ! grep "/root/.local/bin" <<< "${PATH}" > /dev/null 2>&1; then
+if ! grep "/root/.local/bin" <<<"${PATH}" >/dev/null 2>&1; then
 	PATH="/root/.local/bin:/root/bin:/root/usr/bin:${PATH}"
 	PKG_CONFIG_PATH="/usr/lib/pkgconfig:/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}"
 fi
@@ -52,10 +52,10 @@ function log_message() {
 	if [ -z "${DISABLE_COLOR_PRINT}" ]; then
 		FOOTER='\e[0m'
 		case "${type}" in
-			ERROR)        HEADER="${REGULAR}${RED}${type}:  ${BOLD}${RED}" ;;
-			WARN|WARNING) HEADER="${REGULAR}${BLUE}${type}: ${BOLD}${YELLOW}" ;;
-			SUCC|SUCCESS) HEADER="${REGULAR}${BLUE}${type}: ${BOLD}${GREEN}" ;;
-			INFO|*)       HEADER="${REGULAR}${BLUE}${type}: ${BOLD}${BLUE}" ;;
+		ERROR) HEADER="${REGULAR}${RED}${type}:  ${BOLD}${RED}" ;;
+		WARN | WARNING) HEADER="${REGULAR}${BLUE}${type}: ${BOLD}${YELLOW}" ;;
+		SUCC | SUCCESS) HEADER="${REGULAR}${BLUE}${type}: ${BOLD}${GREEN}" ;;
+		INFO | *) HEADER="${REGULAR}${BLUE}${type}: ${BOLD}${BLUE}" ;;
 		esac
 	fi
 	echo -e "${HEADER}$*${FOOTER}" >&2
@@ -70,7 +70,7 @@ function get_user_input_confirm() {
 	local confirm
 	local confirm_string
 	local confirm_default="${1:-0}"
-	confirm_string=( "(N)o" "(Y)es" )
+	confirm_string=("(N)o" "(Y)es")
 
 	echo -en "${REGULAR}${BLUE}CHOOSE:${BOLD}${BLUE} (Y)es/(N)o [default: ${confirm_string[$confirm_default]}]: ${EndCl}" >&2
 	read -r confirm
@@ -129,20 +129,20 @@ function get_github_elements() {
 	local path_part
 	local path_elements
 	path_part="${1#*://github.com/}"
-	mapfile -t -d'/' path_elements <<< "${path_part}"
+	mapfile -t -d'/' path_elements <<<"${path_part}"
 	if [[ "${#path_elements[@]}" -lt "2" ]]; then
-		log_error  "Invalid link passed to get_github_elements method."
+		log_error "Invalid link passed to get_github_elements method."
 		return 1
 	fi
 	echo "${path_elements[0]} ${path_elements[1]}"
 }
 
 function get_github_namespace() {
-	cut -d' ' -f1 <<< "$(get_github_elements "$1")"
+	cut -d' ' -f1 <<<"$(get_github_elements "$1")"
 }
 
 function get_github_repo() {
-	cut -d' ' -f2 <<< "$(get_github_elements "$1")"
+	cut -d' ' -f2 <<<"$(get_github_elements "$1")"
 }
 
 # Adds sufix to base of filename from full path.
@@ -162,11 +162,10 @@ function get_filepath_add_sufix() {
 }
 
 function command_exists {
-	command -v "$@" > /dev/null 2>&1
+	command -v "$@" >/dev/null 2>&1
 }
 
-function as_root()
-{
+function as_root() {
 	CMD_TO_EVALUATE="$*"
 	CURRENT_USER_ID="$(id -u)"
 	EFECTIVE_USER_ID="${EUID:-$CURRENT_USER_ID}"
@@ -178,10 +177,10 @@ function as_root()
 		elif command_exists su; then
 			AS_ROOT="su -c"
 		else
-			log_error  "This command must be run as root [EUID=0] ${CMD_TO_EVALUATE[*]}."
-			log_error  "- current [EUID=${EFECTIVE_USER_ID}]."
-			log_error  "- 'sudo' nor 'su' commands were found in PATH."
-			log_error  "Re-run the script as sudo or install sudo pkg."
+			log_error "This command must be run as root [EUID=0] ${CMD_TO_EVALUATE[*]}."
+			log_error "- current [EUID=${EFECTIVE_USER_ID}]."
+			log_error "- 'sudo' nor 'su' commands were found in PATH."
+			log_error "Re-run the script as sudo or install sudo pkg."
 			exit 1
 		fi
 	fi
@@ -211,8 +210,7 @@ function github_api_call() {
 		-H "Authorization: Bearer ${INPUT_GITHUB_TOKEN}" \
 		-H 'Accept: application/vnd.github.v3+json' \
 		-H 'Content-Type: application/json' \
-		"$@")
-	then
+		"$@"); then
 		echo "${API_RESPONSE}"
 	else
 		echo >&2 "GitHub API call failed."
@@ -221,61 +219,58 @@ function github_api_call() {
 	fi
 }
 
-function print_logo()
-{
-	if [[ -z "$blue_code" ]]
-	then
-		local blue_code=( 26 27 20 19 20 20 21 04 27 26 32 12 33 06 39 38 44 45 )
+function print_logo() {
+	if [[ -z "$blue_code" ]]; then
+		local blue_code=(26 27 20 19 20 20 21 04 27 26 32 12 33 06 39 38 44 45)
 	fi
 	local IFS
 	local logo_string
 	local colorized_logo_string
 	IFS=$'\n\t'
-	logo_string="$(cat <<- EOF
-	.-----------------------------------------------------------.
-	|        *          .                    ..        .    *   |
-	|       .                         .   .  .  .   .           |
-	|                                    . .  *:. . .           |
-	|                             .  .   . .. .         .       |
-	|                    .     . .  . ...    .    .             |
-	|  .              .  .  . .    . .  . .                     |
-	|                   .    .     . ...   ..   .       .       |
-	|            .  .    . *.   . .                             |
-	|                   :.  .           .                       |
-	|            .   .    .    .                                |
-	|        .  .  .    . ^                                     |
-	|       .  .. :.    . |             .               .       |
-	|.   ... .            |                                     |
-	| :.  . .   *.    We are here.              .               |
-	|   .               .             *.                        |
-	.©-Intel-Corporation--------------------ascii-author-unknown.
-	=                                                           =
-	=        88                                  88             =
-	=        ""                ,d                88             =
-	=        88                88                88             =
-	=        88  8b,dPPYba,  MM88MMM  ,adPPYba,  88             =
-	=        88  88P'   '"8a   88    a8P_____88  88             =
-	=        88  88       88   88    8PP"""""""  88             =
-	=        88  88       88   88,   "8b,   ,aa  88             =
-	=        88  88       88   "Y888  '"Ybbd8"'  88             =
-	=                                                           =
-	=============================================================
+	logo_string="$(
+		cat <<-EOF
+			.-----------------------------------------------------------.
+			|        *          .                    ..        .    *   |
+			|       .                         .   .  .  .   .           |
+			|                                    . .  *:. . .           |
+			|                             .  .   . .. .         .       |
+			|                    .     . .  . ...    .    .             |
+			|  .              .  .  . .    . .  . .                     |
+			|                   .    .     . ...   ..   .       .       |
+			|            .  .    . *.   . .                             |
+			|                   :.  .           .                       |
+			|            .   .    .    .                                |
+			|        .  .  .    . ^                                     |
+			|       .  .. :.    . |             .               .       |
+			|.   ... .            |                                     |
+			| :.  . .   *.    We are here.              .               |
+			|   .               .             *.                        |
+			.©-Intel-Corporation--------------------ascii-author-unknown.
+			=                                                           =
+			=        88                                  88             =
+			=        ""                ,d                88             =
+			=        88                88                88             =
+			=        88  8b,dPPYba,  MM88MMM  ,adPPYba,  88             =
+			=        88  88P'   '"8a   88    a8P_____88  88             =
+			=        88  88       88   88    8PP"""""""  88             =
+			=        88  88       88   88,   "8b,   ,aa  88             =
+			=        88  88       88   "Y888  '"Ybbd8"'  88             =
+			=                                                           =
+			=============================================================
 		EOF
 	)"
 
 	colorized_logo_string=""
-	for (( i=0; i<${#logo_string}; i++ ))
-	do
-		colorized_logo_string+="\e[38;05;${blue_code[$(( (i-(i/64)*64)/4 ))]}m"
+	for ((i = 0; i < ${#logo_string}; i++)); do
+		colorized_logo_string+="\e[38;05;${blue_code[$(((i - (i / 64) * 64) / 4))]}m"
 		colorized_logo_string+="${logo_string:$i:1}"
-	done;
+	done
 	colorized_logo_string+='\e[m\n'
 
 	echo -e "$colorized_logo_string" >&2
 }
 
-function print_logo_sequence()
-{
+function print_logo_sequence() {
 	set +x
 	local wait_between_frames="${1:-0}"
 	local wait_cmd=""
@@ -283,39 +278,33 @@ function print_logo_sequence()
 		wait_cmd="sleep ${wait_between_frames}"
 	fi
 
-	blue_code_fixed=( 26 27 20 19 20 20 21 04 27 26 32 12 33 06 39 38 44 45 )
+	blue_code_fixed=(26 27 20 19 20 20 21 04 27 26 32 12 33 06 39 38 44 45)
 	size=${#blue_code_fixed[@]}
-	for (( move=0; move<size; move++ ))
-	do
+	for ((move = 0; move < size; move++)); do
 		blue_code=()
-		for (( i=move; i<size; i++ ))
-		do
+		for ((i = move; i < size; i++)); do
 			blue_code+=("${blue_code_fixed[i]}")
 		done
-		for (( i=0; i<move; i++ ))
-		do
+		for ((i = 0; i < move; i++)); do
 			blue_code+=("${blue_code_fixed[i]}")
 		done
 		echo -en "\e[0;0H"
 		print_logo
 		${wait_cmd}
-	done;
+	done
 }
 
-function print_logo_anim()
-{
+function print_logo_anim() {
 	set +x
 	local number_of_sequences="${1:-2}"
 	local wait_between_frames="${2:-0.025}"
 	clear
-	for (( pt=0; pt<number_of_sequences; pt++ ))
-	do
+	for ((pt = 0; pt < number_of_sequences; pt++)); do
 		print_logo_sequence "${wait_between_frames}"
 	done
 }
 
-function catch_error_print_debug()
-{
+function catch_error_print_debug() {
 	local _last_command_height=""
 	local -n _lineno="${1:-LINENO}"
 	local -n _bash_lineno="${2:-BASH_LINENO}"
@@ -350,7 +339,7 @@ function catch_error_print_debug()
 	fi
 
 	_output_array+=('---')
-	log_error  "${_output_array[*]}"
+	log_error "${_output_array[*]}"
 }
 
 # Calling this function executes ERR and SIGINT signals trapping. Triggered trap calls catch_error_print_debug and exit 1
@@ -365,8 +354,7 @@ function trap_error_print_debug() {
 # $1 - name
 # $2 - version
 # $3 - dest_dir
-function git_download_strip_unpack()
-{
+function git_download_strip_unpack() {
 	# Version can be commit sha or tag, examples:
 	# version=d2515b90cc0ef651f6d0a6661d5a644490bfc3f3
 	# version=refs/tags/v${JPEG_XS_VER}
@@ -385,8 +373,7 @@ function git_download_strip_unpack()
 # Downloads and strip unpack a file from URL ($1) to a target directory ($2)
 # $1 - URL to download
 # $2 - destination directory to strip unpack the tar.gz
-function wget_download_strip_unpack()
-{
+function wget_download_strip_unpack() {
 	local filename
 	local source_url="${1}"
 	local dest_dir="${2}"
@@ -402,8 +389,7 @@ function wget_download_strip_unpack()
 # Example usage:
 #	PM="$(setup_package_manager)" && \
 #	$PM install python3
-function setup_package_manager()
-{
+function setup_package_manager() {
 	TIBER_USE_PM="${PM:-$1}"
 	if [[ -x "$(command -v "$TIBER_USE_PM")" ]]; then
 		export PM="${TIBER_USE_PM}"
@@ -416,8 +402,8 @@ function setup_package_manager()
 	elif [[ -x "$(command -v apt)" ]]; then
 		export PM='apt'
 	else
-		log_error  "No known pkg manager found. Try to re-run with variable, example:"
-		log_error  "export PM=\"apt\""
+		log_error "No known pkg manager found. Try to re-run with variable, example:"
+		log_error "export PM=\"apt\""
 		return 1
 	fi
 	log_info "Setting pkg manager to ${PM}."
@@ -428,8 +414,7 @@ function setup_package_manager()
 # Setup build dir and ffmpeg version/directory.
 # FFMPEG_VER taken from environment or forced by 1st parameter
 # Exports FFMPEG_DIR and FFMPEG_VER
-function lib_setup_ffmpeg_dir_and_version()
-{
+function lib_setup_ffmpeg_dir_and_version() {
 	FFMPEG_VER="${1:-$FFMPEG_VER}"
 	FFMPEG_7_0_DIR="${FFMPEG_7_0_DIR:-ffmpeg-7-0}"
 	FFMPEG_6_1_DIR="${FFMPEG_6_1_DIR:-ffmpeg-6-1}"
@@ -447,8 +432,7 @@ function lib_setup_ffmpeg_dir_and_version()
 	export FFMPEG_SUB_DIR
 }
 
-function exec_command()
-{
+function exec_command() {
 	# One of: yes|no|accept-new
 	SSH_STRICT_HOST_KEY_CHECKING="accept-new"
 	SSH_CMD="ssh -oStrictHostKeyChecking=${SSH_STRICT_HOST_KEY_CHECKING} -t -o"
@@ -463,12 +447,12 @@ function exec_command()
 	elif [[ "$#" -eq "2" ]] || [[ "$#" -eq "3" ]]; then
 		values_returned="$($SSH_CMD "RemoteCommand=eval \"${1}\"" "${user_at_address}" 2>/dev/null)"
 	else
-		log_error  "Wrong arguments for exec_command(). Valid number is one of [1 2 3], got $#"
+		log_error "Wrong arguments for exec_command(). Valid number is one of [1 2 3], got $#"
 		return 1
 	fi
 
 	if [ -z "$values_returned" ]; then
-		log_error  "Unable to collect results or results are empty."
+		log_error "Unable to collect results or results are empty."
 		return 1
 	else
 		echo "${values_returned}"
@@ -494,22 +478,22 @@ function get_cpu_arch() {
 	if ! arch="$(exec_command 'cat /sys/devices/cpu/caps/pmu_name' "$@")"; then echo "Got: $arch" && return 1; fi
 
 	case $arch in
-		icelake)
-			log_info "Xeon IceLake CPU (icx)" 1>&2
-			echo "icx"
-			;;
-		sapphire_rapids)
-			log_info "Xeon Sapphire Rapids CPU (spr)" 1>&2
-			echo "spr"
-			;;
-		skylake)
-			log_info "Xeon SkyLake"
-			echo "skl"
-			;;
-		*)
-			log_error  "Unsupported architecture: ${arch}. Please edit the script or setup the architecture manually."
-			return 1
-			;;
+	icelake)
+		log_info "Xeon IceLake CPU (icx)" 1>&2
+		echo "icx"
+		;;
+	sapphire_rapids)
+		log_info "Xeon Sapphire Rapids CPU (spr)" 1>&2
+		echo "spr"
+		;;
+	skylake)
+		log_info "Xeon SkyLake"
+		echo "skl"
+		;;
+	*)
+		log_error "Unsupported architecture: ${arch}. Please edit the script or setup the architecture manually."
+		return 1
+		;;
 	esac
 	return 0
 }
