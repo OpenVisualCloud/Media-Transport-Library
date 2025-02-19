@@ -39,3 +39,8 @@ jobs:
           VALIDATE_CHECKOV: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
+          FIX_MARKDOWN_PRETTIER: true
+          FIX_MARKDOWN: true
+          FIX_PYTHON_BLACK: true
+          FIX_PYTHON_ISORT: true
+          
