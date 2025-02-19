@@ -21,9 +21,7 @@ def main():
     # Init para
     init_para = mtl.mtl_init_params()
     mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, args.p_port)
-    mtl.mtl_para_pmd_set(
-        init_para, mtl.MTL_PORT_P, mtl.mtl_pmd_by_port_name(args.p_port)
-    )
+    mtl.mtl_para_pmd_set(init_para, mtl.MTL_PORT_P, mtl.mtl_pmd_by_port_name(args.p_port))
     init_para.num_ports = 1
     mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
     init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP

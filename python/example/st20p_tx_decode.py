@@ -29,9 +29,7 @@ def process_frame(st20p_tx, frame, av_pixel_output_format):
 
         # pyav yuv422p10le not support Conversion to numpy array, use copy mode
         yuv_array[:y_size] = np.frombuffer(yuv_frame.planes[0], np.uint16)
-        yuv_array[y_size : y_size + u_size] = np.frombuffer(
-            yuv_frame.planes[1], np.uint16
-        )
+        yuv_array[y_size : y_size + u_size] = np.frombuffer(yuv_frame.planes[1], np.uint16)
         yuv_array[y_size + u_size :] = np.frombuffer(yuv_frame.planes[2], np.uint16)
         src_p = ctypes.c_char_p(yuv_array.ctypes.data)
         src_address = ctypes.cast(src_p, ctypes.c_void_p).value
@@ -65,9 +63,7 @@ def main():
     # Init para
     init_para = mtl.mtl_init_params()
     mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, args.p_port)
-    mtl.mtl_para_pmd_set(
-        init_para, mtl.MTL_PORT_P, mtl.mtl_pmd_by_port_name(args.p_port)
-    )
+    mtl.mtl_para_pmd_set(init_para, mtl.MTL_PORT_P, mtl.mtl_pmd_by_port_name(args.p_port))
     init_para.num_ports = 1
     mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
     init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
