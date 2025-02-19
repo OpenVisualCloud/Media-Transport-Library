@@ -52,7 +52,6 @@ Mkfile.old
 dkms.conf
 
 # Ours
-.*
 *.log
 *.patch
 *.diff
