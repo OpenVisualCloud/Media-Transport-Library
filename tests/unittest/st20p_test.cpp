@@ -1065,7 +1065,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
   ret = mtl_start(st);
   EXPECT_GE(ret, 0);
-  sleep(10);
+  sleep(100);
   if (!para->send_done_check) {
     ret = mtl_stop(st);
     EXPECT_GE(ret, 0);
