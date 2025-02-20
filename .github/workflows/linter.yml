@@ -39,9 +39,9 @@ jobs:
           VALIDATE_CHECKOV: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
-          PYTHON_BLACK_CONFIG_FILE: .github/linters/.pyproject.toml
-          PYTHON_ISORT_CONFIG_FILE: .github/linters/.pyproject.toml
-          MARKDOWN_CONFIG_FILE: .github/linters/.markdown-lint.yml
-          NATURAL_LANGUAGE_CONFIG_FILE: .github/linters/.textlintrc
+          # PYTHON_BLACK_CONFIG_FILE: .github/linters/.pyproject.toml
+          # PYTHON_ISORT_CONFIG_FILE: .github/linters/.pyproject.toml
+          # MARKDOWN_CONFIG_FILE: .github/linters/.markdown-lint.yml
+          # NATURAL_LANGUAGE_CONFIG_FILE: .github/linters/.textlintrc
           # GITHUB_ACTIONS_CONFIG_FILE: .github/linters/actionlint.yaml
           
