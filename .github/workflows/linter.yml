@@ -44,6 +44,7 @@ jobs:
           VALIDATE_PYTHON_BLACK: false
           VALIDATE_PYTHON_PYINK: false
           VALIDATE_NATURAL_LANGUAGE: false
+          VALIDATE_MARKDOWN_PRETTIER: false
+          MARKDOWN_CONFIG_FILE:  .markdown-lint.yml
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
-          
