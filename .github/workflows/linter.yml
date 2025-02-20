@@ -39,8 +39,6 @@ jobs:
           VALIDATE_CHECKOV: false
           VALIDATE_GITHUB_ACTIONS: false
           VALIDATE_MARKDOWN: false
-          VALIDATE_MARKDOWN_PRETTIER: false
-          VALIDATE_NATURAL_LANGUAGE: false
           VALIDATE_PYTHON_BLACK: false
           VALIDATE_PYTHON_PYINK: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
