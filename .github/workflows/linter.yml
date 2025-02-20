@@ -29,7 +29,7 @@ jobs:
       # Run Linter against code base #
       ################################
       - name: Lint Code Base
-        uses: github/super-linter/slim@b92721f792f381cedc002ecdbb9847a15ece5bb8 # v7
+        uses: github/super-linter/slim@85f7611e0f7b53c8573cca84aa0ed4344f6f6a4d # v7.2.1
                                        
         env:
           DEFAULT_BRANCH: main
