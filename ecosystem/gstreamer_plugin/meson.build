@@ -29,9 +29,15 @@ else
     gstreamer_inc_dir  = '/usr/include/gstreamer-1.0'
 endif
 
+if run_command('test', '-d', '/usr/local/include/glib-2.0', check: false).returncode() == 0
+    glib_2_0_inc_dir  = '/usr/local/include/glib-2.0'
+else
+    glib_2_0_inc_dir  = '/usr/include/glib-2.0'
+endif
+
 inc_dirs = include_directories(
-    '/usr/include/glib-2.0',
     '/usr/local/include/mtl',
+    glib_2_0_inc_dir,
     gstreamer_inc_dir
 )
 
