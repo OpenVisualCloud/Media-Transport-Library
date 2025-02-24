@@ -21,8 +21,7 @@ static int rdma_rx_send_buffer_done(struct mt_rdma_rx_ctx *ctx, uint16_t idx) {
   int ret = rdma_post_send(ctx->id, NULL, &msg, sizeof(msg), NULL,
                            IBV_SEND_INLINE | IBV_SEND_SIGNALED);
   if (ret) {
-    err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name,
-        strerror(errno));
+    err("%s(%s), rdma_post_send failed: %s\n", __func__, ctx->ops_name, strerror(errno));
     pthread_mutex_unlock(&rx_buffer->lock);
     return -EIO;
   }
@@ -55,9 +54,9 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx *ctx) {
     rx_buffer->mr = mr;
   }
 
-  struct ibv_mr *mr = ibv_reg_mr(
-      ctx->pd, ctx->recv_msgs, ctx->buffer_cnt * sizeof(struct mt_rdma_message),
-      IBV_ACCESS_LOCAL_WRITE);
+  struct ibv_mr *mr = ibv_reg_mr(ctx->pd, ctx->recv_msgs,
+                                 ctx->buffer_cnt * sizeof(struct mt_rdma_message),
+                                 IBV_ACCESS_LOCAL_WRITE);
   if (!mr) {
     err("%s(%s), ibv_reg_mr message failed\n", __func__, ctx->ops_name);
     rdma_rx_uinit_mrs(ctx);
@@ -65,8 +64,7 @@ static int rdma_rx_init_mrs(struct mt_rdma_rx_ctx *ctx) {
   }
   ctx->recv_msgs_mr = mr;
 
-  mr = ibv_reg_mr(ctx->pd, ctx->meta_region,
-                  ctx->buffer_cnt * MT_RDMA_MSG_MAX_SIZE,
+  mr = ibv_reg_mr(ctx->pd, ctx->meta_region, ctx->buffer_cnt * MT_RDMA_MSG_MAX_SIZE,
                   IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
   if (!mr) {
     err("%s(%s), ibv_reg_mr meta region failed\n", __func__, ctx->ops_name);
@@ -129,8 +127,7 @@ static int rdma_rx_alloc_buffers(struct mt_rdma_rx_ctx *ctx) {
   return 0;
 }
 
-static int rdma_rx_handle_wc_recv_imm(struct mt_rdma_rx_ctx *ctx,
-                                      struct ibv_wc *wc) {
+static int rdma_rx_handle_wc_recv_imm(struct mt_rdma_rx_ctx *ctx, struct ibv_wc *wc) {
   struct mtl_rdma_rx_ops *ops = &ctx->ops;
   uint16_t idx = ntohl(wc->imm_data) >> 16;
   dbg("%s(%s), buffer %u write done\n", __func__, ctx->ops_name, idx);
@@ -146,15 +143,13 @@ static int rdma_rx_handle_wc_recv_imm(struct mt_rdma_rx_ctx *ctx,
   rx_buffer->buffer.user_meta_size = ntohl(wc->imm_data) & 0x0000FFFF;
   rx_buffer->status = MT_RDMA_BUFFER_STATUS_READY;
   ctx->stat_buffer_received++;
-  if (ops->notify_buffer_ready)
-    ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
+  if (ops->notify_buffer_ready) ops->notify_buffer_ready(ops->priv, &rx_buffer->buffer);
   pthread_mutex_unlock(&rx_buffer->lock);
 
   struct mt_rdma_message *msg = (struct mt_rdma_message *)wc->wr_id;
   int ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
   if (ret) {
-    err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
-        strerror(errno));
+    err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name, strerror(errno));
     return -EIO;
   }
   return 0;
@@ -170,13 +165,13 @@ static int rdma_rx_handle_wc(struct mt_rdma_rx_ctx *ctx, struct ibv_wc *wc) {
   }
 
   switch (wc->opcode) {
-  case IBV_WC_RECV_RDMA_WITH_IMM:
-    return rdma_rx_handle_wc_recv_imm(ctx, wc);
-  case IBV_WC_SEND:
-    return 0; /* nothing to do */
-  default:
-    err("%s(%s), unexpected opcode: %d\n", __func__, ctx->ops_name, wc->opcode);
-    return -EIO;
+    case IBV_WC_RECV_RDMA_WITH_IMM:
+      return rdma_rx_handle_wc_recv_imm(ctx, wc);
+    case IBV_WC_SEND:
+      return 0; /* nothing to do */
+    default:
+      err("%s(%s), unexpected opcode: %d\n", __func__, ctx->ops_name, wc->opcode);
+      return -EIO;
   }
 }
 
@@ -220,10 +215,8 @@ static void *rdma_rx_cq_poll_thread(void *arg) {
     }
 
     while (ibv_poll_cq(cq, 1, &wc)) {
-      if (ctx->cq_poll_stop)
-        break;
-      if (rdma_rx_handle_wc(ctx, &wc))
-        goto out;
+      if (ctx->cq_poll_stop) break;
+      if (rdma_rx_handle_wc(ctx, &wc)) goto out;
       ctx->stat_cq_poll_done++;
     }
 
@@ -249,8 +242,7 @@ static void *rdma_rx_connect_thread(void *arg) {
   while (!ctx->connect_stop) {
     ret = poll(&pfd, 1, 200);
     if (ret < 0) {
-      err("%s(%s), poll failed: %s\n", __func__, ctx->ops_name,
-          strerror(errno));
+      err("%s(%s), poll failed: %s\n", __func__, ctx->ops_name, strerror(errno));
       goto connect_err;
     } else if (ret == 0) {
       /* timeout */
@@ -259,110 +251,106 @@ static void *rdma_rx_connect_thread(void *arg) {
     ret = rdma_get_cm_event(ctx->ec, &event);
     if (!ret) {
       switch (event->event) {
-      case RDMA_CM_EVENT_ADDR_RESOLVED:
-        ret = rdma_resolve_route(ctx->id, 2000);
-        if (ret) {
-          err("%s(%s), rdma_resolve_route failed\n", __func__, ctx->ops_name);
-          goto connect_err;
-        }
-        break;
-      case RDMA_CM_EVENT_ROUTE_RESOLVED:
-        ctx->pd = ibv_alloc_pd(event->id->verbs);
-        if (!ctx->pd) {
-          err("%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
-          goto connect_err;
-        }
-        if (!ctx->cq_poll_only) {
-          ctx->cc = ibv_create_comp_channel(event->id->verbs);
-          if (!ctx->cc) {
-            err("%s(%s), ibv_create_comp_channel failed\n", __func__,
-                ctx->ops_name);
-            goto connect_err;
-          }
-        }
-        ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
-        if (!ctx->cq) {
-          err("%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
-          goto connect_err;
-        }
-        if (!ctx->cq_poll_only) {
-          ret = ibv_req_notify_cq(ctx->cq, 0);
+        case RDMA_CM_EVENT_ADDR_RESOLVED:
+          ret = rdma_resolve_route(ctx->id, 2000);
           if (ret) {
-            err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
+            err("%s(%s), rdma_resolve_route failed\n", __func__, ctx->ops_name);
             goto connect_err;
           }
-        }
-        struct ibv_qp_init_attr init_qp_attr = {
-            .cap.max_send_wr = ctx->buffer_cnt * 2,
-            .cap.max_recv_wr = ctx->buffer_cnt * 2,
-            .cap.max_send_sge = 1,
-            .cap.max_recv_sge = 1,
-            .cap.max_inline_data = sizeof(struct mt_rdma_message),
-            .sq_sig_all = 0,
-            .send_cq = ctx->cq,
-            .recv_cq = ctx->cq,
-            .qp_type = IBV_QPT_RC,
-        };
-        ret = rdma_create_qp(event->id, ctx->pd, &init_qp_attr);
-        if (ret) {
-          err("%s(%s), rdma_create_qp failed\n", __func__, ctx->ops_name);
-          goto connect_err;
-        }
-        ctx->qp = event->id->qp;
-        ret = rdma_rx_init_mrs(ctx);
-        if (ret) {
-          err("%s(%s), rdma_tx_init_mrs failed\n", __func__, ctx->ops_name);
-          goto connect_err;
-        }
-        struct rdma_conn_param conn_param = {
-            .initiator_depth = 1,
-            .responder_resources = 1,
-            .rnr_retry_count = 7 /* infinite retry */,
-        };
-        ret = rdma_connect(event->id, &conn_param);
-        if (ret) {
-          err("%s(%s), rdma_connect failed\n", __func__, ctx->ops_name);
-          goto connect_err;
-        }
-        break;
-      case RDMA_CM_EVENT_ESTABLISHED:
-        for (uint16_t i = 0; i < ctx->buffer_cnt; i++) { /* start receiving */
-          struct mt_rdma_message *msg = &ctx->recv_msgs[i];
-          ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg),
-                               ctx->recv_msgs_mr);
+          break;
+        case RDMA_CM_EVENT_ROUTE_RESOLVED:
+          ctx->pd = ibv_alloc_pd(event->id->verbs);
+          if (!ctx->pd) {
+            err("%s(%s), ibv_alloc_pd failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          if (!ctx->cq_poll_only) {
+            ctx->cc = ibv_create_comp_channel(event->id->verbs);
+            if (!ctx->cc) {
+              err("%s(%s), ibv_create_comp_channel failed\n", __func__, ctx->ops_name);
+              goto connect_err;
+            }
+          }
+          ctx->cq = ibv_create_cq(event->id->verbs, 10, ctx, ctx->cc, 0);
+          if (!ctx->cq) {
+            err("%s(%s), ibv_create_cq failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          if (!ctx->cq_poll_only) {
+            ret = ibv_req_notify_cq(ctx->cq, 0);
+            if (ret) {
+              err("%s(%s), ibv_req_notify_cq failed\n", __func__, ctx->ops_name);
+              goto connect_err;
+            }
+          }
+          struct ibv_qp_init_attr init_qp_attr = {
+              .cap.max_send_wr = ctx->buffer_cnt * 2,
+              .cap.max_recv_wr = ctx->buffer_cnt * 2,
+              .cap.max_send_sge = 1,
+              .cap.max_recv_sge = 1,
+              .cap.max_inline_data = sizeof(struct mt_rdma_message),
+              .sq_sig_all = 0,
+              .send_cq = ctx->cq,
+              .recv_cq = ctx->cq,
+              .qp_type = IBV_QPT_RC,
+          };
+          ret = rdma_create_qp(event->id, ctx->pd, &init_qp_attr);
           if (ret) {
-            err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
-                strerror(errno));
+            err("%s(%s), rdma_create_qp failed\n", __func__, ctx->ops_name);
             goto connect_err;
           }
-          ret = rdma_rx_send_buffer_done(ctx, i);
+          ctx->qp = event->id->qp;
+          ret = rdma_rx_init_mrs(ctx);
           if (ret) {
-            err("%s(%s), rdma_rx_send_buffer_done failed\n", __func__,
-                ctx->ops_name);
+            err("%s(%s), rdma_tx_init_mrs failed\n", __func__, ctx->ops_name);
             goto connect_err;
           }
-        }
-        ctx->connected = true;
-        ctx->cq_poll_stop = false;
-        ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread,
-                             ctx);
-        if (ret) {
-          err("%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
+          struct rdma_conn_param conn_param = {
+              .initiator_depth = 1,
+              .responder_resources = 1,
+              .rnr_retry_count = 7 /* infinite retry */,
+          };
+          ret = rdma_connect(event->id, &conn_param);
+          if (ret) {
+            err("%s(%s), rdma_connect failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          break;
+        case RDMA_CM_EVENT_ESTABLISHED:
+          for (uint16_t i = 0; i < ctx->buffer_cnt; i++) { /* start receiving */
+            struct mt_rdma_message *msg = &ctx->recv_msgs[i];
+            ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
+            if (ret) {
+              err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
+                  strerror(errno));
+              goto connect_err;
+            }
+            ret = rdma_rx_send_buffer_done(ctx, i);
+            if (ret) {
+              err("%s(%s), rdma_rx_send_buffer_done failed\n", __func__, ctx->ops_name);
+              goto connect_err;
+            }
+          }
+          ctx->connected = true;
+          ctx->cq_poll_stop = false;
+          ret = pthread_create(&ctx->cq_poll_thread, NULL, rdma_rx_cq_poll_thread, ctx);
+          if (ret) {
+            err("%s(%s), pthread_create failed\n", __func__, ctx->ops_name);
+            goto connect_err;
+          }
+          info("%s(%s), connected\n", __func__, ctx->ops_name);
+          break;
+        case RDMA_CM_EVENT_DISCONNECTED:
+          info("%s(%s), TX disconnected.\n", __func__, ctx->ops_name);
+          ctx->connected = false;
+          ctx->cq_poll_stop = true;
+          ctx->connect_stop = true;
+          /* todo: handle resources clearing and notifying */
+          break;
+        default:
+          err("%s(%s), event: %s, error: %d\n", __func__, ctx->ops_name,
+              rdma_event_str(event->event), event->status);
           goto connect_err;
-        }
-        info("%s(%s), connected\n", __func__, ctx->ops_name);
-        break;
-      case RDMA_CM_EVENT_DISCONNECTED:
-        info("%s(%s), TX disconnected.\n", __func__, ctx->ops_name);
-        ctx->connected = false;
-        ctx->cq_poll_stop = true;
-        ctx->connect_stop = true;
-        /* todo: handle resources clearing and notifying */
-        break;
-      default:
-        err("%s(%s), event: %s, error: %d\n", __func__, ctx->ops_name,
-            rdma_event_str(event->event), event->status);
-        goto connect_err;
       }
       rdma_ack_cm_event(event);
     }
@@ -398,8 +386,7 @@ struct mtl_rdma_buffer *mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle) {
   return NULL;
 }
 
-int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle,
-                           struct mtl_rdma_buffer *buffer) {
+int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer *buffer) {
   struct mt_rdma_rx_ctx *ctx = handle;
   if (!ctx->connected) {
     return -EIO;
@@ -407,12 +394,10 @@ int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle,
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
     struct mt_rdma_rx_buffer *rx_buffer = &ctx->rx_buffers[i];
-    if (&rx_buffer->buffer != buffer)
-      continue;
+    if (&rx_buffer->buffer != buffer) continue;
     pthread_mutex_lock(&rx_buffer->lock);
     if (rx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION) {
-      err("%s(%s), buffer %p not in consumption\n", __func__, ctx->ops_name,
-          buffer);
+      err("%s(%s), buffer %p not in consumption\n", __func__, ctx->ops_name, buffer);
       pthread_mutex_unlock(&rx_buffer->lock);
       return -EIO;
     }
@@ -437,8 +422,8 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
     ctx->cq_poll_thread = 0;
 
     /* print cq poll stat */
-    dbg("%s(%s), cq poll done: %lu, cq poll empty: %lu\n", __func__,
-        ctx->ops_name, ctx->stat_cq_poll_done, ctx->stat_cq_poll_empty);
+    dbg("%s(%s), cq poll done: %lu, cq poll empty: %lu\n", __func__, ctx->ops_name,
+        ctx->stat_cq_poll_done, ctx->stat_cq_poll_empty);
   }
 
   if (ctx->connect_thread) {
@@ -465,8 +450,7 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle) {
   return 0;
 }
 
-mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh,
-                                      struct mtl_rdma_rx_ops *ops) {
+mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh, struct mtl_rdma_rx_ops *ops) {
   int ret = 0;
   struct mt_rdma_rx_ctx *ctx = calloc(1, sizeof(*ctx));
   if (!ctx) {

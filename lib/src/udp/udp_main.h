@@ -16,10 +16,10 @@
 // clang-format on
 
 /* On error, -1 is returned, and errno is set appropriately. */
-#define MUDP_ERR_RET(code)                                                     \
-  do {                                                                         \
-    errno = code;                                                              \
-    return -1;                                                                 \
+#define MUDP_ERR_RET(code) \
+  do {                     \
+    errno = code;          \
+    return -1;             \
   } while (0)
 
 /* if bind or not */

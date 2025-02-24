@@ -35,8 +35,7 @@ static int rx_st20p_close_source(struct rx_st20p_sample_ctx *s) {
   return 0;
 }
 
-static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s,
-                                const char *file) {
+static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s, const char *file) {
   int fd, ret, idx = s->idx;
   off_t f_size;
   int fb_cnt = 3;
@@ -66,8 +65,8 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s,
   s->dst_cursor = m;
   s->dst_end = m + f_size;
   s->dst_fd = fd;
-  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__,
-       idx, fb_cnt, file, m, f_size);
+  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__, idx, fb_cnt,
+       file, m, f_size);
 
   return 0;
 }
@@ -75,11 +74,9 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s,
 static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx *s,
                                    struct st_frame *frame) {
   s->fb_recv++;
-  if (s->dst_fd < 0)
-    return; /* no dump */
+  if (s->dst_fd < 0) return; /* no dump */
 
-  if (s->dst_cursor + s->frame_size > s->dst_end)
-    s->dst_cursor = s->dst_begin;
+  if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
   mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
 }
@@ -120,8 +117,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -151,7 +147,7 @@ int main(int argc, char **argv) {
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20p_test";
-    ops_rx.priv = app[i]; // app handle register to lib
+    ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = ctx.param.num_ports;
     memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -159,8 +155,8 @@ int main(int argc, char **argv) {
              ctx.param.port[MTL_PORT_P]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     if (ops_rx.port.num_port > 1) {
-      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R],
-             ctx.rx_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx.rx_ip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
       ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
@@ -198,8 +194,7 @@ int main(int argc, char **argv) {
       }
     }
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread,
-                         app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -214,8 +209,7 @@ int main(int argc, char **argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    if (app[i]->handle)
-      st20p_rx_wake_block(app[i]->handle);
+    if (app[i]->handle) st20p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
 
@@ -225,8 +219,7 @@ int main(int argc, char **argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i,
-          app[i]->fb_recv);
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
       ret = -EIO;
     }
   }
@@ -234,8 +227,7 @@ int main(int argc, char **argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle)
-        st20p_rx_free(app[i]->handle);
+      if (app[i]->handle) st20p_rx_free(app[i]->handle);
       free(app[i]);
     }
   }

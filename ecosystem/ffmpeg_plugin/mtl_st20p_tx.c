@@ -57,8 +57,7 @@ static int mtl_st20p_write_close(AVFormatContext *ctx) {
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx,
-       s->frame_counter);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 
@@ -83,8 +82,7 @@ static int mtl_st20p_write_header(AVFormatContext *ctx) {
   s->framerate = ctx->streams[0]->avg_frame_rate;
   ops_tx.fps = framerate_to_st_fps(s->framerate);
   if (ops_tx.fps == ST_FPS_MAX) {
-    err(ctx, "%s, frame rate %0.2f is not supported\n", __func__,
-        av_q2d(s->framerate));
+    err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
     return AVERROR(EINVAL);
   }
 
@@ -92,21 +90,21 @@ static int mtl_st20p_write_header(AVFormatContext *ctx) {
 
   /* transport_fmt is hardcode now */
   switch (s->pixel_format) {
-  case AV_PIX_FMT_YUV422P10LE:
-    ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-    ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-    break;
-  case AV_PIX_FMT_RGB24:
-    ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
-    ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
-    break;
-  default:
-    err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
-    return AVERROR(EINVAL);
+    case AV_PIX_FMT_YUV422P10LE:
+      ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      break;
+    case AV_PIX_FMT_RGB24:
+      ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
+      ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
+      break;
+    default:
+      err(ctx, "%s, unsupported pixel format: %d\n", __func__, s->pixel_format);
+      return AVERROR(EINVAL);
   }
 
   ops_tx.name = "st20p_ffmpge";
-  ops_tx.priv = s; // Handle of priv_data registered to lib
+  ops_tx.priv = s;  // Handle of priv_data registered to lib
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_tx.framebuff_cnt = s->fb_cnt;
@@ -142,8 +140,8 @@ static int mtl_st20p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
   struct st_frame *frame;
 
   if (pkt->size != s->frame_size) {
-    err(ctx, "%s(%d), unexpected pkt size: %d (%d expected)\n", __func__,
-        s->idx, pkt->size, s->frame_size);
+    err(ctx, "%s(%d), unexpected pkt size: %d (%d expected)\n", __func__, s->idx,
+        pkt->size, s->frame_size);
     return AVERROR(EIO);
   }
 
@@ -159,8 +157,7 @@ static int mtl_st20p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
 
   st20p_tx_put_frame(s->tx_handle, frame);
   s->frame_counter++;
-  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx,
-      s->frame_counter);
+  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 

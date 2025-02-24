@@ -58,8 +58,7 @@ static int mtl_st20p_read_close(AVFormatContext *ctx) {
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx,
-       s->frame_counter);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 
@@ -94,31 +93,28 @@ static int mtl_st20p_read_header(AVFormatContext *ctx) {
   ops_rx.height = s->height;
   ops_rx.fps = framerate_to_st_fps(s->framerate);
   if (ops_rx.fps == ST_FPS_MAX) {
-    err(ctx, "%s, frame rate %0.2f is not supported\n", __func__,
-        av_q2d(s->framerate));
+    err(ctx, "%s, frame rate %0.2f is not supported\n", __func__, av_q2d(s->framerate));
     return AVERROR(EINVAL);
   }
   /* transport_fmt is hardcode now */
   pix_fmt = s->pixel_format;
   pix_fmt_desc = av_pix_fmt_desc_get(pix_fmt);
   switch (pix_fmt) {
-  case AV_PIX_FMT_YUV422P10LE:
-    ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-    ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-    break;
-  case AV_PIX_FMT_RGB24:
-    ops_rx.transport_fmt = ST20_FMT_RGB_8BIT;
-    ops_rx.output_fmt = ST_FRAME_FMT_RGB8;
-    break;
-  default:
-    err(ctx, "%s, unsupported pixel format: %s\n", __func__,
-        pix_fmt_desc->name);
-    return AVERROR(EINVAL);
+    case AV_PIX_FMT_YUV422P10LE:
+      ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+      break;
+    case AV_PIX_FMT_RGB24:
+      ops_rx.transport_fmt = ST20_FMT_RGB_8BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_RGB8;
+      break;
+    default:
+      err(ctx, "%s, unsupported pixel format: %s\n", __func__, pix_fmt_desc->name);
+      return AVERROR(EINVAL);
   }
   img_buf_size = av_image_get_buffer_size(pix_fmt, s->width, s->height, 1);
   if (img_buf_size < 0) {
-    err(ctx, "%s, av_image_get_buffer_size failed with %d\n", __func__,
-        img_buf_size);
+    err(ctx, "%s, av_image_get_buffer_size failed with %d\n", __func__, img_buf_size);
     return img_buf_size;
   }
   dbg(ctx, "%s, img_buf_size: %d\n", __func__, img_buf_size);
@@ -147,7 +143,7 @@ static int mtl_st20p_read_header(AVFormatContext *ctx) {
       av_rescale_q(ctx->packet_size, (AVRational){8, 1}, st->time_base);
 
   ops_rx.name = "st20p_rx_ffmpeg";
-  ops_rx.priv = s; // Handle of priv_data registered to lib
+  ops_rx.priv = s;  // Handle of priv_data registered to lib
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
   dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_rx.framebuff_cnt = s->fb_cnt;
@@ -168,13 +164,11 @@ static int mtl_st20p_read_header(AVFormatContext *ctx) {
   }
 
   if (s->timeout_sec)
-    st20p_rx_set_block_timeout(s->rx_handle,
-                               s->timeout_sec * (uint64_t)NS_PER_S);
+    st20p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
 
   img_buf_size = st20p_rx_frame_size(s->rx_handle);
   if (img_buf_size != ctx->packet_size) {
-    err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size,
-        ctx->packet_size);
+    err(ctx, "%s, frame size mismatch %d:%u\n", __func__, img_buf_size, ctx->packet_size);
     mtl_st20p_read_close(ctx);
     return AVERROR(EIO);
   }
@@ -204,10 +198,8 @@ static int mtl_st20p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
      */
     for (int i = 1; i <= s->session_init_retry; i++) {
       frame = st20p_rx_get_frame(s->rx_handle);
-      if (frame)
-        break;
-      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx,
-           i);
+      if (frame) break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
     }
   } else
     frame = st20p_rx_get_frame(s->rx_handle);
@@ -218,8 +210,7 @@ static int mtl_st20p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
   }
   dbg(ctx, "%s(%d), st20p_rx_get_frame: %p\n", __func__, s->idx, frame);
   if (frame->data_size != ctx->packet_size) {
-    err(ctx,
-        "%s(%d), unexpected frame size received: %" PRId64 " (%u expected)\n",
+    err(ctx, "%s(%d), unexpected frame size received: %" PRId64 " (%u expected)\n",
         __func__, s->idx, frame->data_size, ctx->packet_size);
     st20p_rx_put_frame(s->rx_handle, frame);
     return AVERROR(EIO);
@@ -329,7 +320,7 @@ FFInputFormat ff_mtl_st20p_demuxer = {
     .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
     .p.priv_class = &mtl_st20p_demuxer_class,
 };
-#else // MTL_FFMPEG_7_0
+#else  // MTL_FFMPEG_7_0
 #ifndef MTL_FFMPEG_4_4
 const AVInputFormat ff_mtl_st20p_demuxer =
 #else
@@ -347,4 +338,4 @@ AVInputFormat ff_mtl_st20p_demuxer =
         .raw_codec_id = AV_CODEC_ID_RAWVIDEO,
         .priv_class = &mtl_st20p_demuxer_class,
 };
-#endif // MTL_FFMPEG_7_0
+#endif  // MTL_FFMPEG_7_0

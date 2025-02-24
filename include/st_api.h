@@ -159,9 +159,8 @@ struct st_rx_source_info {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
     /** deprecated, use ip_addr instead, sip_addr is confused */
-    uint8_t
-        sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
-            "Use ip_addr instead");
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
   };
   /** UDP port number */
   uint16_t udp_port[MTL_SESSION_PORT_MAX];
@@ -262,8 +261,7 @@ int st_get_var_info(mtl_handle mt, struct st_var_info *info);
  *     Complete or not.
  */
 static inline bool st_is_frame_complete(enum st_frame_status status) {
-  if ((status == ST_FRAME_STATUS_COMPLETE) ||
-      (status == ST_FRAME_STATUS_RECONSTRUCTED))
+  if ((status == ST_FRAME_STATUS_COMPLETE) || (status == ST_FRAME_STATUS_RECONSTRUCTED))
     return true;
   else
     return false;
@@ -338,11 +336,9 @@ uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate);
  * @return
  *   time in nanoseconds since the TAI epoch.
  */
-static inline uint64_t st10_get_tai(enum st10_timestamp_fmt tfmt,
-                                    uint64_t timestamp,
+static inline uint64_t st10_get_tai(enum st10_timestamp_fmt tfmt, uint64_t timestamp,
                                     uint32_t sampling_rate) {
-  if (tfmt == ST10_TIMESTAMP_FMT_TAI)
-    return timestamp;
+  if (tfmt == ST10_TIMESTAMP_FMT_TAI) return timestamp;
   return st10_media_clk_to_ns((uint32_t)timestamp, sampling_rate);
 }
 
@@ -361,10 +357,8 @@ static inline uint64_t st10_get_tai(enum st10_timestamp_fmt tfmt,
  * sampling_rate.
  */
 static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
-                                          uint64_t timestamp,
-                                          uint32_t sampling_rate) {
-  if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)
-    return (uint32_t)timestamp;
+                                          uint64_t timestamp, uint32_t sampling_rate) {
+  if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) return (uint32_t)timestamp;
   return st10_tai_to_media_clk(timestamp, sampling_rate);
 }
 
@@ -384,10 +378,8 @@ static inline uint16_t st_tx_sessions_queue_cnt(uint16_t st20_sessions,
                                                 uint16_t st30_sessions,
                                                 uint16_t st40_sessions) {
   uint16_t queues = st20_sessions;
-  if (st30_sessions)
-    queues++;
-  if (st40_sessions)
-    queues++;
+  if (st30_sessions) queues++;
+  if (st40_sessions) queues++;
   return queues;
 }
 

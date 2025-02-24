@@ -83,8 +83,7 @@ static int dhcp_send_discover(struct mtl_main_impl *impl, enum mtl_port port) {
   dhcp->hlen = DHCP_HLEN_ETHERNET;
   dhcp->xid = htonl(dhcp_impl->xid);
   dhcp->magic_cookie = htonl(DHCP_MAGIC_COOKIE);
-  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes,
-             sizeof(eth->src_addr.addr_bytes));
+  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
   options = dhcp->options;
   *options++ = DHCP_OPTION_MESSAGE_TYPE;
   *options++ = 1;
@@ -172,8 +171,7 @@ static int dhcp_send_request(struct mtl_main_impl *impl, enum mtl_port port) {
   if (dhcp_impl->status == MT_DHCP_STATUS_RENEWING ||
       dhcp_impl->status == MT_DHCP_STATUS_REBINDING)
     dhcp->ciaddr = htonl(*(uint32_t *)dhcp_impl->ip);
-  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes,
-             sizeof(eth->src_addr.addr_bytes));
+  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
   options = dhcp->options;
   *options++ = DHCP_OPTION_MESSAGE_TYPE;
   *options++ = 1;
@@ -225,8 +223,8 @@ static int dhcp_send_request(struct mtl_main_impl *impl, enum mtl_port port) {
   return 0;
 }
 
-static int dhcp_recv_offer(struct mtl_main_impl *impl,
-                           struct mt_dhcp_hdr *offer, enum mtl_port port) {
+static int dhcp_recv_offer(struct mtl_main_impl *impl, struct mt_dhcp_hdr *offer,
+                           enum mtl_port port) {
   struct mt_dhcp_impl *dhcp_impl = mt_get_dhcp(impl, port);
   mt_pthread_mutex_lock(&dhcp_impl->mutex);
   if (dhcp_impl->status != MT_DHCP_STATUS_DISCOVERING) {
@@ -320,22 +318,21 @@ static int dhcp_recv_ack(struct mtl_main_impl *impl, struct mt_dhcp_hdr *ack,
 
   ret = rte_eal_alarm_set(t1 * US_PER_S, dhcp_renew_handler, dhcp_impl);
   if (ret < 0) {
-    err("%s(%d), start renew timer fail %d, t1 %lf\n", __func__,
-        dhcp_impl->port, ret, t1);
+    err("%s(%d), start renew timer fail %d, t1 %lf\n", __func__, dhcp_impl->port, ret,
+        t1);
     return ret;
   }
 
   ret = rte_eal_alarm_set(t2 * US_PER_S, dhcp_rebind_handler, dhcp_impl);
   if (ret < 0) {
-    err("%s(%d), start rebind timer fail %d, t2 %lf\n", __func__,
-        dhcp_impl->port, ret, t2);
+    err("%s(%d), start rebind timer fail %d, t2 %lf\n", __func__, dhcp_impl->port, ret,
+        t2);
     return ret;
   }
 
   ret = rte_eal_alarm_set(t * US_PER_S, dhcp_lease_handler, dhcp_impl);
   if (ret < 0) {
-    err("%s(%d), start lease timer fail %d, t %lf\n", __func__, dhcp_impl->port,
-        ret, t);
+    err("%s(%d), start lease timer fail %d, t %lf\n", __func__, dhcp_impl->port, ret, t);
     return ret;
   }
 
@@ -399,8 +396,7 @@ static int dhcp_send_release(struct mtl_main_impl *impl, enum mtl_port port) {
   dhcp->xid = rand();
   dhcp->magic_cookie = htonl(DHCP_MAGIC_COOKIE);
   dhcp->ciaddr = htonl(*(uint32_t *)dhcp_impl->ip);
-  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes,
-             sizeof(eth->src_addr.addr_bytes));
+  rte_memcpy(dhcp->chaddr, eth->src_addr.addr_bytes, sizeof(eth->src_addr.addr_bytes));
   options = dhcp->options;
   *options++ = DHCP_OPTION_MESSAGE_TYPE;
   *options++ = 1;
@@ -467,19 +463,19 @@ int mt_dhcp_parse(struct mtl_main_impl *impl, struct mt_dhcp_hdr *hdr,
   }
 
   switch (options[2]) {
-  case DHCP_MESSAGE_TYPE_OFFER:
-    dhcp_recv_offer(impl, hdr, port);
-    break;
-  case DHCP_MESSAGE_TYPE_ACK:
-    dhcp_recv_ack(impl, hdr, port);
-    break;
-  case DHCP_MESSAGE_TYPE_NAK:
-    /* restart the cycle */
-    dhcp_send_discover(impl, port);
-    break;
-  default:
-    err("%s(%d), invalid dhcp message type %u\n", __func__, port, options[2]);
-    return -EINVAL;
+    case DHCP_MESSAGE_TYPE_OFFER:
+      dhcp_recv_offer(impl, hdr, port);
+      break;
+    case DHCP_MESSAGE_TYPE_ACK:
+      dhcp_recv_ack(impl, hdr, port);
+      break;
+    case DHCP_MESSAGE_TYPE_NAK:
+      /* restart the cycle */
+      dhcp_send_discover(impl, port);
+      break;
+    default:
+      err("%s(%d), invalid dhcp message type %u\n", __func__, port, options[2]);
+      return -EINVAL;
   }
 
   return 0;
@@ -527,8 +523,7 @@ int mt_dhcp_init(struct mtl_main_impl *impl) {
   int num_dhcp = 0;
 
   for (int i = 0; i < num_ports; i++) {
-    if (mt_if(impl, i)->net_proto != MTL_PROTO_DHCP)
-      continue;
+    if (mt_if(impl, i)->net_proto != MTL_PROTO_DHCP) continue;
     struct mt_dhcp_impl *dhcp = mt_rte_zmalloc_socket(sizeof(*dhcp), socket);
     if (!dhcp) {
       err("%s(%d), dhcp malloc fail\n", __func__, i);
@@ -556,10 +551,8 @@ int mt_dhcp_init(struct mtl_main_impl *impl) {
     while (--max_retry) {
       done = 0;
       for (int i = 0; i < num_ports; i++)
-        if (impl->dhcp[i] && impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND)
-          done++;
-      if (done == num_dhcp)
-        break;
+        if (impl->dhcp[i] && impl->dhcp[i]->status == MT_DHCP_STATUS_BOUND) done++;
+      if (done == num_dhcp) break;
       mt_sleep_ms(100);
     }
     if (done != num_dhcp) {
@@ -580,8 +573,7 @@ int mt_dhcp_uinit(struct mtl_main_impl *impl) {
 
   for (int i = 0; i < num_ports; i++) {
     struct mt_dhcp_impl *dhcp = mt_get_dhcp(impl, i);
-    if (!dhcp)
-      continue;
+    if (!dhcp) continue;
 
     /* send release to server */
     dhcp_send_release(impl, i);

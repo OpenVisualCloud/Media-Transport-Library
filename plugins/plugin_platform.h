@@ -39,8 +39,7 @@ static inline int st_pthread_cond_init(pthread_cond_t *cond,
   return pthread_cond_init(cond, cond_attr);
 }
 
-static inline int st_pthread_cond_wait(pthread_cond_t *cond,
-                                       pthread_mutex_t *mutex) {
+static inline int st_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
   return pthread_cond_wait(cond, mutex);
 }
 
@@ -60,8 +59,8 @@ static inline uint64_t st_get_monotonic_time() {
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 
-static inline void
-st_usleep(useconds_t usec) { // windows usleep function precision is only 1~15ms
+static inline void st_usleep(
+    useconds_t usec) {  // windows usleep function precision is only 1~15ms
 #ifdef WINDOWSENV
   LARGE_INTEGER delay;
   HANDLE delay_timer_handle = NULL;

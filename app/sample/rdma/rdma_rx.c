@@ -99,16 +99,13 @@ int main(int argc, char **argv) {
   }
 
 out:
-  if (rx)
-    mtl_rdma_rx_free(rx);
+  if (rx) mtl_rdma_rx_free(rx);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i])
-      free(buffers[i]);
+    if (buffers[i]) free(buffers[i]);
   }
 
-  if (mrh)
-    mtl_rdma_uinit(mrh);
+  if (mrh) mtl_rdma_uinit(mrh);
 
   return 0;
 }

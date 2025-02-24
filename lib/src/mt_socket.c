@@ -29,8 +29,7 @@ int mt_socket_get_if_ip(const char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
     return ret;
   }
   struct sockaddr_in *ipaddr = (struct sockaddr_in *)&ifr.ifr_addr;
-  if (ip)
-    memcpy(ip, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
+  if (ip) memcpy(ip, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
 
   ret = ioctl(sock, SIOCGIFNETMASK, &ifr);
   if (ret < 0) {
@@ -39,8 +38,7 @@ int mt_socket_get_if_ip(const char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
     return ret;
   }
   ipaddr = (struct sockaddr_in *)&ifr.ifr_addr;
-  if (netmask)
-    memcpy(netmask, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
+  if (netmask) memcpy(netmask, &ipaddr->sin_addr.s_addr, MTL_IP_ADDR_LEN);
 
   close(sock);
   return 0;
@@ -62,8 +60,7 @@ int mt_socket_set_if_ip(const char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", if_name);
 
   ifr.ifr_addr.sa_family = AF_INET;
-  memcpy(&((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr, ip,
-         MTL_IP_ADDR_LEN);
+  memcpy(&((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr.s_addr, ip, MTL_IP_ADDR_LEN);
   ret = ioctl(sock, SIOCSIFADDR, &ifr);
   if (ret < 0) {
     err("%s, SIOCSIFADDR fail %d for if %s\n", __func__, ret, if_name);
@@ -86,8 +83,7 @@ int mt_socket_set_if_ip(const char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   return 0;
 }
 
-int mt_socket_get_if_gateway(const char *if_name,
-                             uint8_t gateway[MTL_IP_ADDR_LEN]) {
+int mt_socket_get_if_gateway(const char *if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
   FILE *fp = fopen("/proc/net/route", "r");
   char line[100], iface[IF_NAMESIZE], dest[9], gway[9];
 
@@ -196,8 +192,7 @@ int mt_socket_get_numa(const char *if_name) {
   dbg("%s, numa_node %d for %s\n", __func__, numa_node, if_name);
   if (SOCKET_ID_ANY == numa_node) {
     numa_node = 0;
-    info("%s, direct soc_id from SOCKET_ID_ANY to 0 for %s\n", __func__,
-         if_name);
+    info("%s, direct soc_id from SOCKET_ID_ANY to 0 for %s\n", __func__, if_name);
   }
   return numa_node;
 }
@@ -232,8 +227,8 @@ static int socket_arp_get(int sfd, in_addr_t ip, struct rte_ether_addr *ea,
   dbg("%s, entry has been successfully retrieved\n", __func__);
   hw_addr = (unsigned char *)arp.arp_ha.sa_data;
   memcpy(ea->addr_bytes, hw_addr, RTE_ETHER_ADDR_LEN);
-  dbg("%s, mac addr found : %02x:%02x:%02x:%02x:%02x:%02x\n", __func__,
-      hw_addr[0], hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
+  dbg("%s, mac addr found : %02x:%02x:%02x:%02x:%02x:%02x\n", __func__, hw_addr[0],
+      hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
 
   return 0;
 }
@@ -305,13 +300,11 @@ int mt_socket_get_mac(struct mtl_main_impl *impl, const char *if_name,
   int max_retry = 0;
   int sleep_interval_ms = 100;
 
-  if (timeout_ms)
-    max_retry = (timeout_ms / sleep_interval_ms) + 1;
+  if (timeout_ms) max_retry = (timeout_ms / sleep_interval_ms) + 1;
 
   ret = socket_query_local_mac(dip, ea);
   if (ret >= 0) {
-    dbg("%s: %u.%u.%u.%u is a local ip\n", __func__, dip[0], dip[1], dip[2],
-        dip[3]);
+    dbg("%s: %u.%u.%u.%u is a local ip\n", __func__, dip[0], dip[1], dip[2], dip[3]);
     return 0;
   }
 
@@ -347,8 +340,8 @@ int mt_socket_get_mac(struct mtl_main_impl *impl, const char *if_name,
     }
     retry++;
     if (0 == (retry % 50)) {
-      info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0],
-           dip[1], dip[2], dip[3]);
+      info("%s(%s), waiting arp from %d.%d.%d.%d\n", __func__, if_name, dip[0], dip[1],
+           dip[2], dip[3]);
     }
     mt_sleep_ms(sleep_interval_ms);
   }
@@ -357,8 +350,8 @@ int mt_socket_get_mac(struct mtl_main_impl *impl, const char *if_name,
   return 0;
 }
 
-int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port,
-                       uint16_t queue_id, struct mt_rxq_flow *flow) {
+int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port, uint16_t queue_id,
+                       struct mt_rxq_flow *flow) {
   const char *if_name = mt_kernel_if_name(impl, port);
   bool has_ip_flow = true;
 
@@ -377,13 +370,11 @@ int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port,
   }
 
   /* no ip flow requested */
-  if (flow->flags & MT_RXQ_FLOW_F_NO_IP)
-    has_ip_flow = false;
+  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) has_ip_flow = false;
 
   if (mt_get_user_params(impl)->flags & MTL_FLAG_RX_UDP_PORT_ONLY) {
     if (has_ip_flow) {
-      info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__,
-           port);
+      info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__, port);
       has_ip_flow = false;
     }
   }
@@ -402,8 +393,8 @@ int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port,
   if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
     /* workaround now */
     queue_id += MT_DPDK_AF_XDP_START_QUEUE;
-    int ret = mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name),
-                                               dport, true);
+    int ret =
+        mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dport, true);
     if (ret < 0) {
       err("%s(%d), udp_dp_filter fail %d\n", __func__, port, ret);
       return ret;
@@ -413,8 +404,8 @@ int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port,
                               0x02 /*UDP_V4_FLOW*/, sip, dip, 0, dport);
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl *impl, enum mtl_port port,
-                          int flow_id, uint16_t dst_port) {
+int mt_socket_remove_flow(struct mtl_main_impl *impl, enum mtl_port port, int flow_id,
+                          uint16_t dst_port) {
   const char *if_name = mt_kernel_if_name(impl, port);
 
   if (!mt_is_manager_connected(impl)) {
@@ -424,8 +415,7 @@ int mt_socket_remove_flow(struct mtl_main_impl *impl, enum mtl_port port,
 
   if (mt_pmd_is_dpdk_af_xdp(impl, port)) {
     /* workaround now */
-    mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dst_port,
-                                     false);
+    mt_instance_update_udp_dp_filter(impl, if_nametoindex(if_name), dst_port, false);
   }
 
   return mt_instance_del_flow(impl, if_nametoindex(if_name), flow_id);
@@ -445,18 +435,15 @@ int mt_socket_fd_join_multicast(struct mtl_main_impl *impl, enum mtl_port port,
     struct ip_mreq mreq;
     memset(&mreq, 0, sizeof(mreq));
     memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port),
-           MTL_IP_ADDR_LEN);
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     ret = setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
   } else {
     struct ip_mreq_source mreq;
     memset(&mreq, 0, sizeof(mreq));
     memcpy(&mreq.imr_multiaddr.s_addr, flow->dip_addr, MTL_IP_ADDR_LEN);
-    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port),
-           MTL_IP_ADDR_LEN);
+    memcpy(&mreq.imr_interface.s_addr, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
     memcpy(&mreq.imr_sourceaddr.s_addr, flow->sip_addr, MTL_IP_ADDR_LEN);
-    ret = setsockopt(fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq,
-                     sizeof(mreq));
+    ret = setsockopt(fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP, &mreq, sizeof(mreq));
   }
 
   return ret;
@@ -479,8 +466,7 @@ int mt_socket_get_multicast_fd(struct mtl_main_impl *impl, enum mtl_port port,
   } else {
     /* return the fd */
     uint8_t *ip = flow->dip_addr;
-    info("%s(%d), join %u.%u.%u.%u succ\n", __func__, port, ip[0], ip[1], ip[2],
-         ip[3]);
+    info("%s(%d), join %u.%u.%u.%u succ\n", __func__, port, ip[0], ip[1], ip[2], ip[3]);
     return mcast_fd;
   }
 }
@@ -494,8 +480,7 @@ int mt_socket_get_if_ip(const char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
   return -ENOTSUP;
 }
 
-int mt_socket_get_if_gateway(const char *if_name,
-                             uint8_t gateway[MTL_IP_ADDR_LEN]) {
+int mt_socket_get_if_gateway(const char *if_name, uint8_t gateway[MTL_IP_ADDR_LEN]) {
   MTL_MAY_UNUSED(if_name);
   MTL_MAY_UNUSED(gateway);
   return -ENOTSUP;
@@ -523,8 +508,8 @@ int mt_socket_get_mac(struct mtl_main_impl *impl, const char *if_name,
   return -ENOTSUP;
 }
 
-int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port,
-                       uint16_t queue_id, struct mt_rxq_flow *flow) {
+int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port, uint16_t queue_id,
+                       struct mt_rxq_flow *flow) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(queue_id);
@@ -532,8 +517,8 @@ int mt_socket_add_flow(struct mtl_main_impl *impl, enum mtl_port port,
   return -ENOTSUP;
 }
 
-int mt_socket_remove_flow(struct mtl_main_impl *impl, enum mtl_port port,
-                          int flow_id, uint16_t dst_port) {
+int mt_socket_remove_flow(struct mtl_main_impl *impl, enum mtl_port port, int flow_id,
+                          uint16_t dst_port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(flow_id);

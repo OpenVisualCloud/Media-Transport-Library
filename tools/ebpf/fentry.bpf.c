@@ -46,13 +46,11 @@ int BPF_PROG(udp_send_skb_exit, struct sk_buff *skb, struct flowi4 *fl4,
 
   pid = bpf_get_current_pid_tgid() >> 32;
   start_ts = bpf_map_lookup_elem(&start_time, &skb_addr);
-  if (start_ts)
-    duration_ns = bpf_ktime_get_ns() - *start_ts;
+  if (start_ts) duration_ns = bpf_ktime_get_ns() - *start_ts;
   bpf_map_delete_elem(&start_time, &skb_addr);
 
   e = bpf_ringbuf_reserve(&rb, sizeof(*e), 0);
-  if (!e)
-    return 0;
+  if (!e) return 0;
 
   e->pid = pid;
   e->gso_size = cork->gso_size;

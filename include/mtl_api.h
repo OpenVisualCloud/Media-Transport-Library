@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 #ifdef _MSC_VER
-#define MTL_PACK(__Declaration__)                                              \
+#define MTL_PACK(__Declaration__) \
   __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
 #endif
 
@@ -45,7 +45,7 @@ extern "C" {
 /**
  * All version numbers in one to compare with ST_VERSION_NUM()
  */
-#define MTL_VERSION                                                            \
+#define MTL_VERSION \
   MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST)
 
 /**
@@ -204,8 +204,7 @@ enum mtl_log_level {
 typedef void (*mtl_log_prefix_formatter_t)(char *buf, size_t buf_sz);
 
 /* log printer, similar to printf */
-typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char *format,
-                                  ...);
+typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char *format, ...);
 
 /**
  * Poll mode driver type, not change the enum value any more if one PMD type is
@@ -701,8 +700,7 @@ struct mtl_init_params {
 #ifdef __MTL_LIB_BUILD__
   uint16_t tx_sessions_cnt_max;
 #else
-  uint16_t
-      tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
+  uint16_t tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
 #endif
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
@@ -714,8 +712,7 @@ struct mtl_init_params {
 #ifdef __MTL_LIB_BUILD__
   uint16_t rx_sessions_cnt_max;
 #else
-  uint16_t
-      rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
+  uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
 #endif
 };
 
@@ -807,8 +804,7 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info *info);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_port_stats(mtl_handle mt, enum mtl_port port,
-                       struct mtl_port_status *stats);
+int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status *stats);
 
 /**
  * Reset the general statistics(I/O) for a MTL port.
@@ -837,40 +833,33 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
 int mtl_get_numa_id(mtl_handle mt, enum mtl_port port);
 
 /** Helper to set the port for struct mtl_init_params */
-int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port,
-                      char *name);
+int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port, char *name);
 /** Helper to set the sip for struct mtl_init_params */
 int mtl_para_sip_set(struct mtl_init_params *p, enum mtl_port port, char *ip);
 /** Helper to set the gateway for struct mtl_init_params */
-int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port,
-                         char *gateway);
+int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port, char *gateway);
 /** Helper to set the netmask for struct mtl_init_params */
-int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port,
-                         char *netmask);
+int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port, char *netmask);
 /** Helper to set the dma dev port for struct mtl_init_params */
-int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port,
-                          char *name);
+int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port, char *name);
 /** Helper to set the tx queues number for struct mtl_init_params */
 static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params *p,
-                                              enum mtl_port port,
-                                              uint16_t cnt) {
+                                              enum mtl_port port, uint16_t cnt) {
   p->tx_queues_cnt[port] = cnt;
 }
 /** Helper to set the rx queues number for struct mtl_init_params */
 static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params *p,
-                                              enum mtl_port port,
-                                              uint16_t cnt) {
+                                              enum mtl_port port, uint16_t cnt) {
   p->rx_queues_cnt[port] = cnt;
 }
 /** Helper to set the PMD type for struct mtl_init_params */
-static inline void mtl_para_pmd_set(struct mtl_init_params *p,
-                                    enum mtl_port port, enum mtl_pmd_type pmd) {
+static inline void mtl_para_pmd_set(struct mtl_init_params *p, enum mtl_port port,
+                                    enum mtl_pmd_type pmd) {
   p->pmd[port] = pmd;
 }
 
 /** Helper to get the port from struct mtl_init_params */
-static inline char *mtl_para_port_get(struct mtl_init_params *p,
-                                      enum mtl_port port) {
+static inline char *mtl_para_port_get(struct mtl_init_params *p, enum mtl_port port) {
   return p->port[port];
 }
 
@@ -1295,8 +1284,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova,
-                  size_t size);
+int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size);
 
 /**
  * Allocate memory block more than required and map valid data to IOVA.
@@ -1368,8 +1356,7 @@ mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the st user dma dev.
  */
-mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc,
-                                enum mtl_port port);
+mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port);
 
 /**
  * Free the st user dma dev.
@@ -1513,10 +1500,8 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_port_ip_info(mtl_handle mt, enum mtl_port port,
-                     uint8_t ip[MTL_IP_ADDR_LEN],
-                     uint8_t netmask[MTL_IP_ADDR_LEN],
-                     uint8_t gateway[MTL_IP_ADDR_LEN]);
+int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                     uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]);
 
 /**
  * Check if the pmd of one mtl port is dpdk based or not.
@@ -1612,8 +1597,7 @@ int mtl_thread_setname(pthread_t tid, const char *name);
  *     The aligned size.
  */
 static inline size_t mtl_size_page_align(size_t sz, size_t pg_sz) {
-  if (sz % pg_sz)
-    sz += pg_sz - (sz % pg_sz);
+  if (sz % pg_sz) sz += pg_sz - (sz % pg_sz);
   return sz;
 }
 

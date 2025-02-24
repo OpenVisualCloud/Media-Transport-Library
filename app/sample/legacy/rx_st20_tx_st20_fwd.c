@@ -36,8 +36,7 @@ struct rx_st20_tx_st20_sample_ctx {
 };
 
 static int st20_fwd_open_logo(struct st_sample_context *ctx,
-                              struct rx_st20_tx_st20_sample_ctx *s,
-                              char *file) {
+                              struct rx_st20_tx_st20_sample_ctx *s, char *file) {
   FILE *fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
     err("%s, open %s fail\n", __func__, file);
@@ -71,8 +70,8 @@ static int st20_fwd_open_logo(struct st_sample_context *ctx,
   return 0;
 }
 
-static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx *s,
-                                 void *frame, size_t size) {
+static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx *s, void *frame,
+                                 size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
@@ -85,19 +84,15 @@ static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx *s,
   framebuff->size = size;
   /* point to next */
   producer_idx++;
-  if (producer_idx >= s->framebuff_cnt)
-    producer_idx = 0;
+  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
   s->framebuff_producer_idx = producer_idx;
   return 0;
 }
 
-static int rx_st20_frame_ready(void *priv, void *frame,
-                               struct st20_rx_frame_meta *meta) {
-  struct rx_st20_tx_st20_sample_ctx *s =
-      (struct rx_st20_tx_st20_sample_ctx *)priv;
+static int rx_st20_frame_ready(void *priv, void *frame, struct st20_rx_frame_meta *meta) {
+  struct rx_st20_tx_st20_sample_ctx *s = (struct rx_st20_tx_st20_sample_ctx *)priv;
 
-  if (!s->ready)
-    return -EIO;
+  if (!s->ready) return -EIO;
 
   /* incomplete frame */
   if (!st_is_frame_complete(meta->status)) {
@@ -137,8 +132,7 @@ static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
     *next_frame_idx = consumer_idx;
     /* point to next */
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt)
-      consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
     s->tx_framebuff_consumer_idx = consumer_idx;
   } else {
     /* not ready */
@@ -169,8 +163,8 @@ static int tx_video_frame_done(void *priv, uint16_t frame_idx,
     dbg("%s(%d), done_idx %u\n", __func__, s->idx, frame_idx);
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, s->idx,
-        framebuff->stat, frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -178,15 +172,15 @@ static int tx_video_frame_done(void *priv, uint16_t frame_idx,
   return ret;
 }
 
-static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx *s,
-                                 void *frame, size_t frame_size) {
+static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx *s, void *frame,
+                                 size_t frame_size) {
   uint16_t producer_idx;
   struct st_tx_frame *framebuff;
   struct st_frame tx_frame;
 
   if (frame_size != s->framebuff_size) {
-    err("%s(%d), mismatch frame size %" PRIu64 " %" PRIu64 "\n", __func__,
-        s->idx, frame_size, s->framebuff_size);
+    err("%s(%d), mismatch frame size %" PRIu64 " %" PRIu64 "\n", __func__, s->idx,
+        frame_size, s->framebuff_size);
     return;
   }
 
@@ -223,8 +217,7 @@ static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx *s,
   framebuff->stat = ST_TX_FRAME_READY;
   /* point to next */
   producer_idx++;
-  if (producer_idx >= s->framebuff_cnt)
-    producer_idx = 0;
+  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
   s->tx_framebuff_producer_idx = producer_idx;
 
   s->fb_fwd++;
@@ -242,8 +235,7 @@ static void *fwd_thread(void *arg) {
     rx_framebuff = &s->framebuffs[consumer_idx];
     if (!rx_framebuff->frame) {
       /* no ready frame */
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -255,8 +247,7 @@ static void *fwd_thread(void *arg) {
     /* point to next */
     rx_framebuff->frame = NULL;
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt)
-      consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
@@ -299,8 +290,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = fwd_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -326,13 +316,12 @@ int main(int argc, char **argv) {
     ret = -EIO;
     goto error;
   }
-  for (uint16_t j = 0; j < app.framebuff_cnt; j++)
-    app.framebuffs[j].frame = NULL;
+  for (uint16_t j = 0; j < app.framebuff_cnt; j++) app.framebuffs[j].frame = NULL;
   app.framebuff_producer_idx = 0;
   app.framebuff_consumer_idx = 0;
 
-  app.tx_framebuffs = (struct st_tx_frame *)malloc(sizeof(*app.tx_framebuffs) *
-                                                   app.framebuff_cnt);
+  app.tx_framebuffs =
+      (struct st_tx_frame *)malloc(sizeof(*app.tx_framebuffs) * app.framebuff_cnt);
   if (!app.tx_framebuffs) {
     err("%s, tx framebuffs ctx malloc fail\n", __func__);
     ret = -EIO;
@@ -348,12 +337,10 @@ int main(int argc, char **argv) {
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
+  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx.param.port[MTL_PORT_P]);
-  ops_rx.udp_port[MTL_SESSION_PORT_P] =
-      ctx.udp_port; // user config the udp port.
+  ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;  // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.width = ctx.width;
@@ -391,8 +378,7 @@ int main(int argc, char **argv) {
   ops_tx.interlaced = ctx.interlaced;
   ops_tx.fmt = ctx.fmt;
   ops_tx.payload_type = ctx.payload_type;
-  if (app.zero_copy)
-    ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
+  if (app.zero_copy) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   ops_tx.framebuff_cnt = app.framebuff_cnt;
   ops_tx.get_next_frame = tx_video_next_frame;
   ops_tx.notify_frame_done = tx_video_frame_done;

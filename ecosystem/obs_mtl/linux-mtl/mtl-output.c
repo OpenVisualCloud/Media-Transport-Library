@@ -60,25 +60,21 @@ static obs_properties_t *mtl_output_properties(void *vptr) {
 
   obs_properties_t *props = obs_properties_create();
 
-  obs_properties_add_text(props, "port", obs_module_text("Port"),
-                          OBS_TEXT_DEFAULT);
+  obs_properties_add_text(props, "port", obs_module_text("Port"), OBS_TEXT_DEFAULT);
 
-  obs_properties_add_text(props, "lcores", obs_module_text("Lcores"),
-                          OBS_TEXT_DEFAULT);
-  obs_properties_add_text(props, "sip", obs_module_text("InterfaceIP"),
-                          OBS_TEXT_DEFAULT);
+  obs_properties_add_text(props, "lcores", obs_module_text("Lcores"), OBS_TEXT_DEFAULT);
+  obs_properties_add_text(props, "sip", obs_module_text("InterfaceIP"), OBS_TEXT_DEFAULT);
   obs_properties_add_text(props, "ip", obs_module_text("IP"), OBS_TEXT_DEFAULT);
 
-  obs_properties_add_int(props, "udp_port", obs_module_text("UdpPort"), 1000,
-                         65536, 1);
-  obs_properties_add_int(props, "payload_type", obs_module_text("PayloadType"),
-                         0, 255, 1);
-  obs_properties_add_int(props, "framebuffer_cnt",
-                         obs_module_text("FramebuffCnt"), 2, 128, 1);
+  obs_properties_add_int(props, "udp_port", obs_module_text("UdpPort"), 1000, 65536, 1);
+  obs_properties_add_int(props, "payload_type", obs_module_text("PayloadType"), 0, 255,
+                         1);
+  obs_properties_add_int(props, "framebuffer_cnt", obs_module_text("FramebuffCnt"), 2,
+                         128, 1);
 
-  obs_property_t *t_fmt_list = obs_properties_add_list(
-      props, "t_fmt", obs_module_text("TransportFormat"), OBS_COMBO_TYPE_LIST,
-      OBS_COMBO_FORMAT_INT);
+  obs_property_t *t_fmt_list =
+      obs_properties_add_list(props, "t_fmt", obs_module_text("TransportFormat"),
+                              OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
   obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422_10bit"),
                             ST20_FMT_YUV_422_10BIT);
   obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422_8bit"),
@@ -120,8 +116,7 @@ static void mtl_output_terminate(struct mtl_tx_session *s) {
 static void mtl_output_destroy(void *vptr) {
   MTL_TX_SESSION(vptr);
 
-  if (!s)
-    return;
+  if (!s) return;
 
   mtl_output_terminate(s);
 
@@ -136,9 +131,9 @@ static void mtl_output_init(struct mtl_tx_session *s) {
   snprintf(param.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
   inet_pton(AF_INET, s->sip, param.sip_addr[MTL_PORT_P]);
   param.pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
-  param.flags = MTL_FLAG_BIND_NUMA; // default bind to numa
-  param.log_level = s->log_level;   // mtl lib log level
-  param.priv = s;                   // usr ctx pointer
+  param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
+  param.log_level = s->log_level;    // mtl lib log level
+  param.priv = s;                    // usr ctx pointer
   // user register ptp func, if not register, the internal ptp will be used
   param.ptp_get_time_fn = NULL;
   param.tx_queues_cnt[MTL_PORT_P] = 1;
@@ -159,11 +154,11 @@ static void mtl_output_init(struct mtl_tx_session *s) {
   struct st20p_tx_ops ops_tx;
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = "mtl-input";
-  ops_tx.priv = s; // app handle register to lib
+  ops_tx.priv = s;  // app handle register to lib
   ops_tx.port.num_port = 1;
   inet_pton(AF_INET, s->ip, ops_tx.port.dip_addr[MTL_PORT_P]);
   snprintf(ops_tx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
-  ops_tx.port.udp_port[MTL_PORT_P] = s->udp_port; // user config the udp port.
+  ops_tx.port.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
   ops_tx.width = vo_info->width;
   ops_tx.height = vo_info->height;
   ops_tx.fps = obs_to_mtl_fps(vo_info->fps_num, vo_info->fps_den);
@@ -217,15 +212,12 @@ static void mtl_output_video_frame(void *vptr, struct video_data *obs_frame) {
   struct st_frame *frame;
   size_t data_size = 0;
   frame = st20p_tx_get_frame(handle);
-  if (!frame)
-    return;
+  if (!frame) return;
 
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
-  for (uint8_t plane = 0; plane < planes;
-       plane++) { /* assume planes continuous */
+  for (uint8_t plane = 0; plane < planes; plane++) { /* assume planes continuous */
     size_t plane_size =
-        st_frame_least_linesize(frame->fmt, frame->width, plane) *
-        frame->height;
+        st_frame_least_linesize(frame->fmt, frame->width, plane) * frame->height;
     mtl_memcpy(frame->addr[plane], obs_frame->data[plane], plane_size);
     data_size += plane_size;
   }

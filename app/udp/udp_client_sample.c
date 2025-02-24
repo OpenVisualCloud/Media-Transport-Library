@@ -49,13 +49,12 @@ static void *udp_client_thread(void *arg) {
   int idx_pos = udp_len / 2;
   int send_idx = 0;
 
-  info("%s(%d), start socket %p udp len %d\n", __func__, s->idx, socket,
-       (int)udp_len);
+  info("%s(%d), start socket %p udp len %d\n", __func__, s->idx, socket, (int)udp_len);
   while (!s->stop) {
     send_buf[idx_pos] = send_idx++;
-    ssize_t send = mudp_sendto(socket, send_buf, sizeof(send_buf), 0,
-                               (const struct sockaddr *)&s->serv_addr,
-                               sizeof(s->serv_addr));
+    ssize_t send =
+        mudp_sendto(socket, send_buf, sizeof(send_buf), 0,
+                    (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -63,8 +62,7 @@ static void *udp_client_thread(void *arg) {
     s->send_cnt++;
     s->send_cnt_total++;
 
-    ssize_t recv =
-        mudp_recvfrom(socket, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+    ssize_t recv = mudp_recvfrom(socket, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
     if (recv != udp_len) {
       dbg("%s(%d), only recv %d bytes\n", __func__, s->idx, (int)recv);
       s->recv_fail_cnt++;
@@ -74,8 +72,8 @@ static void *udp_client_thread(void *arg) {
     char expect_rx_idx = last_rx_idx + 1;
     last_rx_idx = recv_buf[idx_pos];
     if (last_rx_idx != expect_rx_idx) {
-      err("%s(%d), idx mismatch, expect %u get %u\n", __func__, s->idx,
-          expect_rx_idx, last_rx_idx);
+      err("%s(%d), idx mismatch, expect %u get %u\n", __func__, s->idx, expect_rx_idx,
+          last_rx_idx);
       s->recv_err_cnt++;
       continue;
     }
@@ -98,12 +96,11 @@ static void *udp_client_transport_thread(void *arg) {
     send_buf[i] = i;
   }
 
-  info("%s(%d), start socket %p, udp len %d\n", __func__, s->idx, socket,
-       (int)udp_len);
+  info("%s(%d), start socket %p, udp len %d\n", __func__, s->idx, socket, (int)udp_len);
   while (!s->stop) {
-    ssize_t send = mudp_sendto(socket, send_buf, sizeof(send_buf), 0,
-                               (const struct sockaddr *)&s->serv_addr,
-                               sizeof(s->serv_addr));
+    ssize_t send =
+        mudp_sendto(socket, send_buf, sizeof(send_buf), 0,
+                    (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -123,8 +120,8 @@ static void udp_client_status(struct udp_client_sample_ctx *s) {
   double bps_g = bps / (1000 * 1000 * 1000);
   s->last_stat_time = cur_ts;
 
-  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx,
-       s->send_cnt, bps_g, s->recv_cnt);
+  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx, s->send_cnt, bps_g,
+       s->recv_cnt);
   s->send_cnt = 0;
   s->recv_cnt = 0;
   if (s->recv_fail_cnt) {
@@ -143,8 +140,7 @@ int main(int argc, char **argv) {
 
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, true, true, true);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -175,8 +171,7 @@ int main(int argc, char **argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
-    mudp_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P],
-                       ctx.udp_port + i);
+    mudp_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P], ctx.udp_port + i);
 
     app[i]->socket = mudp_socket(ctx.st, AF_INET, SOCK_DGRAM, 0);
     if (!app[i]->socket) {
@@ -184,16 +179,14 @@ int main(int argc, char **argv) {
       ret = -EIO;
       goto error;
     }
-    if (ctx.udp_tx_bps)
-      mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
+    if (ctx.udp_tx_bps) mudp_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     if (ctx.has_tx_dst_mac[MTL_PORT_P])
       mudp_set_tx_mac(app[i]->socket, ctx.tx_dst_mac[MTL_PORT_P]);
 
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 1000;
-    ret = mudp_setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
-                          sizeof(tv));
+    ret = mudp_setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     if (ret < 0) {
       err("%s(%d), SO_RCVTIMEO fail %d\n", __func__, i, ret);
       goto error;
@@ -202,8 +195,7 @@ int main(int argc, char **argv) {
     if ((ctx.udp_mode == SAMPLE_UDP_TRANSPORT) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL))
-      ret = pthread_create(&app[i]->thread, NULL, udp_client_transport_thread,
-                           app[i]);
+      ret = pthread_create(&app[i]->thread, NULL, udp_client_transport_thread, app[i]);
     else
       ret = pthread_create(&app[i]->thread, NULL, udp_client_thread, app[i]);
     if (ret < 0) {
@@ -242,18 +234,15 @@ int main(int argc, char **argv) {
 
 error:
   for (int i = 0; i < session_num; i++) {
-    if (!app[i])
-      continue;
+    if (!app[i]) continue;
     // stop app thread
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
-    if (app[i]->thread)
-      pthread_join(app[i]->thread, NULL);
+    if (app[i]->thread) pthread_join(app[i]->thread, NULL);
 
-    if (app[i]->socket)
-      mudp_close(app[i]->socket);
+    if (app[i]->socket) mudp_close(app[i]->socket);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
     free(app[i]);

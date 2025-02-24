@@ -32,9 +32,8 @@ static void control_fps(struct timespec *start_time) {
 
   clock_gettime(CLOCK_MONOTONIC, &end_time);
 
-  elapsed_time =
-      (end_time.tv_sec - start_time->tv_sec) * NANOSECONDS_IN_SECOND +
-      (end_time.tv_nsec - start_time->tv_nsec);
+  elapsed_time = (end_time.tv_sec - start_time->tv_sec) * NANOSECONDS_IN_SECOND +
+                 (end_time.tv_nsec - start_time->tv_nsec);
   time_to_wait = DESIRED_FRAME_DURATION - elapsed_time;
 
   if (time_to_wait > 0) {
@@ -158,8 +157,7 @@ int main(int argc, char **argv) {
 
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    uint64_t send_time_ns =
-        ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
+    uint64_t send_time_ns = ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
 
     buffer->size = frame_size;
     buffer->user_meta = &send_time_ns;
@@ -179,16 +177,13 @@ int main(int argc, char **argv) {
 
 out:
 
-  if (tx)
-    mtl_rdma_tx_free(tx);
+  if (tx) mtl_rdma_tx_free(tx);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED)
-      munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
   }
 
-  if (mrh)
-    mtl_rdma_uinit(mrh);
+  if (mrh) mtl_rdma_uinit(mrh);
 
   return ret;
 }

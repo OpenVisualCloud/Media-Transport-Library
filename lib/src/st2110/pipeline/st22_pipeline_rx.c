@@ -18,8 +18,7 @@ static uint16_t rx_st22p_next_idx(struct st22p_rx_ctx *ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
   next_idx++;
-  if (next_idx >= ctx->framebuff_cnt)
-    next_idx = 0;
+  if (next_idx >= ctx->framebuff_cnt) next_idx = 0;
   return next_idx;
 }
 
@@ -38,16 +37,14 @@ static void rx_st22p_decode_block_wake(struct st22p_rx_ctx *ctx) {
 }
 
 static void rx_st22p_decode_notify_frame_ready(struct st22p_rx_ctx *ctx) {
-  if (ctx->derive)
-    return; /* no decoder for derive mode */
+  if (ctx->derive) return; /* no decoder for derive mode */
 
   struct st22_decode_session_impl *decoder = ctx->decode_impl;
   struct st22_decode_dev_impl *dev_impl = decoder->parent;
   struct st22_decoder_dev *dev = &dev_impl->dev;
   st22_decode_priv session = decoder->session;
 
-  if (dev->notify_frame_available)
-    dev->notify_frame_available(session);
+  if (dev->notify_frame_available) dev->notify_frame_available(session);
 
   if (ctx->decode_block_get) {
     /* notify block */
@@ -66,9 +63,8 @@ static void rx_st22p_notify_frame_available(struct st22p_rx_ctx *ctx) {
   }
 }
 
-static struct st22p_rx_frame *
-rx_st22p_next_available(struct st22p_rx_ctx *ctx, uint16_t idx_start,
-                        enum st22p_rx_frame_status desired) {
+static struct st22p_rx_frame *rx_st22p_next_available(
+    struct st22p_rx_ctx *ctx, uint16_t idx_start, enum st22p_rx_frame_status desired) {
   uint16_t idx = idx_start;
   struct st22p_rx_frame *framebuff;
 
@@ -96,12 +92,11 @@ static int rx_st22p_frame_ready(void *priv, void *frame,
   struct st22p_rx_frame *framebuff;
   int ret;
 
-  if (!ctx->ready)
-    return -EBUSY; /* not ready */
+  if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = rx_st22p_next_available(ctx, ctx->framebuff_producer_idx,
-                                      ST22P_RX_FRAME_FREE);
+  framebuff =
+      rx_st22p_next_available(ctx, ctx->framebuff_producer_idx, ST22P_RX_FRAME_FREE);
   /* not any free frame */
   if (!framebuff) {
     rte_atomic32_inc(&ctx->stat_busy);
@@ -109,8 +104,8 @@ static int rx_st22p_frame_ready(void *priv, void *frame,
     return -EBUSY;
   }
 
-  MT_USDT_ST22P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame,
-                                   meta->rtp_timestamp, meta->frame_total_size);
+  MT_USDT_ST22P_RX_FRAME_AVAILABLE(ctx->idx, framebuff->idx, frame, meta->rtp_timestamp,
+                                   meta->frame_total_size);
 
   if (ctx->ext_frame) {
     struct st_ext_frame ext_frame;
@@ -148,16 +143,14 @@ static int rx_st22p_frame_ready(void *priv, void *frame,
   framebuff->dst.tfmt = meta->tfmt;
   /* set dst timestamp to same as src? */
   framebuff->dst.timestamp = meta->timestamp;
-  framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp =
-      meta->rtp_timestamp;
+  framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
   /* if second field */
-  framebuff->dst.second_field = framebuff->src.second_field =
-      meta->second_field;
+  framebuff->dst.second_field = framebuff->src.second_field = meta->second_field;
 
   framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
-  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P;
-       s_port < MTL_SESSION_PORT_MAX; s_port++) {
+  for (enum mtl_session_port s_port = MTL_SESSION_PORT_P; s_port < MTL_SESSION_PORT_MAX;
+       s_port++) {
     framebuff->src.pkts_recv[s_port] = framebuff->dst.pkts_recv[s_port] =
         meta->pkts_recv[s_port];
   }
@@ -230,8 +223,7 @@ static struct st22_decode_frame_meta *rx_st22p_decode_get_frame(void *priv) {
     dbg("%s(%d), not ready %d\n", __func__, idx, ctx->type);
     if (ctx->decode_block_get) {
       rx_st22p_decode_get_block_wait(ctx);
-      if (!ctx->ready)
-        return NULL;
+      if (!ctx->ready) return NULL;
     }
     return NULL; /* not ready */
   }
@@ -239,15 +231,15 @@ static struct st22_decode_frame_meta *rx_st22p_decode_get_frame(void *priv) {
   ctx->stat_decode_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = rx_st22p_next_available(ctx, ctx->framebuff_decode_idx,
-                                      ST22P_RX_FRAME_READY);
+  framebuff =
+      rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
   if (!framebuff && ctx->decode_block_get) { /* wait here for block mode */
     mt_pthread_mutex_unlock(&ctx->lock);
     rx_st22p_decode_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = rx_st22p_next_available(ctx, ctx->framebuff_decode_idx,
-                                        ST22P_RX_FRAME_READY);
+    framebuff =
+        rx_st22p_next_available(ctx, ctx->framebuff_decode_idx, ST22P_RX_FRAME_READY);
   }
   /* not any ready frame */
   if (!framebuff) {
@@ -269,8 +261,7 @@ static struct st22_decode_frame_meta *rx_st22p_decode_get_frame(void *priv) {
   return frame;
 }
 
-static int rx_st22p_decode_put_frame(void *priv,
-                                     struct st22_decode_frame_meta *frame,
+static int rx_st22p_decode_put_frame(void *priv, struct st22_decode_frame_meta *frame,
                                      int result) {
   struct st22p_rx_ctx *ctx = priv;
   int idx = ctx->idx;
@@ -309,16 +300,15 @@ static int rx_st22p_decode_dump(void *priv) {
   struct st22p_rx_ctx *ctx = priv;
   struct st22p_rx_frame *framebuff = ctx->framebuffs;
 
-  if (!ctx->ready)
-    return -EBUSY; /* not ready */
+  if (!ctx->ready) return -EBUSY; /* not ready */
 
   uint16_t producer_idx = ctx->framebuff_producer_idx;
   uint16_t decode_idx = ctx->framebuff_decode_idx;
   uint16_t consumer_idx = ctx->framebuff_consumer_idx;
-  notice("RX_ST22P(%s), p(%d:%s) d(%d:%s) c(%d:%s)\n", ctx->ops_name,
-         producer_idx, rx_st22p_stat_name(framebuff[producer_idx].stat),
-         decode_idx, rx_st22p_stat_name(framebuff[decode_idx].stat),
-         consumer_idx, rx_st22p_stat_name(framebuff[consumer_idx].stat));
+  notice("RX_ST22P(%s), p(%d:%s) d(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
+         rx_st22p_stat_name(framebuff[producer_idx].stat), decode_idx,
+         rx_st22p_stat_name(framebuff[decode_idx].stat), consumer_idx,
+         rx_st22p_stat_name(framebuff[consumer_idx].stat));
 
   int decode_fail = rte_atomic32_read(&ctx->stat_decode_fail);
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
@@ -333,8 +323,7 @@ static int rx_st22p_decode_dump(void *priv) {
   }
 
   notice("RX_ST22P(%s), frame get try %d succ %d, put %d\n", ctx->ops_name,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ,
-         ctx->stat_put_frame);
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
   ctx->stat_put_frame = 0;
@@ -349,8 +338,7 @@ static int rx_st22p_decode_dump(void *priv) {
   return 0;
 }
 
-static int rx_st22p_create_transport(struct mtl_main_impl *impl,
-                                     struct st22p_rx_ctx *ctx,
+static int rx_st22p_create_transport(struct mtl_main_impl *impl, struct st22p_rx_ctx *ctx,
                                      struct st22p_rx_ops *ops) {
   int idx = ctx->idx;
   struct st22_rx_ops ops_rx;
@@ -362,15 +350,13 @@ static int rx_st22p_create_transport(struct mtl_main_impl *impl,
   ops_rx.num_port = RTE_MIN(ops->port.num_port, MTL_SESSION_PORT_MAX);
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.ip_addr[i], ops->port.ip_addr[i], MTL_IP_ADDR_LEN);
-    memcpy(ops_rx.mcast_sip_addr[i], ops->port.mcast_sip_addr[i],
-           MTL_IP_ADDR_LEN);
+    memcpy(ops_rx.mcast_sip_addr[i], ops->port.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_rx.udp_port[i] = ops->port.udp_port[i];
   }
   if (ops->flags & ST22P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST22_RX_FLAG_DATA_PATH_ONLY;
-  if (ops->flags & ST22P_RX_FLAG_ENABLE_VSYNC)
-    ops_rx.flags |= ST22_RX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST22P_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST22_RX_FLAG_ENABLE_VSYNC;
   if (ops->flags & ST22P_RX_FLAG_ENABLE_RTCP) {
     ops_rx.flags |= ST22_RX_FLAG_ENABLE_RTCP;
     ops_rx.rtcp = ops->rtcp;
@@ -439,8 +425,7 @@ static int rx_st22p_uinit_dst_fbs(struct st22p_rx_ctx *ctx) {
   return 0;
 }
 
-static int rx_st22p_init_dst_fbs(struct st22p_rx_ctx *ctx,
-                                 struct st22p_rx_ops *ops) {
+static int rx_st22p_init_dst_fbs(struct st22p_rx_ctx *ctx, struct st22p_rx_ops *ops) {
   int idx = ctx->idx;
   int soc_id = ctx->socket_id;
   struct st22p_rx_frame *frames;
@@ -466,8 +451,7 @@ static int rx_st22p_init_dst_fbs(struct st22p_rx_ctx *ctx,
     frames[i].dst.height = ops->height;
     frames[i].dst.priv = &frames[i];
 
-    if (ctx->derive)
-      continue; /* skip the plane init */
+    if (ctx->derive) continue; /* skip the plane init */
 
     if (ctx->ext_frame) { /* will use ext frame from user */
       uint8_t planes = st_frame_fmt_planes(frames[i].dst.fmt);
@@ -496,13 +480,12 @@ static int rx_st22p_init_dst_fbs(struct st22p_rx_ctx *ctx,
     }
   }
 
-  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx,
-       dst_size, ops->output_fmt, ctx->framebuff_cnt);
+  info("%s(%d), size %" PRIu64 " fmt %d with %u frames\n", __func__, idx, dst_size,
+       ops->output_fmt, ctx->framebuff_cnt);
   return 0;
 }
 
-static int rx_st22p_get_decoder(struct mtl_main_impl *impl,
-                                struct st22p_rx_ctx *ctx,
+static int rx_st22p_get_decoder(struct mtl_main_impl *impl, struct st22p_rx_ctx *ctx,
                                 struct st22p_rx_ops *ops) {
   int idx = ctx->idx;
   struct st22_get_decoder_request req;
@@ -552,8 +535,7 @@ static int rx_st22p_get_block_wait(struct st22p_rx_ctx *ctx) {
   return 0;
 }
 
-static int rx_st22p_usdt_dump_frame(struct st22p_rx_ctx *ctx,
-                                    struct st_frame *frame) {
+static int rx_st22p_usdt_dump_frame(struct st22p_rx_ctx *ctx, struct st_frame *frame) {
   int idx = ctx->idx;
   struct mtl_main_impl *impl = ctx->impl;
   int fd;
@@ -562,8 +544,7 @@ static int rx_st22p_usdt_dump_frame(struct st22p_rx_ctx *ctx,
   uint64_t tsc_s = mt_get_tsc(impl);
 
   snprintf(usdt_dump_path, sizeof(usdt_dump_path),
-           "imtl_usdt_st22prx_s%d_%d_%d_XXXXXX.yuv", idx, ops->width,
-           ops->height);
+           "imtl_usdt_st22prx_s%d_%d_%d_XXXXXX.yuv", idx, ops->width, ops->height);
   fd = mt_mkstemps(usdt_dump_path, strlen(".yuv"));
   if (fd < 0) {
     err("%s(%d), mkstemps %s fail %d\n", __func__, idx, usdt_dump_path, fd);
@@ -595,21 +576,20 @@ struct st_frame *st22p_rx_get_frame(st22p_rx_handle handle) {
     return NULL;
   }
 
-  if (!ctx->ready)
-    return NULL; /* not ready */
+  if (!ctx->ready) return NULL; /* not ready */
 
   ctx->stat_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                      ST22P_RX_FRAME_DECODED);
+  framebuff =
+      rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
   if (!framebuff && ctx->block_get) {
     mt_pthread_mutex_unlock(&ctx->lock);
     rx_st22p_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx,
-                                        ST22P_RX_FRAME_DECODED);
+    framebuff =
+        rx_st22p_next_available(ctx, ctx->framebuff_consumer_idx, ST22P_RX_FRAME_DECODED);
   }
   /* not any decoded frame */
   if (!framebuff) {
@@ -625,8 +605,7 @@ struct st_frame *st22p_rx_get_frame(st22p_rx_handle handle) {
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   ctx->stat_get_frame_succ++;
   struct st_frame *frame = &framebuff->dst;
-  MT_USDT_ST22P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0],
-                             frame->data_size);
+  MT_USDT_ST22P_RX_FRAME_GET(idx, framebuff->idx, frame->addr[0], frame->data_size);
   /* check if dump USDT enabled */
   if (!ctx->derive && MT_USDT_ST22P_RX_FRAME_DUMP_ENABLED()) {
     int period = st_frame_rate(ctx->ops.fps) * 5; /* dump every 5s now */
@@ -685,8 +664,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops) {
 
   if (ops->flags & ST22P_RX_FLAG_EXT_FRAME) {
     if (!ops->query_ext_frame) {
-      err("%s, no query_ext_frame query callback for ext frame mode\n",
-          __func__);
+      err("%s, no query_ext_frame query callback for ext frame mode\n", __func__);
       return NULL;
     }
   }
@@ -697,10 +675,8 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops) {
     return NULL;
   }
 
-  enum mtl_port port =
-      mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
-  if (port >= MTL_PORT_MAX)
-    return NULL;
+  enum mtl_port port = mt_port_by_name(impl, ops->port.port[MTL_SESSION_PORT_P]);
+  if (port >= MTL_PORT_MAX) return NULL;
   int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST22P_RX_FLAG_FORCE_NUMA) {
@@ -722,8 +698,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops) {
   if (ctx->derive) {
     dst_size = 0;
   } else {
-    dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height,
-                             ops->interlaced);
+    dst_size = st_frame_size(ops->output_fmt, ops->width, ops->height, ops->interlaced);
     if (!dst_size) {
       err("%s(%d), get dst size fail\n", __func__, idx);
       return NULL;
@@ -739,12 +714,12 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops) {
   ctx->dst_size = dst_size;
   /* use the possible max size */
   ctx->max_codestream_size = ops->max_codestream_size;
-  if (!ctx->max_codestream_size)
-    ctx->max_codestream_size = dst_size;
+  if (!ctx->max_codestream_size) ctx->max_codestream_size = dst_size;
   if (ctx->derive && !ctx->max_codestream_size) {
-    warn("%s(%d), codestream_size is not set by user in derive mode, use "
-         "default 1M\n",
-         __func__, idx);
+    warn(
+        "%s(%d), codestream_size is not set by user in derive mode, use "
+        "default 1M\n",
+        __func__, idx);
     ctx->max_codestream_size = 0x100000;
   }
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
@@ -758,8 +733,7 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops) {
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
-  if (ops->flags & ST22P_RX_FLAG_BLOCK_GET)
-    ctx->block_get = true;
+  if (ops->flags & ST22P_RX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */
   if (ops->name) {
@@ -797,13 +771,12 @@ st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops) {
 
   /* all ready now */
   ctx->ready = true;
-  notice("%s(%d), codestream fmt %s, output fmt: %s, flags 0x%x\n", __func__,
-         idx, st_frame_fmt_name(ctx->codestream_fmt),
-         st_frame_fmt_name(ops->output_fmt), ops->flags);
+  notice("%s(%d), codestream fmt %s, output fmt: %s, flags 0x%x\n", __func__, idx,
+         st_frame_fmt_name(ctx->codestream_fmt), st_frame_fmt_name(ops->output_fmt),
+         ops->flags);
   st22p_rx_idx++;
 
-  if (!ctx->block_get)
-    rx_st22p_notify_frame_available(ctx);
+  if (!ctx->block_get) rx_st22p_notify_frame_available(ctx);
 
   return ctx;
 }
@@ -876,8 +849,7 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle) {
     return ctx->dst_size;
 }
 
-int st22p_rx_get_queue_meta(st22p_rx_handle handle,
-                            struct st_queue_meta *meta) {
+int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta *meta) {
   struct st22p_rx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
@@ -889,8 +861,8 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle,
   return st22_rx_get_queue_meta(ctx->transport, meta);
 }
 
-int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets,
-                         bool sync, struct st_pcap_dump_meta *meta) {
+int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                         struct st_pcap_dump_meta *meta) {
   struct st22p_rx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
@@ -902,8 +874,7 @@ int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets,
   return st22_rx_pcapng_dump(ctx->transport, max_dump_packets, sync, meta);
 }
 
-int st22p_rx_update_source(st22p_rx_handle handle,
-                           struct st_rx_source_info *src) {
+int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info *src) {
   struct st22p_rx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
@@ -924,8 +895,7 @@ int st22p_rx_wake_block(st22p_rx_handle handle) {
     return 0;
   }
 
-  if (ctx->block_get)
-    rx_st22p_block_wake(ctx);
+  if (ctx->block_get) rx_st22p_block_wake(ctx);
 
   return 0;
 }

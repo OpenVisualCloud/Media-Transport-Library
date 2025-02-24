@@ -184,8 +184,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void *buf, size_t len, int flags,
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-static inline ssize_t mudp_recv(mudp_handle ut, void *buf, size_t len,
-                                int flags) {
+static inline ssize_t mudp_recv(mudp_handle ut, void *buf, size_t len, int flags) {
   return mudp_recvfrom(ut, buf, len, flags, NULL, NULL);
 }
 
@@ -470,8 +469,7 @@ int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void *priv),
-                               void *priv);
+int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void *priv), void *priv);
 
 /**
  * Create a udp transport socket on a PCIE port.
@@ -501,8 +499,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
  * @param port
  *   UDP port.
  */
-static void inline mudp_init_sockaddr_any(struct sockaddr_in *saddr,
-                                          uint16_t port) {
+static void inline mudp_init_sockaddr_any(struct sockaddr_in *saddr, uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = INADDR_ANY;
@@ -520,8 +517,7 @@ static void inline mudp_init_sockaddr_any(struct sockaddr_in *saddr,
  *   UDP port.
  */
 static void inline mudp_init_sockaddr(struct sockaddr_in *saddr,
-                                      uint8_t ip[MTL_IP_ADDR_LEN],
-                                      uint16_t port) {
+                                      uint8_t ip[MTL_IP_ADDR_LEN], uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
   memcpy(&saddr->sin_addr.s_addr, ip, MTL_IP_ADDR_LEN);

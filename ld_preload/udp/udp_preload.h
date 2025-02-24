@@ -29,55 +29,53 @@ enum mtl_log_level upl_get_log_level(void);
 
 /* log define */
 #ifdef DEBUG
-#define dbg(...)                                                               \
-  do {                                                                         \
-    if (upl_get_log_level() <= MTL_LOG_LEVEL_DEBUG)                            \
-      printf("UPL: " __VA_ARGS__);                                             \
+#define dbg(...)                                                                 \
+  do {                                                                           \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_DEBUG) printf("UPL: " __VA_ARGS__); \
   } while (0)
 #else
-#define dbg(...)                                                               \
-  do {                                                                         \
+#define dbg(...) \
+  do {           \
   } while (0)
 #endif
-#define info(...)                                                              \
-  do {                                                                         \
-    if (upl_get_log_level() <= MTL_LOG_LEVEL_INFO)                             \
-      printf("UPL: " __VA_ARGS__);                                             \
+#define info(...)                                                               \
+  do {                                                                          \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_INFO) printf("UPL: " __VA_ARGS__); \
   } while (0)
-#define notice(...)                                                            \
-  do {                                                                         \
-    if (upl_get_log_level() <= MTL_LOG_LEVEL_NOTICE)                           \
-      printf("UPL: "__VA_ARGS__);                                              \
+#define notice(...)                                                              \
+  do {                                                                           \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_NOTICE) printf("UPL: "__VA_ARGS__); \
   } while (0)
-#define warn(...)                                                              \
-  do {                                                                         \
-    if (upl_get_log_level() <= MTL_LOG_LEVEL_WARNING)                          \
-      printf("UPL: Warn: "__VA_ARGS__);                                        \
+#define warn(...)                                                                       \
+  do {                                                                                  \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_WARNING) printf("UPL: Warn: "__VA_ARGS__); \
   } while (0)
-#define err(...)                                                               \
-  do {                                                                         \
-    if (upl_get_log_level() <= MTL_LOG_LEVEL_ERR)                              \
-      printf("UPL: Error: "__VA_ARGS__);                                       \
+#define err(...)                                                                     \
+  do {                                                                               \
+    if (upl_get_log_level() <= MTL_LOG_LEVEL_ERR) printf("UPL: Error: "__VA_ARGS__); \
   } while (0)
 
 /* On error, -1 is returned, and errno is set appropriately. */
-#define UPL_ERR_RET(code)                                                      \
-  do {                                                                         \
-    errno = code;                                                              \
-    return -1;                                                                 \
+#define UPL_ERR_RET(code) \
+  do {                    \
+    errno = code;         \
+    return -1;            \
   } while (0)
 
 /* child only can't use rte malloc */
-static inline void *upl_malloc(size_t sz) { return malloc(sz); }
+static inline void *upl_malloc(size_t sz) {
+  return malloc(sz);
+}
 
 static inline void *upl_zmalloc(size_t sz) {
   void *p = malloc(sz);
-  if (p)
-    memset(p, 0x0, sz);
+  if (p) memset(p, 0x0, sz);
   return p;
 }
 
-static inline void upl_free(void *p) { free(p); }
+static inline void upl_free(void *p) {
+  free(p);
+}
 
 struct upl_functions {
   int (*socket)(int domain, int type, int protocol);
@@ -98,8 +96,7 @@ struct upl_functions {
                       struct sockaddr *src_addr, socklen_t *addrlen);
   ssize_t (*recv)(int sockfd, void *buf, size_t len, int flags);
   ssize_t (*recvmsg)(int sockfd, struct msghdr *msg, int flags);
-  int (*getsockopt)(int sockfd, int level, int optname, void *optval,
-                    socklen_t *optlen);
+  int (*getsockopt)(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
   int (*setsockopt)(int sockfd, int level, int optname, const void *optval,
                     socklen_t optlen);
   int (*fcntl)(int sockfd, int cmd, va_list args);
@@ -109,10 +106,9 @@ struct upl_functions {
   int (*epoll_create)(int size);
   int (*epoll_create1)(int flags);
   int (*epoll_ctl)(int epfd, int op, int fd, struct epoll_event *event);
-  int (*epoll_wait)(int epfd, struct epoll_event *events, int maxevents,
-                    int timeout);
-  int (*epoll_pwait)(int epfd, struct epoll_event *events, int maxevents,
-                     int timeout, const sigset_t *sigmask);
+  int (*epoll_wait)(int epfd, struct epoll_event *events, int maxevents, int timeout);
+  int (*epoll_pwait)(int epfd, struct epoll_event *events, int maxevents, int timeout,
+                     const sigset_t *sigmask);
 };
 
 enum upl_entry_type {

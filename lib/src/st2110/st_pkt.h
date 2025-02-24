@@ -60,20 +60,20 @@ struct st_rfc8331_anc_hdr {
   struct st40_rfc8331_rtp_hdr rtp; /* size: 20 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
-#define ST_PKT_VIDEO_HDR_LEN                                                   \
+#define ST_PKT_VIDEO_HDR_LEN \
   (sizeof(struct st_rfc4175_video_hdr) - sizeof(struct rte_ether_hdr))
 
-#define ST22_PKT_VIDEO_HDR_LEN                                                 \
+#define ST22_PKT_VIDEO_HDR_LEN \
   (sizeof(struct st22_rfc9134_video_hdr) - sizeof(struct rte_ether_hdr))
 
-#define ST_PKT_AUDIO_HDR_LEN                                                   \
+#define ST_PKT_AUDIO_HDR_LEN \
   (sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct rte_ether_hdr))
 
-#define ST_PKT_ANC_HDR_LEN                                                     \
+#define ST_PKT_ANC_HDR_LEN \
   (sizeof(struct st_rfc8331_anc_hdr) - sizeof(struct rte_ether_hdr))
 
 /* standard UDP is 1460 bytes */
-#define ST_PKT_MAX_ETHER_BYTES                                                 \
+#define ST_PKT_MAX_ETHER_BYTES \
   (1460 + sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr))
 
 #endif

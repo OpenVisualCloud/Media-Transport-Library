@@ -48,15 +48,13 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx *ctx) {
   float throughput_bit;
   uint8_t buf[256];
 
-  info("%s, start on %p, size %" PRIu64 "\n", __func__, frame->addr[0],
-       frame->size);
+  info("%s, start on %p, size %" PRIu64 "\n", __func__, frame->addr[0], frame->size);
   /* read */
   loop_cnt = 3;
   start = clock();
   /* read is very slow, not known why */
   size_t r_sz = 0x100000;
-  if (frame->size < r_sz)
-    r_sz = frame->size;
+  if (frame->size < r_sz) r_sz = frame->size;
   for (int loop = 0; loop < loop_cnt; loop++) {
     uint8_t *addr = (uint8_t *)frame->addr[0];
     for (size_t i = 0; i < r_sz; i++) {
@@ -87,16 +85,15 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx *ctx) {
   return 0;
 }
 
-static int gddr_map(struct st_sample_context *ctx, struct st_ext_frame *frame,
-                    size_t sz, int fd) {
+static int gddr_map(struct st_sample_context *ctx, struct st_ext_frame *frame, size_t sz,
+                    int fd) {
   off_t off = ctx->gddr_pa + ctx->gddr_offset;
   void *map = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_SHARED, fd, off);
   if (MAP_FAILED == map) {
     err("%s, map size %" PRIu64 " fail\n", __func__, sz);
     return -EIO;
   }
-  info("%s, map %p with size %" PRIu64 " offset %" PRIx64 "\n", __func__, map,
-       sz, off);
+  info("%s, map %p with size %" PRIu64 " offset %" PRIx64 "\n", __func__, map, sz, off);
 
   mtl_iova_t iova;
   if (mtl_iova_mode_get(ctx->st) == MTL_IOVA_MODE_PA) {
@@ -106,8 +103,7 @@ static int gddr_map(struct st_sample_context *ctx, struct st_ext_frame *frame,
     dbg("%s, iova va mode\n", __func__);
     iova = mtl_dma_map(ctx->st, map, sz);
     if (MTL_BAD_IOVA == iova) {
-      err("%s, dma map fail for va %p sz %" PRIu64 " fail\n", __func__, map,
-          sz);
+      err("%s, dma map fail for va %p sz %" PRIu64 " fail\n", __func__, map, sz);
       munmap(map, sz);
       return -EIO;
     }
@@ -173,24 +169,21 @@ static int rx_st20p_open_source(struct rx_st20p_hg_ctx *s, const char *file) {
   s->dst_cursor = m;
   s->dst_end = m + f_size;
   s->dst_fd = fd;
-  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__,
-       idx, fb_cnt, file, m, f_size);
+  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__, idx, fb_cnt,
+       file, m, f_size);
 
   return 0;
 }
 
-static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx *s,
-                                   struct st_frame *frame) {
+static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx *s, struct st_frame *frame) {
   if (s->dst_fd > 0) {
-    if (s->dst_cursor + s->frame_size > s->dst_end)
-      s->dst_cursor = s->dst_begin;
+    if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
     mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
     s->dst_cursor += s->frame_size;
   } else {
     uint32_t *d;
     if (s->use_cpu_copy) {
-      if (s->cpu_copy_offset + s->frame_size > s->gddr_frame.size)
-        s->cpu_copy_offset = 0;
+      if (s->cpu_copy_offset + s->frame_size > s->gddr_frame.size) s->cpu_copy_offset = 0;
       void *gddr = s->gddr_frame.addr[0] + s->cpu_copy_offset;
       mtl_memcpy(gddr, frame->addr[0], s->frame_size);
       d = (uint32_t *)gddr;
@@ -199,8 +192,7 @@ static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx *s,
       d = (uint32_t *)frame->addr[0];
     }
     if (0 == (s->fb_recv % 60)) {
-      info("%s(%d), frame %p, value 0x%x 0x%x\n", __func__, s->idx, d, d[0],
-           d[1]);
+      info("%s(%d), frame %p, value 0x%x 0x%x\n", __func__, s->idx, d, d[0], d[1]);
     }
   }
   s->fb_recv++;
@@ -216,8 +208,7 @@ static void *rx_st20p_frame_thread(void *arg) {
     frame = st20p_rx_get_frame(handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -237,8 +228,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   if (!ctx.use_cpu_copy) {
     /* enable hdr split */
@@ -287,7 +277,7 @@ int main(int argc, char **argv) {
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20p_test";
-    ops_rx.priv = app[i]; // app handle register to lib
+    ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.port.num_port = 1;
     memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -311,16 +301,13 @@ int main(int argc, char **argv) {
     ops_rx.notify_frame_available = rx_st20p_frame_available;
 
     /* map gddr */
-    app[i]->frame_size = st_frame_size(ops_rx.output_fmt, ops_rx.width,
-                                       ops_rx.height, ops_rx.interlaced);
-    size_t fb_sz =
-        app[i]->frame_size * (app[i]->fb_cnt + 1) + app[i]->pg_sz * 2;
+    app[i]->frame_size =
+        st_frame_size(ops_rx.output_fmt, ops_rx.width, ops_rx.height, ops_rx.interlaced);
+    size_t fb_sz = app[i]->frame_size * (app[i]->fb_cnt + 1) + app[i]->pg_sz * 2;
     fb_sz = mtl_size_page_align(fb_sz, app[i]->pg_sz);
     ret = gddr_map(&ctx, &app[i]->gddr_frame, fb_sz, dev_mem_fd);
-    if (ret < 0)
-      goto error;
-    if (ctx.profiling_gddr)
-      gaddr_profiling(app[i]);
+    if (ret < 0) goto error;
+    if (ctx.profiling_gddr) gaddr_profiling(app[i]);
 
     if (!ctx.use_cpu_copy) {
       ops_rx.flags |= ST20P_RX_FLAG_HDR_SPLIT;
@@ -342,8 +329,7 @@ int main(int argc, char **argv) {
       }
     }
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread,
-                         app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -370,8 +356,7 @@ int main(int argc, char **argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i,
-          app[i]->fb_recv);
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
       ret = -EIO;
     }
   }
@@ -379,12 +364,11 @@ int main(int argc, char **argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle)
-        st20p_rx_free(app[i]->handle);
+      if (app[i]->handle) st20p_rx_free(app[i]->handle);
       if (app[i]->gddr_frame.iova[0]) {
         if (mtl_iova_mode_get(ctx.st) != MTL_IOVA_MODE_PA) {
-          mtl_dma_unmap(ctx.st, app[i]->gddr_frame.addr[0],
-                        app[i]->gddr_frame.iova[0], app[i]->gddr_frame.size);
+          mtl_dma_unmap(ctx.st, app[i]->gddr_frame.addr[0], app[i]->gddr_frame.iova[0],
+                        app[i]->gddr_frame.size);
         }
       }
       if (app[i]->gddr_frame.addr[0]) {
@@ -396,8 +380,7 @@ error:
     }
   }
 
-  if (dev_mem_fd > 0)
-    close(dev_mem_fd);
+  if (dev_mem_fd > 0) close(dev_mem_fd);
   /* release sample(st) dev */
   if (ctx.st) {
     mtl_uninit(ctx.st);

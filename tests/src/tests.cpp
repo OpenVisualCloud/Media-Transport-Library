@@ -95,8 +95,7 @@ struct st_tests_context *st_test_ctx(void) {
 }
 
 static int test_args_dma_dev(struct mtl_init_params *p, const char *in_dev) {
-  if (!in_dev)
-    return -EIO;
+  if (!in_dev) return -EIO;
   char devs[128] = {0};
   snprintf(devs, 128 - 1, "%s", in_dev);
 
@@ -104,192 +103,189 @@ static int test_args_dma_dev(struct mtl_init_params *p, const char *in_dev) {
   char *next_dev = strtok(devs, ",");
   while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
-    snprintf(p->dma_dev_port[p->num_dma_dev_port], MTL_PORT_MAX_LEN - 1, "%s",
-             next_dev);
+    snprintf(p->dma_dev_port[p->num_dma_dev_port], MTL_PORT_MAX_LEN - 1, "%s", next_dev);
     p->num_dma_dev_port++;
     next_dev = strtok(NULL, ",");
   }
   return 0;
 }
 
-static int test_parse_args(struct st_tests_context *ctx,
-                           struct mtl_init_params *p, int argc, char **argv) {
+static int test_parse_args(struct st_tests_context *ctx, struct mtl_init_params *p,
+                           int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
   int nb;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", test_args_options, &opt_idx);
-    if (cmd == -1)
-      break;
+    if (cmd == -1) break;
     dbg("%s, cmd %d %s\n", __func__, cmd, optarg);
 
     switch (cmd) {
-    case TEST_ARG_P_PORT:
-      snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
-      p->num_ports++;
-      break;
-    case TEST_ARG_R_PORT:
-      snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
-      p->num_ports++;
-      break;
-    case TEST_ARG_LCORES:
-      p->lcores = optarg;
-      break;
-    case TEST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
-      nb = atoi(optarg);
-      if (nb > 0 && nb < 100) {
-        p->data_quota_mbs_per_sch =
-            nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
+      case TEST_ARG_P_PORT:
+        snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
+        p->num_ports++;
+        break;
+      case TEST_ARG_R_PORT:
+        snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
+        p->num_ports++;
+        break;
+      case TEST_ARG_LCORES:
+        p->lcores = optarg;
+        break;
+      case TEST_ARG_SCH_SESSION_QUOTA: /* unit: 1080p tx */
+        nb = atoi(optarg);
+        if (nb > 0 && nb < 100) {
+          p->data_quota_mbs_per_sch = nb * st20_1080p59_yuv422_10bit_bandwidth_mps();
+        }
+        break;
+      case TEST_ARG_DMA_DEV:
+        test_args_dma_dev(p, optarg);
+        break;
+      case TEST_ARG_LOG_LEVEL:
+        if (!strcmp(optarg, "debug"))
+          p->log_level = MTL_LOG_LEVEL_DEBUG;
+        else if (!strcmp(optarg, "info"))
+          p->log_level = MTL_LOG_LEVEL_INFO;
+        else if (!strcmp(optarg, "notice"))
+          p->log_level = MTL_LOG_LEVEL_NOTICE;
+        else if (!strcmp(optarg, "warning"))
+          p->log_level = MTL_LOG_LEVEL_WARNING;
+        else if (!strcmp(optarg, "error"))
+          p->log_level = MTL_LOG_LEVEL_ERR;
+        else
+          err("%s, unknow log level %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_CNI_THREAD:
+        p->flags |= MTL_FLAG_CNI_THREAD;
+        break;
+      case TEST_ARG_RX_MONO_POOL:
+        p->flags |= MTL_FLAG_RX_MONO_POOL;
+        break;
+      case TEST_ARG_TX_MONO_POOL:
+        p->flags |= MTL_FLAG_TX_MONO_POOL;
+        break;
+      case TEST_ARG_MONO_POOL:
+        p->flags |= MTL_FLAG_RX_MONO_POOL;
+        p->flags |= MTL_FLAG_TX_MONO_POOL;
+        break;
+      case TEST_ARG_RX_SEPARATE_VIDEO_LCORE:
+        p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
+        break;
+      case TEST_ARG_MIGRATE_ENABLE:
+        p->flags |= MTL_FLAG_RX_VIDEO_MIGRATE;
+        p->flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
+        break;
+      case TEST_ARG_MIGRATE_DISABLE:
+        p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
+        p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
+        break;
+      case TEST_ARG_LIB_PTP:
+        p->flags |= MTL_FLAG_PTP_ENABLE;
+        p->ptp_get_time_fn = NULL; /* clear the user ptp func */
+        break;
+      case TEST_ARG_NB_TX_DESC:
+        p->nb_tx_desc = atoi(optarg);
+        break;
+      case TEST_ARG_NB_RX_DESC:
+        p->nb_rx_desc = atoi(optarg);
+        break;
+      case TEST_ARG_LEVEL:
+        if (!strcmp(optarg, "all"))
+          ctx->level = ST_TEST_LEVEL_ALL;
+        else if (!strcmp(optarg, "mandatory"))
+          ctx->level = ST_TEST_LEVEL_MANDATORY;
+        else
+          err("%s, unknow log level %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_AUTO_START_STOP:
+        p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
+        break;
+      case TEST_ARG_AF_XDP_ZC_DISABLE:
+        p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
+        break;
+      case TEST_ARG_QUEUE_CNT: {
+        uint16_t cnt = atoi(optarg);
+        p->tx_queues_cnt[MTL_PORT_P] = cnt;
+        p->tx_queues_cnt[MTL_PORT_R] = cnt;
+        p->rx_queues_cnt[MTL_PORT_P] = cnt;
+        p->rx_queues_cnt[MTL_PORT_R] = cnt;
+        break;
       }
-      break;
-    case TEST_ARG_DMA_DEV:
-      test_args_dma_dev(p, optarg);
-      break;
-    case TEST_ARG_LOG_LEVEL:
-      if (!strcmp(optarg, "debug"))
-        p->log_level = MTL_LOG_LEVEL_DEBUG;
-      else if (!strcmp(optarg, "info"))
-        p->log_level = MTL_LOG_LEVEL_INFO;
-      else if (!strcmp(optarg, "notice"))
-        p->log_level = MTL_LOG_LEVEL_NOTICE;
-      else if (!strcmp(optarg, "warning"))
-        p->log_level = MTL_LOG_LEVEL_WARNING;
-      else if (!strcmp(optarg, "error"))
-        p->log_level = MTL_LOG_LEVEL_ERR;
-      else
-        err("%s, unknow log level %s\n", __func__, optarg);
-      break;
-    case TEST_ARG_CNI_THREAD:
-      p->flags |= MTL_FLAG_CNI_THREAD;
-      break;
-    case TEST_ARG_RX_MONO_POOL:
-      p->flags |= MTL_FLAG_RX_MONO_POOL;
-      break;
-    case TEST_ARG_TX_MONO_POOL:
-      p->flags |= MTL_FLAG_TX_MONO_POOL;
-      break;
-    case TEST_ARG_MONO_POOL:
-      p->flags |= MTL_FLAG_RX_MONO_POOL;
-      p->flags |= MTL_FLAG_TX_MONO_POOL;
-      break;
-    case TEST_ARG_RX_SEPARATE_VIDEO_LCORE:
-      p->flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
-      break;
-    case TEST_ARG_MIGRATE_ENABLE:
-      p->flags |= MTL_FLAG_RX_VIDEO_MIGRATE;
-      p->flags |= MTL_FLAG_TX_VIDEO_MIGRATE;
-      break;
-    case TEST_ARG_MIGRATE_DISABLE:
-      p->flags &= ~MTL_FLAG_RX_VIDEO_MIGRATE;
-      p->flags &= ~MTL_FLAG_TX_VIDEO_MIGRATE;
-      break;
-    case TEST_ARG_LIB_PTP:
-      p->flags |= MTL_FLAG_PTP_ENABLE;
-      p->ptp_get_time_fn = NULL; /* clear the user ptp func */
-      break;
-    case TEST_ARG_NB_TX_DESC:
-      p->nb_tx_desc = atoi(optarg);
-      break;
-    case TEST_ARG_NB_RX_DESC:
-      p->nb_rx_desc = atoi(optarg);
-      break;
-    case TEST_ARG_LEVEL:
-      if (!strcmp(optarg, "all"))
-        ctx->level = ST_TEST_LEVEL_ALL;
-      else if (!strcmp(optarg, "mandatory"))
-        ctx->level = ST_TEST_LEVEL_MANDATORY;
-      else
-        err("%s, unknow log level %s\n", __func__, optarg);
-      break;
-    case TEST_ARG_AUTO_START_STOP:
-      p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
-      break;
-    case TEST_ARG_AF_XDP_ZC_DISABLE:
-      p->flags |= MTL_FLAG_AF_XDP_ZC_DISABLE;
-      break;
-    case TEST_ARG_QUEUE_CNT: {
-      uint16_t cnt = atoi(optarg);
-      p->tx_queues_cnt[MTL_PORT_P] = cnt;
-      p->tx_queues_cnt[MTL_PORT_R] = cnt;
-      p->rx_queues_cnt[MTL_PORT_P] = cnt;
-      p->rx_queues_cnt[MTL_PORT_R] = cnt;
-      break;
-    }
-    case TEST_ARG_HDR_SPLIT:
-      ctx->hdr_split = true;
-      break;
-    case TEST_ARG_TASKLET_THREAD:
-      p->flags |= MTL_FLAG_TASKLET_THREAD;
-      break;
-    case TEST_ARG_TSC_PACING:
-      p->pacing = ST21_TX_PACING_WAY_TSC;
-      break;
-    case TEST_ARG_RXTX_SIMD_512:
-      p->flags |= MTL_FLAG_RXTX_SIMD_512;
-      break;
-    case TEST_ARG_PACING_WAY:
-      if (!strcmp(optarg, "auto"))
-        p->pacing = ST21_TX_PACING_WAY_AUTO;
-      else if (!strcmp(optarg, "rl"))
-        p->pacing = ST21_TX_PACING_WAY_RL;
-      else if (!strcmp(optarg, "tsn"))
-        p->pacing = ST21_TX_PACING_WAY_TSN;
-      else if (!strcmp(optarg, "tsc"))
+      case TEST_ARG_HDR_SPLIT:
+        ctx->hdr_split = true;
+        break;
+      case TEST_ARG_TASKLET_THREAD:
+        p->flags |= MTL_FLAG_TASKLET_THREAD;
+        break;
+      case TEST_ARG_TSC_PACING:
         p->pacing = ST21_TX_PACING_WAY_TSC;
-      else if (!strcmp(optarg, "ptp"))
-        p->pacing = ST21_TX_PACING_WAY_PTP;
-      else if (!strcmp(optarg, "be"))
-        p->pacing = ST21_TX_PACING_WAY_BE;
-      else
-        err("%s, unknow pacing way %s\n", __func__, optarg);
-      break;
-    case TEST_ARG_RSS_MODE:
-      if (!strcmp(optarg, "l3"))
-        p->rss_mode = MTL_RSS_MODE_L3;
-      else if (!strcmp(optarg, "l3_l4"))
-        p->rss_mode = MTL_RSS_MODE_L3_L4;
-      else if (!strcmp(optarg, "none"))
-        p->rss_mode = MTL_RSS_MODE_NONE;
-      else
-        err("%s, unknow rss mode %s\n", __func__, optarg);
-      break;
-    case TEST_ARG_TX_NO_CHAIN:
-      p->flags |= MTL_FLAG_TX_NO_CHAIN;
-      break;
-    case TEST_ARG_IOVA_MODE:
-      if (!strcmp(optarg, "va"))
-        p->iova_mode = MTL_IOVA_MODE_VA;
-      else if (!strcmp(optarg, "pa"))
-        p->iova_mode = MTL_IOVA_MODE_PA;
-      else
-        err("%s, unknow iova mode %s\n", __func__, optarg);
-      break;
-    case TEST_ARG_MULTI_SRC_PORT:
-      p->flags |= MTL_FLAG_MULTI_SRC_PORT;
-      break;
-    case TEST_ARG_DHCP:
-      for (int port = 0; port < MTL_PORT_MAX; ++port)
-        p->net_proto[port] = MTL_PROTO_DHCP;
-      ctx->dhcp = true;
-      break;
-    case TEST_ARG_MCAST_ONLY:
-      ctx->mcast_only = true;
-      break;
-    case TEST_ARG_ALLOW_ACROSS_NUMA_CORE:
-      p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
-      break;
-    case TEST_ARG_AUDIO_TX_PACING:
-      if (!strcmp(optarg, "auto"))
-        ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_AUTO;
-      else if (!strcmp(optarg, "rl"))
-        ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_RL;
-      else if (!strcmp(optarg, "tsc"))
-        ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_TSC;
-      else
-        err("%s, unknow audio tx pacing %s\n", __func__, optarg);
-      break;
-    default:
-      break;
+        break;
+      case TEST_ARG_RXTX_SIMD_512:
+        p->flags |= MTL_FLAG_RXTX_SIMD_512;
+        break;
+      case TEST_ARG_PACING_WAY:
+        if (!strcmp(optarg, "auto"))
+          p->pacing = ST21_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          p->pacing = ST21_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsn"))
+          p->pacing = ST21_TX_PACING_WAY_TSN;
+        else if (!strcmp(optarg, "tsc"))
+          p->pacing = ST21_TX_PACING_WAY_TSC;
+        else if (!strcmp(optarg, "ptp"))
+          p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
+        else
+          err("%s, unknow pacing way %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MTL_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l3_l4"))
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
+        else if (!strcmp(optarg, "none"))
+          p->rss_mode = MTL_RSS_MODE_NONE;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_TX_NO_CHAIN:
+        p->flags |= MTL_FLAG_TX_NO_CHAIN;
+        break;
+      case TEST_ARG_IOVA_MODE:
+        if (!strcmp(optarg, "va"))
+          p->iova_mode = MTL_IOVA_MODE_VA;
+        else if (!strcmp(optarg, "pa"))
+          p->iova_mode = MTL_IOVA_MODE_PA;
+        else
+          err("%s, unknow iova mode %s\n", __func__, optarg);
+        break;
+      case TEST_ARG_MULTI_SRC_PORT:
+        p->flags |= MTL_FLAG_MULTI_SRC_PORT;
+        break;
+      case TEST_ARG_DHCP:
+        for (int port = 0; port < MTL_PORT_MAX; ++port)
+          p->net_proto[port] = MTL_PROTO_DHCP;
+        ctx->dhcp = true;
+        break;
+      case TEST_ARG_MCAST_ONLY:
+        ctx->mcast_only = true;
+        break;
+      case TEST_ARG_ALLOW_ACROSS_NUMA_CORE:
+        p->flags |= MTL_FLAG_ALLOW_ACROSS_NUMA_CORE;
+        break;
+      case TEST_ARG_AUDIO_TX_PACING:
+        if (!strcmp(optarg, "auto"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsc"))
+          ctx->tx_audio_pacing_way = ST30_TX_PACING_WAY_TSC;
+        else
+          err("%s, unknow audio tx pacing %s\n", __func__, optarg);
+        break;
+      default:
+        break;
     }
   };
 
@@ -393,14 +389,11 @@ static void test_ctx_init(struct st_tests_context *ctx) {
     int cpus_add = 0;
     for (int cpu = 0; cpu < max_cpus; cpu++) {
       if (numa_node_of_cpu(cpu) == numa) {
-        int n = snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos,
-                         ",%d", cpu);
-        if (n < 0 || n >= (TEST_LCORE_LIST_MAX_LEN - pos))
-          break;
+        int n = snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
+        if (n < 0 || n >= (TEST_LCORE_LIST_MAX_LEN - pos)) break;
         pos += n;
         cpus_add++;
-        if (cpus_add >= cpus_per_soc)
-          break;
+        if (cpus_add >= cpus_per_soc) break;
       }
     }
   }
@@ -425,14 +418,14 @@ TEST(Misc, version) {
 }
 
 TEST(Misc, version_compare) {
-  auto version_next = MTL_VERSION_NUM(MTL_VERSION_MAJOR + 1, MTL_VERSION_MINOR,
-                                      MTL_VERSION_LAST);
+  auto version_next =
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR + 1, MTL_VERSION_MINOR, MTL_VERSION_LAST);
   EXPECT_LT(MTL_VERSION, version_next);
-  version_next = MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR + 1,
-                                 MTL_VERSION_LAST);
+  version_next =
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR + 1, MTL_VERSION_LAST);
   EXPECT_LT(MTL_VERSION, version_next);
-  version_next = MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR,
-                                 MTL_VERSION_LAST + 1);
+  version_next =
+      MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST + 1);
   EXPECT_LT(MTL_VERSION, version_next);
 }
 
@@ -441,8 +434,7 @@ static void mtl_memcpy_test(size_t size) {
   char *src = new char[size];
   char *dst = new char[size];
 
-  for (size_t i = 0; i < size; i++)
-    src[i] = i;
+  for (size_t i = 0; i < size; i++) src[i] = i;
   memset(dst, 0, size);
 
   mtl_memcpy(dst, src, size);
@@ -458,8 +450,8 @@ TEST(Misc, memcpy) {
   mtl_memcpy_test(4096 + 100);
 }
 
-static void hp_malloc_test(struct st_tests_context *ctx, size_t size,
-                           enum mtl_port port, bool zero, bool expect_succ) {
+static void hp_malloc_test(struct st_tests_context *ctx, size_t size, enum mtl_port port,
+                           bool zero, bool expect_succ) {
   auto m_handle = ctx->handle;
   void *p;
 
@@ -483,8 +475,7 @@ static void hp_malloc_test(struct st_tests_context *ctx, size_t size,
   }
 }
 
-static void hp_malloc_tests(struct st_tests_context *ctx, enum mtl_port port,
-                            bool zero) {
+static void hp_malloc_tests(struct st_tests_context *ctx, enum mtl_port port, bool zero) {
   hp_malloc_test(ctx, 1, port, zero, true);
   hp_malloc_test(ctx, 1024, port, zero, true);
   hp_malloc_test(ctx, 1024 + 3, port, zero, true);
@@ -495,8 +486,7 @@ TEST(Misc, hp_malloc) {
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_tests(ctx, MTL_PORT_P, false);
-  if (num_port > 1)
-    hp_malloc_tests(ctx, MTL_PORT_R, false);
+  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, false);
 }
 
 TEST(Misc, hp_zmalloc) {
@@ -504,8 +494,7 @@ TEST(Misc, hp_zmalloc) {
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_tests(ctx, MTL_PORT_P, true);
-  if (num_port > 1)
-    hp_malloc_tests(ctx, MTL_PORT_R, true);
+  if (num_port > 1) hp_malloc_tests(ctx, MTL_PORT_R, true);
 }
 
 TEST(Misc, hp_malloc_expect_fail) {
@@ -513,8 +502,7 @@ TEST(Misc, hp_malloc_expect_fail) {
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
-  if (num_port > 1)
-    hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
+  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, false, false);
 }
 
 TEST(Misc, hp_zmalloc_expect_fail) {
@@ -522,8 +510,7 @@ TEST(Misc, hp_zmalloc_expect_fail) {
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
-  if (num_port > 1)
-    hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
+  if (num_port > 1) hp_malloc_test(ctx, 0, MTL_PORT_R, true, false);
 }
 
 TEST(Misc, ptp) {
@@ -646,8 +633,8 @@ GTEST_API_ int main(int argc, char **argv) {
     mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
                      ctx->para.netmask[i], ctx->para.gateway[i]);
     uint8_t *ip = ctx->para.sip_addr[i];
-    info("%s, if ip %u.%u.%u.%u for port %s\n", __func__, ip[0], ip[1], ip[2],
-         ip[3], ctx->para.port[i]);
+    info("%s, if ip %u.%u.%u.%u for port %s\n", __func__, ip[0], ip[1], ip[2], ip[3],
+         ctx->para.port[i]);
   }
 
   if (ctx->para.num_ports > 1) {
@@ -672,8 +659,7 @@ GTEST_API_ int main(int argc, char **argv) {
   int time_least = 10;
   if (link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
-    info("%s, sleep %ds before disable the port\n", __func__,
-         time_least - time_s);
+    info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
     sleep(time_least - time_s);
   }
 
@@ -687,17 +673,14 @@ GTEST_API_ int main(int argc, char **argv) {
 int tx_next_frame(void *priv, uint16_t *next_frame_idx) {
   auto ctx = (tests_context *)priv;
 
-  if (!ctx->handle)
-    return -EIO; /* not ready */
+  if (!ctx->handle) return -EIO; /* not ready */
 
   *next_frame_idx = ctx->fb_idx;
   dbg("%s, next_frame_idx %d\n", __func__, *next_frame_idx);
   ctx->fb_idx++;
-  if (ctx->fb_idx >= ctx->fb_cnt)
-    ctx->fb_idx = 0;
+  if (ctx->fb_idx >= ctx->fb_cnt) ctx->fb_idx = 0;
   ctx->fb_send++;
-  if (!ctx->start_time)
-    ctx->start_time = st_test_get_monotonic_time();
+  if (!ctx->start_time) ctx->start_time = st_test_get_monotonic_time();
   return 0;
 }
 
@@ -708,8 +691,7 @@ void sha_frame_check(void *args) {
   while (!ctx->stop) {
     if (ctx->buf_q.empty()) {
       lck.lock();
-      if (!ctx->stop)
-        ctx->cv.wait(lck);
+      if (!ctx->stop) ctx->cv.wait(lck);
       lck.unlock();
       continue;
     } else {
@@ -720,8 +702,7 @@ void sha_frame_check(void *args) {
       SHA256((unsigned char *)frame, ctx->frame_size, result);
       for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
         unsigned char *target_sha = ctx->shas[i];
-        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH))
-          break;
+        if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
       if (i >= TEST_SHA_HIST_NUM) {
         test_sha_dump("rx_error_sha", result);
@@ -735,8 +716,7 @@ void sha_frame_check(void *args) {
 
 int tests_context_unit(tests_context *ctx) {
   for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
-    if (ctx->frame_buf[frame])
-      st_test_free(ctx->frame_buf[frame]);
+    if (ctx->frame_buf[frame]) st_test_free(ctx->frame_buf[frame]);
     ctx->frame_buf[frame] = NULL;
   }
   if (ctx->ooo_mapping) {
@@ -763,12 +743,11 @@ int test_ctx_notify_event(void *priv, enum st_event event, void *args) {
   if (event == ST_EVENT_VSYNC) {
     tests_context *s = (tests_context *)priv;
     s->vsync_cnt++;
-    if (!s->first_vsync_time)
-      s->first_vsync_time = st_test_get_monotonic_time();
+    if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
 #ifdef DEBUG
     struct st10_vsync_meta *meta = (struct st10_vsync_meta *)args;
-    dbg("%s(%d,%p), epoch %" PRIu64 " vsync_cnt %d\n", __func__, s->idx, s,
-        meta->epoch, s->vsync_cnt);
+    dbg("%s(%d,%p), epoch %" PRIu64 " vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
+        s->vsync_cnt);
 #endif
   }
   return 0;

@@ -98,14 +98,12 @@ static inline struct rte_ring *mur_client_ring(struct mur_client *c) {
   return c->ring;
 }
 
-static inline int mur_client_set_wake_thresh(struct mur_client *c,
-                                             unsigned int count) {
+static inline int mur_client_set_wake_thresh(struct mur_client *c, unsigned int count) {
   c->wake_thresh_count = count;
   return 0;
 }
 
-static inline int mur_client_set_wake_timeout(struct mur_client *c,
-                                              unsigned int us) {
+static inline int mur_client_set_wake_timeout(struct mur_client *c, unsigned int us) {
   c->wake_timeout_us = us;
   return 0;
 }

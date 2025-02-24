@@ -127,9 +127,8 @@ int mtl_sch_free(mtl_sch_handle sch);
  *   - NULL on error.
  *   - Otherwise, the handle to the tasklet.
  */
-mtl_tasklet_handle
-mtl_sch_register_tasklet(struct mtl_sch_impl *sch,
-                         struct mtl_tasklet_ops *tasklet_ops);
+mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl *sch,
+                                            struct mtl_tasklet_ops *tasklet_ops);
 
 /**
  * Unregister the tasklet from the bind sch. One tasklet can be unregistered at

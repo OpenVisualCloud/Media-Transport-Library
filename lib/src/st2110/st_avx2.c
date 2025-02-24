@@ -48,9 +48,9 @@ static uint8_t rfc4175_b2l_shuffle_r1_tbl[16] = {
     0x80,               /* zeros */
 };
 
-int st20_rfc4175_422be10_to_422le10_avx2(
-    struct st20_rfc4175_422_10_pg2_be *pg_be,
-    struct st20_rfc4175_422_10_pg2_le *pg_le, uint32_t w, uint32_t h) {
+int st20_rfc4175_422be10_to_422le10_avx2(struct st20_rfc4175_422_10_pg2_be *pg_be,
+                                         struct st20_rfc4175_422_10_pg2_le *pg_le,
+                                         uint32_t w, uint32_t h) {
   __m128i shuffle_l0 = _mm_loadu_si128((__m128i *)rfc4175_b2l_shuffle_l0_tbl);
   __m128i shuffle_r0 = _mm_loadu_si128((__m128i *)rfc4175_b2l_shuffle_r0_tbl);
   __m128i and_l0 = _mm_loadu_si128((__m128i *)rfc4175_b2l_and_l0_tbl);
@@ -75,10 +75,8 @@ int st20_rfc4175_422be10_to_422le10_avx2(
     __m128i input = _mm_loadu_si128((__m128i *)pg_be);
     __m128i shuffle_l0_result = _mm_shuffle_epi8(input, shuffle_l0);
     __m128i shuffle_r0_result = _mm_shuffle_epi8(input, shuffle_r0);
-    __m128i sl_result =
-        _mm_and_si128(_mm_slli_epi32(shuffle_l0_result, 2), and_l0);
-    __m128i sr_result =
-        _mm_and_si128(_mm_srli_epi32(shuffle_r0_result, 2), and_r0);
+    __m128i sl_result = _mm_and_si128(_mm_slli_epi32(shuffle_l0_result, 2), and_l0);
+    __m128i sr_result = _mm_and_si128(_mm_srli_epi32(shuffle_r0_result, 2), and_r0);
     __m128i sl_result_shuffle = _mm_shuffle_epi8(sl_result, shuffle_l1);
     __m128i sr_result_shuffle = _mm_shuffle_epi8(sr_result, shuffle_r1);
     __m128i result = _mm_or_si128(sl_result_shuffle, sr_result_shuffle);
@@ -157,9 +155,9 @@ static uint8_t rfc4175_l2b_shuffle_r1_tbl[16] = {
     0x80,                         /* zeros */
 };
 
-int st20_rfc4175_422le10_to_422be10_avx2(
-    struct st20_rfc4175_422_10_pg2_le *pg_le,
-    struct st20_rfc4175_422_10_pg2_be *pg_be, uint32_t w, uint32_t h) {
+int st20_rfc4175_422le10_to_422be10_avx2(struct st20_rfc4175_422_10_pg2_le *pg_le,
+                                         struct st20_rfc4175_422_10_pg2_be *pg_be,
+                                         uint32_t w, uint32_t h) {
   __m128i shuffle_l0 = _mm_loadu_si128((__m128i *)rfc4175_l2b_shuffle_l0_tbl);
   __m128i shuffle_r0 = _mm_loadu_si128((__m128i *)rfc4175_l2b_shuffle_r0_tbl);
   __m128i and_l0 = _mm_loadu_si128((__m128i *)rfc4175_l2b_and_l0_tbl);
@@ -184,10 +182,8 @@ int st20_rfc4175_422le10_to_422be10_avx2(
     __m128i input = _mm_loadu_si128((__m128i *)pg_le);
     __m128i shuffle_l0_result = _mm_shuffle_epi8(input, shuffle_l0);
     __m128i shuffle_r0_result = _mm_shuffle_epi8(input, shuffle_r0);
-    __m128i sl_result =
-        _mm_and_si128(_mm_slli_epi32(shuffle_l0_result, 2), and_l0);
-    __m128i sr_result =
-        _mm_and_si128(_mm_srli_epi32(shuffle_r0_result, 2), and_r0);
+    __m128i sl_result = _mm_and_si128(_mm_slli_epi32(shuffle_l0_result, 2), and_l0);
+    __m128i sr_result = _mm_and_si128(_mm_srli_epi32(shuffle_r0_result, 2), and_r0);
     __m128i sl_result_shuffle = _mm_shuffle_epi8(sl_result, shuffle_l1);
     __m128i sr_result_shuffle = _mm_shuffle_epi8(sr_result, shuffle_r1);
     __m128i result = _mm_or_si128(sl_result_shuffle, sr_result_shuffle);

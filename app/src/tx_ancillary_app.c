@@ -14,22 +14,19 @@ static int app_tx_anc_next_frame(void *priv, uint16_t *next_frame_idx,
 
   st_pthread_mutex_lock(&s->st40_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
-    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n",
-        __func__, s->idx, consumer_idx, meta->epoch,
-        st10_get_tai(meta->tfmt, meta->timestamp,
-                     ST10_VIDEO_SAMPLING_RATE_90K));
+    dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, consumer_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
     /* point to next */
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt)
-      consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
   } else {
     /* not ready */
-    dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx,
-        framebuff->stat);
+    dbg("%s(%d), idx %u err stat %d\n", __func__, s->idx, consumer_idx, framebuff->stat);
     ret = -EIO;
   }
   st_pthread_cond_signal(&s->st40_wake_cond);
@@ -48,14 +45,13 @@ static int app_tx_anc_frame_done(void *priv, uint16_t frame_idx,
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST_TX_FRAME_FREE;
-    dbg("%s(%d), done frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n",
-        __func__, s->idx, frame_idx, meta->epoch,
-        st10_get_tai(meta->tfmt, meta->timestamp,
-                     ST10_VIDEO_SAMPLING_RATE_90K));
+    dbg("%s(%d), done frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
+        s->idx, frame_idx, meta->epoch,
+        st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, s->idx,
-        framebuff->stat, frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
   }
   st_pthread_cond_signal(&s->st40_wake_cond);
   st_pthread_mutex_unlock(&s->st40_wake_mutex);
@@ -116,8 +112,7 @@ static void *app_tx_anc_frame_thread(void *arg) {
     }
     st_pthread_mutex_unlock(&s->st40_wake_mutex);
 
-    struct st40_frame *frame_addr =
-        st40_tx_get_framebuffer(s->handle, producer_idx);
+    struct st40_frame *frame_addr = st40_tx_get_framebuffer(s->handle, producer_idx);
     app_tx_anc_build_frame(s, frame_addr);
 
     st_pthread_mutex_lock(&s->st40_wake_mutex);
@@ -125,8 +120,7 @@ static void *app_tx_anc_frame_thread(void *arg) {
     framebuff->stat = ST_TX_FRAME_READY;
     /* point to next */
     producer_idx++;
-    if (producer_idx >= s->framebuff_cnt)
-      producer_idx = 0;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
     s->framebuff_producer_idx = producer_idx;
     st_pthread_mutex_unlock(&s->st40_wake_mutex);
   }
@@ -171,8 +165,8 @@ static void *app_tx_anc_pcap_thread(void *arg) {
       if (ntohs(eth_hdr->ether_type) == ETHERTYPE_IP) {
         ip_hdr = (struct ip *)(packet + sizeof(struct ether_header));
         if (ip_hdr->ip_p == IPPROTO_UDP) {
-          udp_hdr = (struct udphdr *)(packet + sizeof(struct ether_header) +
-                                      sizeof(struct ip));
+          udp_hdr =
+              (struct udphdr *)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
@@ -186,8 +180,7 @@ static void *app_tx_anc_pcap_thread(void *arg) {
       /* open capture file for offline processing */
       s->st40_pcap = pcap_open_offline(s->st40_source_url, err_buf);
       if (s->st40_pcap == NULL) {
-        err("pcap_open_offline %s() failed: %s\n:", s->st40_source_url,
-            err_buf);
+        err("pcap_open_offline %s() failed: %s\n:", s->st40_source_url, err_buf);
         return NULL;
       }
     }
@@ -232,27 +225,21 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session *s, void *usrptr,
   payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
   payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
   payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
-  payload_hdr->swaped_first_hdr_chunk =
-      htonl(payload_hdr->swaped_first_hdr_chunk);
-  payload_hdr->swaped_second_hdr_chunk =
-      htonl(payload_hdr->swaped_second_hdr_chunk);
+  payload_hdr->swaped_first_hdr_chunk = htonl(payload_hdr->swaped_first_hdr_chunk);
+  payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
   for (int i = 0; i < udw_size; i++) {
     st40_set_udw(i + 3, st40_add_parity_bits(s->st40_frame_cursor[i]),
                  (uint8_t *)&payload_hdr->second_hdr_chunk);
   }
-  check_sum = st40_calc_checksum(3 + udw_size,
-                                 (uint8_t *)&payload_hdr->second_hdr_chunk);
-  st40_set_udw(udw_size + 3, check_sum,
-               (uint8_t *)&payload_hdr->second_hdr_chunk);
-  total_size =
-      ((3 + udw_size + 1) * 10) / 8; // Calculate size of the
-                                     // 10-bit words: DID, SDID, DATA_COUNT
-                                     // + size of buffer with data + checksum
-  total_size =
-      (4 - total_size % 4) + total_size; // Calculate word align to the 32-bit
-                                         // word of ANC data packet
-  payload_len = sizeof(struct st40_rfc8331_payload_hdr) - 4 +
-                total_size; // Full size of one ANC
+  check_sum = st40_calc_checksum(3 + udw_size, (uint8_t *)&payload_hdr->second_hdr_chunk);
+  st40_set_udw(udw_size + 3, check_sum, (uint8_t *)&payload_hdr->second_hdr_chunk);
+  total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
+                                               // 10-bit words: DID, SDID, DATA_COUNT
+                                               // + size of buffer with data + checksum
+  total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
+                                                   // word of ANC data packet
+  payload_len =
+      sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
   s->st40_frame_cursor += udw_size;
@@ -308,8 +295,7 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session *s) {
         return -EIO;
       }
 
-      uint8_t *m =
-          mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
+      uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
 
       if (MAP_FAILED != m) {
         s->st40_source_begin = m;
@@ -359,14 +345,11 @@ static int app_tx_anc_start_source(struct st_app_tx_anc_session *s) {
 
   s->st40_app_thread_stop = false;
   if (s->st40_pcap_input)
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_pcap_thread,
-                         (void *)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_pcap_thread, (void *)s);
   else if (s->st40_rtp_input)
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_rtp_thread,
-                         (void *)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_rtp_thread, (void *)s);
   else
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_frame_thread,
-                         (void *)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_frame_thread, (void *)s);
   if (ret < 0) {
     err("%s(%d), thread create fail err = %d\n", __func__, idx, ret);
     return ret;
@@ -386,8 +369,7 @@ static void app_tx_anc_stop_source(struct st_app_tx_anc_session *s) {
     st_pthread_mutex_lock(&s->st40_wake_mutex);
     st_pthread_cond_signal(&s->st40_wake_cond);
     st_pthread_mutex_unlock(&s->st40_wake_mutex);
-    if (s->st40_app_thread)
-      (void)pthread_join(s->st40_app_thread, NULL);
+    if (s->st40_app_thread) (void)pthread_join(s->st40_app_thread, NULL);
   }
 }
 
@@ -398,8 +380,7 @@ int app_tx_anc_uinit(struct st_app_tx_anc_session *s) {
 
   if (s->handle) {
     ret = st40_tx_free(s->handle);
-    if (ret < 0)
-      err("%s(%d), st_tx_anc_session_free fail %d\n", __func__, s->idx, ret);
+    if (ret < 0) err("%s(%d), st_tx_anc_session_free fail %d\n", __func__, s->idx, ret);
     s->handle = NULL;
   }
 
@@ -416,8 +397,7 @@ int app_tx_anc_uinit(struct st_app_tx_anc_session *s) {
   return 0;
 }
 
-static int app_tx_anc_init(struct st_app_context *ctx,
-                           st_json_ancillary_session_t *anc,
+static int app_tx_anc_init(struct st_app_context *ctx, st_json_ancillary_session_t *anc,
                            struct st_app_tx_anc_session *s) {
   int idx = s->idx, ret;
   struct st40_tx_ops ops;
@@ -428,8 +408,8 @@ static int app_tx_anc_init(struct st_app_context *ctx,
   s->framebuff_cnt = 2;
   s->st40_seq_id = 1;
 
-  s->framebuffs = (struct st_tx_frame *)st_app_zmalloc(sizeof(*s->framebuffs) *
-                                                       s->framebuff_cnt);
+  s->framebuffs =
+      (struct st_tx_frame *)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) {
     return -ENOMEM;
   }
@@ -451,10 +431,8 @@ static int app_tx_anc_init(struct st_app_context *ctx,
              : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   snprintf(ops.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           anc ? anc->base.inf[MTL_SESSION_PORT_P]->name
-               : ctx->para.port[MTL_PORT_P]);
-  ops.udp_port[MTL_SESSION_PORT_P] =
-      anc ? anc->base.udp_port : (10200 + s->idx);
+           anc ? anc->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
+  ops.udp_port[MTL_SESSION_PORT_P] = anc ? anc->base.udp_port : (10200 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -466,13 +444,11 @@ static int app_tx_anc_init(struct st_app_context *ctx,
                : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     snprintf(ops.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-             anc ? anc->base.inf[MTL_SESSION_PORT_R]->name
-                 : ctx->para.port[MTL_PORT_R]);
-    ops.udp_port[MTL_SESSION_PORT_R] =
-        anc ? anc->base.udp_port : (10200 + s->idx);
+             anc ? anc->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
+    ops.udp_port[MTL_SESSION_PORT_R] = anc ? anc->base.udp_port : (10200 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0],
-             ctx->tx_dst_mac[MTL_PORT_R], MTL_MAC_ADDR_LEN);
+      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
+             MTL_MAC_ADDR_LEN);
       ops.flags |= ST40_TX_FLAG_USER_R_MAC;
     }
   }
@@ -484,8 +460,7 @@ static int app_tx_anc_init(struct st_app_context *ctx,
   s->st40_pcap_input = false;
   ops.type = anc ? anc->info.type : ST40_TYPE_FRAME_LEVEL;
   ops.interlaced = anc ? anc->info.interlaced : false;
-  ops.payload_type =
-      anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
+  ops.payload_type = anc ? anc->base.payload_type : ST_APP_PAYLOAD_TYPE_ANCILLARY;
   /* select rtp type for pcap file or tx_video_rtp_ring_size */
   if (strstr(s->st40_source_url, ".pcap")) {
     ops.type = ST40_TYPE_RTP_LEVEL;
@@ -501,10 +476,8 @@ static int app_tx_anc_init(struct st_app_context *ctx,
     else
       ops.rtp_ring_size = 16;
   }
-  if (anc && anc->enable_rtcp)
-    ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
-  if (ctx->tx_anc_dedicate_queue)
-    ops.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
+  if (anc && anc->enable_rtcp) ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
+  if (ctx->tx_anc_dedicate_queue) ops.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
 
   handle = st40_tx_create(ctx->st, &ops);
   if (!handle) {
@@ -526,8 +499,7 @@ static int app_tx_anc_init(struct st_app_context *ctx,
 
   ret = app_tx_anc_start_source(s);
   if (ret < 0) {
-    err("%s(%d), app_tx_audio_session_start_source fail %d\n", __func__, idx,
-        ret);
+    err("%s(%d), app_tx_audio_session_start_source fail %d\n", __func__, idx, ret);
     app_tx_anc_uinit(s);
     return ret;
   }
@@ -537,8 +509,7 @@ static int app_tx_anc_init(struct st_app_context *ctx,
 
 int st_app_tx_anc_sessions_stop(struct st_app_context *ctx) {
   struct st_app_tx_anc_session *s;
-  if (!ctx->tx_anc_sessions)
-    return 0;
+  if (!ctx->tx_anc_sessions) return 0;
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     app_tx_anc_stop_source(s);
@@ -552,14 +523,13 @@ int st_app_tx_anc_sessions_init(struct st_app_context *ctx) {
   struct st_app_tx_anc_session *s;
   ctx->tx_anc_sessions = (struct st_app_tx_anc_session *)st_app_zmalloc(
       sizeof(struct st_app_tx_anc_session) * ctx->tx_anc_session_cnt);
-  if (!ctx->tx_anc_sessions)
-    return -ENOMEM;
+  if (!ctx->tx_anc_sessions) return -ENOMEM;
 
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
     s->idx = i;
-    ret = app_tx_anc_init(
-        ctx, ctx->json_ctx ? &ctx->json_ctx->tx_anc_sessions[i] : NULL, s);
+    ret = app_tx_anc_init(ctx, ctx->json_ctx ? &ctx->json_ctx->tx_anc_sessions[i] : NULL,
+                          s);
     if (ret < 0) {
       err("%s(%d), app_tx_anc_session_init fail %d\n", __func__, i, ret);
       return ret;
@@ -571,8 +541,7 @@ int st_app_tx_anc_sessions_init(struct st_app_context *ctx) {
 
 int st_app_tx_anc_sessions_uinit(struct st_app_context *ctx) {
   struct st_app_tx_anc_session *s;
-  if (!ctx->tx_anc_sessions)
-    return 0;
+  if (!ctx->tx_anc_sessions) return 0;
 
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];

@@ -31,8 +31,7 @@ static int tx_st20p_frame_available(void *priv) {
   struct tx_ctx *s = priv;
   struct split_fwd_sample_ctx *app = s->app;
 
-  if (!app->ready)
-    return -EIO;
+  if (!app->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->tx_wake_mutex);
   st_pthread_cond_signal(&s->tx_wake_cond);
@@ -44,8 +43,7 @@ static int tx_st20p_frame_available(void *priv) {
 static int rx_st20p_frame_available(void *priv) {
   struct split_fwd_sample_ctx *s = priv;
 
-  if (!s->ready)
-    return -EIO;
+  if (!s->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->rx_wake_mutex);
   st_pthread_cond_signal(&s->rx_wake_cond);
@@ -63,8 +61,7 @@ static void *tx_st20p_fwd_thread(void *args) {
     frame = st20p_rx_get_frame(rx_handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->rx_wake_mutex);
-      if (!s->stop)
-        st_pthread_cond_wait(&s->rx_wake_cond, &s->rx_wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->rx_wake_cond, &s->rx_wake_mutex);
       st_pthread_mutex_unlock(&s->rx_wake_mutex);
       continue;
     }
@@ -78,8 +75,7 @@ static void *tx_st20p_fwd_thread(void *args) {
         tx_frame = st20p_tx_get_frame(tx_handle);
         if (!tx_frame) { /* no frame */
           st_pthread_mutex_lock(&tx->tx_wake_mutex);
-          if (!s->stop)
-            st_pthread_cond_wait(&tx->tx_wake_cond, &tx->tx_wake_mutex);
+          if (!s->stop) st_pthread_cond_wait(&tx->tx_wake_cond, &tx->tx_wake_mutex);
           st_pthread_mutex_unlock(&tx->tx_wake_mutex);
           continue;
         }
@@ -155,7 +151,7 @@ int main(int argc, char **argv) {
   struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "st20p_rx";
-  ops_rx.priv = &app; // app handle register to lib
+  ops_rx.priv = &app;  // app handle register to lib
   ops_rx.port.num_port = 1;
   memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
@@ -191,8 +187,8 @@ int main(int argc, char **argv) {
     ops_tx.name = "st20p_fwd";
     ops_tx.priv = tx;
     ops_tx.port.num_port = 1;
-    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P],
-           ctx.fwd_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
@@ -227,8 +223,7 @@ int main(int argc, char **argv) {
   st20_get_pgroup(ctx.fmt, &st20_pg);
   app.tx[0].fb_offset = 0;
   app.tx[1].fb_offset = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
-  app.tx[2].fb_offset =
-      (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
+  app.tx[2].fb_offset = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.tx[3].fb_offset = app.tx[2].fb_offset + app.tx[1].fb_offset;
   app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 

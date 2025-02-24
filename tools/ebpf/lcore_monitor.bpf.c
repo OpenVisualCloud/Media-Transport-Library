@@ -52,12 +52,10 @@ static int lm_switch_event_submit(enum lcore_tid_event_type type,
 SEC("tracepoint/sched/sched_switch")
 int bpf_prog_sched_switch(struct trace_event_raw_sched_switch *args) {
   struct lcore_tid_cfg *cfg = lm_get_cfg();
-  if (!cfg)
-    return 0;
+  if (!cfg) return 0;
 
   /* core id check */
-  if (bpf_get_smp_processor_id() != cfg->core_id)
-    return 0;
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
 
   if (cfg->bpf_trace) {
     char fmt[] = "sched_switch: prev_pid %d next_pid in %d\n";
@@ -153,12 +151,10 @@ static int lm_vector_event_submit(enum lcore_tid_event_type type, int vector) {
 SEC("raw_tp/irq_work_entry")
 int BPF_PROG(irq_work_entry, unsigned int vector) {
   struct lcore_tid_cfg *cfg = lm_get_cfg();
-  if (!cfg)
-    return 0;
+  if (!cfg) return 0;
 
   /* core id check */
-  if (bpf_get_smp_processor_id() != cfg->core_id)
-    return 0;
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
 
   if (cfg->bpf_trace) {
     char fmt[] = "irq_work_entry, vector %d\n";
@@ -173,12 +169,10 @@ int BPF_PROG(irq_work_entry, unsigned int vector) {
 SEC("raw_tp/irq_work_exit")
 int BPF_PROG(irq_work_exit, unsigned int vector) {
   struct lcore_tid_cfg *cfg = lm_get_cfg();
-  if (!cfg)
-    return 0;
+  if (!cfg) return 0;
 
   /* core id check */
-  if (bpf_get_smp_processor_id() != cfg->core_id)
-    return 0;
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
 
   if (cfg->bpf_trace) {
     char fmt[] = "irq_work_exit, vector %d\n";
@@ -211,12 +205,10 @@ static int lm_syscall_event_submit(enum lcore_tid_event_type type, int id) {
 SEC("tracepoint/raw_syscalls/sys_enter")
 int bpf_prog_sys_enter(struct trace_event_raw_sys_enter *args) {
   struct lcore_tid_cfg *cfg = lm_get_cfg();
-  if (!cfg)
-    return 0;
+  if (!cfg) return 0;
 
   /* core id check */
-  if (bpf_get_smp_processor_id() != cfg->core_id)
-    return 0;
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
 
   if (cfg->bpf_trace) {
     char fmt[] = "sys_enter: id %d\n";
@@ -231,12 +223,10 @@ int bpf_prog_sys_enter(struct trace_event_raw_sys_enter *args) {
 SEC("tracepoint/raw_syscalls/sys_exit")
 int bpf_prog_sys_enxit(struct trace_event_raw_sys_exit *args) {
   struct lcore_tid_cfg *cfg = lm_get_cfg();
-  if (!cfg)
-    return 0;
+  if (!cfg) return 0;
 
   /* core id check */
-  if (bpf_get_smp_processor_id() != cfg->core_id)
-    return 0;
+  if (bpf_get_smp_processor_id() != cfg->core_id) return 0;
 
   if (cfg->bpf_trace) {
     char fmt[] = "sys_enter: id %d\n";

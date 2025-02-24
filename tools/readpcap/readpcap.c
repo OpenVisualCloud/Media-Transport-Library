@@ -16,7 +16,7 @@
 #include <string.h>
 
 #define NS_PER_S 1000000000
-#define TR_OFFSET_NS (500 * 1000) // 500us
+#define TR_OFFSET_NS (500 * 1000)  // 500us
 
 static inline uint64_t TimespecToNs(const struct timeval *ts) {
   return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_usec;
@@ -62,8 +62,8 @@ int main(int argc, char **argv) {
     printf("target_frame %d\n", g_target_frame_idx);
   }
 
-  fp = pcap_open_offline_with_tstamp_precision(
-      argv[1], PCAP_TSTAMP_PRECISION_NANO, errbuf);
+  fp = pcap_open_offline_with_tstamp_precision(argv[1], PCAP_TSTAMP_PRECISION_NANO,
+                                               errbuf);
   if (fp == NULL) {
     fprintf(stderr, "pcap_open_offline() failed: %s\n", errbuf);
     return 0;

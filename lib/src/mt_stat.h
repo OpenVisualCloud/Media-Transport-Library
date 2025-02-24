@@ -10,8 +10,7 @@
 int mt_stat_init(struct mtl_main_impl *impl);
 int mt_stat_uinit(struct mtl_main_impl *impl);
 
-int mt_stat_register(struct mtl_main_impl *impl, mt_stat_cb_t cb, void *priv,
-                     char *name);
+int mt_stat_register(struct mtl_main_impl *impl, mt_stat_cb_t cb, void *priv, char *name);
 int mt_stat_unregister(struct mtl_main_impl *impl, mt_stat_cb_t cb, void *priv);
 
 static inline uint64_t mt_stat_dump_period_us(struct mtl_main_impl *impl) {

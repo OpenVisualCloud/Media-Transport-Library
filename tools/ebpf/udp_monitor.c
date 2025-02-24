@@ -63,8 +63,7 @@ static struct option um_args_options[] = {
 
 static inline void *um_zmalloc(size_t sz) {
   void *p = malloc(sz);
-  if (p)
-    memset(p, 0x0, sz);
+  if (p) memset(p, 0x0, sz);
   return p;
 }
 
@@ -99,50 +98,47 @@ static int um_parse_args(struct udp_monitor_ctx *ctx, int argc, char **argv) {
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", um_args_options, &opt_idx);
-    if (cmd == -1)
-      break;
+    if (cmd == -1) break;
 
     switch (cmd) {
-    case UM_ARG_INTERFACE:
-      ctx->interface = optarg;
-      break;
-    case UM_ARG_DUMP_PERIOD_S:
-      ctx->dump_period_s = atoi(optarg);
-      break;
-    case UM_ARG_NO_SKIP_SYS:
-      ctx->skip_sys = false;
-      break;
-    case UM_ARG_NO_PROMISC:
-      ctx->promisc = false;
-      break;
-    case UM_ARG_HELP:
-    default:
-      um_print_help();
-      return -1;
+      case UM_ARG_INTERFACE:
+        ctx->interface = optarg;
+        break;
+      case UM_ARG_DUMP_PERIOD_S:
+        ctx->dump_period_s = atoi(optarg);
+        break;
+      case UM_ARG_NO_SKIP_SYS:
+        ctx->skip_sys = false;
+        break;
+      case UM_ARG_NO_PROMISC:
+        ctx->promisc = false;
+        break;
+      case UM_ARG_HELP:
+      default:
+        um_print_help();
+        return -1;
     }
   }
 
   return 0;
 }
 
-static int udp_hdr_list_dump(struct udp_monitor_ctx *ctx, bool clear,
-                             bool skip_sys, double dump_period_s) {
+static int udp_hdr_list_dump(struct udp_monitor_ctx *ctx, bool clear, bool skip_sys,
+                             double dump_period_s) {
   struct udp_detect_list *list = &ctx->detect;
   struct udp_detect_entry *entry;
 
   TAILQ_FOREACH(entry, list, next) {
-    if (!entry->pkt_cnt)
-      continue;
-    if (skip_sys && entry->sys)
-      continue;
+    if (!entry->pkt_cnt) continue;
+    if (skip_sys && entry->sys) continue;
 
     uint8_t *dip = (uint8_t *)&entry->tuple.dst_ip;
     uint8_t *sip = (uint8_t *)&entry->tuple.src_ip;
     double rate_m = (double)entry->tx_bytes * 8 / dump_period_s / (1000 * 1000);
 
-    info("%u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, %f Mb/s pkts %u\n", sip[0], sip[1],
-         sip[2], sip[3], ntohs(entry->tuple.src_port), dip[0], dip[1], dip[2],
-         dip[3], ntohs(entry->tuple.dst_port), rate_m, entry->pkt_cnt);
+    info("%u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, %f Mb/s pkts %u\n", sip[0], sip[1], sip[2],
+         sip[3], ntohs(entry->tuple.src_port), dip[0], dip[1], dip[2], dip[3],
+         ntohs(entry->tuple.dst_port), rate_m, entry->pkt_cnt);
     if (clear) {
       entry->pkt_cnt = 0;
       entry->tx_bytes = 0;
@@ -160,9 +156,9 @@ static int udp_hdr_entry_handler(void *pri, void *data, size_t data_sz) {
 
   uint8_t *dip = (uint8_t *)&e->tuple.dst_ip;
   uint8_t *sip = (uint8_t *)&e->tuple.src_ip;
-  dbg("%s, %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n", __func__, sip[0],
-      sip[1], sip[2], sip[3], ntohs(e->tuple.src_port), dip[0], dip[1], dip[2],
-      dip[3], ntohs(e->tuple.dst_port), e->len);
+  dbg("%s, %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n", __func__, sip[0], sip[1], sip[2],
+      sip[3], ntohs(e->tuple.src_port), dip[0], dip[1], dip[2], dip[3],
+      ntohs(e->tuple.dst_port), e->len);
 
   /* check if any exist */
   TAILQ_FOREACH(entry, list, next) {
@@ -182,16 +178,14 @@ static int udp_hdr_entry_handler(void *pri, void *data, size_t data_sz) {
   entry->pkt_cnt++;
   entry->tx_bytes += e->len;
   /* 224.0.1.129 */
-  if (dip[0] == 224 && dip[1] == 0 && dip[2] == 1 && dip[3] == 129)
-    entry->sys = true;
+  if (dip[0] == 224 && dip[1] == 0 && dip[2] == 1 && dip[3] == 129) entry->sys = true;
   /* 255.255.255.255 */
-  if (dip[0] == 255 && dip[1] == 255 && dip[2] == 255 && dip[3] == 255)
-    entry->sys = true;
+  if (dip[0] == 255 && dip[1] == 255 && dip[2] == 255 && dip[3] == 255) entry->sys = true;
   /* add to list */
   TAILQ_INSERT_TAIL(list, entry, next);
-  info("%s, new detected stream: %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n",
-       __func__, sip[0], sip[1], sip[2], sip[3], ntohs(e->tuple.src_port),
-       dip[0], dip[1], dip[2], dip[3], ntohs(e->tuple.dst_port), e->len);
+  info("%s, new detected stream: %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n", __func__,
+       sip[0], sip[1], sip[2], sip[3], ntohs(e->tuple.src_port), dip[0], dip[1], dip[2],
+       dip[3], ntohs(e->tuple.dst_port), e->len);
 
   return 0;
 }
@@ -201,8 +195,7 @@ static int open_raw_sock(const char *if_name) {
   int fd;
   int ret;
 
-  fd = socket(PF_PACKET, SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC,
-              htons(ETH_P_ALL));
+  fd = socket(PF_PACKET, SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC, htons(ETH_P_ALL));
   if (fd < 0) {
     err("%s, failed to create raw socket\n", __func__);
     return -1;
@@ -214,8 +207,7 @@ static int open_raw_sock(const char *if_name) {
   sll.sll_protocol = htons(ETH_P_ALL);
   ret = bind(fd, (struct sockaddr *)&sll, sizeof(sll));
   if (ret < 0) {
-    err("%s, failed to bind to %s: %d, %s\n", __func__, if_name, ret,
-        strerror(errno));
+    err("%s, failed to bind to %s: %d, %s\n", __func__, if_name, ret, strerror(errno));
     close(fd);
     return ret;
   }
@@ -256,9 +248,9 @@ static void um_sig_handler(int signo) {
   info("%s, signal %d\n", __func__, signo);
 
   switch (signo) {
-  case SIGINT: /* Interrupt from keyboard */
-    g_um_stop = true;
-    break;
+    case SIGINT: /* Interrupt from keyboard */
+      g_um_stop = true;
+      break;
   }
 
   return;
@@ -280,8 +272,7 @@ int main(int argc, char **argv) {
   ctx.promisc = true;
 
   ret = um_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
   if (!ctx.interface) {
     err("%s, no interface assigned\n", __func__);
     um_print_help();
@@ -324,28 +315,27 @@ int main(int argc, char **argv) {
 
   /* Attach BPF program to raw socket */
   prog_fd = bpf_program__fd(skel->progs.bpf_socket_handler);
-  ret = setsockopt(sock_raw_fd, SOL_SOCKET, SO_ATTACH_BPF, &prog_fd,
-                   sizeof(prog_fd));
+  ret = setsockopt(sock_raw_fd, SOL_SOCKET, SO_ATTACH_BPF, &prog_fd, sizeof(prog_fd));
   if (ret < 0) {
     err("%s, failed attach to raw socket %d\n", __func__, ret);
     goto exit;
   }
-  info("%s, attach bpf skeleton to %s succ, sock_raw_fd %d\n", __func__,
-       ctx.interface, sock_raw_fd);
+  info("%s, attach bpf skeleton to %s succ, sock_raw_fd %d\n", __func__, ctx.interface,
+       sock_raw_fd);
   if (ctx.promisc) {
     ret = enable_promisc(sock_fd, ctx.interface, 1);
     if (ret < 0) {
       err("%s, failed to enable promisc %d\n", __func__, ret);
       goto exit;
     }
-    info("%s, enable promisc for %s succ, sock_fd %d\n", __func__,
-         ctx.interface, sock_fd);
+    info("%s, enable promisc for %s succ, sock_fd %d\n", __func__, ctx.interface,
+         sock_fd);
   }
 
   signal(SIGINT, um_sig_handler);
 
-  info("%s, start to poll udp pkts for %s, dump period %ds\n", __func__,
-       ctx.interface, ctx.dump_period_s);
+  info("%s, start to poll udp pkts for %s, dump period %ds\n", __func__, ctx.interface,
+       ctx.dump_period_s);
   last_ns = um_get_monotonic_time();
   while (!g_um_stop) {
     ret = ring_buffer__poll(rb, 100);
@@ -370,18 +360,13 @@ int main(int argc, char **argv) {
   }
 
   info("%s, stop now\n", __func__);
-  if (sock_fd >= 0)
-    enable_promisc(sock_fd, ctx.interface, 0);
+  if (sock_fd >= 0) enable_promisc(sock_fd, ctx.interface, 0);
 
 exit:
-  if (rb)
-    ring_buffer__free(rb);
-  if (skel)
-    udp_monitor_bpf__destroy(skel);
-  if (sock_fd >= 0)
-    close(sock_fd);
-  if (sock_raw_fd >= 0)
-    close(sock_raw_fd);
+  if (rb) ring_buffer__free(rb);
+  if (skel) udp_monitor_bpf__destroy(skel);
+  if (sock_fd >= 0) close(sock_fd);
+  if (sock_raw_fd >= 0) close(sock_raw_fd);
 
   /* free all entries in list */
   struct udp_detect_entry *entry;

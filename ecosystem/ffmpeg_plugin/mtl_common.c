@@ -28,31 +28,28 @@ enum st_fps framerate_to_st_fps(AVRational framerate) {
   return st_frame_rate_to_st_fps(fps);
 }
 
-mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args,
-                       int *idx) {
+mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args, int *idx) {
   struct mtl_init_params p;
   mtl_handle handle = NULL;
 
   if (g_mtl_shared_handle) {
     *idx = g_mtl_ref_cnt;
     g_mtl_ref_cnt++;
-    info(ctx, "%s, shared handle %p ref cnt %d\n", __func__,
-         g_mtl_shared_handle, g_mtl_ref_cnt);
+    info(ctx, "%s, shared handle %p ref cnt %d\n", __func__, g_mtl_shared_handle,
+         g_mtl_ref_cnt);
     return g_mtl_shared_handle;
   }
 
   memset(&p, 0, sizeof(p));
 
   for (int i = 0; i < MTL_PORT_MAX; i++) {
-    if (!args->port[i])
-      break;
+    if (!args->port[i]) break;
     snprintf(p.port[i], sizeof(p.port[i]), "%s", args->port[i]);
     p.pmd[i] = mtl_pmd_by_port_name(p.port[i]);
     if (args->sip[i]) {
       int ret = inet_pton(AF_INET, args->sip[i], p.sip_addr[i]);
       if (ret != 1) {
-        err(ctx, "%s, %d sip %s is not valid ip address\n", __func__, i,
-            args->sip[i]);
+        err(ctx, "%s, %d sip %s is not valid ip address\n", __func__, i, args->sip[i]);
         return NULL;
       }
     }
@@ -65,7 +62,7 @@ mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args,
   p.flags |= MTL_FLAG_RX_VIDEO_MIGRATE;
   p.flags |= MTL_FLAG_RX_SEPARATE_VIDEO_LCORE;
   p.flags |= MTL_FLAG_BIND_NUMA;
-  p.log_level = MTL_LOG_LEVEL_INFO; // log level. ERROR, INFO, WARNING
+  p.log_level = MTL_LOG_LEVEL_INFO;  // log level. ERROR, INFO, WARNING
 
   if (args->dma_dev) {
     char devs[128] = {0};
@@ -114,20 +111,17 @@ int mtl_instance_put(AVFormatContext *ctx, mtl_handle handle) {
 }
 
 int mtl_parse_rx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
-                      const StRxSessionPortArgs *args,
-                      struct st_rx_port *port) {
+                      const StRxSessionPortArgs *args, struct st_rx_port *port) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     /* if no special port in StRxSessionPortArgs, get from StDevArgs */
-    if (!args->port[i] && !devArgs->port[i])
-      break;
+    if (!args->port[i] && !devArgs->port[i]) break;
     dbg(ctx, "%s, port on %d\n", __func__, i);
     snprintf(port->port[i], sizeof(port->port[i]), "%s",
              args->port[i] ? args->port[i] : devArgs->port[i]);
     if (args->sip[i]) {
       int ret = inet_pton(AF_INET, args->sip[i], port->ip_addr[i]);
       if (ret != 1) {
-        err(ctx, "%s, %d sip %s is not valid ip address\n", __func__, i,
-            args->sip[i]);
+        err(ctx, "%s, %d sip %s is not valid ip address\n", __func__, i, args->sip[i]);
         return AVERROR(EINVAL);
       }
     }
@@ -148,20 +142,17 @@ int mtl_parse_rx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
 }
 
 int mtl_parse_tx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
-                      const StTxSessionPortArgs *args,
-                      struct st_tx_port *port) {
+                      const StTxSessionPortArgs *args, struct st_tx_port *port) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     /* if no special port in StTxSessionPortArgs, get from StDevArgs */
-    if (!args->port[i] && !devArgs->port[i])
-      break;
+    if (!args->port[i] && !devArgs->port[i]) break;
     dbg(ctx, "%s, port on %d\n", __func__, i);
     snprintf(port->port[i], sizeof(port->port[i]), "%s",
              args->port[i] ? args->port[i] : devArgs->port[i]);
     if (args->dip[i]) {
       int ret = inet_pton(AF_INET, args->dip[i], port->dip_addr[i]);
       if (ret != 1) {
-        err(ctx, "%s, %d dip %s is not valid ip address\n", __func__, i,
-            args->dip[i]);
+        err(ctx, "%s, %d dip %s is not valid ip address\n", __func__, i, args->dip[i]);
         return AVERROR(EINVAL);
       }
     }
@@ -183,16 +174,16 @@ int mtl_parse_tx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
 
 int mtl_parse_st30_sample_rate(enum st30_sampling *sample_rate, int value) {
   switch (value) {
-  case 48000:
-    *sample_rate = ST30_SAMPLING_48K;
-    return 0;
-  case 96000:
-    *sample_rate = ST30_SAMPLING_96K;
-    return 0;
-  case 44100:
-    *sample_rate = ST31_SAMPLING_44K;
-    return 0;
-  default:
-    return AVERROR(EINVAL);
+    case 48000:
+      *sample_rate = ST30_SAMPLING_48K;
+      return 0;
+    case 96000:
+      *sample_rate = ST30_SAMPLING_96K;
+      return 0;
+    case 44100:
+      *sample_rate = ST31_SAMPLING_44K;
+      return 0;
+    default:
+      return AVERROR(EINVAL);
   }
 }

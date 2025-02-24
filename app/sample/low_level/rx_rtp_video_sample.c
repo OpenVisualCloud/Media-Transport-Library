@@ -35,8 +35,7 @@ static void *app_rx_video_rtp_thread(void *arg) {
     if (!mbuf) {
       /* no buffer */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -46,8 +45,7 @@ static void *app_rx_video_rtp_thread(void *arg) {
     /* handle the rtp packet, should not handle the heavy work, if the
      * st20_rx_get_mbuf is not called timely, the rtp queue in the lib will be
      * full and rtp will be enqueued fail in the lib, packet will be dropped*/
-    if (hdr->base.marker)
-      s->fb_rec++;
+    if (hdr->base.marker) s->fb_rec++;
     /* free to lib */
     st20_rx_put_mbuf(s->handle, mbuf);
   }
@@ -62,8 +60,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -79,8 +76,7 @@ int main(int argc, char **argv) {
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] =
-        (struct rv_rtp_sample_ctx *)malloc(sizeof(struct rv_rtp_sample_ctx));
+    app[i] = (struct rv_rtp_sample_ctx *)malloc(sizeof(struct rv_rtp_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       return -1;
@@ -93,7 +89,7 @@ int main(int argc, char **argv) {
     struct st20_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20_test";
-    ops_rx.priv = app[i]; // app handle register to lib
+    ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
     memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -115,8 +111,7 @@ int main(int argc, char **argv) {
       goto error;
     }
     app[i]->handle = rx_handle[i];
-    ret = pthread_create(&app[i]->app_thread, NULL, app_rx_video_rtp_thread,
-                         app[i]);
+    ret = pthread_create(&app[i]->app_thread, NULL, app_rx_video_rtp_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -141,8 +136,7 @@ int main(int argc, char **argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_rec <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i,
-          app[i]->fb_rec);
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
       ret = -EIO;
     }
   }
@@ -150,10 +144,8 @@ int main(int argc, char **argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i])
-      continue;
-    if (app[i]->handle)
-      st20_rx_free(app[i]->handle);
+    if (!app[i]) continue;
+    if (app[i]->handle) st20_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
     free(app[i]);

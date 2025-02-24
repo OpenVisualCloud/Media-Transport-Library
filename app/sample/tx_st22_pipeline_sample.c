@@ -122,8 +122,7 @@ static int tx_st22p_open_source(struct st_sample_context *ctx,
   return 0;
 }
 
-static void tx_st22p_build_frame(struct tx_st22p_sample_ctx *s,
-                                 struct st_frame *frame) {
+static void tx_st22p_build_frame(struct tx_st22p_sample_ctx *s, struct st_frame *frame) {
   if (s->frame_cursor + s->frame_size > s->source_end) {
     s->frame_cursor = s->source_begin;
   }
@@ -132,8 +131,8 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx *s,
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
   for (uint8_t plane = 0; plane < planes; plane++) {
     size_t plane_sz = st_frame_plane_size(frame, plane);
-    dbg("%s(%d), src frame, plane %u size %" PRIu64 " addr %p\n", __func__,
-        s->idx, plane, plane_sz, frame->addr[plane]);
+    dbg("%s(%d), src frame, plane %u size %" PRIu64 " addr %p\n", __func__, s->idx, plane,
+        plane_sz, frame->addr[plane]);
     dbg("%s(%d), plane %u src addr %p\n", __func__, s->idx, plane, src);
     mtl_memcpy(frame->addr[plane], src, plane_sz);
     src += plane_sz;
@@ -159,8 +158,7 @@ static void *tx_st22p_frame_thread(void *arg) {
       warn("%s(%d), get frame time out\n", __func__, s->idx);
       continue;
     }
-    if (s->source_begin)
-      tx_st22p_build_frame(s, frame);
+    if (s->source_begin) tx_st22p_build_frame(s, frame);
     st22p_tx_put_frame(handle, frame);
     s->fb_send++;
   }
@@ -177,8 +175,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -207,16 +204,16 @@ int main(int argc, char **argv) {
     struct st22p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st22p_sample";
-    ops_tx.priv = app[i]; // app handle register to lib
+    ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.port.num_port = ctx.param.num_ports;
-    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P],
-           ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
+           MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     if (ops_tx.port.num_port > 1) {
-      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R],
-             ctx.tx_dip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
+             MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
       ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
@@ -238,8 +235,7 @@ int main(int argc, char **argv) {
     ops_tx.quality = ST22_QUALITY_MODE_QUALITY;
     ops_tx.codec_thread_cnt = 2;
     ops_tx.codestream_size = ops_tx.width * ops_tx.height * bpp / 8;
-    if (ops_tx.interlaced)
-      ops_tx.codestream_size /= 2;
+    if (ops_tx.interlaced) ops_tx.codestream_size /= 2;
     ops_tx.framebuff_cnt = ctx.framebuff_cnt;
     ops_tx.flags = ST22P_TX_FLAG_BLOCK_GET;
 
@@ -254,8 +250,7 @@ int main(int argc, char **argv) {
     app[i]->frame_size = st22p_tx_frame_size(tx_handle);
     ret = tx_st22p_open_source(&ctx, app[i], ctx.tx_url);
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, tx_st22p_frame_thread,
-                         app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, tx_st22p_frame_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -270,8 +265,7 @@ int main(int argc, char **argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    if (app[i]->handle)
-      st22p_tx_wake_block(app[i]->handle);
+    if (app[i]->handle) st22p_tx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
 
@@ -289,8 +283,7 @@ int main(int argc, char **argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle)
-        st22p_tx_free(app[i]->handle);
+      if (app[i]->handle) st22p_tx_free(app[i]->handle);
       free(app[i]);
     }
   }

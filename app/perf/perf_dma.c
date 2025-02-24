@@ -10,8 +10,7 @@ static inline void rand_data(uint8_t *p, size_t sz, uint8_t base) {
   }
 }
 
-static int dma_copy_perf(mtl_handle st, int w, int h, int frames,
-                         int pkt_size) {
+static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) {
   mtl_udma_handle dma;
   int ret;
   uint16_t nb_desc = 1024;
@@ -61,8 +60,8 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames,
   }
   end = clock();
   duration_cpu = (float)(end - start) / CLOCKS_PER_SEC;
-  info("cpu, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n",
-       duration_cpu, frames, w, h, fb_size_m, pkt_size);
+  info("cpu, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_cpu,
+       frames, w, h, fb_size_m, pkt_size);
 
   start = clock();
   for (int idx = 0; idx < frames; idx++) {
@@ -74,8 +73,8 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames,
   }
   end = clock();
   duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-  info("simd, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n",
-       duration_simd, frames, w, h, fb_size_m, pkt_size);
+  info("simd, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_simd,
+       frames, w, h, fb_size_m, pkt_size);
   info("simd, %fx performance to cpu\n", duration_cpu / duration_simd);
 
   start = clock();
@@ -85,8 +84,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames,
       while (fb_src_iova_off < fb_size) {
         ret = mtl_udma_copy(dma, fb_dst_iova + fb_src_iova_off,
                             fb_src_iova + fb_src_iova_off, pkt_size);
-        if (ret < 0)
-          break;
+        if (ret < 0) break;
         fb_src_iova_off += pkt_size;
       }
       /* submit */
@@ -99,8 +97,8 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames,
   }
   end = clock();
   duration_dma = (float)(end - start) / CLOCKS_PER_SEC;
-  info("dma, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n",
-       duration_dma, frames, w, h, fb_size_m, pkt_size);
+  info("dma, time: %f secs with %d frames(%dx%d,%fm), pkt_size %d\n", duration_dma,
+       frames, w, h, fb_size_m, pkt_size);
   info("dma, %fx performance to cpu\n", duration_cpu / duration_dma);
   info("\n");
 
@@ -117,8 +115,7 @@ int main(int argc, char **argv) {
 
   memset(&ctx, 0, sizeof(ctx));
   ret = dma_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {

@@ -38,8 +38,7 @@ static int tx_st22_next_frame(void *priv, uint16_t *next_frame_idx,
     meta->codestream_size = framebuff->size;
     /* point to next */
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt)
-      consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
   } else {
     /* not ready */
@@ -66,8 +65,8 @@ static int tx_st22_frame_done(void *priv, uint16_t frame_idx,
     s->fb_send++;
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, s->idx,
-        framebuff->stat, frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
+        frame_idx);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -75,9 +74,8 @@ static int tx_st22_frame_done(void *priv, uint16_t frame_idx,
   return ret;
 }
 
-static void st22_encode_frame(struct tx_st22_sample_ctx *s,
-                              void *codestream_addr, size_t max_codestream_size,
-                              size_t *codestream_size) {
+static void st22_encode_frame(struct tx_st22_sample_ctx *s, void *codestream_addr,
+                              size_t max_codestream_size, size_t *codestream_size) {
   MTL_MAY_UNUSED(codestream_addr);
   MTL_MAY_UNUSED(max_codestream_size);
 
@@ -98,8 +96,7 @@ static void *st22_encode_thread(void *arg) {
     framebuff = &s->framebuffs[producer_idx];
     if (ST_TX_FRAME_FREE != framebuff->stat) {
       /* not in free */
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -115,8 +112,7 @@ static void *st22_encode_thread(void *arg) {
     framebuff->stat = ST_TX_FRAME_READY;
     /* point to next */
     producer_idx++;
-    if (producer_idx >= s->framebuff_cnt)
-      producer_idx = 0;
+    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
     s->framebuff_producer_idx = producer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
@@ -133,8 +129,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -150,8 +145,7 @@ int main(int argc, char **argv) {
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] =
-        (struct tx_st22_sample_ctx *)malloc(sizeof(struct tx_st22_sample_ctx));
+    app[i] = (struct tx_st22_sample_ctx *)malloc(sizeof(struct tx_st22_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -163,8 +157,8 @@ int main(int argc, char **argv) {
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
-    app[i]->framebuffs = (struct st_tx_frame *)malloc(
-        sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    app[i]->framebuffs =
+        (struct st_tx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -177,7 +171,7 @@ int main(int argc, char **argv) {
     struct st22_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st22_test";
-    ops_tx.priv = app[i]; // app handle register to lib
+    ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
     memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -208,8 +202,7 @@ int main(int argc, char **argv) {
     app[i]->handle = tx_handle[i];
 
     app[i]->stop = false;
-    ret = pthread_create(&app[i]->encode_thread, NULL, st22_encode_thread,
-                         app[i]);
+    ret = pthread_create(&app[i]->encode_thread, NULL, st22_encode_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -242,15 +235,12 @@ int main(int argc, char **argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i])
-      continue;
-    if (app[i]->handle)
-      st22_tx_free(app[i]->handle);
+    if (!app[i]) continue;
+    if (app[i]->handle) st22_tx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
 
-    if (app[i]->framebuffs)
-      free(app[i]->framebuffs);
+    if (app[i]->framebuffs) free(app[i]->framebuffs);
     free(app[i]);
   }
 

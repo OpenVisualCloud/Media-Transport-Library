@@ -11,8 +11,7 @@ static inline struct mt_sch_mgr *mt_sch_get_mgr(struct mtl_main_impl *impl) {
   return &impl->sch_mgr;
 }
 
-static inline struct mtl_sch_impl *mt_sch_instance(struct mtl_main_impl *impl,
-                                                   int i) {
+static inline struct mtl_sch_impl *mt_sch_instance(struct mtl_main_impl *impl, int i) {
   return &mt_sch_get_mgr(impl)->sch[i];
 }
 
@@ -34,8 +33,7 @@ static inline int mt_sch_socket_id(struct mtl_sch_impl *sch) {
   return sch->socket_id;
 }
 
-static inline void mt_sch_enable_allow_sleep(struct mtl_sch_impl *sch,
-                                             bool enable) {
+static inline void mt_sch_enable_allow_sleep(struct mtl_sch_impl *sch, bool enable) {
   sch->allow_sleep = enable;
 }
 
@@ -56,13 +54,11 @@ static inline void mt_tasklet_set_sleep(struct mt_sch_tasklet_impl *tasklet,
 
 int mt_sch_add_quota(struct mtl_sch_impl *sch, int quota_mbs);
 
-struct mtl_sch_impl *mt_sch_get_by_socket(struct mtl_main_impl *impl,
-                                          int quota_mbs, enum mt_sch_type type,
-                                          mt_sch_mask_t mask, int socket);
-static inline struct mtl_sch_impl *mt_sch_get(struct mtl_main_impl *impl,
-                                              int quota_mbs,
-                                              enum mt_sch_type type,
-                                              mt_sch_mask_t mask) {
+struct mtl_sch_impl *mt_sch_get_by_socket(struct mtl_main_impl *impl, int quota_mbs,
+                                          enum mt_sch_type type, mt_sch_mask_t mask,
+                                          int socket);
+static inline struct mtl_sch_impl *mt_sch_get(struct mtl_main_impl *impl, int quota_mbs,
+                                              enum mt_sch_type type, mt_sch_mask_t mask) {
   /* use the default socket of MTL_PORT_P */
   return mt_sch_get_by_socket(impl, quota_mbs, type, mask,
                               mt_socket_id(impl, MTL_PORT_P));

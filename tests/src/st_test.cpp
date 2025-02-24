@@ -11,8 +11,7 @@ int st_test_sch_cnt(struct st_tests_context *ctx) {
   int ret;
 
   ret = mtl_get_var_info(handle, &var);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   return var.sch_cnt;
 }
@@ -29,12 +28,10 @@ bool st_test_dma_available(struct st_tests_context *ctx) {
   }
 
   ret = mtl_get_var_info(handle, &var);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   ret = mtl_get_fix_info(handle, &fix);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   if (var.dma_dev_cnt < fix.dma_dev_cnt_max)
     return true;
@@ -55,18 +52,15 @@ static void init_expect_fail_test(void) {
   handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(mtl_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
+  memcpy(mtl_p_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
   handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  snprintf(para.port[MTL_PORT_P], sizeof(para.port[MTL_PORT_P]),
-           "0000:55:00.0");
+  snprintf(para.port[MTL_PORT_P], sizeof(para.port[MTL_PORT_P]), "0000:55:00.0");
   handle = mtl_init(&para);
   EXPECT_TRUE(handle == NULL);
 
-  memcpy(mtl_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R],
-         MTL_IP_ADDR_LEN);
+  memcpy(mtl_r_sip_addr(&para), ctx->para.sip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
 
   /* test with 0 num_ports */
   para.num_ports = 0;
@@ -84,7 +78,9 @@ static void init_expect_fail_test(void) {
   EXPECT_TRUE(handle == NULL);
 }
 
-TEST(Main, init_expect_fail) { init_expect_fail_test(); }
+TEST(Main, init_expect_fail) {
+  init_expect_fail_test();
+}
 
 static void reinit_expect_fail_test(void) {
   struct st_tests_context *ctx = st_test_ctx();
@@ -94,7 +90,9 @@ static void reinit_expect_fail_test(void) {
   EXPECT_TRUE(handle == NULL);
 }
 
-TEST(Main, re_init_fail) { reinit_expect_fail_test(); }
+TEST(Main, re_init_fail) {
+  reinit_expect_fail_test();
+}
 
 static void start_stop_test(int repeat) {
   struct st_tests_context *ctx = st_test_ctx();
@@ -109,9 +107,13 @@ static void start_stop_test(int repeat) {
   }
 }
 
-TEST(Main, start_stop_single) { start_stop_test(1); }
+TEST(Main, start_stop_single) {
+  start_stop_test(1);
+}
 
-TEST(Main, start_stop_multi) { start_stop_test(5); }
+TEST(Main, start_stop_multi) {
+  start_stop_test(5);
+}
 
 static void start_expect_fail_test(void) {
   struct st_tests_context *ctx = st_test_ctx();
@@ -126,7 +128,9 @@ static void start_expect_fail_test(void) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Main, start_expect_fail) { start_expect_fail_test(); }
+TEST(Main, start_expect_fail) {
+  start_expect_fail_test();
+}
 
 static void stop_expect_fail_test(void) {
   struct st_tests_context *ctx = st_test_ctx();
@@ -145,7 +149,9 @@ static void stop_expect_fail_test(void) {
   EXPECT_GE(ret, 0);
 }
 
-TEST(Main, stop_expect_fail) { stop_expect_fail_test(); }
+TEST(Main, stop_expect_fail) {
+  stop_expect_fail_test();
+}
 
 TEST(Main, get_fix) {
   struct st_tests_context *ctx = st_test_ctx();
@@ -175,8 +181,7 @@ static int test_lcore_cnt(struct st_tests_context *ctx) {
   int ret;
 
   ret = mtl_get_var_info(handle, &var);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   return var.lcore_cnt;
 }
@@ -210,13 +215,11 @@ TEST(Main, lcore_max) {
 
   for (i = 0; i < max; i++) {
     ret = mtl_get_lcore(handle, &lcore[i]);
-    if (ret < 0)
-      break;
+    if (ret < 0) break;
   }
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt + i);
   max = i;
-  for (i = 0; i < max; i++)
-    mtl_put_lcore(handle, lcore[i]);
+  for (i = 0; i < max; i++) mtl_put_lcore(handle, lcore[i]);
   EXPECT_EQ(test_lcore_cnt(ctx), base_cnt);
 
   test_lcore_one(ctx);
@@ -237,8 +240,7 @@ static bool test_dev_started(struct st_tests_context *ctx) {
   int ret;
 
   ret = mtl_get_var_info(handle, &var);
-  if (ret < 0)
-    return false;
+  if (ret < 0) return false;
 
   return var.dev_started;
 }
@@ -257,14 +259,14 @@ TEST(Main, dev_started) {
 TEST(Main, bandwidth) {
   uint64_t bandwidth_1080p_mps = st20_1080p59_yuv422_10bit_bandwidth_mps();
   uint64_t bandwidth_1080p = 0;
-  int ret = st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT,
-                                   ST_FPS_P59_94, false, &bandwidth_1080p);
+  int ret = st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
+                                   false, &bandwidth_1080p);
   EXPECT_GE(ret, 0);
   EXPECT_EQ(bandwidth_1080p / 1000 / 1000, bandwidth_1080p_mps);
 
   uint64_t bandwidth_720p = 0;
-  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
-                               false, &bandwidth_720p);
+  ret = st20_get_bandwidth_bps(1280, 720, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false,
+                               &bandwidth_720p);
   EXPECT_GE(ret, 0);
   EXPECT_GT(bandwidth_1080p, bandwidth_720p);
 }
@@ -279,7 +281,9 @@ static void st20_frame_size_test() {
   EXPECT_EQ(size, expect_size);
 }
 
-TEST(Main, st20_frame_size) { st20_frame_size_test(); }
+TEST(Main, st20_frame_size) {
+  st20_frame_size_test();
+}
 
 static void fmt_frame_equal_transport_test() {
   bool equal;
@@ -287,27 +291,25 @@ static void fmt_frame_equal_transport_test() {
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422RFC4175PG2BE10,
                                        ST20_FMT_YUV_422_10BIT);
   EXPECT_TRUE(equal);
-  equal =
-      st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_8BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_8BIT);
   EXPECT_TRUE(equal);
   equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_RGB8, ST20_FMT_RGB_8BIT);
   EXPECT_TRUE(equal);
 
-  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR10LE,
-                                       ST20_FMT_YUV_422_10BIT);
-  EXPECT_FALSE(equal);
   equal =
-      st_frame_fmt_equal_transport(ST_FRAME_FMT_V210, ST20_FMT_YUV_422_10BIT);
+      st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR10LE, ST20_FMT_YUV_422_10BIT);
   EXPECT_FALSE(equal);
-  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR8,
-                                       ST20_FMT_YUV_422_8BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_V210, ST20_FMT_YUV_422_10BIT);
   EXPECT_FALSE(equal);
-  equal =
-      st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_12BIT);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_YUV422PLANAR8, ST20_FMT_YUV_422_8BIT);
+  EXPECT_FALSE(equal);
+  equal = st_frame_fmt_equal_transport(ST_FRAME_FMT_UYVY, ST20_FMT_YUV_422_12BIT);
   EXPECT_FALSE(equal);
 }
 
-TEST(Main, fmt_equal_transport) { fmt_frame_equal_transport_test(); }
+TEST(Main, fmt_equal_transport) {
+  fmt_frame_equal_transport_test();
+}
 
 static void fmt_frame_fom_transport_test() {
   enum st_frame_fmt to_fmt;
@@ -319,12 +321,13 @@ static void fmt_frame_fom_transport_test() {
   to_fmt = st_frame_fmt_from_transport(ST20_FMT_RGB_8BIT);
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_RGB8);
 
-  to_fmt =
-      st_frame_fmt_from_transport(ST20_FMT_YUV_444_16BIT); /* not support now */
+  to_fmt = st_frame_fmt_from_transport(ST20_FMT_YUV_444_16BIT); /* not support now */
   EXPECT_TRUE(to_fmt == ST_FRAME_FMT_MAX);
 }
 
-TEST(Main, fmt_frame_transport) { fmt_frame_fom_transport_test(); }
+TEST(Main, fmt_frame_transport) {
+  fmt_frame_fom_transport_test();
+}
 
 static void fmt_frame_to_transport_test() {
   enum st20_fmt to_fmt;
@@ -342,7 +345,9 @@ static void fmt_frame_to_transport_test() {
   EXPECT_TRUE(to_fmt == ST20_FMT_MAX);
 }
 
-TEST(Main, fmt_to_transport) { fmt_frame_to_transport_test(); }
+TEST(Main, fmt_to_transport) {
+  fmt_frame_to_transport_test();
+}
 
 static void frame_api_test() {
   uint32_t w = 1920;
@@ -368,8 +373,7 @@ static void frame_api_test() {
     EXPECT_GT(st_frame_least_linesize(fmt, w, 0), szero);
   }
   /* codestream */
-  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END;
-       i++) {
+  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
     fmt = (enum st_frame_fmt)i;
     size = st_frame_size(fmt, w, h, false);
     EXPECT_EQ(size, szero);
@@ -409,8 +413,7 @@ static void frame_name_test() {
     EXPECT_EQ(st_frame_name_to_fmt(name), fmt);
   }
   /* codestream */
-  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END;
-       i++) {
+  for (int i = ST_FRAME_FMT_CODESTREAM_START; i < ST_FRAME_FMT_CODESTREAM_END; i++) {
     fmt = (enum st_frame_fmt)i;
     name = st_frame_fmt_name(fmt);
     EXPECT_NE(strcmp(fail, name), 0);
@@ -430,8 +433,12 @@ static void frame_name_test() {
   EXPECT_EQ(st_frame_name_to_fmt(fail), ST_FRAME_FMT_MAX);
 }
 
-TEST(Main, frame_api) { frame_api_test(); }
-TEST(Main, frame_name) { frame_name_test(); }
+TEST(Main, frame_api) {
+  frame_api_test();
+}
+TEST(Main, frame_name) {
+  frame_name_test();
+}
 
 static void size_page_align_test() {
   size_t pg_sz = 4096;
@@ -463,10 +470,11 @@ static void size_page_align_test() {
   EXPECT_EQ(sz, expect_sz);
 }
 
-TEST(Main, size_page_align) { size_page_align_test(); }
+TEST(Main, size_page_align) {
+  size_page_align_test();
+}
 
-class fps_23_98
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_23_98 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 TEST_P(fps_23_98, conv_fps_to_st_fps_23_98_test) {
   enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
@@ -481,8 +489,7 @@ PARAMETERIZED_TEST(Main, fps_23_98,
                                      std::make_tuple(ST_FPS_P23_98, 23.99),
                                      std::make_tuple(ST_FPS_P24, 24.00)));
 
-class fps_24
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_24 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 TEST_P(fps_24, conv_fps_to_st_fps_24_test) {
   enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
@@ -495,8 +502,7 @@ PARAMETERIZED_TEST(Main, fps_24,
                                      std::make_tuple(ST_FPS_P24, 24.99),
                                      std::make_tuple(ST_FPS_P25, 25.00)));
 
-class fps_25
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_25 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 TEST_P(fps_25, conv_fps_to_st_fps_25_test) {
   enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
@@ -508,8 +514,7 @@ PARAMETERIZED_TEST(Main, fps_25,
                                      std::make_tuple(ST_FPS_P25, 26.00),
                                      std::make_tuple(ST_FPS_MAX, 27.00)));
 
-class fps_29_97
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_29_97 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 TEST_P(fps_29_97, conv_fps_to_st_fps_29_97_test) {
   enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
@@ -523,8 +528,7 @@ PARAMETERIZED_TEST(Main, fps_29_97,
                                      std::make_tuple(ST_FPS_P29_97, 29.99),
                                      std::make_tuple(ST_FPS_P30, 30.00)));
 
-class fps_30
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_30 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 TEST_P(fps_30, conv_fps_to_st_fps_30_test) {
   enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
@@ -537,8 +541,7 @@ PARAMETERIZED_TEST(Main, fps_30,
                                      std::make_tuple(ST_FPS_MAX, 31.01),
                                      std::make_tuple(ST_FPS_MAX, 32.00)));
 
-class fps_50
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_50 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 TEST_P(fps_50, conv_fps_to_st_fps_50_test) {
   enum st_fps expect = st_frame_rate_to_st_fps(std::get<1>(GetParam()));
@@ -554,8 +557,7 @@ PARAMETERIZED_TEST(Main, fps_50,
                                      std::make_tuple(ST_FPS_P50, 51.00),
                                      std::make_tuple(ST_FPS_MAX, 52.00)));
 
-class fps_59_94
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_59_94 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 PARAMETERIZED_TEST(Main, fps_59_94,
                    ::testing::Values(std::make_tuple(ST_FPS_MAX, 58.93),
@@ -569,8 +571,7 @@ TEST_P(fps_59_94, conv_fps_to_st_fps_50_test) {
   EXPECT_EQ(expect, std::get<0>(GetParam()));
 }
 
-class fps_60
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_60 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 PARAMETERIZED_TEST(Main, fps_60,
                    ::testing::Values(std::make_tuple(ST_FPS_P60, 60.00),
@@ -583,8 +584,7 @@ TEST_P(fps_60, conv_fps_to_st_fps_60_test) {
   EXPECT_EQ(expect, std::get<0>(GetParam()));
 }
 
-class fps_100
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_100 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 PARAMETERIZED_TEST(Main, fps_100,
                    ::testing::Values(std::make_tuple(ST_FPS_MAX, 98.99),
@@ -598,8 +598,7 @@ TEST_P(fps_100, conv_fps_to_st_fps_100_test) {
   EXPECT_EQ(expect, std::get<0>(GetParam()));
 }
 
-class fps_119_98
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_119_98 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 PARAMETERIZED_TEST(Main, fps_119_98,
                    ::testing::Values(std::make_tuple(ST_FPS_MAX, 118.87),
@@ -613,8 +612,7 @@ TEST_P(fps_119_98, conv_fps_to_st_fps_119_98_test) {
   EXPECT_EQ(expect, std::get<0>(GetParam()));
 }
 
-class fps_120
-    : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
+class fps_120 : public ::testing::TestWithParam<std::tuple<enum st_fps, double>> {};
 
 PARAMETERIZED_TEST(Main, fps_120,
                    ::testing::Values(std::make_tuple(ST_FPS_P120, 120.00),

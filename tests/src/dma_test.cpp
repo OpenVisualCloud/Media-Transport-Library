@@ -11,8 +11,7 @@ static int test_dma_cnt(struct st_tests_context *ctx) {
   int ret;
 
   ret = mtl_get_var_info(handle, &var);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   return var.dma_dev_cnt;
 }
@@ -40,8 +39,7 @@ static void test_dma_create_max(struct st_tests_context *ctx) {
   dma_idx = 0;
   while (true) {
     dma[dma_idx] = mtl_udma_create(handle, 128, MTL_PORT_P);
-    if (!dma[dma_idx])
-      break;
+    if (!dma[dma_idx]) break;
     dma_idx++;
     cnt = test_dma_cnt(ctx);
     EXPECT_EQ(base_cnt + dma_idx, cnt);
@@ -58,8 +56,7 @@ static void test_dma_create_max(struct st_tests_context *ctx) {
 TEST(Dma, create) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_create_one(ctx);
 }
@@ -67,8 +64,7 @@ TEST(Dma, create) {
 TEST(Dma, create_max) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_create_max(ctx);
 }
@@ -76,11 +72,9 @@ TEST(Dma, create_max) {
 TEST(Dma, create_multi) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
-  for (int i = 0; i < 10; i++)
-    test_dma_create_one(ctx);
+  for (int i = 0; i < 10; i++) test_dma_create_one(ctx);
 }
 
 static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
@@ -113,8 +107,7 @@ static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
   mtl_hp_free(st, src);
 }
 
-static void test_dma_copy(struct st_tests_context *ctx, uint32_t off,
-                          uint32_t len) {
+static void test_dma_copy(struct st_tests_context *ctx, uint32_t off, uint32_t len) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
   int ret;
@@ -183,13 +176,11 @@ static void test_dma_copy_fill_async(struct st_tests_context *ctx, bool fill) {
     /* try to copy */
     while (fb_src_iova_off < fb_size) {
       if (fill)
-        ret = mtl_udma_fill_u8(dma, fb_dst_iova + fb_src_iova_off, pattern,
-                               element_size);
+        ret = mtl_udma_fill_u8(dma, fb_dst_iova + fb_src_iova_off, pattern, element_size);
       else
         ret = mtl_udma_copy(dma, fb_dst_iova + fb_src_iova_off,
                             fb_src_iova + fb_src_iova_off, element_size);
-      if (ret < 0)
-        break;
+      if (ret < 0) break;
       fb_src_iova_off += element_size;
     }
     /* submit */
@@ -214,8 +205,7 @@ static void test_dma_copy_fill_async(struct st_tests_context *ctx, bool fill) {
 TEST(Dma, copy) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy(ctx, 0, 1024);
   test_dma_copy(ctx, 128, 1024 * 4);
@@ -224,8 +214,7 @@ TEST(Dma, copy) {
 TEST(Dma, copy_odd) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy(ctx, 33, 1024);
   test_dma_copy(ctx, 33, 1024 - 33);
@@ -234,8 +223,7 @@ TEST(Dma, copy_odd) {
 TEST(Dma, copy_sanity) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy_sanity(ctx);
 }
@@ -243,14 +231,13 @@ TEST(Dma, copy_sanity) {
 TEST(Dma, copy_async) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy_fill_async(ctx, false);
 }
 
-static void _test_dma_fill(mtl_handle st, mtl_udma_handle dma, uint32_t off,
-                           uint32_t len, uint8_t pattern) {
+static void _test_dma_fill(mtl_handle st, mtl_udma_handle dma, uint32_t off, uint32_t len,
+                           uint8_t pattern) {
   void *dst = NULL, *src = NULL;
   mtl_iova_t dst_iova;
   int ret;
@@ -278,8 +265,8 @@ static void _test_dma_fill(mtl_handle st, mtl_udma_handle dma, uint32_t off,
   mtl_hp_free(st, src);
 }
 
-static void test_dma_fill(struct st_tests_context *ctx, uint32_t off,
-                          uint32_t len, uint8_t pattern) {
+static void test_dma_fill(struct st_tests_context *ctx, uint32_t off, uint32_t len,
+                          uint8_t pattern) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
   int ret;
@@ -316,8 +303,7 @@ static void test_dma_fill_sanity(struct st_tests_context *ctx) {
 TEST(Dma, fill) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_fill(ctx, 0, 1024, 0xa5);
   test_dma_fill(ctx, 128, 1024 * 4, 0x5a);
@@ -326,8 +312,7 @@ TEST(Dma, fill) {
 TEST(Dma, fill_odd) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_fill(ctx, 33, 1024, 0x5a);
   test_dma_fill(ctx, 33, 1024 - 33, 0xa5);
@@ -336,8 +321,7 @@ TEST(Dma, fill_odd) {
 TEST(Dma, fill_sanity) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_fill_sanity(ctx);
 }
@@ -345,8 +329,7 @@ TEST(Dma, fill_sanity) {
 TEST(Dma, fill_async) {
   struct st_tests_context *ctx = st_test_ctx();
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy_fill_async(ctx, true);
 }
@@ -399,8 +382,7 @@ TEST(Dma, map_fail) {
   free(p);
 }
 
-static void test_dma_map_continues(struct st_tests_context *ctx, size_t size,
-                                   int count) {
+static void test_dma_map_continues(struct st_tests_context *ctx, size_t size, int count) {
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
@@ -480,16 +462,14 @@ TEST(Dma, map_remap) {
   test_dma_remap(ctx, 64 * mtl_page_size(st));
 }
 
-static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma,
-                              size_t copy_size) {
+static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_size) {
   void *dst = NULL, *src = NULL;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
   size_t size = copy_size + 2 * pg_sz;
 
   dst = (uint8_t *)malloc(size);
-  if (!dst)
-    return;
+  if (!dst) return;
   src = (uint8_t *)malloc(size);
   if (!src) {
     free(dst);
@@ -528,8 +508,7 @@ TEST(Dma, map_copy) {
   struct st_tests_context *ctx = st_test_ctx();
   auto st = ctx->handle;
 
-  if (!st_test_dma_available(ctx))
-    return;
+  if (!st_test_dma_available(ctx)) return;
 
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
   ASSERT_TRUE(dma != NULL);

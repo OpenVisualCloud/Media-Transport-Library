@@ -22,18 +22,16 @@ static mtl_handle g_st = NULL;
 void signalHandler(int signum) {
   std::cout << "SIGINT received - exiting!\n";
   switch (signum) {
-  case SIGINT:
-    stop = true;
-    if (g_st != NULL)
-      mtl_abort(g_st);
-    break;
+    case SIGINT:
+      stop = true;
+      if (g_st != NULL) mtl_abort(g_st);
+      break;
   }
 }
 
 int main() {
   int ret = 0;
-  std::cout << "Starting MTL sample..." << std::endl
-            << mtl_version() << std::endl;
+  std::cout << "Starting MTL sample..." << std::endl << mtl_version() << std::endl;
 
   std::signal(SIGINT, signalHandler);
 
@@ -121,8 +119,7 @@ int main() {
 
   cv.notify_one();
   frame_thread.join();
-  if (tx_handle)
-    st20p_tx_free(tx_handle);
+  if (tx_handle) st20p_tx_free(tx_handle);
 
   /* uninit mtl */
   if (st != NULL) {

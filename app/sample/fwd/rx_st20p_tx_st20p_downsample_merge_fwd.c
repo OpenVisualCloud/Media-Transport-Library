@@ -33,8 +33,7 @@ struct merge_fwd_sample_ctx {
 static int tx_st20p_frame_available(void *priv) {
   struct merge_fwd_sample_ctx *s = priv;
 
-  if (!s->ready)
-    return -EIO;
+  if (!s->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->tx_wake_mutex);
   st_pthread_cond_signal(&s->tx_wake_cond);
@@ -47,8 +46,7 @@ static int rx_st20p_frame_available(void *priv) {
   struct rx_ctx *s = priv;
   struct merge_fwd_sample_ctx *app = s->app;
 
-  if (!app->ready)
-    return -EIO;
+  if (!app->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->rx_wake_mutex);
   st_pthread_cond_signal(&s->rx_wake_cond);
@@ -73,14 +71,12 @@ loop_entry:
     frame = st20p_tx_get_frame(tx_handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->tx_wake_mutex);
-      if (!s->stop)
-        st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
       st_pthread_mutex_unlock(&s->tx_wake_mutex);
       continue;
     }
     /* set downsample frame */
-    down_frame.linesize[0] =
-        frame->linesize[0]; /* leave paddings for neighbor frame */
+    down_frame.linesize[0] = frame->linesize[0]; /* leave paddings for neighbor frame */
     down_frame.width = frame->width / 2;
     down_frame.height = frame->height / 2;
     down_frame.fmt = frame->fmt;
@@ -97,16 +93,14 @@ loop_entry:
           rx_frame = st20p_rx_get_frame(rx_handle);
           if (!rx_frame) { /* no frame */
             st_pthread_mutex_lock(&rx->rx_wake_mutex);
-            if (!s->stop)
-              st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
+            if (!s->stop) st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
             st_pthread_mutex_unlock(&rx->rx_wake_mutex);
             continue;
           }
         }
         if (s->sync_tmstamp) {
           uint64_t tmstamp = rx_frame->timestamp;
-          if (!tx_tmstamp)
-            tx_tmstamp = tmstamp;
+          if (!tx_tmstamp) tx_tmstamp = tmstamp;
           if (tx_tmstamp < tmstamp) {
             err("%s, newer timestamp occurs %" PRIu64 ", frame %" PRIu64
                 " may have dropped packets\n",
@@ -213,8 +207,7 @@ int main(int argc, char **argv) {
   ops_tx.transport_fmt = ctx.fmt;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.framebuff_cnt = ctx.framebuff_cnt;
-  if (app.sync_tmstamp)
-    ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+  if (app.sync_tmstamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
   ops_tx.notify_frame_available = tx_st20p_frame_available;
   st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
   if (!tx_handle) {
@@ -270,8 +263,7 @@ int main(int argc, char **argv) {
   st20_get_pgroup(ctx.fmt, &st20_pg);
   app.rx[0].fb_offset = 0;
   app.rx[1].fb_offset = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
-  app.rx[2].fb_offset =
-      (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
+  app.rx[2].fb_offset = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.rx[3].fb_offset = app.rx[2].fb_offset + app.rx[1].fb_offset;
   app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 

@@ -34,15 +34,14 @@ bool mt_dma_full(struct mtl_dma_lender_dev *dev);
 
 int mt_dma_copy(struct mtl_dma_lender_dev *dev, rte_iova_t dst, rte_iova_t src,
                 uint32_t length);
-int mt_dma_fill(struct mtl_dma_lender_dev *dev, rte_iova_t dst,
-                uint64_t pattern, uint32_t length);
+int mt_dma_fill(struct mtl_dma_lender_dev *dev, rte_iova_t dst, uint64_t pattern,
+                uint32_t length);
 int mt_dma_submit(struct mtl_dma_lender_dev *dev);
 uint16_t mt_dma_completed(struct mtl_dma_lender_dev *dev, uint16_t nb_cpls,
                           uint16_t *last_idx, bool *has_error);
 
-static inline void mt_dma_copy_busy(struct mtl_dma_lender_dev *dev,
-                                    rte_iova_t dst, rte_iova_t src,
-                                    uint32_t length) {
+static inline void mt_dma_copy_busy(struct mtl_dma_lender_dev *dev, rte_iova_t dst,
+                                    rte_iova_t src, uint32_t length) {
   int ret;
   do {
     ret = mt_dma_copy(dev, dst, src, length);

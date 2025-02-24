@@ -41,10 +41,11 @@ int mtl_set_log_printer(mtl_log_printer_t f) {
   return 0;
 }
 
-mtl_log_printer_t mt_get_log_printer(void) { return g_mt_log_printer; }
+mtl_log_printer_t mt_get_log_printer(void) {
+  return g_mt_log_printer;
+}
 
-static void log_usdt_printer(enum mtl_log_level level, const char *format,
-                             ...) {
+static void log_usdt_printer(enum mtl_log_level level, const char *format, ...) {
   char msg[256];
   va_list args;
   MTL_MAY_UNUSED(level);
@@ -56,7 +57,9 @@ static void log_usdt_printer(enum mtl_log_level level, const char *format,
   MT_USDT_SYS_LOG_MSG(level, msg);
 }
 
-mtl_log_printer_t mt_get_usdt_log_printer(void) { return log_usdt_printer; }
+mtl_log_printer_t mt_get_usdt_log_printer(void) {
+  return log_usdt_printer;
+}
 
 static enum mtl_log_level g_mt_log_level = MTL_LOG_LEVEL_INFO;
 
@@ -65,7 +68,9 @@ int mt_set_log_global_level(enum mtl_log_level level) {
   return 0;
 }
 
-enum mtl_log_level mt_get_log_global_level(void) { return g_mt_log_level; }
+enum mtl_log_level mt_get_log_global_level(void) {
+  return g_mt_log_level;
+}
 
 int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
   struct mtl_main_impl *impl = mt;
@@ -77,31 +82,30 @@ int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
   }
 
   dbg("%s, set log level %d\n", __func__, level);
-  if (level == mtl_get_log_level(mt))
-    return 0;
+  if (level == mtl_get_log_level(mt)) return 0;
 
   switch (level) {
-  case MTL_LOG_LEVEL_DEBUG:
-    rte_level = RTE_LOG_DEBUG;
-    break;
-  case MTL_LOG_LEVEL_INFO:
-    rte_level = RTE_LOG_INFO;
-    break;
-  case MTL_LOG_LEVEL_NOTICE:
-    rte_level = RTE_LOG_NOTICE;
-    break;
-  case MTL_LOG_LEVEL_WARNING:
-    rte_level = RTE_LOG_WARNING;
-    break;
-  case MTL_LOG_LEVEL_ERR:
-    rte_level = RTE_LOG_ERR;
-    break;
-  case MTL_LOG_LEVEL_CRIT:
-    rte_level = RTE_LOG_CRIT;
-    break;
-  default:
-    err("%s, invalid level %d\n", __func__, level);
-    return -EINVAL;
+    case MTL_LOG_LEVEL_DEBUG:
+      rte_level = RTE_LOG_DEBUG;
+      break;
+    case MTL_LOG_LEVEL_INFO:
+      rte_level = RTE_LOG_INFO;
+      break;
+    case MTL_LOG_LEVEL_NOTICE:
+      rte_level = RTE_LOG_NOTICE;
+      break;
+    case MTL_LOG_LEVEL_WARNING:
+      rte_level = RTE_LOG_WARNING;
+      break;
+    case MTL_LOG_LEVEL_ERR:
+      rte_level = RTE_LOG_ERR;
+      break;
+    case MTL_LOG_LEVEL_CRIT:
+      rte_level = RTE_LOG_CRIT;
+      break;
+    default:
+      err("%s, invalid level %d\n", __func__, level);
+      return -EINVAL;
   }
 
   rte_log_set_global_level(rte_level);
@@ -123,4 +127,6 @@ enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
   return mt_get_user_params(impl)->log_level;
 }
 
-int mtl_openlog_stream(FILE *f) { return rte_openlog_stream(f); }
+int mtl_openlog_stream(FILE *f) {
+  return rte_openlog_stream(f);
+}

@@ -70,9 +70,8 @@ struct st20rc_rx_ops {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
     /** deprecated, use ip_addr instead, sip_addr is confused */
-    uint8_t
-        sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
-            "Use ip_addr instead");
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
   };
   /** num of ports this session attached to, must be 2 */
   uint8_t num_port;
@@ -124,8 +123,7 @@ struct st20rc_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_ready)(void *priv, void *frame,
-                            struct st20_rx_frame_meta *meta);
+  int (*notify_frame_ready)(void *priv, void *frame, struct st20_rx_frame_meta *meta);
   /**
    * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore
@@ -210,8 +208,8 @@ int st20rc_rx_get_framebuffer_count(st20rc_rx_handle handle);
  *   - 0: Success, rx st2110-20(redundant) session pcapng dump succ.
  *   - <0: Error code of the rx st2110-20(redundant) session pcapng dump.
  */
-int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets,
-                          bool sync, struct st_pcap_dump_meta *meta);
+int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                          struct st_pcap_dump_meta *meta);
 
 #if defined(__cplusplus)
 }

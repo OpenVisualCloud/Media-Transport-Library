@@ -1459,9 +1459,8 @@ struct st20_rx_ops {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
     /** deprecated, use ip_addr instead, sip_addr is confused */
-    uint8_t
-        sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
-            "Use ip_addr instead");
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
   };
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -1530,8 +1529,7 @@ struct st20_rx_ops {
    * then. And only non-block method can be used in this callback as it run from
    * lcore tasklet routine.
    */
-  int (*notify_frame_ready)(void *priv, void *frame,
-                            struct st20_rx_frame_meta *meta);
+  int (*notify_frame_ready)(void *priv, void *frame, struct st20_rx_frame_meta *meta);
 
   /**
    * Optional. the ST20_TYPE_FRAME_LEVEL external frame buffer info array,
@@ -1573,8 +1571,7 @@ struct st20_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*uframe_pg_callback)(void *priv, void *frame,
-                            struct st20_rx_uframe_pg_meta *meta);
+  int (*uframe_pg_callback)(void *priv, void *frame, struct st20_rx_uframe_pg_meta *meta);
   /**
    * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL with
    * ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format. And
@@ -1599,8 +1596,7 @@ struct st20_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_slice_ready)(void *priv, void *frame,
-                            struct st20_rx_slice_meta *meta);
+  int (*notify_slice_ready)(void *priv, void *frame, struct st20_rx_slice_meta *meta);
 
   /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2
    */
@@ -1625,9 +1621,8 @@ struct st22_rx_ops {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
     /** deprecated, use ip_addr instead, sip_addr is confused */
-    uint8_t
-        sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
-            "Use ip_addr instead");
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
   };
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -1696,8 +1691,7 @@ struct st22_rx_ops {
    * ST22_TYPE_FRAME_LEVEL. And only non-block method can be used in this
    * callback as it run from lcore tasklet routine.
    */
-  int (*notify_frame_ready)(void *priv, void *frame,
-                            struct st22_rx_frame_meta *meta);
+  int (*notify_frame_ready)(void *priv, void *frame, struct st22_rx_frame_meta *meta);
 
   /**
    * Optional. The event callback when there is some event(vsync or others)
@@ -1787,8 +1781,7 @@ int st20_tx_free(st20_tx_handle handle);
  *   - 0: Success, tx st2110-20(video) session destination update succ.
  *   - <0: Error code of the rx st2110-20(video) session destination update.
  */
-int st20_tx_update_destination(st20_tx_handle handle,
-                               struct st_tx_dest_info *dst);
+int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Set the frame virtual address and iova from user for the tx st2110-20(video)
@@ -1961,8 +1954,8 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt,
-                           enum st_fps fps, bool interlaced, uint64_t *bps);
+int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
+                           bool interlaced, uint64_t *bps);
 
 /**
  * Inline function returning bandwidth(mega per second) for 1080 p59 yuv422
@@ -1972,8 +1965,7 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt,
  */
 static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
   uint64_t bps;
-  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94,
-                         false, &bps);
+  st20_get_bandwidth_bps(1920, 1080, ST20_FMT_YUV_422_10BIT, ST_FPS_P59_94, false, &bps);
   return bps / 1000 / 1000;
 }
 
@@ -2005,8 +1997,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops *ops);
  *   - <0: Error code of the rx st2110-22(compressed video) session destination
  * update.
  */
-int st22_tx_update_destination(st22_tx_handle handle,
-                               struct st_tx_dest_info *dst);
+int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Free the tx st2110-22(compressed video) session.
@@ -2131,8 +2122,8 @@ int st20_rx_get_sch_idx(st20_rx_handle handle);
  *   - 0: Success, rx st2110-20(video) session pcapng dump succ.
  *   - <0: Error code of the rx st2110-20(video) session pcapng dump.
  */
-int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets,
-                        bool sync, struct st_pcap_dump_meta *meta);
+int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                        struct st_pcap_dump_meta *meta);
 
 /**
  * Free the rx st2110-20(video) session.
@@ -2243,8 +2234,7 @@ bool st20_rx_dma_enabled(st20_rx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20_rx_timing_parser_critical(st20_rx_handle handle,
-                                   struct st20_rx_tp_pass *pass);
+int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass *pass);
 
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(video) session
@@ -2332,8 +2322,8 @@ int st22_rx_get_sch_idx(st22_rx_handle handle);
  *   - 0: Success, rx st2110-22 session pcapng dump succ.
  *   - <0: Error code of the rx st2110-22 session pcapng dump.
  */
-int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets,
-                        bool sync, struct st_pcap_dump_meta *meta);
+int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                        struct st_pcap_dump_meta *meta);
 
 /**
  * Free the rx st2110-22(compressed video) session.

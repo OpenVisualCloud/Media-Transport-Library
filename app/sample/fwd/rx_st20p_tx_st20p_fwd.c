@@ -41,28 +41,24 @@ static int rx_st20p_enqueue_frame(struct rx_st20p_tx_st20p_sample_ctx *s,
   s->framebuffs[producer_idx] = frame;
   /* point to next */
   producer_idx++;
-  if (producer_idx >= s->framebuff_cnt)
-    producer_idx = 0;
+  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
   s->framebuff_producer_idx = producer_idx;
   return 0;
 }
 
-struct st_frame *
-rx_st20p_dequeue_frame(struct rx_st20p_tx_st20p_sample_ctx *s) {
+struct st_frame *rx_st20p_dequeue_frame(struct rx_st20p_tx_st20p_sample_ctx *s) {
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_frame *frame = s->framebuffs[consumer_idx];
   s->framebuffs[consumer_idx] = NULL;
   consumer_idx++;
-  if (consumer_idx >= s->framebuff_cnt)
-    consumer_idx = 0;
+  if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
   s->framebuff_consumer_idx = consumer_idx;
 
   return frame;
 }
 
 static int st20_fwd_open_logo(struct st_sample_context *ctx,
-                              struct rx_st20p_tx_st20p_sample_ctx *s,
-                              char *file) {
+                              struct rx_st20p_tx_st20p_sample_ctx *s, char *file) {
   FILE *fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
     err("%s, open %s fail\n", __func__, file);
@@ -100,8 +96,7 @@ static int st20_fwd_open_logo(struct st_sample_context *ctx,
 static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
   struct rx_st20p_tx_st20p_sample_ctx *s = priv;
 
-  if (!s->ready)
-    return -EIO;
+  if (!s->ready) return -EIO;
 
   st20p_rx_handle rx_handle = s->rx_handle;
 
@@ -117,8 +112,7 @@ static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
 static int tx_st20p_frame_available(void *priv) {
   struct rx_st20p_tx_st20p_sample_ctx *s = priv;
 
-  if (!s->ready)
-    return -EIO;
+  if (!s->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -128,11 +122,9 @@ static int tx_st20p_frame_available(void *priv) {
 }
 
 static int rx_st20p_frame_available(void *priv) {
-  struct rx_st20p_tx_st20p_sample_ctx *s =
-      (struct rx_st20p_tx_st20p_sample_ctx *)priv;
+  struct rx_st20p_tx_st20p_sample_ctx *s = (struct rx_st20p_tx_st20p_sample_ctx *)priv;
 
-  if (!s->ready)
-    return -EIO;
+  if (!s->ready) return -EIO;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -147,8 +139,8 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx *s,
   struct st_frame *tx_frame;
 
   if (frame->data_size != s->framebuff_size) {
-    err("%s(%d), mismatch frame size %" PRIu64 " %" PRIu64 "\n", __func__,
-        s->idx, frame->data_size, s->framebuff_size);
+    err("%s(%d), mismatch frame size %" PRIu64 " %" PRIu64 "\n", __func__, s->idx,
+        frame->data_size, s->framebuff_size);
     return;
   }
 
@@ -156,8 +148,7 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx *s,
     tx_frame = st20p_tx_get_frame(tx_handle);
     if (!tx_frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -193,8 +184,7 @@ static void *st20_fwd_st20_thread(void *arg) {
     frame = st20p_rx_get_frame(rx_handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -217,8 +207,7 @@ static void *st20_fwd_st20_thread(void *arg) {
   return NULL;
 }
 
-static int
-rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx *app) {
+static int rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx *app) {
   if (app->tx_handle) {
     st20p_tx_free(app->tx_handle);
     app->tx_handle = NULL;
@@ -248,8 +237,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = fwd_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -271,7 +259,7 @@ int main(int argc, char **argv) {
   struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "st20p_test";
-  ops_rx.priv = &app; // app handle register to lib
+  ops_rx.priv = &app;  // app handle register to lib
   ops_rx.port.num_port = 1;
   memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
@@ -300,7 +288,7 @@ int main(int argc, char **argv) {
   struct st20p_tx_ops ops_tx;
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = "st20p_fwd";
-  ops_tx.priv = &app; // app handle register to lib
+  ops_tx.priv = &app;  // app handle register to lib
   ops_tx.port.num_port = 1;
   memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
@@ -338,8 +326,7 @@ int main(int argc, char **argv) {
     ret = -ENOMEM;
     goto error;
   }
-  for (uint16_t j = 0; j < app.framebuff_cnt; j++)
-    app.framebuffs[j] = NULL;
+  for (uint16_t j = 0; j < app.framebuff_cnt; j++) app.framebuffs[j] = NULL;
   app.framebuff_producer_idx = 0;
   app.framebuff_consumer_idx = 0;
 

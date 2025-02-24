@@ -34,11 +34,11 @@ enum mt_rtp_payload_format {
 };
 
 struct mt_rtcp_tx_ops {
-  const char *name;           /* short and unique name for each session */
-  struct mt_udp_hdr *udp_hdr; /* headers including eth, ipv4 and udp */
-  uint32_t ssrc;              /* ssrc of rtp session */
-  uint16_t buffer_size;       /* max number of buffered rtp packets */
-  enum mtl_port port;         /* port of rtp session */
+  const char *name;                          /* short and unique name for each session */
+  struct mt_udp_hdr *udp_hdr;                /* headers including eth, ipv4 and udp */
+  uint32_t ssrc;                             /* ssrc of rtp session */
+  uint16_t buffer_size;                      /* max number of buffered rtp packets */
+  enum mtl_port port;                        /* port of rtp session */
   enum mt_rtp_payload_format payload_format; /* payload format */
 };
 
@@ -47,10 +47,9 @@ struct mt_rtcp_rx_ops {
   struct mt_udp_hdr *udp_hdr;   /* headers including eth, ipv4 and udp */
   uint64_t nacks_send_interval; /* nack sending interval */
   enum mtl_port port;           /* port of rtp session */
-  uint16_t
-      seq_bitmap_size; /* bitmap size of detecting window, can hold n * 8 seq */
-  uint16_t seq_skip_window; /* skip some seq to handle out of order while
-                               detecting */
+  uint16_t seq_bitmap_size;     /* bitmap size of detecting window, can hold n * 8 seq */
+  uint16_t seq_skip_window;     /* skip some seq to handle out of order while
+                                   detecting */
 };
 
 struct mt_rtcp_tx {
@@ -110,13 +109,11 @@ struct mt_rtcp_rx *mt_rtcp_rx_create(struct mtl_main_impl *mtl,
                                      struct mt_rtcp_rx_ops *ops);
 void mt_rtcp_rx_free(struct mt_rtcp_rx *rx);
 
-int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx *tx,
-                                  struct rte_mbuf **mbufs, unsigned int bulk);
-int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx *tx,
-                                 struct mt_rtcp_hdr *rtcp);
+int mt_rtcp_tx_buffer_rtp_packets(struct mt_rtcp_tx *tx, struct rte_mbuf **mbufs,
+                                  unsigned int bulk);
+int mt_rtcp_tx_parse_rtcp_packet(struct mt_rtcp_tx *tx, struct mt_rtcp_hdr *rtcp);
 
-int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx *rx,
-                                struct st_rfc3550_rtp_hdr *rtp);
+int mt_rtcp_rx_parse_rtp_packet(struct mt_rtcp_rx *rx, struct st_rfc3550_rtp_hdr *rtp);
 int mt_rtcp_rx_send_nack_packet(struct mt_rtcp_rx *rx);
 
 #endif

@@ -56,14 +56,14 @@ static void cni_udp_detect_dump(struct mt_cni_entry *cni,
   uint32_t udp_port = entry->tuple[2];
   uint16_t src_port = ntohs((uint16_t)udp_port);
   uint16_t dst_port = ntohs((uint16_t)(udp_port >> 16));
-  info("%s(%d), sip: %d.%d.%d.%d, dip: %d.%d.%d.%d, src_port %u dst_port %d, "
-       "pkt %d\n",
-       __func__, cni->port, sip[0], sip[1], sip[2], sip[3], dip[0], dip[1],
-       dip[2], dip[3], src_port, dst_port, entry->pkt_cnt);
+  info(
+      "%s(%d), sip: %d.%d.%d.%d, dip: %d.%d.%d.%d, src_port %u dst_port %d, "
+      "pkt %d\n",
+      __func__, cni->port, sip[0], sip[1], sip[2], sip[3], dip[0], dip[1], dip[2], dip[3],
+      src_port, dst_port, entry->pkt_cnt);
 }
 
-static int cni_udp_detect_analyses(struct mt_cni_entry *cni,
-                                   struct mt_udp_hdr *hdr) {
+static int cni_udp_detect_analyses(struct mt_cni_entry *cni, struct mt_udp_hdr *hdr) {
   enum mtl_port port = cni->port;
   uint32_t tuple[3];
   struct mt_cni_udp_detect_entry *entry;
@@ -72,8 +72,8 @@ static int cni_udp_detect_analyses(struct mt_cni_entry *cni,
 
   if (!mt_is_multicast_ip(dip) &&
       memcmp(mt_sip_addr(cni->impl, port), dip, MTL_IP_ADDR_LEN)) {
-    dbg("%s(%d), not our ip %u.%u.%u.%u\n", __func__, port, dip[0], dip[1],
-        dip[2], dip[3]);
+    dbg("%s(%d), not our ip %u.%u.%u.%u\n", __func__, port, dip[0], dip[1], dip[2],
+        dip[3]);
     return -EINVAL;
   }
 
@@ -131,8 +131,7 @@ static int cni_burst_to_kernel(struct mt_cni_entry *cni, struct rte_mbuf *m) {
   struct mtl_main_impl *impl = cni->impl;
   enum mtl_port port = cni->port;
   struct mt_interface *inf = mt_if(impl, port);
-  if (!inf->virtio_port_active)
-    return 0;
+  if (!inf->virtio_port_active) return 0;
 
   cni->virtio_rx_cnt++;
   int ret = rte_eth_tx_burst(inf->virtio_port_id, 0, &m, 1);
@@ -149,13 +148,11 @@ static int cni_burst_from_kernel(struct mt_cni_entry *cni) {
   struct mtl_main_impl *impl = cni->impl;
   enum mtl_port port = cni->port;
   struct mt_interface *inf = mt_if(impl, port);
-  if (!inf->virtio_port_active)
-    return 0;
+  if (!inf->virtio_port_active) return 0;
 
   struct rte_mbuf *pkts[ST_CNI_RX_BURST_SIZE];
 
-  uint16_t revd =
-      rte_eth_rx_burst(inf->virtio_port_id, 0, pkts, ST_CNI_RX_BURST_SIZE);
+  uint16_t revd = rte_eth_rx_burst(inf->virtio_port_id, 0, pkts, ST_CNI_RX_BURST_SIZE);
   if (revd > 0) {
     cni->virtio_tx_cnt += revd;
     uint16_t sent = mt_sys_queue_tx_burst(impl, port, pkts, revd);
@@ -230,54 +227,53 @@ static int cni_rx_handle(struct mt_cni_entry *cni, struct rte_mbuf *m) {
 
   dbg("%s(%d), ether_type 0x%x\n", __func__, port, ether_type);
   switch (ether_type) {
-  case RTE_ETHER_TYPE_1588:
-    ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header *, hdr_offset);
-    mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L2, m->timesync, NULL);
-    break;
-  case RTE_ETHER_TYPE_ARP:
-    if (mt_has_virtio_user(impl, port)) {
-      /* use kernel implementation */
-      cni_burst_to_kernel(cni, m);
-    } else {
-      /* use internal implementation */
-      arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr *, hdr_offset);
-      mt_arp_parse(impl, arp_hdr, port);
-    }
-    break;
-  case RTE_ETHER_TYPE_IPV4:
-    ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, hdr_offset);
-    hdr_offset += ipv4_hdr->ihl * 4; /* may have ip option field */
-    if (ipv4_hdr->next_proto_id == IPPROTO_UDP) {
-      udp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr *, hdr_offset);
-      hdr_offset += sizeof(struct rte_udp_hdr);
-      src_port = ntohs(udp_hdr->src_port);
-      if (ptp && (src_port == MT_PTP_UDP_EVENT_PORT ||
-                  src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
-        dbg("%s(%d), ptp msg src_port %u\n", __func__, port, src_port);
-        ptp_hdr =
-            rte_pktmbuf_mtod_offset(m, struct mt_ptp_header *, hdr_offset);
-        mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync,
-                     (struct mt_ipv4_udp *)ipv4_hdr);
-      } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
-        dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr *, hdr_offset);
-        mt_dhcp_parse(impl, dhcp_hdr, port);
+    case RTE_ETHER_TYPE_1588:
+      ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header *, hdr_offset);
+      mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L2, m->timesync, NULL);
+      break;
+    case RTE_ETHER_TYPE_ARP:
+      if (mt_has_virtio_user(impl, port)) {
+        /* use kernel implementation */
+        cni_burst_to_kernel(cni, m);
       } else {
-        cni_udp_handle(cni, m);
+        /* use internal implementation */
+        arp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_arp_hdr *, hdr_offset);
+        mt_arp_parse(impl, arp_hdr, port);
       }
-    } else if (ipv4_hdr->next_proto_id == IPPROTO_IGMP) {
-      struct mcast_mb_query_v3 *mb_query =
-          rte_pktmbuf_mtod_offset(m, struct mcast_mb_query_v3 *, hdr_offset);
-      mt_mcast_parse(impl, mb_query, port);
-    } else {
-      /* ipv4 packets other than UDP/IGMP fallback to kernel */
+      break;
+    case RTE_ETHER_TYPE_IPV4:
+      ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct rte_ipv4_hdr *, hdr_offset);
+      hdr_offset += ipv4_hdr->ihl * 4; /* may have ip option field */
+      if (ipv4_hdr->next_proto_id == IPPROTO_UDP) {
+        udp_hdr = rte_pktmbuf_mtod_offset(m, struct rte_udp_hdr *, hdr_offset);
+        hdr_offset += sizeof(struct rte_udp_hdr);
+        src_port = ntohs(udp_hdr->src_port);
+        if (ptp && (src_port == MT_PTP_UDP_EVENT_PORT ||
+                    src_port == MT_PTP_UDP_GEN_PORT)) { /* ptp pkt*/
+          dbg("%s(%d), ptp msg src_port %u\n", __func__, port, src_port);
+          ptp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header *, hdr_offset);
+          mt_ptp_parse(ptp, ptp_hdr, vlan, MT_PTP_L4, m->timesync,
+                       (struct mt_ipv4_udp *)ipv4_hdr);
+        } else if (dhcp && src_port == MT_DHCP_UDP_SERVER_PORT) { /* dhcp pkt */
+          dhcp_hdr = rte_pktmbuf_mtod_offset(m, struct mt_dhcp_hdr *, hdr_offset);
+          mt_dhcp_parse(impl, dhcp_hdr, port);
+        } else {
+          cni_udp_handle(cni, m);
+        }
+      } else if (ipv4_hdr->next_proto_id == IPPROTO_IGMP) {
+        struct mcast_mb_query_v3 *mb_query =
+            rte_pktmbuf_mtod_offset(m, struct mcast_mb_query_v3 *, hdr_offset);
+        mt_mcast_parse(impl, mb_query, port);
+      } else {
+        /* ipv4 packets other than UDP/IGMP fallback to kernel */
+        cni_burst_to_kernel(cni, m);
+      }
+      break;
+    default:
+      // dbg("%s(%d), unknown ether_type %d\n", __func__, port, ether_type);
+      /* unknown eth packets fallback to kernel */
       cni_burst_to_kernel(cni, m);
-    }
-    break;
-  default:
-    // dbg("%s(%d), unknown ether_type %d\n", __func__, port, ether_type);
-    /* unknown eth packets fallback to kernel */
-    cni_burst_to_kernel(cni, m);
-    break;
+      break;
   }
   cni->eth_rx_bytes += m->pkt_len;
 
@@ -288,8 +284,7 @@ static int cni_stop_pcap(struct mt_cni_entry *cni) {
   enum mtl_port port = cni->port;
   struct mt_rx_pcap *pcap = &cni->pcap;
 
-  if (!pcap->pcap)
-    return 0;
+  if (!pcap->pcap) return 0;
 
   info("%s(%d), dumped %u packets to %s, dropped %u packets\n", __func__, port,
        pcap->dumped_pkts, pcap->file_name, pcap->dropped_pkts);
@@ -309,18 +304,16 @@ static int cni_start_pcap(struct mt_cni_entry *cni, uint32_t max_dump_packets) {
     return -EIO;
   }
 
-  snprintf(pcap->file_name, sizeof(pcap->file_name), "cni_p%d_%u_XXXXXX.pcapng",
-           port, max_dump_packets);
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "cni_p%d_%u_XXXXXX.pcapng", port,
+           max_dump_packets);
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
-    err("%s(%d), failed to create pcap file %s\n", __func__, port,
-        pcap->file_name);
+    err("%s(%d), failed to create pcap file %s\n", __func__, port, pcap->file_name);
     return -EIO;
   }
   pcap->pcap = mt_pcap_open(cni->impl, port, fd);
   if (!pcap->pcap) {
-    err("%s(%d), failed to open pcap file %s\n", __func__, port,
-        pcap->file_name);
+    err("%s(%d), failed to open pcap file %s\n", __func__, port, pcap->file_name);
     close(fd);
     return -EIO;
   }
@@ -333,8 +326,7 @@ static int cni_start_pcap(struct mt_cni_entry *cni, uint32_t max_dump_packets) {
   return 0;
 }
 
-static int cni_dump_pcap(struct mt_cni_entry *cni, struct rte_mbuf **mbufs,
-                         uint16_t nb) {
+static int cni_dump_pcap(struct mt_cni_entry *cni, struct rte_mbuf **mbufs, uint16_t nb) {
   enum mtl_port port = cni->port;
   struct mt_rx_pcap *pcap = &cni->pcap;
   uint16_t dump = mt_pcap_dump(cni->impl, port, pcap->pcap, mbufs, nb);
@@ -352,8 +344,7 @@ static int cni_traffic(struct mtl_main_impl *impl) {
 
   for (int i = 0; i < num_ports; i++) {
     cni = cni_get_entry(impl, i);
-    if (!cni->rxq)
-      continue;
+    if (!cni->rxq) continue;
 
     struct mt_rx_pcap *pcap = &cni->pcap;
     /* if any pcap progress */
@@ -386,8 +377,7 @@ static int cni_traffic(struct mtl_main_impl *impl) {
         }
       }
 
-      for (uint16_t ri = 0; ri < rx; ri++)
-        cni_rx_handle(cni, pkts_rx[ri]);
+      for (uint16_t ri = 0; ri < rx; ri++) cni_rx_handle(cni, pkts_rx[ri]);
       mt_free_mbufs(&pkts_rx[0], rx);
       done = false;
     }
@@ -406,16 +396,14 @@ static void *cni_traffic_thread(void *arg) {
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&cni->stop_thread) == 0) {
     ret = cni_traffic(impl);
-    if (MTL_TASKLET_ALL_DONE == ret)
-      mt_sleep_ms(cni->thread_sleep_ms);
+    if (MTL_TASKLET_ALL_DONE == ret) mt_sleep_ms(cni->thread_sleep_ms);
   }
   info("%s, stop\n", __func__);
 
   return NULL;
 }
 
-static int cni_traffic_thread_start(struct mtl_main_impl *impl,
-                                    struct mt_cni_impl *cni) {
+static int cni_traffic_thread_start(struct mtl_main_impl *impl, struct mt_cni_impl *cni) {
   int ret;
 
   if (cni->tid) {
@@ -448,8 +436,7 @@ static int cni_tasklet_start(void *priv) {
   struct mt_cni_impl *cni = mt_get_cni(impl);
 
   /* tasklet will take over the cni thread */
-  if (cni->lcore_tasklet)
-    cni_traffic_thread_stop(cni);
+  if (cni->lcore_tasklet) cni_traffic_thread_stop(cni);
 
   return 0;
 }
@@ -458,8 +445,7 @@ static int cni_tasklet_stop(void *priv) {
   struct mtl_main_impl *impl = priv;
   struct mt_cni_impl *cni = mt_get_cni(impl);
 
-  if (cni->lcore_tasklet)
-    cni_traffic_thread_start(impl, cni);
+  if (cni->lcore_tasklet) cni_traffic_thread_start(impl, cni);
 
   return 0;
 }
@@ -501,8 +487,7 @@ static int cni_queues_init(struct mtl_main_impl *impl) {
     inf = mt_if(impl, i);
 
     /* continue if no cni */
-    if (inf->drv_info.flags & MT_DRV_F_NO_CNI)
-      continue;
+    if (inf->drv_info.flags & MT_DRV_F_NO_CNI) continue;
 
     struct mt_rxq_flow flow;
     memset(&flow, 0, sizeof(flow));
@@ -521,15 +506,13 @@ static int cni_queues_init(struct mtl_main_impl *impl) {
 
 static bool cni_need_tasklet(struct mt_cni_impl *cni_impl) {
   struct mtl_main_impl *impl = cni_impl->parent;
-  if (!impl)
-    return false;
+  if (!impl) return false;
   struct mt_cni_entry *cni;
   int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
     cni = &cni_impl->entries[i];
-    if (cni->rxq)
-      return true;
+    if (cni->rxq) return true;
   }
 
   /* no cni in all ports */
@@ -545,8 +528,7 @@ static int cni_stat(void *priv) {
 
   for (int i = 0; i < num_ports; i++) {
     cni = &cni_impl->entries[i];
-    if (!cni->rxq)
-      continue; /* no cni */
+    if (!cni->rxq) continue; /* no cni */
 
     notice("CNI(%d): eth_rx_rate %f Mb/s, eth_rx_cnt %u\n", i,
            (double)cni->eth_rx_bytes * 8 / dump_period_s / MTL_STAT_M_UNIT,
@@ -555,9 +537,8 @@ static int cni_stat(void *priv) {
     cni->eth_rx_bytes = 0;
 
     if (cni->virtio_rx_cnt || cni->virtio_tx_cnt) {
-      notice("CNI(%d): virtio pkts(all:fail) rx %u:%u, tx %u:%u\n", i,
-             cni->virtio_rx_cnt, cni->virtio_rx_fail_cnt, cni->virtio_tx_cnt,
-             cni->virtio_tx_fail_cnt);
+      notice("CNI(%d): virtio pkts(all:fail) rx %u:%u, tx %u:%u\n", i, cni->virtio_rx_cnt,
+             cni->virtio_rx_fail_cnt, cni->virtio_tx_cnt, cni->virtio_tx_fail_cnt);
       cni->virtio_rx_cnt = 0;
       cni->virtio_rx_fail_cnt = 0;
       cni->virtio_tx_cnt = 0;
@@ -622,8 +603,7 @@ int mt_cni_init(struct mtl_main_impl *impl) {
   }
 
   ret = mt_tap_init(impl);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   if (cni_impl->lcore_tasklet) {
     struct mtl_tasklet_ops ops;
@@ -705,12 +685,10 @@ int mt_cni_start(struct mtl_main_impl *impl) {
   struct mt_cni_impl *cni = mt_get_cni(impl);
   int ret;
 
-  if (!cni_need_tasklet(cni))
-    return 0;
+  if (!cni_need_tasklet(cni)) return 0;
 
   ret = cni_traffic_thread_start(impl, cni);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   return 0;
 }
@@ -763,8 +741,8 @@ struct mt_csq_entry *mt_csq_get(struct mtl_main_impl *impl, enum mtl_port port,
   mt_get_cni(impl)->thread_sleep_ms = 0;
 
   uint8_t *ip = flow->dip_addr;
-  info("%s(%d), ip %u.%u.%u.%u port %u on %d\n", __func__, port, ip[0], ip[1],
-       ip[2], ip[3], flow->dst_port, idx);
+  info("%s(%d), ip %u.%u.%u.%u port %u on %d\n", __func__, port, ip[0], ip[1], ip[2],
+       ip[3], flow->dst_port, idx);
   return entry;
 }
 
@@ -781,8 +759,7 @@ int mt_csq_put(struct mt_csq_entry *entry) {
 
 uint16_t mt_csq_burst(struct mt_csq_entry *entry, struct rte_mbuf **rx_pkts,
                       uint16_t nb_pkts) {
-  uint16_t n =
-      rte_ring_sc_dequeue_burst(entry->ring, (void **)rx_pkts, nb_pkts, NULL);
+  uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void **)rx_pkts, nb_pkts, NULL);
   entry->stat_dequeue_cnt += n;
   return n;
 }

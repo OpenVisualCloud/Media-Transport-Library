@@ -29,10 +29,8 @@
 /* max 8 1080p rx(without DMA) session per sch lcore */
 #define ST_QUOTA_RX1080P_NO_DMA_PER_SCH (8)
 
-#define ST_SCH_MAX_TX_VIDEO_SESSIONS                                           \
-  (60) /* max video tx sessions per sch lcore */
-#define ST_SCH_MAX_RX_VIDEO_SESSIONS                                           \
-  (60) /* max video rx sessions per sch lcore */
+#define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
+#define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
 #define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
 
@@ -46,11 +44,9 @@
 #define ST_VIDEO_BPM_SIZE (1260)
 
 /* max tx/rx audio(st_30) sessions */
-#define ST_SCH_MAX_TX_AUDIO_SESSIONS                                           \
-  (512) /* max audio tx sessions per sch lcore */
+#define ST_SCH_MAX_TX_AUDIO_SESSIONS (512) /* max audio tx sessions per sch lcore */
 #define ST_TX_AUDIO_SESSIONS_RING_SIZE (ST_SCH_MAX_TX_AUDIO_SESSIONS * 2)
-#define ST_SCH_MAX_RX_AUDIO_SESSIONS                                           \
-  (512 * 2) /* max audio rx sessions per sch lcore */
+#define ST_SCH_MAX_RX_AUDIO_SESSIONS (512 * 2) /* max audio rx sessions per sch lcore */
 
 /* max tx/rx anc(st_40) sessions */
 #define ST_MAX_TX_ANC_SESSIONS (180)
@@ -124,13 +120,12 @@ struct st_page_info {
 /* describe the frame used in transport(both tx and rx) */
 struct st_frame_trans {
   int idx;
-  void *addr;      /* virtual address */
-  rte_iova_t iova; /* iova for hw */
-  struct st_page_info
-      *page_table;         /* page table for hw, used for IOVA:PA mode */
-  uint16_t page_table_len; /* page table len for hw, used for IOVA:PA mode */
-  rte_atomic32_t refcnt;   /* 0 means it's free */
-  void *priv;              /* private data for lib */
+  void *addr;                      /* virtual address */
+  rte_iova_t iova;                 /* iova for hw */
+  struct st_page_info *page_table; /* page table for hw, used for IOVA:PA mode */
+  uint16_t page_table_len;         /* page table len for hw, used for IOVA:PA mode */
+  rte_atomic32_t refcnt;           /* 0 means it's free */
+  void *priv;                      /* private data for lib */
 
   uint32_t flags;                          /* ST_FT_FLAG_* */
   struct rte_mbuf_ext_shared_info sh_info; /* for st20 tx ext shared */
@@ -152,11 +147,11 @@ struct st_frame_trans {
 
 /* timing for pacing */
 struct st_tx_video_pacing {
-  double trs; /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
-  double tr_offset;           /* in ns, tr offset time of each frame */
-  uint32_t vrx;               /* packets unit, VRX start value of each frame */
-  uint32_t warm_pkts;         /* packets unit, pkts for RL pacing warm boot */
-  double frame_time;          /* time of the frame in nanoseconds */
+  double trs;         /* in ns for of 2 consecutive packets, T-Frame / N-Packets */
+  double tr_offset;   /* in ns, tr offset time of each frame */
+  uint32_t vrx;       /* packets unit, VRX start value of each frame */
+  uint32_t warm_pkts; /* packets unit, pkts for RL pacing warm boot */
+  double frame_time;  /* time of the frame in nanoseconds */
   double frame_time_sampling; /* time of the frame in sampling(90k) */
   /* in ns, idle time at the end of frame, frame_time - tr_offset - (trs * pkts)
    */
@@ -287,9 +282,9 @@ struct st_tx_video_session_impl {
 
   struct st_tx_video_pacing pacing;
   enum st21_tx_pacing_way pacing_way[MTL_SESSION_PORT_MAX];
-  int (*pacing_tasklet_func[MTL_SESSION_PORT_MAX])(
-      struct mtl_main_impl *impl, struct st_tx_video_session_impl *s,
-      enum mtl_session_port s_port);
+  int (*pacing_tasklet_func[MTL_SESSION_PORT_MAX])(struct mtl_main_impl *impl,
+                                                   struct st_tx_video_session_impl *s,
+                                                   enum mtl_session_port s_port);
 
   struct st_vsync_info vsync;
   bool second_field;
@@ -309,9 +304,8 @@ struct st_tx_video_session_impl {
   struct rte_mbuf *trs_inflight[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
   unsigned int trs_inflight_num[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx[MTL_SESSION_PORT_MAX];
-  unsigned int
-      trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
-  int trs_inflight_cnt[MTL_SESSION_PORT_MAX];     /* for stats */
+  unsigned int trs_pad_inflight_num[MTL_SESSION_PORT_MAX]; /* inflight padding */
+  int trs_inflight_cnt[MTL_SESSION_PORT_MAX];              /* for stats */
   struct rte_mbuf *trs_inflight2[MTL_SESSION_PORT_MAX][ST_SESSION_MAX_BULK];
   unsigned int trs_inflight_num2[MTL_SESSION_PORT_MAX];
   unsigned int trs_inflight_idx2[MTL_SESSION_PORT_MAX];
@@ -377,15 +371,13 @@ struct st_tx_video_session_impl {
   uint32_t stat_epoch_drop;
   uint32_t stat_epoch_onward;
   uint32_t stat_error_user_timestamp;
-  uint32_t
-      stat_epoch_troffset_mismatch; /* pacing mismatch the epoch troffset */
+  uint32_t stat_epoch_troffset_mismatch; /* pacing mismatch the epoch troffset */
   uint32_t stat_trans_troffset_mismatch; /* transmitter mismatch the epoch
                                             troffset */
   uint32_t stat_trans_recalculate_warmup;
   uint32_t stat_exceed_frame_time;
   bool stat_user_busy_first;
-  uint32_t
-      stat_user_busy; /* get_next_frame or dequeue_bulk from rtp ring fail */
+  uint32_t stat_user_busy;       /* get_next_frame or dequeue_bulk from rtp ring fail */
   uint32_t stat_lines_not_ready; /* query app lines not ready */
   uint32_t stat_vsync_mismatch;
   uint64_t stat_bytes_tx[MTL_SESSION_PORT_MAX];
@@ -450,8 +442,7 @@ struct st_rx_video_slot_impl {
   struct st22_rx_frame_meta st22_meta; /* only for st22 frame type */
   /* Second field type indicate */
   bool second_field;
-  struct st_rx_video_slot_slice_info
-      *slice_info; /* for ST20_TYPE_SLICE_LEVEL */
+  struct st_rx_video_slot_slice_info *slice_info; /* for ST20_TYPE_SLICE_LEVEL */
   /* payload len for codestream packetization mode */
   uint16_t st22_payload_length;
   uint16_t st22_box_hdr_length;
@@ -482,8 +473,7 @@ struct st_rx_video_detector {
 
 struct st22_rx_video_info {
   /* app callback */
-  int (*notify_frame_ready)(void *priv, void *frame,
-                            struct st22_rx_frame_meta *meta);
+  int (*notify_frame_ready)(void *priv, void *frame, struct st22_rx_frame_meta *meta);
 
   struct st22_rx_frame_meta meta;
   size_t cur_frame_size; /* size per frame */
@@ -1224,8 +1214,7 @@ struct st22_get_encoder_request {
   struct st22_encode_frame_meta *(*get_frame)(void *priv);
   int (*wake_block)(void *priv);
   int (*set_block_timeout)(void *priv, uint64_t timedwait_ns);
-  int (*put_frame)(void *priv, struct st22_encode_frame_meta *frame,
-                   int result);
+  int (*put_frame)(void *priv, struct st22_encode_frame_meta *frame, int result);
   int (*dump)(void *priv);
 };
 
@@ -1237,8 +1226,7 @@ struct st22_get_decoder_request {
   struct st22_decode_frame_meta *(*get_frame)(void *priv);
   int (*wake_block)(void *priv);
   int (*set_block_timeout)(void *priv, uint64_t timedwait_ns);
-  int (*put_frame)(void *priv, struct st22_decode_frame_meta *frame,
-                   int result);
+  int (*put_frame)(void *priv, struct st22_decode_frame_meta *frame, int result);
   int (*dump)(void *priv);
 };
 
@@ -1248,8 +1236,7 @@ struct st20_get_converter_request {
 
   void *priv;
   struct st20_convert_frame_meta *(*get_frame)(void *priv);
-  int (*put_frame)(void *priv, struct st20_convert_frame_meta *frame,
-                   int result);
+  int (*put_frame)(void *priv, struct st20_convert_frame_meta *frame, int result);
   int (*dump)(void *priv);
 };
 

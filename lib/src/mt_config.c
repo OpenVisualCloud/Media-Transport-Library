@@ -6,8 +6,7 @@
 
 #include "mt_log.h"
 
-static int config_parse_plugins(struct mtl_main_impl *impl,
-                                json_object *plugins_array) {
+static int config_parse_plugins(struct mtl_main_impl *impl, json_object *plugins_array) {
   if (json_object_get_type(plugins_array) != json_type_array) {
     err("%s, type not array\n", __func__);
     return -EIO;
@@ -17,22 +16,17 @@ static int config_parse_plugins(struct mtl_main_impl *impl,
   dbg("%s, num_plugins %d\n", __func__, num_plugins);
   for (int i = 0; i < num_plugins; i++) {
     json_object *plugin_obj = json_object_array_get_idx(plugins_array, i);
-    if (!plugin_obj)
-      continue;
+    if (!plugin_obj) continue;
     json_object *obj;
     obj = mt_json_object_get(plugin_obj, "enabled");
-    if (obj && !json_object_get_boolean(obj))
-      continue;
+    if (obj && !json_object_get_boolean(obj)) continue;
     const char *name = NULL;
     obj = mt_json_object_get(plugin_obj, "name");
-    if (obj)
-      name = json_object_get_string(obj);
+    if (obj) name = json_object_get_string(obj);
     const char *path = NULL;
     obj = mt_json_object_get(plugin_obj, "path");
-    if (obj)
-      path = json_object_get_string(obj);
-    if (!name || !path)
-      continue;
+    if (obj) path = json_object_get_string(obj);
+    if (!name || !path) continue;
     st_plugin_register(impl, path);
   }
 
@@ -45,13 +39,11 @@ static int config_parse_json(struct mtl_main_impl *impl, const char *filename) {
     warn("%s, open json file %s fail\n", __func__, filename);
     return -EIO;
   }
-  info("%s, parse %s with json-c version: %s\n", __func__, filename,
-       json_c_version());
+  info("%s, parse %s with json-c version: %s\n", __func__, filename, json_c_version());
 
   /* parse plugins for system */
   json_object *plugins_array = mt_json_object_get(root_object, "plugins");
-  if (plugins_array)
-    config_parse_plugins(impl, plugins_array);
+  if (plugins_array) config_parse_plugins(impl, plugins_array);
 
   json_object_put(root_object);
   return 0;

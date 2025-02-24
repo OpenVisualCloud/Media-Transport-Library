@@ -24,21 +24,19 @@ struct mt_rx_xdp_get_args {
 int mt_dev_xdp_init(struct mt_interface *inf);
 int mt_dev_xdp_uinit(struct mt_interface *inf);
 
-struct mt_tx_xdp_entry *mt_tx_xdp_get(struct mtl_main_impl *impl,
-                                      enum mtl_port port,
+struct mt_tx_xdp_entry *mt_tx_xdp_get(struct mtl_main_impl *impl, enum mtl_port port,
                                       struct mt_txq_flow *flow,
                                       struct mt_tx_xdp_get_args *args);
 int mt_tx_xdp_put(struct mt_tx_xdp_entry *entry);
-uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry *entry,
-                         struct rte_mbuf **tx_pkts, uint16_t nb_pkts);
+uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry *entry, struct rte_mbuf **tx_pkts,
+                         uint16_t nb_pkts);
 
-struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl,
-                                      enum mtl_port port,
+struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl, enum mtl_port port,
                                       struct mt_rxq_flow *flow,
                                       struct mt_rx_xdp_get_args *args);
 int mt_rx_xdp_put(struct mt_rx_xdp_entry *entry);
-uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry *entry,
-                         struct rte_mbuf **rx_pkts, const uint16_t nb_pkts);
+uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
+                         const uint16_t nb_pkts);
 #else
 
 #include "../mt_log.h"
@@ -53,9 +51,10 @@ static inline int mt_dev_xdp_uinit(struct mt_interface *inf) {
   return -ENOTSUP;
 }
 
-static inline struct mt_tx_xdp_entry *
-mt_tx_xdp_get(struct mtl_main_impl *impl, enum mtl_port port,
-              struct mt_txq_flow *flow, struct mt_tx_xdp_get_args *args) {
+static inline struct mt_tx_xdp_entry *mt_tx_xdp_get(struct mtl_main_impl *impl,
+                                                    enum mtl_port port,
+                                                    struct mt_txq_flow *flow,
+                                                    struct mt_tx_xdp_get_args *args) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(flow);
@@ -69,17 +68,17 @@ static inline int mt_tx_xdp_put(struct mt_tx_xdp_entry *entry) {
 }
 
 static inline uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry *entry,
-                                       struct rte_mbuf **tx_pkts,
-                                       uint16_t nb_pkts) {
+                                       struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
   MTL_MAY_UNUSED(entry);
   MTL_MAY_UNUSED(tx_pkts);
   MTL_MAY_UNUSED(nb_pkts);
   return 0;
 }
 
-static inline struct mt_rx_xdp_entry *
-mt_rx_xdp_get(struct mtl_main_impl *impl, enum mtl_port port,
-              struct mt_rxq_flow *flow, struct mt_rx_xdp_get_args *args) {
+static inline struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl,
+                                                    enum mtl_port port,
+                                                    struct mt_rxq_flow *flow,
+                                                    struct mt_rx_xdp_get_args *args) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(flow);

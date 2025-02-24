@@ -7,14 +7,12 @@
 
 #include "st_main.h"
 
-int st_audio_transmitter_init(struct mtl_main_impl *impl,
-                              struct mtl_sch_impl *sch,
+int st_audio_transmitter_init(struct mtl_main_impl *impl, struct mtl_sch_impl *sch,
                               struct st_tx_audio_sessions_mgr *mgr,
                               struct st_audio_transmitter_impl *trs);
 int st_audio_transmitter_uinit(struct st_audio_transmitter_impl *trs);
 
 int st_audio_queue_fatal_error(struct mtl_main_impl *impl,
-                               struct st_tx_audio_sessions_mgr *mgr,
-                               enum mtl_port port);
+                               struct st_tx_audio_sessions_mgr *mgr, enum mtl_port port);
 
 #endif

@@ -27,26 +27,26 @@
 
 /* log define */
 #ifdef DEBUG
-#define dbg(...)                                                               \
-  do {                                                                         \
-    printf(__VA_ARGS__);                                                       \
+#define dbg(...)         \
+  do {                   \
+    printf(__VA_ARGS__); \
   } while (0)
 #else
-#define dbg(...)                                                               \
-  do {                                                                         \
+#define dbg(...) \
+  do {           \
   } while (0)
 #endif
-#define info(...)                                                              \
-  do {                                                                         \
-    printf(__VA_ARGS__);                                                       \
+#define info(...)        \
+  do {                   \
+    printf(__VA_ARGS__); \
   } while (0)
-#define warn(...)                                                              \
-  do {                                                                         \
-    printf(__VA_ARGS__);                                                       \
+#define warn(...)        \
+  do {                   \
+    printf(__VA_ARGS__); \
   } while (0)
-#define err(...)                                                               \
-  do {                                                                         \
-    printf(__VA_ARGS__);                                                       \
+#define err(...)         \
+  do {                   \
+    printf(__VA_ARGS__); \
   } while (0)
 
 #define ST_SAMPLE_URL_MAX_LEN (256)
@@ -144,8 +144,8 @@ struct st_frame_user_meta {
   char dummy[512];
 };
 
-int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv,
-                      bool tx, bool rx, bool unicast);
+int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv, bool tx,
+                      bool rx, bool unicast);
 
 int tx_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv);
 
@@ -155,11 +155,9 @@ int fwd_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv);
 
 int dma_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv);
 
-void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be *data,
-                                  int w, int h);
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be *data, int w, int h);
 
-void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be *data,
-                                  int w, int h);
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be *data, int w, int h);
 
 /* Monotonic time (in nanoseconds) since some unspecified starting point. */
 static inline uint64_t sample_get_monotonic_time() {

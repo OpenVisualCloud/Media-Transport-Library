@@ -41,7 +41,7 @@ struct mt_txq_entry {
   struct mt_tsq_entry *tsq;
   struct mt_tx_socket_entry *tx_socket_q;
   struct mt_tx_xdp_entry *tx_xdp_q;
-  struct mt_tx_rdma_entry *tx_rdma_q; // TODO: remove this when rdma is ready
+  struct mt_tx_rdma_entry *tx_rdma_q;  // TODO: remove this when rdma is ready
 
   uint16_t (*burst)(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                     uint16_t nb_pkts);
@@ -60,9 +60,8 @@ static inline struct rte_mempool *mt_txq_mempool(struct mt_txq_entry *entry) {
 }
 uint16_t mt_txq_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                       uint16_t nb_pkts);
-uint16_t mt_txq_burst_busy(struct mt_txq_entry *entry,
-                           struct rte_mbuf **tx_pkts, uint16_t nb_pkts,
-                           int timeout_ms);
+uint16_t mt_txq_burst_busy(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
+                           uint16_t nb_pkts, int timeout_ms);
 int mt_txq_flush(struct mt_txq_entry *entry, struct rte_mbuf *pad);
 int mt_txq_put(struct mt_txq_entry *entry);
 int mt_txq_fatal_error(struct mt_txq_entry *entry);

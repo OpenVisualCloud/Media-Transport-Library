@@ -18,7 +18,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define timeval2ns(tv)                                                         \
+#define timeval2ns(tv) \
   (((uint64_t)tv.tv_sec * 1000000000) + ((uint64_t)tv.tv_usec * 1000))
 
 #define blog(level, msg, ...) blog(level, "mtl-input: " msg, ##__VA_ARGS__)

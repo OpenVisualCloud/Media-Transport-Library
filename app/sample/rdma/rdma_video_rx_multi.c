@@ -55,9 +55,8 @@ int sdl_init(size_t width, size_t height) {
     return -1;
   }
 
-  window =
-      SDL_CreateWindow("RDMA Frame Display", SDL_WINDOWPOS_UNDEFINED,
-                       SDL_WINDOWPOS_UNDEFINED, 640, 360, SDL_WINDOW_SHOWN);
+  window = SDL_CreateWindow("RDMA Frame Display", SDL_WINDOWPOS_UNDEFINED,
+                            SDL_WINDOWPOS_UNDEFINED, 640, 360, SDL_WINDOW_SHOWN);
   if (!window) {
     printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
     return -1;
@@ -69,8 +68,8 @@ int sdl_init(size_t width, size_t height) {
     return -1;
   }
 
-  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_UYVY,
-                              SDL_TEXTUREACCESS_STREAMING, width, height);
+  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_UYVY, SDL_TEXTUREACCESS_STREAMING,
+                              width, height);
   if (!texture) {
     printf("Texture could not be created! SDL_Error: %s\n", SDL_GetError());
     return -1;
@@ -82,19 +81,16 @@ int sdl_init(size_t width, size_t height) {
 void sdl_display_frame(void *frame, size_t width, size_t height) {
   (void)(height);
   SDL_UpdateTexture(texture, NULL, frame,
-                    width * 2); // Assuming UYVY (2 bytes per pixel)
+                    width * 2);  // Assuming UYVY (2 bytes per pixel)
   SDL_RenderClear(renderer);
   SDL_RenderCopy(renderer, texture, NULL, NULL);
   SDL_RenderPresent(renderer);
 }
 
 void sdl_cleanup() {
-  if (texture)
-    SDL_DestroyTexture(texture);
-  if (renderer)
-    SDL_DestroyRenderer(renderer);
-  if (window)
-    SDL_DestroyWindow(window);
+  if (texture) SDL_DestroyTexture(texture);
+  if (renderer) SDL_DestroyRenderer(renderer);
+  if (window) SDL_DestroyWindow(window);
   SDL_Quit();
 }
 #endif
@@ -183,8 +179,7 @@ int main(int argc, char **argv) {
   struct mtl_rdma_buffer *buffer = NULL;
   struct mtl_rdma_buffer *buffer1 = NULL;
   while (keep_running) {
-    if (!buffer)
-      buffer = mtl_rdma_rx_get_buffer(rx0);
+    if (!buffer) buffer = mtl_rdma_rx_get_buffer(rx0);
     if (!buffer) {
       /* wait for buffer ready */
       pthread_mutex_lock(&mtx);
@@ -192,8 +187,7 @@ int main(int argc, char **argv) {
       pthread_mutex_unlock(&mtx);
       continue;
     }
-    if (!buffer1)
-      buffer1 = mtl_rdma_rx_get_buffer(rx1);
+    if (!buffer1) buffer1 = mtl_rdma_rx_get_buffer(rx1);
     if (!buffer1) {
       /* wait for buffer ready */
       pthread_mutex_lock(&mtx);
@@ -254,18 +248,14 @@ int main(int argc, char **argv) {
   printf("Received %d frames\n", frames_consumed);
 
 out:
-  if (rx0)
-    mtl_rdma_rx_free(rx0);
-  if (rx1)
-    mtl_rdma_rx_free(rx1);
+  if (rx0) mtl_rdma_rx_free(rx0);
+  if (rx1) mtl_rdma_rx_free(rx1);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED)
-      munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
   }
 
-  if (mrh)
-    mtl_rdma_uinit(mrh);
+  if (mrh) mtl_rdma_uinit(mrh);
 
 #ifdef APP_HAS_SDL2
   sdl_cleanup();

@@ -55,8 +55,7 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
     }
   }
 
-  if (!valid_mbuf_cnt)
-    return 0;
+  if (!valid_mbuf_cnt) return 0;
 
   int clients = q->clients;
 
@@ -70,8 +69,7 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
   if (clients == 1) {
     struct mur_client *c = MT_TAILQ_FIRST(&q->client_head);
     c->stat_pkt_rx += valid_mbuf_cnt;
-    n = rte_ring_sp_enqueue_bulk(c->ring, (void **)&valid_mbuf[0],
-                                 valid_mbuf_cnt, NULL);
+    n = rte_ring_sp_enqueue_bulk(c->ring, (void **)&valid_mbuf[0], valid_mbuf_cnt, NULL);
     if (!n) {
       dbg("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
       rte_pktmbuf_free_bulk(&valid_mbuf[0], valid_mbuf_cnt);
@@ -105,8 +103,8 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
       if (c_pkts_nb) { /* push last client */
         struct mur_client *c = cs[last_c_idx];
         c->stat_pkt_rx += c_pkts_nb;
-        unsigned int e = rte_ring_sp_enqueue_bulk(c->ring, (void **)&c_pkts[0],
-                                                  c_pkts_nb, NULL);
+        unsigned int e =
+            rte_ring_sp_enqueue_bulk(c->ring, (void **)&c_pkts[0], c_pkts_nb, NULL);
         if (0 == e) { /* enqueue fail */
           rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
           c->stat_pkt_rx_enq_fail += c_pkts_nb;
@@ -138,8 +136,7 @@ static uint16_t urq_rx(struct mur_queue *q) {
   uint16_t rx_burst = q->rx_burst_pkts;
   struct rte_mbuf *pkts[rx_burst];
 
-  if (!urq_try_lock(q))
-    return 0;
+  if (!urq_try_lock(q)) return 0;
   uint16_t rx = mt_rxq_burst(q->rxq, pkts, rx_burst);
   urq_unlock(q);
 
@@ -171,15 +168,14 @@ static int urq_mgr_del(struct mudp_rxq_mgr *mgr, struct mur_queue *q) {
   return -EIO;
 }
 
-static struct mur_queue *urq_mgr_search(struct mudp_rxq_mgr *mgr,
-                                        uint16_t dst_port) {
+static struct mur_queue *urq_mgr_search(struct mudp_rxq_mgr *mgr, uint16_t dst_port) {
   struct mur_queue *q;
   struct mur_queue *ret = NULL;
 
   MT_TAILQ_FOREACH(q, &mgr->head, next) {
     if (q->dst_port == dst_port) {
-      info("%s(%d), dst_port %u already on q %p, reuse_port %d\n", __func__,
-           mgr->port, dst_port, q, q->reuse_port);
+      info("%s(%d), dst_port %u already on q %p, reuse_port %d\n", __func__, mgr->port,
+           dst_port, q, q->reuse_port);
       ret = q;
     }
   }
@@ -272,8 +268,8 @@ static struct mur_queue *urq_get(struct mudp_rxq_mgr *mgr,
   q->rxq = mt_rxq_get(impl, port, &flow);
   if (!q->rxq) {
     /* wa for e810 pf mode since it doesn't support MT_RXQ_FLOW_F_NO_IP */
-    warn("%s(%d,%u), get rxq fail with no ip flow, try cni queue\n", __func__,
-         port, dst_port);
+    warn("%s(%d,%u), get rxq fail with no ip flow, try cni queue\n", __func__, port,
+         dst_port);
     flow.flags |= MT_RXQ_FLOW_F_FORCE_CNI;
     q->rxq = mt_rxq_get(impl, port, &flow);
     if (!q->rxq) {
@@ -301,8 +297,7 @@ static struct mur_queue *urq_get(struct mudp_rxq_mgr *mgr,
 
 out_unlock_fail:
   urq_mgr_unlock(mgr);
-  if (q)
-    urq_put(q);
+  if (q) urq_put(q);
   return NULL;
 }
 
@@ -352,8 +347,7 @@ static int urc_tasklet_handler(void *priv) {
   struct mur_client *c = priv;
   struct mtl_main_impl *impl = c->parent;
 
-  if (c->q)
-    urq_rx(c->q);
+  if (c->q) urq_rx(c->q);
 
   unsigned int count = rte_ring_count(c->ring);
   if (count > 0) {
@@ -368,8 +362,7 @@ static int urc_tasklet_handler(void *priv) {
 }
 
 static int urc_init_tasklet(struct mtl_main_impl *impl, struct mur_client *c) {
-  if (!mt_user_udp_lcore(impl, c->port))
-    return 0;
+  if (!mt_user_udp_lcore(impl, c->port)) return 0;
 
   struct mtl_tasklet_ops ops;
   char name[32];
@@ -405,8 +398,7 @@ struct mur_client *mur_client_get(struct mur_client_create *create) {
     return NULL;
   }
 
-  struct mur_client *c =
-      mt_rte_zmalloc_socket(sizeof(*c), mt_socket_id(impl, port));
+  struct mur_client *c = mt_rte_zmalloc_socket(sizeof(*c), mt_socket_id(impl, port));
   if (!c) {
     err("%s(%d,%u), client malloc fail\n", __func__, port, dst_port);
     urq_put(q);
@@ -429,10 +421,9 @@ struct mur_client *mur_client_get(struct mur_client_create *create) {
   char ring_name[64];
   struct rte_ring *ring;
   unsigned int flags, count;
-  snprintf(ring_name, sizeof(ring_name), "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX,
-           port, dst_port, q->rxq_id, idx);
-  flags =
-      RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
+  snprintf(ring_name, sizeof(ring_name), "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, port,
+           dst_port, q->rxq_id, idx);
+  flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   count = create->ring_count;
   ring = rte_ring_create(ring_name, count, mt_socket_id(impl, port), flags);
   if (!ring) {
@@ -494,18 +485,17 @@ int mur_client_dump(struct mur_client *c) {
   int idx = c->idx;
 
   if (c->stat_pkt_rx) {
-    notice("%s(%d,%u,%d), pkt rx %u\n", __func__, port, dst_port, idx,
-           c->stat_pkt_rx);
+    notice("%s(%d,%u,%d), pkt rx %u\n", __func__, port, dst_port, idx, c->stat_pkt_rx);
     c->stat_pkt_rx = 0;
   }
   if (c->stat_pkt_rx_enq_fail) {
-    warn("%s(%d,%u,%d), pkt rx %u enqueue fail\n", __func__, port, dst_port,
-         idx, c->stat_pkt_rx_enq_fail);
+    warn("%s(%d,%u,%d), pkt rx %u enqueue fail\n", __func__, port, dst_port, idx,
+         c->stat_pkt_rx_enq_fail);
     c->stat_pkt_rx_enq_fail = 0;
   }
   if (c->stat_timedwait) {
-    notice("%s(%d,%u,%d), timedwait %u timeout %u\n", __func__, port, dst_port,
-           idx, c->stat_timedwait, c->stat_timedwait_timeout);
+    notice("%s(%d,%u,%d), timedwait %u timeout %u\n", __func__, port, dst_port, idx,
+           c->stat_timedwait, c->stat_timedwait_timeout);
     c->stat_timedwait = 0;
     c->stat_timedwait_timeout = 0;
   }
@@ -539,8 +529,7 @@ int mur_client_timedwait(struct mur_client *c, unsigned int timedwait_us,
   dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);
   mt_pthread_mutex_unlock(&c->lcore_wake_mutex);
 
-  if (ret == ETIMEDOUT)
-    c->stat_timedwait_timeout++;
+  if (ret == ETIMEDOUT) c->stat_timedwait_timeout++;
   return ret;
 }
 
@@ -573,8 +562,7 @@ int mudp_rxq_uinit(struct mtl_main_impl *impl) {
 
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     mgr = impl->mudp_rxq_mgr[i];
-    if (!mgr)
-      continue;
+    if (!mgr) continue;
 
     /* check if any not unregister */
     while ((q = MT_TAILQ_FIRST(&mgr->head))) {

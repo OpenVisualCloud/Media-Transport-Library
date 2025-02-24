@@ -57,8 +57,7 @@ static int dma_copy_sample(mtl_handle st) {
     while (fb_src_iova_off < fb_size) {
       ret = mtl_udma_copy(dma, fb_dst_iova + fb_src_iova_off,
                           fb_src_iova + fb_src_iova_off, element_size);
-      if (ret < 0)
-        break;
+      if (ret < 0) break;
       fb_src_iova_off += element_size;
     }
     /* submit */
@@ -151,8 +150,7 @@ static int dma_map_copy_sample(mtl_handle st) {
     while (fb_src_iova_off < fb_size) {
       ret = mtl_udma_copy(dma, fb_dst_iova + fb_src_iova_off,
                           fb_src_iova + fb_src_iova_off, element_size);
-      if (ret < 0)
-        break;
+      if (ret < 0) break;
       fb_src_iova_off += element_size;
     }
     /* submit */
@@ -172,23 +170,20 @@ static int dma_map_copy_sample(mtl_handle st) {
   if (ret != 0) {
     err("%s: sha check fail\n", __func__);
   } else {
-    info("%s: dma map copy %" PRIu64 "k with time %dus\n", __func__,
-         fb_size / 1024, (int)(end_ns - start_ns) / 1000);
+    info("%s: dma map copy %" PRIu64 "k with time %dus\n", __func__, fb_size / 1024,
+         (int)(end_ns - start_ns) / 1000);
   }
 
 out:
   if (fb_src_malloc) {
-    if (fb_src_iova != MTL_BAD_IOVA)
-      mtl_dma_unmap(st, fb_src, fb_src_iova, fb_size);
+    if (fb_src_iova != MTL_BAD_IOVA) mtl_dma_unmap(st, fb_src, fb_src_iova, fb_size);
     free(fb_src_malloc);
   }
   if (fb_dst_malloc) {
-    if (fb_dst_iova != MTL_BAD_IOVA)
-      mtl_dma_unmap(st, fb_dst, fb_dst_iova, fb_size);
+    if (fb_dst_iova != MTL_BAD_IOVA) mtl_dma_unmap(st, fb_dst, fb_dst_iova, fb_size);
     free(fb_dst_malloc);
   }
-  if (dma)
-    mtl_udma_free(dma);
+  if (dma) mtl_udma_free(dma);
   return ret;
 }
 
@@ -198,8 +193,7 @@ int main(int argc, char **argv) {
 
   memset(&ctx, 0, sizeof(ctx));
   ret = dma_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -209,12 +203,10 @@ int main(int argc, char **argv) {
 
   /* dma copy with st_hp_*** memory */
   ret = dma_copy_sample(ctx.st);
-  if (ret < 0)
-    goto exit;
+  if (ret < 0) goto exit;
   /* dma copy with malloc/free memory, use map before passing to DMA */
   ret = dma_map_copy_sample(ctx.st);
-  if (ret < 0)
-    goto exit;
+  if (ret < 0) goto exit;
 
 exit:
   /* release sample(st) dev */

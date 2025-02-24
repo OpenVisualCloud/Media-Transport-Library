@@ -16,7 +16,7 @@
 
 #define TAP_IOV_DEFAULT_MAX 1024
 
-#define ST_TAP_CTL_CODE(code)                                                  \
+#define ST_TAP_CTL_CODE(code) \
   CTL_CODE(FILE_DEVICE_UNKNOWN, code, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define ST_IOCTL_GET_TAPMAC ST_TAP_CTL_CODE(1)
@@ -44,7 +44,7 @@ enum windows_driver_type {
 
 #define IOSTATE_INITIAL 0
 #define IOSTATE_QUEUED 1 /* overlapped I/O has been queued */
-#define IOSTATE_IMMEDIATE_RETURN                                               \
+#define IOSTATE_IMMEDIATE_RETURN \
   2 /* I/O function returned immediately without queueing */
 
 struct overlapped_io {
@@ -88,8 +88,7 @@ static inline int mt_tap_uinit(struct mtl_main_impl *impl) {
   MTL_MAY_UNUSED(impl);
   return 0;
 }
-static inline int mt_tap_handle(struct mtl_main_impl *impl,
-                                enum mtl_port port) {
+static inline int mt_tap_handle(struct mtl_main_impl *impl, enum mtl_port port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   return -EIO;

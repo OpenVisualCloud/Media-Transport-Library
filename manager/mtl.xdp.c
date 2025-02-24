@@ -29,8 +29,7 @@ static int __always_inline lookup_udp4_dp(__u16 dp) {
   __u8 *value;
 
   value = bpf_map_lookup_elem(&udp4_dp_filter, &dp);
-  if (value && *value != 0)
-    return 1;
+  if (value && *value != 0) return 1;
   return 0;
 }
 
@@ -45,24 +44,20 @@ int mtl_dp_filter(struct xdp_md *ctx) {
 
   nh.pos = data;
   eth_type = parse_ethhdr(&nh, data_end, &eth);
-  if (eth_type != bpf_htons(ETH_P_IP))
-    return XDP_PASS;
+  if (eth_type != bpf_htons(ETH_P_IP)) return XDP_PASS;
 
   struct iphdr *iphdr;
   int ip_type;
   ip_type = parse_iphdr(&nh, data_end, &iphdr);
-  if (ip_type != IPPROTO_UDP)
-    return XDP_PASS;
+  if (ip_type != IPPROTO_UDP) return XDP_PASS;
 
   struct udphdr *udphdr;
   int ret;
   ret = parse_udphdr(&nh, data_end, &udphdr);
-  if (ret < 0)
-    return XDP_PASS;
+  if (ret < 0) return XDP_PASS;
 
   __u16 dst_port = bpf_ntohs(udphdr->dest);
-  if (lookup_udp4_dp(dst_port) == 0)
-    return XDP_PASS;
+  if (lookup_udp4_dp(dst_port) == 0) return XDP_PASS;
 
   /* go to next program: xsk_def_prog */
   return XDP_DROP;

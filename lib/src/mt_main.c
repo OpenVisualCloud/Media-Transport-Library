@@ -29,8 +29,7 @@ enum mtl_port mt_port_by_id(struct mtl_main_impl *impl, uint16_t port_id) {
   int i;
 
   for (i = 0; i < num_ports; i++) {
-    if (port_id == mt_port_id(impl, i))
-      return i;
+    if (port_id == mt_port_id(impl, i)) return i;
   }
 
   err("%s, invalid port_id %d\n", __func__, port_id);
@@ -38,23 +37,21 @@ enum mtl_port mt_port_by_id(struct mtl_main_impl *impl, uint16_t port_id) {
 }
 
 int mt_dst_ip_mac(struct mtl_main_impl *impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                  struct rte_ether_addr *ea, enum mtl_port port,
-                  int timeout_ms) {
+                  struct rte_ether_addr *ea, enum mtl_port port, int timeout_ms) {
   int ret;
 
   if (mt_is_multicast_ip(dip)) {
     mt_mcast_ip_to_mac(dip, ea);
     ret = 0;
-  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port),
-                          mt_sip_netmask(impl, port))) {
+  } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
     ret = mt_arp_get_mac(impl, dip, ea, port, timeout_ms);
   } else {
     uint8_t *gateway = mt_sip_gateway(impl, port);
     if (mt_ip_to_u32(gateway)) {
       ret = mt_arp_get_mac(impl, gateway, ea, port, timeout_ms);
     } else {
-      err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__,
-          port, dip[0], dip[1], dip[2], dip[3]);
+      err("%s(%d), ip %d.%d.%d.%d is wan but no gateway support\n", __func__, port,
+          dip[0], dip[1], dip[2], dip[3]);
       return -EIO;
     }
   }
@@ -62,26 +59,23 @@ int mt_dst_ip_mac(struct mtl_main_impl *impl, uint8_t dip[MTL_IP_ADDR_LEN],
   dbg("%s(%d), ip: %d.%d.%d.%d, mac: "
       "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx\n",
       __func__, port, dip[0], dip[1], dip[2], dip[3], ea->addr_bytes[0],
-      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3],
-      ea->addr_bytes[4], ea->addr_bytes[5]);
+      ea->addr_bytes[1], ea->addr_bytes[2], ea->addr_bytes[3], ea->addr_bytes[4],
+      ea->addr_bytes[5]);
   return ret;
 }
 
 uint8_t *mt_sip_addr(struct mtl_main_impl *impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port))
-    return mt_dhcp_get_ip(impl, port);
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_ip(impl, port);
   return mt_get_user_params(impl)->sip_addr[port];
 }
 
 uint8_t *mt_sip_netmask(struct mtl_main_impl *impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port))
-    return mt_dhcp_get_netmask(impl, port);
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_netmask(impl, port);
   return mt_get_user_params(impl)->netmask[port];
 }
 
 uint8_t *mt_sip_gateway(struct mtl_main_impl *impl, enum mtl_port port) {
-  if (mt_dhcp_service_active(impl, port))
-    return mt_dhcp_get_gateway(impl, port);
+  if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_gateway(impl, port);
   return mt_get_user_params(impl)->gateway[port];
 }
 
@@ -90,8 +84,7 @@ bool mt_is_valid_socket(struct mtl_main_impl *impl, int soc_id) {
   int i;
 
   for (i = 0; i < num_ports; i++) {
-    if (soc_id == mt_socket_id(impl, i))
-      return true;
+    if (soc_id == mt_socket_id(impl, i)) return true;
   }
 
   err("%s, invalid soc_id %d\n", __func__, soc_id);
@@ -263,8 +256,7 @@ static int mt_main_free(struct mtl_main_impl *impl) {
 
 bool mt_sessions_time_measure(struct mtl_main_impl *impl) {
   bool enabled = mt_user_tasklet_time_measure(impl);
-  if (MT_USDT_SESSIONS_TIME_MEASURE_ENABLED())
-    enabled = true;
+  if (MT_USDT_SESSIONS_TIME_MEASURE_ENABLED()) enabled = true;
   return enabled;
 }
 
@@ -297,8 +289,7 @@ static int mt_user_params_check(struct mtl_init_params *p) {
       else
         if_name = mt_dpdk_afxdp_port2if(p->port[i]);
       if (!if_name) {
-        err("%s(%d), get afxdp if name fail from %s\n", __func__, i,
-            p->port[i]);
+        err("%s(%d), get afxdp if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
       }
     }
@@ -306,8 +297,7 @@ static int mt_user_params_check(struct mtl_init_params *p) {
     if (pmd == MTL_PMD_DPDK_AF_PACKET) {
       if_name = mt_dpdk_afpkt_port2if(p->port[i]);
       if (!if_name) {
-        err("%s(%d), get afpkt if name fail from %s\n", __func__, i,
-            p->port[i]);
+        err("%s(%d), get afpkt if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
       }
     }
@@ -315,8 +305,7 @@ static int mt_user_params_check(struct mtl_init_params *p) {
     if (pmd == MTL_PMD_KERNEL_SOCKET) {
       if_name = mt_kernel_port2if(p->port[i]);
       if (!if_name) {
-        err("%s(%d), get kernel socket if name fail from %s\n", __func__, i,
-            p->port[i]);
+        err("%s(%d), get kernel socket if name fail from %s\n", __func__, i, p->port[i]);
         return -EINVAL;
       }
     }
@@ -331,8 +320,7 @@ static int mt_user_params_check(struct mtl_init_params *p) {
       ip = p->sip_addr[i];
       ret = mt_ip_addr_check(ip);
       if (ret < 0) {
-        err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1],
-            ip[2], ip[3]);
+        err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
         return -EINVAL;
       }
     }
@@ -343,22 +331,19 @@ static int mt_user_params_check(struct mtl_init_params *p) {
         if (0 == strncmp(p->port[i], p->port[j], MTL_PORT_MAX_LEN)) {
           if (!strncmp(p->port[i], "kernel:lo", MTL_PORT_MAX_LEN)) {
             /* duplicated kernel:lo for test purpose */
-            warn("%s, same name %s for port %d and %d\n", __func__, p->port[i],
-                 i, j);
+            warn("%s, same name %s for port %d and %d\n", __func__, p->port[i], i, j);
           } else {
-            err("%s, same name %s for port %d and %d\n", __func__, p->port[i],
-                i, j);
+            err("%s, same name %s for port %d and %d\n", __func__, p->port[i], i, j);
             return -EINVAL;
           }
         }
         /* check if duplicate ip */
-        if ((p->net_proto[i] == MTL_PROTO_STATIC) &&
-            (p->pmd[i] == MTL_PMD_DPDK_USER) &&
+        if ((p->net_proto[i] == MTL_PROTO_STATIC) && (p->pmd[i] == MTL_PMD_DPDK_USER) &&
             (p->pmd[j] == MTL_PMD_DPDK_USER)) {
           if (0 == memcmp(p->sip_addr[i], p->sip_addr[j], MTL_IP_ADDR_LEN)) {
             ip = p->sip_addr[j];
-            err("%s, same ip %d.%d.%d.%d for port %d and %d\n", __func__, ip[0],
-                ip[1], ip[2], ip[3], i, j);
+            err("%s, same ip %d.%d.%d.%d for port %d and %d\n", __func__, ip[0], ip[1],
+                ip[2], ip[3], i, j);
             return -EINVAL;
           }
         }
@@ -447,8 +432,7 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
       socket[i] = mt_dev_get_socket_id(p->port[i]);
     }
     if (socket[i] < 0) {
-      err("%s(%d), get socket fail %d for pmd %d\n", __func__, i, socket[i],
-          p->pmd[i]);
+      err("%s(%d), get socket fail %d for pmd %d\n", __func__, i, socket[i], p->pmd[i]);
 #ifndef WINDOWSENV
       if (pmd == MTL_PMD_DPDK_USER) {
         err("Run \"dpdk-devbind.py -s | grep Ethernet\" to check if other port "
@@ -467,8 +451,7 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
 
 #ifndef WINDOWSENV
   int numa_nodes = 0;
-  if (numa_available() >= 0)
-    numa_nodes = numa_max_node() + 1;
+  if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
   if (!(p->flags & MTL_FLAG_NOT_BIND_PROCESS_NUMA) && (numa_nodes > 1)) {
     /* bind current thread and its children to socket node */
     struct bitmask *mask = numa_bitmask_alloc(numa_nodes);
@@ -586,12 +569,10 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
       impl->rx_pool_data_size = p->rx_pool_data_size;
       info("%s, new rx_pool_data_size %u\n", __func__, impl->rx_pool_data_size);
     } else {
-      warn("%s, invalid rx_pool_data_size %u\n", __func__,
-           p->rx_pool_data_size);
+      warn("%s, invalid rx_pool_data_size %u\n", __func__, p->rx_pool_data_size);
     }
   }
-  impl->sch_schedule_ns =
-      200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
+  impl->sch_schedule_ns = 200 * NS_PER_US; /* max schedule ns for mt_sleep_ms(0) */
 
   if (p->arp_timeout_s)
     impl->arp_timeout_ms = p->arp_timeout_s * MS_PER_S;
@@ -635,8 +616,7 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
   }
 
   if (p->flags & MTL_FLAG_NOT_BIND_NUMA) {
-    warn("%s, performance may limited as possible across numa access\n",
-         __func__);
+    warn("%s, performance may limited as possible across numa access\n", __func__);
   }
 
   info("%s, succ, tsc_hz %" PRIu64 "\n", __func__, impl->tsc_hz);
@@ -645,8 +625,7 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
   return impl;
 
 err_exit:
-  if (impl)
-    mtl_uninit(impl);
+  if (impl) mtl_uninit(impl);
   return NULL;
 }
 
@@ -700,8 +679,7 @@ int mtl_stop(mtl_handle mt) {
     return -EIO;
   }
 
-  if (mt_user_auto_start_stop(impl))
-    return 0;
+  if (mt_user_auto_start_stop(impl)) return 0;
 
   return _mt_stop(impl);
 }
@@ -853,8 +831,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
   item.size = size;
   item.iova = MTL_BAD_IOVA; /* let map to find one suitable iova for us */
   ret = mt_map_add(impl, &item);
-  if (ret < 0)
-    return MTL_BAD_IOVA;
+  if (ret < 0) return MTL_BAD_IOVA;
   iova = item.iova;
 
   if (!mt_drv_dpdk_based(impl, MTL_PORT_P)) {
@@ -863,14 +840,13 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
 
   ret = rte_extmem_register((void *)vaddr, size, NULL, 0, page_size);
   if (ret < 0) {
-    err("%s, fail(%d,%s) to register extmem %p\n", __func__, ret,
-        rte_strerror(rte_errno), vaddr);
+    err("%s, fail(%d,%s) to register extmem %p\n", __func__, ret, rte_strerror(rte_errno),
+        vaddr);
     goto fail_extmem;
   }
 
   /* only map for MTL_PORT_P now */
-  ret = rte_dev_dma_map(mt_port_device(impl, MTL_PORT_P), (void *)vaddr, iova,
-                        size);
+  ret = rte_dev_dma_map(mt_port_device(impl, MTL_PORT_P), (void *)vaddr, iova, size);
   if (ret < 0) {
     err("%s, dma map fail(%d,%s) for add(%p,%" PRIu64 ")\n", __func__, ret,
         rte_strerror(rte_errno), vaddr, size);
@@ -886,8 +862,7 @@ fail_extmem:
   return MTL_BAD_IOVA;
 }
 
-int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova,
-                  size_t size) {
+int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size) {
   struct mtl_main_impl *impl = mt;
   int ret;
   size_t page_size = mtl_page_size(impl);
@@ -917,16 +892,14 @@ int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova,
   item.size = size;
   item.iova = iova;
   ret = mt_map_remove(impl, &item);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   if (!mt_drv_dpdk_based(impl, MTL_PORT_P)) {
     return 0;
   }
 
   /* only unmap for MTL_PORT_P now */
-  ret = rte_dev_dma_unmap(mt_port_device(impl, MTL_PORT_P), (void *)vaddr, iova,
-                          size);
+  ret = rte_dev_dma_unmap(mt_port_device(impl, MTL_PORT_P), (void *)vaddr, iova, size);
   if (ret < 0) {
     err("%s, dma unmap fail(%d,%s) for add(%p,%" PRIu64 ")\n", __func__, ret,
         rte_strerror(rte_errno), vaddr, size);
@@ -1003,12 +976,11 @@ mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle) {
 
 const char *mtl_version(void) {
   static char version[128];
-  if (version[0] != 0)
-    return version;
+  if (version[0] != 0) return version;
 
   snprintf(version, sizeof(version), "%d.%d.%d.%s %s %s %s", MTL_VERSION_MAJOR,
-           MTL_VERSION_MINOR, MTL_VERSION_LAST, MTL_VERSION_EXTRA,
-           __TIMESTAMP__, __MTL_GIT__, MTL_COMPILER);
+           MTL_VERSION_MINOR, MTL_VERSION_LAST, MTL_VERSION_EXTRA, __TIMESTAMP__,
+           __MTL_GIT__, MTL_COMPILER);
 
   return version;
 }
@@ -1090,8 +1062,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
   }
 
   mt_sch_enable_allow_sleep(sch, enable);
-  info("%s(%d), %s allow sleep\n", __func__, sch_idx,
-       enable ? "enable" : "disable");
+  info("%s(%d), %s allow sleep\n", __func__, sch_idx, enable ? "enable" : "disable");
   return 0;
 }
 
@@ -1145,8 +1116,7 @@ uint64_t mtl_ptp_read_time_raw(mtl_handle mt) {
   return mt_get_ptp_time(impl, port);
 }
 
-mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc,
-                                enum mtl_port port) {
+mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port) {
   struct mtl_main_impl *impl = mt;
   struct mt_dma_request_req req;
 
@@ -1167,8 +1137,7 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc,
   req.priv = impl;
   req.drop_mbuf_cb = NULL;
   struct mtl_dma_lender_dev *dev = mt_dma_request_dev(impl, &req);
-  if (dev)
-    dev->type = MT_HANDLE_UDMA;
+  if (dev) dev->type = MT_HANDLE_UDMA;
   return dev;
 }
 
@@ -1250,20 +1219,18 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
   }
 
   switch (impl->iova_mode) {
-  case RTE_IOVA_PA:
-    return MTL_IOVA_MODE_PA;
-  case RTE_IOVA_VA:
-    return MTL_IOVA_MODE_VA;
-  default:
-    err("%s, invalid iova_mode %d\n", __func__, impl->iova_mode);
-    return MTL_IOVA_MODE_MAX;
+    case RTE_IOVA_PA:
+      return MTL_IOVA_MODE_PA;
+    case RTE_IOVA_VA:
+      return MTL_IOVA_MODE_VA;
+    default:
+      err("%s, invalid iova_mode %d\n", __func__, impl->iova_mode);
+      return MTL_IOVA_MODE_MAX;
   }
 }
 
-int mtl_port_ip_info(mtl_handle mt, enum mtl_port port,
-                     uint8_t ip[MTL_IP_ADDR_LEN],
-                     uint8_t netmask[MTL_IP_ADDR_LEN],
-                     uint8_t gateway[MTL_IP_ADDR_LEN]) {
+int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
+                     uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]) {
   struct mtl_main_impl *impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -1275,22 +1242,17 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port,
     return -EINVAL;
   }
 
-  if (ip)
-    rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
-  if (netmask)
-    rte_memcpy(netmask, mt_sip_netmask(impl, port), MTL_IP_ADDR_LEN);
-  if (gateway)
-    rte_memcpy(gateway, mt_sip_gateway(impl, port), MTL_IP_ADDR_LEN);
+  if (ip) rte_memcpy(ip, mt_sip_addr(impl, port), MTL_IP_ADDR_LEN);
+  if (netmask) rte_memcpy(netmask, mt_sip_netmask(impl, port), MTL_IP_ADDR_LEN);
+  if (gateway) rte_memcpy(gateway, mt_sip_gateway(impl, port), MTL_IP_ADDR_LEN);
   return 0;
 }
 
 enum mtl_simd_level mtl_get_simd_level(void) {
   if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VBMI2))
     return MTL_SIMD_LEVEL_AVX512_VBMI2;
-  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VL))
-    return MTL_SIMD_LEVEL_AVX512;
-  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2))
-    return MTL_SIMD_LEVEL_AVX2;
+  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX512VL)) return MTL_SIMD_LEVEL_AVX512;
+  if (rte_cpu_get_flag_enabled(RTE_CPUFLAG_AVX2)) return MTL_SIMD_LEVEL_AVX2;
   /* no simd */
   return MTL_SIMD_LEVEL_NONE;
 }
@@ -1339,43 +1301,40 @@ int mtl_thread_setname(pthread_t tid, const char *name) {
 #endif
 }
 
-void mtl_sleep_us(unsigned int us) { return mt_sleep_us(us); }
+void mtl_sleep_us(unsigned int us) {
+  return mt_sleep_us(us);
+}
 
-void mtl_delay_us(unsigned int us) { return mt_delay_us(us); }
+void mtl_delay_us(unsigned int us) {
+  return mt_delay_us(us);
+}
 
 int mtl_para_sip_set(struct mtl_init_params *p, enum mtl_port port, char *ip) {
   int ret = inet_pton(AF_INET, ip, p->sip_addr[port]);
-  if (ret == 1)
-    return 0;
+  if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);
   return -EIO;
 }
 
-int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port,
-                         char *gateway) {
+int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port, char *gateway) {
   int ret = inet_pton(AF_INET, gateway, p->gateway[port]);
-  if (ret == 1)
-    return 0;
+  if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, gateway);
   return -EIO;
 }
 
-int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port,
-                         char *netmask) {
+int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port, char *netmask) {
   int ret = inet_pton(AF_INET, netmask, p->netmask[port]);
-  if (ret == 1)
-    return 0;
+  if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, netmask);
   return -EIO;
 }
 
-int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port,
-                      char *name) {
+int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port, char *name) {
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port,
-                          char *name) {
+int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port, char *name) {
   return snprintf(p->dma_dev_port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 

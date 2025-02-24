@@ -32,10 +32,8 @@ static inline struct rte_mempool *mt_tsq_mempool(struct mt_tsq_entry *entry) {
 }
 uint16_t mt_tsq_burst(struct mt_tsq_entry *entry, struct rte_mbuf **tx_pkts,
                       uint16_t nb_pkts);
-uint16_t mt_tsq_burst_busy(struct mtl_main_impl *impl,
-                           struct mt_tsq_entry *entry,
-                           struct rte_mbuf **tx_pkts, uint16_t nb_pkts,
-                           int timeout_ms);
+uint16_t mt_tsq_burst_busy(struct mtl_main_impl *impl, struct mt_tsq_entry *entry,
+                           struct rte_mbuf **tx_pkts, uint16_t nb_pkts, int timeout_ms);
 int mt_tsq_flush(struct mtl_main_impl *impl, struct mt_tsq_entry *entry,
                  struct rte_mbuf *pad);
 int mt_tsq_put(struct mt_tsq_entry *entry);

@@ -23,8 +23,7 @@ struct rv_sample_context {
   struct st20_ext_frame *ext_frames;
 };
 
-static int rx_video_enqueue_frame(struct rv_sample_context *s, void *frame,
-                                  size_t size) {
+static int rx_video_enqueue_frame(struct rv_sample_context *s, void *frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
   struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
@@ -37,8 +36,7 @@ static int rx_video_enqueue_frame(struct rv_sample_context *s, void *frame,
   framebuff->size = size;
   /* point to next */
   producer_idx++;
-  if (producer_idx >= s->framebuff_cnt)
-    producer_idx = 0;
+  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
   s->framebuff_producer_idx = producer_idx;
   return 0;
 }
@@ -47,16 +45,14 @@ static int rx_video_frame_ready(void *priv, void *frame,
                                 struct st20_rx_frame_meta *meta) {
   struct rv_sample_context *s = (struct rv_sample_context *)priv;
 
-  if (!s->handle)
-    return -EIO;
+  if (!s->handle) return -EIO;
 
   if (meta->user_meta) {
     const struct st_frame_user_meta *user_meta = meta->user_meta;
     if (meta->user_meta_size != sizeof(*user_meta)) {
       err("%s(%d), user_meta_size wrong\n", __func__, s->idx);
     }
-    info("%s(%d), user_meta %d %s\n", __func__, s->idx, user_meta->idx,
-         user_meta->dummy);
+    info("%s(%d), user_meta %d %s\n", __func__, s->idx, user_meta->idx, user_meta->dummy);
   }
 
   /* incomplete frame */
@@ -104,8 +100,7 @@ static void *rx_video_frame_thread(void *arg) {
     framebuff = &s->framebuffs[consumer_idx];
     if (!framebuff->frame) {
       /* no ready frame */
-      if (!s->stop)
-        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -118,8 +113,7 @@ static void *rx_video_frame_thread(void *arg) {
     st_pthread_mutex_lock(&s->wake_mutex);
     framebuff->frame = NULL;
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt)
-      consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
@@ -135,8 +129,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -151,8 +144,7 @@ int main(int argc, char **argv) {
   struct rv_sample_context *app[session_num];
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] =
-        (struct rv_sample_context *)malloc(sizeof(struct rv_sample_context));
+    app[i] = (struct rv_sample_context *)malloc(sizeof(struct rv_sample_context));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -163,8 +155,8 @@ int main(int argc, char **argv) {
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
-    app[i]->framebuffs = (struct st_rx_frame *)malloc(
-        sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    app[i]->framebuffs =
+        (struct st_rx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -178,14 +170,14 @@ int main(int argc, char **argv) {
     struct st20_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20_rx";
-    ops_rx.priv = app[i]; // app handle register to lib
+    ops_rx.priv = app[i];  // app handle register to lib
     ops_rx.num_port = 1;
     memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_rx.udp_port[MTL_SESSION_PORT_P] =
-        ctx.udp_port + i * 2; // user config the udp port.
+        ctx.udp_port + i * 2;  // user config the udp port.
     ops_rx.pacing = ST21_PACING_NARROW;
     ops_rx.type = ST20_TYPE_FRAME_LEVEL;
     ops_rx.width = ctx.width;
@@ -200,15 +192,14 @@ int main(int argc, char **argv) {
     ops_rx.notify_frame_ready = rx_video_frame_ready;
 
     if (ops_rx.ext_frames) {
-      app[i]->ext_frames = (struct st20_ext_frame *)malloc(
-          sizeof(*app[i]->ext_frames) * app[i]->framebuff_cnt);
+      app[i]->ext_frames = (struct st20_ext_frame *)malloc(sizeof(*app[i]->ext_frames) *
+                                                           app[i]->framebuff_cnt);
       if (!app[i]->ext_frames) {
         err("%s(%d), ext_frames malloc fail\n", __func__, i);
         ret = -ENOMEM;
         goto error;
       }
-      size_t framebuff_size =
-          st20_frame_size(ops_rx.fmt, ops_rx.width, ops_rx.height);
+      size_t framebuff_size = st20_frame_size(ops_rx.fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->framebuff_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
       mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
@@ -220,10 +211,8 @@ int main(int argc, char **argv) {
       app[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < app[i]->framebuff_cnt; ++j) {
-        app[i]->ext_frames[j].buf_addr =
-            mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
-        app[i]->ext_frames[j].buf_iova =
-            mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       ops_rx.ext_frames = app[i]->ext_frames;
@@ -238,8 +227,7 @@ int main(int argc, char **argv) {
     app[i]->handle = rx_handle[i];
     app[i]->stop = false;
 
-    ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread,
-                         app[i]);
+    ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -264,8 +252,7 @@ int main(int argc, char **argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_rec <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i,
-          app[i]->fb_rec);
+      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
       ret = -EIO;
     }
   }
@@ -273,19 +260,14 @@ int main(int argc, char **argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i])
-      continue;
-    if (app[i]->handle)
-      st20_rx_free(app[i]->handle);
+    if (!app[i]) continue;
+    if (app[i]->handle) st20_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
 
-    if (app[i]->dma_mem)
-      mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
-    if (app[i]->framebuffs)
-      free(app[i]->framebuffs);
-    if (app[i]->ext_frames)
-      free(app[i]->ext_frames);
+    if (app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
+    if (app[i]->framebuffs) free(app[i]->framebuffs);
+    if (app[i]->ext_frames) free(app[i]->ext_frames);
     free(app[i]);
   }
 

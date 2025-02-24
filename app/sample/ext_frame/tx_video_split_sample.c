@@ -27,8 +27,7 @@ static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
   int ret = 0;
   MTL_MAY_UNUSED(meta);
 
-  if (!s->handle)
-    return -EIO; /* not ready */
+  if (!s->handle) return -EIO; /* not ready */
 
   /* the fb_idx of each session is not synced here,
    * which may need to consider in real production */
@@ -42,18 +41,15 @@ static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
 
   *next_frame_idx = s->nfi;
   s->nfi++;
-  if (s->nfi >= s->fb_cnt)
-    s->nfi = 0;
+  if (s->nfi >= s->fb_cnt) s->nfi = 0;
 
   s->fb_idx++;
-  if (s->fb_idx >= s->fb_total)
-    s->fb_idx = 0;
+  if (s->fb_idx >= s->fb_total) s->fb_idx = 0;
 
   return ret;
 }
 
-int tx_video_frame_done(void *priv, uint16_t frame_idx,
-                        struct st20_tx_frame_meta *meta) {
+int tx_video_frame_done(void *priv, uint16_t frame_idx, struct st20_tx_frame_meta *meta) {
   struct tv_split_sample_ctx *s = priv;
   MTL_MAY_UNUSED(frame_idx);
   MTL_MAY_UNUSED(meta);
@@ -93,8 +89,7 @@ int main(int argc, char **argv) {
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tv_split_sample_ctx *)malloc(
-        sizeof(struct tv_split_sample_ctx));
+    app[i] = (struct tv_split_sample_ctx *)malloc(sizeof(struct tv_split_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -110,7 +105,7 @@ int main(int argc, char **argv) {
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_tx";
-    ops_tx.priv = app[i]; // app handle register to lib
+    ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
     memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -163,8 +158,7 @@ int main(int argc, char **argv) {
         goto error;
       }
       if (st.st_size < (app[i]->fb_size * app[i]->fb_cnt)) {
-        err("%s, %s file size too small %" PRIu64 "\n", __func__, ctx.tx_url,
-            st.st_size);
+        err("%s, %s file size too small %" PRIu64 "\n", __func__, ctx.tx_url, st.st_size);
         close(fd);
         ret = -EIO;
         goto error;
@@ -217,15 +211,12 @@ int main(int argc, char **argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i])
-      continue;
-    if (app[i]->handle)
-      st20_tx_free(app[i]->handle);
+    if (!app[i]) continue;
+    if (app[i]->handle) st20_tx_free(app[i]->handle);
     info("%s(%d), sent frames %d\n", __func__, i, app[i]->fb_send);
     free(app[i]);
   }
-  if (dma_mem)
-    mtl_dma_mem_free(ctx.st, dma_mem);
+  if (dma_mem) mtl_dma_mem_free(ctx.st, dma_mem);
 
   /* release sample(st) dev */
   if (ctx.st) {

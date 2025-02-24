@@ -166,8 +166,7 @@ int st30p_tx_free(st30p_tx_handle handle);
 st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops *ops);
 /** Online update the destination info for the tx st2110-30(pipeline) session.
  */
-int st30p_tx_update_destination(st30p_tx_handle handle,
-                                struct st_tx_dest_info *dst);
+int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info *dst);
 /** Wake up the block wait on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is
  * enabled.*/
 int st30p_tx_wake_block(st30p_tx_handle handle);

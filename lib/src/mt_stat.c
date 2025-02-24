@@ -34,7 +34,9 @@ static int _stat_dump(struct mt_stat_mgr *mgr) {
     notice("STAT: failed to get lock\n");
     return -EIO;
   }
-  MT_TAILQ_FOREACH(item, &mgr->head, next) { item->cb_func(item->cb_priv); }
+  MT_TAILQ_FOREACH(item, &mgr->head, next) {
+    item->cb_func(item->cb_priv);
+  }
   stat_unlock(mgr);
 
   return 0;
@@ -106,8 +108,7 @@ int mt_stat_register(struct mtl_main_impl *impl, mt_stat_cb_t cb, void *priv,
   }
   item->cb_func = cb;
   item->cb_priv = priv;
-  if (name)
-    snprintf(item->name, ST_MAX_NAME_LEN - 1, "%s", name);
+  if (name) snprintf(item->name, ST_MAX_NAME_LEN - 1, "%s", name);
 
   stat_lock(mgr);
   MT_TAILQ_INSERT_TAIL(&mgr->head, item, next);
@@ -117,8 +118,7 @@ int mt_stat_register(struct mtl_main_impl *impl, mt_stat_cb_t cb, void *priv,
   return 0;
 }
 
-int mt_stat_unregister(struct mtl_main_impl *impl, mt_stat_cb_t cb,
-                       void *priv) {
+int mt_stat_unregister(struct mtl_main_impl *impl, mt_stat_cb_t cb, void *priv) {
   struct mt_stat_mgr *mgr = get_stat_mgr(impl);
   struct mt_stat_item *item, *tmp_item;
 
@@ -160,8 +160,7 @@ int mt_stat_init(struct mtl_main_impl *impl) {
   }
   mtl_thread_setname(mgr->stat_tid, "mtl_stat");
 
-  if (!p->dump_period_s)
-    p->dump_period_s = MT_STAT_INTERVAL_S_DEFAULT;
+  if (!p->dump_period_s) p->dump_period_s = MT_STAT_INTERVAL_S_DEFAULT;
   mgr->dump_period_us = (uint64_t)p->dump_period_s * US_PER_S;
   rte_eal_alarm_set(mgr->dump_period_us, stat_alarm_handler, mgr);
 
@@ -182,8 +181,7 @@ int mt_stat_uinit(struct mtl_main_impl *impl) {
   }
 
   ret = rte_eal_alarm_cancel(stat_alarm_handler, impl);
-  if (ret < 0)
-    err("%s, alarm cancel fail %d\n", __func__, ret);
+  if (ret < 0) err("%s, alarm cancel fail %d\n", __func__, ret);
   if (mgr->stat_tid) {
     rte_atomic32_set(&mgr->stat_stop, 1);
     stat_wakeup_thread(mgr);

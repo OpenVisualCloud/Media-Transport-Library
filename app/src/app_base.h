@@ -45,7 +45,7 @@
 
 #define ST_APP_DEFAULT_FB_CNT (3)
 
-#define ST_APP_EXPECT_NEAR(val, expect, delta)                                 \
+#define ST_APP_EXPECT_NEAR(val, expect, delta) \
   ((val > (expect - delta)) && (val < (expect + delta)))
 
 #ifndef NS_PER_S
@@ -141,9 +141,9 @@ struct st_app_tx_video_session {
 
   /* rtp mode info */
   bool st20_rtp_input;
-  int st20_pkts_in_line;  /* GPM only, number of packets per each line, 4 for
-                             1080p */
-  int st20_bytes_in_line; /* bytes per line, 4800 for 1080p yuv422 10bit */
+  int st20_pkts_in_line;      /* GPM only, number of packets per each line, 4 for
+                                 1080p */
+  int st20_bytes_in_line;     /* bytes per line, 4800 for 1080p yuv422 10bit */
   uint32_t st20_pkt_data_len; /* data len(byte) for each pkt, 1200 for 1080p
                                  yuv422 10bit */
   struct st20_rfc4175_rtp_hdr st20_rtp_base;
@@ -622,9 +622,8 @@ struct st_app_context {
   struct st_app_tx_st30p_session *tx_st30p_sessions;
   int tx_st30p_session_cnt;
 
-  uint8_t rx_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* rx IP */
-  uint8_t rx_mcast_sip_addr[MTL_PORT_MAX]
-                           [MTL_IP_ADDR_LEN]; /* rx multicast source IP */
+  uint8_t rx_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];        /* rx IP */
+  uint8_t rx_mcast_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* rx multicast source IP */
 
   struct st_app_rx_video_session *rx_video_sessions;
   int rx_video_session_cnt;
@@ -666,16 +665,19 @@ struct st_app_context {
   int utc_offset;
 };
 
-static inline void *st_app_malloc(size_t sz) { return malloc(sz); }
+static inline void *st_app_malloc(size_t sz) {
+  return malloc(sz);
+}
 
 static inline void *st_app_zmalloc(size_t sz) {
   void *p = malloc(sz);
-  if (p)
-    memset(p, 0x0, sz);
+  if (p) memset(p, 0x0, sz);
   return p;
 }
 
-static inline void st_app_free(void *p) { free(p); }
+static inline void st_app_free(void *p) {
+  free(p);
+}
 
 static inline uint64_t st_timespec_to_ns(const struct timespec *ts) {
   return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;

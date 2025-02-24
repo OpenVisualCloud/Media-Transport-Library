@@ -28,8 +28,8 @@ static inline int st_app_player_init(struct st_app_context *ctx) {
   warn("%s, not support as build without SDL2\n", __func__);
   return -ENOTSUP;
 }
-static inline int st_app_init_display(struct st_display *d, char *name,
-                                      int width, int height, char *font) {
+static inline int st_app_init_display(struct st_display *d, char *name, int width,
+                                      int height, char *font) {
   MTL_MAY_UNUSED(d);
   MTL_MAY_UNUSED(name);
   MTL_MAY_UNUSED(width);

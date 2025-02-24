@@ -36,18 +36,17 @@ static int se_parse_args(struct se_context *ctx, int argc, char **argv) {
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", se_args_options, &opt_idx);
-    if (cmd == -1)
-      break;
+    if (cmd == -1) break;
 
     switch (cmd) {
-    case SE_ARG_SLEEP_MS:
-      ctx->sleep_time_ms = atoi(optarg);
-      break;
-    case SE_ARG_WORK_US:
-      ctx->work_time_us = atoi(optarg);
-      break;
-    default:
-      break;
+      case SE_ARG_SLEEP_MS:
+        ctx->sleep_time_ms = atoi(optarg);
+        break;
+      case SE_ARG_WORK_US:
+        ctx->work_time_us = atoi(optarg);
+        break;
+      default:
+        break;
     }
   };
 
@@ -71,8 +70,7 @@ static int se_loop(struct se_context *ctx) {
   uint64_t start, end;
   volatile int sum;
 
-  printf("sleep_time_ms %d work_time_us %d\n", ctx->sleep_time_ms,
-         ctx->work_time_us);
+  printf("sleep_time_ms %d work_time_us %d\n", ctx->sleep_time_ms, ctx->work_time_us);
 
   while (1) {
     usleep(ctx->sleep_time_ms * 1000);

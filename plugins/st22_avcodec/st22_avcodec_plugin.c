@@ -46,24 +46,23 @@ static int avcodec_encode_frame(struct st22_avcodec_encoder_session *s,
 
   ret = avcodec_send_frame(ctx, f);
   if (ret < 0) {
-    err("%s(%d), send frame(%d) fail %s\n", __func__, idx, f_idx,
-        av_err2str(ret));
+    err("%s(%d), send frame(%d) fail %s\n", __func__, idx, f_idx, av_err2str(ret));
     return ret;
   }
   s->frame_cnt++;
 
   ret = avcodec_receive_packet(ctx, p);
   if (ret < 0) {
-    dbg("%s(%d), receive packet fail %s on frame %d\n", __func__, idx,
-        av_err2str(ret), f_idx);
+    dbg("%s(%d), receive packet fail %s on frame %d\n", __func__, idx, av_err2str(ret),
+        f_idx);
     /* log error if not EAGAIN or EOF*/
     if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
-      err("%s(%d), receive packet fail %s on frame %d\n", __func__, idx,
-          av_err2str(ret), f_idx);
+      err("%s(%d), receive packet fail %s on frame %d\n", __func__, idx, av_err2str(ret),
+          f_idx);
     }
   } else {
-    dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__,
-        p->pts, p->size, f_idx);
+    dbg("%s, receive packet %" PRId64 " size %d on frame %d\n", __func__, p->pts, p->size,
+        f_idx);
     /* copy codestream */
     mtl_memcpy(frame->dst->addr[0] + data_size, p->data, p->size);
     data_size = p->size;
@@ -77,8 +76,8 @@ static int avcodec_encode_frame(struct st22_avcodec_encoder_session *s,
   }
 
   frame->dst->data_size = data_size;
-  dbg("%s(%d), codestream size %" PRIu64 " on frame %d\n", __func__, idx,
-      data_size, f_idx);
+  dbg("%s(%d), codestream size %" PRIu64 " on frame %d\n", __func__, idx, data_size,
+      f_idx);
   return data_size > 0 ? 0 : -EIO;
 }
 
@@ -103,8 +102,7 @@ static void *avcodec_encode_thread(void *arg) {
   return NULL;
 }
 
-static int
-avcodec_encoder_uinit_session(struct st22_avcodec_encoder_session *session) {
+static int avcodec_encoder_uinit_session(struct st22_avcodec_encoder_session *session) {
   int idx = session->idx;
 
   if (session->encode_thread) {
@@ -133,9 +131,8 @@ avcodec_encoder_uinit_session(struct st22_avcodec_encoder_session *session) {
   return 0;
 }
 
-static int
-avcodec_encoder_init_session(struct st22_avcodec_encoder_session *session,
-                             struct st22_encoder_create_req *req) {
+static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session *session,
+                                        struct st22_encoder_create_req *req) {
   int idx = session->idx;
   int ret;
 
@@ -148,8 +145,7 @@ avcodec_encoder_init_session(struct st22_avcodec_encoder_session *session,
   } else if (req->output_fmt == ST_FRAME_FMT_H264_CODESTREAM) {
     codec_id = AV_CODEC_ID_H264;
   } else {
-    err("%s(%d), invalid codec stream fmt %d\n", __func__, idx,
-        req->output_fmt);
+    err("%s(%d), invalid codec stream fmt %d\n", __func__, idx, req->output_fmt);
     return -EIO;
   }
   const AVCodec *codec = avcodec_find_encoder(codec_id);
@@ -224,8 +220,7 @@ avcodec_encoder_init_session(struct st22_avcodec_encoder_session *session,
   }
   session->codec_pkt = p;
 
-  ret = pthread_create(&session->encode_thread, NULL, avcodec_encode_thread,
-                       session);
+  ret = pthread_create(&session->encode_thread, NULL, avcodec_encode_thread, session);
   if (ret < 0) {
     err("%s(%d), thread create fail %d\n", __func__, idx, ret);
     avcodec_encoder_uinit_session(session);
@@ -235,19 +230,16 @@ avcodec_encoder_init_session(struct st22_avcodec_encoder_session *session,
   return 0;
 }
 
-static st22_encode_priv
-avcodec_encoder_create_session(void *priv, st22p_encode_session session_p,
-                               struct st22_encoder_create_req *req) {
+static st22_encode_priv avcodec_encoder_create_session(
+    void *priv, st22p_encode_session session_p, struct st22_encoder_create_req *req) {
   struct st22_avcodec_plugin_ctx *ctx = priv;
   struct st22_avcodec_encoder_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_ST22_AVCODEC_ENCODER_SESSIONS; i++) {
-    if (ctx->encoder_sessions[i])
-      continue;
+    if (ctx->encoder_sessions[i]) continue;
     session = malloc(sizeof(*session));
-    if (!session)
-      return NULL;
+    if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
     session->session_p = session_p;
@@ -276,8 +268,7 @@ static int avcodec_encoder_free_session(void *priv, st22_encode_priv session) {
   struct st22_avcodec_encoder_session *encoder_session = session;
   int idx = encoder_session->idx;
 
-  info("%s(%d), total %d encode frames\n", __func__, idx,
-       encoder_session->frame_cnt);
+  info("%s(%d), total %d encode frames\n", __func__, idx, encoder_session->frame_cnt);
   avcodec_encoder_uinit_session(encoder_session);
 
   free(encoder_session);
@@ -302,23 +293,22 @@ static int avcodec_decode_frame(struct st22_avcodec_decoder_session *s,
   p->size = src_size;
   ret = avcodec_send_packet(ctx, p);
   if (ret < 0) {
-    err("%s(%d), send pkt(%d) fail %s\n", __func__, idx, f_idx,
-        av_err2str(ret));
+    err("%s(%d), send pkt(%d) fail %s\n", __func__, idx, f_idx, av_err2str(ret));
     return ret;
   }
 
   ret = avcodec_receive_frame(ctx, f);
   if (ret < 0) {
-    dbg("%s(%d), receive data fail %s on frame %d\n", __func__, idx,
-        av_err2str(ret), f_idx);
+    dbg("%s(%d), receive data fail %s on frame %d\n", __func__, idx, av_err2str(ret),
+        f_idx);
     /* log error if not EAGAIN or EOF*/
     if (ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
-      err("%s(%d), receive data fail %s on frame %d\n", __func__, idx,
-          av_err2str(ret), f_idx);
+      err("%s(%d), receive data fail %s on frame %d\n", __func__, idx, av_err2str(ret),
+          f_idx);
     }
   } else {
-    dbg("%s, format(%dx%d@%d) on frame %d\n", __func__, f->width, f->height,
-        f->format, f_idx);
+    dbg("%s, format(%dx%d@%d) on frame %d\n", __func__, f->width, f->height, f->format,
+        f_idx);
     frame_size = dst->data_size;
     /* copy data to frame */
     mtl_memcpy(dst->addr[0], f->data[0], st_frame_plane_size(dst, 0));
@@ -354,8 +344,7 @@ static void *avcodec_decode_thread(void *arg) {
   return NULL;
 }
 
-static int
-avcodec_decoder_uinit_session(struct st22_avcodec_decoder_session *session) {
+static int avcodec_decoder_uinit_session(struct st22_avcodec_decoder_session *session) {
   int idx = session->idx;
 
   if (session->decode_thread) {
@@ -389,9 +378,8 @@ avcodec_decoder_uinit_session(struct st22_avcodec_decoder_session *session) {
   return 0;
 }
 
-static int
-avcodec_decoder_init_session(struct st22_avcodec_decoder_session *session,
-                             struct st22_decoder_create_req *req) {
+static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *session,
+                                        struct st22_decoder_create_req *req) {
   int idx = session->idx;
   int ret;
 
@@ -467,8 +455,7 @@ avcodec_decoder_init_session(struct st22_avcodec_decoder_session *session,
   }
   session->codec_pkt = p;
 
-  ret = pthread_create(&session->decode_thread, NULL, avcodec_decode_thread,
-                       session);
+  ret = pthread_create(&session->decode_thread, NULL, avcodec_decode_thread, session);
   if (ret < 0) {
     err("%s(%d), thread create fail %d\n", __func__, idx, ret);
     avcodec_decoder_uinit_session(session);
@@ -478,19 +465,16 @@ avcodec_decoder_init_session(struct st22_avcodec_decoder_session *session,
   return 0;
 }
 
-static st22_decode_priv
-avcodec_decoder_create_session(void *priv, st22p_decode_session session_p,
-                               struct st22_decoder_create_req *req) {
+static st22_decode_priv avcodec_decoder_create_session(
+    void *priv, st22p_decode_session session_p, struct st22_decoder_create_req *req) {
   struct st22_avcodec_plugin_ctx *ctx = priv;
   struct st22_avcodec_decoder_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_ST22_AVCODEC_DECODER_SESSIONS; i++) {
-    if (ctx->decoder_sessions[i])
-      continue;
+    if (ctx->decoder_sessions[i]) continue;
     session = malloc(sizeof(*session));
-    if (!session)
-      return NULL;
+    if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
     session->session_p = session_p;
@@ -517,8 +501,7 @@ static int avcodec_decoder_free_session(void *priv, st22_decode_priv session) {
   struct st22_avcodec_decoder_session *decoder_session = session;
   int idx = decoder_session->idx;
 
-  info("%s(%d), total %d decode frames\n", __func__, idx,
-       decoder_session->frame_cnt);
+  info("%s(%d), total %d decode frames\n", __func__, idx, decoder_session->frame_cnt);
   avcodec_decoder_uinit_session(decoder_session);
 
   free(decoder_session);
@@ -530,8 +513,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   struct st22_avcodec_plugin_ctx *ctx;
 
   ctx = malloc(sizeof(*ctx));
-  if (!ctx)
-    return NULL;
+  if (!ctx) return NULL;
   memset(ctx, 0, sizeof(*ctx));
 
   struct st22_decoder_dev d_dev;
@@ -539,8 +521,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   d_dev.name = "st22_plugin_avcodec_decoder";
   d_dev.priv = ctx;
   d_dev.target_device = ST_PLUGIN_DEVICE_CPU;
-  d_dev.input_fmt_caps =
-      ST_FMT_CAP_H264_CODESTREAM | ST_FMT_CAP_H265_CODESTREAM;
+  d_dev.input_fmt_caps = ST_FMT_CAP_H264_CODESTREAM | ST_FMT_CAP_H265_CODESTREAM;
   d_dev.output_fmt_caps = ST_FMT_CAP_YUV422PLANAR8 | ST_FMT_CAP_YUV420PLANAR8;
   d_dev.create_session = avcodec_decoder_create_session;
   d_dev.free_session = avcodec_decoder_free_session;
@@ -557,8 +538,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   e_dev.priv = ctx;
   e_dev.target_device = ST_PLUGIN_DEVICE_CPU;
   e_dev.input_fmt_caps = ST_FMT_CAP_YUV422PLANAR8 | ST_FMT_CAP_YUV420PLANAR8;
-  e_dev.output_fmt_caps =
-      ST_FMT_CAP_H264_CODESTREAM | ST_FMT_CAP_H265_CODESTREAM;
+  e_dev.output_fmt_caps = ST_FMT_CAP_H264_CODESTREAM | ST_FMT_CAP_H265_CODESTREAM;
   e_dev.create_session = avcodec_encoder_create_session;
   e_dev.free_session = avcodec_encoder_free_session;
   ctx->encoder_dev_handle = st22_encoder_register(st, &e_dev);

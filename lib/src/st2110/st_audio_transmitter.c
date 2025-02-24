@@ -30,8 +30,7 @@ static int st_audio_trs_tasklet_stop(void *priv) {
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    if (mgr->queue[port])
-      mt_txq_flush(mgr->queue[port], mt_get_pad(impl, port));
+    if (mgr->queue[port]) mt_txq_flush(mgr->queue[port], mt_get_pad(impl, port));
     if (mgr->ring[port]) {
       mt_ring_dequeue_clean(mgr->ring[port]);
       info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
@@ -67,11 +66,9 @@ static uint16_t st_audio_trs_burst_fail(struct mtl_main_impl *impl,
 static uint16_t st_audio_trs_burst(struct mtl_main_impl *impl,
                                    struct st_tx_audio_sessions_mgr *mgr,
                                    enum mtl_port port, struct rte_mbuf *pkt) {
-  if (!mgr->queue[port])
-    return 0;
+  if (!mgr->queue[port]) return 0;
   uint16_t tx = mt_txq_burst(mgr->queue[port], &pkt, 1);
-  if (!tx)
-    return st_audio_trs_burst_fail(impl, mgr, port);
+  if (!tx) return st_audio_trs_burst_fail(impl, mgr, port);
   mgr->last_burst_succ_time_tsc[port] = mt_get_tsc(impl);
   return tx;
 }
@@ -86,8 +83,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl *impl,
   uint16_t n;
   struct rte_mbuf *pkt;
 
-  if (!ring)
-    return 0;
+  if (!ring) return 0;
 
   /* check if any inflight pkts in transmitter */
   pkt = trs->inflight[port];
@@ -137,8 +133,7 @@ static int st_audio_trs_tasklet_handler(void *priv) {
   return pending;
 }
 
-int st_audio_transmitter_init(struct mtl_main_impl *impl,
-                              struct mtl_sch_impl *sch,
+int st_audio_transmitter_init(struct mtl_main_impl *impl, struct mtl_sch_impl *sch,
                               struct st_tx_audio_sessions_mgr *mgr,
                               struct st_audio_transmitter_impl *trs) {
   int idx = sch->idx;
@@ -177,8 +172,7 @@ int st_audio_transmitter_uinit(struct st_audio_transmitter_impl *trs) {
   }
 
   for (int i = 0; i < mt_num_ports(trs->parent); i++) {
-    info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i,
-         trs->inflight_cnt[i]);
+    info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i, trs->inflight_cnt[i]);
   }
   return 0;
 }

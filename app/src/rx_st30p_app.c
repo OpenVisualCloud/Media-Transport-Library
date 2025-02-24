@@ -39,8 +39,7 @@ static void *app_rx_st30p_frame_thread(void *arg) {
 static int app_rx_st30p_init_frame_thread(struct st_app_rx_st30p_session *s) {
   int ret, idx = s->idx;
 
-  ret =
-      pthread_create(&s->st30p_app_thread, NULL, app_rx_st30p_frame_thread, s);
+  ret = pthread_create(&s->st30p_app_thread, NULL, app_rx_st30p_frame_thread, s);
   if (ret < 0) {
     err("%s(%d), st30p_app_thread create fail %d\n", __func__, ret, idx);
     return -EIO;
@@ -60,15 +59,13 @@ static int app_rx_st30p_uinit(struct st_app_rx_st30p_session *s) {
   if (s->st30p_app_thread_stop) {
     /* wake up the thread */
     info("%s(%d), wait app thread stop\n", __func__, idx);
-    if (s->handle)
-      st30p_rx_wake_block(s->handle);
+    if (s->handle) st30p_rx_wake_block(s->handle);
     pthread_join(s->st30p_app_thread, NULL);
   }
 
   if (s->handle) {
     ret = st30p_rx_free(s->handle);
-    if (ret < 0)
-      err("%s(%d), st30_rx_free fail %d\n", __func__, idx, ret);
+    if (ret < 0) err("%s(%d), st30_rx_free fail %d\n", __func__, idx, ret);
     s->handle = NULL;
   }
 
@@ -94,32 +91,30 @@ static int app_rx_st30p_init(struct st_app_context *ctx,
          st30p ? st_json_ip(ctx, &st30p->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  memcpy(ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
-         st30p ? st30p->base.mcast_src_ip[MTL_PORT_P]
-               : ctx->rx_mcast_sip_addr[MTL_PORT_P],
-         MTL_IP_ADDR_LEN);
-  snprintf(ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           st30p ? st30p->base.inf[MTL_SESSION_PORT_P]->name
-                 : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] =
-      st30p ? st30p->base.udp_port : (10000 + s->idx);
+  memcpy(
+      ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
+      st30p ? st30p->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
+      MTL_IP_ADDR_LEN);
+  snprintf(
+      ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+      st30p ? st30p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
+  ops.port.udp_port[MTL_SESSION_PORT_P] = st30p ? st30p->base.udp_port : (10000 + s->idx);
   if (ops.port.num_port > 1) {
     memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
            st30p ? st_json_ip(ctx, &st30p->base, MTL_SESSION_PORT_R)
                  : ctx->rx_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    memcpy(ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
-           st30p ? st30p->base.mcast_src_ip[MTL_PORT_R]
-                 : ctx->rx_mcast_sip_addr[MTL_PORT_R],
-           MTL_IP_ADDR_LEN);
-    snprintf(ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-             st30p ? st30p->base.inf[MTL_SESSION_PORT_R]->name
-                   : ctx->para.port[MTL_PORT_R]);
+    memcpy(
+        ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
+        st30p ? st30p->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
+        MTL_IP_ADDR_LEN);
+    snprintf(
+        ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+        st30p ? st30p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
         st30p ? st30p->base.udp_port : (10000 + s->idx);
   }
-  ops.port.payload_type =
-      st30p ? st30p->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
+  ops.port.payload_type = st30p ? st30p->base.payload_type : ST_APP_PAYLOAD_TYPE_AUDIO;
 
   ops.fmt = st30p ? st30p->info.audio_format : ST30_FMT_PCM24;
   ops.channel = st30p ? st30p->info.audio_channel : 2;
@@ -127,8 +122,7 @@ static int app_rx_st30p_init(struct st_app_context *ctx,
   ops.ptime = st30p ? st30p->info.audio_ptime : ST30_PTIME_1MS;
   /* set frame size to 10ms time */
   int framebuff_size = st30_calculate_framebuff_size(
-      ops.fmt, ops.ptime, ops.sampling, ops.channel, 10 * NS_PER_MS,
-      &s->expect_fps);
+      ops.fmt, ops.ptime, ops.sampling, ops.channel, 10 * NS_PER_MS, &s->expect_fps);
   ops.framebuff_size = framebuff_size;
 
   ops.flags |= ST30P_RX_FLAG_BLOCK_GET;
@@ -181,17 +175,14 @@ static int app_rx_st30p_stat(struct st_app_rx_st30p_session *s) {
 static int app_rx_st30p_result(struct st_app_rx_st30p_session *s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec =
-      (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
+  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
-  if (!s->stat_frame_total_received)
-    return -EINVAL;
+  if (!s->stat_frame_total_received) return -EINVAL;
 
   critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05)
-               ? "OK"
-               : "FAILED",
+           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
+                                                                              : "FAILED",
            framerate, s->stat_frame_total_received);
   return 0;
 }
@@ -200,15 +191,12 @@ int st_app_rx_st30p_sessions_init(struct st_app_context *ctx) {
   int ret = 0, i = 0;
   struct st_app_rx_st30p_session *s;
   int fb_cnt = ctx->rx_video_fb_cnt;
-  if (fb_cnt <= 0)
-    fb_cnt = ST_APP_DEFAULT_FB_CNT;
+  if (fb_cnt <= 0) fb_cnt = ST_APP_DEFAULT_FB_CNT;
 
-  dbg("%s(%d), rx_st30p_session_cnt %d\n", __func__, i,
-      ctx->rx_st30p_session_cnt);
+  dbg("%s(%d), rx_st30p_session_cnt %d\n", __func__, i, ctx->rx_st30p_session_cnt);
   ctx->rx_st30p_sessions = (struct st_app_rx_st30p_session *)st_app_zmalloc(
       sizeof(struct st_app_rx_st30p_session) * ctx->rx_st30p_session_cnt);
-  if (!ctx->rx_st30p_sessions)
-    return -ENOMEM;
+  if (!ctx->rx_st30p_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st30p_session_cnt; i++) {
     s = &ctx->rx_st30p_sessions[i];
     s->idx = i;
@@ -229,8 +217,7 @@ int st_app_rx_st30p_sessions_init(struct st_app_context *ctx) {
 int st_app_rx_st30p_sessions_uinit(struct st_app_context *ctx) {
   int i;
   struct st_app_rx_st30p_session *s;
-  if (!ctx->rx_st30p_sessions)
-    return 0;
+  if (!ctx->rx_st30p_sessions) return 0;
   for (i = 0; i < ctx->rx_st30p_session_cnt; i++) {
     s = &ctx->rx_st30p_sessions[i];
     app_rx_st30p_uinit(s);
@@ -243,8 +230,7 @@ int st_app_rx_st30p_sessions_uinit(struct st_app_context *ctx) {
 int st_app_rx_st30p_sessions_stat(struct st_app_context *ctx) {
   int i;
   struct st_app_rx_st30p_session *s;
-  if (!ctx->rx_st30p_sessions)
-    return 0;
+  if (!ctx->rx_st30p_sessions) return 0;
 
   for (i = 0; i < ctx->rx_st30p_session_cnt; i++) {
     s = &ctx->rx_st30p_sessions[i];
@@ -258,8 +244,7 @@ int st_app_rx_st30p_sessions_result(struct st_app_context *ctx) {
   int i, ret = 0;
   struct st_app_rx_st30p_session *s;
 
-  if (!ctx->rx_st30p_sessions)
-    return 0;
+  if (!ctx->rx_st30p_sessions) return 0;
 
   for (i = 0; i < ctx->rx_st30p_session_cnt; i++) {
     s = &ctx->rx_st30p_sessions[i];

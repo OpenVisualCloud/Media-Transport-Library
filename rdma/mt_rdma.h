@@ -22,12 +22,12 @@
 
 #define MT_RDMA_MSG_MAX_SIZE (1024)
 
-#define MT_SAFE_FREE(obj, free_fn)                                             \
-  do {                                                                         \
-    if (obj) {                                                                 \
-      free_fn(obj);                                                            \
-      obj = NULL;                                                              \
-    }                                                                          \
+#define MT_SAFE_FREE(obj, free_fn) \
+  do {                             \
+    if (obj) {                     \
+      free_fn(obj);                \
+      obj = NULL;                  \
+    }                              \
   } while (0)
 
 void mt_rdma_set_log_level(enum mtl_rdma_log_level level);
@@ -35,39 +35,34 @@ enum mtl_rdma_log_level mt_rdma_get_log_level(void);
 
 /* log define */
 #ifdef DEBUG
-#define dbg(...)                                                               \
-  do {                                                                         \
-    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_DEBUG)                   \
-      printf(__VA_ARGS__);                                                     \
+#define dbg(...)                                                                  \
+  do {                                                                            \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_DEBUG) printf(__VA_ARGS__); \
   } while (0)
 #else
-#define dbg(...)                                                               \
-  do {                                                                         \
+#define dbg(...) \
+  do {           \
   } while (0)
 #endif
-#define info(...)                                                              \
-  do {                                                                         \
-    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_INFO)                    \
-      printf(__VA_ARGS__);                                                     \
+#define info(...)                                                                \
+  do {                                                                           \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_INFO) printf(__VA_ARGS__); \
   } while (0)
-#define notce(...)                                                             \
-  do {                                                                         \
-    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_NOTICE)                  \
-      printf(__VA_ARGS__);                                                     \
+#define notce(...)                                                                 \
+  do {                                                                             \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_NOTICE) printf(__VA_ARGS__); \
   } while (0)
-#define warn(...)                                                              \
-  do {                                                                         \
-    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_WARNING)                 \
-      printf(__VA_ARGS__);                                                     \
+#define warn(...)                                                                   \
+  do {                                                                              \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_WARNING) printf(__VA_ARGS__); \
   } while (0)
-#define err(...)                                                               \
-  do {                                                                         \
-    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_ERR)                     \
-      printf(__VA_ARGS__);                                                     \
+#define err(...)                                                                \
+  do {                                                                          \
+    if (mt_rdma_get_log_level() <= MTL_RDMA_LOG_LEVEL_ERR) printf(__VA_ARGS__); \
   } while (0)
-#define critical(...)                                                          \
-  do {                                                                         \
-    printf(__VA_ARGS__);                                                       \
+#define critical(...)    \
+  do {                   \
+    printf(__VA_ARGS__); \
   } while (0)
 
 /* Remote buffer info for RDMA write */
@@ -202,8 +197,7 @@ struct mt_rdma_impl {
   struct mtl_rdma_init_params para;
 };
 
-static inline struct mtl_rdma_init_params *
-mt_rdma_get_params(struct mt_rdma_impl *impl) {
+static inline struct mtl_rdma_init_params *mt_rdma_get_params(struct mt_rdma_impl *impl) {
   return &impl->para;
 }
 
@@ -231,9 +225,8 @@ static inline int mt_rdma_handle_cq_events(struct ibv_comp_channel *cc,
   return 0;
 }
 
-static inline int mt_rdma_post_write_imm(struct rdma_cm_id *id, void *context,
-                                         void *addr, size_t length,
-                                         struct ibv_mr *mr, int flags,
+static inline int mt_rdma_post_write_imm(struct rdma_cm_id *id, void *context, void *addr,
+                                         size_t length, struct ibv_mr *mr, int flags,
                                          uint64_t remote_addr, uint32_t rkey,
                                          uint32_t imm_data) {
   struct ibv_send_wr wr, *bad_wr;

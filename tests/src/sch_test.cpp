@@ -41,8 +41,7 @@ static void sch_create_max_test(mtl_handle mt, int max) {
 
   for (int i = 0; i < max; i++) {
     mtl_sch_handle sch = mtl_sch_create(mt, &sch_ops);
-    if (!sch)
-      break;
+    if (!sch) break;
     ret = mtl_sch_start(sch);
     if (ret < 0) {
       ret = mtl_sch_free(sch);
@@ -113,8 +112,7 @@ static int test_tasklet_handler(void *priv) {
   return 0;
 }
 
-static void sch_tasklet_digest_test(mtl_handle mt,
-                                    struct sch_digest_test_para *para) {
+static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para *para) {
   const int sch_cnt = para->sch_cnt;
   int tasklet_cnt = para->tasklets;
   std::vector<mtl_sch_handle> schs(sch_cnt);

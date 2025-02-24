@@ -23,12 +23,10 @@ static inline bool mt_is_multicast_ip(const uint8_t ip[MTL_IP_ADDR_LEN]) {
 }
 
 /* if it is a local address area */
-static inline bool mt_is_lan_ip(uint8_t ip[MTL_IP_ADDR_LEN],
-                                uint8_t sip[MTL_IP_ADDR_LEN],
+static inline bool mt_is_lan_ip(uint8_t ip[MTL_IP_ADDR_LEN], uint8_t sip[MTL_IP_ADDR_LEN],
                                 uint8_t netmask[MTL_IP_ADDR_LEN]) {
   for (int i = 0; i < MTL_IP_ADDR_LEN; i++) {
-    if ((ip[i] & netmask[i]) != (sip[i] & netmask[i]))
-      return false;
+    if ((ip[i] & netmask[i]) != (sip[i] & netmask[i])) return false;
   }
 
   return true;
@@ -60,20 +58,17 @@ void mt_mbuf_sanity_check(struct rte_mbuf **mbufs, uint16_t nb, char *tag);
 
 int mt_pacing_train_result_add(struct mtl_main_impl *impl, enum mtl_port port,
                                uint64_t rl_bps, float pad_interval);
-int mt_pacing_train_result_search(struct mtl_main_impl *impl,
-                                  enum mtl_port port, uint64_t rl_bps,
-                                  float *pad_interval);
+int mt_pacing_train_result_search(struct mtl_main_impl *impl, enum mtl_port port,
+                                  uint64_t rl_bps, float *pad_interval);
 
-int mt_audio_pacing_train_result_add(struct mtl_main_impl *impl,
-                                     enum mtl_port port, uint64_t input_bps,
-                                     uint64_t profiled_bps);
-int mt_audio_pacing_train_result_search(struct mtl_main_impl *impl,
-                                        enum mtl_port port, uint64_t input_bps,
-                                        uint64_t *profiled_bps);
+int mt_audio_pacing_train_result_add(struct mtl_main_impl *impl, enum mtl_port port,
+                                     uint64_t input_bps, uint64_t profiled_bps);
+int mt_audio_pacing_train_result_search(struct mtl_main_impl *impl, enum mtl_port port,
+                                        uint64_t input_bps, uint64_t *profiled_bps);
 
 enum mtl_port mt_port_by_name(struct mtl_main_impl *impl, const char *name);
-int mt_build_port_map(struct mtl_main_impl *impl, char **ports,
-                      enum mtl_port *maps, int num_ports);
+int mt_build_port_map(struct mtl_main_impl *impl, char **ports, enum mtl_port *maps,
+                      int num_ports);
 
 /* logical session port to main(physical) port */
 static inline enum mtl_port mt_port_logic2phy(enum mtl_port *maps,
@@ -85,8 +80,7 @@ void st_video_rtp_dump(enum mtl_port port, int idx, char *tag,
                        struct st20_rfc4175_rtp_hdr *rtp);
 
 void mt_mbuf_dump(enum mtl_port port, int idx, char *tag, struct rte_mbuf *m);
-void mt_mbuf_dump_hdr(enum mtl_port port, int idx, char *tag,
-                      struct rte_mbuf *m);
+void mt_mbuf_dump_hdr(enum mtl_port port, int idx, char *tag, struct rte_mbuf *m);
 
 void mt_lcore_dump();
 
@@ -101,20 +95,17 @@ static inline bool st_is_valid_payload_type(int payload_type) {
     return false;
 }
 
-void mt_eth_macaddr_dump(enum mtl_port port, char *tag,
-                         struct rte_ether_addr *mac_addr);
+void mt_eth_macaddr_dump(enum mtl_port port, char *tag, struct rte_ether_addr *mac_addr);
 
-static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id,
-                                  uint16_t delta) {
+static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t delta) {
   if ((new_id <= old_id) && ((old_id - new_id) < delta))
     return true;
   else
     return false;
 }
 
-struct rte_mbuf *mt_build_pad(struct mtl_main_impl *impl,
-                              struct rte_mempool *mempool, enum mtl_port port,
-                              uint16_t ether_type, uint16_t len);
+struct rte_mbuf *mt_build_pad(struct mtl_main_impl *impl, struct rte_mempool *mempool,
+                              enum mtl_port port, uint16_t ether_type, uint16_t len);
 
 int mt_macaddr_get(struct mtl_main_impl *impl, enum mtl_port port,
                    struct rte_ether_addr *mac_addr);
@@ -122,37 +113,31 @@ int mt_macaddr_get(struct mtl_main_impl *impl, enum mtl_port port,
 /* default with stack */
 #define MT_MEMPOOL_OPS_DEFAULT ("stack")
 
-struct rte_mempool *
-mt_mempool_create_by_ops(struct mtl_main_impl *impl, const char *name,
-                         unsigned int n, unsigned int cache_size,
-                         uint16_t priv_size, uint16_t element_size,
-                         const char *ops_name, int socket_id);
+struct rte_mempool *mt_mempool_create_by_ops(struct mtl_main_impl *impl, const char *name,
+                                             unsigned int n, unsigned int cache_size,
+                                             uint16_t priv_size, uint16_t element_size,
+                                             const char *ops_name, int socket_id);
 
-static inline struct rte_mempool *
-mt_mempool_create(struct mtl_main_impl *impl, enum mtl_port port,
-                  const char *name, unsigned int n, unsigned int cache_size,
-                  uint16_t priv_size, uint16_t element_size) {
-  return mt_mempool_create_by_ops(impl, name, n, cache_size, priv_size,
-                                  element_size, MT_MEMPOOL_OPS_DEFAULT,
-                                  mt_socket_id(impl, port));
+static inline struct rte_mempool *mt_mempool_create(
+    struct mtl_main_impl *impl, enum mtl_port port, const char *name, unsigned int n,
+    unsigned int cache_size, uint16_t priv_size, uint16_t element_size) {
+  return mt_mempool_create_by_ops(impl, name, n, cache_size, priv_size, element_size,
+                                  MT_MEMPOOL_OPS_DEFAULT, mt_socket_id(impl, port));
 }
 
-static inline struct rte_mempool *
-mt_mempool_create_by_socket(struct mtl_main_impl *impl, const char *name,
-                            unsigned int n, unsigned int cache_size,
-                            uint16_t priv_size, uint16_t element_size,
-                            int socket_id) {
-  return mt_mempool_create_by_ops(impl, name, n, cache_size, priv_size,
-                                  element_size, MT_MEMPOOL_OPS_DEFAULT,
-                                  socket_id);
+static inline struct rte_mempool *mt_mempool_create_by_socket(
+    struct mtl_main_impl *impl, const char *name, unsigned int n, unsigned int cache_size,
+    uint16_t priv_size, uint16_t element_size, int socket_id) {
+  return mt_mempool_create_by_ops(impl, name, n, cache_size, priv_size, element_size,
+                                  MT_MEMPOOL_OPS_DEFAULT, socket_id);
 }
 
-static inline struct rte_mempool *
-mt_mempool_create_common(struct mtl_main_impl *impl, enum mtl_port port,
-                         const char *name, unsigned int n) {
+static inline struct rte_mempool *mt_mempool_create_common(struct mtl_main_impl *impl,
+                                                           enum mtl_port port,
+                                                           const char *name,
+                                                           unsigned int n) {
   return mt_mempool_create(impl, port, name, n, MT_MBUF_CACHE_SIZE,
-                           sizeof(struct mt_muf_priv_data),
-                           MT_MBUF_DEFAULT_DATA_SIZE);
+                           sizeof(struct mt_muf_priv_data), MT_MBUF_DEFAULT_DATA_SIZE);
 }
 
 int mt_mempool_free(struct rte_mempool *mp);
@@ -176,14 +161,13 @@ struct mt_u64_fifo *mt_u64_fifo_init(int size, int soc_id);
 int mt_u64_fifo_uinit(struct mt_u64_fifo *fifo);
 int mt_u64_fifo_put(struct mt_u64_fifo *fifo, const uint64_t item);
 int mt_u64_fifo_get(struct mt_u64_fifo *fifo, uint64_t *item);
-int mt_u64_fifo_put_bulk(struct mt_u64_fifo *fifo, const uint64_t *items,
-                         uint32_t n);
+int mt_u64_fifo_put_bulk(struct mt_u64_fifo *fifo, const uint64_t *items, uint32_t n);
 int mt_u64_fifo_get_bulk(struct mt_u64_fifo *fifo, uint64_t *items, uint32_t n);
 int mt_u64_fifo_read_back(struct mt_u64_fifo *fifo, uint64_t *item);
 int mt_u64_fifo_read_front(struct mt_u64_fifo *fifo, uint64_t *item);
 int mt_u64_fifo_read_any(struct mt_u64_fifo *fifo, uint64_t *item, int skip);
-int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo *fifo, uint64_t *items,
-                              uint32_t n, int skip);
+int mt_u64_fifo_read_any_bulk(struct mt_u64_fifo *fifo, uint64_t *items, uint32_t n,
+                              int skip);
 
 static inline int mt_u64_fifo_full(struct mt_u64_fifo *fifo) {
   return fifo->used == fifo->size;
@@ -206,18 +190,15 @@ struct mt_cvt_dma_ctx {
   int *done;
 };
 
-struct mt_cvt_dma_ctx *mt_cvt_dma_ctx_init(int fifo_size, int soc_id,
-                                           int type_num);
+struct mt_cvt_dma_ctx *mt_cvt_dma_ctx_init(int fifo_size, int soc_id, int type_num);
 int mt_cvt_dma_ctx_uinit(struct mt_cvt_dma_ctx *ctx);
 int mt_cvt_dma_ctx_push(struct mt_cvt_dma_ctx *ctx, int type);
 int mt_cvt_dma_ctx_pop(struct mt_cvt_dma_ctx *ctx);
-static inline int mt_cvt_dma_ctx_get_done(struct mt_cvt_dma_ctx *ctx,
-                                          int type) {
+static inline int mt_cvt_dma_ctx_get_done(struct mt_cvt_dma_ctx *ctx, int type) {
   return ctx->done[type];
 }
 
-static inline int mt_cvt_dma_ctx_get_tran(struct mt_cvt_dma_ctx *ctx,
-                                          int type) {
+static inline int mt_cvt_dma_ctx_get_tran(struct mt_cvt_dma_ctx *ctx, int type) {
   return ctx->tran[type];
 }
 
@@ -239,8 +220,7 @@ static inline const char *mt_string_safe(const char *msg) {
   return msg ? msg : "null";
 }
 
-static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf **mbufs,
-                                           uint16_t nb) {
+static inline void mt_mbuf_refcnt_inc_bulk(struct rte_mbuf **mbufs, uint16_t nb) {
   struct rte_mbuf *m = NULL;
   for (uint16_t i = 0; i < nb; i++) {
     m = mbufs[i];
@@ -319,8 +299,7 @@ struct mt_cpu_usage {
 
 int mt_read_cpu_usage(struct mt_cpu_usage *usages, int *cpu_ids, int num_cpus);
 
-double mt_calculate_cpu_usage(struct mt_cpu_usage *prev,
-                              struct mt_cpu_usage *curr);
+double mt_calculate_cpu_usage(struct mt_cpu_usage *prev, struct mt_cpu_usage *curr);
 
 bool mt_file_exists(const char *filename);
 

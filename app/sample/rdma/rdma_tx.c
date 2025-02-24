@@ -93,8 +93,8 @@ int main(int argc, char **argv) {
     }
 
     meta[meta_idx] = buffer_acked;
-    snprintf((char *)buffer->addr, buffer->capacity,
-             "Hello, RDMA! id %d acked %d", i, meta[meta_idx]);
+    snprintf((char *)buffer->addr, buffer->capacity, "Hello, RDMA! id %d acked %d", i,
+             meta[meta_idx]);
     buffer->size = strlen((char *)buffer->addr) + 1;
     buffer->user_meta = &meta[meta_idx];
     buffer->user_meta_size = sizeof(int);
@@ -118,16 +118,13 @@ int main(int argc, char **argv) {
 
 out:
 
-  if (tx)
-    mtl_rdma_tx_free(tx);
+  if (tx) mtl_rdma_tx_free(tx);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i])
-      free(buffers[i]);
+    if (buffers[i]) free(buffers[i]);
   }
 
-  if (mrh)
-    mtl_rdma_uinit(mrh);
+  if (mrh) mtl_rdma_uinit(mrh);
 
   return ret;
 }

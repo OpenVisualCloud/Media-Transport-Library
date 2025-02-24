@@ -16,8 +16,7 @@ static inline void rx_flow_unlock(struct mt_flow_impl *flow) {
   mt_pthread_mutex_unlock(&flow->mutex);
 }
 
-static struct rte_flow *rte_rx_flow_create_raw(struct mt_interface *inf,
-                                               uint16_t q,
+static struct rte_flow *rte_rx_flow_create_raw(struct mt_interface *inf, uint16_t q,
                                                struct mt_rxq_flow *flow) {
   struct rte_flow_error error;
   struct rte_flow *r_flow;
@@ -30,12 +29,14 @@ static struct rte_flow *rte_rx_flow_create_raw(struct mt_interface *inf,
   struct rte_flow_action_queue to_queue = {0};
 
   uint16_t port_id = inf->port_id;
-  char pkt_buf[] = "00000000000100000000000208004500003000000000001100000101010"
-                   "10202020200001B3A001C00"
-                   "008000000000000000000000000000000000000000";
-  char msk_buf[] = "00000000000000000000000000000000000000000000000000000000000"
-                   "0000000000000FFFF000000"
-                   "000000000000000000000000000000000000000000";
+  char pkt_buf[] =
+      "00000000000100000000000208004500003000000000001100000101010"
+      "10202020200001B3A001C00"
+      "008000000000000000000000000000000000000000";
+  char msk_buf[] =
+      "00000000000000000000000000000000000000000000000000000000000"
+      "0000000000000FFFF000000"
+      "000000000000000000000000000000000000000000";
   MTL_MAY_UNUSED(flow);
 
   attr.ingress = 1;
@@ -96,19 +97,15 @@ static struct rte_flow *rte_rx_flow_create(struct mt_interface *inf, uint16_t q,
   memset(&error, 0, sizeof(error));
 
   /* drv not support ip flow */
-  if (inf->drv_info.flow_type == MT_FLOW_NO_IP)
-    has_ip_flow = false;
+  if (inf->drv_info.flow_type == MT_FLOW_NO_IP) has_ip_flow = false;
   /* no ip flow requested */
-  if (flow->flags & MT_RXQ_FLOW_F_NO_IP)
-    has_ip_flow = false;
+  if (flow->flags & MT_RXQ_FLOW_F_NO_IP) has_ip_flow = false;
   /* no port flow requested */
-  if (flow->flags & MT_RXQ_FLOW_F_NO_PORT)
-    has_port_flow = false;
+  if (flow->flags & MT_RXQ_FLOW_F_NO_PORT) has_port_flow = false;
 
   if (mt_get_user_params(inf->parent)->flags & MTL_FLAG_RX_UDP_PORT_ONLY) {
     if (has_ip_flow) {
-      info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__,
-           port);
+      info("%s(%d), no ip flow as MTL_FLAG_RX_UDP_PORT_ONLY is set\n", __func__, port);
       has_ip_flow = false;
     }
   }
@@ -175,8 +172,8 @@ static struct rte_flow *rte_rx_flow_create(struct mt_interface *inf, uint16_t q,
 
   ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
   if (ret < 0) {
-    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port,
-        ret, q, mt_string_safe(error.message));
+    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port, ret, q,
+        mt_string_safe(error.message));
     return NULL;
   }
 
@@ -191,16 +188,16 @@ static struct rte_flow *rte_rx_flow_create(struct mt_interface *inf, uint16_t q,
 
   if (has_ip_flow) {
     uint8_t *ip = flow->dip_addr;
-    info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, port, q,
-         ip[0], ip[1], ip[2], ip[3], flow->dst_port);
+    info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0],
+         ip[1], ip[2], ip[3], flow->dst_port);
   } else {
     info("%s(%d), queue %u succ, port %u\n", __func__, port, q, flow->dst_port);
   }
   return r_flow;
 }
 
-static struct mt_rx_flow_rsp *
-rx_flow_create(struct mt_interface *inf, uint16_t q, struct mt_rxq_flow *flow) {
+static struct mt_rx_flow_rsp *rx_flow_create(struct mt_interface *inf, uint16_t q,
+                                             struct mt_rxq_flow *flow) {
   int ret;
   enum mtl_port port = inf->port;
   struct mtl_main_impl *impl = inf->parent;
@@ -211,15 +208,13 @@ rx_flow_create(struct mt_interface *inf, uint16_t q, struct mt_rxq_flow *flow) {
     return NULL;
   }
 
-  struct mt_rx_flow_rsp *rsp =
-      mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
+  struct mt_rx_flow_rsp *rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
   rsp->flow_id = -1;
   rsp->queue_id = q;
   rsp->dst_port = flow->dst_port;
 
   /* no flow if MT_DRV_F_RX_NO_FLOW */
-  if (inf->drv_info.flags & MT_DRV_F_RX_NO_FLOW)
-    return rsp;
+  if (inf->drv_info.flags & MT_DRV_F_RX_NO_FLOW) return rsp;
 
   if (mt_drv_use_kernel_ctl(impl, port)) {
     ret = mt_socket_add_flow(impl, port, q, flow);
@@ -234,16 +229,15 @@ rx_flow_create(struct mt_interface *inf, uint16_t q, struct mt_rxq_flow *flow) {
 
     r_flow = rte_rx_flow_create(inf, q, flow);
     if (!r_flow) {
-      err("%s(%d), create flow fail for queue %d, ip %u.%u.%u.%u port %u\n",
-          __func__, port, q, ip[0], ip[1], ip[2], ip[3], flow->dst_port);
+      err("%s(%d), create flow fail for queue %d, ip %u.%u.%u.%u port %u\n", __func__,
+          port, q, ip[0], ip[1], ip[2], ip[3], flow->dst_port);
       mt_rte_free(rsp);
       return NULL;
     }
 
     rsp->flow = r_flow;
     /* WA to avoid iavf_flow_create fail in 1000+ mudp close at same time */
-    if (inf->drv_info.drv_type == MT_DRV_IAVF)
-      mt_sleep_ms(5);
+    if (inf->drv_info.drv_type == MT_DRV_IAVF) mt_sleep_ms(5);
   }
 
   return rsp;
@@ -278,21 +272,18 @@ retry:
   }
   mt_rte_free(rsp);
   /* WA to avoid iavf_flow_destroy fail in 1000+ mudp close at same time */
-  if (inf->drv_info.drv_type == MT_DRV_IAVF)
-    mt_sleep_ms(1);
+  if (inf->drv_info.drv_type == MT_DRV_IAVF) mt_sleep_ms(1);
   return 0;
 }
 
-struct mt_rx_flow_rsp *mt_rx_flow_create(struct mtl_main_impl *impl,
-                                         enum mtl_port port, uint16_t q,
-                                         struct mt_rxq_flow *flow) {
+struct mt_rx_flow_rsp *mt_rx_flow_create(struct mtl_main_impl *impl, enum mtl_port port,
+                                         uint16_t q, struct mt_rxq_flow *flow) {
   struct mt_interface *inf = mt_if(impl, port);
   struct mt_rx_flow_rsp *rsp;
   struct mt_flow_impl *flow_impl = impl->flow[port];
 
   if (!mt_drv_kernel_based(impl, port) && q >= inf->nb_rx_q) {
-    err("%s(%d), invalid q %u max allowed %u\n", __func__, port, q,
-        inf->nb_rx_q);
+    err("%s(%d), invalid q %u max allowed %u\n", __func__, port, q, inf->nb_rx_q);
     return NULL;
   }
 
@@ -315,8 +306,7 @@ int mt_flow_uinit(struct mtl_main_impl *impl) {
 
   for (int i = 0; i < num_ports; i++) {
     struct mt_flow_impl *flow = impl->flow[i];
-    if (!flow)
-      continue;
+    if (!flow) continue;
 
     mt_pthread_mutex_destroy(&flow->mutex);
     mt_rte_free(flow);

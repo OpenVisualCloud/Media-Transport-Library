@@ -11,14 +11,12 @@
 
 static int st_plugins_dump(void *priv);
 
-static inline struct st_plugin_mgr *
-st_get_plugins_mgr(struct mtl_main_impl *impl) {
+static inline struct st_plugin_mgr *st_get_plugins_mgr(struct mtl_main_impl *impl) {
   return &impl->plugin_mgr;
 }
 
 static int st_plugin_free(struct st_dl_plugin_impl *plugin) {
-  if (plugin->free)
-    plugin->free(plugin->handle);
+  if (plugin->free) plugin->free(plugin->handle);
   if (plugin->dl_handle) {
     dlclose(plugin->dl_handle);
     plugin->dl_handle = NULL;
@@ -95,9 +93,8 @@ int st22_put_encoder(struct mtl_main_impl *impl,
   return 0;
 }
 
-static struct st22_encode_session_impl *
-st22_get_encoder_session(struct st22_encode_dev_impl *dev_impl,
-                         struct st22_get_encoder_request *req) {
+static struct st22_encode_session_impl *st22_get_encoder_session(
+    struct st22_encode_dev_impl *dev_impl, struct st22_get_encoder_request *req) {
   struct st22_encoder_dev *dev = &dev_impl->dev;
   int idx = dev_impl->idx;
   struct st22_encoder_create_req *create_req = &req->req;
@@ -106,8 +103,7 @@ st22_get_encoder_session(struct st22_encode_dev_impl *dev_impl,
 
   for (int i = 0; i < ST_MAX_SESSIONS_PER_ENCODER; i++) {
     session_impl = &dev_impl->sessions[i];
-    if (session_impl->session)
-      continue;
+    if (session_impl->session) continue;
 
     session = dev->create_session(dev->priv, session_impl, create_req);
     if (session) {
@@ -115,16 +111,16 @@ st22_get_encoder_session(struct st22_encode_dev_impl *dev_impl,
       session_impl->codestream_max_size = create_req->max_codestream_size;
       session_impl->req = *req;
       session_impl->type = MT_ST22_HANDLE_PIPELINE_ENCODE;
-      info("%s(%d), get one session at %d on dev %s, max codestream size "
-           "%" PRIu64 "\n",
-           __func__, idx, i, dev->name, session_impl->codestream_max_size);
+      info(
+          "%s(%d), get one session at %d on dev %s, max codestream size "
+          "%" PRIu64 "\n",
+          __func__, idx, i, dev->name, session_impl->codestream_max_size);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
-           st_frame_fmt_name(req->req.input_fmt),
-           st_frame_fmt_name(req->req.output_fmt));
+           st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
-      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx,
-          i, dev->name);
+      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
+          dev->name);
       return NULL;
     }
   }
@@ -136,22 +132,18 @@ static bool st22_encoder_is_capable(struct st22_encoder_dev *dev,
                                     struct st22_get_encoder_request *req) {
   enum st_plugin_device plugin_dev = req->device;
 
-  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) &&
-      (plugin_dev != dev->target_device))
+  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
 
-  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps))
-    return false;
+  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
 
-  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps))
-    return false;
+  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
 
   return true;
 }
 
-struct st22_encode_session_impl *
-st22_get_encoder(struct mtl_main_impl *impl,
-                 struct st22_get_encoder_request *req) {
+struct st22_encode_session_impl *st22_get_encoder(struct mtl_main_impl *impl,
+                                                  struct st22_get_encoder_request *req) {
   struct st_plugin_mgr *mgr = st_get_plugins_mgr(impl);
   struct st22_encoder_dev *dev;
   struct st22_encode_dev_impl *dev_impl;
@@ -160,8 +152,7 @@ st22_get_encoder(struct mtl_main_impl *impl,
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     dev_impl = mgr->encode_devs[i];
-    if (!dev_impl)
-      continue;
+    if (!dev_impl) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->encode_devs[i]->dev;
     if (!st22_encoder_is_capable(dev, req)) {
@@ -180,8 +171,7 @@ st22_get_encoder(struct mtl_main_impl *impl,
   mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
-      st_frame_fmt_name(req->req.input_fmt),
-      st_frame_fmt_name(req->req.output_fmt));
+      st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
 }
 
@@ -203,9 +193,8 @@ int st22_put_decoder(struct mtl_main_impl *impl,
   return 0;
 }
 
-static struct st22_decode_session_impl *
-st22_get_decoder_session(struct st22_decode_dev_impl *dev_impl,
-                         struct st22_get_decoder_request *req) {
+static struct st22_decode_session_impl *st22_get_decoder_session(
+    struct st22_decode_dev_impl *dev_impl, struct st22_get_decoder_request *req) {
   struct st22_decoder_dev *dev = &dev_impl->dev;
   int idx = dev_impl->idx;
   struct st22_decoder_create_req *create_req = &req->req;
@@ -214,23 +203,20 @@ st22_get_decoder_session(struct st22_decode_dev_impl *dev_impl,
 
   for (int i = 0; i < ST_MAX_SESSIONS_PER_DECODER; i++) {
     session_impl = &dev_impl->sessions[i];
-    if (session_impl->session)
-      continue;
+    if (session_impl->session) continue;
 
     session = dev->create_session(dev->priv, session_impl, create_req);
     if (session) {
       session_impl->session = session;
       session_impl->req = *req;
       session_impl->type = MT_ST22_HANDLE_PIPELINE_DECODE;
-      info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i,
-           dev->name);
+      info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
-           st_frame_fmt_name(req->req.input_fmt),
-           st_frame_fmt_name(req->req.output_fmt));
+           st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
-      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx,
-          i, dev->name);
+      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
+          dev->name);
       return NULL;
     }
   }
@@ -242,22 +228,18 @@ static bool st22_decoder_is_capable(struct st22_decoder_dev *dev,
                                     struct st22_get_decoder_request *req) {
   enum st_plugin_device plugin_dev = req->device;
 
-  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) &&
-      (plugin_dev != dev->target_device))
+  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
 
-  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps))
-    return false;
+  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
 
-  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps))
-    return false;
+  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
 
   return true;
 }
 
-struct st22_decode_session_impl *
-st22_get_decoder(struct mtl_main_impl *impl,
-                 struct st22_get_decoder_request *req) {
+struct st22_decode_session_impl *st22_get_decoder(struct mtl_main_impl *impl,
+                                                  struct st22_get_decoder_request *req) {
   struct st_plugin_mgr *mgr = st_get_plugins_mgr(impl);
   struct st22_decoder_dev *dev;
   struct st22_decode_dev_impl *dev_impl;
@@ -266,12 +248,10 @@ st22_get_decoder(struct mtl_main_impl *impl,
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     dev_impl = mgr->decode_devs[i];
-    if (!dev_impl)
-      continue;
+    if (!dev_impl) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->decode_devs[i]->dev;
-    if (!st22_decoder_is_capable(dev, req))
-      continue;
+    if (!st22_decoder_is_capable(dev, req)) continue;
 
     dbg("%s(%d), try to find one session\n", __func__, i);
     session_impl = st22_get_decoder_session(dev_impl, req);
@@ -284,13 +264,11 @@ st22_get_decoder(struct mtl_main_impl *impl,
   mt_pthread_mutex_unlock(&mgr->lock);
 
   err("%s, fail to get, input fmt: %s, output fmt: %s\n", __func__,
-      st_frame_fmt_name(req->req.input_fmt),
-      st_frame_fmt_name(req->req.output_fmt));
+      st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
 }
 
-int st20_convert_notify_frame_ready(
-    struct st20_convert_session_impl *converter) {
+int st20_convert_notify_frame_ready(struct st20_convert_session_impl *converter) {
   struct st20_convert_dev_impl *dev_impl = converter->parent;
   struct st20_converter_dev *dev = &dev_impl->dev;
   st20_convert_priv session = converter->session;
@@ -316,9 +294,8 @@ int st20_put_converter(struct mtl_main_impl *impl,
   return 0;
 }
 
-static struct st20_convert_session_impl *
-st20_get_converter_session(struct st20_convert_dev_impl *dev_impl,
-                           struct st20_get_converter_request *req) {
+static struct st20_convert_session_impl *st20_get_converter_session(
+    struct st20_convert_dev_impl *dev_impl, struct st20_get_converter_request *req) {
   struct st20_converter_dev *dev = &dev_impl->dev;
   int idx = dev_impl->idx;
   struct st20_converter_create_req *create_req = &req->req;
@@ -327,23 +304,20 @@ st20_get_converter_session(struct st20_convert_dev_impl *dev_impl,
 
   for (int i = 0; i < ST_MAX_SESSIONS_PER_CONVERTER; i++) {
     session_impl = &dev_impl->sessions[i];
-    if (session_impl->session)
-      continue;
+    if (session_impl->session) continue;
 
     session = dev->create_session(dev->priv, session_impl, create_req);
     if (session) {
       session_impl->session = session;
       session_impl->req = *req;
       session_impl->type = MT_ST20_HANDLE_PIPELINE_CONVERT;
-      info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i,
-           dev->name);
+      info("%s(%d), get one session at %d on dev %s\n", __func__, idx, i, dev->name);
       info("%s(%d), input fmt: %s, output fmt: %s\n", __func__, idx,
-           st_frame_fmt_name(req->req.input_fmt),
-           st_frame_fmt_name(req->req.output_fmt));
+           st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
       return session_impl;
     } else {
-      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx,
-          i, dev->name);
+      err("%s(%d), fail to create one session at %d on dev %s\n", __func__, idx, i,
+          dev->name);
       return NULL;
     }
   }
@@ -355,22 +329,18 @@ static bool st20_converter_is_capable(struct st20_converter_dev *dev,
                                       struct st20_get_converter_request *req) {
   enum st_plugin_device plugin_dev = req->device;
 
-  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) &&
-      (plugin_dev != dev->target_device))
+  if ((plugin_dev != ST_PLUGIN_DEVICE_AUTO) && (plugin_dev != dev->target_device))
     return false;
 
-  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps))
-    return false;
+  if (!(MTL_BIT64(req->req.input_fmt) & dev->input_fmt_caps)) return false;
 
-  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps))
-    return false;
+  if (!(MTL_BIT64(req->req.output_fmt) & dev->output_fmt_caps)) return false;
 
   return true;
 }
 
-struct st20_convert_session_impl *
-st20_get_converter(struct mtl_main_impl *impl,
-                   struct st20_get_converter_request *req) {
+struct st20_convert_session_impl *st20_get_converter(
+    struct mtl_main_impl *impl, struct st20_get_converter_request *req) {
   struct st_plugin_mgr *mgr = st_get_plugins_mgr(impl);
   struct st20_converter_dev *dev;
   struct st20_convert_dev_impl *dev_impl;
@@ -379,12 +349,10 @@ st20_get_converter(struct mtl_main_impl *impl,
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     dev_impl = mgr->convert_devs[i];
-    if (!dev_impl)
-      continue;
+    if (!dev_impl) continue;
     dbg("%s(%d), try to find one dev\n", __func__, i);
     dev = &mgr->convert_devs[i]->dev;
-    if (!st20_converter_is_capable(dev, req))
-      continue;
+    if (!st20_converter_is_capable(dev, req)) continue;
 
     dbg("%s(%d), try to find one session\n", __func__, i);
     session_impl = st20_get_converter_session(dev_impl, req);
@@ -397,8 +365,7 @@ st20_get_converter(struct mtl_main_impl *impl,
   mt_pthread_mutex_unlock(&mgr->lock);
 
   info("%s, plugin not found, input fmt: %s, output fmt: %s\n", __func__,
-       st_frame_fmt_name(req->req.input_fmt),
-       st_frame_fmt_name(req->req.output_fmt));
+       st_frame_fmt_name(req->req.input_fmt), st_frame_fmt_name(req->req.output_fmt));
   return NULL;
 }
 
@@ -406,14 +373,11 @@ static int st22_encode_dev_dump(struct st22_encode_dev_impl *encode) {
   struct st22_encode_session_impl *session;
   int ref_cnt = rte_atomic32_read(&encode->ref_cnt);
 
-  if (ref_cnt)
-    notice("ST22 encoder dev: %s with %d sessions\n", encode->name, ref_cnt);
+  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessions\n", encode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIONS_PER_ENCODER; i++) {
     session = &encode->sessions[i];
-    if (!session->session)
-      continue;
-    if (session->req.dump)
-      session->req.dump(session->req.priv);
+    if (!session->session) continue;
+    if (session->req.dump) session->req.dump(session->req.priv);
   }
 
   return 0;
@@ -423,14 +387,11 @@ static int st22_decode_dev_dump(struct st22_decode_dev_impl *decode) {
   struct st22_decode_session_impl *session;
   int ref_cnt = rte_atomic32_read(&decode->ref_cnt);
 
-  if (ref_cnt)
-    notice("ST22 encoder dev: %s with %d sessions\n", decode->name, ref_cnt);
+  if (ref_cnt) notice("ST22 encoder dev: %s with %d sessions\n", decode->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIONS_PER_DECODER; i++) {
     session = &decode->sessions[i];
-    if (!session->session)
-      continue;
-    if (session->req.dump)
-      session->req.dump(session->req.priv);
+    if (!session->session) continue;
+    if (session->req.dump) session->req.dump(session->req.priv);
   }
 
   return 0;
@@ -440,14 +401,11 @@ static int st20_convert_dev_dump(struct st20_convert_dev_impl *convert) {
   struct st20_convert_session_impl *session;
   int ref_cnt = rte_atomic32_read(&convert->ref_cnt);
 
-  if (ref_cnt)
-    notice("ST20 convert dev: %s with %d sessions\n", convert->name, ref_cnt);
+  if (ref_cnt) notice("ST20 convert dev: %s with %d sessions\n", convert->name, ref_cnt);
   for (int i = 0; i < ST_MAX_SESSIONS_PER_CONVERTER; i++) {
     session = &convert->sessions[i];
-    if (!session->session)
-      continue;
-    if (session->req.dump)
-      session->req.dump(session->req.priv);
+    if (!session->session) continue;
+    if (session->req.dump) session->req.dump(session->req.priv);
   }
 
   return 0;
@@ -463,20 +421,17 @@ static int st_plugins_dump(void *priv) {
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
     encode = mgr->encode_devs[i];
-    if (!encode)
-      continue;
+    if (!encode) continue;
     st22_encode_dev_dump(encode);
   }
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
     decode = mgr->decode_devs[i];
-    if (!decode)
-      continue;
+    if (!decode) continue;
     st22_decode_dev_dump(decode);
   }
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
     convert = mgr->convert_devs[i];
-    if (!convert)
-      continue;
+    if (!convert) continue;
     st20_convert_dev_dump(convert);
   }
   mt_pthread_mutex_unlock(&mgr->lock);
@@ -506,8 +461,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle) {
   int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
     mt_pthread_mutex_unlock(&mgr->lock);
-    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name,
-        ref_cnt);
+    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
     return -EBUSY;
   }
   mt_rte_free(dev);
@@ -539,8 +493,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle) {
   int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
     mt_pthread_mutex_unlock(&mgr->lock);
-    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name,
-        ref_cnt);
+    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
     return -EBUSY;
   }
   mt_rte_free(dev);
@@ -572,8 +525,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle) {
   int ref_cnt = rte_atomic32_read(&dev->ref_cnt);
   if (ref_cnt) {
     mt_pthread_mutex_unlock(&mgr->lock);
-    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name,
-        ref_cnt);
+    err("%s(%d), %s are busy with ref_cnt %d\n", __func__, idx, dev->name, ref_cnt);
     return -EBUSY;
   }
   mt_rte_free(dev);
@@ -605,10 +557,9 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
 
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_ENCODER_DEV; i++) {
-    if (mgr->encode_devs[i])
-      continue;
-    encode_dev = mt_rte_zmalloc_socket(sizeof(*encode_dev),
-                                       mt_socket_id(impl, MTL_PORT_P));
+    if (mgr->encode_devs[i]) continue;
+    encode_dev =
+        mt_rte_zmalloc_socket(sizeof(*encode_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!encode_dev) {
       err("%s, encode_dev malloc fail\n", __func__);
       mt_pthread_mutex_unlock(&mgr->lock);
@@ -626,8 +577,8 @@ st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
     }
     mgr->encode_devs[i] = encode_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n",
-         __func__, i, encode_dev->name, dev->target_device, dev->input_fmt_caps,
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, encode_dev->name, dev->target_device, dev->input_fmt_caps,
          dev->output_fmt_caps);
     return encode_dev;
   }
@@ -659,10 +610,9 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
 
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_DECODER_DEV; i++) {
-    if (mgr->decode_devs[i])
-      continue;
-    decode_dev = mt_rte_zmalloc_socket(sizeof(*decode_dev),
-                                       mt_socket_id(impl, MTL_PORT_P));
+    if (mgr->decode_devs[i]) continue;
+    decode_dev =
+        mt_rte_zmalloc_socket(sizeof(*decode_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!decode_dev) {
       err("%s, decode_dev malloc fail\n", __func__);
       mt_pthread_mutex_unlock(&mgr->lock);
@@ -680,8 +630,8 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
     }
     mgr->decode_devs[i] = decode_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n",
-         __func__, i, decode_dev->name, dev->target_device, dev->input_fmt_caps,
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, decode_dev->name, dev->target_device, dev->input_fmt_caps,
          dev->output_fmt_caps);
     return decode_dev;
   }
@@ -691,8 +641,8 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
   return NULL;
 }
 
-st20_converter_dev_handle
-st20_converter_register(mtl_handle mt, struct st20_converter_dev *dev) {
+st20_converter_dev_handle st20_converter_register(mtl_handle mt,
+                                                  struct st20_converter_dev *dev) {
   struct mtl_main_impl *impl = mt;
   struct st_plugin_mgr *mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl *convert_dev;
@@ -717,10 +667,9 @@ st20_converter_register(mtl_handle mt, struct st20_converter_dev *dev) {
 
   mt_pthread_mutex_lock(&mgr->lock);
   for (int i = 0; i < ST_MAX_CONVERTER_DEV; i++) {
-    if (mgr->convert_devs[i])
-      continue;
-    convert_dev = mt_rte_zmalloc_socket(sizeof(*convert_dev),
-                                        mt_socket_id(impl, MTL_PORT_P));
+    if (mgr->convert_devs[i]) continue;
+    convert_dev =
+        mt_rte_zmalloc_socket(sizeof(*convert_dev), mt_socket_id(impl, MTL_PORT_P));
     if (!convert_dev) {
       err("%s, convert_dev malloc fail\n", __func__);
       mt_pthread_mutex_unlock(&mgr->lock);
@@ -738,9 +687,9 @@ st20_converter_register(mtl_handle mt, struct st20_converter_dev *dev) {
     }
     mgr->convert_devs[i] = convert_dev;
     mt_pthread_mutex_unlock(&mgr->lock);
-    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n",
-         __func__, i, convert_dev->name, dev->target_device,
-         dev->input_fmt_caps, dev->output_fmt_caps);
+    info("%s(%d), %s registered, device %d cap(0x%" PRIx64 ":0x%" PRIx64 ")\n", __func__,
+         i, convert_dev->name, dev->target_device, dev->input_fmt_caps,
+         dev->output_fmt_caps);
     return convert_dev;
   }
   mt_pthread_mutex_unlock(&mgr->lock);
@@ -749,13 +698,11 @@ st20_converter_register(mtl_handle mt, struct st20_converter_dev *dev) {
   return NULL;
 }
 
-struct st22_encode_frame_meta *
-st22_encoder_get_frame(st22p_encode_session session) {
+struct st22_encode_frame_meta *st22_encoder_get_frame(st22p_encode_session session) {
   struct st22_encode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return NULL;
   }
 
@@ -766,26 +713,22 @@ int st22_encoder_wake_block(st22p_encode_session session) {
   struct st22_encode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
   return session_impl->req.wake_block(session_impl->req.priv);
 }
 
-int st22_encoder_set_block_timeout(st22p_encode_session session,
-                                   uint64_t timedwait_ns) {
+int st22_encoder_set_block_timeout(st22p_encode_session session, uint64_t timedwait_ns) {
   struct st22_encode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
-  return session_impl->req.set_block_timeout(session_impl->req.priv,
-                                             timedwait_ns);
+  return session_impl->req.set_block_timeout(session_impl->req.priv, timedwait_ns);
 }
 
 int st22_encoder_put_frame(st22p_encode_session session,
@@ -793,21 +736,18 @@ int st22_encoder_put_frame(st22p_encode_session session,
   struct st22_encode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_ENCODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
   return session_impl->req.put_frame(session_impl->req.priv, frame, result);
 }
 
-struct st22_decode_frame_meta *
-st22_decoder_get_frame(st22p_decode_session session) {
+struct st22_decode_frame_meta *st22_decoder_get_frame(st22p_decode_session session) {
   struct st22_decode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return NULL;
   }
 
@@ -818,26 +758,22 @@ int st22_decoder_wake_block(st22p_decode_session session) {
   struct st22_decode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
   return session_impl->req.wake_block(session_impl->req.priv);
 }
 
-int st22_decoder_set_block_timeout(st22p_decode_session session,
-                                   uint64_t timedwait_ns) {
+int st22_decoder_set_block_timeout(st22p_decode_session session, uint64_t timedwait_ns) {
   struct st22_decode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
-  return session_impl->req.set_block_timeout(session_impl->req.priv,
-                                             timedwait_ns);
+  return session_impl->req.set_block_timeout(session_impl->req.priv, timedwait_ns);
 }
 
 int st22_decoder_put_frame(st22p_decode_session session,
@@ -845,21 +781,18 @@ int st22_decoder_put_frame(st22p_decode_session session,
   struct st22_decode_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST22_HANDLE_PIPELINE_DECODE) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
   return session_impl->req.put_frame(session_impl->req.priv, frame, result);
 }
 
-struct st20_convert_frame_meta *
-st20_converter_get_frame(st20p_convert_session session) {
+struct st20_convert_frame_meta *st20_converter_get_frame(st20p_convert_session session) {
   struct st20_convert_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST20_HANDLE_PIPELINE_CONVERT) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return NULL;
   }
 
@@ -867,13 +800,11 @@ st20_converter_get_frame(st20p_convert_session session) {
 }
 
 int st20_converter_put_frame(st20p_convert_session session,
-                             struct st20_convert_frame_meta *frame,
-                             int result) {
+                             struct st20_convert_frame_meta *frame, int result) {
   struct st20_convert_session_impl *session_impl = session;
 
   if (session_impl->type != MT_ST20_HANDLE_PIPELINE_CONVERT) {
-    err("%s(%d), invalid type %d\n", __func__, session_impl->idx,
-        session_impl->type);
+    err("%s(%d), invalid type %d\n", __func__, session_impl->idx, session_impl->type);
     return -EIO;
   }
 
@@ -990,10 +921,8 @@ int st_plugin_register(mtl_handle mt, const char *path) {
   /* add to the plugins */
   mt_pthread_mutex_lock(&mgr->plugins_lock);
   for (int i = 0; i < ST_MAX_DL_PLUGINS; i++) {
-    if (mgr->plugins[i])
-      continue;
-    plugin =
-        mt_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
+    if (mgr->plugins[i]) continue;
+    plugin = mt_rte_zmalloc_socket(sizeof(*plugin), mt_socket_id(impl, MTL_PORT_P));
     if (!plugin) {
       mt_pthread_mutex_unlock(&mgr->plugins_lock);
       dlclose(dl_handle);
@@ -1009,8 +938,7 @@ int st_plugin_register(mtl_handle mt, const char *path) {
     mgr->plugins_nb++;
     mgr->plugins[i] = plugin;
     mt_pthread_mutex_unlock(&mgr->plugins_lock);
-    info("%s(%d), %s registered, version %d\n", __func__, i, path,
-         meta.version);
+    info("%s(%d), %s registered, version %d\n", __func__, i, path, meta.version);
     return 0;
   }
   mt_pthread_mutex_unlock(&mgr->plugins_lock);

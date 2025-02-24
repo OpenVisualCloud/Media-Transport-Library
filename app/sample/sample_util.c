@@ -151,328 +151,324 @@ static struct option sample_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static int sample_args_parse_tx_mac(struct st_sample_context *ctx,
-                                    char *mac_str, enum mtl_port port) {
+static int sample_args_parse_tx_mac(struct st_sample_context *ctx, char *mac_str,
+                                    enum mtl_port port) {
   int ret;
   uint8_t *mac;
 
-  if (!mac_str)
-    return -EIO;
+  if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
 
   mac = &ctx->tx_dst_mac[port][0];
-  ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0],
-               &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]);
-  if (ret < 0)
-    return ret;
+  ret = sscanf(mac_str, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx", &mac[0], &mac[1],
+               &mac[2], &mac[3], &mac[4], &mac[5]);
+  if (ret < 0) return ret;
 
   ctx->has_tx_dst_mac[port] = true;
   return 0;
 }
 
-static int _sample_parse_args(struct st_sample_context *ctx, int argc,
-                              char **argv) {
+static int _sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   int cmd = -1, optIdx = 0;
   struct mtl_init_params *p = &ctx->param;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", sample_args_options, &optIdx);
-    if (cmd == -1)
-      break;
+    if (cmd == -1) break;
     dbg("%s, cmd %d %s\n", __func__, cmd, optarg);
 
     switch (cmd) {
-    case SAMPLE_ARG_P_PORT:
-      snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
-      p->num_ports++;
-      break;
-    case SAMPLE_ARG_R_PORT:
-      snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
-      p->num_ports++;
-      break;
-    case SAMPLE_ARG_DMA_PORT:
-      snprintf(p->dma_dev_port[0], sizeof(p->dma_dev_port[0]), "%s", optarg);
-      p->num_dma_dev_port = 1;
-      break;
-    case SAMPLE_ARG_P_SIP:
-      inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
-      break;
-    case SAMPLE_ARG_R_SIP:
-      inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
-      break;
-    case SAMPLE_ARG_UDP_PORT:
-      ctx->udp_port = atoi(optarg);
-      ctx->audio_udp_port = atoi(optarg);
-      break;
-    case SAMPLE_ARG_PAYLOAD_TYPE:
-      ctx->payload_type = atoi(optarg);
-      ctx->audio_payload_type = atoi(optarg);
-      break;
-    case SAMPLE_ARG_FPS: {
-      enum st_fps fps = st_name_to_fps(optarg);
-      if (fps < ST_FPS_MAX) {
-        ctx->fps = fps;
-      } else {
-        err("%s, unknown fps name %s\n", __func__, optarg);
-      }
-      break;
-    }
-    case SAMPLE_ARG_INTERLACED:
-      ctx->interlaced = true;
-      break;
-    case SAMPLE_ARG_P_TX_IP:
-      inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
-      break;
-    case SAMPLE_ARG_R_TX_IP:
-      inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_R]);
-      break;
-    case SAMPLE_ARG_P_RX_IP:
-      inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_P]);
-      break;
-    case SAMPLE_ARG_R_RX_IP:
-      inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_R]);
-      break;
-    case SAMPLE_ARG_P_FWD_IP:
-      inet_pton(AF_INET, optarg, ctx->fwd_dip_addr[MTL_PORT_P]);
-      break;
-    case SAMPLE_ARG_P_NETMASK:
-      inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_P]);
-      break;
-    case SAMPLE_ARG_R_NETMASK:
-      inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_R]);
-      break;
-    case SAMPLE_ARG_P_GATEWAY:
-      inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_P]);
-      break;
-    case SAMPLE_ARG_R_GATEWAY:
-      inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_R]);
-      break;
-    case SAMPLE_ARG_LOG_LEVEL:
-      if (!strcmp(optarg, "debug"))
-        p->log_level = MTL_LOG_LEVEL_DEBUG;
-      else if (!strcmp(optarg, "info"))
-        p->log_level = MTL_LOG_LEVEL_INFO;
-      else if (!strcmp(optarg, "notice"))
-        p->log_level = MTL_LOG_LEVEL_NOTICE;
-      else if (!strcmp(optarg, "warning"))
-        p->log_level = MTL_LOG_LEVEL_WARNING;
-      else if (!strcmp(optarg, "error"))
-        p->log_level = MTL_LOG_LEVEL_ERR;
-      else
-        err("%s, unknow log level %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_DEV_AUTO_START:
-      p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
-      break;
-    case SAMPLE_ARG_SHARED_TX_QUEUES:
-      p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
-      break;
-    case SAMPLE_ARG_SHARED_RX_QUEUES:
-      p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
-      break;
-    case SAMPLE_ARG_PTP_TSC:
-      p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
-      break;
-    case SAMPLE_ARG_LIB_PTP:
-      p->flags |= MTL_FLAG_PTP_ENABLE;
-      break;
-    case SAMPLE_ARG_UDP_LCORE:
-      p->flags |= MTL_FLAG_UDP_LCORE;
-      break;
-    case SAMPLE_ARG_DHCP:
-      for (int port = 0; port < MTL_PORT_MAX; port++)
-        p->net_proto[port] = MTL_PROTO_DHCP;
-      break;
-    case SAMPLE_ARG_RSS_MODE:
-      if (!strcmp(optarg, "l3"))
-        p->rss_mode = MTL_RSS_MODE_L3;
-      else if (!strcmp(optarg, "l3_l4"))
-        p->rss_mode = MTL_RSS_MODE_L3_L4;
-      else if (!strcmp(optarg, "none"))
-        p->rss_mode = MTL_RSS_MODE_NONE;
-      else
-        err("%s, unknow rss mode %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_PACING_WAY:
-      if (!strcmp(optarg, "auto"))
-        p->pacing = ST21_TX_PACING_WAY_AUTO;
-      else if (!strcmp(optarg, "rl"))
-        p->pacing = ST21_TX_PACING_WAY_RL;
-      else if (!strcmp(optarg, "tsn"))
-        p->pacing = ST21_TX_PACING_WAY_TSN;
-      else if (!strcmp(optarg, "tsc"))
-        p->pacing = ST21_TX_PACING_WAY_TSC;
-      else if (!strcmp(optarg, "tsc_narrow"))
-        p->pacing = ST21_TX_PACING_WAY_TSC_NARROW;
-      else if (!strcmp(optarg, "ptp"))
-        p->pacing = ST21_TX_PACING_WAY_PTP;
-      else if (!strcmp(optarg, "be"))
-        p->pacing = ST21_TX_PACING_WAY_BE;
-      else
-        err("%s, unknow pacing way %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_NB_TX_DESC:
-      p->nb_tx_desc = atoi(optarg);
-      break;
-    case SAMPLE_ARG_NB_RX_DESC:
-      p->nb_rx_desc = atoi(optarg);
-      break;
-    case SAMPLE_ARG_RX_BURST_SZ:
-      ctx->rx_burst_size = atoi(optarg);
-      break;
-    case SAMPLE_ARG_QUEUES_CNT:
-      for (int i = 0; i < MTL_PORT_MAX; i++) {
-        p->rx_queues_cnt[i] = atoi(optarg);
-        p->tx_queues_cnt[i] = p->rx_queues_cnt[i];
-      }
-      break;
-    case SAMPLE_ARG_P_TX_DST_MAC:
-      sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
-      break;
-    case SAMPLE_ARG_R_TX_DST_MAC:
-      sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_R);
-      break;
-    case SAMPLE_ARG_TX_URL:
-      snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", optarg);
-      snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", optarg);
-      break;
-    case SAMPLE_ARG_RX_URL:
-      snprintf(ctx->rx_url, sizeof(ctx->rx_url), "%s", optarg);
-      snprintf(ctx->rx_audio_url, sizeof(ctx->rx_audio_url), "%s", optarg);
-      break;
-    case SAMPLE_ARG_AUDIO_FMT:
-      if (!strcmp(optarg, "pcm8"))
-        ctx->audio_fmt = ST30_FMT_PCM8;
-      else if (!strcmp(optarg, "pcm16"))
-        ctx->audio_fmt = ST30_FMT_PCM16;
-      else if (!strcmp(optarg, "pcm24"))
-        ctx->audio_fmt = ST30_FMT_PCM24;
-      else if (!strcmp(optarg, "am824"))
-        ctx->audio_fmt = ST31_FMT_AM824;
-      else
-        err("%s, unknow audio_fmt %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_AUDIO_CHANNEL:
-      ctx->audio_channel = atoi(optarg);
-      break;
-    case SAMPLE_ARG_AUDIO_SAMPLING:
-      if (!strcmp(optarg, "48k"))
-        ctx->audio_sampling = ST30_SAMPLING_48K;
-      else if (!strcmp(optarg, "96k"))
-        ctx->audio_sampling = ST30_SAMPLING_96K;
-      else if (!strcmp(optarg, "44k"))
-        ctx->audio_sampling = ST31_SAMPLING_44K;
-      else
-        err("%s, unknow audio_sampling %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_AUDIO_PTIME:
-      if (!strcmp(optarg, "1ms")) {
-        ctx->audio_ptime = ST30_PTIME_1MS;
-      } else if (!strcmp(optarg, "125us")) {
-        ctx->audio_ptime = ST30_PTIME_125US;
-        for (int i = 0; i < MTL_PORT_MAX; i++) {
-          p->tx_queues_cnt[i] += 2;
+      case SAMPLE_ARG_P_PORT:
+        snprintf(p->port[MTL_PORT_P], sizeof(p->port[MTL_PORT_P]), "%s", optarg);
+        p->num_ports++;
+        break;
+      case SAMPLE_ARG_R_PORT:
+        snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
+        p->num_ports++;
+        break;
+      case SAMPLE_ARG_DMA_PORT:
+        snprintf(p->dma_dev_port[0], sizeof(p->dma_dev_port[0]), "%s", optarg);
+        p->num_dma_dev_port = 1;
+        break;
+      case SAMPLE_ARG_P_SIP:
+        inet_pton(AF_INET, optarg, mtl_p_sip_addr(p));
+        break;
+      case SAMPLE_ARG_R_SIP:
+        inet_pton(AF_INET, optarg, mtl_r_sip_addr(p));
+        break;
+      case SAMPLE_ARG_UDP_PORT:
+        ctx->udp_port = atoi(optarg);
+        ctx->audio_udp_port = atoi(optarg);
+        break;
+      case SAMPLE_ARG_PAYLOAD_TYPE:
+        ctx->payload_type = atoi(optarg);
+        ctx->audio_payload_type = atoi(optarg);
+        break;
+      case SAMPLE_ARG_FPS: {
+        enum st_fps fps = st_name_to_fps(optarg);
+        if (fps < ST_FPS_MAX) {
+          ctx->fps = fps;
+        } else {
+          err("%s, unknown fps name %s\n", __func__, optarg);
         }
-      } else {
-        err("%s, unknow audio_ptime %s\n", __func__, optarg);
+        break;
       }
-      break;
-    case SAMPLE_ARG_LOGO_URL:
-      snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", optarg);
-      break;
-    case SAMPLE_ARG_WIDTH:
-      ctx->width = atoi(optarg);
-      break;
-    case SAMPLE_ARG_HEIGHT:
-      ctx->height = atoi(optarg);
-      break;
-    case SAMPLE_ARG_SESSIONS_CNT:
-      ctx->sessions = atoi(optarg);
-      break;
-    case SAMPLE_ARG_EXT_FRAME:
-      ctx->ext_frame = true;
-      break;
-    case SAMPLE_ARG_ST22_CODEC:
-      ctx->st22p_codec = st_name_to_codec(optarg);
-      break;
-    case SAMPLE_ARG_PIPELINE_FMT: {
-      enum st_frame_fmt fmt = st_frame_name_to_fmt(optarg);
-      if (fmt < ST_FRAME_FMT_MAX) {
-        ctx->input_fmt = fmt;
-        ctx->output_fmt = fmt;
-      } else {
-        err("%s, unknown fmt %s\n", __func__, optarg);
+      case SAMPLE_ARG_INTERLACED:
+        ctx->interlaced = true;
+        break;
+      case SAMPLE_ARG_P_TX_IP:
+        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);
+        break;
+      case SAMPLE_ARG_R_TX_IP:
+        inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_R]);
+        break;
+      case SAMPLE_ARG_P_RX_IP:
+        inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_P]);
+        break;
+      case SAMPLE_ARG_R_RX_IP:
+        inet_pton(AF_INET, optarg, ctx->rx_ip_addr[MTL_PORT_R]);
+        break;
+      case SAMPLE_ARG_P_FWD_IP:
+        inet_pton(AF_INET, optarg, ctx->fwd_dip_addr[MTL_PORT_P]);
+        break;
+      case SAMPLE_ARG_P_NETMASK:
+        inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_P]);
+        break;
+      case SAMPLE_ARG_R_NETMASK:
+        inet_pton(AF_INET, optarg, p->netmask[MTL_PORT_R]);
+        break;
+      case SAMPLE_ARG_P_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_P]);
+        break;
+      case SAMPLE_ARG_R_GATEWAY:
+        inet_pton(AF_INET, optarg, p->gateway[MTL_PORT_R]);
+        break;
+      case SAMPLE_ARG_LOG_LEVEL:
+        if (!strcmp(optarg, "debug"))
+          p->log_level = MTL_LOG_LEVEL_DEBUG;
+        else if (!strcmp(optarg, "info"))
+          p->log_level = MTL_LOG_LEVEL_INFO;
+        else if (!strcmp(optarg, "notice"))
+          p->log_level = MTL_LOG_LEVEL_NOTICE;
+        else if (!strcmp(optarg, "warning"))
+          p->log_level = MTL_LOG_LEVEL_WARNING;
+        else if (!strcmp(optarg, "error"))
+          p->log_level = MTL_LOG_LEVEL_ERR;
+        else
+          err("%s, unknow log level %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_DEV_AUTO_START:
+        p->flags |= MTL_FLAG_DEV_AUTO_START_STOP;
+        break;
+      case SAMPLE_ARG_SHARED_TX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_TX_QUEUE;
+        break;
+      case SAMPLE_ARG_SHARED_RX_QUEUES:
+        p->flags |= MTL_FLAG_SHARED_RX_QUEUE;
+        break;
+      case SAMPLE_ARG_PTP_TSC:
+        p->flags |= MTL_FLAG_PTP_SOURCE_TSC;
+        break;
+      case SAMPLE_ARG_LIB_PTP:
+        p->flags |= MTL_FLAG_PTP_ENABLE;
+        break;
+      case SAMPLE_ARG_UDP_LCORE:
+        p->flags |= MTL_FLAG_UDP_LCORE;
+        break;
+      case SAMPLE_ARG_DHCP:
+        for (int port = 0; port < MTL_PORT_MAX; port++)
+          p->net_proto[port] = MTL_PROTO_DHCP;
+        break;
+      case SAMPLE_ARG_RSS_MODE:
+        if (!strcmp(optarg, "l3"))
+          p->rss_mode = MTL_RSS_MODE_L3;
+        else if (!strcmp(optarg, "l3_l4"))
+          p->rss_mode = MTL_RSS_MODE_L3_L4;
+        else if (!strcmp(optarg, "none"))
+          p->rss_mode = MTL_RSS_MODE_NONE;
+        else
+          err("%s, unknow rss mode %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_PACING_WAY:
+        if (!strcmp(optarg, "auto"))
+          p->pacing = ST21_TX_PACING_WAY_AUTO;
+        else if (!strcmp(optarg, "rl"))
+          p->pacing = ST21_TX_PACING_WAY_RL;
+        else if (!strcmp(optarg, "tsn"))
+          p->pacing = ST21_TX_PACING_WAY_TSN;
+        else if (!strcmp(optarg, "tsc"))
+          p->pacing = ST21_TX_PACING_WAY_TSC;
+        else if (!strcmp(optarg, "tsc_narrow"))
+          p->pacing = ST21_TX_PACING_WAY_TSC_NARROW;
+        else if (!strcmp(optarg, "ptp"))
+          p->pacing = ST21_TX_PACING_WAY_PTP;
+        else if (!strcmp(optarg, "be"))
+          p->pacing = ST21_TX_PACING_WAY_BE;
+        else
+          err("%s, unknow pacing way %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_NB_TX_DESC:
+        p->nb_tx_desc = atoi(optarg);
+        break;
+      case SAMPLE_ARG_NB_RX_DESC:
+        p->nb_rx_desc = atoi(optarg);
+        break;
+      case SAMPLE_ARG_RX_BURST_SZ:
+        ctx->rx_burst_size = atoi(optarg);
+        break;
+      case SAMPLE_ARG_QUEUES_CNT:
+        for (int i = 0; i < MTL_PORT_MAX; i++) {
+          p->rx_queues_cnt[i] = atoi(optarg);
+          p->tx_queues_cnt[i] = p->rx_queues_cnt[i];
+        }
+        break;
+      case SAMPLE_ARG_P_TX_DST_MAC:
+        sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_P);
+        break;
+      case SAMPLE_ARG_R_TX_DST_MAC:
+        sample_args_parse_tx_mac(ctx, optarg, MTL_PORT_R);
+        break;
+      case SAMPLE_ARG_TX_URL:
+        snprintf(ctx->tx_url, sizeof(ctx->tx_url), "%s", optarg);
+        snprintf(ctx->tx_audio_url, sizeof(ctx->tx_audio_url), "%s", optarg);
+        break;
+      case SAMPLE_ARG_RX_URL:
+        snprintf(ctx->rx_url, sizeof(ctx->rx_url), "%s", optarg);
+        snprintf(ctx->rx_audio_url, sizeof(ctx->rx_audio_url), "%s", optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_FMT:
+        if (!strcmp(optarg, "pcm8"))
+          ctx->audio_fmt = ST30_FMT_PCM8;
+        else if (!strcmp(optarg, "pcm16"))
+          ctx->audio_fmt = ST30_FMT_PCM16;
+        else if (!strcmp(optarg, "pcm24"))
+          ctx->audio_fmt = ST30_FMT_PCM24;
+        else if (!strcmp(optarg, "am824"))
+          ctx->audio_fmt = ST31_FMT_AM824;
+        else
+          err("%s, unknow audio_fmt %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_CHANNEL:
+        ctx->audio_channel = atoi(optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_SAMPLING:
+        if (!strcmp(optarg, "48k"))
+          ctx->audio_sampling = ST30_SAMPLING_48K;
+        else if (!strcmp(optarg, "96k"))
+          ctx->audio_sampling = ST30_SAMPLING_96K;
+        else if (!strcmp(optarg, "44k"))
+          ctx->audio_sampling = ST31_SAMPLING_44K;
+        else
+          err("%s, unknow audio_sampling %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_AUDIO_PTIME:
+        if (!strcmp(optarg, "1ms")) {
+          ctx->audio_ptime = ST30_PTIME_1MS;
+        } else if (!strcmp(optarg, "125us")) {
+          ctx->audio_ptime = ST30_PTIME_125US;
+          for (int i = 0; i < MTL_PORT_MAX; i++) {
+            p->tx_queues_cnt[i] += 2;
+          }
+        } else {
+          err("%s, unknow audio_ptime %s\n", __func__, optarg);
+        }
+        break;
+      case SAMPLE_ARG_LOGO_URL:
+        snprintf(ctx->logo_url, sizeof(ctx->rx_url), "%s", optarg);
+        break;
+      case SAMPLE_ARG_WIDTH:
+        ctx->width = atoi(optarg);
+        break;
+      case SAMPLE_ARG_HEIGHT:
+        ctx->height = atoi(optarg);
+        break;
+      case SAMPLE_ARG_SESSIONS_CNT:
+        ctx->sessions = atoi(optarg);
+        break;
+      case SAMPLE_ARG_EXT_FRAME:
+        ctx->ext_frame = true;
+        break;
+      case SAMPLE_ARG_ST22_CODEC:
+        ctx->st22p_codec = st_name_to_codec(optarg);
+        break;
+      case SAMPLE_ARG_PIPELINE_FMT: {
+        enum st_frame_fmt fmt = st_frame_name_to_fmt(optarg);
+        if (fmt < ST_FRAME_FMT_MAX) {
+          ctx->input_fmt = fmt;
+          ctx->output_fmt = fmt;
+        } else {
+          err("%s, unknown fmt %s\n", __func__, optarg);
+        }
+        break;
       }
-      break;
-    }
-    case SAMPLE_ARG_TRANSPORT_FMT: {
-      enum st20_fmt fmt = st20_name_to_fmt(optarg);
-      if (fmt < ST20_FMT_MAX) {
-        ctx->fmt = fmt;
-      } else {
-        err("%s, unknown fmt %s\n", __func__, optarg);
+      case SAMPLE_ARG_TRANSPORT_FMT: {
+        enum st20_fmt fmt = st20_name_to_fmt(optarg);
+        if (fmt < ST20_FMT_MAX) {
+          ctx->fmt = fmt;
+        } else {
+          err("%s, unknown fmt %s\n", __func__, optarg);
+        }
+        break;
       }
-      break;
-    }
-    case SAMPLE_ARG_PACKING:
-      if (!strcmp(optarg, "bpm"))
-        ctx->packing = ST20_PACKING_BPM;
-      else if (!strcmp(optarg, "gpm"))
-        ctx->packing = ST20_PACKING_GPM;
-      else if (!strcmp(optarg, "gpm_sl"))
-        ctx->packing = ST20_PACKING_GPM_SL;
-      else
-        err("%s, unknown codec %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_UDP_MODE:
-      if (!strcmp(optarg, "default"))
-        ctx->udp_mode = SAMPLE_UDP_DEFAULT;
-      else if (!strcmp(optarg, "transport"))
-        ctx->udp_mode = SAMPLE_UDP_TRANSPORT;
-      else if (!strcmp(optarg, "transport_poll"))
-        ctx->udp_mode = SAMPLE_UDP_TRANSPORT_POLL;
-      else if (!strcmp(optarg, "transport_unify_poll"))
-        ctx->udp_mode = SAMPLE_UDP_TRANSPORT_UNIFY_POLL;
-      else
-        err("%s, unknow udp_mode %s\n", __func__, optarg);
-      break;
-    case SAMPLE_ARG_UDP_TX_BPS_G:
-      ctx->udp_tx_bps = ((uint64_t)atoi(optarg)) * 1024 * 1024 * 1024;
-      break;
-    case SAMPLE_ARG_UDP_LEN:
-      ctx->udp_len = atoi(optarg);
-      break;
-    case SAMPLE_ARG_GDDR_PA:
-      ctx->gddr_pa = strtol(optarg, NULL, 0);
-      break;
-    case SAMPLE_ARG_RX_DUMP:
-      ctx->rx_dump = true;
-      break;
-    case SAMPLE_ARG_USER_META:
-      ctx->has_user_meta = true;
-      break;
-    case SAMPLE_ARG_USE_CPU_COPY:
-      ctx->use_cpu_copy = true;
-      break;
-    case SAMPLE_ARG_PROFILING_GDDR:
-      ctx->profiling_gddr = true;
-      break;
-    case SAMPLE_ARG_PERF_FRAMES:
-      ctx->perf_frames = atoi(optarg);
-      break;
-    case SAMPLE_ARG_PERF_FB_CNT:
-      ctx->perf_fb_cnt = atoi(optarg);
-      break;
-    case SAMPLE_ARG_MULTI_INC_ADDR:
-      ctx->multi_inc_addr = true;
-      break;
-    case SAMPLE_ARG_LCORES:
-      p->lcores = optarg;
-      break;
-    case '?':
-      break;
-    default:
-      break;
+      case SAMPLE_ARG_PACKING:
+        if (!strcmp(optarg, "bpm"))
+          ctx->packing = ST20_PACKING_BPM;
+        else if (!strcmp(optarg, "gpm"))
+          ctx->packing = ST20_PACKING_GPM;
+        else if (!strcmp(optarg, "gpm_sl"))
+          ctx->packing = ST20_PACKING_GPM_SL;
+        else
+          err("%s, unknown codec %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_UDP_MODE:
+        if (!strcmp(optarg, "default"))
+          ctx->udp_mode = SAMPLE_UDP_DEFAULT;
+        else if (!strcmp(optarg, "transport"))
+          ctx->udp_mode = SAMPLE_UDP_TRANSPORT;
+        else if (!strcmp(optarg, "transport_poll"))
+          ctx->udp_mode = SAMPLE_UDP_TRANSPORT_POLL;
+        else if (!strcmp(optarg, "transport_unify_poll"))
+          ctx->udp_mode = SAMPLE_UDP_TRANSPORT_UNIFY_POLL;
+        else
+          err("%s, unknow udp_mode %s\n", __func__, optarg);
+        break;
+      case SAMPLE_ARG_UDP_TX_BPS_G:
+        ctx->udp_tx_bps = ((uint64_t)atoi(optarg)) * 1024 * 1024 * 1024;
+        break;
+      case SAMPLE_ARG_UDP_LEN:
+        ctx->udp_len = atoi(optarg);
+        break;
+      case SAMPLE_ARG_GDDR_PA:
+        ctx->gddr_pa = strtol(optarg, NULL, 0);
+        break;
+      case SAMPLE_ARG_RX_DUMP:
+        ctx->rx_dump = true;
+        break;
+      case SAMPLE_ARG_USER_META:
+        ctx->has_user_meta = true;
+        break;
+      case SAMPLE_ARG_USE_CPU_COPY:
+        ctx->use_cpu_copy = true;
+        break;
+      case SAMPLE_ARG_PROFILING_GDDR:
+        ctx->profiling_gddr = true;
+        break;
+      case SAMPLE_ARG_PERF_FRAMES:
+        ctx->perf_frames = atoi(optarg);
+        break;
+      case SAMPLE_ARG_PERF_FB_CNT:
+        ctx->perf_fb_cnt = atoi(optarg);
+        break;
+      case SAMPLE_ARG_MULTI_INC_ADDR:
+        ctx->multi_inc_addr = true;
+        break;
+      case SAMPLE_ARG_LCORES:
+        p->lcores = optarg;
+        break;
+      case '?':
+        break;
+      default:
+        break;
     }
   };
 
@@ -485,13 +481,11 @@ static void sample_sig_handler(int signo) {
   info("%s, signal %d\n", __func__, signo);
 
   switch (signo) {
-  case SIGINT: /* Interrupt from keyboard */
-    ctx->exit = true;
-    if (ctx->st)
-      mtl_abort(ctx->st);
-    if (ctx->sig_handler)
-      ctx->sig_handler(signo);
-    break;
+    case SIGINT: /* Interrupt from keyboard */
+      ctx->exit = true;
+      if (ctx->st) mtl_abort(ctx->st);
+      if (ctx->sig_handler) ctx->sig_handler(signo);
+      break;
   }
 
   return;
@@ -507,8 +501,8 @@ static int sample_set_afxdp(struct st_sample_context *ctx) {
   return 0;
 }
 
-int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv,
-                      bool tx, bool rx, bool unicast) {
+int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv, bool tx,
+                      bool rx, bool unicast) {
   struct mtl_init_params *p = &ctx->param;
 
   g_sample_ctx = ctx;
@@ -545,8 +539,7 @@ int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv,
 
   snprintf(p->dma_dev_port[0], MTL_PORT_MAX_LEN, "%s", "0000:80:04.0");
 
-  if (!ctx->sessions)
-    ctx->sessions = 1;
+  if (!ctx->sessions) ctx->sessions = 1;
   ctx->framebuff_cnt = 3;
   ctx->width = 1920;
   ctx->height = 1080;
@@ -582,13 +575,10 @@ int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv,
   _sample_parse_args(ctx, argc, argv);
 
   /* always enable 1 port */
-  if (!p->num_ports)
-    p->num_ports = 1;
+  if (!p->num_ports) p->num_ports = 1;
 
-  if (tx && !p->tx_queues_cnt[0])
-    sample_tx_queue_cnt_set(ctx, ctx->sessions);
-  if (rx && !p->rx_queues_cnt[0])
-    sample_rx_queue_cnt_set(ctx, ctx->sessions);
+  if (tx && !p->tx_queues_cnt[0]) sample_tx_queue_cnt_set(ctx, ctx->sessions);
+  if (rx && !p->rx_queues_cnt[0]) sample_rx_queue_cnt_set(ctx, ctx->sessions);
   sample_set_afxdp(ctx);
 
   return 0;
@@ -602,13 +592,11 @@ int rx_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   return sample_parse_args(ctx, argc, argv, false, true, false);
 };
 
-int fwd_sample_parse_args(struct st_sample_context *ctx, int argc,
-                          char **argv) {
+int fwd_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   return sample_parse_args(ctx, argc, argv, true, true, false);
 };
 
-int dma_sample_parse_args(struct st_sample_context *ctx, int argc,
-                          char **argv) {
+int dma_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   /* init sample(st) dev */
   sample_parse_args(ctx, argc, argv, false, false, false);
   /* enable dma port */
@@ -636,8 +624,7 @@ int sample_rx_queue_cnt_set(struct st_sample_context *ctx, uint16_t cnt) {
   return 0;
 }
 
-void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be *data,
-                                  int w, int h) {
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be *data, int w, int h) {
   int pg_size = w * h / 2;
   uint16_t cb, y0, cr, y1; /* 10 bit */
 
@@ -665,8 +652,7 @@ void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be *data,
   }
 }
 
-void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be *data,
-                                  int w, int h) {
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be *data, int w, int h) {
   int pg_size = w * h / 2;
   uint16_t cb, y0, cr, y1; /* 12 bit */
 

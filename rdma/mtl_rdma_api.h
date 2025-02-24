@@ -116,8 +116,7 @@ struct mtl_rdma_tx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the TX session.
  */
-mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh,
-                                      struct mtl_rdma_tx_ops *ops);
+mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_ops *ops);
 
 /**
  * Free the TX session.
@@ -154,8 +153,7 @@ struct mtl_rdma_buffer *mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle,
-                           struct mtl_rdma_buffer *buffer);
+int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer *buffer);
 
 /** The structure describing how to create an RX session. */
 struct mtl_rdma_rx_ops {
@@ -195,8 +193,7 @@ struct mtl_rdma_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the RX session.
  */
-mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh,
-                                      struct mtl_rdma_rx_ops *ops);
+mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh, struct mtl_rdma_rx_ops *ops);
 
 /**
  * Free the RX session.
@@ -233,8 +230,7 @@ struct mtl_rdma_buffer *mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle,
-                           struct mtl_rdma_buffer *buffer);
+int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer *buffer);
 
 /** MTL RDMA init flag */
 enum mtl_rdma_init_flag {

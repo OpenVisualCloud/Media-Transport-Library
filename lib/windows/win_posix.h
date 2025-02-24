@@ -131,7 +131,7 @@ int shmget(key_t key, size_t size, int shmflg);
 typedef intptr_t pthread_cond_t;
 typedef int pthread_condattr_t;
 
-#ifdef __MTL_LIB_BUILD__ // only lib need this typedef
+#ifdef __MTL_LIB_BUILD__  // only lib need this typedef
 typedef rte_cpuset_t cpu_set_t;
 #endif
 
@@ -146,11 +146,12 @@ int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
 int pthread_cond_destroy(pthread_cond_t *cv);
 int pthread_mutex_trylock(pthread_mutex_t *mutex);
 
-int clock_gettime(int clk_id,
-                  struct timespec *tp); /* use precise time for windows */
+int clock_gettime(int clk_id, struct timespec *tp); /* use precise time for windows */
 
 #ifdef __MTL_LIB_BUILD__
-static inline pid_t getpid() { return GetCurrentProcessId(); }
+static inline pid_t getpid() {
+  return GetCurrentProcessId();
+}
 #endif
 
 #endif

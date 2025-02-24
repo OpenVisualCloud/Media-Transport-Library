@@ -11,41 +11,35 @@
 #include "st_err.h"
 
 /* call tx_audio_session_put always if get successfully */
-static inline struct st_tx_audio_session_impl *
-tx_audio_session_get(struct st_tx_audio_sessions_mgr *mgr, int idx) {
+static inline struct st_tx_audio_session_impl *tx_audio_session_get(
+    struct st_tx_audio_sessions_mgr *mgr, int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
   struct st_tx_audio_session_impl *s = mgr->sessions[idx];
-  if (!s)
-    rte_spinlock_unlock(&mgr->mutex[idx]);
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
 /* call tx_audio_session_put always if get successfully */
-static inline struct st_tx_audio_session_impl *
-tx_audio_session_get_timeout(struct st_tx_audio_sessions_mgr *mgr, int idx,
-                             int timeout_us) {
-  if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us))
-    return NULL;
+static inline struct st_tx_audio_session_impl *tx_audio_session_get_timeout(
+    struct st_tx_audio_sessions_mgr *mgr, int idx, int timeout_us) {
+  if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
   struct st_tx_audio_session_impl *s = mgr->sessions[idx];
-  if (!s)
-    rte_spinlock_unlock(&mgr->mutex[idx]);
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
 /* call tx_audio_session_put always if get successfully */
-static inline struct st_tx_audio_session_impl *
-tx_audio_session_try_get(struct st_tx_audio_sessions_mgr *mgr, int idx) {
-  if (!rte_spinlock_trylock(&mgr->mutex[idx]))
-    return NULL;
+static inline struct st_tx_audio_session_impl *tx_audio_session_try_get(
+    struct st_tx_audio_sessions_mgr *mgr, int idx) {
+  if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
   struct st_tx_audio_session_impl *s = mgr->sessions[idx];
-  if (!s)
-    rte_spinlock_unlock(&mgr->mutex[idx]);
+  if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
 /* call tx_audio_session_put always if get successfully */
-static inline bool
-tx_audio_session_get_empty(struct st_tx_audio_sessions_mgr *mgr, int idx) {
+static inline bool tx_audio_session_get_empty(struct st_tx_audio_sessions_mgr *mgr,
+                                              int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
   struct st_tx_audio_session_impl *s = mgr->sessions[idx];
   if (s) {
@@ -56,8 +50,7 @@ tx_audio_session_get_empty(struct st_tx_audio_sessions_mgr *mgr, int idx) {
   }
 }
 
-static inline void tx_audio_session_put(struct st_tx_audio_sessions_mgr *mgr,
-                                        int idx) {
+static inline void tx_audio_session_put(struct st_tx_audio_sessions_mgr *mgr, int idx) {
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
@@ -67,8 +60,7 @@ static int tx_audio_session_free_frames(struct st_tx_audio_session_impl *s) {
 
     /* dec ref for current frame */
     frame = &s->st30_frames[s->st30_frame_idx];
-    if (rte_atomic32_read(&frame->refcnt))
-      rte_atomic32_dec(&frame->refcnt);
+    if (rte_atomic32_read(&frame->refcnt)) rte_atomic32_dec(&frame->refcnt);
 
     for (int i = 0; i < s->st30_frames_cnt; i++) {
       frame = &s->st30_frames[i];
@@ -93,8 +85,8 @@ static int tx_audio_session_alloc_frames(struct st_tx_audio_session_impl *s) {
     return -EIO;
   }
 
-  s->st30_frames = mt_rte_zmalloc_socket(
-      sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
+  s->st30_frames =
+      mt_rte_zmalloc_socket(sizeof(*s->st30_frames) * s->st30_frames_cnt, soc_id);
   if (!s->st30_frames) {
     err("%s(%d), st30_frames malloc fail\n", __func__, idx);
     return -ENOMEM;
@@ -111,8 +103,7 @@ static int tx_audio_session_alloc_frames(struct st_tx_audio_session_impl *s) {
 
     void *frame = mt_rte_zmalloc_socket(s->st30_frame_size, soc_id);
     if (!frame) {
-      err("%s(%d), rte_malloc %u fail at %d\n", __func__, idx,
-          s->st30_frame_size, i);
+      err("%s(%d), rte_malloc %u fail at %d\n", __func__, idx, s->st30_frame_size, i);
       tx_audio_session_free_frames(s);
       return -ENOMEM;
     }
@@ -144,21 +135,17 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl *impl,
   struct rte_ether_addr *d_addr = mt_eth_d_addr(eth);
 
   /* ether hdr */
-  if ((s_port == MTL_SESSION_PORT_P) &&
-      (ops->flags & ST30_TX_FLAG_USER_P_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0],
-               RTE_ETHER_ADDR_LEN);
+  if ((s_port == MTL_SESSION_PORT_P) && (ops->flags & ST30_TX_FLAG_USER_P_MAC)) {
+    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_P_TX_MAC\n", __func__);
-  } else if ((s_port == MTL_SESSION_PORT_R) &&
-             (ops->flags & ST30_TX_FLAG_USER_R_MAC)) {
-    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0],
-               RTE_ETHER_ADDR_LEN);
+  } else if ((s_port == MTL_SESSION_PORT_R) && (ops->flags & ST30_TX_FLAG_USER_R_MAC)) {
+    rte_memcpy(d_addr->addr_bytes, &ops->tx_dst_mac[s_port][0], RTE_ETHER_ADDR_LEN);
     info("%s, USER_R_TX_MAC\n", __func__);
   } else {
     ret = mt_dst_ip_mac(impl, dip, d_addr, port, impl->arp_timeout_ms);
     if (ret < 0) {
-      err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret,
-          dip[0], dip[1], dip[2], dip[3]);
+      err("%s(%d), get mac fail %d for %d.%d.%d.%d\n", __func__, idx, ret, dip[0], dip[1],
+          dip[2], dip[3]);
       return ret;
     }
   }
@@ -202,13 +189,12 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl *impl,
 
   s->st30_seq_id = 0;
 
-  info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u payload_type %u\n", __func__, idx,
-       s_port, dip[0], dip[1], dip[2], dip[3], s->st30_src_port[s_port],
-       s->st30_dst_port[s_port], rtp->payload_type);
-  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n",
-       __func__, idx, d_addr->addr_bytes[0], d_addr->addr_bytes[1],
-       d_addr->addr_bytes[2], d_addr->addr_bytes[3], d_addr->addr_bytes[4],
-       d_addr->addr_bytes[5], ssrc);
+  info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u payload_type %u\n", __func__, idx, s_port,
+       dip[0], dip[1], dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port],
+       rtp->payload_type);
+  info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n", __func__, idx,
+       d_addr->addr_bytes[0], d_addr->addr_bytes[1], d_addr->addr_bytes[2],
+       d_addr->addr_bytes[3], d_addr->addr_bytes[4], d_addr->addr_bytes[5], ssrc);
   return 0;
 }
 
@@ -217,8 +203,7 @@ static int tx_audio_session_init_pacing(struct st_tx_audio_session_impl *s) {
   struct st_tx_audio_session_pacing *pacing = &s->pacing;
   struct st30_tx_ops *ops = &s->ops;
   double pkt_time = st30_get_packet_time(ops->ptime);
-  if (pkt_time < 0)
-    return -EINVAL;
+  if (pkt_time < 0) return -EINVAL;
 
   pacing->pkt_time_sampling = (double)(s->sample_num * 1000) * 1 / 1000;
   pacing->trs = pkt_time;
@@ -233,24 +218,21 @@ static int tx_audio_session_init_pacing(struct st_tx_audio_session_impl *s) {
   return 0;
 }
 
-static int
-tx_audio_session_init_pacing_epoch(struct mtl_main_impl *impl,
-                                   struct st_tx_audio_session_impl *s) {
+static int tx_audio_session_init_pacing_epoch(struct mtl_main_impl *impl,
+                                              struct st_tx_audio_session_impl *s) {
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   struct st_tx_audio_session_pacing *pacing = &s->pacing;
   pacing->cur_epochs = ptp_time / pacing->trs;
   return 0;
 }
 
-static inline double
-tx_audio_pacing_time(struct st_tx_audio_session_pacing *pacing,
-                     uint64_t epochs) {
+static inline double tx_audio_pacing_time(struct st_tx_audio_session_pacing *pacing,
+                                          uint64_t epochs) {
   return epochs * pacing->trs;
 }
 
-static inline uint32_t
-tx_audio_pacing_time_stamp(struct st_tx_audio_session_pacing *pacing,
-                           uint64_t epochs) {
+static inline uint32_t tx_audio_pacing_time_stamp(
+    struct st_tx_audio_session_pacing *pacing, uint64_t epochs) {
   uint64_t tmstamp64 = epochs * pacing->pkt_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
 
@@ -262,18 +244,15 @@ static uint64_t tx_audio_pacing_required_tai(struct st_tx_audio_session_impl *s,
                                              uint64_t timestamp) {
   uint64_t required_tai = 0;
 
-  if (!(s->ops.flags & ST30_TX_FLAG_USER_PACING))
-    return 0;
-  if (!timestamp)
-    return 0;
+  if (!(s->ops.flags & ST30_TX_FLAG_USER_PACING)) return 0;
+  if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     if (timestamp > 0xFFFFFFFF) {
-      err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx,
-          timestamp);
+      err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx, timestamp);
     }
-    required_tai = st10_media_clk_to_ns((uint32_t)timestamp,
-                                        st30_get_sample_rate(s->ops.sampling));
+    required_tai =
+        st10_media_clk_to_ns((uint32_t)timestamp, st30_get_sample_rate(s->ops.sampling));
   } else {
     required_tai = timestamp;
   }
@@ -282,8 +261,8 @@ static uint64_t tx_audio_pacing_required_tai(struct st_tx_audio_session_impl *s,
 }
 
 static int tx_audio_session_sync_pacing(struct mtl_main_impl *impl,
-                                        struct st_tx_audio_session_impl *s,
-                                        bool sync, uint64_t required_tai) {
+                                        struct st_tx_audio_session_impl *s, bool sync,
+                                        uint64_t required_tai) {
   struct st_tx_audio_session_pacing *pacing = &s->pacing;
   double pkt_time = pacing->trs;
   /* always use MTL_PORT_P for ptp now */
@@ -295,11 +274,9 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl *impl,
   if (required_tai) {
     uint64_t ptp_epochs = ptp_time / pkt_time;
     epochs = required_tai / pkt_time;
-    dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64
-        " epochs %" PRIu64 "\n",
+    dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
-    if (epochs < ptp_epochs)
-      s->stat_error_user_timestamp++;
+    if (epochs < ptp_epochs) s->stat_error_user_timestamp++;
   } else {
     epochs = ptp_time / pkt_time;
 
@@ -328,18 +305,16 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl *impl,
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs)
-    s->stat_epoch_drop += (epochs - next_epochs);
-  if (epochs < next_epochs)
-    s->stat_epoch_onward += (next_epochs - epochs);
+  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
 
   pacing->cur_epochs = epochs;
   pacing->cur_epoch_time = tx_audio_pacing_time(pacing, epochs);
   pacing->pacing_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
-  dbg("%s(%d), epochs %" PRIu64 ", rtp_time_stamp %u\n", __func__, s->idx,
-      epochs, pacing->rtp_time_stamp);
+  dbg("%s(%d), epochs %" PRIu64 ", rtp_time_stamp %u\n", __func__, s->idx, epochs,
+      pacing->rtp_time_stamp);
 
   if (sync) {
     dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, s->idx,
@@ -381,8 +356,7 @@ static int tx_audio_sessions_tasklet_start(void *priv) {
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_audio_session_get(mgr, sidx);
-    if (!s)
-      continue;
+    if (!s) continue;
 
     tx_audio_session_init_pacing_epoch(impl, s);
     tx_audio_session_put(mgr, sidx);
@@ -490,9 +464,8 @@ static int tx_audio_session_build_rtp_packet(struct st_tx_audio_session_impl *s,
   return 0;
 }
 
-static int
-tx_audio_session_rtp_update_packet(struct st_tx_audio_session_impl *s,
-                                   struct rte_mbuf *pkt) {
+static int tx_audio_session_rtp_update_packet(struct st_tx_audio_session_impl *s,
+                                              struct rte_mbuf *pkt) {
   struct mt_udp_hdr *hdr;
   struct rte_ipv4_hdr *ipv4;
   struct st_rfc3550_rtp_hdr *rtp;
@@ -535,9 +508,10 @@ tx_audio_session_rtp_update_packet(struct st_tx_audio_session_impl *s,
   return 0;
 }
 
-static int tx_audio_session_build_packet_chain(
-    struct st_tx_audio_session_impl *s, struct rte_mbuf *pkt,
-    struct rte_mbuf *pkt_rtp, enum mtl_session_port s_port) {
+static int tx_audio_session_build_packet_chain(struct st_tx_audio_session_impl *s,
+                                               struct rte_mbuf *pkt,
+                                               struct rte_mbuf *pkt_rtp,
+                                               enum mtl_session_port s_port) {
   struct mt_udp_hdr *hdr;
   struct rte_ipv4_hdr *ipv4;
   struct rte_udp_hdr *udp;
@@ -591,19 +565,17 @@ static int tx_audio_session_build_packet_chain(
   }
 
   /* rtp packet used twice for redundant path */
-  if (s_port == MTL_SESSION_PORT_R)
-    rte_mbuf_refcnt_update(pkt_rtp, 1);
+  if (s_port == MTL_SESSION_PORT_R) rte_mbuf_refcnt_update(pkt_rtp, 1);
 
   return 0;
 }
 
-static int
-tx_audio_session_usdt_dump_close(struct st_tx_audio_session_impl *s) {
+static int tx_audio_session_usdt_dump_close(struct st_tx_audio_session_impl *s) {
   int idx = s->idx;
 
   if (s->usdt_dump_fd >= 0) {
-    info("%s(%d), close fd %d, dumped frames %d\n", __func__, idx,
-         s->usdt_dump_fd, s->usdt_dumped_frames);
+    info("%s(%d), close fd %d, dumped frames %d\n", __func__, idx, s->usdt_dump_fd,
+         s->usdt_dumped_frames);
     close(s->usdt_dump_fd);
     s->usdt_dump_fd = -1;
   }
@@ -620,17 +592,16 @@ static int tx_audio_session_usdt_dump_frame(struct st_tx_audio_session_impl *s,
     struct st30_tx_ops *ops = &s->ops;
     snprintf(s->usdt_dump_path, sizeof(s->usdt_dump_path),
              "imtl_usdt_st30tx_m%ds%d_%d_%d_c%u_XXXXXX.pcm", mgr->idx, idx,
-             st30_get_sample_rate(ops->sampling),
-             st30_get_sample_size(ops->fmt) * 8, ops->channel);
+             st30_get_sample_rate(ops->sampling), st30_get_sample_size(ops->fmt) * 8,
+             ops->channel);
     ret = mt_mkstemps(s->usdt_dump_path, strlen(".pcm"));
     if (ret < 0) {
-      err("%s(%d), mkstemps %s fail %d\n", __func__, idx, s->usdt_dump_path,
-          ret);
+      err("%s(%d), mkstemps %s fail %d\n", __func__, idx, s->usdt_dump_path, ret);
       return ret;
     }
     s->usdt_dump_fd = ret;
-    info("%s(%d), mkstemps succ on %s fd %d\n", __func__, idx,
-         s->usdt_dump_path, s->usdt_dump_fd);
+    info("%s(%d), mkstemps succ on %s fd %d\n", __func__, idx, s->usdt_dump_path,
+         s->usdt_dump_fd);
   }
 
   /* write frame to dump file */
@@ -709,8 +680,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
         if (frame_end_time > pacing->tsc_time_cursor) {
           s->stat_exceed_frame_time++;
           dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
-              s->st30_frame_idx,
-              (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+              s->st30_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
         }
         s->check_frame_done_time = false;
       }
@@ -718,13 +688,11 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
       tx_audio_session_init_next_meta(s, &meta);
       /* Query next frame buffer idx */
       bool time_measure = mt_sessions_time_measure(impl);
-      if (time_measure)
-        tsc_start = mt_get_tsc(impl);
+      if (time_measure) tsc_start = mt_get_tsc(impl);
       ret = ops->get_next_frame(ops->priv, &next_frame_idx, &meta);
       if (time_measure) {
         uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
-        s->stat_max_next_frame_us =
-            RTE_MAX(s->stat_max_next_frame_us, delta_us);
+        s->stat_max_next_frame_us = RTE_MAX(s->stat_max_next_frame_us, delta_us);
       }
       if (ret < 0) { /* no frame ready from app */
         dbg("%s(%d), get_next_frame fail %d\n", __func__, idx, ret);
@@ -735,8 +703,8 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
       struct st_frame_trans *frame = &s->st30_frames[next_frame_idx];
       int refcnt = rte_atomic32_read(&frame->refcnt);
       if (refcnt) {
-        err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx,
-            next_frame_idx, refcnt);
+        err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx,
+            refcnt);
         s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
         return MTL_TASKLET_ALL_DONE;
       }
@@ -745,8 +713,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
       s->st30_frame_idx = next_frame_idx;
       dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
       s->st30_frame_stat = ST30_TX_STAT_SENDING_PKTS;
-      MT_USDT_ST30_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx,
-                                 frame->addr);
+      MT_USDT_ST30_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr);
       /* check if dump USDT enabled */
       if (MT_USDT_ST30_TX_FRAME_DUMP_ENABLED()) {
         tx_audio_session_usdt_dump_frame(s, frame);
@@ -759,8 +726,8 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
   if (s->calculate_time_cursor) {
     struct st_frame_trans *frame = &s->st30_frames[s->st30_frame_idx];
     /* user timestamp control if any */
-    uint64_t required_tai = tx_audio_pacing_required_tai(
-        s, frame->ta_meta.tfmt, frame->ta_meta.timestamp);
+    uint64_t required_tai =
+        tx_audio_pacing_required_tai(s, frame->ta_meta.tfmt, frame->ta_meta.timestamp);
     tx_audio_session_sync_pacing(impl, s, false, required_tai);
     if (ops->flags & ST30_TX_FLAG_USER_TIMESTAMP &&
         (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
@@ -784,8 +751,8 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n",
-            __func__, idx, cur_tsc, target_tsc);
+        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
+            cur_tsc, target_tsc);
       }
     }
   }
@@ -819,8 +786,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
         s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
         return MTL_TASKLET_ALL_DONE;
       }
-      tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp,
-                                          MTL_SESSION_PORT_R);
+      tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     }
   } else {
     tx_audio_session_build_packet(s, pkt);
@@ -870,15 +836,13 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl *impl,
     struct st30_tx_frame_meta *ta_meta = &frame->ta_meta;
     uint64_t tsc_start = 0;
     bool time_measure = mt_sessions_time_measure(impl);
-    if (time_measure)
-      tsc_start = mt_get_tsc(impl);
+    if (time_measure) tsc_start = mt_get_tsc(impl);
     /* end of current frame */
     if (ops->notify_frame_done)
       ops->notify_frame_done(ops->priv, s->st30_frame_idx, ta_meta);
     if (time_measure) {
       uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
-      s->stat_max_notify_frame_us =
-          RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+      s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
     }
 
     rte_atomic32_dec(&frame->refcnt);
@@ -941,8 +905,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl *impl,
   }
 
   /* sync pacing */
-  if (!pacing->tsc_time_cursor)
-    tx_audio_session_sync_pacing(impl, s, false, 0);
+  if (!pacing->tsc_time_cursor) tx_audio_session_sync_pacing(impl, s, false, 0);
 
   if (s->pacing_in_build) {
     uint64_t cur_tsc = mt_get_tsc(impl);
@@ -956,8 +919,8 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl *impl,
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n",
-            __func__, idx, cur_tsc, target_tsc);
+        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
+            cur_tsc, target_tsc);
       }
     }
   }
@@ -1014,8 +977,7 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl *impl,
       }
       tx_audio_session_update_redundant(s, pkt_r);
     } else {
-      tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp,
-                                          MTL_SESSION_PORT_R);
+      tx_audio_session_build_packet_chain(s, pkt_r, pkt_rtp, MTL_SESSION_PORT_R);
     }
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
     s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
@@ -1038,9 +1000,10 @@ static int tx_audio_session_tasklet_rtp(struct mtl_main_impl *impl,
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
-static int tx_audio_session_tasklet_transmit(
-    struct mtl_main_impl *impl, struct st_tx_audio_sessions_mgr *mgr,
-    struct st_tx_audio_session_impl *s, int s_port) {
+static int tx_audio_session_tasklet_transmit(struct mtl_main_impl *impl,
+                                             struct st_tx_audio_sessions_mgr *mgr,
+                                             struct st_tx_audio_session_impl *s,
+                                             int s_port) {
   int idx = s->idx, ret;
   struct rte_mbuf *pkt;
   enum mtl_port t_port = mt_port_logic2phy(s->port_maps, s_port);
@@ -1098,8 +1061,8 @@ static int tx_audio_session_tasklet_transmit(
       return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                               : MTL_TASKLET_ALL_DONE;
     } else {
-      err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__,
-          idx, cur_tsc, target_tsc);
+      err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
+          cur_tsc, target_tsc);
     }
   }
 
@@ -1167,12 +1130,11 @@ static int tx_audio_session_uinit_rl(struct mtl_main_impl *impl,
   return 0;
 }
 
-static inline uint64_t
-tx_audio_session_initial_rl_bps(struct st_tx_audio_session_impl *s) {
+static inline uint64_t tx_audio_session_initial_rl_bps(
+    struct st_tx_audio_session_impl *s) {
   struct st_tx_audio_session_rl_info *rl = &s->rl;
-  double bps =
-      (double)(s->st30_pkt_size + rl->pad_pkt_size * rl->pads_per_st30_pkt) *
-      (double)NS_PER_S / s->pacing.trs;
+  double bps = (double)(s->st30_pkt_size + rl->pad_pkt_size * rl->pads_per_st30_pkt) *
+               (double)NS_PER_S / s->pacing.trs;
   return bps;
 }
 
@@ -1190,8 +1152,7 @@ static int double_cmp(const void *a, const void *b) {
 
 static inline uint64_t tx_audio_session_profiling_rl_bps(
     struct mtl_main_impl *impl, struct st_tx_audio_session_impl *s,
-    enum mtl_session_port s_port, uint64_t initial_bytes_per_sec,
-    int rl_q_idx) {
+    enum mtl_session_port s_port, uint64_t initial_bytes_per_sec, int rl_q_idx) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   int idx = s->idx;
   struct st_tx_audio_session_rl_info *rl = &s->rl;
@@ -1232,8 +1193,8 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
     uint64_t tsc_end = mt_get_tsc(impl);
     double time_sec = (double)(tsc_end - tsc_start) / NS_PER_S;
     loop_actual_per_sec[loop] = total / time_sec;
-    dbg("%s(%d), pkts per second expect %f actual %f\n", __func__, idx,
-        expect_per_sec, loop_actual_per_sec[loop]);
+    dbg("%s(%d), pkts per second expect %f actual %f\n", __func__, idx, expect_per_sec,
+        loop_actual_per_sec[loop]);
   }
   /* sort */
   qsort(loop_actual_per_sec, loop_cnt, sizeof(double), double_cmp);
@@ -1246,12 +1207,12 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
   double actual_per_sec = actual_per_sec_sum / entry_in_sum;
   double ratio = actual_per_sec / expect_per_sec;
   if (ratio > 1.1 || ratio < 0.9) {
-    err("%s(%d), fail, expect %f but actual %f\n", __func__, idx,
-        expect_per_sec, actual_per_sec);
+    err("%s(%d), fail, expect %f but actual %f\n", __func__, idx, expect_per_sec,
+        actual_per_sec);
     return 0;
   }
-  info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__,
-       idx, expect_per_sec, actual_per_sec,
+  info("%s(%d), pkts per second, expect %f actual %f with time %fs\n", __func__, idx,
+       expect_per_sec, actual_per_sec,
        ((double)mt_get_tsc(impl) - train_start_tsc) / NS_PER_S);
   return initial_bytes_per_sec * expect_per_sec / actual_per_sec;
 }
@@ -1273,8 +1234,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl *impl,
     rl->required_accuracy_ns = 40 * NS_PER_US; /* 40us */
   }
   if (s->ops.rl_offset_ns) {
-    info("%s(%d), user required offset %dns\n", __func__, idx,
-         s->ops.rl_offset_ns);
+    info("%s(%d), user required offset %dns\n", __func__, idx, s->ops.rl_offset_ns);
   }
   rl->pkts_prepare_warmup = 4;
   rl->pads_per_st30_pkt = 3;
@@ -1287,8 +1247,8 @@ static int tx_audio_session_init_rl(struct mtl_main_impl *impl,
     port = mt_port_logic2phy(s->port_maps, i);
 
     uint64_t initial_bytes_per_sec = tx_audio_session_initial_rl_bps(s);
-    int profiled = mt_audio_pacing_train_result_search(
-        impl, port, initial_bytes_per_sec, &profiled_per_sec);
+    int profiled = mt_audio_pacing_train_result_search(impl, port, initial_bytes_per_sec,
+                                                       &profiled_per_sec);
 
     /* pad pkt */
     rl_port->pad = mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port,
@@ -1320,17 +1280,15 @@ static int tx_audio_session_init_rl(struct mtl_main_impl *impl,
         return -EIO;
       }
       if ((j == 0) && (profiled < 0)) { /* only profile on the first */
-        uint64_t trained = tx_audio_session_profiling_rl_bps(
-            impl, s, i, initial_bytes_per_sec, j);
+        uint64_t trained =
+            tx_audio_session_profiling_rl_bps(impl, s, i, initial_bytes_per_sec, j);
         if (!trained) {
           tx_audio_session_uinit_rl(impl, s);
           return -EIO;
         }
 
-        mt_audio_pacing_train_result_add(impl, port, initial_bytes_per_sec,
-                                         trained);
-        info("%s(%d), trained bytes_per_sec %" PRIu64 "\n", __func__, idx,
-             trained);
+        mt_audio_pacing_train_result_add(impl, port, initial_bytes_per_sec, trained);
+        info("%s(%d), trained bytes_per_sec %" PRIu64 "\n", __func__, idx, trained);
         int ret = mt_txq_set_tx_bps(rl_port->queue[j], trained);
         if (ret < 0) {
           tx_audio_session_uinit_rl(impl, s);
@@ -1339,37 +1297,35 @@ static int tx_audio_session_init_rl(struct mtl_main_impl *impl,
         initial_bytes_per_sec = trained;
       }
       queue_id = mt_txq_queue_id(rl_port->queue[j]);
-      info("%s(%d), port(l:%d,p:%d), queue %d at sync %d\n", __func__, idx, i,
-           port, queue_id, j);
+      info("%s(%d), port(l:%d,p:%d), queue %d at sync %d\n", __func__, idx, i, port,
+           queue_id, j);
     }
   }
 
   return 0;
 }
 
-static void
-tx_audio_session_rl_switch_queue(struct st_tx_audio_session_rl_port *rl_port) {
+static void tx_audio_session_rl_switch_queue(
+    struct st_tx_audio_session_rl_port *rl_port) {
   int cur_queue = rl_port->cur_queue;
   cur_queue++;
-  if (cur_queue >= ST30_TX_RL_QUEUES_USED)
-    cur_queue = 0;
+  if (cur_queue >= ST30_TX_RL_QUEUES_USED) cur_queue = 0;
   rl_port->cur_queue = cur_queue;
 }
 
-static void
-tx_audio_session_rl_inc_pkt_idx(struct st_tx_audio_session_rl_info *rl,
-                                struct st_tx_audio_session_rl_port *rl_port) {
+static void tx_audio_session_rl_inc_pkt_idx(struct st_tx_audio_session_rl_info *rl,
+                                            struct st_tx_audio_session_rl_port *rl_port) {
   rl_port->cur_pkt_idx++;
   if (rl_port->cur_pkt_idx >= rl->pkts_per_sync) {
-    dbg("%s(%d,%d), switch to next queue, cur queue %d pkts %d send\n",
-        __func__, idx, s_port, cur_queue, rl_port->cur_pkt_idx);
+    dbg("%s(%d,%d), switch to next queue, cur queue %d pkts %d send\n", __func__, idx,
+        s_port, cur_queue, rl_port->cur_pkt_idx);
     rl_port->cur_pkt_idx = 0;
     tx_audio_session_rl_switch_queue(rl_port);
   }
 }
 
-static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl *s,
-                                           int s_port, struct rte_mbuf *pkt) {
+static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl *s, int s_port,
+                                           struct rte_mbuf *pkt) {
   struct st_tx_audio_session_rl_info *rl = &s->rl;
   struct st_tx_audio_session_rl_port *rl_port = &rl->port_info[s_port];
   int pads_per_st30_pkt = rl->pads_per_st30_pkt;
@@ -1393,8 +1349,8 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl *s,
   tx = mt_txq_burst(queue, pads, pads_per_st30_pkt);
   rl_port->stat_pad_pkts_burst += tx;
   if (tx != pads_per_st30_pkt) {
-    dbg("%s(%d,%d), sending %u pad pkts only %u succ\n", __func__, s->idx,
-        s_port, pads_per_st30_pkt, tx);
+    dbg("%s(%d,%d), sending %u pad pkts only %u succ\n", __func__, s->idx, s_port,
+        pads_per_st30_pkt, tx);
     /* save to pad inflight */
     rl_port->trs_pad_inflight_num = pads_per_st30_pkt - tx;
   } else {
@@ -1404,9 +1360,8 @@ static uint16_t tx_audio_session_rl_tx_pkt(struct st_tx_audio_session_impl *s,
   return 1;
 }
 
-static uint16_t
-tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl *s, int s_port,
-                               int pre, int pkts) {
+static uint16_t tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl *s,
+                                               int s_port, int pre, int pkts) {
   struct st_tx_audio_session_rl_info *rl = &s->rl;
   struct st_tx_audio_session_rl_port *rl_port = &rl->port_info[s_port];
   int cur_queue = rl_port->cur_queue;
@@ -1438,10 +1393,9 @@ tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl *s, int s_port,
   return 0;
 }
 
-static uint16_t
-tx_audio_session_rl_first_pkt(struct mtl_main_impl *impl,
-                              struct st_tx_audio_session_impl *s, int s_port,
-                              struct rte_mbuf *pkt) {
+static uint16_t tx_audio_session_rl_first_pkt(struct mtl_main_impl *impl,
+                                              struct st_tx_audio_session_impl *s,
+                                              int s_port, struct rte_mbuf *pkt) {
   struct st_tx_audio_session_rl_info *rl = &s->rl;
   struct st_tx_audio_session_rl_port *rl_port = &rl->port_info[s_port];
   uint64_t target_tsc = rl_port->trs_target_tsc + s->ops.rl_offset_ns;
@@ -1449,8 +1403,7 @@ tx_audio_session_rl_first_pkt(struct mtl_main_impl *impl,
 
   cur_tsc = mt_get_tsc(impl);
   if (cur_tsc > target_tsc) { /* time already reach */
-    dbg("%s(%d,%d), warmup fail, cur %" PRIu64 " target %" PRIu64
-        ", burst directly\n",
+    dbg("%s(%d,%d), warmup fail, cur %" PRIu64 " target %" PRIu64 ", burst directly\n",
         __func__, s->idx, s_port, cur_tsc, target_tsc);
     rl_port->trs_target_tsc = 0; /* clear target tsc */
     rl_port->stat_mismatch_sync_point++;
@@ -1460,22 +1413,20 @@ tx_audio_session_rl_first_pkt(struct mtl_main_impl *impl,
     return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
   }
 
-  if (rl_port->force_sync_first_tsc)
-    return 0;
+  if (rl_port->force_sync_first_tsc) return 0;
 
   /* check if we are reaching the warmup stage */
   uint32_t delta_tsc = target_tsc - cur_tsc;
   uint32_t trs = s->pacing.trs;
   uint32_t delta_pkts = delta_tsc / trs;
   if (delta_pkts > rl->max_warmup_trs) {
-    dbg("%s(%d,%d), delta_pkts %u too large\n", __func__, idx, s_port,
-        delta_pkts);
+    dbg("%s(%d,%d), delta_pkts %u too large\n", __func__, idx, s_port, delta_pkts);
     return 0;
   }
   uint32_t accuracy = delta_tsc % trs;
   if (accuracy > rl->required_accuracy_ns) {
-    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__,
-        idx, s_port, accuracy, delta_tsc, trs);
+    dbg("%s(%d,%d), accuracy %u too large, delta_tsc %u trs %u\n", __func__, idx, s_port,
+        accuracy, delta_tsc, trs);
     return 0;
   }
   dbg("%s(%d,%d), accuracy %u succ\n", __func__, idx, s_port, accuracy);
@@ -1494,8 +1445,8 @@ tx_audio_session_rl_first_pkt(struct mtl_main_impl *impl,
     uint32_t delta_tsc_now = target_tsc - mt_get_tsc(impl);
     uint32_t delta_pkts_now = delta_tsc_now / trs;
     if (delta_pkts_now < (i - 0)) {
-      dbg("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx,
-          delta_pkts_now, i);
+      dbg("%s(%d), mismatch delta_pkts_now %d at %d\n", __func__, s->idx, delta_pkts_now,
+          i);
       /* try next sync point */
       rl_port->stat_recalculate_warmup++;
       rl_port->force_sync_first_tsc = true;
@@ -1508,10 +1459,9 @@ tx_audio_session_rl_first_pkt(struct mtl_main_impl *impl,
   return tx_audio_session_rl_tx_pkt(s, s_port, pkt);
 }
 
-static int
-tx_audio_session_tasklet_rl_transmit(struct mtl_main_impl *impl,
-                                     struct st_tx_audio_session_impl *s,
-                                     int s_port) {
+static int tx_audio_session_tasklet_rl_transmit(struct mtl_main_impl *impl,
+                                                struct st_tx_audio_session_impl *s,
+                                                int s_port) {
   int ret;
   struct rte_mbuf *pkt;
   struct st_tx_audio_session_rl_info *rl = &s->rl;
@@ -1583,12 +1533,9 @@ static int tx_audio_sessions_tasklet(void *priv) {
 
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_audio_session_try_get(mgr, sidx);
-    if (!s)
-      continue;
-    if (!s->active)
-      goto exit;
-    if (time_measure)
-      tsc_s = mt_get_tsc(impl);
+    if (!s) continue;
+    if (!s->active) goto exit;
+    if (time_measure) tsc_s = mt_get_tsc(impl);
 
     s->stat_build_ret_code = 0;
     if (s->ops.type == ST30_TYPE_FRAME_LEVEL)
@@ -1623,8 +1570,7 @@ static int tx_audio_sessions_mgr_uinit_hw(struct st_tx_audio_sessions_mgr *mgr,
   if (mgr->queue[port]) {
     struct rte_mbuf *pad = mt_get_pad(mgr->parent, port);
     /* flush all the pkts in the tx ring desc */
-    if (pad)
-      mt_txq_flush(mgr->queue[port], pad);
+    if (pad) mt_txq_flush(mgr->queue[port], pad);
     mt_txq_put(mgr->queue[port]);
     mgr->queue[port] = NULL;
   }
@@ -1641,8 +1587,7 @@ static int tx_audio_sessions_mgr_init_hw(struct mtl_main_impl *impl,
   char ring_name[32];
   int mgr_idx = mgr->idx;
 
-  if (mgr->queue[port])
-    return 0; /* init already */
+  if (mgr->queue[port]) return 0; /* init already */
 
   struct mt_txq_flow flow;
   memset(&flow, 0, sizeof(flow));
@@ -1652,8 +1597,7 @@ static int tx_audio_sessions_mgr_init_hw(struct mtl_main_impl *impl,
   }
 
   snprintf(ring_name, 32, "%sM%dP%d", ST_TX_AUDIO_PREFIX, mgr_idx, port);
-  flags = RING_F_MP_HTS_ENQ |
-          RING_F_SC_DEQ; /* multi-producer and single-consumer */
+  flags = RING_F_MP_HTS_ENQ | RING_F_SC_DEQ; /* multi-producer and single-consumer */
   count = ST_TX_AUDIO_SESSIONS_RING_SIZE;
   ring = rte_ring_create(ring_name, count, mgr->socket_id, flags);
   if (!ring) {
@@ -1701,8 +1645,7 @@ static int tx_audio_session_sq_flush(struct st_tx_audio_sessions_mgr *mgr,
                                      struct st_tx_audio_session_impl *s) {
   int mgr_idx = mgr->idx, s_idx = s->idx;
 
-  if (!s->shared_queue)
-    return 0; /* skip as not shared queue */
+  if (!s->shared_queue) return 0; /* skip as not shared queue */
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     struct rte_mempool *pool = s->mbuf_mempool_hdr[i];
@@ -1716,12 +1659,10 @@ static int tx_audio_session_sq_flush(struct st_tx_audio_sessions_mgr *mgr,
       int retry = 100; /* max 1000ms */
       while (retry > 0) {
         retry--;
-        if (!rte_mempool_in_use_count(pool))
-          break;
+        if (!rte_mempool_in_use_count(pool)) break;
         mt_sleep_ms(10);
       }
-      info("%s(%d,%d), check in_use retry %d\n", __func__, mgr_idx, s_idx,
-           retry);
+      info("%s(%d,%d), check in_use retry %d\n", __func__, mgr_idx, s_idx, retry);
     }
   }
 
@@ -1733,15 +1674,13 @@ int tx_audio_session_mempool_free(struct st_tx_audio_session_impl *s) {
 
   if (s->mbuf_mempool_chain && !s->tx_mono_pool) {
     ret = mt_mempool_free(s->mbuf_mempool_chain);
-    if (ret >= 0)
-      s->mbuf_mempool_chain = NULL;
+    if (ret >= 0) s->mbuf_mempool_chain = NULL;
   }
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     if (s->mbuf_mempool_hdr[i] && !s->tx_mono_pool) {
       ret = mt_mempool_free(s->mbuf_mempool_hdr[i]);
-      if (ret >= 0)
-        s->mbuf_mempool_hdr[i] = NULL;
+      if (ret >= 0) s->mbuf_mempool_hdr[i] = NULL;
     }
   }
 
@@ -1753,8 +1692,7 @@ static bool tx_audio_session_has_chain_buf(struct st_tx_audio_session_impl *s) {
   int num_ports = ops->num_port;
 
   for (int port = 0; port < num_ports; port++) {
-    if (!s->eth_has_chain[port])
-      return false;
+    if (!s->eth_has_chain[port]) return false;
   }
 
   /* all ports capable chain */
@@ -1787,14 +1725,13 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl *impl,
       warn("%s(%d), use previous hdr mempool for port %d\n", __func__, idx, i);
     } else {
       n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
-      if (ops->type == ST30_TYPE_RTP_LEVEL)
-        n += ops->rtp_ring_size;
+      if (ops->type == ST30_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
       char pool_name[32];
-      snprintf(pool_name, 32, "%sM%dS%dP%d_HDR_%d", ST_TX_AUDIO_PREFIX,
-               mgr->idx, idx, i, s->recovery_idx);
+      snprintf(pool_name, 32, "%sM%dS%dP%d_HDR_%d", ST_TX_AUDIO_PREFIX, mgr->idx, idx, i,
+               s->recovery_idx);
       struct rte_mempool *mbuf_pool = mt_mempool_create_by_socket(
-          impl, pool_name, n, MT_MBUF_CACHE_SIZE,
-          sizeof(struct mt_muf_priv_data), hdr_room_size, s->socket_id);
+          impl, pool_name, n, MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
+          hdr_room_size, s->socket_id);
       if (!mbuf_pool) {
         tx_audio_session_mempool_free(s);
         return -ENOMEM;
@@ -1807,8 +1744,7 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl *impl,
   if (!s->tx_no_chain) {
     port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
     n = mt_if_nb_tx_desc(impl, port) + ST_TX_AUDIO_SESSIONS_RING_SIZE;
-    if (ops->type == ST30_TYPE_RTP_LEVEL)
-      n += ops->rtp_ring_size;
+    if (ops->type == ST30_TYPE_RTP_LEVEL) n += ops->rtp_ring_size;
 
     if (s->tx_mono_pool) {
       s->mbuf_mempool_chain = mt_sys_tx_mempool(impl, port);
@@ -1818,11 +1754,10 @@ static int tx_audio_session_mempool_init(struct mtl_main_impl *impl,
       warn("%s(%d), use previous chain mempool\n", __func__, idx);
     } else {
       char pool_name[32];
-      snprintf(pool_name, 32, "%sM%dS%d_CHAIN_%d", ST_TX_AUDIO_PREFIX, mgr->idx,
-               idx, s->recovery_idx);
-      struct rte_mempool *mbuf_pool =
-          mt_mempool_create_by_socket(impl, pool_name, n, MT_MBUF_CACHE_SIZE, 0,
-                                      chain_room_size, s->socket_id);
+      snprintf(pool_name, 32, "%sM%dS%d_CHAIN_%d", ST_TX_AUDIO_PREFIX, mgr->idx, idx,
+               s->recovery_idx);
+      struct rte_mempool *mbuf_pool = mt_mempool_create_by_socket(
+          impl, pool_name, n, MT_MBUF_CACHE_SIZE, 0, chain_room_size, s->socket_id);
       if (!mbuf_pool) {
         tx_audio_session_mempool_free(s);
         return -ENOMEM;
@@ -1842,8 +1777,7 @@ static int tx_audio_session_init_rtp(struct st_tx_audio_sessions_mgr *mgr,
   int mgr_idx = mgr->idx, idx = s->idx;
 
   snprintf(ring_name, 32, "%sM%dS%d_PKT", ST_TX_AUDIO_PREFIX, mgr_idx, idx);
-  flags =
-      RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
+  flags = RING_F_SP_ENQ | RING_F_SC_DEQ; /* single-producer and single-consumer */
   ring = rte_ring_create(ring_name, count, s->socket_id, flags);
   if (!ring) {
     err("%s(%d,%d), rte_ring_create fail\n", __func__, mgr_idx, idx);
@@ -1855,8 +1789,7 @@ static int tx_audio_session_init_rtp(struct st_tx_audio_sessions_mgr *mgr,
   return 0;
 }
 
-static int
-tx_audio_session_uinit_trans_ring(struct st_tx_audio_session_impl *s) {
+static int tx_audio_session_uinit_trans_ring(struct st_tx_audio_session_impl *s) {
   for (int port = 0; port < MTL_SESSION_PORT_MAX; port++) {
     if (s->trans_ring[port]) {
       mt_fifo_mbuf_clean(s->trans_ring[port]);
@@ -1868,9 +1801,8 @@ tx_audio_session_uinit_trans_ring(struct st_tx_audio_session_impl *s) {
   return 0;
 }
 
-static int
-tx_audio_session_init_trans_ring(struct st_tx_audio_sessions_mgr *mgr,
-                                 struct st_tx_audio_session_impl *s) {
+static int tx_audio_session_init_trans_ring(struct st_tx_audio_sessions_mgr *mgr,
+                                            struct st_tx_audio_session_impl *s) {
   struct mt_u64_fifo *ring;
   unsigned int count = ST_TX_AUDIO_SESSIONS_RING_SIZE;
   int mgr_idx = mgr->idx, idx = s->idx;
@@ -1956,8 +1888,7 @@ static int tx_audio_session_init_queue(struct mtl_main_impl *impl,
       return -EIO;
     }
     queue_id = mt_txq_queue_id(s->queue[i]);
-    info("%s(%d), port(l:%d,p:%d), queue %d\n", __func__, idx, i, port,
-         queue_id);
+    info("%s(%d), port(l:%d,p:%d), queue %d\n", __func__, idx, i, port, queue_id);
   }
 
   return 0;
@@ -2050,36 +1981,30 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
   char *ports[MTL_SESSION_PORT_MAX];
   bool rdma_ud = false;
 
-  for (int i = 0; i < num_port; i++)
-    ports[i] = ops->port[i];
+  for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   s->mgr = mgr;
 
   /* use dedicated queue for rdma_ud */
   for (int i = 0; i < num_port; i++) {
     enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_pmd_is_rdma_ud(impl, port))
-      rdma_ud = true;
+    if (mt_pmd_is_rdma_ud(impl, port)) rdma_ud = true;
   }
 
   /* detect pacing */
   s->tx_pacing_way = ST30_TX_PACING_WAY_TSC;
   double pkt_time = st30_get_packet_time(ops->ptime);
   bool detect_rl = false;
-  if ((ops->pacing_way == ST30_TX_PACING_WAY_AUTO) &&
-      (pkt_time < (NS_PER_MS / 2))) {
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_AUTO) && (pkt_time < (NS_PER_MS / 2))) {
     info("%s(%d), try detect rl as pkt_time %fns\n", __func__, idx, pkt_time);
     detect_rl = true;
   }
-  if ((ops->pacing_way == ST30_TX_PACING_WAY_RL) &&
-      (pkt_time < (NS_PER_MS * 2))) {
+  if ((ops->pacing_way == ST30_TX_PACING_WAY_RL) && (pkt_time < (NS_PER_MS * 2))) {
     detect_rl = true;
   }
-  if (rdma_ud)
-    detect_rl = false; /* no rl for rdma_ud */
+  if (rdma_ud) detect_rl = false; /* no rl for rdma_ud */
   if (detect_rl) {
     bool cap_rl = true;
     /* check if all port support rl */
@@ -2088,20 +2013,19 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
       enum st21_tx_pacing_way sys_pacing_way = mt_if(impl, port)->tx_pacing_way;
       if (sys_pacing_way != ST21_TX_PACING_WAY_RL) {
         if (ops->pacing_way == ST30_TX_PACING_WAY_AUTO) {
-          info("%s(%d,%d), the port sys pacing way %d not capable to RL\n",
-               __func__, idx, port, sys_pacing_way);
+          info("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
+               port, sys_pacing_way);
           cap_rl = false;
           break;
         } else {
-          err("%s(%d,%d), the port sys pacing way %d not capable to RL\n",
-              __func__, idx, port, sys_pacing_way);
+          err("%s(%d,%d), the port sys pacing way %d not capable to RL\n", __func__, idx,
+              port, sys_pacing_way);
           return -ENOTSUP;
         }
       }
     }
     if (cap_rl) {
-      info("%s(%d), select rl based pacing for pkt_time %fns\n", __func__, idx,
-           pkt_time);
+      info("%s(%d), select rl based pacing for pkt_time %fns\n", __func__, idx, pkt_time);
       s->tx_pacing_way = ST30_TX_PACING_WAY_RL;
     }
   }
@@ -2109,23 +2033,18 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
   if (ops->name) {
     snprintf(s->ops_name, sizeof(s->ops_name), "%s", ops->name);
   } else {
-    snprintf(s->ops_name, sizeof(s->ops_name), "RX_AUDIO_M%dS%d", mgr->idx,
-             idx);
+    snprintf(s->ops_name, sizeof(s->ops_name), "RX_AUDIO_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
 
   /* if disable shared queue */
   s->shared_queue = true;
-  if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL)
-    s->shared_queue = false;
-  if (ops->flags & ST30_TX_FLAG_DEDICATE_QUEUE)
-    s->shared_queue = false;
-  if (rdma_ud)
-    s->shared_queue = false;
+  if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL) s->shared_queue = false;
+  if (ops->flags & ST30_TX_FLAG_DEDICATE_QUEUE) s->shared_queue = false;
+  if (rdma_ud) s->shared_queue = false;
 
   for (int i = 0; i < num_port; i++) {
-    s->st30_dst_port[i] =
-        (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx * 2);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10100 + idx * 2);
     if (mt_user_random_src_port(impl))
       s->st30_src_port[i] = mt_random_port(s->st30_dst_port[i]);
     else
@@ -2145,30 +2064,24 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
   }
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
-  s->tx_no_chain =
-      mt_user_tx_no_chain(impl) || !tx_audio_session_has_chain_buf(s);
-  if (rdma_ud)
-    s->tx_no_chain = true;
+  s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_audio_session_has_chain_buf(s);
+  if (rdma_ud) s->tx_no_chain = true;
 
   s->st30_frames_cnt = ops->framebuff_cnt;
 
   ret = st30_get_sample_size(ops->fmt);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
   s->sample_size = ret;
   ret = st30_get_sample_num(ops->ptime, ops->sampling);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
   s->sample_num = ret;
 
   ret = st30_get_packet_size(ops->fmt, ops->ptime, ops->sampling, ops->channel);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
   s->pkt_len = ret;
 
   /* calculate pkts in line*/
-  size_t bytes_in_pkt =
-      ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr);
+  size_t bytes_in_pkt = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st_rfc3550_audio_hdr);
 
   s->st30_pkt_size = s->pkt_len + sizeof(struct st_rfc3550_audio_hdr);
   if (s->pkt_len > bytes_in_pkt) {
@@ -2179,8 +2092,8 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
   s->st30_total_pkts = ops->framebuff_size / s->pkt_len;
   if (ops->framebuff_size % s->pkt_len) {
     /* todo: add the support? */
-    err("%s(%d), framebuff_size %d not multiple pkt_len %d\n", __func__, idx,
-        s->pkt_len, ops->framebuff_size);
+    err("%s(%d), framebuff_size %d not multiple pkt_len %d\n", __func__, idx, s->pkt_len,
+        ops->framebuff_size);
     return -EIO;
   }
   s->st30_pkt_idx = 0;
@@ -2200,8 +2113,7 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
     s->inflight[i] = NULL;
     s->inflight_cnt[i] = 0;
   }
-  if (ops->flags & ST30_TX_FLAG_BUILD_PACING)
-    s->pacing_in_build = true;
+  if (ops->flags & ST30_TX_FLAG_BUILD_PACING) s->pacing_in_build = true;
   s->calculate_time_cursor = true;
   ret = tx_audio_session_init_pacing(s);
   if (ret < 0) {
@@ -2245,10 +2157,10 @@ static int tx_audio_session_attach(struct mtl_main_impl *impl,
   s->frames_per_sec = (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts;
   s->active = true;
 
-  info("%s(%d), fmt %d channel %u sampling %d ptime %d pt %u\n", __func__, idx,
-       ops->fmt, ops->channel, ops->sampling, ops->ptime, ops->payload_type);
-  info("%s(%d), pkt_len %u frame_size %u frames %u fps %f, pacing_way %s\n",
-       __func__, idx, s->pkt_len, s->st30_frame_size, s->st30_frames_cnt,
+  info("%s(%d), fmt %d channel %u sampling %d ptime %d pt %u\n", __func__, idx, ops->fmt,
+       ops->channel, ops->sampling, ops->ptime, ops->payload_type);
+  info("%s(%d), pkt_len %u frame_size %u frames %u fps %f, pacing_way %s\n", __func__,
+       idx, s->pkt_len, s->st30_frame_size, s->st30_frames_cnt,
        (double)NS_PER_S / s->pacing.trs / s->st30_total_pkts,
        audio_pacing_way_name(s->tx_pacing_way));
   return 0;
@@ -2266,8 +2178,7 @@ static int tx_audio_session_update_dst(struct mtl_main_impl *impl,
   for (int i = 0; i < num_port; i++) {
     memcpy(ops->dip_addr[i], dst->dip_addr[i], MTL_IP_ADDR_LEN);
     ops->udp_port[i] = dst->udp_port[i];
-    s->st30_dst_port[i] =
-        (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
+    s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
     s->st30_src_port[i] =
         (ops->udp_src_port[i]) ? (ops->udp_src_port[i]) : s->st30_dst_port[i];
 
@@ -2282,10 +2193,9 @@ static int tx_audio_session_update_dst(struct mtl_main_impl *impl,
   return 0;
 }
 
-static int
-tx_audio_sessions_mgr_update_dst(struct st_tx_audio_sessions_mgr *mgr,
-                                 struct st_tx_audio_session_impl *s,
-                                 struct st_tx_dest_info *dst) {
+static int tx_audio_sessions_mgr_update_dst(struct st_tx_audio_sessions_mgr *mgr,
+                                            struct st_tx_audio_session_impl *s,
+                                            struct st_tx_dest_info *dst) {
   int ret = -EIO, midx = mgr->idx, idx = s->idx;
 
   s = tx_audio_session_get(mgr, idx); /* get the lock */
@@ -2316,13 +2226,12 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr *mgr,
   rte_atomic32_set(&s->st30_stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
-  notice("TX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d, pkts %d:%d inflight "
-         "%d:%d\n",
-         m_idx, idx, s->ops_name, framerate, frame_cnt,
-         s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P],
-         s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R],
-         s->inflight_cnt[MTL_SESSION_PORT_P],
-         s->inflight_cnt[MTL_SESSION_PORT_R]);
+  notice(
+      "TX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d, pkts %d:%d inflight "
+      "%d:%d\n",
+      m_idx, idx, s->ops_name, framerate, frame_cnt,
+      s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P], s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R],
+      s->inflight_cnt[MTL_SESSION_PORT_P], s->inflight_cnt[MTL_SESSION_PORT_R]);
   s->st30_stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
   s->st30_stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
 
@@ -2332,8 +2241,7 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr *mgr,
     s->stat_epoch_mismatch = 0;
   }
   if (s->stat_epoch_drop) {
-    notice("TX_AUDIO_SESSION(%d,%d): epoch drop %u\n", m_idx, idx,
-           s->stat_epoch_drop);
+    notice("TX_AUDIO_SESSION(%d,%d): epoch drop %u\n", m_idx, idx, s->stat_epoch_drop);
     s->stat_epoch_drop = 0;
   }
   if (s->stat_epoch_onward) {
@@ -2342,8 +2250,7 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr *mgr,
     s->stat_epoch_onward = 0;
   }
   if (s->stat_epoch_late) {
-    notice("TX_AUDIO_SESSION(%d,%d): epoch late %u\n", m_idx, idx,
-           s->stat_epoch_late);
+    notice("TX_AUDIO_SESSION(%d,%d): epoch late %u\n", m_idx, idx, s->stat_epoch_late);
     s->stat_epoch_late = 0;
   }
   if (s->stat_exceed_frame_time) {
@@ -2373,8 +2280,8 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr *mgr,
   }
   if (s->tx_pacing_way == ST30_TX_PACING_WAY_RL) {
     struct st_tx_audio_session_rl_port *rl_port = &s->rl.port_info[0];
-    notice("TX_AUDIO_SESSION(%d,%d): rl pkts %u pads %u warmup %u\n", m_idx,
-           idx, rl_port->stat_pkts_burst, rl_port->stat_pad_pkts_burst,
+    notice("TX_AUDIO_SESSION(%d,%d): rl pkts %u pads %u warmup %u\n", m_idx, idx,
+           rl_port->stat_pkts_burst, rl_port->stat_pad_pkts_burst,
            rl_port->stat_warmup_pkts_burst);
     rl_port->stat_pkts_burst = 0;
     rl_port->stat_pad_pkts_burst = 0;
@@ -2390,8 +2297,8 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr *mgr,
       rl_port->stat_recalculate_warmup = 0;
     }
     if (rl_port->stat_hit_backup_cp) {
-      notice("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n",
-             m_idx, idx, rl_port->stat_hit_backup_cp);
+      notice("TX_AUDIO_SESSION(%d,%d): hit backup warmup checkpoint %u\n", m_idx, idx,
+             rl_port->stat_hit_backup_cp);
       rl_port->stat_hit_backup_cp = 0;
     }
   }
@@ -2399,27 +2306,26 @@ static void tx_audio_session_stat(struct st_tx_audio_sessions_mgr *mgr,
   struct mt_stat_u64 *stat_time = &s->stat_time;
   if (stat_time->cnt) {
     uint64_t avg_ns = stat_time->sum / stat_time->cnt;
-    notice("TX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min "
-           "%.2fus\n",
-           m_idx, idx, (float)avg_ns / NS_PER_US,
-           (float)stat_time->max / NS_PER_US,
-           (float)stat_time->min / NS_PER_US);
+    notice(
+        "TX_AUDIO_SESSION(%d,%d): tasklet time avg %.2fus max %.2fus min "
+        "%.2fus\n",
+        m_idx, idx, (float)avg_ns / NS_PER_US, (float)stat_time->max / NS_PER_US,
+        (float)stat_time->min / NS_PER_US);
     mt_stat_u64_init(stat_time);
   }
   struct mt_stat_u64 *stat_tx_delta = &s->stat_tx_delta;
   if (stat_tx_delta->cnt) {
     uint64_t avg_ns = stat_tx_delta->sum / stat_tx_delta->cnt;
-    notice(
-        "TX_AUDIO_SESSION(%d,%d): tx delta avg %.2fus max %.2fus min %.2fus\n",
-        m_idx, idx, (float)avg_ns / NS_PER_US,
-        (float)stat_tx_delta->max / NS_PER_US,
-        (float)stat_tx_delta->min / NS_PER_US);
+    notice("TX_AUDIO_SESSION(%d,%d): tx delta avg %.2fus max %.2fus min %.2fus\n", m_idx,
+           idx, (float)avg_ns / NS_PER_US, (float)stat_tx_delta->max / NS_PER_US,
+           (float)stat_tx_delta->min / NS_PER_US);
     mt_stat_u64_init(stat_tx_delta);
   }
   if (s->stat_max_next_frame_us > 8 || s->stat_max_notify_frame_us > 8) {
-    notice("TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max "
-           "%uus\n",
-           m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
+    notice(
+        "TX_AUDIO_SESSION(%d,%d): get next frame max %uus, notify done max "
+        "%uus\n",
+        m_idx, idx, s->stat_max_next_frame_us, s->stat_max_notify_frame_us);
   }
   s->stat_max_next_frame_us = 0;
   s->stat_max_notify_frame_us = 0;
@@ -2442,21 +2348,18 @@ static int st_tx_audio_sessions_stat(void *priv) {
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = tx_audio_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
-    if (!s)
-      continue;
+    if (!s) continue;
     tx_audio_session_stat(mgr, s);
     tx_audio_session_put(mgr, j);
   }
   if (mgr->st30_stat_pkts_burst > 0) {
-    notice("TX_AUDIO_MGR(%d), pkts burst %d\n", m_idx,
-           mgr->st30_stat_pkts_burst);
+    notice("TX_AUDIO_MGR(%d), pkts burst %d\n", m_idx, mgr->st30_stat_pkts_burst);
     mgr->st30_stat_pkts_burst = 0;
   } else {
     int32_t clients = rte_atomic32_read(&mgr->transmitter_clients);
     if ((clients > 0) && (mgr->max_idx > 0)) {
       for (int i = 0; i < mt_num_ports(mgr->parent); i++) {
-        warn("TX_AUDIO_MGR(%d): trs ret %d:%d\n", m_idx, i,
-             mgr->stat_trs_ret_code[i]);
+        warn("TX_AUDIO_MGR(%d): trs ret %d:%d\n", m_idx, i, mgr->stat_trs_ret_code[i]);
       }
     }
   }
@@ -2509,9 +2412,8 @@ static int tx_audio_sessions_mgr_init(struct mtl_main_impl *impl,
   return 0;
 }
 
-static struct st_tx_audio_session_impl *
-tx_audio_sessions_mgr_attach(struct mtl_sch_impl *sch,
-                             struct st30_tx_ops *ops) {
+static struct st_tx_audio_session_impl *tx_audio_sessions_mgr_attach(
+    struct mtl_sch_impl *sch, struct st30_tx_ops *ops) {
   struct st_tx_audio_sessions_mgr *mgr = &sch->tx_a_mgr;
   int midx = mgr->idx;
   int ret;
@@ -2520,8 +2422,7 @@ tx_audio_sessions_mgr_attach(struct mtl_sch_impl *sch,
 
   /* find one empty slot in the mgr */
   for (int i = 0; i < ST_SCH_MAX_TX_AUDIO_SESSIONS; i++) {
-    if (!tx_audio_session_get_empty(mgr, i))
-      continue;
+    if (!tx_audio_session_get_empty(mgr, i)) continue;
 
     s = mt_rte_zmalloc_socket(sizeof(*s), socket);
     if (!s) {
@@ -2579,8 +2480,7 @@ static int tx_audio_sessions_mgr_update(struct st_tx_audio_sessions_mgr *mgr) {
   int max_idx = 0;
 
   for (int i = 0; i < ST_SCH_MAX_TX_AUDIO_SESSIONS; i++) {
-    if (mgr->sessions[i])
-      max_idx = i + 1;
+    if (mgr->sessions[i]) max_idx = i + 1;
   }
 
   mgr->max_idx = max_idx;
@@ -2601,8 +2501,7 @@ static int tx_audio_sessions_mgr_uinit(struct st_tx_audio_sessions_mgr *mgr) {
 
   for (int i = 0; i < ST_SCH_MAX_TX_AUDIO_SESSIONS; i++) {
     s = tx_audio_session_get(mgr, i);
-    if (!s)
-      continue;
+    if (!s) continue;
 
     warn("%s(%d), session %d still attached\n", __func__, m_idx, i);
     tx_audio_sessions_mgr_detach(mgr, s);
@@ -2630,16 +2529,14 @@ static int tx_audio_ops_check(struct st30_tx_ops *ops) {
     ip = ops->dip_addr[i];
     ret = mt_ip_addr_check(ip);
     if (ret < 0) {
-      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2],
-          ip[3]);
+      err("%s(%d), invalid ip %d.%d.%d.%d\n", __func__, i, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
     }
   }
 
   if (num_ports > 1) {
     if (0 == memcmp(ops->dip_addr[0], ops->dip_addr[1], MTL_IP_ADDR_LEN)) {
-      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2],
-          ip[3]);
+      err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
       return -EINVAL;
     }
   }
@@ -2676,12 +2573,10 @@ static int tx_audio_ops_check(struct st30_tx_ops *ops) {
   return 0;
 }
 
-static int st_tx_audio_init(struct mtl_main_impl *impl,
-                            struct mtl_sch_impl *sch) {
+static int st_tx_audio_init(struct mtl_main_impl *impl, struct mtl_sch_impl *sch) {
   int ret;
 
-  if (sch->tx_a_init)
-    return 0;
+  if (sch->tx_a_init) return 0;
 
   /* create tx audio context */
   ret = tx_audio_sessions_mgr_init(impl, sch, &sch->tx_a_mgr);
@@ -2701,8 +2596,7 @@ static int st_tx_audio_init(struct mtl_main_impl *impl,
 }
 
 int st_audio_queue_fatal_error(struct mtl_main_impl *impl,
-                               struct st_tx_audio_sessions_mgr *mgr,
-                               enum mtl_port port) {
+                               struct st_tx_audio_sessions_mgr *mgr, enum mtl_port port) {
   int idx = mgr->idx;
   int ret;
   struct st_tx_audio_session_impl *s;
@@ -2713,8 +2607,7 @@ int st_audio_queue_fatal_error(struct mtl_main_impl *impl,
   }
 
   /* clean mbuf in the ring as we will free the mempool then */
-  if (mgr->ring[port])
-    mt_ring_dequeue_clean(mgr->ring[port]);
+  if (mgr->ring[port]) mt_ring_dequeue_clean(mgr->ring[port]);
   /* clean the queue done mbuf */
   mt_txq_done_cleanup(mgr->queue[port]);
 
@@ -2726,23 +2619,20 @@ int st_audio_queue_fatal_error(struct mtl_main_impl *impl,
    * pkt */
   for (int sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_audio_session_get(mgr, sidx);
-    if (!s)
-      continue;
+    if (!s) continue;
 
     /* clear all tx ring buffer */
-    if (s->packet_ring)
-      mt_ring_dequeue_clean(s->packet_ring);
+    if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
     for (uint8_t i = 0; i < s->ops.num_port; i++) {
-      if (s->trans_ring[i])
-        mt_fifo_mbuf_clean(s->trans_ring[i]);
+      if (s->trans_ring[i]) mt_fifo_mbuf_clean(s->trans_ring[i]);
     }
 
     s->recovery_idx++;
     tx_audio_session_mempool_free(s);
     ret = tx_audio_session_mempool_init(impl, mgr, s);
     if (ret < 0) {
-      err("%s(%d,%d), init mempool fail %d for session %d\n", __func__, idx,
-          port, ret, sidx);
+      err("%s(%d,%d), init mempool fail %d for session %d\n", __func__, idx, port, ret,
+          sidx);
       s->stat_unrecoverable_error++;
       s->active = false; /* mark current session to dead */
     } else {
@@ -2768,8 +2658,7 @@ int st_audio_queue_fatal_error(struct mtl_main_impl *impl,
 }
 
 int st_tx_audio_sessions_sch_uinit(struct mtl_sch_impl *sch) {
-  if (!sch->tx_a_init)
-    return 0;
+  if (!sch->tx_a_init) return 0;
 
   /* free tx audio context */
   st_audio_transmitter_uinit(&sch->a_trs);
@@ -2800,8 +2689,7 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops *ops) {
   }
 
   enum mtl_port port = mt_port_by_name(impl, ops->port[MTL_SESSION_PORT_P]);
-  if (port >= MTL_PORT_MAX)
-    return NULL;
+  if (port >= MTL_PORT_MAX) return NULL;
   int socket = mt_socket_id(impl, port);
 
   if (ops->flags & ST30_TX_FLAG_FORCE_NUMA) {
@@ -2815,10 +2703,9 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops *ops) {
     return NULL;
   }
 
-  quota_mbs = impl->main_sch->data_quota_mbs_limit /
-              impl->tx_audio_sessions_max_per_sch;
-  sch = mt_sch_get_by_socket(impl, quota_mbs, MT_SCH_TYPE_DEFAULT,
-                             MT_SCH_MASK_ALL, socket);
+  quota_mbs = impl->main_sch->data_quota_mbs_limit / impl->tx_audio_sessions_max_per_sch;
+  sch =
+      mt_sch_get_by_socket(impl, quota_mbs, MT_SCH_TYPE_DEFAULT, MT_SCH_MASK_ALL, socket);
   if (!sch) {
     mt_rte_free(s_impl);
     err("%s, get sch fail\n", __func__);
@@ -2856,8 +2743,7 @@ st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops *ops) {
   return s_impl;
 }
 
-int st30_tx_update_destination(st30_tx_handle handle,
-                               struct st_tx_dest_info *dst) {
+int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info *dst) {
   struct st_tx_audio_session_handle_impl *s_impl = handle;
   struct st_tx_audio_session_impl *s;
   struct mtl_sch_impl *sch;
@@ -2874,8 +2760,7 @@ int st30_tx_update_destination(st30_tx_handle handle,
   sch_idx = sch->idx;
 
   ret = st_tx_dest_info_check(dst, s->ops.num_port);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   ret = tx_audio_sessions_mgr_update_dst(&sch->tx_a_mgr, s, dst);
   if (ret < 0) {
@@ -2910,12 +2795,10 @@ int st30_tx_free(st30_tx_handle handle) {
   mt_pthread_mutex_lock(&sch->tx_a_mgr_mutex);
   ret = tx_audio_sessions_mgr_detach(&sch->tx_a_mgr, s);
   mt_pthread_mutex_unlock(&sch->tx_a_mgr_mutex);
-  if (ret < 0)
-    err("%s(%d, %d), mgr detach fail\n", __func__, sch_idx, idx);
+  if (ret < 0) err("%s(%d, %d), mgr detach fail\n", __func__, sch_idx, idx);
 
   ret = mt_sch_put(sch, s_impl->quota_mbs);
-  if (ret < 0)
-    err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);
+  if (ret < 0) err("%s(%d, %d), mt_sch_put fail\n", __func__, sch_idx, idx);
 
   mt_rte_free(s_impl);
 
@@ -2980,9 +2863,8 @@ void *st30_tx_get_mbuf(st30_tx_handle handle, void **usrptr) {
     return NULL;
   }
 
-  struct rte_mempool *mp = s->tx_no_chain
-                               ? s->mbuf_mempool_hdr[MTL_SESSION_PORT_P]
-                               : s->mbuf_mempool_chain;
+  struct rte_mempool *mp =
+      s->tx_no_chain ? s->mbuf_mempool_hdr[MTL_SESSION_PORT_P] : s->mbuf_mempool_chain;
   pkt = rte_pktmbuf_alloc(mp);
   if (!pkt) {
     dbg("%s(%d), pkt alloc fail\n", __func__, idx);
@@ -3008,8 +2890,7 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void *mbuf, uint16_t len) {
   }
 
   if (!mt_rtp_len_valid(len)) {
-    if (len)
-      err("%s, invalid len %d\n", __func__, len);
+    if (len) err("%s, invalid len %d\n", __func__, len);
     rte_pktmbuf_free(mbuf);
     return -EIO;
   }
@@ -3023,8 +2904,7 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void *mbuf, uint16_t len) {
     return -EIO;
   }
 
-  if (s->tx_no_chain)
-    len += sizeof(struct mt_udp_hdr);
+  if (s->tx_no_chain) len += sizeof(struct mt_udp_hdr);
 
   pkt->data_len = pkt->pkt_len = len;
   ret = rte_ring_sp_enqueue(packet_ring, (void *)pkt);

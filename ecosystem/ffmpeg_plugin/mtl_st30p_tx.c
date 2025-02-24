@@ -65,8 +65,7 @@ static int mtl_st30p_write_close(AVFormatContext *ctx) {
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx,
-       s->frame_counter);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 
@@ -77,8 +76,7 @@ static int mtl_st30p_write_header(AVFormatContext *ctx) {
   AVCodecParameters *codecpar = ctx->streams[0]->codecpar;
 
   if (codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
-    err(ctx, "%s, codec_type %d is not audio\n", __func__,
-        codecpar->codec_type);
+    err(ctx, "%s, codec_type %d is not audio\n", __func__, codecpar->codec_type);
     return AVERROR(EINVAL);
   }
 
@@ -128,12 +126,11 @@ static int mtl_st30p_write_header(AVFormatContext *ctx) {
     return AVERROR(EINVAL);
   }
 
-  s->frame_size =
-      st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
-                                    ops_tx.channel, 10 * NS_PER_MS, NULL);
+  s->frame_size = st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
+                                                ops_tx.channel, 10 * NS_PER_MS, NULL);
 
   ops_tx.name = "st30p_ffmpeg";
-  ops_tx.priv = s; // Handle of priv_data registered to lib
+  ops_tx.priv = s;  // Handle of priv_data registered to lib
   ops_tx.framebuff_cnt = s->fb_cnt;
   ops_tx.framebuff_size = s->frame_size;
 
@@ -186,13 +183,12 @@ static int mtl_st30p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
     return AVERROR(EIO);
   }
 
-  dbg(ctx, "%s(%d), pkt size %d frame size %d\n", __func__, s->idx, size,
-      s->frame_size);
+  dbg(ctx, "%s(%d), pkt size %d frame size %d\n", __func__, s->idx, size, s->frame_size);
   while (size > 0) {
     int left = s->frame_size - s->filled;
     uint8_t *cur = (uint8_t *)frame->addr + s->filled;
-    dbg(ctx, "%s(%d), size %d left %d filled %d\n", __func__, s->idx, size,
-        left, s->filled);
+    dbg(ctx, "%s(%d), size %d left %d filled %d\n", __func__, s->idx, size, left,
+        s->filled);
 
     if (size < left) {
       mtl_memcpy(cur, data, size);
@@ -206,8 +202,7 @@ static int mtl_st30p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
       s->last_frame = NULL;
       frame = mtl_st30p_fetch_frame(ctx, s);
       if (!frame) {
-        info(ctx, "%s(%d), fetch frame timeout, size %d\n", __func__, s->idx,
-             size);
+        info(ctx, "%s(%d), fetch frame timeout, size %d\n", __func__, s->idx, size);
         return AVERROR(EIO);
       }
       data += left;
@@ -216,8 +211,7 @@ static int mtl_st30p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
     }
   }
 
-  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx,
-      s->frame_counter);
+  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
 }
 

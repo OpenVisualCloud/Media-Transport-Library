@@ -14,8 +14,7 @@ static int rx_st20rc_frame_pop(struct st20rc_rx_ctx *ctx, void *frame) {
 
   for (int i = 0; i < ctx->frames_cnt; i++) {
     rx_frame = &ctx->frames[i];
-    if (rx_frame->frame != frame)
-      continue;
+    if (rx_frame->frame != frame) continue;
     /* find the slot */
     rx_frame->frame = NULL;
     return st20_rx_put_framebuff(ctx->transport[rx_frame->port]->handle, frame);
@@ -33,15 +32,14 @@ static int rx_st20rc_frame_push(struct st20rc_rx_ctx *ctx, void *frame,
 
   for (int i = 0; i < ctx->frames_cnt; i++) {
     rx_frame = &ctx->frames[i];
-    if (rx_frame->frame)
-      continue;
+    if (rx_frame->frame) continue;
     /* find a empty slot, notify user */
     rx_frame->frame = frame;
     rx_frame->port = port;
     rx_frame->meta = *meta;
     ret = ctx->ops.notify_frame_ready(ctx->ops.priv, frame, meta);
-    dbg("%s(%d), notify frame %p(%d:%u) to user, ret %d\n", __func__, ctx->idx,
-        frame, port, i, ret);
+    dbg("%s(%d), notify frame %p(%d:%u) to user, ret %d\n", __func__, ctx->idx, frame,
+        port, i, ret);
     if (ret < 0) {
       /* clear the frame */
       rx_frame->frame = NULL;
@@ -61,8 +59,7 @@ static int rx_st20rc_frame_ready(void *priv, void *frame,
   enum mtl_session_port port = transport->port;
   int ret = -EIO;
 
-  if (!ctx->ready)
-    return -EBUSY; /* not ready */
+  if (!ctx->ready) return -EBUSY; /* not ready */
 
   dbg("%s(%d), get frame %p at port %d\n", __func__, idx, frame, port);
 
@@ -89,8 +86,7 @@ static int rx_st20rc_frame_ready(void *priv, void *frame,
         ret = rx_st20rc_frame_push(ctx, frame, port, meta);
         if (ret >= 0) {
           ctx->cur_frame_complete = true;
-          info("%s(%d), push frame %p at r_port %d\n", __func__, idx, frame,
-               port);
+          info("%s(%d), push frame %p at r_port %d\n", __func__, idx, frame, port);
         }
       } else {
         ret = -EIO; /* simply drop as frame get already */
@@ -102,8 +98,7 @@ static int rx_st20rc_frame_ready(void *priv, void *frame,
   mt_pthread_mutex_unlock(&ctx->lock);
 
   /* always return 0 to suppress the error log */
-  if (ret < 0)
-    st20_rx_put_framebuff(ctx->transport[port]->handle, frame);
+  if (ret < 0) st20_rx_put_framebuff(ctx->transport[port]->handle, frame);
   return 0;
 }
 
@@ -140,8 +135,7 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx *ctx,
     return -EIO;
   }
 
-  transport =
-      mt_rte_zmalloc_socket(sizeof(*transport), mt_socket_id(impl, MTL_PORT_P));
+  transport = mt_rte_zmalloc_socket(sizeof(*transport), mt_socket_id(impl, MTL_PORT_P));
   if (!transport) {
     err("%s, transport malloc fail\n", __func__);
     return -ENOMEM;
@@ -154,12 +148,10 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx *ctx,
   ops_rx.name = ops->name;
   ops_rx.priv = transport;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ops->ip_addr[port],
-         MTL_IP_ADDR_LEN);
+  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ops->ip_addr[port], MTL_IP_ADDR_LEN);
   memcpy(ops_rx.mcast_sip_addr[MTL_SESSION_PORT_P], ops->mcast_sip_addr[port],
          MTL_IP_ADDR_LEN);
-  snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-           ops->port[port]);
+  snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s", ops->port[port]);
   ops_rx.udp_port[MTL_SESSION_PORT_P] = ops->udp_port[port];
 
   if (ops->flags & ST20RC_RX_FLAG_DATA_PATH_ONLY)
@@ -168,12 +160,9 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx *ctx,
   ops_rx.flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
   /* disable migrate since it may migrate the two sessions into one sch */
   ops_rx.flags |= ST20_RX_FLAG_DISABLE_MIGRATE;
-  if (ops->flags & ST20RC_RX_FLAG_DMA_OFFLOAD)
-    ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
-  if (ops->flags & ST20RC_RX_FLAG_HDR_SPLIT)
-    ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
-  if (ops->flags & ST20RC_RX_FLAG_ENABLE_VSYNC)
-    ops_rx.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
+  if (ops->flags & ST20RC_RX_FLAG_DMA_OFFLOAD) ops_rx.flags |= ST20_RX_FLAG_DMA_OFFLOAD;
+  if (ops->flags & ST20RC_RX_FLAG_HDR_SPLIT) ops_rx.flags |= ST20_RX_FLAG_HDR_SPLIT;
+  if (ops->flags & ST20RC_RX_FLAG_ENABLE_VSYNC) ops_rx.flags |= ST20_RX_FLAG_ENABLE_VSYNC;
 
   ops_rx.pacing = ops->pacing;
   ops_rx.width = ops->width;
@@ -192,8 +181,7 @@ static int rx_st20rc_create_transport(struct st20rc_rx_ctx *ctx,
   mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
   if (port == MTL_SESSION_PORT_R) {
     /* let R port select a different sch */
-    int sch_idx =
-        st20_rx_get_sch_idx(ctx->transport[MTL_SESSION_PORT_P]->handle);
+    int sch_idx = st20_rx_get_sch_idx(ctx->transport[MTL_SESSION_PORT_P]->handle);
     if (sch_idx < 0) {
       err("%s(%d), st20_rx_get_sch_idx fail \n", __func__, idx);
       rx_st20rc_free_transport(transport);
@@ -257,11 +245,10 @@ st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops *ops) {
     err("%s, invalid num_port %u\n", __func__, num_port);
     return NULL;
   }
-  if (0 == memcmp(ops->ip_addr[MTL_SESSION_PORT_P],
-                  ops->ip_addr[MTL_SESSION_PORT_R], MTL_IP_ADDR_LEN)) {
+  if (0 == memcmp(ops->ip_addr[MTL_SESSION_PORT_P], ops->ip_addr[MTL_SESSION_PORT_R],
+                  MTL_IP_ADDR_LEN)) {
     uint8_t *ip = ops->ip_addr[MTL_SESSION_PORT_P];
-    err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2],
-        ip[3]);
+    err("%s, same %d.%d.%d.%d for both ip\n", __func__, ip[0], ip[1], ip[2], ip[3]);
     return NULL;
   }
   if (!ops->notify_frame_ready) {
@@ -330,8 +317,7 @@ size_t st20rc_rx_get_framebuffer_size(st20rc_rx_handle handle) {
     return -EIO;
   }
 
-  return st20_rx_get_framebuffer_size(
-      ctx->transport[MTL_SESSION_PORT_P]->handle);
+  return st20_rx_get_framebuffer_size(ctx->transport[MTL_SESSION_PORT_P]->handle);
 }
 
 int st20rc_rx_get_framebuffer_count(st20rc_rx_handle handle) {
@@ -342,12 +328,11 @@ int st20rc_rx_get_framebuffer_count(st20rc_rx_handle handle) {
     return -EIO;
   }
 
-  return st20_rx_get_framebuffer_count(
-      ctx->transport[MTL_SESSION_PORT_P]->handle);
+  return st20_rx_get_framebuffer_count(ctx->transport[MTL_SESSION_PORT_P]->handle);
 }
 
-int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets,
-                          bool sync, struct st_pcap_dump_meta *meta) {
+int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets, bool sync,
+                          struct st_pcap_dump_meta *meta) {
   struct st20rc_rx_ctx *ctx = handle;
   int ret = 0;
 
@@ -356,9 +341,9 @@ int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets,
     return -EIO;
   }
 
-  ret += st20_rx_pcapng_dump(ctx->transport[MTL_SESSION_PORT_P]->handle,
-                             max_dump_packets, sync, meta);
-  ret += st20_rx_pcapng_dump(ctx->transport[MTL_SESSION_PORT_R]->handle,
-                             max_dump_packets, sync, meta);
+  ret += st20_rx_pcapng_dump(ctx->transport[MTL_SESSION_PORT_P]->handle, max_dump_packets,
+                             sync, meta);
+  ret += st20_rx_pcapng_dump(ctx->transport[MTL_SESSION_PORT_R]->handle, max_dump_packets,
+                             sync, meta);
   return ret;
 }

@@ -62,9 +62,9 @@ static void destroy_display_context(struct st_display *d) {
 }
 
 static int create_display_context(struct st_display *d) {
-  d->window = SDL_CreateWindow(
-      d->name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, d->window_w,
-      d->window_h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+  d->window =
+      SDL_CreateWindow(d->name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                       d->window_w, d->window_h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
   if (d->window == NULL) {
     err("%s, create window fail: %s\n", __func__, SDL_GetError());
     destroy_display_context(d);
@@ -78,8 +78,8 @@ static int create_display_context(struct st_display *d) {
     return -EIO;
   }
 
-  d->texture = SDL_CreateTexture(
-      d->renderer, d->fmt, SDL_TEXTUREACCESS_STREAMING, d->pixel_w, d->pixel_h);
+  d->texture = SDL_CreateTexture(d->renderer, d->fmt, SDL_TEXTUREACCESS_STREAMING,
+                                 d->pixel_w, d->pixel_h);
   if (d->texture == NULL) {
     err("%s, create texture fail: %s\n", __func__, SDL_GetError());
     destroy_display_context(d);
@@ -127,8 +127,7 @@ static void *display_thread_func(void *arg) {
       sprintf(text, "FPS:\t%.2f", d->fps);
       SDL_Color Red = {255, 0, 0};
       SDL_Surface *surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
-      SDL_Texture *Message =
-          SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
+      SDL_Texture *Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
 
       SDL_RenderCopy(d->renderer, Message, NULL, &d->msg_rect);
       SDL_FreeSurface(surfaceMessage);
@@ -142,8 +141,7 @@ static void *display_thread_func(void *arg) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       dbg("%s, SDL event: %d\n", __func__, event.type);
-      if (event.type == SDL_QUIT)
-        d->display_thread_stop = true;
+      if (event.type == SDL_QUIT) d->display_thread_stop = true;
     }
 #endif
   }
@@ -152,8 +150,7 @@ static void *display_thread_func(void *arg) {
 }
 
 int st_app_uinit_display(struct st_display *d) {
-  if (!d)
-    return 0;
+  if (!d) return 0;
 
   d->display_thread_stop = true;
   if (d->display_thread) {
@@ -190,8 +187,7 @@ int st_app_init_display(struct st_display *d, char *name, int width, int height,
   int ret;
   MTL_MAY_UNUSED(font);
 
-  if (!d)
-    return -ENOMEM;
+  if (!d) return -ENOMEM;
   snprintf(d->name, 32, "%s", name);
   d->window_w = SCREEN_WIDTH;
   d->window_h = SCREEN_HEIGHT;
@@ -232,7 +228,6 @@ int st_app_init_display(struct st_display *d, char *name, int width, int height,
     return ret;
   }
 
-  info("%s(%s), succ, pixel width: %d, height: %d\n", __func__, name, width,
-       height);
+  info("%s(%s), succ, pixel width: %d, height: %d\n", __func__, name, width, height);
   return 0;
 }

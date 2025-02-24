@@ -23,15 +23,13 @@ struct mt_pcap {
 };
 
 /* note: fd will be be closed in mt_pcap_close if the open succ */
-struct mt_pcap *mt_pcap_open(struct mtl_main_impl *impl, enum mtl_port port,
-                             int fd);
+struct mt_pcap *mt_pcap_open(struct mtl_main_impl *impl, enum mtl_port port, int fd);
 int mt_pcap_close(struct mt_pcap *pcap);
 uint16_t mt_pcap_dump(struct mtl_main_impl *impl, enum mtl_port port,
-                      struct mt_pcap *pcap, struct rte_mbuf **mbufs,
-                      uint16_t nb);
+                      struct mt_pcap *pcap, struct rte_mbuf **mbufs, uint16_t nb);
 #else
-static inline struct mt_pcap *mt_pcap_open(struct mtl_main_impl *impl,
-                                           enum mtl_port port, int fd) {
+static inline struct mt_pcap *mt_pcap_open(struct mtl_main_impl *impl, enum mtl_port port,
+                                           int fd) {
   MTL_MAY_UNUSED(impl);
   err("%s(%d,%d), no pcap support for this build\n", __func__, port, fd);
   return NULL;
@@ -42,9 +40,9 @@ static inline int mt_pcap_close(struct mt_pcap *pcap) {
   return -ENOTSUP;
 }
 
-static inline uint16_t mt_pcap_dump(struct mtl_main_impl *impl,
-                                    enum mtl_port port, struct mt_pcap *pcap,
-                                    struct rte_mbuf **mbufs, uint16_t nb) {
+static inline uint16_t mt_pcap_dump(struct mtl_main_impl *impl, enum mtl_port port,
+                                    struct mt_pcap *pcap, struct rte_mbuf **mbufs,
+                                    uint16_t nb) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(pcap);

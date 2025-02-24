@@ -30,8 +30,7 @@ static int notify_rtp_done(void *priv) {
 }
 
 static int app_tx_build_rtp_packet(struct tv_rtp_sample_ctx *s,
-                                   struct st20_rfc4175_rtp_hdr *rtp,
-                                   uint16_t *pkt_len) {
+                                   struct st20_rfc4175_rtp_hdr *rtp, uint16_t *pkt_len) {
   uint8_t *payload = (uint8_t *)rtp + sizeof(*rtp);
 
   /* update hdr */
@@ -86,14 +85,12 @@ static void *app_tx_rtp_thread(void *arg) {
       if (mbuf) {
         st_pthread_mutex_unlock(&s->wake_mutex);
       } else {
-        if (!s->stop)
-          st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+        if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
         st_pthread_mutex_unlock(&s->wake_mutex);
         continue;
       }
     }
-    app_tx_build_rtp_packet(s, (struct st20_rfc4175_rtp_hdr *)usrptr,
-                            &mbuf_len);
+    app_tx_build_rtp_packet(s, (struct st20_rfc4175_rtp_hdr *)usrptr, &mbuf_len);
     st20_tx_put_mbuf(s->handle, mbuf, mbuf_len);
   }
 
@@ -107,8 +104,7 @@ int main(int argc, char **argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0)
-    return ret;
+  if (ret < 0) return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -124,8 +120,7 @@ int main(int argc, char **argv) {
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] =
-        (struct tv_rtp_sample_ctx *)malloc(sizeof(struct tv_rtp_sample_ctx));
+    app[i] = (struct tv_rtp_sample_ctx *)malloc(sizeof(struct tv_rtp_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -139,7 +134,7 @@ int main(int argc, char **argv) {
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_test";
-    ops_tx.priv = app[i]; // app handle register to lib
+    ops_tx.priv = app[i];  // app handle register to lib
     ops_tx.num_port = 1;
     memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -153,9 +148,8 @@ int main(int argc, char **argv) {
     ops_tx.fps = ctx.fps;
     ops_tx.fmt = ctx.fmt;
     ops_tx.payload_type = ctx.payload_type;
-    ops_tx.rtp_ring_size =
-        1024; // the rtp ring size between app and lib. app is the
-              // producer, lib is the consumer, should be 2^n
+    ops_tx.rtp_ring_size = 1024;  // the rtp ring size between app and lib. app is the
+                                  // producer, lib is the consumer, should be 2^n
 
     // app register non-block func, app could get the rtp tx done
     ops_tx.notify_rtp_done = notify_rtp_done;
@@ -210,10 +204,8 @@ int main(int argc, char **argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i])
-      continue;
-    if (app[i]->handle)
-      st20_tx_free(app[i]->handle);
+    if (!app[i]) continue;
+    if (app[i]->handle) st20_tx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
     free(app[i]);

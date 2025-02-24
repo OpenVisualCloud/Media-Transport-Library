@@ -321,9 +321,8 @@ struct st40_rx_ops {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
     /** deprecated, use ip_addr instead, sip_addr is confused */
-    uint8_t
-        sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
-            "Use ip_addr instead");
+    uint8_t sip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN] __mtl_deprecated_msg(
+        "Use ip_addr instead");
   };
   /** Mandatory. 1 or 2, num of ports this session attached to */
   uint8_t num_port;
@@ -398,8 +397,7 @@ int st40_tx_free(st40_tx_handle handle);
  *   - 0: Success, tx st2110-40(ancillary) session destination update succ.
  *   - <0: Error code of the rx st2110-40(ancillary) session destination update.
  */
-int st40_tx_update_destination(st40_tx_handle handle,
-                               struct st_tx_dest_info *dst);
+int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Get the framebuffer pointer from the tx st2110-40(ancillary) session.

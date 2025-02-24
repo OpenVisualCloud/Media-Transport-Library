@@ -57,19 +57,16 @@ static void *encode_thread(void *arg) {
   return NULL;
 }
 
-static st22_encode_priv
-encoder_create_session(void *priv, st22p_encode_session session_p,
-                       struct st22_encoder_create_req *req) {
+static st22_encode_priv encoder_create_session(void *priv, st22p_encode_session session_p,
+                                               struct st22_encoder_create_req *req) {
   struct st22_sample_ctx *ctx = priv;
   struct st22_encoder_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_SAMPLE_ENCODER_SESSIONS; i++) {
-    if (ctx->encoder_sessions[i])
-      continue;
+    if (ctx->encoder_sessions[i]) continue;
     session = malloc(sizeof(*session));
-    if (!session)
-      return NULL;
+    if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
 
@@ -112,8 +109,7 @@ static int encoder_free_session(void *priv, st22_encode_priv session) {
     pthread_join(encoder_session->encode_thread, NULL);
   }
 
-  info("%s(%d), total %d encode frames\n", __func__, idx,
-       encoder_session->frame_cnt);
+  info("%s(%d), total %d encode frames\n", __func__, idx, encoder_session->frame_cnt);
   free(encoder_session);
   ctx->encoder_sessions[idx] = NULL;
   return 0;
@@ -164,19 +160,16 @@ static void *decode_thread(void *arg) {
   return NULL;
 }
 
-static st22_decode_priv
-decoder_create_session(void *priv, st22p_decode_session session_p,
-                       struct st22_decoder_create_req *req) {
+static st22_decode_priv decoder_create_session(void *priv, st22p_decode_session session_p,
+                                               struct st22_decoder_create_req *req) {
   struct st22_sample_ctx *ctx = priv;
   struct st22_decoder_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_SAMPLE_DECODER_SESSIONS; i++) {
-    if (ctx->decoder_sessions[i])
-      continue;
+    if (ctx->decoder_sessions[i]) continue;
     session = malloc(sizeof(*session));
-    if (!session)
-      return NULL;
+    if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
 
@@ -194,9 +187,8 @@ decoder_create_session(void *priv, st22p_decode_session session_p,
     }
 
     ctx->decoder_sessions[i] = session;
-    info("%s(%d), input fmt: %s, output fmt: %s, scan: %s, socket id: %d\n",
-         __func__, i, st_frame_fmt_name(req->input_fmt),
-         st_frame_fmt_name(req->output_fmt),
+    info("%s(%d), input fmt: %s, output fmt: %s, scan: %s, socket id: %d\n", __func__, i,
+         st_frame_fmt_name(req->input_fmt), st_frame_fmt_name(req->output_fmt),
          req->interlaced ? "interlaced" : "progressive", req->socket_id);
     return session;
   }
@@ -217,8 +209,7 @@ static int decoder_free_session(void *priv, st22_decode_priv session) {
     pthread_join(decoder_session->decode_thread, NULL);
   }
 
-  info("%s(%d), total %d decode frames\n", __func__, idx,
-       decoder_session->frame_cnt);
+  info("%s(%d), total %d decode frames\n", __func__, idx, decoder_session->frame_cnt);
   free(decoder_session);
   ctx->decoder_sessions[idx] = NULL;
   return 0;
@@ -234,8 +225,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   struct st22_sample_ctx *ctx;
 
   ctx = malloc(sizeof(*ctx));
-  if (!ctx)
-    return NULL;
+  if (!ctx) return NULL;
   memset(ctx, 0, sizeof(*ctx));
 
   struct st22_decoder_dev d_dev;
@@ -243,12 +233,10 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   d_dev.name = "st22_decoder_sample";
   d_dev.priv = ctx;
   d_dev.target_device = ST_PLUGIN_DEVICE_CPU;
-  d_dev.input_fmt_caps =
-      ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
+  d_dev.input_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   d_dev.output_fmt_caps = ST_FMT_CAP_ARGB | ST_FMT_CAP_BGRA | ST_FMT_CAP_RGB8;
-  d_dev.output_fmt_caps |= ST_FMT_CAP_YUV422PLANAR10LE |
-                           ST_FMT_CAP_YUV422PLANAR8 | ST_FMT_CAP_V210 |
-                           ST_FMT_CAP_YUV422RFC4175PG2BE10;
+  d_dev.output_fmt_caps |= ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8 |
+                           ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
   d_dev.output_fmt_caps |= ST_FMT_CAP_YUV420PLANAR8;
   d_dev.create_session = decoder_create_session;
   d_dev.free_session = decoder_free_session;
@@ -267,12 +255,10 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   e_dev.target_device = ST_PLUGIN_DEVICE_CPU;
 
   e_dev.input_fmt_caps = ST_FMT_CAP_ARGB | ST_FMT_CAP_BGRA | ST_FMT_CAP_RGB8;
-  e_dev.input_fmt_caps |= ST_FMT_CAP_YUV422PLANAR10LE |
-                          ST_FMT_CAP_YUV422PLANAR8 | ST_FMT_CAP_V210 |
-                          ST_FMT_CAP_YUV422RFC4175PG2BE10;
+  e_dev.input_fmt_caps |= ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_YUV422PLANAR8 |
+                          ST_FMT_CAP_V210 | ST_FMT_CAP_YUV422RFC4175PG2BE10;
   e_dev.input_fmt_caps |= ST_FMT_CAP_YUV420PLANAR8;
-  e_dev.output_fmt_caps =
-      ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
+  e_dev.output_fmt_caps = ST_FMT_CAP_JPEGXS_CODESTREAM | ST_FMT_CAP_H264_CBR_CODESTREAM;
   e_dev.create_session = encoder_create_session;
   e_dev.free_session = encoder_free_session;
   e_dev.notify_frame_available = encoder_frame_available;

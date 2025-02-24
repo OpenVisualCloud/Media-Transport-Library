@@ -46,8 +46,7 @@ static void mtl_input_update(void *vptr, obs_data_t *settings);
 /**
  * Prepare the frame for obs
  */
-static void mtl_prep_obs_frame(struct mtl_rx_session *s,
-                               struct obs_source_frame *frame,
+static void mtl_prep_obs_frame(struct mtl_rx_session *s, struct obs_source_frame *frame,
                                size_t *plane_offsets) {
   memset(frame, 0, sizeof(struct obs_source_frame));
   memset(plane_offsets, 0, sizeof(size_t) * MAX_AV_PLANES);
@@ -57,39 +56,37 @@ static void mtl_prep_obs_frame(struct mtl_rx_session *s,
   frame->width = s->width;
   frame->height = s->height;
   frame->format = format;
-  video_format_get_parameters(VIDEO_CS_DEFAULT, VIDEO_RANGE_DEFAULT,
-                              frame->color_matrix, frame->color_range_min,
-                              frame->color_range_max);
+  video_format_get_parameters(VIDEO_CS_DEFAULT, VIDEO_RANGE_DEFAULT, frame->color_matrix,
+                              frame->color_range_min, frame->color_range_max);
 
   switch (format) {
-  case VIDEO_FORMAT_I420:
-    frame->linesize[0] = s->width;
-    frame->linesize[1] = s->width / 2;
-    frame->linesize[2] = s->width / 2;
-    plane_offsets[1] = s->width * s->height;
-    plane_offsets[2] = s->width * s->height * 5 / 4;
-    break;
-  case VIDEO_FORMAT_NV12:
-    frame->linesize[0] = s->width;
-    frame->linesize[1] = s->width;
-    plane_offsets[1] = s->width * s->height;
-    break;
-  case VIDEO_FORMAT_UYVY:
-  case VIDEO_FORMAT_YUY2:
-  case VIDEO_FORMAT_YVYU:
-    frame->linesize[0] = s->width * 2;
-    break;
-  default:
-    frame->linesize[0] = s->width * 2;
-    break;
+    case VIDEO_FORMAT_I420:
+      frame->linesize[0] = s->width;
+      frame->linesize[1] = s->width / 2;
+      frame->linesize[2] = s->width / 2;
+      plane_offsets[1] = s->width * s->height;
+      plane_offsets[2] = s->width * s->height * 5 / 4;
+      break;
+    case VIDEO_FORMAT_NV12:
+      frame->linesize[0] = s->width;
+      frame->linesize[1] = s->width;
+      plane_offsets[1] = s->width * s->height;
+      break;
+    case VIDEO_FORMAT_UYVY:
+    case VIDEO_FORMAT_YUY2:
+    case VIDEO_FORMAT_YVYU:
+      frame->linesize[0] = s->width * 2;
+      break;
+    default:
+      frame->linesize[0] = s->width * 2;
+      break;
   }
 }
 
 static int notify_frame_available(void *priv) {
   MTL_RX_SESSION(priv);
 
-  if (!s->handle)
-    return -EIO;
+  if (!s->handle) return -EIO;
 
   pthread_mutex_lock(&s->wake_mutex);
   pthread_cond_signal(&s->wake_cond);
@@ -121,8 +118,7 @@ static void *mtl_thread(void *vptr) {
     frame = st20p_rx_get_frame(handle);
     if (!frame) { /* no frame */
       pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop)
-        pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop) pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -171,22 +167,19 @@ static void mtl_input_defaults(obs_data_t *settings) {
  * @param ignore ignore this property
  * @param enable enable/disable all properties
  */
-static void mtl_props_set_enabled(obs_properties_t *props,
-                                  obs_property_t *ignore, bool enable) {
-  if (!props)
-    return;
+static void mtl_props_set_enabled(obs_properties_t *props, obs_property_t *ignore,
+                                  bool enable) {
+  if (!props) return;
 
   for (obs_property_t *prop = obs_properties_first(props); prop != NULL;
        obs_property_next(&prop)) {
-    if (prop == ignore)
-      continue;
+    if (prop == ignore) continue;
 
     obs_property_set_enabled(prop, enable);
   }
 }
 
-static bool on_start_clicked(obs_properties_t *ps, obs_property_t *p,
-                             void *vptr) {
+static bool on_start_clicked(obs_properties_t *ps, obs_property_t *p, void *vptr) {
   MTL_RX_SESSION(vptr);
 
   mtl_input_init(s);
@@ -201,8 +194,7 @@ static bool on_start_clicked(obs_properties_t *ps, obs_property_t *p,
   return true;
 }
 
-static bool on_stop_clicked(obs_properties_t *ps, obs_property_t *p,
-                            void *vptr) {
+static bool on_stop_clicked(obs_properties_t *ps, obs_property_t *p, void *vptr) {
   MTL_RX_SESSION(vptr);
 
   mtl_input_terminate(s);
@@ -222,27 +214,21 @@ static obs_properties_t *mtl_input_properties(void *vptr) {
 
   obs_properties_t *props = obs_properties_create();
 
-  obs_properties_add_text(props, "port", obs_module_text("Port"),
-                          OBS_TEXT_DEFAULT);
+  obs_properties_add_text(props, "port", obs_module_text("Port"), OBS_TEXT_DEFAULT);
 
-  obs_properties_add_text(props, "lcores", obs_module_text("Lcores"),
-                          OBS_TEXT_DEFAULT);
-  obs_properties_add_text(props, "sip", obs_module_text("InterfaceIP"),
-                          OBS_TEXT_DEFAULT);
+  obs_properties_add_text(props, "lcores", obs_module_text("Lcores"), OBS_TEXT_DEFAULT);
+  obs_properties_add_text(props, "sip", obs_module_text("InterfaceIP"), OBS_TEXT_DEFAULT);
   obs_properties_add_text(props, "ip", obs_module_text("IP"), OBS_TEXT_DEFAULT);
 
-  obs_properties_add_int(props, "udp_port", obs_module_text("UdpPort"), 1000,
-                         65536, 1);
-  obs_properties_add_int(props, "payload_type", obs_module_text("PayloadType"),
-                         0, 255, 1);
-  obs_properties_add_int(props, "framebuffer_cnt",
-                         obs_module_text("FramebuffCnt"), 2, 128, 1);
-  obs_properties_add_int(props, "width", obs_module_text("Width"), 1, 65535, 1);
-  obs_properties_add_int(props, "height", obs_module_text("Height"), 1, 65535,
+  obs_properties_add_int(props, "udp_port", obs_module_text("UdpPort"), 1000, 65536, 1);
+  obs_properties_add_int(props, "payload_type", obs_module_text("PayloadType"), 0, 255,
                          1);
-  obs_property_t *fps_list =
-      obs_properties_add_list(props, "fps", obs_module_text("FPS"),
-                              OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+  obs_properties_add_int(props, "framebuffer_cnt", obs_module_text("FramebuffCnt"), 2,
+                         128, 1);
+  obs_properties_add_int(props, "width", obs_module_text("Width"), 1, 65535, 1);
+  obs_properties_add_int(props, "height", obs_module_text("Height"), 1, 65535, 1);
+  obs_property_t *fps_list = obs_properties_add_list(
+      props, "fps", obs_module_text("FPS"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
   obs_property_list_add_int(fps_list, obs_module_text("23.98"), ST_FPS_P23_98);
   obs_property_list_add_int(fps_list, obs_module_text("24"), ST_FPS_P24);
   obs_property_list_add_int(fps_list, obs_module_text("25"), ST_FPS_P25);
@@ -252,13 +238,12 @@ static obs_properties_t *mtl_input_properties(void *vptr) {
   obs_property_list_add_int(fps_list, obs_module_text("59.94"), ST_FPS_P59_94);
   obs_property_list_add_int(fps_list, obs_module_text("60"), ST_FPS_P60);
   obs_property_list_add_int(fps_list, obs_module_text("100"), ST_FPS_P100);
-  obs_property_list_add_int(fps_list, obs_module_text("119.88"),
-                            ST_FPS_P119_88);
+  obs_property_list_add_int(fps_list, obs_module_text("119.88"), ST_FPS_P119_88);
   obs_property_list_add_int(fps_list, obs_module_text("120"), ST_FPS_P120);
 
-  obs_property_t *t_fmt_list = obs_properties_add_list(
-      props, "t_fmt", obs_module_text("TransportFormat"), OBS_COMBO_TYPE_LIST,
-      OBS_COMBO_FORMAT_INT);
+  obs_property_t *t_fmt_list =
+      obs_properties_add_list(props, "t_fmt", obs_module_text("TransportFormat"),
+                              OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
   obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422_10bit"),
                             ST20_FMT_YUV_422_10BIT);
   obs_property_list_add_int(t_fmt_list, obs_module_text("YUV422_8bit"),
@@ -269,16 +254,11 @@ static obs_properties_t *mtl_input_properties(void *vptr) {
   obs_property_t *v_fmt_list =
       obs_properties_add_list(props, "v_fmt", obs_module_text("VideoFormat"),
                               OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-  obs_property_list_add_int(v_fmt_list, obs_module_text("UYVY"),
-                            VIDEO_FORMAT_UYVY);
-  obs_property_list_add_int(v_fmt_list, obs_module_text("YUY2"),
-                            VIDEO_FORMAT_YUY2);
-  obs_property_list_add_int(v_fmt_list, obs_module_text("YVYU"),
-                            VIDEO_FORMAT_YVYU);
-  obs_property_list_add_int(v_fmt_list, obs_module_text("I420"),
-                            VIDEO_FORMAT_I420);
-  obs_property_list_add_int(v_fmt_list, obs_module_text("NV12"),
-                            VIDEO_FORMAT_NV12);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("UYVY"), VIDEO_FORMAT_UYVY);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("YUY2"), VIDEO_FORMAT_YUY2);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("YVYU"), VIDEO_FORMAT_YVYU);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("I420"), VIDEO_FORMAT_I420);
+  obs_property_list_add_int(v_fmt_list, obs_module_text("NV12"), VIDEO_FORMAT_NV12);
 
   obs_property_t *log_level_list =
       obs_properties_add_list(props, "log_level", obs_module_text("LogLevel"),
@@ -289,10 +269,8 @@ static obs_properties_t *mtl_input_properties(void *vptr) {
   obs_property_list_add_int(log_level_list, "WARNING", MTL_LOG_LEVEL_WARNING);
   obs_property_list_add_int(log_level_list, "DEBUG", MTL_LOG_LEVEL_DEBUG);
 
-  obs_properties_add_button(props, "start", obs_module_text("Start"),
-                            on_start_clicked);
-  obs_properties_add_button(props, "stop", obs_module_text("Stop"),
-                            on_stop_clicked);
+  obs_properties_add_button(props, "start", obs_module_text("Start"), on_start_clicked);
+  obs_properties_add_button(props, "stop", obs_module_text("Stop"), on_stop_clicked);
   obs_property_t *stop = obs_properties_get(props, "stop");
   obs_property_set_enabled(stop, false);
 
@@ -329,8 +307,7 @@ static void mtl_input_terminate(struct mtl_rx_session *s) {
 static void mtl_input_destroy(void *vptr) {
   MTL_RX_SESSION(vptr);
 
-  if (!s)
-    return;
+  if (!s) return;
 
   mtl_input_terminate(s);
 
@@ -345,9 +322,9 @@ static void mtl_input_init(struct mtl_rx_session *s) {
   snprintf(param.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
   inet_pton(AF_INET, s->sip, param.sip_addr[MTL_PORT_P]);
   param.pmd[MTL_PORT_P] = MTL_PMD_DPDK_USER;
-  param.flags = MTL_FLAG_BIND_NUMA; // default bind to numa
-  param.log_level = s->log_level;   // mtl lib log level
-  param.priv = s;                   // usr ctx pointer
+  param.flags = MTL_FLAG_BIND_NUMA;  // default bind to numa
+  param.log_level = s->log_level;    // mtl lib log level
+  param.priv = s;                    // usr ctx pointer
   // user register ptp func, if not register, the internal ptp will be used
   param.ptp_get_time_fn = NULL;
   param.tx_queues_cnt[MTL_PORT_P] = 0;
@@ -365,11 +342,11 @@ static void mtl_input_init(struct mtl_rx_session *s) {
   struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "mtl-input";
-  ops_rx.priv = s; // app handle register to lib
+  ops_rx.priv = s;  // app handle register to lib
   ops_rx.port.num_port = 1;
   inet_pton(AF_INET, s->ip, ops_rx.port.ip_addr[MTL_PORT_P]);
   snprintf(ops_rx.port.port[MTL_PORT_P], MTL_PORT_MAX_LEN, "%s", s->port);
-  ops_rx.port.udp_port[MTL_PORT_P] = s->udp_port; // user config the udp port.
+  ops_rx.port.udp_port[MTL_PORT_P] = s->udp_port;  // user config the udp port.
   ops_rx.width = s->width;
   ops_rx.height = s->height;
   ops_rx.fps = s->fps;

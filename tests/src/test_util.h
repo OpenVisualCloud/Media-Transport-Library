@@ -38,12 +38,13 @@ enum st_test_level {
 
 static inline void *st_test_zmalloc(size_t sz) {
   void *p = malloc(sz);
-  if (p)
-    memset(p, 0x0, sz);
+  if (p) memset(p, 0x0, sz);
   return p;
 }
 
-static inline void st_test_free(void *p) { free(p); }
+static inline void st_test_free(void *p) {
+  free(p);
+}
 
 static inline void st_test_rand_data(uint8_t *p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {
@@ -62,8 +63,7 @@ static inline void st_test_rand_v210(uint8_t *p, size_t sz, uint8_t base) {
 #else
     p[i] = rand();
 #endif
-    if ((i % 4) == 3)
-      p[i] &= 0x3F;
+    if ((i % 4) == 3) p[i] &= 0x3F;
   }
 }
 
