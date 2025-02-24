@@ -1,6 +1,3 @@
-# SPDX-License-Identifier: GPL-2.0
----
-BasedOnStyle:  Google
-DerivePointerAlignment: false
-ColumnLimit: 90
-AllowShortFunctionsOnASingleLine: None
+#SPDX - License - Identifier : GPL - 2.0
+-- -BasedOnStyle : Google DerivePointerAlignment
+    : false ColumnLimit : 90 AllowShortFunctionsOnASingleLine : None
