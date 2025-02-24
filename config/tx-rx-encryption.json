@@ -1,0 +1,84 @@
+{
+    "tx_no_chain": false,
+    "interfaces": [
+        {
+            "name": "0000:4b:01.0",
+            "ip": "192.168.17.101"
+        },
+        {
+            "name": "0000:4b:01.1",
+            "ip": "192.168.17.102"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "192.168.17.102"
+            ],
+            "interface": [
+                0
+            ],
+            "video": [],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p25",
+                    "interlaced": false,
+                    "device": "AUTO",
+                    "pacing": "gap",
+                    "packing": "BPM",
+                    "input_format": "YUV422RFC4175PG2BE10",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "/tmp/yuv422p10be.yuv",
+                    "display": false,
+                    "enable_rtcp": false
+                }
+            ],
+            "st22p": [],
+            "st30p": [],
+            "audio": [],
+            "ancillary": [],
+            "fastmetadata": []
+        }
+    ],
+    "rx_sessions": [
+        {
+            "ip": [
+                "192.168.17.101"
+            ],
+            "interface": [
+                1
+            ],
+            "video": [],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p25",
+                    "interlaced": false,
+                    "device": "AUTO",
+                    "pacing": "gap",
+                    "packing": "BPM",
+                    "output_format": "YUV422RFC4175PG2BE10",
+                    "transport_format": "YUV_422_10bit",
+                    "measure_latency": false,
+                    "display": false,
+                    "enable_rtcp": false,
+                    "st20p_url": "/tmp/out.yuv"
+                }
+            ],
+            "st22p": [],
+            "st30p": [],
+            "audio": [],
+            "ancillary": [],
+            "fastmetadata": []
+        }
+    ]
+}

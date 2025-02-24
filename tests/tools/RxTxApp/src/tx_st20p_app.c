@@ -4,6 +4,16 @@
 
 #include "tx_st20p_app.h"
 
+#include <intel-ipsec-mb.h>
+
+static IMB_MGR* mgr;
+
+static uint8_t cipher_key[16] = {0};
+static uint8_t cipher_iv[16] = {0};
+DECLARE_ALIGNED(static uint32_t exp_enc_key[4 * 15], 16);
+DECLARE_ALIGNED(static uint32_t exp_dec_key[4 * 15], 16);
+static IMB_JOB* job;
+
 static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
@@ -46,7 +56,38 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
   uint8_t* src = s->st20p_frame_cursor;
 
   if (!s->ctx->tx_copy_once || !s->st20p_frames_copied) {
-    mtl_memcpy(frame->addr[0], src, frame_size);
+    // mtl_memcpy(frame->addr[0], src, frame_size);
+    job = IMB_GET_NEXT_JOB(mgr);
+    job->src = src;
+    job->dst = frame->addr[0];
+    job->cipher_mode = IMB_CIPHER_CNTR;
+    job->hash_alg = IMB_AUTH_NULL;
+    job->enc_keys = exp_enc_key;
+    job->dec_keys = exp_dec_key;
+    job->iv = cipher_iv;
+    job->cipher_direction = IMB_DIR_ENCRYPT;
+    job->chain_order = IMB_ORDER_CIPHER_HASH;
+    job->key_len_in_bytes = 16;
+    job->iv_len_in_bytes = 16;
+    job->cipher_start_src_offset_in_bytes = 0;
+    job->msg_len_to_cipher_in_bytes = frame_size;
+    job = IMB_SUBMIT_JOB(mgr);
+    if (job == NULL) {
+      const int err = imb_get_errno(mgr);
+      printf(
+          "%d Unexpected null return from submit job()\n"
+          "\t Error code %d, %s\n",
+          __LINE__, err, imb_get_strerror(err));
+      exit(1);
+    }
+    if (job->status != IMB_STATUS_COMPLETED) {
+      const int err = imb_get_errno(mgr);
+      printf(
+          "%d Wrong job status\n"
+          "\t Error code %d, %s\n",
+          __LINE__, err, imb_get_strerror(err));
+      exit(1);
+    }
   }
   /* point to next frame */
   s->st20p_frame_cursor += frame_size;
@@ -65,6 +106,10 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   struct st_frame* frame;
   uint8_t shas[SHA256_DIGEST_LENGTH];
 
+  mgr = alloc_mb_mgr(0);
+  init_mb_mgr_auto(mgr, NULL);
+  IMB_AES_KEYEXP_128(mgr, cipher_key, exp_enc_key, exp_dec_key);
+
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
     frame = st20p_tx_get_frame(handle);
@@ -81,6 +126,8 @@ static void* app_tx_st20p_frame_thread(void* arg) {
     st20p_tx_put_frame(handle, frame);
   }
   info("%s(%d), stop\n", __func__, idx);
+
+  free_mb_mgr(mgr);
 
   return NULL;
 }
