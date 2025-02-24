@@ -22,7 +22,7 @@
 
 static volatile bool stop = false;
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char* format,
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
                            va_list args) {
   return vfprintf(stderr, format, args);
 }
@@ -31,25 +31,25 @@ static void et_sig_handler(int signo) {
   printf("%s, signal %d\n", __func__, signo);
 
   switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      stop = true;
-      break;
+  case SIGINT: /* Interrupt from keyboard */
+    stop = true;
+    break;
   }
 
   return;
 }
 
-static int udp_send_handler(void* ctx, void* data, size_t data_sz) {
-  const struct udp_send_event* e = data;
+static int udp_send_handler(void *ctx, void *data, size_t data_sz) {
+  const struct udp_send_event *e = data;
 
-  printf("%s: pid %d, gso_size %u, bytes %u, duration_ns %llu\n", __func__, e->pid,
-         e->gso_size, e->udp_send_bytes, e->duration_ns);
+  printf("%s: pid %d, gso_size %u, bytes %u, duration_ns %llu\n", __func__,
+         e->pid, e->gso_size, e->udp_send_bytes, e->duration_ns);
   return 0;
 }
 
 static int et_fentry_loop() {
-  struct ring_buffer* rb = NULL;
-  struct fentry_bpf* skel;
+  struct ring_buffer *rb = NULL;
+  struct fentry_bpf *skel;
   int ret = 0;
 
   skel = fentry_bpf__open_and_load();
@@ -66,7 +66,8 @@ static int et_fentry_loop() {
 
   printf("fentry_bpf__attach() succeeded\n");
 
-  rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), udp_send_handler, NULL, NULL);
+  rb = ring_buffer__new(bpf_map__fd(skel->maps.rb), udp_send_handler, NULL,
+                        NULL);
   if (!rb) {
     ret = -1;
     fprintf(stderr, "failed to create ring buffer\n");
@@ -91,7 +92,7 @@ cleanup:
   return ret;
 }
 
-static int et_xdp_loop(struct et_ctx* ctx) {
+static int et_xdp_loop(struct et_ctx *ctx) {
   int ret = 0;
   int if_cnt = ctx->xdp_if_cnt;
 
@@ -100,7 +101,7 @@ static int et_xdp_loop(struct et_ctx* ctx) {
     return -EIO;
   }
 
-  struct xdp_program* prog[if_cnt];
+  struct xdp_program *prog[if_cnt];
 
   /* load xdp program for each interface */
   for (int i = 0; i < if_cnt; i++) {
@@ -149,60 +150,64 @@ static void et_print_help() {
   printf("##### Usage: #####\n\n");
 
   printf(" Params:\n");
-  printf("  --help                                  Print this help information\n");
+  printf("  --help                                  Print this help "
+         "information\n");
   printf("  --print                                 Print libbpf output\n");
 
   printf("\n Prog Commands:\n");
-  printf("  --prog <type>                           Attach to program of <type>\n");
+  printf("  --prog <type>                           Attach to program of "
+         "<type>\n");
   printf(
-      "  --prog xdp --ifname <name1,name2> --xdp_path /path/to/xdp.o       Load a custom "
+      "  --prog xdp --ifname <name1,name2> --xdp_path /path/to/xdp.o       "
+      "Load a custom "
       "XDP kernel program from the specified path and attach it to specified "
       "interfaces\n");
 
   printf("\n");
 }
 
-static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
+static int et_parse_args(struct et_ctx *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", et_args_options, &opt_idx);
-    if (cmd == -1) break;
+    if (cmd == -1)
+      break;
 
     switch (cmd) {
-      case ET_ARG_PROG:
-        if (strcmp(optarg, "fentry") == 0) {
-          ctx->prog_type = ET_PROG_FENTRY;
-        } else if (strcmp(optarg, "xdp") == 0) {
-          ctx->prog_type = ET_PROG_XDP;
-        }
-        break;
-      case ET_ARG_PRINT_LIBBPF:
-        libbpf_set_print(libbpf_print_fn);
-        break;
-      case ET_ARG_IFNAME:
-        char* ifname;
-        ctx->xdp_if_cnt = 0;
-        ifname = strtok(optarg, ",");
-        while (ifname) {
-          ctx->xdp_ifindex[ctx->xdp_if_cnt++] = if_nametoindex(ifname);
-          ifname = strtok(NULL, ",");
-        }
-        break;
-      case ET_ARG_XDP_PATH:
-        ctx->xdp_path = optarg;
-        break;
-      case ET_ARG_HELP:
-      default:
-        et_print_help();
-        return -1;
+    case ET_ARG_PROG:
+      if (strcmp(optarg, "fentry") == 0) {
+        ctx->prog_type = ET_PROG_FENTRY;
+      } else if (strcmp(optarg, "xdp") == 0) {
+        ctx->prog_type = ET_PROG_XDP;
+      }
+      break;
+    case ET_ARG_PRINT_LIBBPF:
+      libbpf_set_print(libbpf_print_fn);
+      break;
+    case ET_ARG_IFNAME:
+      char *ifname;
+      ctx->xdp_if_cnt = 0;
+      ifname = strtok(optarg, ",");
+      while (ifname) {
+        ctx->xdp_ifindex[ctx->xdp_if_cnt++] = if_nametoindex(ifname);
+        ifname = strtok(NULL, ",");
+      }
+      break;
+    case ET_ARG_XDP_PATH:
+      ctx->xdp_path = optarg;
+      break;
+    case ET_ARG_HELP:
+    default:
+      et_print_help();
+      return -1;
     }
   }
 
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct et_ctx ctx;
   memset(&ctx, 0, sizeof(ctx));
   et_parse_args(&ctx, argc, argv);
@@ -210,14 +215,14 @@ int main(int argc, char** argv) {
 
   printf("prog type is %s\n", prog_type_str[ctx.prog_type]);
   switch (ctx.prog_type) {
-    case ET_PROG_FENTRY:
-      et_fentry_loop();
-      break;
-    case ET_PROG_XDP:
-      et_xdp_loop(&ctx);
-      break;
-    default:
-      break;
+  case ET_PROG_FENTRY:
+    et_fentry_loop();
+    break;
+  case ET_PROG_XDP:
+    et_xdp_loop(&ctx);
+    break;
+  default:
+    break;
   }
 
   return 0;

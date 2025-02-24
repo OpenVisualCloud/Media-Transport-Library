@@ -19,7 +19,7 @@ struct tv_sample_context {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_tx_frame* framebuffs;
+  struct st_tx_frame *framebuffs;
 
   mtl_dma_mem_handle dma_mem;
 
@@ -27,15 +27,16 @@ struct tv_sample_context {
   bool has_user_meta;
 };
 
-static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct tv_sample_context* s = priv;
+static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct tv_sample_context *s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
-  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  struct st_tx_frame *framebuff = &s->framebuffs[consumer_idx];
   MTL_MAY_UNUSED(meta);
 
-  if (!s->handle) return -EIO; /* not ready */
+  if (!s->handle)
+    return -EIO; /* not ready */
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -45,7 +46,8 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     *next_frame_idx = consumer_idx;
     /* point to next */
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt)
+      consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
     if (s->has_user_meta) {
       s->meta.idx = s->fb_send;
@@ -62,14 +64,15 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int tx_video_frame_done(void* priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct tv_sample_context* s = priv;
+static int tx_video_frame_done(void *priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct tv_sample_context *s = priv;
   int ret;
-  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
-  if (!s->handle) return -EIO; /* not ready */
+  if (!s->handle)
+    return -EIO; /* not ready */
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -79,8 +82,8 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
     s->fb_send++;
   } else {
     ret = -EIO;
-    err("%s(%d), err status %d for frame %u\n", __func__, s->idx, framebuff->stat,
-        frame_idx);
+    err("%s(%d), err status %d for frame %u\n", __func__, s->idx,
+        framebuff->stat, frame_idx);
   }
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
@@ -88,7 +91,7 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static void tx_video_build_frame(struct tv_sample_context* s, void* frame,
+static void tx_video_build_frame(struct tv_sample_context *s, void *frame,
                                  size_t frame_size) {
   MTL_MAY_UNUSED(s);
   MTL_MAY_UNUSED(frame);
@@ -98,10 +101,10 @@ static void tx_video_build_frame(struct tv_sample_context* s, void* frame,
   st_usleep(10 * 1000);
 }
 
-static void* tx_video_frame_thread(void* arg) {
-  struct tv_sample_context* s = arg;
+static void *tx_video_frame_thread(void *arg) {
+  struct tv_sample_context *s = arg;
   uint16_t producer_idx;
-  struct st_tx_frame* framebuff;
+  struct st_tx_frame *framebuff;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -110,7 +113,8 @@ static void* tx_video_frame_thread(void* arg) {
     framebuff = &s->framebuffs[producer_idx];
     if (ST_TX_FRAME_FREE != framebuff->stat) {
       /* not in free */
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -119,12 +123,12 @@ static void* tx_video_frame_thread(void* arg) {
       struct st20_ext_frame ext_frame;
       ext_frame.buf_addr =
           mtl_dma_mem_addr(s->dma_mem) + producer_idx * s->framebuff_size;
-      ext_frame.buf_iova =
-          mtl_dma_mem_iova(s->dma_mem) + (mtl_iova_t)producer_idx * s->framebuff_size;
+      ext_frame.buf_iova = mtl_dma_mem_iova(s->dma_mem) +
+                           (mtl_iova_t)producer_idx * s->framebuff_size;
       ext_frame.buf_len = s->framebuff_size;
       st20_tx_set_ext_frame(s->handle, producer_idx, &ext_frame);
     } else {
-      void* frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
+      void *frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
       tx_video_build_frame(s, frame_addr, s->framebuff_size);
     }
     st_pthread_mutex_lock(&s->wake_mutex);
@@ -132,7 +136,8 @@ static void* tx_video_frame_thread(void* arg) {
     framebuff->stat = ST_TX_FRAME_READY;
     /* point to next */
     producer_idx++;
-    if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+    if (producer_idx >= s->framebuff_cnt)
+      producer_idx = 0;
     s->framebuff_producer_idx = producer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
@@ -141,14 +146,15 @@ static void* tx_video_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -161,12 +167,13 @@ int main(int argc, char** argv) {
   uint32_t session_num = ctx.sessions;
   st20_tx_handle tx_handle[session_num];
   memset(tx_handle, 0, sizeof(tx_handle));
-  struct tv_sample_context* app[session_num];
+  struct tv_sample_context *app[session_num];
   memset(app, 0, sizeof(app));
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tv_sample_context*)malloc(sizeof(struct tv_sample_context));
+    app[i] =
+        (struct tv_sample_context *)malloc(sizeof(struct tv_sample_context));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -181,8 +188,8 @@ int main(int argc, char** argv) {
       app[i]->has_user_meta = true;
     }
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
-    app[i]->framebuffs =
-        (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    app[i]->framebuffs = (struct st_tx_frame *)malloc(
+        sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -195,14 +202,15 @@ int main(int argc, char** argv) {
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20_tx";
-    ops_tx.priv = app[i];  // app handle register to lib
+    ops_tx.priv = app[i]; // app handle register to lib
     ops_tx.num_port = 1;
     memcpy(ops_tx.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
-    if (ctx.ext_frame) ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
-    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;  // udp port
+    if (ctx.ext_frame)
+      ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
+    ops_tx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2; // udp port
     ops_tx.pacing = ST21_PACING_NARROW;
     ops_tx.packing = ctx.packing;
     ops_tx.type = ST20_TYPE_FRAME_LEVEL;
@@ -248,7 +256,8 @@ int main(int argc, char** argv) {
     app[i]->handle = tx_handle[i];
 
     app[i]->stop = false;
-    ret = pthread_create(&app[i]->app_thread, NULL, tx_video_frame_thread, app[i]);
+    ret = pthread_create(&app[i]->app_thread, NULL, tx_video_frame_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -281,13 +290,17 @@ int main(int argc, char** argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i]) continue;
-    if (app[i]->handle) st20_tx_free(app[i]->handle);
+    if (!app[i])
+      continue;
+    if (app[i]->handle)
+      st20_tx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
 
-    if (app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
-    if (app[i]->framebuffs) free(app[i]->framebuffs);
+    if (app[i]->dma_mem)
+      mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
+    if (app[i]->framebuffs)
+      free(app[i]->framebuffs);
     free(app[i]);
   }
 

@@ -16,7 +16,7 @@
 
 #define TAP_IOV_DEFAULT_MAX 1024
 
-#define ST_TAP_CTL_CODE(code) \
+#define ST_TAP_CTL_CODE(code)                                                  \
   CTL_CODE(FILE_DEVICE_UNKNOWN, code, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #define ST_IOCTL_GET_TAPMAC ST_TAP_CTL_CODE(1)
@@ -44,7 +44,7 @@ enum windows_driver_type {
 
 #define IOSTATE_INITIAL 0
 #define IOSTATE_QUEUED 1 /* overlapped I/O has been queued */
-#define IOSTATE_IMMEDIATE_RETURN \
+#define IOSTATE_IMMEDIATE_RETURN                                               \
   2 /* I/O function returned immediately without queueing */
 
 struct overlapped_io {
@@ -56,13 +56,13 @@ struct overlapped_io {
 };
 
 struct iovec {
-  void* iov_base; /* Pointer to data. */
+  void *iov_base; /* Pointer to data. */
   size_t iov_len; /* Length of data. */
 };
 
 struct tap_rt_context {
-  struct rte_mempool* mp;
-  struct rte_mbuf* pool;
+  struct rte_mempool *mp;
+  struct rte_mbuf *pool;
   struct iovec (*iovecs)[];
   HANDLE tap_handle;
   struct overlapped_io reads;
@@ -75,20 +75,21 @@ struct tap_rt_context {
   bool flow_control;
 };
 
-int mt_tap_init(struct mtl_main_impl* impl);
-int mt_tap_uinit(struct mtl_main_impl* impl);
-int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port);
+int mt_tap_init(struct mtl_main_impl *impl);
+int mt_tap_uinit(struct mtl_main_impl *impl);
+int mt_tap_handle(struct mtl_main_impl *impl, enum mtl_port port);
 
 #else
-static inline int mt_tap_init(struct mtl_main_impl* impl) {
+static inline int mt_tap_init(struct mtl_main_impl *impl) {
   MTL_MAY_UNUSED(impl);
   return 0;
 }
-static inline int mt_tap_uinit(struct mtl_main_impl* impl) {
+static inline int mt_tap_uinit(struct mtl_main_impl *impl) {
   MTL_MAY_UNUSED(impl);
   return 0;
 }
-static inline int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline int mt_tap_handle(struct mtl_main_impl *impl,
+                                enum mtl_port port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   return -EIO;

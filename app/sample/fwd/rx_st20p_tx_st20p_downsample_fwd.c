@@ -21,22 +21,11 @@ struct rx_st20p_tx_st20p_sample_ctx {
   struct st20_pgroup st20_pg;
 };
 
-static int tx_st20p_frame_available(void* priv) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = priv;
+static int tx_st20p_frame_available(void *priv) {
+  struct rx_st20p_tx_st20p_sample_ctx *s = priv;
 
-  if (!s->ready) return -EIO;
-
-  st_pthread_mutex_lock(&s->wake_mutex);
-  st_pthread_cond_signal(&s->wake_cond);
-  st_pthread_mutex_unlock(&s->wake_mutex);
-
-  return 0;
-}
-
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = priv;
-
-  if (!s->ready) return -EIO;
+  if (!s->ready)
+    return -EIO;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -45,16 +34,30 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
-                                   struct st_frame* frame) {
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_st20p_tx_st20p_sample_ctx *s = priv;
+
+  if (!s->ready)
+    return -EIO;
+
+  st_pthread_mutex_lock(&s->wake_mutex);
+  st_pthread_cond_signal(&s->wake_cond);
+  st_pthread_mutex_unlock(&s->wake_mutex);
+
+  return 0;
+}
+
+static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx *s,
+                                   struct st_frame *frame) {
   st20p_tx_handle tx_handle = s->tx_handle;
-  struct st_frame* tx_frame;
+  struct st_frame *tx_frame;
 
   while (!s->stop) {
     tx_frame = st20p_tx_get_frame(tx_handle);
     if (!tx_frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -67,17 +70,18 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
   }
 }
 
-static void* st20_fwd_st20_thread(void* arg) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = arg;
+static void *st20_fwd_st20_thread(void *arg) {
+  struct rx_st20p_tx_st20p_sample_ctx *s = arg;
   st20p_rx_handle rx_handle = s->rx_handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20p_rx_get_frame(rx_handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -90,7 +94,8 @@ static void* st20_fwd_st20_thread(void* arg) {
   return NULL;
 }
 
-static int rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx* app) {
+static int
+rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx *app) {
   if (app->tx_handle) {
     st20p_tx_free(app->tx_handle);
     app->tx_handle = NULL;
@@ -105,14 +110,15 @@ static int rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx* app) 
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = fwd_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -135,7 +141,7 @@ int main(int argc, char** argv) {
   struct st20p_rx_ops ops_rx;
   memset(&ops_rx, 0, sizeof(ops_rx));
   ops_rx.name = "st20p_test";
-  ops_rx.priv = &app;  // app handle register to lib
+  ops_rx.priv = &app; // app handle register to lib
   ops_rx.port.num_port = 1;
   memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
@@ -164,7 +170,7 @@ int main(int argc, char** argv) {
   struct st20p_tx_ops ops_tx;
   memset(&ops_tx, 0, sizeof(ops_tx));
   ops_tx.name = "st20p_fwd";
-  ops_tx.priv = &app;  // app handle register to lib
+  ops_tx.priv = &app; // app handle register to lib
   ops_tx.port.num_port = 1;
   memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.fwd_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);

@@ -9,10 +9,10 @@
 #include "st_err.h"
 #include "st_tx_ancillary_session.h"
 
-static int st_ancillary_trs_tasklet_start(void* priv) {
-  struct st_ancillary_transmitter_impl* trs = priv;
+static int st_ancillary_trs_tasklet_start(void *priv) {
+  struct st_ancillary_transmitter_impl *trs = priv;
   int idx = trs->idx;
-  struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
+  struct st_tx_ancillary_sessions_mgr *mgr = trs->mgr;
 
   rte_atomic32_set(&mgr->transmitter_started, 1);
 
@@ -20,17 +20,18 @@ static int st_ancillary_trs_tasklet_start(void* priv) {
   return 0;
 }
 
-static int st_ancillary_trs_tasklet_stop(void* priv) {
-  struct st_ancillary_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parent;
-  struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
+static int st_ancillary_trs_tasklet_stop(void *priv) {
+  struct st_ancillary_transmitter_impl *trs = priv;
+  struct mtl_main_impl *impl = trs->parent;
+  struct st_tx_ancillary_sessions_mgr *mgr = trs->mgr;
   int idx = trs->idx, port;
 
   rte_atomic32_set(&mgr->transmitter_started, 0);
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
-    if (mgr->queue[port]) mt_txq_flush(mgr->queue[port], mt_get_pad(impl, port));
+    if (mgr->queue[port])
+      mt_txq_flush(mgr->queue[port], mt_get_pad(impl, port));
     if (mgr->ring[port]) {
       mt_ring_dequeue_clean(mgr->ring[port]);
       info("%s(%d), port %d, remaining entries %d\n", __func__, idx, port,
@@ -48,15 +49,17 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
 }
 
 /* pacing handled by session itself */
-static int st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl* trs,
-                                            struct st_tx_ancillary_sessions_mgr* mgr,
-                                            enum mtl_port port) {
-  struct rte_ring* ring = mgr->ring[port];
+static int
+st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl *trs,
+                                 struct st_tx_ancillary_sessions_mgr *mgr,
+                                 enum mtl_port port) {
+  struct rte_ring *ring = mgr->ring[port];
   int ret;
   uint16_t n;
-  struct rte_mbuf* pkt;
+  struct rte_mbuf *pkt;
 
-  if (!ring) return 0;
+  if (!ring)
+    return 0;
 
   /* check if any inflight pkts in transmitter */
   pkt = trs->inflight[port];
@@ -74,7 +77,7 @@ static int st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl
   /* try to dequeue */
   for (int i = 0; i < mgr->max_idx; i++) {
     /* try to dequeue */
-    ret = rte_ring_sc_dequeue(ring, (void**)&pkt);
+    ret = rte_ring_sc_dequeue(ring, (void **)&pkt);
     if (ret < 0) {
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_DEQUEUE_FAIL;
       return MTL_TASKLET_ALL_DONE; /* all done */
@@ -94,10 +97,10 @@ static int st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl
   return MTL_TASKLET_HAS_PENDING; /* may has pending pkt in the ring */
 }
 
-static int st_ancillary_trs_tasklet_handler(void* priv) {
-  struct st_ancillary_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parent;
-  struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
+static int st_ancillary_trs_tasklet_handler(void *priv) {
+  struct st_ancillary_transmitter_impl *trs = priv;
+  struct mtl_main_impl *impl = trs->parent;
+  struct st_tx_ancillary_sessions_mgr *mgr = trs->mgr;
   int port;
   int pending = MTL_TASKLET_ALL_DONE;
 
@@ -108,9 +111,10 @@ static int st_ancillary_trs_tasklet_handler(void* priv) {
   return pending;
 }
 
-int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
-                                  struct st_tx_ancillary_sessions_mgr* mgr,
-                                  struct st_ancillary_transmitter_impl* trs) {
+int st_ancillary_transmitter_init(struct mtl_main_impl *impl,
+                                  struct mtl_sch_impl *sch,
+                                  struct st_tx_ancillary_sessions_mgr *mgr,
+                                  struct st_ancillary_transmitter_impl *trs) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 
@@ -137,7 +141,7 @@ int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_imp
   return 0;
 }
 
-int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs) {
+int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl *trs) {
   int idx = trs->idx;
 
   if (trs->tasklet) {
@@ -146,7 +150,8 @@ int st_ancillary_transmitter_uinit(struct st_ancillary_transmitter_impl* trs) {
   }
 
   for (int i = 0; i < mt_num_ports(trs->parent); i++) {
-    info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i, trs->inflight_cnt[i]);
+    info("%s(%d), succ, inflight %d:%d\n", __func__, idx, i,
+         trs->inflight_cnt[i]);
   }
   return 0;
 }

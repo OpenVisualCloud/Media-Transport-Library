@@ -31,8 +31,8 @@ struct usocket_client_sample_ctx {
   int recv_cnt_total;
 };
 
-static void* usocket_client_thread(void* arg) {
-  struct usocket_client_sample_ctx* s = arg;
+static void *usocket_client_thread(void *arg) {
+  struct usocket_client_sample_ctx *s = arg;
   int socket = s->socket;
 
   ssize_t udp_len = s->udp_len;
@@ -49,8 +49,9 @@ static void* usocket_client_thread(void* arg) {
        (int)udp_len);
   while (!s->stop) {
     send_buf[idx_pos] = send_idx++;
-    ssize_t send = sendto(socket, send_buf, sizeof(send_buf), 0,
-                          (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    ssize_t send =
+        sendto(socket, send_buf, sizeof(send_buf), 0,
+               (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -68,8 +69,8 @@ static void* usocket_client_thread(void* arg) {
     char expect_rx_idx = last_rx_idx + 1;
     last_rx_idx = recv_buf[idx_pos];
     if (last_rx_idx != expect_rx_idx) {
-      err("%s(%d), idx mismatch, expect %u get %u\n", __func__, s->idx, expect_rx_idx,
-          last_rx_idx);
+      err("%s(%d), idx mismatch, expect %u get %u\n", __func__, s->idx,
+          expect_rx_idx, last_rx_idx);
       s->recv_err_cnt++;
       continue;
     }
@@ -82,8 +83,8 @@ static void* usocket_client_thread(void* arg) {
   return NULL;
 }
 
-static void* usocket_client_transport_thread(void* arg) {
-  struct usocket_client_sample_ctx* s = arg;
+static void *usocket_client_transport_thread(void *arg) {
+  struct usocket_client_sample_ctx *s = arg;
   int socket = s->socket;
 
   ssize_t udp_len = s->udp_len;
@@ -95,8 +96,9 @@ static void* usocket_client_transport_thread(void* arg) {
   info("%s(%d), start socket %d, usocket len %d\n", __func__, s->idx, socket,
        (int)udp_len);
   while (!s->stop) {
-    ssize_t send = sendto(socket, send_buf, sizeof(send_buf), 0,
-                          (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    ssize_t send =
+        sendto(socket, send_buf, sizeof(send_buf), 0,
+               (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -109,15 +111,15 @@ static void* usocket_client_transport_thread(void* arg) {
   return NULL;
 }
 
-static void usocket_client_status(struct usocket_client_sample_ctx* s) {
+static void usocket_client_status(struct usocket_client_sample_ctx *s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->send_cnt * s->udp_len * 8 / time_sec;
   double bps_g = bps / (1000 * 1000 * 1000);
   s->last_stat_time = cur_ts;
 
-  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx, s->send_cnt, bps_g,
-       s->recv_cnt);
+  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx,
+       s->send_cnt, bps_g, s->recv_cnt);
   s->send_cnt = 0;
   s->recv_cnt = 0;
   if (s->recv_fail_cnt) {
@@ -130,16 +132,17 @@ static void usocket_client_status(struct usocket_client_sample_ctx* s) {
   }
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, true, false, true);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   uint32_t session_num = ctx.sessions;
-  struct usocket_client_sample_ctx* app[session_num];
+  struct usocket_client_sample_ctx *app[session_num];
   memset(app, 0, sizeof(app));
 
   for (int i = 0; i < session_num; i++) {
@@ -160,7 +163,8 @@ int main(int argc, char** argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
-    mudp_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P], ctx.udp_port + i);
+    mudp_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P],
+                       ctx.udp_port + i);
 
     app[i]->socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (app[i]->socket < 0) {
@@ -181,10 +185,11 @@ int main(int argc, char** argv) {
     if ((ctx.udp_mode == SAMPLE_UDP_TRANSPORT) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL))
-      ret =
-          pthread_create(&app[i]->thread, NULL, usocket_client_transport_thread, app[i]);
+      ret = pthread_create(&app[i]->thread, NULL,
+                           usocket_client_transport_thread, app[i]);
     else
-      ret = pthread_create(&app[i]->thread, NULL, usocket_client_thread, app[i]);
+      ret =
+          pthread_create(&app[i]->thread, NULL, usocket_client_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       goto error;
@@ -221,15 +226,18 @@ int main(int argc, char** argv) {
 
 error:
   for (int i = 0; i < session_num; i++) {
-    if (!app[i]) continue;
+    if (!app[i])
+      continue;
     // stop app thread
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
-    if (app[i]->thread) pthread_join(app[i]->thread, NULL);
+    if (app[i]->thread)
+      pthread_join(app[i]->thread, NULL);
 
-    if (app[i]->socket) close(app[i]->socket);
+    if (app[i]->socket)
+      close(app[i]->socket);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
     free(app[i]);

@@ -23,23 +23,24 @@ extern "C" {
 /** Structure describing iovec for sendmsg and recvmsg */
 struct iovec {
   /** Pointer to data. */
-  void* iov_base;
+  void *iov_base;
   /** Length of data. */
   size_t iov_len;
 };
 
-/** Structure describing messages sent by `sendmsg' and received by `recvmsg'. */
+/** Structure describing messages sent by `sendmsg' and received by `recvmsg'.
+ */
 struct msghdr {
   /** Address to send to/receive from.  */
-  void* msg_name;
+  void *msg_name;
   /** Length of address data.  */
   socklen_t msg_namelen;
   /** Vector of data to send/receive into.  */
-  struct iovec* msg_iov;
+  struct iovec *msg_iov;
   /** Number of elements in the vector.  */
   size_t msg_iovlen;
   /** Ancillary data (eg BSD filedesc passing). */
-  void* msg_control;
+  void *msg_control;
   /** Ancillary data buffer length. */
   size_t msg_controllen;
   /** Flags on received message.  */
@@ -56,18 +57,20 @@ struct cmsghdr {
   int cmsg_type;
 };
 
-#define CMSGDATA_ALIGN(length) \
+#define CMSGDATA_ALIGN(length)                                                 \
   (((length) + MAX_NATURAL_ALIGNMENT - 1) & (~(MAX_NATURAL_ALIGNMENT - 1)))
 
-#define CMSG_FIRSTHDR(msg) \
-  (((msg)->msg_controllen >= sizeof(struct cmsghdr)) ? (msg)->msg_control : NULL)
+#define CMSG_FIRSTHDR(msg)                                                     \
+  (((msg)->msg_controllen >= sizeof(struct cmsghdr)) ? (msg)->msg_control      \
+                                                     : NULL)
 
 #define CMSG_LEN(length) (CMSGDATA_ALIGN(sizeof(struct cmsghdr)) + length)
 
 #ifdef CMSG_DATA
 #undef CMSG_DATA
 #endif
-#define CMSG_DATA(cmsg) ((PUCHAR)(cmsg) + CMSGDATA_ALIGN(sizeof(struct cmsghdr)))
+#define CMSG_DATA(cmsg)                                                        \
+  ((PUCHAR)(cmsg) + CMSGDATA_ALIGN(sizeof(struct cmsghdr)))
 
 #ifndef SOCK_NONBLOCK
 #define SOCK_NONBLOCK (0x800)

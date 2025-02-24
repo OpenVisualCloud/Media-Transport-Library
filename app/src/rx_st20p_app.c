@@ -4,9 +4,9 @@
 
 #include "rx_st20p_app.h"
 
-static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
-                                       struct st_frame* frame) {
-  struct st_display* d = s->display;
+static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session *s,
+                                       struct st_frame *frame) {
+  struct st_display *d = s->display;
   int idx = s->idx;
 
   if (s->num_port > 1) {
@@ -14,15 +14,18 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
         frame->pkts_total, frame->pkts_recv[MTL_SESSION_PORT_P],
         frame->pkts_recv[MTL_SESSION_PORT_R]);
     if (frame->pkts_recv[MTL_SESSION_PORT_P] < (frame->pkts_total / 2))
-      warn("%s(%d): P port only receive %u pkts while total pkts is %u\n", __func__, idx,
-           frame->pkts_recv[MTL_SESSION_PORT_P], frame->pkts_total);
+      warn("%s(%d): P port only receive %u pkts while total pkts is %u\n",
+           __func__, idx, frame->pkts_recv[MTL_SESSION_PORT_P],
+           frame->pkts_total);
     if (frame->pkts_recv[MTL_SESSION_PORT_R] < (frame->pkts_total / 2))
-      warn("%s(%d): R port only receive %u pkts while total pkts is %u\n", __func__, idx,
-           frame->pkts_recv[MTL_SESSION_PORT_R], frame->pkts_total);
+      warn("%s(%d): R port only receive %u pkts while total pkts is %u\n",
+           __func__, idx, frame->pkts_recv[MTL_SESSION_PORT_R],
+           frame->pkts_total);
   }
 
   if (frame->interlaced) {
-    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+    dbg("%s(%d), %s field\n", __func__, s->idx,
+        frame->second_field ? "second" : "first");
   }
 
   if (d && d->front_frame) {
@@ -44,9 +47,9 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
   }
 }
 
-static void* app_rx_st20p_frame_thread(void* arg) {
-  struct st_app_rx_st20p_session* s = arg;
-  struct st_frame* frame;
+static void *app_rx_st20p_frame_thread(void *arg) {
+  struct st_app_rx_st20p_session *s = arg;
+  struct st_frame *frame;
   uint8_t shas[SHA256_DIGEST_LENGTH];
   int idx = s->idx;
 
@@ -81,9 +84,11 @@ static void* app_rx_st20p_frame_thread(void* arg) {
         err("%s(%d), invalid user meta size %" PRId64 "\n", __func__, idx,
             frame->user_meta_size);
       } else {
-        st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
+        st_sha256((unsigned char *)frame->addr[0],
+                  st_frame_plane_size(frame, 0), shas);
         if (memcmp(shas, frame->user_meta, sizeof(shas))) {
-          err("%s(%d), sha check fail for frame %p\n", __func__, idx, frame->addr);
+          err("%s(%d), sha check fail for frame %p\n", __func__, idx,
+              frame->addr);
           st_sha_dump("user meta sha:", frame->user_meta);
           st_sha_dump("frame sha:", shas);
         }
@@ -99,10 +104,11 @@ static void* app_rx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-static int app_rx_st20p_init_frame_thread(struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_init_frame_thread(struct st_app_rx_st20p_session *s) {
   int ret, idx = s->idx;
 
-  ret = pthread_create(&s->st20p_app_thread, NULL, app_rx_st20p_frame_thread, s);
+  ret =
+      pthread_create(&s->st20p_app_thread, NULL, app_rx_st20p_frame_thread, s);
   if (ret < 0) {
     err("%s(%d), st20p_app_thread create fail %d\n", __func__, ret, idx);
     return -EIO;
@@ -115,7 +121,7 @@ static int app_rx_st20p_init_frame_thread(struct st_app_rx_st20p_session* s) {
   return 0;
 }
 
-static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_uinit(struct st_app_rx_st20p_session *s) {
   int ret, idx = s->idx;
 
   st_app_uinit_display(s->display);
@@ -128,20 +134,22 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
   if (s->st20p_app_thread_stop) {
     /* wake up the thread */
     info("%s(%d), wait app thread stop\n", __func__, idx);
-    if (s->handle) st20p_rx_wake_block(s->handle);
+    if (s->handle)
+      st20p_rx_wake_block(s->handle);
     pthread_join(s->st20p_app_thread, NULL);
   }
 
   if (s->handle) {
     ret = st20p_rx_free(s->handle);
-    if (ret < 0) err("%s(%d), st20_rx_free fail %d\n", __func__, idx, ret);
+    if (ret < 0)
+      err("%s(%d), st20_rx_free fail %d\n", __func__, idx, ret);
     s->handle = NULL;
   }
 
   return 0;
 }
 
-static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session *s) {
   int idx = s->idx;
   uint64_t cur_time = st_app_get_monotonic_time();
   double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
@@ -149,11 +157,13 @@ static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
   int ret;
   struct st20_rx_port_status stats;
 
-  if (!s->handle) return 0;
+  if (!s->handle)
+    return 0;
 
   for (uint8_t port = 0; port < s->num_port; port++) {
     ret = st20p_rx_get_port_stats(s->handle, port, &stats);
-    if (ret < 0) return ret;
+    if (ret < 0)
+      return ret;
     tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
     fps = (double)stats.frames / time_sec;
 
@@ -165,9 +175,9 @@ static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
   return 0;
 }
 
-static int app_rx_st20p_init(struct st_app_context* ctx,
-                             struct st_json_st20p_session* st20p,
-                             struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_init(struct st_app_context *ctx,
+                             struct st_json_st20p_session *st20p,
+                             struct st_app_rx_st20p_session *s) {
   int idx = s->idx, ret;
   struct st20p_rx_ops ops;
   char name[32];
@@ -185,26 +195,27 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
          st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  memcpy(
-      ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
-      st20p ? st20p->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
-      MTL_IP_ADDR_LEN);
-  snprintf(
-      ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-      st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
+  memcpy(ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
+         st20p ? st20p->base.mcast_src_ip[MTL_PORT_P]
+               : ctx->rx_mcast_sip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
+  snprintf(ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name
+                 : ctx->para.port[MTL_PORT_P]);
+  ops.port.udp_port[MTL_SESSION_PORT_P] =
+      st20p ? st20p->base.udp_port : (10000 + s->idx);
   if (ops.port.num_port > 1) {
     memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
            st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
                  : ctx->rx_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    memcpy(
-        ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
-        st20p ? st20p->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
-        MTL_IP_ADDR_LEN);
-    snprintf(
-        ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-        st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
+    memcpy(ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
+           st20p ? st20p->base.mcast_src_ip[MTL_PORT_R]
+                 : ctx->rx_mcast_sip_addr[MTL_PORT_R],
+           MTL_IP_ADDR_LEN);
+    snprintf(ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name
+                   : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
         st20p ? st20p->base.udp_port : (10000 + s->idx);
   }
@@ -213,18 +224,24 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   ops.height = st20p ? st20p->info.height : 1080;
   ops.fps = st20p ? st20p->info.fps : ST_FPS_P59_94;
   ops.interlaced = st20p ? st20p->info.interlaced : false;
-  ops.output_fmt = st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
-  ops.port.payload_type = st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
+  ops.output_fmt =
+      st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ops.transport_fmt =
+      st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
+  ops.port.payload_type =
+      st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
   ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.flags |= ST20P_RX_FLAG_BLOCK_GET;
   ops.rx_burst_size = ctx->rx_burst_size;
   ops.framebuff_cnt = s->framebuff_cnt;
   /* always try to enable DMA offload */
   ops.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;
-  if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
-  if (ctx->enable_timing_parser) ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
-  if (ctx->rx_video_multi_thread) ops.flags |= ST20P_RX_FLAG_USE_MULTI_THREADS;
+  if (st20p && st20p->enable_rtcp)
+    ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
+  if (ctx->enable_timing_parser)
+    ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
+  if (ctx->rx_video_multi_thread)
+    ops.flags |= ST20P_RX_FLAG_USE_MULTI_THREADS;
   if (ctx->force_rx_video_numa >= 0) {
     ops.flags |= ST20P_RX_FLAG_FORCE_NUMA;
     ops.socket_id = ctx->force_rx_video_numa;
@@ -241,7 +258,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   s->expect_fps = st_frame_rate(ops.fps);
 
   if ((st20p && st20p->display) || ctx->rx_display) {
-    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
+    struct st_display *d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
@@ -276,7 +293,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   return 0;
 }
 
-static int app_rx_st20p_stat(struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_stat(struct st_app_rx_st20p_session *s) {
   uint64_t cur_time_ns = st_app_get_monotonic_time();
 #ifdef DEBUG
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
@@ -285,7 +302,8 @@ static int app_rx_st20p_stat(struct st_app_rx_st20p_session* s) {
       s->stat_frame_received);
 #endif
   if (s->measure_latency && s->stat_frame_received) {
-    double latency_ms = (double)s->stat_latency_us_sum / s->stat_frame_received / 1000;
+    double latency_ms =
+        (double)s->stat_latency_us_sum / s->stat_frame_received / 1000;
     info("%s(%d), avrage latency %fms\n", __func__, s->idx, latency_ms);
     s->stat_latency_us_sum = 0;
   }
@@ -295,37 +313,43 @@ static int app_rx_st20p_stat(struct st_app_rx_st20p_session* s) {
   return 0;
 }
 
-static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_result(struct st_app_rx_st20p_session *s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
+  double time_sec =
+      (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
-  if (!s->stat_frame_total_received) return -EINVAL;
+  if (!s->stat_frame_total_received)
+    return -EINVAL;
 
   critical("%s(%d), %s, fps %f, %d frame received\n", __func__, idx,
-           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05) ? "OK"
-                                                                              : "FAILED",
+           ST_APP_EXPECT_NEAR(framerate, s->expect_fps, s->expect_fps * 0.05)
+               ? "OK"
+               : "FAILED",
            framerate, s->stat_frame_total_received);
   return 0;
 }
 
-static int app_rx_st20p_pcap(struct st_app_rx_st20p_session* s) {
+static int app_rx_st20p_pcap(struct st_app_rx_st20p_session *s) {
   if (s->pcapng_max_pkts)
     st20p_rx_pcapng_dump(s->handle, s->pcapng_max_pkts, false, NULL);
   return 0;
 }
 
-int st_app_rx_st20p_sessions_init(struct st_app_context* ctx) {
+int st_app_rx_st20p_sessions_init(struct st_app_context *ctx) {
   int ret = 0, i = 0;
-  struct st_app_rx_st20p_session* s;
+  struct st_app_rx_st20p_session *s;
   int fb_cnt = ctx->rx_video_fb_cnt;
-  if (fb_cnt <= 0) fb_cnt = ST_APP_DEFAULT_FB_CNT;
+  if (fb_cnt <= 0)
+    fb_cnt = ST_APP_DEFAULT_FB_CNT;
 
-  dbg("%s(%d), rx_st20p_session_cnt %d\n", __func__, i, ctx->rx_st20p_session_cnt);
-  ctx->rx_st20p_sessions = (struct st_app_rx_st20p_session*)st_app_zmalloc(
+  dbg("%s(%d), rx_st20p_session_cnt %d\n", __func__, i,
+      ctx->rx_st20p_session_cnt);
+  ctx->rx_st20p_sessions = (struct st_app_rx_st20p_session *)st_app_zmalloc(
       sizeof(struct st_app_rx_st20p_session) * ctx->rx_st20p_session_cnt);
-  if (!ctx->rx_st20p_sessions) return -ENOMEM;
+  if (!ctx->rx_st20p_sessions)
+    return -ENOMEM;
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
     s->idx = i;
@@ -343,10 +367,11 @@ int st_app_rx_st20p_sessions_init(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20p_sessions_uinit(struct st_app_context* ctx) {
+int st_app_rx_st20p_sessions_uinit(struct st_app_context *ctx) {
   int i;
-  struct st_app_rx_st20p_session* s;
-  if (!ctx->rx_st20p_sessions) return 0;
+  struct st_app_rx_st20p_session *s;
+  if (!ctx->rx_st20p_sessions)
+    return 0;
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
     app_rx_st20p_uinit(s);
@@ -356,10 +381,11 @@ int st_app_rx_st20p_sessions_uinit(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20p_sessions_stat(struct st_app_context* ctx) {
+int st_app_rx_st20p_sessions_stat(struct st_app_context *ctx) {
   int i;
-  struct st_app_rx_st20p_session* s;
-  if (!ctx->rx_st20p_sessions) return 0;
+  struct st_app_rx_st20p_session *s;
+  if (!ctx->rx_st20p_sessions)
+    return 0;
 
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
@@ -369,11 +395,12 @@ int st_app_rx_st20p_sessions_stat(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20p_sessions_result(struct st_app_context* ctx) {
+int st_app_rx_st20p_sessions_result(struct st_app_context *ctx) {
   int i, ret = 0;
-  struct st_app_rx_st20p_session* s;
+  struct st_app_rx_st20p_session *s;
 
-  if (!ctx->rx_st20p_sessions) return 0;
+  if (!ctx->rx_st20p_sessions)
+    return 0;
 
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
@@ -383,11 +410,12 @@ int st_app_rx_st20p_sessions_result(struct st_app_context* ctx) {
   return ret;
 }
 
-int st_app_rx_st20p_sessions_pcap(struct st_app_context* ctx) {
+int st_app_rx_st20p_sessions_pcap(struct st_app_context *ctx) {
   int i;
-  struct st_app_rx_st20p_session* s;
+  struct st_app_rx_st20p_session *s;
 
-  if (!ctx->rx_st20p_sessions) return 0;
+  if (!ctx->rx_st20p_sessions)
+    return 0;
 
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
@@ -397,10 +425,11 @@ int st_app_rx_st20p_sessions_pcap(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20p_io_stat(struct st_app_context* ctx) {
+int st_app_rx_st20p_io_stat(struct st_app_context *ctx) {
   int i, ret = 0;
-  struct st_app_rx_st20p_session* s;
-  if (!ctx->rx_st20p_sessions) return 0;
+  struct st_app_rx_st20p_session *s;
+  if (!ctx->rx_st20p_sessions)
+    return 0;
 
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];

@@ -13,34 +13,39 @@ enum mtl_log_level app_get_log_level(void);
 
 /* log define */
 #ifdef DEBUG
-#define dbg(...)                                                         \
-  do {                                                                   \
-    if (app_get_log_level() <= MTL_LOG_LEVEL_DEBUG) printf(__VA_ARGS__); \
+#define dbg(...)                                                               \
+  do {                                                                         \
+    if (app_get_log_level() <= MTL_LOG_LEVEL_DEBUG)                            \
+      printf(__VA_ARGS__);                                                     \
   } while (0)
 #else
-#define dbg(...) \
-  do {           \
+#define dbg(...)                                                               \
+  do {                                                                         \
   } while (0)
 #endif
-#define info(...)                                                       \
-  do {                                                                  \
-    if (app_get_log_level() <= MTL_LOG_LEVEL_INFO) printf(__VA_ARGS__); \
+#define info(...)                                                              \
+  do {                                                                         \
+    if (app_get_log_level() <= MTL_LOG_LEVEL_INFO)                             \
+      printf(__VA_ARGS__);                                                     \
   } while (0)
-#define notce(...)                                                        \
-  do {                                                                    \
-    if (app_get_log_level() <= MTL_LOG_LEVEL_NOTICE) printf(__VA_ARGS__); \
+#define notce(...)                                                             \
+  do {                                                                         \
+    if (app_get_log_level() <= MTL_LOG_LEVEL_NOTICE)                           \
+      printf(__VA_ARGS__);                                                     \
   } while (0)
-#define warn(...)                                                          \
-  do {                                                                     \
-    if (app_get_log_level() <= MTL_LOG_LEVEL_WARNING) printf(__VA_ARGS__); \
+#define warn(...)                                                              \
+  do {                                                                         \
+    if (app_get_log_level() <= MTL_LOG_LEVEL_WARNING)                          \
+      printf(__VA_ARGS__);                                                     \
   } while (0)
-#define err(...)                                                       \
-  do {                                                                 \
-    if (app_get_log_level() <= MTL_LOG_LEVEL_ERR) printf(__VA_ARGS__); \
+#define err(...)                                                               \
+  do {                                                                         \
+    if (app_get_log_level() <= MTL_LOG_LEVEL_ERR)                              \
+      printf(__VA_ARGS__);                                                     \
   } while (0)
-#define critical(...)    \
-  do {                   \
-    printf(__VA_ARGS__); \
+#define critical(...)                                                          \
+  do {                                                                         \
+    printf(__VA_ARGS__);                                                       \
   } while (0)
 
 #endif

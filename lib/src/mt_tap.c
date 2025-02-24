@@ -14,32 +14,36 @@
 #include "mt_sch.h"
 #include "mt_util.h"
 
-static struct mtl_main_impl* tap_main_impl;
-static struct rte_ring* tap_tx_ring;
+static struct mtl_main_impl *tap_main_impl;
+static struct rte_ring *tap_tx_ring;
 
-typedef ULONG (*GetAdaptersInfo_type)(PIP_ADAPTER_INFO AdapterInfo, PULONG SizePointer);
+typedef ULONG (*GetAdaptersInfo_type)(PIP_ADAPTER_INFO AdapterInfo,
+                                      PULONG SizePointer);
 
 static GetAdaptersInfo_type GetAdaptersInfo_ptr = NULL;
 
-static inline void tap_set_global_impl(struct mtl_main_impl* impl) {
+static inline void tap_set_global_impl(struct mtl_main_impl *impl) {
   tap_main_impl = impl;
 }
 
-static inline bool io_active(struct overlapped_io* io) {
-  return io->iostate == IOSTATE_QUEUED || io->iostate == IOSTATE_IMMEDIATE_RETURN;
+static inline bool io_active(struct overlapped_io *io) {
+  return io->iostate == IOSTATE_QUEUED ||
+         io->iostate == IOSTATE_IMMEDIATE_RETURN;
 }
 
-static struct mtl_main_impl* tap_get_global_impl(void) {
-  struct mtl_main_impl* impl = tap_main_impl;
-  if (!impl) err("%s, global impl not init\n", __func__);
+static struct mtl_main_impl *tap_get_global_impl(void) {
+  struct mtl_main_impl *impl = tap_main_impl;
+  if (!impl)
+    err("%s, global impl not init\n", __func__);
   return impl;
 }
 
-static void tap_rxq_pool_free(struct rte_mbuf* pool) {
-  struct rte_mbuf* mbuf = pool;
+static void tap_rxq_pool_free(struct rte_mbuf *pool) {
+  struct rte_mbuf *mbuf = pool;
   uint16_t nb_segs = 1;
 
-  if (mbuf == NULL) return;
+  if (mbuf == NULL)
+    return;
 
   while (mbuf->next) {
     mbuf = mbuf->next;
@@ -49,8 +53,8 @@ static void tap_rxq_pool_free(struct rte_mbuf* pool) {
   rte_pktmbuf_free(pool);
 }
 
-static int tap_put_mbuf(struct rte_ring* packet_ring, void* mbuf) {
-  struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
+static int tap_put_mbuf(struct rte_ring *packet_ring, void *mbuf) {
+  struct rte_mbuf *pkt = (struct rte_mbuf *)mbuf;
   int ret;
   if (!packet_ring) {
     err("%s, tap ring is not created\n", __func__);
@@ -62,7 +66,7 @@ static int tap_put_mbuf(struct rte_ring* packet_ring, void* mbuf) {
     return -EIO;
   }
   pkt->data_len = pkt->pkt_len;
-  ret = rte_ring_sp_enqueue(packet_ring, (void*)pkt);
+  ret = rte_ring_sp_enqueue(packet_ring, (void *)pkt);
 
   if (ret < 0) {
     err("%s, can not enqueue to the tap ring\n", __func__);
@@ -72,74 +76,78 @@ static int tap_put_mbuf(struct rte_ring* packet_ring, void* mbuf) {
   return 0;
 }
 
-static void* tap_get_mbuf(struct rte_ring* packet_ring, void** usrptr, uint16_t* len) {
-  struct rte_mbuf* pkt;
+static void *tap_get_mbuf(struct rte_ring *packet_ring, void **usrptr,
+                          uint16_t *len) {
+  struct rte_mbuf *pkt;
   int ret;
   if (!packet_ring) {
     err("%s, tap ring is not created\n", __func__);
     return NULL;
   }
 
-  ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
+  ret = rte_ring_sc_dequeue(packet_ring, (void **)&pkt);
 
   if (ret < 0) {
     info("%s, tap ring is empty\n", __func__);
     return NULL;
   }
-  if (len) *len = pkt->data_len;
-  if (usrptr) *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, 0);
+  if (len)
+    *len = pkt->data_len;
+  if (usrptr)
+    *usrptr = rte_pktmbuf_mtod_offset(pkt, void *, 0);
 
   return pkt;
 }
 
-static int overlapped_result(struct mt_cni_impl* cni, struct overlapped_io* io) {
+static int overlapped_result(struct mt_cni_impl *cni,
+                             struct overlapped_io *io) {
   int ret = -1;
   BOOL status;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
   switch (io->iostate) {
-    case IOSTATE_QUEUED:
-      status =
-          GetOverlappedResult(tap_ctx->tap_handle, &io->overlapped, &io->size, FALSE);
-      if (status) {
-        ret = io->size;
-        io->status = 0;
-        io->iostate = IOSTATE_IMMEDIATE_RETURN;
-        assert(ResetEvent(io->overlapped.hEvent));
-      } else {
-        ret = -1;
-        if (GetLastError() != ERROR_IO_INCOMPLETE) {
-          io->iostate = IOSTATE_INITIAL;
-          io->status = -1;
-          assert(ResetEvent(io->overlapped.hEvent));
-        }
-      }
-      break;
-
-    case IOSTATE_IMMEDIATE_RETURN:
-      io->iostate = IOSTATE_INITIAL;
+  case IOSTATE_QUEUED:
+    status = GetOverlappedResult(tap_ctx->tap_handle, &io->overlapped,
+                                 &io->size, FALSE);
+    if (status) {
+      ret = io->size;
+      io->status = 0;
+      io->iostate = IOSTATE_IMMEDIATE_RETURN;
       assert(ResetEvent(io->overlapped.hEvent));
-      if (io->status) {
-        SetLastError(io->status);
-        ret = -1;
-      } else {
-        ret = io->size;
-      }
-      break;
-
-    case IOSTATE_INITIAL:
-      SetLastError(ERROR_INVALID_FUNCTION);
+    } else {
       ret = -1;
-      err("%s : Overlapped result wrong state\n", __func__);
-      break;
+      if (GetLastError() != ERROR_IO_INCOMPLETE) {
+        io->iostate = IOSTATE_INITIAL;
+        io->status = -1;
+        assert(ResetEvent(io->overlapped.hEvent));
+      }
+    }
+    break;
 
-    default:
-      assert(0);
+  case IOSTATE_IMMEDIATE_RETURN:
+    io->iostate = IOSTATE_INITIAL;
+    assert(ResetEvent(io->overlapped.hEvent));
+    if (io->status) {
+      SetLastError(io->status);
+      ret = -1;
+    } else {
+      ret = io->size;
+    }
+    break;
+
+  case IOSTATE_INITIAL:
+    SetLastError(ERROR_INVALID_FUNCTION);
+    ret = -1;
+    err("%s : Overlapped result wrong state\n", __func__);
+    break;
+
+  default:
+    assert(0);
   }
   return ret;
 }
 
-static long readv(struct mt_cni_impl* cni, struct iovec* iov, int count) {
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+static long readv(struct mt_cni_impl *cni, struct iovec *iov, int count) {
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
   long rlen = -1, total = 0;
   BOOL status;
   int err;
@@ -167,7 +175,8 @@ static long readv(struct mt_cni_impl* cni, struct iovec* iov, int count) {
         rlen = 0;
       }
     }
-    if (rlen <= 0) return rlen;
+    if (rlen <= 0)
+      return rlen;
     total += rlen;
     iov++;
     count--;
@@ -175,16 +184,17 @@ static long readv(struct mt_cni_impl* cni, struct iovec* iov, int count) {
   return total;
 }
 
-static long writev(struct mt_cni_impl* cni, struct iovec* iov, int count) {
+static long writev(struct mt_cni_impl *cni, struct iovec *iov, int count) {
   long totallen = 0, wlen = -1;
   BOOL status;
   int err;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
   while (count) {
     wlen = 0;
     assert(ResetEvent(tap_ctx->writes.overlapped.hEvent));
-    status = WriteFile(tap_ctx->tap_handle, (const char*)iov->iov_base, iov->iov_len,
-                       &tap_ctx->writes.size, &tap_ctx->writes.overlapped);
+    status = WriteFile(tap_ctx->tap_handle, (const char *)iov->iov_base,
+                       iov->iov_len, &tap_ctx->writes.size,
+                       &tap_ctx->writes.overlapped);
     if (status) {
       tap_ctx->writes.iostate = IOSTATE_IMMEDIATE_RETURN;
       assert(SetEvent(tap_ctx->writes.overlapped.hEvent));
@@ -201,7 +211,8 @@ static long writev(struct mt_cni_impl* cni, struct iovec* iov, int count) {
         tap_ctx->writes.status = err;
       }
     }
-    if (wlen <= 0) return totallen;
+    if (wlen <= 0)
+      return totallen;
     totallen += wlen;
     iov++;
     count--;
@@ -209,20 +220,22 @@ static long writev(struct mt_cni_impl* cni, struct iovec* iov, int count) {
   return totallen;
 }
 
-static uint16_t tap_tx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
+static uint16_t tap_tx_packet(struct mt_cni_impl *cni, struct rte_mbuf **bufs,
                               uint16_t nb_pkts) {
   int ret = 0;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
-  if (unlikely(nb_pkts == 0)) return 0;
-  if (io_active(&tap_ctx->writes)) ret = overlapped_result(cni, &tap_ctx->writes);
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
+  if (unlikely(nb_pkts == 0))
+    return 0;
+  if (io_active(&tap_ctx->writes))
+    ret = overlapped_result(cni, &tap_ctx->writes);
 
   if (tap_ctx->writes.iostate == IOSTATE_INITIAL) {
-    struct rte_mbuf* mbuf = bufs[0];
+    struct rte_mbuf *mbuf = bufs[0];
     static struct iovec iovecs[2];
-    struct rte_mbuf* seg = mbuf;
+    struct rte_mbuf *seg = mbuf;
 
     iovecs[0].iov_len = rte_pktmbuf_data_len(seg);
-    iovecs[0].iov_base = rte_pktmbuf_mtod(seg, void*);
+    iovecs[0].iov_base = rte_pktmbuf_mtod(seg, void *);
     ret = writev(cni, iovecs, 1);
     if (ret == -1) {
       err("%s write buffer error\n", __func__);
@@ -234,47 +247,55 @@ static uint16_t tap_tx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
     return 0;
 }
 
-static uint16_t tap_rx_packet(struct mt_cni_impl* cni, struct rte_mbuf** bufs,
+static uint16_t tap_rx_packet(struct mt_cni_impl *cni, struct rte_mbuf **bufs,
                               uint16_t nb_pkts) {
   int len;
   uint16_t num_rx = 0;
   unsigned long num_rx_bytes = 0;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
-  if (!nb_pkts) return 0;
-  if (io_active(&tap_ctx->reads)) overlapped_result(cni, &tap_ctx->reads);
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
+  if (!nb_pkts)
+    return 0;
+  if (io_active(&tap_ctx->reads))
+    overlapped_result(cni, &tap_ctx->reads);
 
-  if (tap_ctx->reads.iostate == IOSTATE_INITIAL) readv(cni, *tap_ctx->iovecs, 1);
+  if (tap_ctx->reads.iostate == IOSTATE_INITIAL)
+    readv(cni, *tap_ctx->iovecs, 1);
 
   len = tap_ctx->reads.size;
   if (len > 0) {
-    struct rte_mbuf* mbuf = tap_ctx->pool;
-    struct rte_mbuf* seg = NULL;
-    struct rte_mbuf* new_tail = NULL;
+    struct rte_mbuf *mbuf = tap_ctx->pool;
+    struct rte_mbuf *seg = NULL;
+    struct rte_mbuf *new_tail = NULL;
     uint16_t data_off = rte_pktmbuf_headroom(mbuf);
     mbuf->pkt_len = len;
     mbuf->nb_segs = 0;
     while (1) {
-      struct rte_mbuf* buf = rte_pktmbuf_alloc(tap_ctx->mp);
+      struct rte_mbuf *buf = rte_pktmbuf_alloc(tap_ctx->mp);
       if (unlikely(!buf)) {
-        if (!new_tail || !seg) goto end;
+        if (!new_tail || !seg)
+          goto end;
         seg->next = NULL;
         tap_rxq_pool_free(mbuf);
         goto end;
       }
       seg = seg ? seg->next : mbuf;
-      if (tap_ctx->pool == mbuf) tap_ctx->pool = buf;
-      if (new_tail) new_tail->next = buf;
+      if (tap_ctx->pool == mbuf)
+        tap_ctx->pool = buf;
+      if (new_tail)
+        new_tail->next = buf;
       new_tail = buf;
       new_tail->next = seg->next;
 
       (*tap_ctx->iovecs)[mbuf->nb_segs].iov_len = buf->buf_len - data_off;
-      (*tap_ctx->iovecs)[mbuf->nb_segs].iov_base = (char*)buf->buf_addr + data_off;
+      (*tap_ctx->iovecs)[mbuf->nb_segs].iov_base =
+          (char *)buf->buf_addr + data_off;
 
       seg->data_len = RTE_MIN(seg->buf_len - data_off, len);
       seg->data_off = data_off;
 
       len -= seg->data_len;
-      if (len <= 0) break;
+      if (len <= 0)
+        break;
       mbuf->nb_segs++;
       /* First segment has headroom, not the others */
       data_off = 0;
@@ -287,8 +308,8 @@ end:
   return num_rx;
 }
 
-static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_id,
-                                        uint16_t q) {
+static struct rte_flow *tap_create_flow(struct mt_cni_impl *cni,
+                                        uint16_t port_id, uint16_t q) {
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[4];
   struct rte_flow_action action[2];
@@ -302,9 +323,9 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   char pkt_buf[90];
   char msk_buf[90];
   struct rte_flow_error error;
-  struct rte_flow* r_flow;
+  struct rte_flow *r_flow;
   int ret;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
 
   memset(&error, 0, sizeof(error));
 
@@ -321,8 +342,9 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
 
   memset(&ipv4_mask.hdr.dst_addr, 0xFF, MTL_IP_ADDR_LEN);
   rte_memcpy(&ipv4_spec.hdr.dst_addr, tap_ctx->ip_addr, MTL_IP_ADDR_LEN);
-  info("Flow bind to ip address inet %02x %02x %02x %02x \n", tap_ctx->ip_addr[0],
-       tap_ctx->ip_addr[1], tap_ctx->ip_addr[2], tap_ctx->ip_addr[3]);
+  info("Flow bind to ip address inet %02x %02x %02x %02x \n",
+       tap_ctx->ip_addr[0], tap_ctx->ip_addr[1], tap_ctx->ip_addr[2],
+       tap_ctx->ip_addr[3]);
 
   memset(&attr, 0, sizeof(attr));
   attr.ingress = 1;
@@ -344,8 +366,8 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
 
   ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
   if (ret < 0) {
-    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port_id, ret, q,
-        mt_string_safe(error.message));
+    err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__,
+        port_id, ret, q, mt_string_safe(error.message));
     return NULL;
   }
 
@@ -367,21 +389,23 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   memset(pkt_buf, 0, sizeof(pkt_buf));
   memset(msk_buf, 0, sizeof(msk_buf));
   snprintf(pkt_buf, 84, "%s",
-           "00000000000100000000000208060001080006040000000000000001010101010000000000020"
+           "0000000000010000000000020806000108000604000000000000000101010101000"
+           "0000000020"
            "2020202");
-  snprintf(pkt_buf, 12, "%02x%02x%02x%02x%02x%02x", tap_ctx->mac_addr.addr_bytes[0],
-           tap_ctx->mac_addr.addr_bytes[1], tap_ctx->mac_addr.addr_bytes[2],
-           tap_ctx->mac_addr.addr_bytes[3], tap_ctx->mac_addr.addr_bytes[4],
-           tap_ctx->mac_addr.addr_bytes[5]);
+  snprintf(pkt_buf, 12, "%02x%02x%02x%02x%02x%02x",
+           tap_ctx->mac_addr.addr_bytes[0], tap_ctx->mac_addr.addr_bytes[1],
+           tap_ctx->mac_addr.addr_bytes[2], tap_ctx->mac_addr.addr_bytes[3],
+           tap_ctx->mac_addr.addr_bytes[4], tap_ctx->mac_addr.addr_bytes[5]);
   info("Flow bind to mac address %12.12s \n", pkt_buf);
   snprintf(msk_buf, 84, "%s",
-           "FFFFFFFFFFFF000000000000FFFF0000000000000000000000000000000000000000000000000"
+           "FFFFFFFFFFFF000000000000FFFF000000000000000000000000000000000000000"
+           "0000000000"
            "0000000");
   memset(pattern, 0, sizeof(pattern));
 
-  spec.pattern = (void*)pkt_buf;
+  spec.pattern = (void *)pkt_buf;
   spec.length = 42;
-  mask.pattern = (void*)msk_buf;
+  mask.pattern = (void *)msk_buf;
   mask.length = 42;
 
   memset(pattern, 0, sizeof(pattern));
@@ -392,21 +416,21 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
 
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   if (!r_flow) {
-    err("%s(%d), rte_flow_create 2 fail for queue %d, %s\n", __func__, port_id, q,
-        mt_string_safe(error.message));
+    err("%s(%d), rte_flow_create 2 fail for queue %d, %s\n", __func__, port_id,
+        q, mt_string_safe(error.message));
     return NULL;
   }
   return r_flow;
 }
 
-static int tap_get_ipaddress(struct mt_cni_impl* cni) {
+static int tap_get_ipaddress(struct mt_cni_impl *cni) {
   PIP_ADAPTER_INFO pAdapterInfo;
   PIP_ADAPTER_INFO pAdapter = NULL;
   DWORD dwRetVal = 0;
   static const char library_name[] = "IPHLPAPI.dll";
   static const char function[] = "GetAdaptersInfo";
   ULONG ulOutBufLen = sizeof(IP_ADAPTER_INFO);
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
   HMODULE library = NULL;
 
   library = LoadLibraryA(library_name);
@@ -415,34 +439,38 @@ static int tap_get_ipaddress(struct mt_cni_impl* cni) {
     return 1;
   }
 
-  GetAdaptersInfo_ptr = (GetAdaptersInfo_type)((void*)GetProcAddress(library, function));
+  GetAdaptersInfo_ptr =
+      (GetAdaptersInfo_type)((void *)GetProcAddress(library, function));
   if (GetAdaptersInfo_ptr == NULL) {
     err("GetProcAddress(\"%s\", \"%s\")\n", library_name, function);
     return 1;
   }
 
-  pAdapterInfo = (IP_ADAPTER_INFO*)malloc(sizeof(IP_ADAPTER_INFO));
+  pAdapterInfo = (IP_ADAPTER_INFO *)malloc(sizeof(IP_ADAPTER_INFO));
   if (pAdapterInfo == NULL) {
     err("Error allocating memory needed to call GetAdaptersinfo\n");
     return 1;
   }
 
-  if (GetAdaptersInfo_ptr(pAdapterInfo, &ulOutBufLen) == ERROR_BUFFER_OVERFLOW) {
+  if (GetAdaptersInfo_ptr(pAdapterInfo, &ulOutBufLen) ==
+      ERROR_BUFFER_OVERFLOW) {
     free(pAdapterInfo);
-    pAdapterInfo = (IP_ADAPTER_INFO*)malloc(ulOutBufLen);
+    pAdapterInfo = (IP_ADAPTER_INFO *)malloc(ulOutBufLen);
     if (pAdapterInfo == NULL) {
       err("Error allocating memory needed to call GetAdaptersinfo\n");
       return 1;
     }
   }
 
-  if ((dwRetVal = GetAdaptersInfo_ptr(pAdapterInfo, &ulOutBufLen)) == NO_ERROR) {
+  if ((dwRetVal = GetAdaptersInfo_ptr(pAdapterInfo, &ulOutBufLen)) ==
+      NO_ERROR) {
     pAdapter = pAdapterInfo;
     while (pAdapter) {
       dbg("\tAdapter Name: \t%s\n", pAdapter->AdapterName);
       if (strcmpi(tap_ctx->tap_name, pAdapter->AdapterName) == 0) {
         dbg("Found ip address %s\n", pAdapter->IpAddressList.IpAddress.String);
-        inet_pton(AF_INET, pAdapter->IpAddressList.IpAddress.String, tap_ctx->ip_addr);
+        inet_pton(AF_INET, pAdapter->IpAddressList.IpAddress.String,
+                  tap_ctx->ip_addr);
       }
       dbg("\tAdapter Desc: \t%s\n", pAdapter->Description);
       dbg("\tIP Address: \t%s\n", pAdapter->IpAddressList.IpAddress.String);
@@ -452,9 +480,9 @@ static int tap_get_ipaddress(struct mt_cni_impl* cni) {
   return 0;
 }
 
-static int tap_uninit_lcore(struct mtl_main_impl* impl) {
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+static int tap_uninit_lcore(struct mtl_main_impl *impl) {
+  struct mt_cni_impl *cni = mt_get_cni(impl);
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
 
   while (rte_atomic32_read(&cni->stop_tap) == 0) {
     mt_sleep_ms(10);
@@ -469,15 +497,15 @@ static int tap_uninit_lcore(struct mtl_main_impl* impl) {
 // Thread to handle rx packets in ring buffer from NIC card
 // Write packet to TAP from ring buffer
 // Read packets from TAP driver and directly transfer to NIC card
-static int tap_bkg_thread(void* arg) {
-  struct mtl_main_impl* impl = arg;
-  struct mt_cni_impl* cni = mt_get_cni(impl);
+static int tap_bkg_thread(void *arg) {
+  struct mtl_main_impl *impl = arg;
+  struct mt_cni_impl *cni = mt_get_cni(impl);
   int num_ports = mt_num_ports(impl);
   int i;
-  void* data = NULL;
+  void *data = NULL;
   uint16_t rx, tx, count;
-  struct rte_mbuf* pkts_rx[1];
-  struct rte_mbuf* pkts_tx[1];
+  struct rte_mbuf *pkts_rx[1];
+  struct rte_mbuf *pkts_tx[1];
 
   pkts_tx[0] = NULL;
   pkts_rx[0] = NULL;
@@ -487,7 +515,8 @@ static int tap_bkg_thread(void* arg) {
     for (i = 0; i < num_ports; i++) {
       count = rte_ring_count(tap_tx_ring);
       while (count) {
-        if (!pkts_tx[0]) pkts_tx[0] = tap_get_mbuf(tap_tx_ring, &data, &tx);
+        if (!pkts_tx[0])
+          pkts_tx[0] = tap_get_mbuf(tap_tx_ring, &data, &tx);
         if (pkts_tx[0]) {
           tx = tap_tx_packet(cni, pkts_tx, 1);
           if (tx > 0) {
@@ -515,14 +544,15 @@ static int tap_bkg_thread(void* arg) {
   return 0;
 }
 
-static int tap_queues_uinit(struct mtl_main_impl* impl) {
+static int tap_queues_uinit(struct mtl_main_impl *impl) {
   int num_ports = mt_num_ports(impl);
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct mt_cni_impl *cni = mt_get_cni(impl);
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
   for (int i = 0; i < num_ports; i++) {
     if (cni->tap_tx_q[i]) {
-      struct rte_mbuf* pad = mt_get_pad(impl, i);
-      if (pad) mt_txq_flush(cni->tap_tx_q[i], pad);
+      struct rte_mbuf *pad = mt_get_pad(impl, i);
+      if (pad)
+        mt_txq_flush(cni->tap_tx_q[i], pad);
       mt_txq_put(cni->tap_tx_q[i]);
       cni->tap_tx_q[i] = NULL;
     }
@@ -531,9 +561,12 @@ static int tap_queues_uinit(struct mtl_main_impl* impl) {
       cni->tap_rx_q[i] = NULL;
     }
   }
-  if (tap_ctx->iovecs) rte_free(tap_ctx->iovecs);
-  if (tap_ctx->pool) tap_rxq_pool_free(tap_ctx->pool);
-  if (tap_ctx->mp) mt_mempool_free(tap_ctx->mp);
+  if (tap_ctx->iovecs)
+    rte_free(tap_ctx->iovecs);
+  if (tap_ctx->pool)
+    tap_rxq_pool_free(tap_ctx->pool);
+  if (tap_ctx->mp)
+    mt_mempool_free(tap_ctx->mp);
   return 0;
 }
 
@@ -541,16 +574,17 @@ static int configure_tap() {
   int ret, i;
   char ring_name[32];
   unsigned int flags, count;
-  struct mtl_main_impl* impl = tap_get_global_impl();
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-  struct mt_interface* inf = mt_if(impl, 0);
+  struct mtl_main_impl *impl = tap_get_global_impl();
+  struct mt_cni_impl *cni = mt_get_cni(impl);
+  struct mt_interface *inf = mt_if(impl, 0);
   struct iovec(*iovecs)[inf->nb_rx_desc + 1];
   int data_off = RTE_PKTMBUF_HEADROOM;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
-  struct rte_mbuf** tmp = &tap_ctx->pool;
-  struct rte_mempool* mbuf_pool = mt_mempool_create(
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
+  struct rte_mbuf **tmp = &tap_ctx->pool;
+  struct rte_mempool *mbuf_pool = mt_mempool_create(
       impl, 0, "tap", inf->nb_rx_desc + ST_TX_VIDEO_SESSIONS_RING_SIZE,
-      MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data), ST_PKT_MAX_ETHER_BYTES);
+      MT_MBUF_CACHE_SIZE, sizeof(struct mt_muf_priv_data),
+      ST_PKT_MAX_ETHER_BYTES);
   if (!mbuf_pool) {
     err("%s tap mempool create fail\n", __func__);
     return -ENOMEM;
@@ -572,7 +606,7 @@ static int configure_tap() {
       return ret;
     }
     (*tap_ctx->iovecs)[i].iov_len = (*tmp)->buf_len - data_off;
-    (*tap_ctx->iovecs)[i].iov_base = (char*)(*tmp)->buf_addr + data_off;
+    (*tap_ctx->iovecs)[i].iov_base = (char *)(*tmp)->buf_addr + data_off;
     data_off = 0;
     tmp = &(*tmp)->next;
   }
@@ -587,48 +621,49 @@ static int configure_tap() {
   return 0;
 }
 
-static bool tap_open_device(struct mt_cni_impl* cni,
+static bool tap_open_device(struct mt_cni_impl *cni,
                             PSP_DEVICE_INTERFACE_DETAIL_DATA dev_ifx_detail) {
-  struct mtl_main_impl* impl = tap_get_global_impl();
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
-  char* path;
+  struct mtl_main_impl *impl = tap_get_global_impl();
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
+  char *path;
   char tap_device_path[MAX_PATH];
 
-  path = strrchr(dev_ifx_detail->DevicePath, '\\');  // find the last character '\'
-  if (path)                                          // remove the character '\'
+  path =
+      strrchr(dev_ifx_detail->DevicePath, '\\'); // find the last character '\'
+  if (path)                                      // remove the character '\'
     path++;
   else
     return false;
   snprintf(tap_ctx->tap_name, sizeof(tap_ctx->tap_name), "%s", path);
-  snprintf(tap_device_path, sizeof(tap_device_path), "%s%s%s", USERMODEDEVICEDIR, path,
-           TAP_WIN_SUFFIX);
+  snprintf(tap_device_path, sizeof(tap_device_path), "%s%s%s",
+           USERMODEDEVICEDIR, path, TAP_WIN_SUFFIX);
   info("%s create file path %s\n", __func__, tap_device_path);
 
-  tap_ctx->tap_handle =
-      CreateFile(tap_device_path, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING,
-                 FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_OVERLAPPED, 0);
+  tap_ctx->tap_handle = CreateFile(
+      tap_device_path, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING,
+      FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_OVERLAPPED, 0);
   if (tap_ctx->tap_handle == NULL) {
     err("CreateFile failed on device: %s\n", tap_device_path);
     return false;
   }
   ULONG mtu = 0;
   DWORD len;
-  if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPMTU, &mtu, sizeof(mtu), &mtu,
-                      sizeof(mtu), &len, NULL)) {
+  if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPMTU, &mtu,
+                      sizeof(mtu), &mtu, sizeof(mtu), &len, NULL)) {
     info("TAP-Windows MTU=%d\n", (int)mtu);
   }
   ULONG info[3];
   memset(info, 0, sizeof(info));
-  if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPVER, &info, sizeof(info),
-                      &info, sizeof(info), &len, NULL)) {
+  if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPVER, &info,
+                      sizeof(info), &info, sizeof(info), &len, NULL)) {
     info("TAP-Windows Driver Version %d.%d %s\n", (int)info[0], (int)info[1],
          (info[2] ? "(DEBUG)" : ""));
   }
 
   unsigned char mac[6];
   memset(mac, 0, sizeof(mac));
-  if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPMAC, &mac, sizeof(mac), &mac,
-                      sizeof(mac), &len, NULL)) {
+  if (DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_GET_TAPMAC, &mac,
+                      sizeof(mac), &mac, sizeof(mac), &len, NULL)) {
     rte_memcpy(tap_ctx->mac_addr.addr_bytes, mac, 6);
     info("TAP-Windows Mac address %02x-%02x-%02x-%02x-%02x-%02x\n",
          tap_ctx->mac_addr.addr_bytes[0], tap_ctx->mac_addr.addr_bytes[1],
@@ -639,9 +674,9 @@ static bool tap_open_device(struct mt_cni_impl* cni,
   ULONG status = TRUE;
   if (!DeviceIoControl(tap_ctx->tap_handle, ST_IOCTL_SET_TAPSTATUS, &status,
                        sizeof(status), &status, sizeof(status), &len, NULL)) {
-    info(
-        "WARNING: The TAP-Windows driver rejected a TAP_WIN_IOCTL_SET_MEDIA_STATUS "
-        "DeviceIoControl call.\n");
+    info("WARNING: The TAP-Windows driver rejected a "
+         "TAP_WIN_IOCTL_SET_MEDIA_STATUS "
+         "DeviceIoControl call.\n");
   }
 
   memset(&tap_ctx->writes, 0, sizeof(tap_ctx->writes));
@@ -660,7 +695,8 @@ static bool tap_open_device(struct mt_cni_impl* cni,
     for (int i = 0; i < num_ports; i++) {
       if (rte_eth_dev_mac_addr_add(mt_port_id(impl, i), &tap_ctx->mac_addr, 0))
         err("%s bind to mac failed \n", __func__);
-      tap_create_flow(cni, mt_port_id(impl, i), mt_rxq_queue_id(cni->tap_rx_q[i]));
+      tap_create_flow(cni, mt_port_id(impl, i),
+                      mt_rxq_queue_id(cni->tap_rx_q[i]));
     }
   }
   return true;
@@ -674,7 +710,8 @@ static HDEVINFO get_tap_device_information_set(HDEVINFO tapinfo,
   HDEVINFO tapset;
 
   /* obtain the driver interface for this device */
-  ret = SetupDiGetDeviceInstanceId(tapinfo, tapdata, tap_id, sizeof(tap_id), &size);
+  ret = SetupDiGetDeviceInstanceId(tapinfo, tapdata, tap_id, sizeof(tap_id),
+                                   &size);
   if (ret) {
     dbg("%s tap device id %s\n", __func__, tap_id);
     tapset = SetupDiGetClassDevs(&GUID_NDIS_LAN_CLASS, tap_id, NULL,
@@ -690,7 +727,8 @@ static HDEVINFO get_tap_device_information_set(HDEVINFO tapinfo,
   }
 }
 
-static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO tapset) {
+static PSP_DEVICE_INTERFACE_DETAIL_DATA
+get_tap_device_interface_detail(HDEVINFO tapset) {
   BOOL ret;
   DWORD size = 0;
   SP_DEVICE_INTERFACE_DATA tap_interface_data;
@@ -703,15 +741,17 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
                                     &tap_interface_data);
   if (ret) {
     size = 0;
-    ret = SetupDiGetDeviceInterfaceDetail(tapset, &tap_interface_data, NULL, 0, &size,
-                                          NULL);
+    ret = SetupDiGetDeviceInterfaceDetail(tapset, &tap_interface_data, NULL, 0,
+                                          &size, NULL);
     if (!ret) {
       if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
         tap_interface_detail = calloc(size, sizeof(char));
         if (tap_interface_detail) {
-          tap_interface_detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
+          tap_interface_detail->cbSize =
+              sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
           ret = SetupDiGetDeviceInterfaceDetail(tapset, &tap_interface_data,
-                                                tap_interface_detail, size, NULL, NULL);
+                                                tap_interface_detail, size,
+                                                NULL, NULL);
           if (!ret) {
             err("Error get tap interface detail");
             free(tap_interface_detail);
@@ -732,14 +772,14 @@ static PSP_DEVICE_INTERFACE_DETAIL_DATA get_tap_device_interface_detail(HDEVINFO
   return NULL;
 }
 
-static int tap_device_init(struct mt_cni_impl* cni) {
+static int tap_device_init(struct mt_cni_impl *cni) {
   DWORD device_index = 0;
   HDEVINFO dev_info;
   SP_DEVINFO_DATA device_info_data;
   char sz_buffer[MAX_PATH];
   HDEVINFO di_set = INVALID_HANDLE_VALUE;
   PSP_DEVICE_INTERFACE_DETAIL_DATA dev_ifx_detail = NULL;
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
 
   dev_info = SetupDiGetClassDevs(&GUID_DEVCLASS_NET, NULL, NULL, DIGCF_PRESENT);
   if (dev_info == INVALID_HANDLE_VALUE) {
@@ -753,21 +793,27 @@ static int tap_device_init(struct mt_cni_impl* cni) {
     device_index++;
     /* we only want to enumerate net class devices */
     memset(sz_buffer, 0, sizeof(sz_buffer));
-    SetupDiGetDeviceRegistryProperty(dev_info, &device_info_data, SPDRP_DEVICEDESC, NULL,
-                                     (PBYTE)&sz_buffer, sizeof(sz_buffer), NULL);
+    SetupDiGetDeviceRegistryProperty(dev_info, &device_info_data,
+                                     SPDRP_DEVICEDESC, NULL, (PBYTE)&sz_buffer,
+                                     sizeof(sz_buffer), NULL);
     if (strstr(sz_buffer, TAP_WIN_DRIVERNAME) != NULL) {
       di_set = get_tap_device_information_set(dev_info, &device_info_data);
-      if (di_set == INVALID_HANDLE_VALUE) continue;
+      if (di_set == INVALID_HANDLE_VALUE)
+        continue;
       dev_ifx_detail = get_tap_device_interface_detail(di_set);
       if (!dev_ifx_detail) {
-        if (di_set != INVALID_HANDLE_VALUE) SetupDiDestroyDeviceInfoList(di_set);
+        if (di_set != INVALID_HANDLE_VALUE)
+          SetupDiDestroyDeviceInfoList(di_set);
         continue;
       } else {
         if (tap_open_device(cni, dev_ifx_detail)) {
-          if (dev_ifx_detail) free(dev_ifx_detail);
-          if (di_set != INVALID_HANDLE_VALUE) SetupDiDestroyDeviceInfoList(di_set);
+          if (dev_ifx_detail)
+            free(dev_ifx_detail);
+          if (di_set != INVALID_HANDLE_VALUE)
+            SetupDiDestroyDeviceInfoList(di_set);
 
-          if (dev_info != INVALID_HANDLE_VALUE) SetupDiDestroyDeviceInfoList(dev_info);
+          if (dev_info != INVALID_HANDLE_VALUE)
+            SetupDiDestroyDeviceInfoList(dev_info);
 
           break;
         }
@@ -776,33 +822,36 @@ static int tap_device_init(struct mt_cni_impl* cni) {
     memset(&device_info_data, 0, sizeof(SP_DEVINFO_DATA));
     device_info_data.cbSize = sizeof(SP_DEVINFO_DATA);
   }
-  if (dev_info != INVALID_HANDLE_VALUE) SetupDiDestroyDeviceInfoList(dev_info);
+  if (dev_info != INVALID_HANDLE_VALUE)
+    SetupDiDestroyDeviceInfoList(dev_info);
   if (tap_ctx->tap_handle)
     return 0;
   else
     return -EIO;
 }
 
-static int tap_device_uninit(struct mtl_main_impl* impl) {
-  struct rte_mbuf* pkts_rx;
-  void* data = NULL;
+static int tap_device_uninit(struct mtl_main_impl *impl) {
+  struct rte_mbuf *pkts_rx;
+  void *data = NULL;
   uint16_t tx;
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-  struct tap_rt_context* tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  struct mt_cni_impl *cni = mt_get_cni(impl);
+  struct tap_rt_context *tap_ctx = (struct tap_rt_context *)cni->tap_context;
 
   pkts_rx = tap_get_mbuf(tap_tx_ring, &data, &tx);
   while (pkts_rx) {
     mt_free_mbufs(&pkts_rx, 1);
     pkts_rx = tap_get_mbuf(tap_tx_ring, &data, &tx);
   }
-  if (tap_ctx->tap_handle) CloseHandle(tap_ctx->tap_handle);
+  if (tap_ctx->tap_handle)
+    CloseHandle(tap_ctx->tap_handle);
   return 0;
 }
 
 static const struct rte_eth_txconf dev_tx_port_conf = {.tx_rs_thresh = 1,
                                                        .tx_free_thresh = 1};
 
-static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) {
+static int tap_queues_init(struct mtl_main_impl *impl,
+                           struct mt_cni_impl *cni) {
   int num_ports = mt_num_ports(impl);
 
   uint16_t nb_tx_desc;
@@ -830,8 +879,9 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
     }
     nb_tx_desc = mt_if_nb_tx_desc(impl, i);
     socket_id = rte_eth_dev_socket_id(mt_port_id(impl, i));
-    ret = rte_eth_tx_queue_setup(mt_port_id(impl, i), mt_txq_queue_id(cni->tap_tx_q[i]),
-                                 nb_tx_desc, socket_id, &dev_tx_port_conf);
+    ret = rte_eth_tx_queue_setup(mt_port_id(impl, i),
+                                 mt_txq_queue_id(cni->tap_tx_q[i]), nb_tx_desc,
+                                 socket_id, &dev_tx_port_conf);
     if (ret < 0) {
       err("%s(%d), rte_eth_tx_queue_setup fail %d\n", __func__, i, ret);
       return ret;
@@ -858,9 +908,9 @@ static int tap_queues_init(struct mtl_main_impl* impl, struct mt_cni_impl* cni) 
   return 0;
 }
 
-int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct mt_cni_impl* cni = mt_get_cni(impl);
-  struct rte_mbuf* pkts_rx[ST_CNI_RX_BURST_SIZE];
+int mt_tap_handle(struct mtl_main_impl *impl, enum mtl_port port) {
+  struct mt_cni_impl *cni = mt_get_cni(impl);
+  struct rte_mbuf *pkts_rx[ST_CNI_RX_BURST_SIZE];
   uint16_t rx;
 
   if (rte_atomic32_read(&cni->stop_tap)) {
@@ -880,27 +930,30 @@ int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
   return 0;
 }
 
-int mt_tap_init(struct mtl_main_impl* impl) {
+int mt_tap_init(struct mtl_main_impl *impl) {
   int ret;
-  struct mt_cni_impl* cni = mt_get_cni(impl);
+  struct mt_cni_impl *cni = mt_get_cni(impl);
   unsigned int lcore;
-  struct tap_rt_context* tap_ctx;
+  struct tap_rt_context *tap_ctx;
 
   tap_set_global_impl(impl);
 
   cni->tap_context = calloc(sizeof(struct tap_rt_context), sizeof(char));
-  tap_ctx = (struct tap_rt_context*)cni->tap_context;
+  tap_ctx = (struct tap_rt_context *)cni->tap_context;
   tap_ctx->flow_control =
-      true;  // if do not need flow control, should set NIC to promiscuous mode
+      true; // if do not need flow control, should set NIC to promiscuous mode
   ret = tap_queues_init(impl, cni);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   ret = tap_device_init(cni);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   rte_atomic32_set(&cni->stop_tap, 0);
   tap_ctx->has_lcore = false;
-  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_TAP, mt_socket_id(impl, MTL_PORT_P));
+  ret = mt_sch_get_lcore(impl, &lcore, MT_LCORE_TYPE_TAP,
+                         mt_socket_id(impl, MTL_PORT_P));
   if (ret < 0) {
     err("%s, get lcore fail %d\n", __func__, ret);
     mt_tap_uinit(impl);
@@ -918,8 +971,8 @@ int mt_tap_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_tap_uinit(struct mtl_main_impl* impl) {
-  struct mt_cni_impl* cni = mt_get_cni(impl);
+int mt_tap_uinit(struct mtl_main_impl *impl) {
+  struct mt_cni_impl *cni = mt_get_cni(impl);
 
   rte_atomic32_set(&cni->stop_tap, 1);
   if (cni->tap_bkg_tid) {
@@ -930,7 +983,8 @@ int mt_tap_uinit(struct mtl_main_impl* impl) {
   tap_queues_uinit(impl);
   tap_device_uninit(impl);
   tap_set_global_impl(NULL);
-  if (cni->tap_context) free(cni->tap_context);
+  if (cni->tap_context)
+    free(cni->tap_context);
   info("%s, succ\n", __func__);
   return 0;
 }

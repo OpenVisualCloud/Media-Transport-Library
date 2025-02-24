@@ -16,10 +16,10 @@
 // clang-format on
 
 /* On error, -1 is returned, and errno is set appropriately. */
-#define MUDP_ERR_RET(code) \
-  do {                     \
-    errno = code;          \
-    return -1;             \
+#define MUDP_ERR_RET(code)                                                     \
+  do {                                                                         \
+    errno = code;                                                              \
+    return -1;                                                                 \
   } while (0)
 
 /* if bind or not */
@@ -39,12 +39,12 @@
 #define MUDP_PREFIX "MU_"
 
 struct mudp_impl {
-  struct mtl_main_impl* parent;
+  struct mtl_main_impl *parent;
   enum mt_handle_type type;
   int idx;
   bool alive;
-  int (*user_dump)(void* priv);
-  void* user_dump_priv;
+  int (*user_dump)(void *priv);
+  void *user_dump_priv;
 
   enum mtl_port port;
   struct mt_udp_hdr hdr;
@@ -53,11 +53,11 @@ struct mudp_impl {
   int fallback_fd; /* for MTL_PMD_KERNEL_SOCKET */
 
   uint64_t txq_bps; /* bit per sec for q */
-  struct mt_txq_entry* txq;
-  struct mur_client* rxq;
+  struct mt_txq_entry *txq;
+  struct mur_client *rxq;
   unsigned int rx_ring_count;
   unsigned int rx_poll_sleep_us;
-  struct rte_mempool* tx_pool;
+  struct rte_mempool *tx_pool;
   bool tx_pool_by_queue;
   uint16_t element_size;
   unsigned int element_nb;
@@ -74,7 +74,7 @@ struct mudp_impl {
   unsigned int rx_timeout_us;
   uint8_t user_mac[MTL_MAC_ADDR_LEN];
 
-  uint32_t* mcast_addrs;
+  uint32_t *mcast_addrs;
   int mcast_addrs_nb;
   pthread_mutex_t mcast_addrs_mutex;
 
@@ -116,7 +116,7 @@ struct mudp_impl {
 
 int mudp_verify_socket_args(int domain, int type, int protocol);
 
-int mudp_poll_query(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout,
-                    int (*query)(void* priv), void* priv);
+int mudp_poll_query(struct mudp_pollfd *fds, mudp_nfds_t nfds, int timeout,
+                    int (*query)(void *priv), void *priv);
 
 #endif

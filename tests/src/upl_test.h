@@ -18,19 +18,21 @@ struct uplt_ctx {
   uint8_t mcast_ip_addr[UPLT_IP_ADDR_LEN];
 };
 
-struct uplt_ctx* uplt_get_ctx(void);
+struct uplt_ctx *uplt_get_ctx(void);
 
 int uplt_socket_port(int domain, int type, int protocol, int port);
 
-static void inline uplt_init_sockaddr(struct sockaddr_in* saddr,
-                                      uint8_t ip[UPLT_IP_ADDR_LEN], uint16_t port) {
+static void inline uplt_init_sockaddr(struct sockaddr_in *saddr,
+                                      uint8_t ip[UPLT_IP_ADDR_LEN],
+                                      uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
   memcpy(&saddr->sin_addr.s_addr, ip, UPLT_IP_ADDR_LEN);
   saddr->sin_port = htons(port);
 }
 
-static void inline uplt_init_sockaddr_any(struct sockaddr_in* saddr, uint16_t port) {
+static void inline uplt_init_sockaddr_any(struct sockaddr_in *saddr,
+                                          uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = INADDR_ANY;

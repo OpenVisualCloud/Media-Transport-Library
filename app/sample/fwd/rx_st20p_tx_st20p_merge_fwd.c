@@ -9,7 +9,7 @@ struct rx_ctx {
   size_t fb_offset;
   pthread_cond_t rx_wake_cond;
   pthread_mutex_t rx_wake_mutex;
-  void* app;
+  void *app;
   int fb_rcv;
 };
 
@@ -30,10 +30,11 @@ struct merge_fwd_sample_ctx {
   bool sync_tmstamp;
 };
 
-static int tx_st20p_frame_available(void* priv) {
-  struct merge_fwd_sample_ctx* s = priv;
+static int tx_st20p_frame_available(void *priv) {
+  struct merge_fwd_sample_ctx *s = priv;
 
-  if (!s->ready) return -EIO;
+  if (!s->ready)
+    return -EIO;
 
   st_pthread_mutex_lock(&s->tx_wake_mutex);
   st_pthread_cond_signal(&s->tx_wake_cond);
@@ -42,11 +43,12 @@ static int tx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_ctx* s = priv;
-  struct merge_fwd_sample_ctx* app = s->app;
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_ctx *s = priv;
+  struct merge_fwd_sample_ctx *app = s->app;
 
-  if (!app->ready) return -EIO;
+  if (!app->ready)
+    return -EIO;
 
   st_pthread_mutex_lock(&s->rx_wake_mutex);
   st_pthread_cond_signal(&s->rx_wake_cond);
@@ -55,13 +57,13 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static void* tx_st20p_fwd_thread(void* args) {
-  struct merge_fwd_sample_ctx* s = args;
+static void *tx_st20p_fwd_thread(void *args) {
+  struct merge_fwd_sample_ctx *s = args;
   st20p_tx_handle tx_handle = s->tx_handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   /* in case when timestamp mismatch */
-  struct st_frame* rx_restore_frame = NULL;
+  struct st_frame *rx_restore_frame = NULL;
   int rx_restore_idx = -1;
 
 loop_entry:
@@ -70,15 +72,16 @@ loop_entry:
     frame = st20p_tx_get_frame(tx_handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->tx_wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->tx_wake_cond, &s->tx_wake_mutex);
       st_pthread_mutex_unlock(&s->tx_wake_mutex);
       continue;
     }
 
     for (int i = 0; i < 4; i++) {
-      struct rx_ctx* rx = &s->rx[i];
+      struct rx_ctx *rx = &s->rx[i];
       st20p_rx_handle rx_handle = rx->rx_handle;
-      struct st_frame* rx_frame = NULL;
+      struct st_frame *rx_frame = NULL;
 
       while (!s->stop && !rx_frame) {
         if (rx_restore_frame && rx_restore_idx == i) {
@@ -87,14 +90,16 @@ loop_entry:
           rx_frame = st20p_rx_get_frame(rx_handle);
           if (!rx_frame) { /* no frame */
             st_pthread_mutex_lock(&rx->rx_wake_mutex);
-            if (!s->stop) st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
+            if (!s->stop)
+              st_pthread_cond_wait(&rx->rx_wake_cond, &rx->rx_wake_mutex);
             st_pthread_mutex_unlock(&rx->rx_wake_mutex);
             continue;
           }
         }
         if (s->sync_tmstamp) {
           uint64_t tmstamp = rx_frame->timestamp;
-          if (!tx_tmstamp) tx_tmstamp = tmstamp;
+          if (!tx_tmstamp)
+            tx_tmstamp = tmstamp;
           if (tx_tmstamp < tmstamp) {
             err("%s, newer timestamp occurs %" PRIu64 ", frame %" PRIu64
                 " may have dropped packets\n",
@@ -112,8 +117,8 @@ loop_entry:
         }
 
         /* copy frame */
-        uint8_t* src = rx_frame->addr[0];
-        uint8_t* dst = frame->addr[0] + rx->fb_offset;
+        uint8_t *src = rx_frame->addr[0];
+        uint8_t *dst = frame->addr[0] + rx->fb_offset;
         uint32_t src_linesize = rx_frame->linesize[0];
         uint32_t dst_linesize = frame->linesize[0];
         for (int line = 0; line < rx_frame->height; line++) {
@@ -142,7 +147,7 @@ loop_entry:
   return NULL;
 }
 
-static int split_fwd_sample_free_app(struct merge_fwd_sample_ctx* app) {
+static int split_fwd_sample_free_app(struct merge_fwd_sample_ctx *app) {
   for (int i = 0; i < 4; i++) {
     if (app->rx[i].rx_handle) {
       st20p_rx_free(app->rx[i].rx_handle);
@@ -161,7 +166,7 @@ static int split_fwd_sample_free_app(struct merge_fwd_sample_ctx* app) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int session_num = 4;
   struct st_sample_context ctx;
   int ret;
@@ -187,8 +192,8 @@ int main(int argc, char** argv) {
   app.st = ctx.st;
   st_pthread_mutex_init(&app.tx_wake_mutex, NULL);
   st_pthread_cond_init(&app.tx_wake_cond, NULL);
-  app.sync_tmstamp = true; /* make sure frames to be merged have same timestamp, otherwise
-                              disable this option */
+  app.sync_tmstamp = true; /* make sure frames to be merged have same timestamp,
+                              otherwise disable this option */
 
   struct st20p_tx_ops ops_tx;
   memset(&ops_tx, 0, sizeof(ops_tx));
@@ -209,7 +214,8 @@ int main(int argc, char** argv) {
   ops_tx.transport_fmt = ctx.fmt;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.framebuff_cnt = ctx.framebuff_cnt;
-  if (app.sync_tmstamp) ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+  if (app.sync_tmstamp)
+    ops_tx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
   ops_tx.notify_frame_available = tx_st20p_frame_available;
   st20p_tx_handle tx_handle = st20p_tx_create(ctx.st, &ops_tx);
   if (!tx_handle) {
@@ -220,7 +226,7 @@ int main(int argc, char** argv) {
   app.tx_handle = tx_handle;
 
   for (int i = 0; i < 4; i++) {
-    struct rx_ctx* rx = &app.rx[i];
+    struct rx_ctx *rx = &app.rx[i];
     st_pthread_mutex_init(&rx->rx_wake_mutex, NULL);
     st_pthread_cond_init(&rx->rx_wake_cond, NULL);
     rx->app = &app;
@@ -265,7 +271,8 @@ int main(int argc, char** argv) {
   st20_get_pgroup(ctx.fmt, &st20_pg);
   app.rx[0].fb_offset = 0;
   app.rx[1].fb_offset = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
-  app.rx[2].fb_offset = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
+  app.rx[2].fb_offset =
+      (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.rx[3].fb_offset = app.rx[2].fb_offset + app.rx[1].fb_offset;
   app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 
@@ -281,7 +288,7 @@ int main(int argc, char** argv) {
   st_pthread_cond_signal(&app.tx_wake_cond);
   st_pthread_mutex_unlock(&app.tx_wake_mutex);
   for (int i = 0; i < 4; i++) {
-    struct rx_ctx* rx = &app.rx[i];
+    struct rx_ctx *rx = &app.rx[i];
     st_pthread_mutex_lock(&rx->rx_wake_mutex);
     st_pthread_cond_signal(&rx->rx_wake_cond);
     st_pthread_mutex_unlock(&rx->rx_wake_mutex);

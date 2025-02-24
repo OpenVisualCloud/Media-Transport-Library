@@ -13,25 +13,26 @@
 #include "st_err.h"
 #include "st_tx_video_session.h"
 
-static int video_trs_tasklet_start(void* priv) {
-  struct st_video_transmitter_impl* trs = priv;
+static int video_trs_tasklet_start(void *priv) {
+  struct st_video_transmitter_impl *trs = priv;
   int idx = trs->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static int video_trs_tasklet_stop(void* priv) {
-  struct st_video_transmitter_impl* trs = priv;
+static int video_trs_tasklet_stop(void *priv) {
+  struct st_video_transmitter_impl *trs = priv;
   int idx = trs->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
-                                     struct st_tx_video_session_impl* s,
-                                     enum mtl_session_port s_port, uint16_t nb_pkts) {
+static uint16_t video_trs_burst_fail(struct mtl_main_impl *impl,
+                                     struct st_tx_video_session_impl *s,
+                                     enum mtl_session_port s_port,
+                                     uint16_t nb_pkts) {
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
 
@@ -46,25 +47,29 @@ static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
   return 0;
 }
 
-static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
-                                    struct st_tx_video_session_impl* s,
+static uint16_t video_trs_burst_pad(struct mtl_main_impl *impl,
+                                    struct st_tx_video_session_impl *s,
                                     enum mtl_session_port s_port,
-                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+                                    struct rte_mbuf **tx_pkts,
+                                    uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (!tx) return video_trs_burst_fail(impl, s, s_port, nb_pkts);
+  if (!tx)
+    return video_trs_burst_fail(impl, s, s_port, nb_pkts);
   return tx;
 }
 
 /* for normal pkts, pad should call the video_trs_burst_pad */
-static uint16_t video_trs_burst(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s,
-                                enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
-                                uint16_t nb_pkts) {
-  if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
+static uint16_t video_trs_burst(struct mtl_main_impl *impl,
+                                struct st_tx_video_session_impl *s,
+                                enum mtl_session_port s_port,
+                                struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
+  if (s->rtcp_tx[s_port])
+    mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   s->stat_pkts_burst += tx;
   if (!tx) {
-    if (s->rtcp_tx[s_port]) rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
+    if (s->rtcp_tx[s_port])
+      rte_pktmbuf_free_bulk(tx_pkts, nb_pkts);
     return video_trs_burst_fail(impl, s, s_port, nb_pkts);
   }
 
@@ -75,8 +80,9 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
 
   int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);
   if (0 == pkt_idx) {
-    struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
-    if (frame) st20_frame_tx_start(impl, s, s_port, frame);
+    struct st_frame_trans *frame = st_tx_mbuf_get_priv(tx_pkts[0]);
+    if (frame)
+      st20_frame_tx_start(impl, s, s_port, frame);
   }
 
   for (uint16_t i = 0; i < tx; i++) {
@@ -88,16 +94,16 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
 }
 
 /* warm start for the first packet */
-static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s,
+static int video_trs_rl_warm_up(struct mtl_main_impl *impl,
+                                struct st_tx_video_session_impl *s,
                                 enum mtl_session_port s_port) {
-  struct st_tx_video_pacing* pacing = &s->pacing;
+  struct st_tx_video_pacing *pacing = &s->pacing;
   uint64_t target_ptp = s->trs_target_ptp[s_port];
   uint64_t target_tsc = s->trs_target_tsc[s_port];
   uint64_t cur_tsc, pre_tsc;
   uint64_t cur_ptp;
   int32_t warm_pkts = pacing->warm_pkts;
-  struct rte_mbuf* pads[1];
+  struct rte_mbuf *pads[1];
   int32_t delta_pkts;
   unsigned int tx;
   bool warm_use_tsc = true;
@@ -134,18 +140,19 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
     if (delta_pkts > i) {
       warm_pkts -= (delta_pkts - i);
       s->stat_trans_recalculate_warmup++;
-      dbg("%s(%d), mismatch delta_pkts %d at %d\n", __func__, s->idx, delta_pkts, i);
+      dbg("%s(%d), mismatch delta_pkts %d at %d\n", __func__, s->idx,
+          delta_pkts, i);
     }
   }
 
   return 0;
 }
 
-static int video_burst_packet(struct mtl_main_impl* impl,
-                              struct st_tx_video_session_impl* s,
-                              enum mtl_session_port s_port, struct rte_mbuf** pkts,
-                              int bulk, bool use_two) {
-  struct st_tx_video_pacing* pacing = &s->pacing;
+static int video_burst_packet(struct mtl_main_impl *impl,
+                              struct st_tx_video_session_impl *s,
+                              enum mtl_session_port s_port,
+                              struct rte_mbuf **pkts, int bulk, bool use_two) {
+  struct st_tx_video_pacing *pacing = &s->pacing;
   int tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
 
@@ -157,39 +164,46 @@ static int video_burst_packet(struct mtl_main_impl* impl,
       s->trs_inflight_num[s_port] = remaining;
       s->trs_inflight_idx[s_port] = 0;
       s->trs_inflight_cnt[s_port]++;
-      for (i = 0; i < remaining; i++) s->trs_inflight[s_port][i] = pkts[tx + i];
+      for (i = 0; i < remaining; i++)
+        s->trs_inflight[s_port][i] = pkts[tx + i];
     } else {
       s->trs_inflight_num2[s_port] = remaining;
       s->trs_inflight_idx2[s_port] = 0;
       s->trs_inflight_cnt2[s_port]++;
-      for (i = 0; i < remaining; i++) s->trs_inflight2[s_port][i] = pkts[tx + i];
+      for (i = 0; i < remaining; i++)
+        s->trs_inflight2[s_port][i] = pkts[tx + i];
     }
   }
 
   /* check if it need insert padding packet */
-  if (fmodf(pkt_idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) < bulk) {
+  if (fmodf(pkt_idx + 1 + pacing->pad_interval / 2, pacing->pad_interval) <
+      bulk) {
     rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-    if (tx < 1) s->trs_pad_inflight_num[s_port]++;
+    tx = video_trs_burst_pad(impl, s, s_port,
+                             &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    if (tx < 1)
+      s->trs_pad_inflight_num[s_port]++;
   }
 
   return 0;
 }
 
-static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port, int* ret_status) {
+static int _video_trs_rl_tasklet(struct mtl_main_impl *impl,
+                                 struct st_tx_video_session_impl *s,
+                                 enum mtl_session_port s_port,
+                                 int *ret_status) {
   unsigned int bulk = s->bulk;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int idx = s->idx;
   unsigned int n, tx;
   uint32_t pkt_idx = 0;
 
   /* check if any inflight pkts in transmitter inflight 2 */
   if (s->trs_inflight_num2[s_port] > 0) {
-    tx = video_trs_burst(impl, s, s_port,
-                         &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
-                         s->trs_inflight_num2[s_port]);
+    tx =
+        video_trs_burst(impl, s, s_port,
+                        &s->trs_inflight2[s_port][s->trs_inflight_idx2[s_port]],
+                        s->trs_inflight_num2[s_port]);
     s->trs_inflight_num2[s_port] -= tx;
     s->trs_inflight_idx2[s_port] += tx;
     if (tx > 0) {
@@ -211,8 +225,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid trs tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-            cur_tsc, target_tsc);
+        err("%s(%d), invalid trs tsc cur %" PRIu64 " target %" PRIu64 "\n",
+            __func__, idx, cur_tsc, target_tsc);
       }
     }
     video_trs_rl_warm_up(impl, s, s_port);
@@ -223,7 +237,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   if (s->trs_pad_inflight_num[s_port] > 0) {
     dbg("%s(%d), inflight padding pkts %d\n", __func__, idx,
         s->trs_pad_inflight_num[s_port]);
-    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    tx = video_trs_burst_pad(impl, s, s_port,
+                             &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
     s->trs_pad_inflight_num[s_port] -= tx;
     if (tx > 0) {
       return MTL_TASKLET_HAS_PENDING;
@@ -249,8 +264,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -261,13 +276,15 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     pkt_idx = st_tx_mbuf_get_idx(pkts[i]);
     if ((pkt_idx == 0) || (pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
       valid_bulk = i;
-      break; /* break if it's the first pkt of frame or it's the start of dummy */
+      break; /* break if it's the first pkt of frame or it's the start of dummy
+              */
     }
   }
-  dbg("%s(%d), pkt_idx %u valid_bulk %d ts %" PRIu64 "\n", __func__, idx, pkt_idx,
-      valid_bulk, st_tx_mbuf_get_tsc(pkts[0]));
+  dbg("%s(%d), pkt_idx %u valid_bulk %d ts %" PRIu64 "\n", __func__, idx,
+      pkt_idx, valid_bulk, st_tx_mbuf_get_tsc(pkts[0]));
 
-  /* builder always build bulk pkts per enqueue, pkts after dummy are all dummy */
+  /* builder always build bulk pkts per enqueue, pkts after dummy are all dummy
+   */
   if (unlikely(pkt_idx == ST_TX_DUMMY_PKT_IDX)) {
     video_burst_packet(impl, s, s_port, pkts, valid_bulk, false);
     rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
@@ -285,8 +302,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
     }
     uint64_t target_tsc = st_tx_mbuf_get_tsc(pkts[valid_bulk]);
     uint64_t target_ptp = st_tx_mbuf_get_ptp(pkts[valid_bulk]);
-    dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-        cur_tsc, target_tsc);
+    dbg("%s(%d), first pkt, ts cur %" PRIu64 " target %" PRIu64 "\n", __func__,
+        idx, cur_tsc, target_tsc);
     if (likely(cur_tsc < target_tsc || s->trs_inflight_num2[s_port])) {
       unsigned int i;
       uint64_t delta = target_tsc - cur_tsc;
@@ -304,7 +321,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid tsc for first pkt cur %" PRIu64 " target %" PRIu64 "\n",
+        err("%s(%d), invalid tsc for first pkt cur %" PRIu64 " target %" PRIu64
+            "\n",
             __func__, idx, cur_tsc, target_tsc);
       }
     } else {
@@ -320,8 +338,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   return MTL_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s,
+static int video_trs_rl_tasklet(struct mtl_main_impl *impl,
+                                struct st_tx_video_session_impl *s,
                                 enum mtl_session_port s_port) {
   int pending = MTL_TASKLET_ALL_DONE;
   int ret_status = 0;
@@ -339,12 +357,13 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
   return pending;
 }
 
-static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
+static int video_trs_tsc_tasklet(struct mtl_main_impl *impl,
+                                 struct st_tx_video_session_impl *s,
                                  enum mtl_session_port s_port) {
   unsigned int bulk = s->bulk;
-  if (s->pacing_way[s_port] == ST21_TX_PACING_WAY_BE) bulk = 1;
-  struct rte_ring* ring = s->ring[s_port];
+  if (s->pacing_way[s_port] == ST21_TX_PACING_WAY_BE)
+    bulk = 1;
+  struct rte_ring *ring = s->ring[s_port];
   int idx = s->idx, tx;
   unsigned int n;
   uint64_t target_tsc, cur_tsc;
@@ -360,8 +379,8 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid trs tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-            cur_tsc, target_tsc);
+        err("%s(%d), invalid trs tsc cur %" PRIu64 " target %" PRIu64 "\n",
+            __func__, idx, cur_tsc, target_tsc);
       }
     }
     s->trs_target_tsc[s_port] = 0;
@@ -383,8 +402,8 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -420,13 +439,14 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
         s->trs_inflight_num[s_port] = valid_bulk;
         s->trs_inflight_idx[s_port] = 0;
         s->trs_inflight_cnt[s_port]++;
-        for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
+        for (i = 0; i < valid_bulk; i++)
+          s->trs_inflight[s_port][i] = pkts[i];
         s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-            cur_tsc, target_tsc);
+        err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n",
+            __func__, idx, cur_tsc, target_tsc);
       }
     }
   }
@@ -440,23 +460,24 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
     s->trs_inflight_num[s_port] = remaining;
     s->trs_inflight_idx[s_port] = 0;
     s->trs_inflight_cnt[s_port]++;
-    for (i = 0; i < remaining; i++) s->trs_inflight[s_port][i] = pkts[tx + i];
+    for (i = 0; i < remaining; i++)
+      s->trs_inflight[s_port][i] = pkts[tx + i];
   }
 
   return MTL_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
-                                         struct st_tx_video_session_impl* s,
+static int video_trs_launch_time_tasklet(struct mtl_main_impl *impl,
+                                         struct st_tx_video_session_impl *s,
                                          enum mtl_session_port s_port) {
   unsigned int bulk = s->bulk;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int tx = 0;
   unsigned int n;
   uint64_t i;
   uint64_t target_ptp;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = mt_if(impl, port);
+  struct mt_interface *inf = mt_if(impl, port);
 
   if (!mt_ptp_is_locked(impl, MTL_PORT_P)) {
     /* fallback to tsc if ptp is not synced */
@@ -481,8 +502,8 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -508,7 +529,8 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
       target_ptp = st_tx_mbuf_get_ptp(pkts[i]);
       /* Put tx timestamp into transmit descriptor */
       pkts[i]->ol_flags |= inf->tx_launch_time_flag;
-      *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t*) = target_ptp;
+      *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t *) =
+          target_ptp;
     }
 
     tx = video_trs_burst(impl, s, s_port, &pkts[0], valid_bulk);
@@ -519,7 +541,8 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
       s->trs_inflight_num[s_port] = remaining;
       s->trs_inflight_idx[s_port] = 0;
       s->trs_inflight_cnt[s_port]++;
-      for (i = 0; i < remaining; i++) s->trs_inflight[s_port][i] = pkts[tx + i];
+      for (i = 0; i < remaining; i++)
+        s->trs_inflight[s_port][i] = pkts[tx + i];
     }
   }
 
@@ -532,11 +555,11 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 }
 
-static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
+static int video_trs_ptp_tasklet(struct mtl_main_impl *impl,
+                                 struct st_tx_video_session_impl *s,
                                  enum mtl_session_port s_port) {
   unsigned int bulk = s->bulk;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int idx = s->idx, tx;
   unsigned int n;
   uint64_t target_ptp, cur_ptp;
@@ -552,8 +575,8 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
         return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                                 : MTL_TASKLET_ALL_DONE;
       } else {
-        err("%s(%d), invalid trs tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-            cur_ptp, target_ptp);
+        err("%s(%d), invalid trs tsc cur %" PRIu64 " target %" PRIu64 "\n",
+            __func__, idx, cur_ptp, target_ptp);
       }
     }
     s->trs_target_tsc[s_port] = 0;
@@ -575,8 +598,8 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -611,13 +634,14 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
       s->trs_inflight_num[s_port] = valid_bulk;
       s->trs_inflight_idx[s_port] = 0;
       s->trs_inflight_cnt[s_port]++;
-      for (i = 0; i < valid_bulk; i++) s->trs_inflight[s_port][i] = pkts[i];
+      for (i = 0; i < valid_bulk; i++)
+        s->trs_inflight[s_port][i] = pkts[i];
       s->stat_trs_ret_code[s_port] = -STI_TSCTRS_TARGET_TSC_NOT_REACH;
       return delta < mt_sch_schedule_ns(impl) ? MTL_TASKLET_HAS_PENDING
                                               : MTL_TASKLET_ALL_DONE;
     } else {
-      err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__, idx,
-          cur_ptp, target_ptp);
+      err("%s(%d), invalid tsc cur %" PRIu64 " target %" PRIu64 "\n", __func__,
+          idx, cur_ptp, target_ptp);
     }
   }
 
@@ -630,26 +654,29 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
     s->trs_inflight_num[s_port] = remaining;
     s->trs_inflight_idx[s_port] = 0;
     s->trs_inflight_cnt[s_port]++;
-    for (i = 0; i < remaining; i++) s->trs_inflight[s_port][i] = pkts[tx + i];
+    for (i = 0; i < remaining; i++)
+      s->trs_inflight[s_port][i] = pkts[tx + i];
   }
 
   return MTL_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_tasklet_handler(void* priv) {
-  struct st_video_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parent;
-  struct st_tx_video_sessions_mgr* mgr = trs->mgr;
-  struct st_tx_video_session_impl* s;
+static int video_trs_tasklet_handler(void *priv) {
+  struct st_video_transmitter_impl *trs = priv;
+  struct mtl_main_impl *impl = trs->parent;
+  struct st_tx_video_sessions_mgr *mgr = trs->mgr;
+  struct st_tx_video_session_impl *s;
   int sidx, s_port;
   int pending = MTL_TASKLET_ALL_DONE;
 
   for (sidx = 0; sidx < mgr->max_idx; sidx++) {
     s = tx_video_session_try_get(mgr, sidx);
-    if (!s) continue;
+    if (!s)
+      continue;
 
     for (s_port = 0; s_port < s->ops.num_port; s_port++) {
-      if (!s->queue[s_port]) continue;
+      if (!s->queue[s_port])
+        continue;
       pending += s->pacing_tasklet_func[s_port](impl, s, s_port);
     }
     tx_video_session_put(mgr, sidx);
@@ -658,35 +685,36 @@ static int video_trs_tasklet_handler(void* priv) {
   return pending;
 }
 
-int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
+int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl *s,
                                     enum mtl_session_port port) {
   int idx = s->idx;
 
   switch (s->pacing_way[port]) {
-    case ST21_TX_PACING_WAY_RL:
-      s->pacing_tasklet_func[port] = video_trs_rl_tasklet;
-      break;
-    case ST21_TX_PACING_WAY_TSN:
-      s->pacing_tasklet_func[port] = video_trs_launch_time_tasklet;
-      break;
-    case ST21_TX_PACING_WAY_TSC:
-    case ST21_TX_PACING_WAY_BE:
-    case ST21_TX_PACING_WAY_TSC_NARROW:
-      s->pacing_tasklet_func[port] = video_trs_tsc_tasklet;
-      break;
-    case ST21_TX_PACING_WAY_PTP:
-      s->pacing_tasklet_func[port] = video_trs_ptp_tasklet;
-      break;
-    default:
-      err("%s(%d), unknow pacing %d\n", __func__, idx, s->pacing_way[port]);
-      return -EIO;
+  case ST21_TX_PACING_WAY_RL:
+    s->pacing_tasklet_func[port] = video_trs_rl_tasklet;
+    break;
+  case ST21_TX_PACING_WAY_TSN:
+    s->pacing_tasklet_func[port] = video_trs_launch_time_tasklet;
+    break;
+  case ST21_TX_PACING_WAY_TSC:
+  case ST21_TX_PACING_WAY_BE:
+  case ST21_TX_PACING_WAY_TSC_NARROW:
+    s->pacing_tasklet_func[port] = video_trs_tsc_tasklet;
+    break;
+  case ST21_TX_PACING_WAY_PTP:
+    s->pacing_tasklet_func[port] = video_trs_ptp_tasklet;
+    break;
+  default:
+    err("%s(%d), unknow pacing %d\n", __func__, idx, s->pacing_way[port]);
+    return -EIO;
   }
   return 0;
 }
 
-int st_video_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
-                              struct st_tx_video_sessions_mgr* mgr,
-                              struct st_video_transmitter_impl* trs) {
+int st_video_transmitter_init(struct mtl_main_impl *impl,
+                              struct mtl_sch_impl *sch,
+                              struct st_tx_video_sessions_mgr *mgr,
+                              struct st_video_transmitter_impl *trs) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 
@@ -711,7 +739,7 @@ int st_video_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* s
   return 0;
 }
 
-int st_video_transmitter_uinit(struct st_video_transmitter_impl* trs) {
+int st_video_transmitter_uinit(struct st_video_transmitter_impl *trs) {
   int idx = trs->idx;
 
   if (trs->tasklet) {

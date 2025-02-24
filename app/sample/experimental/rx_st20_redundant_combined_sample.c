@@ -20,12 +20,13 @@ struct st20rc_sample_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_rx_frame* framebuffs;
+  struct st_rx_frame *framebuffs;
 };
 
-static int rx_video_enqueue_frame(struct st20rc_sample_ctx* s, void* frame, size_t size) {
+static int rx_video_enqueue_frame(struct st20rc_sample_ctx *s, void *frame,
+                                  size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -36,16 +37,18 @@ static int rx_video_enqueue_frame(struct st20rc_sample_ctx* s, void* frame, size
   framebuff->size = size;
   /* point to next */
   producer_idx++;
-  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+  if (producer_idx >= s->framebuff_cnt)
+    producer_idx = 0;
   s->framebuff_producer_idx = producer_idx;
   return 0;
 }
 
-static int rx_video_frame_ready(void* priv, void* frame,
-                                struct st20_rx_frame_meta* meta) {
-  struct st20rc_sample_ctx* s = (struct st20rc_sample_ctx*)priv;
+static int rx_video_frame_ready(void *priv, void *frame,
+                                struct st20_rx_frame_meta *meta) {
+  struct st20rc_sample_ctx *s = (struct st20rc_sample_ctx *)priv;
 
-  if (!s->handle) return -EIO;
+  if (!s->handle)
+    return -EIO;
 
   /* incomplete frame */
   if (!st_is_frame_complete(meta->status)) {
@@ -68,7 +71,7 @@ static int rx_video_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static void rx_video_consume_frame(struct st20rc_sample_ctx* s, void* frame,
+static void rx_video_consume_frame(struct st20rc_sample_ctx *s, void *frame,
                                    size_t frame_size) {
   MTL_MAY_UNUSED(frame);
   MTL_MAY_UNUSED(frame_size);
@@ -79,11 +82,11 @@ static void rx_video_consume_frame(struct st20rc_sample_ctx* s, void* frame,
   s->fb_rec++;
 }
 
-static void* rx_video_frame_thread(void* arg) {
-  struct st20rc_sample_ctx* s = arg;
+static void *rx_video_frame_thread(void *arg) {
+  struct st20rc_sample_ctx *s = arg;
   int idx = s->idx;
   int consumer_idx;
-  struct st_rx_frame* framebuff;
+  struct st_rx_frame *framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
@@ -92,7 +95,8 @@ static void* rx_video_frame_thread(void* arg) {
     framebuff = &s->framebuffs[consumer_idx];
     if (!framebuff->frame) {
       /* no ready frame */
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -105,7 +109,8 @@ static void* rx_video_frame_thread(void* arg) {
     st_pthread_mutex_lock(&s->wake_mutex);
     framebuff->frame = NULL;
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt)
+      consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
@@ -114,7 +119,7 @@ static void* rx_video_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret = -EIO;
 
@@ -133,13 +138,14 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st20rc_rx_handle rx_handle[session_num];
-  struct st20rc_sample_ctx* app[session_num];
+  struct st20rc_sample_ctx *app[session_num];
   uint64_t sart_time_ns;
   int loop = 0;
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct st20rc_sample_ctx*)malloc(sizeof(struct st20rc_sample_ctx));
+    app[i] =
+        (struct st20rc_sample_ctx *)malloc(sizeof(struct st20rc_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -151,8 +157,8 @@ int main(int argc, char** argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
-    app[i]->framebuffs =
-        (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    app[i]->framebuffs = (struct st_rx_frame *)malloc(
+        sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -166,7 +172,7 @@ int main(int argc, char** argv) {
     struct st20rc_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20rc_test";
-    ops_rx.priv = app[i];  // app handle register to lib
+    ops_rx.priv = app[i]; // app handle register to lib
     ops_rx.num_port = 2;
     memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -186,7 +192,8 @@ int main(int argc, char** argv) {
     ops_rx.framebuff_cnt = app[i]->framebuff_cnt;
     ops_rx.payload_type = ctx.payload_type;
     ops_rx.notify_frame_ready = rx_video_frame_ready;
-    if (ctx.hdr_split) ops_rx.flags |= ST20RC_RX_FLAG_HDR_SPLIT;
+    if (ctx.hdr_split)
+      ops_rx.flags |= ST20RC_RX_FLAG_HDR_SPLIT;
 
     rx_handle[i] = st20rc_rx_create(ctx.st, &ops_rx);
     if (!rx_handle[i]) {
@@ -196,7 +203,8 @@ int main(int argc, char** argv) {
     }
     app[i]->handle = rx_handle[i];
 
-    ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread, app[i]);
+    ret = pthread_create(&app[i]->app_thread, NULL, rx_video_frame_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       goto error;
@@ -210,11 +218,13 @@ int main(int argc, char** argv) {
     loop++;
     if (0 == (loop % 10)) {
       uint64_t end_time_ns = mtl_ptp_read_time(ctx.st);
-      double time_sec = (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
+      double time_sec =
+          (double)(end_time_ns - sart_time_ns) / (1000 * 1000 * 1000);
       for (int i = 0; i < session_num; i++) {
         int fb_rec = app[i]->fb_rec - app[i]->stat_fb_rec;
         double framerate = fb_rec / time_sec;
-        info("%s(%d), fps %f, %d frame received\n", __func__, i, framerate, fb_rec);
+        info("%s(%d), fps %f, %d frame received\n", __func__, i, framerate,
+             fb_rec);
         app[i]->stat_fb_rec = app[i]->fb_rec;
       }
       sart_time_ns = end_time_ns;
@@ -234,7 +244,8 @@ int main(int argc, char** argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_rec <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_rec);
+      err("%s(%d), error, no received frames %d\n", __func__, i,
+          app[i]->fb_rec);
       ret = -EIO;
     }
   }
@@ -242,11 +253,14 @@ int main(int argc, char** argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i]) continue;
-    if (app[i]->handle) st20rc_rx_free(app[i]->handle);
+    if (!app[i])
+      continue;
+    if (app[i]->handle)
+      st20rc_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
-    if (app[i]->framebuffs) free(app[i]->framebuffs);
+    if (app[i]->framebuffs)
+      free(app[i]->framebuffs);
     free(app[i]);
   }
 

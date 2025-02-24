@@ -47,7 +47,7 @@ static void conv_app_print_app() {
   printf("\n");
 }
 
-static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
+static enum cvt_frame_fmt cvt_parse_fmt(const char *sfmt) {
   if (!strcmp(sfmt, "yuv422p10le")) {
     return CVT_FRAME_FMT_YUV422PLANAR10LE;
   }
@@ -95,45 +95,46 @@ static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
   return CVT_FRAME_FMT_MAX;
 }
 
-int conv_app_parse_args(struct conv_app_context* ctx, int argc, char** argv) {
+int conv_app_parse_args(struct conv_app_context *ctx, int argc, char **argv) {
   int cmd = -1, optIdx = 0;
   int ret = 0;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", conv_app_args_options, &optIdx);
-    if (cmd == -1) break;
+    if (cmd == -1)
+      break;
     dbg("%s, cmd %d %s\n", __func__, cmd, optarg);
 
     switch (cmd) {
-      case CONV_ARG_FORMAT_IN:
-        ctx->fmt_in = cvt_parse_fmt(optarg);
-        break;
-      case CONV_ARG_FORMAT_OUT:
-        ctx->fmt_out = cvt_parse_fmt(optarg);
-        break;
-      case CONV_ARG_W:
-        ctx->w = atoi(optarg);
-        break;
-      case CONV_ARG_H:
-        ctx->h = atoi(optarg);
-        break;
-      case CONV_ARG_FILE_IN:
-        snprintf(ctx->file_in, sizeof(ctx->file_in), "%s", optarg);
-        break;
-      case CONV_ARG_FILE_OUT:
-        snprintf(ctx->file_out, sizeof(ctx->file_out), "%s", optarg);
-        break;
-      case CONV_ARG_FRAME2FIELD:
-        ctx->frame2field = true;
-        break;
-      case CONV_ARG_HELP:
-        conv_app_print_app();
-        ret = -EIO;
-        break;
-      default:
-        conv_app_print_app();
-        ret = -EIO;
-        break;
+    case CONV_ARG_FORMAT_IN:
+      ctx->fmt_in = cvt_parse_fmt(optarg);
+      break;
+    case CONV_ARG_FORMAT_OUT:
+      ctx->fmt_out = cvt_parse_fmt(optarg);
+      break;
+    case CONV_ARG_W:
+      ctx->w = atoi(optarg);
+      break;
+    case CONV_ARG_H:
+      ctx->h = atoi(optarg);
+      break;
+    case CONV_ARG_FILE_IN:
+      snprintf(ctx->file_in, sizeof(ctx->file_in), "%s", optarg);
+      break;
+    case CONV_ARG_FILE_OUT:
+      snprintf(ctx->file_out, sizeof(ctx->file_out), "%s", optarg);
+      break;
+    case CONV_ARG_FRAME2FIELD:
+      ctx->frame2field = true;
+      break;
+    case CONV_ARG_HELP:
+      conv_app_print_app();
+      ret = -EIO;
+      break;
+    default:
+      conv_app_print_app();
+      ret = -EIO;
+      break;
     }
   };
 

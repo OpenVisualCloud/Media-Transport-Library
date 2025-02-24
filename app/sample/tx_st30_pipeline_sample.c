@@ -16,13 +16,13 @@ struct tx_st30p_sample_ctx {
   int fb_send_done;
 
   size_t frame_size;
-  uint8_t* source_begin;
+  uint8_t *source_begin;
   mtl_iova_t source_begin_iova;
-  uint8_t* source_end;
-  uint8_t* frame_cursor;
+  uint8_t *source_end;
+  uint8_t *frame_cursor;
 };
 
-static int tx_st30p_close_source(struct tx_st30p_sample_ctx* s) {
+static int tx_st30p_close_source(struct tx_st30p_sample_ctx *s) {
   if (s->source_begin) {
     mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
@@ -31,11 +31,11 @@ static int tx_st30p_close_source(struct tx_st30p_sample_ctx* s) {
   return 0;
 }
 
-static int tx_st30p_open_source(struct tx_st30p_sample_ctx* s, char* file) {
+static int tx_st30p_open_source(struct tx_st30p_sample_ctx *s, char *file) {
   int fd = -EIO;
   struct stat i;
   int frame_cnt = 2;
-  uint8_t* m = NULL;
+  uint8_t *m = NULL;
   size_t fbs_size = s->frame_size * frame_cnt;
 
   fd = st_open(file, O_RDONLY);
@@ -56,8 +56,8 @@ static int tx_st30p_open_source(struct tx_st30p_sample_ctx* s, char* file) {
     return -EIO;
   }
   if (i.st_size % s->frame_size) {
-    err("%s, %s file size should be multiple of frame size %" PRIu64 "\n", __func__, file,
-        s->frame_size);
+    err("%s, %s file size should be multiple of frame size %" PRIu64 "\n",
+        __func__, file, s->frame_size);
     close(fd);
     return -EIO;
   }
@@ -75,22 +75,27 @@ init_fb:
   s->source_begin = mtl_hp_zmalloc(s->st, fbs_size, MTL_PORT_P);
   if (!s->source_begin) {
     err("%s, source malloc on hugepage fail\n", __func__);
-    if (m) munmap(m, i.st_size);
-    if (fd >= 0) close(fd);
+    if (m)
+      munmap(m, i.st_size);
+    if (fd >= 0)
+      close(fd);
     return -EIO;
   }
   s->frame_cursor = s->source_begin;
-  if (m) mtl_memcpy(s->source_begin, m, fbs_size);
+  if (m)
+    mtl_memcpy(s->source_begin, m, fbs_size);
   s->source_end = s->source_begin + fbs_size;
 
-  if (m) munmap(m, i.st_size);
-  if (fd >= 0) close(fd);
+  if (m)
+    munmap(m, i.st_size);
+  if (fd >= 0)
+    close(fd);
 
   return 0;
 }
 
-static int tx_st30p_frame_done(void* priv, struct st30_frame* frame) {
-  struct tx_st30p_sample_ctx* s = priv;
+static int tx_st30p_frame_done(void *priv, struct st30_frame *frame) {
+  struct tx_st30p_sample_ctx *s = priv;
   MTL_MAY_UNUSED(frame);
 
   s->fb_send_done++;
@@ -98,17 +103,17 @@ static int tx_st30p_frame_done(void* priv, struct st30_frame* frame) {
   return 0;
 }
 
-static void tx_st30p_build_frame(struct tx_st30p_sample_ctx* s,
-                                 struct st30_frame* frame) {
-  uint8_t* src = s->frame_cursor;
+static void tx_st30p_build_frame(struct tx_st30p_sample_ctx *s,
+                                 struct st30_frame *frame) {
+  uint8_t *src = s->frame_cursor;
 
   mtl_memcpy(frame->addr, src, s->frame_size);
 }
 
-static void* tx_st30p_frame_thread(void* arg) {
-  struct tx_st30p_sample_ctx* s = arg;
+static void *tx_st30p_frame_thread(void *arg) {
+  struct tx_st30p_sample_ctx *s = arg;
   st30p_tx_handle handle = s->handle;
-  struct st30_frame* frame;
+  struct st30_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -118,7 +123,8 @@ static void* tx_st30p_frame_thread(void* arg) {
       continue;
     }
 
-    if (s->source_begin) tx_st30p_build_frame(s, frame);
+    if (s->source_begin)
+      tx_st30p_build_frame(s, frame);
     st30p_tx_put_frame(handle, frame);
 
     /* point to next frame */
@@ -134,14 +140,15 @@ static void* tx_st30p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -152,7 +159,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct tx_st30p_sample_ctx* app[session_num];
+  struct tx_st30p_sample_ctx *app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
@@ -170,16 +177,16 @@ int main(int argc, char** argv) {
     struct st30p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st30p_test";
-    ops_tx.priv = app[i];  // app handle register to lib
+    ops_tx.priv = app[i]; // app handle register to lib
     ops_tx.port.num_port = ctx.param.num_ports;
-    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P],
+           ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.audio_udp_port + i * 2;
     if (ops_tx.port.num_port > 1) {
-      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
-             MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R],
+             ctx.tx_dip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
       ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.audio_udp_port + i * 2;
@@ -199,8 +206,9 @@ int main(int argc, char** argv) {
     ops_tx.ptime = ctx.audio_ptime;
 
     /* set frame size to 10ms time */
-    int framebuff_size = st30_calculate_framebuff_size(
-        ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
+    int framebuff_size =
+        st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
+                                      ops_tx.channel, 10 * NS_PER_MS, NULL);
     ops_tx.framebuff_size = framebuff_size;
 
     st30p_tx_handle tx_handle = st30p_tx_create(ctx.st, &ops_tx);
@@ -217,10 +225,11 @@ int main(int argc, char** argv) {
       err("%s(%d), open source fail\n", __func__, i);
       goto error;
     }
-    info("%s(%d), frame_size %" PRId64 ", tx url %s\n", __func__, i, app[i]->frame_size,
-         ctx.tx_audio_url);
+    info("%s(%d), frame_size %" PRId64 ", tx url %s\n", __func__, i,
+         app[i]->frame_size, ctx.tx_audio_url);
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, tx_st30p_frame_thread, app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, tx_st30p_frame_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -235,7 +244,8 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    if (app[i]->handle) st30p_tx_wake_block(app[i]->handle);
+    if (app[i]->handle)
+      st30p_tx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), sent frames %d(done %d)\n", __func__, i, app[i]->fb_send,
          app[i]->fb_send_done);
@@ -254,7 +264,8 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle) st30p_tx_free(app[i]->handle);
+      if (app[i]->handle)
+        st30p_tx_free(app[i]->handle);
       free(app[i]);
     }
   }

@@ -31,29 +31,30 @@ static struct option se_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static int se_parse_args(struct se_context* ctx, int argc, char** argv) {
+static int se_parse_args(struct se_context *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", se_args_options, &opt_idx);
-    if (cmd == -1) break;
+    if (cmd == -1)
+      break;
 
     switch (cmd) {
-      case SE_ARG_SLEEP_MS:
-        ctx->sleep_time_ms = atoi(optarg);
-        break;
-      case SE_ARG_WORK_US:
-        ctx->work_time_us = atoi(optarg);
-        break;
-      default:
-        break;
+    case SE_ARG_SLEEP_MS:
+      ctx->sleep_time_ms = atoi(optarg);
+      break;
+    case SE_ARG_WORK_US:
+      ctx->work_time_us = atoi(optarg);
+      break;
+    default:
+      break;
     }
   };
 
   return 0;
 }
 
-static int se_init(struct se_context* ctx) {
+static int se_init(struct se_context *ctx) {
   ctx->sleep_time_ms = 100;
   ctx->work_time_us = 100;
   return 0;
@@ -66,11 +67,12 @@ static inline uint64_t se_get_monotonic_time() {
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 
-static int se_loop(struct se_context* ctx) {
+static int se_loop(struct se_context *ctx) {
   uint64_t start, end;
   volatile int sum;
 
-  printf("sleep_time_ms %d work_time_us %d\n", ctx->sleep_time_ms, ctx->work_time_us);
+  printf("sleep_time_ms %d work_time_us %d\n", ctx->sleep_time_ms,
+         ctx->work_time_us);
 
   while (1) {
     usleep(ctx->sleep_time_ms * 1000);
@@ -86,7 +88,7 @@ static int se_loop(struct se_context* ctx) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct se_context ctx;
 
   se_init(&ctx);

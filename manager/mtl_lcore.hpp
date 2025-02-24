@@ -11,21 +11,18 @@
 #define MTL_MAX_LCORE 128
 
 class mtl_lcore {
- private:
+private:
   std::bitset<MTL_MAX_LCORE> bs;
   std::mutex bs_mtx;
 
-  mtl_lcore() {
-    bs.reset();
-  }
-  ~mtl_lcore() {
-  }
+  mtl_lcore() { bs.reset(); }
+  ~mtl_lcore() {}
 
- public:
-  mtl_lcore(const mtl_lcore&) = delete;
-  mtl_lcore& operator=(const mtl_lcore&) = delete;
+public:
+  mtl_lcore(const mtl_lcore &) = delete;
+  mtl_lcore &operator=(const mtl_lcore &) = delete;
 
-  static mtl_lcore& get_instance() {
+  static mtl_lcore &get_instance() {
     static mtl_lcore instance;
     return instance;
   }
@@ -35,7 +32,8 @@ class mtl_lcore {
 };
 
 int mtl_lcore::get_lcore(uint16_t lcore_id) {
-  if (lcore_id >= MTL_MAX_LCORE) return -1;
+  if (lcore_id >= MTL_MAX_LCORE)
+    return -1;
   std::lock_guard<std::mutex> lock(bs_mtx);
   if (bs.test(lcore_id))
     return -1;
@@ -45,7 +43,8 @@ int mtl_lcore::get_lcore(uint16_t lcore_id) {
 }
 
 int mtl_lcore::put_lcore(uint16_t lcore_id) {
-  if (lcore_id >= MTL_MAX_LCORE) return -1;
+  if (lcore_id >= MTL_MAX_LCORE)
+    return -1;
   std::lock_guard<std::mutex> lock(bs_mtx);
   if (!bs.test(lcore_id))
     return -1;

@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 #ifdef _MSC_VER
-#define MTL_PACK(__Declaration__) \
+#define MTL_PACK(__Declaration__)                                              \
   __pragma(pack(push, 1)) __Declaration__ __pragma(pack(pop))
 #endif
 
@@ -45,7 +45,7 @@ extern "C" {
 /**
  * All version numbers in one to compare with ST_VERSION_NUM()
  */
-#define MTL_VERSION \
+#define MTL_VERSION                                                            \
   MTL_VERSION_NUM(MTL_VERSION_MAJOR, MTL_VERSION_MINOR, MTL_VERSION_LAST)
 
 /**
@@ -107,11 +107,11 @@ extern "C" {
 /**
  * Handle to MTL transport device context
  */
-typedef struct mtl_main_impl* mtl_handle;
+typedef struct mtl_main_impl *mtl_handle;
 /**
  * Handle to st user dma device
  */
-typedef struct mtl_dma_lender_dev* mtl_udma_handle;
+typedef struct mtl_dma_lender_dev *mtl_udma_handle;
 
 /**
  * IO virtual address type.
@@ -126,7 +126,7 @@ typedef uint64_t mtl_cpuva_t;
 /**
  * Handle to dma mem
  */
-typedef struct mtl_dma_mem* mtl_dma_mem_handle;
+typedef struct mtl_dma_mem *mtl_dma_mem_handle;
 
 /**
  * Bad IOVA address
@@ -201,14 +201,15 @@ enum mtl_log_level {
 #define MTL_LOG_LEVEL_ERROR (MTL_LOG_LEVEL_ERR)
 
 /* log formatter */
-typedef void (*mtl_log_prefix_formatter_t)(char* buf, size_t buf_sz);
+typedef void (*mtl_log_prefix_formatter_t)(char *buf, size_t buf_sz);
 
 /* log printer, similar to printf */
-typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char* format, ...);
+typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char *format,
+                                  ...);
 
 /**
- * Poll mode driver type, not change the enum value any more if one PMD type is marked as
- * production quality.
+ * Poll mode driver type, not change the enum value any more if one PMD type is
+ * marked as production quality.
  */
 enum mtl_pmd_type {
   /** DPDK user driver PMD */
@@ -239,7 +240,8 @@ enum mtl_rss_mode {
   MTL_RSS_MODE_NONE = 0,
   /** hash with both l3 src and dst, not use now */
   MTL_RSS_MODE_L3,
-  /** hash with l3 src and dst address, l4 src port and dst port, used with shared rss */
+  /** hash with l3 src and dst address, l4 src port and dst port, used with
+     shared rss */
   MTL_RSS_MODE_L3_L4,
   /** max value of this enum */
   MTL_RSS_MODE_MAX,
@@ -325,15 +327,17 @@ enum mtl_init_flag {
   /** Separated lcore for RX video(st2110-20/st2110-22) sessions. */
   MTL_FLAG_RX_SEPARATE_VIDEO_LCORE = (MTL_BIT64(2)),
   /**
-   * Enable migrate mode for rx video session if current LCORE is too busy to handle the
-   * rx video tasklet, the busy session may be migrated to a new LCORE.
-   * If not enable, rx video will always use static mapping based on quota.
+   * Enable migrate mode for rx video session if current LCORE is too busy to
+   * handle the rx video tasklet, the busy session may be migrated to a new
+   * LCORE. If not enable, rx video will always use static mapping based on
+   * quota.
    */
   MTL_FLAG_TX_VIDEO_MIGRATE = (MTL_BIT64(3)),
   /**
-   * Enable migrate mode for rx video session if current LCORE is too busy to handle the
-   * rx video tasklet, the busy session may be migrated to a new LCORE.
-   * If not enable, rx video will always use static mapping based on quota.
+   * Enable migrate mode for rx video session if current LCORE is too busy to
+   * handle the rx video tasklet, the busy session may be migrated to a new
+   * LCORE. If not enable, rx video will always use static mapping based on
+   * quota.
    */
   MTL_FLAG_RX_VIDEO_MIGRATE = (MTL_BIT64(4)),
   /**
@@ -349,8 +353,8 @@ enum mtl_init_flag {
    */
   MTL_FLAG_RXTX_SIMD_512 = (MTL_BIT64(7)),
   /**
-   * Enable HW offload timestamp for all RX packets target the compliance analyze. Only
-   * can work for PF on E810 now.
+   * Enable HW offload timestamp for all RX packets target the compliance
+   * analyze. Only can work for PF on E810 now.
    */
   MTL_FLAG_ENABLE_HW_TIMESTAMP = (MTL_BIT64(8)),
   /**
@@ -388,16 +392,18 @@ enum mtl_init_flag {
    */
   MTL_FLAG_VIRTIO_USER = (MTL_BIT64(16)),
   /**
-   * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the mtl_start/mtl_stop
+   * Do mtl_start in mtl_init, mtl_stop in mtl_uninit, and skip the
+   * mtl_start/mtl_stop
    */
   MTL_FLAG_DEV_AUTO_START_STOP = (MTL_BIT64(17)),
   /**
-   * Enable the use of cores across NUMA nodes; by default, only cores within the same
-   * NUMA node as the NIC are used due to the high cost of cross-NUMA communication.
+   * Enable the use of cores across NUMA nodes; by default, only cores within
+   * the same NUMA node as the NIC are used due to the high cost of cross-NUMA
+   * communication.
    */
   MTL_FLAG_ALLOW_ACROSS_NUMA_CORE = (MTL_BIT64(18)),
-  /** not send multicast join message, for the SDN switch case which deliver the stream
-   * directly
+  /** not send multicast join message, for the SDN switch case which deliver the
+   * stream directly
    */
   MTL_FLAG_NO_MULTICAST = (MTL_BIT64(19)),
   /** Dedicated lcore for system CNI tasks. */
@@ -460,8 +466,8 @@ enum mtl_init_flag {
    */
   MTL_FLAG_RX_USE_CNI = (MTL_BIT64(45)),
   /**
-   * To exclusively use port only for flow, the application must ensure that all RX
-   * streams have unique UDP port numbers.
+   * To exclusively use port only for flow, the application must ensure that all
+   * RX streams have unique UDP port numbers.
    */
   MTL_FLAG_RX_UDP_PORT_ONLY = (MTL_BIT64(46)),
   /** not bind current process to NIC numa socket */
@@ -485,11 +491,12 @@ struct mtl_ptp_sync_notify_meta {
  * The structure describing how to init a mtl port device.
  */
 struct mtl_port_init_params {
-  /** Optional. Flags to control MTL port. See MTL_PORT_FLAG_* for possible value */
+  /** Optional. Flags to control MTL port. See MTL_PORT_FLAG_* for possible
+   * value */
   uint64_t flags;
   /** Lib will force assign the numa for current port to this numa id if
-   * MTL_PORT_FLAG_FORCE_NUMA is set. Not set MTL_PORT_FLAG_FORCE_NUMA if you don't know
-   * the detail.
+   * MTL_PORT_FLAG_FORCE_NUMA is set. Not set MTL_PORT_FLAG_FORCE_NUMA if you
+   * don't know the detail.
    */
   int socket_id;
 };
@@ -501,13 +508,15 @@ struct mtl_port_init_params {
 struct mtl_init_params {
   /**
    * Mandatory. PCIE BDF port, ex: 0000:af:01.0.
-   * MTL_PMD_NATIVE_AF_XDP, use native_af_xdp + ifname, ex: native_af_xdp:enp175s0f0.
+   * MTL_PMD_NATIVE_AF_XDP, use native_af_xdp + ifname, ex:
+   * native_af_xdp:enp175s0f0.
    *
    * Below PMDs are only for experimental usage, not for production usage.
    * MTL_PMD_KERNEL_SOCKET, use kernel + ifname, ex: kernel:enp175s0f0.
-   * MTL_PMD_RDMA_UD with ST2110 packing, use rdma_ud + ifname, ex: rdma_ud:enp175s0f0.
-   * MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex: dpdk_af_xdp:enp175s0f0.
-   * MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
+   * MTL_PMD_RDMA_UD with ST2110 packing, use rdma_ud + ifname, ex:
+   * rdma_ud:enp175s0f0. MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex:
+   * dpdk_af_xdp:enp175s0f0. MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet +
+   * ifname, ex: dpdk_af_packet:enp175s0f0.
    */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
@@ -517,19 +526,19 @@ struct mtl_init_params {
    * Static(default) or DHCP(please make sure you have a DHCP server inside LAN)
    */
   enum mtl_net_proto net_proto[MTL_PORT_MAX];
-  /** Mandatory. dpdk user pmd(default) or af_xdp. Use mtl_pmd_by_port_name helper to get
-   * PMD type */
+  /** Mandatory. dpdk user pmd(default) or af_xdp. Use mtl_pmd_by_port_name
+   * helper to get PMD type */
   enum mtl_pmd_type pmd[MTL_PORT_MAX];
   /**
    * Mandatory. Max NIC tx queues requested the lib to support.
-   * for MTL_TRANSPORT_ST2110, you can use helper api: st_tx_sessions_queue_cnt to
-   * calculate.
+   * for MTL_TRANSPORT_ST2110, you can use helper api: st_tx_sessions_queue_cnt
+   * to calculate.
    */
   uint16_t tx_queues_cnt[MTL_PORT_MAX];
   /**
    * Mandatory. Max NIC rx queues requested the lib to support.
-   * for MTL_TRANSPORT_ST2110, you can use helper api: st_rx_sessions_queue_cnt to
-   * calculate.
+   * for MTL_TRANSPORT_ST2110, you can use helper api: st_rx_sessions_queue_cnt
+   * to calculate.
    */
   uint16_t rx_queues_cnt[MTL_PORT_MAX];
 
@@ -551,31 +560,35 @@ struct mtl_init_params {
    */
   uint8_t gateway[MTL_PORT_MAX][MTL_IP_ADDR_LEN];
 
-  /** Optional. Flags to control MTL behaviors. See MTL_FLAG_* for possible value */
+  /** Optional. Flags to control MTL behaviors. See MTL_FLAG_* for possible
+   * value */
   uint64_t flags;
-  /** Optional. Private data to the cb functions(ptp_get_time_fn and stat_dump_cb_fn) */
-  void* priv;
+  /** Optional. Private data to the cb functions(ptp_get_time_fn and
+   * stat_dump_cb_fn) */
+  void *priv;
   /** Optional. log level control */
   enum mtl_log_level log_level;
   /**
-   * Optional. The logical cores list can be used in the MTL, e.g. "28,29,30,31".
-   * If not assigned, the core usage will be determined by MTL itself.
+   * Optional. The logical cores list can be used in the MTL, e.g.
+   * "28,29,30,31". If not assigned, the core usage will be determined by MTL
+   * itself.
    */
-  char* lcores;
+  char *lcores;
 
   /**
    * Optional. Dma(CBDMA or DSA) device can be used in the MTL.
-   * DMA can be used to offload the CPU for copy the payload for video rx sessions.
-   * See more from ST20_RX_FLAG_DMA_OFFLOAD in st20_api.h.
-   * PCIE BDF path like 0000:80:04.0.
+   * DMA can be used to offload the CPU for copy the payload for video rx
+   * sessions. See more from ST20_RX_FLAG_DMA_OFFLOAD in st20_api.h. PCIE BDF
+   * path like 0000:80:04.0.
    */
   char dma_dev_port[MTL_DMA_DEV_MAX][MTL_PORT_MAX_LEN];
-  /** Optional. The element number in the dma_dev_port array, leave to zero if no DMA */
+  /** Optional. The element number in the dma_dev_port array, leave to zero if
+   * no DMA */
   uint8_t num_dma_dev_port;
 
   /**
-   * Optional. If using rss (L3 or L4) for the rx packets classification, default use RTE
-   * flow director.
+   * Optional. If using rss (L3 or L4) for the rx packets classification,
+   * default use RTE flow director.
    */
   enum mtl_rss_mode rss_mode;
   /**
@@ -583,58 +596,61 @@ struct mtl_init_params {
    */
   enum mtl_iova_mode iova_mode;
   /**
-   * Optional. Number of transmit descriptors for each NIC TX queue, 0 means determined by
-   * lib. It will affect the memory usage and the performance.
+   * Optional. Number of transmit descriptors for each NIC TX queue, 0 means
+   * determined by lib. It will affect the memory usage and the performance.
    */
   uint16_t nb_tx_desc;
   /**
-   * Optional. Number of receive descriptors for each NIC RX queue, 0 means determined by
-   * lib. It will affect the memory usage and the performance.
+   * Optional. Number of receive descriptors for each NIC RX queue, 0 means
+   * determined by lib. It will affect the memory usage and the performance.
    */
   uint16_t nb_rx_desc;
 
   /**
    * Optional. Function to acquire current ptp time(in nanoseconds) from user.
-   * If NULL, MTL will get from built-in ptp source(NIC) if built-in ptp4l is enabled or
-   * system time if built-in ptp4l is not enabled.
+   * If NULL, MTL will get from built-in ptp source(NIC) if built-in ptp4l is
+   * enabled or system time if built-in ptp4l is not enabled.
    */
-  uint64_t (*ptp_get_time_fn)(void* priv);
-  /** Optional for MTL_FLAG_PTP_ENABLE. The callback is notified every time the built-in
-   * PTP protocol receives a valid PTP_DELAY_RESP message from the PTP grandmaster. */
-  void (*ptp_sync_notify)(void* priv, struct mtl_ptp_sync_notify_meta* meta);
+  uint64_t (*ptp_get_time_fn)(void *priv);
+  /** Optional for MTL_FLAG_PTP_ENABLE. The callback is notified every time the
+   * built-in PTP protocol receives a valid PTP_DELAY_RESP message from the PTP
+   * grandmaster. */
+  void (*ptp_sync_notify)(void *priv, struct mtl_ptp_sync_notify_meta *meta);
 
-  /** Optional. Stats dump period in seconds, zero means determined by lib(10s default) */
+  /** Optional. Stats dump period in seconds, zero means determined by lib(10s
+   * default) */
   uint16_t dump_period_s;
   /** Optional. Stats dump callback for user in every dump_period_s */
-  void (*stat_dump_cb_fn)(void* priv);
+  void (*stat_dump_cb_fn)(void *priv);
 
   /**
-   * Optional for MTL_TRANSPORT_ST2110. The st21 tx pacing way, leave to zero(auto) if you
-   * don't known the detail.
+   * Optional for MTL_TRANSPORT_ST2110. The st21 tx pacing way, leave to
+   * zero(auto) if you don't known the detail.
    */
   enum st21_tx_pacing_way pacing;
   /**
-   * Optional for MTL_TRANSPORT_ST2110. The max data quota for the sessions of each lcore
-   * can handled, 0 means determined by lib. If exceed this limit, the new created
-   * sessions will be scheduled to a new lcore.
+   * Optional for MTL_TRANSPORT_ST2110. The max data quota for the sessions of
+   * each lcore can handled, 0 means determined by lib. If exceed this limit,
+   * the new created sessions will be scheduled to a new lcore.
    */
   uint32_t data_quota_mbs_per_sch;
   /**
-   * Optional for MTL_TRANSPORT_ST2110. The number of max tx audio session for each lcore,
-   * 0 means determined by lib */
+   * Optional for MTL_TRANSPORT_ST2110. The number of max tx audio session for
+   * each lcore, 0 means determined by lib */
   uint32_t tx_audio_sessions_max_per_sch;
   /**
-   * Optional for MTL_TRANSPORT_ST2110. The number of max rx audio session for each lcore,
-   * 0 means determined by lib */
+   * Optional for MTL_TRANSPORT_ST2110. The number of max rx audio session for
+   * each lcore, 0 means determined by lib */
   uint32_t rx_audio_sessions_max_per_sch;
   /**
-   * Optional for MTL_TRANSPORT_ST2110. Suggest max allowed udp size for each network pkt,
-   * leave to zero if you don't known detail.
+   * Optional for MTL_TRANSPORT_ST2110. Suggest max allowed udp size for each
+   * network pkt, leave to zero if you don't known detail.
    */
   uint16_t pkt_udp_suggest_max_size;
   /**
-   * Optional for MTL_TRANSPORT_ST2110. The number for hdr split queues of rx, should be
-   * smaller than rx_sessions_cnt_max. Experimental feature for header split.
+   * Optional for MTL_TRANSPORT_ST2110. The number for hdr split queues of rx,
+   * should be smaller than rx_sessions_cnt_max. Experimental feature for header
+   * split.
    */
   uint16_t nb_rx_hdr_split_queues;
   /**
@@ -643,22 +659,27 @@ struct mtl_init_params {
    * some NICs may need this to avoid mbuf split.
    */
   uint16_t rx_pool_data_size;
-  /** Optional. the maximum number of memzones in DPDK, leave zero to use default 2560 */
+  /** Optional. the maximum number of memzones in DPDK, leave zero to use
+   * default 2560 */
   uint32_t memzone_max;
 
-  /** Optional. The number of tasklets for each lcore, 0 means determined by lib */
+  /** Optional. The number of tasklets for each lcore, 0 means determined by lib
+   */
   uint32_t tasklets_nb_per_sch;
 
   /** Optional.
-   * Set the ARP timeout value in seconds for ST2110 sessions when using a unicast
-   * address. Leave to zero to use the system's default timeout of 60 seconds.
+   * Set the ARP timeout value in seconds for ST2110 sessions when using a
+   * unicast address. Leave to zero to use the system's default timeout of 60
+   * seconds.
    */
   uint16_t arp_timeout_s;
 
-  /** Optional. Number of scheduler(lcore) used for rss dispatch, 0 means only 1 core */
+  /** Optional. Number of scheduler(lcore) used for rss dispatch, 0 means only 1
+   * core */
   uint16_t rss_sch_nb[MTL_PORT_MAX];
 
-  /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller proportional gain. */
+  /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller proportional gain.
+   */
   double kp;
   /** Optional for MTL_FLAG_PTP_ENABLE. The ptp pi controller integral gain. */
   double ki;
@@ -666,30 +687,35 @@ struct mtl_init_params {
   /** Optional, all future port params should be placed into this struct */
   struct mtl_port_init_params port_params[MTL_PORT_MAX];
 
-  /* The Core ID that is used as DPDK main thread, leave to zero is good for most case */
+  /* The Core ID that is used as DPDK main thread, leave to zero is good for
+   * most case */
   uint32_t main_lcore;
 
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
    * max tx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_fix_info to query the actual count.
-   * dpdk context will allocate the hw resources(queues, memory) based on this number.
+   * dpdk context will allocate the hw resources(queues, memory) based on this
+   * number.
    */
 #ifdef __MTL_LIB_BUILD__
   uint16_t tx_sessions_cnt_max;
 #else
-  uint16_t tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
+  uint16_t
+      tx_sessions_cnt_max __mtl_deprecated_msg("Use tx_queues_cnt instead");
 #endif
   /**
    * deprecated for MTL_TRANSPORT_ST2110.
    * max rx sessions(st20, st22, st30, st40) requested the lib to support,
    * use mtl_get_fix_info to query the actual count.
-   * dpdk context will allocate the hw resources(queues, memory) based on this number.
+   * dpdk context will allocate the hw resources(queues, memory) based on this
+   * number.
    */
 #ifdef __MTL_LIB_BUILD__
   uint16_t rx_sessions_cnt_max;
 #else
-  uint16_t rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
+  uint16_t
+      rx_sessions_cnt_max __mtl_deprecated_msg("Use rx_queues_cnt instead");
 #endif
 };
 
@@ -733,7 +759,8 @@ struct mtl_port_status {
   uint64_t tx_bytes;
   /** Total number of failed received packets. */
   uint64_t rx_err_packets;
-  /** Total number of received packets dropped by the HW. (i.e. Rx queues are full) */
+  /** Total number of received packets dropped by the HW. (i.e. Rx queues are
+   * full) */
   uint64_t rx_hw_dropped_packets;
   /** Total number of Rx mbuf allocation failures. */
   uint64_t rx_nombuf_packets;
@@ -752,7 +779,7 @@ struct mtl_port_status {
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info);
+int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info *info);
 
 /**
  * Retrieve the varied information of an MTL instance.
@@ -765,7 +792,7 @@ int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info);
+int mtl_get_var_info(mtl_handle mt, struct mtl_var_info *info);
 
 /**
  * Retrieve the general statistics(I/O) for a MTL port.
@@ -780,7 +807,8 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status* stats);
+int mtl_get_port_stats(mtl_handle mt, enum mtl_port port,
+                       struct mtl_port_status *stats);
 
 /**
  * Reset the general statistics(I/O) for a MTL port.
@@ -809,33 +837,40 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
 int mtl_get_numa_id(mtl_handle mt, enum mtl_port port);
 
 /** Helper to set the port for struct mtl_init_params */
-int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
+int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port,
+                      char *name);
 /** Helper to set the sip for struct mtl_init_params */
-int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip);
+int mtl_para_sip_set(struct mtl_init_params *p, enum mtl_port port, char *ip);
 /** Helper to set the gateway for struct mtl_init_params */
-int mtl_para_gateway_set(struct mtl_init_params* p, enum mtl_port port, char* gateway);
+int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port,
+                         char *gateway);
 /** Helper to set the netmask for struct mtl_init_params */
-int mtl_para_netmask_set(struct mtl_init_params* p, enum mtl_port port, char* netmask);
+int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port,
+                         char *netmask);
 /** Helper to set the dma dev port for struct mtl_init_params */
-int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
+int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port,
+                          char *name);
 /** Helper to set the tx queues number for struct mtl_init_params */
-static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params* p,
-                                              enum mtl_port port, uint16_t cnt) {
+static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params *p,
+                                              enum mtl_port port,
+                                              uint16_t cnt) {
   p->tx_queues_cnt[port] = cnt;
 }
 /** Helper to set the rx queues number for struct mtl_init_params */
-static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params* p,
-                                              enum mtl_port port, uint16_t cnt) {
+static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params *p,
+                                              enum mtl_port port,
+                                              uint16_t cnt) {
   p->rx_queues_cnt[port] = cnt;
 }
 /** Helper to set the PMD type for struct mtl_init_params */
-static inline void mtl_para_pmd_set(struct mtl_init_params* p, enum mtl_port port,
-                                    enum mtl_pmd_type pmd) {
+static inline void mtl_para_pmd_set(struct mtl_init_params *p,
+                                    enum mtl_port port, enum mtl_pmd_type pmd) {
   p->pmd[port] = pmd;
 }
 
 /** Helper to get the port from struct mtl_init_params */
-static inline char* mtl_para_port_get(struct mtl_init_params* p, enum mtl_port port) {
+static inline char *mtl_para_port_get(struct mtl_init_params *p,
+                                      enum mtl_port port) {
   return p->port[port];
 }
 
@@ -846,7 +881,7 @@ static inline char* mtl_para_port_get(struct mtl_init_params* p, enum mtl_port p
  * @return
  *     Primary port name pointer
  */
-static inline char* mtl_p_port(struct mtl_init_params* p) {
+static inline char *mtl_p_port(struct mtl_init_params *p) {
   return mtl_para_port_get(p, MTL_PORT_P);
 }
 
@@ -857,7 +892,7 @@ static inline char* mtl_p_port(struct mtl_init_params* p) {
  * @return
  *     Redundant port name pointer
  */
-static inline char* mtl_r_port(struct mtl_init_params* p) {
+static inline char *mtl_r_port(struct mtl_init_params *p) {
   return mtl_para_port_get(p, MTL_PORT_R);
 }
 
@@ -869,7 +904,7 @@ static inline char* mtl_r_port(struct mtl_init_params* p) {
  * @return
  *     Primary port IP address pointer
  */
-static inline uint8_t* mtl_p_sip_addr(struct mtl_init_params* p) {
+static inline uint8_t *mtl_p_sip_addr(struct mtl_init_params *p) {
   return p->sip_addr[MTL_PORT_P];
 }
 
@@ -881,7 +916,7 @@ static inline uint8_t* mtl_p_sip_addr(struct mtl_init_params* p) {
  * @return
  *     Redundant port IP address pointer
  */
-static inline uint8_t* mtl_r_sip_addr(struct mtl_init_params* p) {
+static inline uint8_t *mtl_r_sip_addr(struct mtl_init_params *p) {
   return p->sip_addr[MTL_PORT_R];
 }
 
@@ -890,7 +925,7 @@ static inline uint8_t* mtl_r_sip_addr(struct mtl_init_params* p) {
  * @return
  *     ST version string
  */
-const char* mtl_version(void);
+const char *mtl_version(void);
 
 /**
  * Initialize the MTL transport device context which based on DPDK.
@@ -901,7 +936,7 @@ const char* mtl_version(void);
  *   - NULL on error.
  *   - Otherwise, the handle to the MTL transport device context.
  */
-mtl_handle mtl_init(struct mtl_init_params* p);
+mtl_handle mtl_init(struct mtl_init_params *p);
 
 /**
  * Un-initialize the MTL transport device context.
@@ -993,14 +1028,14 @@ enum mtl_log_level mtl_get_log_level(mtl_handle mt);
 int mtl_set_log_prefix_formatter(mtl_log_prefix_formatter_t f);
 
 /**
- * Set up a custom log printer for the user. By default, MTL uses `RTE_LOG` for outputting
- * logs. However, applications can register a customized log printer using this function.
- * Whenever MTL needs to log anything, the registered log callback will be invoked.
+ * Set up a custom log printer for the user. By default, MTL uses `RTE_LOG` for
+ * outputting logs. However, applications can register a customized log printer
+ * using this function. Whenever MTL needs to log anything, the registered log
+ * callback will be invoked.
  *
  * A example printer is like below:
- * static void log_user_printer(enum mtl_log_level level, const char* format, ...) {
- *   MTL_MAY_UNUSED(level);
- *   va_list args;
+ * static void log_user_printer(enum mtl_log_level level, const char* format,
+ * ...) { MTL_MAY_UNUSED(level); va_list args;
  *
  *   // Init variadic argument list
  *   va_start(args, format);
@@ -1030,7 +1065,7 @@ int mtl_set_log_printer(mtl_log_printer_t f);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_openlog_stream(FILE* f);
+int mtl_openlog_stream(FILE *f);
 
 /**
  * Enable or disable sleep mode for sch.
@@ -1072,7 +1107,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
+int mtl_get_lcore(mtl_handle mt, unsigned int *lcore);
 
 /**
  * Bind one thread to lcore.
@@ -1090,7 +1125,8 @@ int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore);
 
 /**
- * Put back the DPDK lcore which requested from the MTL transport device context.
+ * Put back the DPDK lcore which requested from the MTL transport device
+ * context.
  *
  * @param mt
  *   The handle to the MTL transport device context.
@@ -1114,7 +1150,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
  * @return
  *   - Pointer to the destination data.
  */
-void* mtl_memcpy(void* dest, const void* src, size_t n);
+void *mtl_memcpy(void *dest, const void *src, size_t n);
 
 /**
  * Read cached time from ptp source.
@@ -1139,7 +1175,8 @@ uint64_t mtl_ptp_read_time_raw(mtl_handle mt);
 /**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.
  * In NUMA systems, the memory allocated from the same NUMA socket of the port.
- * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
+ * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the
+ * iova.
  *
  * @param mt
  *   The handle to the MTL transport device context.
@@ -1151,13 +1188,14 @@ uint64_t mtl_ptp_read_time_raw(mtl_handle mt);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the pointer to the allocated memory.
  */
-void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
+void *mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
 
 /**
  * Allocate zero'ed memory from the huge-page area of memory.
- * Equivalent to mtl_hp_malloc() except that the memory zone is cleared with zero.
- * In NUMA systems, the memory allocated from the same NUMA socket of the port.
- * Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get the iova.
+ * Equivalent to mtl_hp_malloc() except that the memory zone is cleared with
+ * zero. In NUMA systems, the memory allocated from the same NUMA socket of the
+ * port. Note the memory is mmap to IOVA already, use mtl_hp_virt2iova to get
+ * the iova.
  *
  * @param mt
  *   The handle to the MTL transport device context.
@@ -1169,7 +1207,7 @@ void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the virtual address pointer to the allocated memory.
  */
-void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
+void *mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
 
 /**
  * Frees the memory pointed by the pointer.
@@ -1183,7 +1221,7 @@ void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
-void mtl_hp_free(mtl_handle mt, void* ptr);
+void mtl_hp_free(mtl_handle mt, void *ptr);
 
 /**
  * Return the IO address of a virtual address from mtl_hp_malloc/mtl_hp_zmalloc
@@ -1196,7 +1234,7 @@ void mtl_hp_free(mtl_handle mt, void* ptr);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr);
+mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void *vaddr);
 
 /**
  * Return the detected page size on the system.
@@ -1239,7 +1277,7 @@ void mtl_delay_us(unsigned int us);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size);
+mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size);
 
 /**
  * Perform DMA unmapping on the mtl_dma_map
@@ -1257,7 +1295,8 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size);
+int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova,
+                  size_t size);
 
 /**
  * Allocate memory block more than required and map valid data to IOVA.
@@ -1303,7 +1342,7 @@ void mtl_dma_mem_free(mtl_handle mt, mtl_dma_mem_handle handle);
  * @return
  *   - Begin address of dma mapped memory.
  */
-void* mtl_dma_mem_addr(mtl_dma_mem_handle handle);
+void *mtl_dma_mem_addr(mtl_dma_mem_handle handle);
 
 /**
  * Get the begin IOVA of dma mapped memory.
@@ -1329,7 +1368,8 @@ mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle);
  *   - NULL on error.
  *   - Otherwise, the handle to the st user dma dev.
  */
-mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port);
+mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc,
+                                enum mtl_port port);
 
 /**
  * Free the st user dma dev.
@@ -1473,8 +1513,10 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
-                     uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]);
+int mtl_port_ip_info(mtl_handle mt, enum mtl_port port,
+                     uint8_t ip[MTL_IP_ADDR_LEN],
+                     uint8_t netmask[MTL_IP_ADDR_LEN],
+                     uint8_t gateway[MTL_IP_ADDR_LEN]);
 
 /**
  * Check if the pmd of one mtl port is dpdk based or not.
@@ -1485,7 +1527,8 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
  *   The port.
  * @return
  *   - true: a DPDK based PMD.
- *   - false: not a DPDK based PMD, MTL_PMD_KERNEL_SOCKET or MTL_PMD_NATIVE_AF_XDP.
+ *   - false: not a DPDK based PMD, MTL_PMD_KERNEL_SOCKET or
+ * MTL_PMD_NATIVE_AF_XDP.
  */
 bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port);
 
@@ -1505,7 +1548,7 @@ enum mtl_simd_level mtl_get_simd_level(void);
  * @return
  *     simd level name
  */
-const char* mtl_get_simd_level_name(enum mtl_simd_level level);
+const char *mtl_get_simd_level_name(enum mtl_simd_level level);
 
 /**
  * Helper function to get pmd type by port name.
@@ -1515,7 +1558,7 @@ const char* mtl_get_simd_level_name(enum mtl_simd_level level);
  * @return
  *   pmd type.
  */
-enum mtl_pmd_type mtl_pmd_by_port_name(const char* port);
+enum mtl_pmd_type mtl_pmd_by_port_name(const char *port);
 
 /**
  * Helper function to check if it's a af_xdp based pmd.
@@ -1543,7 +1586,7 @@ static inline bool mtl_pmd_is_af_xdp(enum mtl_pmd_type pmd) {
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+int mtl_get_if_ip(char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                   uint8_t netmask[MTL_IP_ADDR_LEN]);
 
 /**
@@ -1556,7 +1599,7 @@ int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_thread_setname(pthread_t tid, const char* name);
+int mtl_thread_setname(pthread_t tid, const char *name);
 
 /**
  * Helper function which align a size with pages
@@ -1569,7 +1612,8 @@ int mtl_thread_setname(pthread_t tid, const char* name);
  *     The aligned size.
  */
 static inline size_t mtl_size_page_align(size_t sz, size_t pg_sz) {
-  if (sz % pg_sz) sz += pg_sz - (sz % pg_sz);
+  if (sz % pg_sz)
+    sz += pg_sz - (sz % pg_sz);
   return sz;
 }
 
@@ -1580,8 +1624,8 @@ struct mtl_memcpy_ops {
   size_t sz;
 };
 /** Helper function to perform mtl_memcpy with mtl_cpuva_t */
-static inline int mtl_memcpy_action(struct mtl_memcpy_ops* ops) {
-  mtl_memcpy((void*)ops->dst, (const void*)ops->src, ops->sz);
+static inline int mtl_memcpy_action(struct mtl_memcpy_ops *ops) {
+  mtl_memcpy((void *)ops->dst, (const void *)ops->src, ops->sz);
   return 0;
 }
 

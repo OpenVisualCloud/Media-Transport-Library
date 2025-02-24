@@ -17,18 +17,18 @@ struct rx_st20p_sample_ctx {
 
   size_t frame_size;
   int dst_fd;
-  uint8_t* dst_begin;
-  uint8_t* dst_end;
-  uint8_t* dst_cursor;
+  uint8_t *dst_begin;
+  uint8_t *dst_end;
+  uint8_t *dst_cursor;
 
   mtl_dma_mem_handle dma_mem;
-  struct st20_ext_frame* ext_frames;
+  struct st20_ext_frame *ext_frames;
   int ext_idx;
   int fb_cnt;
 };
 
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_sample_ctx* s = priv;
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_st20p_sample_ctx *s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -37,9 +37,9 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
-                                    struct st20_rx_frame_meta* meta) {
-  struct rx_st20p_sample_ctx* s = priv;
+static int rx_st20p_query_ext_frame(void *priv, struct st_ext_frame *ext_frame,
+                                    struct st20_rx_frame_meta *meta) {
+  struct rx_st20p_sample_ctx *s = priv;
   int i = s->ext_idx;
   MTL_MAY_UNUSED(meta);
 
@@ -52,12 +52,13 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   /* save your private data here get it from st_frame.opaque */
   /* ext_frame->opaque = ?; */
 
-  if (++s->ext_idx >= s->fb_cnt) s->ext_idx = 0;
+  if (++s->ext_idx >= s->fb_cnt)
+    s->ext_idx = 0;
 
   return 0;
 }
 
-static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
+static int rx_st20p_close_source(struct rx_st20p_sample_ctx *s) {
   if (s->dst_begin) {
     munmap(s->dst_begin, s->dst_end - s->dst_begin);
     s->dst_begin = NULL;
@@ -70,7 +71,8 @@ static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
   return 0;
 }
 
-static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file) {
+static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s,
+                                const char *file) {
   int fd, ret, idx = s->idx;
   off_t f_size;
   int fb_cnt = 3;
@@ -89,7 +91,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -100,15 +102,16 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
   s->dst_cursor = m;
   s->dst_end = m + f_size;
   s->dst_fd = fd;
-  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__, idx, fb_cnt,
-       file, m, f_size);
+  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__,
+       idx, fb_cnt, file, m, f_size);
 
   return 0;
 }
 
-static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
-                                   struct st_frame* frame) {
-  if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
+static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx *s,
+                                   struct st_frame *frame) {
+  if (s->dst_cursor + s->frame_size > s->dst_end)
+    s->dst_cursor = s->dst_begin;
   mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
   /* parse private data for dynamic ext frame
@@ -119,17 +122,18 @@ static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
   s->fb_recv++;
 }
 
-static void* rx_st20p_frame_thread(void* arg) {
-  struct rx_st20p_sample_ctx* s = arg;
+static void *rx_st20p_frame_thread(void *arg) {
+  struct rx_st20p_sample_ctx *s = arg;
   st20p_rx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20p_rx_get_frame(handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -141,14 +145,15 @@ static void* rx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -159,7 +164,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_st20p_sample_ctx* app[session_num];
+  struct rx_st20p_sample_ctx *app[session_num];
   bool equal = st_frame_fmt_equal_transport(ctx.output_fmt, ctx.fmt);
 
   // create and register rx session
@@ -181,7 +186,7 @@ int main(int argc, char** argv) {
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20p_test";
-    ops_rx.priv = app[i];  // app handle register to lib
+    ops_rx.priv = app[i]; // app handle register to lib
     ops_rx.port.num_port = 1;
     memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -201,8 +206,8 @@ int main(int argc, char** argv) {
 
     if (equal) {
       /* no convert, use ext frame for example */
-      app[i]->ext_frames =
-          (struct st20_ext_frame*)malloc(sizeof(*app[i]->ext_frames) * app[i]->fb_cnt);
+      app[i]->ext_frames = (struct st20_ext_frame *)malloc(
+          sizeof(*app[i]->ext_frames) * app[i]->fb_cnt);
       size_t framebuff_size =
           st20_frame_size(ops_rx.transport_fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->fb_cnt;
@@ -216,8 +221,10 @@ int main(int argc, char** argv) {
       app[i]->dma_mem = dma_mem;
 
       for (int j = 0; j < app[i]->fb_cnt; ++j) {
-        app[i]->ext_frames[j].buf_addr = mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
-        app[i]->ext_frames[j].buf_iova = mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_addr =
+            mtl_dma_mem_addr(dma_mem) + j * framebuff_size;
+        app[i]->ext_frames[j].buf_iova =
+            mtl_dma_mem_iova(dma_mem) + j * framebuff_size;
         app[i]->ext_frames[j].buf_len = framebuff_size;
       }
       app[i]->ext_idx = 0;
@@ -241,7 +248,8 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread, app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_frame_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -268,7 +276,8 @@ int main(int argc, char** argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
+      err("%s(%d), error, no received frames %d\n", __func__, i,
+          app[i]->fb_recv);
       ret = -EIO;
     }
   }
@@ -276,9 +285,12 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle) st20p_rx_free(app[i]->handle);
-      if (ctx.st && app[i]->dma_mem) mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
-      if (app[i]->ext_frames) free(app[i]->ext_frames);
+      if (app[i]->handle)
+        st20p_rx_free(app[i]->handle);
+      if (ctx.st && app[i]->dma_mem)
+        mtl_dma_mem_free(ctx.st, app[i]->dma_mem);
+      if (app[i]->ext_frames)
+        free(app[i]->ext_frames);
       st_pthread_mutex_destroy(&app[i]->wake_mutex);
       st_pthread_cond_destroy(&app[i]->wake_cond);
       free(app[i]);

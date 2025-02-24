@@ -21,13 +21,14 @@ namespace fs = std::filesystem;
 
 static const int MAX_CLIENTS = 10;
 
-static const char* mtlm_version(void) {
+static const char *mtlm_version(void) {
   static char version[128];
-  if (version[0] != 0) return version;
+  if (version[0] != 0)
+    return version;
 
   snprintf(version, sizeof(version), "%d.%d.%d.%s %s %s %s", MTLM_VERSION_MAJOR,
-           MTLM_VERSION_MINOR, MTLM_VERSION_LAST, MTLM_VERSION_EXTRA, __TIMESTAMP__,
-           __MTLM_GIT__, MTLM_COMPILER);
+           MTLM_VERSION_MINOR, MTLM_VERSION_LAST, MTLM_VERSION_EXTRA,
+           __TIMESTAMP__, __MTLM_GIT__, MTLM_COMPILER);
 
   return version;
 }
@@ -39,17 +40,19 @@ int main() {
   std::vector<std::unique_ptr<mtl_instance>> clients;
 
   logger::set_log_level(log_level::INFO);
-  logger::log(log_level::INFO, "MTL Manager version: " + std::string(mtlm_version()));
+  logger::log(log_level::INFO,
+              "MTL Manager version: " + std::string(mtlm_version()));
 
   fs::path directory_path(MTL_MANAGER_SOCK_PATH);
   directory_path.remove_filename();
   if (!fs::exists(directory_path)) {
     try {
       fs::create_directory(directory_path);
-    } catch (const std::exception& e) {
-      logger::log(log_level::ERROR,
-                  "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
-                      ", please run the application with the appropriate privileges");
+    } catch (const std::exception &e) {
+      logger::log(
+          log_level::ERROR,
+          "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
+              ", please run the application with the appropriate privileges");
       return -EIO;
     }
   }
@@ -84,7 +87,7 @@ int main() {
 
   unlink(MTL_MANAGER_SOCK_PATH);
 
-  ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
+  ret = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
   if (ret < 0) {
     logger::log(log_level::ERROR,
                 "Failed to bind socket, please run the application with the "
@@ -93,7 +96,8 @@ int main() {
   }
 
   /* Allow all users to connect (which might be insecure) */
-  fs::permissions(MTL_MANAGER_SOCK_PATH, fs::perms::all, fs::perm_options::replace);
+  fs::permissions(MTL_MANAGER_SOCK_PATH, fs::perms::all,
+                  fs::perm_options::replace);
 
   ret = listen(sockfd, MAX_CLIENTS);
   if (ret < 0) {
@@ -156,16 +160,18 @@ int main() {
         ev.data.fd = client_sockfd;
         ret = epoll_ctl(epfd, EPOLL_CTL_ADD, client_sockfd, &ev);
         if (ret < 0) {
-          logger::log(log_level::ERROR, "Failed to add client socket fd to epoll.");
+          logger::log(log_level::ERROR,
+                      "Failed to add client socket fd to epoll.");
           close(client_sockfd);
           continue;
         }
 
         auto client = std::make_unique<mtl_instance>(client_sockfd);
         clients.push_back(std::move(client));
+        logger::log(log_level::INFO, "New client connected. fd: " +
+                                         std::to_string(client_sockfd));
         logger::log(log_level::INFO,
-                    "New client connected. fd: " + std::to_string(client_sockfd));
-        logger::log(log_level::INFO, "Total clients: " + std::to_string(clients.size()));
+                    "Total clients: " + std::to_string(clients.size()));
       } else if (evfd == signal_fd) { /* handle signal */
         struct signalfd_siginfo siginfo;
         ssize_t len = read(signal_fd, &siginfo, sizeof(siginfo));
@@ -179,22 +185,25 @@ int main() {
           is_running = false;
         }
       } else { /* handle client message */
-        auto it = std::find_if(clients.begin(), clients.end(), [&](auto& client) {
-          return client->get_conn_fd() == evfd;
-        });
+        auto it =
+            std::find_if(clients.begin(), clients.end(), [&](auto &client) {
+              return client->get_conn_fd() == evfd;
+            });
         if (it != clients.end()) {
-          auto& client = *it;
+          auto &client = *it;
           char buf[256];
           int len = recv(evfd, buf, sizeof(buf), 0);
           if (len < 0) {
             logger::log(log_level::ERROR,
-                        "Failed to receive data from client " + std::to_string(evfd));
+                        "Failed to receive data from client " +
+                            std::to_string(evfd));
           } else if (len == 0) {
             logger::log(log_level::INFO,
                         "Client " + std::to_string(evfd) + " disconnected.");
             ret = epoll_ctl(epfd, EPOLL_CTL_DEL, evfd, NULL);
             if (ret < 0)
-              logger::log(log_level::WARNING, "Failed to remove client from epoll.");
+              logger::log(log_level::WARNING,
+                          "Failed to remove client from epoll.");
             clients.erase(it);
             logger::log(log_level::INFO,
                         "Total clients: " + std::to_string(clients.size()));
@@ -208,9 +217,12 @@ int main() {
   logger::log(log_level::INFO, "MTL Manager exited.");
 
 out:
-  if (signal_fd >= 0) close(signal_fd);
-  if (epfd >= 0) close(epfd);
-  if (sockfd >= 0) close(sockfd);
+  if (signal_fd >= 0)
+    close(signal_fd);
+  if (epfd >= 0)
+    close(epfd);
+  if (sockfd >= 0)
+    close(sockfd);
 
   return ret;
 }

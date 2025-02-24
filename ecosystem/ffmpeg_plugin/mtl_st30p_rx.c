@@ -22,7 +22,7 @@
 #include "mtl_common.h"
 
 typedef struct MtlSt30pDemuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -36,9 +36,9 @@ typedef struct MtlSt30pDemuxerContext {
   int sample_rate;
   int channels;
   enum st30_fmt fmt;
-  char* fmt_str;
+  char *fmt_str;
   enum st30_ptime ptime;
-  char* ptime_str;
+  char *ptime_str;
   enum AVCodecID codec_id;
 
   mtl_handle dev_handle;
@@ -47,8 +47,8 @@ typedef struct MtlSt30pDemuxerContext {
   int64_t frame_counter;
 } MtlSt30pDemuxerContext;
 
-static int mtl_st30p_read_close(AVFormatContext* ctx) {
-  MtlSt30pDemuxerContext* s = ctx->priv_data;
+static int mtl_st30p_read_close(AVFormatContext *ctx) {
+  MtlSt30pDemuxerContext *s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy rx session
@@ -64,14 +64,15 @@ static int mtl_st30p_read_close(AVFormatContext* ctx) {
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx,
+       s->frame_counter);
   return 0;
 }
 
-static int mtl_st30p_read_header(AVFormatContext* ctx) {
-  MtlSt30pDemuxerContext* s = ctx->priv_data;
+static int mtl_st30p_read_header(AVFormatContext *ctx) {
+  MtlSt30pDemuxerContext *s = ctx->priv_data;
   struct st30p_rx_ops ops_rx;
-  AVStream* st = NULL;
+  AVStream *st = NULL;
   int ret;
   int frame_buf_size;
 
@@ -123,8 +124,9 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
     err(ctx, "%s, invalid sample_rate: %d\n", __func__, s->sample_rate);
     return ret;
   }
-  frame_buf_size = st30_calculate_framebuff_size(
-      ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
+  frame_buf_size =
+      st30_calculate_framebuff_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling,
+                                    ops_rx.channel, 10 * NS_PER_MS, NULL);
   ctx->packet_size = frame_buf_size;
 
   st = avformat_new_stream(ctx, NULL);
@@ -146,7 +148,7 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   avpriv_set_pts_info(st, 64, 1, 100);
 
   ops_rx.name = "st30p_rx_ffmpeg";
-  ops_rx.priv = s;  // Handle of priv_data registered to lib
+  ops_rx.priv = s; // Handle of priv_data registered to lib
   ops_rx.framebuff_cnt = s->fb_cnt;
   /* set frame size to 10ms time */
   ops_rx.framebuff_size = frame_buf_size;
@@ -166,7 +168,8 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   }
 
   if (s->timeout_sec)
-    st30p_rx_set_block_timeout(s->rx_handle, s->timeout_sec * (uint64_t)NS_PER_S);
+    st30p_rx_set_block_timeout(s->rx_handle,
+                               s->timeout_sec * (uint64_t)NS_PER_S);
 
   frame_buf_size = st30p_rx_frame_size(s->rx_handle);
   if (frame_buf_size != ctx->packet_size) {
@@ -187,10 +190,10 @@ static int mtl_st30p_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  MtlSt30pDemuxerContext* s = ctx->priv_data;
+static int mtl_st30p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  MtlSt30pDemuxerContext *s = ctx->priv_data;
   int ret = 0;
-  struct st30_frame* frame;
+  struct st30_frame *frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
 
@@ -201,8 +204,10 @@ static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
      */
     for (int i = 1; i <= s->session_init_retry; i++) {
       frame = st30p_rx_get_frame(s->rx_handle);
-      if (frame) break;
-      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx, i);
+      if (frame)
+        break;
+      info(ctx, "%s(%d) session initialization retry %d\n", __func__, s->idx,
+           i);
     }
   } else
     frame = st30p_rx_get_frame(s->rx_handle);
@@ -213,7 +218,8 @@ static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   }
   dbg(ctx, "%s, st30p_rx_get_frame: %p\n", __func__, frame);
   if (frame->data_size != ctx->packet_size) {
-    err(ctx, "%s(%d), unexpected frame size received: %" PRId64 " (%u expected)\n",
+    err(ctx,
+        "%s(%d), unexpected frame size received: %" PRId64 " (%u expected)\n",
         __func__, s->idx, frame->data_size, ctx->packet_size);
     st30p_rx_put_frame(s->rx_handle, frame);
     return AVERROR(EIO);
@@ -317,7 +323,7 @@ const FFInputFormat ff_mtl_st30p_demuxer = {
     .p.extensions = "mtl",
     .p.priv_class = &mtl_st30p_demuxer_class,
 };
-#else  // MTL_FFMPEG_7_0
+#else // MTL_FFMPEG_7_0
 #ifndef MTL_FFMPEG_4_4
 const AVInputFormat ff_mtl_st30p_demuxer =
 #else
@@ -334,4 +340,4 @@ AVInputFormat ff_mtl_st30p_demuxer =
         .extensions = "mtl",
         .priv_class = &mtl_st30p_demuxer_class,
 };
-#endif  // MTL_FFMPEG_7_0
+#endif // MTL_FFMPEG_7_0

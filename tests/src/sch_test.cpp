@@ -41,7 +41,8 @@ static void sch_create_max_test(mtl_handle mt, int max) {
 
   for (int i = 0; i < max; i++) {
     mtl_sch_handle sch = mtl_sch_create(mt, &sch_ops);
-    if (!sch) break;
+    if (!sch)
+      break;
     ret = mtl_sch_start(sch);
     if (ret < 0) {
       ret = mtl_sch_free(sch);
@@ -78,7 +79,7 @@ struct sch_digest_test_para {
   bool test_auto_unregister;
 };
 
-static void sch_digest_test_para_init(struct sch_digest_test_para* para) {
+static void sch_digest_test_para_init(struct sch_digest_test_para *para) {
   memset(para, 0, sizeof(*para));
   para->sch_cnt = 1;
   para->tasklets = 1;
@@ -94,25 +95,26 @@ struct tasklet_test_ctx {
   mtl_tasklet_handle handle;
 };
 
-static int test_tasklet_start(void* priv) {
-  struct tasklet_test_ctx* ctx = (struct tasklet_test_ctx*)priv;
+static int test_tasklet_start(void *priv) {
+  struct tasklet_test_ctx *ctx = (struct tasklet_test_ctx *)priv;
   ctx->start = true;
   return 0;
 }
 
-static int test_tasklet_stop(void* priv) {
-  struct tasklet_test_ctx* ctx = (struct tasklet_test_ctx*)priv;
+static int test_tasklet_stop(void *priv) {
+  struct tasklet_test_ctx *ctx = (struct tasklet_test_ctx *)priv;
   ctx->start = false;
   return 0;
 }
 
-static int test_tasklet_handler(void* priv) {
-  struct tasklet_test_ctx* ctx = (struct tasklet_test_ctx*)priv;
+static int test_tasklet_handler(void *priv) {
+  struct tasklet_test_ctx *ctx = (struct tasklet_test_ctx *)priv;
   ctx->job++;
   return 0;
 }
 
-static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* para) {
+static void sch_tasklet_digest_test(mtl_handle mt,
+                                    struct sch_digest_test_para *para) {
   const int sch_cnt = para->sch_cnt;
   int tasklet_cnt = para->tasklets;
   std::vector<mtl_sch_handle> schs(sch_cnt);
@@ -130,7 +132,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
   ops.stop = test_tasklet_stop;
   ops.handler = test_tasklet_handler;
 
-  std::vector<tasklet_test_ctx*> tasklet_ctxs;
+  std::vector<tasklet_test_ctx *> tasklet_ctxs;
   tasklet_ctxs.resize((size_t)sch_cnt * tasklet_cnt);
 
   /* create the sch */
@@ -139,7 +141,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
     ASSERT_TRUE(sch != NULL);
     if (!para->runtime) {
       for (int j = 0; j < tasklet_cnt; j++) {
-        tasklet_test_ctx* ctx = new tasklet_test_ctx();
+        tasklet_test_ctx *ctx = new tasklet_test_ctx();
         ASSERT_TRUE(ctx != NULL);
         ctx->sch_idx = i;
         ctx->tasklet_idx = j;
@@ -155,7 +157,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
 
     if (para->runtime) {
       for (int j = 0; j < tasklet_cnt; j++) {
-        tasklet_test_ctx* ctx = new tasklet_test_ctx();
+        tasklet_test_ctx *ctx = new tasklet_test_ctx();
         ASSERT_TRUE(ctx != NULL);
         ctx->sch_idx = i;
         ctx->tasklet_idx = j;
@@ -173,7 +175,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
   mtl_sleep_us(1000 * 1000);
   /* check if all tasklet started */
   for (int i = 0; i < sch_cnt * tasklet_cnt; i++) {
-    tasklet_test_ctx* ctx = tasklet_ctxs[i];
+    tasklet_test_ctx *ctx = tasklet_ctxs[i];
     EXPECT_TRUE(ctx->start);
     EXPECT_GT(ctx->job, 0);
     if (para->runtime) {
@@ -190,7 +192,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
 
   if (!para->runtime && !para->test_auto_unregister) {
     for (int i = 0; i < sch_cnt * tasklet_cnt; i++) {
-      tasklet_test_ctx* ctx = tasklet_ctxs[i];
+      tasklet_test_ctx *ctx = tasklet_ctxs[i];
       ret = mtl_sch_unregister_tasklet(ctx->handle);
       EXPECT_GE(ret, 0);
     }
@@ -204,7 +206,7 @@ static void sch_tasklet_digest_test(mtl_handle mt, struct sch_digest_test_para* 
 
   /* check if all tasklet stopped */
   for (int i = 0; i < sch_cnt * tasklet_cnt; i++) {
-    tasklet_test_ctx* ctx = tasklet_ctxs[i];
+    tasklet_test_ctx *ctx = tasklet_ctxs[i];
     EXPECT_FALSE(ctx->start);
     delete tasklet_ctxs[i];
   }

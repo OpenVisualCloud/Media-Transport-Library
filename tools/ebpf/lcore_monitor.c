@@ -53,37 +53,39 @@ static void lm_print_help() {
   printf(" Params:\n");
   printf("  --lcore <id>        Set the monitor lcore\n");
   printf("  --t_pid <id>        Set the monitor t_pid\n");
-  printf("  --filter_us <us>    Report the sch/irq event only if the time > filter_us\n");
+  printf("  --filter_us <us>    Report the sch/irq event only if the time > "
+         "filter_us\n");
   printf("  --bpf_trace         Enable bpf trace\n");
   printf("  --help              Print help info\n");
 
   printf("\n");
 }
 
-static int lm_parse_args(struct lcore_monitor_ctx* ctx, int argc, char** argv) {
+static int lm_parse_args(struct lcore_monitor_ctx *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", et_args_options, &opt_idx);
-    if (cmd == -1) break;
+    if (cmd == -1)
+      break;
 
     switch (cmd) {
-      case LM_ARG_CORE:
-        ctx->cfg.core_id = atoi(optarg);
-        break;
-      case LM_ARG_T_PID:
-        ctx->cfg.t_pid = atoi(optarg);
-        break;
-      case LM_ARG_BPF_TRACE:
-        ctx->cfg.bpf_trace = true;
-        break;
-      case LM_ARG_FILTER_US:
-        ctx->filter_ns = atoi(optarg) * 1000;
-        break;
-      case LM_ARG_HELP:
-      default:
-        lm_print_help();
-        return -1;
+    case LM_ARG_CORE:
+      ctx->cfg.core_id = atoi(optarg);
+      break;
+    case LM_ARG_T_PID:
+      ctx->cfg.t_pid = atoi(optarg);
+      break;
+    case LM_ARG_BPF_TRACE:
+      ctx->cfg.bpf_trace = true;
+      break;
+    case LM_ARG_FILTER_US:
+      ctx->filter_ns = atoi(optarg) * 1000;
+      break;
+    case LM_ARG_HELP:
+    default:
+      lm_print_help();
+      return -1;
     }
   }
 
@@ -96,17 +98,18 @@ static void lm_sig_handler(int signo) {
   info("%s, signal %d\n", __func__, signo);
 
   switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      stop = true;
-      break;
+  case SIGINT: /* Interrupt from keyboard */
+    stop = true;
+    break;
   }
 
   return;
 }
 
-static int get_process_name_by_pid(pid_t pid, char* process_name, size_t max_len) {
+static int get_process_name_by_pid(pid_t pid, char *process_name,
+                                   size_t max_len) {
   char path[128];
-  FILE* fp;
+  FILE *fp;
 
   snprintf(path, sizeof(path), "/proc/%d/comm", pid);
   fp = fopen(path, "r");
@@ -130,9 +133,9 @@ static int get_process_name_by_pid(pid_t pid, char* process_name, size_t max_len
   return 0;
 }
 
-static int lm_event_handler(void* pri, void* data, size_t data_sz) {
-  struct lcore_monitor_ctx* ctx = pri;
-  const struct lcore_tid_event* e = data;
+static int lm_event_handler(void *pri, void *data, size_t data_sz) {
+  struct lcore_monitor_ctx *ctx = pri;
+  const struct lcore_tid_event *e = data;
   int ret;
 
   dbg("%s: type %d, ns %" PRIu64 "\n", __func__, e->type, e->ns);
@@ -143,14 +146,16 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   }
   if (e->type == LCORE_SCHED_IN) {
     float ns = e->ns - ctx->sched_out.ns;
-    if (ns < ctx->filter_ns) return 0;
+    if (ns < ctx->filter_ns)
+      return 0;
     int next_pid = ctx->sched_out.next_pid;
     char process_name[64];
     ret = get_process_name_by_pid(next_pid, process_name, sizeof(process_name));
     if (ret < 0)
       info("%s: sched out %.3fus as pid: %d\n", __func__, ns / 1000, next_pid);
     else
-      info("%s: sched out %.3fus as comm: %s\n", __func__, ns / 1000, process_name);
+      info("%s: sched out %.3fus as comm: %s\n", __func__, ns / 1000,
+           process_name);
     return 0;
   }
 
@@ -161,7 +166,8 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   }
   if (e->type == LCORE_IRQ_EXIT) {
     float ns = e->ns - ctx->irq_entry.ns;
-    if (ns < ctx->filter_ns) return 0;
+    if (ns < ctx->filter_ns)
+      return 0;
     info("%s: sched out %.3fus as irq: %d\n", __func__, ns / 1000, e->irq);
     return 0;
   }
@@ -173,8 +179,10 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   }
   if (e->type == LCORE_VECTOR_EXIT) {
     float ns = e->ns - ctx->vector_entry.ns;
-    if (ns < ctx->filter_ns) return 0;
-    info("%s: sched out %.3fus as vector: %d\n", __func__, ns / 1000, e->vector);
+    if (ns < ctx->filter_ns)
+      return 0;
+    info("%s: sched out %.3fus as vector: %d\n", __func__, ns / 1000,
+         e->vector);
     return 0;
   }
 
@@ -185,7 +193,8 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   }
   if (e->type == LCORE_SYS_EXIT) {
     float ns = e->ns - ctx->syscall.ns;
-    if (ns < ctx->filter_ns) return 0;
+    if (ns < ctx->filter_ns)
+      return 0;
     info("%s: syscall out %.3fus as syscall: %d\n", __func__, ns / 1000, e->id);
     return 0;
   }
@@ -194,13 +203,14 @@ static int lm_event_handler(void* pri, void* data, size_t data_sz) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct lcore_monitor_ctx ctx;
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = lm_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
   if (!ctx.cfg.core_id) {
     err("%s, no core id define\n", __func__);
     lm_print_help();
@@ -212,8 +222,8 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  struct lcore_monitor_bpf* skel = NULL;
-  struct ring_buffer* rb = NULL;
+  struct lcore_monitor_bpf *skel = NULL;
+  struct ring_buffer *rb = NULL;
 
   skel = lcore_monitor_bpf__open_and_load();
   if (!skel) {
@@ -256,7 +266,9 @@ int main(int argc, char** argv) {
 
   info("%s, stop now\n", __func__);
 exit:
-  if (rb) ring_buffer__free(rb);
-  if (skel) lcore_monitor_bpf__destroy(skel);
+  if (rb)
+    ring_buffer__free(rb);
+  if (skel)
+    lcore_monitor_bpf__destroy(skel);
   return 0;
 }

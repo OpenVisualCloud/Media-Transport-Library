@@ -34,8 +34,8 @@ struct ufd_client_sample_ctx {
   int recv_cnt_total;
 };
 
-static void* ufd_client_thread(void* arg) {
-  struct ufd_client_sample_ctx* s = arg;
+static void *ufd_client_thread(void *arg) {
+  struct ufd_client_sample_ctx *s = arg;
   int socket = s->socket;
 
   ssize_t ufd_len = s->udp_len;
@@ -48,12 +48,13 @@ static void* ufd_client_thread(void* arg) {
   int idx_pos = ufd_len / 2;
   int send_idx = 0;
 
-  info("%s(%d), start socket %d ufd len %d\n", __func__, s->idx, socket, (int)ufd_len);
+  info("%s(%d), start socket %d ufd len %d\n", __func__, s->idx, socket,
+       (int)ufd_len);
   while (!s->stop) {
     send_buf[idx_pos] = send_idx++;
-    ssize_t send =
-        mufd_sendto(socket, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    ssize_t send = mufd_sendto(socket, send_buf, sizeof(send_buf), 0,
+                               (const struct sockaddr *)&s->serv_addr,
+                               sizeof(s->serv_addr));
     if (send != ufd_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -61,7 +62,8 @@ static void* ufd_client_thread(void* arg) {
     s->send_cnt++;
     s->send_cnt_total++;
 
-    ssize_t recv = mufd_recvfrom(socket, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
+    ssize_t recv =
+        mufd_recvfrom(socket, recv_buf, sizeof(recv_buf), 0, NULL, NULL);
     if (recv != ufd_len) {
       dbg("%s(%d), only recv %d bytes\n", __func__, s->idx, (int)recv);
       s->recv_fail_cnt++;
@@ -71,8 +73,8 @@ static void* ufd_client_thread(void* arg) {
     char expect_rx_idx = last_rx_idx + 1;
     last_rx_idx = recv_buf[idx_pos];
     if (last_rx_idx != expect_rx_idx) {
-      err("%s(%d), idx mismatch, expect %u get %u\n", __func__, s->idx, expect_rx_idx,
-          last_rx_idx);
+      err("%s(%d), idx mismatch, expect %u get %u\n", __func__, s->idx,
+          expect_rx_idx, last_rx_idx);
       s->recv_err_cnt++;
       continue;
     }
@@ -85,8 +87,8 @@ static void* ufd_client_thread(void* arg) {
   return NULL;
 }
 
-static void* ufd_client_transport_thread(void* arg) {
-  struct ufd_client_sample_ctx* s = arg;
+static void *ufd_client_transport_thread(void *arg) {
+  struct ufd_client_sample_ctx *s = arg;
   int socket = s->socket;
 
   ssize_t ufd_len = s->udp_len;
@@ -95,11 +97,12 @@ static void* ufd_client_transport_thread(void* arg) {
     send_buf[i] = i;
   }
 
-  info("%s(%d), start socket %d ufd len %d\n", __func__, s->idx, socket, (int)ufd_len);
+  info("%s(%d), start socket %d ufd len %d\n", __func__, s->idx, socket,
+       (int)ufd_len);
   while (!s->stop) {
-    ssize_t send =
-        mufd_sendto(socket, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+    ssize_t send = mufd_sendto(socket, send_buf, sizeof(send_buf), 0,
+                               (const struct sockaddr *)&s->serv_addr,
+                               sizeof(s->serv_addr));
     if (send != ufd_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -112,15 +115,15 @@ static void* ufd_client_transport_thread(void* arg) {
   return NULL;
 }
 
-static void ufd_client_status(struct ufd_client_sample_ctx* s) {
+static void ufd_client_status(struct ufd_client_sample_ctx *s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->send_cnt * s->udp_len * 8 / time_sec;
   double bps_g = bps / (1000 * 1000 * 1000);
   s->last_stat_time = cur_ts;
 
-  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx, s->send_cnt, bps_g,
-       s->recv_cnt);
+  info("%s(%d), send %d pkts(%fg/s) recv %d pkts\n", __func__, s->idx,
+       s->send_cnt, bps_g, s->recv_cnt);
   s->send_cnt = 0;
   s->recv_cnt = 0;
   if (s->recv_fail_cnt) {
@@ -135,28 +138,29 @@ static void ufd_client_status(struct ufd_client_sample_ctx* s) {
 
 static void ufd_client_sig_handler(int signo) {
   switch (signo) {
-    case SIGINT: /* Interrupt from keyboard */
-      mufd_abort();
-      break;
+  case SIGINT: /* Interrupt from keyboard */
+    mufd_abort();
+    break;
   }
 
   return;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = sample_parse_args(&ctx, argc, argv, true, false, true);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   ufd_override_check(&ctx);
 
   ctx.sig_handler = ufd_client_sig_handler;
 
   uint32_t session_num = ctx.sessions;
-  struct ufd_client_sample_ctx* app[session_num];
+  struct ufd_client_sample_ctx *app[session_num];
   memset(app, 0, sizeof(app));
 
   for (int i = 0; i < session_num; i++) {
@@ -177,7 +181,8 @@ int main(int argc, char** argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
 
-    mufd_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P], ctx.udp_port + i);
+    mufd_init_sockaddr(&app[i]->serv_addr, ctx.tx_dip_addr[MTL_PORT_P],
+                       ctx.udp_port + i);
 
     app[i]->socket = mufd_socket(AF_INET, SOCK_DGRAM, 0);
     if (app[i]->socket < 0) {
@@ -185,14 +190,16 @@ int main(int argc, char** argv) {
       ret = -EIO;
       goto error;
     }
-    if (ctx.udp_tx_bps) mufd_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
+    if (ctx.udp_tx_bps)
+      mufd_set_tx_rate(app[i]->socket, ctx.udp_tx_bps);
     if (ctx.has_tx_dst_mac[MTL_PORT_P])
       mufd_set_tx_mac(app[i]->socket, ctx.tx_dst_mac[MTL_PORT_P]);
 
     struct timeval tv;
     tv.tv_sec = 0;
     tv.tv_usec = 1000;
-    ret = mufd_setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    ret = mufd_setsockopt(app[i]->socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                          sizeof(tv));
     if (ret < 0) {
       err("%s(%d), SO_RCVTIMEO fail %d\n", __func__, i, ret);
       goto error;
@@ -201,7 +208,8 @@ int main(int argc, char** argv) {
     if ((ctx.udp_mode == SAMPLE_UDP_TRANSPORT) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_POLL) ||
         (ctx.udp_mode == SAMPLE_UDP_TRANSPORT_UNIFY_POLL))
-      ret = pthread_create(&app[i]->thread, NULL, ufd_client_transport_thread, app[i]);
+      ret = pthread_create(&app[i]->thread, NULL, ufd_client_transport_thread,
+                           app[i]);
     else
       ret = pthread_create(&app[i]->thread, NULL, ufd_client_thread, app[i]);
     if (ret < 0) {
@@ -240,15 +248,18 @@ int main(int argc, char** argv) {
 
 error:
   for (int i = 0; i < session_num; i++) {
-    if (!app[i]) continue;
+    if (!app[i])
+      continue;
     // stop app thread
     app[i]->stop = true;
     st_pthread_mutex_lock(&app[i]->wake_mutex);
     st_pthread_cond_signal(&app[i]->wake_cond);
     st_pthread_mutex_unlock(&app[i]->wake_mutex);
-    if (app[i]->thread) pthread_join(app[i]->thread, NULL);
+    if (app[i]->thread)
+      pthread_join(app[i]->thread, NULL);
 
-    if (app[i]->socket >= 0) mufd_close(app[i]->socket);
+    if (app[i]->socket >= 0)
+      mufd_close(app[i]->socket);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
     free(app[i]);

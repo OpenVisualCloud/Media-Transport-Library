@@ -20,9 +20,9 @@ extern "C" {
 #endif
 
 /** Handle to tx st2110-30 pipeline session of lib */
-typedef struct st30p_tx_ctx* st30p_tx_handle;
+typedef struct st30p_tx_ctx *st30p_tx_handle;
 /** Handle to rx st2110-30 pipeline session of lib */
-typedef struct st30p_rx_ctx* st30p_rx_handle;
+typedef struct st30p_rx_ctx *st30p_rx_handle;
 
 /** Bit define for flags of struct st20p_tx_ops. */
 enum st30p_tx_flag {
@@ -45,14 +45,15 @@ enum st30p_tx_flag {
   ST30P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(8)),
 
   /** Enable the st30p_tx_get_frame block behavior to wait until a frame becomes
-   available or timeout(default: 1s, use st30p_tx_set_block_timeout to customize)*/
+   available or timeout(default: 1s, use st30p_tx_set_block_timeout to
+   customize)*/
   ST30P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
 /** The structure info for st30 frame meta. */
 struct st30_frame {
   /** frame buffer address */
-  void* addr;
+  void *addr;
   /** frame format */
   enum st30_fmt fmt;
   /** channels number */
@@ -75,18 +76,19 @@ struct st30_frame {
   uint32_t rtp_timestamp;
   /** the total packets received, not include the redundant packets */
   uint32_t pkts_total;
-  /** the valid packets received on each session port. For each session port, the validity
-   * of received packets can be assessed by comparing 'pkts_recv[s_port]' with
-   * 'pkts_total,' which serves as an indicator of signal quality.  */
+  /** the valid packets received on each session port. For each session port,
+   * the validity of received packets can be assessed by comparing
+   * 'pkts_recv[s_port]' with 'pkts_total,' which serves as an indicator of
+   * signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
 };
 
 /**
- * The structure describing how to create a tx st2110-30(audio) pipeline session.
- * Include the PCIE port and other required info
+ * The structure describing how to create a tx st2110-30(audio) pipeline
+ * session. Include the PCIE port and other required info
  */
 struct st30p_tx_ops {
   /** Mandatory. tx port info */
@@ -104,32 +106,33 @@ struct st30p_tx_ops {
   enum st30_tx_pacing_way pacing_way;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;
-  /** size for each frame buffer, must be multiple of packet size(st30_get_packet_size) */
+  /** size for each frame buffer, must be multiple of packet
+   * size(st30_get_packet_size) */
   uint32_t framebuff_size;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST30P_TX_FLAG_* for possible flags */
   uint32_t flags;
 
   /**
    * Optional. Callback when frame available.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
+   * And only non-block method can be used within this callback as it run from
+   * lcore tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**
    * Optional. Callback when frame done.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
+   * And only non-block method can be used within this callback as it run from
+   * lcore tasklet routine.
    */
-  int (*notify_frame_done)(void* priv, struct st30_frame* frame);
+  int (*notify_frame_done)(void *priv, struct st30_frame *frame);
 
   /*
-   * Optional. The size of fifo ring which used between the packet builder and pacing.
-   * Leave to zero to use default value: the packet number within
+   * Optional. The size of fifo ring which used between the packet builder and
+   * pacing. Leave to zero to use default value: the packet number within
    * ST30_TX_FIFO_DEFAULT_TIME_MS.
    */
   uint16_t fifo_size;
@@ -139,11 +142,14 @@ struct st30p_tx_ops {
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
-  /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
+  /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check
+   * point */
   uint32_t rl_accuracy_ns;
-  /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check point */
+  /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check
+   * point */
   int32_t rl_offset_ns;
-  /**  Use this socket if ST30P_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  /**  Use this socket if ST30P_TX_FLAG_FORCE_NUMA is on, default use the NIC
+   * numa */
   int socket_id;
 };
 
@@ -151,44 +157,49 @@ struct st30p_tx_ops {
  * Get one tx frame from the tx st2110-30 pipeline session.
  * Call st30p_tx_put_frame to return the frame to session.
  */
-struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle);
+struct st30_frame *st30p_tx_get_frame(st30p_tx_handle handle);
 /** Put back the frame which get by st30p_tx_get_frame. */
-int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame);
+int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame *frame);
 /** Free the tx st2110-30 pipeline session. */
 int st30p_tx_free(st30p_tx_handle handle);
 /** Create one tx st2110-30 pipeline session */
-st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops);
-/** Online update the destination info for the tx st2110-30(pipeline) session. */
-int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info* dst);
-/** Wake up the block wait on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is enabled.*/
+st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops *ops);
+/** Online update the destination info for the tx st2110-30(pipeline) session.
+ */
+int st30p_tx_update_destination(st30p_tx_handle handle,
+                                struct st_tx_dest_info *dst);
+/** Wake up the block wait on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is
+ * enabled.*/
 int st30p_tx_wake_block(st30p_tx_handle handle);
 /* get framebuff size */
 size_t st30p_tx_frame_size(st30p_tx_handle handle);
 /* get framebuff pointer */
-void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx);
-/** Set the block timeout time on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is
- * enabled. */
+void *st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx);
+/** Set the block timeout time on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET
+ * is enabled. */
 int st30p_tx_set_block_timeout(st30p_tx_handle handle, uint64_t timedwait_ns);
 
 /** Bit define for flags of struct st20p_rx_ops. */
 enum st30p_rx_flag {
   /**
    * Flag bit in flags of struct st30p_rx_ops, for non MTL_PMD_DPDK_USER.
-   * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
-   * Use st30_rx_get_queue_meta to get the queue meta(queue number etc) info.
+   * If set, it's application duty to set the rx flow(queue) and multicast
+   * join/drop. Use st30_rx_get_queue_meta to get the queue meta(queue number
+   * etc) info.
    */
   ST30P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
   /** Force the numa of the created session, both CPU and memory */
   ST30P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
 
   /** Enable the st30p_rx_get_frame block behavior to wait until a frame becomes
-   available or timeout(default: 1s, use st30p_rx_set_block_timeout to customize) */
+   available or timeout(default: 1s, use st30p_rx_set_block_timeout to
+   customize) */
   ST30P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
 /**
- * The structure describing how to create a rx st2110-30(audio) pipeline session.
- * Include the PCIE port and other required info
+ * The structure describing how to create a rx st2110-30(audio) pipeline
+ * session. Include the PCIE port and other required info
  */
 struct st30p_rx_ops {
   /** Mandatory. rx port info */
@@ -204,23 +215,25 @@ struct st30p_rx_ops {
   enum st30_ptime ptime;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;
-  /** size for each frame buffer, must be multiple of packet size(st30_get_packet_size) */
+  /** size for each frame buffer, must be multiple of packet
+   * size(st30_get_packet_size) */
   uint32_t framebuff_size;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST30P_RX_FLAG_* for possible flags */
   uint32_t flags;
 
   /**
    * Optional. Callback when frame available in the lib.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
+   * And only non-block method can be used within this callback as it run from
+   * lcore tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
-  /**  Use this socket if ST30P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
+  int (*notify_frame_available)(void *priv);
+  /**  Use this socket if ST30P_RX_FLAG_FORCE_NUMA is on, default use the NIC
+   * numa */
   int socket_id;
 };
 
@@ -228,17 +241,18 @@ struct st30p_rx_ops {
  * Get one rx frame from the rx st2110-30 pipeline session.
  * Call st30p_rx_put_frame to return the frame to session.
  */
-struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle);
+struct st30_frame *st30p_rx_get_frame(st30p_rx_handle handle);
 /** Put back the frame which get by st30p_rx_get_frame. */
-int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame);
+int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame *frame);
 /** Free the rx st2110-30 pipeline session. */
 int st30p_rx_free(st30p_rx_handle handle);
 /** Create one rx st2110-30 pipeline session */
-st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops);
-/** Wake up the block wait on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is enabled.*/
+st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops *ops);
+/** Wake up the block wait on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is
+ * enabled.*/
 int st30p_rx_wake_block(st30p_rx_handle handle);
-/** Set the block timeout time on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is
- * enabled. */
+/** Set the block timeout time on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET
+ * is enabled. */
 int st30p_rx_set_block_timeout(st30p_rx_handle handle, uint64_t timedwait_ns);
 /* get framebuff size */
 size_t st30p_rx_frame_size(st30p_rx_handle handle);

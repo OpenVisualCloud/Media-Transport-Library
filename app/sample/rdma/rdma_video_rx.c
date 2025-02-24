@@ -26,12 +26,12 @@ static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static atomic_bool keep_running = true;
 
 #ifdef APP_HAS_SDL2
-static SDL_Window* window = NULL;
-static SDL_Renderer* renderer = NULL;
-static SDL_Texture* texture = NULL;
+static SDL_Window *window = NULL;
+static SDL_Renderer *renderer = NULL;
+static SDL_Texture *texture = NULL;
 #endif
 
-static int rx_notify_buffer_ready(void* priv, struct mtl_rdma_buffer* buffer) {
+static int rx_notify_buffer_ready(void *priv, struct mtl_rdma_buffer *buffer) {
   (void)(priv);
   (void)(buffer);
   pthread_mutex_lock(&mtx);
@@ -55,8 +55,9 @@ int sdl_init(size_t width, size_t height) {
     return -1;
   }
 
-  window = SDL_CreateWindow("RDMA Frame Display", SDL_WINDOWPOS_UNDEFINED,
-                            SDL_WINDOWPOS_UNDEFINED, 640, 360, SDL_WINDOW_SHOWN);
+  window =
+      SDL_CreateWindow("RDMA Frame Display", SDL_WINDOWPOS_UNDEFINED,
+                       SDL_WINDOWPOS_UNDEFINED, 640, 360, SDL_WINDOW_SHOWN);
   if (!window) {
     printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
     return -1;
@@ -68,8 +69,8 @@ int sdl_init(size_t width, size_t height) {
     return -1;
   }
 
-  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_UYVY, SDL_TEXTUREACCESS_STREAMING,
-                              width, height);
+  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_UYVY,
+                              SDL_TEXTUREACCESS_STREAMING, width, height);
   if (!texture) {
     printf("Texture could not be created! SDL_Error: %s\n", SDL_GetError());
     return -1;
@@ -78,24 +79,27 @@ int sdl_init(size_t width, size_t height) {
   return 0;
 }
 
-void sdl_display_frame(void* frame, size_t width, size_t height) {
+void sdl_display_frame(void *frame, size_t width, size_t height) {
   (void)(height);
   SDL_UpdateTexture(texture, NULL, frame,
-                    width * 2);  // Assuming UYVY (2 bytes per pixel)
+                    width * 2); // Assuming UYVY (2 bytes per pixel)
   SDL_RenderClear(renderer);
   SDL_RenderCopy(renderer, texture, NULL, NULL);
   SDL_RenderPresent(renderer);
 }
 
 void sdl_cleanup() {
-  if (texture) SDL_DestroyTexture(texture);
-  if (renderer) SDL_DestroyRenderer(renderer);
-  if (window) SDL_DestroyWindow(window);
+  if (texture)
+    SDL_DestroyTexture(texture);
+  if (renderer)
+    SDL_DestroyRenderer(renderer);
+  if (window)
+    SDL_DestroyWindow(window);
   SDL_Quit();
 }
 #endif
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
 #ifdef APP_HAS_SDL2
   if (sdl_init(1920, 1080) != 0) {
     fprintf(stderr, "Failed to initialize SDL.\n");
@@ -110,7 +114,7 @@ int main(int argc, char** argv) {
   signal(SIGINT, int_handler);
 
   int ret = 0;
-  void* buffers[3] = {};
+  void *buffers[3] = {};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_rx_handle rx = NULL;
   struct mtl_rdma_init_params p = {
@@ -162,7 +166,7 @@ int main(int argc, char** argv) {
   printf("Starting to receive frames\n");
 
   int frames_consumed = 0;
-  struct mtl_rdma_buffer* buffer = NULL;
+  struct mtl_rdma_buffer *buffer = NULL;
   while (keep_running) {
     buffer = mtl_rdma_rx_get_buffer(rx);
     if (!buffer) {
@@ -178,7 +182,7 @@ int main(int argc, char** argv) {
       clock_gettime(CLOCK_REALTIME, &now);
       uint64_t recv_time_ns =
           ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
-      uint64_t send_time_ns = *(uint64_t*)buffer->user_meta;
+      uint64_t send_time_ns = *(uint64_t *)buffer->user_meta;
       printf("Latency: %.2f us\n", (recv_time_ns - send_time_ns) / 1000.0);
     }
 
@@ -211,13 +215,16 @@ int main(int argc, char** argv) {
   printf("Received %d frames\n", frames_consumed);
 
 out:
-  if (rx) mtl_rdma_rx_free(rx);
+  if (rx)
+    mtl_rdma_rx_free(rx);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED)
+      munmap(buffers[i], frame_size);
   }
 
-  if (mrh) mtl_rdma_uinit(mrh);
+  if (mrh)
+    mtl_rdma_uinit(mrh);
 
 #ifdef APP_HAS_SDL2
   sdl_cleanup();

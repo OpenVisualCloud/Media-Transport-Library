@@ -106,7 +106,7 @@ enum anc_format {
 
 struct st_video_fmt_desc {
   enum video_format fmt;
-  char* name;
+  char *name;
   uint32_t width;
   uint32_t height;
   enum st_fps fps;
@@ -137,7 +137,7 @@ enum st_json_ip_type {
 typedef struct st_json_session_base {
   uint8_t ip[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
   uint8_t mcast_src_ip[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
-  st_json_interface_t* inf[MTL_SESSION_PORT_MAX];
+  st_json_interface_t *inf[MTL_SESSION_PORT_MAX];
   int num_inf;
   uint16_t udp_port;
   uint8_t payload_type;
@@ -257,7 +257,7 @@ typedef struct st_json_st20p_session {
 } st_json_st20p_session_t;
 
 typedef struct st_json_context {
-  st_json_interface_t* interfaces;
+  st_json_interface_t *interfaces;
   int num_interfaces;
   enum mtl_rss_mode rss_mode;
   int sch_quota;
@@ -267,39 +267,39 @@ typedef struct st_json_context {
   bool shared_tx_queues;
   bool shared_rx_queues;
   bool tx_no_chain;
-  char* log_file;
+  char *log_file;
 
-  st_json_video_session_t* tx_video_sessions;
+  st_json_video_session_t *tx_video_sessions;
   int tx_video_session_cnt;
-  st_json_audio_session_t* tx_audio_sessions;
+  st_json_audio_session_t *tx_audio_sessions;
   int tx_audio_session_cnt;
-  st_json_ancillary_session_t* tx_anc_sessions;
+  st_json_ancillary_session_t *tx_anc_sessions;
   int tx_anc_session_cnt;
-  st_json_st22p_session_t* tx_st22p_sessions;
+  st_json_st22p_session_t *tx_st22p_sessions;
   int tx_st22p_session_cnt;
-  st_json_st20p_session_t* tx_st20p_sessions;
+  st_json_st20p_session_t *tx_st20p_sessions;
   int tx_st20p_session_cnt;
-  st_json_st30p_session_t* tx_st30p_sessions;
+  st_json_st30p_session_t *tx_st30p_sessions;
   int tx_st30p_session_cnt;
 
-  st_json_video_session_t* rx_video_sessions;
+  st_json_video_session_t *rx_video_sessions;
   int rx_video_session_cnt;
-  st_json_audio_session_t* rx_audio_sessions;
+  st_json_audio_session_t *rx_audio_sessions;
   int rx_audio_session_cnt;
-  st_json_ancillary_session_t* rx_anc_sessions;
+  st_json_ancillary_session_t *rx_anc_sessions;
   int rx_anc_session_cnt;
-  st_json_st22p_session_t* rx_st22p_sessions;
+  st_json_st22p_session_t *rx_st22p_sessions;
   int rx_st22p_session_cnt;
-  st_json_st20p_session_t* rx_st20p_sessions;
+  st_json_st20p_session_t *rx_st20p_sessions;
   int rx_st20p_session_cnt;
-  st_json_video_session_t* rx_st20r_sessions;
+  st_json_video_session_t *rx_st20r_sessions;
   int rx_st20r_session_cnt;
-  st_json_st30p_session_t* rx_st30p_sessions;
+  st_json_st30p_session_t *rx_st30p_sessions;
   int rx_st30p_session_cnt;
 } st_json_context_t;
 
-int st_app_parse_json(st_json_context_t* ctx, const char* filename);
-void st_app_free_json(st_json_context_t* ctx);
+int st_app_parse_json(st_json_context_t *ctx, const char *filename);
+void st_app_free_json(st_json_context_t *ctx);
 
 enum st_fps st_app_get_fps(enum video_format fmt);
 uint32_t st_app_get_width(enum video_format fmt);

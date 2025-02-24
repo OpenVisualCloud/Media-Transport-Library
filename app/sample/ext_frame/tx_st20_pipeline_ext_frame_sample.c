@@ -17,25 +17,26 @@ struct tx_st20p_sample_ctx {
   pthread_mutex_t wake_mutex;
 
   size_t frame_size;
-  uint8_t* source_begin;
+  uint8_t *source_begin;
   mtl_iova_t source_begin_iova;
-  uint8_t* source_end;
-  uint8_t* frame_cursor;
+  uint8_t *source_end;
+  uint8_t *frame_cursor;
 
   mtl_dma_mem_handle dma_mem;
 };
 
-static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
-  if (s->dma_mem) mtl_dma_mem_free(s->st, s->dma_mem);
+static int tx_st20p_close_source(struct tx_st20p_sample_ctx *s) {
+  if (s->dma_mem)
+    mtl_dma_mem_free(s->st, s->dma_mem);
 
   return 0;
 }
 
-static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
+static int tx_st20p_open_source(struct tx_st20p_sample_ctx *s, char *file) {
   int fd = -EIO;
   struct stat i;
   int frame_cnt = 2;
-  uint8_t* m = NULL;
+  uint8_t *m = NULL;
   size_t fbs_size = s->frame_size * frame_cnt;
 
   fd = st_open(file, O_RDONLY);
@@ -56,8 +57,8 @@ static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
     return -EIO;
   }
   if (i.st_size % s->frame_size) {
-    err("%s, %s file size should be multiple of frame size %" PRIu64 "\n", __func__, file,
-        s->frame_size);
+    err("%s, %s file size should be multiple of frame size %" PRIu64 "\n",
+        __func__, file, s->frame_size);
     close(fd);
     return -EIO;
   }
@@ -81,8 +82,10 @@ init_fb:
   mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(s->st, fbs_size);
   if (!dma_mem) {
     err("%s(%d), dma mem alloc/map fail\n", __func__, s->idx);
-    if (m) munmap(m, fbs_size);
-    if (fd >= 0) close(fd);
+    if (m)
+      munmap(m, fbs_size);
+    if (fd >= 0)
+      close(fd);
     return -EIO;
   }
   s->dma_mem = dma_mem;
@@ -100,15 +103,17 @@ init_fb:
     munmap(m, fbs_size);
   }
   s->source_end = s->source_begin + fbs_size;
-  info("%s, source begin at %p, end at %p\n", __func__, s->source_begin, s->source_end);
+  info("%s, source begin at %p, end at %p\n", __func__, s->source_begin,
+       s->source_end);
 
-  if (fd >= 0) close(fd);
+  if (fd >= 0)
+    close(fd);
 
   return 0;
 }
 
-static int tx_st20p_frame_available(void* priv) {
-  struct tx_st20p_sample_ctx* s = priv;
+static int tx_st20p_frame_available(void *priv) {
+  struct tx_st20p_sample_ctx *s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -117,7 +122,7 @@ static int tx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
+static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
   MTL_MAY_UNUSED(priv);
   MTL_MAY_UNUSED(frame);
 
@@ -127,32 +132,36 @@ static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   return 0;
 }
 
-static void* tx_st20p_frame_thread(void* arg) {
-  struct tx_st20p_sample_ctx* s = arg;
+static void *tx_st20p_frame_thread(void *arg) {
+  struct tx_st20p_sample_ctx *s = arg;
   st20p_tx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
     frame = st20p_tx_get_frame(handle);
     if (!frame) { /* no frame */
       st_pthread_mutex_lock(&s->wake_mutex);
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
     struct st_ext_frame ext_frame;
     ext_frame.addr[0] = s->frame_cursor;
-    ext_frame.iova[0] = s->source_begin_iova + (s->frame_cursor - s->source_begin);
-    ext_frame.linesize[0] = st_frame_least_linesize(frame->fmt, frame->width, 0);
+    ext_frame.iova[0] =
+        s->source_begin_iova + (s->frame_cursor - s->source_begin);
+    ext_frame.linesize[0] =
+        st_frame_least_linesize(frame->fmt, frame->width, 0);
     uint8_t planes = st_frame_fmt_planes(frame->fmt);
-    for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
+    for (uint8_t plane = 1; plane < planes;
+         plane++) { /* assume planes continous */
       ext_frame.linesize[plane] =
           st_frame_least_linesize(frame->fmt, frame->width, plane);
-      ext_frame.addr[plane] = (uint8_t*)ext_frame.addr[plane - 1] +
+      ext_frame.addr[plane] = (uint8_t *)ext_frame.addr[plane - 1] +
                               ext_frame.linesize[plane - 1] * frame->height;
-      ext_frame.iova[plane] =
-          ext_frame.iova[plane - 1] + ext_frame.linesize[plane - 1] * frame->height;
+      ext_frame.iova[plane] = ext_frame.iova[plane - 1] +
+                              ext_frame.linesize[plane - 1] * frame->height;
     }
     ext_frame.size = s->frame_size;
     ext_frame.opaque = NULL;
@@ -171,14 +180,15 @@ static void* tx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -189,7 +199,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct tx_st20p_sample_ctx* app[session_num];
+  struct tx_st20p_sample_ctx *app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
@@ -209,16 +219,16 @@ int main(int argc, char** argv) {
     struct st20p_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
     ops_tx.name = "st20p_test";
-    ops_tx.priv = app[i];  // app handle register to lib
+    ops_tx.priv = app[i]; // app handle register to lib
     ops_tx.port.num_port = ctx.param.num_ports;
-    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P], ctx.tx_dip_addr[MTL_PORT_P],
-           MTL_IP_ADDR_LEN);
+    memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_P],
+           ctx.tx_dip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
     snprintf(ops_tx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
              ctx.param.port[MTL_PORT_P]);
     ops_tx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     if (ops_tx.port.num_port > 1) {
-      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R], ctx.tx_dip_addr[MTL_PORT_R],
-             MTL_IP_ADDR_LEN);
+      memcpy(ops_tx.port.dip_addr[MTL_SESSION_PORT_R],
+             ctx.tx_dip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
       snprintf(ops_tx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
       ops_tx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
@@ -251,7 +261,8 @@ int main(int argc, char** argv) {
       goto error;
     }
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, tx_st20p_frame_thread, app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, tx_st20p_frame_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -288,7 +299,8 @@ error:
     if (app[i]) {
       st_pthread_mutex_destroy(&app[i]->wake_mutex);
       st_pthread_cond_destroy(&app[i]->wake_cond);
-      if (app[i]->handle) st20p_tx_free(app[i]->handle);
+      if (app[i]->handle)
+        st20p_tx_free(app[i]->handle);
       free(app[i]);
     }
   }

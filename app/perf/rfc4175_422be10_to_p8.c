@@ -7,16 +7,16 @@
 static int perf_cvt_422_10_pg2_be_to_p8(mtl_handle st, int w, int h, int frames,
                                         int fb_cnt) {
   size_t fb_pg10_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_10 =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_malloc(st, fb_pg10_size * fb_cnt,
-                                                        MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be *pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_malloc(
+          st, fb_pg10_size * fb_cnt, MTL_PORT_P);
   size_t fb_pg8_size = (size_t)w * h * 2;
   float fb_pg8_size_m = (float)fb_pg8_size / 1024 / 1024;
-  uint8_t* pg_8 = (uint8_t*)malloc(fb_pg8_size * fb_cnt);
+  uint8_t *pg_8 = (uint8_t *)malloc(fb_pg8_size * fb_cnt);
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
 
-  struct st20_rfc4175_422_10_pg2_be* pg_10_in;
-  uint8_t* pg_8_out;
+  struct st20_rfc4175_422_10_pg2_be *pg_10_in;
+  uint8_t *pg_8_out;
 
   for (int i = 0; i < fb_cnt; i++) {
     pg_10_in = pg_10 + (i % fb_cnt) * (fb_pg10_size / sizeof(*pg_10));
@@ -36,22 +36,22 @@ static int perf_cvt_422_10_pg2_be_to_p8(mtl_handle st, int w, int h, int frames,
   }
   end = clock();
   duration = (float)(end - start) / CLOCKS_PER_SEC;
-  info("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration, frames,
-       w, h, fb_pg8_size_m, fb_cnt);
+  info("scalar, time: %f secs with %d frames(%dx%d,%fm@%d buffers)\n", duration,
+       frames, w, h, fb_pg8_size_m, fb_cnt);
 
   if (cpu_level >= MTL_SIMD_LEVEL_AVX512) {
     start = clock();
     for (int i = 0; i < frames; i++) {
       pg_10_in = pg_10 + (i % fb_cnt) * (fb_pg10_size / sizeof(*pg_10));
       pg_8_out = pg_8 + (i % fb_cnt) * (fb_pg8_size / sizeof(*pg_8));
-      st20_rfc4175_422be10_to_yuv422p8_simd(pg_10_in, pg_8_out, pg_8_out + w * h,
-                                            pg_8_out + w * h * 3 / 2, w, h,
-                                            MTL_SIMD_LEVEL_AVX512);
+      st20_rfc4175_422be10_to_yuv422p8_simd(
+          pg_10_in, pg_8_out, pg_8_out + w * h, pg_8_out + w * h * 3 / 2, w, h,
+          MTL_SIMD_LEVEL_AVX512);
     }
     end = clock();
     float duration_simd = (float)(end - start) / CLOCKS_PER_SEC;
-    info("avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n", duration_simd,
-         frames, w, h, fb_cnt);
+    info("avx512, time: %f secs with %d frames(%dx%d@%d buffers)\n",
+         duration_simd, frames, w, h, fb_cnt);
     info("avx512, %fx performance to scalar\n", duration / duration_simd);
   }
 
@@ -61,8 +61,8 @@ static int perf_cvt_422_10_pg2_be_to_p8(mtl_handle st, int w, int h, int frames,
   return 0;
 }
 
-static void* perf_thread(void* arg) {
-  struct st_sample_context* ctx = arg;
+static void *perf_thread(void *arg) {
+  struct st_sample_context *ctx = arg;
   mtl_handle dev_handle = ctx->st;
   int frames = ctx->perf_frames;
   int fb_cnt = ctx->perf_fb_cnt;
@@ -86,13 +86,14 @@ static void* perf_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   memset(&ctx, 0, sizeof(ctx));
   ret = tx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   ctx.st = mtl_init(&ctx.param);
   if (!ctx.st) {
@@ -102,7 +103,8 @@ int main(int argc, char** argv) {
 
   pthread_t thread;
   ret = pthread_create(&thread, NULL, perf_thread, &ctx);
-  if (ret) goto exit;
+  if (ret)
+    goto exit;
   pthread_join(thread, NULL);
 
 exit:

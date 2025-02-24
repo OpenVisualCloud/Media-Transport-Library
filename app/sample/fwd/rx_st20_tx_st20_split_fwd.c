@@ -11,7 +11,7 @@
 #define FB_CNT (4) /* 2 is not enough for this case */
 
 struct frame_info {
-  void* frame_addr;
+  void *frame_addr;
   atomic_int refcnt;
   uint64_t tmstamp;
   TAILQ_ENTRY(frame_info) tailq;
@@ -20,7 +20,7 @@ struct frame_info {
 TAILQ_HEAD(frameq, frame_info);
 
 struct tx_ctx {
-  void* app;
+  void *app;
   st20_tx_handle tx_handle;
   size_t fb_offset;
   int fb_idx;
@@ -31,7 +31,7 @@ struct split_fwd_sample_ctx {
   st20_rx_handle rx_handle;
 
   struct frameq q;
-  struct frame_info* sending_frames[FB_CNT];
+  struct frame_info *sending_frames[FB_CNT];
 
   struct tx_ctx tx[4];
   size_t fb_size;
@@ -41,8 +41,8 @@ struct split_fwd_sample_ctx {
   int fb_fwd;
 };
 
-static int sending_frames_insert(struct split_fwd_sample_ctx* app,
-                                 struct frame_info* fi) {
+static int sending_frames_insert(struct split_fwd_sample_ctx *app,
+                                 struct frame_info *fi) {
   int i;
   for (i = 0; i < FB_CNT; i++) {
     if (app->sending_frames[i] == NULL) {
@@ -57,10 +57,11 @@ static int sending_frames_insert(struct split_fwd_sample_ctx* app,
   return 0;
 }
 
-static int sending_frames_delete(struct split_fwd_sample_ctx* app, uint64_t tmstamp) {
+static int sending_frames_delete(struct split_fwd_sample_ctx *app,
+                                 uint64_t tmstamp) {
   int i;
   for (i = 0; i < FB_CNT; i++) {
-    struct frame_info* fi = app->sending_frames[i];
+    struct frame_info *fi = app->sending_frames[i];
     if (fi && fi->tmstamp == tmstamp) {
       atomic_fetch_sub(&fi->refcnt, 1);
       if (atomic_load(&fi->refcnt) == 0) {
@@ -80,18 +81,22 @@ static int sending_frames_delete(struct split_fwd_sample_ctx* app, uint64_t tmst
   return 0;
 }
 
-static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
-  struct split_fwd_sample_ctx* s = (struct split_fwd_sample_ctx*)priv;
+static int rx_st20_frame_ready(void *priv, void *frame,
+                               struct st20_rx_frame_meta *meta) {
+  struct split_fwd_sample_ctx *s = (struct split_fwd_sample_ctx *)priv;
 
-  if (!s->ready) return -EIO;
+  if (!s->ready)
+    return -EIO;
 
   /* incomplete frame */
-  if (!st_is_frame_complete(meta->status) || meta->tfmt != ST10_TIMESTAMP_FMT_MEDIA_CLK) {
+  if (!st_is_frame_complete(meta->status) ||
+      meta->tfmt != ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     st20_rx_put_framebuff(s->rx_handle, frame);
     return -EIO;
   }
 
-  struct frame_info* fi = (struct frame_info*)malloc(sizeof(struct frame_info));
+  struct frame_info *fi =
+      (struct frame_info *)malloc(sizeof(struct frame_info));
   if (!fi) {
     st20_rx_put_framebuff(s->rx_handle, frame);
     return -EIO;
@@ -107,17 +112,18 @@ static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
   return 0;
 }
 
-static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct tx_ctx* s = priv;
-  struct split_fwd_sample_ctx* app = s->app;
+static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct tx_ctx *s = priv;
+  struct split_fwd_sample_ctx *app = s->app;
 
-  if (!app->ready) return -EIO;
+  if (!app->ready)
+    return -EIO;
 
   int ret;
   int consumer_idx = s->fb_idx;
 
-  struct frame_info* fi = TAILQ_FIRST(&app->q);
+  struct frame_info *fi = TAILQ_FIRST(&app->q);
   if (fi) {
     ret = 0;
     *next_frame_idx = consumer_idx;
@@ -126,7 +132,8 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
 
     struct st20_ext_frame ext_frame;
     ext_frame.buf_addr = fi->frame_addr + s->fb_offset;
-    ext_frame.buf_iova = mtl_hp_virt2iova(app->st, fi->frame_addr) + s->fb_offset;
+    ext_frame.buf_iova =
+        mtl_hp_virt2iova(app->st, fi->frame_addr) + s->fb_offset;
     ext_frame.buf_len = app->fb_size / 2;
     st20_tx_set_ext_frame(s->tx_handle, consumer_idx, &ext_frame);
 
@@ -143,7 +150,8 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
     }
 
     consumer_idx++;
-    if (consumer_idx >= FB_CNT) consumer_idx = 0;
+    if (consumer_idx >= FB_CNT)
+      consumer_idx = 0;
     s->fb_idx = consumer_idx;
   } else {
     /* not ready */
@@ -153,19 +161,20 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int tx_video_frame_done(void* priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct tx_ctx* s = priv;
-  struct split_fwd_sample_ctx* app = s->app;
+static int tx_video_frame_done(void *priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct tx_ctx *s = priv;
+  struct split_fwd_sample_ctx *app = s->app;
   MTL_MAY_UNUSED(frame_idx);
 
   /* try to release the sending frame */
-  if (app->ready) sending_frames_delete(app, meta->timestamp);
+  if (app->ready)
+    sending_frames_delete(app, meta->timestamp);
 
   return 0;
 }
 
-static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
+static int split_fwd_sample_free_app(struct split_fwd_sample_ctx *app) {
   for (int i = 0; i < 4; i++) {
     if (app->tx[i].tx_handle) {
       st20_tx_free(app->tx[i].tx_handle);
@@ -173,7 +182,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
     }
   }
 
-  struct frame_info* fi = NULL;
+  struct frame_info *fi = NULL;
   while (!TAILQ_EMPTY(&app->q)) {
     fi = TAILQ_FIRST(&app->q);
     TAILQ_REMOVE(&app->q, fi, tailq);
@@ -188,7 +197,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int session_num = 4;
   struct st_sample_context ctx;
   int ret = -EIO;
@@ -221,10 +230,12 @@ int main(int argc, char** argv) {
   ops_rx.name = "st20_fwd";
   ops_rx.priv = &app;
   ops_rx.num_port = 1;
-  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P], MTL_IP_ADDR_LEN);
+  memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
+         MTL_IP_ADDR_LEN);
   snprintf(ops_rx.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx.param.port[MTL_PORT_P]);
-  ops_rx.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port;  // user config the udp port.
+  ops_rx.udp_port[MTL_SESSION_PORT_P] =
+      ctx.udp_port; // user config the udp port.
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.type = ST20_TYPE_FRAME_LEVEL;
   ops_rx.width = ctx.width;
@@ -245,7 +256,7 @@ int main(int argc, char** argv) {
   app.rx_handle = rx_handle;
 
   for (int i = 0; i < 4; i++) {
-    struct tx_ctx* tx = &app.tx[i];
+    struct tx_ctx *tx = &app.tx[i];
     tx->app = &app;
     struct st20_tx_ops ops_tx;
     memset(&ops_tx, 0, sizeof(ops_tx));
@@ -283,7 +294,8 @@ int main(int argc, char** argv) {
 
   app.tx[0].fb_offset = 0; /* origin */
   app.tx[1].fb_offset = (ctx.width / 2) * st20_pg.size / st20_pg.coverage;
-  app.tx[2].fb_offset = (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
+  app.tx[2].fb_offset =
+      (ctx.width / 2) * ctx.height * st20_pg.size / st20_pg.coverage;
   app.tx[3].fb_offset = app.tx[2].fb_offset + app.tx[1].fb_offset;
   app.fb_size = ctx.width * ctx.height * st20_pg.size / st20_pg.coverage;
 

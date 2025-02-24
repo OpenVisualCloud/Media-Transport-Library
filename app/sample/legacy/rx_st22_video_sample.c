@@ -17,12 +17,13 @@ struct rx_st22_sample_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_rx_frame* framebuffs;
+  struct st_rx_frame *framebuffs;
 };
 
-static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx* s, void* frame, size_t size) {
+static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx *s, void *frame,
+                                 size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -33,15 +34,18 @@ static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx* s, void* frame, size
   framebuff->size = size;
   /* point to next */
   producer_idx++;
-  if (producer_idx >= s->framebuff_cnt) producer_idx = 0;
+  if (producer_idx >= s->framebuff_cnt)
+    producer_idx = 0;
   s->framebuff_producer_idx = producer_idx;
   return 0;
 }
 
-static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_meta* meta) {
-  struct rx_st22_sample_ctx* s = (struct rx_st22_sample_ctx*)priv;
+static int rx_st22_frame_ready(void *priv, void *frame,
+                               struct st22_rx_frame_meta *meta) {
+  struct rx_st22_sample_ctx *s = (struct rx_st22_sample_ctx *)priv;
 
-  if (!s->handle) return -EIO;
+  if (!s->handle)
+    return -EIO;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   int ret = rx_st22_enqueue_frame(s, frame, meta->frame_total_size);
@@ -58,8 +62,8 @@ static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   return 0;
 }
 
-static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_addr,
-                              size_t codestream_size) {
+static void st22_decode_frame(struct rx_st22_sample_ctx *s,
+                              void *codestream_addr, size_t codestream_size) {
   MTL_MAY_UNUSED(codestream_addr);
   MTL_MAY_UNUSED(codestream_size);
 
@@ -70,11 +74,11 @@ static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_add
   s->fb_decoded++;
 }
 
-static void* st22_decode_thread(void* arg) {
-  struct rx_st22_sample_ctx* s = arg;
+static void *st22_decode_thread(void *arg) {
+  struct rx_st22_sample_ctx *s = arg;
   int idx = s->idx;
   int consumer_idx;
-  struct st_rx_frame* framebuff;
+  struct st_rx_frame *framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
@@ -83,7 +87,8 @@ static void* st22_decode_thread(void* arg) {
     framebuff = &s->framebuffs[consumer_idx];
     if (!framebuff->frame) {
       /* no ready frame */
-      if (!s->stop) st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
+      if (!s->stop)
+        st_pthread_cond_wait(&s->wake_cond, &s->wake_mutex);
       st_pthread_mutex_unlock(&s->wake_mutex);
       continue;
     }
@@ -96,7 +101,8 @@ static void* st22_decode_thread(void* arg) {
     st_pthread_mutex_lock(&s->wake_mutex);
     framebuff->frame = NULL;
     consumer_idx++;
-    if (consumer_idx >= s->framebuff_cnt) consumer_idx = 0;
+    if (consumer_idx >= s->framebuff_cnt)
+      consumer_idx = 0;
     s->framebuff_consumer_idx = consumer_idx;
     st_pthread_mutex_unlock(&s->wake_mutex);
   }
@@ -105,7 +111,7 @@ static void* st22_decode_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int bpp = 3; /* 3bit per pixel */
   struct st_sample_context ctx;
   int ret;
@@ -113,7 +119,8 @@ int main(int argc, char** argv) {
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -125,11 +132,12 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st22_rx_handle rx_handle[session_num];
-  struct rx_st22_sample_ctx* app[session_num];
+  struct rx_st22_sample_ctx *app[session_num];
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct rx_st22_sample_ctx*)malloc(sizeof(struct rx_st22_sample_ctx));
+    app[i] =
+        (struct rx_st22_sample_ctx *)malloc(sizeof(struct rx_st22_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -140,8 +148,8 @@ int main(int argc, char** argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
-    app[i]->framebuffs =
-        (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+    app[i]->framebuffs = (struct st_rx_frame *)malloc(
+        sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -155,7 +163,7 @@ int main(int argc, char** argv) {
     struct st22_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st22_test";
-    ops_rx.priv = app[i];  // app handle register to lib
+    ops_rx.priv = app[i]; // app handle register to lib
     ops_rx.num_port = 1;
     memcpy(ops_rx.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -185,7 +193,8 @@ int main(int argc, char** argv) {
     app[i]->handle = rx_handle[i];
 
     app[i]->stop = false;
-    ret = pthread_create(&app[i]->decode_thread, NULL, st22_decode_thread, app[i]);
+    ret = pthread_create(&app[i]->decode_thread, NULL, st22_decode_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), app_thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -210,7 +219,8 @@ int main(int argc, char** argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_decoded <= 0) {
-      err("%s(%d), error, no decoded frames %d\n", __func__, i, app[i]->fb_decoded);
+      err("%s(%d), error, no decoded frames %d\n", __func__, i,
+          app[i]->fb_decoded);
       ret = -EIO;
     }
   }
@@ -218,11 +228,14 @@ int main(int argc, char** argv) {
 error:
   // release session
   for (int i = 0; i < session_num; i++) {
-    if (!app[i]) continue;
-    if (app[i]->handle) st22_rx_free(app[i]->handle);
+    if (!app[i])
+      continue;
+    if (app[i]->handle)
+      st22_rx_free(app[i]->handle);
     st_pthread_mutex_destroy(&app[i]->wake_mutex);
     st_pthread_cond_destroy(&app[i]->wake_cond);
-    if (app[i]->framebuffs) free(app[i]->framebuffs);
+    if (app[i]->framebuffs)
+      free(app[i]->framebuffs);
     free(app[i]);
   }
 

@@ -61,8 +61,8 @@ typedef unsigned long int nfds_t;
 #define MT_ENABLE_P_SHARED /* default enable PTHREAD_PROCESS_SHARED */
 #endif
 
-static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
-                                        pthread_mutexattr_t* p_attr) {
+static inline int mt_pthread_mutex_init(pthread_mutex_t *mutex,
+                                        pthread_mutexattr_t *p_attr) {
 #ifdef MT_ENABLE_P_SHARED
   pthread_mutexattr_t attr;
   if (p_attr) {
@@ -77,41 +77,43 @@ static inline int mt_pthread_mutex_init(pthread_mutex_t* mutex,
   return pthread_mutex_init(mutex, p_attr);
 }
 
-static inline int mt_pthread_mutex_lock(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_lock(pthread_mutex_t *mutex) {
   return pthread_mutex_lock(mutex);
 }
 
-static inline int mt_pthread_mutex_try_lock(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_try_lock(pthread_mutex_t *mutex) {
   return pthread_mutex_trylock(mutex);
 }
 
-static inline int mt_pthread_mutex_unlock(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return pthread_mutex_unlock(mutex);
 }
 
-static inline int mt_pthread_mutex_destroy(pthread_mutex_t* mutex) {
+static inline int mt_pthread_mutex_destroy(pthread_mutex_t *mutex) {
   return pthread_mutex_destroy(mutex);
 }
 
-static inline int mt_pthread_cond_init(pthread_cond_t* cond,
-                                       pthread_condattr_t* cond_attr) {
+static inline int mt_pthread_cond_init(pthread_cond_t *cond,
+                                       pthread_condattr_t *cond_attr) {
   return pthread_cond_init(cond, cond_attr);
 }
 
-static inline int mt_pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
+static inline int mt_pthread_cond_wait(pthread_cond_t *cond,
+                                       pthread_mutex_t *mutex) {
   return pthread_cond_wait(cond, mutex);
 }
 
-static inline int mt_pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
-                                            const struct timespec* time) {
+static inline int mt_pthread_cond_timedwait(pthread_cond_t *cond,
+                                            pthread_mutex_t *mutex,
+                                            const struct timespec *time) {
   return pthread_cond_timedwait(cond, mutex, time);
 }
 
-static inline int mt_pthread_cond_destroy(pthread_cond_t* cond) {
+static inline int mt_pthread_cond_destroy(pthread_cond_t *cond) {
   return pthread_cond_destroy(cond);
 }
 
-static inline int mt_pthread_cond_wait_init(pthread_cond_t* cond) {
+static inline int mt_pthread_cond_wait_init(pthread_cond_t *cond) {
 #if MT_THREAD_TIMEDWAIT_CLOCK_ID != CLOCK_REALTIME
   pthread_condattr_t attr;
   pthread_condattr_init(&attr);
@@ -122,7 +124,7 @@ static inline int mt_pthread_cond_wait_init(pthread_cond_t* cond) {
 #endif
 }
 
-static inline void timespec_add_ns(struct timespec* time, uint64_t ns) {
+static inline void timespec_add_ns(struct timespec *time, uint64_t ns) {
   time->tv_nsec += ns;
   while (time->tv_nsec >= 1000000000L) {
     time->tv_nsec -= 1000000000L;
@@ -130,8 +132,8 @@ static inline void timespec_add_ns(struct timespec* time, uint64_t ns) {
   }
 }
 
-static inline int mt_pthread_cond_timedwait_ns(pthread_cond_t* cond,
-                                               pthread_mutex_t* mutex,
+static inline int mt_pthread_cond_timedwait_ns(pthread_cond_t *cond,
+                                               pthread_mutex_t *mutex,
                                                uint64_t timedwait_ns) {
   struct timespec time;
   clock_gettime(MT_THREAD_TIMEDWAIT_CLOCK_ID, &time);
@@ -139,7 +141,7 @@ static inline int mt_pthread_cond_timedwait_ns(pthread_cond_t* cond,
   return mt_pthread_cond_timedwait(cond, mutex, &time);
 }
 
-static inline int mt_pthread_cond_signal(pthread_cond_t* cond) {
+static inline int mt_pthread_cond_signal(pthread_cond_t *cond) {
   return pthread_cond_signal(cond);
 }
 
@@ -147,7 +149,7 @@ static inline bool mt_socket_match(int cpu_socket, int dev_socket) {
 #ifdef WINDOWSENV
   MTL_MAY_UNUSED(cpu_socket);
   MTL_MAY_UNUSED(dev_socket);
-  return true;  // windows cpu socket always 0
+  return true; // windows cpu socket always 0
 #else
   return (cpu_socket == dev_socket);
 #endif

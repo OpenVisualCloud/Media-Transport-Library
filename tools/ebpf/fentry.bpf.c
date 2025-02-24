@@ -25,8 +25,8 @@ struct {
 } rb SEC(".maps");
 
 SEC("fentry/udp_send_skb")
-int BPF_PROG(udp_send_skb, struct sk_buff* skb, struct flowi4* fl4,
-             struct inet_cork* cork) {
+int BPF_PROG(udp_send_skb, struct sk_buff *skb, struct flowi4 *fl4,
+             struct inet_cork *cork) {
   u64 ts;
   u64 skb_addr = (u64)skb;
 
@@ -37,20 +37,22 @@ int BPF_PROG(udp_send_skb, struct sk_buff* skb, struct flowi4* fl4,
 }
 
 SEC("fexit/udp_send_skb")
-int BPF_PROG(udp_send_skb_exit, struct sk_buff* skb, struct flowi4* fl4,
-             struct inet_cork* cork, long ret) {
-  struct udp_send_event* e;
+int BPF_PROG(udp_send_skb_exit, struct sk_buff *skb, struct flowi4 *fl4,
+             struct inet_cork *cork, long ret) {
+  struct udp_send_event *e;
   pid_t pid;
   u64 *start_ts, duration_ns = 0;
   u64 skb_addr = (u64)skb;
 
   pid = bpf_get_current_pid_tgid() >> 32;
   start_ts = bpf_map_lookup_elem(&start_time, &skb_addr);
-  if (start_ts) duration_ns = bpf_ktime_get_ns() - *start_ts;
+  if (start_ts)
+    duration_ns = bpf_ktime_get_ns() - *start_ts;
   bpf_map_delete_elem(&start_time, &skb_addr);
 
   e = bpf_ringbuf_reserve(&rb, sizeof(*e), 0);
-  if (!e) return 0;
+  if (!e)
+    return 0;
 
   e->pid = pid;
   e->gso_size = cork->gso_size;

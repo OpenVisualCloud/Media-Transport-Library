@@ -27,12 +27,12 @@
 #define MTL_MAX_QUEUES 64
 
 class mtl_interface {
- private:
+private:
   const unsigned int ifindex;
   uint32_t max_combined;
   uint32_t combined_count;
 #ifdef MTL_HAS_XDP_BACKEND
-  struct xdp_program* xdp_prog;
+  struct xdp_program *xdp_prog;
   int xsks_map_fd;
   int udp4_dp_filter_fd;
   enum xdp_attach_mode xdp_mode;
@@ -40,9 +40,10 @@ class mtl_interface {
 #endif
   std::vector<bool> queues;
 
- private:
-  void log(const log_level& level, const std::string& message) const {
-    logger::log(level, "[Interface " + std::to_string(ifindex) + "] " + message);
+private:
+  void log(const log_level &level, const std::string &message) const {
+    logger::log(level,
+                "[Interface " + std::to_string(ifindex) + "] " + message);
   }
   int clear_flow_rules();
   int parse_combined_info();
@@ -51,7 +52,7 @@ class mtl_interface {
   void unload_xdp();
 #endif
 
- public:
+public:
   mtl_interface(unsigned int ifindex);
   ~mtl_interface();
 
@@ -65,8 +66,8 @@ class mtl_interface {
   int update_udp_dp_filter(uint16_t dst_port, bool add);
   int get_queue();
   int put_queue(uint16_t queue_id);
-  int add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip, uint32_t dst_ip,
-               uint16_t src_port, uint16_t dst_port);
+  int add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
+               uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
   int del_flow(uint32_t flow_id);
 };
 
@@ -78,7 +79,8 @@ mtl_interface::mtl_interface(unsigned int ifindex)
   xsks_map_fd = -1;
   udp4_dp_filter_fd = -1;
   xdp_mode = XDP_MODE_UNSPEC;
-  if (load_xdp() < 0) throw std::runtime_error("Failed to load XDP program.");
+  if (load_xdp() < 0)
+    throw std::runtime_error("Failed to load XDP program.");
 #else
   throw std::runtime_error("No XDP support for this build");
 #endif
@@ -124,14 +126,15 @@ int mtl_interface::update_udp_dp_filter(uint16_t dst_port, bool add) {
   uint8_t value = add ? 1 : 0;
   int ret = bpf_map_update_elem(udp4_dp_filter_fd, &dst_port, &value, BPF_ANY);
   if (ret < 0) {
-    log(log_level::ERROR,
-        "Failed to update udp4_dp_filter map, dst_port: " + std::to_string(dst_port) +
-            ", error: " + std::to_string(ret));
+    log(log_level::ERROR, "Failed to update udp4_dp_filter map, dst_port: " +
+                              std::to_string(dst_port) +
+                              ", error: " + std::to_string(ret));
     return -1;
   }
 
   std::string action = add ? "Added " : "Removed ";
-  log(log_level::INFO, action + std::to_string(dst_port) + " in udp4_dp_filter");
+  log(log_level::INFO,
+      action + std::to_string(dst_port) + " in udp4_dp_filter");
 
   return 0;
 #else
@@ -194,7 +197,7 @@ int mtl_interface::clear_flow_rules() {
   }
 
   if (cmd.rule_cnt > 0) {
-    struct ethtool_rxnfc* cmd_w_rules = (struct ethtool_rxnfc*)calloc(
+    struct ethtool_rxnfc *cmd_w_rules = (struct ethtool_rxnfc *)calloc(
         1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
     if (!cmd_w_rules) {
       log(log_level::ERROR, "Failed to allocate memory");
@@ -264,8 +267,9 @@ int mtl_interface::parse_combined_info() {
   return 0;
 }
 
-int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
-                            uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type,
+                            uint32_t src_ip, uint32_t dst_ip, uint16_t src_port,
+                            uint16_t dst_port) {
   int ret = 0;
   int free_loc = -1, flow_id = -1;
   char ifname[IF_NAMESIZE];
@@ -294,8 +298,8 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     return ret;
   }
 
-  struct ethtool_rxnfc* cmd_w_rules;
-  cmd_w_rules = (struct ethtool_rxnfc*)calloc(
+  struct ethtool_rxnfc *cmd_w_rules;
+  cmd_w_rules = (struct ethtool_rxnfc *)calloc(
       1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
   cmd_w_rules->cmd = ETHTOOL_GRXCLSRLALL;
   cmd_w_rules->rule_cnt = cmd.rule_cnt;
@@ -336,7 +340,7 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
   /* set the flow rule */
   memset(&cmd, 0, sizeof(cmd));
   cmd.cmd = ETHTOOL_SRXCLSRLINS;
-  struct ethtool_rx_flow_spec* fs = &cmd.fs;
+  struct ethtool_rx_flow_spec *fs = &cmd.fs;
   fs->flow_type = flow_type;
   if (dst_port) {
     fs->m_u.udp_ip4_spec.pdst = 0xFFFF;
@@ -360,7 +364,8 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
   ifr.ifr_data = (caddr_t)&cmd;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
-    log(log_level::ERROR, "Cannot insert flow rule: " + std::string(strerror(errno)));
+    log(log_level::ERROR,
+        "Cannot insert flow rule: " + std::string(strerror(errno)));
     close(fd);
     return ret;
   }
@@ -368,8 +373,9 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
 
   close(fd);
 
-  log(log_level::INFO, "Successfully inserted flow rule " + std::to_string(flow_id) +
-                           " with queue " + std::to_string(queue_id));
+  log(log_level::INFO, "Successfully inserted flow rule " +
+                           std::to_string(flow_id) + " with queue " +
+                           std::to_string(queue_id));
   return flow_id;
 }
 
@@ -396,14 +402,15 @@ int mtl_interface::del_flow(uint32_t flow_id) {
   ifr.ifr_data = (caddr_t)&cmd;
   ret = ioctl(fd, SIOCETHTOOL, &ifr);
   if (ret < 0) {
-    log(log_level::ERROR, "Cannot delete flow rule " + std::to_string(flow_id) + " ," +
-                              std::string(strerror(errno)));
+    log(log_level::ERROR, "Cannot delete flow rule " + std::to_string(flow_id) +
+                              " ," + std::string(strerror(errno)));
     close(fd);
     return ret;
   }
   close(fd);
 
-  log(log_level::INFO, "Successfully deleted flow rule " + std::to_string(flow_id));
+  log(log_level::INFO,
+      "Successfully deleted flow rule " + std::to_string(flow_id));
   return 0;
 }
 
@@ -436,16 +443,16 @@ int mtl_interface::load_xdp() {
   }
 
   /* save the filter map fd */
-  udp4_dp_filter_fd = bpf_map__fd(
-      bpf_object__find_map_by_name(xdp_program__bpf_obj(xdp_prog), "udp4_dp_filter"));
+  udp4_dp_filter_fd = bpf_map__fd(bpf_object__find_map_by_name(
+      xdp_program__bpf_obj(xdp_prog), "udp4_dp_filter"));
   if (udp4_dp_filter_fd < 0) {
     log(log_level::ERROR, "Failed to get udp4_dp_filter map fd.");
     unload_xdp();
     return -1;
   }
 
-  log(log_level::INFO,
-      "Loaded xdp prog succ, udp4_dp_filter_fd: " + std::to_string(udp4_dp_filter_fd));
+  log(log_level::INFO, "Loaded xdp prog succ, udp4_dp_filter_fd: " +
+                           std::to_string(udp4_dp_filter_fd));
   return 0;
 }
 

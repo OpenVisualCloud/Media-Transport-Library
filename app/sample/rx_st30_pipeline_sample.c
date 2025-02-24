@@ -15,14 +15,14 @@ struct rx_st30p_sample_ctx {
 
   size_t frame_size;
   int dst_fd;
-  uint8_t* dst_begin;
-  uint8_t* dst_end;
-  uint8_t* dst_cursor;
+  uint8_t *dst_begin;
+  uint8_t *dst_end;
+  uint8_t *dst_cursor;
 
   int fb_cnt;
 };
 
-static int rx_st30p_close_source(struct rx_st30p_sample_ctx* s) {
+static int rx_st30p_close_source(struct rx_st30p_sample_ctx *s) {
   if (s->dst_begin) {
     munmap(s->dst_begin, s->dst_end - s->dst_begin);
     s->dst_begin = NULL;
@@ -35,7 +35,8 @@ static int rx_st30p_close_source(struct rx_st30p_sample_ctx* s) {
   return 0;
 }
 
-static int rx_st30p_open_source(struct rx_st30p_sample_ctx* s, const char* file) {
+static int rx_st30p_open_source(struct rx_st30p_sample_ctx *s,
+                                const char *file) {
   int fd, ret, idx = s->idx;
   off_t f_size;
   int fb_cnt = 1000 * 10; /* dump 10s */
@@ -54,7 +55,7 @@ static int rx_st30p_open_source(struct rx_st30p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -65,26 +66,28 @@ static int rx_st30p_open_source(struct rx_st30p_sample_ctx* s, const char* file)
   s->dst_cursor = m;
   s->dst_end = m + f_size;
   s->dst_fd = fd;
-  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__, idx, fb_cnt,
-       file, m, f_size);
+  info("%s(%d), save %d framebuffers to file %s(%p,%" PRIu64 ")\n", __func__,
+       idx, fb_cnt, file, m, f_size);
 
   return 0;
 }
 
-static void rx_st30p_consume_frame(struct rx_st30p_sample_ctx* s,
-                                   struct st30_frame* frame) {
+static void rx_st30p_consume_frame(struct rx_st30p_sample_ctx *s,
+                                   struct st30_frame *frame) {
   s->fb_recv++;
-  if (s->dst_fd < 0) return; /* no dump */
+  if (s->dst_fd < 0)
+    return; /* no dump */
 
-  if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
+  if (s->dst_cursor + s->frame_size > s->dst_end)
+    s->dst_cursor = s->dst_begin;
   mtl_memcpy(s->dst_cursor, frame->addr, s->frame_size);
   s->dst_cursor += s->frame_size;
 }
 
-static void* rx_st30p_frame_thread(void* arg) {
-  struct rx_st30p_sample_ctx* s = arg;
+static void *rx_st30p_frame_thread(void *arg) {
+  struct rx_st30p_sample_ctx *s = arg;
   st30p_rx_handle handle = s->handle;
-  struct st30_frame* frame;
+  struct st30_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -102,14 +105,15 @@ static void* rx_st30p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
@@ -120,7 +124,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_st30p_sample_ctx* app[session_num];
+  struct rx_st30p_sample_ctx *app[session_num];
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
@@ -139,7 +143,7 @@ int main(int argc, char** argv) {
     struct st30p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st30p_test";
-    ops_rx.priv = app[i];  // app handle register to lib
+    ops_rx.priv = app[i]; // app handle register to lib
     ops_rx.port.num_port = ctx.param.num_ports;
     memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -147,8 +151,8 @@ int main(int argc, char** argv) {
              ctx.param.port[MTL_PORT_P]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.audio_udp_port + i * 2;
     if (ops_rx.port.num_port > 1) {
-      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx.rx_ip_addr[MTL_PORT_R],
-             MTL_IP_ADDR_LEN);
+      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R],
+             ctx.rx_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
       ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.audio_udp_port + i * 2;
@@ -167,8 +171,9 @@ int main(int argc, char** argv) {
     ops_rx.ptime = ctx.audio_ptime;
 
     /* set frame size to 10ms time */
-    int framebuff_size = st30_calculate_framebuff_size(
-        ops_rx.fmt, ops_rx.ptime, ops_rx.sampling, ops_rx.channel, 10 * NS_PER_MS, NULL);
+    int framebuff_size =
+        st30_calculate_framebuff_size(ops_rx.fmt, ops_rx.ptime, ops_rx.sampling,
+                                      ops_rx.channel, 10 * NS_PER_MS, NULL);
     ops_rx.framebuff_size = framebuff_size;
 
     st30p_rx_handle rx_handle = st30p_rx_create(ctx.st, &ops_rx);
@@ -188,7 +193,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st30p_frame_thread, app[i]);
+    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st30p_frame_thread,
+                         app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -203,7 +209,8 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    if (app[i]->handle) st30p_rx_wake_block(app[i]->handle);
+    if (app[i]->handle)
+      st30p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
 
@@ -213,7 +220,8 @@ int main(int argc, char** argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
+      err("%s(%d), error, no received frames %d\n", __func__, i,
+          app[i]->fb_recv);
       ret = -EIO;
     }
   }
@@ -221,7 +229,8 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle) st30p_rx_free(app[i]->handle);
+      if (app[i]->handle)
+        st30p_rx_free(app[i]->handle);
       free(app[i]);
     }
   }

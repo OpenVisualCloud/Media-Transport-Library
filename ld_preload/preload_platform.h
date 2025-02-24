@@ -19,9 +19,7 @@
 #ifdef WINDOWSENV
 typedef unsigned long int nfds_t;
 
-static inline pid_t getpid() {
-  return GetCurrentProcessId();
-}
+static inline pid_t getpid() { return GetCurrentProcessId(); }
 #endif
 
 #endif

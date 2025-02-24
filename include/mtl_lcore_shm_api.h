@@ -56,7 +56,8 @@ int mtl_lcore_shm_print(void);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_lcore_shm_clean(enum mtl_lcore_clean_action action, void* args, size_t args_sz);
+int mtl_lcore_shm_clean(enum mtl_lcore_clean_action action, void *args,
+                        size_t args_sz);
 
 #if defined(__cplusplus)
 }

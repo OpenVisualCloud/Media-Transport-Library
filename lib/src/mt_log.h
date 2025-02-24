@@ -41,84 +41,84 @@ mtl_log_printer_t mt_get_usdt_log_printer(void);
 
 /* Debug-level messages */
 #ifdef DEBUG
-#define dbg(...)                    \
-  do {                              \
-    MT_LOG(DEBUG, MT, __VA_ARGS__); \
+#define dbg(...)                                                               \
+  do {                                                                         \
+    MT_LOG(DEBUG, MT, __VA_ARGS__);                                            \
   } while (0)
 #else
-#define dbg(...) \
-  do {           \
+#define dbg(...)                                                               \
+  do {                                                                         \
   } while (0)
 #endif
 
 /* Informational */
-#define info(...)                   \
-  do {                              \
-    MT_LOG(INFO, MTL, __VA_ARGS__); \
+#define info(...)                                                              \
+  do {                                                                         \
+    MT_LOG(INFO, MTL, __VA_ARGS__);                                            \
   } while (0)
-#define info_once(...)                \
-  do {                                \
-    static bool once = true;          \
-    if (once) {                       \
-      MT_LOG(INFO, MTL, __VA_ARGS__); \
-      once = false;                   \
-    }                                 \
+#define info_once(...)                                                         \
+  do {                                                                         \
+    static bool once = true;                                                   \
+    if (once) {                                                                \
+      MT_LOG(INFO, MTL, __VA_ARGS__);                                          \
+      once = false;                                                            \
+    }                                                                          \
   } while (0)
 
 /* Normal but significant condition. */
-#define notice(...)                   \
-  do {                                \
-    MT_LOG(NOTICE, MTL, __VA_ARGS__); \
+#define notice(...)                                                            \
+  do {                                                                         \
+    MT_LOG(NOTICE, MTL, __VA_ARGS__);                                          \
   } while (0)
-#define notice_once(...)                \
-  do {                                  \
-    static bool once = true;            \
-    if (once) {                         \
-      MT_LOG(NOTICE, MTL, __VA_ARGS__); \
-      once = false;                     \
-    }                                   \
+#define notice_once(...)                                                       \
+  do {                                                                         \
+    static bool once = true;                                                   \
+    if (once) {                                                                \
+      MT_LOG(NOTICE, MTL, __VA_ARGS__);                                        \
+      once = false;                                                            \
+    }                                                                          \
   } while (0)
 
 /* Warning conditions. */
-#define warn(...)                               \
-  do {                                          \
-    MT_LOG(WARNING, MTL, "Warn: " __VA_ARGS__); \
+#define warn(...)                                                              \
+  do {                                                                         \
+    MT_LOG(WARNING, MTL, "Warn: " __VA_ARGS__);                                \
   } while (0)
-#define warn_once(...)                            \
-  do {                                            \
-    static bool once = true;                      \
-    if (once) {                                   \
-      MT_LOG(WARNING, MTL, "Warn: " __VA_ARGS__); \
-      once = false;                               \
-    }                                             \
+#define warn_once(...)                                                         \
+  do {                                                                         \
+    static bool once = true;                                                   \
+    if (once) {                                                                \
+      MT_LOG(WARNING, MTL, "Warn: " __VA_ARGS__);                              \
+      once = false;                                                            \
+    }                                                                          \
   } while (0)
 
 /* Error conditions. */
-#define err(...)                             \
-  do {                                       \
-    MT_LOG(ERR, MTL, "Error: " __VA_ARGS__); \
+#define err(...)                                                               \
+  do {                                                                         \
+    MT_LOG(ERR, MTL, "Error: " __VA_ARGS__);                                   \
   } while (0)
-#define err_once(...)                          \
-  do {                                         \
-    static bool once = true;                   \
-    if (once) {                                \
-      MT_LOG(ERR, MTL, "Error: " __VA_ARGS__); \
-      once = false;                            \
-    }                                          \
+#define err_once(...)                                                          \
+  do {                                                                         \
+    static bool once = true;                                                   \
+    if (once) {                                                                \
+      MT_LOG(ERR, MTL, "Error: " __VA_ARGS__);                                 \
+      once = false;                                                            \
+    }                                                                          \
   } while (0)
 
 /* Critical conditions		*/
-#define critical(...)               \
-  do {                              \
-    MT_LOG(CRIT, MTL, __VA_ARGS__); \
+#define critical(...)                                                          \
+  do {                                                                         \
+    MT_LOG(CRIT, MTL, __VA_ARGS__);                                            \
   } while (0)
-#define critical_once(...)            \
-  do {                                \
-    static bool once = true;          \
-    if (once) {                       \
-      MT_LOG(CRIT, MTL, __VA_ARGS__); \
-      once = false;                   \
-    }                                 \
+#define critical_once(...)                                                     \
+  do {                                                                         \
+    static bool once = true;                                                   \
+    if (once) {                                                                \
+      MT_LOG(CRIT, MTL, __VA_ARGS__);                                          \
+      once = false;                                                            \
+    }                                                                          \
   } while (0)
 
 #endif

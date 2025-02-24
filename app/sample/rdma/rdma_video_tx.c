@@ -26,14 +26,15 @@ static atomic_bool keep_running = true;
 static int frames_sent = 0;
 static int frames_acked = -3;
 
-static void control_fps(struct timespec* start_time) {
+static void control_fps(struct timespec *start_time) {
   struct timespec end_time;
   long long elapsed_time, time_to_wait;
 
   clock_gettime(CLOCK_MONOTONIC, &end_time);
 
-  elapsed_time = (end_time.tv_sec - start_time->tv_sec) * NANOSECONDS_IN_SECOND +
-                 (end_time.tv_nsec - start_time->tv_nsec);
+  elapsed_time =
+      (end_time.tv_sec - start_time->tv_sec) * NANOSECONDS_IN_SECOND +
+      (end_time.tv_nsec - start_time->tv_nsec);
   time_to_wait = DESIRED_FRAME_DURATION - elapsed_time;
 
   if (time_to_wait > 0) {
@@ -46,14 +47,14 @@ static void control_fps(struct timespec* start_time) {
   clock_gettime(CLOCK_MONOTONIC, start_time);
 }
 
-static int tx_notify_buffer_sent(void* priv, struct mtl_rdma_buffer* buffer) {
+static int tx_notify_buffer_sent(void *priv, struct mtl_rdma_buffer *buffer) {
   (void)(priv);
   (void)(buffer);
   frames_sent++;
   return 0;
 }
 
-static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
+static int tx_notify_buffer_done(void *priv, struct mtl_rdma_buffer *buffer) {
   (void)(priv);
   (void)(buffer);
   frames_acked++;
@@ -71,7 +72,7 @@ void int_handler(int dummy) {
   pthread_mutex_unlock(&mtx);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   if (argc != 4) {
     printf("Usage: %s <ip> <port> <yuv_file>\n", argv[0]);
     return -1;
@@ -79,7 +80,7 @@ int main(int argc, char** argv) {
   signal(SIGINT, int_handler);
 
   int ret = 0;
-  void* buffers[3] = {};
+  void *buffers[3] = {};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_tx_handle tx = NULL;
   struct mtl_rdma_init_params p = {
@@ -122,7 +123,7 @@ int main(int argc, char** argv) {
     goto out;
   }
 
-  FILE* yuv_file = fopen(argv[3], "rb");
+  FILE *yuv_file = fopen(argv[3], "rb");
   if (!yuv_file) {
     printf("Failed to open YUV file\n");
     ret = -1;
@@ -134,7 +135,7 @@ int main(int argc, char** argv) {
   struct timespec start_time;
   clock_gettime(CLOCK_MONOTONIC, &start_time);
   while (keep_running) {
-    struct mtl_rdma_buffer* buffer = mtl_rdma_tx_get_buffer(tx);
+    struct mtl_rdma_buffer *buffer = mtl_rdma_tx_get_buffer(tx);
     if (!buffer) {
       /* wait for buffer done */
       pthread_mutex_lock(&mtx);
@@ -157,7 +158,8 @@ int main(int argc, char** argv) {
 
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    uint64_t send_time_ns = ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
+    uint64_t send_time_ns =
+        ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
 
     buffer->size = frame_size;
     buffer->user_meta = &send_time_ns;
@@ -177,13 +179,16 @@ int main(int argc, char** argv) {
 
 out:
 
-  if (tx) mtl_rdma_tx_free(tx);
+  if (tx)
+    mtl_rdma_tx_free(tx);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED)
+      munmap(buffers[i], frame_size);
   }
 
-  if (mrh) mtl_rdma_uinit(mrh);
+  if (mrh)
+    mtl_rdma_uinit(mrh);
 
   return ret;
 }

@@ -469,15 +469,16 @@ enum st_frame_fmt st_codec_codestream_fmt(enum st22_codec codec) {
   return ST_FRAME_FMT_MAX;
 }
 
-static const char* st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
+static const char *st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
     "auto", "ratelimit", "tsc", "tsn", "ptp", "be", "tsc_narrow",
 };
 
-const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
+const char *st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
   return st_pacing_way_names[way];
 }
 
-size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t plane) {
+size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width,
+                               uint8_t plane) {
   size_t linesize = 0;
 
   if (st_frame_fmt_planes(fmt) == 1) {
@@ -487,49 +488,49 @@ size_t st_frame_least_linesize(enum st_frame_fmt fmt, uint32_t width, uint8_t pl
       linesize = st_frame_size(fmt, width, 1, false);
   } else {
     switch (st_frame_fmt_get_sampling(fmt)) {
-      case ST_FRAME_SAMPLING_422:
-        switch (plane) {
-          case 0:
-            linesize = st_frame_size(fmt, width, 1, false) / 2;
-            break;
-          case 1:
-          case 2:
-            linesize = st_frame_size(fmt, width, 1, false) / 4;
-            break;
-          default:
-            err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
-            break;
-        }
+    case ST_FRAME_SAMPLING_422:
+      switch (plane) {
+      case 0:
+        linesize = st_frame_size(fmt, width, 1, false) / 2;
         break;
-      case ST_FRAME_SAMPLING_444:
-        switch (plane) {
-          case 0:
-          case 1:
-          case 2:
-            linesize = st_frame_size(fmt, width, 1, false) / 3;
-            break;
-          default:
-            err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
-            break;
-        }
-        break;
-      case ST_FRAME_SAMPLING_420:
-        switch (plane) {
-          case 0:
-            linesize = st_frame_size(fmt, width, 1, false) * 4 / 6;
-            break;
-          case 1:
-          case 2:
-            linesize = st_frame_size(fmt, width, 1, false) / 6;
-            break;
-          default:
-            err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
-            break;
-        }
+      case 1:
+      case 2:
+        linesize = st_frame_size(fmt, width, 1, false) / 4;
         break;
       default:
-        err("%s, invalid sampling for fmt %d\n", __func__, fmt);
+        err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
         break;
+      }
+      break;
+    case ST_FRAME_SAMPLING_444:
+      switch (plane) {
+      case 0:
+      case 1:
+      case 2:
+        linesize = st_frame_size(fmt, width, 1, false) / 3;
+        break;
+      default:
+        err("%s, invalid plane idx %u for 444 planar fmt\n", __func__, plane);
+        break;
+      }
+      break;
+    case ST_FRAME_SAMPLING_420:
+      switch (plane) {
+      case 0:
+        linesize = st_frame_size(fmt, width, 1, false) * 4 / 6;
+        break;
+      case 1:
+      case 2:
+        linesize = st_frame_size(fmt, width, 1, false) / 6;
+        break;
+      default:
+        err("%s, invalid plane idx %u for 422 planar fmt\n", __func__, plane);
+        break;
+      }
+      break;
+    default:
+      err("%s, invalid sampling for fmt %d\n", __func__, fmt);
+      break;
     }
   }
 
@@ -542,65 +543,66 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
   size_t pixels = (size_t)width * height;
 
   switch (fmt) {
-    case ST_FRAME_FMT_YUV422PLANAR10LE:
-    case ST_FRAME_FMT_YUV422PLANAR12LE:
-    case ST_FRAME_FMT_Y210:
-      size = pixels * 2 * 2; /* 10/12bits in two bytes */
-      break;
-    case ST_FRAME_FMT_V210:
-      if (pixels % 3) {
-        err("%s, invalid width %u height %u for v210 fmt, not multiple of 3\n", __func__,
-            width, height);
-      } else {
-        size = pixels * 8 / 3;
-      }
-      break;
-    case ST_FRAME_FMT_YUV422PLANAR8:
-    case ST_FRAME_FMT_YUV422CUSTOM8:
-    case ST_FRAME_FMT_UYVY:
-      size = pixels * 2;
-      break;
-    case ST_FRAME_FMT_YUV444PLANAR10LE:
-    case ST_FRAME_FMT_YUV444PLANAR12LE:
-    case ST_FRAME_FMT_GBRPLANAR10LE:
-    case ST_FRAME_FMT_GBRPLANAR12LE:
-      size = pixels * 2 * 3; /* 10bits in two bytes */
-      break;
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-      size = st20_frame_size(ST20_FMT_YUV_422_10BIT, width, height);
-      break;
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
-      size = st20_frame_size(ST20_FMT_YUV_422_12BIT, width, height);
-      break;
-    case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
-    case ST_FRAME_FMT_RGBRFC4175PG4BE10:
-      size = st20_frame_size(ST20_FMT_YUV_444_10BIT, width, height);
-      break;
-    case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
-    case ST_FRAME_FMT_RGBRFC4175PG2BE12:
-      size = st20_frame_size(ST20_FMT_YUV_444_12BIT, width, height);
-      break;
-    case ST_FRAME_FMT_ARGB:
-    case ST_FRAME_FMT_BGRA:
-      size = pixels * 4; /* 8 bits ARGB pixel in a 32 bits */
-      break;
-    case ST_FRAME_FMT_RGB8:
-      size = pixels * 3; /* 8 bits RGB pixel in a 24 bits */
-      break;
-    case ST_FRAME_FMT_YUV420CUSTOM8:
-    case ST_FRAME_FMT_YUV420PLANAR8:
-      size = st20_frame_size(ST20_FMT_YUV_420_8BIT, width, height);
-      break;
-    default:
-      err("%s, invalid fmt %d\n", __func__, fmt);
-      break;
+  case ST_FRAME_FMT_YUV422PLANAR10LE:
+  case ST_FRAME_FMT_YUV422PLANAR12LE:
+  case ST_FRAME_FMT_Y210:
+    size = pixels * 2 * 2; /* 10/12bits in two bytes */
+    break;
+  case ST_FRAME_FMT_V210:
+    if (pixels % 3) {
+      err("%s, invalid width %u height %u for v210 fmt, not multiple of 3\n",
+          __func__, width, height);
+    } else {
+      size = pixels * 8 / 3;
+    }
+    break;
+  case ST_FRAME_FMT_YUV422PLANAR8:
+  case ST_FRAME_FMT_YUV422CUSTOM8:
+  case ST_FRAME_FMT_UYVY:
+    size = pixels * 2;
+    break;
+  case ST_FRAME_FMT_YUV444PLANAR10LE:
+  case ST_FRAME_FMT_YUV444PLANAR12LE:
+  case ST_FRAME_FMT_GBRPLANAR10LE:
+  case ST_FRAME_FMT_GBRPLANAR12LE:
+    size = pixels * 2 * 3; /* 10bits in two bytes */
+    break;
+  case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
+    size = st20_frame_size(ST20_FMT_YUV_422_10BIT, width, height);
+    break;
+  case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
+    size = st20_frame_size(ST20_FMT_YUV_422_12BIT, width, height);
+    break;
+  case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
+  case ST_FRAME_FMT_RGBRFC4175PG4BE10:
+    size = st20_frame_size(ST20_FMT_YUV_444_10BIT, width, height);
+    break;
+  case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
+  case ST_FRAME_FMT_RGBRFC4175PG2BE12:
+    size = st20_frame_size(ST20_FMT_YUV_444_12BIT, width, height);
+    break;
+  case ST_FRAME_FMT_ARGB:
+  case ST_FRAME_FMT_BGRA:
+    size = pixels * 4; /* 8 bits ARGB pixel in a 32 bits */
+    break;
+  case ST_FRAME_FMT_RGB8:
+    size = pixels * 3; /* 8 bits RGB pixel in a 24 bits */
+    break;
+  case ST_FRAME_FMT_YUV420CUSTOM8:
+  case ST_FRAME_FMT_YUV420PLANAR8:
+    size = st20_frame_size(ST20_FMT_YUV_420_8BIT, width, height);
+    break;
+  default:
+    err("%s, invalid fmt %d\n", __func__, fmt);
+    break;
   }
 
-  if (interlaced) size /= 2; /* if all fmt support interlace? */
+  if (interlaced)
+    size /= 2; /* if all fmt support interlace? */
   return size;
 }
 
-int st_frame_sanity_check(struct st_frame* frame) {
+int st_frame_sanity_check(struct st_frame *frame) {
   RTE_BUILD_BUG_ON(ST_FRAME_FMT_MAX > 64);
 
   int planes = st_frame_fmt_planes(frame->fmt);
@@ -629,16 +631,17 @@ int st_frame_sanity_check(struct st_frame* frame) {
 
     /* check data size */
     if (frame->data_size > frame->buffer_size) {
-      err("%s, frame data size %" PRIu64 " exceeds buffer size %" PRIu64 "\n", __func__,
-          frame->data_size, frame->buffer_size);
+      err("%s, frame data size %" PRIu64 " exceeds buffer size %" PRIu64 "\n",
+          __func__, frame->data_size, frame->buffer_size);
       return -EINVAL;
     }
 
     /* check data size is enough */
-    size_t least_sz =
-        st_frame_size(frame->fmt, frame->width, frame->height, frame->interlaced);
+    size_t least_sz = st_frame_size(frame->fmt, frame->width, frame->height,
+                                    frame->interlaced);
     if (frame->data_size < least_sz) {
-      err("%s, frame data size %" PRIu64 " small then frame least_sz %" PRIu64 "\n",
+      err("%s, frame data size %" PRIu64 " small then frame least_sz %" PRIu64
+          "\n",
           __func__, frame->data_size, least_sz);
       return -EINVAL;
     }
@@ -647,7 +650,7 @@ int st_frame_sanity_check(struct st_frame* frame) {
   return 0;
 }
 
-int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
+int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup *pg) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
@@ -673,15 +676,15 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
 
   size_t size = (size_t)width * height;
   if (size % pg.coverage) {
-    err("%s, fmt %d, invalid w %u h %u, not multiple of %u\n", __func__, fmt, width,
-        height, pg.coverage);
+    err("%s, fmt %d, invalid w %u h %u, not multiple of %u\n", __func__, fmt,
+        width, height, pg.coverage);
     return 0;
   }
 
   return size * pg.size / pg.coverage;
 }
 
-const char* st20_fmt_name(enum st20_fmt fmt) {
+const char *st20_fmt_name(enum st20_fmt fmt) {
   struct st20_pgroup pg;
   memset(&pg, 0, sizeof(pg));
 
@@ -693,7 +696,7 @@ const char* st20_fmt_name(enum st20_fmt fmt) {
   return pg.name;
 }
 
-enum st20_fmt st20_name_to_fmt(const char* name) {
+enum st20_fmt st20_name_to_fmt(const char *name) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
@@ -706,7 +709,7 @@ enum st20_fmt st20_name_to_fmt(const char* name) {
   return ST20_FMT_MAX;
 }
 
-int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
+int st_get_fps_timing(enum st_fps fps, struct st_fps_timing *fps_tm) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
@@ -738,8 +741,10 @@ enum st_fps st_frame_rate_to_st_fps(double framerate) {
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
     if (framerate == st_fps_timings[i].framerate ||
-        ((framerate >= st_fps_timings[i].framerate - st_fps_timings[i].lower_limit) &&
-         (framerate <= st_fps_timings[i].framerate + st_fps_timings[i].upper_limit))) {
+        ((framerate >=
+          st_fps_timings[i].framerate - st_fps_timings[i].lower_limit) &&
+         (framerate <=
+          st_fps_timings[i].framerate + st_fps_timings[i].upper_limit))) {
       return st_fps_timings[i].fps;
     }
   }
@@ -748,7 +753,7 @@ enum st_fps st_frame_rate_to_st_fps(double framerate) {
   return ST_FPS_MAX;
 }
 
-enum st_fps st_name_to_fps(const char* name) {
+enum st_fps st_name_to_fps(const char *name) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
@@ -761,7 +766,7 @@ enum st_fps st_name_to_fps(const char* name) {
   return ST_FPS_MAX;
 }
 
-const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
+const char *st_frame_fmt_name(enum st_frame_fmt fmt) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
@@ -774,7 +779,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
   return "unknown";
 }
 
-enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
+enum st_frame_fmt st_frame_name_to_fmt(const char *name) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
@@ -787,7 +792,7 @@ enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
   return ST_FRAME_FMT_MAX;
 }
 
-enum st22_codec st_name_to_codec(const char* name) {
+enum st22_codec st_name_to_codec(const char *name) {
   if (!strcmp(name, "jpegxs"))
     return ST22_CODEC_JPEGXS;
   else if (!strcmp(name, "h264_cbr"))
@@ -831,67 +836,69 @@ enum st_frame_sampling st_frame_fmt_get_sampling(enum st_frame_fmt fmt) {
 
 enum st20_fmt st_frame_fmt_to_transport(enum st_frame_fmt fmt) {
   switch (fmt) {
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
-      return ST20_FMT_YUV_422_10BIT;
-    case ST_FRAME_FMT_UYVY:
-    case ST_FRAME_FMT_YUV422CUSTOM8:
-      return ST20_FMT_YUV_422_8BIT;
-    case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
-      return ST20_FMT_YUV_422_12BIT;
-    case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
-      return ST20_FMT_YUV_444_10BIT;
-    case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
-      return ST20_FMT_YUV_444_12BIT;
-    case ST_FRAME_FMT_YUV420CUSTOM8:
-      return ST20_FMT_YUV_420_8BIT;
-    case ST_FRAME_FMT_RGBRFC4175PG4BE10:
-      return ST20_FMT_RGB_10BIT;
-    case ST_FRAME_FMT_RGBRFC4175PG2BE12:
-      return ST20_FMT_RGB_12BIT;
-    case ST_FRAME_FMT_RGB8:
-      return ST20_FMT_RGB_8BIT;
-    default:
-      err("%s, invalid fmt %d\n", __func__, fmt);
-      return ST20_FMT_MAX;
+  case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
+    return ST20_FMT_YUV_422_10BIT;
+  case ST_FRAME_FMT_UYVY:
+  case ST_FRAME_FMT_YUV422CUSTOM8:
+    return ST20_FMT_YUV_422_8BIT;
+  case ST_FRAME_FMT_YUV422RFC4175PG2BE12:
+    return ST20_FMT_YUV_422_12BIT;
+  case ST_FRAME_FMT_YUV444RFC4175PG4BE10:
+    return ST20_FMT_YUV_444_10BIT;
+  case ST_FRAME_FMT_YUV444RFC4175PG2BE12:
+    return ST20_FMT_YUV_444_12BIT;
+  case ST_FRAME_FMT_YUV420CUSTOM8:
+    return ST20_FMT_YUV_420_8BIT;
+  case ST_FRAME_FMT_RGBRFC4175PG4BE10:
+    return ST20_FMT_RGB_10BIT;
+  case ST_FRAME_FMT_RGBRFC4175PG2BE12:
+    return ST20_FMT_RGB_12BIT;
+  case ST_FRAME_FMT_RGB8:
+    return ST20_FMT_RGB_8BIT;
+  default:
+    err("%s, invalid fmt %d\n", __func__, fmt);
+    return ST20_FMT_MAX;
   }
 }
 
 enum st_frame_fmt st_frame_fmt_from_transport(enum st20_fmt tfmt) {
   switch (tfmt) {
-    case ST20_FMT_YUV_422_10BIT:
-      return ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-    case ST20_FMT_YUV_422_8BIT:
-      return ST_FRAME_FMT_UYVY;
-    case ST20_FMT_YUV_422_12BIT:
-      return ST_FRAME_FMT_YUV422RFC4175PG2BE12;
-    case ST20_FMT_YUV_444_10BIT:
-      return ST_FRAME_FMT_YUV444RFC4175PG4BE10;
-    case ST20_FMT_YUV_444_12BIT:
-      return ST_FRAME_FMT_YUV444RFC4175PG2BE12;
-    case ST20_FMT_YUV_420_8BIT:
-      return ST_FRAME_FMT_YUV420CUSTOM8;
-    case ST20_FMT_RGB_10BIT:
-      return ST_FRAME_FMT_RGBRFC4175PG4BE10;
-    case ST20_FMT_RGB_12BIT:
-      return ST_FRAME_FMT_RGBRFC4175PG2BE12;
-    case ST20_FMT_RGB_8BIT:
-      return ST_FRAME_FMT_RGB8;
-    case ST20_FMT_YUV_422_PLANAR10LE:
-      return ST_FRAME_FMT_YUV422PLANAR10LE;
-    case ST20_FMT_V210:
-      return ST_FRAME_FMT_V210;
-    default:
-      err("%s, invalid tfmt %d\n", __func__, tfmt);
-      return ST_FRAME_FMT_MAX;
+  case ST20_FMT_YUV_422_10BIT:
+    return ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  case ST20_FMT_YUV_422_8BIT:
+    return ST_FRAME_FMT_UYVY;
+  case ST20_FMT_YUV_422_12BIT:
+    return ST_FRAME_FMT_YUV422RFC4175PG2BE12;
+  case ST20_FMT_YUV_444_10BIT:
+    return ST_FRAME_FMT_YUV444RFC4175PG4BE10;
+  case ST20_FMT_YUV_444_12BIT:
+    return ST_FRAME_FMT_YUV444RFC4175PG2BE12;
+  case ST20_FMT_YUV_420_8BIT:
+    return ST_FRAME_FMT_YUV420CUSTOM8;
+  case ST20_FMT_RGB_10BIT:
+    return ST_FRAME_FMT_RGBRFC4175PG4BE10;
+  case ST20_FMT_RGB_12BIT:
+    return ST_FRAME_FMT_RGBRFC4175PG2BE12;
+  case ST20_FMT_RGB_8BIT:
+    return ST_FRAME_FMT_RGB8;
+  case ST20_FMT_YUV_422_PLANAR10LE:
+    return ST_FRAME_FMT_YUV422PLANAR10LE;
+  case ST20_FMT_V210:
+    return ST_FRAME_FMT_V210;
+  default:
+    err("%s, invalid tfmt %d\n", __func__, tfmt);
+    return ST_FRAME_FMT_MAX;
   }
 }
 
 bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
-  if (fmt == ST_FRAME_FMT_YUV422CUSTOM8 || fmt == ST_FRAME_FMT_YUV420CUSTOM8) return true;
+  if (fmt == ST_FRAME_FMT_YUV422CUSTOM8 || fmt == ST_FRAME_FMT_YUV420CUSTOM8)
+    return true;
 
   enum st_frame_fmt to_fmt = st_frame_fmt_from_transport(tfmt);
 
-  if (to_fmt == ST_FRAME_FMT_MAX) return false;
+  if (to_fmt == ST_FRAME_FMT_MAX)
+    return false;
 
   return (fmt == to_fmt) ? true : false;
 }
@@ -908,40 +915,42 @@ uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
   return ts;
 }
 
-int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y) {
+int st_draw_logo(struct st_frame *frame, struct st_frame *logo, uint32_t x,
+                 uint32_t y) {
   if (frame->fmt != logo->fmt) {
     err("%s, mismatch fmt %d %d\n", __func__, frame->fmt, logo->fmt);
     return -EINVAL;
   }
 
   if (frame->fmt != ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
-    err("%s, err fmt %d, only ST_FRAME_FMT_YUV422RFC4175PG2BE10\n", __func__, frame->fmt);
+    err("%s, err fmt %d, only ST_FRAME_FMT_YUV422RFC4175PG2BE10\n", __func__,
+        frame->fmt);
     return -EINVAL;
   }
 
   if ((x + logo->width) > frame->width) {
-    err("%s, err w, x %u logo width %u frame width %u\n", __func__, x, logo->width,
-        frame->width);
+    err("%s, err w, x %u logo width %u frame width %u\n", __func__, x,
+        logo->width, frame->width);
     return -EINVAL;
   }
   if ((y + logo->height) > frame->height) {
-    err("%s, err h, y %u logo height %u frame height %u\n", __func__, y, logo->height,
-        frame->height);
+    err("%s, err h, y %u logo height %u frame height %u\n", __func__, y,
+        logo->height, frame->height);
     return -EINVAL;
   }
 
   size_t logo_col_size = logo->width / 2 * 5;
   for (uint32_t col = 0; col < logo->height; col++) {
-    void* dst = frame->addr[0] + (((col + y) * frame->width) + x) / 2 * 5;
-    void* src = logo->addr[0] + (col * logo->width) / 2 * 5;
+    void *dst = frame->addr[0] + (((col + y) * frame->width) + x) / 2 * 5;
+    void *src = logo->addr[0] + (col * logo->width) / 2 * 5;
     mtl_memcpy(dst, src, logo_col_size);
   }
 
   return 0;
 }
 
-int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           bool interlaced, uint64_t* bps) {
+int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt,
+                           enum st_fps fps, bool interlaced, uint64_t *bps) {
   struct st20_pgroup pg;
   struct st_fps_timing fps_tm;
   int ret;
@@ -951,30 +960,34 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
   memset(&fps_tm, 0, sizeof(fps_tm));
 
   ret = st20_get_pgroup(fmt, &pg);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   ret = st_get_fps_timing(fps, &fps_tm);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   double reactive = 1080.0 / 1125.0;
-  traffic =
-      (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul / fps_tm.den;
-  if (interlaced) traffic /= 2;
+  traffic = (uint64_t)width * height * 8 * pg.size / pg.coverage * fps_tm.mul /
+            fps_tm.den;
+  if (interlaced)
+    traffic /= 2;
   traffic = traffic / reactive;
 
   *bps = traffic;
   return 0;
 }
 
-int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,
-                           uint64_t* bps) {
+int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size,
+                           enum st_fps fps, uint64_t *bps) {
   struct st_fps_timing fps_tm;
   int ret;
 
   memset(&fps_tm, 0, sizeof(fps_tm));
 
   ret = st_get_fps_timing(fps, &fps_tm);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   double reactive = 1080.0 / 1125.0;
   *bps = (uint64_t)total_pkts * pkt_size * fps_tm.mul / fps_tm.den;
@@ -982,14 +995,16 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
   return 0;
 }
 
-int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) {
+int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps,
+                             uint64_t *bps) {
   struct st_fps_timing fps_tm;
   int ret;
 
   memset(&fps_tm, 0, sizeof(fps_tm));
 
   ret = st_get_fps_timing(fps, &fps_tm);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   double reactive = 1080.0 / 1125.0;
   *bps = frame_size * fps_tm.mul / fps_tm.den;
@@ -1000,36 +1015,36 @@ int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) 
 double st30_get_packet_time(enum st30_ptime ptime) {
   double packet_time_ns = 0.0; /* in nanoseconds */
   switch (ptime) {
-    case ST30_PTIME_1MS:
-      packet_time_ns = (double)1000000000.0 * 1 / 1000;
-      break;
-    case ST30_PTIME_125US:
-      packet_time_ns = (double)1000000000.0 * 1 / 8000;
-      break;
-    case ST30_PTIME_250US:
-      packet_time_ns = (double)1000000000.0 * 1 / 4000;
-      break;
-    case ST30_PTIME_333US:
-      packet_time_ns = (double)1000000000.0 * 1 / 3000;
-      break;
-    case ST30_PTIME_4MS:
-      packet_time_ns = (double)1000000000.0 * 4 / 1000;
-      break;
-    case ST31_PTIME_80US:
-      packet_time_ns = (double)1000000000.0 * 1 / 12500;
-      break;
-    case ST31_PTIME_1_09MS:
-      packet_time_ns = (double)1000000000.0 * 48 / 44100;
-      break;
-    case ST31_PTIME_0_14MS:
-      packet_time_ns = (double)1000000000.0 * 6 / 44100;
-      break;
-    case ST31_PTIME_0_09MS:
-      packet_time_ns = (double)1000000000.0 * 4 / 44100;
-      break;
-    default:
-      err("%s, wrong ptime %d\n", __func__, ptime);
-      return -EINVAL;
+  case ST30_PTIME_1MS:
+    packet_time_ns = (double)1000000000.0 * 1 / 1000;
+    break;
+  case ST30_PTIME_125US:
+    packet_time_ns = (double)1000000000.0 * 1 / 8000;
+    break;
+  case ST30_PTIME_250US:
+    packet_time_ns = (double)1000000000.0 * 1 / 4000;
+    break;
+  case ST30_PTIME_333US:
+    packet_time_ns = (double)1000000000.0 * 1 / 3000;
+    break;
+  case ST30_PTIME_4MS:
+    packet_time_ns = (double)1000000000.0 * 4 / 1000;
+    break;
+  case ST31_PTIME_80US:
+    packet_time_ns = (double)1000000000.0 * 1 / 12500;
+    break;
+  case ST31_PTIME_1_09MS:
+    packet_time_ns = (double)1000000000.0 * 48 / 44100;
+    break;
+  case ST31_PTIME_0_14MS:
+    packet_time_ns = (double)1000000000.0 * 6 / 44100;
+    break;
+  case ST31_PTIME_0_09MS:
+    packet_time_ns = (double)1000000000.0 * 4 / 44100;
+    break;
+  default:
+    err("%s, wrong ptime %d\n", __func__, ptime);
+    return -EINVAL;
   }
   return packet_time_ns;
 }
@@ -1037,21 +1052,21 @@ double st30_get_packet_time(enum st30_ptime ptime) {
 int st30_get_sample_size(enum st30_fmt fmt) {
   int sample_size = 0;
   switch (fmt) {
-    case ST30_FMT_PCM16:
-      sample_size = 2;
-      break;
-    case ST30_FMT_PCM24:
-      sample_size = 3;
-      break;
-    case ST30_FMT_PCM8:
-      sample_size = 1;
-      break;
-    case ST31_FMT_AM824:
-      sample_size = 4;
-      break;
-    default:
-      err("%s, wrong fmt %d\n", __func__, fmt);
-      return -EINVAL;
+  case ST30_FMT_PCM16:
+    sample_size = 2;
+    break;
+  case ST30_FMT_PCM24:
+    sample_size = 3;
+    break;
+  case ST30_FMT_PCM8:
+    sample_size = 1;
+    break;
+  case ST31_FMT_AM824:
+    sample_size = 4;
+    break;
+  default:
+    err("%s, wrong fmt %d\n", __func__, fmt);
+    return -EINVAL;
   }
   return sample_size;
 }
@@ -1059,90 +1074,90 @@ int st30_get_sample_size(enum st30_fmt fmt) {
 int st30_get_sample_num(enum st30_ptime ptime, enum st30_sampling sampling) {
   int samples = 0;
   switch (sampling) {
-    case ST30_SAMPLING_48K:
-      switch (ptime) {
-        case ST30_PTIME_1MS:
-          samples = 48;
-          break;
-        case ST30_PTIME_125US:
-          samples = 6;
-          break;
-        case ST30_PTIME_250US:
-          samples = 12;
-          break;
-        case ST30_PTIME_333US:
-          samples = 16;
-          break;
-        case ST30_PTIME_4MS:
-          samples = 192;
-          break;
-        case ST31_PTIME_80US:
-          samples = 4;
-          break;
-        default:
-          err("%s, wrong ptime %d for 48k\n", __func__, ptime);
-          return -EINVAL;
-      }
+  case ST30_SAMPLING_48K:
+    switch (ptime) {
+    case ST30_PTIME_1MS:
+      samples = 48;
       break;
-    case ST30_SAMPLING_96K:
-      switch (ptime) {
-        case ST30_PTIME_1MS:
-          samples = 96;
-          break;
-        case ST30_PTIME_125US:
-          samples = 12;
-          break;
-        case ST30_PTIME_250US:
-          samples = 24;
-          break;
-        case ST30_PTIME_333US:
-          samples = 32;
-          break;
-        case ST30_PTIME_4MS:
-          samples = 384;
-          break;
-        case ST31_PTIME_80US:
-          samples = 8;
-          break;
-        default:
-          err("%s, wrong ptime %d for 96k\n", __func__, ptime);
-          return -EINVAL;
-      }
+    case ST30_PTIME_125US:
+      samples = 6;
       break;
-    case ST31_SAMPLING_44K:
-      switch (ptime) {
-        case ST31_PTIME_1_09MS:
-          samples = 48;
-          break;
-        case ST31_PTIME_0_14MS:
-          samples = 6;
-          break;
-        case ST31_PTIME_0_09MS:
-          samples = 4;
-          break;
-        default:
-          err("%s, wrong ptime %d for 44k\n", __func__, ptime);
-          return -EINVAL;
-      }
+    case ST30_PTIME_250US:
+      samples = 12;
+      break;
+    case ST30_PTIME_333US:
+      samples = 16;
+      break;
+    case ST30_PTIME_4MS:
+      samples = 192;
+      break;
+    case ST31_PTIME_80US:
+      samples = 4;
       break;
     default:
-      err("%s, wrong sampling %d\n", __func__, sampling);
+      err("%s, wrong ptime %d for 48k\n", __func__, ptime);
       return -EINVAL;
+    }
+    break;
+  case ST30_SAMPLING_96K:
+    switch (ptime) {
+    case ST30_PTIME_1MS:
+      samples = 96;
+      break;
+    case ST30_PTIME_125US:
+      samples = 12;
+      break;
+    case ST30_PTIME_250US:
+      samples = 24;
+      break;
+    case ST30_PTIME_333US:
+      samples = 32;
+      break;
+    case ST30_PTIME_4MS:
+      samples = 384;
+      break;
+    case ST31_PTIME_80US:
+      samples = 8;
+      break;
+    default:
+      err("%s, wrong ptime %d for 96k\n", __func__, ptime);
+      return -EINVAL;
+    }
+    break;
+  case ST31_SAMPLING_44K:
+    switch (ptime) {
+    case ST31_PTIME_1_09MS:
+      samples = 48;
+      break;
+    case ST31_PTIME_0_14MS:
+      samples = 6;
+      break;
+    case ST31_PTIME_0_09MS:
+      samples = 4;
+      break;
+    default:
+      err("%s, wrong ptime %d for 44k\n", __func__, ptime);
+      return -EINVAL;
+    }
+    break;
+  default:
+    err("%s, wrong sampling %d\n", __func__, sampling);
+    return -EINVAL;
   }
   return samples;
 }
 
 int st30_get_sample_rate(enum st30_sampling sampling) {
   switch (sampling) {
-    case ST30_SAMPLING_48K:
-      return 48000;
-    case ST30_SAMPLING_96K:
-      return 96000;
-    case ST31_SAMPLING_44K:
-      return 44100;
-    default:
-      err("%s, wrong sampling %d\n", __func__, sampling);
-      return -EINVAL;
+  case ST30_SAMPLING_48K:
+    return 48000;
+  case ST30_SAMPLING_96K:
+    return 96000;
+  case ST31_SAMPLING_44K:
+    return 44100;
+  default:
+    err("%s, wrong sampling %d\n", __func__, sampling);
+    return -EINVAL;
   }
 }
 
@@ -1153,11 +1168,13 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
   int sample_num;
 
   ret = st30_get_sample_size(fmt);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
   sample_size = ret;
 
   ret = st30_get_sample_num(ptime, sampling);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
   sample_num = ret;
 
   if (!channel) {
@@ -1170,7 +1187,7 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
 
 int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
                                   enum st30_sampling sampling, uint16_t channel,
-                                  uint64_t desired_frame_time_ns, double* fps) {
+                                  uint64_t desired_frame_time_ns, double *fps) {
   /* count frame size */
   int pkt_per_frame = 1;
   int pkt_len = st30_get_packet_size(fmt, ptime, sampling, channel);
@@ -1187,28 +1204,32 @@ int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
   return framebuff_size;
 }
 
-void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova) {
+void st_frame_init_plane_single_src(struct st_frame *frame, void *addr,
+                                    mtl_iova_t iova) {
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
 
   for (uint8_t plane = 0; plane < planes; plane++) {
-    frame->linesize[plane] = st_frame_least_linesize(frame->fmt, frame->width, plane);
+    frame->linesize[plane] =
+        st_frame_least_linesize(frame->fmt, frame->width, plane);
     if (plane == 0) {
       frame->addr[plane] = addr;
       frame->iova[plane] = iova;
     } else {
-      frame->addr[plane] = frame->addr[plane - 1] +
-                           frame->linesize[plane - 1] * st_frame_data_height(frame);
-      frame->iova[plane] = frame->iova[plane - 1] +
-                           frame->linesize[plane - 1] * st_frame_data_height(frame);
+      frame->addr[plane] =
+          frame->addr[plane - 1] +
+          frame->linesize[plane - 1] * st_frame_data_height(frame);
+      frame->iova[plane] =
+          frame->iova[plane - 1] +
+          frame->linesize[plane - 1] * st_frame_data_height(frame);
     }
   }
 }
 
-struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
-                                 uint32_t h, bool interlaced) {
-  struct mtl_main_impl* impl = mt;
+struct st_frame *st_frame_create(mtl_handle mt, enum st_frame_fmt fmt,
+                                 uint32_t w, uint32_t h, bool interlaced) {
+  struct mtl_main_impl *impl = mt;
   int soc_id = mt_socket_id(impl, MTL_PORT_P);
-  struct st_frame* frame = mt_rte_zmalloc_socket(sizeof(*frame), soc_id);
+  struct st_frame *frame = mt_rte_zmalloc_socket(sizeof(*frame), soc_id);
   if (!frame) {
     err("%s, frame malloc fail\n", __func__);
     return NULL;
@@ -1220,7 +1241,7 @@ struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t 
   frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC | ST_FRAME_FLAG_RTE_MALLOC;
 
   size_t data_sz = st_frame_size(fmt, w, h, interlaced);
-  void* data = mt_rte_zmalloc_socket(data_sz, soc_id);
+  void *data = mt_rte_zmalloc_socket(data_sz, soc_id);
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
     st_frame_free(frame);
@@ -1233,9 +1254,9 @@ struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t 
   return frame;
 }
 
-struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
-                                           bool interlaced) {
-  struct st_frame* frame = mt_zmalloc(sizeof(*frame));
+struct st_frame *st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w,
+                                           uint32_t h, bool interlaced) {
+  struct st_frame *frame = mt_zmalloc(sizeof(*frame));
   if (!frame) {
     err("%s, frame malloc fail\n", __func__);
     return NULL;
@@ -1247,7 +1268,7 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC;
 
   size_t data_sz = st_frame_size(fmt, w, h, interlaced);
-  void* data = mt_zmalloc(data_sz);
+  void *data = mt_zmalloc(data_sz);
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
     st_frame_free(frame);
@@ -1260,9 +1281,10 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   return frame;
 }
 
-int st_frame_free(struct st_frame* frame) {
+int st_frame_free(struct st_frame *frame) {
   if (!(frame->flags & ST_FRAME_FLAG_SINGLE_MALLOC)) {
-    err("%s, frame %p is not created by ST_FRAME_FLAG_SINGLE_MALLOC\n", __func__, frame);
+    err("%s, frame %p is not created by ST_FRAME_FLAG_SINGLE_MALLOC\n",
+        __func__, frame);
     return -EINVAL;
   }
   if (frame->flags & ST_FRAME_FLAG_RTE_MALLOC) {
@@ -1349,7 +1371,8 @@ static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
         .fps = ST_FPS_P59_94,
         .packing = ST20_PACKING_BPM,
         .interlaced = false,
-        .pad_interval = 262, /* measured with VERO avg vrx: 7.0, narrow vrx: 9 */
+        .pad_interval =
+            262, /* measured with VERO avg vrx: 7.0, narrow vrx: 9 */
     },
     {
         /* 4kp50 gpm */
@@ -1393,22 +1416,25 @@ static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
     },
 };
 
-uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
-                                      struct st_tx_video_session_impl* s,
+uint16_t st20_pacing_static_profiling(struct mtl_main_impl *impl,
+                                      struct st_tx_video_session_impl *s,
                                       enum mtl_session_port s_port) {
-  const struct cvl_pad_table* refer;
-  struct st20_tx_ops* ops = &s->ops;
+  const struct cvl_pad_table *refer;
+  struct st20_tx_ops *ops = &s->ops;
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(s_port);
 
-  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO) return 0; /* no for st22 */
+  if (s->s_type == MT_ST22_HANDLE_TX_VIDEO)
+    return 0; /* no for st22 */
 
   for (int i = 0; i < MTL_ARRAY_SIZE(g_cvl_static_pad_tables); i++) {
     refer = &g_cvl_static_pad_tables[i];
     if ((ops->fmt == refer->fmt) && (ops->width == refer->width) &&
         (ops->height == refer->height) && (ops->fps == refer->fps) &&
-        (ops->packing == refer->packing) && (ops->interlaced == refer->interlaced)) {
-      dbg("%s(%d), reference pad_interval %u\n", __func__, s->idx, refer->pad_interval);
+        (ops->packing == refer->packing) &&
+        (ops->interlaced == refer->interlaced)) {
+      dbg("%s(%d), reference pad_interval %u\n", __func__, s->idx,
+          refer->pad_interval);
       return refer->pad_interval;
     }
   }
@@ -1416,24 +1442,28 @@ uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
   return 0; /* not found */
 }
 
-int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char* name) {
+int st_rxp_para_port_set(struct st_rx_port *p, enum mtl_session_port port,
+                         char *name) {
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int st_rxp_para_ip_set(struct st_rx_port* p, enum mtl_port port, char* ip) {
+int st_rxp_para_ip_set(struct st_rx_port *p, enum mtl_port port, char *ip) {
   int ret = inet_pton(AF_INET, ip, p->ip_addr[port]);
-  if (ret == 1) return 0;
+  if (ret == 1)
+    return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);
   return -EIO;
 }
 
-int st_txp_para_port_set(struct st_tx_port* p, enum mtl_session_port port, char* name) {
+int st_txp_para_port_set(struct st_tx_port *p, enum mtl_session_port port,
+                         char *name) {
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int st_txp_para_dip_set(struct st_tx_port* p, enum mtl_port port, char* ip) {
+int st_txp_para_dip_set(struct st_tx_port *p, enum mtl_port port, char *ip) {
   int ret = inet_pton(AF_INET, ip, p->dip_addr[port]);
-  if (ret == 1) return 0;
+  if (ret == 1)
+    return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);
   return -EIO;
 }

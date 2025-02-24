@@ -11,25 +11,25 @@
 #define _PLAYER_HEAD_H_
 
 #ifdef APP_HAS_SDL2
-int st_app_player_uinit(struct st_app_context* ctx);
-int st_app_player_init(struct st_app_context* ctx);
+int st_app_player_uinit(struct st_app_context *ctx);
+int st_app_player_init(struct st_app_context *ctx);
 
-int st_app_init_display(struct st_display* d, char* name, int width, int height,
-                        char* font);
-int st_app_uinit_display(struct st_display* d);
+int st_app_init_display(struct st_display *d, char *name, int width, int height,
+                        char *font);
+int st_app_uinit_display(struct st_display *d);
 #else
-static inline int st_app_player_uinit(struct st_app_context* ctx) {
+static inline int st_app_player_uinit(struct st_app_context *ctx) {
   MTL_MAY_UNUSED(ctx);
   warn("%s, not support as build without SDL2\n", __func__);
   return -ENOTSUP;
 }
-static inline int st_app_player_init(struct st_app_context* ctx) {
+static inline int st_app_player_init(struct st_app_context *ctx) {
   MTL_MAY_UNUSED(ctx);
   warn("%s, not support as build without SDL2\n", __func__);
   return -ENOTSUP;
 }
-static inline int st_app_init_display(struct st_display* d, char* name, int width,
-                                      int height, char* font) {
+static inline int st_app_init_display(struct st_display *d, char *name,
+                                      int width, int height, char *font) {
   MTL_MAY_UNUSED(d);
   MTL_MAY_UNUSED(name);
   MTL_MAY_UNUSED(width);
@@ -38,7 +38,7 @@ static inline int st_app_init_display(struct st_display* d, char* name, int widt
   warn("%s, not support as build without SDL2\n", __func__);
   return -ENOTSUP;
 }
-static inline int st_app_uinit_display(struct st_display* d) {
+static inline int st_app_uinit_display(struct st_display *d) {
   MTL_MAY_UNUSED(d);
   warn("%s, not support as build without SDL2\n", __func__);
   return -ENOTSUP;

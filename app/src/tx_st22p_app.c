@@ -4,9 +4,9 @@
 
 #include "tx_st22p_app.h"
 
-static void app_tx_st22p_display_frame(struct st_app_tx_st22p_session* s,
-                                       struct st_frame* frame) {
-  struct st_display* d = s->display;
+static void app_tx_st22p_display_frame(struct st_app_tx_st22p_session *s,
+                                       struct st_frame *frame) {
+  struct st_display *d = s->display;
 
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
@@ -27,29 +27,30 @@ static void app_tx_st22p_display_frame(struct st_app_tx_st22p_session* s,
   }
 }
 
-static void app_tx_st22p_build_frame(struct st_app_tx_st22p_session* s,
-                                     struct st_frame* frame) {
+static void app_tx_st22p_build_frame(struct st_app_tx_st22p_session *s,
+                                     struct st_frame *frame) {
   if (s->st22p_frame_cursor + s->st22p_frame_size > s->st22p_source_end) {
     s->st22p_frame_cursor = s->st22p_source_begin;
   }
-  uint8_t* src = s->st22p_frame_cursor;
+  uint8_t *src = s->st22p_frame_cursor;
 
   mtl_memcpy(frame->addr[0], src, s->st22p_frame_size);
   /* point to next frame */
   s->st22p_frame_cursor += s->st22p_frame_size;
 
   if (frame->interlaced) {
-    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+    dbg("%s(%d), %s field\n", __func__, s->idx,
+        frame->second_field ? "second" : "first");
   }
 
   app_tx_st22p_display_frame(s, frame);
 }
 
-static void* app_tx_st22p_frame_thread(void* arg) {
-  struct st_app_tx_st22p_session* s = arg;
+static void *app_tx_st22p_frame_thread(void *arg) {
+  struct st_app_tx_st22p_session *s = arg;
   st22p_tx_handle handle = s->handle;
   int idx = s->idx;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22p_app_thread_stop) {
@@ -66,7 +67,7 @@ static void* app_tx_st22p_frame_thread(void* arg) {
   return NULL;
 }
 
-static int app_tx_st22p_open_source(struct st_app_tx_st22p_session* s) {
+static int app_tx_st22p_open_source(struct st_app_tx_st22p_session *s) {
   int fd;
   struct stat i;
 
@@ -82,13 +83,13 @@ static int app_tx_st22p_open_source(struct st_app_tx_st22p_session* s) {
     return -EIO;
   }
   if (i.st_size < s->st22p_frame_size) {
-    err("%s, %s file size small then a frame %d\n", __func__, s->st22p_source_url,
-        s->st22p_frame_size);
+    err("%s, %s file size small then a frame %d\n", __func__,
+        s->st22p_source_url, s->st22p_frame_size);
     close(fd);
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap fail '%s'\n", __func__, s->st22p_source_url);
     close(fd);
@@ -112,11 +113,12 @@ static int app_tx_st22p_open_source(struct st_app_tx_st22p_session* s) {
   return 0;
 }
 
-static int app_tx_st22p_start_source(struct st_app_tx_st22p_session* s) {
+static int app_tx_st22p_start_source(struct st_app_tx_st22p_session *s) {
   int ret = -EINVAL;
   int idx = s->idx;
 
-  ret = pthread_create(&s->st22p_app_thread, NULL, app_tx_st22p_frame_thread, s);
+  ret =
+      pthread_create(&s->st22p_app_thread, NULL, app_tx_st22p_frame_thread, s);
   if (ret < 0) {
     err("%s(%d), thread create fail err = %d\n", __func__, idx, ret);
     return ret;
@@ -130,18 +132,19 @@ static int app_tx_st22p_start_source(struct st_app_tx_st22p_session* s) {
   return 0;
 }
 
-static void app_tx_st22p_stop_source(struct st_app_tx_st22p_session* s) {
+static void app_tx_st22p_stop_source(struct st_app_tx_st22p_session *s) {
   s->st22p_app_thread_stop = true;
   /* wake up the thread */
   if (s->st22p_app_thread) {
     info("%s(%d), wait app thread stop\n", __func__, s->idx);
-    if (s->handle) st22p_tx_wake_block(s->handle);
+    if (s->handle)
+      st22p_tx_wake_block(s->handle);
     pthread_join(s->st22p_app_thread, NULL);
     s->st22p_app_thread = 0;
   }
 }
 
-static int app_tx_st22p_close_source(struct st_app_tx_st22p_session* s) {
+static int app_tx_st22p_close_source(struct st_app_tx_st22p_session *s) {
   if (s->st22p_source_fd < 0 && s->st22p_source_begin) {
     mtl_hp_free(s->st, s->st22p_source_begin);
     s->st22p_source_begin = NULL;
@@ -155,20 +158,21 @@ static int app_tx_st22p_close_source(struct st_app_tx_st22p_session* s) {
   return 0;
 }
 
-static int app_tx_st22p_handle_free(struct st_app_tx_st22p_session* s) {
+static int app_tx_st22p_handle_free(struct st_app_tx_st22p_session *s) {
   int ret;
   int idx = s->idx;
 
   if (s->handle) {
     ret = st22p_tx_free(s->handle);
-    if (ret < 0) err("%s(%d), st22p_tx_free fail %d\n", __func__, idx, ret);
+    if (ret < 0)
+      err("%s(%d), st22p_tx_free fail %d\n", __func__, idx, ret);
     s->handle = NULL;
   }
 
   return 0;
 }
 
-static int app_tx_st22p_uinit(struct st_app_tx_st22p_session* s) {
+static int app_tx_st22p_uinit(struct st_app_tx_st22p_session *s) {
   app_tx_st22p_stop_source(s);
   app_tx_st22p_handle_free(s);
   app_tx_st22p_close_source(s);
@@ -181,8 +185,9 @@ static int app_tx_st22p_uinit(struct st_app_tx_st22p_session* s) {
   return 0;
 }
 
-static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t* st22p,
-                             struct st_app_tx_st22p_session* s) {
+static int app_tx_st22p_init(struct st_app_context *ctx,
+                             st_json_st22p_session_t *st22p,
+                             struct st_app_tx_st22p_session *s) {
   int idx = s->idx, ret;
   struct st22p_tx_ops ops;
   char name[32];
@@ -197,10 +202,11 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
          st22p ? st_json_ip(ctx, &st22p->base, MTL_SESSION_PORT_P)
                : ctx->tx_dip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
-  snprintf(
-      ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
-      st22p ? st22p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] = st22p ? st22p->base.udp_port : (10000 + s->idx);
+  snprintf(ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+           st22p ? st22p->base.inf[MTL_SESSION_PORT_P]->name
+                 : ctx->para.port[MTL_PORT_P]);
+  ops.port.udp_port[MTL_SESSION_PORT_P] =
+      st22p ? st22p->base.udp_port : (10000 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -211,34 +217,39 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
            st22p ? st_json_ip(ctx, &st22p->base, MTL_SESSION_PORT_R)
                  : ctx->tx_dip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
-    snprintf(
-        ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
-        st22p ? st22p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
+    snprintf(ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+             st22p ? st22p->base.inf[MTL_SESSION_PORT_R]->name
+                   : ctx->para.port[MTL_PORT_R]);
     ops.port.udp_port[MTL_SESSION_PORT_R] =
         st22p ? st22p->base.udp_port : (10000 + s->idx);
     if (ctx->has_tx_dst_mac[MTL_PORT_R]) {
-      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0], ctx->tx_dst_mac[MTL_PORT_R],
-             MTL_MAC_ADDR_LEN);
+      memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_R][0],
+             ctx->tx_dst_mac[MTL_PORT_R], MTL_MAC_ADDR_LEN);
       ops.flags |= ST22P_TX_FLAG_USER_R_MAC;
     }
   }
-  ops.port.payload_type = st22p ? st22p->base.payload_type : ST_APP_PAYLOAD_TYPE_ST22;
+  ops.port.payload_type =
+      st22p ? st22p->base.payload_type : ST_APP_PAYLOAD_TYPE_ST22;
   ops.width = st22p ? st22p->info.width : 1920;
   ops.height = st22p ? st22p->info.height : 1080;
   ops.fps = st22p ? st22p->info.fps : ST_FPS_P59_94;
   ops.interlaced = st22p ? st22p->info.interlaced : false;
-  ops.input_fmt = st22p ? st22p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  ops.input_fmt =
+      st22p ? st22p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
   ops.pack_type = st22p ? st22p->info.pack_type : ST22_PACK_CODESTREAM;
   ops.codec = st22p ? st22p->info.codec : ST22_CODEC_JPEGXS;
   ops.device = st22p ? st22p->info.device : ST_PLUGIN_DEVICE_AUTO;
   ops.quality = st22p ? st22p->info.quality : ST22_QUALITY_MODE_SPEED;
   ops.codec_thread_cnt = st22p ? st22p->info.codec_thread_count : 0;
   ops.codestream_size = ops.width * ops.height * 3 / 8;
-  if (ops.interlaced) ops.codestream_size /= 2; /* the size is for each field */
+  if (ops.interlaced)
+    ops.codestream_size /= 2; /* the size is for each field */
   ops.framebuff_cnt = 2;
   ops.flags |= ST22P_TX_FLAG_BLOCK_GET;
-  if (st22p && st22p->enable_rtcp) ops.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
-  if (ctx->tx_no_bulk) ops.flags |= ST22P_TX_FLAG_DISABLE_BULK;
+  if (st22p && st22p->enable_rtcp)
+    ops.flags |= ST22P_TX_FLAG_ENABLE_RTCP;
+  if (ctx->tx_no_bulk)
+    ops.flags |= ST22P_TX_FLAG_DISABLE_BULK;
   if (ctx->force_tx_video_numa >= 0) {
     ops.flags |= ST22P_TX_FLAG_FORCE_NUMA;
     ops.socket_id = ctx->force_tx_video_numa;
@@ -280,7 +291,7 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   }
 
   if ((st22p && st22p->display) || ctx->tx_display) {
-    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
+    struct st_display *d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
@@ -293,12 +304,13 @@ static int app_tx_st22p_init(struct st_app_context* ctx, st_json_st22p_session_t
   return 0;
 }
 
-int st_app_tx_st22p_sessions_init(struct st_app_context* ctx) {
+int st_app_tx_st22p_sessions_init(struct st_app_context *ctx) {
   int ret, i;
-  struct st_app_tx_st22p_session* s;
-  ctx->tx_st22p_sessions = (struct st_app_tx_st22p_session*)st_app_zmalloc(
+  struct st_app_tx_st22p_session *s;
+  ctx->tx_st22p_sessions = (struct st_app_tx_st22p_session *)st_app_zmalloc(
       sizeof(struct st_app_tx_st22p_session) * ctx->tx_st22p_session_cnt);
-  if (!ctx->tx_st22p_sessions) return -ENOMEM;
+  if (!ctx->tx_st22p_sessions)
+    return -ENOMEM;
   for (i = 0; i < ctx->tx_st22p_session_cnt; i++) {
     s = &ctx->tx_st22p_sessions[i];
     s->idx = i;
@@ -313,9 +325,10 @@ int st_app_tx_st22p_sessions_init(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_tx_st22p_sessions_stop(struct st_app_context* ctx) {
-  struct st_app_tx_st22p_session* s;
-  if (!ctx->tx_st22p_sessions) return 0;
+int st_app_tx_st22p_sessions_stop(struct st_app_context *ctx) {
+  struct st_app_tx_st22p_session *s;
+  if (!ctx->tx_st22p_sessions)
+    return 0;
   for (int i = 0; i < ctx->tx_st22p_session_cnt; i++) {
     s = &ctx->tx_st22p_sessions[i];
     app_tx_st22p_stop_source(s);
@@ -324,10 +337,11 @@ int st_app_tx_st22p_sessions_stop(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_tx_st22p_sessions_uinit(struct st_app_context* ctx) {
+int st_app_tx_st22p_sessions_uinit(struct st_app_context *ctx) {
   int i;
-  struct st_app_tx_st22p_session* s;
-  if (!ctx->tx_st22p_sessions) return 0;
+  struct st_app_tx_st22p_session *s;
+  if (!ctx->tx_st22p_sessions)
+    return 0;
   for (i = 0; i < ctx->tx_st22p_session_cnt; i++) {
     s = &ctx->tx_st22p_sessions[i];
     app_tx_st22p_uinit(s);

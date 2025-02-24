@@ -22,7 +22,7 @@
 #include "mtl_common.h"
 
 typedef struct mtlSt30pMuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -32,11 +32,11 @@ typedef struct mtlSt30pMuxerContext {
   /* arguments for session */
   int fb_cnt;
   int frame_size;
-  char* ptime_str;
+  char *ptime_str;
   enum st30_ptime ptime;
 
   int filled;
-  struct st30_frame* last_frame;
+  struct st30_frame *last_frame;
 
   mtl_handle dev_handle;
   st30p_tx_handle tx_handle;
@@ -44,8 +44,8 @@ typedef struct mtlSt30pMuxerContext {
   int64_t frame_counter;
 } mtlSt30pMuxerContext;
 
-static int mtl_st30p_write_close(AVFormatContext* ctx) {
-  mtlSt30pMuxerContext* s = ctx->priv_data;
+static int mtl_st30p_write_close(AVFormatContext *ctx) {
+  mtlSt30pMuxerContext *s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy tx session
@@ -65,18 +65,20 @@ static int mtl_st30p_write_close(AVFormatContext* ctx) {
     s->dev_handle = NULL;
   }
 
-  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
+  info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx,
+       s->frame_counter);
   return 0;
 }
 
-static int mtl_st30p_write_header(AVFormatContext* ctx) {
-  mtlSt30pMuxerContext* s = ctx->priv_data;
+static int mtl_st30p_write_header(AVFormatContext *ctx) {
+  mtlSt30pMuxerContext *s = ctx->priv_data;
   struct st30p_tx_ops ops_tx;
   int ret;
-  AVCodecParameters* codecpar = ctx->streams[0]->codecpar;
+  AVCodecParameters *codecpar = ctx->streams[0]->codecpar;
 
   if (codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
-    err(ctx, "%s, codec_type %d is not audio\n", __func__, codecpar->codec_type);
+    err(ctx, "%s, codec_type %d is not audio\n", __func__,
+        codecpar->codec_type);
     return AVERROR(EINVAL);
   }
 
@@ -126,11 +128,12 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
     return AVERROR(EINVAL);
   }
 
-  s->frame_size = st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
-                                                ops_tx.channel, 10 * NS_PER_MS, NULL);
+  s->frame_size =
+      st30_calculate_framebuff_size(ops_tx.fmt, ops_tx.ptime, ops_tx.sampling,
+                                    ops_tx.channel, 10 * NS_PER_MS, NULL);
 
   ops_tx.name = "st30p_ffmpeg";
-  ops_tx.priv = s;  // Handle of priv_data registered to lib
+  ops_tx.priv = s; // Handle of priv_data registered to lib
   ops_tx.framebuff_cnt = s->fb_cnt;
   ops_tx.framebuff_size = s->frame_size;
 
@@ -159,12 +162,12 @@ static int mtl_st30p_write_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static struct st30_frame* mtl_st30p_fetch_frame(AVFormatContext* ctx,
-                                                mtlSt30pMuxerContext* s) {
+static struct st30_frame *mtl_st30p_fetch_frame(AVFormatContext *ctx,
+                                                mtlSt30pMuxerContext *s) {
   if (s->last_frame) {
     return s->last_frame;
   } else {
-    struct st30_frame* frame;
+    struct st30_frame *frame;
     frame = st30p_tx_get_frame(s->tx_handle);
     dbg(ctx, "%s(%d), get frame addr %p\n", __func__, s->idx, frame->addr);
     s->last_frame = frame;
@@ -172,23 +175,24 @@ static struct st30_frame* mtl_st30p_fetch_frame(AVFormatContext* ctx,
   }
 }
 
-static int mtl_st30p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  mtlSt30pMuxerContext* s = ctx->priv_data;
+static int mtl_st30p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  mtlSt30pMuxerContext *s = ctx->priv_data;
   int size = pkt->size;
-  uint8_t* data = pkt->data;
-  struct st30_frame* frame = mtl_st30p_fetch_frame(ctx, s);
+  uint8_t *data = pkt->data;
+  struct st30_frame *frame = mtl_st30p_fetch_frame(ctx, s);
 
   if (!frame) {
     info(ctx, "%s(%d), fetch frame timeout\n", __func__, s->idx);
     return AVERROR(EIO);
   }
 
-  dbg(ctx, "%s(%d), pkt size %d frame size %d\n", __func__, s->idx, size, s->frame_size);
+  dbg(ctx, "%s(%d), pkt size %d frame size %d\n", __func__, s->idx, size,
+      s->frame_size);
   while (size > 0) {
     int left = s->frame_size - s->filled;
-    uint8_t* cur = (uint8_t*)frame->addr + s->filled;
-    dbg(ctx, "%s(%d), size %d left %d filled %d\n", __func__, s->idx, size, left,
-        s->filled);
+    uint8_t *cur = (uint8_t *)frame->addr + s->filled;
+    dbg(ctx, "%s(%d), size %d left %d filled %d\n", __func__, s->idx, size,
+        left, s->filled);
 
     if (size < left) {
       mtl_memcpy(cur, data, size);
@@ -202,7 +206,8 @@ static int mtl_st30p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
       s->last_frame = NULL;
       frame = mtl_st30p_fetch_frame(ctx, s);
       if (!frame) {
-        info(ctx, "%s(%d), fetch frame timeout, size %d\n", __func__, s->idx, size);
+        info(ctx, "%s(%d), fetch frame timeout, size %d\n", __func__, s->idx,
+             size);
         return AVERROR(EIO);
       }
       data += left;
@@ -211,7 +216,8 @@ static int mtl_st30p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
     }
   }
 
-  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
+  dbg(ctx, "%s(%d), frame counter %" PRId64 "\n", __func__, s->idx,
+      s->frame_counter);
   return 0;
 }
 

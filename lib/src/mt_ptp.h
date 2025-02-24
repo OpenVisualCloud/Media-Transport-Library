@@ -102,30 +102,33 @@ struct mt_ptp_delay_resp_msg {
   uint8_t suffix[0];
 } __attribute__((packed));
 
-static inline struct mt_ptp_impl* mt_get_ptp(struct mtl_main_impl* impl,
+static inline struct mt_ptp_impl *mt_get_ptp(struct mtl_main_impl *impl,
                                              enum mtl_port port) {
   return impl->ptp[port];
 }
 
-int mt_ptp_init(struct mtl_main_impl* impl);
-int mt_ptp_uinit(struct mtl_main_impl* impl);
+int mt_ptp_init(struct mtl_main_impl *impl);
+int mt_ptp_uinit(struct mtl_main_impl *impl);
 
-int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
+int mt_ptp_parse(struct mt_ptp_impl *ptp, struct mt_ptp_header *hdr, bool vlan,
                  enum mt_ptp_l_mode mode, uint16_t timesync,
-                 struct mt_ipv4_udp* ipv4_hdr);
+                 struct mt_ipv4_udp *ipv4_hdr);
 
-static inline bool mt_ptp_is_active(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_ptp_is_active(struct mtl_main_impl *impl,
+                                    enum mtl_port port) {
   return mt_get_ptp(impl, port)->active;
 }
 
-static inline bool mt_ptp_is_locked(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_ptp_is_locked(struct mtl_main_impl *impl,
+                                    enum mtl_port port) {
   return mt_get_ptp(impl, port)->locked;
 }
 
-static inline bool mt_ptp_is_connected(struct mtl_main_impl* impl, enum mtl_port port) {
+static inline bool mt_ptp_is_connected(struct mtl_main_impl *impl,
+                                       enum mtl_port port) {
   return mt_get_ptp(impl, port)->connected;
 }
 
-uint64_t mt_ptp_internal_time(struct mtl_main_impl* impl, enum mtl_port port);
+uint64_t mt_ptp_internal_time(struct mtl_main_impl *impl, enum mtl_port port);
 
 #endif

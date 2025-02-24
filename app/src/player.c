@@ -14,7 +14,7 @@
 #define MSG_WIDTH_MARGIN (5)
 #define MSG_HEIGHT_MARGIN (5)
 
-int st_app_player_uinit(struct st_app_context* ctx) {
+int st_app_player_uinit(struct st_app_context *ctx) {
   MTL_MAY_UNUSED(ctx);
 
   SDL_Quit();
@@ -24,7 +24,7 @@ int st_app_player_uinit(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_player_init(struct st_app_context* ctx) {
+int st_app_player_init(struct st_app_context *ctx) {
   info("%s, SDL_Init start\n", __func__);
   int res = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
   info("%s, SDL_Init result %d\n", __func__, res);
@@ -46,7 +46,7 @@ int st_app_player_init(struct st_app_context* ctx) {
   return 0;
 }
 
-static void destroy_display_context(struct st_display* d) {
+static void destroy_display_context(struct st_display *d) {
   if (d->texture) {
     SDL_DestroyTexture(d->texture);
     d->texture = NULL;
@@ -61,10 +61,10 @@ static void destroy_display_context(struct st_display* d) {
   }
 }
 
-static int create_display_context(struct st_display* d) {
-  d->window =
-      SDL_CreateWindow(d->name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-                       d->window_w, d->window_h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+static int create_display_context(struct st_display *d) {
+  d->window = SDL_CreateWindow(
+      d->name, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, d->window_w,
+      d->window_h, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
   if (d->window == NULL) {
     err("%s, create window fail: %s\n", __func__, SDL_GetError());
     destroy_display_context(d);
@@ -78,8 +78,8 @@ static int create_display_context(struct st_display* d) {
     return -EIO;
   }
 
-  d->texture = SDL_CreateTexture(d->renderer, d->fmt, SDL_TEXTUREACCESS_STREAMING,
-                                 d->pixel_w, d->pixel_h);
+  d->texture = SDL_CreateTexture(
+      d->renderer, d->fmt, SDL_TEXTUREACCESS_STREAMING, d->pixel_w, d->pixel_h);
   if (d->texture == NULL) {
     err("%s, create texture fail: %s\n", __func__, SDL_GetError());
     destroy_display_context(d);
@@ -89,8 +89,8 @@ static int create_display_context(struct st_display* d) {
   return 0;
 }
 
-static void* display_thread_func(void* arg) {
-  struct st_display* d = arg;
+static void *display_thread_func(void *arg) {
+  struct st_display *d = arg;
 
   int ret = create_display_context(d);
   if (ret < 0) {
@@ -126,8 +126,9 @@ static void* display_thread_func(void* arg) {
       char text[32];
       sprintf(text, "FPS:\t%.2f", d->fps);
       SDL_Color Red = {255, 0, 0};
-      SDL_Surface* surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
-      SDL_Texture* Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
+      SDL_Surface *surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
+      SDL_Texture *Message =
+          SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
 
       SDL_RenderCopy(d->renderer, Message, NULL, &d->msg_rect);
       SDL_FreeSurface(surfaceMessage);
@@ -141,7 +142,8 @@ static void* display_thread_func(void* arg) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       dbg("%s, SDL event: %d\n", __func__, event.type);
-      if (event.type == SDL_QUIT) d->display_thread_stop = true;
+      if (event.type == SDL_QUIT)
+        d->display_thread_stop = true;
     }
 #endif
   }
@@ -149,8 +151,9 @@ static void* display_thread_func(void* arg) {
   return NULL;
 }
 
-int st_app_uinit_display(struct st_display* d) {
-  if (!d) return 0;
+int st_app_uinit_display(struct st_display *d) {
+  if (!d)
+    return 0;
 
   d->display_thread_stop = true;
   if (d->display_thread) {
@@ -182,12 +185,13 @@ int st_app_uinit_display(struct st_display* d) {
   return 0;
 }
 
-int st_app_init_display(struct st_display* d, char* name, int width, int height,
-                        char* font) {
+int st_app_init_display(struct st_display *d, char *name, int width, int height,
+                        char *font) {
   int ret;
   MTL_MAY_UNUSED(font);
 
-  if (!d) return -ENOMEM;
+  if (!d)
+    return -ENOMEM;
   snprintf(d->name, 32, "%s", name);
   d->window_w = SCREEN_WIDTH;
   d->window_h = SCREEN_HEIGHT;
@@ -228,6 +232,7 @@ int st_app_init_display(struct st_display* d, char* name, int width, int height,
     return ret;
   }
 
-  info("%s(%s), succ, pixel width: %d, height: %d\n", __func__, name, width, height);
+  info("%s(%s), succ, pixel width: %d, height: %d\n", __func__, name, width,
+       height);
   return 0;
 }

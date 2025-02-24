@@ -38,13 +38,17 @@ enum cvt_frame_fmt {
   CVT_FRAME_FMT_GBRPLANAR10LE,
   /** GBR planar 12bit little endian */
   CVT_FRAME_FMT_GBRPLANAR12LE,
-  /** RFC4175 in ST2110, two YUV 422 10 bit pixel groups on 5 bytes, big endian */
+  /** RFC4175 in ST2110, two YUV 422 10 bit pixel groups on 5 bytes, big endian
+   */
   CVT_FRAME_FMT_YUV422RFC4175PG2BE10,
-  /** RFC4175 in ST2110, two YUV 422 12 bit pixel groups on 6 bytes, big endian */
+  /** RFC4175 in ST2110, two YUV 422 12 bit pixel groups on 6 bytes, big endian
+   */
   CVT_FRAME_FMT_YUV422RFC4175PG2BE12,
-  /** RFC4175 in ST2110, four YUV 444 10 bit pixel groups on 15 bytes, big endian */
+  /** RFC4175 in ST2110, four YUV 444 10 bit pixel groups on 15 bytes, big
+     endian */
   CVT_FRAME_FMT_YUV444RFC4175PG4BE10,
-  /** RFC4175 in ST2110, two YUV 444 12 bit pixel groups on 9 bytes, big endian */
+  /** RFC4175 in ST2110, two YUV 444 12 bit pixel groups on 9 bytes, big endian
+   */
   CVT_FRAME_FMT_YUV444RFC4175PG2BE12,
   /** RFC4175 in ST2110, four RGB 10 bit pixel groups on 15 bytes, big endian */
   CVT_FRAME_FMT_RGBRFC4175PG4BE10,
@@ -64,16 +68,15 @@ struct conv_app_context {
   bool frame2field;
 };
 
-static inline void* conv_app_zmalloc(size_t sz) {
-  void* p = malloc(sz);
-  if (p) memset(p, 0x0, sz);
+static inline void *conv_app_zmalloc(size_t sz) {
+  void *p = malloc(sz);
+  if (p)
+    memset(p, 0x0, sz);
   return p;
 }
 
-static inline void conv_app_free(void* p) {
-  free(p);
-}
+static inline void conv_app_free(void *p) { free(p); }
 
-int conv_app_parse_args(struct conv_app_context* ctx, int argc, char** argv);
+int conv_app_parse_args(struct conv_app_context *ctx, int argc, char **argv);
 
 #endif

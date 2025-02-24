@@ -43,7 +43,7 @@ struct rx_timing_parser_sample_ctx {
   uint8_t num_port;
 };
 
-static void rx_st20p_tp_stat_init(struct rx_tp_stat* stat) {
+static void rx_st20p_tp_stat_init(struct rx_tp_stat *stat) {
   memset(stat, 0, sizeof(*stat));
 
   stat->cinst_max = INT_MIN;
@@ -62,34 +62,40 @@ static void rx_st20p_tp_stat_init(struct rx_tp_stat* stat) {
   stat->rtp_ts_delta_min = INT_MAX;
 }
 
-static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx* s,
-                                   enum mtl_session_port port, struct rx_tp_stat* stat) {
+static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx *s,
+                                   enum mtl_session_port port,
+                                   struct rx_tp_stat *stat) {
   int idx = s->idx;
-  info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, port,
-       stat->compliant_result[ST_RX_TP_COMPLIANT_NARROW],
+  info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx,
+       port, stat->compliant_result[ST_RX_TP_COMPLIANT_NARROW],
        stat->compliant_result[ST_RX_TP_COMPLIANT_WIDE],
        stat->compliant_result[ST_RX_TP_COMPLIANT_FAILED]);
-  info("%s(%d), CINST MIN %d MAX %d!\n", __func__, idx, stat->cinst_min, stat->cinst_max);
-  info("%s(%d), VRX MIN %d MAX %d!\n", __func__, idx, stat->vrx_min, stat->vrx_max);
-  info("%s(%d), IPT MIN %d MAX %d!\n", __func__, idx, stat->ipt_min, stat->ipt_max);
-  info("%s(%d), FPT MIN %d MAX %d!\n", __func__, idx, stat->fpt_min, stat->fpt_max);
+  info("%s(%d), CINST MIN %d MAX %d!\n", __func__, idx, stat->cinst_min,
+       stat->cinst_max);
+  info("%s(%d), VRX MIN %d MAX %d!\n", __func__, idx, stat->vrx_min,
+       stat->vrx_max);
+  info("%s(%d), IPT MIN %d MAX %d!\n", __func__, idx, stat->ipt_min,
+       stat->ipt_max);
+  info("%s(%d), FPT MIN %d MAX %d!\n", __func__, idx, stat->fpt_min,
+       stat->fpt_max);
   info("%s(%d), LATENCY MIN %d MAX %d!\n", __func__, idx, stat->latency_min,
        stat->latency_max);
-  info("%s(%d), RTP OFFSET MIN %d MAX %d!\n", __func__, idx, stat->rtp_offset_min,
-       stat->rtp_offset_max);
-  info("%s(%d), RTP TS DELTA MIN %d MAX %d!\n", __func__, idx, stat->rtp_ts_delta_min,
-       stat->rtp_ts_delta_max);
+  info("%s(%d), RTP OFFSET MIN %d MAX %d!\n", __func__, idx,
+       stat->rtp_offset_min, stat->rtp_offset_max);
+  info("%s(%d), RTP TS DELTA MIN %d MAX %d!\n", __func__, idx,
+       stat->rtp_ts_delta_min, stat->rtp_ts_delta_max);
 }
 
-static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx* s,
-                               enum mtl_session_port port, struct st20_rx_tp_meta* tp) {
+static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx *s,
+                               enum mtl_session_port port,
+                               struct st20_rx_tp_meta *tp) {
   if (tp->compliant != ST_RX_TP_COMPLIANT_NARROW) {
-    dbg("%s(%d), compliant failed %d cause: %s, frame idx %d\n", __func__, s->idx,
-        tp->compliant, tp->failed_cause, s->fb_recv);
+    dbg("%s(%d), compliant failed %d cause: %s, frame idx %d\n", __func__,
+        s->idx, tp->compliant, tp->failed_cause, s->fb_recv);
   }
 
   /* update stat */
-  struct rx_tp_stat* stat = &s->stat[port];
+  struct rx_tp_stat *stat = &s->stat[port];
   stat->vrx_min = ST_MIN(tp->vrx_min, stat->vrx_min);
   stat->vrx_max = ST_MAX(tp->vrx_max, stat->vrx_max);
   stat->cinst_min = ST_MIN(tp->cinst_min, stat->cinst_min);
@@ -110,10 +116,10 @@ static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx* s,
   return 0;
 }
 
-static void* rx_st20p_tp_thread(void* arg) {
-  struct rx_timing_parser_sample_ctx* s = arg;
+static void *rx_st20p_tp_thread(void *arg) {
+  struct rx_timing_parser_sample_ctx *s = arg;
   st20p_rx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
   int idx = s->idx;
   int ret;
 
@@ -128,7 +134,8 @@ static void* rx_st20p_tp_thread(void* arg) {
       ret = st20p_rx_timing_parser_critical(handle, &s->pass);
       if (ret >= 0) {
         s->pass_get = true;
-        info("%s(%d), pass critical, cinst narrow %d wide %d, vrx narrow %d wide %d\n",
+        info("%s(%d), pass critical, cinst narrow %d wide %d, vrx narrow %d "
+             "wide %d\n",
              __func__, idx, s->pass.cinst_max_narrow, s->pass.cinst_max_wide,
              s->pass.vrx_max_narrow, s->pass.vrx_max_wide);
       }
@@ -145,14 +152,15 @@ static void* rx_st20p_tp_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
   /* init sample(st) dev */
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
-  if (ret < 0) return ret;
+  if (ret < 0)
+    return ret;
 
   /* enable hw offload timestamp */
   ctx.param.flags |= MTL_FLAG_ENABLE_HW_TIMESTAMP;
@@ -166,7 +174,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_timing_parser_sample_ctx* app[session_num];
+  struct rx_timing_parser_sample_ctx *app[session_num];
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
@@ -188,7 +196,7 @@ int main(int argc, char** argv) {
     struct st20p_rx_ops ops_rx;
     memset(&ops_rx, 0, sizeof(ops_rx));
     ops_rx.name = "st20p_test";
-    ops_rx.priv = app[i];  // app handle register to lib
+    ops_rx.priv = app[i]; // app handle register to lib
     ops_rx.port.num_port = app[i]->num_port;
     memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_P], ctx.rx_ip_addr[MTL_PORT_P],
            MTL_IP_ADDR_LEN);
@@ -196,8 +204,8 @@ int main(int argc, char** argv) {
              ctx.param.port[MTL_PORT_P]);
     ops_rx.port.udp_port[MTL_SESSION_PORT_P] = ctx.udp_port + i * 2;
     if (ops_rx.port.num_port > 1) {
-      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R], ctx.rx_ip_addr[MTL_PORT_R],
-             MTL_IP_ADDR_LEN);
+      memcpy(ops_rx.port.ip_addr[MTL_SESSION_PORT_R],
+             ctx.rx_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
       snprintf(ops_rx.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
                ctx.param.port[MTL_PORT_R]);
       ops_rx.port.udp_port[MTL_SESSION_PORT_R] = ctx.udp_port + i * 2;
@@ -228,7 +236,8 @@ int main(int argc, char** argv) {
     }
     app[i]->handle = rx_handle;
 
-    ret = pthread_create(&app[i]->frame_thread, NULL, rx_st20p_tp_thread, app[i]);
+    ret =
+        pthread_create(&app[i]->frame_thread, NULL, rx_st20p_tp_thread, app[i]);
     if (ret < 0) {
       err("%s(%d), thread create fail %d\n", __func__, ret, i);
       ret = -EIO;
@@ -257,7 +266,8 @@ int main(int argc, char** argv) {
   // stop app thread
   for (int i = 0; i < session_num; i++) {
     app[i]->stop = true;
-    if (app[i]->handle) st20p_rx_wake_block(app[i]->handle);
+    if (app[i]->handle)
+      st20p_rx_wake_block(app[i]->handle);
     pthread_join(app[i]->frame_thread, NULL);
     info("%s(%d), received frames %d\n", __func__, i, app[i]->fb_recv);
   }
@@ -265,7 +275,8 @@ int main(int argc, char** argv) {
   // check result
   for (int i = 0; i < session_num; i++) {
     if (app[i]->fb_recv <= 0) {
-      err("%s(%d), error, no received frames %d\n", __func__, i, app[i]->fb_recv);
+      err("%s(%d), error, no received frames %d\n", __func__, i,
+          app[i]->fb_recv);
       ret = -EIO;
     }
   }
@@ -273,7 +284,8 @@ int main(int argc, char** argv) {
 error:
   for (int i = 0; i < session_num; i++) {
     if (app[i]) {
-      if (app[i]->handle) st20p_rx_free(app[i]->handle);
+      if (app[i]->handle)
+        st20p_rx_free(app[i]->handle);
       free(app[i]);
     }
   }
