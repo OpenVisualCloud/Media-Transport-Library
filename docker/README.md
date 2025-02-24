@@ -21,6 +21,7 @@ http_proxy=http://proxy.xxx.com:xxx
 https_proxy=https://proxy.xxx.com:xxx
 docker build -t mtl_ubuntu:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 docker build -t mtl_rockos:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
+docker build -t mtl_rockod_gstreamer:latest -f rockos_gstreamer.dockerfile --build-arg HTTP_PROXY=$http_proxy --build-arg HTTPS_PROXY=$https_proxy ../
 ```
 
 ## 3. Run and login into the docker container
