@@ -45,6 +45,5 @@ jobs:
           VALIDATE_PYTHON_PYINK: false
           VALIDATE_NATURAL_LANGUAGE: false
           VALIDATE_MARKDOWN_PRETTIER: false
-          LINTER_RULES_PATH: ./
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN
