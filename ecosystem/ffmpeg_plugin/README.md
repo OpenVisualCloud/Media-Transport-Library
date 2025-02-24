@@ -1,4 +1,4 @@
-# The Ffmpeg Plugin for MTL
+# The MTL Plugin for FFmpeg
 
 ## Notice
 
@@ -18,9 +18,9 @@ sudo ldconfig
 cd ../
 ```
 
-### 1.2. Build ffmpeg with MTL patches
+### 1.2. Build FFmpeg with MTL patches
 
-Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
+> Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
 
 ```bash
 git clone https://github.com/FFmpeg/FFmpeg.git
@@ -38,21 +38,23 @@ sudo make install
 sudo ldconfig
 ```
 
-Note, for ffmpeg 4.4 or 6.1 version, replace 7.0 with 4.4/6.1 for above example commands.
+> Note: For FFmpeg version 4.4 or 6.1, replace 7.0 with 4.4 or 6.1 respectively in above commands.
+
+> Note: In order to build the FFmpeg in a non-default path (e.g., not to overwrite an existing instance), use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
 ## 2. ST20P raw video run guide
 
-The MTL ST20P plugin is implemented as an FFMpeg input/output device, enabling direct reading from or sending raw video via the ST2110-20 stream.
+The MTL ST20P plugin is implemented as an FFmpeg input/output device, enabling direct reading from or sending raw video via the ST 2110-20 stream.
 
 ### 2.1. St20p input
 
-Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112:
+Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 112:
 
 ```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "k" -f rawvideo /dev/null -y
 ```
 
-Below error indicate MTL don't detect a video stream on the listening address.
+Following error indicates that MTL cannot detect a video stream on the listening address.
 
 ```text
 [mtl_st20p @ 0x55634f8b3c80] mtl_st20p_read_packet(0), st20p_rx_get_frame timeout
@@ -61,14 +63,14 @@ Below error indicate MTL don't detect a video stream on the listening address.
 [vost#0:0/rawvideo @ 0x55634f8bcc80] No filtered frames for output stream, trying to initialize anyway.
 ```
 
-Reading two st2110-20 10bit YUV422 stream, one on "239.168.85.20:20000" and the second on "239.168.85.20:20002":
+Reading two ST 2110-20 10-bit YUV422 stream, one on 239.168.85.20:20000 and the second on 239.168.85.20:20002:
 
-```bash
 <!-- markdownlint-disable line-length -->
+```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "1" -p_port 0000:af:01.0 -p_rx_ip 239.168.85.20 -udp_port 20002 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "2" -map 0:0 -f rawvideo /dev/null -y -map 1:0 -f rawvideo /dev/null -y
 ```
 
-Reading a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112, and use libopenh264 to encode the stream to out.264 file:
+Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 112, and use libopenh264 to encode the stream to out.264 file:
 
 ```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st20p -i "k" -c:v libopenh264 out.264 -y
@@ -76,7 +78,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 ### 2.2. St20p output
 
-Reading from a yuv stream from a local file and sending a st2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112:
+Reading from a yuv stream from a local file and sending a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 112:
 
 ```bash
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st20p -
@@ -84,18 +86,18 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i
 
 ### 2.3. y210 format
 
-Note: The format y210 is not supported by the Ffmpeg plugins for MTL.
+The y210 format is not supported by the MTL Plugin for FFmpeg.
 
 ## 3. ST22 compressed video run guide
 
-A typical workflow for processing an MTL ST22 compressed stream with FFMpeg is outlined in the following steps: Initially, FFMpeg reads a YUV frame from the input source, then forwards the frame to a codec to encode the raw video into a compressed codec stream. Finally, the codec stream is sent to the MTL ST22 plugin.
-The MTL ST22 plugin constructs the codec stream and transmits it as ST2110-22 RTP packets, adhering to the standard. In addition to the JPEG XS stream, the MTL ST22 plugin is capable of supporting various other common compressed codecs, including H264, H265, and HEVC, among others.
+A typical workflow for processing an MTL ST22 compressed stream with FFmpeg is outlined in the following steps: Initially, FFmpeg reads a YUV frame from the input source, then forwards the frame to a codec to encode the raw video into a compressed codec stream. Finally, the codec stream is sent to the MTL ST22 plugin.
+The MTL ST22 plugin constructs the codec stream and transmits it as ST 2110-22 RTP packets, adhering to the standard. In addition to the JPEG XS stream, the MTL ST22 plugin is capable of supporting various other common compressed codecs, including H.264 (AVC), and H.265 (HEVC), among others.
 
 ![Tasklet](ffmpeg_st22_flow.png)
 
 ### 3.1. St22 output
 
-Reading from a yuv stream from local source file, encode with h264 codec and sending a st2110-22 codestream on "239.168.85.20:20000" with payload_type 112:
+Reading from a yuv stream from local source file, encode with h264 codec and sending a ST 2110-22 codestream on 239.168.85.20:20000 with payload_type 112:
 
 ```bash
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv420p_1080p.yuv -filter:v fps=59.94 -c:v libopenh264 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st22 -
@@ -103,15 +105,15 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.2. St22 input
 
-Reading a st2110-22 codestream on "239.168.85.20:20000" with payload_type 112, decode with ffmpeg h264 codec:
+Reading a ST 2110-22 codestream on 239.168.85.20:20000 with payload_type 112, decode with FFmpeg h264 codec:
 
 ```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -video_size 1920x1080 -st22_codec h264 -f mtl_st22 -i "k" -f rawvideo /dev/null -y
 ```
 
-### 3.3. SVT-JPEGXS
+### 3.3. SVT-JPEG-XS
 
-Make sure the FFMpeg is build with both MTL and SVT-JPEGXS plugin:
+Make sure the FFmpeg is build with both MTL and SVT-JPEG-XS plugin:
 
 ```bash
 # start rx
@@ -122,7 +124,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 ### 3.4. SVT-HEVC
 
-Make sure the FFMpeg is build with both MTL and SVT-HEVC plugin:
+Make sure the FFmpeg is build with both MTL and SVT-HEVC plugin:
 
 ```bash
 # start rx
@@ -135,13 +137,13 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv
 
 Another option involves utilizing the MTL built-in ST22 codec plugin, where FFmpeg can directly send or retrieve the YUV raw frame to/from the MTL ST22P plugin. MTL will then internally decode or encode the codec stream.
 
-Reading a st2110-22 pipeline jpegxs codestream on "239.168.85.20:20000" with payload_type 112:
+Reading a ST 2110-22 pipeline jpegxs codestream on 239.168.85.20:20000 with payload_type 112:
 
 ```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -st22_codec jpegxs -fps 59.94 -pix_fmt yuv422p10le -video_size 1920x1080 -f mtl_st22p -i "k" -f rawvideo /dev/null -y
 ```
 
-Reading from a yuv file and sending a st2110-22 pipeline jpegxs codestream on "239.168.85.20:20000" with payload_type 112:
+Reading from a yuv file and sending a ST 2110-22 pipeline jpegxs codestream on 239.168.85.20:20000 with payload_type 112:
 
 ```bash
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i yuv422p10le_1080p.yuv -filter:v fps=59.94 -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -st22_codec jpegxs -f mtl_st22p -
@@ -151,7 +153,7 @@ ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv422p10le -i
 
 ### 4.1. St30p input
 
-Reading a st2110-30 stream(pcm24,1ms packet time,2 channels) on "239.168.85.20:30000" with payload_type 111 and encoded to a wav file:
+Reading a ST 2110-30 stream (pcm24, 1ms packet time, 2 channels) on 239.168.85.20:30000 with payload_type 111 and encoded to a wav file:
 
 ```bash
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 30000 -payload_type 111 -pcm_fmt pcm24 -ptime 1ms -channels 2 -f mtl_st30p -i "0" dump.wav -y
@@ -159,7 +161,7 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 
 ### 4.2. St30p output
 
-Reading from a wav file and sending a st2110-30 stream(pcm24,1ms packet time,2 channels) on "239.168.85.20:30000" with payload_type 111:
+Reading from a wav file and sending a ST 2110-30 stream (pcm24, 1ms packet time, 2 channels) on 239.168.85.20:30000 with payload_type 111:
 
 ```bash
 ffmpeg -stream_loop -1 -i test.wav -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 30000 -payload_type 111 -ptime 1ms -f mtl_st30p -
@@ -193,7 +195,7 @@ or use
 ./build_ffmpeg_plugin.sh -g
 ```
 
-Reading a ST2110-20 10bit YUV422 stream on "239.168.85.20:20000" with payload_type 112 and
+Reading a ST 2110-20 10-bit YUV422 stream on 239.168.85.20:20000 with payload_type 112 and
 enabled gpu_direct:
 
 ```bash
