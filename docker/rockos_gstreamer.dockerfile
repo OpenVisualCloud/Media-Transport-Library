@@ -126,6 +126,7 @@ RUN yum update -y && \
     systemtap-sdt-devel \
     libatomic \
     gstreamer1-plugins-base \
+    gstreamer1-plugins-good \
     gstreamer1-devel
 
 # Add user: mtl(1001) with group vfio(2110)
@@ -136,12 +137,15 @@ RUN groupadd -g 2110 vfio && \
 COPY --chown=mtl --from=builder /install /
 COPY --chown=mtl --from=builder /Media-Transport-Library/tests/tools/RxTxApp/build/RxTxApp /home/mtl/RxTxApp
 COPY --chown=mtl --from=builder /Media-Transport-Library/tests/tools/RxTxApp/script /home/mtl/scripts
-COPY --chown=mtl --from=builder /Media-Transport-Library/ecosystem/gstreamer_plugin/builddir/*.so /home/mtl/gstreamer
+COPY --chown=mtl --from=builder /Media-Transport-Library/ecosystem/gstreamer_plugin/builddir/*.so /home/mtl/gstreamer/
+
+# Setup dpdk
+RUN echo -e "/usr/local/lib\n/usr/local/lib64" > /etc/ld.so.conf.d/dpdk.conf
+RUN ldconfig
 
 WORKDIR /home/mtl/
 
-RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/local-lib.conf && ldconfig
 
 USER mtl
 
-CMD ["/bin/bash"]
+ENTRYPOINT ["/bin/bash", "-c"]
