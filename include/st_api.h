@@ -79,8 +79,8 @@ enum st_frame_status {
   /** All pixels of the frame were received */
   ST_FRAME_STATUS_COMPLETE = 0,
   /**
-   * There was some packet loss, but the complete frame was reconstructed using packets
-   * from primary and redundant streams
+   * There was some packet loss, but the complete frame was reconstructed using
+   * packets from primary and redundant streams
    */
   ST_FRAME_STATUS_RECONSTRUCTED,
   /** Packets were lost */
@@ -140,8 +140,8 @@ MTL_PACK(struct st_rfc3550_rtp_hdr {
 #endif
 
 /**
- * The structure describing the destination address(ip addr and port) info for TX.
- * Leave redundant info to zero if the session only has primary port.
+ * The structure describing the destination address(ip addr and port) info for
+ * TX. Leave redundant info to zero if the session only has primary port.
  */
 struct st_tx_dest_info {
   /** destination IP address of sender */
@@ -211,7 +211,8 @@ enum st_event {
   ST_EVENT_VSYNC = 0,
   /** the error occurred and session recovery successfully */
   ST_EVENT_RECOVERY_ERROR,
-  /** fatal error and session can't recovery, app should free the session then */
+  /** fatal error and session can't recovery, app should free the session then
+   */
   ST_EVENT_FATAL_ERROR,
   /** max value of this enum */
   ST_EVENT_MAX,
@@ -254,7 +255,7 @@ struct st_var_info {
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_var_info(mtl_handle mt, struct st_var_info* info);
+int st_get_var_info(mtl_handle mt, struct st_var_info *info);
 
 /**
  * Inline function to check the  rx frame is a completed frame.
@@ -297,17 +298,19 @@ enum st_fps st_frame_rate_to_st_fps(double framerate);
  * @return
  *   enum st_fps fps.
  */
-enum st_fps st_name_to_fps(const char* name);
+enum st_fps st_name_to_fps(const char *name);
 
 /**
- * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.
+ * Helper function to convert ST10_TIMESTAMP_FMT_TAI to
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK.
  *
  * @param tai_ns
  *   time in nanoseconds since the TAI epoch.
  * @param sampling_rate
  *   sampling rate(90k for video, 48K/96K for audio).
  * @return
- *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate
+ *   the raw media clock value defined in ST2110-10, whose units vary by
+ * sampling_rate
  */
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
 
@@ -315,7 +318,8 @@ uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate);
  * Helper function to convert ST10_TIMESTAMP_FMT_MEDIA_CLK to nanoseconds.
  *
  * @param media_ts
- *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
+ *   the raw media clock value defined in ST2110-10, whose units vary by
+ * sampling_rate.
  * @param sampling_rate
  *   sampling rate(90k for video, 48K/96K for audio).
  * @return
@@ -353,7 +357,8 @@ static inline uint64_t st10_get_tai(enum st10_timestamp_fmt tfmt, uint64_t times
  * @param sampling_rate
  *   sampling rate(90k for video, 48K/96K for audio).
  * @return
- *   the raw media clock value defined in ST2110-10, whose units vary by sampling_rate.
+ *   the raw media clock value defined in ST2110-10, whose units vary by
+ * sampling_rate.
  */
 static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
                                           uint64_t timestamp, uint32_t sampling_rate) {

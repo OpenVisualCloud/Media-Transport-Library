@@ -23,14 +23,14 @@ struct st20p_rx_frame {
   struct st_frame dst; /* converted */
   struct st20_convert_frame_meta convert_frame;
   uint16_t idx;
-  void* user_meta; /* the user meta data */
+  void *user_meta; /* the user meta data */
   size_t user_meta_buffer_size;
   size_t user_meta_data_size;
   struct st20_rx_tp_meta tp[MTL_SESSION_PORT_MAX];
 };
 
 struct st20p_rx_ctx {
-  struct mtl_main_impl* impl;
+  struct mtl_main_impl *impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
@@ -43,7 +43,7 @@ struct st20p_rx_ctx {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_convert_idx;
   uint16_t framebuff_consumer_idx;
-  struct st20p_rx_frame* framebuffs;
+  struct st20p_rx_frame *framebuffs;
   pthread_mutex_t lock;
   int usdt_frame_cnt;
 
@@ -53,8 +53,8 @@ struct st20p_rx_ctx {
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
 
-  struct st20_convert_session_impl* convert_impl;
-  struct st_frame_converter* internal_converter;
+  struct st20_convert_session_impl *convert_impl;
+  struct st_frame_converter *internal_converter;
   bool ready;
   bool derive;
   bool dynamic_ext_frame;

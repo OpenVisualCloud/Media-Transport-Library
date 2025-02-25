@@ -18,7 +18,7 @@
 #define NS_PER_S 1000000000
 #define TR_OFFSET_NS (500 * 1000)  // 500us
 
-static inline uint64_t TimespecToNs(const struct timeval* ts) {
+static inline uint64_t TimespecToNs(const struct timeval *ts) {
   return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_usec;
 }
 
@@ -28,8 +28,8 @@ static uint64_t last_tn = 0;
 static uint64_t frame_tn = 0;
 static int g_target_frame_idx = -2;
 
-void packetHandler(u_char* userData, const struct pcap_pkthdr* pkthdr,
-                   const u_char* packet) {
+void packetHandler(u_char *userData, const struct pcap_pkthdr *pkthdr,
+                   const u_char *packet) {
   uint64_t tn = TimespecToNs(&pkthdr->ts);
   if (last_tn) {
     if ((tn - last_tn) > TR_OFFSET_NS) {
@@ -46,8 +46,8 @@ void packetHandler(u_char* userData, const struct pcap_pkthdr* pkthdr,
   last_tn = tn;
 }
 
-int main(int argc, char** argv) {
-  pcap_t* fp;
+int main(int argc, char **argv) {
+  pcap_t *fp;
   char errbuf[PCAP_ERRBUF_SIZE];
   char source[1500];
   int i, maxCountSyn = 0, maxCountHttp = 0, maxIdxSyn = 0, maxIdxHttp = 0;

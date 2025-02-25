@@ -21,13 +21,13 @@ struct rx_st20p_tx_st22p_sample_ctx {
   size_t framebuff_size;
 
   /* logo */
-  void* logo_buf;
+  void *logo_buf;
   struct st_frame logo_meta;
 };
 
-static int st22_fwd_open_logo(struct st_sample_context* ctx,
-                              struct rx_st20p_tx_st22p_sample_ctx* s, char* file) {
-  FILE* fp_logo = st_fopen(file, "rb");
+static int st22_fwd_open_logo(struct st_sample_context *ctx,
+                              struct rx_st20p_tx_st22p_sample_ctx *s, char *file) {
+  FILE *fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
     err("%s, open %s fail\n", __func__, file);
     return -EIO;
@@ -60,8 +60,8 @@ static int st22_fwd_open_logo(struct st_sample_context* ctx,
   return 0;
 }
 
-static int tx_st22p_frame_available(void* priv) {
-  struct rx_st20p_tx_st22p_sample_ctx* s = priv;
+static int tx_st22p_frame_available(void *priv) {
+  struct rx_st20p_tx_st22p_sample_ctx *s = priv;
 
   if (!s->ready) return -EIO;
 
@@ -72,8 +72,8 @@ static int tx_st22p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_tx_st22p_sample_ctx* s = (struct rx_st20p_tx_st22p_sample_ctx*)priv;
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_st20p_tx_st22p_sample_ctx *s = (struct rx_st20p_tx_st22p_sample_ctx *)priv;
 
   if (!s->ready) return -EIO;
 
@@ -84,10 +84,10 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx* s,
-                                   struct st_frame* frame) {
+static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx *s,
+                                   struct st_frame *frame) {
   st22p_tx_handle tx_handle = s->tx_handle;
-  struct st_frame* tx_frame;
+  struct st_frame *tx_frame;
 
   if (frame->data_size != s->framebuff_size) {
     err("%s(%d), mismatch frame size %" PRIu64 " %" PRIu64 "\n", __func__, s->idx,
@@ -113,10 +113,10 @@ static void fwd_st22_consume_frame(struct rx_st20p_tx_st22p_sample_ctx* s,
   }
 }
 
-static void* st20_fwd_st22_thread(void* arg) {
-  struct rx_st20p_tx_st22p_sample_ctx* s = arg;
+static void *st20_fwd_st22_thread(void *arg) {
+  struct rx_st20p_tx_st22p_sample_ctx *s = arg;
   st20p_rx_handle rx_handle = s->rx_handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -136,7 +136,7 @@ static void* st20_fwd_st22_thread(void* arg) {
   return NULL;
 }
 
-static int rx_st20p_tx_st22p_free_app(struct rx_st20p_tx_st22p_sample_ctx* app) {
+static int rx_st20p_tx_st22p_free_app(struct rx_st20p_tx_st22p_sample_ctx *app) {
   if (app->tx_handle) {
     st22p_tx_free(app->tx_handle);
     app->tx_handle = NULL;
@@ -155,7 +155,7 @@ static int rx_st20p_tx_st22p_free_app(struct rx_st20p_tx_st22p_sample_ctx* app) 
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int bpp = 3;
   struct st_sample_context ctx;
   int ret;

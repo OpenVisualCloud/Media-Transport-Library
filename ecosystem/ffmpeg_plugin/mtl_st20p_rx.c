@@ -25,7 +25,7 @@
 #endif /* MTL_GPU_DIRECT_ENABLED */
 
 typedef struct MtlSt20pDemuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -53,8 +53,8 @@ typedef struct MtlSt20pDemuxerContext {
 #endif /* MTL_GPU_DIRECT_ENABLED */
 } MtlSt20pDemuxerContext;
 
-static int mtl_st20p_read_close(AVFormatContext* ctx) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_close(AVFormatContext *ctx) {
+  MtlSt20pDemuxerContext *s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy rx session
@@ -80,11 +80,11 @@ static int mtl_st20p_read_close(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_read_header(AVFormatContext* ctx) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
-  AVStream* st = NULL;
+static int mtl_st20p_read_header(AVFormatContext *ctx) {
+  MtlSt20pDemuxerContext *s = ctx->priv_data;
+  AVStream *st = NULL;
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
-  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
+  const AVPixFmtDescriptor *pix_fmt_desc = NULL;
   struct st20p_rx_ops ops_rx;
   int ret;
   int img_buf_size;
@@ -226,10 +226,10 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  MtlSt20pDemuxerContext *s = ctx->priv_data;
   int ret = 0;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
 

@@ -11,12 +11,12 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_malloc(st, fb_pg2_size * fb_cnt,
-                                                        MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)malloc(fb_pg2_size * fb_cnt);
-  uint8_t* pg_v210 = (uint8_t*)malloc(fb_pg2_size_v210 * fb_cnt);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_malloc(st, fb_pg2_size * fb_cnt,
+                                                         MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)malloc(fb_pg2_size * fb_cnt);
+  uint8_t *pg_v210 = (uint8_t *)malloc(fb_pg2_size_v210 * fb_cnt);
   mtl_iova_t pg_be_iova = mtl_hp_virt2iova(st, pg_be);
   mtl_iova_t pg_be_in_iova;
   size_t planar_size = fb_pg2_size;
@@ -27,8 +27,8 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
   size_t v210_1line_size = st_frame_size(ST_FRAME_FMT_V210, w, 1, false);
   info("v210_1line_size %" PRIu64 "\n", v210_1line_size);
 
-  struct st20_rfc4175_422_10_pg2_be* pg_be_in;
-  uint8_t* pg_v210_out;
+  struct st20_rfc4175_422_10_pg2_be *pg_be_in;
+  uint8_t *pg_v210_out;
 
   for (int i = 0; i < fb_cnt; i++) {
     pg_be_in = pg_be + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_be));
@@ -133,7 +133,7 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
   }
 
 #if TEST_2_STEPS
-  struct st20_rfc4175_422_10_pg2_le* pg_le_out;
+  struct st20_rfc4175_422_10_pg2_le *pg_le_out;
   info("2 steps conversion (be->le->v210)\n");
   start = clock();
   for (int i = 0; i < frames; i++) {
@@ -141,7 +141,7 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
     pg_le_out = pg_le + (i % fb_cnt) * (fb_pg2_size / sizeof(*pg_le));
     pg_v210_out = pg_v210 + (i % fb_cnt) * (fb_pg2_size_v210 / sizeof(*pg_v210));
     st20_rfc4175_422be10_to_422le10_simd(pg_be_in, pg_le_out, w, h, MTL_SIMD_LEVEL_NONE);
-    st20_rfc4175_422le10_to_v210_simd((uint8_t*)pg_le_out, pg_v210_out, w, h,
+    st20_rfc4175_422le10_to_v210_simd((uint8_t *)pg_le_out, pg_v210_out, w, h,
                                       MTL_SIMD_LEVEL_NONE);
   }
   end = clock();
@@ -157,7 +157,7 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
       pg_v210_out = pg_v210 + (i % fb_cnt) * (fb_pg2_size_v210 / sizeof(*pg_v210));
       st20_rfc4175_422be10_to_422le10_simd(pg_be_in, pg_le_out, w, h,
                                            MTL_SIMD_LEVEL_AVX512);
-      st20_rfc4175_422le10_to_v210_simd((uint8_t*)pg_le_out, pg_v210_out, w, h,
+      st20_rfc4175_422le10_to_v210_simd((uint8_t *)pg_le_out, pg_v210_out, w, h,
                                         MTL_SIMD_LEVEL_AVX512);
     }
     end = clock();
@@ -175,7 +175,7 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
       pg_v210_out = pg_v210 + (i % fb_cnt) * (fb_pg2_size_v210 / sizeof(*pg_v210));
       st20_rfc4175_422be10_to_422le10_simd(pg_be_in, pg_le_out, w, h,
                                            MTL_SIMD_LEVEL_AVX512_VBMI2);
-      st20_rfc4175_422le10_to_v210_simd((uint8_t*)pg_le_out, pg_v210_out, w, h,
+      st20_rfc4175_422le10_to_v210_simd((uint8_t *)pg_le_out, pg_v210_out, w, h,
                                         MTL_SIMD_LEVEL_AVX512_VBMI2);
     }
     end = clock();
@@ -194,8 +194,8 @@ static int perf_cvt_422_10_pg2_be_to_v210(mtl_handle st, int w, int h, int frame
   return 0;
 }
 
-static void* perf_thread(void* arg) {
-  struct st_sample_context* ctx = arg;
+static void *perf_thread(void *arg) {
+  struct st_sample_context *ctx = arg;
   mtl_handle dev_handle = ctx->st;
   int frames = ctx->perf_frames;
   int fb_cnt = ctx->perf_fb_cnt;
@@ -219,7 +219,7 @@ static void* perf_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 

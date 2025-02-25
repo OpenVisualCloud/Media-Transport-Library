@@ -89,16 +89,12 @@ def parse_args(is_tx):
         p_port_default = "0000:af:01.1"
     else:
         p_port_default = "0000:af:01.0"
-    parser.add_argument(
-        "--p_port", type=str, default=p_port_default, help="primary port name"
-    )
+    parser.add_argument("--p_port", type=str, default=p_port_default, help="primary port name")
     if is_tx:
         p_sip_default = "192.168.108.101"
     else:
         p_sip_default = "192.168.108.102"
-    parser.add_argument(
-        "--p_sip", type=str, default=p_sip_default, help="primary local IP address"
-    )
+    parser.add_argument("--p_sip", type=str, default=p_sip_default, help="primary local IP address")
     # nb_tx_desc & nb_rx_desc
     parser.add_argument("--nb_tx_desc", type=int, default=0, help="nb_tx_desc")
     parser.add_argument("--nb_rx_desc", type=int, default=0, help="nb_rx_desc")
@@ -147,24 +143,18 @@ def parse_args(is_tx):
     )
     # display
     parser.add_argument("--display", action="store_true", help="enable display option")
-    parser.add_argument(
-        "--display_scale_factor", type=int, default=2, help="display scale factor"
-    )
+    parser.add_argument("--display_scale_factor", type=int, default=2, help="display scale factor")
     # tx_url
     parser.add_argument(
         "--tx_url", type=str, default="yuv422p10le_1080p.yuv", help="tx url file path"
     )
     # rx_url
-    parser.add_argument(
-        "--rx_url", type=str, default="test.mp4", help="rx url file path"
-    )
+    parser.add_argument("--rx_url", type=str, default="test.mp4", help="rx url file path")
     # width & height
     parser.add_argument("--width", type=int, default=1920, help="width")
     parser.add_argument("--height", type=int, default=1080, help="height")
     # interlaced
-    parser.add_argument(
-        "--interlaced", action="store_true", help="Enable interlaced option"
-    )
+    parser.add_argument("--interlaced", action="store_true", help="Enable interlaced option")
     # udp_port
     parser.add_argument("--udp_port", type=int, default=20000, help="udp port")
     # payload_type
@@ -320,9 +310,7 @@ def wait_key():
 
 def frame_display_yuv422p8(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
-        mtl.st_frame_addr_cpuva(frame, 0)
-    )
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr_cpuva(frame, 0))
     width = frame.width
     height = frame.height
 
@@ -336,9 +324,7 @@ def frame_display_yuv422p8(frame, display_scale_factor):
 
 def frame_display_yuv420p8(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
-        mtl.st_frame_addr_cpuva(frame, 0)
-    )
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr_cpuva(frame, 0))
     width = frame.width
     height = frame.height
 
@@ -352,9 +338,7 @@ def frame_display_yuv420p8(frame, display_scale_factor):
 
 def frame_display_yuv422p10le(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
-        mtl.st_frame_addr_cpuva(frame, 0)
-    )
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr_cpuva(frame, 0))
     width = frame.width
     height = frame.height
 
@@ -369,9 +353,7 @@ def frame_display_yuv422p10le(frame, display_scale_factor):
 
 def frame_display_uyvy(frame, display_scale_factor):
     # Pack frame pointer from frame addr
-    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(
-        mtl.st_frame_addr_cpuva(frame, 0)
-    )
+    ptr = (ctypes.c_ubyte * (frame.data_size)).from_address(mtl.st_frame_addr_cpuva(frame, 0))
     width = frame.width
     height = frame.height
     downscaled_width = width // display_scale_factor

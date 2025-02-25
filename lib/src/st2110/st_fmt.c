@@ -469,11 +469,11 @@ enum st_frame_fmt st_codec_codestream_fmt(enum st22_codec codec) {
   return ST_FRAME_FMT_MAX;
 }
 
-static const char* st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
+static const char *st_pacing_way_names[ST21_TX_PACING_WAY_MAX] = {
     "auto", "ratelimit", "tsc", "tsn", "ptp", "be", "tsc_narrow",
 };
 
-const char* st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
+const char *st_tx_pacing_way_name(enum st21_tx_pacing_way way) {
   return st_pacing_way_names[way];
 }
 
@@ -600,7 +600,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
   return size;
 }
 
-int st_frame_sanity_check(struct st_frame* frame) {
+int st_frame_sanity_check(struct st_frame *frame) {
   RTE_BUILD_BUG_ON(ST_FRAME_FMT_MAX > 64);
 
   int planes = st_frame_fmt_planes(frame->fmt);
@@ -647,7 +647,7 @@ int st_frame_sanity_check(struct st_frame* frame) {
   return 0;
 }
 
-int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg) {
+int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup *pg) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
@@ -681,7 +681,7 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height) {
   return size * pg.size / pg.coverage;
 }
 
-const char* st20_fmt_name(enum st20_fmt fmt) {
+const char *st20_fmt_name(enum st20_fmt fmt) {
   struct st20_pgroup pg;
   memset(&pg, 0, sizeof(pg));
 
@@ -693,7 +693,7 @@ const char* st20_fmt_name(enum st20_fmt fmt) {
   return pg.name;
 }
 
-enum st20_fmt st20_name_to_fmt(const char* name) {
+enum st20_fmt st20_name_to_fmt(const char *name) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st20_pgroups); i++) {
@@ -706,7 +706,7 @@ enum st20_fmt st20_name_to_fmt(const char* name) {
   return ST20_FMT_MAX;
 }
 
-int st_get_fps_timing(enum st_fps fps, struct st_fps_timing* fps_tm) {
+int st_get_fps_timing(enum st_fps fps, struct st_fps_timing *fps_tm) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
@@ -748,7 +748,7 @@ enum st_fps st_frame_rate_to_st_fps(double framerate) {
   return ST_FPS_MAX;
 }
 
-enum st_fps st_name_to_fps(const char* name) {
+enum st_fps st_name_to_fps(const char *name) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_fps_timings); i++) {
@@ -761,7 +761,7 @@ enum st_fps st_name_to_fps(const char* name) {
   return ST_FPS_MAX;
 }
 
-const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
+const char *st_frame_fmt_name(enum st_frame_fmt fmt) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
@@ -774,7 +774,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt) {
   return "unknown";
 }
 
-enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
+enum st_frame_fmt st_frame_name_to_fmt(const char *name) {
   int i;
 
   for (i = 0; i < MTL_ARRAY_SIZE(st_frame_fmt_descs); i++) {
@@ -787,7 +787,7 @@ enum st_frame_fmt st_frame_name_to_fmt(const char* name) {
   return ST_FRAME_FMT_MAX;
 }
 
-enum st22_codec st_name_to_codec(const char* name) {
+enum st22_codec st_name_to_codec(const char *name) {
   if (!strcmp(name, "jpegxs"))
     return ST22_CODEC_JPEGXS;
   else if (!strcmp(name, "h264_cbr"))
@@ -908,7 +908,7 @@ uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
   return ts;
 }
 
-int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y) {
+int st_draw_logo(struct st_frame *frame, struct st_frame *logo, uint32_t x, uint32_t y) {
   if (frame->fmt != logo->fmt) {
     err("%s, mismatch fmt %d %d\n", __func__, frame->fmt, logo->fmt);
     return -EINVAL;
@@ -932,8 +932,8 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
 
   size_t logo_col_size = logo->width / 2 * 5;
   for (uint32_t col = 0; col < logo->height; col++) {
-    void* dst = frame->addr[0] + (((col + y) * frame->width) + x) / 2 * 5;
-    void* src = logo->addr[0] + (col * logo->width) / 2 * 5;
+    void *dst = frame->addr[0] + (((col + y) * frame->width) + x) / 2 * 5;
+    void *src = logo->addr[0] + (col * logo->width) / 2 * 5;
     mtl_memcpy(dst, src, logo_col_size);
   }
 
@@ -941,7 +941,7 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
 }
 
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           bool interlaced, uint64_t* bps) {
+                           bool interlaced, uint64_t *bps) {
   struct st20_pgroup pg;
   struct st_fps_timing fps_tm;
   int ret;
@@ -967,7 +967,7 @@ int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps
 }
 
 int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps fps,
-                           uint64_t* bps) {
+                           uint64_t *bps) {
   struct st_fps_timing fps_tm;
   int ret;
 
@@ -982,7 +982,7 @@ int st22_rtp_bandwidth_bps(uint32_t total_pkts, uint16_t pkt_size, enum st_fps f
   return 0;
 }
 
-int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t* bps) {
+int st22_frame_bandwidth_bps(size_t frame_size, enum st_fps fps, uint64_t *bps) {
   struct st_fps_timing fps_tm;
   int ret;
 
@@ -1170,7 +1170,7 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
 
 int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
                                   enum st30_sampling sampling, uint16_t channel,
-                                  uint64_t desired_frame_time_ns, double* fps) {
+                                  uint64_t desired_frame_time_ns, double *fps) {
   /* count frame size */
   int pkt_per_frame = 1;
   int pkt_len = st30_get_packet_size(fmt, ptime, sampling, channel);
@@ -1187,7 +1187,7 @@ int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
   return framebuff_size;
 }
 
-void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova) {
+void st_frame_init_plane_single_src(struct st_frame *frame, void *addr, mtl_iova_t iova) {
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
 
   for (uint8_t plane = 0; plane < planes; plane++) {
@@ -1204,11 +1204,11 @@ void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova
   }
 }
 
-struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
+struct st_frame *st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
                                  uint32_t h, bool interlaced) {
-  struct mtl_main_impl* impl = mt;
+  struct mtl_main_impl *impl = mt;
   int soc_id = mt_socket_id(impl, MTL_PORT_P);
-  struct st_frame* frame = mt_rte_zmalloc_socket(sizeof(*frame), soc_id);
+  struct st_frame *frame = mt_rte_zmalloc_socket(sizeof(*frame), soc_id);
   if (!frame) {
     err("%s, frame malloc fail\n", __func__);
     return NULL;
@@ -1220,7 +1220,7 @@ struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t 
   frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC | ST_FRAME_FLAG_RTE_MALLOC;
 
   size_t data_sz = st_frame_size(fmt, w, h, interlaced);
-  void* data = mt_rte_zmalloc_socket(data_sz, soc_id);
+  void *data = mt_rte_zmalloc_socket(data_sz, soc_id);
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
     st_frame_free(frame);
@@ -1233,9 +1233,9 @@ struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t 
   return frame;
 }
 
-struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
+struct st_frame *st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                            bool interlaced) {
-  struct st_frame* frame = mt_zmalloc(sizeof(*frame));
+  struct st_frame *frame = mt_zmalloc(sizeof(*frame));
   if (!frame) {
     err("%s, frame malloc fail\n", __func__);
     return NULL;
@@ -1247,7 +1247,7 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   frame->flags = ST_FRAME_FLAG_SINGLE_MALLOC;
 
   size_t data_sz = st_frame_size(fmt, w, h, interlaced);
-  void* data = mt_zmalloc(data_sz);
+  void *data = mt_zmalloc(data_sz);
   if (!data) {
     err("%s, data malloc fail, size %" PRIu64 "\n", __func__, data_sz);
     st_frame_free(frame);
@@ -1260,7 +1260,7 @@ struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, ui
   return frame;
 }
 
-int st_frame_free(struct st_frame* frame) {
+int st_frame_free(struct st_frame *frame) {
   if (!(frame->flags & ST_FRAME_FLAG_SINGLE_MALLOC)) {
     err("%s, frame %p is not created by ST_FRAME_FLAG_SINGLE_MALLOC\n", __func__, frame);
     return -EINVAL;
@@ -1393,11 +1393,11 @@ static const struct cvl_pad_table g_cvl_static_pad_tables[] = {
     },
 };
 
-uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
-                                      struct st_tx_video_session_impl* s,
+uint16_t st20_pacing_static_profiling(struct mtl_main_impl *impl,
+                                      struct st_tx_video_session_impl *s,
                                       enum mtl_session_port s_port) {
-  const struct cvl_pad_table* refer;
-  struct st20_tx_ops* ops = &s->ops;
+  const struct cvl_pad_table *refer;
+  struct st20_tx_ops *ops = &s->ops;
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(s_port);
 
@@ -1416,22 +1416,22 @@ uint16_t st20_pacing_static_profiling(struct mtl_main_impl* impl,
   return 0; /* not found */
 }
 
-int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char* name) {
+int st_rxp_para_port_set(struct st_rx_port *p, enum mtl_session_port port, char *name) {
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int st_rxp_para_ip_set(struct st_rx_port* p, enum mtl_port port, char* ip) {
+int st_rxp_para_ip_set(struct st_rx_port *p, enum mtl_port port, char *ip) {
   int ret = inet_pton(AF_INET, ip, p->ip_addr[port]);
   if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);
   return -EIO;
 }
 
-int st_txp_para_port_set(struct st_tx_port* p, enum mtl_session_port port, char* name) {
+int st_txp_para_port_set(struct st_tx_port *p, enum mtl_session_port port, char *name) {
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int st_txp_para_dip_set(struct st_tx_port* p, enum mtl_port port, char* ip) {
+int st_txp_para_dip_set(struct st_tx_port *p, enum mtl_port port, char *ip) {
   int ret = inet_pton(AF_INET, ip, p->dip_addr[port]);
   if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);

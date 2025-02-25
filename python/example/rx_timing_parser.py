@@ -28,15 +28,9 @@ class Dashboard:
         self.fig, self.ax = plt.subplots()
         plt.title(title_str)
         plt.subplots_adjust(bottom=0.2)
-        (self.vrx_max_line,) = self.ax.plot(
-            self.times, self.vrx_max_values, label="VRX Max"
-        )
-        (self.vrx_min_line,) = self.ax.plot(
-            self.times, self.vrx_min_values, label="VRX Min"
-        )
-        (self.vrx_avg_line,) = self.ax.plot(
-            self.times, self.vrx_avg_values, label="VRX Avg"
-        )
+        (self.vrx_max_line,) = self.ax.plot(self.times, self.vrx_max_values, label="VRX Max")
+        (self.vrx_min_line,) = self.ax.plot(self.times, self.vrx_min_values, label="VRX Min")
+        (self.vrx_avg_line,) = self.ax.plot(self.times, self.vrx_avg_values, label="VRX Avg")
         # init compliance text
         self.ax.legend(loc="upper left")
         self.text_narrow = self.ax.text(
@@ -188,9 +182,7 @@ def main():
     # Init mtl para
     init_para = mtl.mtl_init_params()
     mtl.mtl_para_port_set(init_para, mtl.MTL_PORT_P, args.p_port)
-    mtl.mtl_para_pmd_set(
-        init_para, mtl.MTL_PORT_P, mtl.mtl_pmd_by_port_name(args.p_port)
-    )
+    mtl.mtl_para_pmd_set(init_para, mtl.MTL_PORT_P, mtl.mtl_pmd_by_port_name(args.p_port))
     init_para.num_ports = 1
     mtl.mtl_para_sip_set(init_para, mtl.MTL_PORT_P, args.p_sip)
     init_para.flags = mtl.MTL_FLAG_BIND_NUMA | mtl.MTL_FLAG_DEV_AUTO_START_STOP
