@@ -33,6 +33,7 @@ jobs:
                                        
         env:
           DEFAULT_BRANCH: main
+          VALIDATE_CPP: false # conflicts with clang-format
           VALIDATE_JSCPD: false
           VALIDATE_JSON: false
           VALIDATE_JSON_PRETTIER: false
