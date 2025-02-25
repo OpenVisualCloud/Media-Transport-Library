@@ -268,7 +268,7 @@ static int tv_free_frames(struct st_tx_video_session_impl *s) {
     struct st_frame_trans *frame;
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       frame = &s->st20_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, NULL);
     }
 
     mt_rte_free(s->st20_frames);
@@ -1035,7 +1035,7 @@ static int tv_build_st20(struct st_tx_video_session_impl *s, struct rte_mbuf *pk
   if (e_rtp)
     payload = &e_rtp[1];
   else
-    payload = &rtp[1];
+    payload = (void*)((uint8_t*)rtp + sizeof(*rtp));
   if (e_rtp && s->st20_linesize > s->st20_bytes_in_line) {
     /* cross lines with padding case */
     mtl_memcpy(payload, frame_info->addr + offset, line1_length);
@@ -1401,7 +1401,7 @@ static int tv_build_st22(struct st_tx_video_session_impl *s, struct rte_mbuf *pk
     rtp->base.marker = 1;
     rtp->last_packet = 1;
     dbg("%s(%d), maker on pkt %d(total %d)\n", __func__, s->idx, s->st20_pkt_idx,
-        s->st22_total_pkts);
+        s->st20_total_pkts);
   }
   rtp->base.seq_number = htons((uint16_t)s->st20_seq_id);
   s->st20_seq_id++;
@@ -1430,7 +1430,7 @@ static int tv_build_st22(struct st_tx_video_session_impl *s, struct rte_mbuf *pk
   uint32_t offset = s->st20_pkt_idx * s->st20_pkt_len;
   uint16_t left_len = RTE_MIN(s->st20_pkt_len, st22_info->cur_frame_size - offset);
   dbg("%s(%d), data len %u on pkt %d(total %d)\n", __func__, s->idx, left_len,
-      s->st20_pkt_idx, s->st22_total_pkts);
+      s->st20_pkt_idx, s->st20_total_pkts);
 
   /* copy payload */
   struct st_frame_trans *frame_info = &s->st20_frames[s->st20_frame_idx];
@@ -1475,7 +1475,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl *s, struct rte_mb
     rtp->base.marker = 1;
     rtp->last_packet = 1;
     dbg("%s(%d), maker on pkt %d(total %d)\n", __func__, s->idx, s->st20_pkt_idx,
-        s->st22_total_pkts);
+        s->st20_total_pkts);
   }
   rtp->base.seq_number = htons((uint16_t)s->st20_seq_id);
   s->st20_seq_id++;
@@ -1506,7 +1506,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl *s, struct rte_mb
   uint32_t offset = s->st20_pkt_idx * s->st20_pkt_len;
   uint16_t left_len = RTE_MIN(s->st20_pkt_len, st22_info->cur_frame_size - offset);
   dbg("%s(%d), data len %u on pkt %d(total %d)\n", __func__, s->idx, left_len,
-      s->st20_pkt_idx, s->st22_total_pkts);
+      s->st20_pkt_idx, s->st20_total_pkts);
 
   /* attach payload to chainbuf */
   struct st_frame_trans *frame_info = &s->st20_frames[s->st20_frame_idx];
@@ -1798,7 +1798,11 @@ static int tv_tasklet_frame(struct mtl_main_impl *impl,
       uint32_t offset = s->st20_pkt_len * (s->st20_pkt_idx + bulk);
       line_number = offset / s->st20_bytes_in_line + 1;
     }
-    if (line_number >= ops->height) line_number = ops->height - 1;
+
+    uint32_t height = ops->interlaced ? (ops->height >> 1) : ops->height;
+    if (line_number >= height) {
+      line_number = height - 1;
+    }
     if (line_number >= s->st20_frame_lines_ready) {
       struct st20_tx_slice_meta slice_meta;
       memset(&slice_meta, 0, sizeof(slice_meta));
@@ -1970,6 +1974,8 @@ static int tv_tasklet_rtp(struct mtl_main_impl *impl,
   struct rte_mempool *hdr_pool_r = NULL;
   struct rte_ring *ring_p = s->ring[MTL_SESSION_PORT_P];
   struct rte_ring *ring_r = NULL;
+
+  ret = -1;
 
   if (rte_ring_full(ring_p)) {
     s->stat_build_ret_code = -STI_RTP_RING_FULL;
@@ -2909,7 +2915,10 @@ static int tv_init_pkt(struct mtl_main_impl *impl, struct st_tx_video_session_im
          sizeof(struct st20_packet_group_info) * ST20_PKT_TYPE_MAX);
 
   /* 4800 if 1080p yuv422 */
-  s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  /* Calculate bytes per line, rounding up if there's a remainder */
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
+  s->st20_bytes_in_line =
+      (raw_bytes_size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
   /* rtp mode only  */
   s->rtp_pkt_max_size = ops->rtp_pkt_size;
 
@@ -3072,7 +3081,9 @@ static int tv_attach(struct mtl_main_impl *impl, struct st_tx_video_sessions_mgr
   else
     s->tx_hang_detect_time_thresh = NS_PER_S;
 
-  s->st20_linesize = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  /* Calculate bytes per line, rounding up if there's a remainder */
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
+  s->st20_linesize = (raw_bytes_size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
   if (ops->linesize > s->st20_linesize)
     s->st20_linesize = ops->linesize;
   else if (ops->linesize) {
@@ -3912,11 +3923,9 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl *impl,
 }
 
 /* only st20 frame mode has this callback */
-int st20_frame_tx_start(struct mtl_main_impl *impl, struct st_tx_video_session_impl *s,
-                        enum mtl_session_port s_port, struct st_frame_trans *frame) {
-  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
+int st20_frame_tx_start(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
+                        enum mtl_session_port s_port, struct st_frame_trans* frame) {
   if (!frame->user_meta_data_size) return 0;
-
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   /* tx the user meta */
   struct rte_mbuf *pkt;
@@ -3928,7 +3937,10 @@ int st20_frame_tx_start(struct mtl_main_impl *impl, struct st_tx_video_session_i
   struct rte_mempool *pool = mt_drv_no_sys_txq(impl, port)
                                  ? s->mbuf_mempool_hdr[s_port]
                                  : mt_sys_tx_mempool(impl, port);
+  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
   pkt = rte_pktmbuf_alloc(pool);
+
+  dbg("%s(%d,%d), start trans for frame %p\n", __func__, s->idx, port, frame);
   if (!pkt) {
     err("%s(%d), pkt alloc fail\n", __func__, port);
     return -ENOMEM;
@@ -3951,7 +3963,7 @@ int st20_frame_tx_start(struct mtl_main_impl *impl, struct st_tx_video_session_i
   mt_mbuf_init_ipv4(pkt);
 
   /* copy user meta */
-  void *payload = &rtp[1];
+  void* payload = (uint8_t*)rtp + sizeof(struct st20_rfc4175_rtp_hdr);
   mtl_memcpy(payload, frame->user_meta, frame->user_meta_data_size);
 
   pkt->data_len = sizeof(struct st_rfc4175_video_hdr) + frame->user_meta_data_size;

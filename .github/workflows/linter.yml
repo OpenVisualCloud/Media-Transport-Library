@@ -14,12 +14,12 @@ jobs:
 
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@0d381219ddf674d61a7572ddd19d7941e271515c # v2.9.0
+        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
           egress-policy: audit
 
       - name: Checkout Code
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # Full git history is needed to get a proper
           # list of changed files within `super-linter`
@@ -40,10 +40,7 @@ jobs:
           VALIDATE_YAML: false
           VALIDATE_YAML_PRETTIER: false
           VALIDATE_CHECKOV: false
-          VALIDATE_GITHUB_ACTIONS: false
-          VALIDATE_PYTHON_BLACK: false
-          VALIDATE_PYTHON_PYINK: false
-          VALIDATE_NATURAL_LANGUAGE: false
-          VALIDATE_MARKDOWN_PRETTIER: false
+          VALIDATE_PYTHON_MYPY: false
+          VALIDATE_PYTHON_PYLINT: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOG_LEVEL: WARN

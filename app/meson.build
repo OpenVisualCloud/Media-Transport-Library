@@ -4,6 +4,11 @@
 project('mtl_app', 'c', default_options: ['buildtype=release'],
   version: run_command(find_program('cat'), files('../VERSION'), check: true).stdout().strip(),)
 
+gpu_direct = dependency('mtl_gpu_direct', required: false)
+if gpu_direct.found()
+  add_global_arguments('-DMTL_GPU_DIRECT_ENABLED', language : 'c')
+endif
+
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
@@ -43,7 +48,6 @@ else
 endif
 
 # add source file
-subdir('src')
 subdir('tools')
 subdir('sample')
 subdir('perf')
@@ -94,14 +98,6 @@ if get_option('enable_asan') == true
   app_c_args += ['-fsanitize=address']
   asan_dep = cc.find_library('asan', required : true)
 endif
-
-# build executable
-executable('RxTxApp', sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, mtl, libjson_c, libpcap, libsdl2, libsdl2_ttf, libm, libpthread, ws2_32_dep, mman_dep, libopenssl]
-)
 
 # Color convert tool for raw yuv file
 executable('ConvApp', conv_sources,
@@ -525,4 +521,17 @@ executable('RdmaVideoRxMultiSample', rdma_video_rx_multi_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
 )
+endif
+
+if gpu_direct.found()
+  executable('GpuDirectVideoTxMultiSample', gpu_direct_tx_sample_sources,
+    c_args : app_c_args,
+    link_args: app_ld_args,
+    dependencies: [libpthread, mtl, gpu_direct]
+  )
+  executable('GpuDirectVideoRxMultiSample', gpu_direct_rx_sample_sources,
+    c_args : app_c_args,
+    link_args: app_ld_args,
+    dependencies: [libpthread, mtl, gpu_direct, libsdl2]
+  )
 endif

@@ -180,6 +180,25 @@ static struct rte_flow *rte_rx_flow_create(struct mt_interface *inf, uint16_t q,
   mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+
+  /* WA specific for e810 for PF interfaces */
+  if (!has_ip_flow && !r_flow) {
+    info("%s(%d), Flow creation failed on default group, retrying with group 2\n",
+         __func__, port);
+    attr.group = 2;
+
+    ret = rte_flow_validate(port_id, &attr, pattern, action, &error);
+    if (ret < 0) {
+      err("%s(%d), rte_flow_validate fail %d for queue %d, %s\n", __func__, port, ret, q,
+          mt_string_safe(error.message));
+      return NULL;
+    }
+
+    mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
+    r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
+    mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  }
+
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port, q,
         mt_string_safe(error.message));

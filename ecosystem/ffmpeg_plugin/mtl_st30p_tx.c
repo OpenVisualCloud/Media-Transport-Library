@@ -111,7 +111,7 @@ static int mtl_st30p_write_header(AVFormatContext *ctx) {
   ops_tx.channel = codecpar->ch_layout.nb_channels;
 #endif
   ret = mtl_parse_st30_sample_rate(&ops_tx.sampling, codecpar->sample_rate);
-  if (!ret) {
+  if (ret) {
     err(ctx, "%s, unknown sample_rate %d\n", __func__, codecpar->sample_rate);
     return ret;
   }
@@ -230,7 +230,7 @@ static const AVOption mtl_st30p_tx_options[] = {
      3,
      8000,
      ENC},
-    {"at",
+    {"ptime",
      "audio packet time",
      OFFSET(ptime_str),
      AV_OPT_TYPE_STRING,

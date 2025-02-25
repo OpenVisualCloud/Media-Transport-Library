@@ -15,8 +15,12 @@
 #include "st_fmt.h"
 #include "st_rx_timing_parser.h"
 
-static int rv_init_pkt_handler(struct st_rx_video_session_impl *s);
-static int rvs_mgr_update(struct st_rx_video_sessions_mgr *mgr);
+#ifdef MTL_GPU_DIRECT_ENABLED
+#include <mtl_gpu_direct/gpu.h>
+#endif /* MTL_GPU_DIRECT_ENABLED */
+
+static int rv_init_pkt_handler(struct st_rx_video_session_impl* s);
+static int rvs_mgr_update(struct st_rx_video_sessions_mgr* mgr);
 
 static inline struct mtl_main_impl *rv_get_impl(struct st_rx_video_session_impl *s) {
   return s->parent->parent;
@@ -191,8 +195,12 @@ static bool inline rv_is_dynamic_ext_frame(struct st_rx_video_session_impl *s) {
   return s->ops.query_ext_frame != NULL;
 }
 
-static struct st_frame_trans *rv_get_frame(struct st_rx_video_session_impl *s) {
-  struct st_frame_trans *st20_frame;
+static bool inline rv_framebuffer_in_gpu_direct_vram(struct st_rx_video_session_impl* s) {
+  return s->ops.gpu_direct_framebuffer_in_vram_device_address;
+}
+
+static struct st_frame_trans* rv_get_frame(struct st_rx_video_session_impl* s) {
+  struct st_frame_trans* st20_frame;
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     st20_frame = &s->st20_frames[i];
@@ -307,7 +315,7 @@ static int rv_free_frames(struct st_rx_video_session_impl *s) {
     struct st_frame_trans *frame;
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       frame = &s->st20_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, s->ops.gpu_context);
     }
     mt_rte_free(s->st20_frames);
     s->st20_frames = NULL;
@@ -447,15 +455,34 @@ static int rv_alloc_frames(struct mtl_main_impl *impl,
       st20_frame->addr = NULL;
       st20_frame->flags = 0;
     } else {
-      frame = mt_rte_zmalloc_socket(size, soc_id);
+#ifdef MTL_GPU_DIRECT_ENABLED
+      if (rv_framebuffer_in_gpu_direct_vram(s)) {
+        info("%s: using GPU direct feature.\n", __func__);
+        GpuContext* gpu = s->ops.gpu_context;
+        ret = gpu_allocate_shared_buffer(gpu, &frame, size);
+        if (ret < 0) {
+          err("%s: failed to allocate GPU memory on vram. ret: %d\n", __func__, ret);
+          return -ENOMEM;
+        }
+      } else
+#endif /* MTL_GPU_DIRECT_ENABLED */
+        frame = mt_rte_zmalloc_socket(size, soc_id);
+
       if (!frame) {
         err("%s(%d), frame malloc %" PRIu64 " fail for %d\n", __func__, idx, size, i);
         rv_free_frames(s);
         return -ENOMEM;
       }
-      st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
+
+      if (rv_framebuffer_in_gpu_direct_vram(s)) {
+        st20_frame->flags = ST_FT_FLAG_GPU_MALLOC;
+      } else {
+        st20_frame->flags = ST_FT_FLAG_RTE_MALLOC;
+        st20_frame->iova = rte_malloc_virt2iova(frame);
+      }
+
       st20_frame->addr = frame;
-      st20_frame->iova = rte_malloc_virt2iova(frame);
+
       if (impl->iova_mode == RTE_IOVA_PA && s->dma_dev) {
         ret = rv_frame_create_page_table(s, st20_frame);
         if (ret < 0) {
@@ -1076,7 +1103,7 @@ static struct st_rx_video_slot_impl *rv_slot_by_tmstamp(
     /* still in progress of previous frame, drop current pkt */
     rte_atomic32_inc(&s->dma_previous_busy_cnt);
     dbg("%s(%d): still has dma inflight %u\n", __func__, s->idx,
-        s->dma_dev->nb_borrowed[s->dma_lender]);
+        s->dma_dev->nb_borrowed[s->dma_dev].nb_borrowed);
     return NULL;
   }
 
@@ -1300,14 +1327,9 @@ static int rv_start_pcap(struct st_rx_video_session_impl *s, enum mtl_session_po
     err("%s(%d,%d), pcap dump already started\n", __func__, idx, s_port);
     return -EIO;
   }
+  snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
+           idx, s_port, max_dump_packets);
 
-  if (s->st22_info) {
-    snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-             idx, s_port, max_dump_packets);
-  } else {
-    snprintf(pcap->file_name, sizeof(pcap->file_name), "st22rx_s%dp%d_%u_XXXXXX.pcapng",
-             idx, s_port, max_dump_packets);
-  }
   int fd = mt_mkstemps(pcap->file_name, strlen(".pcapng"));
   if (fd < 0) {
     err("%s(%d,%d), failed to create pcap file %s\n", __func__, idx, s_port,
@@ -1770,7 +1792,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl *s, struct rte_mbuf
     }
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
-      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, idx, s_port, pkt_idx);
+      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
+          pkt_idx);
       s->stat_pkts_redundant_dropped++;
       return 0;
     }
@@ -1786,7 +1809,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl *s, struct rte_mbuf
       s->port_user_stats[MTL_SESSION_PORT_P].frames++;
       mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
-      dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, idx, s_port, seq_id,
+      dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id,
           tmstamp);
     } else {
       dbg("%s(%d,%d), drop seq_id %d as base seq id %d not got\n", __func__, s->idx,
@@ -1800,8 +1823,8 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl *s, struct rte_mbuf
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->rtps_ring, (void *)mbuf);
   if (ret < 0) {
-    dbg("%s(%d,%d), drop as rtps ring full, pkt_idx %d base %u\n", __func__, idx, s_port,
-        pkt_idx, slot->seq_id_base);
+    dbg("%s(%d,%d), drop as rtps ring full, pkt_idx %d base %u\n", __func__, s->idx,
+        s_port, pkt_idx, slot->seq_id_base);
     s->stat_pkts_rtp_ring_full++;
     return -EIO;
   }
@@ -2171,7 +2194,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl *s,
     hdr_split->cur_frame_mbuf_idx =
         (payload - RTE_PKTMBUF_HEADROOM - hdr_split->frames) / ST_VIDEO_BPM_SIZE;
     dbg("%s(%d,%d), cur_frame_addr %p cur_frame_idx %u\n", __func__, s->idx, s_port,
-        hdr_split->cur_frame_addr, slot->cur_frame_mbuf_idx);
+        hdr_split->cur_frame_addr, hdr_split->cur_frame_mbuf_idx);
     if (hdr_split->cur_frame_mbuf_idx % hdr_split->mbufs_per_frame) {
       s->stat_mismatch_hdr_split_frame++;
       dbg("%s(%d,%d), cur_frame_addr %p cur_frame_idx %u mbufs_per_frame %u\n", __func__,
@@ -2212,7 +2235,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl *s,
   /* check if frame is full */
   size_t frame_recv_size = rv_slot_get_frame_size(slot);
   if (frame_recv_size >= s->st20_frame_size) {
-    dbg("%s(%d,%d): full frame on %p(%d)\n", __func__, s->idx, s_port, slot->frame->addr,
+    dbg("%s(%d,%d): full frame on %p(%zu)\n", __func__, s->idx, s_port, slot->frame->addr,
         frame_recv_size);
     dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
@@ -2599,7 +2622,10 @@ static int rv_handle_detect_pkt(struct st_rx_video_session_impl *s, struct rte_m
         s->st20_frame_size =
             ops->width * ops->height * s->st20_pg.size / s->st20_pg.coverage;
         if (ops->interlaced) s->st20_frame_size = s->st20_frame_size >> 1;
-        s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+        /* Calculate bytes per line, rounding up if there's a remainder */
+        size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
+        s->st20_bytes_in_line =
+            (raw_bytes_size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
         s->st20_linesize = s->st20_bytes_in_line;
         if (ops->linesize > s->st20_linesize)
           s->st20_linesize = ops->linesize;
@@ -2647,7 +2673,8 @@ static bool rv_simulate_pkt_loss(struct st_rx_video_session_impl *s) {
   }
   /* continue drop pkt in current burst */
   s->burst_loss_cnt--;
-  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx, s_port);
+  dbg("%s(%d,%d), drop as simulate pkt loss\n", __func__, s->idx,
+      s->stat_pkts_simulate_loss);
   s->stat_pkts_simulate_loss++;
   return true;
 }
@@ -3028,7 +3055,10 @@ static int rv_attach(struct mtl_main_impl *impl, struct st_rx_video_sessions_mgr
   s->impl = impl;
   s->frame_time = (double)1000000000.0 * fps_tm.den / fps_tm.mul;
   s->frame_time_sampling = (double)(fps_tm.sampling_clock_rate) * fps_tm.den / fps_tm.mul;
-  s->st20_bytes_in_line = ops->width * s->st20_pg.size / s->st20_pg.coverage;
+  /* Calculate bytes per line, rounding up if there's a remainder */
+  size_t raw_bytes_size = (size_t)ops->width * s->st20_pg.size;
+  s->st20_bytes_in_line =
+      (raw_bytes_size + s->st20_pg.coverage - 1) / s->st20_pg.coverage;
   s->st20_linesize = s->st20_bytes_in_line;
   if (ops->linesize > s->st20_linesize)
     s->st20_linesize = ops->linesize;
@@ -3305,9 +3335,10 @@ static int rv_migrate_dma(struct mtl_main_impl *impl,
   return 0;
 }
 
-static void rv_stat(struct st_rx_video_sessions_mgr *mgr,
-                    struct st_rx_video_session_impl *s) {
-  int m_idx = mgr ? mgr->idx : 0, idx = s->idx;
+static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
+                    struct st_rx_video_session_impl* s) {
+  int m_idx = mgr->idx;
+  int idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   int frames_received = rte_atomic32_read(&s->stat_frames_received);
@@ -3531,8 +3562,9 @@ static int rvs_pkt_rx_tasklet_start(void *priv) {
   return 0;
 }
 
-static int rv_detach(struct mtl_main_impl *impl, struct st_rx_video_sessions_mgr *mgr,
-                     struct st_rx_video_session_impl *s) {
+static int rv_detach(struct mtl_main_impl* impl, struct st_rx_video_sessions_mgr* mgr,
+                     struct st_rx_video_session_impl* s) {
+  if (!mgr || !s) return -EINVAL;
   s->attached = false;
   rv_stat(mgr, s);
   rv_uinit(impl, s);
@@ -3748,6 +3780,8 @@ static int rvs_mgr_update(struct st_rx_video_sessions_mgr *mgr) {
 static int rv_sessions_stat(void *priv) {
   struct st_rx_video_sessions_mgr *mgr = priv;
   struct st_rx_video_session_impl *s;
+
+  if (!mgr) return -EINVAL;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = rx_video_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);

@@ -8,10 +8,11 @@
 # Ubuntu 22.04, build stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS builder
 
-LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
+LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 # Install build dependencies and debug tools
 RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends systemtap-sdt-dev && \
     apt-get install -y --no-install-recommends git build-essential meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev ca-certificates && \
     apt-get install -y --no-install-recommends m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib && \
     apt-get clean && \
@@ -51,12 +52,12 @@ RUN make install && \
 WORKDIR /$MTL_REPO
 RUN ./build.sh && \
     DESTDIR=/install meson install -C build && \
-    setcap 'cap_net_raw+ep' ./build/app/RxTxApp
+    setcap 'cap_net_raw+ep' ./tests/tools/RxTxApp/build/RxTxApp
 
 # Ubuntu 22.04, runtime stage
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS final
 
-LABEL maintainer="frank.du@intel.com,ming3.li@intel.com"
+LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 # Install runtime dependencies
 RUN apt-get update -y && \
@@ -71,6 +72,8 @@ RUN groupadd -g 2110 vfio && \
 # Copy libraries and binaries
 COPY --chown=imtl --from=builder /install /
 COPY --chown=imtl --from=builder /Media-Transport-Library/build /home/imtl
+COPY --chown=imtl --from=builder /Media-Transport-Library/tests/tools/RxTxApp/build/RxTxApp /home/imtl/RxTxApp
+COPY --chown=imtl --from=builder /Media-Transport-Library/tests/tools/RxTxApp/script /home/imtl/scripts
 
 WORKDIR /home/imtl/
 
@@ -78,5 +81,5 @@ WORKDIR /home/imtl/
 RUN ldconfig
 
 USER imtl
-
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 CMD ["/bin/bash"]

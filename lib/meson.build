@@ -18,6 +18,12 @@ if not is_windows
 endif
 jsonc_dep = dependency('json-c', required : true)
 
+# add gpu direct
+gpu_direct_dep = dependency('mtl_gpu_direct', required: false)
+if gpu_direct_dep.found()
+  add_global_arguments('-DMTL_GPU_DIRECT_ENABLED', language : 'c')
+endif
+
 # xdp check
 libxdp_dep = dependency('libxdp', required: false)
 libbpf_dep = dependency('libbpf', required: false)
@@ -148,7 +154,7 @@ mtl_lib += shared_library(meson.project_name(), sources,
   c_args : mtl_c_args,
   link_args : mtl_link_c_args,
   # asan should be always the first dep
-  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, libdl_dep,
+  dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, gpu_direct_dep, libdl_dep,
                  jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep, libibvers_dep, librdmacm_dep,
                  usdt_provider_header_dep,],
   install: true

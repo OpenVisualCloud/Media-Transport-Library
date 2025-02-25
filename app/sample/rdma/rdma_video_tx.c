@@ -15,9 +15,12 @@
 #include <time.h>
 #include <unistd.h>
 
-#define TARGET_FPS 30
 #define NANOSECONDS_IN_SECOND 1000000000
+#define TARGET_FPS 30
 #define DESIRED_FRAME_DURATION (NANOSECONDS_IN_SECOND / TARGET_FPS)
+#define FRAME_WIDTH 1920
+#define FRAME_HEIGHT 1080
+#define FRAME_SIZE (FRAME_WIDTH * FRAME_HEIGHT * 2)  // UYVY format
 
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -86,6 +89,7 @@ int main(int argc, char **argv) {
       .log_level = MTL_RDMA_LOG_LEVEL_INFO,
       //.flags = MTL_RDMA_FLAG_LOW_LATENCY,
   };
+
   mrh = mtl_rdma_init(&p);
   if (!mrh) {
     printf("Failed to initialize RDMA\n");
@@ -93,9 +97,8 @@ int main(int argc, char **argv) {
     goto out;
   }
 
-  size_t frame_size = 1920 * 1080 * 2; /* UYVY */
   for (int i = 0; i < 3; i++) {
-    buffers[i] = mmap(NULL, frame_size, PROT_READ | PROT_WRITE,
+    buffers[i] = mmap(NULL, FRAME_SIZE, PROT_READ | PROT_WRITE,
                       MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
     if (buffers[i] == MAP_FAILED) {
       printf("Failed to allocate buffer\n");
@@ -110,7 +113,7 @@ int main(int argc, char **argv) {
       .port = argv[2],
       .num_buffers = 3,
       .buffers = buffers,
-      .buffer_capacity = frame_size,
+      .buffer_capacity = FRAME_SIZE,
       .notify_buffer_done = tx_notify_buffer_done,
       .notify_buffer_sent = tx_notify_buffer_sent,
   };
@@ -143,7 +146,7 @@ int main(int argc, char **argv) {
       continue;
     }
 
-    while (fread(buffer->addr, 1, frame_size, yuv_file) != frame_size) {
+    while (fread(buffer->addr, 1, FRAME_SIZE, yuv_file) != FRAME_SIZE) {
       if (feof(yuv_file)) {
         /* restart from the beginning if the end of file is reached */
         fseek(yuv_file, 0, SEEK_SET);
@@ -159,7 +162,7 @@ int main(int argc, char **argv) {
     clock_gettime(CLOCK_REALTIME, &now);
     uint64_t send_time_ns = ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
 
-    buffer->size = frame_size;
+    buffer->size = FRAME_SIZE;
     buffer->user_meta = &send_time_ns;
     buffer->user_meta_size = sizeof(uint64_t);
 
@@ -180,7 +183,7 @@ out:
   if (tx) mtl_rdma_tx_free(tx);
 
   for (int i = 0; i < 3; i++) {
-    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], frame_size);
+    if (buffers[i] && buffers[i] != MAP_FAILED) munmap(buffers[i], FRAME_SIZE);
   }
 
   if (mrh) mtl_rdma_uinit(mrh);

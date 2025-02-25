@@ -155,9 +155,8 @@ int main(int argc, char **argv) {
     ops_tx.notify_rtp_done = notify_rtp_done;
     // 4320 for ex. it is for 1080p, each line, we have 4 packet.
     ops_tx.rtp_frame_total_pkts = 4320;
-    ops_tx.rtp_pkt_size = 1200 + sizeof(struct st_rfc3550_rtp_hdr);
-    // rtp_frame_total_pkts x rtp_pkt_size will be used for Rate limit in the
-    // lib.
+    ops_tx.rtp_pkt_size = 1200 + sizeof(struct st20_rfc4175_rtp_hdr);
+    // rtp_frame_total_pkts x rtp_pkt_size will be used for Rate limit in the lib.
 
     tx_handle[i] = st20_tx_create(ctx.st, &ops_tx);
     if (!tx_handle[i]) {

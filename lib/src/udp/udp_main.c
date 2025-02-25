@@ -188,7 +188,7 @@ static int udp_build_tx_pkt(struct mtl_main_impl *impl, struct mudp_impl *s,
   pkt->pkt_len = pkt->data_len;
 
   /* copy payload */
-  void *payload = &udp[1];
+  void* payload = (uint8_t*)udp + sizeof(struct rte_udp_hdr);
   mtl_memcpy(payload, buf, len);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
@@ -916,7 +916,7 @@ static ssize_t udp_rx_dequeue(struct mudp_impl *s, void *buf, size_t len, int fl
   struct rte_udp_hdr *udp = &hdr->udp;
   void *payload = &udp[1];
   ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
-  dbg("%s(%d), payload_len %d bytes\n", __func__, idx, payload_len);
+  dbg("%s(%d), payload_len %" PRIu64 " bytes\n", __func__, idx, payload_len);
 
   if (payload_len <= len) {
     rte_memcpy(buf, payload, payload_len);
@@ -940,7 +940,7 @@ static ssize_t udp_rx_dequeue(struct mudp_impl *s, void *buf, size_t len, int fl
         payload_len, len);
   }
   rte_pktmbuf_free(pkt);
-  dbg("%s(%d), copied %d bytes, flags %d\n", __func__, idx, copied, flags);
+  dbg("%s(%d), copied %" PRIu64 " bytes, flags %d\n", __func__, idx, copied, flags);
   return copied;
 }
 
@@ -1094,7 +1094,13 @@ static int udp_fallback_poll(struct mudp_pollfd *fds, mudp_nfds_t nfds, int time
   struct pollfd p_fds[nfds];
   int ret;
 
-  dbg("%s(%d), nfds %d timeout %d\n", __func__, s->idx, (int)nfds, timeout);
+  if (nfds > 0) {
+    s = fds[0].fd;
+    dbg("%s(%d), nfds %d timeout %d\n", __func__, s->idx, (int)nfds, timeout);
+  } else {
+    dbg("%s, nfds %d timeout %d\n", __func__, (int)nfds, timeout);
+  }
+
   for (mudp_nfds_t i = 0; i < nfds; i++) {
     s = fds[i].fd;
 

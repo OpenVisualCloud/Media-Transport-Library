@@ -200,6 +200,17 @@
 #define MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(m_idx, s_idx, mbuf, tmstamp) \
   MT_DTRACE_PROBE4(st40, rx_mbuf_enqueue_fail, m_idx, s_idx, mbuf, tmstamp)
 
+#define MT_USDT_ST41_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, meta_num, total_udw) \
+  MT_DTRACE_PROBE6(st41, tx_frame_next, m_idx, s_idx, f_idx, va, meta_num, total_udw)
+#define MT_USDT_ST41_TX_FRAME_DONE(m_idx, s_idx, f_idx, tmstamp) \
+  MT_DTRACE_PROBE4(st41, tx_frame_done, m_idx, s_idx, f_idx, tmstamp)
+#define MT_USDT_ST41_RX_MBUF_AVAILABLE(m_idx, s_idx, mbuf, tmstamp, data_size) \
+  MT_DTRACE_PROBE5(st41, rx_mbuf_available, m_idx, s_idx, mbuf, tmstamp, data_size)
+#define MT_USDT_ST41_RX_MBUF_PUT(m_idx, s_idx, mbuf) \
+  MT_DTRACE_PROBE3(st41, rx_mbuf_put, m_idx, s_idx, mbuf)
+#define MT_USDT_ST41_RX_MBUF_ENQUEUE_FAIL(m_idx, s_idx, mbuf, tmstamp) \
+  MT_DTRACE_PROBE4(st41, rx_mbuf_enqueue_fail, m_idx, s_idx, mbuf, tmstamp)
+
 #define MT_USDT_ST22_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, tmstamp, sz) \
   MT_DTRACE_PROBE6(st22, tx_frame_next, m_idx, s_idx, f_idx, va, tmstamp, sz)
 #define MT_USDT_ST22_TX_FRAME_DONE(m_idx, s_idx, f_idx, tmstamp) \

@@ -1,10 +1,10 @@
 # JSON Configuration Guide
 
-Media Transport Library sample app can use json file to configure sessions. this documentation explains how to write the json files.
+Media Transport Library sample app can use JSON file to configure sessions. This documentation explains how to write the JSON files.
 
 ## Examples
 
-Example `tx_1v_1a_1anc.json` file, find more example config file in [example config](../config):
+Example `tx_1v_1a_1anc.json` file, find more examples config files in [example config directory](../config).
 
 ```json
 {
@@ -57,6 +57,18 @@ Example `tx_1v_1a_1anc.json` file, find more example config file in [example con
                     "ancillary_format": "closed_caption",
                     "ancillary_url": "./test.txt",
                     "ancillary_fps": "p59"
+                }
+            ],
+            "fastmetadata": [
+                {
+                    "replicas": 1,
+                    "start_port": 40000,
+                    "payload_type": 115,
+                    "type": "frame",
+                    "fastmetadata_data_item_type": 123456,
+                    "fastmetadata_k_bit": 1,
+                    "fastmetadata_url": "./test.txt",
+                    "fastmetadata_fps": "p59"
                 }
             ]
         }
@@ -155,7 +167,27 @@ Items in each element of the "ancillary" array
 
 ​ **ancillary_url (string):** ancillary source
 
-   **ancillary_fps (string):** `"p59", "p50", "p29"`ancillary fps which should be aligned to video
+​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps which should be aligned to video
+
+#### fast metadata (array of fast metadata sessions)
+
+Items in each element of the "fastmetadata" array
+
+​ **replicas (int):** `1~max_num` the number of session copies
+
+​ **type (string):** `"frame", "rtp"` app->lib data type
+
+​ **start_port (int):** `0~65535` start udp port for copies of sessions
+
+​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+​ **fastmetadata_data_item_type (int):** `0~4194303`  (0x - 0x3fffff) 22 bits data item type
+
+​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value
+
+​ **fastmetadata_url (string):** fast metadata source
+
+ **fastmetadata_fps (string):** `"p59", "p50", "p29"` fast metadata fps which should be aligned to video
 
 ### RX Sessions (array of rx session groups)
 
@@ -206,6 +238,9 @@ Items in each element of the "audio" array
 ​ **audio_sampling (string):** `"48kHz", "96kHz"` audio sample rate
 
 ​ **audio_ptime (string):** `"1", "0.12", "0.25", "0.33", "4"` audio packet time, AES67(st30) supported: 1ms, 4ms, 125us(0.12), 250us(0.25) and 333us(0.33), AM824(st31) supported: 1ms
+> The maximum frame size that can be sent in the Media Transport Library (MTL) is
+> 1440 bytes. This means that the combination of channel size, packet time (ptime),
+> and audio channel should not exceed this limit.
 
 ​ **audio_url (string):** audio reference file
 
@@ -218,6 +253,22 @@ Items in each element of the "ancillary" array
 ​ **start_port (int):** `0~65535` start udp port for copies of sessions
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+#### fast metadata (array of fast metadata sessions) for RX
+
+Items in each element of the "fastmetadata" array
+
+​ **replicas (int):** `1~max_num` the number of session copies
+
+​ **start_port (int):** `0~65535` start udp port for copies of sessions
+
+​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+​ **fastmetadata_data_item_type (int):** `0~4194303`  (0x - 0x3fffff) 22 bits data item type - reference value (for testing the flow) - Optional setting
+
+​ **fastmetadata_k_bit (int):** `0~1` 1 bit K-bit value - reference value (for testing the flow) - Optional setting
+
+​ **fastmetadata_url (string):** fast metadata reference file (for testing the flow) - Optional setting
 
 ### Others
 

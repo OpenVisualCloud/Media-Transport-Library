@@ -80,10 +80,10 @@ static int rsq_entry_free(struct mt_rsq_entry *entry) {
     mt_ring_dequeue_clean(entry->ring);
     rte_ring_free(entry->ring);
   }
-  if (entry->mcast_fd) {
-    close(entry->mcast_fd);
-    entry->mcast_fd = -1;
-  }
+  if (entry->mcast_fd > 0) close(entry->mcast_fd);
+
+  entry->mcast_fd = -1;
+
   info("%s(%d), succ on q %u idx %d\n", __func__, rsqm->port, entry->queue_id,
        entry->idx);
   mt_rte_free(entry);
@@ -307,9 +307,9 @@ static int rsq_rx(struct mt_rsq_queue *rsq_queue) {
   for (uint16_t i = 0; i < rx; i++) {
     rsq_entry = NULL;
 
-    hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr *);
-    dbg("%s(%u), pkt %u ip %u.%u.%u.%u, port dst %u src %u\n", __func__, q, i,
-        ntohs(hdr->udp.dst_port), ntohs(hdr->udp.src_port));
+    hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+    dbg("%s, pkt %u ip %u, port dst %u src %u\n", __func__, q, i,
+        (unsigned int)ntohs(hdr->udp.dst_port), (unsigned int)ntohs(hdr->udp.src_port));
 
     MT_TAILQ_FOREACH(rsq_entry, &rsq_queue->head, next) {
       bool matched = mt_udp_matched(&rsq_entry->flow, hdr);

@@ -69,7 +69,7 @@ static struct st_frame_trans *rx_audio_session_get_frame(
     frame_info = &s->st30_frames[i];
 
     if (0 == rte_atomic32_read(&frame_info->refcnt)) {
-      dbg("%s(%d), find frame at %d\n", __func__, idx, i);
+      dbg("%s(%d), find frame at %d\n", __func__, s->idx, i);
       rte_atomic32_inc(&frame_info->refcnt);
       return frame_info;
     }
@@ -98,7 +98,7 @@ static int rx_audio_session_free_frames(struct st_rx_audio_session_impl *s) {
     struct st_frame_trans *frame;
     for (int i = 0; i < s->st30_frames_cnt; i++) {
       frame = &s->st30_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, NULL);
     }
     mt_rte_free(s->st30_frames);
     s->st30_frames = NULL;
@@ -441,7 +441,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl *impl,
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void *)mbuf);
   if (ret < 0) {
-    dbg("%s(%d,%d), drop as rtps ring full, seq id %d\n", __func__, seq_id, s_port);
+    dbg("%s(%d,%d), drop as rtps ring full\n", __func__, seq_id, s_port);
     s->st30_stat_pkts_rtp_ring_full++;
     return -EIO;
   }

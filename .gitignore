@@ -54,6 +54,8 @@ dkms.conf
 # Ours
 *.log
 *.patch
+!patches/*.patch
+!ecosystem/*.patch
 *.diff
 *.yuv
 *.pcapng
@@ -78,3 +80,13 @@ mtl_system_status_*
 *.mp4
 *.pcm
 *.wav
+
+#Generated documentation
+doc/_build
+
+# Gpu direct files
+ecosystem/msdk/_install
+gpu_direct/tests/fff.h
+gpu_direct/subprojects/*
+!gpu_direct/subprojects/gtest.wrap
+_temp*

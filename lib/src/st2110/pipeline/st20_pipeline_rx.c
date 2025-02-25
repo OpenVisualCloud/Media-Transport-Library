@@ -522,6 +522,12 @@ static int rx_st20p_create_transport(struct mtl_main_impl *impl, struct st20p_rx
     ops_rx.socket_id = ops->socket_id;
     ops_rx.flags |= ST20_RX_FLAG_FORCE_NUMA;
   }
+
+  if (ops->flags & ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS) {
+    ops_rx.gpu_direct_framebuffer_in_vram_device_address = true;
+    ops_rx.gpu_context = ops->gpu_context;
+  }
+
   ops_rx.pacing = ST21_PACING_NARROW;
   ops_rx.width = ops->width;
   ops_rx.height = ops->height;
@@ -928,9 +934,16 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops *ops) {
   int ret;
   int idx = st20p_rx_idx;
   size_t dst_size = 0;
-  bool auto_detect = ops->flags & ST20P_RX_FLAG_AUTO_DETECT ? true : false;
+  bool auto_detect;
+
+  /* validate the input parameters */
+  if (!mt || !ops) {
+    err("%s(%d), NULL input parameters \n", __func__, idx);
+    return NULL;
+  }
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
+  auto_detect = ops->flags & ST20P_RX_FLAG_AUTO_DETECT ? true : false;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);

@@ -119,7 +119,7 @@ static int mtl_st30p_read_header(AVFormatContext *ctx) {
   ops_rx.ptime = s->ptime;
   ops_rx.channel = s->channels;
   ret = mtl_parse_st30_sample_rate(&ops_rx.sampling, s->sample_rate);
-  if (!ret) {
+  if (ret) {
     err(ctx, "%s, invalid sample_rate: %d\n", __func__, s->sample_rate);
     return ret;
   }
@@ -266,16 +266,16 @@ static const AVOption mtl_st30p_rx_options[] = {
      0,
      60,
      DEC},
-    {"ar",
-     "audio sampling rate",
+    {"sample_rate",
+     "audio sample rate",
      OFFSET(sample_rate),
      AV_OPT_TYPE_INT,
      {.i64 = 48000},
      1,
      INT_MAX,
      DEC},
-    {"ac",
-     "audio channel",
+    {"channels",
+     "number of audio channels",
      OFFSET(channels),
      AV_OPT_TYPE_INT,
      {.i64 = 2},
@@ -288,7 +288,7 @@ static const AVOption mtl_st30p_rx_options[] = {
      AV_OPT_TYPE_STRING,
      {.str = NULL},
      .flags = DEC},
-    {"at",
+    {"ptime",
      "audio packet time",
      OFFSET(ptime_str),
      AV_OPT_TYPE_STRING,

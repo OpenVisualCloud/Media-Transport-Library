@@ -319,14 +319,14 @@ static int xdp_umem_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
       umem_size);
   ret = xsk_umem__create(&xq->umem, aligned_base_addr, umem_size, &xq->rx_prod,
                          &xq->tx_cons, &cfg);
-  if (ret < 0) {
+  if (ret) {
     err("%s(%d,%u), umem create fail %d %s\n", __func__, port, q, ret, strerror(errno));
     if (ret == -EPERM)
       err("%s(%d,%u), please add capability for the app: sudo setcap "
           "'cap_net_raw+ep' "
           "<app>\n",
           __func__, port, q);
-    return ret;
+    return -EINVAL;
   }
   xq->umem_buffer = aligned_base_addr;
 
@@ -517,7 +517,7 @@ static void xdp_tx_poll_done(struct mt_xdp_queue *xq) {
 static inline void xdp_tx_check_free(struct mt_xdp_queue *xq) {
   struct xsk_ring_cons *cq = &xq->tx_cons;
   uint32_t cq_avail = xsk_cons_nb_avail(cq, xq->umem_ring_size);
-  dbg("%s(%d, %u), cq_avail %u\n", __func__, port, q, cq_avail);
+  dbg("%s(%d, %u), cq_avail %u\n", __func__, xq->port, xq->q, cq_avail);
   if (cq_avail >= xq->tx_free_thresh) {
     xdp_tx_poll_done(xq);
   }
@@ -527,7 +527,7 @@ static void xdp_tx_wakeup(struct mt_xdp_queue *xq) {
   if (xsk_ring_prod__needs_wakeup(&xq->tx_prod)) {
     int ret = send(xq->socket_fd, NULL, 0, MSG_DONTWAIT);
     xq->stat_tx_wakeup++;
-    dbg("%s(%d, %u), wake up %d\n", __func__, port, q, ret);
+    dbg("%s(%d, %u), wake up %d\n", __func__, xq->port, xq->q, ret);
     if (ret < 0) {
       dbg("%s(%d, %u), wake up fail %d(%s)\n", __func__, xq->port, xq->q, ret,
           strerror(errno));
@@ -558,14 +558,14 @@ static uint16_t xdp_tx(struct mtl_main_impl *impl, struct mt_xdp_queue *xq,
     struct rte_mbuf *m = tx_pkts[i];
     struct rte_mbuf *local = rte_pktmbuf_alloc(mbuf_pool);
     if (!local) {
-      dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, q);
+      dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, xq->q);
       xq->stat_tx_mbuf_alloc_fail++;
       goto exit;
     }
 
     uint32_t idx;
     if (!xsk_ring_prod__reserve(pd, 1, &idx)) {
-      dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, q);
+      dbg("%s(%d, %u), socket_tx reserve fail\n", __func__, port, xq->q);
       xq->stat_tx_prod_reserve_fail++;
       rte_pktmbuf_free(local);
       xdp_tx_wakeup(xq);
@@ -593,14 +593,14 @@ static uint16_t xdp_tx(struct mtl_main_impl *impl, struct mt_xdp_queue *xq,
     tx_bytes += desc->len;
     rte_pktmbuf_free(m);
     dbg("%s(%d, %u), tx local mbuf %p umem pkt %p addr 0x%" PRIu64 "\n", __func__, port,
-        q, local, pkt, addr);
+        xq->q, local, pkt, addr);
     xq->stat_tx_copy++;
     tx++;
   }
 
 exit:
   if (tx) {
-    dbg("%s(%d, %u), submit %u\n", __func__, port, q, tx);
+    dbg("%s(%d, %u), submit %u\n", __func__, port, xq->q, tx);
     xsk_ring_prod__submit(pd, tx);
     xdp_tx_wakeup(xq); /* do we need wakeup for every submit? */
     if (stats) {

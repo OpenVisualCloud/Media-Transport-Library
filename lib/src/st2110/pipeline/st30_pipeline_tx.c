@@ -191,7 +191,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl *impl, struct st30p_tx
     struct st30_frame *frame = &frames[i].frame;
 
     frame->addr = st30_tx_get_framebuffer(transport, i);
-    dbg("%s(%d), fb %p on %u\n", __func__, idx, frame->addr);
+    dbg("%s(%d), fb %p\n", __func__, idx, frame->addr);
   }
 
   return 0;
@@ -350,6 +350,13 @@ static void tx_st30p_framebuffs_flush(struct st30p_tx_ctx *ctx) {
       mt_sleep_ms(10);
     }
   }
+  /* Workaround: When tx_st30p_frame_done is called and subsequently framebuff->stat is
+   * set to ST30P_TX_FRAME_FREE, data from the framebuffer can still be in transport,
+   * already packetized and copied into rte_mbuf, waiting to be sent.
+   * TODO: add synchronization mechanism to ensure all data is sent before freeing the
+   * session.
+   */
+  mt_sleep_ms(50);
 }
 
 struct st30_frame *st30p_tx_get_frame(st30p_tx_handle handle) {
@@ -467,6 +474,12 @@ st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops *ops) {
   struct st30p_tx_ctx *ctx;
   int ret;
   int idx = st30p_tx_idx;
+
+  /* validate the input parameters */
+  if (!mt || !ops) {
+    err("%s(%d), NULL input parameters \n", __func__, idx);
+    return NULL;
+  }
 
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 

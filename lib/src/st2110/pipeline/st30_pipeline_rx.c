@@ -391,6 +391,12 @@ st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops *ops) {
   int ret;
   int idx = st30p_rx_idx;
 
+  /* validate the input parameters */
+  if (!mt || !ops) {
+    err("%s(%d), NULL input parameters \n", __func__, idx);
+    return NULL;
+  }
+
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {

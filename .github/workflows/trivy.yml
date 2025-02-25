@@ -1,0 +1,147 @@
+name: Trivy
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+    - cron: "0 23 * * *"
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'branch to run scans on'
+        default: 'main'
+        type: string  
+
+
+env:
+  BUILD_TYPE: Release
+  MTL_BUILD_DISABLE_PCAPNG: true
+  PREFIX_DIR: /usr/local
+  DEBIAN_FRONTEND: noninteractive
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db
+  TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db
+permissions:
+  contents: read
+
+
+jobs:
+  triv-security-tab:
+    name: sarif output scan
+    runs-on: ubuntu-22.04
+    permissions:
+        security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+    steps:
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+
+      - name: Run Trivy vulnerability scanner with sarif output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./docker
+          format: sarif
+          exit-code: 0
+          vuln-type: os,library
+          output: Trivy-dockerfile.sarif
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
+        with:
+          sarif_file: Trivy-dockerfile.sarif
+
+  triv-security-tab-manager:
+    name: manager sarif output scan
+    runs-on: ubuntu-22.04
+    permissions:
+        security-events: write  # for github/codeql-action/upload-sarif to upload SARIF results
+    steps:
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Run Trivy vulnerability scanner with sarif output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./manager
+          format: sarif
+          exit-code: 0
+          vuln-type: os,library
+          output: Trivy-manager-dockerfile.sarif
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
+        with:
+          sarif_file: Trivy-manager-dockerfile.sarif
+
+  trivy-stdout:
+    name: table output scan
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 23 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: maint-25.02 # tmp branch
+      - name: Checkout code
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Checkout code
+        if: github.event_name != 'schedule'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+
+      - name: Run Trivy vulnerability scanner with table output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./docker
+          cache: false
+          format: table
+          exit-code: 1
+          vuln-type: os,library
+
+      - name: Run Trivy manager vulnerability scanner with table output
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./manager
+          cache: false
+          format: table
+          exit-code: 1
+          vuln-type: os,library

@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <mtl/st_convert_api.h>
+
 #include "mtl_common.h"
 
 typedef struct mtlSt20pMuxerContext {
@@ -94,6 +96,12 @@ static int mtl_st20p_write_header(AVFormatContext *ctx) {
       ops_tx.input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
       ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       break;
+    case AV_PIX_FMT_Y210LE: /* This format is not supported by MTL plugin.
+                               This is workaround
+                               for Intel(R) Tiber(TM) Broadcast Suite */
+      ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      ops_tx.input_fmt = ST_FRAME_FMT_Y210;
+      break;
     case AV_PIX_FMT_RGB24:
       ops_tx.input_fmt = ST_FRAME_FMT_RGB8;
       ops_tx.transport_fmt = ST20_FMT_RGB_8BIT;
@@ -152,6 +160,15 @@ static int mtl_st20p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
     return AVERROR(EIO);
   }
   dbg(ctx, "%s(%d), st20p_tx_get_frame: %p\n", __func__, s->idx, frame);
+
+  /* This format is not supported by MTL plugin.
+     This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
+  if (s->pixel_format == AV_PIX_FMT_Y210LE) {
+    st20_y210_to_rfc4175_422be10((uint16_t*)pkt->data,
+                                 (struct st20_rfc4175_422_10_pg2_be*)(frame->addr[0]),
+                                 s->width, s->height);
+  }
+
   /* todo: zero copy with external frame mode */
   mtl_memcpy(frame->addr[0], pkt->data, s->frame_size);
 

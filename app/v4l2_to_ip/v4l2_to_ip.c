@@ -767,8 +767,12 @@ static void video_close(struct device *dev) {
   if (dev->opened) close(dev->fd);
 }
 
-static void video_log_status(struct device *dev) {
-  ioctl(dev->fd, VIDIOC_LOG_STATUS);
+static void video_log_status(struct device* dev) {
+  int ret;
+  ret = ioctl(dev->fd, VIDIOC_LOG_STATUS);
+  if (ret < 0) {
+    printf("Failed to log status: %s (%d).\n", strerror(errno), errno);
+  }
 }
 
 static int video_get_format(struct device *dev) {
@@ -1032,6 +1036,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
 
     ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
     if (ret < 0) {
+      free(buffers);
       printf("Unable to query buffer %u: %s (%d).\n", i, strerror(errno), errno);
       return ret;
     }
@@ -1054,7 +1059,10 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
         break;
     }
 
-    if (ret < 0) return ret;
+    if (ret < 0) {
+      free(buffers);
+      return ret;
+    }
   }
 
   dev->timestamp_type = buf.flags & V4L2_BUF_FLAG_TIMESTAMP_MASK;
@@ -1317,14 +1325,15 @@ static int tx_video_frame_done(void *priv, uint16_t frame_idx,
   int ret;
   MTL_MAY_UNUSED(meta);
 
+  pthread_mutex_lock(&(framebuff_ctl->wake_mutex));
+
   if (frame_idx != framebuff_ctl->receive_idx) {
     ret = -EIO;
     printf("%s, receive_idx %d != frame_done %d\n", __func__, framebuff_ctl->receive_idx,
            frame_idx);
+    pthread_mutex_unlock(&(framebuff_ctl->wake_mutex));
     return ret;
   }
-
-  pthread_mutex_lock(&(framebuff_ctl->wake_mutex));
 
   if (TX_FRAME_TRANSMITTING != framebuff_ctl->buffs[framebuff_ctl->receive_idx].status) {
     ret = -EIO;

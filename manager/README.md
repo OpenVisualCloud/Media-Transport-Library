@@ -2,7 +2,7 @@
 
 ## Overview
 
-![design](manager_design.svg)
+![MTL Manager Design](manager_design.svg)
 
 MTL Manager is a daemon server designed to operate with root privileges. Its primary role is to manage the lifecycle and configurations of MTL instances. It addresses a variety of administrative tasks, including:
 
@@ -42,8 +42,10 @@ This command will start the MTL Manager with root privileges, which are necessar
 
 The XDP program for udp port filtering will be loaded along with the libxdp's built-in xsk program when the AF_XDP socket is created. It utilizes the xdp-dispatcher program provided by libxdp which allows running of multiple XDP programs in chain on the same interface. You can check the loaded programs with xdp-loader:
 
-```bash
-$ sudo xdp-loader status
+```text
+sudo xdp-loader status
+```
+```text
 Interface        Prio  Program name      Mode     ID   Tag               Chain actions
 --------------------------------------------------------------------------------------
 lo                     <No XDP program loaded!>

@@ -231,8 +231,8 @@ out:
 /* connect thread */
 static void *rdma_rx_connect_thread(void *arg) {
   int ret = 0;
-  struct mt_rdma_rx_ctx *ctx = arg;
-  struct rdma_cm_event *event;
+  struct mt_rdma_rx_ctx* ctx = arg;
+  struct rdma_cm_event* event = NULL;
   struct pollfd pfd = {
       .fd = ctx->ec->fd,
       .events = POLLIN,

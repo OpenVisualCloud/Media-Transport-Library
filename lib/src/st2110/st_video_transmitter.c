@@ -274,7 +274,7 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl *impl,
     video_burst_packet(impl, s, s_port, pkts, valid_bulk, false);
     rte_pktmbuf_free_bulk(&pkts[valid_bulk], bulk - valid_bulk);
     s->stat_pkts_burst_dummy += bulk - valid_bulk;
-    dbg("%s(%d), pkt_idx %" PRIu64 " ts %" PRIu64 "\n", __func__, idx, pkt_idx,
+    dbg("%s(%d), pkt_idx %" PRIu64 " ts %" PRIu64 "\n", __func__, idx, (uint64_t)pkt_idx,
         st_tx_mbuf_get_tsc(pkts[0]));
     *ret_status = -STI_RLTRS_BURST_HAS_DUMMY;
     return MTL_TASKLET_HAS_PENDING;

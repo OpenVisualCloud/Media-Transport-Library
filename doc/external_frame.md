@@ -8,7 +8,7 @@ The external frame API is introduced so that the library can use user-provided m
 
 ## 2. ST20/ST22 Pipeline ext_frame API
 
-### 2.1 st_ext_frame
+### 2.1. st_ext_frame
 
 ```c
 /** The structure info for external frame */
@@ -27,9 +27,9 @@ struct st_ext_frame {
 };
 ```
 
-### 2.2 st20p_tx usages
+### 2.2. st20p_tx usages
 
-#### 2.2.1 dynamic frames
+#### 2.2.1. dynamic frames
 
 in ops, set the flag
 
@@ -70,9 +70,9 @@ static int tx_st20p_frame_done(void* priv, struct st_frame*frame) {
 
 Others follow the general API flow.
 
-### 2.3 st20p_rx usages
+### 2.3. st20p_rx usages
 
-#### 2.3.1 dynamic frames
+#### 2.3.1. dynamic frames
 
 in ops, set the flag and set query_ext_frame callback
 
@@ -101,7 +101,7 @@ static int st20p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
 
 User should maintain the lifetime of frames after st22p_rx_get_frame.
 
-#### 2.3.2 dedicated frames
+#### 2.3.2. dedicated frames
 
 set the ext_frames array in ops
 
@@ -123,9 +123,9 @@ rx_handle = st20p_rx_create(st, &ops_rx);
 
 Others follow the general API flow.
 
-### 2.4 st22p_tx usages
+### 2.4. st22p_tx usages
 
-#### 2.4.1 dynamic frames
+#### 2.4.1. dynamic frames
 
 in ops, set the flag
 
@@ -166,9 +166,9 @@ static int tx_st22p_frame_done(void* priv, struct st_frame*frame) {
 
 Others follow the general API flow.
 
-### 2.5 st22p_rx usages
+### 2.5. st22p_rx usages
 
-#### 2.5.1 dynamic frames
+#### 2.5.1. dynamic frames
 
 in ops, set the flag and set query_ext_frame callback
 
@@ -199,7 +199,7 @@ User should maintain the lifetime of frames after st22p_rx_get_frame.
 
 ## 3. ST20(raw video) ext_frame API
 
-### 3.1 st20_ext_frame
+### 3.1. st20_ext_frame
 
 ```c
 /** External framebuffer */
@@ -215,9 +215,9 @@ struct st20_ext_frame {
 };
 ```
 
-### 3.2 st20_tx usages
+### 3.2. st20_tx usages
 
-#### 3.2.1 dynamic frames
+#### 3.2.1. dynamic frames
 
 in ops, set the flag
 
@@ -233,9 +233,9 @@ st20_tx_set_ext_frame(s->handle, idx, &ext_frame);
 *next_frame_idx = idx;
 ```
 
-### 3.3 st20_rx usages
+### 3.3. st20_rx usages
 
-#### 3.3.1 dynamic frames
+#### 3.3.1. dynamic frames
 
 implement and set query_ext_frame callback and set incomplete frame flag
 
@@ -258,7 +258,7 @@ static int rx_query_ext_frame(void* priv, st20_ext_frame*ext_frame, struct st20_
 
 use as the general API, user should maintain the lifetime of frames
 
-#### 3.3.2 dedicated frames
+#### 3.3.2. dedicated frames
 
 set the ext_frames array in ops
 

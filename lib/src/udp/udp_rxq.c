@@ -526,7 +526,7 @@ int mur_client_timedwait(struct mur_client *c, unsigned int timedwait_us,
   mt_pthread_mutex_lock(&c->lcore_wake_mutex);
   ret = mt_pthread_cond_timedwait_ns(&c->lcore_wake_cond, &c->lcore_wake_mutex,
                                      (uint64_t)timedwait_us * NS_PER_US);
-  dbg("%s(%u), timedwait ret %d\n", __func__, q->dst_port, ret);
+  dbg("%s(%u), timedwait ret %d\n", __func__, c->dst_port, ret);
   mt_pthread_mutex_unlock(&c->lcore_wake_mutex);
 
   if (ret == ETIMEDOUT) c->stat_timedwait_timeout++;

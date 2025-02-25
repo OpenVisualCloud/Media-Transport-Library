@@ -781,6 +781,12 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops *ops) {
   size_t src_size;
   enum st_frame_fmt codestream_fmt;
 
+  /* validate the input parameters */
+  if (!mt || !ops) {
+    err("%s(%d), NULL input parameters \n", __func__, idx);
+    return NULL;
+  }
+
   notice("%s, start for %s\n", __func__, mt_string_safe(ops->name));
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -808,7 +814,6 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops *ops) {
     err("%s(%d), ctx malloc fail on socket %d\n", __func__, idx, socket);
     return NULL;
   }
-  ctx->socket_id = socket;
 
   if (codestream_fmt == ops->input_fmt) {
     ctx->derive = true;
@@ -833,6 +838,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops *ops) {
   }
 
   ctx->idx = idx;
+  ctx->socket_id = socket;
   ctx->codestream_fmt = codestream_fmt;
   ctx->ready = false;
   ctx->ext_frame = (ops->flags & ST22P_TX_FLAG_EXT_FRAME) ? true : false;

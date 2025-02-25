@@ -12,6 +12,7 @@
 #define ST_RVRTP_PAYLOAD_TYPE_RAW_VIDEO (112)
 #define ST_RARTP_PAYLOAD_TYPE_PCM_AUDIO (111)
 #define ST_RANCRTP_PAYLOAD_TYPE_ANCILLARY (113)
+#define ST_RFMDRTP_PAYLOAD_TYPE_FASTMETADATA (115)
 
 #define ST_TP_CINST_DRAIN_FACTOR (1.1f) /* Drain factor */
 
@@ -60,6 +61,14 @@ struct st_rfc8331_anc_hdr {
   struct st40_rfc8331_rtp_hdr rtp; /* size: 20 */
 } __attribute__((__packed__)) __rte_aligned(2);
 
+/* total size: 58 */
+struct st41_fmd_hdr {
+  struct rte_ether_hdr eth; /* size: 14 */
+  struct rte_ipv4_hdr ipv4; /* size: 20 */
+  struct rte_udp_hdr udp;   /* size: 8 */
+  struct st41_rtp_hdr rtp;  /* size: 16 */
+} __attribute__((__packed__)) __rte_aligned(2);
+
 #define ST_PKT_VIDEO_HDR_LEN \
   (sizeof(struct st_rfc4175_video_hdr) - sizeof(struct rte_ether_hdr))
 
@@ -71,6 +80,8 @@ struct st_rfc8331_anc_hdr {
 
 #define ST_PKT_ANC_HDR_LEN \
   (sizeof(struct st_rfc8331_anc_hdr) - sizeof(struct rte_ether_hdr))
+
+#define ST_PKT_FMD_HDR_LEN (sizeof(struct st41_fmd_hdr) - sizeof(struct rte_ether_hdr))
 
 /* standard UDP is 1460 bytes */
 #define ST_PKT_MAX_ETHER_BYTES \

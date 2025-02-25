@@ -230,6 +230,8 @@ struct st_var_info {
   uint16_t st30_tx_sessions_cnt;
   /** st40 tx session count */
   uint16_t st40_tx_sessions_cnt;
+  /** st41 tx session count */
+  uint16_t st41_tx_sessions_cnt;
   /** st20 rx session count */
   uint16_t st20_rx_sessions_cnt;
   /** st22 rx session count */
@@ -238,6 +240,8 @@ struct st_var_info {
   uint16_t st30_rx_sessions_cnt;
   /** st40 rx session count */
   uint16_t st40_rx_sessions_cnt;
+  /** st41 rx session count */
+  uint16_t st41_rx_sessions_cnt;
 };
 
 /**
@@ -369,17 +373,21 @@ static inline uint32_t st10_get_media_clk(enum st10_timestamp_fmt tfmt,
  * st20 tx sessions count.
  * @param st30_sessions
  * st30 tx sessions count.
- * @param st30_sessions
- * st30 sessions count.
+ * @param st40_sessions
+ * st40 sessions count.
+ * @param st41_sessions
+ * st41 sessions count.
  * @return
  *   queues count.
  */
 static inline uint16_t st_tx_sessions_queue_cnt(uint16_t st20_sessions,
                                                 uint16_t st30_sessions,
-                                                uint16_t st40_sessions) {
+                                                uint16_t st40_sessions,
+                                                uint16_t st41_sessions) {
   uint16_t queues = st20_sessions;
   if (st30_sessions) queues++;
   if (st40_sessions) queues++;
+  if (st41_sessions) queues++;
   return queues;
 }
 
@@ -390,15 +398,18 @@ static inline uint16_t st_tx_sessions_queue_cnt(uint16_t st20_sessions,
  * st20 tx sessions count.
  * @param st30_sessions
  * st30 tx sessions count.
- * @param st30_sessions
- * st30 sessions count.
+ * @param st40_sessions
+ * st40 sessions count.
+ * @param st41_sessions
+ * st41 sessions count.
  * @return
  *   queues count.
  */
 static inline uint16_t st_rx_sessions_queue_cnt(uint16_t st20_sessions,
                                                 uint16_t st30_sessions,
-                                                uint16_t st40_sessions) {
-  return st20_sessions + st30_sessions + st40_sessions;
+                                                uint16_t st40_sessions,
+                                                uint16_t st41_sessions) {
+  return st20_sessions + st30_sessions + st40_sessions + st41_sessions;
 }
 
 #if defined(__cplusplus)

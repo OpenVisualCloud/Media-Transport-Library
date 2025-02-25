@@ -21,9 +21,9 @@ sudo sysctl -w vm.nr_hugepages=2048
 
 ## 3. Run
 
-Config the `interfaces` item in the json file to use the kernel network interface, below is an example which use `enp24s0f0` interface.
+Config the `interfaces` item in the JSON file to use the kernel network interface, below is an example which use `enp24s0f0` interface.
 
-```bash
+```json
     "interfaces": [
         {
             "name": "kernel:enp24s0f0",
@@ -31,13 +31,13 @@ Config the `interfaces` item in the json file to use the kernel network interfac
     ],
 ```
 
-Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../tests/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/script/kernel_socket_json/rx.json) respectively.
+Also, for complete JSON configurations for ST2110-20 transmission (tx) and reception (rx), please refer to the [kernel tx config](../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel rx config](../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) respectively.
 
-Refer to sections "5. Run the sample application" in the [linux run guide](run.md) for the detail commands on how to run the sample application.
+Refer to sections "5. Run the sample application" in the [Linux run guide](run.md) for the detail commands on how to run the sample application.
 
 If you want to select kernel socket data path from the API level, please follow below example:
 
-```bash
+```c
   struct mtl_init_params* p;
   ...
   p->pmd[MTL_PORT_P] = MTL_PMD_KERNEL_SOCKET;

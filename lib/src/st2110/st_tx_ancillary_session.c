@@ -65,7 +65,7 @@ static int tx_ancillary_session_free_frames(struct st_tx_ancillary_session_impl 
 
     for (int i = 0; i < s->st40_frames_cnt; i++) {
       frame = &s->st40_frames[i];
-      st_frame_trans_uinit(frame);
+      st_frame_trans_uinit(frame, NULL);
     }
 
     mt_rte_free(s->st40_frames);
@@ -762,7 +762,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl *impl,
       if (frame_end_time > pacing->tsc_time_cursor) {
         s->stat_exceed_frame_time++;
         dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
-            s->st40_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
+            s->st40_frame_idx,
+            (uint64_t)((frame_end_time - pacing->tsc_time_cursor) / NS_PER_US));
       }
       s->check_frame_done_time = false;
     }

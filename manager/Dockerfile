@@ -8,7 +8,7 @@
 # Build stage, ubuntu 22.04
 FROM ubuntu@sha256:149d67e29f765f4db62aa52161009e99e389544e25a8f43c8c89d4a445a7ca37 AS builder
 
-LABEL maintainer="ming3.li@intel.com"
+LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
@@ -49,9 +49,16 @@ RUN apt-get update -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Add user: imtl(1001) with group vfio(2110)
+RUN groupadd -g 2110 vfio && \
+    useradd -m -G vfio -u 1001 imtl
+
 # Copy the necessary binaries and libraries from the builder
-COPY --from=builder /install /
+COPY --chown=imtl --from=builder /install /
 
 RUN ldconfig
 
+USER imtl
+
+HEALTHCHECK --interval=30s --timeout=5s CMD true || exit 1
 ENTRYPOINT ["MtlManager"]

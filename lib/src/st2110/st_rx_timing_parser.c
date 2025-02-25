@@ -147,12 +147,12 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl *s,
   slot->meta.cinst_avg = cinst_avg;
   slot->meta.vrx_avg = vrx_avg;
   slot->meta.ipt_avg = ipt_avg;
-  dbg("%s(%d), Cinst AVG %.2f MIN %d MAX %d test %s!\n", __func__, s->idx, cinst_avg,
-      slot->cinst_min, slot->cinst_max, rv_tp_cinst_result(tp, slot));
-  dbg("%s(%d), VRX AVG %.2f MIN %d MAX %d test %s!\n", __func__, s->idx, vrx_avg,
-      slot->vrx_min, slot->vrx_max, rv_tp_vrx_result(tp, slot));
+  dbg("%s(%d), Cinst AVG %.2f MIN %d MAX %d \n", __func__, s->idx, cinst_avg,
+      slot->meta.cinst_min, slot->meta.cinst_max);
+  dbg("%s(%d), VRX AVG %.2f MIN %d MAX %d \n", __func__, s->idx, vrx_avg,
+      slot->meta.vrx_min, slot->meta.vrx_max);
   dbg("%s(%d), Inter-packet time(ns) AVG %.2f MIN %d MAX %d!\n", __func__, s->idx,
-      ipt_avg, slot->ipt_min, slot->ipt_max);
+      ipt_avg, slot->meta.ipt_max, slot->meta.ipt_min);
 
   /* parse tp compliant for current frame */
   enum st_rx_tp_compliant compliant = rv_tp_compliant(tp, slot);

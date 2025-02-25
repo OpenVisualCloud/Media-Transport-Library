@@ -17,7 +17,12 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <mtl/st_convert_api.h>
+
 #include "mtl_common.h"
+#ifdef MTL_GPU_DIRECT_ENABLED
+#include <mtl_gpu_direct/gpu.h>
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
 typedef struct MtlSt20pDemuxerContext {
   const AVClass *class; /**< Class for private options. */
@@ -39,6 +44,13 @@ typedef struct MtlSt20pDemuxerContext {
   st20p_rx_handle rx_handle;
 
   int64_t frame_counter;
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  bool gpu_direct_enabled;
+  int gpu_driver_index;
+  int gpu_device_index;
+  void* gpu_context;
+#endif /* MTL_GPU_DIRECT_ENABLED */
 } MtlSt20pDemuxerContext;
 
 static int mtl_st20p_read_close(AVFormatContext *ctx) {
@@ -57,6 +69,12 @@ static int mtl_st20p_read_close(AVFormatContext *ctx) {
     mtl_instance_put(ctx, s->dev_handle);
     s->dev_handle = NULL;
   }
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  if (s->gpu_direct_enabled) {
+    free_gpu_context(s->gpu_context);
+  }
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
   info(ctx, "%s(%d), frame_counter %" PRId64 "\n", __func__, s->idx, s->frame_counter);
   return 0;
@@ -104,6 +122,12 @@ static int mtl_st20p_read_header(AVFormatContext *ctx) {
       ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
       break;
+    case AV_PIX_FMT_Y210LE: /* This format is not supported by MTL plugin.
+                               This is workaround
+                               for Intel(R) Tiber(TM) Broadcast Suite */
+      ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+      ops_rx.output_fmt = ST_FRAME_FMT_Y210;
+      break;
     case AV_PIX_FMT_RGB24:
       ops_rx.transport_fmt = ST20_FMT_RGB_8BIT;
       ops_rx.output_fmt = ST_FRAME_FMT_RGB8;
@@ -147,6 +171,24 @@ static int mtl_st20p_read_header(AVFormatContext *ctx) {
   ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
   dbg(ctx, "%s, fb_cnt: %d\n", __func__, s->fb_cnt);
   ops_rx.framebuff_cnt = s->fb_cnt;
+
+#ifdef MTL_GPU_DIRECT_ENABLED
+  if (s->gpu_direct_enabled) {
+    /* create context for one gpu device */
+    GpuContext gpu_ctx = {0};
+
+    /* print GPU device and driver IDs */
+    print_gpu_drivers_and_devices();
+
+    ret = init_gpu_device(&gpu_ctx, s->gpu_driver_index, s->gpu_device_index);
+    if (ret < 0) {
+      err(ctx, "%s, app gpu initialization failed %d\n", __func__, ret);
+      return -ENXIO;
+    }
+    ops_rx.gpu_context = (void*)(&gpu_ctx);
+    ops_rx.flags |= ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS;
+  }
+#endif /* MTL_GPU_DIRECT_ENABLED */
 
   // get mtl dev
   s->dev_handle = mtl_dev_get(ctx, &s->devArgs, &s->idx);
@@ -222,6 +264,18 @@ static int mtl_st20p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
     st20p_rx_put_frame(s->rx_handle, frame);
     return ret;
   }
+
+  /* This format is not supported by MTL plugin.
+     This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
+  if (s->pixel_format == AV_PIX_FMT_Y210LE) {
+    ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)frame,
+                                       (uint16_t*)pkt->data, s->width, s->height);
+    if (ret != 0) {
+      av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210le failed with %d\n", ret);
+      return ret;
+    }
+  }
+
   /* todo: zero copy with external frame mode */
   mtl_memcpy(pkt->data, frame->addr[0], ctx->packet_size);
   st20p_rx_put_frame(s->rx_handle, frame);
@@ -296,6 +350,32 @@ static const AVOption mtl_st20p_rx_options[] = {
      3,
      8,
      DEC},
+#ifdef MTL_GPU_DIRECT_ENABLED
+    {"gpu_direct",
+     "Store frames in framebuffer directly on GPU",
+     OFFSET(gpu_direct_enabled),
+     AV_OPT_TYPE_BOOL,
+     {.i64 = 0},
+     0,
+     1,
+     DEC},
+    {"gpu_driver",
+     "Index of the GPU driver",
+     OFFSET(gpu_driver_index),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     60,
+     DEC},
+    {"gpu_device",
+     "Index of the GPU device",
+     OFFSET(gpu_device_index),
+     AV_OPT_TYPE_INT,
+     {.i64 = 0},
+     0,
+     60,
+     DEC},
+#endif /* MTL_GPU_DIRECT_ENABLED */
     {NULL},
 };
 

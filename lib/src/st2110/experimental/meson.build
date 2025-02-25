@@ -3,4 +3,5 @@
 
 sources += files(
 	'st20_redundant_combined_rx.c',
+	'st40_pipeline_tx.c',
 )
