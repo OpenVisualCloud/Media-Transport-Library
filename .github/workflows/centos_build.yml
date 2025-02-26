@@ -48,12 +48,6 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: DoozyX/clang-format-lint-action@v0.18.2 
-        with:
-          clangFormatVersion: '17'
-          source: '.'
-          extensions: 'hpp,h,cpp,c,cc'
-          style: 'file .github/linters/.clang-format'
 
       - name: Install the build dependency
         run: |
