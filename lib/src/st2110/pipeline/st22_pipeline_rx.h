@@ -26,7 +26,7 @@ struct st22p_rx_frame {
 };
 
 struct st22p_rx_ctx {
-  struct mtl_main_impl* impl;
+  struct mtl_main_impl *impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
@@ -40,7 +40,7 @@ struct st22p_rx_ctx {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_decode_idx;
   uint16_t framebuff_consumer_idx;
-  struct st22p_rx_frame* framebuffs;
+  struct st22p_rx_frame *framebuffs;
   pthread_mutex_t lock;
 
   /* for ST22P_RX_FLAG_BLOCK_GET */
@@ -49,7 +49,7 @@ struct st22p_rx_ctx {
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
 
-  struct st22_decode_session_impl* decode_impl;
+  struct st22_decode_session_impl *decode_impl;
   /* for ST22_DECODER_RESP_FLAG_BLOCK_GET */
   bool decode_block_get;
   pthread_cond_t decode_block_wake_cond;

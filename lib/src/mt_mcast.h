@@ -67,21 +67,21 @@ struct mcast_mb_query_v3 {
   uint32_t source_addr[0];
 } __attribute__((__packed__)) __rte_aligned(2);
 
-int mt_mcast_init(struct mtl_main_impl* impl);
-int mt_mcast_uinit(struct mtl_main_impl* impl);
-int mt_mcast_join(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t source_addr,
+int mt_mcast_init(struct mtl_main_impl *impl);
+int mt_mcast_uinit(struct mtl_main_impl *impl);
+int mt_mcast_join(struct mtl_main_impl *impl, uint32_t group_addr, uint32_t source_addr,
                   enum mtl_port port);
-int mt_mcast_leave(struct mtl_main_impl* impl, uint32_t group_addr, uint32_t source_addr,
+int mt_mcast_leave(struct mtl_main_impl *impl, uint32_t group_addr, uint32_t source_addr,
                    enum mtl_port port);
-int mt_mcast_l2_join(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
+int mt_mcast_l2_join(struct mtl_main_impl *impl, struct rte_ether_addr *addr,
                      enum mtl_port port);
-int mt_mcast_l2_leave(struct mtl_main_impl* impl, struct rte_ether_addr* addr,
+int mt_mcast_l2_leave(struct mtl_main_impl *impl, struct rte_ether_addr *addr,
                       enum mtl_port port);
-int mt_mcast_parse(struct mtl_main_impl* impl, struct mcast_mb_query_v3* query,
+int mt_mcast_parse(struct mtl_main_impl *impl, struct mcast_mb_query_v3 *query,
                    enum mtl_port port);
 
-static inline void mt_mcast_ip_to_mac(uint8_t* mcast_ip4_addr,
-                                      struct rte_ether_addr* mcast_mac) {
+static inline void mt_mcast_ip_to_mac(uint8_t *mcast_ip4_addr,
+                                      struct rte_ether_addr *mcast_mac) {
   /* Fixed multicast area */
   mcast_mac->addr_bytes[0] = 0x01;
   mcast_mac->addr_bytes[1] = 0x00;

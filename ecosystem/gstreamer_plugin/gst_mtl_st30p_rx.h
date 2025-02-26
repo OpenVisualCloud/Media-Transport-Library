@@ -58,7 +58,7 @@ G_DECLARE_FINAL_TYPE(Gst_Mtl_St30p_Rx, gst_mtl_st30p_rx, GST, MTL_ST30P_RX, GstB
 
 struct _Gst_Mtl_St30p_Rx {
   GstBaseSrc element;
-  GstBuffer* buffer;
+  GstBuffer *buffer;
 
   /*< private >*/
   struct st30p_rx_ops ops_rx;

@@ -13,44 +13,44 @@
 #include "mt_shared_queue.h"
 #include "mt_shared_rss.h"
 
-static uint16_t rx_socket_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_socket_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                                 const uint16_t nb_pkts) {
   return mt_rx_socket_burst(entry->rx_socket_q, rx_pkts, nb_pkts);
 }
 
-static uint16_t rx_xdp_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_xdp_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                              const uint16_t nb_pkts) {
   return mt_rx_xdp_burst(entry->rx_xdp_q, rx_pkts, nb_pkts);
 }
 
-static uint16_t rx_rdma_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_rdma_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                               const uint16_t nb_pkts) {
   return mt_rx_rdma_burst(entry->rx_rdma_q, rx_pkts, nb_pkts);
 }
 
-static uint16_t rx_srss_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_srss_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                               const uint16_t nb_pkts) {
   return mt_srss_burst(entry->srss, rx_pkts, nb_pkts);
 }
 
-static uint16_t rx_rsq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_rsq_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                              const uint16_t nb_pkts) {
   return mt_rsq_burst(entry->rsq, rx_pkts, nb_pkts);
 }
 
-static uint16_t rx_csq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_csq_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                              const uint16_t nb_pkts) {
   return mt_csq_burst(entry->csq, rx_pkts, nb_pkts);
 }
 
-static uint16_t rx_dpdk_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+static uint16_t rx_dpdk_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                               const uint16_t nb_pkts) {
   return mt_dpdk_rx_burst(entry->rxq, rx_pkts, nb_pkts);
 }
 
-struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_rxq_flow* flow) {
-  struct mt_rxq_entry* entry =
+struct mt_rxq_entry *mt_rxq_get(struct mtl_main_impl *impl, enum mtl_port port,
+                                struct mt_rxq_flow *flow) {
+  struct mt_rxq_entry *entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), entry malloc fail\n", __func__, port);
@@ -103,7 +103,7 @@ fail:
   return NULL;
 }
 
-int mt_rxq_put(struct mt_rxq_entry* entry) {
+int mt_rxq_put(struct mt_rxq_entry *entry) {
   if (entry->rxq) {
     mt_dev_put_rx_queue(entry->parent, entry->rxq);
     entry->rxq = NULL;
@@ -136,39 +136,39 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
   return 0;
 }
 
-uint16_t mt_rxq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
+uint16_t mt_rxq_burst(struct mt_rxq_entry *entry, struct rte_mbuf **rx_pkts,
                       const uint16_t nb_pkts) {
   return entry->burst(entry, rx_pkts, nb_pkts);
 }
 
-static uint16_t tx_socket_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+static uint16_t tx_socket_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                                 uint16_t nb_pkts) {
   return mt_tx_socket_burst(entry->tx_socket_q, tx_pkts, nb_pkts);
 }
 
-static uint16_t tx_xdp_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+static uint16_t tx_xdp_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                              uint16_t nb_pkts) {
   return mt_tx_xdp_burst(entry->tx_xdp_q, tx_pkts, nb_pkts);
 }
 
-static uint16_t tx_rdma_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+static uint16_t tx_rdma_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                               uint16_t nb_pkts) {
   return mt_tx_rdma_burst(entry->tx_rdma_q, tx_pkts, nb_pkts);
 }
 
-static uint16_t tx_tsq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+static uint16_t tx_tsq_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                              uint16_t nb_pkts) {
   return mt_tsq_burst(entry->tsq, tx_pkts, nb_pkts);
 }
 
-static uint16_t tx_dpdk_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+static uint16_t tx_dpdk_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                               uint16_t nb_pkts) {
   return mt_dpdk_tx_burst(entry->txq, tx_pkts, nb_pkts);
 }
 
-struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
-                                struct mt_txq_flow* flow) {
-  struct mt_txq_entry* entry =
+struct mt_txq_entry *mt_txq_get(struct mtl_main_impl *impl, enum mtl_port port,
+                                struct mt_txq_flow *flow) {
+  struct mt_txq_entry *entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), entry malloc fail\n", __func__, port);
@@ -211,7 +211,7 @@ fail:
   return NULL;
 }
 
-int mt_txq_put(struct mt_txq_entry* entry) {
+int mt_txq_put(struct mt_txq_entry *entry) {
   if (entry->txq) {
     mt_dev_put_tx_queue(entry->parent, entry->txq);
     entry->txq = NULL;
@@ -236,19 +236,19 @@ int mt_txq_put(struct mt_txq_entry* entry) {
   return 0;
 }
 
-int mt_txq_fatal_error(struct mt_txq_entry* entry) {
+int mt_txq_fatal_error(struct mt_txq_entry *entry) {
   if (entry->txq) mt_dev_tx_queue_fatal_error(entry->parent, entry->txq);
   if (entry->tsq) mt_tsq_fatal_error(entry->tsq);
   return 0;
 }
 
-int mt_txq_done_cleanup(struct mt_txq_entry* entry) {
+int mt_txq_done_cleanup(struct mt_txq_entry *entry) {
   if (entry->txq) mt_dev_tx_done_cleanup(entry->parent, entry->txq);
   if (entry->tsq) mt_tsq_done_cleanup(entry->tsq);
   return 0;
 }
 
-int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
+int mt_txq_set_tx_bps(struct mt_txq_entry *entry, uint64_t bytes_per_sec) {
   if (!entry->txq) {
     err("%s(%u), not txq\n", __func__, entry->queue_id);
     return -ENOTSUP;
@@ -257,7 +257,7 @@ int mt_txq_set_tx_bps(struct mt_txq_entry* entry, uint64_t bytes_per_sec) {
   return mt_dev_set_tx_bps(entry->parent, entry->txq, bytes_per_sec);
 }
 
-int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
+int mt_txq_flush(struct mt_txq_entry *entry, struct rte_mbuf *pad) {
   if (entry->tsq)
     return mt_tsq_flush(entry->parent, entry->tsq, pad);
   else if (entry->txq)
@@ -266,15 +266,15 @@ int mt_txq_flush(struct mt_txq_entry* entry, struct rte_mbuf* pad) {
     return 0;
 }
 
-uint16_t mt_txq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+uint16_t mt_txq_burst(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                       uint16_t nb_pkts) {
   return entry->burst(entry, tx_pkts, nb_pkts);
 }
 
-uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
+uint16_t mt_txq_burst_busy(struct mt_txq_entry *entry, struct rte_mbuf **tx_pkts,
                            uint16_t nb_pkts, int timeout_ms) {
   uint16_t sent = 0;
-  struct mtl_main_impl* impl = entry->parent;
+  struct mtl_main_impl *impl = entry->parent;
   uint64_t start_ts = mt_get_tsc(impl);
 
   /* Send this vector with busy looping */
@@ -292,9 +292,9 @@ uint16_t mt_txq_burst_busy(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts
   return sent;
 }
 
-int mt_dp_queue_init(struct mtl_main_impl* impl) {
+int mt_dp_queue_init(struct mtl_main_impl *impl) {
   int ret;
-  struct mt_dp_impl* dp;
+  struct mt_dp_impl *dp;
   int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
@@ -349,11 +349,11 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
+int mt_dp_queue_uinit(struct mtl_main_impl *impl) {
   int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    struct mt_dp_impl* dp = impl->dp[i];
+    struct mt_dp_impl *dp = impl->dp[i];
     if (!dp) continue;
 
     if (dp->txq_sys_entry) {
@@ -370,7 +370,7 @@ int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
   mt_tsq_uinit(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    struct mt_dp_impl* dp = impl->dp[i];
+    struct mt_dp_impl *dp = impl->dp[i];
     if (!dp) continue;
 
     mt_rte_free(dp);
@@ -380,9 +380,9 @@ int mt_dp_queue_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl* impl, enum mtl_port port,
-                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
-  struct mt_dp_impl* dp = impl->dp[port];
+uint16_t mt_sys_queue_tx_burst(struct mtl_main_impl *impl, enum mtl_port port,
+                               struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
+  struct mt_dp_impl *dp = impl->dp[port];
 
   if (!dp->txq_sys_entry) {
     err("%s(%d), txq sys queue not active\n", __func__, port);

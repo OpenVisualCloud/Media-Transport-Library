@@ -4,9 +4,9 @@
 
 #include "tx_st30p_app.h"
 
-static void app_tx_st30p_build_frame(struct st_app_tx_st30p_session* s,
-                                     struct st30_frame* frame, size_t frame_size) {
-  uint8_t* src = s->st30p_frame_cursor;
+static void app_tx_st30p_build_frame(struct st_app_tx_st30p_session *s,
+                                     struct st30_frame *frame, size_t frame_size) {
+  uint8_t *src = s->st30p_frame_cursor;
 
   mtl_memcpy(frame->addr, src, frame_size);
 
@@ -18,11 +18,11 @@ static void app_tx_st30p_build_frame(struct st_app_tx_st30p_session* s,
   }
 }
 
-static void* app_tx_st30p_frame_thread(void* arg) {
-  struct st_app_tx_st30p_session* s = arg;
+static void *app_tx_st30p_frame_thread(void *arg) {
+  struct st_app_tx_st30p_session *s = arg;
   st30p_tx_handle handle = s->handle;
   int idx = s->idx;
-  struct st30_frame* frame;
+  struct st30_frame *frame;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st30p_app_thread_stop) {
@@ -39,7 +39,7 @@ static void* app_tx_st30p_frame_thread(void* arg) {
   return NULL;
 }
 
-static int app_tx_st30p_open_source(struct st_app_tx_st30p_session* s) {
+static int app_tx_st30p_open_source(struct st_app_tx_st30p_session *s) {
   int fd;
   struct stat i;
 
@@ -61,7 +61,7 @@ static int app_tx_st30p_open_source(struct st_app_tx_st30p_session* s) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap fail '%s'\n", __func__, s->st30p_source_url);
     close(fd);
@@ -85,7 +85,7 @@ static int app_tx_st30p_open_source(struct st_app_tx_st30p_session* s) {
   return 0;
 }
 
-static int app_tx_st30p_start_source(struct st_app_tx_st30p_session* s) {
+static int app_tx_st30p_start_source(struct st_app_tx_st30p_session *s) {
   int ret = -EINVAL;
   int idx = s->idx;
 
@@ -103,7 +103,7 @@ static int app_tx_st30p_start_source(struct st_app_tx_st30p_session* s) {
   return 0;
 }
 
-static void app_tx_st30p_stop_source(struct st_app_tx_st30p_session* s) {
+static void app_tx_st30p_stop_source(struct st_app_tx_st30p_session *s) {
   s->st30p_app_thread_stop = true;
   if (s->st30p_app_thread) {
     info("%s(%d), wait app thread stop\n", __func__, s->idx);
@@ -113,7 +113,7 @@ static void app_tx_st30p_stop_source(struct st_app_tx_st30p_session* s) {
   }
 }
 
-static int app_tx_st30p_close_source(struct st_app_tx_st30p_session* s) {
+static int app_tx_st30p_close_source(struct st_app_tx_st30p_session *s) {
   if (s->st30p_source_fd < 0 && s->st30p_source_begin) {
     mtl_hp_free(s->st, s->st30p_source_begin);
     s->st30p_source_begin = NULL;
@@ -127,7 +127,7 @@ static int app_tx_st30p_close_source(struct st_app_tx_st30p_session* s) {
   return 0;
 }
 
-static int app_tx_st30p_handle_free(struct st_app_tx_st30p_session* s) {
+static int app_tx_st30p_handle_free(struct st_app_tx_st30p_session *s) {
   int ret;
   int idx = s->idx;
 
@@ -140,15 +140,15 @@ static int app_tx_st30p_handle_free(struct st_app_tx_st30p_session* s) {
   return 0;
 }
 
-static int app_tx_st30p_uinit(struct st_app_tx_st30p_session* s) {
+static int app_tx_st30p_uinit(struct st_app_tx_st30p_session *s) {
   app_tx_st30p_stop_source(s);
   app_tx_st30p_handle_free(s);
   app_tx_st30p_close_source(s);
   return 0;
 }
 
-static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t* st30p,
-                             struct st_app_tx_st30p_session* s) {
+static int app_tx_st30p_init(struct st_app_context *ctx, st_json_st30p_session_t *st30p,
+                             struct st_app_tx_st30p_session *s) {
   int idx = s->idx, ret;
   struct st30p_tx_ops ops;
   char name[32];
@@ -243,10 +243,10 @@ static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t
   return 0;
 }
 
-int st_app_tx_st30p_sessions_init(struct st_app_context* ctx) {
+int st_app_tx_st30p_sessions_init(struct st_app_context *ctx) {
   int ret, i;
-  struct st_app_tx_st30p_session* s;
-  ctx->tx_st30p_sessions = (struct st_app_tx_st30p_session*)st_app_zmalloc(
+  struct st_app_tx_st30p_session *s;
+  ctx->tx_st30p_sessions = (struct st_app_tx_st30p_session *)st_app_zmalloc(
       sizeof(struct st_app_tx_st30p_session) * ctx->tx_st30p_session_cnt);
   if (!ctx->tx_st30p_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_st30p_session_cnt; i++) {
@@ -263,8 +263,8 @@ int st_app_tx_st30p_sessions_init(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_tx_st30p_sessions_stop(struct st_app_context* ctx) {
-  struct st_app_tx_st30p_session* s;
+int st_app_tx_st30p_sessions_stop(struct st_app_context *ctx) {
+  struct st_app_tx_st30p_session *s;
   if (!ctx->tx_st30p_sessions) return 0;
   for (int i = 0; i < ctx->tx_st30p_session_cnt; i++) {
     s = &ctx->tx_st30p_sessions[i];
@@ -274,9 +274,9 @@ int st_app_tx_st30p_sessions_stop(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_tx_st30p_sessions_uinit(struct st_app_context* ctx) {
+int st_app_tx_st30p_sessions_uinit(struct st_app_context *ctx) {
   int i;
-  struct st_app_tx_st30p_session* s;
+  struct st_app_tx_st30p_session *s;
   if (!ctx->tx_st30p_sessions) return 0;
   for (i = 0; i < ctx->tx_st30p_session_cnt; i++) {
     s = &ctx->tx_st30p_sessions[i];

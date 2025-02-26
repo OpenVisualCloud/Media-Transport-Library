@@ -19,61 +19,61 @@
 /* set to 1 to enable the simulated test */
 #define MT_DEV_SIMULATE_MALICIOUS_PKT (0)
 
-int mt_dev_get_socket_id(const char* port);
+int mt_dev_get_socket_id(const char *port);
 
-int mt_dev_init(struct mtl_init_params* p, struct mt_kport_info* kport_info);
-int mt_dev_uinit(struct mtl_init_params* p);
+int mt_dev_init(struct mtl_init_params *p, struct mt_kport_info *kport_info);
+int mt_dev_uinit(struct mtl_init_params *p);
 
-int mt_dev_create(struct mtl_main_impl* impl);
-int mt_dev_free(struct mtl_main_impl* impl);
+int mt_dev_create(struct mtl_main_impl *impl);
+int mt_dev_free(struct mtl_main_impl *impl);
 
-int mt_dev_start(struct mtl_main_impl* impl);
-int mt_dev_stop(struct mtl_main_impl* impl);
+int mt_dev_start(struct mtl_main_impl *impl);
+int mt_dev_stop(struct mtl_main_impl *impl);
 
-struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        struct mt_txq_flow* flow);
-int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
-static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue* queue) {
+struct mt_tx_queue *mt_dev_get_tx_queue(struct mtl_main_impl *impl, enum mtl_port port,
+                                        struct mt_txq_flow *flow);
+int mt_dev_put_tx_queue(struct mtl_main_impl *impl, struct mt_tx_queue *queue);
+static inline uint16_t mt_dev_tx_queue_id(struct mt_tx_queue *queue) {
   return queue->queue_id;
 }
-int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
-int mt_dev_set_tx_bps(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
+int mt_dev_tx_queue_fatal_error(struct mtl_main_impl *impl, struct mt_tx_queue *queue);
+int mt_dev_set_tx_bps(struct mtl_main_impl *impl, struct mt_tx_queue *queue,
                       uint64_t bytes_per_sec);
-int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                           struct rte_mbuf* pad);
-int mt_dev_tx_done_cleanup(struct mtl_main_impl* impl, struct mt_tx_queue* queue);
-static inline uint16_t mt_dpdk_tx_burst(struct mt_tx_queue* queue,
-                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+int mt_dpdk_flush_tx_queue(struct mtl_main_impl *impl, struct mt_tx_queue *queue,
+                           struct rte_mbuf *pad);
+int mt_dev_tx_done_cleanup(struct mtl_main_impl *impl, struct mt_tx_queue *queue);
+static inline uint16_t mt_dpdk_tx_burst(struct mt_tx_queue *queue,
+                                        struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
   return rte_eth_tx_burst(queue->port_id, queue->queue_id, tx_pkts, nb_pkts);
 }
-uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
-                               struct rte_mbuf** tx_pkts, uint16_t nb_pkts,
+uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl *impl, struct mt_tx_queue *queue,
+                               struct rte_mbuf **tx_pkts, uint16_t nb_pkts,
                                int timeout_ms);
 
-struct mt_rx_queue* mt_dev_get_rx_queue(struct mtl_main_impl* impl, enum mtl_port port,
-                                        struct mt_rxq_flow* flow);
-int mt_dev_put_rx_queue(struct mtl_main_impl* impl, struct mt_rx_queue* queue);
-static inline uint16_t mt_dev_rx_queue_id(struct mt_rx_queue* queue) {
+struct mt_rx_queue *mt_dev_get_rx_queue(struct mtl_main_impl *impl, enum mtl_port port,
+                                        struct mt_rxq_flow *flow);
+int mt_dev_put_rx_queue(struct mtl_main_impl *impl, struct mt_rx_queue *queue);
+static inline uint16_t mt_dev_rx_queue_id(struct mt_rx_queue *queue) {
   return queue->queue_id;
 }
-static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue* queue,
-                                        struct rte_mbuf** rx_pkts,
+static inline uint16_t mt_dpdk_rx_burst(struct mt_rx_queue *queue,
+                                        struct rte_mbuf **rx_pkts,
                                         const uint16_t nb_pkts) {
   return rte_eth_rx_burst(queue->port_id, queue->queue_id, rx_pkts, nb_pkts);
 }
 
-int mt_dev_if_init(struct mtl_main_impl* impl);
-int mt_dev_if_uinit(struct mtl_main_impl* impl);
-int mt_dev_if_pre_uinit(struct mtl_main_impl* impl);
+int mt_dev_if_init(struct mtl_main_impl *impl);
+int mt_dev_if_uinit(struct mtl_main_impl *impl);
+int mt_dev_if_pre_uinit(struct mtl_main_impl *impl);
 
-int mt_dev_tsc_done_action(struct mtl_main_impl* impl);
+int mt_dev_tsc_done_action(struct mtl_main_impl *impl);
 
-uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl* impl, enum mtl_port port,
+uint16_t mt_dev_rss_hash_queue(struct mtl_main_impl *impl, enum mtl_port port,
                                uint32_t hash);
 
-int mt_update_admin_port_stats(struct mtl_main_impl* impl);
-int mt_read_admin_port_stats(struct mtl_main_impl* impl, enum mtl_port port,
-                             struct mtl_port_status* stats);
-int mt_reset_admin_port_stats(struct mtl_main_impl* impl);
+int mt_update_admin_port_stats(struct mtl_main_impl *impl);
+int mt_read_admin_port_stats(struct mtl_main_impl *impl, enum mtl_port port,
+                             struct mtl_port_status *stats);
+int mt_reset_admin_port_stats(struct mtl_main_impl *impl);
 
 #endif

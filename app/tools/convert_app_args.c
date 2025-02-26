@@ -47,7 +47,7 @@ static void conv_app_print_app() {
   printf("\n");
 }
 
-static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
+static enum cvt_frame_fmt cvt_parse_fmt(const char *sfmt) {
   if (!strcmp(sfmt, "yuv422p10le")) {
     return CVT_FRAME_FMT_YUV422PLANAR10LE;
   }
@@ -95,7 +95,7 @@ static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
   return CVT_FRAME_FMT_MAX;
 }
 
-int conv_app_parse_args(struct conv_app_context* ctx, int argc, char** argv) {
+int conv_app_parse_args(struct conv_app_context *ctx, int argc, char **argv) {
   int cmd = -1, optIdx = 0;
   int ret = 0;
 

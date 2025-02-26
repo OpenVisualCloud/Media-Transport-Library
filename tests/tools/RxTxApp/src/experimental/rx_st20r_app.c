@@ -4,10 +4,10 @@
 
 #include "rx_st20r_app.h"
 
-static int app_rx_st20r_enqueue_frame(struct st_app_rx_video_session* s, void* frame,
+static int app_rx_st20r_enqueue_frame(struct st_app_rx_video_session *s, void *frame,
                                       size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -23,9 +23,9 @@ static int app_rx_st20r_enqueue_frame(struct st_app_rx_video_session* s, void* f
   return 0;
 }
 
-static void app_rx_st20r_consume_frame(struct st_app_rx_video_session* s, void* frame,
+static void app_rx_st20r_consume_frame(struct st_app_rx_video_session *s, void *frame,
                                        size_t frame_size) {
-  struct st_display* d = s->display;
+  struct st_display *d = s->display;
 
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
@@ -52,11 +52,11 @@ static void app_rx_st20r_consume_frame(struct st_app_rx_video_session* s, void* 
   }
 }
 
-static void* app_rx_st20r_frame_thread(void* arg) {
-  struct st_app_rx_video_session* s = arg;
+static void *app_rx_st20r_frame_thread(void *arg) {
+  struct st_app_rx_video_session *s = arg;
   int idx = s->idx;
   int consumer_idx;
-  struct st_rx_frame* framebuff;
+  struct st_rx_frame *framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20_app_thread_stop) {
@@ -88,7 +88,7 @@ static void* app_rx_st20r_frame_thread(void* arg) {
   return NULL;
 }
 
-static int app_rx_st20r_close_source(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_close_source(struct st_app_rx_video_session *s) {
   if (s->st20_dst_fd >= 0) {
     munmap(s->st20_dst_begin, s->st20_dst_end - s->st20_dst_begin);
     close(s->st20_dst_fd);
@@ -98,7 +98,7 @@ static int app_rx_st20r_close_source(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_st20r_open_source(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_open_source(struct st_app_rx_video_session *s) {
   int fd, ret, idx = s->idx;
   off_t f_size;
 
@@ -119,7 +119,7 @@ static int app_rx_st20r_open_source(struct st_app_rx_video_session* s) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, s->st20_dst_url);
     close(fd);
@@ -136,7 +136,7 @@ static int app_rx_st20r_open_source(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_st20r_init_frame_thread(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_init_frame_thread(struct st_app_rx_video_session *s) {
   int ret, idx = s->idx;
 
   /* user do not require fb save to file or display */
@@ -155,9 +155,9 @@ static int app_rx_st20r_init_frame_thread(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_st20r_frame_ready(void* priv, void* frame,
-                                    struct st20_rx_frame_meta* meta) {
-  struct st_app_rx_video_session* s = priv;
+static int app_rx_st20r_frame_ready(void *priv, void *frame,
+                                    struct st20_rx_frame_meta *meta) {
+  struct st_app_rx_video_session *s = priv;
   int ret;
 
   if (!s->st20r_handle) return -EIO;
@@ -208,7 +208,7 @@ static int app_rx_st20r_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static int app_rx_st20r_uinit(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_uinit(struct st_app_rx_video_session *s) {
   int ret, idx = s->idx;
 
   st_app_uinit_display(s->display);
@@ -243,8 +243,8 @@ static int app_rx_st20r_uinit(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t* video,
-                             struct st_app_rx_video_session* s) {
+static int app_rx_st20r_init(struct st_app_context *ctx, st_json_video_session_t *video,
+                             struct st_app_rx_video_session *s) {
   int idx = s->idx, ret;
   struct st20rc_rx_ops ops;
   char name[32];
@@ -319,14 +319,14 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   s->framebuff_producer_idx = 0;
   s->framebuff_consumer_idx = 0;
   s->framebuffs =
-      (struct st_rx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+      (struct st_rx_frame *)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) return -ENOMEM;
   for (int j = 0; j < s->framebuff_cnt; j++) {
     s->framebuffs[j].frame = NULL;
   }
 
   if ((video && video->display) || ctx->rx_display) {
-    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
+    struct st_display *d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
@@ -368,7 +368,7 @@ static int app_rx_st20r_init(struct st_app_context* ctx, st_json_video_session_t
   return 0;
 }
 
-static int app_rx_st20r_stat(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_stat(struct st_app_rx_video_session *s) {
   uint64_t cur_time_ns = st_app_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   double framerate = s->stat_frame_received / time_sec;
@@ -386,7 +386,7 @@ static int app_rx_st20r_stat(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_st20r_result(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_result(struct st_app_rx_video_session *s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
@@ -401,19 +401,19 @@ static int app_rx_st20r_result(struct st_app_rx_video_session* s) {
   return 0;
 }
 
-static int app_rx_st20r_pcap(struct st_app_rx_video_session* s) {
+static int app_rx_st20r_pcap(struct st_app_rx_video_session *s) {
   if (s->pcapng_max_pkts)
     st20rc_rx_pcapng_dump(s->st20r_handle, s->pcapng_max_pkts, false, NULL);
   return 0;
 }
 
-int st_app_rx_st20r_sessions_init(struct st_app_context* ctx) {
+int st_app_rx_st20r_sessions_init(struct st_app_context *ctx) {
   int ret, i;
-  struct st_app_rx_video_session* s;
+  struct st_app_rx_video_session *s;
   int fb_cnt = ctx->rx_video_fb_cnt;
   if (fb_cnt <= 0) fb_cnt = 3;
 
-  ctx->rx_st20r_sessions = (struct st_app_rx_video_session*)st_app_zmalloc(
+  ctx->rx_st20r_sessions = (struct st_app_rx_video_session *)st_app_zmalloc(
       sizeof(*ctx->rx_st20r_sessions) * ctx->rx_st20r_session_cnt);
   if (!ctx->rx_st20r_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st20r_session_cnt; i++) {
@@ -435,9 +435,9 @@ int st_app_rx_st20r_sessions_init(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20r_sessions_uinit(struct st_app_context* ctx) {
+int st_app_rx_st20r_sessions_uinit(struct st_app_context *ctx) {
   int i;
-  struct st_app_rx_video_session* s;
+  struct st_app_rx_video_session *s;
   if (!ctx->rx_st20r_sessions) return 0;
   for (i = 0; i < ctx->rx_st20r_session_cnt; i++) {
     s = &ctx->rx_st20r_sessions[i];
@@ -448,9 +448,9 @@ int st_app_rx_st20r_sessions_uinit(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20r_sessions_stat(struct st_app_context* ctx) {
+int st_app_rx_st20r_sessions_stat(struct st_app_context *ctx) {
   int i;
-  struct st_app_rx_video_session* s;
+  struct st_app_rx_video_session *s;
   if (!ctx->rx_st20r_sessions) return 0;
 
   for (i = 0; i < ctx->rx_st20r_session_cnt; i++) {
@@ -461,9 +461,9 @@ int st_app_rx_st20r_sessions_stat(struct st_app_context* ctx) {
   return 0;
 }
 
-int st_app_rx_st20r_sessions_result(struct st_app_context* ctx) {
+int st_app_rx_st20r_sessions_result(struct st_app_context *ctx) {
   int i, ret = 0;
-  struct st_app_rx_video_session* s;
+  struct st_app_rx_video_session *s;
 
   if (!ctx->rx_st20r_sessions) return 0;
 
@@ -475,9 +475,9 @@ int st_app_rx_st20r_sessions_result(struct st_app_context* ctx) {
   return ret;
 }
 
-int st_app_rx_st20r_sessions_pcap(struct st_app_context* ctx) {
+int st_app_rx_st20r_sessions_pcap(struct st_app_context *ctx) {
   int i;
-  struct st_app_rx_video_session* s;
+  struct st_app_rx_video_session *s;
 
   if (!ctx->rx_st20r_sessions) return 0;
 

@@ -47,7 +47,7 @@ static void lsm_print_help() {
   printf("\n");
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
   int ret;
 

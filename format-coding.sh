@@ -28,6 +28,3 @@ find . -path ./build -prune -o -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' ! -name 'pymt
 
 # clean-up the copied .clang-format
 rm .clang-format
-CONFIG=".github/linters/.pyproject.toml"
-black --config "$CONFIG" python/
-isort --settings-path "$CONFIG" python/

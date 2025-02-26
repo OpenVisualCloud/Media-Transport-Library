@@ -76,11 +76,11 @@ int main() {
   ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
   ops_tx.device = ST_PLUGIN_DEVICE_AUTO;
   ops_tx.framebuff_cnt = 3;
-  auto sample_frame_available = [](void* priv) {
+  auto sample_frame_available = [](void *priv) {
     cv.notify_one();
     return 0;
   };
-  auto sample_frame_done = [](void* priv, struct st_frame* frame) {
+  auto sample_frame_done = [](void *priv, struct st_frame *frame) {
     fb_done++;
     return 0;
   };
@@ -94,7 +94,7 @@ int main() {
   }
 
   auto sample_frame_thread = [tx_handle]() {
-    struct st_frame* frame;
+    struct st_frame *frame;
     while (!stop) {
       frame = st20p_tx_get_frame(tx_handle);
       if (!frame) { /* no frame */

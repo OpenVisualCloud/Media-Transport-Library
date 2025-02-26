@@ -79,11 +79,11 @@ static inline uint16_t get_parity_bits(uint16_t val) {
   return parity_tab[val & 0xFF];
 }
 
-static uint16_t st_ntohs(uint8_t* data) {
+static uint16_t st_ntohs(uint8_t *data) {
   return ((data[0] << 8) | (data[1]));
 }
 
-static uint16_t get_10bit_udw(int idx, uint8_t* data) {
+static uint16_t get_10bit_udw(int idx, uint8_t *data) {
   int byte_offset, bit_offset;
   int total_bits_offset = idx * 10; /*10 bit per field */
   byte_offset = total_bits_offset / 8;
@@ -122,7 +122,7 @@ static uint16_t get_10bit_udw(int idx, uint8_t* data) {
   return udw;
 }
 
-static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
+static void set_10bit_udw(int idx, uint16_t udw, uint8_t *data) {
   int byte_offset, bit_offset;
   int total_bits_offset = idx * 10; /*10 bit per field */
   byte_offset = total_bits_offset / 8;
@@ -165,15 +165,15 @@ static void set_10bit_udw(int idx, uint16_t udw, uint8_t* data) {
   data[1] = (uint8_t)(val & 0xFF);
 }
 
-uint16_t st40_get_udw(uint32_t idx, uint8_t* data) {
+uint16_t st40_get_udw(uint32_t idx, uint8_t *data) {
   return get_10bit_udw(idx, data);
 }
 
-void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data) {
+void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t *data) {
   set_10bit_udw(idx, udw, data);
 }
 
-uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data) {
+uint16_t st40_calc_checksum(uint32_t data_num, uint8_t *data) {
   uint16_t chks = 0, udw;
   for (uint32_t i = 0; i < data_num; i++) {
     udw = get_10bit_udw(i, data);

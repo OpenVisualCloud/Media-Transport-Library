@@ -9,7 +9,7 @@
 
 #ifdef MT_HAS_PCAPNG_TS
 
-int mt_pcap_close(struct mt_pcap* pcap) {
+int mt_pcap_close(struct mt_pcap *pcap) {
   if (pcap->pcapng) {
     rte_pcapng_close(pcap->pcapng);
     pcap->pcapng = NULL;
@@ -22,9 +22,9 @@ int mt_pcap_close(struct mt_pcap* pcap) {
   return 0;
 }
 
-struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int fd) {
+struct mt_pcap *mt_pcap_open(struct mtl_main_impl *impl, enum mtl_port port, int fd) {
   int ret;
-  struct mt_pcap* pcap = mt_zmalloc(sizeof(*pcap));
+  struct mt_pcap *pcap = mt_zmalloc(sizeof(*pcap));
   if (!pcap) {
     err("%s(%d,%d), malloc pcap fail\n", __func__, port, fd);
     return NULL;
@@ -63,13 +63,13 @@ struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int
   return pcap;
 }
 
-uint16_t mt_pcap_dump(struct mtl_main_impl* impl, enum mtl_port port,
-                      struct mt_pcap* pcap, struct rte_mbuf** mbufs, uint16_t nb) {
-  struct rte_mbuf* pcapng_mbuf[nb];
+uint16_t mt_pcap_dump(struct mtl_main_impl *impl, enum mtl_port port,
+                      struct mt_pcap *pcap, struct rte_mbuf **mbufs, uint16_t nb) {
+  struct rte_mbuf *pcapng_mbuf[nb];
   int pcapng_mbuf_cnt = 0;
   uint16_t port_id = mt_port_id(impl, port);
-  struct rte_mbuf* pkt;
-  struct rte_mbuf* mc;
+  struct rte_mbuf *pkt;
+  struct rte_mbuf *mc;
 
   for (uint16_t i = 0; i < nb; i++) {
     pkt = mbufs[i];

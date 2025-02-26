@@ -21,8 +21,8 @@ extern "C" {
 /**
  * Handle to mtl sch context
  */
-typedef struct mtl_sch_impl* mtl_sch_handle;
-typedef struct mt_sch_tasklet_impl* mtl_tasklet_handle;
+typedef struct mtl_sch_impl *mtl_sch_handle;
+typedef struct mt_sch_tasklet_impl *mtl_tasklet_handle;
 
 /** the tasklet is likely has pending task */
 #define MTL_TASKLET_HAS_PENDING (1)
@@ -34,7 +34,7 @@ typedef struct mt_sch_tasklet_impl* mtl_tasklet_handle;
  */
 struct mtl_sch_ops {
   /** name */
-  const char* name;
+  const char *name;
   /** the max number of tasklet in this sch, leave to zero to use the default value */
   uint32_t nb_tasklets;
 };
@@ -45,20 +45,20 @@ struct mtl_sch_ops {
  */
 struct mtl_tasklet_ops {
   /** name */
-  const char* name;
+  const char *name;
   /** private data to the callback */
-  void* priv;
+  void *priv;
 
   /** the callback at the time when the sch started */
-  int (*start)(void* priv);
+  int (*start)(void *priv);
   /** the callback at the time when the sch stopped */
-  int (*stop)(void* priv);
+  int (*stop)(void *priv);
   /**
    * the callback for task routine, only non-block method can be used for this callback
    * since all tasklets share the CPU time. Return MTL_TASKLET_ALL_DONE if no any pending
    * task, all are done. Return MTL_TASKLET_HAS_PENDING if it has pending tasks.
    */
-  int (*handler)(void* priv);
+  int (*handler)(void *priv);
   /**
    * the recommend sleep time(us) if all tasklet report MTL_TASKLET_ALL_DONE.
    * also this value can be set by mtl_tasklet_set_sleep at runtime.
@@ -78,7 +78,7 @@ struct mtl_tasklet_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the sch.
  */
-mtl_sch_handle mtl_sch_create(mtl_handle mt, struct mtl_sch_ops* ops);
+mtl_sch_handle mtl_sch_create(mtl_handle mt, struct mtl_sch_ops *ops);
 
 /**
  * Start the sch.
@@ -125,8 +125,8 @@ int mtl_sch_free(mtl_sch_handle sch);
  *   - NULL on error.
  *   - Otherwise, the handle to the tasklet.
  */
-mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl* sch,
-                                            struct mtl_tasklet_ops* tasklet_ops);
+mtl_tasklet_handle mtl_sch_register_tasklet(struct mtl_sch_impl *sch,
+                                            struct mtl_tasklet_ops *tasklet_ops);
 
 /**
  * Unregister the tasklet from the bind sch. One tasklet can be unregistered at runtime

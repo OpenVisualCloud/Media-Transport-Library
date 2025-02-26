@@ -13,24 +13,24 @@
 #include "st_err.h"
 #include "st_tx_video_session.h"
 
-static int video_trs_tasklet_start(void* priv) {
-  struct st_video_transmitter_impl* trs = priv;
+static int video_trs_tasklet_start(void *priv) {
+  struct st_video_transmitter_impl *trs = priv;
   int idx = trs->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static int video_trs_tasklet_stop(void* priv) {
-  struct st_video_transmitter_impl* trs = priv;
+static int video_trs_tasklet_stop(void *priv) {
+  struct st_video_transmitter_impl *trs = priv;
   int idx = trs->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
-                                     struct st_tx_video_session_impl* s,
+static uint16_t video_trs_burst_fail(struct mtl_main_impl *impl,
+                                     struct st_tx_video_session_impl *s,
                                      enum mtl_session_port s_port, uint16_t nb_pkts) {
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
@@ -46,19 +46,19 @@ static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
   return 0;
 }
 
-static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
-                                    struct st_tx_video_session_impl* s,
+static uint16_t video_trs_burst_pad(struct mtl_main_impl *impl,
+                                    struct st_tx_video_session_impl *s,
                                     enum mtl_session_port s_port,
-                                    struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
+                                    struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
   if (!tx) return video_trs_burst_fail(impl, s, s_port, nb_pkts);
   return tx;
 }
 
 /* for normal pkts, pad should call the video_trs_burst_pad */
-static uint16_t video_trs_burst(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s,
-                                enum mtl_session_port s_port, struct rte_mbuf** tx_pkts,
+static uint16_t video_trs_burst(struct mtl_main_impl *impl,
+                                struct st_tx_video_session_impl *s,
+                                enum mtl_session_port s_port, struct rte_mbuf **tx_pkts,
                                 uint16_t nb_pkts) {
   if (s->rtcp_tx[s_port]) mt_mbuf_refcnt_inc_bulk(tx_pkts, nb_pkts);
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
@@ -75,7 +75,7 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
 
   int pkt_idx = st_tx_mbuf_get_idx(tx_pkts[0]);
   if (0 == pkt_idx) {
-    struct st_frame_trans* frame = st_tx_mbuf_get_priv(tx_pkts[0]);
+    struct st_frame_trans *frame = st_tx_mbuf_get_priv(tx_pkts[0]);
     if (frame) st20_frame_tx_start(impl, s, s_port, frame);
   }
 
@@ -88,16 +88,16 @@ static uint16_t video_trs_burst(struct mtl_main_impl* impl,
 }
 
 /* warm start for the first packet */
-static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s,
+static int video_trs_rl_warm_up(struct mtl_main_impl *impl,
+                                struct st_tx_video_session_impl *s,
                                 enum mtl_session_port s_port) {
-  struct st_tx_video_pacing* pacing = &s->pacing;
+  struct st_tx_video_pacing *pacing = &s->pacing;
   uint64_t target_ptp = s->trs_target_ptp[s_port];
   uint64_t target_tsc = s->trs_target_tsc[s_port];
   uint64_t cur_tsc, pre_tsc;
   uint64_t cur_ptp;
   int32_t warm_pkts = pacing->warm_pkts;
-  struct rte_mbuf* pads[1];
+  struct rte_mbuf *pads[1];
   int32_t delta_pkts;
   unsigned int tx;
   bool warm_use_tsc = true;
@@ -141,11 +141,11 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int video_burst_packet(struct mtl_main_impl* impl,
-                              struct st_tx_video_session_impl* s,
-                              enum mtl_session_port s_port, struct rte_mbuf** pkts,
+static int video_burst_packet(struct mtl_main_impl *impl,
+                              struct st_tx_video_session_impl *s,
+                              enum mtl_session_port s_port, struct rte_mbuf **pkts,
                               int bulk, bool use_two) {
-  struct st_tx_video_pacing* pacing = &s->pacing;
+  struct st_tx_video_pacing *pacing = &s->pacing;
   int tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
 
@@ -176,11 +176,11 @@ static int video_burst_packet(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
-                                 enum mtl_session_port s_port, int* ret_status) {
+static int _video_trs_rl_tasklet(struct mtl_main_impl *impl,
+                                 struct st_tx_video_session_impl *s,
+                                 enum mtl_session_port s_port, int *ret_status) {
   unsigned int bulk = s->bulk;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int idx = s->idx;
   unsigned int n, tx;
   uint32_t pkt_idx = 0;
@@ -249,8 +249,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     *ret_status = -STI_RLTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -320,8 +320,8 @@ static int _video_trs_rl_tasklet(struct mtl_main_impl* impl,
   return MTL_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
-                                struct st_tx_video_session_impl* s,
+static int video_trs_rl_tasklet(struct mtl_main_impl *impl,
+                                struct st_tx_video_session_impl *s,
                                 enum mtl_session_port s_port) {
   int pending = MTL_TASKLET_ALL_DONE;
   int ret_status = 0;
@@ -339,12 +339,12 @@ static int video_trs_rl_tasklet(struct mtl_main_impl* impl,
   return pending;
 }
 
-static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
+static int video_trs_tsc_tasklet(struct mtl_main_impl *impl,
+                                 struct st_tx_video_session_impl *s,
                                  enum mtl_session_port s_port) {
   unsigned int bulk = s->bulk;
   if (s->pacing_way[s_port] == ST21_TX_PACING_WAY_BE) bulk = 1;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int idx = s->idx, tx;
   unsigned int n;
   uint64_t target_tsc, cur_tsc;
@@ -383,8 +383,8 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -446,17 +446,17 @@ static int video_trs_tsc_tasklet(struct mtl_main_impl* impl,
   return MTL_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
-                                         struct st_tx_video_session_impl* s,
+static int video_trs_launch_time_tasklet(struct mtl_main_impl *impl,
+                                         struct st_tx_video_session_impl *s,
                                          enum mtl_session_port s_port) {
   unsigned int bulk = s->bulk;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int tx = 0;
   unsigned int n;
   uint64_t i;
   uint64_t target_ptp;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-  struct mt_interface* inf = mt_if(impl, port);
+  struct mt_interface *inf = mt_if(impl, port);
 
   if (!mt_ptp_is_locked(impl, MTL_PORT_P)) {
     /* fallback to tsc if ptp is not synced */
@@ -481,8 +481,8 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -508,7 +508,7 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
       target_ptp = st_tx_mbuf_get_ptp(pkts[i]);
       /* Put tx timestamp into transmit descriptor */
       pkts[i]->ol_flags |= inf->tx_launch_time_flag;
-      *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t*) = target_ptp;
+      *RTE_MBUF_DYNFIELD(pkts[i], inf->tx_dynfield_offset, uint64_t *) = target_ptp;
     }
 
     tx = video_trs_burst(impl, s, s_port, &pkts[0], valid_bulk);
@@ -532,11 +532,11 @@ static int video_trs_launch_time_tasklet(struct mtl_main_impl* impl,
   }
 }
 
-static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
-                                 struct st_tx_video_session_impl* s,
+static int video_trs_ptp_tasklet(struct mtl_main_impl *impl,
+                                 struct st_tx_video_session_impl *s,
                                  enum mtl_session_port s_port) {
   unsigned int bulk = s->bulk;
-  struct rte_ring* ring = s->ring[s_port];
+  struct rte_ring *ring = s->ring[s_port];
   int idx = s->idx, tx;
   unsigned int n;
   uint64_t target_ptp, cur_ptp;
@@ -575,8 +575,8 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   }
 
   /* dequeue from ring */
-  struct rte_mbuf* pkts[bulk];
-  n = mt_rte_ring_sc_dequeue_bulk(ring, (void**)&pkts[0], bulk, NULL);
+  struct rte_mbuf *pkts[bulk];
+  n = mt_rte_ring_sc_dequeue_bulk(ring, (void **)&pkts[0], bulk, NULL);
   if (n == 0) {
     s->stat_trs_ret_code[s_port] = -STI_TSCTRS_DEQUEUE_FAIL;
     return MTL_TASKLET_ALL_DONE;
@@ -636,11 +636,11 @@ static int video_trs_ptp_tasklet(struct mtl_main_impl* impl,
   return MTL_TASKLET_HAS_PENDING;
 }
 
-static int video_trs_tasklet_handler(void* priv) {
-  struct st_video_transmitter_impl* trs = priv;
-  struct mtl_main_impl* impl = trs->parent;
-  struct st_tx_video_sessions_mgr* mgr = trs->mgr;
-  struct st_tx_video_session_impl* s;
+static int video_trs_tasklet_handler(void *priv) {
+  struct st_video_transmitter_impl *trs = priv;
+  struct mtl_main_impl *impl = trs->parent;
+  struct st_tx_video_sessions_mgr *mgr = trs->mgr;
+  struct st_tx_video_session_impl *s;
   int sidx, s_port;
   int pending = MTL_TASKLET_ALL_DONE;
 
@@ -658,7 +658,7 @@ static int video_trs_tasklet_handler(void* priv) {
   return pending;
 }
 
-int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
+int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl *s,
                                     enum mtl_session_port port) {
   int idx = s->idx;
 
@@ -684,9 +684,9 @@ int st_video_resolve_pacing_tasklet(struct st_tx_video_session_impl* s,
   return 0;
 }
 
-int st_video_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
-                              struct st_tx_video_sessions_mgr* mgr,
-                              struct st_video_transmitter_impl* trs) {
+int st_video_transmitter_init(struct mtl_main_impl *impl, struct mtl_sch_impl *sch,
+                              struct st_tx_video_sessions_mgr *mgr,
+                              struct st_video_transmitter_impl *trs) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 
@@ -711,7 +711,7 @@ int st_video_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_impl* s
   return 0;
 }
 
-int st_video_transmitter_uinit(struct st_video_transmitter_impl* trs) {
+int st_video_transmitter_uinit(struct st_video_transmitter_impl *trs) {
   int idx = trs->idx;
 
   if (trs->tasklet) {
