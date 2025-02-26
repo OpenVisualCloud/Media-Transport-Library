@@ -21,41 +21,41 @@ extern "C" {
 #endif
 
 /** Handle to tx st2110-22 pipeline session of lib */
-typedef struct st22p_tx_ctx* st22p_tx_handle;
+typedef struct st22p_tx_ctx *st22p_tx_handle;
 /** Handle to rx st2110-22 pipeline session of lib */
-typedef struct st22p_rx_ctx* st22p_rx_handle;
+typedef struct st22p_rx_ctx *st22p_rx_handle;
 /** Handle to tx st2110-20 pipeline session of lib */
-typedef struct st20p_tx_ctx* st20p_tx_handle;
+typedef struct st20p_tx_ctx *st20p_tx_handle;
 /** Handle to rx st2110-20 pipeline session of lib */
-typedef struct st20p_rx_ctx* st20p_rx_handle;
+typedef struct st20p_rx_ctx *st20p_rx_handle;
 
 /** Handle to st2110-22 encode device of lib */
-typedef struct st22_encode_dev_impl* st22_encoder_dev_handle;
+typedef struct st22_encode_dev_impl *st22_encoder_dev_handle;
 /** Handle to st2110-22 decode device of lib */
-typedef struct st22_decode_dev_impl* st22_decoder_dev_handle;
+typedef struct st22_decode_dev_impl *st22_decoder_dev_handle;
 /** Handle to st2110-20 convert device of lib */
-typedef struct st20_convert_dev_impl* st20_converter_dev_handle;
+typedef struct st20_convert_dev_impl *st20_converter_dev_handle;
 
 /** Handle to the st22 encode session private data */
-typedef void* st22_encode_priv;
+typedef void *st22_encode_priv;
 
 /** Handle to the st2110-22 pipeline encode session of lib */
-typedef struct st22_encode_session_impl* st22p_encode_session;
+typedef struct st22_encode_session_impl *st22p_encode_session;
 
 /** Handle to the st22 decode session private data */
-typedef void* st22_decode_priv;
+typedef void *st22_decode_priv;
 
 /** Handle to the st2110-22 pipeline decode session of lib */
-typedef struct st22_decode_session_impl* st22p_decode_session;
+typedef struct st22_decode_session_impl *st22p_decode_session;
 
 /** Handle to the st20 convert session private data */
-typedef void* st20_convert_priv;
+typedef void *st20_convert_priv;
 
 /** Handle to the st2110-20 pipeline convert session of lib */
-typedef struct st20_convert_session_impl* st20p_convert_session;
+typedef struct st20_convert_session_impl *st20p_convert_session;
 
 /** Handle to the private data of plugin */
-typedef void* st_plugin_priv;
+typedef void *st_plugin_priv;
 
 /** Version type of st plugin */
 enum st_plugin_version {
@@ -82,7 +82,7 @@ struct st_plugin_meta {
 };
 
 /** Get meta function prototype of plugin */
-typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta* meta);
+typedef int (*st_plugin_get_meta_fn)(struct st_plugin_meta *meta);
 /** Get meta function name of plugin */
 #define ST_PLUGIN_GET_META_API "st_plugin_get_meta"
 /** Create function prototype of plugin */
@@ -242,7 +242,7 @@ enum st_frame_flag {
 
 /** The structure info for external frame */
 struct st_ext_frame { /** Each plane's virtual address of external frame */
-  void* addr[ST_MAX_PLANES];
+  void *addr[ST_MAX_PLANES];
   /** Each plane's IOVA of external frame */
   mtl_iova_t iova[ST_MAX_PLANES];
   /** Each plane's linesize of external frame,
@@ -251,13 +251,13 @@ struct st_ext_frame { /** Each plane's virtual address of external frame */
   /** Buffer size of external frame */
   size_t size;
   /** Private data for user */
-  void* opaque;
+  void *opaque;
 };
 
 /** The structure info for frame meta. */
 struct st_frame {
   /** frame buffer address of each plane */
-  void* addr[ST_MAX_PLANES];
+  void *addr[ST_MAX_PLANES];
   /** frame buffer IOVA of each plane */
   mtl_iova_t iova[ST_MAX_PLANES];
   /** frame buffer linesize of each plane */
@@ -298,7 +298,7 @@ struct st_frame {
    * MTL_PKT_MAX_RTP_BYTES. This data will be transported to RX with video data and passed
    * to user by user_meta also.
    */
-  const void* user_meta;
+  const void *user_meta;
   /** size for meta data buffer */
   size_t user_meta_size;
   /** the total packets received, not include the redundant packets */
@@ -309,12 +309,12 @@ struct st_frame {
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
   /** priv data for user */
-  void* opaque;
+  void *opaque;
   /** timing parser meta for st20p_rx_get_frame, only active if
    * ST20P_RX_FLAG_TIMING_PARSER_META */
-  struct st20_rx_tp_meta* tp[MTL_SESSION_PORT_MAX];
+  struct st20_rx_tp_meta *tp[MTL_SESSION_PORT_MAX];
 };
 
 /** Device type of st plugin */
@@ -643,9 +643,9 @@ struct st22_encoder_create_req {
 /** The structure info for st22 encoder dev. */
 struct st22_encoder_dev {
   /** name */
-  const char* name;
+  const char *name;
   /** private data to the callback function */
-  void* priv;
+  void *priv;
   /** device, cpu/gpu/fpga/others */
   enum st_plugin_device target_device;
 
@@ -654,22 +654,22 @@ struct st22_encoder_dev {
   /** supported output format for encode, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
   /** create session function */
-  st22_encode_priv (*create_session)(void* priv, st22p_encode_session session_p,
-                                     struct st22_encoder_create_req* req);
+  st22_encode_priv (*create_session)(void *priv, st22p_encode_session session_p,
+                                     struct st22_encoder_create_req *req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st22_encode_priv encode_priv);
   /** free session function */
-  int (*free_session)(void* priv, st22_encode_priv encode_priv);
+  int (*free_session)(void *priv, st22_encode_priv encode_priv);
 };
 
 /** The structure info for st22 encode frame meta. */
 struct st22_encode_frame_meta {
   /** Encode source frame */
-  struct st_frame* src;
+  struct st_frame *src;
   /** Encode dst frame */
-  struct st_frame* dst;
+  struct st_frame *dst;
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
 };
 
 /** The structure info for st plugin decode session create request. */
@@ -699,9 +699,9 @@ struct st22_decoder_create_req {
 /** The structure info for st22 decoder dev. */
 struct st22_decoder_dev {
   /** name */
-  const char* name;
+  const char *name;
   /** private data to the callback function */
-  void* priv;
+  void *priv;
   /** device, cpu/gpu/fpga/others */
   enum st_plugin_device target_device;
 
@@ -710,22 +710,22 @@ struct st22_decoder_dev {
   /** supported output format for decode, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
   /** create session function */
-  st22_decode_priv (*create_session)(void* priv, st22p_decode_session session_p,
-                                     struct st22_decoder_create_req* req);
+  st22_decode_priv (*create_session)(void *priv, st22p_decode_session session_p,
+                                     struct st22_decoder_create_req *req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st22_decode_priv decode_priv);
   /** free session function */
-  int (*free_session)(void* priv, st22_decode_priv decode_priv);
+  int (*free_session)(void *priv, st22_decode_priv decode_priv);
 };
 
 /** The structure info for st22 decode frame meta. */
 struct st22_decode_frame_meta {
   /** Decode source frame */
-  struct st_frame* src;
+  struct st_frame *src;
   /** Decode dst frame */
-  struct st_frame* dst;
+  struct st_frame *dst;
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
 };
 
 /** The structure info for st plugin convert session create request. */
@@ -749,9 +749,9 @@ struct st20_converter_create_req {
 /** The structure info for st20 converter dev. */
 struct st20_converter_dev {
   /** name */
-  const char* name;
+  const char *name;
   /** private data to the callback function */
-  void* priv;
+  void *priv;
   /** device, cpu/gpu/fpga/others */
   enum st_plugin_device target_device;
 
@@ -760,22 +760,22 @@ struct st20_converter_dev {
   /** supported output format for convert, ST_FMT_CAP_* */
   uint64_t output_fmt_caps;
   /** create session function */
-  st20_convert_priv (*create_session)(void* priv, st20p_convert_session session_p,
-                                      struct st20_converter_create_req* req);
+  st20_convert_priv (*create_session)(void *priv, st20p_convert_session session_p,
+                                      struct st20_converter_create_req *req);
   /** Callback when frame available in the lib. */
   int (*notify_frame_available)(st20_convert_priv convert_priv);
   /** free session function */
-  int (*free_session)(void* priv, st20_convert_priv convert_priv);
+  int (*free_session)(void *priv, st20_convert_priv convert_priv);
 };
 
 /** The structure info for st20 convert frame meta. */
 struct st20_convert_frame_meta {
   /** Encode source frame */
-  struct st_frame* src;
+  struct st_frame *src;
   /** Encode dst frame */
-  struct st_frame* dst;
+  struct st_frame *dst;
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
 };
 
 /** The structure info for st tx port, used in creating session. */
@@ -852,9 +852,9 @@ struct st20p_tx_ops {
   uint16_t framebuff_cnt;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. Flags to control session behaviors. See ST20P_TX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -863,13 +863,13 @@ struct st20p_tx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**
    * Optional. Callback when frame done in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_done)(void* priv, struct st_frame* frame);
+  int (*notify_frame_done)(void *priv, struct st_frame *frame);
 
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
@@ -909,7 +909,7 @@ struct st20p_tx_ops {
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
+  int (*notify_event)(void *priv, enum st_event event, void *args);
   /**  Use this socket if ST20P_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -939,9 +939,9 @@ struct st20p_rx_ops {
   uint16_t framebuff_cnt;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. Flags to control session behaviors. See ST20P_RX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -953,12 +953,12 @@ struct st20p_rx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
 
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
   /** Optional. Array of external frames */
-  struct st_ext_frame* ext_frames;
+  struct st_ext_frame *ext_frames;
   /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_rx_rtcp_ops rtcp;
   /**
@@ -966,27 +966,27 @@ struct st20p_rx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*query_ext_frame)(void* priv, struct st_ext_frame* ext_frame,
-                         struct st20_rx_frame_meta* meta);
+  int (*query_ext_frame)(void *priv, struct st_ext_frame *ext_frame,
+                         struct st20_rx_frame_meta *meta);
   /**
    * Optional. event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
+  int (*notify_event)(void *priv, enum st_event event, void *args);
   /**
    * Optional with ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format.
    * And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
-                         struct st20_detect_reply* reply);
+  int (*notify_detected)(void *priv, const struct st20_detect_meta *meta,
+                         struct st20_detect_reply *reply);
   /**  Use this socket if ST20P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 
   /* use to store framebuffers on vram */
-  void* gpu_context;
+  void *gpu_context;
 };
 
 /** The structure describing how to create a tx st2110-22 pipeline session. */
@@ -1021,9 +1021,9 @@ struct st22p_tx_ops {
   uint16_t framebuff_cnt;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. Flags to control session behaviors. See ST22P_TX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -1034,13 +1034,13 @@ struct st22p_tx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**
    * Optional. Callback when frame done in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_done)(void* priv, struct st_frame* frame);
+  int (*notify_frame_done)(void *priv, struct st_frame *frame);
 
   /** Optional for ST22P_TX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_tx_rtcp_ops rtcp;
@@ -1055,7 +1055,7 @@ struct st22p_tx_ops {
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
+  int (*notify_event)(void *priv, enum st_event event, void *args);
   /**  Use this socket if ST22P_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -1087,9 +1087,9 @@ struct st22p_rx_ops {
   uint16_t framebuff_cnt;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. Flags to control session behaviors. See ST22P_RX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -1105,21 +1105,21 @@ struct st22p_rx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**
    * Optional. event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
+  int (*notify_event)(void *priv, enum st_event event, void *args);
   /**
    * Mandatory for ST22P_RX_FLAG_EXT_FRAME. Callback when the lib query next external
    * frame's data address. And only non-block method can be used within this callback as
    * it run from lcore tasklet routine.
    */
-  int (*query_ext_frame)(void* priv, struct st_ext_frame* ext_frame,
-                         struct st22_rx_frame_meta* meta);
+  int (*query_ext_frame)(void *priv, struct st_ext_frame *ext_frame,
+                         struct st22_rx_frame_meta *meta);
   /**  Use this socket if ST22P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -1136,7 +1136,7 @@ struct st22p_rx_ops {
  *   - Others: the handle to the encode dev context.
  */
 st22_encoder_dev_handle st22_encoder_register(mtl_handle mt,
-                                              struct st22_encoder_dev* dev);
+                                              struct st22_encoder_dev *dev);
 
 /**
  * Unregister one st22 encoder.
@@ -1159,7 +1159,7 @@ int st22_encoder_unregister(st22_encoder_dev_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
-struct st22_encode_frame_meta* st22_encoder_get_frame(st22p_encode_session session);
+struct st22_encode_frame_meta *st22_encoder_get_frame(st22p_encode_session session);
 
 /**
  * Wake up the block wait on st22_encoder_get_frame if ST22_ENCODER_RESP_FLAG_BLOCK_GET is
@@ -1202,7 +1202,7 @@ int st22_encoder_set_block_timeout(st22p_encode_session session, uint64_t timedw
  *   - <0: Error code if put fail.
  */
 int st22_encoder_put_frame(st22p_encode_session session,
-                           struct st22_encode_frame_meta* frame, int result);
+                           struct st22_encode_frame_meta *frame, int result);
 
 /**
  * Register one st22 decoder.
@@ -1216,7 +1216,7 @@ int st22_encoder_put_frame(st22p_encode_session session,
  *   - Others: the handle to the encode dev
  */
 st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
-                                              struct st22_decoder_dev* dev);
+                                              struct st22_decoder_dev *dev);
 
 /**
  * Unregister one st22 decoder.
@@ -1239,7 +1239,7 @@ int st22_decoder_unregister(st22_decoder_dev_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
-struct st22_decode_frame_meta* st22_decoder_get_frame(st22p_decode_session session);
+struct st22_decode_frame_meta *st22_decoder_get_frame(st22p_decode_session session);
 
 /**
  * Wake up the block wait on st22_decoder_get_frame if ST22_DECODER_RESP_FLAG_BLOCK_GET is
@@ -1282,7 +1282,7 @@ int st22_decoder_set_block_timeout(st22p_decode_session session, uint64_t timedw
  *   - <0: Error code if put fail.
  */
 int st22_decoder_put_frame(st22p_decode_session session,
-                           struct st22_decode_frame_meta* frame, int result);
+                           struct st22_decode_frame_meta *frame, int result);
 
 /**
  * Register one st20 converter.
@@ -1296,7 +1296,7 @@ int st22_decoder_put_frame(st22p_decode_session session,
  *   - Others: the handle to the convert dev
  */
 st20_converter_dev_handle st20_converter_register(mtl_handle mt,
-                                                  struct st20_converter_dev* dev);
+                                                  struct st20_converter_dev *dev);
 
 /**
  * Unregister one st20 converter.
@@ -1319,7 +1319,7 @@ int st20_converter_unregister(st20_converter_dev_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
-struct st20_convert_frame_meta* st20_converter_get_frame(st20p_convert_session session);
+struct st20_convert_frame_meta *st20_converter_get_frame(st20p_convert_session session);
 
 /**
  * Put back the frame which get by st20_converter_get_frame to the rx
@@ -1336,7 +1336,7 @@ struct st20_convert_frame_meta* st20_converter_get_frame(st20p_convert_session s
  *   - <0: Error code if put fail.
  */
 int st20_converter_put_frame(st20p_convert_session session,
-                             struct st20_convert_frame_meta* frame, int result);
+                             struct st20_convert_frame_meta *frame, int result);
 
 /**
  * Register one st plugin so.
@@ -1350,7 +1350,7 @@ int st20_converter_put_frame(st20p_convert_session session,
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_plugin_register(mtl_handle mt, const char* path);
+int st_plugin_register(mtl_handle mt, const char *path);
 
 /**
  * Unregister one st plugin so.
@@ -1364,7 +1364,7 @@ int st_plugin_register(mtl_handle mt, const char* path);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_plugin_unregister(mtl_handle mt, const char* path);
+int st_plugin_unregister(mtl_handle mt, const char *path);
 
 /**
  * Get the number of registered plugins lib.
@@ -1388,7 +1388,7 @@ int st_get_plugins_nb(mtl_handle mt);
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-22 pipeline session.
  */
-st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops);
+st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops *ops);
 
 /**
  * Free the tx st2110-22 pipeline session.
@@ -1412,7 +1412,7 @@ int st22p_tx_free(st22p_tx_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame meta pointer.
  */
-struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
+struct st_frame *st22p_tx_get_frame(st22p_tx_handle handle);
 
 /**
  * Put back the frame which get by st22p_tx_get_frame to the tx
@@ -1426,7 +1426,7 @@ struct st_frame* st22p_tx_get_frame(st22p_tx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame);
+int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame *frame);
 
 /**
  * Put back the frame which get by st22p_tx_get_frame to the tx
@@ -1442,8 +1442,8 @@ int st22p_tx_put_frame(st22p_tx_handle handle, struct st_frame* frame);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
-                           struct st_ext_frame* ext_frame);
+int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame *frame,
+                           struct st_ext_frame *ext_frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-22 pipeline session.
@@ -1456,7 +1456,7 @@ int st22p_tx_put_ext_frame(st22p_tx_handle handle, struct st_frame* frame,
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void* st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx);
+void *st22p_tx_get_fb_addr(st22p_tx_handle handle, uint16_t idx);
 
 /**
  * Get the framebuffer size from the tx st2110-22 pipeline session.
@@ -1479,7 +1479,7 @@ size_t st22p_tx_frame_size(st22p_tx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info* dst);
+int st22p_tx_update_destination(st22p_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Wake up the block wait on st22p_tx_get_frame if ST22P_TX_FLAG_BLOCK_GET is enabled.
@@ -1517,7 +1517,7 @@ int st22p_tx_set_block_timeout(st22p_tx_handle handle, uint64_t timedwait_ns);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-22 pipeline session.
  */
-st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops* ops);
+st22p_rx_handle st22p_rx_create(mtl_handle mt, struct st22p_rx_ops *ops);
 
 /**
  * Free the rx st2110-22 pipeline session.
@@ -1540,7 +1540,7 @@ int st22p_rx_free(st22p_rx_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
-struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle);
+struct st_frame *st22p_rx_get_frame(st22p_rx_handle handle);
 
 /**
  * Put back the frame which get by st22p_rx_get_frame to the rx
@@ -1554,7 +1554,7 @@ struct st_frame* st22p_rx_get_frame(st22p_rx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame);
+int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame *frame);
 
 /**
  * Get the framebuffer pointer from the rx st2110-22 pipeline session.
@@ -1567,7 +1567,7 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame);
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void* st22p_rx_get_fb_addr(st22p_rx_handle handle, uint16_t idx);
+void *st22p_rx_get_fb_addr(st22p_rx_handle handle, uint16_t idx);
 
 /**
  * Get the framebuffer size from the rx st2110-22 pipeline session.
@@ -1596,7 +1596,7 @@ size_t st22p_rx_frame_size(st22p_rx_handle handle);
  *   - <0: Error code of the rx st2110-22 pipeline session pcapng dump.
  */
 int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                         struct st_pcap_dump_meta* meta);
+                         struct st_pcap_dump_meta *meta);
 
 /**
  * Get the queue meta attached to rx st2110-22 pipeline session.
@@ -1609,7 +1609,7 @@ int st22p_rx_pcapng_dump(st22p_rx_handle handle, uint32_t max_dump_packets, bool
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
+int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta *meta);
 
 /**
  * Online update the source info for the rx st2110-22(pipeline) session.
@@ -1622,7 +1622,7 @@ int st22p_rx_get_queue_meta(st22p_rx_handle handle, struct st_queue_meta* meta);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info* src);
+int st22p_rx_update_source(st22p_rx_handle handle, struct st_rx_source_info *src);
 
 /**
  * Wake up the block wait on st22p_rx_get_frame if ST22P_RX_FLAG_BLOCK_GET is enabled.
@@ -1660,7 +1660,7 @@ int st22p_rx_set_block_timeout(st22p_rx_handle handle, uint64_t timedwait_ns);
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-20 pipeline session.
  */
-st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops);
+st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops *ops);
 
 /**
  * Free the tx st2110-20 pipeline session.
@@ -1684,7 +1684,7 @@ int st20p_tx_free(st20p_tx_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame meta pointer.
  */
-struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle);
+struct st_frame *st20p_tx_get_frame(st20p_tx_handle handle);
 
 /**
  * Put back the frame which get by st20p_tx_get_frame to the tx
@@ -1698,7 +1698,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
+int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame *frame);
 
 /**
  * Put back the frame which get by st20p_tx_get_frame to the tx
@@ -1714,8 +1714,8 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
-                           struct st_ext_frame* ext_frame);
+int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame *frame,
+                           struct st_ext_frame *ext_frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-20 pipeline session.
@@ -1728,7 +1728,7 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx);
+void *st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx);
 
 /**
  * Get the framebuffer size from the tx st2110-20 pipeline session.
@@ -1765,7 +1765,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
  *   - <0: Error code.
  */
 int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
-                            struct st20_tx_port_status* stats);
+                            struct st20_tx_port_status *stats);
 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session port.
@@ -1791,7 +1791,7 @@ int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst);
+int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Wake up the block wait on st20p_tx_get_frame if ST20P_TX_FLAG_BLOCK_GET is enabled.
@@ -1829,7 +1829,7 @@ int st20p_tx_set_block_timeout(st20p_tx_handle handle, uint64_t timedwait_ns);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20 pipeline session.
  */
-st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops);
+st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops *ops);
 
 /**
  * Free the rx st2110-20 pipeline session.
@@ -1852,7 +1852,7 @@ int st20p_rx_free(st20p_rx_handle handle);
  *   - NULL if no available frame in the session.
  *   - Otherwise, the frame pointer.
  */
-struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle);
+struct st_frame *st20p_rx_get_frame(st20p_rx_handle handle);
 
 /**
  * Put back the frame which get by st20p_rx_get_frame to the rx
@@ -1866,7 +1866,7 @@ struct st_frame* st20p_rx_get_frame(st20p_rx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame);
+int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame *frame);
 
 /**
  * Get the framebuffer pointer from the rx st2110-20 pipeline session.
@@ -1879,7 +1879,7 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame);
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void* st20p_rx_get_fb_addr(st20p_rx_handle handle, uint16_t idx);
+void *st20p_rx_get_fb_addr(st20p_rx_handle handle, uint16_t idx);
 
 /**
  * Get the framebuffer size from the rx st2110-20 pipeline session.
@@ -1908,7 +1908,7 @@ size_t st20p_rx_frame_size(st20p_rx_handle handle);
  *   - <0: Error code of the rx st2110-20 pipeline session pcapng dump.
  */
 int st20p_rx_pcapng_dump(st20p_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                         struct st_pcap_dump_meta* meta);
+                         struct st_pcap_dump_meta *meta);
 
 /**
  * Get the queue meta attached to rx st2110-20 pipeline session.
@@ -1921,7 +1921,7 @@ int st20p_rx_pcapng_dump(st20p_rx_handle handle, uint32_t max_dump_packets, bool
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta* meta);
+int st20p_rx_get_queue_meta(st20p_rx_handle handle, struct st_queue_meta *meta);
 
 /**
  * Get the scheduler index for the rx st2110-20(pipeline) session.
@@ -1948,7 +1948,7 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
  *   - <0: Error code.
  */
 int st20p_rx_get_port_stats(st20p_rx_handle handle, enum mtl_session_port port,
-                            struct st20_rx_port_status* stats);
+                            struct st20_rx_port_status *stats);
 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(pipeline) session port.
@@ -1974,7 +1974,7 @@ int st20p_rx_reset_port_stats(st20p_rx_handle handle, enum mtl_session_port port
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src);
+int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info *src);
 
 /**
  * Get the timing parser pass critical to rx st2110-20(pipeline) session.
@@ -1988,7 +1988,7 @@ int st20p_rx_update_source(st20p_rx_handle handle, struct st_rx_source_info* src
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20p_rx_timing_parser_critical(st20p_rx_handle handle, struct st20_rx_tp_pass* pass);
+int st20p_rx_timing_parser_critical(st20p_rx_handle handle, struct st20_rx_tp_pass *pass);
 
 /**
  * Wake up the block wait on st20p_rx_get_frame if ST20P_RX_FLAG_BLOCK_GET is enabled.
@@ -2025,7 +2025,7 @@ int st20p_rx_set_block_timeout(st20p_rx_handle handle, uint64_t timedwait_ns);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_frame_convert(struct st_frame* src, struct st_frame* dst);
+int st_frame_convert(struct st_frame *src, struct st_frame *dst);
 
 /**
  * Downsample frame size to destination frame.
@@ -2040,7 +2040,7 @@ int st_frame_convert(struct st_frame* src, struct st_frame* dst);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st_frame_downsample(struct st_frame* src, struct st_frame* dst, int idx);
+int st_frame_downsample(struct st_frame *src, struct st_frame *dst, int idx);
 
 /**
  * Calculate the least linesize per the format, w, plane
@@ -2084,7 +2084,7 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
  *   0 if successful.
  *   < 0: Fail.
  */
-int st_frame_sanity_check(struct st_frame* frame);
+int st_frame_sanity_check(struct st_frame *frame);
 
 /**
  * Get the name of st_frame_fmt
@@ -2095,7 +2095,7 @@ int st_frame_sanity_check(struct st_frame* frame);
  *   The pointer to name.
  *   NULL: Fail.
  */
-const char* st_frame_fmt_name(enum st_frame_fmt fmt);
+const char *st_frame_fmt_name(enum st_frame_fmt fmt);
 
 /**
  * Get st_frame_fmt from name
@@ -2106,7 +2106,7 @@ const char* st_frame_fmt_name(enum st_frame_fmt fmt);
  *   The frame fmt.
  *   ST_FRAME_FMT_MAX: Fail.
  */
-enum st_frame_fmt st_frame_name_to_fmt(const char* name);
+enum st_frame_fmt st_frame_name_to_fmt(const char *name);
 
 /**
  * Get number of planes of st_frame_fmt
@@ -2177,7 +2177,7 @@ bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y);
+int st_draw_logo(struct st_frame *frame, struct st_frame *logo, uint32_t x, uint32_t y);
 
 /**
  * Helper to get st frame plane size
@@ -2189,7 +2189,7 @@ int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint
  * @return
  *   size
  */
-static inline size_t st_frame_plane_size(struct st_frame* frame, uint8_t plane) {
+static inline size_t st_frame_plane_size(struct st_frame *frame, uint8_t plane) {
   /* no line size for codestream */
   if (st_frame_fmt_is_codestream(frame->fmt)) return frame->data_size;
 
@@ -2207,68 +2207,68 @@ static inline size_t st_frame_plane_size(struct st_frame* frame, uint8_t plane) 
  * @return
  *   height
  */
-static inline uint32_t st_frame_data_height(struct st_frame* frame) {
+static inline uint32_t st_frame_data_height(struct st_frame *frame) {
   uint32_t h = frame->height;
   if (frame->interlaced) h /= 2;
   return h;
 }
 
 /** Helper to set the port for struct st_rx_port */
-int st_rxp_para_port_set(struct st_rx_port* p, enum mtl_session_port port, char* name);
+int st_rxp_para_port_set(struct st_rx_port *p, enum mtl_session_port port, char *name);
 /** Helper to set the ip for struct st_rx_port */
-int st_rxp_para_ip_set(struct st_rx_port* p, enum mtl_port port, char* ip);
+int st_rxp_para_ip_set(struct st_rx_port *p, enum mtl_port port, char *ip);
 /** Helper to set the udp port number for struct st_rx_port */
-static inline void st_rxp_para_udp_port_set(struct st_rx_port* p, enum mtl_port port,
+static inline void st_rxp_para_udp_port_set(struct st_rx_port *p, enum mtl_port port,
                                             uint16_t udp_port) {
   p->udp_port[port] = udp_port;
 }
 
 /** Helper to set the port for struct st_tx_port */
-int st_txp_para_port_set(struct st_tx_port* p, enum mtl_session_port port, char* name);
+int st_txp_para_port_set(struct st_tx_port *p, enum mtl_session_port port, char *name);
 /** Helper to set the dip for struct st_tx_port */
-int st_txp_para_dip_set(struct st_tx_port* p, enum mtl_port port, char* ip);
+int st_txp_para_dip_set(struct st_tx_port *p, enum mtl_port port, char *ip);
 /** Helper to set the udp port number for struct st_tx_port */
-static inline void st_txp_para_udp_port_set(struct st_tx_port* p, enum mtl_port port,
+static inline void st_txp_para_udp_port_set(struct st_tx_port *p, enum mtl_port port,
                                             uint16_t udp_port) {
   p->udp_port[port] = udp_port;
 }
 
 /** Helper to get the frame addr from struct st_frame */
-static inline void* st_frame_addr(struct st_frame* frame, uint8_t plane) {
+static inline void *st_frame_addr(struct st_frame *frame, uint8_t plane) {
   return frame->addr[plane];
 }
 /** Helper to get the frame addr(mtl_cpuva_t) from struct st_frame */
-static inline mtl_cpuva_t st_frame_addr_cpuva(struct st_frame* frame, uint8_t plane) {
+static inline mtl_cpuva_t st_frame_addr_cpuva(struct st_frame *frame, uint8_t plane) {
   return (mtl_cpuva_t)frame->addr[plane];
 }
 /** Helper to get the frame iova from struct st_frame */
-static inline mtl_iova_t st_frame_iova(struct st_frame* frame, uint8_t plane) {
+static inline mtl_iova_t st_frame_iova(struct st_frame *frame, uint8_t plane) {
   return frame->iova[plane];
 }
 /** Helper to get the frame tp meta from struct st_frame */
-static inline struct st20_rx_tp_meta* st_frame_tp_meta(struct st_frame* frame,
+static inline struct st20_rx_tp_meta *st_frame_tp_meta(struct st_frame *frame,
                                                        enum mtl_session_port port) {
   return frame->tp[port];
 }
 
 /** request to create a plain memory by rte malloc to hold the frame buffer */
-struct st_frame* st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
+struct st_frame *st_frame_create(mtl_handle mt, enum st_frame_fmt fmt, uint32_t w,
                                  uint32_t h, bool interlaced);
 /** free the frame created by st_frame_create */
-int st_frame_free(struct st_frame* frame);
+int st_frame_free(struct st_frame *frame);
 /** request to create a plain memory by libc malloc */
-struct st_frame* st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
+struct st_frame *st_frame_create_by_malloc(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                            bool interlaced);
 
 /** merge two fields to one full frame */
-int st_field_merge(const struct st_frame* first, const struct st_frame* second,
-                   struct st_frame* frame);
+int st_field_merge(const struct st_frame *first, const struct st_frame *second,
+                   struct st_frame *frame);
 /** split one full frame to two fields */
-int st_field_split(const struct st_frame* frame, struct st_frame* first,
-                   struct st_frame* second);
+int st_field_split(const struct st_frame *frame, struct st_frame *first,
+                   struct st_frame *second);
 
 /** helper for name to codec */
-enum st22_codec st_name_to_codec(const char* name);
+enum st22_codec st_name_to_codec(const char *name);
 
 #if defined(__cplusplus)
 }

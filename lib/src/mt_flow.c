@@ -8,18 +8,18 @@
 #include "mt_socket.h"
 #include "mt_util.h"
 
-static inline void rx_flow_lock(struct mt_flow_impl* flow) {
+static inline void rx_flow_lock(struct mt_flow_impl *flow) {
   mt_pthread_mutex_lock(&flow->mutex);
 }
 
-static inline void rx_flow_unlock(struct mt_flow_impl* flow) {
+static inline void rx_flow_unlock(struct mt_flow_impl *flow) {
   mt_pthread_mutex_unlock(&flow->mutex);
 }
 
-static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_t q,
-                                               struct mt_rxq_flow* flow) {
+static struct rte_flow *rte_rx_flow_create_raw(struct mt_interface *inf, uint16_t q,
+                                               struct mt_rxq_flow *flow) {
   struct rte_flow_error error;
-  struct rte_flow* r_flow;
+  struct rte_flow *r_flow;
 
   struct rte_flow_attr attr = {0};
   struct rte_flow_item pattern[2];
@@ -43,9 +43,9 @@ static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_
   memset(pattern, 0, sizeof(pattern));
   memset(action, 0, sizeof(action));
 
-  spec.pattern = (const void*)pkt_buf;
+  spec.pattern = (const void *)pkt_buf;
   spec.length = 62;
-  mask.pattern = (const void*)msk_buf;
+  mask.pattern = (const void *)msk_buf;
   mask.length = 62;
 
   pattern[0].type = RTE_FLOW_ITEM_TYPE_RAW;
@@ -71,8 +71,8 @@ static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_
   return r_flow;
 }
 
-static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
-                                           struct mt_rxq_flow* flow) {
+static struct rte_flow *rte_rx_flow_create(struct mt_interface *inf, uint16_t q,
+                                           struct mt_rxq_flow *flow) {
   struct rte_flow_attr attr;
   struct rte_flow_item pattern[4];
   struct rte_flow_action action[2];
@@ -84,7 +84,7 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   struct rte_flow_item_udp udp_spec;
   struct rte_flow_item_udp udp_mask;
   struct rte_flow_error error;
-  struct rte_flow* r_flow;
+  struct rte_flow *r_flow;
   int ret;
   bool has_ip_flow = true;
   bool has_port_flow = true;
@@ -204,7 +204,7 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   }
 
   if (has_ip_flow) {
-    uint8_t* ip = flow->dip_addr;
+    uint8_t *ip = flow->dip_addr;
     info("%s(%d), queue %u succ, ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0],
          ip[1], ip[2], ip[3], flow->dst_port);
   } else {
@@ -213,19 +213,19 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
   return r_flow;
 }
 
-static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t q,
-                                             struct mt_rxq_flow* flow) {
+static struct mt_rx_flow_rsp *rx_flow_create(struct mt_interface *inf, uint16_t q,
+                                             struct mt_rxq_flow *flow) {
   int ret;
   enum mtl_port port = inf->port;
-  struct mtl_main_impl* impl = inf->parent;
-  uint8_t* ip = flow->dip_addr;
+  struct mtl_main_impl *impl = inf->parent;
+  uint8_t *ip = flow->dip_addr;
 
   if (!mt_drv_kernel_based(impl, port) && q >= inf->nb_rx_q) {
     err("%s(%d), invalid q %u\n", __func__, port, q);
     return NULL;
   }
 
-  struct mt_rx_flow_rsp* rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
+  struct mt_rx_flow_rsp *rsp = mt_rte_zmalloc_socket(sizeof(*rsp), inf->socket_id);
   rsp->flow_id = -1;
   rsp->queue_id = q;
   rsp->dst_port = flow->dst_port;
@@ -242,7 +242,7 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
     }
     rsp->flow_id = ret;
   } else {
-    struct rte_flow* r_flow;
+    struct rte_flow *r_flow;
 
     r_flow = rte_rx_flow_create(inf, q, flow);
     if (!r_flow) {
@@ -260,7 +260,7 @@ static struct mt_rx_flow_rsp* rx_flow_create(struct mt_interface* inf, uint16_t 
   return rsp;
 }
 
-static int rx_flow_free(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp) {
+static int rx_flow_free(struct mt_interface *inf, struct mt_rx_flow_rsp *rsp) {
   enum mtl_port port = inf->port;
   struct rte_flow_error error;
   int ret;
@@ -293,11 +293,11 @@ retry:
   return 0;
 }
 
-struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_port port,
-                                         uint16_t q, struct mt_rxq_flow* flow) {
-  struct mt_interface* inf = mt_if(impl, port);
-  struct mt_rx_flow_rsp* rsp;
-  struct mt_flow_impl* flow_impl = impl->flow[port];
+struct mt_rx_flow_rsp *mt_rx_flow_create(struct mtl_main_impl *impl, enum mtl_port port,
+                                         uint16_t q, struct mt_rxq_flow *flow) {
+  struct mt_interface *inf = mt_if(impl, port);
+  struct mt_rx_flow_rsp *rsp;
+  struct mt_flow_impl *flow_impl = impl->flow[port];
 
   if (!mt_drv_kernel_based(impl, port) && q >= inf->nb_rx_q) {
     err("%s(%d), invalid q %u max allowed %u\n", __func__, port, q, inf->nb_rx_q);
@@ -311,18 +311,18 @@ struct mt_rx_flow_rsp* mt_rx_flow_create(struct mtl_main_impl* impl, enum mtl_po
   return rsp;
 }
 
-int mt_rx_flow_free(struct mtl_main_impl* impl, enum mtl_port port,
-                    struct mt_rx_flow_rsp* rsp) {
-  struct mt_interface* inf = mt_if(impl, port);
+int mt_rx_flow_free(struct mtl_main_impl *impl, enum mtl_port port,
+                    struct mt_rx_flow_rsp *rsp) {
+  struct mt_interface *inf = mt_if(impl, port);
   /* no lock need */
   return rx_flow_free(inf, rsp);
 }
 
-int mt_flow_uinit(struct mtl_main_impl* impl) {
+int mt_flow_uinit(struct mtl_main_impl *impl) {
   int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    struct mt_flow_impl* flow = impl->flow[i];
+    struct mt_flow_impl *flow = impl->flow[i];
     if (!flow) continue;
 
     mt_pthread_mutex_destroy(&flow->mutex);
@@ -333,9 +333,9 @@ int mt_flow_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_flow_init(struct mtl_main_impl* impl) {
+int mt_flow_init(struct mtl_main_impl *impl) {
   int num_ports = mt_num_ports(impl);
-  struct mt_flow_impl* flow;
+  struct mt_flow_impl *flow;
 
   for (int i = 0; i < num_ports; i++) {
     flow = mt_rte_zmalloc_socket(sizeof(*flow), mt_socket_id(impl, i));

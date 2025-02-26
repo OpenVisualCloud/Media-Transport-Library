@@ -26,9 +26,9 @@ struct rx_st20p_hg_ctx {
 
   size_t frame_size;
   int dst_fd;
-  uint8_t* dst_begin;
-  uint8_t* dst_end;
-  uint8_t* dst_cursor;
+  uint8_t *dst_begin;
+  uint8_t *dst_end;
+  uint8_t *dst_cursor;
 
   int fb_cnt;
   size_t pg_sz;
@@ -38,10 +38,10 @@ struct rx_st20p_hg_ctx {
   off_t cpu_copy_offset;
 };
 
-static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
+static int gaddr_profiling(struct rx_st20p_hg_ctx *ctx) {
   clock_t start, end;
   float sec;
-  struct st_ext_frame* frame = &ctx->gddr_frame;
+  struct st_ext_frame *frame = &ctx->gddr_frame;
   int loop_cnt;
   float throughput_bit;
   uint8_t buf[256];
@@ -54,7 +54,7 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
   size_t r_sz = 0x100000;
   if (frame->size < r_sz) r_sz = frame->size;
   for (int loop = 0; loop < loop_cnt; loop++) {
-    uint8_t* addr = (uint8_t*)frame->addr[0];
+    uint8_t *addr = (uint8_t *)frame->addr[0];
     for (size_t i = 0; i < r_sz; i++) {
       buf[i & 0xFF] = addr[i];
       dbg("%s, value %u at %d\n", __func__, addr[i], (int)i);
@@ -70,7 +70,7 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
   loop_cnt = 20;
   start = clock();
   for (int loop = 0; loop < loop_cnt; loop++) {
-    uint8_t* addr = (uint8_t*)frame->addr[0];
+    uint8_t *addr = (uint8_t *)frame->addr[0];
     for (size_t i = 0; i < frame->size; i++) {
       addr[i] = buf[i & 0xFF];
     }
@@ -83,10 +83,10 @@ static int gaddr_profiling(struct rx_st20p_hg_ctx* ctx) {
   return 0;
 }
 
-static int gddr_map(struct st_sample_context* ctx, struct st_ext_frame* frame, size_t sz,
+static int gddr_map(struct st_sample_context *ctx, struct st_ext_frame *frame, size_t sz,
                     int fd) {
   off_t off = ctx->gddr_pa + ctx->gddr_offset;
-  void* map = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_SHARED, fd, off);
+  void *map = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_SHARED, fd, off);
   if (MAP_FAILED == map) {
     err("%s, map size %" PRIu64 " fail\n", __func__, sz);
     return -EIO;
@@ -114,8 +114,8 @@ static int gddr_map(struct st_sample_context* ctx, struct st_ext_frame* frame, s
   return 0;
 }
 
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_hg_ctx* s = priv;
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_st20p_hg_ctx *s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -124,7 +124,7 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_close_source(struct rx_st20p_hg_ctx* s) {
+static int rx_st20p_close_source(struct rx_st20p_hg_ctx *s) {
   if (s->dst_begin) {
     munmap(s->dst_begin, s->dst_end - s->dst_begin);
     s->dst_begin = NULL;
@@ -137,7 +137,7 @@ static int rx_st20p_close_source(struct rx_st20p_hg_ctx* s) {
   return 0;
 }
 
-static int rx_st20p_open_source(struct rx_st20p_hg_ctx* s, const char* file) {
+static int rx_st20p_open_source(struct rx_st20p_hg_ctx *s, const char *file) {
   int fd, ret, idx = s->idx;
   off_t f_size;
   int fb_cnt = 3;
@@ -156,7 +156,7 @@ static int rx_st20p_open_source(struct rx_st20p_hg_ctx* s, const char* file) {
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -173,21 +173,21 @@ static int rx_st20p_open_source(struct rx_st20p_hg_ctx* s, const char* file) {
   return 0;
 }
 
-static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx* s, struct st_frame* frame) {
+static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx *s, struct st_frame *frame) {
   if (s->dst_fd > 0) {
     if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
     mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
     s->dst_cursor += s->frame_size;
   } else {
-    uint32_t* d;
+    uint32_t *d;
     if (s->use_cpu_copy) {
       if (s->cpu_copy_offset + s->frame_size > s->gddr_frame.size) s->cpu_copy_offset = 0;
-      void* gddr = s->gddr_frame.addr[0] + s->cpu_copy_offset;
+      void *gddr = s->gddr_frame.addr[0] + s->cpu_copy_offset;
       mtl_memcpy(gddr, frame->addr[0], s->frame_size);
-      d = (uint32_t*)gddr;
+      d = (uint32_t *)gddr;
       s->cpu_copy_offset += s->frame_size;
     } else {
-      d = (uint32_t*)frame->addr[0];
+      d = (uint32_t *)frame->addr[0];
     }
     if (0 == (s->fb_recv % 60)) {
       info("%s(%d), frame %p, value 0x%x 0x%x\n", __func__, s->idx, d, d[0], d[1]);
@@ -196,10 +196,10 @@ static void rx_st20p_consume_frame(struct rx_st20p_hg_ctx* s, struct st_frame* f
   s->fb_recv++;
 }
 
-static void* rx_st20p_frame_thread(void* arg) {
-  struct rx_st20p_hg_ctx* s = arg;
+static void *rx_st20p_frame_thread(void *arg) {
+  struct rx_st20p_hg_ctx *s = arg;
   st20p_rx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -218,7 +218,7 @@ static void* rx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
   int dev_mem_fd = -EIO;
@@ -242,7 +242,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_st20p_hg_ctx* app[session_num];
+  struct rx_st20p_hg_ctx *app[session_num];
 
   memset(app, 0x0, sizeof(app));
 

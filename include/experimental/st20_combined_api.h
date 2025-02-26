@@ -20,7 +20,7 @@ extern "C" {
 #endif
 
 /** Handle to rx st2110-22 pipeline session of lib */
-typedef struct st20rc_rx_ctx* st20rc_rx_handle;
+typedef struct st20rc_rx_ctx *st20rc_rx_handle;
 
 /**
  * Flag bit in flags of struct st20rc_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -60,9 +60,9 @@ typedef struct st20rc_rx_ctx* st20rc_rx_handle;
  */
 struct st20rc_rx_ops {
   /** name */
-  const char* name;
+  const char *name;
   /** private data to the callback function */
-  void* priv;
+  void *priv;
   union {
     /** Mandatory. multicast IP address or sender IP for unicast */
     uint8_t ip_addr[MTL_SESSION_PORT_MAX][MTL_IP_ADDR_LEN];
@@ -119,14 +119,14 @@ struct st20rc_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_ready)(void* priv, void* frame, struct st20_rx_frame_meta* meta);
+  int (*notify_frame_ready)(void *priv, void *frame, struct st20_rx_frame_meta *meta);
   /**
    * event callback, lib will call this when there is some event happened.
    * Only non-block method can be used in this callback as it run from lcore routine.
    * args point to the meta data of each event.
    * Ex, cast to struct st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void* priv, enum st_event event, void* args);
+  int (*notify_event)(void *priv, enum st_event event, void *args);
 };
 
 /**
@@ -140,7 +140,7 @@ struct st20rc_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20(redundant) session.
  */
-st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops* ops);
+st20rc_rx_handle st20rc_rx_create(mtl_handle mt, struct st20rc_rx_ops *ops);
 
 /**
  * Free the rx st2110-20(redundant) session.
@@ -164,7 +164,7 @@ int st20rc_rx_free(st20rc_rx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20rc_rx_put_frame(st20rc_rx_handle handle, void* frame);
+int st20rc_rx_put_frame(st20rc_rx_handle handle, void *frame);
 
 /**
  * Get the framebuffer size for the rx st2110-20(redundant) session.
@@ -203,7 +203,7 @@ int st20rc_rx_get_framebuffer_count(st20rc_rx_handle handle);
  *   - <0: Error code of the rx st2110-20(redundant) session pcapng dump.
  */
 int st20rc_rx_pcapng_dump(st20rc_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                          struct st_pcap_dump_meta* meta);
+                          struct st_pcap_dump_meta *meta);
 
 #if defined(__cplusplus)
 }

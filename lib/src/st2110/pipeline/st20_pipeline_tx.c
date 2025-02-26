@@ -7,15 +7,15 @@
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
-static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
+static const char *st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_converting", "converted", "in_user", "in_transmitting",
 };
 
-static const char* tx_st20p_stat_name(enum st20p_tx_frame_status stat) {
+static const char *tx_st20p_stat_name(enum st20p_tx_frame_status stat) {
   return st20p_tx_frame_stat_name[stat];
 }
 
-static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx* ctx, uint16_t idx) {
+static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx *ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
   next_idx++;
@@ -23,19 +23,19 @@ static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx* ctx, uint16_t idx) {
   return next_idx;
 }
 
-static inline struct st_frame* tx_st20p_user_frame(struct st20p_tx_ctx* ctx,
-                                                   struct st20p_tx_frame* framebuff) {
+static inline struct st_frame *tx_st20p_user_frame(struct st20p_tx_ctx *ctx,
+                                                   struct st20p_tx_frame *framebuff) {
   return ctx->derive ? &framebuff->dst : &framebuff->src;
 }
 
-static void tx_st20p_block_wake(struct st20p_tx_ctx* ctx) {
+static void tx_st20p_block_wake(struct st20p_tx_ctx *ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   mt_pthread_cond_signal(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
 
-static void tx_st20p_notify_frame_available(struct st20p_tx_ctx* ctx) {
+static void tx_st20p_notify_frame_available(struct st20p_tx_ctx *ctx) {
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);
   }
@@ -46,10 +46,10 @@ static void tx_st20p_notify_frame_available(struct st20p_tx_ctx* ctx) {
   }
 }
 
-static struct st20p_tx_frame* tx_st20p_next_available(
-    struct st20p_tx_ctx* ctx, uint16_t idx_start, enum st20p_tx_frame_status desired) {
+static struct st20p_tx_frame *tx_st20p_next_available(
+    struct st20p_tx_ctx *ctx, uint16_t idx_start, enum st20p_tx_frame_status desired) {
   uint16_t idx = idx_start;
-  struct st20p_tx_frame* framebuff;
+  struct st20p_tx_frame *framebuff;
 
   /* check ready frame from idx_start */
   while (1) {
@@ -69,10 +69,10 @@ static struct st20p_tx_frame* tx_st20p_next_available(
   return NULL;
 }
 
-static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct st20p_tx_ctx* ctx = priv;
-  struct st20p_tx_frame* framebuff;
+static int tx_st20p_next_frame(void *priv, uint16_t *next_frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct st20p_tx_ctx *ctx = priv;
+  struct st20p_tx_frame *framebuff;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
@@ -88,7 +88,7 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
   framebuff->stat = ST20P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
 
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  struct st_frame *frame = tx_st20p_user_frame(ctx, framebuff);
   meta->second_field = frame->second_field;
   if (ctx->ops.flags & (ST20P_TX_FLAG_USER_PACING | ST20P_TX_FLAG_USER_TIMESTAMP)) {
     meta->tfmt = frame->tfmt;
@@ -106,11 +106,11 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct st20p_tx_ctx* ctx = priv;
+static int tx_st20p_frame_done(void *priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct st20p_tx_ctx *ctx = priv;
   int ret;
-  struct st20p_tx_frame* framebuff = &ctx->framebuffs[frame_idx];
+  struct st20p_tx_frame *framebuff = &ctx->framebuffs[frame_idx];
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -124,7 +124,7 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  struct st_frame *frame = tx_st20p_user_frame(ctx, framebuff);
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
   frame->epoch = meta->epoch;
@@ -142,8 +142,8 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static int tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
-  struct st20p_tx_ctx* ctx = priv;
+static int tx_st20p_notify_event(void *priv, enum st_event event, void *args) {
+  struct st20p_tx_ctx *ctx = priv;
 
   if (ctx->ops.notify_event) {
     ctx->ops.notify_event(ctx->ops.priv, event, args);
@@ -152,10 +152,10 @@ static int tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
   return 0;
 }
 
-static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
-  struct st20p_tx_ctx* ctx = priv;
+static struct st20_convert_frame_meta *tx_st20p_convert_get_frame(void *priv) {
+  struct st20p_tx_ctx *ctx = priv;
   int idx = ctx->idx;
-  struct st20p_tx_frame* framebuff;
+  struct st20p_tx_frame *framebuff;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -182,11 +182,11 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
   return &framebuff->convert_frame;
 }
 
-static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta* frame,
+static int tx_st20p_convert_put_frame(void *priv, struct st20_convert_frame_meta *frame,
                                       int result) {
-  struct st20p_tx_ctx* ctx = priv;
+  struct st20p_tx_ctx *ctx = priv;
   int idx = ctx->idx;
-  struct st20p_tx_frame* framebuff = frame->priv;
+  struct st20p_tx_frame *framebuff = frame->priv;
   uint16_t convert_idx = framebuff->idx;
   size_t data_size = frame->dst->data_size;
 
@@ -215,9 +215,9 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
   return 0;
 }
 
-static int tx_st20p_convert_dump(void* priv) {
-  struct st20p_tx_ctx* ctx = priv;
-  struct st20p_tx_frame* framebuff = ctx->framebuffs;
+static int tx_st20p_convert_dump(void *priv) {
+  struct st20p_tx_ctx *ctx = priv;
+  struct st20p_tx_frame *framebuff = ctx->framebuffs;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
@@ -240,8 +240,8 @@ static int tx_st20p_convert_dump(void* priv) {
   return 0;
 }
 
-static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx_ctx* ctx,
-                                     struct st20p_tx_ops* ops) {
+static int tx_st20p_create_transport(struct mtl_main_impl *impl, struct st20p_tx_ctx *ctx,
+                                     struct st20p_tx_ops *ops) {
   int idx = ctx->idx;
   struct st20_tx_ops ops_tx;
   st20_tx_handle transport;
@@ -315,7 +315,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   }
   ctx->transport = transport;
 
-  struct st20p_tx_frame* frames = ctx->framebuffs;
+  struct st20p_tx_frame *frames = ctx->framebuffs;
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME) {
       frames[i].dst.addr[0] = NULL;
@@ -342,7 +342,7 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   return 0;
 }
 
-static int tx_st20p_uinit_src_fbs(struct st20p_tx_ctx* ctx) {
+static int tx_st20p_uinit_src_fbs(struct st20p_tx_ctx *ctx) {
   if (ctx->framebuffs) {
     if (!ctx->derive && !(ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME)) {
       /* do not free derived/ext frames */
@@ -370,12 +370,12 @@ static int tx_st20p_uinit_src_fbs(struct st20p_tx_ctx* ctx) {
   return 0;
 }
 
-static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx* ctx,
-                                 struct st20p_tx_ops* ops) {
+static int tx_st20p_init_src_fbs(struct mtl_main_impl *impl, struct st20p_tx_ctx *ctx,
+                                 struct st20p_tx_ops *ops) {
   int idx = ctx->idx;
   int soc_id = ctx->socket_id;
-  struct st20p_tx_frame* frames;
-  void* src = NULL;
+  struct st20p_tx_frame *frames;
+  void *src = NULL;
   size_t src_size = ctx->src_size;
 
   ctx->framebuff_cnt = ops->framebuff_cnt;
@@ -437,8 +437,8 @@ static int tx_st20p_init_src_fbs(struct mtl_main_impl* impl, struct st20p_tx_ctx
   return 0;
 }
 
-static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ctx* ctx,
-                                  struct st20p_tx_ops* ops) {
+static int tx_st20p_get_converter(struct mtl_main_impl *impl, struct st20p_tx_ctx *ctx,
+                                  struct st20p_tx_ops *ops) {
   int idx = ctx->idx;
   struct st20_get_converter_request req;
 
@@ -456,9 +456,9 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   req.put_frame = tx_st20p_convert_put_frame;
   req.dump = tx_st20p_convert_dump;
 
-  struct st20_convert_session_impl* convert_impl = st20_get_converter(impl, &req);
+  struct st20_convert_session_impl *convert_impl = st20_get_converter(impl, &req);
   if (req.device == ST_PLUGIN_DEVICE_TEST_INTERNAL || !convert_impl) {
-    struct st_frame_converter* converter = NULL;
+    struct st_frame_converter *converter = NULL;
     converter = mt_rte_zmalloc_socket(sizeof(*converter), ctx->socket_id);
     if (!converter) {
       err("%s, converter malloc fail\n", __func__);
@@ -479,9 +479,9 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
   return 0;
 }
 
-static int tx_st20p_stat(void* priv) {
-  struct st20p_tx_ctx* ctx = priv;
-  struct st20p_tx_frame* framebuff = ctx->framebuffs;
+static int tx_st20p_stat(void *priv) {
+  struct st20p_tx_ctx *ctx = priv;
+  struct st20p_tx_frame *framebuff = ctx->framebuffs;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
@@ -500,12 +500,12 @@ static int tx_st20p_stat(void* priv) {
   return 0;
 }
 
-static int tx_st20p_usdt_dump_frame(struct st20p_tx_ctx* ctx, struct st_frame* frame) {
+static int tx_st20p_usdt_dump_frame(struct st20p_tx_ctx *ctx, struct st_frame *frame) {
   int idx = ctx->idx;
-  struct mtl_main_impl* impl = ctx->impl;
+  struct mtl_main_impl *impl = ctx->impl;
   int fd;
   char usdt_dump_path[64];
-  struct st20p_tx_ops* ops = &ctx->ops;
+  struct st20p_tx_ops *ops = &ctx->ops;
   uint64_t tsc_s = mt_get_tsc(impl);
 
   snprintf(usdt_dump_path, sizeof(usdt_dump_path),
@@ -531,10 +531,10 @@ static int tx_st20p_usdt_dump_frame(struct st20p_tx_ctx* ctx, struct st_frame* f
   return 0;
 }
 
-static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
+static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx *ctx) {
   /* wait all frame are in free or in transmitting(flushed by transport) */
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
-    struct st20p_tx_frame* framebuff = &ctx->framebuffs[i];
+    struct st20p_tx_frame *framebuff = &ctx->framebuffs[i];
     int retry = 0;
 
     while (1) {
@@ -559,7 +559,7 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
   }
 }
 
-static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
+static int st20p_tx_get_block_wait(struct st20p_tx_ctx *ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
@@ -570,10 +570,10 @@ static int st20p_tx_get_block_wait(struct st20p_tx_ctx* ctx) {
   return 0;
 }
 
-struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
-  struct st20p_tx_ctx* ctx = handle;
+struct st_frame *st20p_tx_get_frame(st20p_tx_handle handle) {
+  struct st20p_tx_ctx *ctx = handle;
   int idx = ctx->idx;
-  struct st20p_tx_frame* framebuff;
+  struct st20p_tx_frame *framebuff;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -607,7 +607,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
-  struct st_frame* frame = tx_st20p_user_frame(ctx, framebuff);
+  struct st_frame *frame = tx_st20p_user_frame(ctx, framebuff);
   if (ctx->ops.interlaced) { /* init second_field but user still can customize */
     frame->second_field = ctx->second_field;
     ctx->second_field = ctx->second_field ? false : true;
@@ -619,10 +619,10 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   return frame;
 }
 
-int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
-  struct st20p_tx_ctx* ctx = handle;
+int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame *frame) {
+  struct st20p_tx_ctx *ctx = handle;
   int idx = ctx->idx;
-  struct st20p_tx_frame* framebuff = frame->priv;
+  struct st20p_tx_frame *framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -686,11 +686,11 @@ int st20p_tx_put_frame(st20p_tx_handle handle, struct st_frame* frame) {
   return 0;
 }
 
-int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
-                           struct st_ext_frame* ext_frame) {
-  struct st20p_tx_ctx* ctx = handle;
+int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame *frame,
+                           struct st_ext_frame *ext_frame) {
+  struct st20p_tx_ctx *ctx = handle;
   int idx = ctx->idx;
-  struct st20p_tx_frame* framebuff = frame->priv;
+  struct st20p_tx_frame *framebuff = frame->priv;
   uint16_t producer_idx = framebuff->idx;
   int ret = 0;
 
@@ -773,10 +773,10 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
   return 0;
 }
 
-st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
+st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops *ops) {
   static int st20p_tx_idx;
-  struct mtl_main_impl* impl = mt;
-  struct st20p_tx_ctx* ctx;
+  struct mtl_main_impl *impl = mt;
+  struct st20p_tx_ctx *ctx;
   int ret;
   int idx = st20p_tx_idx;
   size_t src_size;
@@ -883,8 +883,8 @@ st20p_tx_handle st20p_tx_create(mtl_handle mt, struct st20p_tx_ops* ops) {
 }
 
 int st20p_tx_free(st20p_tx_handle handle) {
-  struct st20p_tx_ctx* ctx = handle;
-  struct mtl_main_impl* impl = ctx->impl;
+  struct st20p_tx_ctx *ctx = handle;
+  struct mtl_main_impl *impl = ctx->impl;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -927,8 +927,8 @@ int st20p_tx_free(st20p_tx_handle handle) {
   return 0;
 }
 
-void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
-  struct st20p_tx_ctx* ctx = handle;
+void *st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -951,7 +951,7 @@ void* st20p_tx_get_fb_addr(st20p_tx_handle handle, uint16_t idx) {
 }
 
 size_t st20p_tx_frame_size(st20p_tx_handle handle) {
-  struct st20p_tx_ctx* ctx = handle;
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -963,7 +963,7 @@ size_t st20p_tx_frame_size(st20p_tx_handle handle) {
 }
 
 int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
-  struct st20p_tx_ctx* ctx = handle;
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -975,8 +975,8 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
 }
 
 int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
-                            struct st20_tx_port_status* stats) {
-  struct st20p_tx_ctx* ctx = handle;
+                            struct st20_tx_port_status *stats) {
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -988,7 +988,7 @@ int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
 }
 
 int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port) {
-  struct st20p_tx_ctx* ctx = handle;
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -999,8 +999,8 @@ int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port
   return st20_tx_reset_port_stats(ctx->transport, port);
 }
 
-int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst) {
-  struct st20p_tx_ctx* ctx = handle;
+int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info *dst) {
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -1012,7 +1012,7 @@ int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* 
 }
 
 int st20p_tx_wake_block(st20p_tx_handle handle) {
-  struct st20p_tx_ctx* ctx = handle;
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
@@ -1026,7 +1026,7 @@ int st20p_tx_wake_block(st20p_tx_handle handle) {
 }
 
 int st20p_tx_set_block_timeout(st20p_tx_handle handle, uint64_t timedwait_ns) {
-  struct st20p_tx_ctx* ctx = handle;
+  struct st20p_tx_ctx *ctx = handle;
   int cidx = ctx->idx;
 
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {

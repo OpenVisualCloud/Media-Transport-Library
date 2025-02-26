@@ -5,9 +5,9 @@
 #ifndef _MT_LIB_QUIRK_HEAD_H_
 #define _MT_LIB_QUIRK_HEAD_H_
 
-static inline unsigned int mt_rte_ring_sc_dequeue_bulk(struct rte_ring* r,
-                                                       void** obj_table, unsigned int n,
-                                                       unsigned int* available) {
+static inline unsigned int mt_rte_ring_sc_dequeue_bulk(struct rte_ring *r,
+                                                       void **obj_table, unsigned int n,
+                                                       unsigned int *available) {
 #if defined(__clang__) /* fix for clang release build */
   /* not sure why clang has issue with variable n, probably optimized code sequence */
   if (n == 4)

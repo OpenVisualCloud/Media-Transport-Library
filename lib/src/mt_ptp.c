@@ -31,15 +31,15 @@
   ((1 == ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
 // clang-format on
 
-typedef BOOL(WINAPI* PGSTAP)(PDWORD64 lpTimeAdjustment, PDWORD64 lpTimeIncrement,
+typedef BOOL(WINAPI *PGSTAP)(PDWORD64 lpTimeAdjustment, PDWORD64 lpTimeIncrement,
                              PBOOL lpTimeAdjustmentDisabled);
 static PGSTAP win_get_systime_adj;
 
-typedef BOOL(WINAPI* PSSTAP)(DWORD64 dwTimeAdjustment, BOOL bTimeAdjustmentDisabled);
+typedef BOOL(WINAPI *PSSTAP)(DWORD64 dwTimeAdjustment, BOOL bTimeAdjustmentDisabled);
 static PSSTAP win_set_systime_adj;
 #endif
 
-static char* ptp_mode_strs[MT_PTP_MAX_MODE] = {
+static char *ptp_mode_strs[MT_PTP_MAX_MODE] = {
     "l2",
     "l4",
 };
@@ -50,39 +50,39 @@ enum servo_state {
   LOCKED,
 };
 
-static inline char* ptp_mode_str(enum mt_ptp_l_mode mode) {
+static inline char *ptp_mode_str(enum mt_ptp_l_mode mode) {
   return ptp_mode_strs[mode];
 }
 
-static inline uint64_t ptp_net_tmstamp_to_ns(struct mt_ptp_tmstamp* ts) {
+static inline uint64_t ptp_net_tmstamp_to_ns(struct mt_ptp_tmstamp *ts) {
   uint64_t sec = (uint64_t)ntohl(ts->sec_lsb) + ((uint64_t)ntohs(ts->sec_msb) << 32);
   return (sec * NS_PER_S) + ntohl(ts->ns);
 }
 
-static inline void ptp_timesync_lock(struct mt_ptp_impl* ptp) { /* todo */
+static inline void ptp_timesync_lock(struct mt_ptp_impl *ptp) { /* todo */
   MTL_MAY_UNUSED(ptp);
 }
 
-static inline void ptp_timesync_unlock(struct mt_ptp_impl* ptp) { /* todo */
+static inline void ptp_timesync_unlock(struct mt_ptp_impl *ptp) { /* todo */
   MTL_MAY_UNUSED(ptp);
 }
 
-static inline uint64_t ptp_correct_ts(struct mt_ptp_impl* ptp, uint64_t ts) {
+static inline uint64_t ptp_correct_ts(struct mt_ptp_impl *ptp, uint64_t ts) {
   int64_t ts_local_advanced = ts - ptp->last_sync_ts;
   int64_t ts_ptp_advanced = ptp->coefficient * ts_local_advanced;
   return ptp->last_sync_ts + ts_ptp_advanced;
 }
 
-static inline uint64_t ptp_no_timesync_time(struct mt_ptp_impl* ptp) {
+static inline uint64_t ptp_no_timesync_time(struct mt_ptp_impl *ptp) {
   uint64_t tsc = mt_get_tsc(ptp->impl);
   return tsc + ptp->no_timesync_delta;
 }
 
-static inline void ptp_no_timesync_adjust(struct mt_ptp_impl* ptp, int64_t delta) {
+static inline void ptp_no_timesync_adjust(struct mt_ptp_impl *ptp, int64_t delta) {
   ptp->no_timesync_delta += delta;
 }
 
-static inline uint64_t ptp_timesync_read_time_no_lock(struct mt_ptp_impl* ptp) {
+static inline uint64_t ptp_timesync_read_time_no_lock(struct mt_ptp_impl *ptp) {
   enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   int ret;
@@ -101,7 +101,7 @@ static inline uint64_t ptp_timesync_read_time_no_lock(struct mt_ptp_impl* ptp) {
   return mt_timespec_to_ns(&spec);
 }
 
-static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
+static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl *ptp) {
   enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   int ret;
@@ -122,8 +122,8 @@ static inline uint64_t ptp_timesync_read_time(struct mt_ptp_impl* ptp) {
   return mt_timespec_to_ns(&spec);
 }
 
-static inline double pi_sample(struct mt_pi_servo* s, double offset, double local_ts,
-                               enum servo_state* state) {
+static inline double pi_sample(struct mt_pi_servo *s, double offset, double local_ts,
+                               enum servo_state *state) {
   double ppb = 0.0;
 
   switch (s->count) {
@@ -160,7 +160,7 @@ static inline double pi_sample(struct mt_pi_servo* s, double offset, double loca
   return ppb;
 }
 
-static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
+static void ptp_adj_system_clock_time(struct mt_ptp_impl *ptp, int64_t delta) {
   int ret;
 #ifndef WINDOWSENV
   struct timex adjtime;
@@ -204,7 +204,7 @@ static void ptp_adj_system_clock_time(struct mt_ptp_impl* ptp, int64_t delta) {
   }
 }
 
-static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
+static void ptp_adj_system_clock_freq(struct mt_ptp_impl *ptp, double ppb) {
   int ret = -1;
 #ifndef WINDOWSENV
   struct timex adjfreq;
@@ -239,7 +239,7 @@ static void ptp_adj_system_clock_freq(struct mt_ptp_impl* ptp, double ppb) {
   }
 }
 
-static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
+static void phc2sys_adjust(struct mt_ptp_impl *ptp) {
   enum servo_state state = UNLOCKED;
   double ppb;
   struct timespec ts1_sys, ts2_sys;
@@ -311,7 +311,7 @@ static void phc2sys_adjust(struct mt_ptp_impl* ptp) {
   }
 }
 
-static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* tai) {
+static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl *ptp, uint64_t *tai) {
   uint16_t port_id = ptp->port_id;
   int ret;
   struct timespec spec;
@@ -332,8 +332,8 @@ static inline int ptp_timesync_read_tx_time(struct mt_ptp_impl* ptp, uint64_t* t
   return ret;
 }
 
-static inline int ptp_timesync_read_rx_time(struct mt_ptp_impl* ptp, uint32_t flags,
-                                            uint64_t* tai) {
+static inline int ptp_timesync_read_rx_time(struct mt_ptp_impl *ptp, uint32_t flags,
+                                            uint64_t *tai) {
   enum mtl_port port = ptp->port;
   uint16_t port_id = ptp->port_id;
   int ret;
@@ -355,7 +355,7 @@ static inline int ptp_timesync_read_rx_time(struct mt_ptp_impl* ptp, uint32_t fl
   return ret;
 }
 
-static inline int ptp_timesync_adjust_time(struct mt_ptp_impl* ptp, int64_t delta) {
+static inline int ptp_timesync_adjust_time(struct mt_ptp_impl *ptp, int64_t delta) {
   int ret;
 
   if (ptp->no_timesync) {
@@ -371,7 +371,7 @@ static inline int ptp_timesync_adjust_time(struct mt_ptp_impl* ptp, int64_t delt
 }
 
 #ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
-static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl* ptp, int64_t ppm,
+static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl *ptp, int64_t ppm,
                                            int64_t delta) {
   int ret;
 
@@ -390,27 +390,27 @@ static inline int ptp_timesync_adjust_freq(struct mt_ptp_impl* ptp, int64_t ppm,
 }
 #endif
 
-static inline uint64_t ptp_get_raw_time(struct mt_ptp_impl* ptp) {
+static inline uint64_t ptp_get_raw_time(struct mt_ptp_impl *ptp) {
   return ptp_timesync_read_time(ptp);
 }
 
-static inline uint64_t ptp_get_correct_time(struct mt_ptp_impl* ptp) {
+static inline uint64_t ptp_get_correct_time(struct mt_ptp_impl *ptp) {
   return ptp_correct_ts(ptp, ptp_get_raw_time(ptp));
 }
 
-static uint64_t ptp_from_eth(struct mtl_main_impl* impl, enum mtl_port port) {
+static uint64_t ptp_from_eth(struct mtl_main_impl *impl, enum mtl_port port) {
   return ptp_get_correct_time(mt_get_ptp(impl, port));
 }
 
-static void ptp_print_port_id(enum mtl_port port, struct mt_ptp_port_id* pid) {
-  uint8_t* id = &pid->clock_identity.id[0];
+static void ptp_print_port_id(enum mtl_port port, struct mt_ptp_port_id *pid) {
+  uint8_t *id = &pid->clock_identity.id[0];
   info(
       "mt_ptp_port_id(%d), port_number: %04x, clk_id: "
       "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",
       port, pid->port_number, id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]);
 }
 
-static inline bool ptp_port_id_equal(struct mt_ptp_port_id* s, struct mt_ptp_port_id* t) {
+static inline bool ptp_port_id_equal(struct mt_ptp_port_id *s, struct mt_ptp_port_id *t) {
   if (!memcmp(s, t, sizeof(struct mt_ptp_port_id)))
     return true;
   else
@@ -423,8 +423,8 @@ static struct rte_ether_addr ptp_l4_multicast_eaddr = {
 static struct rte_ether_addr ptp_l2_multicast_eaddr = {
     {0x01, 0x1b, 0x19, 0x00, 0x00, 0x00}};
 
-static inline void ptp_set_master_addr(struct mt_ptp_impl* ptp,
-                                       struct rte_ether_addr* d_addr) {
+static inline void ptp_set_master_addr(struct mt_ptp_impl *ptp,
+                                       struct rte_ether_addr *d_addr) {
   if (ptp->master_addr_mode == MT_PTP_MULTICAST_ADDR) {
     if (ptp->t2_mode == MT_PTP_L4)
       rte_ether_addr_copy(&ptp_l4_multicast_eaddr, d_addr);
@@ -435,14 +435,14 @@ static inline void ptp_set_master_addr(struct mt_ptp_impl* ptp,
   }
 }
 
-static void ptp_coefficient_result_reset(struct mt_ptp_impl* ptp) {
+static void ptp_coefficient_result_reset(struct mt_ptp_impl *ptp) {
   ptp->coefficient_result_sum = 0.0;
   ptp->coefficient_result_min = 2.0;
   ptp->coefficient_result_max = 0.0;
   ptp->coefficient_result_cnt = 0;
 }
 
-static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
+static void ptp_update_coefficient(struct mt_ptp_impl *ptp, int64_t error) {
   ptp->integral += (error + ptp->prev_error) / 2;
   ptp->prev_error = error;
   double offset = ptp->kp * error + ptp->ki * ptp->integral;
@@ -451,7 +451,7 @@ static void ptp_update_coefficient(struct mt_ptp_impl* ptp, int64_t error) {
   dbg("%s(%d), error %" PRId64 ", offset %.15lf\n", __func__, ptp->port, error, offset);
 }
 
-static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
+static void ptp_calculate_coefficient(struct mt_ptp_impl *ptp, int64_t delta) {
   if (delta > 1000 * 1000) return;
   uint64_t ts_s = ptp_get_raw_time(ptp);
   uint64_t ts_m = ts_s + delta;
@@ -474,7 +474,7 @@ static void ptp_calculate_coefficient(struct mt_ptp_impl* ptp, int64_t delta) {
       delta, ptp->coefficient, ts_m);
 }
 
-static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_correct) {
+static void ptp_adjust_delta(struct mt_ptp_impl *ptp, int64_t delta, bool error_correct) {
   MTL_MAY_UNUSED(error_correct);
 
 #ifdef MTL_HAS_DPDK_TIMESYNC_ADJUST_FREQ
@@ -554,8 +554,8 @@ static void ptp_adjust_delta(struct mt_ptp_impl* ptp, int64_t delta, bool error_
   }
 }
 
-static void ptp_delay_req_read_tx_time_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
+static void ptp_delay_req_read_tx_time_handler(void *param) {
+  struct mt_ptp_impl *ptp = param;
   uint64_t tx_ns = 0;
   int ret;
 
@@ -567,7 +567,7 @@ static void ptp_delay_req_read_tx_time_handler(void* param) {
   }
 }
 
-static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
+static void ptp_expect_result_clear(struct mt_ptp_impl *ptp) {
   ptp->expect_result_cnt = 0;
   ptp->expect_result_sum = 0;
   ptp->expect_correct_result_sum = 0;
@@ -576,14 +576,14 @@ static void ptp_expect_result_clear(struct mt_ptp_impl* ptp) {
   ptp->expect_result_start_ns = 0;
 }
 
-static void ptp_t_result_clear(struct mt_ptp_impl* ptp) {
+static void ptp_t_result_clear(struct mt_ptp_impl *ptp) {
   ptp->t1 = 0;
   ptp->t2 = 0;
   ptp->t3 = 0;
   ptp->t4 = 0;
 }
 
-static void ptp_result_reset(struct mt_ptp_impl* ptp) {
+static void ptp_result_reset(struct mt_ptp_impl *ptp) {
   ptp->delta_result_err = 0;
   ptp->delta_result_cnt = 0;
   ptp->delta_result_sum = 0;
@@ -593,7 +593,7 @@ static void ptp_result_reset(struct mt_ptp_impl* ptp) {
   ptp->expect_t2_t1_delta_avg = 0;
 }
 
-static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
+static int ptp_sync_expect_result(struct mt_ptp_impl *ptp) {
   if (ptp->expect_correct_result_avg) {
     if (ptp->use_pi) {
       /* fine tune coefficient */
@@ -609,8 +609,8 @@ static int ptp_sync_expect_result(struct mt_ptp_impl* ptp) {
   return 0;
 }
 
-static void ptp_monitor_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
+static void ptp_monitor_handler(void *param) {
+  struct mt_ptp_impl *ptp = param;
   uint64_t expect_result_period_us = ptp->expect_result_period_ns / 1000;
 
   ptp->stat_sync_timeout_err++;
@@ -622,8 +622,8 @@ static void ptp_monitor_handler(void* param) {
   }
 }
 
-static void ptp_sync_timeout_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
+static void ptp_sync_timeout_handler(void *param) {
+  struct mt_ptp_impl *ptp = param;
   uint64_t expect_result_period_us = ptp->expect_result_period_ns / 1000;
 
   ptp_expect_result_clear(ptp);
@@ -637,8 +637,8 @@ static void ptp_sync_timeout_handler(void* param) {
   }
 }
 
-static int ptp_parse_result(struct mt_ptp_impl* ptp) {
-  struct mtl_main_impl* impl = ptp->impl;
+static int ptp_parse_result(struct mt_ptp_impl *ptp) {
+  struct mtl_main_impl *impl = ptp->impl;
   int64_t t2_t1_delta = ((int64_t)ptp->t2 - ptp->t1);
   int64_t t4_t3_delta = ((int64_t)ptp->t4 - ptp->t3);
 
@@ -765,7 +765,7 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   ptp->connected = true;
 
   /* notify the sync event if ptp_sync_notify is enabled */
-  struct mtl_init_params* p = mt_get_user_params(impl);
+  struct mtl_init_params *p = mt_get_user_params(impl);
   if (p->ptp_sync_notify && (MTL_PORT_P == ptp->port)) {
     struct mtl_ptp_sync_notify_meta meta;
     meta.master_utc_offset = ptp->master_utc_offset;
@@ -809,15 +809,15 @@ static int ptp_parse_result(struct mt_ptp_impl* ptp) {
   return 0;
 }
 
-static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
+static void ptp_delay_req_task(struct mt_ptp_impl *ptp) {
   enum mtl_port port = ptp->port;
   size_t hdr_offset;
-  struct mt_ptp_sync_msg* msg;
+  struct mt_ptp_sync_msg *msg;
   uint64_t tx_ns = 0;
 
   if (ptp->t3) return; /* t3 already sent */
 
-  struct rte_mbuf* m = rte_pktmbuf_alloc(ptp->mbuf_pool);
+  struct rte_mbuf *m = rte_pktmbuf_alloc(ptp->mbuf_pool);
   if (!m) {
     err("%s(%d), rte_pktmbuf_alloc fail\n", __func__, port);
     return;
@@ -833,12 +833,12 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 #endif
   }
 
-  struct rte_ether_hdr* hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
+  struct rte_ether_hdr *hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
   hdr_offset = sizeof(struct rte_ether_hdr);
 
   if (ptp->t2_mode == MT_PTP_L4) {
-    struct mt_ipv4_udp* ipv4_hdr =
-        rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
+    struct mt_ipv4_udp *ipv4_hdr =
+        rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp *, hdr_offset);
     hdr_offset += sizeof(struct mt_ipv4_udp);
     rte_memcpy(ipv4_hdr, &ptp->dst_udp, sizeof(*ipv4_hdr));
     ipv4_hdr->udp.src_port = htons(MT_PTP_UDP_EVENT_PORT);
@@ -854,7 +854,7 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
     hdr->ether_type = htons(RTE_ETHER_TYPE_1588);
   }
 
-  msg = rte_pktmbuf_mtod_offset(m, struct mt_ptp_sync_msg*, hdr_offset);
+  msg = rte_pktmbuf_mtod_offset(m, struct mt_ptp_sync_msg *, hdr_offset);
   memset(msg, 0x0, sizeof(*msg));
   msg->hdr.message_type = PTP_DELAY_REQ;
   msg->hdr.version = 2;
@@ -944,13 +944,13 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
 }
 
 #if MT_PTP_USE_TX_TIMER
-static void ptp_delay_req_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
+static void ptp_delay_req_handler(void *param) {
+  struct mt_ptp_impl *ptp = param;
   return ptp_delay_req_task(ptp);
 }
 #endif
 
-static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, bool vlan,
+static int ptp_parse_sync(struct mt_ptp_impl *ptp, struct mt_ptp_sync_msg *msg, bool vlan,
                           enum mt_ptp_l_mode mode, uint16_t timesync) {
   uint64_t rx_ns = 0;
 #define RX_MAX_DELTA (1 * 1000 * 1000) /* 1ms */
@@ -1003,8 +1003,8 @@ static int ptp_parse_sync(struct mt_ptp_impl* ptp, struct mt_ptp_sync_msg* msg, 
   return 0;
 }
 
-static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
-                               struct mt_ptp_follow_up_msg* msg) {
+static int ptp_parse_follow_up(struct mt_ptp_impl *ptp,
+                               struct mt_ptp_follow_up_msg *msg) {
   if (msg->hdr.sequence_id != ptp->t2_sequence_id) {
     dbg("%s(%d), error sequence id %d %d\n", __func__, ptp->port, msg->hdr.sequence_id,
         ptp->t2_sequence_id);
@@ -1027,8 +1027,8 @@ static int ptp_parse_follow_up(struct mt_ptp_impl* ptp,
   return 0;
 }
 
-static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_msg* msg,
-                              enum mt_ptp_l_mode mode, struct mt_ipv4_udp* ipv4_hdr) {
+static int ptp_parse_announce(struct mt_ptp_impl *ptp, struct mt_ptp_announce_msg *msg,
+                              enum mt_ptp_l_mode mode, struct mt_ipv4_udp *ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
   if (!ptp->master_initialized) {
@@ -1044,7 +1044,7 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
          port, ptp_mode_str(mode), ptp->master_utc_offset, msg->hdr.domain_number);
     ptp_print_port_id(port, &ptp->master_port_id);
     if (mode == MT_PTP_L4) {
-      struct mt_ipv4_udp* dst_udp = &ptp->dst_udp;
+      struct mt_ipv4_udp *dst_udp = &ptp->dst_udp;
 
       rte_memcpy(dst_udp, ipv4_hdr, sizeof(*dst_udp));
       rte_memcpy(&dst_udp->ip.src_addr, &ptp->sip_addr[0], MTL_IP_ADDR_LEN);
@@ -1068,8 +1068,8 @@ static int ptp_parse_announce(struct mt_ptp_impl* ptp, struct mt_ptp_announce_ms
   return 0;
 }
 
-static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
-                                struct mt_ptp_delay_resp_msg* msg) {
+static int ptp_parse_delay_resp(struct mt_ptp_impl *ptp,
+                                struct mt_ptp_delay_resp_msg *msg) {
   if (!ptp_port_id_equal(&msg->requesting_port_identity, &ptp->our_port_id)) {
     /* not our request resp */
     return 0;
@@ -1100,7 +1100,7 @@ static int ptp_parse_delay_resp(struct mt_ptp_impl* ptp,
   return 0;
 }
 
-static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
+static void ptp_stat_clear(struct mt_ptp_impl *ptp) {
   ptp->stat_delta_cnt = 0;
   ptp->stat_delta_sum = 0;
   ptp->stat_delta_min = INT_MAX;
@@ -1121,7 +1121,7 @@ static void ptp_stat_clear(struct mt_ptp_impl* ptp) {
   if (ptp->phc2sys_active) ptp->phc2sys.stat_delta_max = 0;
 }
 
-static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
+static void ptp_sync_from_user(struct mtl_main_impl *impl, struct mt_ptp_impl *ptp) {
   enum mtl_port port = ptp->port;
   uint64_t target_ns = mt_get_ptp_time(impl, port);
   uint64_t raw_ns = ptp_get_raw_time(ptp);
@@ -1156,8 +1156,8 @@ static void ptp_sync_from_user(struct mtl_main_impl* impl, struct mt_ptp_impl* p
   ptp->stat_delta_sum += labs(delta);
 }
 
-static void ptp_sync_from_user_handler(void* param) {
-  struct mt_ptp_impl* ptp = param;
+static void ptp_sync_from_user_handler(void *param) {
+  struct mt_ptp_impl *ptp = param;
 
   ptp_sync_from_user(ptp->impl, ptp);
   rte_eal_alarm_set(MT_PTP_TP_SYNC_MS * 1000, ptp_sync_from_user_handler, ptp);
@@ -1199,7 +1199,7 @@ int obtain_systime_privileges() {
 }
 #endif
 
-static void phc2sys_init(struct mt_ptp_impl* ptp) {
+static void phc2sys_init(struct mt_ptp_impl *ptp) {
   memset(&ptp->phc2sys.servo, 0, sizeof(struct mt_pi_servo));
   memset(&ptp->servo, 0, sizeof(struct mt_pi_servo));
 #ifndef WINDOWSENV
@@ -1232,24 +1232,24 @@ static void phc2sys_init(struct mt_ptp_impl* ptp) {
   info("%s(%d), succ\n", __func__, ptp->port);
 }
 
-static int ptp_rxq_mbuf_handle(struct mt_ptp_impl* ptp, struct rte_mbuf* m) {
-  struct mt_ipv4_udp* ipv4_hdr;
-  struct mt_ptp_header* hdr;
+static int ptp_rxq_mbuf_handle(struct mt_ptp_impl *ptp, struct rte_mbuf *m) {
+  struct mt_ipv4_udp *ipv4_hdr;
+  struct mt_ptp_header *hdr;
   size_t hdr_offset;
 
   hdr_offset = sizeof(struct rte_ether_hdr);
-  ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp*, hdr_offset);
+  ipv4_hdr = rte_pktmbuf_mtod_offset(m, struct mt_ipv4_udp *, hdr_offset);
   hdr_offset += sizeof(*ipv4_hdr);
-  hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header*, sizeof(struct mt_udp_hdr));
+  hdr = rte_pktmbuf_mtod_offset(m, struct mt_ptp_header *, sizeof(struct mt_udp_hdr));
   mt_ptp_parse(ptp, hdr, false, MT_PTP_L4, m->timesync, ipv4_hdr);
 
   return 0;
 }
 
-static int ptp_rxq_tasklet_handler(void* priv) {
-  struct mt_ptp_impl* ptp = priv;
+static int ptp_rxq_tasklet_handler(void *priv) {
+  struct mt_ptp_impl *ptp = priv;
   uint16_t rx;
-  struct rte_mbuf* pkt[MT_PTP_RX_BURST_SIZE];
+  struct rte_mbuf *pkt[MT_PTP_RX_BURST_SIZE];
 
   /* MT_PTP_UDP_GEN_PORT */
   rx = mt_rxq_burst(ptp->gen_rxq, &pkt[0], MT_PTP_RX_BURST_SIZE);
@@ -1268,13 +1268,13 @@ static int ptp_rxq_tasklet_handler(void* priv) {
   return 0;
 }
 
-static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
+static int ptp_init(struct mtl_main_impl *impl, struct mt_ptp_impl *ptp,
                     enum mtl_port port) {
   uint16_t port_id = mt_port_id(impl, port);
   struct rte_ether_addr mac;
   int ret;
-  uint8_t* ip = &ptp->sip_addr[0];
-  struct mt_interface* inf = mt_if(impl, port);
+  uint8_t *ip = &ptp->sip_addr[0];
+  struct mt_interface *inf = mt_if(impl, port);
 
   ret = mt_macaddr_get(impl, port, &mac);
   if (ret < 0) {
@@ -1283,8 +1283,8 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   }
 
   uint16_t magic = MT_PTP_CLOCK_IDENTITY_MAGIC;
-  struct mt_ptp_port_id* our_port_id = &ptp->our_port_id;
-  uint8_t* id = &our_port_id->clock_identity.id[0];
+  struct mt_ptp_port_id *our_port_id = &ptp->our_port_id;
+  uint8_t *id = &our_port_id->clock_identity.id[0];
   memcpy(&id[0], &mac.addr_bytes[0], 3);
   memcpy(&id[3], &magic, 2);
   memcpy(&id[5], &mac.addr_bytes[3], 3);
@@ -1307,7 +1307,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
     info("%s(%d), use pi controller, kp %e, ki %e\n", __func__, port, ptp->kp, ptp->ki);
   if (mt_user_phc2sys_service(impl) && (MTL_PORT_P == port)) phc2sys_init(ptp);
 
-  struct mtl_init_params* p = mt_get_user_params(impl);
+  struct mtl_init_params *p = mt_get_user_params(impl);
   if (p->flags & MTL_FLAG_PTP_UNICAST_ADDR) {
     ptp->master_addr_mode = MT_PTP_UNICAST_ADDR;
     info("%s(%d), MT_PTP_UNICAST_ADDR\n", __func__, port);
@@ -1398,7 +1398,7 @@ static int ptp_init(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp,
   return 0;
 }
 
-static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
+static int ptp_uinit(struct mtl_main_impl *impl, struct mt_ptp_impl *ptp) {
   enum mtl_port port = ptp->port;
 
   rte_eal_alarm_cancel(ptp_sync_from_user_handler, ptp);
@@ -1435,9 +1435,9 @@ static int ptp_uinit(struct mtl_main_impl* impl, struct mt_ptp_impl* ptp) {
   return 0;
 }
 
-int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
+int mt_ptp_parse(struct mt_ptp_impl *ptp, struct mt_ptp_header *hdr, bool vlan,
                  enum mt_ptp_l_mode mode, uint16_t timesync,
-                 struct mt_ipv4_udp* ipv4_hdr) {
+                 struct mt_ipv4_udp *ipv4_hdr) {
   enum mtl_port port = ptp->port;
 
   if (!ptp->active) return 0;
@@ -1463,16 +1463,16 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
 
   switch (hdr->message_type) {
     case PTP_SYNC:
-      ptp_parse_sync(ptp, (struct mt_ptp_sync_msg*)hdr, vlan, mode, timesync);
+      ptp_parse_sync(ptp, (struct mt_ptp_sync_msg *)hdr, vlan, mode, timesync);
       break;
     case PTP_FOLLOW_UP:
-      ptp_parse_follow_up(ptp, (struct mt_ptp_follow_up_msg*)hdr);
+      ptp_parse_follow_up(ptp, (struct mt_ptp_follow_up_msg *)hdr);
       break;
     case PTP_DELAY_RESP:
-      ptp_parse_delay_resp(ptp, (struct mt_ptp_delay_resp_msg*)hdr);
+      ptp_parse_delay_resp(ptp, (struct mt_ptp_delay_resp_msg *)hdr);
       break;
     case PTP_ANNOUNCE:
-      ptp_parse_announce(ptp, (struct mt_ptp_announce_msg*)hdr, mode, ipv4_hdr);
+      ptp_parse_announce(ptp, (struct mt_ptp_announce_msg *)hdr, mode, ipv4_hdr);
       break;
     case PTP_DELAY_REQ:
       break;
@@ -1489,8 +1489,8 @@ int mt_ptp_parse(struct mt_ptp_impl* ptp, struct mt_ptp_header* hdr, bool vlan,
   return 0;
 }
 
-static int ptp_stat(void* priv) {
-  struct mt_ptp_impl* ptp = priv;
+static int ptp_stat(void *priv) {
+  struct mt_ptp_impl *ptp = priv;
   enum mtl_port port = ptp->port;
   char date_time[64];
   struct timespec spec;
@@ -1556,7 +1556,7 @@ static int ptp_stat(void* priv) {
   return 0;
 }
 
-int mt_ptp_init(struct mtl_main_impl* impl) {
+int mt_ptp_init(struct mtl_main_impl *impl) {
   int socket = mt_socket_id(impl, MTL_PORT_P);
   int ret;
   int num_port = mt_num_ports(impl);
@@ -1565,7 +1565,7 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
     /* only probe on the MTL_PORT_P */
     if ((i != MTL_PORT_P) && !mt_if_has_offload_timestamp(impl, i)) continue;
 
-    struct mt_ptp_impl* ptp = mt_rte_zmalloc_socket(sizeof(*ptp), socket);
+    struct mt_ptp_impl *ptp = mt_rte_zmalloc_socket(sizeof(*ptp), socket);
     if (!ptp) {
       err("%s(%d), ptp malloc fail\n", __func__, i);
       mt_ptp_uinit(impl);
@@ -1589,9 +1589,9 @@ int mt_ptp_init(struct mtl_main_impl* impl) {
   return 0;
 }
 
-int mt_ptp_uinit(struct mtl_main_impl* impl) {
+int mt_ptp_uinit(struct mtl_main_impl *impl) {
   int num_ports = mt_num_ports(impl);
-  struct mt_ptp_impl* ptp;
+  struct mt_ptp_impl *ptp;
 
   for (int i = 0; i < num_ports; i++) {
     ptp = mt_get_ptp(impl, i);
@@ -1609,20 +1609,20 @@ int mt_ptp_uinit(struct mtl_main_impl* impl) {
   return 0;
 }
 
-uint64_t mt_get_raw_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
+uint64_t mt_get_raw_ptp_time(struct mtl_main_impl *impl, enum mtl_port port) {
   return ptp_get_raw_time(mt_get_ptp(impl, port));
 }
 
-static uint64_t mbuf_hw_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
+static uint64_t mbuf_hw_time_stamp(struct mtl_main_impl *impl, struct rte_mbuf *mbuf,
                                    enum mtl_port port) {
-  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+  struct mt_ptp_impl *ptp = mt_get_ptp(impl, port);
   uint64_t time_stamp =
-      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t*);
+      *RTE_MBUF_DYNFIELD(mbuf, impl->dynfield_offset, rte_mbuf_timestamp_t *);
   time_stamp += ptp->ptp_delta;
   return ptp_correct_ts(ptp, time_stamp);
 }
 
-uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
+uint64_t mt_mbuf_time_stamp(struct mtl_main_impl *impl, struct rte_mbuf *mbuf,
                             enum mtl_port port) {
   if (mt_if_has_offload_timestamp(impl, port))
     return mbuf_hw_time_stamp(impl, mbuf, port);
@@ -1630,8 +1630,8 @@ uint64_t mt_mbuf_time_stamp(struct mtl_main_impl* impl, struct rte_mbuf* mbuf,
     return mtl_ptp_read_time(impl);
 }
 
-int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeout_ms) {
-  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+int mt_ptp_wait_stable(struct mtl_main_impl *impl, enum mtl_port port, int timeout_ms) {
+  struct mt_ptp_impl *ptp = mt_get_ptp(impl, port);
   uint64_t start_ts = mt_get_tsc(impl);
   int retry = 0;
 
@@ -1659,8 +1659,8 @@ int mt_ptp_wait_stable(struct mtl_main_impl* impl, enum mtl_port port, int timeo
   return 0;
 }
 
-uint64_t mt_ptp_internal_time(struct mtl_main_impl* impl, enum mtl_port port) {
-  struct mt_ptp_impl* ptp = mt_get_ptp(impl, port);
+uint64_t mt_ptp_internal_time(struct mtl_main_impl *impl, enum mtl_port port) {
+  struct mt_ptp_impl *ptp = mt_get_ptp(impl, port);
 
   if (!ptp->active) {
     err("%s(%d), ptp not active\n", __func__, port);

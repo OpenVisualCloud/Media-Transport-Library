@@ -22,7 +22,7 @@
 
 static volatile bool stop = false;
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char* format,
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
                            va_list args) {
   return vfprintf(stderr, format, args);
 }
@@ -39,8 +39,8 @@ static void et_sig_handler(int signo) {
   return;
 }
 
-static int udp_send_handler(void* ctx, void* data, size_t data_sz) {
-  const struct udp_send_event* e = data;
+static int udp_send_handler(void *ctx, void *data, size_t data_sz) {
+  const struct udp_send_event *e = data;
 
   printf("%s: pid %d, gso_size %u, bytes %u, duration_ns %llu\n", __func__, e->pid,
          e->gso_size, e->udp_send_bytes, e->duration_ns);
@@ -48,8 +48,8 @@ static int udp_send_handler(void* ctx, void* data, size_t data_sz) {
 }
 
 static int et_fentry_loop() {
-  struct ring_buffer* rb = NULL;
-  struct fentry_bpf* skel;
+  struct ring_buffer *rb = NULL;
+  struct fentry_bpf *skel;
   int ret = 0;
 
   skel = fentry_bpf__open_and_load();
@@ -91,7 +91,7 @@ cleanup:
   return ret;
 }
 
-static int et_xdp_loop(struct et_ctx* ctx) {
+static int et_xdp_loop(struct et_ctx *ctx) {
   int ret = 0;
   int if_cnt = ctx->xdp_if_cnt;
 
@@ -100,7 +100,7 @@ static int et_xdp_loop(struct et_ctx* ctx) {
     return -EIO;
   }
 
-  struct xdp_program* prog[if_cnt];
+  struct xdp_program *prog[if_cnt];
 
   /* load xdp program for each interface */
   for (int i = 0; i < if_cnt; i++) {
@@ -162,7 +162,7 @@ static void et_print_help() {
   printf("\n");
 }
 
-static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
+static int et_parse_args(struct et_ctx *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
@@ -181,7 +181,7 @@ static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
         libbpf_set_print(libbpf_print_fn);
         break;
       case ET_ARG_IFNAME:
-        char* ifname;
+        char *ifname;
         ctx->xdp_if_cnt = 0;
         ifname = strtok(optarg, ",");
         while (ifname) {
@@ -202,7 +202,7 @@ static int et_parse_args(struct et_ctx* ctx, int argc, char** argv) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct et_ctx ctx;
   memset(&ctx, 0, sizeof(ctx));
   et_parse_args(&ctx, argc, argv);

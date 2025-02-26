@@ -19,9 +19,12 @@
 
 set -e
 
+# copy .clang-format to the cwd for linting process
+cp .github/linters/.clang-format .clang-format
+
 echo "clang-format check"
 find . -path ./build -prune -o -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' ! -name 'pymtl_wrap.c' \
-	! -name 'vmlinux.h' -exec clang-format --verbose -i {} +
+	! -name 'vmlinux.h' ! -name '.clang-format' -exec clang-format-17 --verbose -i {} +
 
-black python/
-isort python/
+# clean-up the copied .clang-format
+rm .clang-format

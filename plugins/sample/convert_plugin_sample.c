@@ -15,8 +15,8 @@
 #include "../log.h"
 #include "../plugin_platform.h"
 
-static int convert_frame(struct converter_session* s,
-                         struct st20_convert_frame_meta* frame) {
+static int convert_frame(struct converter_session *s,
+                         struct st20_convert_frame_meta *frame) {
   switch (frame->src->fmt) {
     case ST_FRAME_FMT_YUV422RFC4175PG2BE10:
       switch (frame->dst->fmt) {
@@ -42,10 +42,10 @@ static int convert_frame(struct converter_session* s,
   return 0;
 }
 
-static void* convert_thread(void* arg) {
-  struct converter_session* s = arg;
+static void *convert_thread(void *arg) {
+  struct converter_session *s = arg;
   st20p_convert_session session_p = s->session_p;
-  struct st20_convert_frame_meta* frame;
+  struct st20_convert_frame_meta *frame;
   int result;
 
   info("%s(%d), start\n", __func__, s->idx);
@@ -65,11 +65,11 @@ static void* convert_thread(void* arg) {
   return NULL;
 }
 
-static st20_convert_priv converter_create_session(void* priv,
+static st20_convert_priv converter_create_session(void *priv,
                                                   st20p_convert_session session_p,
-                                                  struct st20_converter_create_req* req) {
-  struct convert_ctx* ctx = priv;
-  struct converter_session* session = NULL;
+                                                  struct st20_converter_create_req *req) {
+  struct convert_ctx *ctx = priv;
+  struct converter_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_COLOR_CONVERT_SESSIONS; i++) {
@@ -103,9 +103,9 @@ static st20_convert_priv converter_create_session(void* priv,
   return NULL;
 }
 
-static int converter_free_session(void* priv, st20_convert_priv session) {
-  struct convert_ctx* ctx = priv;
-  struct converter_session* converter_session = session;
+static int converter_free_session(void *priv, st20_convert_priv session) {
+  struct convert_ctx *ctx = priv;
+  struct converter_session *converter_session = session;
   int idx = converter_session->idx;
 
   converter_session->stop = true;
@@ -123,8 +123,8 @@ static int converter_free_session(void* priv, st20_convert_priv session) {
   return 0;
 }
 
-static int converter_frame_available(void* priv) {
-  struct converter_session* s = priv;
+static int converter_frame_available(void *priv) {
+  struct converter_session *s = priv;
 
   dbg("%s(%d)\n", __func__, s->idx);
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -135,7 +135,7 @@ static int converter_frame_available(void* priv) {
 }
 
 st_plugin_priv st_plugin_create(mtl_handle st) {
-  struct convert_ctx* ctx;
+  struct convert_ctx *ctx;
 
   ctx = malloc(sizeof(*ctx));
   if (!ctx) return NULL;
@@ -164,7 +164,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
   return ctx;
 }
 int st_plugin_free(st_plugin_priv handle) {
-  struct convert_ctx* ctx = handle;
+  struct convert_ctx *ctx = handle;
 
   for (int i = 0; i < MAX_COLOR_CONVERT_SESSIONS; i++) {
     if (ctx->converter_sessions[i]) {
@@ -178,7 +178,7 @@ int st_plugin_free(st_plugin_priv handle) {
   return 0;
 }
 
-int st_plugin_get_meta(struct st_plugin_meta* meta) {
+int st_plugin_get_meta(struct st_plugin_meta *meta) {
   meta->version = ST_PLUGIN_VERSION_V1;
   meta->magic = ST_PLUGIN_VERSION_V1_MAGIC;
   return 0;

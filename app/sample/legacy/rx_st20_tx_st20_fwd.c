@@ -22,22 +22,22 @@ struct rx_st20_tx_st20_sample_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_rx_frame* framebuffs;
+  struct st_rx_frame *framebuffs;
 
   uint16_t tx_framebuff_producer_idx;
   uint16_t tx_framebuff_consumer_idx;
-  struct st_tx_frame* tx_framebuffs;
+  struct st_tx_frame *tx_framebuffs;
 
   bool zero_copy;
 
   /* logo */
-  void* logo_buf;
+  void *logo_buf;
   struct st_frame logo_meta;
 };
 
-static int st20_fwd_open_logo(struct st_sample_context* ctx,
-                              struct rx_st20_tx_st20_sample_ctx* s, char* file) {
-  FILE* fp_logo = st_fopen(file, "rb");
+static int st20_fwd_open_logo(struct st_sample_context *ctx,
+                              struct rx_st20_tx_st20_sample_ctx *s, char *file) {
+  FILE *fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
     err("%s, open %s fail\n", __func__, file);
     return -EIO;
@@ -70,10 +70,10 @@ static int st20_fwd_open_logo(struct st_sample_context* ctx,
   return 0;
 }
 
-static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx* s, void* frame,
+static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx *s, void *frame,
                                  size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -89,8 +89,8 @@ static int rx_st20_enqueue_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
   return 0;
 }
 
-static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_meta* meta) {
-  struct rx_st20_tx_st20_sample_ctx* s = (struct rx_st20_tx_st20_sample_ctx*)priv;
+static int rx_st20_frame_ready(void *priv, void *frame, struct st20_rx_frame_meta *meta) {
+  struct rx_st20_tx_st20_sample_ctx *s = (struct rx_st20_tx_st20_sample_ctx *)priv;
 
   if (!s->ready) return -EIO;
 
@@ -116,12 +116,12 @@ static int rx_st20_frame_ready(void* priv, void* frame, struct st20_rx_frame_met
   return 0;
 }
 
-static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct rx_st20_tx_st20_sample_ctx* s = priv;
+static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct rx_st20_tx_st20_sample_ctx *s = priv;
   int ret;
   uint16_t consumer_idx = s->tx_framebuff_consumer_idx;
-  struct st_tx_frame* framebuff = &s->tx_framebuffs[consumer_idx];
+  struct st_tx_frame *framebuff = &s->tx_framebuffs[consumer_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -144,15 +144,15 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int tx_video_frame_done(void* priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct rx_st20_tx_st20_sample_ctx* s = priv;
+static int tx_video_frame_done(void *priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct rx_st20_tx_st20_sample_ctx *s = priv;
   int ret;
-  struct st_tx_frame* framebuff = &s->tx_framebuffs[frame_idx];
+  struct st_tx_frame *framebuff = &s->tx_framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
   if (s->zero_copy) { /* rx framebuffer put back to lib here */
-    void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, frame_idx);
+    void *frame_addr = st20_tx_get_framebuffer(s->tx_handle, frame_idx);
     st20_rx_put_framebuff(s->rx_handle, frame_addr);
   }
 
@@ -172,10 +172,10 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* frame,
+static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx *s, void *frame,
                                  size_t frame_size) {
   uint16_t producer_idx;
-  struct st_tx_frame* framebuff;
+  struct st_tx_frame *framebuff;
   struct st_frame tx_frame;
 
   if (frame_size != s->framebuff_size) {
@@ -200,7 +200,7 @@ static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
     ext_frame.buf_len = s->framebuff_size;
     st20_tx_set_ext_frame(s->tx_handle, producer_idx, &ext_frame);
   } else {
-    void* frame_addr = st20_tx_get_framebuffer(s->tx_handle, producer_idx);
+    void *frame_addr = st20_tx_get_framebuffer(s->tx_handle, producer_idx);
     mtl_memcpy(frame_addr, frame, s->framebuff_size);
   }
 
@@ -223,9 +223,9 @@ static void rx_fwd_consume_frame(struct rx_st20_tx_st20_sample_ctx* s, void* fra
   s->fb_fwd++;
 }
 
-static void* fwd_thread(void* arg) {
-  struct rx_st20_tx_st20_sample_ctx* s = arg;
-  struct st_rx_frame* rx_framebuff;
+static void *fwd_thread(void *arg) {
+  struct rx_st20_tx_st20_sample_ctx *s = arg;
+  struct st_rx_frame *rx_framebuff;
   int consumer_idx;
 
   info("%s(%d), start\n", __func__, s->idx);
@@ -256,7 +256,7 @@ static void* fwd_thread(void* arg) {
   return NULL;
 }
 
-static int rx_st20_tx_st20_free_app(struct rx_st20_tx_st20_sample_ctx* app) {
+static int rx_st20_tx_st20_free_app(struct rx_st20_tx_st20_sample_ctx *app) {
   if (app->tx_handle) {
     st20_tx_free(app->tx_handle);
     app->tx_handle = NULL;
@@ -283,7 +283,7 @@ static int rx_st20_tx_st20_free_app(struct rx_st20_tx_st20_sample_ctx* app) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -310,7 +310,7 @@ int main(int argc, char** argv) {
 
   app.framebuff_cnt = ctx.framebuff_cnt;
   app.framebuffs =
-      (struct st_rx_frame*)malloc(sizeof(*app.framebuffs) * app.framebuff_cnt);
+      (struct st_rx_frame *)malloc(sizeof(*app.framebuffs) * app.framebuff_cnt);
   if (!app.framebuffs) {
     err("%s, rx framebuffs ctx malloc fail\n", __func__);
     ret = -EIO;
@@ -321,7 +321,7 @@ int main(int argc, char** argv) {
   app.framebuff_consumer_idx = 0;
 
   app.tx_framebuffs =
-      (struct st_tx_frame*)malloc(sizeof(*app.tx_framebuffs) * app.framebuff_cnt);
+      (struct st_tx_frame *)malloc(sizeof(*app.tx_framebuffs) * app.framebuff_cnt);
   if (!app.tx_framebuffs) {
     err("%s, tx framebuffs ctx malloc fail\n", __func__);
     ret = -EIO;

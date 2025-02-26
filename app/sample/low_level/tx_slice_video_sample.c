@@ -7,7 +7,7 @@
 struct tv_slice_sample_ctx {
   int idx;
   int fb_send;
-  void* handle;
+  void *handle;
 
   bool stop;
   pthread_t app_thread;
@@ -18,18 +18,18 @@ struct tv_slice_sample_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_tx_frame* framebuffs;
+  struct st_tx_frame *framebuffs;
 
   int lines_per_slice;
   int height;
 };
 
-static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct tv_slice_sample_ctx* s = priv;
+static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct tv_slice_sample_ctx *s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
-  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  struct st_tx_frame *framebuff = &s->framebuffs[consumer_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -52,11 +52,11 @@ static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int tx_video_frame_done(void* priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta* meta) {
-  struct tv_slice_sample_ctx* s = priv;
+static int tx_video_frame_done(void *priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta *meta) {
+  struct tv_slice_sample_ctx *s = priv;
   int ret;
-  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -76,10 +76,10 @@ static int tx_video_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static int tx_video_frame_lines_ready(void* priv, uint16_t frame_idx,
-                                      struct st20_tx_slice_meta* meta) {
-  struct tv_slice_sample_ctx* s = priv;
-  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+static int tx_video_frame_lines_ready(void *priv, uint16_t frame_idx,
+                                      struct st20_tx_slice_meta *meta) {
+  struct tv_slice_sample_ctx *s = priv;
+  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
 
   st_pthread_mutex_lock(&s->wake_mutex);
   framebuff->slice_trigger = true;
@@ -91,8 +91,8 @@ static int tx_video_frame_lines_ready(void* priv, uint16_t frame_idx,
   return 0;
 }
 
-static void tx_video_build_slice(struct tv_slice_sample_ctx* s,
-                                 struct st_tx_frame* framebuff, void* frame_addr) {
+static void tx_video_build_slice(struct tv_slice_sample_ctx *s,
+                                 struct st_tx_frame *framebuff, void *frame_addr) {
   int lines_build = 0;
   int slices = (s->height / s->lines_per_slice) + 1;
   MTL_MAY_UNUSED(frame_addr);
@@ -118,11 +118,11 @@ static void tx_video_build_slice(struct tv_slice_sample_ctx* s,
   }
 }
 
-static void* tx_video_slice_thread(void* arg) {
-  struct tv_slice_sample_ctx* s = arg;
+static void *tx_video_slice_thread(void *arg) {
+  struct tv_slice_sample_ctx *s = arg;
   uint16_t producer_idx;
   uint16_t consumer_idx;
-  struct st_tx_frame* framebuff;
+  struct st_tx_frame *framebuff;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -140,7 +140,7 @@ static void* tx_video_slice_thread(void* arg) {
 
     dbg("%s(%d), producer_idx %d consumer_idx %d\n", __func__, s->idx, producer_idx,
         consumer_idx);
-    void* frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
+    void *frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
 
     framebuff->size = s->framebuff_size;
     framebuff->lines_ready = 0;
@@ -159,7 +159,7 @@ static void* tx_video_slice_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -178,11 +178,11 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st20_tx_handle tx_handle[session_num];
-  struct tv_slice_sample_ctx* app[session_num];
+  struct tv_slice_sample_ctx *app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tv_slice_sample_ctx*)malloc(sizeof(struct tv_slice_sample_ctx));
+    app[i] = (struct tv_slice_sample_ctx *)malloc(sizeof(struct tv_slice_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
-        (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+        (struct st_tx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;

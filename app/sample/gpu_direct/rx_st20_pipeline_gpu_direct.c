@@ -16,14 +16,14 @@ struct rx_st20p_sample_ctx {
 
   size_t frame_size;
   int dst_fd;
-  uint8_t* dst_begin;
-  uint8_t* dst_end;
-  uint8_t* dst_cursor;
+  uint8_t *dst_begin;
+  uint8_t *dst_end;
+  uint8_t *dst_cursor;
 
   int fb_cnt;
 };
 
-static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
+static int rx_st20p_close_source(struct rx_st20p_sample_ctx *s) {
   if (s->dst_begin) {
     munmap(s->dst_begin, s->dst_end - s->dst_begin);
     s->dst_begin = NULL;
@@ -36,7 +36,7 @@ static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
   return 0;
 }
 
-static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file) {
+static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s, const char *file) {
   int fd, ret, idx = s->idx;
   off_t f_size;
   int fb_cnt = 3;
@@ -55,7 +55,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s failed\n", __func__, idx, file);
     close(fd);
@@ -72,8 +72,8 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
   return 0;
 }
 
-static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
-                                   struct st_frame* frame) {
+static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx *s,
+                                   struct st_frame *frame) {
   s->fb_recv++;
   if (s->dst_fd < 0) /* no dump */
     return;
@@ -84,10 +84,10 @@ static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
   s->dst_cursor += s->frame_size;
 }
 
-static void* rx_st20p_frame_thread(void* arg) {
-  struct rx_st20p_sample_ctx* s = arg;
+static void *rx_st20p_frame_thread(void *arg) {
+  struct rx_st20p_sample_ctx *s = arg;
   st20p_rx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -98,7 +98,7 @@ static void* rx_st20p_frame_thread(void* arg) {
     }
     dbg("%s(%d), one new frame\n", __func__, s->idx);
     if (frame->user_meta) {
-      const struct st_frame_user_meta* user_meta = frame->user_meta;
+      const struct st_frame_user_meta *user_meta = frame->user_meta;
       if (frame->user_meta_size != sizeof(*user_meta)) {
         err("%s(%d), user_meta_size wrong\n", __func__, s->idx);
       }
@@ -113,7 +113,7 @@ static void* rx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
   int gpu_driver_index = 0;
@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_st20p_sample_ctx* app[session_num];
+  struct rx_st20p_sample_ctx *app[session_num];
 
   // create contex for one gpu device
   GpuContext gpu_ctx = {0};
@@ -145,7 +145,7 @@ int main(int argc, char** argv) {
     err("%s, app gpu initialization failed %d\n", __func__, res);
     return -ENXIO;
   }
-  ctx.gpu_ctx = (void*)(&gpu_ctx);
+  ctx.gpu_ctx = (void *)(&gpu_ctx);
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {

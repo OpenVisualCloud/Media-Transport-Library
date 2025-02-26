@@ -151,10 +151,10 @@ static struct option sample_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static int sample_args_parse_tx_mac(struct st_sample_context* ctx, char* mac_str,
+static int sample_args_parse_tx_mac(struct st_sample_context *ctx, char *mac_str,
                                     enum mtl_port port) {
   int ret;
-  uint8_t* mac;
+  uint8_t *mac;
 
   if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
@@ -168,9 +168,9 @@ static int sample_args_parse_tx_mac(struct st_sample_context* ctx, char* mac_str
   return 0;
 }
 
-static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+static int _sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   int cmd = -1, optIdx = 0;
-  struct mtl_init_params* p = &ctx->param;
+  struct mtl_init_params *p = &ctx->param;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", sample_args_options, &optIdx);
@@ -475,9 +475,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
   return 0;
 }
 
-static struct st_sample_context* g_sample_ctx;
+static struct st_sample_context *g_sample_ctx;
 static void sample_sig_handler(int signo) {
-  struct st_sample_context* ctx = g_sample_ctx;
+  struct st_sample_context *ctx = g_sample_ctx;
   info("%s, signal %d\n", __func__, signo);
 
   switch (signo) {
@@ -491,8 +491,8 @@ static void sample_sig_handler(int signo) {
   return;
 }
 
-static int sample_set_afxdp(struct st_sample_context* ctx) {
-  struct mtl_init_params* p = &ctx->param;
+static int sample_set_afxdp(struct st_sample_context *ctx) {
+  struct mtl_init_params *p = &ctx->param;
 
   for (uint8_t i = 0; i < p->num_ports; i++) {
     p->pmd[i] = mtl_pmd_by_port_name(p->port[i]);
@@ -501,9 +501,9 @@ static int sample_set_afxdp(struct st_sample_context* ctx) {
   return 0;
 }
 
-int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool tx,
+int sample_parse_args(struct st_sample_context *ctx, int argc, char **argv, bool tx,
                       bool rx, bool unicast) {
-  struct mtl_init_params* p = &ctx->param;
+  struct mtl_init_params *p = &ctx->param;
 
   g_sample_ctx = ctx;
   signal(SIGINT, sample_sig_handler);
@@ -584,19 +584,19 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   return 0;
 }
 
-int tx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+int tx_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   return sample_parse_args(ctx, argc, argv, true, false, false);
 };
 
-int rx_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+int rx_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   return sample_parse_args(ctx, argc, argv, false, true, false);
 };
 
-int fwd_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+int fwd_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   return sample_parse_args(ctx, argc, argv, true, true, false);
 };
 
-int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) {
+int dma_sample_parse_args(struct st_sample_context *ctx, int argc, char **argv) {
   /* init sample(st) dev */
   sample_parse_args(ctx, argc, argv, false, false, false);
   /* enable dma port */
@@ -604,8 +604,8 @@ int dma_sample_parse_args(struct st_sample_context* ctx, int argc, char** argv) 
   return 0;
 };
 
-int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
-  struct mtl_init_params* p = &ctx->param;
+int sample_tx_queue_cnt_set(struct st_sample_context *ctx, uint16_t cnt) {
+  struct mtl_init_params *p = &ctx->param;
 
   for (uint8_t i = 0; i < p->num_ports; i++) {
     p->tx_queues_cnt[i] = cnt;
@@ -614,8 +614,8 @@ int sample_tx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
   return 0;
 }
 
-int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
-  struct mtl_init_params* p = &ctx->param;
+int sample_rx_queue_cnt_set(struct st_sample_context *ctx, uint16_t cnt) {
+  struct mtl_init_params *p = &ctx->param;
 
   for (uint8_t i = 0; i < p->num_ports; i++) {
     p->rx_queues_cnt[i] = cnt;
@@ -624,7 +624,7 @@ int sample_rx_queue_cnt_set(struct st_sample_context* ctx, uint16_t cnt) {
   return 0;
 }
 
-void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w, int h) {
+void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be *data, int w, int h) {
   int pg_size = w * h / 2;
   uint16_t cb, y0, cr, y1; /* 10 bit */
 
@@ -652,7 +652,7 @@ void fill_rfc4175_422_10_pg2_data(struct st20_rfc4175_422_10_pg2_be* data, int w
   }
 }
 
-void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w, int h) {
+void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be *data, int w, int h) {
   int pg_size = w * h / 2;
   uint16_t cb, y0, cr, y1; /* 12 bit */
 
@@ -680,7 +680,7 @@ void fill_rfc4175_422_12_pg2_data(struct st20_rfc4175_422_12_pg2_be* data, int w
   }
 }
 
-int ufd_override_check(struct st_sample_context* ctx) {
+int ufd_override_check(struct st_sample_context *ctx) {
   struct mufd_override_params override;
   bool has_override = false;
 

@@ -48,7 +48,7 @@ struct mufd_override_params {
  *   - >=0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_commit_override_params(struct mufd_override_params* p);
+int mufd_commit_override_params(struct mufd_override_params *p);
 
 /**
  * All init params should be parsed from MUFD_CFG_ENV_NAME json config file.
@@ -84,7 +84,7 @@ struct mufd_init_params {
  *   - >=0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_commit_init_params(struct mufd_init_params* p);
+int mufd_commit_init_params(struct mufd_init_params *p);
 
 /**
  * Get the session nb of mufd context.
@@ -133,7 +133,7 @@ enum mtl_log_level mufd_log_level(void);
  *   - >=0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_set_opaque(int sockfd, void* pri);
+int mufd_set_opaque(int sockfd, void *pri);
 
 /**
  * Get private opaque data on the udp transport socket.
@@ -144,7 +144,7 @@ int mufd_set_opaque(int sockfd, void* pri);
  * @return
  *   - The opaque data pointer.
  */
-void* mufd_get_opaque(int sockfd);
+void *mufd_get_opaque(int sockfd);
 
 /**
  * Get IP address of the udp transport socket.
@@ -185,7 +185,7 @@ int mufd_tx_valid_ip(int sockfd, uint8_t dip[MTL_IP_ADDR_LEN]);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
+int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void *priv), void *priv);
 
 /**
  * Allocate memory from the huge-page area of memory. The memory is not cleared.
@@ -200,7 +200,7 @@ int mufd_register_stat_dump_cb(int sockfd, int (*dump)(void* priv), void* priv);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the pointer to the allocated memory.
  */
-void* mufd_hp_malloc(size_t size, enum mtl_port port);
+void *mufd_hp_malloc(size_t size, enum mtl_port port);
 
 /**
  * Allocate zero'ed memory from the huge-page area of memory.
@@ -216,7 +216,7 @@ void* mufd_hp_malloc(size_t size, enum mtl_port port);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the virtual address pointer to the allocated memory.
  */
-void* mufd_hp_zmalloc(size_t size, enum mtl_port port);
+void *mufd_hp_zmalloc(size_t size, enum mtl_port port);
 
 /**
  * Frees the memory pointed by the pointer.
@@ -228,7 +228,7 @@ void* mufd_hp_zmalloc(size_t size, enum mtl_port port);
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
-void mufd_hp_free(void* ptr);
+void mufd_hp_free(void *ptr);
 
 /**
  * Check if the socket type is support or not by mufd.
@@ -265,8 +265,8 @@ int mufd_socket_check(int domain, int type, int protocol);
  *   - =0: Timeosockfd.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_poll_query(struct pollfd* fds, nfds_t nfds, int timeout,
-                    int (*query)(void* priv), void* priv);
+int mufd_poll_query(struct pollfd *fds, nfds_t nfds, int timeout,
+                    int (*query)(void *priv), void *priv);
 
 #if defined(__cplusplus)
 }

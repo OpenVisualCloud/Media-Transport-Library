@@ -15,16 +15,16 @@ struct tx_st22p_sample_ctx {
   int fb_send;
 
   size_t frame_size;
-  uint8_t* source_begin;
-  uint8_t* source_end;
-  uint8_t* frame_cursor;
+  uint8_t *source_begin;
+  uint8_t *source_end;
+  uint8_t *frame_cursor;
 
   /* logo */
-  void* logo_buf;
+  void *logo_buf;
   struct st_frame logo_meta;
 };
 
-static int tx_st22p_close_source(struct tx_st22p_sample_ctx* s) {
+static int tx_st22p_close_source(struct tx_st22p_sample_ctx *s) {
   if (s->source_begin) {
     mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
@@ -38,9 +38,9 @@ static int tx_st22p_close_source(struct tx_st22p_sample_ctx* s) {
   return 0;
 }
 
-static int tx_st22p_open_logo(struct st_sample_context* ctx,
-                              struct tx_st22p_sample_ctx* s, char* file) {
-  FILE* fp_logo = st_fopen(file, "rb");
+static int tx_st22p_open_logo(struct st_sample_context *ctx,
+                              struct tx_st22p_sample_ctx *s, char *file) {
+  FILE *fp_logo = st_fopen(file, "rb");
   if (!fp_logo) {
     err("%s, open %s fail\n", __func__, file);
     return -EIO;
@@ -73,8 +73,8 @@ static int tx_st22p_open_logo(struct st_sample_context* ctx,
   return 0;
 }
 
-static int tx_st22p_open_source(struct st_sample_context* ctx,
-                                struct tx_st22p_sample_ctx* s, char* file) {
+static int tx_st22p_open_source(struct st_sample_context *ctx,
+                                struct tx_st22p_sample_ctx *s, char *file) {
   int fd;
   struct stat i;
 
@@ -96,7 +96,7 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap %s fail\n", __func__, file);
     close(fd);
@@ -122,11 +122,11 @@ static int tx_st22p_open_source(struct st_sample_context* ctx,
   return 0;
 }
 
-static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame* frame) {
+static void tx_st22p_build_frame(struct tx_st22p_sample_ctx *s, struct st_frame *frame) {
   if (s->frame_cursor + s->frame_size > s->source_end) {
     s->frame_cursor = s->source_begin;
   }
-  uint8_t* src = s->frame_cursor;
+  uint8_t *src = s->frame_cursor;
 
   uint8_t planes = st_frame_fmt_planes(frame->fmt);
   for (uint8_t plane = 0; plane < planes; plane++) {
@@ -146,10 +146,10 @@ static void tx_st22p_build_frame(struct tx_st22p_sample_ctx* s, struct st_frame*
   s->frame_cursor += s->frame_size;
 }
 
-static void* tx_st22p_frame_thread(void* arg) {
-  struct tx_st22p_sample_ctx* s = arg;
+static void *tx_st22p_frame_thread(void *arg) {
+  struct tx_st22p_sample_ctx *s = arg;
   st22p_tx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -167,7 +167,7 @@ static void* tx_st22p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int bpp = 3;
   struct st_sample_context ctx;
   int ret;
@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct tx_st22p_sample_ctx* app[session_num];
+  struct tx_st22p_sample_ctx *app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {

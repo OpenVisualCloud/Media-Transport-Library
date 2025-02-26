@@ -6,7 +6,7 @@
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("linux-mtl", "en-US")
-MODULE_EXPORT const char* obs_module_description(void) {
+MODULE_EXPORT const char *obs_module_description(void) {
   return "Linux MTL input/output";
 }
 
@@ -21,7 +21,7 @@ bool obs_module_load(void) {
   obs_register_output(&mtl_output);
 #endif
 
-  obs_data_t* obs_settings = obs_data_create();
+  obs_data_t *obs_settings = obs_data_create();
 
   obs_apply_private_data(obs_settings);
   obs_data_release(obs_settings);

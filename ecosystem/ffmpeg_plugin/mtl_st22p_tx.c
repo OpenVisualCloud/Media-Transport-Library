@@ -20,7 +20,7 @@
 #include "mtl_common.h"
 
 typedef struct mtlSt22pMuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -28,7 +28,7 @@ typedef struct mtlSt22pMuxerContext {
   /* arguments for session port */
   StTxSessionPortArgs portArgs;
   /* arguments for session */
-  char* codec_str;
+  char *codec_str;
   int fb_cnt;
   float bpp;
   int codec_thread_cnt;
@@ -43,8 +43,8 @@ typedef struct mtlSt22pMuxerContext {
   int frame_size;
 } mtlSt22pMuxerContext;
 
-static int mtl_st22p_write_close(AVFormatContext* ctx) {
-  mtlSt22pMuxerContext* s = ctx->priv_data;
+static int mtl_st22p_write_close(AVFormatContext *ctx) {
+  mtlSt22pMuxerContext *s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy tx session
@@ -64,8 +64,8 @@ static int mtl_st22p_write_close(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st22p_write_header(AVFormatContext* ctx) {
-  mtlSt22pMuxerContext* s = ctx->priv_data;
+static int mtl_st22p_write_header(AVFormatContext *ctx) {
+  mtlSt22pMuxerContext *s = ctx->priv_data;
   struct st22p_tx_ops ops_tx;
   int ret;
 
@@ -153,12 +153,12 @@ static int mtl_st22p_write_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st22_write_header(AVFormatContext* ctx) {
-  mtlSt22pMuxerContext* s = ctx->priv_data;
+static int mtl_st22_write_header(AVFormatContext *ctx) {
+  mtlSt22pMuxerContext *s = ctx->priv_data;
   struct st22p_tx_ops ops_tx;
   int ret;
   enum AVCodecID codec_id;
-  const AVCodecDescriptor* codec_desc;
+  const AVCodecDescriptor *codec_desc;
 
   memset(&ops_tx, 0, sizeof(ops_tx));
 
@@ -237,9 +237,9 @@ static int mtl_st22_write_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st22p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  mtlSt22pMuxerContext* s = ctx->priv_data;
-  struct st_frame* frame;
+static int mtl_st22p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  mtlSt22pMuxerContext *s = ctx->priv_data;
+  struct st_frame *frame;
 
   if (pkt->size != s->frame_size) {
     err(ctx, "%s(%d), unexpected pkt size: %d (%d expected)\n", __func__, s->idx,
@@ -263,9 +263,9 @@ static int mtl_st22p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   return 0;
 }
 
-static int mtl_st22_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  mtlSt22pMuxerContext* s = ctx->priv_data;
-  struct st_frame* frame;
+static int mtl_st22_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  mtlSt22pMuxerContext *s = ctx->priv_data;
+  struct st_frame *frame;
 
   if (pkt->size > s->frame_size) {
     err(ctx, "%s(%d), invalid pkt size: %d (max %d)\n", __func__, s->idx, pkt->size,

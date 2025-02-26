@@ -63,7 +63,7 @@ struct _Gst_Mtl_St30p_Tx {
   /*
    * Handles incomplete frame buffers when their size does not match the expected size.
    */
-  struct st30_frame* cur_frame;
+  struct st30_frame *cur_frame;
   guint cur_frame_available_size;
 
   /* arguments */

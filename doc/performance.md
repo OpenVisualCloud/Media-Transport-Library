@@ -15,6 +15,7 @@ APP used: RxTxApp reference app.
 
 following table shows the benchmark of max tx session number.
 format | 1 port with 1 NIC | 2 port with 2 NIC
+
 --- | --- | ---
 720p29.97 | 160 | 160 x 2
 720p50 | 96 | 96 x 2
