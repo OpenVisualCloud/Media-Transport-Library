@@ -104,6 +104,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
+
 | Property Name | Type   | Description                                                                                       | Range                    |
 |---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
 | dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
@@ -170,6 +171,7 @@ To be fixed in the future.
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 
 **Arguments**
+
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
 | retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
@@ -220,6 +222,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 `11988/100`, `120`
 
 **Arguments**
+
 | Property Name       | Type     | Description                                         | Range                      | Default Value |
 |---------------------|----------|-----------------------------------------------------|----------------------------|---------------|
 | retry               | uint     | Number of times the MTL will try to get a frame.    | 0 to G_MAXUINT             | 10            |
@@ -271,6 +274,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 - **Channels Range**: 1 to 8
 
 **Arguments**
+
 | Property Name       | Type   | Description                                           | Range                   | Default Value |
 |---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
 | tx-samplerate       | uint   | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
@@ -305,6 +309,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 - **Sample Rate Range**: 44100, 48000, 96000
 
 **Arguments**
+
 | Property Name       | Type    | Description                                           | Range                   | Default Value |
 |---------------------|---------|-------------------------------------------------------|-------------------------|---------------|
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT          | 3             |
@@ -353,6 +358,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
+
 | Property Name     | Type | Description                                                        | Range         | Default Value |
 |-------------------|------|--------------------------------------------------------------------|---------------|---------------|
 | tx-framebuff-cnt  | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
@@ -384,6 +390,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
+
 | Property Name       | Type   | Description                                           | Range                       | Default Value |
 |---------------------|--------|-------------------------------------------------------|-----------------------------|---------------|
 | buffer-size         | uint   | Size of the buffer used for receiving data            | 0 to G_MAXUINT (power of 2) | 1024          |
