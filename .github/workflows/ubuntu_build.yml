@@ -53,6 +53,7 @@ jobs:
           clangFormatVersion: '17'
           source: '.'
           extensions: 'hpp,h,cpp,c,cc'
+          style: 'file .github/linters/.clang-format'
 
       - name: Install the build dependency
         run: |
