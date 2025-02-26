@@ -111,9 +111,9 @@ Reading a ST 2110-22 codestream on 239.168.85.20:20000 with payload_type 112, de
 ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -fps 59.94 -video_size 1920x1080 -st22_codec h264 -f mtl_st22 -i "k" -f rawvideo /dev/null -y
 ```
 
-### 3.3. SVT-JPEG-XS
+### 3.3. SVT JPEG XS
 
-Make sure the FFmpeg is build with both MTL and SVT-JPEG-XS plugin:
+Make sure the FFmpeg is build with both MTL and SVT JPEG XS plugin:
 
 ```bash
 # start rx
@@ -122,9 +122,9 @@ ffmpeg -p_port 0000:af:01.0 -p_sip 192.168.96.2 -p_rx_ip 239.168.85.20 -udp_port
 ffmpeg -stream_loop -1 -video_size 1920x1080 -f rawvideo -pix_fmt yuv420p -i yuv420p_1080p.yuv -filter:v fps=59.94 -c:v libsvt_jpegxs -p_port 0000:af:01.1 -p_sip 192.168.96.3 -p_tx_ip 239.168.85.20 -udp_port 20000 -payload_type 112 -f mtl_st22 -
 ```
 
-### 3.4. SVT-HEVC
+### 3.4. SVT HEVC
 
-Make sure the FFmpeg is build with both MTL and SVT-HEVC plugin:
+Make sure the FFmpeg is build with both MTL and SVT HEVC plugin:
 
 ```bash
 # start rx
