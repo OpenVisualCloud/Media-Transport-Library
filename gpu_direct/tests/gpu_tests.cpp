@@ -10,40 +10,40 @@ DEFINE_FFF_GLOBALS;
 
 // Mock level-zero API functions
 FAKE_VALUE_FUNC(ze_result_t, zeInit, ze_init_flags_t);
-FAKE_VALUE_FUNC(ze_result_t, zeDriverGet, uint32_t*, ze_driver_handle_t*);
+FAKE_VALUE_FUNC(ze_result_t, zeDriverGet, uint32_t *, ze_driver_handle_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeContextCreate, ze_driver_handle_t,
-                const ze_context_desc_t*, ze_context_handle_t*);
-FAKE_VALUE_FUNC(ze_result_t, zeDeviceGet, ze_driver_handle_t, uint32_t*,
-                ze_device_handle_t*);
+                const ze_context_desc_t *, ze_context_handle_t *);
+FAKE_VALUE_FUNC(ze_result_t, zeDeviceGet, ze_driver_handle_t, uint32_t *,
+                ze_device_handle_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeDeviceGetProperties, ze_device_handle_t,
-                ze_device_properties_t*);
+                ze_device_properties_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeMemAllocShared, ze_context_handle_t,
-                const ze_device_mem_alloc_desc_t*, const ze_host_mem_alloc_desc_t*,
-                size_t, size_t, ze_device_handle_t, void**);
+                const ze_device_mem_alloc_desc_t *, const ze_host_mem_alloc_desc_t *,
+                size_t, size_t, ze_device_handle_t, void **);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueCreate, ze_context_handle_t,
-                ze_device_handle_t, const ze_command_queue_desc_t*,
-                ze_command_queue_handle_t*);
+                ze_device_handle_t, const ze_command_queue_desc_t *,
+                ze_command_queue_handle_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListCreate, ze_context_handle_t, ze_device_handle_t,
-                const ze_command_list_desc_t*, ze_command_list_handle_t*);
+                const ze_command_list_desc_t *, ze_command_list_handle_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListAppendMemoryCopy, ze_command_list_handle_t,
-                void*, const void*, size_t, ze_event_handle_t, uint32_t,
-                ze_event_handle_t*);
+                void *, const void *, size_t, ze_event_handle_t, uint32_t,
+                ze_event_handle_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListAppendMemoryFill, ze_command_list_handle_t,
-                void*, const void*, size_t, size_t, ze_event_handle_t, uint32_t,
-                ze_event_handle_t*);
+                void *, const void *, size_t, size_t, ze_event_handle_t, uint32_t,
+                ze_event_handle_t *);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListClose, ze_command_list_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueExecuteCommandLists, ze_command_queue_handle_t,
-                uint32_t, ze_command_list_handle_t*, ze_fence_handle_t);
+                uint32_t, ze_command_list_handle_t *, ze_fence_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueSynchronize, ze_command_queue_handle_t,
                 uint64_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListReset, ze_command_list_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandListDestroy, ze_command_list_handle_t);
 FAKE_VALUE_FUNC(ze_result_t, zeCommandQueueDestroy, ze_command_queue_handle_t);
-FAKE_VALUE_FUNC(ze_result_t, zeMemFree, ze_context_handle_t, void*);
+FAKE_VALUE_FUNC(ze_result_t, zeMemFree, ze_context_handle_t, void *);
 
 // Memory allocation mocks
-FAKE_VOID_FUNC(free, void*);
-FAKE_VALUE_FUNC(void*, calloc, size_t, size_t);
+FAKE_VOID_FUNC(free, void *);
+FAKE_VALUE_FUNC(void *, calloc, size_t, size_t);
 
 class GpuTest : public testing::Test {
  public:
@@ -69,7 +69,7 @@ class GpuTest : public testing::Test {
     RESET_FAKE(free);
     FFF_RESET_HISTORY();
   }
-  void VerifyCallCountsAreZero(const std::set<std::string>& exceptions = {}) {
+  void VerifyCallCountsAreZero(const std::set<std::string> &exceptions = {}) {
     const std::vector<std::pair<std::string, unsigned int>> fakes = {
         {"zeInit", zeInit_fake.call_count},
         {"zeDriverGet", zeDriverGet_fake.call_count},
@@ -93,7 +93,7 @@ class GpuTest : public testing::Test {
         {"free", free_fake.call_count},
     };
 
-    for (const auto& [name, call_count] : fakes) {
+    for (const auto &[name, call_count] : fakes) {
       if (exceptions.find(name) == exceptions.end()) {
         ASSERT_EQ(call_count, 0) << "Call count for '" << name << "' is not zero.";
       }
@@ -138,7 +138,7 @@ TEST_F(GpuTest, print_gpu_drivers_and_devices_ERROR_init) {
 
 TEST_F(GpuTest, print_gpu_drivers_and_devices_no_drivers_OK) {
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t*) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *) {
     *count = 0;  // Set driversCount to 1
     return ZE_RESULT_SUCCESS;
   };
@@ -152,7 +152,7 @@ TEST_F(GpuTest, print_gpu_drivers_and_devices_no_drivers_OK) {
 
 TEST_F(GpuTest, PrintGpuDriversAndDevices_ERROR_CallocDrivers) {
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t*) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *) {
     *count = 1;  // Set driversCount to 1
     return ZE_RESULT_SUCCESS;
   };
@@ -168,24 +168,24 @@ TEST_F(GpuTest, PrintGpuDriversAndDevices_ERROR_CallocDrivers) {
 
 TEST_F(GpuTest, TestPrintGpuDriversAndDevices_OK) {
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t* handle) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *handle) {
     *count = 1;  // Set driversCount to 1
     return ZE_RESULT_SUCCESS;
   };
   ze_driver_handle_t mock_drivers[1] = {
       reinterpret_cast<ze_driver_handle_t>(1)};  // mock 1 driver
-  calloc_fake.return_val = (void*)mock_drivers;
+  calloc_fake.return_val = (void *)mock_drivers;
   zeContextCreate_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t driver, uint32_t* count,
-                                    ze_device_handle_t* devices) {
+  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t driver, uint32_t *count,
+                                    ze_device_handle_t *devices) {
     *count = 1;  // return 1 device
     return ZE_RESULT_SUCCESS;
   };
   ze_device_handle_t mock_devices[1] = {
       reinterpret_cast<ze_device_handle_t>(1)};  // mock 1 device
-  calloc_fake.return_val = (void*)mock_devices;
+  calloc_fake.return_val = (void *)mock_devices;
   zeDeviceGetProperties_fake.custom_fake = [](ze_device_handle_t device,
-                                              ze_device_properties_t* properties) {
+                                              ze_device_properties_t *properties) {
     strcpy(properties->name, "Test Device");
     properties->type = ZE_DEVICE_TYPE_GPU;
     properties->vendorId = 0x1234;
@@ -232,7 +232,7 @@ TEST_F(GpuTest, InitGpuDevice_ERROR_ContextAlreadyInitialized) {
 TEST_F(GpuTest, InitGpuDevice_ERROR_InvalidDriverIndex) {
   GpuContext ctx = {};
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t*) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *) {
     *count = 1;
     return ZE_RESULT_SUCCESS;
   };
@@ -248,18 +248,18 @@ TEST_F(GpuTest, InitGpuDevice_ERROR_InvalidDriverIndex) {
 TEST_F(GpuTest, InitGpuDevice_ERROR_FailToCreateContext) {
   GpuContext ctx = {};
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t* handle) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *handle) {
     *count = 1;
     return ZE_RESULT_SUCCESS;
   };
-  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t, uint32_t* count,
-                                    ze_device_handle_t*) {
+  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t, uint32_t *count,
+                                    ze_device_handle_t *) {
     *count = 1;
     return ZE_RESULT_SUCCESS;
   };
   ze_driver_handle_t mock_drivers[1] = {
       reinterpret_cast<ze_driver_handle_t>(1)};  // mock 1 driver
-  calloc_fake.return_val = (void*)mock_drivers;
+  calloc_fake.return_val = (void *)mock_drivers;
   zeContextCreate_fake.return_val = ZE_RESULT_ERROR_INVALID_ARGUMENT;
   int result = init_gpu_device(&ctx, 0, 0);
   EXPECT_EQ(result, -1);
@@ -276,19 +276,19 @@ TEST_F(GpuTest, InitGpuDevice_ERROR_FailToCreateContext) {
 TEST_F(GpuTest, InitGpuDevice_ERROR_InvalidDeviceIndex) {
   GpuContext ctx = {};
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t* handle) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *handle) {
     *count = 1;
     return ZE_RESULT_SUCCESS;
   };
-  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t, uint32_t* count,
-                                    ze_device_handle_t*) {
+  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t, uint32_t *count,
+                                    ze_device_handle_t *) {
     *count = 1;
     return ZE_RESULT_SUCCESS;
   };
   zeContextCreate_fake.return_val = ZE_RESULT_SUCCESS;
   ze_driver_handle_t mock_drivers[1] = {
       reinterpret_cast<ze_driver_handle_t>(1)};  // mock 1 driver
-  calloc_fake.return_val = (void*)mock_drivers;
+  calloc_fake.return_val = (void *)mock_drivers;
 
   int result = init_gpu_device(&ctx, 0, 1);  // Invalid device index
   EXPECT_EQ(result, -EINVAL);
@@ -306,24 +306,24 @@ TEST_F(GpuTest, InitGpuDevice_ERROR_InvalidDeviceIndex) {
 TEST_F(GpuTest, InitGpuDevice_OK) {
   GpuContext ctx = {};
   zeInit_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDriverGet_fake.custom_fake = [](uint32_t* count, ze_driver_handle_t* handle) {
+  zeDriverGet_fake.custom_fake = [](uint32_t *count, ze_driver_handle_t *handle) {
     *count = 1;  // Set driversCount to 1
     return ZE_RESULT_SUCCESS;
   };
   ze_driver_handle_t mock_drivers[1] = {
       reinterpret_cast<ze_driver_handle_t>(1)};  // mock 1 driver
-  calloc_fake.return_val = (void*)mock_drivers;
+  calloc_fake.return_val = (void *)mock_drivers;
   zeContextCreate_fake.return_val = ZE_RESULT_SUCCESS;
-  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t driver, uint32_t* count,
-                                    ze_device_handle_t* devices) {
+  zeDeviceGet_fake.custom_fake = [](ze_driver_handle_t driver, uint32_t *count,
+                                    ze_device_handle_t *devices) {
     *count = 1;  // return 1 device
     return ZE_RESULT_SUCCESS;
   };
   ze_device_handle_t mock_devices[1] = {
       reinterpret_cast<ze_device_handle_t>(1)};  // mock 1 device
-  calloc_fake.return_val = (void*)mock_devices;
+  calloc_fake.return_val = (void *)mock_devices;
   zeDeviceGetProperties_fake.custom_fake = [](ze_device_handle_t device,
-                                              ze_device_properties_t* properties) {
+                                              ze_device_properties_t *properties) {
     strcpy(properties->name, "Test Device");
     properties->type = ZE_DEVICE_TYPE_GPU;
     properties->vendorId = 0x1234;
@@ -374,11 +374,11 @@ TEST_F(GpuTest, GpuAllocateSharedBuffer_ERROR_AllocationFailed) {
 TEST_F(GpuTest, GpuAllocateSharedBuffer_OK) {
   GpuContext ctx = {.initialized = 1,
                     .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
-  void* buf = NULL;
+  void *buf = NULL;
   zeMemAllocShared_fake.custom_fake = [](ze_context_handle_t,
-                                         const ze_device_mem_alloc_desc_t*,
-                                         const ze_host_mem_alloc_desc_t*, size_t, size_t,
-                                         ze_device_handle_t, void** buffer) {
+                                         const ze_device_mem_alloc_desc_t *,
+                                         const ze_host_mem_alloc_desc_t *, size_t, size_t,
+                                         ze_device_handle_t, void **buffer) {
     static int dummyValue = 42;  // Example value to write
     *buffer = &dummyValue;
     return ZE_RESULT_SUCCESS;
@@ -386,7 +386,7 @@ TEST_F(GpuTest, GpuAllocateSharedBuffer_OK) {
   int result = gpu_allocate_shared_buffer(&ctx, &buf, 1024);
   EXPECT_EQ(result, 0);
   EXPECT_EQ(zeMemAllocShared_fake.call_count, 1);
-  EXPECT_EQ(*static_cast<int*>(buf), 42);
+  EXPECT_EQ(*static_cast<int *>(buf), 42);
   VerifyCallCountsAreZero({"zeMemAllocShared"});
 }
 
@@ -396,7 +396,7 @@ TEST_F(GpuTest, GpuAllocateSharedBuffer_OK) {
 
 TEST_F(GpuTest, GpuMemcpy_ERROR_UninitializedContext) {
   GpuContext ctx = {};  // Not initialized
-  int result = gpu_memcpy(&ctx, (void*)1, (void*)2, 1024);
+  int result = gpu_memcpy(&ctx, (void *)1, (void *)2, 1024);
   EXPECT_EQ(result, -1);
   VerifyCallCountsAreZero();
 }
@@ -405,7 +405,7 @@ TEST_F(GpuTest, GpuMemcpy_ERROR_CommandListAppendMemoryCopy) {
   GpuContext ctx = {.initialized = 1,
                     .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
   zeCommandListAppendMemoryCopy_fake.return_val = ZE_RESULT_ERROR_UNKNOWN;
-  int result = gpu_memcpy(&ctx, (void*)1, (void*)2, 1024);
+  int result = gpu_memcpy(&ctx, (void *)1, (void *)2, 1024);
   EXPECT_EQ(result, -1);
   EXPECT_EQ(zeCommandListAppendMemoryCopy_fake.call_count, 1);
   VerifyCallCountsAreZero({"zeCommandListAppendMemoryCopy"});
@@ -419,7 +419,7 @@ TEST_F(GpuTest, GpuMemcpy_OK) {
   zeCommandQueueExecuteCommandLists_fake.return_val = ZE_RESULT_SUCCESS;
   zeCommandQueueSynchronize_fake.return_val = ZE_RESULT_SUCCESS;
   zeCommandListReset_fake.return_val = ZE_RESULT_SUCCESS;
-  int result = gpu_memcpy(&ctx, (void*)1, (void*)2, 1024);
+  int result = gpu_memcpy(&ctx, (void *)1, (void *)2, 1024);
   EXPECT_EQ(result, 0);
   EXPECT_EQ(zeCommandListAppendMemoryCopy_fake.call_count, 1);
   EXPECT_EQ(zeCommandListClose_fake.call_count, 1);
@@ -437,7 +437,7 @@ TEST_F(GpuTest, GpuMemcpy_OK) {
 
 TEST_F(GpuTest, GpuMemset_ERROR_UninitializedContext) {
   GpuContext ctx = {};  // Not initialized
-  int result = gpu_memset(&ctx, (void*)1, 0, 1024);
+  int result = gpu_memset(&ctx, (void *)1, 0, 1024);
   EXPECT_EQ(result, -1);
   VerifyCallCountsAreZero();
 }
@@ -446,7 +446,7 @@ TEST_F(GpuTest, GpuMemset_ERROR_CommandListAppendMemoryFill) {
   GpuContext ctx = {.initialized = 1,
                     .deviceContext = reinterpret_cast<ze_context_handle_t>(1)};
   zeCommandListAppendMemoryFill_fake.return_val = ZE_RESULT_ERROR_UNKNOWN;
-  int result = gpu_memset(&ctx, (void*)1, 0, 1024);
+  int result = gpu_memset(&ctx, (void *)1, 0, 1024);
   EXPECT_EQ(result, -1);
   EXPECT_EQ(zeCommandListAppendMemoryFill_fake.call_count, 1);
   VerifyCallCountsAreZero({"zeCommandListAppendMemoryFill"});
@@ -460,7 +460,7 @@ TEST_F(GpuTest, GpuMemset_OK) {
   zeCommandQueueExecuteCommandLists_fake.return_val = ZE_RESULT_SUCCESS;
   zeCommandQueueSynchronize_fake.return_val = ZE_RESULT_SUCCESS;
   zeCommandListReset_fake.return_val = ZE_RESULT_SUCCESS;
-  int result = gpu_memset(&ctx, (void*)1, 0, 1024);
+  int result = gpu_memset(&ctx, (void *)1, 0, 1024);
   EXPECT_EQ(result, 0);
   EXPECT_EQ(zeCommandListAppendMemoryFill_fake.call_count, 1);
   EXPECT_EQ(zeCommandListClose_fake.call_count, 1);

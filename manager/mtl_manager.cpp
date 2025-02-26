@@ -21,7 +21,7 @@ namespace fs = std::filesystem;
 
 static const int MAX_CLIENTS = 10;
 
-static const char* mtlm_version(void) {
+static const char *mtlm_version(void) {
   static char version[128];
   if (version[0] != 0) return version;
 
@@ -46,7 +46,7 @@ int main() {
   if (!fs::exists(directory_path)) {
     try {
       fs::create_directory(directory_path);
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       logger::log(log_level::ERROR,
                   "Failed to create dir:" + std::string(MTL_MANAGER_SOCK_PATH) +
                       ", please run the application with the appropriate privileges");
@@ -84,7 +84,7 @@ int main() {
 
   unlink(MTL_MANAGER_SOCK_PATH);
 
-  ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
+  ret = bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
   if (ret < 0) {
     logger::log(log_level::ERROR,
                 "Failed to bind socket, please run the application with the "
@@ -179,11 +179,11 @@ int main() {
           is_running = false;
         }
       } else { /* handle client message */
-        auto it = std::find_if(clients.begin(), clients.end(), [&](auto& client) {
+        auto it = std::find_if(clients.begin(), clients.end(), [&](auto &client) {
           return client->get_conn_fd() == evfd;
         });
         if (it != clients.end()) {
-          auto& client = *it;
+          auto &client = *it;
           char buf[256];
           int len = recv(evfd, buf, sizeof(buf), 0);
           if (len < 0) {

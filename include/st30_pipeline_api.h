@@ -20,9 +20,9 @@ extern "C" {
 #endif
 
 /** Handle to tx st2110-30 pipeline session of lib */
-typedef struct st30p_tx_ctx* st30p_tx_handle;
+typedef struct st30p_tx_ctx *st30p_tx_handle;
 /** Handle to rx st2110-30 pipeline session of lib */
-typedef struct st30p_rx_ctx* st30p_rx_handle;
+typedef struct st30p_rx_ctx *st30p_rx_handle;
 
 /** Bit define for flags of struct st20p_tx_ops. */
 enum st30p_tx_flag {
@@ -52,7 +52,7 @@ enum st30p_tx_flag {
 /** The structure info for st30 frame meta. */
 struct st30_frame {
   /** frame buffer address */
-  void* addr;
+  void *addr;
   /** frame format */
   enum st30_fmt fmt;
   /** channels number */
@@ -81,7 +81,7 @@ struct st30_frame {
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
 };
 
 /**
@@ -108,9 +108,9 @@ struct st30p_tx_ops {
   uint32_t framebuff_size;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST30P_TX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -119,13 +119,13 @@ struct st30p_tx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**
    * Optional. Callback when frame done.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_done)(void* priv, struct st30_frame* frame);
+  int (*notify_frame_done)(void *priv, struct st30_frame *frame);
 
   /*
    * Optional. The size of fifo ring which used between the packet builder and pacing.
@@ -151,21 +151,21 @@ struct st30p_tx_ops {
  * Get one tx frame from the tx st2110-30 pipeline session.
  * Call st30p_tx_put_frame to return the frame to session.
  */
-struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle);
+struct st30_frame *st30p_tx_get_frame(st30p_tx_handle handle);
 /** Put back the frame which get by st30p_tx_get_frame. */
-int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame);
+int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame *frame);
 /** Free the tx st2110-30 pipeline session. */
 int st30p_tx_free(st30p_tx_handle handle);
 /** Create one tx st2110-30 pipeline session */
-st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops* ops);
+st30p_tx_handle st30p_tx_create(mtl_handle mt, struct st30p_tx_ops *ops);
 /** Online update the destination info for the tx st2110-30(pipeline) session. */
-int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info* dst);
+int st30p_tx_update_destination(st30p_tx_handle handle, struct st_tx_dest_info *dst);
 /** Wake up the block wait on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is enabled.*/
 int st30p_tx_wake_block(st30p_tx_handle handle);
 /* get framebuff size */
 size_t st30p_tx_frame_size(st30p_tx_handle handle);
 /* get framebuff pointer */
-void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx);
+void *st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx);
 /** Set the block timeout time on st30p_tx_get_frame if ST30P_TX_FLAG_BLOCK_GET is
  * enabled. */
 int st30p_tx_set_block_timeout(st30p_tx_handle handle, uint64_t timedwait_ns);
@@ -208,9 +208,9 @@ struct st30p_rx_ops {
   uint32_t framebuff_size;
 
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST30P_RX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -219,7 +219,7 @@ struct st30p_rx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**  Use this socket if ST30P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -228,13 +228,13 @@ struct st30p_rx_ops {
  * Get one rx frame from the rx st2110-30 pipeline session.
  * Call st30p_rx_put_frame to return the frame to session.
  */
-struct st30_frame* st30p_rx_get_frame(st30p_rx_handle handle);
+struct st30_frame *st30p_rx_get_frame(st30p_rx_handle handle);
 /** Put back the frame which get by st30p_rx_get_frame. */
-int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame);
+int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame *frame);
 /** Free the rx st2110-30 pipeline session. */
 int st30p_rx_free(st30p_rx_handle handle);
 /** Create one rx st2110-30 pipeline session */
-st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops);
+st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops *ops);
 /** Wake up the block wait on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is enabled.*/
 int st30p_rx_wake_block(st30p_rx_handle handle);
 /** Set the block timeout time on st30p_rx_get_frame if ST30P_RX_FLAG_BLOCK_GET is

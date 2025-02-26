@@ -17,12 +17,12 @@ struct rx_st22_sample_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_rx_frame* framebuffs;
+  struct st_rx_frame *framebuffs;
 };
 
-static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx* s, void* frame, size_t size) {
+static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx *s, void *frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -38,8 +38,8 @@ static int rx_st22_enqueue_frame(struct rx_st22_sample_ctx* s, void* frame, size
   return 0;
 }
 
-static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_meta* meta) {
-  struct rx_st22_sample_ctx* s = (struct rx_st22_sample_ctx*)priv;
+static int rx_st22_frame_ready(void *priv, void *frame, struct st22_rx_frame_meta *meta) {
+  struct rx_st22_sample_ctx *s = (struct rx_st22_sample_ctx *)priv;
 
   if (!s->handle) return -EIO;
 
@@ -58,7 +58,7 @@ static int rx_st22_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   return 0;
 }
 
-static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_addr,
+static void st22_decode_frame(struct rx_st22_sample_ctx *s, void *codestream_addr,
                               size_t codestream_size) {
   MTL_MAY_UNUSED(codestream_addr);
   MTL_MAY_UNUSED(codestream_size);
@@ -70,11 +70,11 @@ static void st22_decode_frame(struct rx_st22_sample_ctx* s, void* codestream_add
   s->fb_decoded++;
 }
 
-static void* st22_decode_thread(void* arg) {
-  struct rx_st22_sample_ctx* s = arg;
+static void *st22_decode_thread(void *arg) {
+  struct rx_st22_sample_ctx *s = arg;
   int idx = s->idx;
   int consumer_idx;
-  struct st_rx_frame* framebuff;
+  struct st_rx_frame *framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
@@ -105,7 +105,7 @@ static void* st22_decode_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int bpp = 3; /* 3bit per pixel */
   struct st_sample_context ctx;
   int ret;
@@ -125,11 +125,11 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st22_rx_handle rx_handle[session_num];
-  struct rx_st22_sample_ctx* app[session_num];
+  struct rx_st22_sample_ctx *app[session_num];
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct rx_st22_sample_ctx*)malloc(sizeof(struct rx_st22_sample_ctx));
+    app[i] = (struct rx_st22_sample_ctx *)malloc(sizeof(struct rx_st22_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -141,7 +141,7 @@ int main(int argc, char** argv) {
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
-        (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+        (struct st_rx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;

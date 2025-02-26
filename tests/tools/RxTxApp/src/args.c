@@ -303,7 +303,7 @@ static struct option st_app_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static int app_args_parse_lcores(struct mtl_init_params* p, char* list) {
+static int app_args_parse_lcores(struct mtl_init_params *p, char *list) {
   if (!list) return -EIO;
 
   dbg("%s, lcore list %s\n", __func__, list);
@@ -311,10 +311,10 @@ static int app_args_parse_lcores(struct mtl_init_params* p, char* list) {
   return 0;
 }
 
-static int app_args_parse_tx_mac(struct st_app_context* ctx, char* mac_str,
+static int app_args_parse_tx_mac(struct st_app_context *ctx, char *mac_str,
                                  enum mtl_port port) {
   int ret;
-  uint8_t* mac;
+  uint8_t *mac;
 
   if (!mac_str) return -EIO;
   dbg("%s, tx dst mac %s\n", __func__, mac_str);
@@ -328,13 +328,13 @@ static int app_args_parse_tx_mac(struct st_app_context* ctx, char* mac_str,
   return 0;
 }
 
-static int app_args_dma_dev(struct mtl_init_params* p, char* in_dev) {
+static int app_args_dma_dev(struct mtl_init_params *p, char *in_dev) {
   if (!in_dev) return -EIO;
   char devs[128] = {0};
   snprintf(devs, 128 - 1, "%s", in_dev);
 
   dbg("%s, dev list %s\n", __func__, devs);
-  char* next_dev = strtok(devs, ",");
+  char *next_dev = strtok(devs, ",");
   while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
     snprintf(p->dma_dev_port[p->num_dma_dev_port], MTL_PORT_MAX_LEN - 1, "%s", next_dev);
@@ -344,8 +344,8 @@ static int app_args_dma_dev(struct mtl_init_params* p, char* in_dev) {
   return 0;
 }
 
-static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
-                         char* json_file) {
+static int app_args_json(struct st_app_context *ctx, struct mtl_init_params *p,
+                         char *json_file) {
   ctx->json_ctx = st_app_zmalloc(sizeof(st_json_context_t));
   if (!ctx->json_ctx) {
     err("%s, json_ctx alloc fail\n", __func__);
@@ -403,7 +403,7 @@ static int app_args_json(struct st_app_context* ctx, struct mtl_init_params* p,
   return 0;
 }
 
-static void log_prefix_time_ms(char* buf, size_t sz) {
+static void log_prefix_time_ms(char *buf, size_t sz) {
   struct timespec ts;
   struct tm tm;
   char time_s_buf[64];
@@ -414,7 +414,7 @@ static void log_prefix_time_ms(char* buf, size_t sz) {
   snprintf(buf, sz, "%s.%u, ", time_s_buf, (uint32_t)(ts.tv_nsec / NS_PER_MS));
 }
 
-static void log_user_printer(enum mtl_log_level level, const char* format, ...) {
+static void log_user_printer(enum mtl_log_level level, const char *format, ...) {
   MTL_MAY_UNUSED(level);
   va_list args;
 
@@ -426,12 +426,12 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
   va_end(args);
 }
 
-static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_params* p,
-                               char* str, enum mtl_port port) {
-  st_json_context_t* json_ctx = ctx->json_ctx;
+static int app_args_parse_port(struct st_app_context *ctx, struct mtl_init_params *p,
+                               char *str, enum mtl_port port) {
+  st_json_context_t *json_ctx = ctx->json_ctx;
   if (json_ctx) {
     int json_num_interfaces = json_ctx->num_interfaces;
-    st_json_interface_t* json_interfaces = &json_ctx->interfaces[port];
+    st_json_interface_t *json_interfaces = &json_ctx->interfaces[port];
     if (port < json_num_interfaces) {
       info("%s, override json interface for port: %d to %s\n", __func__, port, str);
       snprintf(json_interfaces->name, sizeof(json_interfaces->name), "%s", str);
@@ -445,8 +445,8 @@ static int app_args_parse_port(struct st_app_context* ctx, struct mtl_init_param
   return 0;
 }
 
-int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int argc,
-                      char** argv) {
+int st_app_parse_args(struct st_app_context *ctx, struct mtl_init_params *p, int argc,
+                      char **argv) {
   int cmd = -1, optIdx = 0;
   int nb;
 

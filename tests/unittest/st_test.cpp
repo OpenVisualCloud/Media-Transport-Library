@@ -5,7 +5,7 @@
 #include "log.h"
 #include "tests.h"
 
-int st_test_sch_cnt(struct st_tests_context* ctx) {
+int st_test_sch_cnt(struct st_tests_context *ctx) {
   mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
   int ret;
@@ -16,7 +16,7 @@ int st_test_sch_cnt(struct st_tests_context* ctx) {
   return var.sch_cnt;
 }
 
-bool st_test_dma_available(struct st_tests_context* ctx) {
+bool st_test_dma_available(struct st_tests_context *ctx) {
   mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
   struct mtl_fix_info fix;
@@ -40,7 +40,7 @@ bool st_test_dma_available(struct st_tests_context* ctx) {
 }
 
 static void init_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle;
   struct mtl_init_params para;
 
@@ -83,7 +83,7 @@ TEST(Main, init_expect_fail) {
 }
 
 static void reinit_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle;
 
   handle = mtl_init(&ctx->para);
@@ -95,7 +95,7 @@ TEST(Main, re_init_fail) {
 }
 
 static void start_stop_test(int repeat) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   int ret;
 
@@ -116,7 +116,7 @@ TEST(Main, start_stop_multi) {
 }
 
 static void start_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   int ret;
 
@@ -133,7 +133,7 @@ TEST(Main, start_expect_fail) {
 }
 
 static void stop_expect_fail_test(void) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   int ret;
 
@@ -154,7 +154,7 @@ TEST(Main, stop_expect_fail) {
 }
 
 TEST(Main, get_fix) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   struct mtl_fix_info fix;
   int ret;
@@ -166,7 +166,7 @@ TEST(Main, get_fix) {
 }
 
 TEST(Main, get_var) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
   int ret;
@@ -175,7 +175,7 @@ TEST(Main, get_var) {
   EXPECT_GE(ret, 0);
 }
 
-static int test_lcore_cnt(struct st_tests_context* ctx) {
+static int test_lcore_cnt(struct st_tests_context *ctx) {
   mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
   int ret;
@@ -186,7 +186,7 @@ static int test_lcore_cnt(struct st_tests_context* ctx) {
   return var.lcore_cnt;
 }
 
-static void test_lcore_one(struct st_tests_context* ctx) {
+static void test_lcore_one(struct st_tests_context *ctx) {
   mtl_handle handle = ctx->handle;
   int base_cnt = test_lcore_cnt(ctx);
   int ret;
@@ -201,13 +201,13 @@ static void test_lcore_one(struct st_tests_context* ctx) {
 }
 
 TEST(Main, lcore) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
 
   test_lcore_one(ctx);
 }
 
 TEST(Main, lcore_max) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   int base_cnt = test_lcore_cnt(ctx), max = 100;
   int ret, i;
@@ -226,7 +226,7 @@ TEST(Main, lcore_max) {
 }
 
 TEST(Main, lcore_expect_fail) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
 
   int ret = mtl_put_lcore(handle, 10000);
@@ -234,7 +234,7 @@ TEST(Main, lcore_expect_fail) {
   test_lcore_one(ctx);
 }
 
-static bool test_dev_started(struct st_tests_context* ctx) {
+static bool test_dev_started(struct st_tests_context *ctx) {
   mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
   int ret;
@@ -246,7 +246,7 @@ static bool test_dev_started(struct st_tests_context* ctx) {
 }
 
 TEST(Main, dev_started) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
 
   int ret = mtl_start(handle);
@@ -394,8 +394,8 @@ static void frame_api_test() {
 
 static void frame_name_test() {
   int result;
-  const char* fail = "unknown";
-  const char* name;
+  const char *fail = "unknown";
+  const char *name;
   enum st_frame_fmt fmt;
 
   /* yuv */

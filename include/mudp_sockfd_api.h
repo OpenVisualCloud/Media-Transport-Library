@@ -71,7 +71,7 @@ int mufd_close(int sockfd);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
+int mufd_bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
  * Send data on the udp transport socket.
@@ -93,8 +93,8 @@ int mufd_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
  *   - >0: the number of bytes sent.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
-                    const struct sockaddr* dest_addr, socklen_t addrlen);
+ssize_t mufd_sendto(int sockfd, const void *buf, size_t len, int flags,
+                    const struct sockaddr *dest_addr, socklen_t addrlen);
 
 /**
  * Send data on the udp transport socket.
@@ -109,7 +109,7 @@ ssize_t mufd_sendto(int sockfd, const void* buf, size_t len, int flags,
  *   - >0: the number of bytes sent.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags);
+ssize_t mufd_sendmsg(int sockfd, const struct msghdr *msg, int flags);
 
 /**
  * Poll the udp transport socket, blocks until one of the events occurs.
@@ -127,7 +127,7 @@ ssize_t mufd_sendmsg(int sockfd, const struct msghdr* msg, int flags);
  *   - =0: Timeosockfd.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout);
+int mufd_poll(struct pollfd *fds, nfds_t nfds, int timeout);
 
 /**
  * Receive data on the udp transport socket.
@@ -148,8 +148,8 @@ int mufd_poll(struct pollfd* fds, nfds_t nfds, int timeout);
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
-                      struct sockaddr* src_addr, socklen_t* addrlen);
+ssize_t mufd_recvfrom(int sockfd, void *buf, size_t len, int flags,
+                      struct sockaddr *src_addr, socklen_t *addrlen);
 
 /**
  * Receive data on the udp transport socket.
@@ -166,7 +166,7 @@ ssize_t mufd_recvfrom(int sockfd, void* buf, size_t len, int flags,
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-static inline ssize_t mufd_recv(int sockfd, void* buf, size_t len, int flags) {
+static inline ssize_t mufd_recv(int sockfd, void *buf, size_t len, int flags) {
   return mufd_recvfrom(sockfd, buf, len, flags, NULL, NULL);
 }
 
@@ -183,7 +183,7 @@ static inline ssize_t mufd_recv(int sockfd, void* buf, size_t len, int flags) {
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mufd_recvmsg(int sockfd, struct msghdr* msg, int flags);
+ssize_t mufd_recvmsg(int sockfd, struct msghdr *msg, int flags);
 
 /**
  * getsockopt on the udp transport socket.
@@ -203,7 +203,7 @@ ssize_t mufd_recvmsg(int sockfd, struct msghdr* msg, int flags);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen);
+int mufd_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
 
 /**
  * setsockopt on the udp transport socket.
@@ -223,7 +223,7 @@ int mufd_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t*
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mufd_setsockopt(int sockfd, int level, int optname, const void* optval,
+int mufd_setsockopt(int sockfd, int level, int optname, const void *optval,
                     socklen_t optlen);
 
 /**
@@ -351,7 +351,7 @@ int mufd_socket_port(int domain, int type, int protocol, enum mtl_port port);
  * @param port
  *   UDP port.
  */
-static void inline mufd_init_sockaddr_any(struct sockaddr_in* saddr, uint16_t port) {
+static void inline mufd_init_sockaddr_any(struct sockaddr_in *saddr, uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = INADDR_ANY;
@@ -368,7 +368,7 @@ static void inline mufd_init_sockaddr_any(struct sockaddr_in* saddr, uint16_t po
  * @param port
  *   UDP port.
  */
-static void inline mufd_init_sockaddr(struct sockaddr_in* saddr,
+static void inline mufd_init_sockaddr(struct sockaddr_in *saddr,
                                       uint8_t ip[MTL_IP_ADDR_LEN], uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;

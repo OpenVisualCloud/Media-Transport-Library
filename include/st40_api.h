@@ -21,11 +21,11 @@ extern "C" {
 /**
  * Handle to tx st2110-40(ancillary) session
  */
-typedef struct st_tx_ancillary_session_handle_impl* st40_tx_handle;
+typedef struct st_tx_ancillary_session_handle_impl *st40_tx_handle;
 /**
  * Handle to rx st2110-40(ancillary) session
  */
-typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
+typedef struct st_rx_ancillary_session_handle_impl *st40_rx_handle;
 
 /**
  * Flag bit in flags of struct st40_tx_ops.
@@ -207,7 +207,7 @@ struct st40_meta {
  */
 struct st40_frame {
   struct st40_meta meta[ST40_MAX_META]; /**<  Meta data  */
-  uint8_t* data;                        /**<  Handle to data buffer  */
+  uint8_t *data;                        /**<  Handle to data buffer  */
   uint32_t data_size;                   /**<  Size of content data  */
   uint32_t meta_num;                    /**<  number of meta data  */
 };
@@ -257,9 +257,9 @@ struct st40_tx_ops {
    * a random value */
   uint32_t ssrc;
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST40_TX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -274,8 +274,8 @@ struct st40_tx_ops {
    * implicit means the frame ownership will be transferred to lib, And only non-block
    * method can be used in this callback as it run from lcore tasklet routine.
    */
-  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
-                        struct st40_tx_frame_meta* meta);
+  int (*get_next_frame)(void *priv, uint16_t *next_frame_idx,
+                        struct st40_tx_frame_meta *meta);
   /**
    * Optional for ST40_TYPE_FRAME_LEVEL. callback when lib finish sending one frame.
    * frame_idx indicate the frame which finish the transmit.
@@ -283,8 +283,8 @@ struct st40_tx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
-                           struct st40_tx_frame_meta* meta);
+  int (*notify_frame_done)(void *priv, uint16_t frame_idx,
+                           struct st40_tx_frame_meta *meta);
 
   /** Optional. UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
@@ -301,7 +301,7 @@ struct st40_tx_ops {
    * packet, And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_rtp_done)(void* priv);
+  int (*notify_rtp_done)(void *priv);
 };
 
 /**
@@ -335,9 +335,9 @@ struct st40_rx_ops {
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST40_RX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -347,7 +347,7 @@ struct st40_rx_ops {
    * Optional. the callback when lib finish the sending of one rtp packet. And only
    * non-block method can be used in this callback as it run from lcore tasklet routine.
    */
-  int (*notify_rtp_ready)(void* priv);
+  int (*notify_rtp_ready)(void *priv);
 };
 
 /**
@@ -362,7 +362,7 @@ struct st40_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-40(ancillary) session.
  */
-st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops* ops);
+st40_tx_handle st40_tx_create(mtl_handle mt, struct st40_tx_ops *ops);
 
 /**
  * Free the tx st2110-40(ancillary) session.
@@ -386,7 +386,7 @@ int st40_tx_free(st40_tx_handle handle);
  *   - 0: Success, tx st2110-40(ancillary) session destination update succ.
  *   - <0: Error code of the rx st2110-40(ancillary) session destination update.
  */
-int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info* dst);
+int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Get the framebuffer pointer from the tx st2110-40(ancillary) session.
@@ -400,7 +400,7 @@ int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info* ds
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
+void *st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
 
 /**
  * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-40(ancillary) session.
@@ -415,7 +415,7 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void* st40_tx_get_mbuf(st40_tx_handle handle, void** usrptr);
+void *st40_tx_get_mbuf(st40_tx_handle handle, void **usrptr);
 
 /**
  * Put back the mbuf which get by st40_tx_get_mbuf to the tx st2110-40(ancillary) session.
@@ -431,7 +431,7 @@ void* st40_tx_get_mbuf(st40_tx_handle handle, void** usrptr);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len);
+int st40_tx_put_mbuf(st40_tx_handle handle, void *mbuf, uint16_t len);
 
 /**
  * Create one rx st2110-40(ancillary) session.
@@ -445,7 +445,7 @@ int st40_tx_put_mbuf(st40_tx_handle handle, void* mbuf, uint16_t len);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-40(ancillary) session.
  */
-st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops);
+st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops *ops);
 
 /**
  * Online update the source info for the rx st2110-40(ancillary) session.
@@ -458,7 +458,7 @@ st40_rx_handle st40_rx_create(mtl_handle mt, struct st40_rx_ops* ops);
  *   - 0: Success, rx st2110-40(ancillary) session source update succ.
  *   - <0: Error code of the rx st2110-40(ancillary) session source update.
  */
-int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info* src);
+int st40_rx_update_source(st40_rx_handle handle, struct st_rx_source_info *src);
 
 /**
  * Free the rx st2110-40(ancillary) session.
@@ -486,7 +486,7 @@ int st40_rx_free(st40_rx_handle handle);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len);
+void *st40_rx_get_mbuf(st40_rx_handle handle, void **usrptr, uint16_t *len);
 
 /**
  * Put back the mbuf which get by st40_rx_get_mbuf to the rx st2110-40(ancillary) session.
@@ -497,7 +497,7 @@ void* st40_rx_get_mbuf(st40_rx_handle handle, void** usrptr, uint16_t* len);
  * @param mbuf
  *   the dpdk mbuf pointer by st40_rx_get_mbuf.
  */
-void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf);
+void st40_rx_put_mbuf(st40_rx_handle handle, void *mbuf);
 
 /**
  * Get the queue meta attached to rx st2110-40(ancillary) session.
@@ -510,7 +510,7 @@ void st40_rx_put_mbuf(st40_rx_handle handle, void* mbuf);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta);
+int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta *meta);
 
 /**
  * Get udw from from st2110-40(ancillary) payload.
@@ -522,7 +522,7 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta);
  * @return
  *   - udw
  */
-uint16_t st40_get_udw(uint32_t idx, uint8_t* data);
+uint16_t st40_get_udw(uint32_t idx, uint8_t *data);
 
 /**
  * Set udw from for st2110-40(ancillary) payload.
@@ -534,7 +534,7 @@ uint16_t st40_get_udw(uint32_t idx, uint8_t* data);
  * @param data
  *   The pointer to st2110-40 payload.
  */
-void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data);
+void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t *data);
 
 /**
  * Calculate checksum from st2110-40(ancillary) payload.
@@ -546,7 +546,7 @@ void st40_set_udw(uint32_t idx, uint16_t udw, uint8_t* data);
  * @return
  *   - checksum
  */
-uint16_t st40_calc_checksum(uint32_t data_num, uint8_t* data);
+uint16_t st40_calc_checksum(uint32_t data_num, uint8_t *data);
 
 /**
  * Add parity from st2110-40(ancillary) payload.

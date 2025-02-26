@@ -16,8 +16,8 @@
 #include "../log.h"
 #include "../plugin_platform.h"
 
-static int encode_frame(struct st22_encoder_session* s,
-                        struct st22_encode_frame_meta* frame) {
+static int encode_frame(struct st22_encoder_session *s,
+                        struct st22_encode_frame_meta *frame) {
   size_t codestream_size = s->req.max_codestream_size;
 
   if (frame->src->interlaced) {
@@ -36,10 +36,10 @@ static int encode_frame(struct st22_encoder_session* s,
   return 0;
 }
 
-static void* encode_thread(void* arg) {
-  struct st22_encoder_session* s = arg;
+static void *encode_thread(void *arg) {
+  struct st22_encoder_session *s = arg;
   st22p_encode_session session_p = s->session_p;
-  struct st22_encode_frame_meta* frame;
+  struct st22_encode_frame_meta *frame;
   int result;
 
   info("%s(%d), start\n", __func__, s->idx);
@@ -57,10 +57,10 @@ static void* encode_thread(void* arg) {
   return NULL;
 }
 
-static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session session_p,
-                                               struct st22_encoder_create_req* req) {
-  struct st22_sample_ctx* ctx = priv;
-  struct st22_encoder_session* session = NULL;
+static st22_encode_priv encoder_create_session(void *priv, st22p_encode_session session_p,
+                                               struct st22_encoder_create_req *req) {
+  struct st22_sample_ctx *ctx = priv;
+  struct st22_encoder_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_SAMPLE_ENCODER_SESSIONS; i++) {
@@ -98,9 +98,9 @@ static st22_encode_priv encoder_create_session(void* priv, st22p_encode_session 
   return NULL;
 }
 
-static int encoder_free_session(void* priv, st22_encode_priv session) {
-  struct st22_sample_ctx* ctx = priv;
-  struct st22_encoder_session* encoder_session = session;
+static int encoder_free_session(void *priv, st22_encode_priv session) {
+  struct st22_sample_ctx *ctx = priv;
+  struct st22_encoder_session *encoder_session = session;
   int idx = encoder_session->idx;
 
   if (encoder_session->encode_thread) {
@@ -115,14 +115,14 @@ static int encoder_free_session(void* priv, st22_encode_priv session) {
   return 0;
 }
 
-static int encoder_frame_available(void* priv) {
+static int encoder_frame_available(void *priv) {
   /* nothing to do, sample enable ST22_ENCODER_RESP_FLAG_BLOCK_GET */
   MTL_MAY_UNUSED(priv);
   return 0;
 }
 
-static int decode_frame(struct st22_decoder_session* s,
-                        struct st22_decode_frame_meta* frame) {
+static int decode_frame(struct st22_decoder_session *s,
+                        struct st22_decode_frame_meta *frame) {
   size_t codestream_size = frame->src->data_size;
 
   if (frame->src->interlaced) {
@@ -139,10 +139,10 @@ static int decode_frame(struct st22_decoder_session* s,
   return 0;
 }
 
-static void* decode_thread(void* arg) {
-  struct st22_decoder_session* s = arg;
+static void *decode_thread(void *arg) {
+  struct st22_decoder_session *s = arg;
   st22p_decode_session session_p = s->session_p;
-  struct st22_decode_frame_meta* frame;
+  struct st22_decode_frame_meta *frame;
   int result;
 
   info("%s(%d), start\n", __func__, s->idx);
@@ -160,10 +160,10 @@ static void* decode_thread(void* arg) {
   return NULL;
 }
 
-static st22_decode_priv decoder_create_session(void* priv, st22p_decode_session session_p,
-                                               struct st22_decoder_create_req* req) {
-  struct st22_sample_ctx* ctx = priv;
-  struct st22_decoder_session* session = NULL;
+static st22_decode_priv decoder_create_session(void *priv, st22p_decode_session session_p,
+                                               struct st22_decoder_create_req *req) {
+  struct st22_sample_ctx *ctx = priv;
+  struct st22_decoder_session *session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_SAMPLE_DECODER_SESSIONS; i++) {
@@ -197,9 +197,9 @@ static st22_decode_priv decoder_create_session(void* priv, st22p_decode_session 
   return NULL;
 }
 
-static int decoder_free_session(void* priv, st22_decode_priv session) {
-  struct st22_sample_ctx* ctx = priv;
-  struct st22_decoder_session* decoder_session = session;
+static int decoder_free_session(void *priv, st22_decode_priv session) {
+  struct st22_sample_ctx *ctx = priv;
+  struct st22_decoder_session *decoder_session = session;
   int idx = decoder_session->idx;
 
   if (decoder_session->decode_thread) {
@@ -215,14 +215,14 @@ static int decoder_free_session(void* priv, st22_decode_priv session) {
   return 0;
 }
 
-static int decoder_frame_available(void* priv) {
+static int decoder_frame_available(void *priv) {
   /* nothing to do, sample enable ST22_DECODER_RESP_FLAG_BLOCK_GET */
   MTL_MAY_UNUSED(priv);
   return 0;
 }
 
 st_plugin_priv st_plugin_create(mtl_handle st) {
-  struct st22_sample_ctx* ctx;
+  struct st22_sample_ctx *ctx;
 
   ctx = malloc(sizeof(*ctx));
   if (!ctx) return NULL;
@@ -275,7 +275,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
 }
 
 int st_plugin_free(st_plugin_priv handle) {
-  struct st22_sample_ctx* ctx = handle;
+  struct st22_sample_ctx *ctx = handle;
 
   for (int i = 0; i < MAX_SAMPLE_DECODER_SESSIONS; i++) {
     if (ctx->decoder_sessions[i]) {
@@ -301,7 +301,7 @@ int st_plugin_free(st_plugin_priv handle) {
   return 0;
 }
 
-int st_plugin_get_meta(struct st_plugin_meta* meta) {
+int st_plugin_get_meta(struct st_plugin_meta *meta) {
   meta->version = ST_PLUGIN_VERSION_V1;
   meta->magic = ST_PLUGIN_VERSION_V1_MAGIC;
   return 0;

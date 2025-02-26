@@ -12,7 +12,7 @@ struct tx_st22_sample_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_tx_frame* framebuffs;
+  struct st_tx_frame *framebuffs;
 
   bool stop;
   pthread_t encode_thread;
@@ -22,12 +22,12 @@ struct tx_st22_sample_ctx {
   pthread_mutex_t wake_mutex;
 };
 
-static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
-                              struct st22_tx_frame_meta* meta) {
-  struct tx_st22_sample_ctx* s = priv;
+static int tx_st22_next_frame(void *priv, uint16_t *next_frame_idx,
+                              struct st22_tx_frame_meta *meta) {
+  struct tx_st22_sample_ctx *s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
-  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
+  struct st_tx_frame *framebuff = &s->framebuffs[consumer_idx];
 
   st_pthread_mutex_lock(&s->wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
@@ -50,11 +50,11 @@ static int tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
   return ret;
 }
 
-static int tx_st22_frame_done(void* priv, uint16_t frame_idx,
-                              struct st22_tx_frame_meta* meta) {
-  struct tx_st22_sample_ctx* s = priv;
+static int tx_st22_frame_done(void *priv, uint16_t frame_idx,
+                              struct st22_tx_frame_meta *meta) {
+  struct tx_st22_sample_ctx *s = priv;
   int ret;
-  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
+  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -74,8 +74,8 @@ static int tx_st22_frame_done(void* priv, uint16_t frame_idx,
   return ret;
 }
 
-static void st22_encode_frame(struct tx_st22_sample_ctx* s, void* codestream_addr,
-                              size_t max_codestream_size, size_t* codestream_size) {
+static void st22_encode_frame(struct tx_st22_sample_ctx *s, void *codestream_addr,
+                              size_t max_codestream_size, size_t *codestream_size) {
   MTL_MAY_UNUSED(codestream_addr);
   MTL_MAY_UNUSED(max_codestream_size);
 
@@ -84,10 +84,10 @@ static void st22_encode_frame(struct tx_st22_sample_ctx* s, void* codestream_add
   *codestream_size = s->bytes_per_frame;
 }
 
-static void* st22_encode_thread(void* arg) {
-  struct tx_st22_sample_ctx* s = arg;
+static void *st22_encode_thread(void *arg) {
+  struct tx_st22_sample_ctx *s = arg;
   uint16_t producer_idx;
-  struct st_tx_frame* framebuff;
+  struct st_tx_frame *framebuff;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -102,7 +102,7 @@ static void* st22_encode_thread(void* arg) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    void* frame_addr = st22_tx_get_fb_addr(s->handle, producer_idx);
+    void *frame_addr = st22_tx_get_fb_addr(s->handle, producer_idx);
     size_t max_framesize = s->bytes_per_frame;
     size_t codestream_size = s->bytes_per_frame;
     st22_encode_frame(s, frame_addr, max_framesize, &codestream_size);
@@ -121,7 +121,7 @@ static void* st22_encode_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int bpp = 3;
   struct st_sample_context ctx;
   int ret;
@@ -141,11 +141,11 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st22_tx_handle tx_handle[session_num];
-  struct tx_st22_sample_ctx* app[session_num];
+  struct tx_st22_sample_ctx *app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tx_st22_sample_ctx*)malloc(sizeof(struct tx_st22_sample_ctx));
+    app[i] = (struct tx_st22_sample_ctx *)malloc(sizeof(struct tx_st22_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
 
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
-        (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+        (struct st_tx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;

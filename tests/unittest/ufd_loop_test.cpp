@@ -19,8 +19,8 @@ struct loop_para {
   bool use_poll;
 };
 
-static bool loop_dedicated_mode(struct utest_ctx* ctx) {
-  struct mtl_init_params* p = &ctx->init_params.mt_params;
+static bool loop_dedicated_mode(struct utest_ctx *ctx) {
+  struct mtl_init_params *p = &ctx->init_params.mt_params;
 
   if (p->flags & (MTL_FLAG_SHARED_TX_QUEUE | MTL_FLAG_SHARED_RX_QUEUE)) {
     return false;
@@ -29,7 +29,7 @@ static bool loop_dedicated_mode(struct utest_ctx* ctx) {
   return true;
 }
 
-static int loop_para_init(struct loop_para* para) {
+static int loop_para_init(struct loop_para *para) {
   memset(para, 0x0, sizeof(*para));
   para->sessions = 1;
   para->udp_port = 10000;
@@ -44,7 +44,7 @@ static int loop_para_init(struct loop_para* para) {
   return 0;
 }
 
-static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
+static int loop_sanity_test(struct utest_ctx *ctx, struct loop_para *para) {
   int sessions = para->sessions;
   uint16_t udp_port = para->udp_port;
   int udp_len = para->udp_len;
@@ -57,12 +57,12 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
   std::vector<struct sockaddr_in> rx_addr(sessions);
   std::vector<struct sockaddr_in> tx_bind_addr(sessions); /* for dual loop */
   std::vector<struct sockaddr_in> rx_bind_addr(sessions);
-  struct pollfd* fds = new struct pollfd[sessions];
+  struct pollfd *fds = new struct pollfd[sessions];
   int ret;
-  struct mtl_init_params* p = &ctx->init_params.mt_params;
+  struct mtl_init_params *p = &ctx->init_params.mt_params;
 
-  char* send_buf = new char[udp_len];
-  char* recv_buf = new char[udp_len];
+  char *send_buf = new char[udp_len];
+  char *recv_buf = new char[udp_len];
   int payload_len = udp_len - SHA256_DIGEST_LENGTH;
   ssize_t send;
   ssize_t recv;
@@ -92,7 +92,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
     tx_fds[i] = ret;
 
     if (dual_loop) {
-      ret = mufd_bind(tx_fds[i], (const struct sockaddr*)&tx_bind_addr[i],
+      ret = mufd_bind(tx_fds[i], (const struct sockaddr *)&tx_bind_addr[i],
                       sizeof(tx_bind_addr[i]));
       EXPECT_GE(ret, 0);
       if (ret < 0) goto exit;
@@ -110,7 +110,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
     if (ret < 0) goto exit;
     rx_fds[i] = ret;
 
-    ret = mufd_bind(rx_fds[i], (const struct sockaddr*)&rx_bind_addr[i],
+    ret = mufd_bind(rx_fds[i], (const struct sockaddr *)&rx_bind_addr[i],
                     sizeof(rx_bind_addr[i]));
     EXPECT_GE(ret, 0);
     if (ret < 0) goto exit;
@@ -139,13 +139,13 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
   for (int loop = 0; loop < para->tx_pkts; loop++) {
     /* tx */
     for (int i = 0; i < sessions; i++) {
-      st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
+      st_test_rand_data((uint8_t *)send_buf, payload_len, 0);
       send_buf[0] = i;
-      SHA256((unsigned char*)send_buf, payload_len,
-             (unsigned char*)send_buf + payload_len);
+      SHA256((unsigned char *)send_buf, payload_len,
+             (unsigned char *)send_buf + payload_len);
 
       send = mufd_sendto(tx_fds[i], send_buf, udp_len, 0,
-                         (const struct sockaddr*)&rx_addr[i], sizeof(rx_addr[i]));
+                         (const struct sockaddr *)&rx_addr[i], sizeof(rx_addr[i]));
       EXPECT_EQ((size_t)send, udp_len);
     }
     if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
@@ -192,7 +192,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
       /* check idx */
       EXPECT_EQ((char)i, recv_buf[0]);
       /* check sha */
-      SHA256((unsigned char*)recv_buf, payload_len, sha_result);
+      SHA256((unsigned char *)recv_buf, payload_len, sha_result);
       ret = memcmp(recv_buf + payload_len, sha_result, SHA256_DIGEST_LENGTH);
       EXPECT_EQ(ret, 0);
       // test_sha_dump("upd_loop_sha", sha_result);
@@ -200,12 +200,12 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
 
     if (dual_loop) {
       for (int i = 0; i < sessions; i++) {
-        st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
+        st_test_rand_data((uint8_t *)send_buf, payload_len, 0);
         send_buf[0] = i;
-        SHA256((unsigned char*)send_buf, payload_len,
-               (unsigned char*)send_buf + payload_len);
+        SHA256((unsigned char *)send_buf, payload_len,
+               (unsigned char *)send_buf + payload_len);
         send = mufd_sendto(rx_fds[i], send_buf, udp_len, 0,
-                           (const struct sockaddr*)&tx_addr[i], sizeof(tx_addr[i]));
+                           (const struct sockaddr *)&tx_addr[i], sizeof(tx_addr[i]));
         EXPECT_EQ((size_t)send, udp_len);
       }
       if (para->tx_sleep_us) st_usleep(para->tx_sleep_us);
@@ -222,7 +222,7 @@ static int loop_sanity_test(struct utest_ctx* ctx, struct loop_para* para) {
         /* check idx */
         EXPECT_EQ((char)i, recv_buf[0]);
         /* check sha */
-        SHA256((unsigned char*)recv_buf, payload_len, sha_result);
+        SHA256((unsigned char *)recv_buf, payload_len, sha_result);
         ret = memcmp(recv_buf + payload_len, sha_result, SHA256_DIGEST_LENGTH);
         EXPECT_EQ(ret, 0);
       }
@@ -259,7 +259,7 @@ exit:
 }
 
 TEST(Loop, single) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -267,7 +267,7 @@ TEST(Loop, single) {
 }
 
 TEST(Loop, multi) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -277,7 +277,7 @@ TEST(Loop, multi) {
 }
 
 TEST(Loop, multi_no_sleep) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -287,7 +287,7 @@ TEST(Loop, multi_no_sleep) {
 }
 
 TEST(Loop, multi_shared_max) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   if (loop_dedicated_mode(ctx)) {
@@ -304,7 +304,7 @@ TEST(Loop, multi_shared_max) {
 }
 
 TEST(Loop, poll_single) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -313,7 +313,7 @@ TEST(Loop, poll_single) {
 }
 
 TEST(Loop, poll_multi) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -324,7 +324,7 @@ TEST(Loop, poll_multi) {
 }
 
 TEST(Loop, poll_multi_no_sleep) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -335,7 +335,7 @@ TEST(Loop, poll_multi_no_sleep) {
 }
 
 TEST(Loop, poll_shared_max) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   if (loop_dedicated_mode(ctx)) {
@@ -353,7 +353,7 @@ TEST(Loop, poll_shared_max) {
 }
 
 TEST(Loop, dual_single) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -362,7 +362,7 @@ TEST(Loop, dual_single) {
 }
 
 TEST(Loop, dual_multi) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -373,7 +373,7 @@ TEST(Loop, dual_multi) {
 }
 
 TEST(Loop, dual_multi_no_sleep) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -384,7 +384,7 @@ TEST(Loop, dual_multi_no_sleep) {
 }
 
 TEST(Loop, dual_multi_shared_max) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   if (loop_dedicated_mode(ctx)) {
@@ -402,7 +402,7 @@ TEST(Loop, dual_multi_shared_max) {
 }
 
 TEST(Loop, mcast_single) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -411,7 +411,7 @@ TEST(Loop, mcast_single) {
 }
 
 TEST(Loop, mcast_multi) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   loop_para_init(&para);
@@ -422,7 +422,7 @@ TEST(Loop, mcast_multi) {
 }
 
 TEST(Loop, mcast_multi_shared_max) {
-  struct utest_ctx* ctx = utest_get_ctx();
+  struct utest_ctx *ctx = utest_get_ctx();
   struct loop_para para;
 
   if (loop_dedicated_mode(ctx)) {

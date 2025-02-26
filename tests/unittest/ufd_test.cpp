@@ -28,15 +28,15 @@ static struct option utest_args_options[] = {
     {"rss_mode", required_argument, 0, UTEST_ARG_RSS_MODE},
     {0, 0, 0, 0}};
 
-static struct utest_ctx* g_utest_ctx;
+static struct utest_ctx *g_utest_ctx;
 
-struct utest_ctx* utest_get_ctx(void) {
+struct utest_ctx *utest_get_ctx(void) {
   return g_utest_ctx;
 }
 
-static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
+static int utest_parse_args(struct utest_ctx *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
-  struct mtl_init_params* p = &ctx->init_params.mt_params;
+  struct mtl_init_params *p = &ctx->init_params.mt_params;
 
   while (1) {
     cmd = getopt_long_only(argc, argv, "hv", utest_args_options, &opt_idx);
@@ -100,10 +100,10 @@ static int utest_parse_args(struct utest_ctx* ctx, int argc, char** argv) {
   return 0;
 }
 
-static void utest_random_ip(struct utest_ctx* ctx) {
-  struct mtl_init_params* p = &ctx->init_params.mt_params;
-  uint8_t* p_ip = mtl_p_sip_addr(p);
-  uint8_t* r_ip = mtl_r_sip_addr(p);
+static void utest_random_ip(struct utest_ctx *ctx) {
+  struct mtl_init_params *p = &ctx->init_params.mt_params;
+  uint8_t *p_ip = mtl_p_sip_addr(p);
+  uint8_t *r_ip = mtl_r_sip_addr(p);
 
   srand(st_test_get_monotonic_time());
 
@@ -123,8 +123,8 @@ static void utest_random_ip(struct utest_ctx* ctx) {
   p_ip[3] = rand() % 0xFF;
 }
 
-static void utest_ctx_init(struct utest_ctx* ctx) {
-  struct mtl_init_params* p = &ctx->init_params.mt_params;
+static void utest_ctx_init(struct utest_ctx *ctx) {
+  struct mtl_init_params *p = &ctx->init_params.mt_params;
 
   memset(p, 0x0, sizeof(*p));
 
@@ -139,7 +139,7 @@ static void utest_ctx_init(struct utest_ctx* ctx) {
   p->tasklets_nb_per_sch = ctx->init_params.slots_nb_max + 8;
 }
 
-static void utest_ctx_uinit(struct utest_ctx* ctx) {
+static void utest_ctx_uinit(struct utest_ctx *ctx) {
   st_test_free(ctx);
 }
 
@@ -210,13 +210,13 @@ TEST(Api, socket_max_r) {
 }
 
 template <typename OPT_TYPE>
-static void socketopt_double(OPT_TYPE* i) {
+static void socketopt_double(OPT_TYPE *i) {
   OPT_TYPE value = *i;
   *i = value * 2;
 }
 
 template <typename OPT_TYPE>
-static void socketopt_half(OPT_TYPE* i) {
+static void socketopt_half(OPT_TYPE *i) {
   OPT_TYPE value = *i;
   *i = value / 2;
 }
@@ -236,7 +236,7 @@ static void socketopt_test(int level, int optname) {
 
   /* double */
   socketopt_double<OPT_TYPE>(&bufsize);
-  ret = mufd_setsockopt(fd, level, optname, (const void*)&bufsize, val_size);
+  ret = mufd_setsockopt(fd, level, optname, (const void *)&bufsize, val_size);
   EXPECT_GE(ret, 0);
   /* read again */
   OPT_TYPE bufsize_read;
@@ -247,7 +247,7 @@ static void socketopt_test(int level, int optname) {
 
   /* revert back */
   socketopt_half<OPT_TYPE>(&bufsize);
-  ret = mufd_setsockopt(fd, level, optname, (const void*)&bufsize, val_size);
+  ret = mufd_setsockopt(fd, level, optname, (const void *)&bufsize, val_size);
   EXPECT_GE(ret, 0);
   /* read again */
   ret = mufd_getsockopt(fd, level, optname, &bufsize_read, &val_size);
@@ -259,7 +259,7 @@ static void socketopt_test(int level, int optname) {
   val_size *= 2;
   ret = mufd_getsockopt(fd, level, optname, &bufsize, &val_size);
   EXPECT_LT(ret, 0);
-  ret = mufd_setsockopt(fd, level, optname, (const void*)&bufsize, val_size);
+  ret = mufd_setsockopt(fd, level, optname, (const void *)&bufsize, val_size);
   EXPECT_LT(ret, 0);
 
   ret = mufd_close(fd);
@@ -277,12 +277,12 @@ TEST(Api, socket_cookie) {
 }
 
 template <>
-void socketopt_double(struct timeval* i) {
+void socketopt_double(struct timeval *i) {
   i->tv_sec *= 2;
   i->tv_usec *= 2;
 }
 template <>
-void socketopt_half(struct timeval* i) {
+void socketopt_half(struct timeval *i) {
   i->tv_sec /= 2;
   i->tv_usec /= 2;
 }
@@ -290,16 +290,16 @@ TEST(Api, socket_rcvtimeo) {
   socketopt_test<struct timeval>(SOL_SOCKET, SO_RCVTIMEO);
 }
 
-static int check_r_port_alive(struct mtl_init_params* p) {
+static int check_r_port_alive(struct mtl_init_params *p) {
   int tx_fd = -1;
   int rx_fd = -1;
   int ret = -EIO;
   struct sockaddr_in tx_addr;
   struct sockaddr_in rx_addr;
   size_t payload_len = 1024;
-  char* send_buf = new char[payload_len];
-  char* recv_buf = new char[payload_len];
-  st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
+  char *send_buf = new char[payload_len];
+  char *recv_buf = new char[payload_len];
+  st_test_rand_data((uint8_t *)send_buf, payload_len, 0);
   /* max timeout 3 min */
   int sleep_ms = 10;
   int max_retry = 1000 / sleep_ms * 60 * 3;
@@ -317,7 +317,7 @@ static int check_r_port_alive(struct mtl_init_params* p) {
   if (ret < 0) goto out;
   rx_fd = ret;
 
-  ret = mufd_bind(rx_fd, (const struct sockaddr*)&rx_addr, sizeof(rx_addr));
+  ret = mufd_bind(rx_fd, (const struct sockaddr *)&rx_addr, sizeof(rx_addr));
   if (ret < 0) goto out;
 
   struct timeval tv;
@@ -327,7 +327,7 @@ static int check_r_port_alive(struct mtl_init_params* p) {
   if (ret < 0) goto out;
 
   while (retry < max_retry) {
-    if (mufd_sendto(tx_fd, send_buf, payload_len, 0, (const struct sockaddr*)&rx_addr,
+    if (mufd_sendto(tx_fd, send_buf, payload_len, 0, (const struct sockaddr *)&rx_addr,
                     sizeof(rx_addr)) < 0)
       warn("%s, send buf fail at %d\n", __func__, retry);
 
@@ -349,14 +349,14 @@ out:
   return ret;
 }
 
-GTEST_API_ int main(int argc, char** argv) {
-  struct utest_ctx* ctx;
+GTEST_API_ int main(int argc, char **argv) {
+  struct utest_ctx *ctx;
   int ret;
   bool link_flap_wa = true;
 
   testing::InitGoogleTest(&argc, argv);
 
-  ctx = (struct utest_ctx*)st_test_zmalloc(sizeof(*ctx));
+  ctx = (struct utest_ctx *)st_test_zmalloc(sizeof(*ctx));
   if (!ctx) {
     err("%s, ctx alloc fail\n", __func__);
     return -ENOMEM;

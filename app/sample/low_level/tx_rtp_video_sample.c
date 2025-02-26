@@ -21,17 +21,17 @@ struct tv_rtp_sample_ctx {
   pthread_mutex_t wake_mutex;
 };
 
-static int notify_rtp_done(void* priv) {
-  struct tv_rtp_sample_ctx* s = (struct tv_rtp_sample_ctx*)priv;
+static int notify_rtp_done(void *priv) {
+  struct tv_rtp_sample_ctx *s = (struct tv_rtp_sample_ctx *)priv;
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
   st_pthread_mutex_unlock(&s->wake_mutex);
   return 0;
 }
 
-static int app_tx_build_rtp_packet(struct tv_rtp_sample_ctx* s,
-                                   struct st20_rfc4175_rtp_hdr* rtp, uint16_t* pkt_len) {
-  uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
+static int app_tx_build_rtp_packet(struct tv_rtp_sample_ctx *s,
+                                   struct st20_rfc4175_rtp_hdr *rtp, uint16_t *pkt_len) {
+  uint8_t *payload = (uint8_t *)rtp + sizeof(*rtp);
 
   /* update hdr */
   rtp->base.tmstamp = htonl(s->rtp_tmstamp);
@@ -71,8 +71,8 @@ static int app_tx_build_rtp_packet(struct tv_rtp_sample_ctx* s,
   return 0;
 }
 
-static void* app_tx_rtp_thread(void* arg) {
-  struct tv_rtp_sample_ctx* s = arg;
+static void *app_tx_rtp_thread(void *arg) {
+  struct tv_rtp_sample_ctx *s = arg;
   void *mbuf, *usrptr;
   uint16_t mbuf_len;
   while (!s->stop) {
@@ -90,14 +90,14 @@ static void* app_tx_rtp_thread(void* arg) {
         continue;
       }
     }
-    app_tx_build_rtp_packet(s, (struct st20_rfc4175_rtp_hdr*)usrptr, &mbuf_len);
+    app_tx_build_rtp_packet(s, (struct st20_rfc4175_rtp_hdr *)usrptr, &mbuf_len);
     st20_tx_put_mbuf(s->handle, mbuf, mbuf_len);
   }
 
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -116,11 +116,11 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st20_tx_handle tx_handle[session_num];
-  struct tv_rtp_sample_ctx* app[session_num];
+  struct tv_rtp_sample_ctx *app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tv_rtp_sample_ctx*)malloc(sizeof(struct tv_rtp_sample_ctx));
+    app[i] = (struct tv_rtp_sample_ctx *)malloc(sizeof(struct tv_rtp_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;

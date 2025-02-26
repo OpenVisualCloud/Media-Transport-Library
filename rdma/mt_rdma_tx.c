@@ -4,20 +4,20 @@
 
 #include "mt_rdma.h"
 
-static int rdma_tx_uinit_mrs(struct mt_rdma_tx_ctx* ctx) {
+static int rdma_tx_uinit_mrs(struct mt_rdma_tx_ctx *ctx) {
   MT_SAFE_FREE(ctx->meta_mr, ibv_dereg_mr);
   MT_SAFE_FREE(ctx->recv_msgs_mr, ibv_dereg_mr);
   for (int i = 0; i < ctx->buffer_cnt; i++) {
-    struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    struct mt_rdma_tx_buffer *tx_buffer = &ctx->tx_buffers[i];
     MT_SAFE_FREE(tx_buffer->mr, ibv_dereg_mr);
   }
   return 0;
 }
 
-static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
+static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx *ctx) {
   for (int i = 0; i < ctx->buffer_cnt; i++) {
-    struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
-    struct ibv_mr* mr =
+    struct mt_rdma_tx_buffer *tx_buffer = &ctx->tx_buffers[i];
+    struct ibv_mr *mr =
         ibv_reg_mr(ctx->pd, tx_buffer->buffer.addr, tx_buffer->buffer.capacity,
                    IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
     if (!mr) {
@@ -29,7 +29,7 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
     tx_buffer->mr = mr;
   }
 
-  struct ibv_mr* mr = ibv_reg_mr(ctx->pd, ctx->recv_msgs,
+  struct ibv_mr *mr = ibv_reg_mr(ctx->pd, ctx->recv_msgs,
                                  ctx->buffer_cnt * sizeof(struct mt_rdma_message),
                                  IBV_ACCESS_LOCAL_WRITE);
   if (!mr) {
@@ -51,7 +51,7 @@ static int rdma_tx_init_mrs(struct mt_rdma_tx_ctx* ctx) {
   return 0;
 }
 
-static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
+static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx *ctx) {
   rdma_tx_uinit_mrs(ctx);
   MT_SAFE_FREE(ctx->meta_region, free);
   MT_SAFE_FREE(ctx->recv_msgs, free);
@@ -62,8 +62,8 @@ static int rdma_tx_free_buffers(struct mt_rdma_tx_ctx* ctx) {
   return 0;
 }
 
-static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
-  struct mtl_rdma_tx_ops* ops = &ctx->ops;
+static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx *ctx) {
+  struct mtl_rdma_tx_ops *ops = &ctx->ops;
   ctx->buffer_cnt = ops->num_buffers;
 
   /* alloc receive message region */
@@ -90,7 +90,7 @@ static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
   }
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
-    struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    struct mt_rdma_tx_buffer *tx_buffer = &ctx->tx_buffers[i];
     tx_buffer->idx = i;
     tx_buffer->status =
         MT_RDMA_BUFFER_STATUS_IN_CONSUMPTION; /* need to receive done form rx to start */
@@ -104,12 +104,12 @@ static int rdma_tx_alloc_buffers(struct mt_rdma_tx_ctx* ctx) {
   return 0;
 }
 
-static int rdma_tx_handle_wc_recv(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
+static int rdma_tx_handle_wc_recv(struct mt_rdma_tx_ctx *ctx, struct ibv_wc *wc) {
   int ret = 0;
   uint16_t idx = 0;
-  struct mt_rdma_tx_buffer* tx_buffer = NULL;
-  struct mtl_rdma_tx_ops* ops = &ctx->ops;
-  struct mt_rdma_message* msg = (struct mt_rdma_message*)wc->wr_id;
+  struct mt_rdma_tx_buffer *tx_buffer = NULL;
+  struct mtl_rdma_tx_ops *ops = &ctx->ops;
+  struct mt_rdma_message *msg = (struct mt_rdma_message *)wc->wr_id;
   if (msg->magic != MT_RDMA_MSG_MAGIC) {
     err("%s(%s), received invalid magic %u\n", __func__, ctx->ops_name, msg->magic);
     return -EINVAL;
@@ -154,9 +154,9 @@ static int rdma_tx_handle_wc_recv(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc)
   return 0;
 }
 
-static int rdma_tx_handle_wc_write(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
-  struct mtl_rdma_tx_ops* ops = &ctx->ops;
-  struct mt_rdma_tx_buffer* tx_buffer = (struct mt_rdma_tx_buffer*)wc->wr_id;
+static int rdma_tx_handle_wc_write(struct mt_rdma_tx_ctx *ctx, struct ibv_wc *wc) {
+  struct mtl_rdma_tx_ops *ops = &ctx->ops;
+  struct mt_rdma_tx_buffer *tx_buffer = (struct mt_rdma_tx_buffer *)wc->wr_id;
   pthread_mutex_lock(&tx_buffer->lock);
   if (tx_buffer->status != MT_RDMA_BUFFER_STATUS_IN_TRANSMISSION) {
     err("%s(%s), buffer write done with invalid status %d\n", __func__, ctx->ops_name,
@@ -173,7 +173,7 @@ static int rdma_tx_handle_wc_write(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc
   return 0;
 }
 
-static int rdma_tx_handle_wc(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
+static int rdma_tx_handle_wc(struct mt_rdma_tx_ctx *ctx, struct ibv_wc *wc) {
   if (wc->status != IBV_WC_SUCCESS) {
     err("%s(%s), work completion error: %s\n", __func__, ctx->ops_name,
         ibv_wc_status_str(wc->status));
@@ -194,11 +194,11 @@ static int rdma_tx_handle_wc(struct mt_rdma_tx_ctx* ctx, struct ibv_wc* wc) {
 }
 
 /* cq poll thread */
-static void* rdma_tx_cq_poll_thread(void* arg) {
+static void *rdma_tx_cq_poll_thread(void *arg) {
   int ret = 0;
-  struct mt_rdma_tx_ctx* ctx = arg;
+  struct mt_rdma_tx_ctx *ctx = arg;
   struct ibv_wc wc;
-  struct ibv_cq* cq = ctx->cq;
+  struct ibv_cq *cq = ctx->cq;
   int ms_timeout = 10;
   struct pollfd pfd = {0};
 
@@ -247,10 +247,10 @@ out:
 }
 
 /* connect thread */
-static void* rdma_tx_connect_thread(void* arg) {
+static void *rdma_tx_connect_thread(void *arg) {
   int ret = 0;
-  struct mt_rdma_tx_ctx* ctx = arg;
-  struct rdma_cm_event* event = NULL;
+  struct mt_rdma_tx_ctx *ctx = arg;
+  struct rdma_cm_event *event = NULL;
   struct pollfd pfd = {
       .fd = ctx->ec->fd,
       .events = POLLIN,
@@ -332,7 +332,7 @@ static void* rdma_tx_connect_thread(void* arg) {
           break;
         case RDMA_CM_EVENT_ESTABLISHED:
           for (int i = 0; i < ctx->buffer_cnt; i++) { /* post receive done msg */
-            struct mt_rdma_message* msg = &ctx->recv_msgs[i];
+            struct mt_rdma_message *msg = &ctx->recv_msgs[i];
             ret = rdma_post_recv(ctx->id, msg, msg, sizeof(*msg), ctx->recv_msgs_mr);
             if (ret) {
               err("%s(%s), rdma_post_recv failed: %s\n", __func__, ctx->ops_name,
@@ -375,15 +375,15 @@ connect_err:
   return NULL;
 }
 
-struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle) {
-  struct mt_rdma_tx_ctx* ctx = handle;
+struct mtl_rdma_buffer *mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle) {
+  struct mt_rdma_tx_ctx *ctx = handle;
   if (!ctx->connected) {
     return NULL;
   }
 
   /* change to use buffer_producer_idx to act as a queue */
   for (int i = 0; i < ctx->buffer_cnt; i++) {
-    struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    struct mt_rdma_tx_buffer *tx_buffer = &ctx->tx_buffers[i];
     pthread_mutex_lock(&tx_buffer->lock);
     if (tx_buffer->status == MT_RDMA_BUFFER_STATUS_FREE) {
       tx_buffer->status = MT_RDMA_BUFFER_STATUS_IN_PRODUCTION;
@@ -395,8 +395,8 @@ struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle) {
   return NULL;
 }
 
-int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* buffer) {
-  struct mt_rdma_tx_ctx* ctx = handle;
+int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer *buffer) {
+  struct mt_rdma_tx_ctx *ctx = handle;
   if (!ctx->connected) {
     return -EIO;
   }
@@ -412,7 +412,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
   }
 
   for (int i = 0; i < ctx->buffer_cnt; i++) {
-    struct mt_rdma_tx_buffer* tx_buffer = &ctx->tx_buffers[i];
+    struct mt_rdma_tx_buffer *tx_buffer = &ctx->tx_buffers[i];
     if (&tx_buffer->buffer != buffer) continue;
 
     pthread_mutex_lock(&tx_buffer->lock);
@@ -461,7 +461,7 @@ int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* bu
 }
 
 int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
-  struct mt_rdma_tx_ctx* ctx = handle;
+  struct mt_rdma_tx_ctx *ctx = handle;
   if (!ctx) {
     return 0;
   }
@@ -500,9 +500,9 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle) {
   return 0;
 }
 
-mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_ops* ops) {
+mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_ops *ops) {
   int ret = 0;
-  struct mt_rdma_tx_ctx* ctx = calloc(1, sizeof(*ctx));
+  struct mt_rdma_tx_ctx *ctx = calloc(1, sizeof(*ctx));
   if (!ctx) {
     err("%s(%s), malloc mt_rdma_tx_ctx failed\n", __func__, ops->name);
     return NULL;
@@ -524,7 +524,7 @@ mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_op
     goto out;
   }
 
-  struct rdma_cm_id* listen_id = NULL;
+  struct rdma_cm_id *listen_id = NULL;
   ret = rdma_create_id(ctx->ec, &listen_id, ctx, RDMA_PS_TCP);
   if (ret) {
     err("%s(%s), rdma_create_id failed\n", __func__, ops->name);
@@ -533,7 +533,7 @@ mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_op
   ctx->listen_id = listen_id;
 
   struct rdma_addrinfo hints = {.ai_port_space = RDMA_PS_TCP, .ai_flags = RAI_PASSIVE};
-  struct rdma_addrinfo* rai;
+  struct rdma_addrinfo *rai;
   ret = rdma_getaddrinfo(ops->ip, ops->port, &hints, &rai);
   if (ret) {
     err("%s(%s), rdma_getaddrinfo failed\n", __func__, ops->name);

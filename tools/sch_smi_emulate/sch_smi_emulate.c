@@ -31,7 +31,7 @@ static struct option se_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static int se_parse_args(struct se_context* ctx, int argc, char** argv) {
+static int se_parse_args(struct se_context *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
@@ -53,7 +53,7 @@ static int se_parse_args(struct se_context* ctx, int argc, char** argv) {
   return 0;
 }
 
-static int se_init(struct se_context* ctx) {
+static int se_init(struct se_context *ctx) {
   ctx->sleep_time_ms = 100;
   ctx->work_time_us = 100;
   return 0;
@@ -66,7 +66,7 @@ static inline uint64_t se_get_monotonic_time() {
   return ((uint64_t)ts.tv_sec * NS_PER_S) + ts.tv_nsec;
 }
 
-static int se_loop(struct se_context* ctx) {
+static int se_loop(struct se_context *ctx) {
   uint64_t start, end;
   volatile int sum;
 
@@ -86,7 +86,7 @@ static int se_loop(struct se_context* ctx) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct se_context ctx;
 
   se_init(&ctx);

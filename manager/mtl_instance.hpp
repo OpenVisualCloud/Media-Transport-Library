@@ -33,21 +33,21 @@ class mtl_instance {
   std::unordered_map<unsigned int, std::unordered_set<unsigned int>> if_flow_ids;
 
  private:
-  void log(const log_level& level, const std::string& message) const {
+  void log(const log_level &level, const std::string &message) const {
     logger::log(level,
                 "[Instance " + hostname + ":" + std::to_string(pid) + "] " + message);
   }
 
-  void handle_message_get_lcore(mtl_lcore_message_t* lcore_msg);
-  void handle_message_put_lcore(mtl_lcore_message_t* lcore_msg);
-  void handle_message_register(mtl_register_message_t* register_msg);
-  void handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg);
-  void handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t* udp_dp_filter_msg,
+  void handle_message_get_lcore(mtl_lcore_message_t *lcore_msg);
+  void handle_message_put_lcore(mtl_lcore_message_t *lcore_msg);
+  void handle_message_register(mtl_register_message_t *register_msg);
+  void handle_message_if_xsk_map_fd(mtl_if_message_t *if_msg);
+  void handle_message_udp_dp_filter(mtl_udp_dp_filter_message_t *udp_dp_filter_msg,
                                     bool add);
-  void handle_message_if_get_queue(mtl_if_message_t* if_msg);
-  void handle_message_if_put_queue(mtl_if_message_t* if_msg);
-  void handle_message_if_add_flow(mtl_if_message_t* if_msg);
-  void handle_message_if_del_flow(mtl_if_message_t* if_msg);
+  void handle_message_if_get_queue(mtl_if_message_t *if_msg);
+  void handle_message_if_put_queue(mtl_if_message_t *if_msg);
+  void handle_message_if_add_flow(mtl_if_message_t *if_msg);
+  void handle_message_if_del_flow(mtl_if_message_t *if_msg);
 
   int send_response(int response, mtl_message_type_t type = MTL_MSG_TYPE_RESPONSE) {
     mtl_message_t msg;
@@ -65,8 +65,8 @@ class mtl_instance {
   }
   ~mtl_instance() {
     log(log_level::INFO, "Remove client.");
-    for (const auto& lcore_id : lcore_ids) mtl_lcore::get_instance().put_lcore(lcore_id);
-    for (auto& pair : if_queue_ids) {
+    for (const auto &lcore_id : lcore_ids) mtl_lcore::get_instance().put_lcore(lcore_id);
+    for (auto &pair : if_queue_ids) {
       auto interface = get_interface(pair.first);
       if (interface != nullptr) {
         for (uint16_t id : pair.second) {
@@ -75,7 +75,7 @@ class mtl_instance {
         pair.second.clear();
       }
     }
-    for (auto& pair : if_flow_ids) {
+    for (auto &pair : if_flow_ids) {
       auto interface = get_interface(pair.first);
       if (interface != nullptr) {
         for (unsigned int id : pair.second) {
@@ -100,12 +100,12 @@ class mtl_instance {
   std::string get_hostname() const {
     return hostname;
   }
-  void handle_message(const char* buf, int len);
+  void handle_message(const char *buf, int len);
 };
 
-void mtl_instance::handle_message(const char* buf, int len) {
+void mtl_instance::handle_message(const char *buf, int len) {
   if ((size_t)len < sizeof(mtl_message_t)) return;
-  mtl_message_t* msg = (mtl_message_t*)buf;
+  mtl_message_t *msg = (mtl_message_t *)buf;
   if (ntohl(msg->header.magic) != MTL_MANAGER_MAGIC) {
     log(log_level::ERROR, "Invalid magic");
     return;
@@ -148,7 +148,7 @@ void mtl_instance::handle_message(const char* buf, int len) {
   }
 }
 
-void mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
+void mtl_instance::handle_message_get_lcore(mtl_lcore_message_t *lcore_msg) {
   if (!is_registered) {
     log(log_level::WARNING, "Instance is not registered");
     return;
@@ -168,7 +168,7 @@ void mtl_instance::handle_message_get_lcore(mtl_lcore_message_t* lcore_msg) {
   }
 }
 
-void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
+void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t *lcore_msg) {
   if (!is_registered) {
     log(log_level::INFO, "Instance is not registered");
     return;
@@ -188,7 +188,7 @@ void mtl_instance::handle_message_put_lcore(mtl_lcore_message_t* lcore_msg) {
   }
 }
 
-void mtl_instance::handle_message_register(mtl_register_message_t* register_msg) {
+void mtl_instance::handle_message_register(mtl_register_message_t *register_msg) {
   pid = ntohl(register_msg->pid);
   uid = ntohl(register_msg->uid);
   hostname = std::string(register_msg->hostname, 64);
@@ -235,13 +235,13 @@ std::shared_ptr<mtl_interface> mtl_instance::get_interface(const unsigned int if
     g_interfaces[ifindex] = new_interface;
     interfaces[ifindex] = new_interface;
     return new_interface;
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     log(log_level::ERROR, "Failed to initialize interface: " + std::string(e.what()));
     return nullptr;
   }
 }
 
-void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
+void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t *if_msg) {
   int fd = -1;
   unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
@@ -260,17 +260,17 @@ void mtl_instance::handle_message_if_xsk_map_fd(mtl_if_message_t* if_msg) {
   msg.msg_controllen = CMSG_SPACE(sizeof(int));
   msg.msg_control = control;
 
-  struct cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
   cmsg->cmsg_level = SOL_SOCKET;
   cmsg->cmsg_type = SCM_RIGHTS;
   cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-  *((int*)CMSG_DATA(cmsg)) = fd;
+  *((int *)CMSG_DATA(cmsg)) = fd;
 
   if (sendmsg(conn_fd, &msg, 0) < 0) log(log_level::ERROR, "Failed to send xsk map fd");
 }
 
 void mtl_instance::handle_message_udp_dp_filter(
-    mtl_udp_dp_filter_message_t* udp_dp_filter_msg, bool add) {
+    mtl_udp_dp_filter_message_t *udp_dp_filter_msg, bool add) {
   unsigned int ifindex = ntohl(udp_dp_filter_msg->ifindex);
   uint16_t port = ntohs(udp_dp_filter_msg->port);
   auto interface = get_interface(ifindex);
@@ -286,7 +286,7 @@ void mtl_instance::handle_message_udp_dp_filter(
   }
 }
 
-void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
+void mtl_instance::handle_message_if_get_queue(mtl_if_message_t *if_msg) {
   unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
@@ -303,7 +303,7 @@ void mtl_instance::handle_message_if_get_queue(mtl_if_message_t* if_msg) {
   }
 }
 
-void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
+void mtl_instance::handle_message_if_put_queue(mtl_if_message_t *if_msg) {
   unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
@@ -320,7 +320,7 @@ void mtl_instance::handle_message_if_put_queue(mtl_if_message_t* if_msg) {
   }
 }
 
-void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
+void mtl_instance::handle_message_if_add_flow(mtl_if_message_t *if_msg) {
   unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {
@@ -338,7 +338,7 @@ void mtl_instance::handle_message_if_add_flow(mtl_if_message_t* if_msg) {
   }
 }
 
-void mtl_instance::handle_message_if_del_flow(mtl_if_message_t* if_msg) {
+void mtl_instance::handle_message_if_del_flow(mtl_if_message_t *if_msg) {
   unsigned int ifindex = ntohl(if_msg->ifindex);
   auto interface = get_interface(ifindex);
   if (interface == nullptr) {

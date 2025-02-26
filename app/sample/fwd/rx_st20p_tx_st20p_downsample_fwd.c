@@ -21,8 +21,8 @@ struct rx_st20p_tx_st20p_sample_ctx {
   struct st20_pgroup st20_pg;
 };
 
-static int tx_st20p_frame_available(void* priv) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = priv;
+static int tx_st20p_frame_available(void *priv) {
+  struct rx_st20p_tx_st20p_sample_ctx *s = priv;
 
   if (!s->ready) return -EIO;
 
@@ -33,8 +33,8 @@ static int tx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = priv;
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_st20p_tx_st20p_sample_ctx *s = priv;
 
   if (!s->ready) return -EIO;
 
@@ -45,10 +45,10 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
-                                   struct st_frame* frame) {
+static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx *s,
+                                   struct st_frame *frame) {
   st20p_tx_handle tx_handle = s->tx_handle;
-  struct st_frame* tx_frame;
+  struct st_frame *tx_frame;
 
   while (!s->stop) {
     tx_frame = st20p_tx_get_frame(tx_handle);
@@ -67,10 +67,10 @@ static void fwd_st20_consume_frame(struct rx_st20p_tx_st20p_sample_ctx* s,
   }
 }
 
-static void* st20_fwd_st20_thread(void* arg) {
-  struct rx_st20p_tx_st20p_sample_ctx* s = arg;
+static void *st20_fwd_st20_thread(void *arg) {
+  struct rx_st20p_tx_st20p_sample_ctx *s = arg;
   st20p_rx_handle rx_handle = s->rx_handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -90,7 +90,7 @@ static void* st20_fwd_st20_thread(void* arg) {
   return NULL;
 }
 
-static int rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx* app) {
+static int rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx *app) {
   if (app->tx_handle) {
     st20p_tx_free(app->tx_handle);
     app->tx_handle = NULL;
@@ -105,7 +105,7 @@ static int rx_st20p_tx_st20p_free_app(struct rx_st20p_tx_st20p_sample_ctx* app) 
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 

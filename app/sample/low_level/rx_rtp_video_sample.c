@@ -14,8 +14,8 @@ struct rv_rtp_sample_ctx {
   pthread_mutex_t wake_mutex;
 };
 
-static int rx_rtp_ready(void* priv) {
-  struct rv_rtp_sample_ctx* s = (struct rv_rtp_sample_ctx*)priv;
+static int rx_rtp_ready(void *priv) {
+  struct rv_rtp_sample_ctx *s = (struct rv_rtp_sample_ctx *)priv;
   // wake up the app thread who is waiting for the rtp buf;
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -23,12 +23,12 @@ static int rx_rtp_ready(void* priv) {
   return 0;
 }
 
-static void* app_rx_video_rtp_thread(void* arg) {
-  struct rv_rtp_sample_ctx* s = arg;
-  void* usrptr;
+static void *app_rx_video_rtp_thread(void *arg) {
+  struct rv_rtp_sample_ctx *s = arg;
+  void *usrptr;
   uint16_t len;
-  void* mbuf;
-  struct st20_rfc4175_rtp_hdr* hdr;
+  void *mbuf;
+  struct st20_rfc4175_rtp_hdr *hdr;
 
   while (!s->stop) {
     mbuf = st20_rx_get_mbuf(s->handle, &usrptr, &len);
@@ -41,7 +41,7 @@ static void* app_rx_video_rtp_thread(void* arg) {
     }
 
     /* get one packet */
-    hdr = (struct st20_rfc4175_rtp_hdr*)usrptr;
+    hdr = (struct st20_rfc4175_rtp_hdr *)usrptr;
     /* handle the rtp packet, should not handle the heavy work, if the st20_rx_get_mbuf is
      * not called timely, the rtp queue in the lib will be full and rtp will be enqueued
      * fail in the lib, packet will be dropped*/
@@ -53,7 +53,7 @@ static void* app_rx_video_rtp_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -72,11 +72,11 @@ int main(int argc, char** argv) {
 
   uint32_t session_num = ctx.sessions;
   st20_rx_handle rx_handle[session_num];
-  struct rv_rtp_sample_ctx* app[session_num];
+  struct rv_rtp_sample_ctx *app[session_num];
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct rv_rtp_sample_ctx*)malloc(sizeof(struct rv_rtp_sample_ctx));
+    app[i] = (struct rv_rtp_sample_ctx *)malloc(sizeof(struct rv_rtp_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       return -1;

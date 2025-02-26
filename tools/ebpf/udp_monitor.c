@@ -38,7 +38,7 @@ TAILQ_HEAD(udp_detect_list, udp_detect_entry);
 
 struct udp_monitor_ctx {
   struct udp_detect_list detect;
-  const char* interface;
+  const char *interface;
   int dump_period_s;
   bool skip_sys;
   bool promisc;
@@ -61,13 +61,13 @@ static struct option um_args_options[] = {
     {"help", no_argument, 0, UM_ARG_HELP},
     {0, 0, 0, 0}};
 
-static inline void* um_zmalloc(size_t sz) {
-  void* p = malloc(sz);
+static inline void *um_zmalloc(size_t sz) {
+  void *p = malloc(sz);
   if (p) memset(p, 0x0, sz);
   return p;
 }
 
-static inline uint64_t um_timespec_to_ns(const struct timespec* ts) {
+static inline uint64_t um_timespec_to_ns(const struct timespec *ts) {
   return ((uint64_t)ts->tv_sec * NS_PER_S) + ts->tv_nsec;
 }
 
@@ -93,7 +93,7 @@ static void um_print_help() {
   printf("\n");
 }
 
-static int um_parse_args(struct udp_monitor_ctx* ctx, int argc, char** argv) {
+static int um_parse_args(struct udp_monitor_ctx *ctx, int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
@@ -123,17 +123,17 @@ static int um_parse_args(struct udp_monitor_ctx* ctx, int argc, char** argv) {
   return 0;
 }
 
-static int udp_hdr_list_dump(struct udp_monitor_ctx* ctx, bool clear, bool skip_sys,
+static int udp_hdr_list_dump(struct udp_monitor_ctx *ctx, bool clear, bool skip_sys,
                              double dump_period_s) {
-  struct udp_detect_list* list = &ctx->detect;
-  struct udp_detect_entry* entry;
+  struct udp_detect_list *list = &ctx->detect;
+  struct udp_detect_entry *entry;
 
   TAILQ_FOREACH(entry, list, next) {
     if (!entry->pkt_cnt) continue;
     if (skip_sys && entry->sys) continue;
 
-    uint8_t* dip = (uint8_t*)&entry->tuple.dst_ip;
-    uint8_t* sip = (uint8_t*)&entry->tuple.src_ip;
+    uint8_t *dip = (uint8_t *)&entry->tuple.dst_ip;
+    uint8_t *sip = (uint8_t *)&entry->tuple.src_ip;
     double rate_m = (double)entry->tx_bytes * 8 / dump_period_s / (1000 * 1000);
 
     info("%u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, %f Mb/s pkts %u\n", sip[0], sip[1], sip[2],
@@ -148,14 +148,14 @@ static int udp_hdr_list_dump(struct udp_monitor_ctx* ctx, bool clear, bool skip_
   return 0;
 }
 
-static int udp_hdr_entry_handler(void* pri, void* data, size_t data_sz) {
-  struct udp_monitor_ctx* ctx = pri;
-  const struct udp_pkt_entry* e = data;
-  struct udp_detect_list* list = &ctx->detect;
-  struct udp_detect_entry* entry;
+static int udp_hdr_entry_handler(void *pri, void *data, size_t data_sz) {
+  struct udp_monitor_ctx *ctx = pri;
+  const struct udp_pkt_entry *e = data;
+  struct udp_detect_list *list = &ctx->detect;
+  struct udp_detect_entry *entry;
 
-  uint8_t* dip = (uint8_t*)&e->tuple.dst_ip;
-  uint8_t* sip = (uint8_t*)&e->tuple.src_ip;
+  uint8_t *dip = (uint8_t *)&e->tuple.dst_ip;
+  uint8_t *sip = (uint8_t *)&e->tuple.src_ip;
   dbg("%s, %u.%u.%u.%u:%u -> %u.%u.%u.%u:%u, len %u\n", __func__, sip[0], sip[1], sip[2],
       sip[3], ntohs(e->tuple.src_port), dip[0], dip[1], dip[2], dip[3],
       ntohs(e->tuple.dst_port), e->len);
@@ -190,7 +190,7 @@ static int udp_hdr_entry_handler(void* pri, void* data, size_t data_sz) {
   return 0;
 }
 
-static int open_raw_sock(const char* if_name) {
+static int open_raw_sock(const char *if_name) {
   struct sockaddr_ll sll;
   int fd;
   int ret;
@@ -205,7 +205,7 @@ static int open_raw_sock(const char* if_name) {
   sll.sll_family = AF_PACKET;
   sll.sll_ifindex = if_nametoindex(if_name);
   sll.sll_protocol = htons(ETH_P_ALL);
-  ret = bind(fd, (struct sockaddr*)&sll, sizeof(sll));
+  ret = bind(fd, (struct sockaddr *)&sll, sizeof(sll));
   if (ret < 0) {
     err("%s, failed to bind to %s: %d, %s\n", __func__, if_name, ret, strerror(errno));
     close(fd);
@@ -215,7 +215,7 @@ static int open_raw_sock(const char* if_name) {
   return fd;
 }
 
-static int enable_promisc(int sock, const char* if_name, int enable) {
+static int enable_promisc(int sock, const char *if_name, int enable) {
   struct ifreq ifr;
   int ret;
 
@@ -256,13 +256,13 @@ static void um_sig_handler(int signo) {
   return;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct udp_monitor_ctx ctx;
   int ret;
   int sock_raw_fd = -1;
   int sock_fd = -1;
-  struct udp_monitor_bpf* skel = NULL;
-  struct ring_buffer* rb = NULL;
+  struct udp_monitor_bpf *skel = NULL;
+  struct ring_buffer *rb = NULL;
   int prog_fd = -1;
   uint64_t last_ns, cur_ns, ns_diff;
 
@@ -369,7 +369,7 @@ exit:
   if (sock_raw_fd >= 0) close(sock_raw_fd);
 
   /* free all entries in list */
-  struct udp_detect_entry* entry;
+  struct udp_detect_entry *entry;
   while ((entry = TAILQ_FIRST(&ctx.detect))) {
     TAILQ_REMOVE(&ctx.detect, entry, next);
     free(entry);

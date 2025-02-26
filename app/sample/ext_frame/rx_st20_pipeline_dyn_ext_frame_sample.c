@@ -17,18 +17,18 @@ struct rx_st20p_sample_ctx {
 
   size_t frame_size;
   int dst_fd;
-  uint8_t* dst_begin;
-  uint8_t* dst_end;
-  uint8_t* dst_cursor;
+  uint8_t *dst_begin;
+  uint8_t *dst_end;
+  uint8_t *dst_cursor;
 
   mtl_dma_mem_handle dma_mem;
-  struct st20_ext_frame* ext_frames;
+  struct st20_ext_frame *ext_frames;
   int ext_idx;
   int fb_cnt;
 };
 
-static int rx_st20p_frame_available(void* priv) {
-  struct rx_st20p_sample_ctx* s = priv;
+static int rx_st20p_frame_available(void *priv) {
+  struct rx_st20p_sample_ctx *s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -37,9 +37,9 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
-                                    struct st20_rx_frame_meta* meta) {
-  struct rx_st20p_sample_ctx* s = priv;
+static int rx_st20p_query_ext_frame(void *priv, struct st_ext_frame *ext_frame,
+                                    struct st20_rx_frame_meta *meta) {
+  struct rx_st20p_sample_ctx *s = priv;
   int i = s->ext_idx;
   MTL_MAY_UNUSED(meta);
 
@@ -57,7 +57,7 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   return 0;
 }
 
-static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
+static int rx_st20p_close_source(struct rx_st20p_sample_ctx *s) {
   if (s->dst_begin) {
     munmap(s->dst_begin, s->dst_end - s->dst_begin);
     s->dst_begin = NULL;
@@ -70,7 +70,7 @@ static int rx_st20p_close_source(struct rx_st20p_sample_ctx* s) {
   return 0;
 }
 
-static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file) {
+static int rx_st20p_open_source(struct rx_st20p_sample_ctx *s, const char *file) {
   int fd, ret, idx = s->idx;
   off_t f_size;
   int fb_cnt = 3;
@@ -89,7 +89,7 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
     return -EIO;
   }
 
-  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, file);
     close(fd);
@@ -106,8 +106,8 @@ static int rx_st20p_open_source(struct rx_st20p_sample_ctx* s, const char* file)
   return 0;
 }
 
-static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
-                                   struct st_frame* frame) {
+static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx *s,
+                                   struct st_frame *frame) {
   if (s->dst_cursor + s->frame_size > s->dst_end) s->dst_cursor = s->dst_begin;
   mtl_memcpy(s->dst_cursor, frame->addr[0], s->frame_size);
   s->dst_cursor += s->frame_size;
@@ -119,10 +119,10 @@ static void rx_st20p_consume_frame(struct rx_st20p_sample_ctx* s,
   s->fb_recv++;
 }
 
-static void* rx_st20p_frame_thread(void* arg) {
-  struct rx_st20p_sample_ctx* s = arg;
+static void *rx_st20p_frame_thread(void *arg) {
+  struct rx_st20p_sample_ctx *s = arg;
   st20p_rx_handle handle = s->handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -141,7 +141,7 @@ static void* rx_st20p_frame_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_st20p_sample_ctx* app[session_num];
+  struct rx_st20p_sample_ctx *app[session_num];
   bool equal = st_frame_fmt_equal_transport(ctx.output_fmt, ctx.fmt);
 
   // create and register rx session
@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
     if (equal) {
       /* no convert, use ext frame for example */
       app[i]->ext_frames =
-          (struct st20_ext_frame*)malloc(sizeof(*app[i]->ext_frames) * app[i]->fb_cnt);
+          (struct st20_ext_frame *)malloc(sizeof(*app[i]->ext_frames) * app[i]->fb_cnt);
       size_t framebuff_size =
           st20_frame_size(ops_rx.transport_fmt, ops_rx.width, ops_rx.height);
       size_t fb_size = framebuff_size * app[i]->fb_cnt;

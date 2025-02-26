@@ -24,13 +24,13 @@ struct st20p_tx_frame {
   struct st_frame dst; /* converted */
   struct st20_convert_frame_meta convert_frame;
   uint16_t idx;
-  void* user_meta; /* the meta data from user */
+  void *user_meta; /* the meta data from user */
   size_t user_meta_buffer_size;
   size_t user_meta_data_size;
 };
 
 struct st20p_tx_ctx {
-  struct mtl_main_impl* impl;
+  struct mtl_main_impl *impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
@@ -43,12 +43,12 @@ struct st20p_tx_ctx {
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_convert_idx;
   uint16_t framebuff_consumer_idx;
-  struct st20p_tx_frame* framebuffs;
+  struct st20p_tx_frame *framebuffs;
   pthread_mutex_t lock;
   int usdt_frame_cnt;
 
-  struct st20_convert_session_impl* convert_impl;
-  struct st_frame_converter* internal_converter;
+  struct st20_convert_session_impl *convert_impl;
+  struct st_frame_converter *internal_converter;
   bool ready;
   bool derive; /* input_fmt == transport_fmt */
 
