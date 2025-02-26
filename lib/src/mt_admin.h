@@ -7,7 +7,7 @@
 
 #include "mt_main.h"
 
-int mt_admin_init(struct mtl_main_impl *impl);
-int mt_admin_uinit(struct mtl_main_impl *impl);
+int mt_admin_init(struct mtl_main_impl* impl);
+int mt_admin_uinit(struct mtl_main_impl* impl);
 
 #endif

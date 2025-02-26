@@ -26,14 +26,14 @@
 
 struct mt_xdp_queue {
   enum mtl_port port;
-  struct rte_mempool *mbuf_pool;
+  struct rte_mempool* mbuf_pool;
   uint16_t q;
   uint32_t umem_ring_size;
 
-  struct xsk_umem *umem;
-  void *umem_buffer;
+  struct xsk_umem* umem;
+  void* umem_buffer;
 
-  struct xsk_socket *socket;
+  struct xsk_socket* socket;
   int socket_fd;
 
   /* rx pkt send on this producer ring, filled by kernel */
@@ -48,8 +48,8 @@ struct mt_xdp_queue {
   uint32_t tx_free_thresh;
   uint32_t tx_full_thresh;
 
-  struct mt_tx_xdp_entry *tx_entry;
-  struct mt_rx_xdp_entry *rx_entry;
+  struct mt_tx_xdp_entry* tx_entry;
+  struct mt_rx_xdp_entry* rx_entry;
 
   uint64_t stat_tx_pkts;
   uint64_t stat_tx_bytes;
@@ -73,7 +73,7 @@ struct mt_xdp_queue {
 };
 
 struct mt_xdp_priv {
-  struct mtl_main_impl *parent;
+  struct mtl_main_impl* parent;
   enum mtl_port port;
   char drv[32];
   uint32_t flags; /* XDP_F_* */
@@ -81,16 +81,16 @@ struct mt_xdp_priv {
 
   uint16_t queues_cnt;
 
-  struct mt_xdp_queue *queues_info;
+  struct mt_xdp_queue* queues_info;
   pthread_mutex_t queues_lock;
 
   bool has_ctrl;
 };
 
-static int xdp_queue_tx_max_rate(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq,
+static int xdp_queue_tx_max_rate(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq,
                                  uint32_t rate_kbps) {
   enum mtl_port port = xq->port;
-  const char *if_name = mt_kernel_if_name(xdp->parent, port);
+  const char* if_name = mt_kernel_if_name(xdp->parent, port);
 
   char path[128];
   snprintf(path, sizeof(path), "/sys/class/net/%s/queues/tx-%u/tx_maxrate", if_name,
@@ -100,7 +100,7 @@ static int xdp_queue_tx_max_rate(struct mt_xdp_priv *xdp, struct mt_xdp_queue *x
   return ret;
 }
 
-static int xdp_queue_tx_stat(struct mt_xdp_queue *xq) {
+static int xdp_queue_tx_stat(struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
 
@@ -147,7 +147,7 @@ static int xdp_queue_tx_stat(struct mt_xdp_queue *xq) {
   return 0;
 }
 
-static int xdp_queue_rx_stat(struct mt_xdp_queue *xq) {
+static int xdp_queue_rx_stat(struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
 
@@ -183,11 +183,11 @@ static int xdp_queue_rx_stat(struct mt_xdp_queue *xq) {
   return 0;
 }
 
-static int xdp_stat_dump(void *priv) {
-  struct mt_xdp_priv *xdp = priv;
+static int xdp_stat_dump(void* priv) {
+  struct mt_xdp_priv* xdp = priv;
 
   for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
-    struct mt_xdp_queue *xq = &xdp->queues_info[i];
+    struct mt_xdp_queue* xq = &xdp->queues_info[i];
     if (xq->tx_entry) xdp_queue_tx_stat(xq);
     if (xq->rx_entry) xdp_queue_rx_stat(xq);
   }
@@ -195,12 +195,12 @@ static int xdp_stat_dump(void *priv) {
   return 0;
 }
 
-static void xdp_queue_clean_mbuf(struct mt_xdp_queue *xq) {
+static void xdp_queue_clean_mbuf(struct mt_xdp_queue* xq) {
   /* todo: find a way to safe free the mbuf in xsk_ring_prod__fill_addr */
   MTL_MAY_UNUSED(xq);
 }
 
-static int xdp_queue_uinit(struct mt_xdp_queue *xq) {
+static int xdp_queue_uinit(struct mt_xdp_queue* xq) {
   xdp_queue_clean_mbuf(xq);
 
   if (xq->socket) {
@@ -216,12 +216,12 @@ static int xdp_queue_uinit(struct mt_xdp_queue *xq) {
   return 0;
 }
 
-static int xdp_free(struct mt_xdp_priv *xdp) {
+static int xdp_free(struct mt_xdp_priv* xdp) {
   enum mtl_port port = xdp->port;
 
   if (xdp->queues_info) {
     for (uint16_t i = 0; i < xdp->queues_cnt; i++) {
-      struct mt_xdp_queue *xq = &xdp->queues_info[i];
+      struct mt_xdp_queue* xq = &xdp->queues_info[i];
 
       xdp_queue_uinit(xq);
 
@@ -245,10 +245,10 @@ static int xdp_free(struct mt_xdp_priv *xdp) {
   return 0;
 }
 
-static int xdp_parse_drv_name(struct mt_xdp_priv *xdp) {
-  struct mtl_main_impl *impl = xdp->parent;
+static int xdp_parse_drv_name(struct mt_xdp_priv* xdp) {
+  struct mtl_main_impl* impl = xdp->parent;
   enum mtl_port port = xdp->port;
-  const char *if_name = mt_kernel_if_name(impl, port);
+  const char* if_name = mt_kernel_if_name(impl, port);
   char drv_path[128];
   char link_path[128];
 
@@ -259,7 +259,7 @@ static int xdp_parse_drv_name(struct mt_xdp_priv *xdp) {
     goto unknown;
   }
   link_path[len] = '\0';
-  char *driver_name = basename(link_path);
+  char* driver_name = basename(link_path);
   if (!driver_name) {
     warn("%s(%d), basename fail for %s\n", __func__, port, if_name);
     goto unknown;
@@ -274,10 +274,10 @@ unknown:
   return -EIO;
 }
 
-static int xdp_parse_pacing_ice(struct mt_xdp_priv *xdp) {
-  struct mtl_main_impl *impl = xdp->parent;
+static int xdp_parse_pacing_ice(struct mt_xdp_priv* xdp) {
+  struct mtl_main_impl* impl = xdp->parent;
   enum mtl_port port = xdp->port;
-  const char *if_name = mt_kernel_if_name(impl, port);
+  const char* if_name = mt_kernel_if_name(impl, port);
 
   uint32_t rate = MTL_BIT32(31);
   char path[128];
@@ -291,14 +291,14 @@ static int xdp_parse_pacing_ice(struct mt_xdp_priv *xdp) {
   return ret;
 }
 
-static int xdp_umem_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
+static int xdp_umem_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   int ret;
   struct xsk_umem_config cfg;
-  void *base_addr = NULL;
-  void *aligned_base_addr = NULL;
-  struct rte_mempool *pool = xq->mbuf_pool;
+  void* base_addr = NULL;
+  void* aligned_base_addr = NULL;
+  struct rte_mempool* pool = xq->mbuf_pool;
   uint64_t umem_size;
 
   memset(&cfg, 0, sizeof(cfg));
@@ -311,7 +311,7 @@ static int xdp_umem_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
                        rte_pktmbuf_priv_size(pool) + RTE_PKTMBUF_HEADROOM;
 
   base_addr = mt_mempool_mem_addr(pool);
-  aligned_base_addr = (void *)((uint64_t)base_addr & ~(mtl_page_size(xdp->parent) - 1));
+  aligned_base_addr = (void*)((uint64_t)base_addr & ~(mtl_page_size(xdp->parent) - 1));
   umem_size = mt_mempool_mem_size(pool) + base_addr - aligned_base_addr;
   dbg("%s(%d), base_addr %p umem_size %" PRIu64 "\n", __func__, port, aligned_base_addr,
       umem_size);
@@ -332,12 +332,12 @@ static int xdp_umem_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
   return 0;
 }
 
-static inline int xdp_rx_prod_reserve(struct mt_xdp_queue *xq, struct rte_mbuf **mbufs,
+static inline int xdp_rx_prod_reserve(struct mt_xdp_queue* xq, struct rte_mbuf** mbufs,
                                       uint16_t sz) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   uint32_t idx = 0;
-  struct xsk_ring_prod *pq = &xq->rx_prod;
+  struct xsk_ring_prod* pq = &xq->rx_prod;
   int ret;
 
   ret = xsk_ring_prod__reserve(pq, sz, &idx);
@@ -347,7 +347,7 @@ static inline int xdp_rx_prod_reserve(struct mt_xdp_queue *xq, struct rte_mbuf *
   }
 
   for (uint32_t i = 0; i < sz; i++) {
-    __u64 *fq_addr;
+    __u64* fq_addr;
     uint64_t addr;
 
     fq_addr = xsk_ring_prod__fill_addr(pq, idx++);
@@ -359,13 +359,13 @@ static inline int xdp_rx_prod_reserve(struct mt_xdp_queue *xq, struct rte_mbuf *
   return 0;
 }
 
-static int xdp_rx_prod_init(struct mt_xdp_queue *xq) {
+static int xdp_rx_prod_init(struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   uint32_t ring_sz = xq->umem_ring_size;
   int ret;
 
-  struct rte_mbuf *mbufs[ring_sz];
+  struct rte_mbuf* mbufs[ring_sz];
   ret = rte_pktmbuf_alloc_bulk(xq->mbuf_pool, mbufs, ring_sz);
   if (ret < 0) {
     err("%s(%d,%u), mbufs alloc fail %d\n", __func__, port, q, ret);
@@ -381,8 +381,8 @@ static int xdp_rx_prod_init(struct mt_xdp_queue *xq) {
   return 0;
 }
 
-static int xdp_socket_update_xskmap(struct mtl_main_impl *impl, struct mt_xdp_queue *xq,
-                                    const char *ifname) {
+static int xdp_socket_update_xskmap(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
+                                    const char* ifname) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   int ret;
@@ -403,11 +403,11 @@ static int xdp_socket_update_xskmap(struct mtl_main_impl *impl, struct mt_xdp_qu
   return 0;
 }
 
-static int xdp_socket_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
+static int xdp_socket_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
-  struct mtl_main_impl *impl = xdp->parent;
-  const char *if_name = mt_kernel_if_name(impl, port);
+  struct mtl_main_impl* impl = xdp->parent;
+  const char* if_name = mt_kernel_if_name(impl, port);
   struct xsk_socket_config cfg;
   int ret;
 
@@ -462,7 +462,7 @@ copy_mode:
   return 0;
 }
 
-static int xdp_queue_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
+static int xdp_queue_init(struct mt_xdp_priv* xdp, struct mt_xdp_queue* xq) {
   enum mtl_port port = xq->port;
   uint16_t q = xq->q;
   int ret;
@@ -491,8 +491,8 @@ static int xdp_queue_init(struct mt_xdp_priv *xdp, struct mt_xdp_queue *xq) {
   return 0;
 }
 
-static void xdp_tx_poll_done(struct mt_xdp_queue *xq) {
-  struct xsk_ring_cons *cq = &xq->tx_cons;
+static void xdp_tx_poll_done(struct mt_xdp_queue* xq) {
+  struct xsk_ring_cons* cq = &xq->tx_cons;
   uint32_t idx = 0;
   uint32_t size = xq->umem_ring_size;
   uint32_t n = xsk_ring_cons__peek(cq, size, &idx);
@@ -500,7 +500,7 @@ static void xdp_tx_poll_done(struct mt_xdp_queue *xq) {
   for (uint32_t i = 0; i < n; i++) {
     uint64_t addr = *xsk_ring_cons__comp_addr(cq, idx++);
     addr = xsk_umem__extract_addr(addr);
-    struct rte_mbuf *m = (struct rte_mbuf *)xsk_umem__get_data(
+    struct rte_mbuf* m = (struct rte_mbuf*)xsk_umem__get_data(
         xq->umem_buffer, addr + xq->mbuf_pool->header_size);
     dbg("%s(%d, %u), free mbuf %p addr 0x%" PRIu64 "\n", __func__, xq->port, xq->q, m,
         addr);
@@ -511,8 +511,8 @@ static void xdp_tx_poll_done(struct mt_xdp_queue *xq) {
   xsk_ring_cons__release(cq, n);
 }
 
-static inline void xdp_tx_check_free(struct mt_xdp_queue *xq) {
-  struct xsk_ring_cons *cq = &xq->tx_cons;
+static inline void xdp_tx_check_free(struct mt_xdp_queue* xq) {
+  struct xsk_ring_cons* cq = &xq->tx_cons;
   uint32_t cq_avail = xsk_cons_nb_avail(cq, xq->umem_ring_size);
   dbg("%s(%d, %u), cq_avail %u\n", __func__, xq->port, xq->q, cq_avail);
   if (cq_avail >= xq->tx_free_thresh) {
@@ -520,7 +520,7 @@ static inline void xdp_tx_check_free(struct mt_xdp_queue *xq) {
   }
 }
 
-static void xdp_tx_wakeup(struct mt_xdp_queue *xq) {
+static void xdp_tx_wakeup(struct mt_xdp_queue* xq) {
   if (xsk_ring_prod__needs_wakeup(&xq->tx_prod)) {
     int ret = send(xq->socket_fd, NULL, 0, MSG_DONTWAIT);
     xq->stat_tx_wakeup++;
@@ -533,14 +533,14 @@ static void xdp_tx_wakeup(struct mt_xdp_queue *xq) {
   }
 }
 
-static uint16_t xdp_tx(struct mtl_main_impl *impl, struct mt_xdp_queue *xq,
-                       struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
+static uint16_t xdp_tx(struct mtl_main_impl* impl, struct mt_xdp_queue* xq,
+                       struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   enum mtl_port port = xq->port;
   // uint16_t q = xq->q;
-  struct rte_mempool *mbuf_pool = xq->mbuf_pool;
+  struct rte_mempool* mbuf_pool = xq->mbuf_pool;
   uint16_t tx = 0;
-  struct xsk_ring_prod *pd = &xq->tx_prod;
-  struct mtl_port_status *stats = mt_if(impl, port)->dev_stats_sw;
+  struct xsk_ring_prod* pd = &xq->tx_prod;
+  struct mtl_port_status* stats = mt_if(impl, port)->dev_stats_sw;
   uint64_t tx_bytes = 0;
 
   xdp_tx_check_free(xq); /* do we need check free threshold for every tx burst */
@@ -552,8 +552,8 @@ static uint16_t xdp_tx(struct mtl_main_impl *impl, struct mt_xdp_queue *xq,
   }
 
   for (uint16_t i = 0; i < nb_pkts; i++) {
-    struct rte_mbuf *m = tx_pkts[i];
-    struct rte_mbuf *local = rte_pktmbuf_alloc(mbuf_pool);
+    struct rte_mbuf* m = tx_pkts[i];
+    struct rte_mbuf* local = rte_pktmbuf_alloc(mbuf_pool);
     if (!local) {
       dbg("%s(%d, %u), local mbuf alloc fail\n", __func__, port, xq->q);
       xq->stat_tx_mbuf_alloc_fail++;
@@ -568,20 +568,20 @@ static uint16_t xdp_tx(struct mtl_main_impl *impl, struct mt_xdp_queue *xq,
       xdp_tx_wakeup(xq);
       goto exit;
     }
-    struct xdp_desc *desc = xsk_ring_prod__tx_desc(pd, idx);
+    struct xdp_desc* desc = xsk_ring_prod__tx_desc(pd, idx);
     desc->len = m->pkt_len;
     uint64_t addr =
         (uint64_t)local - (uint64_t)xq->umem_buffer - xq->mbuf_pool->header_size;
     uint64_t offset =
         rte_pktmbuf_mtod(local, uint64_t) - (uint64_t)local + xq->mbuf_pool->header_size;
-    void *pkt = xsk_umem__get_data(xq->umem_buffer, addr + offset);
+    void* pkt = xsk_umem__get_data(xq->umem_buffer, addr + offset);
     offset = offset << XSK_UNALIGNED_BUF_OFFSET_SHIFT;
     desc->addr = addr | offset;
 
-    struct rte_mbuf *n = m;
+    struct rte_mbuf* n = m;
     uint16_t nb_segs = m->nb_segs;
     for (uint16_t seg = 0; seg < nb_segs; seg++) {
-      rte_memcpy(pkt, rte_pktmbuf_mtod(n, void *), n->data_len);
+      rte_memcpy(pkt, rte_pktmbuf_mtod(n, void*), n->data_len);
       pkt += n->data_len;
       /* point to next */
       n = n->next;
@@ -613,14 +613,14 @@ exit:
   return tx;
 }
 
-static bool xdp_rx_check_pkt(struct mt_rx_xdp_entry *entry, struct rte_mbuf *pkt) {
+static bool xdp_rx_check_pkt(struct mt_rx_xdp_entry* entry, struct rte_mbuf* pkt) {
   enum mtl_port port = entry->port;
-  struct mt_xdp_queue *xq = entry->xq;
+  struct mt_xdp_queue* xq = entry->xq;
   uint16_t q = entry->queue_id;
-  struct mt_udp_hdr *hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr *);
-  struct rte_ether_hdr *eth = &hdr->eth;
-  struct rte_ipv4_hdr *ipv4 = &hdr->ipv4;
-  struct rte_udp_hdr *udp = &hdr->udp;
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  struct rte_ether_hdr* eth = &hdr->eth;
+  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_udp_hdr* udp = &hdr->udp;
 
   MTL_MAY_UNUSED(port);
   MTL_MAY_UNUSED(q);
@@ -649,14 +649,14 @@ static bool xdp_rx_check_pkt(struct mt_rx_xdp_entry *entry, struct rte_mbuf *pkt
   return true;
 }
 
-static uint16_t xdp_rx(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
+static uint16_t xdp_rx(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
                        uint16_t nb_pkts) {
-  struct mt_xdp_queue *xq = entry->xq;
+  struct mt_xdp_queue* xq = entry->xq;
   enum mtl_port port = entry->port;
   uint16_t q = xq->q;
-  struct xsk_ring_cons *rx_cons = &xq->rx_cons;
-  struct rte_mempool *mp = xq->mbuf_pool;
-  struct mtl_port_status *stats = mt_if(entry->parent, port)->dev_stats_sw;
+  struct xsk_ring_cons* rx_cons = &xq->rx_cons;
+  struct rte_mempool* mp = xq->mbuf_pool;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
   uint64_t rx_bytes = 0;
   uint32_t idx = 0;
   uint32_t rx = xsk_ring_cons__peek(rx_cons, nb_pkts, &idx);
@@ -664,7 +664,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
 
   xq->stat_rx_burst++;
 
-  struct rte_mbuf *fill[rx];
+  struct rte_mbuf* fill[rx];
   int ret = rte_pktmbuf_alloc_bulk(xq->mbuf_pool, fill, rx);
   if (ret < 0) {
     dbg("%s(%d, %u), mbuf alloc bulk %u fail\n", __func__, port, q, rx);
@@ -675,7 +675,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
 
   uint32_t valid_rx = 0;
   for (uint32_t i = 0; i < rx; i++) {
-    const struct xdp_desc *desc;
+    const struct xdp_desc* desc;
     uint64_t addr;
     uint32_t len;
     uint64_t offset;
@@ -685,7 +685,7 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
     len = desc->len;
     offset = xsk_umem__extract_offset(addr);
     addr = xsk_umem__extract_addr(addr);
-    struct rte_mbuf *pkt = xsk_umem__get_data(xq->umem_buffer, addr + mp->header_size);
+    struct rte_mbuf* pkt = xsk_umem__get_data(xq->umem_buffer, addr + mp->header_size);
     pkt->data_off =
         offset - sizeof(struct rte_mbuf) - rte_pktmbuf_priv_size(mp) - mp->header_size;
     rte_pktmbuf_pkt_len(pkt) = len;
@@ -717,8 +717,8 @@ static uint16_t xdp_rx(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
   return valid_rx;
 }
 
-int mt_dev_xdp_init(struct mt_interface *inf) {
-  struct mtl_main_impl *impl = inf->parent;
+int mt_dev_xdp_init(struct mt_interface* inf) {
+  struct mtl_main_impl* impl = inf->parent;
   enum mtl_port port = inf->port;
   int ret;
 
@@ -732,7 +732,7 @@ int mt_dev_xdp_init(struct mt_interface *inf) {
     return -EIO;
   }
 
-  struct mt_xdp_priv *xdp = mt_rte_zmalloc_socket(sizeof(*xdp), mt_socket_id(impl, port));
+  struct mt_xdp_priv* xdp = mt_rte_zmalloc_socket(sizeof(*xdp), mt_socket_id(impl, port));
   if (!xdp) {
     err("%s(%d), xdp malloc fail\n", __func__, port);
     return -ENOMEM;
@@ -761,7 +761,7 @@ int mt_dev_xdp_init(struct mt_interface *inf) {
       return -EIO;
     }
 
-    struct mt_xdp_queue *xq = &xdp->queues_info[i];
+    struct mt_xdp_queue* xq = &xdp->queues_info[i];
     xq->port = port;
     xq->q = q;
     xq->umem_ring_size = XSK_RING_CONS__DEFAULT_NUM_DESCS;
@@ -798,10 +798,10 @@ int mt_dev_xdp_init(struct mt_interface *inf) {
   return 0;
 }
 
-int mt_dev_xdp_uinit(struct mt_interface *inf) {
-  struct mt_xdp_priv *xdp = inf->xdp;
+int mt_dev_xdp_uinit(struct mt_interface* inf) {
+  struct mt_xdp_priv* xdp = inf->xdp;
   if (!xdp) return 0;
-  struct mtl_main_impl *impl = inf->parent;
+  struct mtl_main_impl* impl = inf->parent;
 
   mt_stat_unregister(impl, xdp_stat_dump, xdp);
 
@@ -811,15 +811,15 @@ int mt_dev_xdp_uinit(struct mt_interface *inf) {
   return 0;
 }
 
-struct mt_tx_xdp_entry *mt_tx_xdp_get(struct mtl_main_impl *impl, enum mtl_port port,
-                                      struct mt_txq_flow *flow,
-                                      struct mt_tx_xdp_get_args *args) {
+struct mt_tx_xdp_entry* mt_tx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                      struct mt_txq_flow* flow,
+                                      struct mt_tx_xdp_get_args* args) {
   if (!mt_pmd_is_native_af_xdp(impl, port)) {
     err("%s(%d), this pmd is not native xdp\n", __func__, port);
     return NULL;
   }
 
-  struct mt_tx_xdp_entry *entry =
+  struct mt_tx_xdp_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), entry malloc fail\n", __func__, port);
@@ -829,8 +829,8 @@ struct mt_tx_xdp_entry *mt_tx_xdp_get(struct mtl_main_impl *impl, enum mtl_port 
   entry->port = port;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
-  struct mt_xdp_priv *xdp = mt_if(impl, port)->xdp;
-  struct mt_xdp_queue *xq = NULL;
+  struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
+  struct mt_xdp_queue* xq = NULL;
 
   if (args && args->queue_match) {
     mt_pthread_mutex_lock(&xdp->queues_lock);
@@ -873,18 +873,18 @@ struct mt_tx_xdp_entry *mt_tx_xdp_get(struct mtl_main_impl *impl, enum mtl_port 
     xdp_queue_tx_max_rate(xdp, xq, rate_kbps);
   }
 
-  uint8_t *ip = flow->dip_addr;
+  uint8_t* ip = flow->dip_addr;
   info("%s(%d), ip %u.%u.%u.%u, port %u, queue %u\n", __func__, port, ip[0], ip[1], ip[2],
        ip[3], flow->dst_port, entry->queue_id);
   return entry;
 }
 
-int mt_tx_xdp_put(struct mt_tx_xdp_entry *entry) {
+int mt_tx_xdp_put(struct mt_tx_xdp_entry* entry) {
   enum mtl_port port = entry->port;
-  struct mt_txq_flow *flow = &entry->flow;
-  uint8_t *ip = flow->dip_addr;
-  struct mt_xdp_queue *xq = entry->xq;
-  struct mt_xdp_priv *xdp = mt_if(entry->parent, port)->xdp;
+  struct mt_txq_flow* flow = &entry->flow;
+  uint8_t* ip = flow->dip_addr;
+  struct mt_xdp_queue* xq = entry->xq;
+  struct mt_xdp_priv* xdp = mt_if(entry->parent, port)->xdp;
 
   /* rl settings clear */
   if (xdp->flags & XDP_F_RATE_LIMIT) {
@@ -905,19 +905,19 @@ int mt_tx_xdp_put(struct mt_tx_xdp_entry *entry) {
   return 0;
 }
 
-uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry *entry, struct rte_mbuf **tx_pkts,
+uint16_t mt_tx_xdp_burst(struct mt_tx_xdp_entry* entry, struct rte_mbuf** tx_pkts,
                          uint16_t nb_pkts) {
   return xdp_tx(entry->parent, entry->xq, tx_pkts, nb_pkts);
 }
 
-static inline int xdp_socket_update_dp(struct mtl_main_impl *impl, int ifindex,
+static inline int xdp_socket_update_dp(struct mtl_main_impl* impl, int ifindex,
                                        uint16_t dp, bool add) {
   return mt_instance_update_udp_dp_filter(impl, ifindex, dp, add);
 }
 
-struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl, enum mtl_port port,
-                                      struct mt_rxq_flow *flow,
-                                      struct mt_rx_xdp_get_args *args) {
+struct mt_rx_xdp_entry* mt_rx_xdp_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                      struct mt_rxq_flow* flow,
+                                      struct mt_rx_xdp_get_args* args) {
   if (!mt_pmd_is_native_af_xdp(impl, port)) {
     err("%s(%d), this pmd is not native xdp\n", __func__, port);
     return NULL;
@@ -925,7 +925,7 @@ struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl, enum mtl_port 
 
   MTL_MAY_UNUSED(args);
 
-  struct mt_rx_xdp_entry *entry =
+  struct mt_rx_xdp_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), entry malloc fail\n", __func__, port);
@@ -936,8 +936,8 @@ struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl, enum mtl_port 
   entry->mcast_fd = -1;
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
-  struct mt_xdp_priv *xdp = mt_if(impl, port)->xdp;
-  struct mt_xdp_queue *xq = NULL;
+  struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
+  struct mt_xdp_queue* xq = NULL;
 
   if (args && args->queue_match) {
     mt_pthread_mutex_lock(&xdp->queues_lock);
@@ -1000,19 +1000,19 @@ struct mt_rx_xdp_entry *mt_rx_xdp_get(struct mtl_main_impl *impl, enum mtl_port 
   }
   entry->mcast_fd = mcast_fd;
 
-  uint8_t *ip = flow->dip_addr;
+  uint8_t* ip = flow->dip_addr;
   info("%s(%d,%u), ip %u.%u.%u.%u port %u\n", __func__, port, q, ip[0], ip[1], ip[2],
        ip[3], flow->dst_port);
   return entry;
 }
 
-int mt_rx_xdp_put(struct mt_rx_xdp_entry *entry) {
-  struct mtl_main_impl *impl = entry->parent;
+int mt_rx_xdp_put(struct mt_rx_xdp_entry* entry) {
+  struct mtl_main_impl* impl = entry->parent;
   enum mtl_port port = entry->port;
-  struct mt_rxq_flow *flow = &entry->flow;
-  uint8_t *ip = flow->dip_addr;
-  struct mt_xdp_queue *xq = entry->xq;
-  struct mt_xdp_priv *xdp = mt_if(impl, port)->xdp;
+  struct mt_rxq_flow* flow = &entry->flow;
+  uint8_t* ip = flow->dip_addr;
+  struct mt_xdp_queue* xq = entry->xq;
+  struct mt_xdp_priv* xdp = mt_if(impl, port)->xdp;
 
   if (entry->mcast_fd > 0) {
     close(entry->mcast_fd);
@@ -1034,7 +1034,7 @@ int mt_rx_xdp_put(struct mt_rx_xdp_entry *entry) {
   return 0;
 }
 
-uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry *entry, struct rte_mbuf **rx_pkts,
+uint16_t mt_rx_xdp_burst(struct mt_rx_xdp_entry* entry, struct rte_mbuf** rx_pkts,
                          const uint16_t nb_pkts) {
   return xdp_rx(entry, rx_pkts, nb_pkts);
 }

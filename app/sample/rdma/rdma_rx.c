@@ -13,7 +13,7 @@
 static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
-static int rx_notify_buffer_ready(void *priv, struct mtl_rdma_buffer *buffer) {
+static int rx_notify_buffer_ready(void* priv, struct mtl_rdma_buffer* buffer) {
   (void)(priv);
   (void)(buffer);
   pthread_mutex_lock(&mtx);
@@ -22,13 +22,13 @@ static int rx_notify_buffer_ready(void *priv, struct mtl_rdma_buffer *buffer) {
   return 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   if (argc != 4) {
     printf("Usage: %s <local_ip> <ip> <port>\n", argv[0]);
     return -1;
   }
   int ret = 0;
-  void *buffers[3] = {};
+  void* buffers[3] = {};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_rx_handle rx = NULL;
   struct mtl_rdma_init_params p = {
@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
 
   int total = 100;
   int buffer_consumed = 0;
-  struct mtl_rdma_buffer *buffer = NULL;
+  struct mtl_rdma_buffer* buffer = NULL;
   while (buffer_consumed < total) {
     buffer = mtl_rdma_rx_get_buffer(rx);
     if (!buffer) {
@@ -82,9 +82,9 @@ int main(int argc, char **argv) {
     }
 
     /* print buffer string */
-    printf("Received buffer %d: %s\n", buffer_consumed, (char *)buffer->addr);
+    printf("Received buffer %d: %s\n", buffer_consumed, (char*)buffer->addr);
     if (buffer->user_meta && buffer->user_meta_size) {
-      printf("User meta: %d\n", *(int *)buffer->user_meta);
+      printf("User meta: %d\n", *(int*)buffer->user_meta);
     }
     usleep(10000); /* simulate consuming */
 

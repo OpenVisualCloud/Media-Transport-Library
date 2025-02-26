@@ -15,30 +15,30 @@
 #define MT_SQ_RING_PREFIX "SQ_"
 #define MT_SQ_BURST_SIZE (128)
 
-static inline struct mt_rsq_impl *rsq_ctx_get(struct mtl_main_impl *impl,
+static inline struct mt_rsq_impl* rsq_ctx_get(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
   return impl->rsq[port];
 }
 
-static inline void rsq_lock(struct mt_rsq_queue *s) {
+static inline void rsq_lock(struct mt_rsq_queue* s) {
   rte_spinlock_lock(&s->mutex);
 }
 
 /* return true if try lock succ */
-static inline bool rsq_try_lock(struct mt_rsq_queue *s) {
+static inline bool rsq_try_lock(struct mt_rsq_queue* s) {
   int ret = rte_spinlock_trylock(&s->mutex);
   return ret ? true : false;
 }
 
-static inline void rsq_unlock(struct mt_rsq_queue *s) {
+static inline void rsq_unlock(struct mt_rsq_queue* s) {
   rte_spinlock_unlock(&s->mutex);
 }
 
-static int rsq_stat_dump(void *priv) {
-  struct mt_rsq_impl *rsq = priv;
+static int rsq_stat_dump(void* priv) {
+  struct mt_rsq_impl* rsq = priv;
   enum mtl_port port = rsq->port;
-  struct mt_rsq_queue *s;
-  struct mt_rsq_entry *entry;
+  struct mt_rsq_queue* s;
+  struct mt_rsq_entry* entry;
   int idx;
 
   for (uint16_t q = 0; q < rsq->nb_rsq_queues; q++) {
@@ -69,8 +69,8 @@ static int rsq_stat_dump(void *priv) {
   return 0;
 }
 
-static int rsq_entry_free(struct mt_rsq_entry *entry) {
-  struct mt_rsq_impl *rsqm = entry->parent;
+static int rsq_entry_free(struct mt_rsq_entry* entry) {
+  struct mt_rsq_impl* rsqm = entry->parent;
 
   if (entry->flow_rsp) {
     mt_rx_flow_free(rsqm->parent, rsqm->port, entry->flow_rsp);
@@ -90,9 +90,9 @@ static int rsq_entry_free(struct mt_rsq_entry *entry) {
   return 0;
 }
 
-static int rsq_uinit(struct mt_rsq_impl *rsq) {
-  struct mt_rsq_queue *rsq_queue;
-  struct mt_rsq_entry *entry;
+static int rsq_uinit(struct mt_rsq_impl* rsq) {
+  struct mt_rsq_queue* rsq_queue;
+  struct mt_rsq_entry* entry;
 
   if (rsq->rsq_queues) {
     for (uint16_t q = 0; q < rsq->nb_rsq_queues; q++) {
@@ -119,10 +119,10 @@ static int rsq_uinit(struct mt_rsq_impl *rsq) {
   return 0;
 }
 
-static int rsq_init(struct mtl_main_impl *impl, struct mt_rsq_impl *rsq) {
+static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
   enum mtl_port port = rsq->port;
   int soc_id = mt_socket_id(impl, port);
-  struct mt_rsq_queue *rsq_queue;
+  struct mt_rsq_queue* rsq_queue;
 
   rsq->rsq_queues =
       mt_rte_zmalloc_socket(sizeof(*rsq->rsq_queues) * rsq->nb_rsq_queues, soc_id);
@@ -149,7 +149,7 @@ static int rsq_init(struct mtl_main_impl *impl, struct mt_rsq_impl *rsq) {
   return 0;
 }
 
-static uint32_t rsq_flow_hash(struct mt_rxq_flow *flow) {
+static uint32_t rsq_flow_hash(struct mt_rxq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
@@ -162,22 +162,22 @@ static uint32_t rsq_flow_hash(struct mt_rxq_flow *flow) {
                             flow->sip_addr[3]);
   tuple.dport = flow->dst_port;
   tuple.sport = tuple.dport;
-  return mt_softrss((uint32_t *)&tuple, len);
+  return mt_softrss((uint32_t*)&tuple, len);
 }
 
-struct mt_rsq_entry *mt_rsq_get(struct mtl_main_impl *impl, enum mtl_port port,
-                                struct mt_rxq_flow *flow) {
+struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_rxq_flow* flow) {
   if (!mt_user_shared_rxq(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
 
-  struct mt_rsq_impl *rsqm = rsq_ctx_get(impl, port);
+  struct mt_rsq_impl* rsqm = rsq_ctx_get(impl, port);
   uint32_t hash = rsq_flow_hash(flow);
   uint16_t q = (hash % RTE_ETH_RETA_GROUP_SIZE) % rsqm->nb_rsq_queues;
-  struct mt_rsq_queue *rsq_queue = &rsqm->rsq_queues[q];
+  struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
   int idx = rsq_queue->entry_idx;
-  struct mt_rsq_entry *entry =
+  struct mt_rsq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%u), entry malloc fail\n", __func__, q);
@@ -248,15 +248,15 @@ struct mt_rsq_entry *mt_rsq_get(struct mtl_main_impl *impl, enum mtl_port port,
   if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) rsq_queue->cni_entry = entry;
   rsq_unlock(rsq_queue);
 
-  uint8_t *ip = flow->dip_addr;
+  uint8_t* ip = flow->dip_addr;
   info("%s(%d), q %u ip %u.%u.%u.%u, port %u hash %u, on %d\n", __func__, port, q, ip[0],
        ip[1], ip[2], ip[3], flow->dst_port, hash, idx);
   return entry;
 }
 
-int mt_rsq_put(struct mt_rsq_entry *entry) {
-  struct mt_rsq_impl *rsqm = entry->parent;
-  struct mt_rsq_queue *rsq_queue = &rsqm->rsq_queues[entry->queue_id];
+int mt_rsq_put(struct mt_rsq_entry* entry) {
+  struct mt_rsq_impl* rsqm = entry->parent;
+  struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[entry->queue_id];
 
   rsq_lock(rsq_queue);
   MT_TAILQ_REMOVE(&rsq_queue->head, entry, next);
@@ -267,11 +267,11 @@ int mt_rsq_put(struct mt_rsq_entry *entry) {
   return 0;
 }
 
-static inline void rsq_entry_pkts_enqueue(struct mt_rsq_entry *entry,
-                                          struct rte_mbuf **pkts,
+static inline void rsq_entry_pkts_enqueue(struct mt_rsq_entry* entry,
+                                          struct rte_mbuf** pkts,
                                           const uint16_t nb_pkts) {
   /* use bulk version */
-  unsigned int n = rte_ring_sp_enqueue_bulk(entry->ring, (void **)pkts, nb_pkts, NULL);
+  unsigned int n = rte_ring_sp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
   entry->stat_enqueue_cnt += n;
   if (n == 0) {
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
@@ -287,15 +287,15 @@ static inline void rsq_entry_pkts_enqueue(struct mt_rsq_entry *entry,
     matched_pkts_nb = 0;                                                         \
   } while (0)
 
-static int rsq_rx(struct mt_rsq_queue *rsq_queue) {
+static int rsq_rx(struct mt_rsq_queue* rsq_queue) {
   uint16_t q = rsq_queue->queue_id;
-  struct rte_mbuf *pkts[MT_SQ_BURST_SIZE];
-  struct rte_mbuf *matched_pkts[MT_SQ_BURST_SIZE];
+  struct rte_mbuf* pkts[MT_SQ_BURST_SIZE];
+  struct rte_mbuf* matched_pkts[MT_SQ_BURST_SIZE];
   uint16_t rx;
-  struct mt_rsq_entry *rsq_entry = NULL;
-  struct mt_rsq_entry *last_rsq_entry = NULL;
+  struct mt_rsq_entry* rsq_entry = NULL;
+  struct mt_rsq_entry* last_rsq_entry = NULL;
   uint16_t matched_pkts_nb = 0;
-  struct mt_udp_hdr *hdr;
+  struct mt_udp_hdr* hdr;
 
   if (rsq_queue->xdp)
     rx = mt_rx_xdp_burst(rsq_queue->xdp, pkts, MT_SQ_BURST_SIZE);
@@ -307,7 +307,7 @@ static int rsq_rx(struct mt_rsq_queue *rsq_queue) {
   for (uint16_t i = 0; i < rx; i++) {
     rsq_entry = NULL;
 
-    hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr *);
+    hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
     dbg("%s, pkt %u ip %u, port dst %u src %u\n", __func__, q, i,
         (unsigned int)ntohs(hdr->udp.dst_port), (unsigned int)ntohs(hdr->udp.src_port));
 
@@ -330,22 +330,22 @@ static int rsq_rx(struct mt_rsq_queue *rsq_queue) {
   return rx;
 }
 
-uint16_t mt_rsq_burst(struct mt_rsq_entry *entry, struct rte_mbuf **rx_pkts,
+uint16_t mt_rsq_burst(struct mt_rsq_entry* entry, struct rte_mbuf** rx_pkts,
                       uint16_t nb_pkts) {
-  struct mt_rsq_impl *rsqm = entry->parent;
+  struct mt_rsq_impl* rsqm = entry->parent;
   uint16_t q = entry->queue_id;
-  struct mt_rsq_queue *rsq_queue = &rsqm->rsq_queues[q];
+  struct mt_rsq_queue* rsq_queue = &rsqm->rsq_queues[q];
 
   if (!rsq_try_lock(rsq_queue)) return 0;
   rsq_rx(rsq_queue);
   rsq_unlock(rsq_queue);
-  uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void **)rx_pkts, nb_pkts, NULL);
+  uint16_t n = rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
   entry->stat_dequeue_cnt += n;
 
   return n;
 }
 
-int mt_rsq_init(struct mtl_main_impl *impl) {
+int mt_rsq_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
 
@@ -374,7 +374,7 @@ int mt_rsq_init(struct mtl_main_impl *impl) {
   return 0;
 }
 
-int mt_rsq_uinit(struct mtl_main_impl *impl) {
+int mt_rsq_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     if (impl->rsq[i]) {
       rsq_uinit(impl->rsq[i]);
@@ -386,28 +386,28 @@ int mt_rsq_uinit(struct mtl_main_impl *impl) {
   return 0;
 }
 
-static inline struct mt_tsq_impl *tsq_ctx_get(struct mtl_main_impl *impl,
+static inline struct mt_tsq_impl* tsq_ctx_get(struct mtl_main_impl* impl,
                                               enum mtl_port port) {
   return impl->tsq[port];
 }
 
-static inline void tsq_lock(struct mt_tsq_queue *s) {
+static inline void tsq_lock(struct mt_tsq_queue* s) {
   mt_pthread_mutex_lock(&s->mutex);
 }
 
 /* return true if try lock succ */
-static inline bool tsq_try_lock(struct mt_tsq_queue *s) {
+static inline bool tsq_try_lock(struct mt_tsq_queue* s) {
   int ret = mt_pthread_mutex_try_lock(&s->mutex);
   return ret == 0 ? true : false;
 }
 
-static inline void tsq_unlock(struct mt_tsq_queue *s) {
+static inline void tsq_unlock(struct mt_tsq_queue* s) {
   mt_pthread_mutex_unlock(&s->mutex);
 }
 
-static int tsq_stat_dump(void *priv) {
-  struct mt_tsq_impl *tsq = priv;
-  struct mt_tsq_queue *s;
+static int tsq_stat_dump(void* priv) {
+  struct mt_tsq_impl* tsq = priv;
+  struct mt_tsq_queue* s;
 
   for (uint16_t q = 0; q < tsq->nb_tsq_queues; q++) {
     s = &tsq->tsq_queues[q];
@@ -423,14 +423,14 @@ static int tsq_stat_dump(void *priv) {
   return 0;
 }
 
-static int tsq_entry_free(struct mt_tsq_entry *entry) {
+static int tsq_entry_free(struct mt_tsq_entry* entry) {
   mt_rte_free(entry);
   return 0;
 }
 
-static int tsq_uinit(struct mt_tsq_impl *tsq) {
-  struct mt_tsq_queue *tsq_queue;
-  struct mt_tsq_entry *entry;
+static int tsq_uinit(struct mt_tsq_impl* tsq) {
+  struct mt_tsq_queue* tsq_queue;
+  struct mt_tsq_entry* entry;
 
   if (tsq->tsq_queues) {
     for (uint16_t q = 0; q < tsq->nb_tsq_queues; q++) {
@@ -461,10 +461,10 @@ static int tsq_uinit(struct mt_tsq_impl *tsq) {
   return 0;
 }
 
-static int tsq_init(struct mtl_main_impl *impl, struct mt_tsq_impl *tsq) {
+static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
   enum mtl_port port = tsq->port;
   int soc_id = mt_socket_id(impl, port);
-  struct mt_tsq_queue *tsq_queue;
+  struct mt_tsq_queue* tsq_queue;
 
   tsq->tsq_queues =
       mt_rte_zmalloc_socket(sizeof(*tsq->tsq_queues) * tsq->nb_tsq_queues, soc_id);
@@ -491,7 +491,7 @@ static int tsq_init(struct mtl_main_impl *impl, struct mt_tsq_impl *tsq) {
   return 0;
 }
 
-static uint32_t tsq_flow_hash(struct mt_txq_flow *flow) {
+static uint32_t tsq_flow_hash(struct mt_txq_flow* flow) {
   struct rte_ipv4_tuple tuple;
   uint32_t len;
 
@@ -503,24 +503,24 @@ static uint32_t tsq_flow_hash(struct mt_txq_flow *flow) {
   tuple.dst_addr = tuple.src_addr;
   tuple.sport = flow->dst_port;
   tuple.dport = flow->dst_port;
-  return mt_softrss((uint32_t *)&tuple, len);
+  return mt_softrss((uint32_t*)&tuple, len);
 }
 
-struct mt_tsq_entry *mt_tsq_get(struct mtl_main_impl *impl, enum mtl_port port,
-                                struct mt_txq_flow *flow) {
+struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                struct mt_txq_flow* flow) {
   if (!mt_user_shared_txq(impl, port)) {
     err("%s(%d), shared queue not enabled\n", __func__, port);
     return NULL;
   }
 
-  struct mt_tsq_impl *tsqm = tsq_ctx_get(impl, port);
+  struct mt_tsq_impl* tsqm = tsq_ctx_get(impl, port);
   uint32_t hash = tsq_flow_hash(flow);
   uint16_t q = 0;
   /* queue zero is reserved for system queue */
   if (!(flow->flags & MT_TXQ_FLOW_F_SYS_QUEUE)) {
     q = (hash % RTE_ETH_RETA_GROUP_SIZE) % (tsqm->nb_tsq_queues - 1) + 1;
   }
-  struct mt_tsq_queue *tsq_queue = &tsqm->tsq_queues[q];
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[q];
 
   if (tsq_queue->fatal_error) {
     /* try to find one valid queue */
@@ -543,7 +543,7 @@ struct mt_tsq_entry *mt_tsq_get(struct mtl_main_impl *impl, enum mtl_port port,
     q = q_b;
     tsq_queue = &tsqm->tsq_queues[q];
   }
-  struct mt_tsq_entry *entry =
+  struct mt_tsq_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d:%u), entry malloc fail\n", __func__, port, q);
@@ -557,7 +557,7 @@ struct mt_tsq_entry *mt_tsq_get(struct mtl_main_impl *impl, enum mtl_port port,
   if (!tsq_queue->tx_pool) {
     char pool_name[32];
     snprintf(pool_name, 32, "TSQ_P%dQ%u", port, q);
-    struct rte_mempool *pool =
+    struct rte_mempool* pool =
         mt_mempool_create(impl, port, pool_name, mt_if_nb_tx_desc(impl, port) + 512,
                           MT_MBUF_CACHE_SIZE, 0, MTL_MTU_MAX_BYTES);
     if (!pool) {
@@ -591,15 +591,15 @@ struct mt_tsq_entry *mt_tsq_get(struct mtl_main_impl *impl, enum mtl_port port,
 
   entry->tx_pool = tsq_queue->tx_pool;
 
-  uint8_t *ip = flow->dip_addr;
+  uint8_t* ip = flow->dip_addr;
   info("%s(%d), q %u ip %u.%u.%u.%u, port %u hash %u\n", __func__, port, q, ip[0], ip[1],
        ip[2], ip[3], flow->dst_port, hash);
   return entry;
 }
 
-int mt_tsq_put(struct mt_tsq_entry *entry) {
-  struct mt_tsq_impl *tsqm = entry->parent;
-  struct mt_tsq_queue *tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+int mt_tsq_put(struct mt_tsq_entry* entry) {
+  struct mt_tsq_impl* tsqm = entry->parent;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
 
   tsq_lock(tsq_queue);
   MT_TAILQ_REMOVE(&tsq_queue->head, entry, next);
@@ -610,9 +610,9 @@ int mt_tsq_put(struct mt_tsq_entry *entry) {
   return 0;
 }
 
-int mt_tsq_fatal_error(struct mt_tsq_entry *entry) {
-  struct mt_tsq_impl *tsqm = entry->parent;
-  struct mt_tsq_queue *tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+int mt_tsq_fatal_error(struct mt_tsq_entry* entry) {
+  struct mt_tsq_impl* tsqm = entry->parent;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
 
   tsq_lock(tsq_queue);
   tsq_queue->fatal_error = true;
@@ -622,9 +622,9 @@ int mt_tsq_fatal_error(struct mt_tsq_entry *entry) {
   return 0;
 }
 
-int mt_tsq_done_cleanup(struct mt_tsq_entry *entry) {
-  struct mt_tsq_impl *tsqm = entry->parent;
-  struct mt_tsq_queue *tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+int mt_tsq_done_cleanup(struct mt_tsq_entry* entry) {
+  struct mt_tsq_impl* tsqm = entry->parent;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
 
   tsq_lock(tsq_queue);
   rte_eth_tx_done_cleanup(tsq_queue->port_id, tsq_queue->queue_id, 0);
@@ -633,10 +633,10 @@ int mt_tsq_done_cleanup(struct mt_tsq_entry *entry) {
   return 0;
 }
 
-uint16_t mt_tsq_burst(struct mt_tsq_entry *entry, struct rte_mbuf **tx_pkts,
+uint16_t mt_tsq_burst(struct mt_tsq_entry* entry, struct rte_mbuf** tx_pkts,
                       uint16_t nb_pkts) {
-  struct mt_tsq_impl *tsqm = entry->parent;
-  struct mt_tsq_queue *tsq_queue = &tsqm->tsq_queues[entry->queue_id];
+  struct mt_tsq_impl* tsqm = entry->parent;
+  struct mt_tsq_queue* tsq_queue = &tsqm->tsq_queues[entry->queue_id];
   uint16_t tx;
 
   rte_spinlock_lock(&tsq_queue->tx_mutex);
@@ -650,8 +650,8 @@ uint16_t mt_tsq_burst(struct mt_tsq_entry *entry, struct rte_mbuf **tx_pkts,
   return tx;
 }
 
-uint16_t mt_tsq_burst_busy(struct mtl_main_impl *impl, struct mt_tsq_entry *entry,
-                           struct rte_mbuf **tx_pkts, uint16_t nb_pkts, int timeout_ms) {
+uint16_t mt_tsq_burst_busy(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
+                           struct rte_mbuf** tx_pkts, uint16_t nb_pkts, int timeout_ms) {
   uint16_t sent = 0;
   uint64_t start_ts = mt_get_tsc(impl);
 
@@ -671,15 +671,15 @@ uint16_t mt_tsq_burst_busy(struct mtl_main_impl *impl, struct mt_tsq_entry *entr
   return sent;
 }
 
-int mt_tsq_flush(struct mtl_main_impl *impl, struct mt_tsq_entry *entry,
-                 struct rte_mbuf *pad) {
-  struct mt_tsq_impl *tsqm = entry->parent;
+int mt_tsq_flush(struct mtl_main_impl* impl, struct mt_tsq_entry* entry,
+                 struct rte_mbuf* pad) {
+  struct mt_tsq_impl* tsqm = entry->parent;
   enum mtl_port port = tsqm->port;
   uint16_t queue_id = entry->queue_id;
 
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
   int burst_pkts = mt_if_nb_tx_burst(impl, port) * 2;
-  struct rte_mbuf *pads[1];
+  struct rte_mbuf* pads[1];
   pads[0] = pad;
 
   info("%s(%d), queue %u burst_pkts %d\n", __func__, port, queue_id, burst_pkts);
@@ -691,7 +691,7 @@ int mt_tsq_flush(struct mtl_main_impl *impl, struct mt_tsq_entry *entry,
   return 0;
 }
 
-int mt_tsq_init(struct mtl_main_impl *impl) {
+int mt_tsq_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int ret;
 
@@ -720,7 +720,7 @@ int mt_tsq_init(struct mtl_main_impl *impl) {
   return 0;
 }
 
-int mt_tsq_uinit(struct mtl_main_impl *impl) {
+int mt_tsq_uinit(struct mtl_main_impl* impl) {
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     if (impl->tsq[i]) {
       tsq_uinit(impl->tsq[i]);

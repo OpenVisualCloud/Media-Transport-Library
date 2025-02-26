@@ -21,9 +21,9 @@ struct tv_split_sample_ctx {
   mtl_dma_mem_handle dma_mem;
 };
 
-static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
-                               struct st20_tx_frame_meta *meta) {
-  struct tv_split_sample_ctx *s = priv;
+static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st20_tx_frame_meta* meta) {
+  struct tv_split_sample_ctx* s = priv;
   int ret = 0;
   MTL_MAY_UNUSED(meta);
 
@@ -49,8 +49,8 @@ static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
   return ret;
 }
 
-int tx_video_frame_done(void *priv, uint16_t frame_idx, struct st20_tx_frame_meta *meta) {
-  struct tv_split_sample_ctx *s = priv;
+int tx_video_frame_done(void* priv, uint16_t frame_idx, struct st20_tx_frame_meta* meta) {
+  struct tv_split_sample_ctx* s = priv;
   MTL_MAY_UNUSED(frame_idx);
   MTL_MAY_UNUSED(meta);
 
@@ -60,10 +60,10 @@ int tx_video_frame_done(void *priv, uint16_t frame_idx, struct st20_tx_frame_met
   return 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   int session_num = 4;
   mtl_dma_mem_handle dma_mem = NULL;
-  uint8_t *m = NULL;
+  uint8_t* m = NULL;
   size_t map_size = 0;
   struct st_sample_context ctx;
   int ret;
@@ -84,12 +84,12 @@ int main(int argc, char **argv) {
 
   st20_tx_handle tx_handle[session_num];
   memset(tx_handle, 0, sizeof(tx_handle));
-  struct tv_split_sample_ctx *app[session_num];
+  struct tv_split_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tv_split_sample_ctx *)malloc(sizeof(struct tv_split_sample_ctx));
+    app[i] = (struct tv_split_sample_ctx*)malloc(sizeof(struct tv_split_sample_ctx));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -180,7 +180,7 @@ int main(int argc, char **argv) {
         goto error;
       }
       if (m) {
-        void *dst = mtl_dma_mem_addr(dma_mem);
+        void* dst = mtl_dma_mem_addr(dma_mem);
         mtl_memcpy(dst, m, map_size);
         munmap(m, map_size);
       }

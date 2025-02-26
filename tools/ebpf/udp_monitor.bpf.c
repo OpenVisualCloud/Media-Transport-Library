@@ -21,8 +21,8 @@ struct {
 } udp_hdr_rb SEC(".maps");
 
 SEC("socket")
-int bpf_socket_handler(struct __sk_buff *skb) {
-  struct udp_pkt_entry *e;
+int bpf_socket_handler(struct __sk_buff* skb) {
+  struct udp_pkt_entry* e;
   __u8 verlen;
   __u16 proto;
   __u8 ip_proto;

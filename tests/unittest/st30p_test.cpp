@@ -10,15 +10,15 @@
 #define ST30P_TEST_PAYLOAD_TYPE (111)
 #define ST30P_TEST_UDP_PORT (50000)
 
-static int test_st30p_tx_frame_available(void *priv) {
-  tests_context *s = (tests_context *)priv;
+static int test_st30p_tx_frame_available(void* priv) {
+  tests_context* s = (tests_context*)priv;
 
   s->cv.notify_all();
   return 0;
 }
 
-static int test_st30p_tx_frame_done(void *priv, struct st30_frame *frame) {
-  tests_context *s = (tests_context *)priv;
+static int test_st30p_tx_frame_done(void* priv, struct st30_frame* frame) {
+  tests_context* s = (tests_context*)priv;
 
   if (!s->handle) return -EIO; /* not ready */
 
@@ -26,14 +26,14 @@ static int test_st30p_tx_frame_done(void *priv, struct st30_frame *frame) {
   return 0;
 }
 
-static int test_st30p_rx_frame_available(void *priv) {
-  tests_context *s = (tests_context *)priv;
+static int test_st30p_rx_frame_available(void* priv) {
+  tests_context* s = (tests_context*)priv;
 
   s->cv.notify_all();
   return 0;
 }
 
-static void st30p_tx_ops_init(tests_context *st30, struct st30p_tx_ops *ops_tx) {
+static void st30p_tx_ops_init(tests_context* st30, struct st30p_tx_ops* ops_tx) {
   auto ctx = st30->ctx;
 
   memset(ops_tx, 0, sizeof(*ops_tx));
@@ -61,7 +61,7 @@ static void st30p_tx_ops_init(tests_context *st30, struct st30p_tx_ops *ops_tx) 
   st30->frame_size = ops_tx->framebuff_size;
 }
 
-static void st30p_rx_ops_init(tests_context *st30, struct st30p_rx_ops *ops_rx) {
+static void st30p_rx_ops_init(tests_context* st30, struct st30p_rx_ops* ops_rx) {
   auto ctx = st30->ctx;
 
   memset(ops_rx, 0, sizeof(*ops_rx));
@@ -141,10 +141,10 @@ TEST(St30p, rx_create_expect_fail) {
   pipeline_expect_fail_test(st30p_rx);
 }
 
-static void test_st30p_tx_frame_thread(void *args) {
-  tests_context *s = (tests_context *)args;
+static void test_st30p_tx_frame_thread(void* args) {
+  tests_context* s = (tests_context*)args;
   auto handle = s->handle;
-  struct st30_frame *frame;
+  struct st30_frame* frame;
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
 
   dbg("%s(%d), start\n", __func__, s->idx);
@@ -181,10 +181,10 @@ static void test_st30p_tx_frame_thread(void *args) {
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-static void test_st30p_rx_frame_thread(void *args) {
-  tests_context *s = (tests_context *)args;
+static void test_st30p_rx_frame_thread(void* args) {
+  tests_context* s = (tests_context*)args;
   auto handle = s->handle;
-  struct st30_frame *frame;
+  struct st30_frame* frame;
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
   uint64_t timestamp = 0;
 
@@ -228,10 +228,10 @@ static void test_st30p_rx_frame_thread(void *args) {
     }
 
     unsigned char result[SHA256_DIGEST_LENGTH];
-    SHA256((unsigned char *)frame->addr, s->frame_size, result);
+    SHA256((unsigned char*)frame->addr, s->frame_size, result);
     int i = 0;
     for (i = 0; i < TEST_MAX_SHA_HIST_NUM; i++) {
-      unsigned char *target_sha = s->shas[i];
+      unsigned char* target_sha = s->shas[i];
       if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
     }
     if (i >= TEST_MAX_SHA_HIST_NUM) {
@@ -257,7 +257,7 @@ struct st30p_rx_digest_test_para {
   bool zero_payload_type;
 };
 
-static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para *para) {
+static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para* para) {
   memset(para, 0, sizeof(*para));
 
   para->sessions = 1;
@@ -272,8 +272,8 @@ static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para *par
 
 static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
                                  enum st30_sampling sampling[], enum st30_ptime ptime[],
-                                 struct st30p_rx_digest_test_para *para) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+                                 struct st30p_rx_digest_test_para* para) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   int ret;
   struct st30p_tx_ops ops_tx;
@@ -288,8 +288,8 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
   /* return if level lower than global */
   if (para->level < ctx->level) return;
 
-  std::vector<tests_context *> test_ctx_tx;
-  std::vector<tests_context *> test_ctx_rx;
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
   std::vector<st30p_tx_handle> tx_handle;
   std::vector<st30p_rx_handle> rx_handle;
   std::vector<double> expect_framerate_tx;
@@ -367,14 +367,14 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
 
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
-    uint8_t *fb;
+    uint8_t* fb;
     for (int frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
-      fb = (uint8_t *)st30p_tx_get_fb_addr(tx_handle[i], frame);
+      fb = (uint8_t*)st30p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
 
-      unsigned char *result = test_ctx_tx[i]->shas[frame];
-      SHA256((unsigned char *)fb, frame_size, result);
+      unsigned char* result = test_ctx_tx[i]->shas[frame];
+      SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st30p_tx", result);
     }
 

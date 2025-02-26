@@ -69,7 +69,7 @@ struct test_st22_encoder_session {
   int timeout_ms;
   int rand_ratio;
 
-  struct st_tests_context *ctx;
+  struct st_tests_context* ctx;
 };
 
 struct test_st22_decoder_session {
@@ -89,7 +89,7 @@ struct test_st22_decoder_session {
   int timeout_interval;
   int timeout_ms;
 
-  struct st_tests_context *ctx;
+  struct st_tests_context* ctx;
 };
 
 struct st_tests_context {
@@ -111,9 +111,9 @@ struct st_tests_context {
   st22_encoder_dev_handle encoder_dev_handle;
   st22_decoder_dev_handle decoder_dev_handle;
   st20_converter_dev_handle converter_dev_handle;
-  struct test_st22_encoder_session *encoder_sessions[MAX_TEST_ENCODER_SESSIONS];
-  struct test_st22_decoder_session *decoder_sessions[MAX_TEST_DECODER_SESSIONS];
-  struct test_converter_session *converter_sessions[MAX_TEST_CONVERTER_SESSIONS];
+  struct test_st22_encoder_session* encoder_sessions[MAX_TEST_ENCODER_SESSIONS];
+  struct test_st22_decoder_session* decoder_sessions[MAX_TEST_DECODER_SESSIONS];
+  struct test_converter_session* converter_sessions[MAX_TEST_CONVERTER_SESSIONS];
   bool encoder_use_block_get;
   bool decoder_use_block_get;
   int plugin_fail_interval;
@@ -122,51 +122,51 @@ struct st_tests_context {
   int plugin_rand_ratio;
 };
 
-struct st_tests_context *st_test_ctx(void);
+struct st_tests_context* st_test_ctx(void);
 
-static inline int st_test_num_port(struct st_tests_context *ctx) {
+static inline int st_test_num_port(struct st_tests_context* ctx) {
   return ctx->para.num_ports;
 }
 
-static inline void st_test_jxs_fail_interval(struct st_tests_context *ctx, int interval) {
+static inline void st_test_jxs_fail_interval(struct st_tests_context* ctx, int interval) {
   ctx->plugin_fail_interval = interval;
 }
 
-static inline void st_test_jxs_timeout_interval(struct st_tests_context *ctx,
+static inline void st_test_jxs_timeout_interval(struct st_tests_context* ctx,
                                                 int interval) {
   ctx->plugin_timeout_interval = interval;
 }
 
-static inline void st_test_jxs_timeout_ms(struct st_tests_context *ctx, int ms) {
+static inline void st_test_jxs_timeout_ms(struct st_tests_context* ctx, int ms) {
   ctx->plugin_timeout_ms = ms;
 }
 
-static inline void st_test_jxs_rand_ratio(struct st_tests_context *ctx, int rand_ratio) {
+static inline void st_test_jxs_rand_ratio(struct st_tests_context* ctx, int rand_ratio) {
   ctx->plugin_rand_ratio = rand_ratio;
 }
 
-static inline void st_test_jxs_use_block_get(struct st_tests_context *ctx, bool block) {
+static inline void st_test_jxs_use_block_get(struct st_tests_context* ctx, bool block) {
   ctx->decoder_use_block_get = block;
   ctx->encoder_use_block_get = block;
 }
 
-int st_test_sch_cnt(struct st_tests_context *ctx);
+int st_test_sch_cnt(struct st_tests_context* ctx);
 
-bool st_test_dma_available(struct st_tests_context *ctx);
+bool st_test_dma_available(struct st_tests_context* ctx);
 
-int st_test_st22_plugin_register(struct st_tests_context *ctx);
+int st_test_st22_plugin_register(struct st_tests_context* ctx);
 
-int st_test_st22_plugin_unregister(struct st_tests_context *ctx);
+int st_test_st22_plugin_unregister(struct st_tests_context* ctx);
 
-int st_test_convert_plugin_register(struct st_tests_context *ctx);
+int st_test_convert_plugin_register(struct st_tests_context* ctx);
 
-int st_test_convert_plugin_unregister(struct st_tests_context *ctx);
+int st_test_convert_plugin_unregister(struct st_tests_context* ctx);
 
-void sha_frame_check(void *args);
+void sha_frame_check(void* args);
 
 class tests_context {
  public:
-  struct st_tests_context *ctx = NULL;
+  struct st_tests_context* ctx = NULL;
   int idx = 0;
   int fb_cnt = 0;
   uint16_t fb_idx = 0;
@@ -177,8 +177,8 @@ class tests_context {
   uint64_t first_vsync_time = 0;
   int packet_rec = 0;
   uint64_t start_time = 0;
-  void *handle = NULL;
-  void *priv = NULL; /* private data for the test */
+  void* handle = NULL;
+  void* priv = NULL; /* private data for the test */
   bool stop = false;
   std::mutex mtx = {};
   std::condition_variable cv = {};
@@ -198,7 +198,7 @@ class tests_context {
   int stride = 0;
   bool single_line = false;
   bool slice = false;
-  std::queue<void *> buf_q = {};
+  std::queue<void*> buf_q = {};
   std::queue<bool> second_field_q = {};
   int lines_per_slice = 0;
 
@@ -213,7 +213,7 @@ class tests_context {
   size_t uframe_size = 0;
   uint8_t shas[TEST_MAX_SHA_HIST_NUM][SHA256_DIGEST_LENGTH] = {};
   /* frame buff alloc in the test context */
-  uint8_t *frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
+  uint8_t* frame_buf[TEST_MAX_SHA_HIST_NUM] = {};
   uint16_t lines_ready[TEST_MAX_SHA_HIST_NUM] = {};
   bool check_sha = false;
   int sha_fail_cnt = 0; /* fail as sha check fail */
@@ -227,16 +227,16 @@ class tests_context {
   int last_user_meta_frame_idx = 0;
   int user_meta_fail_cnt = 0;
   bool out_of_order_pkt = false; /* out of order pkt index */
-  int *ooo_mapping = NULL;
+  int* ooo_mapping = NULL;
   int slice_cnt = 0;
   uint32_t slice_recv_lines = 0;
   uint64_t slice_recv_timestamp = 0;
-  void *ext_fb_malloc;
-  uint8_t *ext_fb = NULL;
+  void* ext_fb_malloc;
+  uint8_t* ext_fb = NULL;
   mtl_iova_t ext_fb_iova = 0;
   size_t ext_fb_iova_map_sz = 0;
-  struct st20_ext_frame *ext_frames;
-  struct st_ext_frame *p_ext_frames;
+  struct st20_ext_frame* ext_frames;
+  struct st_ext_frame* p_ext_frames;
   int ext_idx = 0;
   bool ext_fb_in_use[3] = {false}; /* assume 3 framebuffer */
   mtl_dma_mem_handle dma_mem = NULL;
@@ -261,11 +261,11 @@ struct test_user_meta {
   int frame_idx;
 };
 
-int tests_context_unit(tests_context *ctx);
+int tests_context_unit(tests_context* ctx);
 
-int test_ctx_notify_event(void *priv, enum st_event event, void *args);
+int test_ctx_notify_event(void* priv, enum st_event event, void* args);
 
-int tx_next_frame(void *priv, uint16_t *next_frame_idx);
+int tx_next_frame(void* priv, uint16_t* next_frame_idx);
 
 #define TEST_CREATE_FREE_MAX (16)
 
@@ -447,7 +447,7 @@ int tx_next_frame(void *priv, uint16_t *next_frame_idx);
     ops.num_port = 1;                             \
     handle = A##_create(m_handle, &ops);          \
     ASSERT_TRUE(handle != NULL);                  \
-    void *fb_buff;                                \
+    void* fb_buff;                                \
     for (uint16_t idx = 0; idx < fb_nb; idx++) {  \
       fb_buff = A##_get_framebuffer(handle, idx); \
       EXPECT_TRUE(fb_buff != NULL);               \
@@ -475,7 +475,7 @@ int tx_next_frame(void *priv, uint16_t *next_frame_idx);
     ops.num_port = 1;                                 \
     handle = A##_create(m_handle, &ops);              \
     ASSERT_TRUE(handle != NULL);                      \
-    void *fb_buff;                                    \
+    void* fb_buff;                                    \
     fb_buff = A##_get_framebuffer(handle, fb_nb);     \
     EXPECT_TRUE(fb_buff == NULL);                     \
     fb_buff = A##_get_framebuffer(handle, fb_nb * 2); \

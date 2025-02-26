@@ -32,7 +32,7 @@ class mtl_interface {
   uint32_t max_combined;
   uint32_t combined_count;
 #ifdef MTL_HAS_XDP_BACKEND
-  struct xdp_program *xdp_prog;
+  struct xdp_program* xdp_prog;
   int xsks_map_fd;
   int udp4_dp_filter_fd;
   enum xdp_attach_mode xdp_mode;
@@ -41,7 +41,7 @@ class mtl_interface {
   std::vector<bool> queues;
 
  private:
-  void log(const log_level &level, const std::string &message) const {
+  void log(const log_level& level, const std::string& message) const {
     logger::log(level, "[Interface " + std::to_string(ifindex) + "] " + message);
   }
   int clear_flow_rules();
@@ -194,7 +194,7 @@ int mtl_interface::clear_flow_rules() {
   }
 
   if (cmd.rule_cnt > 0) {
-    struct ethtool_rxnfc *cmd_w_rules = (struct ethtool_rxnfc *)calloc(
+    struct ethtool_rxnfc* cmd_w_rules = (struct ethtool_rxnfc*)calloc(
         1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
     if (!cmd_w_rules) {
       log(log_level::ERROR, "Failed to allocate memory");
@@ -294,8 +294,8 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
     return ret;
   }
 
-  struct ethtool_rxnfc *cmd_w_rules;
-  cmd_w_rules = (struct ethtool_rxnfc *)calloc(
+  struct ethtool_rxnfc* cmd_w_rules;
+  cmd_w_rules = (struct ethtool_rxnfc*)calloc(
       1, sizeof(*cmd_w_rules) + cmd.rule_cnt * sizeof(uint32_t));
   cmd_w_rules->cmd = ETHTOOL_GRXCLSRLALL;
   cmd_w_rules->rule_cnt = cmd.rule_cnt;
@@ -336,7 +336,7 @@ int mtl_interface::add_flow(uint16_t queue_id, uint32_t flow_type, uint32_t src_
   /* set the flow rule */
   memset(&cmd, 0, sizeof(cmd));
   cmd.cmd = ETHTOOL_SRXCLSRLINS;
-  struct ethtool_rx_flow_spec *fs = &cmd.fs;
+  struct ethtool_rx_flow_spec* fs = &cmd.fs;
   fs->flow_type = flow_type;
   if (dst_port) {
     fs->m_u.udp_ip4_spec.pdst = 0xFFFF;

@@ -4,7 +4,7 @@
 
 #include "rx_st22_app.h"
 
-static int app_rx_st22_close_source(struct st22_app_rx_session *s) {
+static int app_rx_st22_close_source(struct st22_app_rx_session* s) {
   if (s->st22_dst_fd >= 0) {
     munmap(s->st22_dst_begin, s->st22_dst_end - s->st22_dst_begin);
     close(s->st22_dst_fd);
@@ -14,7 +14,7 @@ static int app_rx_st22_close_source(struct st22_app_rx_session *s) {
   return 0;
 }
 
-static int app_rx_st22_open_source(struct st22_app_rx_session *s) {
+static int app_rx_st22_open_source(struct st22_app_rx_session* s) {
   int fd, ret, idx = s->idx;
   off_t f_size;
 
@@ -35,7 +35,7 @@ static int app_rx_st22_open_source(struct st22_app_rx_session *s) {
     return -EIO;
   }
 
-  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap %s fail\n", __func__, idx, s->st22_dst_url);
     close(fd);
@@ -51,10 +51,10 @@ static int app_rx_st22_open_source(struct st22_app_rx_session *s) {
   return 0;
 }
 
-static int app_rx_st22_enqueue_frame(struct st22_app_rx_session *s, void *frame,
+static int app_rx_st22_enqueue_frame(struct st22_app_rx_session* s, void* frame,
                                      size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -70,9 +70,9 @@ static int app_rx_st22_enqueue_frame(struct st22_app_rx_session *s, void *frame,
   return 0;
 }
 
-static int app_rx_st22_frame_ready(void *priv, void *frame,
-                                   struct st22_rx_frame_meta *meta) {
-  struct st22_app_rx_session *s = (struct st22_app_rx_session *)priv;
+static int app_rx_st22_frame_ready(void* priv, void* frame,
+                                   struct st22_rx_frame_meta* meta) {
+  struct st22_app_rx_session* s = (struct st22_app_rx_session*)priv;
 
   if (!s->handle) return -EIO;
 
@@ -91,7 +91,7 @@ static int app_rx_st22_frame_ready(void *priv, void *frame,
   return 0;
 }
 
-static void app_rx_st22_decode_frame(struct st22_app_rx_session *s, void *codestream_addr,
+static void app_rx_st22_decode_frame(struct st22_app_rx_session* s, void* codestream_addr,
                                      size_t codestream_size) {
   if (s->st22_dst_cursor + codestream_size > s->st22_dst_end)
     s->st22_dst_cursor = s->st22_dst_begin;
@@ -102,11 +102,11 @@ static void app_rx_st22_decode_frame(struct st22_app_rx_session *s, void *codest
   s->fb_decoded++;
 }
 
-static void *app_rx_st22_decode_thread(void *arg) {
-  struct st22_app_rx_session *s = arg;
+static void* app_rx_st22_decode_thread(void* arg) {
+  struct st22_app_rx_session* s = arg;
   int idx = s->idx;
   int consumer_idx;
-  struct st_rx_frame *framebuff;
+  struct st_rx_frame* framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22_app_thread_stop) {
@@ -137,7 +137,7 @@ static void *app_rx_st22_decode_thread(void *arg) {
   return NULL;
 }
 
-static int app_rx_st22_uinit(struct st22_app_rx_session *s) {
+static int app_rx_st22_uinit(struct st22_app_rx_session* s) {
   int ret, idx = s->idx;
 
   s->st22_app_thread_stop = true;
@@ -168,7 +168,7 @@ static int app_rx_st22_uinit(struct st22_app_rx_session *s) {
   return 0;
 }
 
-static int app_rx_st22_init(struct st_app_context *ctx, struct st22_app_rx_session *s,
+static int app_rx_st22_init(struct st_app_context* ctx, struct st22_app_rx_session* s,
                             int bpp) {
   int idx = s->idx, ret;
   struct st22_rx_ops ops;
@@ -220,7 +220,7 @@ static int app_rx_st22_init(struct st_app_context *ctx, struct st22_app_rx_sessi
   s->framebuff_producer_idx = 0;
   s->framebuff_consumer_idx = 0;
   s->framebuffs =
-      (struct st_rx_frame *)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+      (struct st_rx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) return -ENOMEM;
   for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
     s->framebuffs[j].frame = NULL;
@@ -259,10 +259,10 @@ static int app_rx_st22_init(struct st_app_context *ctx, struct st22_app_rx_sessi
   return 0;
 }
 
-int st22_app_rx_sessions_init(struct st_app_context *ctx) {
+int st22_app_rx_sessions_init(struct st_app_context* ctx) {
   int ret, i;
-  struct st22_app_rx_session *s;
-  ctx->rx_st22_sessions = (struct st22_app_rx_session *)st_app_zmalloc(
+  struct st22_app_rx_session* s;
+  ctx->rx_st22_sessions = (struct st22_app_rx_session*)st_app_zmalloc(
       sizeof(struct st22_app_rx_session) * ctx->rx_st22_session_cnt);
   if (!ctx->rx_st22_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_st22_session_cnt; i++) {
@@ -281,9 +281,9 @@ int st22_app_rx_sessions_init(struct st_app_context *ctx) {
   return 0;
 }
 
-int st22_app_rx_sessions_uinit(struct st_app_context *ctx) {
+int st22_app_rx_sessions_uinit(struct st_app_context* ctx) {
   int i;
-  struct st22_app_rx_session *s;
+  struct st22_app_rx_session* s;
   if (!ctx->rx_st22_sessions) return 0;
   for (i = 0; i < ctx->rx_st22_session_cnt; i++) {
     s = &ctx->rx_st22_sessions[i];

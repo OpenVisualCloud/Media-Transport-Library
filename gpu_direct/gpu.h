@@ -16,8 +16,8 @@ typedef struct GpuContext {
   uint32_t deviceCount;
 
   // all drivers and devices
-  ze_driver_handle_t *drivers;
-  ze_device_handle_t *devices;
+  ze_driver_handle_t* drivers;
+  ze_device_handle_t* devices;
 
   // check if context initialized
   bool initialized;
@@ -37,12 +37,12 @@ typedef struct GpuContext {
 
 int init_level_zero_lib();
 int print_gpu_drivers_and_devices();
-int init_gpu_device(GpuContext *ctx, unsigned driverIndex, unsigned deviceIndex);
-int gpu_allocate_shared_buffer(GpuContext *ctx, void **buf, size_t size);
-int gpu_allocate_device_buffer(GpuContext *ctx, void **buf, size_t size);
-int gpu_memcpy(GpuContext *ctx, void *dst, const void *src, size_t sz);
-int gpu_memset(GpuContext *ctx, void *dst, char byte, size_t sz);
-void gpu_free_buf(GpuContext *ctx, void *buf);
-int free_gpu_context(GpuContext *ctx);
+int init_gpu_device(GpuContext* ctx, unsigned driverIndex, unsigned deviceIndex);
+int gpu_allocate_shared_buffer(GpuContext* ctx, void** buf, size_t size);
+int gpu_allocate_device_buffer(GpuContext* ctx, void** buf, size_t size);
+int gpu_memcpy(GpuContext* ctx, void* dst, const void* src, size_t sz);
+int gpu_memset(GpuContext* ctx, void* dst, char byte, size_t sz);
+void gpu_free_buf(GpuContext* ctx, void* buf);
+int free_gpu_context(GpuContext* ctx);
 
 #endif /* GPU */

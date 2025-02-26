@@ -25,11 +25,11 @@ struct converter_session {
 
 struct convert_ctx {
   st20_converter_dev_handle converter_dev_handle;
-  struct converter_session *converter_sessions[MAX_COLOR_CONVERT_SESSIONS];
+  struct converter_session* converter_sessions[MAX_COLOR_CONVERT_SESSIONS];
 };
 
 /* the APIs for plugin */
-int st_plugin_get_meta(struct st_plugin_meta *meta);
+int st_plugin_get_meta(struct st_plugin_meta* meta);
 st_plugin_priv st_plugin_create(mtl_handle st);
 int st_plugin_free(st_plugin_priv handle);
 

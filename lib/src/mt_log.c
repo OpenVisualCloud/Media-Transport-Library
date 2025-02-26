@@ -6,7 +6,7 @@
 
 #include "mt_main.h"
 
-static void log_default_prefix(char *buf, size_t sz) {
+static void log_default_prefix(char* buf, size_t sz) {
   time_t now;
   struct tm tm;
 
@@ -45,7 +45,7 @@ mtl_log_printer_t mt_get_log_printer(void) {
   return g_mt_log_printer;
 }
 
-static void log_usdt_printer(enum mtl_log_level level, const char *format, ...) {
+static void log_usdt_printer(enum mtl_log_level level, const char* format, ...) {
   char msg[256];
   va_list args;
   MTL_MAY_UNUSED(level);
@@ -73,7 +73,7 @@ enum mtl_log_level mt_get_log_global_level(void) {
 }
 
 int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
   uint32_t rte_level;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -117,7 +117,7 @@ int mtl_set_log_level(mtl_handle mt, enum mtl_log_level level) {
 }
 
 enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -127,6 +127,6 @@ enum mtl_log_level mtl_get_log_level(mtl_handle mt) {
   return mt_get_user_params(impl)->log_level;
 }
 
-int mtl_openlog_stream(FILE *f) {
+int mtl_openlog_stream(FILE* f) {
   return rte_openlog_stream(f);
 }

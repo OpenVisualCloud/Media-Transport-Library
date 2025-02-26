@@ -22,10 +22,10 @@ class mtl_lcore {
   }
 
  public:
-  mtl_lcore(const mtl_lcore &) = delete;
-  mtl_lcore &operator=(const mtl_lcore &) = delete;
+  mtl_lcore(const mtl_lcore&) = delete;
+  mtl_lcore& operator=(const mtl_lcore&) = delete;
 
-  static mtl_lcore &get_instance() {
+  static mtl_lcore& get_instance() {
     static mtl_lcore instance;
     return instance;
   }

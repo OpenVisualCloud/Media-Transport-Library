@@ -34,7 +34,7 @@ enum et_prog_type {
   ET_PROG_XDP,
 };
 
-static const char *prog_type_str[] = {
+static const char* prog_type_str[] = {
     [ET_PROG_FENTRY] = "fentry",
     [ET_PROG_KPROBE] = "kprobe",
     [ET_PROG_TRACEPOINT] = "tracepoint",
@@ -45,7 +45,7 @@ struct et_ctx {
   enum et_prog_type prog_type;
   int xdp_ifindex[8];
   int xdp_if_cnt;
-  char *xdp_path;
+  char* xdp_path;
 };
 
 #endif /* __ET_H */

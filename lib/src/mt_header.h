@@ -56,7 +56,7 @@ struct mt_stat_u64 {
 };
 
 struct mt_rx_pcap {
-  struct mt_pcap *pcap;
+  struct mt_pcap* pcap;
   uint32_t dumped_pkts;
   uint32_t dropped_pkts;
   uint32_t required_pkts;

@@ -107,8 +107,8 @@ struct shmid_ds {
   pid_t shm_lpid;
   unsigned short shm_nattch;
   unsigned short shm_unused;
-  void *shm_unused2;
-  void *shm_unused3;
+  void* shm_unused2;
+  void* shm_unused3;
 };
 
 static int inline flock(int fd, int operation) {
@@ -117,15 +117,15 @@ static int inline flock(int fd, int operation) {
   return 0;
 }
 
-static key_t inline ftok(const char *path, int id) {
+static key_t inline ftok(const char* path, int id) {
   MTL_MAY_UNUSED(path);
   MTL_MAY_UNUSED(id);
   return 0;
 }
 
-void *shmat(int shmid, const void *shmaddr, int shmflg);
-int shmctl(int shmid, int cmd, struct shmid_ds *buf);
-int shmdt(const void *shmaddr);
+void* shmat(int shmid, const void* shmaddr, int shmflg);
+int shmctl(int shmid, int cmd, struct shmid_ds* buf);
+int shmdt(const void* shmaddr);
 int shmget(key_t key, size_t size, int shmflg);
 
 typedef intptr_t pthread_cond_t;
@@ -138,15 +138,15 @@ typedef rte_cpuset_t cpu_set_t;
 #define localtime_r(T, Tm) (localtime_s(Tm, T) ? NULL : Tm)
 
 pthread_t pthread_self(void);
-int pthread_cond_signal(pthread_cond_t *cv);
-int pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *a);
-int pthread_cond_wait(pthread_cond_t *cv, pthread_mutex_t *external_mutex);
-int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
-                           const struct timespec *time);
-int pthread_cond_destroy(pthread_cond_t *cv);
-int pthread_mutex_trylock(pthread_mutex_t *mutex);
+int pthread_cond_signal(pthread_cond_t* cv);
+int pthread_cond_init(pthread_cond_t* cv, const pthread_condattr_t* a);
+int pthread_cond_wait(pthread_cond_t* cv, pthread_mutex_t* external_mutex);
+int pthread_cond_timedwait(pthread_cond_t* cond, pthread_mutex_t* mutex,
+                           const struct timespec* time);
+int pthread_cond_destroy(pthread_cond_t* cv);
+int pthread_mutex_trylock(pthread_mutex_t* mutex);
 
-int clock_gettime(int clk_id, struct timespec *tp); /* use precise time for windows */
+int clock_gettime(int clk_id, struct timespec* tp); /* use precise time for windows */
 
 #ifdef __MTL_LIB_BUILD__
 static inline pid_t getpid() {

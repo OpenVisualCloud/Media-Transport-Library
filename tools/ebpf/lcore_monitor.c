@@ -60,7 +60,7 @@ static void lm_print_help() {
   printf("\n");
 }
 
-static int lm_parse_args(struct lcore_monitor_ctx *ctx, int argc, char **argv) {
+static int lm_parse_args(struct lcore_monitor_ctx* ctx, int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
@@ -104,9 +104,9 @@ static void lm_sig_handler(int signo) {
   return;
 }
 
-static int get_process_name_by_pid(pid_t pid, char *process_name, size_t max_len) {
+static int get_process_name_by_pid(pid_t pid, char* process_name, size_t max_len) {
   char path[128];
-  FILE *fp;
+  FILE* fp;
 
   snprintf(path, sizeof(path), "/proc/%d/comm", pid);
   fp = fopen(path, "r");
@@ -130,9 +130,9 @@ static int get_process_name_by_pid(pid_t pid, char *process_name, size_t max_len
   return 0;
 }
 
-static int lm_event_handler(void *pri, void *data, size_t data_sz) {
-  struct lcore_monitor_ctx *ctx = pri;
-  const struct lcore_tid_event *e = data;
+static int lm_event_handler(void* pri, void* data, size_t data_sz) {
+  struct lcore_monitor_ctx* ctx = pri;
+  const struct lcore_tid_event* e = data;
   int ret;
 
   dbg("%s: type %d, ns %" PRIu64 "\n", __func__, e->type, e->ns);
@@ -194,7 +194,7 @@ static int lm_event_handler(void *pri, void *data, size_t data_sz) {
   return 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct lcore_monitor_ctx ctx;
   int ret;
 
@@ -212,8 +212,8 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  struct lcore_monitor_bpf *skel = NULL;
-  struct ring_buffer *rb = NULL;
+  struct lcore_monitor_bpf* skel = NULL;
+  struct ring_buffer* rb = NULL;
 
   skel = lcore_monitor_bpf__open_and_load();
   if (!skel) {

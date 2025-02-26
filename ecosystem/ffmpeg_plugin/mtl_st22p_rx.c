@@ -20,7 +20,7 @@
 #include "mtl_common.h"
 
 typedef struct MtlSt22pDemuxerContext {
-  const AVClass *class; /**< Class for private options. */
+  const AVClass* class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -28,7 +28,7 @@ typedef struct MtlSt22pDemuxerContext {
   /* arguments for session port */
   StRxSessionPortArgs portArgs;
   /* arguments for session */
-  char *codec_str;
+  char* codec_str;
   int width, height;
   enum AVPixelFormat pixel_format;
   AVRational framerate;
@@ -43,8 +43,8 @@ typedef struct MtlSt22pDemuxerContext {
   int64_t frame_counter;
 } MtlSt22pDemuxerContext;
 
-static int mtl_st22p_read_close(AVFormatContext *ctx) {
-  MtlSt22pDemuxerContext *s = ctx->priv_data;
+static int mtl_st22p_read_close(AVFormatContext* ctx) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy rx session
@@ -64,12 +64,12 @@ static int mtl_st22p_read_close(AVFormatContext *ctx) {
   return 0;
 }
 
-static int mtl_st22p_read_header(AVFormatContext *ctx) {
-  MtlSt22pDemuxerContext *s = ctx->priv_data;
-  AVStream *st = NULL;
+static int mtl_st22p_read_header(AVFormatContext* ctx) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
+  AVStream* st = NULL;
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
   int img_buf_size;
-  const AVPixFmtDescriptor *pix_fmt_desc = NULL;
+  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
   struct st22p_rx_ops ops_rx;
   int ret;
 
@@ -196,9 +196,9 @@ static int mtl_st22p_read_header(AVFormatContext *ctx) {
   return 0;
 }
 
-static int mtl_st22_read_header(AVFormatContext *ctx) {
-  MtlSt22pDemuxerContext *s = ctx->priv_data;
-  AVStream *st = NULL;
+static int mtl_st22_read_header(AVFormatContext* ctx) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
+  AVStream* st = NULL;
   int img_buf_size;
   struct st22p_rx_ops ops_rx;
   int ret;
@@ -311,10 +311,10 @@ static int mtl_st22_read_header(AVFormatContext *ctx) {
   return 0;
 }
 
-static int mtl_st22p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
-  MtlSt22pDemuxerContext *s = ctx->priv_data;
+static int mtl_st22p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
   int ret = 0;
-  struct st_frame *frame;
+  struct st_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
 
@@ -358,10 +358,10 @@ static int mtl_st22p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
   return 0;
 }
 
-static int mtl_st22_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
-  MtlSt22pDemuxerContext *s = ctx->priv_data;
+static int mtl_st22_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  MtlSt22pDemuxerContext* s = ctx->priv_data;
   int ret = 0;
-  struct st_frame *frame;
+  struct st_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   frame = st22p_rx_get_frame(s->rx_handle);

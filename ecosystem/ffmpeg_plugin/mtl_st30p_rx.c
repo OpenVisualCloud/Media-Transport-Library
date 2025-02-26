@@ -22,7 +22,7 @@
 #include "mtl_common.h"
 
 typedef struct MtlSt30pDemuxerContext {
-  const AVClass *class; /**< Class for private options. */
+  const AVClass* class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -36,9 +36,9 @@ typedef struct MtlSt30pDemuxerContext {
   int sample_rate;
   int channels;
   enum st30_fmt fmt;
-  char *fmt_str;
+  char* fmt_str;
   enum st30_ptime ptime;
-  char *ptime_str;
+  char* ptime_str;
   enum AVCodecID codec_id;
 
   mtl_handle dev_handle;
@@ -47,8 +47,8 @@ typedef struct MtlSt30pDemuxerContext {
   int64_t frame_counter;
 } MtlSt30pDemuxerContext;
 
-static int mtl_st30p_read_close(AVFormatContext *ctx) {
-  MtlSt30pDemuxerContext *s = ctx->priv_data;
+static int mtl_st30p_read_close(AVFormatContext* ctx) {
+  MtlSt30pDemuxerContext* s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy rx session
@@ -68,10 +68,10 @@ static int mtl_st30p_read_close(AVFormatContext *ctx) {
   return 0;
 }
 
-static int mtl_st30p_read_header(AVFormatContext *ctx) {
-  MtlSt30pDemuxerContext *s = ctx->priv_data;
+static int mtl_st30p_read_header(AVFormatContext* ctx) {
+  MtlSt30pDemuxerContext* s = ctx->priv_data;
   struct st30p_rx_ops ops_rx;
-  AVStream *st = NULL;
+  AVStream* st = NULL;
   int ret;
   int frame_buf_size;
 
@@ -187,10 +187,10 @@ static int mtl_st30p_read_header(AVFormatContext *ctx) {
   return 0;
 }
 
-static int mtl_st30p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
-  MtlSt30pDemuxerContext *s = ctx->priv_data;
+static int mtl_st30p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
+  MtlSt30pDemuxerContext* s = ctx->priv_data;
   int ret = 0;
-  struct st30_frame *frame;
+  struct st30_frame* frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
 

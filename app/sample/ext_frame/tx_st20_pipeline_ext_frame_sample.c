@@ -17,25 +17,25 @@ struct tx_st20p_sample_ctx {
   pthread_mutex_t wake_mutex;
 
   size_t frame_size;
-  uint8_t *source_begin;
+  uint8_t* source_begin;
   mtl_iova_t source_begin_iova;
-  uint8_t *source_end;
-  uint8_t *frame_cursor;
+  uint8_t* source_end;
+  uint8_t* frame_cursor;
 
   mtl_dma_mem_handle dma_mem;
 };
 
-static int tx_st20p_close_source(struct tx_st20p_sample_ctx *s) {
+static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
   if (s->dma_mem) mtl_dma_mem_free(s->st, s->dma_mem);
 
   return 0;
 }
 
-static int tx_st20p_open_source(struct tx_st20p_sample_ctx *s, char *file) {
+static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
   int fd = -EIO;
   struct stat i;
   int frame_cnt = 2;
-  uint8_t *m = NULL;
+  uint8_t* m = NULL;
   size_t fbs_size = s->frame_size * frame_cnt;
 
   fd = st_open(file, O_RDONLY);
@@ -107,8 +107,8 @@ init_fb:
   return 0;
 }
 
-static int tx_st20p_frame_available(void *priv) {
-  struct tx_st20p_sample_ctx *s = priv;
+static int tx_st20p_frame_available(void* priv) {
+  struct tx_st20p_sample_ctx* s = priv;
 
   st_pthread_mutex_lock(&s->wake_mutex);
   st_pthread_cond_signal(&s->wake_cond);
@@ -117,7 +117,7 @@ static int tx_st20p_frame_available(void *priv) {
   return 0;
 }
 
-static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
+static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
   MTL_MAY_UNUSED(priv);
   MTL_MAY_UNUSED(frame);
 
@@ -127,10 +127,10 @@ static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
   return 0;
 }
 
-static void *tx_st20p_frame_thread(void *arg) {
-  struct tx_st20p_sample_ctx *s = arg;
+static void* tx_st20p_frame_thread(void* arg) {
+  struct tx_st20p_sample_ctx* s = arg;
   st20p_tx_handle handle = s->handle;
-  struct st_frame *frame;
+  struct st_frame* frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -149,7 +149,7 @@ static void *tx_st20p_frame_thread(void *arg) {
     for (uint8_t plane = 1; plane < planes; plane++) { /* assume planes continous */
       ext_frame.linesize[plane] =
           st_frame_least_linesize(frame->fmt, frame->width, plane);
-      ext_frame.addr[plane] = (uint8_t *)ext_frame.addr[plane - 1] +
+      ext_frame.addr[plane] = (uint8_t*)ext_frame.addr[plane - 1] +
                               ext_frame.linesize[plane - 1] * frame->height;
       ext_frame.iova[plane] =
           ext_frame.iova[plane - 1] + ext_frame.linesize[plane - 1] * frame->height;
@@ -171,7 +171,7 @@ static void *tx_st20p_frame_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct tx_st20p_sample_ctx *app[session_num];
+  struct tx_st20p_sample_ctx* app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {

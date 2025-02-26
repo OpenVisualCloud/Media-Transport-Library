@@ -4,9 +4,9 @@
 
 #include "tx_st20p_app.h"
 
-static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session *s,
-                                       struct st_frame *frame) {
-  struct st_display *d = s->display;
+static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session* s,
+                                       struct st_frame* frame) {
+  struct st_display* d = s->display;
 
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
@@ -27,10 +27,10 @@ static void app_tx_st20p_display_frame(struct st_app_tx_st20p_session *s,
   }
 }
 
-static int app_tx_st20p_notify_event(void *priv, enum st_event event, void *args) {
-  struct st_app_tx_st20p_session *s = priv;
+static int app_tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
+  struct st_app_tx_st20p_session* s = priv;
   if (event == ST_EVENT_VSYNC) {
-    struct st10_vsync_meta *meta = args;
+    struct st10_vsync_meta* meta = args;
     info("%s(%d), epoch %" PRIu64 "\n", __func__, s->idx, meta->epoch);
   } else if (event == ST_EVENT_FATAL_ERROR) {
     err("%s(%d), ST_EVENT_FATAL_ERROR\n", __func__, s->idx);
@@ -41,9 +41,9 @@ static int app_tx_st20p_notify_event(void *priv, enum st_event event, void *args
   return 0;
 }
 
-static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session *s,
-                                     struct st_frame *frame, size_t frame_size) {
-  uint8_t *src = s->st20p_frame_cursor;
+static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
+                                     struct st_frame* frame, size_t frame_size) {
+  uint8_t* src = s->st20p_frame_cursor;
 
   if (!s->ctx->tx_copy_once || !s->st20p_frames_copied) {
     mtl_memcpy(frame->addr[0], src, frame_size);
@@ -58,11 +58,11 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session *s,
   app_tx_st20p_display_frame(s, frame);
 }
 
-static void *app_tx_st20p_frame_thread(void *arg) {
-  struct st_app_tx_st20p_session *s = arg;
+static void* app_tx_st20p_frame_thread(void* arg) {
+  struct st_app_tx_st20p_session* s = arg;
   st20p_tx_handle handle = s->handle;
   int idx = s->idx;
-  struct st_frame *frame;
+  struct st_frame* frame;
   uint8_t shas[SHA256_DIGEST_LENGTH];
 
   info("%s(%d), start\n", __func__, idx);
@@ -74,7 +74,7 @@ static void *app_tx_st20p_frame_thread(void *arg) {
     }
     app_tx_st20p_build_frame(s, frame, s->st20p_frame_size);
     if (s->sha_check) {
-      st_sha256((unsigned char *)frame->addr[0], st_frame_plane_size(frame, 0), shas);
+      st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
       frame->user_meta = shas;
       frame->user_meta_size = sizeof(shas);
     }
@@ -85,7 +85,7 @@ static void *app_tx_st20p_frame_thread(void *arg) {
   return NULL;
 }
 
-static int app_tx_st20p_open_source(struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_open_source(struct st_app_tx_st20p_session* s) {
   int fd;
   struct stat i;
 
@@ -107,7 +107,7 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session *s) {
     return -EIO;
   }
 
-  uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap fail '%s'\n", __func__, s->st20p_source_url);
     close(fd);
@@ -131,7 +131,7 @@ static int app_tx_st20p_open_source(struct st_app_tx_st20p_session *s) {
   return 0;
 }
 
-static int app_tx_st20p_start_source(struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_start_source(struct st_app_tx_st20p_session* s) {
   int ret = -EINVAL;
   int idx = s->idx;
 
@@ -149,7 +149,7 @@ static int app_tx_st20p_start_source(struct st_app_tx_st20p_session *s) {
   return 0;
 }
 
-static void app_tx_st20p_stop_source(struct st_app_tx_st20p_session *s) {
+static void app_tx_st20p_stop_source(struct st_app_tx_st20p_session* s) {
   s->st20p_app_thread_stop = true;
   if (s->st20p_app_thread) {
     info("%s(%d), wait app thread stop\n", __func__, s->idx);
@@ -159,7 +159,7 @@ static void app_tx_st20p_stop_source(struct st_app_tx_st20p_session *s) {
   }
 }
 
-static int app_tx_st20p_close_source(struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_close_source(struct st_app_tx_st20p_session* s) {
   if (s->st20p_source_fd < 0 && s->st20p_source_begin) {
     mtl_hp_free(s->st, s->st20p_source_begin);
     s->st20p_source_begin = NULL;
@@ -173,7 +173,7 @@ static int app_tx_st20p_close_source(struct st_app_tx_st20p_session *s) {
   return 0;
 }
 
-static int app_tx_st20p_handle_free(struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_handle_free(struct st_app_tx_st20p_session* s) {
   int ret;
   int idx = s->idx;
 
@@ -186,7 +186,7 @@ static int app_tx_st20p_handle_free(struct st_app_tx_st20p_session *s) {
   return 0;
 }
 
-static int app_tx_st20p_uinit(struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_uinit(struct st_app_tx_st20p_session* s) {
   app_tx_st20p_stop_source(s);
   app_tx_st20p_handle_free(s);
   app_tx_st20p_close_source(s);
@@ -199,7 +199,7 @@ static int app_tx_st20p_uinit(struct st_app_tx_st20p_session *s) {
   return 0;
 }
 
-static int app_tx_st20p_io_stat(struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_io_stat(struct st_app_tx_st20p_session* s) {
   int idx = s->idx;
   uint64_t cur_time = st_app_get_monotonic_time();
   double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
@@ -223,8 +223,8 @@ static int app_tx_st20p_io_stat(struct st_app_tx_st20p_session *s) {
   return 0;
 }
 
-static int app_tx_st20p_init(struct st_app_context *ctx, st_json_st20p_session_t *st20p,
-                             struct st_app_tx_st20p_session *s) {
+static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t* st20p,
+                             struct st_app_tx_st20p_session* s) {
   int idx = s->idx, ret;
   struct st20p_tx_ops ops;
   char name[32];
@@ -333,7 +333,7 @@ static int app_tx_st20p_init(struct st_app_context *ctx, st_json_st20p_session_t
   }
 
   if ((st20p && st20p->display) || ctx->tx_display) {
-    struct st_display *d = st_app_zmalloc(sizeof(struct st_display));
+    struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
     ret = st_app_init_display(d, name, s->width, s->height, ctx->ttf_file);
     if (ret < 0) {
       err("%s(%d), st_app_init_display fail %d\n", __func__, idx, ret);
@@ -346,10 +346,10 @@ static int app_tx_st20p_init(struct st_app_context *ctx, st_json_st20p_session_t
   return 0;
 }
 
-int st_app_tx_st20p_sessions_init(struct st_app_context *ctx) {
+int st_app_tx_st20p_sessions_init(struct st_app_context* ctx) {
   int ret, i;
-  struct st_app_tx_st20p_session *s;
-  ctx->tx_st20p_sessions = (struct st_app_tx_st20p_session *)st_app_zmalloc(
+  struct st_app_tx_st20p_session* s;
+  ctx->tx_st20p_sessions = (struct st_app_tx_st20p_session*)st_app_zmalloc(
       sizeof(struct st_app_tx_st20p_session) * ctx->tx_st20p_session_cnt);
   if (!ctx->tx_st20p_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_st20p_session_cnt; i++) {
@@ -366,8 +366,8 @@ int st_app_tx_st20p_sessions_init(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_tx_st20p_sessions_stop(struct st_app_context *ctx) {
-  struct st_app_tx_st20p_session *s;
+int st_app_tx_st20p_sessions_stop(struct st_app_context* ctx) {
+  struct st_app_tx_st20p_session* s;
   if (!ctx->tx_st20p_sessions) return 0;
   for (int i = 0; i < ctx->tx_st20p_session_cnt; i++) {
     s = &ctx->tx_st20p_sessions[i];
@@ -377,9 +377,9 @@ int st_app_tx_st20p_sessions_stop(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_tx_st20p_sessions_uinit(struct st_app_context *ctx) {
+int st_app_tx_st20p_sessions_uinit(struct st_app_context* ctx) {
   int i;
-  struct st_app_tx_st20p_session *s;
+  struct st_app_tx_st20p_session* s;
   if (!ctx->tx_st20p_sessions) return 0;
   for (i = 0; i < ctx->tx_st20p_session_cnt; i++) {
     s = &ctx->tx_st20p_sessions[i];
@@ -390,9 +390,9 @@ int st_app_tx_st20p_sessions_uinit(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_tx_st20p_io_stat(struct st_app_context *ctx) {
+int st_app_tx_st20p_io_stat(struct st_app_context* ctx) {
   int i, ret = 0;
-  struct st_app_tx_st20p_session *s;
+  struct st_app_tx_st20p_session* s;
   if (!ctx->tx_st20p_sessions) return 0;
 
   for (i = 0; i < ctx->tx_st20p_session_cnt; i++) {

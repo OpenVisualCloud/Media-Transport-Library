@@ -26,7 +26,7 @@ struct {
 } XDP_RUN_CONFIG(mtl_dp_filter);
 
 static int __always_inline lookup_udp4_dp(__u16 dp) {
-  __u8 *value;
+  __u8* value;
 
   value = bpf_map_lookup_elem(&udp4_dp_filter, &dp);
   if (value && *value != 0) return 1;
@@ -34,24 +34,24 @@ static int __always_inline lookup_udp4_dp(__u16 dp) {
 }
 
 SEC("xdp")
-int mtl_dp_filter(struct xdp_md *ctx) {
-  void *data_end = (void *)(long)ctx->data_end;
-  void *data = (void *)(long)ctx->data;
+int mtl_dp_filter(struct xdp_md* ctx) {
+  void* data_end = (void*)(long)ctx->data_end;
+  void* data = (void*)(long)ctx->data;
 
   struct hdr_cursor nh;
-  struct ethhdr *eth;
+  struct ethhdr* eth;
   int eth_type;
 
   nh.pos = data;
   eth_type = parse_ethhdr(&nh, data_end, &eth);
   if (eth_type != bpf_htons(ETH_P_IP)) return XDP_PASS;
 
-  struct iphdr *iphdr;
+  struct iphdr* iphdr;
   int ip_type;
   ip_type = parse_iphdr(&nh, data_end, &iphdr);
   if (ip_type != IPPROTO_UDP) return XDP_PASS;
 
-  struct udphdr *udphdr;
+  struct udphdr* udphdr;
   int ret;
   ret = parse_udphdr(&nh, data_end, &udphdr);
   if (ret < 0) return XDP_PASS;

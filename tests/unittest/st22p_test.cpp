@@ -10,9 +10,9 @@
 #define ST22P_TEST_PAYLOAD_TYPE (114)
 #define ST22P_TEST_UDP_PORT (16000)
 
-static int test_encode_frame(struct test_st22_encoder_session *s,
-                             struct st22_encode_frame_meta *frame) {
-  struct st22_encoder_create_req *req = &s->req;
+static int test_encode_frame(struct test_st22_encoder_session* s,
+                             struct st22_encode_frame_meta* frame) {
+  struct st22_encoder_create_req* req = &s->req;
   size_t codestream_size = req->max_codestream_size;
 
   /* check frame sanity */
@@ -25,7 +25,7 @@ static int test_encode_frame(struct test_st22_encoder_session *s,
 
   /* copy src sha to the start of encode frame */
   memcpy(frame->dst->addr[0],
-         (uint8_t *)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
+         (uint8_t*)frame->src->addr[0] + frame->src->data_size - SHA256_DIGEST_LENGTH,
          SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
   /* data size indicate the encode stream size for current frame */
@@ -53,11 +53,11 @@ static int test_encode_frame(struct test_st22_encoder_session *s,
   return 0;
 }
 
-static void *test_encode_thread(void *arg) {
-  struct test_st22_encoder_session *s = (struct test_st22_encoder_session *)arg;
+static void* test_encode_thread(void* arg) {
+  struct test_st22_encoder_session* s = (struct test_st22_encoder_session*)arg;
   st22p_encode_session session_p = s->session_p;
-  struct st_tests_context *ctx = s->ctx;
-  struct st22_encode_frame_meta *frame;
+  struct st_tests_context* ctx = s->ctx;
+  struct st22_encode_frame_meta* frame;
   int result;
 
   if (ctx->encoder_use_block_get) st22_encoder_set_block_timeout(session_p, NS_PER_S);
@@ -81,16 +81,16 @@ static void *test_encode_thread(void *arg) {
   return NULL;
 }
 
-static st22_encode_priv test_encoder_create_session(void *priv,
+static st22_encode_priv test_encoder_create_session(void* priv,
                                                     st22p_encode_session session_p,
-                                                    struct st22_encoder_create_req *req) {
-  struct st_tests_context *ctx = (struct st_tests_context *)priv;
-  struct test_st22_encoder_session *session = NULL;
+                                                    struct st22_encoder_create_req* req) {
+  struct st_tests_context* ctx = (struct st_tests_context*)priv;
+  struct test_st22_encoder_session* session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_TEST_ENCODER_SESSIONS; i++) {
     if (ctx->encoder_sessions[i]) continue;
-    session = (struct test_st22_encoder_session *)malloc(sizeof(*session));
+    session = (struct test_st22_encoder_session*)malloc(sizeof(*session));
     if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->ctx = ctx;
@@ -132,10 +132,10 @@ static st22_encode_priv test_encoder_create_session(void *priv,
   return NULL;
 }
 
-static int test_encoder_free_session(void *priv, st22_encode_priv session) {
-  struct st_tests_context *ctx = (struct st_tests_context *)priv;
-  struct test_st22_encoder_session *encoder_session =
-      (struct test_st22_encoder_session *)session;
+static int test_encoder_free_session(void* priv, st22_encode_priv session) {
+  struct st_tests_context* ctx = (struct st_tests_context*)priv;
+  struct test_st22_encoder_session* encoder_session =
+      (struct test_st22_encoder_session*)session;
   int idx = encoder_session->idx;
 
   encoder_session->stop = true;
@@ -157,9 +157,9 @@ static int test_encoder_free_session(void *priv, st22_encode_priv session) {
   return 0;
 }
 
-static int test_encoder_frame_available(void *priv) {
-  struct test_st22_encoder_session *s = (struct test_st22_encoder_session *)priv;
-  struct st_tests_context *ctx = s->ctx;
+static int test_encoder_frame_available(void* priv) {
+  struct test_st22_encoder_session* s = (struct test_st22_encoder_session*)priv;
+  struct st_tests_context* ctx = s->ctx;
 
   if (ctx->encoder_use_block_get) return 0;
 
@@ -171,9 +171,9 @@ static int test_encoder_frame_available(void *priv) {
   return 0;
 }
 
-static int test_decode_frame(struct test_st22_decoder_session *s,
-                             struct st22_decode_frame_meta *frame) {
-  struct st22_decoder_create_req *req = &s->req;
+static int test_decode_frame(struct test_st22_decoder_session* s,
+                             struct st22_decode_frame_meta* frame) {
+  struct st22_decoder_create_req* req = &s->req;
 
   /* check frame sanity */
   if (frame->src->width != req->width) return -EIO;
@@ -185,7 +185,7 @@ static int test_decode_frame(struct test_st22_decoder_session *s,
   if (frame->src->data_size > frame->src->buffer_size) return -EIO;
 
   /* copy sha to the end of decode frame */
-  memcpy((uint8_t *)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
+  memcpy((uint8_t*)frame->dst->addr[0] + frame->dst->data_size - SHA256_DIGEST_LENGTH,
          frame->src->addr[0], SHA256_DIGEST_LENGTH);
   st_usleep(s->sleep_time_us);
 
@@ -207,11 +207,11 @@ static int test_decode_frame(struct test_st22_decoder_session *s,
   return 0;
 }
 
-static void *test_decode_thread(void *arg) {
-  struct test_st22_decoder_session *s = (struct test_st22_decoder_session *)arg;
+static void* test_decode_thread(void* arg) {
+  struct test_st22_decoder_session* s = (struct test_st22_decoder_session*)arg;
   st22p_decode_session session_p = s->session_p;
-  struct st_tests_context *ctx = s->ctx;
-  struct st22_decode_frame_meta *frame;
+  struct st_tests_context* ctx = s->ctx;
+  struct st22_decode_frame_meta* frame;
   int result;
 
   if (ctx->encoder_use_block_get) st22_decoder_set_block_timeout(session_p, NS_PER_S);
@@ -235,16 +235,16 @@ static void *test_decode_thread(void *arg) {
   return NULL;
 }
 
-static st22_decode_priv test_decoder_create_session(void *priv,
+static st22_decode_priv test_decoder_create_session(void* priv,
                                                     st22p_decode_session session_p,
-                                                    struct st22_decoder_create_req *req) {
-  struct st_tests_context *ctx = (struct st_tests_context *)priv;
-  struct test_st22_decoder_session *session = NULL;
+                                                    struct st22_decoder_create_req* req) {
+  struct st_tests_context* ctx = (struct st_tests_context*)priv;
+  struct test_st22_decoder_session* session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_TEST_DECODER_SESSIONS; i++) {
     if (ctx->decoder_sessions[i]) continue;
-    session = (struct test_st22_decoder_session *)malloc(sizeof(*session));
+    session = (struct test_st22_decoder_session*)malloc(sizeof(*session));
     if (!session) return NULL;
     memset(session, 0, sizeof(*session));
     session->idx = i;
@@ -285,10 +285,10 @@ static st22_decode_priv test_decoder_create_session(void *priv,
   return NULL;
 }
 
-static int test_decoder_free_session(void *priv, st22_decode_priv session) {
-  struct st_tests_context *ctx = (struct st_tests_context *)priv;
-  struct test_st22_decoder_session *decoder_session =
-      (struct test_st22_decoder_session *)session;
+static int test_decoder_free_session(void* priv, st22_decode_priv session) {
+  struct st_tests_context* ctx = (struct st_tests_context*)priv;
+  struct test_st22_decoder_session* decoder_session =
+      (struct test_st22_decoder_session*)session;
   int idx = decoder_session->idx;
 
   decoder_session->stop = true;
@@ -310,9 +310,9 @@ static int test_decoder_free_session(void *priv, st22_decode_priv session) {
   return 0;
 }
 
-static int test_decoder_frame_available(void *priv) {
-  struct test_st22_decoder_session *s = (struct test_st22_decoder_session *)priv;
-  struct st_tests_context *ctx = s->ctx;
+static int test_decoder_frame_available(void* priv) {
+  struct test_st22_decoder_session* s = (struct test_st22_decoder_session*)priv;
+  struct st_tests_context* ctx = s->ctx;
 
   if (ctx->decoder_use_block_get) return 0;
 
@@ -324,7 +324,7 @@ static int test_decoder_frame_available(void *priv) {
   return 0;
 }
 
-int st_test_st22_plugin_unregister(struct st_tests_context *ctx) {
+int st_test_st22_plugin_unregister(struct st_tests_context* ctx) {
   if (ctx->decoder_dev_handle) {
     st22_decoder_unregister(ctx->decoder_dev_handle);
     ctx->decoder_dev_handle = NULL;
@@ -337,7 +337,7 @@ int st_test_st22_plugin_unregister(struct st_tests_context *ctx) {
   return 0;
 }
 
-int st_test_st22_plugin_register(struct st_tests_context *ctx) {
+int st_test_st22_plugin_register(struct st_tests_context* ctx) {
   auto st = ctx->handle;
   int ret = 0;
 
@@ -377,7 +377,7 @@ int st_test_st22_plugin_register(struct st_tests_context *ctx) {
   return 0;
 }
 
-static void plugin_register_test(const char *so_name, bool expect_succ) {
+static void plugin_register_test(const char* so_name, bool expect_succ) {
   auto ctx = st_test_ctx();
   auto st = ctx->handle;
 
@@ -403,16 +403,16 @@ TEST(St22p, plugin_register_fail) {
 static void frame_draw_logo_test(enum st_frame_fmt fmt, uint32_t w, uint32_t h,
                                  uint32_t logo_w, uint32_t logo_h, uint32_t x, uint32_t y,
                                  bool expect) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   size_t logo_size = st_frame_size(fmt, logo_w, logo_h, false);
   size_t frame_size = st_frame_size(fmt, w, h, false);
-  void *frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
+  void* frame_buf = mtl_hp_malloc(st, frame_size, MTL_PORT_P);
   if (!frame_buf) {
     err("%s, frame_buf malloc fail\n", __func__);
     return;
   }
-  void *logo_buf = mtl_hp_malloc(st, logo_size, MTL_PORT_P);
+  void* logo_buf = mtl_hp_malloc(st, logo_size, MTL_PORT_P);
   if (!logo_buf) {
     err("%s, logo_buf malloc fail\n", __func__);
     mtl_hp_free(st, frame_buf);
@@ -455,16 +455,16 @@ TEST(St22p, draw_logo_rfc4175_1080p_fail) {
                        100, false);
 }
 
-static int test_st22p_tx_frame_available(void *priv) {
-  tests_context *s = (tests_context *)priv;
+static int test_st22p_tx_frame_available(void* priv) {
+  tests_context* s = (tests_context*)priv;
 
   s->cv.notify_all();
 
   return 0;
 }
 
-static int test_st22p_tx_frame_done(void *priv, struct st_frame *frame) {
-  tests_context *s = (tests_context *)priv;
+static int test_st22p_tx_frame_done(void* priv, struct st_frame* frame) {
+  tests_context* s = (tests_context*)priv;
 
   if (!s->handle) return -EIO; /* not ready */
 
@@ -484,17 +484,17 @@ static int test_st22p_tx_frame_done(void *priv, struct st_frame *frame) {
   return 0;
 }
 
-static int test_st22p_rx_frame_available(void *priv) {
-  tests_context *s = (tests_context *)priv;
+static int test_st22p_rx_frame_available(void* priv) {
+  tests_context* s = (tests_context*)priv;
 
   s->cv.notify_all();
 
   return 0;
 }
 
-static int test_st22p_rx_query_ext_frame(void *priv, st_ext_frame *ext_frame,
-                                         struct st22_rx_frame_meta *meta) {
-  auto ctx = (tests_context *)priv;
+static int test_st22p_rx_query_ext_frame(void* priv, st_ext_frame* ext_frame,
+                                         struct st22_rx_frame_meta* meta) {
+  auto ctx = (tests_context*)priv;
   if (!ctx->handle) return -EIO; /* not ready */
   int i = ctx->ext_idx;
 
@@ -514,7 +514,7 @@ static int test_st22p_rx_query_ext_frame(void *priv, st_ext_frame *ext_frame,
   return 0;
 }
 
-static void st22p_tx_ops_init(tests_context *st22, struct st22p_tx_ops *ops_tx) {
+static void st22p_tx_ops_init(tests_context* st22, struct st22p_tx_ops* ops_tx) {
   auto ctx = st22->ctx;
 
   memset(ops_tx, 0, sizeof(*ops_tx));
@@ -543,7 +543,7 @@ static void st22p_tx_ops_init(tests_context *st22, struct st22p_tx_ops *ops_tx) 
   ops_tx->notify_event = test_ctx_notify_event;
 }
 
-static void st22p_rx_ops_init(tests_context *st22, struct st22p_rx_ops *ops_rx) {
+static void st22p_rx_ops_init(tests_context* st22, struct st22p_rx_ops* ops_rx) {
   auto ctx = st22->ctx;
 
   memset(ops_rx, 0, sizeof(*ops_rx));
@@ -635,10 +635,10 @@ TEST(St22p, rx_create_expect_fail_fb_cnt) {
   pipeline_expect_fail_test_fb_cnt(st22p_rx, fbcnt);
 }
 
-static void test_st22p_tx_frame_thread(void *args) {
-  tests_context *s = (tests_context *)args;
+static void test_st22p_tx_frame_thread(void* args) {
+  tests_context* s = (tests_context*)args;
   auto handle = s->handle;
-  struct st_frame *frame;
+  struct st_frame* frame;
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
 
   dbg("%s(%d), start\n", __func__, s->idx);
@@ -685,10 +685,10 @@ static void test_st22p_tx_frame_thread(void *args) {
   dbg("%s(%d), stop\n", __func__, s->idx);
 }
 
-static void test_st22p_rx_frame_thread(void *args) {
-  tests_context *s = (tests_context *)args;
+static void test_st22p_rx_frame_thread(void* args) {
+  tests_context* s = (tests_context*)args;
   auto handle = s->handle;
-  struct st_frame *frame;
+  struct st_frame* frame;
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
   uint64_t timestamp = 0;
 
@@ -715,7 +715,7 @@ static void test_st22p_rx_frame_thread(void *args) {
 
     if (frame->opaque) {
       /* free dynamic ext frame */
-      bool *in_use = (bool *)frame->opaque;
+      bool* in_use = (bool*)frame->opaque;
       EXPECT_TRUE(*in_use);
       *in_use = false;
     }
@@ -736,11 +736,11 @@ static void test_st22p_rx_frame_thread(void *args) {
       s->pre_timestamp = (uint32_t)frame->timestamp;
     }
 
-    unsigned char *sha =
-        (unsigned char *)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
+    unsigned char* sha =
+        (unsigned char*)frame->addr[0] + frame->data_size - SHA256_DIGEST_LENGTH;
     int i = 0;
     for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
-      unsigned char *target_sha = s->shas[i];
+      unsigned char* target_sha = s->shas[i];
       if (!memcmp(sha, target_sha, SHA256_DIGEST_LENGTH)) break;
     }
     if (i >= ST22_TEST_SHA_HIST_NUM) {
@@ -775,7 +775,7 @@ struct st22p_rx_digest_test_para {
   bool derive;
 };
 
-static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para *para) {
+static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para* para) {
   memset(para, 0, sizeof(*para));
 
   para->sessions = 1;
@@ -799,8 +799,8 @@ static void test_st22p_init_rx_digest_para(struct st22p_rx_digest_test_para *par
 static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
                                  enum st_frame_fmt fmt[], enum st22_codec codec[],
                                  int compress_ratio[],
-                                 struct st22p_rx_digest_test_para *para) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+                                 struct st22p_rx_digest_test_para* para) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto st = ctx->handle;
   int ret;
   struct st22p_tx_ops ops_tx;
@@ -828,8 +828,8 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
   }
 
-  std::vector<tests_context *> test_ctx_tx;
-  std::vector<tests_context *> test_ctx_rx;
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
   std::vector<st22p_tx_handle> tx_handle;
   std::vector<st22p_rx_handle> rx_handle;
   std::vector<double> expect_framerate_tx;
@@ -939,7 +939,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       uint8_t planes = st_frame_fmt_planes(fmt[i]);
       size_t frame_size = test_ctx_tx[i]->frame_size;
 
-      test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame *)malloc(
+      test_ctx_tx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_tx[i]->p_ext_frames) * test_ctx_tx[i]->fb_cnt);
       size_t pg_sz = mtl_page_size(st);
       size_t fb_size = test_ctx_tx[i]->frame_size * test_ctx_tx[i]->fb_cnt;
@@ -949,7 +949,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_tx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_malloc != NULL);
       test_ctx_tx[i]->ext_fb =
-          (uint8_t *)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_tx[i]->ext_fb_malloc, pg_sz);
       test_ctx_tx[i]->ext_fb_iova =
           mtl_dma_map(st, test_ctx_tx[i]->ext_fb, test_ctx_tx[i]->ext_fb_iova_map_sz);
       ASSERT_TRUE(test_ctx_tx[i]->ext_fb_iova != MTL_BAD_IOVA);
@@ -966,7 +966,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
                 test_ctx_tx[i]->ext_fb_iova + j * frame_size;
           } else {
             test_ctx_tx[i]->p_ext_frames[j].addr[plane] =
-                (uint8_t *)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
+                (uint8_t*)test_ctx_tx[i]->p_ext_frames[j].addr[plane - 1] +
                 test_ctx_tx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
             test_ctx_tx[i]->p_ext_frames[j].iova[plane] =
                 test_ctx_tx[i]->p_ext_frames[j].iova[plane - 1] +
@@ -980,16 +980,16 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
-    uint8_t *fb;
+    uint8_t* fb;
     for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
       if (para->tx_ext)
-        fb = (uint8_t *)test_ctx_tx[i]->ext_fb + frame * frame_size;
+        fb = (uint8_t*)test_ctx_tx[i]->ext_fb + frame * frame_size;
       else
-        fb = (uint8_t *)st22p_tx_get_fb_addr(tx_handle[i], frame);
+        fb = (uint8_t*)st22p_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
-      unsigned char *result = test_ctx_tx[i]->shas[frame];
-      SHA256((unsigned char *)fb, frame_size, result);
+      unsigned char* result = test_ctx_tx[i]->shas[frame];
+      SHA256((unsigned char*)fb, frame_size, result);
       test_sha_dump("st22p_tx", result);
       /* copy sha to the end of frame */
       memcpy(fb + frame_size - SHA256_DIGEST_LENGTH, result, SHA256_DIGEST_LENGTH);
@@ -1025,7 +1025,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     if (para->rx_ext) {
       uint8_t planes = st_frame_fmt_planes(fmt[i]);
-      test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame *)malloc(
+      test_ctx_rx[i]->p_ext_frames = (struct st_ext_frame*)malloc(
           sizeof(*test_ctx_rx[i]->p_ext_frames) * test_ctx_rx[i]->fb_cnt);
       size_t frame_size = st_frame_size(fmt[i], width[i], height[i], false);
       size_t pg_sz = mtl_page_size(st);
@@ -1036,7 +1036,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
       test_ctx_rx[i]->ext_fb_malloc = st_test_zmalloc(fb_size_malloc);
       ASSERT_TRUE(test_ctx_rx[i]->ext_fb_malloc != NULL);
       test_ctx_rx[i]->ext_fb =
-          (uint8_t *)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
+          (uint8_t*)MTL_ALIGN((uint64_t)test_ctx_rx[i]->ext_fb_malloc, pg_sz);
       test_ctx_rx[i]->ext_fb_iova =
           mtl_dma_map(st, test_ctx_rx[i]->ext_fb, test_ctx_rx[i]->ext_fb_iova_map_sz);
       info("%s, session %d ext_fb %p\n", __func__, i, test_ctx_rx[i]->ext_fb);
@@ -1053,7 +1053,7 @@ static void st22p_rx_digest_test(enum st_fps fps[], int width[], int height[],
                 test_ctx_rx[i]->ext_fb_iova + j * frame_size;
           } else {
             test_ctx_rx[i]->p_ext_frames[j].addr[plane] =
-                (uint8_t *)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
+                (uint8_t*)test_ctx_rx[i]->p_ext_frames[j].addr[plane - 1] +
                 test_ctx_rx[i]->p_ext_frames[j].linesize[plane - 1] * height[i];
             test_ctx_rx[i]->p_ext_frames[j].iova[plane] =
                 test_ctx_rx[i]->p_ext_frames[j].iova[plane - 1] +

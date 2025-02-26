@@ -4,7 +4,7 @@
 
 #include "../sample/sample_util.h"
 
-static void fill_rand_v210(uint8_t *p, size_t sz) {
+static void fill_rand_v210(uint8_t* p, size_t sz) {
   for (size_t i = 0; i < sz; i++) {
     p[i] = rand();
     if ((i % 4) == 3) p[i] &= 0x3F;
@@ -15,16 +15,16 @@ static int perf_cvt_v210_to_be(mtl_handle st, int w, int h, int frames, int fb_c
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_size_v210 = w * h * 8 / 3;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be *pg_be =
-      (struct st20_rfc4175_422_10_pg2_be *)malloc(fb_pg2_size * fb_cnt);
-  uint8_t *pg_v210 = (uint8_t *)mtl_hp_malloc(st, fb_size_v210 * fb_cnt, MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be* pg_be =
+      (struct st20_rfc4175_422_10_pg2_be*)malloc(fb_pg2_size * fb_cnt);
+  uint8_t* pg_v210 = (uint8_t*)mtl_hp_malloc(st, fb_size_v210 * fb_cnt, MTL_PORT_P);
   mtl_iova_t pg_v210_iova = mtl_hp_virt2iova(st, pg_v210);
   mtl_iova_t pg_v210_in_iova;
   float fb_size_v210_m = (float)fb_size_v210 / 1024 / 1024;
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
 
-  uint8_t *pg_v210_in;
-  struct st20_rfc4175_422_10_pg2_be *pg_be_out;
+  uint8_t* pg_v210_in;
+  struct st20_rfc4175_422_10_pg2_be* pg_be_out;
 
   for (int i = 0; i < fb_cnt; i++) {
     pg_v210_in = pg_v210 + (i % fb_cnt) * (fb_size_v210 / sizeof(*pg_v210_in));
@@ -111,8 +111,8 @@ static int perf_cvt_v210_to_be(mtl_handle st, int w, int h, int frames, int fb_c
   return 0;
 }
 
-static void *perf_thread(void *arg) {
-  struct st_sample_context *ctx = arg;
+static void* perf_thread(void* arg) {
+  struct st_sample_context* ctx = arg;
   mtl_handle dev_handle = ctx->st;
   int frames = ctx->perf_frames;
   int fb_cnt = ctx->perf_fb_cnt;
@@ -136,7 +136,7 @@ static void *perf_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 

@@ -34,7 +34,7 @@ struct udp_server_sample_ctx {
 };
 
 struct udp_server_samples_ctx {
-  struct udp_server_sample_ctx **apps;
+  struct udp_server_sample_ctx** apps;
   int apps_cnt;
 
   bool stop;
@@ -43,8 +43,8 @@ struct udp_server_samples_ctx {
   pthread_mutex_t wake_mutex;
 };
 
-static void *udp_server_thread(void *arg) {
-  struct udp_server_sample_ctx *s = arg;
+static void* udp_server_thread(void* arg) {
+  struct udp_server_sample_ctx* s = arg;
   mudp_handle socket = s->socket;
   ssize_t udp_len = MUDP_MAX_BYTES;
   char buf[udp_len];
@@ -53,8 +53,8 @@ static void *udp_server_thread(void *arg) {
 
   info("%s(%d), start socket %p\n", __func__, s->idx, socket);
   while (!s->stop) {
-    ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0,
-                                 (struct sockaddr *)&cli_addr, &cli_addr_len);
+    ssize_t recv = mudp_recvfrom(socket, buf, sizeof(buf), 0, (struct sockaddr*)&cli_addr,
+                                 &cli_addr_len);
     if (recv < 0) {
       dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
       continue;
@@ -63,7 +63,7 @@ static void *udp_server_thread(void *arg) {
     s->recv_cnt_total++;
     s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
-    ssize_t send = mudp_sendto(socket, buf, recv, 0, (const struct sockaddr *)&cli_addr,
+    ssize_t send = mudp_sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr,
                                cli_addr_len);
     if (send != recv) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
@@ -77,8 +77,8 @@ static void *udp_server_thread(void *arg) {
   return NULL;
 }
 
-static void *udp_server_transport_thread(void *arg) {
-  struct udp_server_sample_ctx *s = arg;
+static void* udp_server_transport_thread(void* arg) {
+  struct udp_server_sample_ctx* s = arg;
   mudp_handle socket = s->socket;
   ssize_t udp_len = MUDP_MAX_BYTES;
   char buf[udp_len];
@@ -99,8 +99,8 @@ static void *udp_server_transport_thread(void *arg) {
   return NULL;
 }
 
-static void *udp_server_transport_poll_thread(void *arg) {
-  struct udp_server_sample_ctx *s = arg;
+static void* udp_server_transport_poll_thread(void* arg) {
+  struct udp_server_sample_ctx* s = arg;
   mudp_handle socket = s->socket;
   ssize_t udp_len = MUDP_MAX_BYTES;
   char buf[udp_len];
@@ -128,9 +128,9 @@ static void *udp_server_transport_poll_thread(void *arg) {
   return NULL;
 }
 
-static void *udp_servers_poll_thread(void *arg) {
-  struct udp_server_samples_ctx *ctxs = arg;
-  struct udp_server_sample_ctx *s = NULL;
+static void* udp_servers_poll_thread(void* arg) {
+  struct udp_server_samples_ctx* ctxs = arg;
+  struct udp_server_sample_ctx* s = NULL;
   int apps_cnt = ctxs->apps_cnt;
   mudp_handle socket;
   ssize_t udp_len = MUDP_MAX_BYTES;
@@ -167,7 +167,7 @@ static void *udp_servers_poll_thread(void *arg) {
   return NULL;
 }
 
-static void udp_server_status(struct udp_server_sample_ctx *s) {
+static void udp_server_status(struct udp_server_sample_ctx* s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->recv_len * 8 / time_sec;
@@ -181,7 +181,7 @@ static void udp_server_status(struct udp_server_sample_ctx *s) {
   s->recv_len = 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   struct udp_server_samples_ctx ctxs;
   int ret;
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct udp_server_sample_ctx *app[session_num];
+  struct udp_server_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
 
   ctxs.apps = NULL;
@@ -250,7 +250,7 @@ int main(int argc, char **argv) {
       mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
                          ctx.udp_port + i);
     }
-    ret = mudp_bind(app[i]->socket, (const struct sockaddr *)&app[i]->bind_addr,
+    ret = mudp_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);

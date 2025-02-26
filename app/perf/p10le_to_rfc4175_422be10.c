@@ -12,7 +12,7 @@
 
 #include "../sample/sample_util.h"
 
-static void fill_422_planar_le(uint16_t *y, uint16_t *b, uint16_t *r, int w, int h) {
+static void fill_422_planar_le(uint16_t* y, uint16_t* b, uint16_t* r, int w, int h) {
   int pg_size = w * h / 2;
 
   for (int pg = 0; pg < pg_size; pg++) {
@@ -27,23 +27,23 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
                                             int fb_cnt) {
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   mtl_udma_handle dma = mtl_udma_create(st, 128, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be *pg_be =
-      (struct st20_rfc4175_422_10_pg2_be *)malloc(fb_pg2_size * fb_cnt);
+  struct st20_rfc4175_422_10_pg2_be* pg_be =
+      (struct st20_rfc4175_422_10_pg2_be*)malloc(fb_pg2_size * fb_cnt);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
   float planar_size_m = (float)planar_size / 1024 / 1024;
-  uint16_t *p10_u16 = (uint16_t *)mtl_hp_malloc(st, planar_size * fb_cnt, MTL_PORT_P);
-  uint16_t *p10_u16_b = p10_u16 + w * h;
-  uint16_t *p10_u16_r = p10_u16 + w * h * 3 / 2;
+  uint16_t* p10_u16 = (uint16_t*)mtl_hp_malloc(st, planar_size * fb_cnt, MTL_PORT_P);
+  uint16_t* p10_u16_b = p10_u16 + w * h;
+  uint16_t* p10_u16_r = p10_u16 + w * h * 3 / 2;
   mtl_iova_t p10_u16_y_iova = mtl_hp_virt2iova(st, p10_u16);
   mtl_iova_t p10_u16_b_iova = p10_u16_y_iova + planar_size / 2;
   mtl_iova_t p10_u16_r_iova = p10_u16_b_iova + planar_size / 4;
   mtl_iova_t p10_u16_y_in_iova, p10_u16_b_in_iova, p10_u16_r_in_iova;
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
 
-  struct st20_rfc4175_422_10_pg2_be *pg_be_out;
-  uint16_t *p10_u16_in;
-  uint16_t *p10_u16_b_in;
-  uint16_t *p10_u16_r_in;
+  struct st20_rfc4175_422_10_pg2_be* pg_be_out;
+  uint16_t* p10_u16_in;
+  uint16_t* p10_u16_b_in;
+  uint16_t* p10_u16_r_in;
 
   for (int i = 0; i < fb_cnt; i++) {
     p10_u16_in = p10_u16 + (i % fb_cnt) * (planar_size / sizeof(*p10_u16));
@@ -152,8 +152,8 @@ static int perf_cvt_planar_le_to_422_10_pg2(mtl_handle st, int w, int h, int fra
   return 0;
 }
 
-static void *perf_thread(void *arg) {
-  struct st_sample_context *ctx = arg;
+static void* perf_thread(void* arg) {
+  struct st_sample_context* ctx = arg;
   mtl_handle dev_handle = ctx->st;
   int frames = ctx->perf_frames;
   int fb_cnt = ctx->perf_fb_cnt;
@@ -177,7 +177,7 @@ static void *perf_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 

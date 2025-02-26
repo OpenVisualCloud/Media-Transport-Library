@@ -113,26 +113,26 @@ G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St40_Rx, gst_mtl_st40_rx, GST_TYPE_BASE_SRC,
 GST_ELEMENT_REGISTER_DEFINE(mtl_st40_rx, "mtl_st40_rx", GST_RANK_NONE,
                             GST_TYPE_MTL_ST40_RX);
 
-static void gst_mtl_st40_rx_set_property(GObject *object, guint prop_id,
-                                         const GValue *value, GParamSpec *pspec);
-static void gst_mtl_st40_rx_get_property(GObject *object, guint prop_id, GValue *value,
-                                         GParamSpec *pspec);
-static void gst_mtl_st40_rx_finalize(GObject *object);
+static void gst_mtl_st40_rx_set_property(GObject* object, guint prop_id,
+                                         const GValue* value, GParamSpec* pspec);
+static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue* value,
+                                         GParamSpec* pspec);
+static void gst_mtl_st40_rx_finalize(GObject* object);
 
-static gboolean gst_mtl_st40_rx_start(GstBaseSrc *basesrc);
-static gboolean gst_mtl_st40_rx_stop(GstBaseSrc *basesrc);
-static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc *basesrc, guint64 offset,
-                                            guint length, GstBuffer **buffer);
+static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc);
+static gboolean gst_mtl_st40_rx_stop(GstBaseSrc* basesrc);
+static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc* basesrc, guint64 offset,
+                                            guint length, GstBuffer** buffer);
 
-static gint gst_mtl_st40_rx_mbuff_avalible(void *priv);
-static void *gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx *src,
-                                                   st40_rx_handle handle, void **usrptr,
-                                                   uint16_t *size);
-static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx *src, GstBuffer **buf,
-                                                 void *usrptr);
+static gint gst_mtl_st40_rx_mbuff_avalible(void* priv);
+static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
+                                                   st40_rx_handle handle, void** usrptr,
+                                                   uint16_t* size);
+static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buf,
+                                                 void* usrptr);
 
-static gint gst_mtl_st40_rx_mbuff_avalible(void *priv) {
-  Gst_Mtl_St40_Rx *src = (Gst_Mtl_St40_Rx *)priv;
+static gint gst_mtl_st40_rx_mbuff_avalible(void* priv) {
+  Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
 
   pthread_mutex_lock(&(src->mbuff_mutex));
   pthread_cond_signal(&(src->mbuff_cond));
@@ -141,10 +141,10 @@ static gint gst_mtl_st40_rx_mbuff_avalible(void *priv) {
   return 0;
 }
 
-static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass *klass) {
-  GObjectClass *gobject_class;
-  GstElementClass *gstelement_class;
-  GstBaseSrcClass *gstbasesrc_class;
+static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
+  GObjectClass* gobject_class;
+  GstElementClass* gstelement_class;
+  GstBaseSrcClass* gstbasesrc_class;
 
   gobject_class = G_OBJECT_CLASS(klass);
   gstelement_class = GST_ELEMENT_CLASS(klass);
@@ -181,11 +181,11 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass *klass) {
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
-static gboolean gst_mtl_st40_rx_start(GstBaseSrc *basesrc) {
+static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   struct st40_rx_ops ops_rx = {0};
   gint ret;
 
-  Gst_Mtl_St40_Rx *src = GST_MTL_ST40_RX(basesrc);
+  Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(basesrc);
 
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
@@ -269,9 +269,9 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc *basesrc) {
   return TRUE;
 }
 
-static void gst_mtl_st40_rx_init(Gst_Mtl_St40_Rx *src) {
-  GstElement *element = GST_ELEMENT(src);
-  GstPad *srcpad;
+static void gst_mtl_st40_rx_init(Gst_Mtl_St40_Rx* src) {
+  GstElement* element = GST_ELEMENT(src);
+  GstPad* srcpad;
 
   srcpad = gst_element_get_static_pad(element, "src");
   if (!srcpad) {
@@ -280,9 +280,9 @@ static void gst_mtl_st40_rx_init(Gst_Mtl_St40_Rx *src) {
   }
 }
 
-static void gst_mtl_st40_rx_set_property(GObject *object, guint prop_id,
-                                         const GValue *value, GParamSpec *pspec) {
-  Gst_Mtl_St40_Rx *self = GST_MTL_ST40_RX(object);
+static void gst_mtl_st40_rx_set_property(GObject* object, guint prop_id,
+                                         const GValue* value, GParamSpec* pspec) {
+  Gst_Mtl_St40_Rx* self = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
     gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
@@ -303,9 +303,9 @@ static void gst_mtl_st40_rx_set_property(GObject *object, guint prop_id,
   }
 }
 
-static void gst_mtl_st40_rx_get_property(GObject *object, guint prop_id, GValue *value,
-                                         GParamSpec *pspec) {
-  Gst_Mtl_St40_Rx *src = GST_MTL_ST40_RX(object);
+static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue* value,
+                                         GParamSpec* pspec) {
+  Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
     gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->devArgs),
@@ -326,12 +326,12 @@ static void gst_mtl_st40_rx_get_property(GObject *object, guint prop_id, GValue 
   }
 }
 
-static void *gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx *src,
-                                                   st40_rx_handle handle, void **usrptr,
-                                                   uint16_t *size) {
+static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
+                                                   st40_rx_handle handle, void** usrptr,
+                                                   uint16_t* size) {
   struct timespec ts;
   gint ret;
-  void *mbuf;
+  void* mbuf;
 
   clock_gettime(CLOCK_REALTIME, &ts);
   ts.tv_sec += src->timeout_mbuf_get_seconds;
@@ -350,16 +350,16 @@ static void *gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx *src,
   return mbuf;
 }
 
-static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx *src, GstBuffer **buffer,
-                                                 void *usrptr) {
-  struct st40_rfc8331_rtp_hdr *hdr;
-  struct st40_rfc8331_payload_hdr *payload_hdr;
+static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buffer,
+                                                 void* usrptr) {
+  struct st40_rfc8331_rtp_hdr* hdr;
+  struct st40_rfc8331_payload_hdr* payload_hdr;
   GstMapInfo dest_info;
   guint16 data, fill_size;
   gint udw_size;
 
-  hdr = (struct st40_rfc8331_rtp_hdr *)usrptr;
-  payload_hdr = (struct st40_rfc8331_payload_hdr *)(&hdr[1]);
+  hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
+  payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
   udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
   payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
@@ -369,7 +369,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx *src, GstBuffer
     return GST_FLOW_ERROR;
   } else if (src->udw_size == 0) {
     src->udw_size = udw_size;
-    src->anc_data = (char *)malloc(udw_size);
+    src->anc_data = (char*)malloc(udw_size);
   } else if (src->udw_size != udw_size) {
     GST_INFO("Size of recieved ancillary data has changed");
     if (src->anc_data) {
@@ -377,7 +377,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx *src, GstBuffer
       src->anc_data = NULL;
     }
     src->udw_size = udw_size;
-    src->anc_data = (char *)malloc(udw_size);
+    src->anc_data = (char*)malloc(udw_size);
   }
 
   *buffer = gst_buffer_new_allocate(NULL, src->udw_size, NULL);
@@ -392,7 +392,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx *src, GstBuffer
   }
 
   for (int i = 0; i < udw_size; i++) {
-    data = st40_get_udw(i + 3, (uint8_t *)&payload_hdr->second_hdr_chunk);
+    data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
     if (!st40_check_parity_bits(data)) {
       GST_ERROR("Ancillary data parity bits check failed");
       return GST_FLOW_ERROR;
@@ -411,9 +411,9 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx *src, GstBuffer
   return GST_FLOW_OK;
 }
 
-static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc *basesrc, guint64 offset,
-                                            guint length, GstBuffer **buffer) {
-  Gst_Mtl_St40_Rx *src = GST_MTL_ST40_RX(basesrc);
+static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc* basesrc, guint64 offset,
+                                            guint length, GstBuffer** buffer) {
+  Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(basesrc);
   void *mbuf, *usrptr;
   guint16 size;
   gint ret;
@@ -448,8 +448,8 @@ static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc *basesrc, guint64 offset,
   return ret;
 }
 
-static void gst_mtl_st40_rx_finalize(GObject *object) {
-  Gst_Mtl_St40_Rx *src = GST_MTL_ST40_RX(object);
+static void gst_mtl_st40_rx_finalize(GObject* object) {
+  Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(object);
 
   if (src->anc_data) free(src->anc_data);
 
@@ -470,8 +470,8 @@ static void gst_mtl_st40_rx_finalize(GObject *object) {
   }
 }
 
-static gboolean gst_mtl_st40_rx_stop(GstBaseSrc *basesrc) {
-  Gst_Mtl_St40_Rx *src = GST_MTL_ST40_RX(basesrc);
+static gboolean gst_mtl_st40_rx_stop(GstBaseSrc* basesrc) {
+  Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(basesrc);
 
   if (src->mtl_lib_handle) {
     mtl_stop(src->mtl_lib_handle);
@@ -480,7 +480,7 @@ static gboolean gst_mtl_st40_rx_stop(GstBaseSrc *basesrc) {
   return TRUE;
 }
 
-static gboolean plugin_init(GstPlugin *mtl_st40_rx) {
+static gboolean plugin_init(GstPlugin* mtl_st40_rx) {
   return gst_element_register(mtl_st40_rx, "mtl_st40_rx", GST_RANK_SECONDARY,
                               GST_TYPE_MTL_ST40_RX);
 }

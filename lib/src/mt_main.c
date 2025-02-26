@@ -24,7 +24,7 @@
 #include "st2110/pipeline/st_plugin.h"
 #include "udp/udp_rxq.h"
 
-enum mtl_port mt_port_by_id(struct mtl_main_impl *impl, uint16_t port_id) {
+enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
   int i;
 
@@ -36,8 +36,8 @@ enum mtl_port mt_port_by_id(struct mtl_main_impl *impl, uint16_t port_id) {
   return MTL_PORT_MAX;
 }
 
-int mt_dst_ip_mac(struct mtl_main_impl *impl, uint8_t dip[MTL_IP_ADDR_LEN],
-                  struct rte_ether_addr *ea, enum mtl_port port, int timeout_ms) {
+int mt_dst_ip_mac(struct mtl_main_impl* impl, uint8_t dip[MTL_IP_ADDR_LEN],
+                  struct rte_ether_addr* ea, enum mtl_port port, int timeout_ms) {
   int ret;
 
   if (mt_is_multicast_ip(dip)) {
@@ -46,7 +46,7 @@ int mt_dst_ip_mac(struct mtl_main_impl *impl, uint8_t dip[MTL_IP_ADDR_LEN],
   } else if (mt_is_lan_ip(dip, mt_sip_addr(impl, port), mt_sip_netmask(impl, port))) {
     ret = mt_arp_get_mac(impl, dip, ea, port, timeout_ms);
   } else {
-    uint8_t *gateway = mt_sip_gateway(impl, port);
+    uint8_t* gateway = mt_sip_gateway(impl, port);
     if (mt_ip_to_u32(gateway)) {
       ret = mt_arp_get_mac(impl, gateway, ea, port, timeout_ms);
     } else {
@@ -63,22 +63,22 @@ int mt_dst_ip_mac(struct mtl_main_impl *impl, uint8_t dip[MTL_IP_ADDR_LEN],
   return ret;
 }
 
-uint8_t *mt_sip_addr(struct mtl_main_impl *impl, enum mtl_port port) {
+uint8_t* mt_sip_addr(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_ip(impl, port);
   return mt_get_user_params(impl)->sip_addr[port];
 }
 
-uint8_t *mt_sip_netmask(struct mtl_main_impl *impl, enum mtl_port port) {
+uint8_t* mt_sip_netmask(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_netmask(impl, port);
   return mt_get_user_params(impl)->netmask[port];
 }
 
-uint8_t *mt_sip_gateway(struct mtl_main_impl *impl, enum mtl_port port) {
+uint8_t* mt_sip_gateway(struct mtl_main_impl* impl, enum mtl_port port) {
   if (mt_dhcp_service_active(impl, port)) return mt_dhcp_get_gateway(impl, port);
   return mt_get_user_params(impl)->gateway[port];
 }
 
-bool mt_is_valid_socket(struct mtl_main_impl *impl, int soc_id) {
+bool mt_is_valid_socket(struct mtl_main_impl* impl, int soc_id) {
   int num_ports = mt_num_ports(impl);
   int i;
 
@@ -90,9 +90,9 @@ bool mt_is_valid_socket(struct mtl_main_impl *impl, int soc_id) {
   return false;
 }
 
-static int u64_cmp(const void *a, const void *b) {
-  const uint64_t *ai = a;
-  const uint64_t *bi = b;
+static int u64_cmp(const void* a, const void* b) {
+  const uint64_t* ai = a;
+  const uint64_t* bi = b;
 
   if (*ai < *bi) {
     return -1;
@@ -102,8 +102,8 @@ static int u64_cmp(const void *a, const void *b) {
   return 0;
 }
 
-static void *mt_calibrate_tsc(void *arg) {
-  struct mtl_main_impl *impl = arg;
+static void* mt_calibrate_tsc(void* arg) {
+  struct mtl_main_impl* impl = arg;
   int loop = 100;
   int trim = 10;
   uint64_t array[loop];
@@ -133,7 +133,7 @@ static void *mt_calibrate_tsc(void *arg) {
   return NULL;
 }
 
-static int mt_main_create(struct mtl_main_impl *impl) {
+static int mt_main_create(struct mtl_main_impl* impl) {
   int ret;
 
   ret = mt_flow_init(impl);
@@ -226,7 +226,7 @@ static int mt_main_create(struct mtl_main_impl *impl) {
   return 0;
 }
 
-static int mt_main_free(struct mtl_main_impl *impl) {
+static int mt_main_free(struct mtl_main_impl* impl) {
   if (impl->tsc_cal_tid) {
     pthread_join(impl->tsc_cal_tid, NULL);
     impl->tsc_cal_tid = 0;
@@ -253,15 +253,15 @@ static int mt_main_free(struct mtl_main_impl *impl) {
   return 0;
 }
 
-bool mt_sessions_time_measure(struct mtl_main_impl *impl) {
+bool mt_sessions_time_measure(struct mtl_main_impl* impl) {
   bool enabled = mt_user_tasklet_time_measure(impl);
   if (MT_USDT_SESSIONS_TIME_MEASURE_ENABLED()) enabled = true;
   return enabled;
 }
 
-static int mt_user_params_check(struct mtl_init_params *p) {
+static int mt_user_params_check(struct mtl_init_params* p) {
   int num_ports = p->num_ports, ret;
-  uint8_t *ip = NULL;
+  uint8_t* ip = NULL;
   uint8_t if_ip[MTL_IP_ADDR_LEN];
   uint8_t if_netmask[MTL_IP_ADDR_LEN];
 
@@ -273,7 +273,7 @@ static int mt_user_params_check(struct mtl_init_params *p) {
   /* info check for each port */
   for (int i = 0; i < num_ports; i++) {
     enum mtl_pmd_type pmd = p->pmd[i];
-    const char *if_name = NULL;
+    const char* if_name = NULL;
 
     /* type check */
     if (pmd >= MTL_PMD_TYPE_MAX) {
@@ -353,7 +353,7 @@ static int mt_user_params_check(struct mtl_init_params *p) {
   return 0;
 }
 
-static int _mt_start(struct mtl_main_impl *impl) {
+static int _mt_start(struct mtl_main_impl* impl) {
   int ret;
 
   if (mt_started(impl)) {
@@ -376,7 +376,7 @@ static int _mt_start(struct mtl_main_impl *impl) {
   return 0;
 }
 
-static int _mt_stop(struct mtl_main_impl *impl) {
+static int _mt_stop(struct mtl_main_impl* impl) {
   if (!mt_started(impl)) {
     dbg("%s, not started\n", __func__);
     return 0;
@@ -388,12 +388,12 @@ static int _mt_stop(struct mtl_main_impl *impl) {
   return 0;
 }
 
-mtl_handle mtl_init(struct mtl_init_params *p) {
-  struct mtl_main_impl *impl = NULL;
+mtl_handle mtl_init(struct mtl_init_params* p) {
+  struct mtl_main_impl* impl = NULL;
   int socket[MTL_PORT_MAX], ret;
   int num_ports = p->num_ports;
   struct mt_kport_info kport_info;
-  struct mt_interface *inf;
+  struct mt_interface* inf;
   enum mtl_pmd_type pmd;
 
   RTE_BUILD_BUG_ON(MTL_SESSION_PORT_MAX > (int)MTL_PORT_MAX);
@@ -452,7 +452,7 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
   if (numa_available() >= 0) numa_nodes = numa_max_node() + 1;
   if (!(p->flags & MTL_FLAG_NOT_BIND_PROCESS_NUMA) && (numa_nodes > 1)) {
     /* bind current thread and its children to socket node */
-    struct bitmask *mask = numa_bitmask_alloc(numa_nodes);
+    struct bitmask* mask = numa_bitmask_alloc(numa_nodes);
 
     info("%s, bind to socket %d, numa_nodes %d\n", __func__, socket[MTL_PORT_P],
          numa_nodes);
@@ -500,7 +500,7 @@ mtl_handle mtl_init(struct mtl_init_params *p) {
       uint8_t if_ip[MTL_IP_ADDR_LEN];
       uint8_t if_netmask[MTL_IP_ADDR_LEN];
       uint8_t if_gateway[MTL_IP_ADDR_LEN];
-      const char *if_name = kport_info.kernel_if[i];
+      const char* if_name = kport_info.kernel_if[i];
 
       ret = mt_socket_get_if_ip(if_name, if_ip, if_netmask);
       if (ret < 0) {
@@ -628,8 +628,8 @@ err_exit:
 }
 
 int mtl_uninit(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
-  struct mtl_init_params *p = mt_get_user_params(impl);
+  struct mtl_main_impl* impl = mt;
+  struct mtl_init_params* p = mt_get_user_params(impl);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -659,7 +659,7 @@ int mtl_uninit(mtl_handle mt) {
 }
 
 int mtl_start(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -670,7 +670,7 @@ int mtl_start(mtl_handle mt) {
 }
 
 int mtl_stop(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -682,8 +682,8 @@ int mtl_stop(mtl_handle mt) {
   return _mt_stop(impl);
 }
 
-int mtl_get_lcore(mtl_handle mt, unsigned int *lcore) {
-  struct mtl_main_impl *impl = mt;
+int mtl_get_lcore(mtl_handle mt, unsigned int* lcore) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -695,7 +695,7 @@ int mtl_get_lcore(mtl_handle mt, unsigned int *lcore) {
 }
 
 int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -706,7 +706,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore) {
 }
 
 int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -727,7 +727,7 @@ int mtl_bind_to_lcore(mtl_handle mt, pthread_t thread, unsigned int lcore) {
 }
 
 int mtl_abort(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -739,12 +739,12 @@ int mtl_abort(mtl_handle mt) {
   return 0;
 }
 
-void *mtl_memcpy(void *dest, const void *src, size_t n) {
+void* mtl_memcpy(void* dest, const void* src, size_t n) {
   return rte_memcpy(dest, src, n);
 }
 
-void *mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
-  struct mtl_main_impl *impl = mt;
+void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
   int num_ports = mt_num_ports(impl);
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -760,8 +760,8 @@ void *mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
   return mt_rte_malloc_socket(size, mt_socket_id(impl, port));
 }
 
-void *mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
-  struct mtl_main_impl *impl = mt;
+void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
+  struct mtl_main_impl* impl = mt;
   int num_ports = mt_num_ports(impl);
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -777,18 +777,18 @@ void *mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port) {
   return mt_rte_zmalloc_socket(size, mt_socket_id(impl, port));
 }
 
-void mtl_hp_free(mtl_handle mt, void *ptr) {
+void mtl_hp_free(mtl_handle mt, void* ptr) {
   MTL_MAY_UNUSED(mt);
   return mt_rte_free(ptr);
 }
 
-mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void *vaddr) {
+mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr) {
   MTL_MAY_UNUSED(mt);
   return rte_malloc_virt2iova(vaddr);
 }
 
 size_t mtl_page_size(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -798,8 +798,8 @@ size_t mtl_page_size(mtl_handle mt) {
   return impl->page_size;
 }
 
-mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
-  struct mtl_main_impl *impl = mt;
+mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size) {
+  struct mtl_main_impl* impl = mt;
   int ret;
   mtl_iova_t iova;
   size_t page_size = mtl_page_size(impl);
@@ -809,7 +809,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
     return MTL_BAD_IOVA;
   }
 
-  if (!rte_is_aligned((void *)vaddr, page_size)) {
+  if (!rte_is_aligned((void*)vaddr, page_size)) {
     err("%s, vaddr %p not align to page size\n", __func__, vaddr);
     return MTL_BAD_IOVA;
   }
@@ -825,7 +825,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
   }
 
   struct mt_map_item item;
-  item.vaddr = (void *)vaddr;
+  item.vaddr = (void*)vaddr;
   item.size = size;
   item.iova = MTL_BAD_IOVA; /* let map to find one suitable iova for us */
   ret = mt_map_add(impl, &item);
@@ -836,7 +836,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
     return iova;
   }
 
-  ret = rte_extmem_register((void *)vaddr, size, NULL, 0, page_size);
+  ret = rte_extmem_register((void*)vaddr, size, NULL, 0, page_size);
   if (ret < 0) {
     err("%s, fail(%d,%s) to register extmem %p\n", __func__, ret, rte_strerror(rte_errno),
         vaddr);
@@ -844,7 +844,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
   }
 
   /* only map for MTL_PORT_P now */
-  ret = rte_dev_dma_map(mt_port_device(impl, MTL_PORT_P), (void *)vaddr, iova, size);
+  ret = rte_dev_dma_map(mt_port_device(impl, MTL_PORT_P), (void*)vaddr, iova, size);
   if (ret < 0) {
     err("%s, dma map fail(%d,%s) for add(%p,%" PRIu64 ")\n", __func__, ret,
         rte_strerror(rte_errno), vaddr, size);
@@ -854,14 +854,14 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size) {
   return iova;
 
 fail_map:
-  rte_extmem_unregister((void *)vaddr, size);
+  rte_extmem_unregister((void*)vaddr, size);
 fail_extmem:
   mt_map_remove(impl, &item);
   return MTL_BAD_IOVA;
 }
 
-int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size) {
-  struct mtl_main_impl *impl = mt;
+int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size) {
+  struct mtl_main_impl* impl = mt;
   int ret;
   size_t page_size = mtl_page_size(impl);
 
@@ -870,7 +870,7 @@ int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size
     return -EIO;
   }
 
-  if (!rte_is_aligned((void *)vaddr, page_size)) {
+  if (!rte_is_aligned((void*)vaddr, page_size)) {
     err("%s, vaddr %p not align to page size\n", __func__, vaddr);
     return -EINVAL;
   }
@@ -886,7 +886,7 @@ int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size
   }
 
   struct mt_map_item item;
-  item.vaddr = (void *)vaddr;
+  item.vaddr = (void*)vaddr;
   item.size = size;
   item.iova = iova;
   ret = mt_map_remove(impl, &item);
@@ -897,20 +897,20 @@ int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size
   }
 
   /* only unmap for MTL_PORT_P now */
-  ret = rte_dev_dma_unmap(mt_port_device(impl, MTL_PORT_P), (void *)vaddr, iova, size);
+  ret = rte_dev_dma_unmap(mt_port_device(impl, MTL_PORT_P), (void*)vaddr, iova, size);
   if (ret < 0) {
     err("%s, dma unmap fail(%d,%s) for add(%p,%" PRIu64 ")\n", __func__, ret,
         rte_strerror(rte_errno), vaddr, size);
   }
 
-  rte_extmem_unregister((void *)vaddr, size);
+  rte_extmem_unregister((void*)vaddr, size);
 
   return 0;
 }
 
 mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
-  struct mtl_main_impl *impl = mt;
-  struct mtl_dma_mem *mem;
+  struct mtl_main_impl* impl = mt;
+  struct mtl_dma_mem* mem;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -926,14 +926,14 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
   size_t page_size = mtl_page_size(impl);
   size_t iova_size = mtl_size_page_align(size, page_size);
   size_t alloc_size = iova_size + page_size;
-  void *alloc_addr = mt_zmalloc(alloc_size);
+  void* alloc_addr = mt_zmalloc(alloc_size);
   if (!alloc_addr) {
     err("%s, dma mem alloc fail\n", __func__);
     mt_rte_free(mem);
     return NULL;
   }
 
-  void *addr = (void *)MTL_ALIGN((uint64_t)alloc_addr, page_size);
+  void* addr = (void*)MTL_ALIGN((uint64_t)alloc_addr, page_size);
   mtl_iova_t iova = mtl_dma_map(impl, addr, iova_size);
   if (iova == MTL_BAD_IOVA) {
     err("%s, dma mem %p map fail\n", __func__, addr);
@@ -954,25 +954,25 @@ mtl_dma_mem_handle mtl_dma_mem_alloc(mtl_handle mt, size_t size) {
 }
 
 void mtl_dma_mem_free(mtl_handle mt, mtl_dma_mem_handle handle) {
-  struct mtl_dma_mem *mem = handle;
+  struct mtl_dma_mem* mem = handle;
   mtl_dma_unmap(mt, mem->addr, mem->iova, mem->iova_size);
   mt_free(mem->alloc_addr);
   mt_rte_free(mem);
 }
 
-void *mtl_dma_mem_addr(mtl_dma_mem_handle handle) {
-  struct mtl_dma_mem *mem = handle;
+void* mtl_dma_mem_addr(mtl_dma_mem_handle handle) {
+  struct mtl_dma_mem* mem = handle;
 
   return mem->addr;
 }
 
 mtl_iova_t mtl_dma_mem_iova(mtl_dma_mem_handle handle) {
-  struct mtl_dma_mem *mem = handle;
+  struct mtl_dma_mem* mem = handle;
 
   return mem->iova;
 }
 
-const char *mtl_version(void) {
+const char* mtl_version(void) {
   static char version[128];
   if (version[0] != 0) return version;
 
@@ -983,8 +983,8 @@ const char *mtl_version(void) {
   return version;
 }
 
-int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info *info) {
-  struct mtl_main_impl *impl = mt;
+int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -998,9 +998,9 @@ int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info *info) {
   return 0;
 }
 
-int mtl_get_var_info(mtl_handle mt, struct mtl_var_info *info) {
-  struct mtl_main_impl *impl = mt;
-  struct mt_dma_mgr *mgr = mt_get_dma_mgr(impl);
+int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info) {
+  struct mtl_main_impl* impl = mt;
+  struct mt_dma_mgr* mgr = mt_get_dma_mgr(impl);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1016,8 +1016,8 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info *info) {
   return 0;
 }
 
-int st_get_var_info(mtl_handle mt, struct st_var_info *info) {
-  struct mtl_main_impl *impl = mt;
+int st_get_var_info(mtl_handle mt, struct st_var_info* info) {
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1040,7 +1040,7 @@ int st_get_var_info(mtl_handle mt, struct st_var_info *info) {
 }
 
 int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (sch_idx > MT_MAX_SCH_NUM) {
     err("%s, invalid sch_idx %d\n", __func__, sch_idx);
@@ -1051,7 +1051,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
     return -EIO;
   }
 
-  struct mtl_sch_impl *sch = mt_sch_instance(impl, sch_idx);
+  struct mtl_sch_impl* sch = mt_sch_instance(impl, sch_idx);
   if (!sch) {
     err("%s(%d), sch instance null\n", __func__, sch_idx);
     return -EIO;
@@ -1067,7 +1067,7 @@ int mtl_sch_enable_sleep(mtl_handle mt, int sch_idx, bool enable) {
 }
 
 int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1080,7 +1080,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us) {
 }
 
 uint64_t mtl_ptp_read_time(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
   enum mtl_port port = MTL_PORT_P;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -1105,7 +1105,7 @@ uint64_t mtl_ptp_read_time(mtl_handle mt) {
 }
 
 uint64_t mtl_ptp_read_time_raw(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
   enum mtl_port port = MTL_PORT_P;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -1117,7 +1117,7 @@ uint64_t mtl_ptp_read_time_raw(mtl_handle mt) {
 }
 
 mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port port) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
   struct mt_dma_request_req req;
 
   if (impl->type != MT_HANDLE_MAIN) {
@@ -1136,14 +1136,14 @@ mtl_udma_handle mtl_udma_create(mtl_handle mt, uint16_t nb_desc, enum mtl_port p
   req.socket_id = mt_socket_id(impl, port);
   req.priv = impl;
   req.drop_mbuf_cb = NULL;
-  struct mtl_dma_lender_dev *dev = mt_dma_request_dev(impl, &req);
+  struct mtl_dma_lender_dev* dev = mt_dma_request_dev(impl, &req);
   if (dev) dev->type = MT_HANDLE_UDMA;
   return dev;
 }
 
 int mtl_udma_free(mtl_udma_handle handle) {
-  struct mtl_dma_lender_dev *dev = handle;
-  struct mtl_main_impl *impl = dev->priv;
+  struct mtl_dma_lender_dev* dev = handle;
+  struct mtl_main_impl* impl = dev->priv;
 
   if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
@@ -1155,7 +1155,7 @@ int mtl_udma_free(mtl_udma_handle handle) {
 
 int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
                   uint32_t length) {
-  struct mtl_dma_lender_dev *dev = handle;
+  struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
@@ -1167,7 +1167,7 @@ int mtl_udma_copy(mtl_udma_handle handle, mtl_iova_t dst, mtl_iova_t src,
 
 int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
                   uint32_t length) {
-  struct mtl_dma_lender_dev *dev = handle;
+  struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
@@ -1178,7 +1178,7 @@ int mtl_udma_fill(mtl_udma_handle handle, mtl_iova_t dst, uint64_t pattern,
 }
 
 int mtl_udma_submit(mtl_udma_handle handle) {
-  struct mtl_dma_lender_dev *dev = handle;
+  struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
@@ -1189,7 +1189,7 @@ int mtl_udma_submit(mtl_udma_handle handle) {
 }
 
 uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
-  struct mtl_dma_lender_dev *dev = handle;
+  struct mtl_dma_lender_dev* dev = handle;
 
   if (dev->type != MT_HANDLE_UDMA) {
     err("%s, invalid type %d\n", __func__, dev->type);
@@ -1200,7 +1200,7 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
 }
 
 enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1211,7 +1211,7 @@ enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
 }
 
 enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1231,7 +1231,7 @@ enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
 
 int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_LEN],
                      uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1257,14 +1257,14 @@ enum mtl_simd_level mtl_get_simd_level(void) {
   return MTL_SIMD_LEVEL_NONE;
 }
 
-static const char *mt_simd_level_names[MTL_SIMD_LEVEL_MAX] = {
+static const char* mt_simd_level_names[MTL_SIMD_LEVEL_MAX] = {
     "none",
     "avx2",
     "avx512",
     "avx512_vbmi",
 };
 
-const char *mtl_get_simd_level_name(enum mtl_simd_level level) {
+const char* mtl_get_simd_level_name(enum mtl_simd_level level) {
   if (level >= MTL_SIMD_LEVEL_MAX) {
     err("%s, invalid level %d\n", __func__, level);
     return "unknown";
@@ -1274,7 +1274,7 @@ const char *mtl_get_simd_level_name(enum mtl_simd_level level) {
 }
 
 bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1287,7 +1287,7 @@ bool mtl_pmd_is_dpdk_based(mtl_handle mt, enum mtl_port port) {
   return mt_drv_dpdk_based(impl, port);
 }
 
-int mtl_thread_setname(pthread_t tid, const char *name) {
+int mtl_thread_setname(pthread_t tid, const char* name) {
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 11, 0, 0)
   rte_thread_t thread_id = {.opaque_id = tid};
   rte_thread_set_name(thread_id, name);
@@ -1309,37 +1309,37 @@ void mtl_delay_us(unsigned int us) {
   return mt_delay_us(us);
 }
 
-int mtl_para_sip_set(struct mtl_init_params *p, enum mtl_port port, char *ip) {
+int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip) {
   int ret = inet_pton(AF_INET, ip, p->sip_addr[port]);
   if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, ip);
   return -EIO;
 }
 
-int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port, char *gateway) {
+int mtl_para_gateway_set(struct mtl_init_params* p, enum mtl_port port, char* gateway) {
   int ret = inet_pton(AF_INET, gateway, p->gateway[port]);
   if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, gateway);
   return -EIO;
 }
 
-int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port, char *netmask) {
+int mtl_para_netmask_set(struct mtl_init_params* p, enum mtl_port port, char* netmask) {
   int ret = inet_pton(AF_INET, netmask, p->netmask[port]);
   if (ret == 1) return 0;
   err("%s, fail to inet_pton for %s\n", __func__, netmask);
   return -EIO;
 }
 
-int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port, char *name) {
+int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name) {
   return snprintf(p->port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
-int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port, char *name) {
+int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name) {
   return snprintf(p->dma_dev_port[port], MTL_PORT_MAX_LEN, "%s", name);
 }
 
 int mtl_get_numa_id(mtl_handle mt, enum mtl_port port) {
-  struct mtl_main_impl *impl = mt;
+  struct mtl_main_impl* impl = mt;
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1350,6 +1350,6 @@ int mtl_get_numa_id(mtl_handle mt, enum mtl_port port) {
     return -EIO;
   }
 
-  struct mt_interface *inf = mt_if(impl, port);
+  struct mt_interface* inf = mt_if(impl, port);
   return inf->socket_id;
 }

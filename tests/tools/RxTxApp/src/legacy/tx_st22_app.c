@@ -4,12 +4,12 @@
 
 #include "tx_st22_app.h"
 
-static int app_tx_st22_next_frame(void *priv, uint16_t *next_frame_idx,
-                                  struct st22_tx_frame_meta *meta) {
-  struct st22_app_tx_session *s = priv;
+static int app_tx_st22_next_frame(void* priv, uint16_t* next_frame_idx,
+                                  struct st22_tx_frame_meta* meta) {
+  struct st22_app_tx_session* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
-  struct st_tx_frame *framebuff = &s->framebuffs[consumer_idx];
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -34,11 +34,11 @@ static int app_tx_st22_next_frame(void *priv, uint16_t *next_frame_idx,
   return ret;
 }
 
-static int app_tx_st22_frame_done(void *priv, uint16_t frame_idx,
-                                  struct st22_tx_frame_meta *meta) {
-  struct st22_app_tx_session *s = priv;
+static int app_tx_st22_frame_done(void* priv, uint16_t frame_idx,
+                                  struct st22_tx_frame_meta* meta) {
+  struct st22_app_tx_session* s = priv;
   int ret;
-  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -58,10 +58,10 @@ static int app_tx_st22_frame_done(void *priv, uint16_t frame_idx,
   return ret;
 }
 
-static void app_tx_st22_build_frame(struct st22_app_tx_session *s, void *codestream_addr,
-                                    size_t max_codestream_size, size_t *codestream_size) {
-  uint8_t *src = s->st22_frame_cursor;
-  uint8_t *dst = codestream_addr;
+static void app_tx_st22_build_frame(struct st22_app_tx_session* s, void* codestream_addr,
+                                    size_t max_codestream_size, size_t* codestream_size) {
+  uint8_t* src = s->st22_frame_cursor;
+  uint8_t* dst = codestream_addr;
   int framesize = s->bytes_per_frame;
   MTL_MAY_UNUSED(max_codestream_size);
 
@@ -77,11 +77,11 @@ static void app_tx_st22_build_frame(struct st22_app_tx_session *s, void *codestr
   *codestream_size = framesize;
 }
 
-static void *app_tx_st22_frame_thread(void *arg) {
-  struct st22_app_tx_session *s = arg;
+static void* app_tx_st22_frame_thread(void* arg) {
+  struct st22_app_tx_session* s = arg;
   int idx = s->idx;
   uint16_t producer_idx;
-  struct st_tx_frame *framebuff;
+  struct st_tx_frame* framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st22_app_thread_stop) {
@@ -96,7 +96,7 @@ static void *app_tx_st22_frame_thread(void *arg) {
     }
     st_pthread_mutex_unlock(&s->wake_mutex);
 
-    void *frame_addr = st22_tx_get_fb_addr(s->handle, producer_idx);
+    void* frame_addr = st22_tx_get_fb_addr(s->handle, producer_idx);
     size_t max_framesize = s->bytes_per_frame;
     size_t codestream_size = s->bytes_per_frame;
     app_tx_st22_build_frame(s, frame_addr, max_framesize, &codestream_size);
@@ -115,7 +115,7 @@ static void *app_tx_st22_frame_thread(void *arg) {
   return NULL;
 }
 
-static void app_tx_st22_stop_source(struct st22_app_tx_session *s) {
+static void app_tx_st22_stop_source(struct st22_app_tx_session* s) {
   s->st22_app_thread_stop = true;
   /* wake up the thread */
   st_pthread_mutex_lock(&s->wake_mutex);
@@ -127,7 +127,7 @@ static void app_tx_st22_stop_source(struct st22_app_tx_session *s) {
   }
 }
 
-static int app_tx_st22_start_source(struct st22_app_tx_session *s) {
+static int app_tx_st22_start_source(struct st22_app_tx_session* s) {
   int ret = -EINVAL;
   int idx = s->idx;
 
@@ -145,7 +145,7 @@ static int app_tx_st22_start_source(struct st22_app_tx_session *s) {
   return 0;
 }
 
-static int app_tx_st22_close_source(struct st22_app_tx_session *s) {
+static int app_tx_st22_close_source(struct st22_app_tx_session* s) {
   if (s->st22_source_fd >= 0) {
     munmap(s->st22_source_begin, s->st22_source_end - s->st22_source_begin);
     close(s->st22_source_fd);
@@ -155,7 +155,7 @@ static int app_tx_st22_close_source(struct st22_app_tx_session *s) {
   return 0;
 }
 
-static int app_tx_st22_open_source(struct st22_app_tx_session *s) {
+static int app_tx_st22_open_source(struct st22_app_tx_session* s) {
   int fd;
   struct stat i;
 
@@ -177,7 +177,7 @@ static int app_tx_st22_open_source(struct st22_app_tx_session *s) {
     return -EIO;
   }
 
-  uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s, mmap %s fail\n", __func__, s->st22_source_url);
     close(fd);
@@ -192,7 +192,7 @@ static int app_tx_st22_open_source(struct st22_app_tx_session *s) {
   return 0;
 }
 
-static int app_tx_st22_handle_free(struct st22_app_tx_session *s) {
+static int app_tx_st22_handle_free(struct st22_app_tx_session* s) {
   int ret;
   int idx = s->idx;
 
@@ -205,7 +205,7 @@ static int app_tx_st22_handle_free(struct st22_app_tx_session *s) {
   return 0;
 }
 
-static int app_tx_st22_uinit(struct st22_app_tx_session *s) {
+static int app_tx_st22_uinit(struct st22_app_tx_session* s) {
   app_tx_st22_stop_source(s);
   app_tx_st22_handle_free(s);
   app_tx_st22_close_source(s);
@@ -221,7 +221,7 @@ static int app_tx_st22_uinit(struct st22_app_tx_session *s) {
   return 0;
 }
 
-static int app_tx_st22_init(struct st_app_context *ctx, struct st22_app_tx_session *s,
+static int app_tx_st22_init(struct st_app_context* ctx, struct st22_app_tx_session* s,
                             int bpp) {
   int idx = s->idx, ret;
   struct st22_tx_ops ops;
@@ -279,7 +279,7 @@ static int app_tx_st22_init(struct st_app_context *ctx, struct st22_app_tx_sessi
   s->framebuff_producer_idx = 0;
   s->framebuff_consumer_idx = 0;
   s->framebuffs =
-      (struct st_tx_frame *)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+      (struct st_tx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) return -ENOMEM;
   for (uint16_t j = 0; j < s->framebuff_cnt; j++) {
     s->framebuffs[j].stat = ST_TX_FRAME_FREE;
@@ -315,10 +315,10 @@ static int app_tx_st22_init(struct st_app_context *ctx, struct st22_app_tx_sessi
   return 0;
 }
 
-int st22_app_tx_sessions_init(struct st_app_context *ctx) {
+int st22_app_tx_sessions_init(struct st_app_context* ctx) {
   int ret, i;
-  struct st22_app_tx_session *s;
-  ctx->tx_st22_sessions = (struct st22_app_tx_session *)st_app_zmalloc(
+  struct st22_app_tx_session* s;
+  ctx->tx_st22_sessions = (struct st22_app_tx_session*)st_app_zmalloc(
       sizeof(struct st22_app_tx_session) * ctx->tx_st22_session_cnt);
   if (!ctx->tx_st22_sessions) return -ENOMEM;
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
@@ -334,8 +334,8 @@ int st22_app_tx_sessions_init(struct st_app_context *ctx) {
   return 0;
 }
 
-int st22_app_tx_sessions_stop(struct st_app_context *ctx) {
-  struct st22_app_tx_session *s;
+int st22_app_tx_sessions_stop(struct st_app_context* ctx) {
+  struct st22_app_tx_session* s;
   if (!ctx->tx_st22_sessions) return 0;
   for (int i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];
@@ -345,9 +345,9 @@ int st22_app_tx_sessions_stop(struct st_app_context *ctx) {
   return 0;
 }
 
-int st22_app_tx_sessions_uinit(struct st_app_context *ctx) {
+int st22_app_tx_sessions_uinit(struct st_app_context* ctx) {
   int i;
-  struct st22_app_tx_session *s;
+  struct st22_app_tx_session* s;
   if (!ctx->tx_st22_sessions) return 0;
   for (i = 0; i < ctx->tx_st22_session_cnt; i++) {
     s = &ctx->tx_st22_sessions[i];

@@ -72,7 +72,7 @@ struct _Gst_Mtl_St40_Rx {
   guint timeout_mbuf_get_seconds;
   guint16 mbuff_size;
   guint16 udw_size;
-  char *anc_data;
+  char* anc_data;
 };
 
 G_END_DECLS

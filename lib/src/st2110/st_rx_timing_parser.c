@@ -10,10 +10,10 @@ static inline float rv_tp_calculate_avg(uint32_t cnt, int64_t sum) {
   return cnt ? ((float)sum / cnt) : -1.0f;
 }
 
-void rv_tp_on_packet(struct st_rx_video_session_impl *s, enum mtl_session_port s_port,
-                     struct st_rv_tp_slot *slot, uint32_t rtp_tmstamp, uint64_t pkt_time,
+void rv_tp_on_packet(struct st_rx_video_session_impl* s, enum mtl_session_port s_port,
+                     struct st_rv_tp_slot* slot, uint32_t rtp_tmstamp, uint64_t pkt_time,
                      int pkt_idx) {
-  struct st_rx_video_tp *tp = s->tp;
+  struct st_rx_video_tp* tp = s->tp;
   uint64_t epoch_tmstamp;
   double tvd, trs = tp->trs;
 
@@ -69,12 +69,12 @@ void rv_tp_on_packet(struct st_rx_video_session_impl *s, enum mtl_session_port s
   slot->meta.pkts_cnt++;
 }
 
-static void rv_tp_compliant_set_cause(struct st20_rx_tp_meta *meta, char *cause) {
+static void rv_tp_compliant_set_cause(struct st20_rx_tp_meta* meta, char* cause) {
   snprintf(meta->failed_cause, sizeof(meta->failed_cause), "%s", cause);
 }
 
-static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp *tp,
-                                               struct st_rv_tp_slot *slot) {
+static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp* tp,
+                                               struct st_rv_tp_slot* slot) {
   /* fpt check */
   if (slot->meta.fpt > tp->pass.tr_offset) {
     rv_tp_compliant_set_cause(&slot->meta, "fpt exceed tr_offset");
@@ -137,9 +137,9 @@ static enum st_rx_tp_compliant rv_tp_compliant(struct st_rx_video_tp *tp,
   return ST_RX_TP_COMPLIANT_NARROW;
 }
 
-void rv_tp_slot_parse_result(struct st_rx_video_session_impl *s,
-                             enum mtl_session_port s_port, struct st_rv_tp_slot *slot) {
-  struct st_rx_video_tp *tp = s->tp;
+void rv_tp_slot_parse_result(struct st_rx_video_session_impl* s,
+                             enum mtl_session_port s_port, struct st_rv_tp_slot* slot) {
+  struct st_rx_video_tp* tp = s->tp;
   float cinst_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->cinst_sum);
   float vrx_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->vrx_sum);
   float ipt_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->ipt_sum);
@@ -161,8 +161,8 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl *s,
   if (!s->enable_timing_parser_stat) return;
 
   /* update stat */
-  struct st_rv_tp_stat *stat = &tp->stat[s_port];
-  struct st_rv_tp_slot *stat_slot = &stat->slot;
+  struct st_rv_tp_stat* stat = &tp->stat[s_port];
+  struct st_rv_tp_slot* stat_slot = &stat->slot;
 
   stat->stat_compliant_result[compliant]++;
 
@@ -196,11 +196,11 @@ void rv_tp_slot_parse_result(struct st_rx_video_session_impl *s,
   stat->stat_frame_cnt++;
 }
 
-static void rv_tp_stat_init(struct st_rx_video_session_impl *s,
-                            struct st_rx_video_tp *tp) {
+static void rv_tp_stat_init(struct st_rx_video_session_impl* s,
+                            struct st_rx_video_tp* tp) {
   MTL_MAY_UNUSED(s);
   for (int s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
-    struct st_rv_tp_stat *stat = &tp->stat[s_port];
+    struct st_rv_tp_stat* stat = &tp->stat[s_port];
 
     memset(stat, 0, sizeof(*stat));
     rv_tp_slot_init(&stat->slot);
@@ -215,14 +215,14 @@ static void rv_tp_stat_init(struct st_rx_video_session_impl *s,
   }
 }
 
-void rv_tp_stat(struct st_rx_video_session_impl *s) {
+void rv_tp_stat(struct st_rx_video_session_impl* s) {
   int idx = s->idx;
-  struct st_rx_video_tp *tp = s->tp;
+  struct st_rx_video_tp* tp = s->tp;
   if (!tp) return;
 
   for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
-    struct st_rv_tp_stat *stat = &tp->stat[s_port];
-    struct st_rv_tp_slot *stat_slot = &stat->slot;
+    struct st_rv_tp_stat* stat = &tp->stat[s_port];
+    struct st_rv_tp_slot* stat_slot = &stat->slot;
 
     info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, s_port,
          stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
@@ -256,7 +256,7 @@ void rv_tp_stat(struct st_rx_video_session_impl *s) {
   rv_tp_stat_init(s, tp);
 }
 
-void rv_tp_slot_init(struct st_rv_tp_slot *slot) {
+void rv_tp_slot_init(struct st_rv_tp_slot* slot) {
   memset(slot, 0, sizeof(*slot));
 
   slot->meta.cinst_max = INT_MIN;
@@ -267,7 +267,7 @@ void rv_tp_slot_init(struct st_rv_tp_slot *slot) {
   slot->meta.ipt_min = INT_MAX;
 }
 
-int rv_tp_uinit(struct st_rx_video_session_impl *s) {
+int rv_tp_uinit(struct st_rx_video_session_impl* s) {
   if (s->tp) {
     mt_rte_free(s->tp);
     s->tp = NULL;
@@ -276,12 +276,12 @@ int rv_tp_uinit(struct st_rx_video_session_impl *s) {
   return 0;
 }
 
-int rv_tp_init(struct mtl_main_impl *impl, struct st_rx_video_session_impl *s) {
+int rv_tp_init(struct mtl_main_impl* impl, struct st_rx_video_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   int soc_id = mt_socket_id(impl, port);
   int idx = s->idx, ret;
-  struct st_rx_video_tp *tp;
-  struct st20_rx_ops *ops = &s->ops;
+  struct st_rx_video_tp* tp;
+  struct st20_rx_ops* ops = &s->ops;
   double frame_time = s->frame_time;
   double frame_time_s;
   struct st_fps_timing fps_tm;
@@ -353,9 +353,9 @@ int rv_tp_init(struct mtl_main_impl *impl, struct st_rx_video_session_impl *s) {
   return 0;
 }
 
-static void ra_tp_stat_init(struct st_rx_audio_tp *tp) {
+static void ra_tp_stat_init(struct st_rx_audio_tp* tp) {
   for (int s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
-    struct st_ra_tp_stat *stat = &tp->stat[s_port];
+    struct st_ra_tp_stat* stat = &tp->stat[s_port];
 
     memset(stat, 0, sizeof(*stat));
     ra_tp_slot_init(&stat->slot);
@@ -364,12 +364,12 @@ static void ra_tp_stat_init(struct st_rx_audio_tp *tp) {
   }
 }
 
-static void ra_tp_compliant_set_cause(struct st30_rx_tp_meta *meta, char *cause) {
+static void ra_tp_compliant_set_cause(struct st30_rx_tp_meta* meta, char* cause) {
   snprintf(meta->failed_cause, sizeof(meta->failed_cause), "%s", cause);
 }
 
-static enum st_rx_tp_compliant ra_tp_slot_compliant(struct st_rx_audio_tp *tp,
-                                                    struct st_ra_tp_slot *slot,
+static enum st_rx_tp_compliant ra_tp_slot_compliant(struct st_rx_audio_tp* tp,
+                                                    struct st_ra_tp_slot* slot,
                                                     int32_t tsdf) {
   /* dpvr and tsdf check */
   if (slot->meta.dpvr_min < 0) {
@@ -400,10 +400,10 @@ static enum st_rx_tp_compliant ra_tp_slot_compliant(struct st_rx_audio_tp *tp,
   return ST_RX_TP_COMPLIANT_NARROW;
 }
 
-void ra_tp_slot_parse_result(struct st_rx_audio_session_impl *s,
+void ra_tp_slot_parse_result(struct st_rx_audio_session_impl* s,
                              enum mtl_session_port s_port) {
-  struct st_rx_audio_tp *tp = s->tp;
-  struct st_ra_tp_slot *slot = &s->tp->slot[s_port];
+  struct st_rx_audio_tp* tp = s->tp;
+  struct st_ra_tp_slot* slot = &s->tp->slot[s_port];
   dbg("%s(%d,%d), start\n", __func__, s->idx, s_port);
 
   slot->meta.ipt_avg = rv_tp_calculate_avg(slot->meta.pkts_cnt, slot->ipt_sum);
@@ -419,8 +419,8 @@ void ra_tp_slot_parse_result(struct st_rx_audio_session_impl *s,
   slot->meta.compliant = compliant;
 
   /* update stat */
-  struct st_ra_tp_stat *stat = &tp->stat[s_port];
-  struct st_ra_tp_slot *stat_slot = &stat->slot;
+  struct st_ra_tp_stat* stat = &tp->stat[s_port];
+  struct st_ra_tp_slot* stat_slot = &stat->slot;
 
   stat->stat_compliant_result[compliant]++;
   stat->tsdf_min = RTE_MIN(stat->tsdf_min, tsdf);
@@ -441,10 +441,10 @@ void ra_tp_slot_parse_result(struct st_rx_audio_session_impl *s,
   stat_slot->meta.pkts_cnt += slot->meta.pkts_cnt;
 }
 
-void ra_tp_on_packet(struct st_rx_audio_session_impl *s, enum mtl_session_port s_port,
+void ra_tp_on_packet(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
                      uint32_t rtp_tmstamp, uint64_t pkt_time) {
-  struct st_rx_audio_tp *tp = s->tp;
-  struct st_ra_tp_slot *slot = &tp->slot[s_port];
+  struct st_rx_audio_tp* tp = s->tp;
+  struct st_ra_tp_slot* slot = &tp->slot[s_port];
 
   uint64_t epoch = (double)pkt_time / tp->pkt_time;
   uint64_t epoch_ns = (double)epoch * tp->pkt_time;
@@ -475,12 +475,12 @@ void ra_tp_on_packet(struct st_rx_audio_session_impl *s, enum mtl_session_port s
   tp->prev_pkt_time[s_port] = pkt_time;
 }
 
-int ra_tp_init(struct mtl_main_impl *impl, struct st_rx_audio_session_impl *s) {
+int ra_tp_init(struct mtl_main_impl* impl, struct st_rx_audio_session_impl* s) {
   enum mtl_port port = mt_port_logic2phy(s->port_maps, MTL_SESSION_PORT_P);
   int soc_id = mt_socket_id(impl, port);
   int idx = s->idx;
-  struct st_rx_audio_tp *tp;
-  struct st30_rx_ops *ops = &s->ops;
+  struct st_rx_audio_tp* tp;
+  struct st30_rx_ops* ops = &s->ops;
 
   tp = mt_rte_zmalloc_socket(sizeof(*tp), soc_id);
   if (!tp) {
@@ -510,7 +510,7 @@ int ra_tp_init(struct mtl_main_impl *impl, struct st_rx_audio_session_impl *s) {
   return 0;
 }
 
-int ra_tp_uinit(struct st_rx_audio_session_impl *s) {
+int ra_tp_uinit(struct st_rx_audio_session_impl* s) {
   if (s->tp) {
     mt_rte_free(s->tp);
     s->tp = NULL;
@@ -519,14 +519,14 @@ int ra_tp_uinit(struct st_rx_audio_session_impl *s) {
   return 0;
 }
 
-void ra_tp_stat(struct st_rx_audio_session_impl *s) {
+void ra_tp_stat(struct st_rx_audio_session_impl* s) {
   int idx = s->idx;
-  struct st_rx_audio_tp *tp = s->tp;
+  struct st_rx_audio_tp* tp = s->tp;
   if (!tp) return;
 
   for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
-    struct st_ra_tp_stat *stat = &tp->stat[s_port];
-    struct st_ra_tp_slot *stat_slot = &stat->slot;
+    struct st_ra_tp_stat* stat = &tp->stat[s_port];
+    struct st_ra_tp_slot* stat_slot = &stat->slot;
 
     info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, s_port,
          stat->stat_compliant_result[ST_RX_TP_COMPLIANT_NARROW],
@@ -555,7 +555,7 @@ void ra_tp_stat(struct st_rx_audio_session_impl *s) {
   ra_tp_stat_init(tp);
 }
 
-void ra_tp_slot_init(struct st_ra_tp_slot *slot) {
+void ra_tp_slot_init(struct st_ra_tp_slot* slot) {
   memset(slot, 0, sizeof(*slot));
 
   slot->meta.dpvr_max = INT_MIN;

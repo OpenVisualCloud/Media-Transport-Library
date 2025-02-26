@@ -15,17 +15,17 @@
 #include "../log.h"
 #include "../plugin_platform.h"
 
-static int avcodec_encode_frame(struct st22_avcodec_encoder_session *s,
-                                struct st22_encode_frame_meta *frame) {
+static int avcodec_encode_frame(struct st22_avcodec_encoder_session* s,
+                                struct st22_encode_frame_meta* frame) {
   int idx = s->idx;
-  AVFrame *f = s->codec_frame;
-  AVPacket *p = s->codec_pkt;
-  AVCodecContext *ctx = s->codec_ctx;
+  AVFrame* f = s->codec_frame;
+  AVPacket* p = s->codec_pkt;
+  AVCodecContext* ctx = s->codec_ctx;
   size_t data_size = 0;
   int ret;
   bool measure_time = false;
   uint64_t start_time = 0, end_time = 0;
-  struct st_frame *src = frame->src;
+  struct st_frame* src = frame->src;
   int f_idx = s->frame_cnt;
 
   if (measure_time) {
@@ -81,10 +81,10 @@ static int avcodec_encode_frame(struct st22_avcodec_encoder_session *s,
   return data_size > 0 ? 0 : -EIO;
 }
 
-static void *avcodec_encode_thread(void *arg) {
-  struct st22_avcodec_encoder_session *s = arg;
+static void* avcodec_encode_thread(void* arg) {
+  struct st22_avcodec_encoder_session* s = arg;
   st22p_encode_session session_p = s->session_p;
-  struct st22_encode_frame_meta *frame;
+  struct st22_encode_frame_meta* frame;
   int result;
 
   info("%s(%d), start\n", __func__, s->idx);
@@ -102,7 +102,7 @@ static void *avcodec_encode_thread(void *arg) {
   return NULL;
 }
 
-static int avcodec_encoder_uinit_session(struct st22_avcodec_encoder_session *session) {
+static int avcodec_encoder_uinit_session(struct st22_avcodec_encoder_session* session) {
   int idx = session->idx;
 
   if (session->encode_thread) {
@@ -131,8 +131,8 @@ static int avcodec_encoder_uinit_session(struct st22_avcodec_encoder_session *se
   return 0;
 }
 
-static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session *session,
-                                        struct st22_encoder_create_req *req) {
+static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session* session,
+                                        struct st22_encoder_create_req* req) {
   int idx = session->idx;
   int ret;
 
@@ -148,13 +148,13 @@ static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session *ses
     err("%s(%d), invalid codec stream fmt %d\n", __func__, idx, req->output_fmt);
     return -EIO;
   }
-  const AVCodec *codec = avcodec_find_encoder(codec_id);
+  const AVCodec* codec = avcodec_find_encoder(codec_id);
   if (!codec) {
     err("%s(%d), codec %d create fail\n", __func__, idx, codec_id);
     avcodec_encoder_uinit_session(session);
     return -EIO;
   }
-  AVCodecContext *c = avcodec_alloc_context3(codec);
+  AVCodecContext* c = avcodec_alloc_context3(codec);
   if (!c) {
     err("%s(%d), codec ctx create fail\n", __func__, idx);
     avcodec_encoder_uinit_session(session);
@@ -195,7 +195,7 @@ static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session *ses
     return ret;
   }
 
-  AVFrame *f = av_frame_alloc();
+  AVFrame* f = av_frame_alloc();
   if (!f) {
     err("%s(%d), frame alloc fail\n", __func__, idx);
     avcodec_encoder_uinit_session(session);
@@ -212,7 +212,7 @@ static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session *ses
     return -EIO;
   }
 
-  AVPacket *p = av_packet_alloc();
+  AVPacket* p = av_packet_alloc();
   if (!p) {
     err("%s(%d), pkt alloc fail\n", __func__, idx);
     avcodec_encoder_uinit_session(session);
@@ -231,9 +231,9 @@ static int avcodec_encoder_init_session(struct st22_avcodec_encoder_session *ses
 }
 
 static st22_encode_priv avcodec_encoder_create_session(
-    void *priv, st22p_encode_session session_p, struct st22_encoder_create_req *req) {
-  struct st22_avcodec_plugin_ctx *ctx = priv;
-  struct st22_avcodec_encoder_session *session = NULL;
+    void* priv, st22p_encode_session session_p, struct st22_encoder_create_req* req) {
+  struct st22_avcodec_plugin_ctx* ctx = priv;
+  struct st22_avcodec_encoder_session* session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_ST22_AVCODEC_ENCODER_SESSIONS; i++) {
@@ -263,9 +263,9 @@ static st22_encode_priv avcodec_encoder_create_session(
   return NULL;
 }
 
-static int avcodec_encoder_free_session(void *priv, st22_encode_priv session) {
-  struct st22_avcodec_plugin_ctx *ctx = priv;
-  struct st22_avcodec_encoder_session *encoder_session = session;
+static int avcodec_encoder_free_session(void* priv, st22_encode_priv session) {
+  struct st22_avcodec_plugin_ctx* ctx = priv;
+  struct st22_avcodec_encoder_session* encoder_session = session;
   int idx = encoder_session->idx;
 
   info("%s(%d), total %d encode frames\n", __func__, idx, encoder_session->frame_cnt);
@@ -276,16 +276,16 @@ static int avcodec_encoder_free_session(void *priv, st22_encode_priv session) {
   return 0;
 }
 
-static int avcodec_decode_frame(struct st22_avcodec_decoder_session *s,
-                                struct st22_decode_frame_meta *frame) {
+static int avcodec_decode_frame(struct st22_avcodec_decoder_session* s,
+                                struct st22_decode_frame_meta* frame) {
   int idx = s->idx;
   int f_idx = s->frame_cnt;
-  AVCodecContext *ctx = s->codec_ctx;
-  AVFrame *f = s->codec_frame;
-  AVPacket *p = s->codec_pkt;
+  AVCodecContext* ctx = s->codec_ctx;
+  AVFrame* f = s->codec_frame;
+  AVPacket* p = s->codec_pkt;
   int ret;
   size_t src_size = frame->src->data_size;
-  struct st_frame *dst = frame->dst;
+  struct st_frame* dst = frame->dst;
   size_t frame_size = 0;
 
   av_packet_unref(p);
@@ -323,10 +323,10 @@ static int avcodec_decode_frame(struct st22_avcodec_decoder_session *s,
   return frame_size > 0 ? 0 : -EIO;
 }
 
-static void *avcodec_decode_thread(void *arg) {
-  struct st22_avcodec_decoder_session *s = arg;
+static void* avcodec_decode_thread(void* arg) {
+  struct st22_avcodec_decoder_session* s = arg;
   st22p_decode_session session_p = s->session_p;
-  struct st22_decode_frame_meta *frame;
+  struct st22_decode_frame_meta* frame;
   int result;
 
   info("%s(%d), start\n", __func__, s->idx);
@@ -344,7 +344,7 @@ static void *avcodec_decode_thread(void *arg) {
   return NULL;
 }
 
-static int avcodec_decoder_uinit_session(struct st22_avcodec_decoder_session *session) {
+static int avcodec_decoder_uinit_session(struct st22_avcodec_decoder_session* session) {
   int idx = session->idx;
 
   if (session->decode_thread) {
@@ -378,8 +378,8 @@ static int avcodec_decoder_uinit_session(struct st22_avcodec_decoder_session *se
   return 0;
 }
 
-static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *session,
-                                        struct st22_decoder_create_req *req) {
+static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session* session,
+                                        struct st22_decoder_create_req* req) {
   int idx = session->idx;
   int ret;
 
@@ -394,14 +394,14 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *ses
     err("%s(%d), invalid codec stream fmt %d\n", __func__, idx, req->input_fmt);
     return -EIO;
   }
-  const AVCodec *codec = avcodec_find_decoder(codec_id);
+  const AVCodec* codec = avcodec_find_decoder(codec_id);
   if (!codec) {
     err("%s(%d), codec create fail\n", __func__, idx);
     avcodec_decoder_uinit_session(session);
     return -EIO;
   }
 
-  AVCodecParserContext *parser = av_parser_init(codec->id);
+  AVCodecParserContext* parser = av_parser_init(codec->id);
   if (!parser) {
     err("%s(%d), parser create fail\n", __func__, idx);
     avcodec_decoder_uinit_session(session);
@@ -409,7 +409,7 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *ses
   }
   session->codec_parser = parser;
 
-  AVCodecContext *c = avcodec_alloc_context3(codec);
+  AVCodecContext* c = avcodec_alloc_context3(codec);
   if (!c) {
     err("%s(%d), codec ctx create fail\n", __func__, idx);
     avcodec_decoder_uinit_session(session);
@@ -439,7 +439,7 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *ses
     return ret;
   }
 
-  AVFrame *f = av_frame_alloc();
+  AVFrame* f = av_frame_alloc();
   if (!f) {
     err("%s(%d), frame alloc fail\n", __func__, idx);
     avcodec_decoder_uinit_session(session);
@@ -447,7 +447,7 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *ses
   }
   session->codec_frame = f;
 
-  AVPacket *p = av_packet_alloc();
+  AVPacket* p = av_packet_alloc();
   if (!p) {
     err("%s(%d), pkt alloc fail\n", __func__, idx);
     avcodec_decoder_uinit_session(session);
@@ -466,9 +466,9 @@ static int avcodec_decoder_init_session(struct st22_avcodec_decoder_session *ses
 }
 
 static st22_decode_priv avcodec_decoder_create_session(
-    void *priv, st22p_decode_session session_p, struct st22_decoder_create_req *req) {
-  struct st22_avcodec_plugin_ctx *ctx = priv;
-  struct st22_avcodec_decoder_session *session = NULL;
+    void* priv, st22p_decode_session session_p, struct st22_decoder_create_req* req) {
+  struct st22_avcodec_plugin_ctx* ctx = priv;
+  struct st22_avcodec_decoder_session* session = NULL;
   int ret;
 
   for (int i = 0; i < MAX_ST22_AVCODEC_DECODER_SESSIONS; i++) {
@@ -496,9 +496,9 @@ static st22_decode_priv avcodec_decoder_create_session(
   return NULL;
 }
 
-static int avcodec_decoder_free_session(void *priv, st22_decode_priv session) {
-  struct st22_avcodec_plugin_ctx *ctx = priv;
-  struct st22_avcodec_decoder_session *decoder_session = session;
+static int avcodec_decoder_free_session(void* priv, st22_decode_priv session) {
+  struct st22_avcodec_plugin_ctx* ctx = priv;
+  struct st22_avcodec_decoder_session* decoder_session = session;
   int idx = decoder_session->idx;
 
   info("%s(%d), total %d decode frames\n", __func__, idx, decoder_session->frame_cnt);
@@ -510,7 +510,7 @@ static int avcodec_decoder_free_session(void *priv, st22_decode_priv session) {
 }
 
 st_plugin_priv st_plugin_create(mtl_handle st) {
-  struct st22_avcodec_plugin_ctx *ctx;
+  struct st22_avcodec_plugin_ctx* ctx;
 
   ctx = malloc(sizeof(*ctx));
   if (!ctx) return NULL;
@@ -554,7 +554,7 @@ st_plugin_priv st_plugin_create(mtl_handle st) {
 }
 
 int st_plugin_free(st_plugin_priv handle) {
-  struct st22_avcodec_plugin_ctx *ctx = handle;
+  struct st22_avcodec_plugin_ctx* ctx = handle;
 
   for (int i = 0; i < MAX_ST22_AVCODEC_DECODER_SESSIONS; i++) {
     if (ctx->decoder_sessions[i]) {
@@ -580,7 +580,7 @@ int st_plugin_free(st_plugin_priv handle) {
   return 0;
 }
 
-int st_plugin_get_meta(struct st_plugin_meta *meta) {
+int st_plugin_get_meta(struct st_plugin_meta* meta) {
   meta->version = ST_PLUGIN_VERSION_V1;
   meta->magic = ST_PLUGIN_VERSION_V1_MAGIC;
   return 0;

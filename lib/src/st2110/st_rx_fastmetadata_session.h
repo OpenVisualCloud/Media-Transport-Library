@@ -11,6 +11,6 @@
 
 #define ST_RX_FASTMETADATA_PREFIX "RC_"
 
-int st_rx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl *sch);
+int st_rx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl* sch);
 
 #endif /* _ST_LIB_RX_FASTMETADATA_SESSION_HEAD_H_ */

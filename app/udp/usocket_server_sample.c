@@ -30,7 +30,7 @@ struct usocket_server_sample_ctx {
 };
 
 struct usocket_server_samples_ctx {
-  struct usocket_server_sample_ctx **apps;
+  struct usocket_server_sample_ctx** apps;
   int apps_cnt;
 
   bool stop;
@@ -39,8 +39,8 @@ struct usocket_server_samples_ctx {
   pthread_mutex_t wake_mutex;
 };
 
-static void *usocket_server_thread(void *arg) {
-  struct usocket_server_sample_ctx *s = arg;
+static void* usocket_server_thread(void* arg) {
+  struct usocket_server_sample_ctx* s = arg;
   int socket = s->socket;
   ssize_t usocket_len = MUDP_MAX_BYTES;
   char buf[usocket_len];
@@ -49,8 +49,8 @@ static void *usocket_server_thread(void *arg) {
 
   info("%s(%d), start socket %d\n", __func__, s->idx, socket);
   while (!s->stop) {
-    ssize_t recv = recvfrom(socket, buf, sizeof(buf), 0, (struct sockaddr *)&cli_addr,
-                            &cli_addr_len);
+    ssize_t recv =
+        recvfrom(socket, buf, sizeof(buf), 0, (struct sockaddr*)&cli_addr, &cli_addr_len);
     if (recv < 0) {
       dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
       continue;
@@ -60,7 +60,7 @@ static void *usocket_server_thread(void *arg) {
     s->recv_len += recv;
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
     ssize_t send =
-        sendto(socket, buf, recv, 0, (const struct sockaddr *)&cli_addr, cli_addr_len);
+        sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr, cli_addr_len);
     if (send != recv) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -73,8 +73,8 @@ static void *usocket_server_thread(void *arg) {
   return NULL;
 }
 
-static void *usocket_server_transport_thread(void *arg) {
-  struct usocket_server_sample_ctx *s = arg;
+static void* usocket_server_transport_thread(void* arg) {
+  struct usocket_server_sample_ctx* s = arg;
   int socket = s->socket;
   ssize_t usocket_len = MUDP_MAX_BYTES;
   char buf[usocket_len];
@@ -95,8 +95,8 @@ static void *usocket_server_transport_thread(void *arg) {
   return NULL;
 }
 
-static void *usocket_server_transport_poll_thread(void *arg) {
-  struct usocket_server_sample_ctx *s = arg;
+static void* usocket_server_transport_poll_thread(void* arg) {
+  struct usocket_server_sample_ctx* s = arg;
   int socket = s->socket;
   ssize_t usocket_len = MUDP_MAX_BYTES;
   char buf[usocket_len];
@@ -123,9 +123,9 @@ static void *usocket_server_transport_poll_thread(void *arg) {
   return NULL;
 }
 
-static void *usocket_servers_poll_thread(void *arg) {
-  struct usocket_server_samples_ctx *ctxs = arg;
-  struct usocket_server_sample_ctx *s = NULL;
+static void* usocket_servers_poll_thread(void* arg) {
+  struct usocket_server_samples_ctx* ctxs = arg;
+  struct usocket_server_sample_ctx* s = NULL;
   int apps_cnt = ctxs->apps_cnt;
   int socket;
   ssize_t usocket_len = MUDP_MAX_BYTES;
@@ -162,7 +162,7 @@ static void *usocket_servers_poll_thread(void *arg) {
   return NULL;
 }
 
-static void usocket_server_status(struct usocket_server_sample_ctx *s) {
+static void usocket_server_status(struct usocket_server_sample_ctx* s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->recv_len * 8 / time_sec;
@@ -176,7 +176,7 @@ static void usocket_server_status(struct usocket_server_sample_ctx *s) {
   s->recv_len = 0;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   struct usocket_server_samples_ctx ctxs;
   int ret;
@@ -186,7 +186,7 @@ int main(int argc, char **argv) {
   if (ret < 0) return ret;
 
   uint32_t session_num = ctx.sessions;
-  struct usocket_server_sample_ctx *app[session_num];
+  struct usocket_server_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
 
   ctxs.apps = NULL;
@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
     else
       mudp_init_sockaddr(&app[i]->bind_addr, ctx.param.sip_addr[MTL_PORT_P],
                          ctx.udp_port + i);
-    ret = bind(app[i]->socket, (const struct sockaddr *)&app[i]->bind_addr,
+    ret = bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                sizeof(app[i]->bind_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);

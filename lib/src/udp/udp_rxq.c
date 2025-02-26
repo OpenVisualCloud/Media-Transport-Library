@@ -11,39 +11,39 @@
 
 /* queue implementation */
 
-static inline void urq_mgr_lock(struct mudp_rxq_mgr *mgr) {
+static inline void urq_mgr_lock(struct mudp_rxq_mgr* mgr) {
   mt_pthread_mutex_lock(&mgr->mutex);
 }
 
-static inline void urq_mgr_unlock(struct mudp_rxq_mgr *mgr) {
+static inline void urq_mgr_unlock(struct mudp_rxq_mgr* mgr) {
   mt_pthread_mutex_unlock(&mgr->mutex);
 }
 
-static inline void urq_lock(struct mur_queue *q) {
+static inline void urq_lock(struct mur_queue* q) {
   mt_pthread_mutex_lock(&q->mutex);
 }
 
 /* return true if try lock succ */
-static inline bool urq_try_lock(struct mur_queue *q) {
+static inline bool urq_try_lock(struct mur_queue* q) {
   int ret = mt_pthread_mutex_try_lock(&q->mutex);
   return ret == 0 ? true : false;
 }
 
-static inline void urq_unlock(struct mur_queue *q) {
+static inline void urq_unlock(struct mur_queue* q) {
   mt_pthread_mutex_unlock(&q->mutex);
 }
 
-static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
+static uint16_t urq_rx_handle(struct mur_queue* q, struct rte_mbuf** pkts,
                               uint16_t nb_pkts) {
   uint16_t idx = q->rxq_id;
-  struct rte_mbuf *valid_mbuf[nb_pkts];
+  struct rte_mbuf* valid_mbuf[nb_pkts];
   uint16_t valid_mbuf_cnt = 0;
   uint16_t n = 0;
 
   /* check if valid udp pkt */
   for (uint16_t i = 0; i < nb_pkts; i++) {
-    struct mt_udp_hdr *hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr *);
-    struct rte_ipv4_hdr *ipv4 = &hdr->ipv4;
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
+    struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
 
     if (ipv4->next_proto_id == IPPROTO_UDP) {
       valid_mbuf[valid_mbuf_cnt] = pkts[i];
@@ -67,9 +67,9 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
 
   /* enqueue the valid mbuf */
   if (clients == 1) {
-    struct mur_client *c = MT_TAILQ_FIRST(&q->client_head);
+    struct mur_client* c = MT_TAILQ_FIRST(&q->client_head);
     c->stat_pkt_rx += valid_mbuf_cnt;
-    n = rte_ring_sp_enqueue_bulk(c->ring, (void **)&valid_mbuf[0], valid_mbuf_cnt, NULL);
+    n = rte_ring_sp_enqueue_bulk(c->ring, (void**)&valid_mbuf[0], valid_mbuf_cnt, NULL);
     if (!n) {
       dbg("%s(%d), %u pkts enqueue fail\n", __func__, idx, valid_mbuf_cnt);
       rte_pktmbuf_free_bulk(&valid_mbuf[0], valid_mbuf_cnt);
@@ -80,7 +80,7 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
   }
 
   urq_lock(q);
-  struct mur_client *cs[clients];
+  struct mur_client* cs[clients];
   cs[0] = MT_TAILQ_FIRST(&q->client_head);
   for (int i = 1; i < clients; i++) {
     cs[i] = MT_TAILQ_NEXT(cs[i - 1], next);
@@ -88,11 +88,11 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
 
   int last_c_idx = -1;
   int c_pkts_nb = 0;
-  struct rte_mbuf *c_pkts[valid_mbuf_cnt];
+  struct rte_mbuf* c_pkts[valid_mbuf_cnt];
 
   for (uint16_t i = 0; i < valid_mbuf_cnt; i++) {
-    struct rte_mbuf *mbuf = valid_mbuf[i];
-    struct mt_udp_hdr *hdr = rte_pktmbuf_mtod(mbuf, struct mt_udp_hdr *);
+    struct rte_mbuf* mbuf = valid_mbuf[i];
+    struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(mbuf, struct mt_udp_hdr*);
     /* hash with ip and port of both src and dst */
     uint32_t tuple[3];
     rte_memcpy(tuple, &hdr->ipv4.src_addr, sizeof(tuple));
@@ -101,10 +101,10 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
 
     if (c_idx != last_c_idx) {
       if (c_pkts_nb) { /* push last client */
-        struct mur_client *c = cs[last_c_idx];
+        struct mur_client* c = cs[last_c_idx];
         c->stat_pkt_rx += c_pkts_nb;
         unsigned int e =
-            rte_ring_sp_enqueue_bulk(c->ring, (void **)&c_pkts[0], c_pkts_nb, NULL);
+            rte_ring_sp_enqueue_bulk(c->ring, (void**)&c_pkts[0], c_pkts_nb, NULL);
         if (0 == e) { /* enqueue fail */
           rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
           c->stat_pkt_rx_enq_fail += c_pkts_nb;
@@ -116,10 +116,10 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
     c_pkts[c_pkts_nb++] = mbuf;
   }
   if (c_pkts_nb) { /* push last client */
-    struct mur_client *c = cs[last_c_idx];
+    struct mur_client* c = cs[last_c_idx];
     c->stat_pkt_rx += c_pkts_nb;
     unsigned int e =
-        rte_ring_sp_enqueue_bulk(c->ring, (void **)&c_pkts[0], c_pkts_nb, NULL);
+        rte_ring_sp_enqueue_bulk(c->ring, (void**)&c_pkts[0], c_pkts_nb, NULL);
     if (0 == e) { /* enqueue fail */
       rte_pktmbuf_free_bulk(c_pkts, c_pkts_nb);
       c->stat_pkt_rx_enq_fail += c_pkts_nb;
@@ -132,9 +132,9 @@ static uint16_t urq_rx_handle(struct mur_queue *q, struct rte_mbuf **pkts,
   return n;
 }
 
-static uint16_t urq_rx(struct mur_queue *q) {
+static uint16_t urq_rx(struct mur_queue* q) {
   uint16_t rx_burst = q->rx_burst_pkts;
-  struct rte_mbuf *pkts[rx_burst];
+  struct rte_mbuf* pkts[rx_burst];
 
   if (!urq_try_lock(q)) return 0;
   uint16_t rx = mt_rxq_burst(q->rxq, pkts, rx_burst);
@@ -146,12 +146,12 @@ static uint16_t urq_rx(struct mur_queue *q) {
   return n;
 }
 
-static int urq_mgr_add(struct mudp_rxq_mgr *mgr, struct mur_queue *q) {
+static int urq_mgr_add(struct mudp_rxq_mgr* mgr, struct mur_queue* q) {
   MT_TAILQ_INSERT_TAIL(&mgr->head, q, next);
   return 0;
 }
 
-static int urq_mgr_del(struct mudp_rxq_mgr *mgr, struct mur_queue *q) {
+static int urq_mgr_del(struct mudp_rxq_mgr* mgr, struct mur_queue* q) {
   struct mur_queue *item, *tmp_item;
 
   for (item = MT_TAILQ_FIRST(&mgr->head); item != NULL; item = tmp_item) {
@@ -168,9 +168,9 @@ static int urq_mgr_del(struct mudp_rxq_mgr *mgr, struct mur_queue *q) {
   return -EIO;
 }
 
-static struct mur_queue *urq_mgr_search(struct mudp_rxq_mgr *mgr, uint16_t dst_port) {
-  struct mur_queue *q;
-  struct mur_queue *ret = NULL;
+static struct mur_queue* urq_mgr_search(struct mudp_rxq_mgr* mgr, uint16_t dst_port) {
+  struct mur_queue* q;
+  struct mur_queue* ret = NULL;
 
   MT_TAILQ_FOREACH(q, &mgr->head, next) {
     if (q->dst_port == dst_port) {
@@ -183,8 +183,8 @@ static struct mur_queue *urq_mgr_search(struct mudp_rxq_mgr *mgr, uint16_t dst_p
   return ret;
 }
 
-static int urq_put(struct mur_queue *q) {
-  struct mtl_main_impl *impl = q->parent;
+static int urq_put(struct mur_queue* q) {
+  struct mtl_main_impl* impl = q->parent;
 
   if (!rte_atomic32_dec_and_test(&q->refcnt)) {
     info("%s(%d,%u), refcnt %d\n", __func__, q->port, q->dst_port,
@@ -193,11 +193,11 @@ static int urq_put(struct mur_queue *q) {
   }
 
   info("%s(%d,%u), refcnt zero now\n", __func__, q->port, q->dst_port);
-  struct mudp_rxq_mgr *mgr = impl->mudp_rxq_mgr[q->port];
+  struct mudp_rxq_mgr* mgr = impl->mudp_rxq_mgr[q->port];
   urq_mgr_lock(mgr);
 
   /* check if any not removed client */
-  struct mur_client *c;
+  struct mur_client* c;
   while ((c = MT_TAILQ_FIRST(&q->client_head))) {
     warn("%s(%d,%u), %p not removed\n", __func__, q->port, q->dst_port, c);
     MT_TAILQ_REMOVE(&q->client_head, c, next);
@@ -216,13 +216,13 @@ static int urq_put(struct mur_queue *q) {
   return 0;
 }
 
-static struct mur_queue *urq_get(struct mudp_rxq_mgr *mgr,
-                                 struct mur_client_create *create, int *idx) {
-  struct mtl_main_impl *impl = create->impl;
+static struct mur_queue* urq_get(struct mudp_rxq_mgr* mgr,
+                                 struct mur_client_create* create, int* idx) {
+  struct mtl_main_impl* impl = create->impl;
   enum mtl_port port = create->port;
   uint16_t dst_port = create->dst_port;
   int ret;
-  struct mur_queue *q = NULL;
+  struct mur_queue* q = NULL;
 
   urq_mgr_lock(mgr); /* get the lock */
 
@@ -301,7 +301,7 @@ out_unlock_fail:
   return NULL;
 }
 
-static int urq_add_client(struct mur_queue *q, struct mur_client *c) {
+static int urq_add_client(struct mur_queue* q, struct mur_client* c) {
   urq_lock(q);
   MT_TAILQ_INSERT_TAIL(&q->client_head, c, next);
   q->clients++;
@@ -310,7 +310,7 @@ static int urq_add_client(struct mur_queue *q, struct mur_client *c) {
   return 0;
 }
 
-static int urq_del_client(struct mur_queue *q, struct mur_client *c) {
+static int urq_del_client(struct mur_queue* q, struct mur_client* c) {
   struct mur_client *item, *tmp_item;
 
   urq_lock(q);
@@ -333,19 +333,19 @@ static int urq_del_client(struct mur_queue *q, struct mur_client *c) {
 
 /* client implementation */
 
-static inline bool urc_lcore_mode(struct mur_client *c) {
+static inline bool urc_lcore_mode(struct mur_client* c) {
   return c->lcore_tasklet ? true : false;
 }
 
-static void urc_lcore_wakeup(struct mur_client *c) {
+static void urc_lcore_wakeup(struct mur_client* c) {
   mt_pthread_mutex_lock(&c->lcore_wake_mutex);
   mt_pthread_cond_signal(&c->lcore_wake_cond);
   mt_pthread_mutex_unlock(&c->lcore_wake_mutex);
 }
 
-static int urc_tasklet_handler(void *priv) {
-  struct mur_client *c = priv;
-  struct mtl_main_impl *impl = c->parent;
+static int urc_tasklet_handler(void* priv) {
+  struct mur_client* c = priv;
+  struct mtl_main_impl* impl = c->parent;
 
   if (c->q) urq_rx(c->q);
 
@@ -361,7 +361,7 @@ static int urc_tasklet_handler(void *priv) {
   return 0;
 }
 
-static int urc_init_tasklet(struct mtl_main_impl *impl, struct mur_client *c) {
+static int urc_init_tasklet(struct mtl_main_impl* impl, struct mur_client* c) {
   if (!mt_user_udp_lcore(impl, c->port)) return 0;
 
   struct mtl_tasklet_ops ops;
@@ -384,21 +384,21 @@ static int urc_init_tasklet(struct mtl_main_impl *impl, struct mur_client *c) {
   return 0;
 }
 
-struct mur_client *mur_client_get(struct mur_client_create *create) {
-  struct mtl_main_impl *impl = create->impl;
+struct mur_client* mur_client_get(struct mur_client_create* create) {
+  struct mtl_main_impl* impl = create->impl;
   enum mtl_port port = create->port;
   uint16_t dst_port = create->dst_port;
-  struct mudp_rxq_mgr *mgr = impl->mudp_rxq_mgr[port];
+  struct mudp_rxq_mgr* mgr = impl->mudp_rxq_mgr[port];
   int ret;
   int idx;
 
-  struct mur_queue *q = urq_get(mgr, create, &idx);
+  struct mur_queue* q = urq_get(mgr, create, &idx);
   if (!q) {
     err("%s(%d,%u), get queue fail\n", __func__, port, dst_port);
     return NULL;
   }
 
-  struct mur_client *c = mt_rte_zmalloc_socket(sizeof(*c), mt_socket_id(impl, port));
+  struct mur_client* c = mt_rte_zmalloc_socket(sizeof(*c), mt_socket_id(impl, port));
   if (!c) {
     err("%s(%d,%u), client malloc fail\n", __func__, port, dst_port);
     urq_put(q);
@@ -419,7 +419,7 @@ struct mur_client *mur_client_get(struct mur_client_create *create) {
   c->wake_tsc_last = mt_get_tsc(impl);
 
   char ring_name[64];
-  struct rte_ring *ring;
+  struct rte_ring* ring;
   unsigned int flags, count;
   snprintf(ring_name, sizeof(ring_name), "%sP%dDP%dQ%uC%d", MT_UDP_RXQ_PREFIX, port,
            dst_port, q->rxq_id, idx);
@@ -452,7 +452,7 @@ struct mur_client *mur_client_get(struct mur_client_create *create) {
   return c;
 }
 
-int mur_client_put(struct mur_client *c) {
+int mur_client_put(struct mur_client* c) {
   urc_lcore_wakeup(c); /* wake up any pending wait */
 
   if (c->lcore_tasklet) {
@@ -479,7 +479,7 @@ int mur_client_put(struct mur_client *c) {
   return 0;
 }
 
-int mur_client_dump(struct mur_client *c) {
+int mur_client_dump(struct mur_client* c) {
   enum mtl_port port = c->port;
   uint16_t dst_port = c->dst_port;
   int idx = c->idx;
@@ -503,14 +503,14 @@ int mur_client_dump(struct mur_client *c) {
   return 0;
 }
 
-uint16_t mur_client_rx(struct mur_client *c) {
+uint16_t mur_client_rx(struct mur_client* c) {
   if (urc_lcore_mode(c))
     return 0;
   else
     return urq_rx(c->q);
 }
 
-int mur_client_timedwait(struct mur_client *c, unsigned int timedwait_us,
+int mur_client_timedwait(struct mur_client* c, unsigned int timedwait_us,
                          unsigned int poll_sleep_us) {
   if (!urc_lcore_mode(c)) {
     if (poll_sleep_us) {
@@ -533,12 +533,12 @@ int mur_client_timedwait(struct mur_client *c, unsigned int timedwait_us,
   return ret;
 }
 
-int mudp_rxq_init(struct mtl_main_impl *impl) {
+int mudp_rxq_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
   int socket = mt_socket_id(impl, MTL_PORT_P);
 
   for (int i = 0; i < num_ports; i++) {
-    struct mudp_rxq_mgr *mgr = mt_rte_zmalloc_socket(sizeof(*mgr), socket);
+    struct mudp_rxq_mgr* mgr = mt_rte_zmalloc_socket(sizeof(*mgr), socket);
     if (!mgr) {
       err("%s(%d), mgr malloc fail\n", __func__, i);
       mudp_rxq_uinit(impl);
@@ -556,9 +556,9 @@ int mudp_rxq_init(struct mtl_main_impl *impl) {
   return 0;
 }
 
-int mudp_rxq_uinit(struct mtl_main_impl *impl) {
-  struct mudp_rxq_mgr *mgr;
-  struct mur_queue *q;
+int mudp_rxq_uinit(struct mtl_main_impl* impl) {
+  struct mudp_rxq_mgr* mgr;
+  struct mur_queue* q;
 
   for (int i = 0; i < MTL_PORT_MAX; i++) {
     mgr = impl->mudp_rxq_mgr[i];

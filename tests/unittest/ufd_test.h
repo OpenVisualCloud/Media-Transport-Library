@@ -23,4 +23,4 @@ struct utest_ctx {
   bool dhcp;
 };
 
-struct utest_ctx *utest_get_ctx(void);
+struct utest_ctx* utest_get_ctx(void);

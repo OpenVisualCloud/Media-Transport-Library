@@ -7,18 +7,18 @@
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
-static const char *st40p_tx_frame_stat_name[ST40P_TX_FRAME_STATUS_MAX] = {
+static const char* st40p_tx_frame_stat_name[ST40P_TX_FRAME_STATUS_MAX] = {
     "free",
     "in_user",
     "ready",
     "in_transmitting",
 };
 
-static const char *tx_st40p_stat_name(enum st40p_tx_frame_status stat) {
+static const char* tx_st40p_stat_name(enum st40p_tx_frame_status stat) {
   return st40p_tx_frame_stat_name[stat];
 }
 
-static uint16_t tx_st40p_next_idx(struct st40p_tx_ctx *ctx, uint16_t idx) {
+static uint16_t tx_st40p_next_idx(struct st40p_tx_ctx* ctx, uint16_t idx) {
   /* point to next */
   uint16_t next_idx = idx;
   next_idx++;
@@ -26,14 +26,14 @@ static uint16_t tx_st40p_next_idx(struct st40p_tx_ctx *ctx, uint16_t idx) {
   return next_idx;
 }
 
-static void tx_st40p_block_wake(struct st40p_tx_ctx *ctx) {
+static void tx_st40p_block_wake(struct st40p_tx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
   mt_pthread_cond_signal(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
 
-static void tx_st40p_notify_frame_available(struct st40p_tx_ctx *ctx) {
+static void tx_st40p_notify_frame_available(struct st40p_tx_ctx* ctx) {
   if (ctx->ops.notify_frame_available) { /* notify app */
     ctx->ops.notify_frame_available(ctx->ops.priv);
   }
@@ -44,10 +44,10 @@ static void tx_st40p_notify_frame_available(struct st40p_tx_ctx *ctx) {
   }
 }
 
-static struct st40p_tx_frame *tx_st40p_next_available(
-    struct st40p_tx_ctx *ctx, uint16_t idx_start, enum st40p_tx_frame_status desired) {
+static struct st40p_tx_frame* tx_st40p_next_available(
+    struct st40p_tx_ctx* ctx, uint16_t idx_start, enum st40p_tx_frame_status desired) {
   uint16_t idx = idx_start;
-  struct st40p_tx_frame *framebuff;
+  struct st40p_tx_frame* framebuff;
 
   /* check ready frame from idx_start */
   while (1) {
@@ -67,10 +67,10 @@ static struct st40p_tx_frame *tx_st40p_next_available(
   return NULL;
 }
 
-static int tx_st40p_next_frame(void *priv, uint16_t *next_frame_idx,
-                               struct st40_tx_frame_meta *meta) {
-  struct st40p_tx_ctx *ctx = priv;
-  struct st40p_tx_frame *framebuff;
+static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st40_tx_frame_meta* meta) {
+  struct st40p_tx_ctx* ctx = priv;
+  struct st40p_tx_frame* framebuff;
   MTL_MAY_UNUSED(meta);
 
   if (!ctx->ready) return -EBUSY; /* not ready */
@@ -93,11 +93,11 @@ static int tx_st40p_next_frame(void *priv, uint16_t *next_frame_idx,
   return 0;
 }
 
-static int tx_st40p_frame_done(void *priv, uint16_t frame_idx,
-                               struct st40_tx_frame_meta *meta) {
-  struct st40p_tx_ctx *ctx = priv;
-  struct st40p_tx_frame *framebuff;
-  struct st40_frame_info *frame_info;
+static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
+                               struct st40_tx_frame_meta* meta) {
+  struct st40p_tx_ctx* ctx = priv;
+  struct st40p_tx_frame* framebuff;
+  struct st40_frame_info* frame_info;
   int ret;
 
   framebuff = &ctx->framebuffs[frame_idx];
@@ -129,9 +129,9 @@ static int tx_st40p_frame_done(void *priv, uint16_t frame_idx,
 
   return ret;
 }
-static int tx_st40p_asign_anc_frames(struct st40p_tx_ctx *ctx) {
-  struct st40p_tx_frame *frames = ctx->framebuffs;
-  struct st40_frame_info *frame_info;
+static int tx_st40p_asign_anc_frames(struct st40p_tx_ctx* ctx) {
+  struct st40p_tx_frame* frames = ctx->framebuffs;
+  struct st40_frame_info* frame_info;
   int idx = ctx->idx;
   uint16_t i;
 
@@ -148,8 +148,8 @@ static int tx_st40p_asign_anc_frames(struct st40p_tx_ctx *ctx) {
   return 0;
 }
 
-static int tx_st40p_create_transport(struct mtl_main_impl *impl, struct st40p_tx_ctx *ctx,
-                                     struct st40p_tx_ops *ops) {
+static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx_ctx* ctx,
+                                     struct st40p_tx_ops* ops) {
   int idx = ctx->idx;
   struct st40_tx_ops ops_tx = {0};
 
@@ -207,7 +207,7 @@ static int tx_st40p_create_transport(struct mtl_main_impl *impl, struct st40p_tx
   return 0;
 }
 
-static int tx_st40p_uinit_fbs(struct st40p_tx_ctx *ctx) {
+static int tx_st40p_uinit_fbs(struct st40p_tx_ctx* ctx) {
   if (!ctx->framebuffs) return 0;
 
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
@@ -222,11 +222,11 @@ static int tx_st40p_uinit_fbs(struct st40p_tx_ctx *ctx) {
   return 0;
 }
 
-static int tx_st40p_init_fbs(struct st40p_tx_ctx *ctx, struct st40p_tx_ops *ops) {
+static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops) {
   int idx = ctx->idx;
   int soc_id = ctx->socket_id;
   struct st40p_tx_frame *frames, *framebuff;
-  struct st40_frame_info *frame_info;
+  struct st40_frame_info* frame_info;
 
   frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
   if (!frames) {
@@ -257,9 +257,9 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx *ctx, struct st40p_tx_ops *ops)
   return 0;
 }
 
-static int tx_st40p_stat(void *priv) {
-  struct st40p_tx_ctx *ctx = priv;
-  struct st40p_tx_frame *framebuff = ctx->framebuffs;
+static int tx_st40p_stat(void* priv) {
+  struct st40p_tx_ctx* ctx = priv;
+  struct st40p_tx_frame* framebuff = ctx->framebuffs;
   uint16_t producer_idx;
   uint16_t consumer_idx;
 
@@ -280,7 +280,7 @@ static int tx_st40p_stat(void *priv) {
   return 0;
 }
 
-static int tx_st40p_get_block_wait(struct st40p_tx_ctx *ctx) {
+static int tx_st40p_get_block_wait(struct st40p_tx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
 
   /* wait on the block cond */
@@ -293,8 +293,8 @@ static int tx_st40p_get_block_wait(struct st40p_tx_ctx *ctx) {
   return 0;
 }
 
-static void tx_st40p_framebuffs_flush(struct st40p_tx_ctx *ctx) {
-  struct st40p_tx_frame *framebuff;
+static void tx_st40p_framebuffs_flush(struct st40p_tx_ctx* ctx) {
+  struct st40p_tx_frame* framebuff;
 
   /* wait all frame are in free or in transmitting(flushed by transport) */
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
@@ -323,10 +323,10 @@ static void tx_st40p_framebuffs_flush(struct st40p_tx_ctx *ctx) {
   }
 }
 
-struct st40_frame_info *st40p_tx_get_frame(st40p_tx_handle handle) {
-  struct st40p_tx_ctx *ctx = handle;
-  struct st40p_tx_frame *framebuff;
-  struct st40_frame_info *frame_info;
+struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
+  struct st40p_tx_ctx* ctx = handle;
+  struct st40p_tx_frame* framebuff;
+  struct st40_frame_info* frame_info;
   int idx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -368,10 +368,10 @@ struct st40_frame_info *st40p_tx_get_frame(st40p_tx_handle handle) {
   return frame_info;
 }
 
-int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info *frame_info) {
-  struct st40p_tx_ctx *ctx = handle;
+int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_info) {
+  struct st40p_tx_ctx* ctx = handle;
   int idx = ctx->idx;
-  struct st40p_tx_frame *framebuff = frame_info->priv;
+  struct st40p_tx_frame* framebuff = frame_info->priv;
   uint16_t producer_idx = framebuff->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -398,8 +398,8 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info *frame_inf
 }
 
 int st40p_tx_free(st40p_tx_handle handle) {
-  struct st40p_tx_ctx *ctx = handle;
-  struct mtl_main_impl *impl = ctx->impl;
+  struct st40p_tx_ctx* ctx = handle;
+  struct mtl_main_impl* impl = ctx->impl;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -431,10 +431,10 @@ int st40p_tx_free(st40p_tx_handle handle) {
   return 0;
 }
 
-st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops *ops) {
+st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
   static int st40p_tx_idx;
-  struct mtl_main_impl *impl = mt;
-  struct st40p_tx_ctx *ctx;
+  struct mtl_main_impl* impl = mt;
+  struct st40p_tx_ctx* ctx;
   int idx = st40p_tx_idx;
   enum mtl_port port;
   int ret;
@@ -519,8 +519,8 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops *ops) {
   return ctx;
 }
 
-int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info *dst) {
-  struct st40p_tx_ctx *ctx = handle;
+int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info* dst) {
+  struct st40p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -532,7 +532,7 @@ int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info *
 }
 
 int st40p_tx_wake_block(st40p_tx_handle handle) {
-  struct st40p_tx_ctx *ctx = handle;
+  struct st40p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -546,7 +546,7 @@ int st40p_tx_wake_block(st40p_tx_handle handle) {
 }
 
 int st40p_tx_set_block_timeout(st40p_tx_handle handle, uint64_t timedwait_ns) {
-  struct st40p_tx_ctx *ctx = handle;
+  struct st40p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -559,7 +559,7 @@ int st40p_tx_set_block_timeout(st40p_tx_handle handle, uint64_t timedwait_ns) {
 }
 
 size_t st40p_tx_max_udw_buff_size(st40p_tx_handle handle) {
-  struct st40p_tx_ctx *ctx = handle;
+  struct st40p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -570,8 +570,8 @@ size_t st40p_tx_max_udw_buff_size(st40p_tx_handle handle) {
   return ctx->ops.max_udw_buff_size;
 }
 
-void *st40p_tx_get_udw_buff_addr(st40p_tx_handle handle, uint16_t idx) {
-  struct st40p_tx_ctx *ctx = handle;
+void* st40p_tx_get_udw_buff_addr(st40p_tx_handle handle, uint16_t idx) {
+  struct st40p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {
@@ -588,8 +588,8 @@ void *st40p_tx_get_udw_buff_addr(st40p_tx_handle handle, uint16_t idx) {
   return ctx->framebuffs[idx].frame_info.udw_buff_addr;
 }
 
-void *st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
-  struct st40p_tx_ctx *ctx = handle;
+void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
+  struct st40p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
   if (MT_ST40_HANDLE_PIPELINE_TX != ctx->type) {

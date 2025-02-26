@@ -16,12 +16,12 @@
 #ifndef _TX_APP_ST30P_HEAD_H_
 #define _TX_APP_ST30P_HEAD_H_
 
-int st_app_tx_st30p_sessions_init(struct st_app_context *ctx);
+int st_app_tx_st30p_sessions_init(struct st_app_context* ctx);
 
-int st_app_tx_st30p_sessions_stop(struct st_app_context *ctx);
+int st_app_tx_st30p_sessions_stop(struct st_app_context* ctx);
 
-int st_app_tx_st30p_sessions_uinit(struct st_app_context *ctx);
+int st_app_tx_st30p_sessions_uinit(struct st_app_context* ctx);
 
-int st_app_tx_st30p_io_stat(struct st_app_context *ctx);
+int st_app_tx_st30p_io_stat(struct st_app_context* ctx);
 
 #endif

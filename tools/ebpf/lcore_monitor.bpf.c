@@ -23,16 +23,16 @@ struct {
   __uint(max_entries, 512 * 1024);
 } lm_events_map SEC(".maps");
 
-static struct lcore_tid_cfg *lm_get_cfg(void) {
-  struct lcore_tid_cfg *cfg;
+static struct lcore_tid_cfg* lm_get_cfg(void) {
+  struct lcore_tid_cfg* cfg;
   uint32_t key = 0;
   cfg = bpf_map_lookup_elem(&lm_cfg_map, &key);
   return cfg;
 }
 
 static int lm_switch_event_submit(enum lcore_tid_event_type type,
-                                  struct trace_event_raw_sched_switch *args) {
-  struct lcore_tid_event *e;
+                                  struct trace_event_raw_sched_switch* args) {
+  struct lcore_tid_event* e;
 
   e = bpf_ringbuf_reserve(&lm_events_map, sizeof(*e), 0);
   if (!e) {
@@ -50,8 +50,8 @@ static int lm_switch_event_submit(enum lcore_tid_event_type type,
 }
 
 SEC("tracepoint/sched/sched_switch")
-int bpf_prog_sched_switch(struct trace_event_raw_sched_switch *args) {
-  struct lcore_tid_cfg *cfg = lm_get_cfg();
+int bpf_prog_sched_switch(struct trace_event_raw_sched_switch* args) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
   if (!cfg) return 0;
 
   /* core id check */
@@ -131,7 +131,7 @@ int bpf_prog_irq_handler_exit(struct trace_event_raw_irq_handler_entry* args) {
 #endif
 
 static int lm_vector_event_submit(enum lcore_tid_event_type type, int vector) {
-  struct lcore_tid_event *e;
+  struct lcore_tid_event* e;
 
   e = bpf_ringbuf_reserve(&lm_events_map, sizeof(*e), 0);
   if (!e) {
@@ -150,7 +150,7 @@ static int lm_vector_event_submit(enum lcore_tid_event_type type, int vector) {
 
 SEC("raw_tp/irq_work_entry")
 int BPF_PROG(irq_work_entry, unsigned int vector) {
-  struct lcore_tid_cfg *cfg = lm_get_cfg();
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
   if (!cfg) return 0;
 
   /* core id check */
@@ -168,7 +168,7 @@ int BPF_PROG(irq_work_entry, unsigned int vector) {
 
 SEC("raw_tp/irq_work_exit")
 int BPF_PROG(irq_work_exit, unsigned int vector) {
-  struct lcore_tid_cfg *cfg = lm_get_cfg();
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
   if (!cfg) return 0;
 
   /* core id check */
@@ -185,7 +185,7 @@ int BPF_PROG(irq_work_exit, unsigned int vector) {
 }
 
 static int lm_syscall_event_submit(enum lcore_tid_event_type type, int id) {
-  struct lcore_tid_event *e;
+  struct lcore_tid_event* e;
 
   e = bpf_ringbuf_reserve(&lm_events_map, sizeof(*e), 0);
   if (!e) {
@@ -203,8 +203,8 @@ static int lm_syscall_event_submit(enum lcore_tid_event_type type, int id) {
 }
 
 SEC("tracepoint/raw_syscalls/sys_enter")
-int bpf_prog_sys_enter(struct trace_event_raw_sys_enter *args) {
-  struct lcore_tid_cfg *cfg = lm_get_cfg();
+int bpf_prog_sys_enter(struct trace_event_raw_sys_enter* args) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
   if (!cfg) return 0;
 
   /* core id check */
@@ -221,8 +221,8 @@ int bpf_prog_sys_enter(struct trace_event_raw_sys_enter *args) {
 }
 
 SEC("tracepoint/raw_syscalls/sys_exit")
-int bpf_prog_sys_enxit(struct trace_event_raw_sys_exit *args) {
-  struct lcore_tid_cfg *cfg = lm_get_cfg();
+int bpf_prog_sys_enxit(struct trace_event_raw_sys_exit* args) {
+  struct lcore_tid_cfg* cfg = lm_get_cfg();
   if (!cfg) return 0;
 
   /* core id check */

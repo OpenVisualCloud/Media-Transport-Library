@@ -32,22 +32,22 @@ struct mt_dhcp_hdr {
   uint8_t options[0];
 } __attribute__((packed));
 
-static inline struct mt_dhcp_impl *mt_get_dhcp(struct mtl_main_impl *impl,
+static inline struct mt_dhcp_impl* mt_get_dhcp(struct mtl_main_impl* impl,
                                                enum mtl_port port) {
   return impl->dhcp[port];
 }
 
-int mt_dhcp_init(struct mtl_main_impl *impl);
+int mt_dhcp_init(struct mtl_main_impl* impl);
 
-int mt_dhcp_uinit(struct mtl_main_impl *impl);
+int mt_dhcp_uinit(struct mtl_main_impl* impl);
 
-int mt_dhcp_parse(struct mtl_main_impl *impl, struct mt_dhcp_hdr *hdr,
+int mt_dhcp_parse(struct mtl_main_impl* impl, struct mt_dhcp_hdr* hdr,
                   enum mtl_port port);
 
-uint8_t *mt_dhcp_get_ip(struct mtl_main_impl *impl, enum mtl_port port);
+uint8_t* mt_dhcp_get_ip(struct mtl_main_impl* impl, enum mtl_port port);
 
-uint8_t *mt_dhcp_get_netmask(struct mtl_main_impl *impl, enum mtl_port port);
+uint8_t* mt_dhcp_get_netmask(struct mtl_main_impl* impl, enum mtl_port port);
 
-uint8_t *mt_dhcp_get_gateway(struct mtl_main_impl *impl, enum mtl_port port);
+uint8_t* mt_dhcp_get_gateway(struct mtl_main_impl* impl, enum mtl_port port);
 
 #endif

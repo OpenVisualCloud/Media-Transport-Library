@@ -9,14 +9,14 @@
 
 #define ST40_TEST_PAYLOAD_TYPE (113)
 
-static int tx_anc_next_frame(void *priv, uint16_t *next_frame_idx,
-                             struct st40_tx_frame_meta *meta) {
+static int tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
+                             struct st40_tx_frame_meta* meta) {
   return tx_next_frame(priv, next_frame_idx);
 }
 
-static int tx_anc_next_frame_timestamp(void *priv, uint16_t *next_frame_idx,
-                                       struct st40_tx_frame_meta *meta) {
-  auto ctx = (tests_context *)priv;
+static int tx_anc_next_frame_timestamp(void* priv, uint16_t* next_frame_idx,
+                                       struct st40_tx_frame_meta* meta) {
+  auto ctx = (tests_context*)priv;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -31,8 +31,8 @@ static int tx_anc_next_frame_timestamp(void *priv, uint16_t *next_frame_idx,
   return 0;
 }
 
-static int tx_anc_build_rtp_packet(tests_context *s, struct st40_rfc8331_rtp_hdr *rtp,
-                                   uint16_t *pkt_len) {
+static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr* rtp,
+                                   uint16_t* pkt_len) {
   /* rtp hdr */
   memset(rtp, 0x0, sizeof(*rtp));
   rtp->base.marker = 1;
@@ -51,8 +51,8 @@ static int tx_anc_build_rtp_packet(tests_context *s, struct st40_rfc8331_rtp_hdr
   s->rtp_tmstamp++;
   s->seq_id++;
   if (s->check_sha) {
-    struct st40_rfc8331_payload_hdr *payload_hdr =
-        (struct st40_rfc8331_payload_hdr *)(&rtp[1]);
+    struct st40_rfc8331_payload_hdr* payload_hdr =
+        (struct st40_rfc8331_payload_hdr*)(&rtp[1]);
     int total_size, payload_len, udw_size = s->frame_size;
     payload_hdr->first_hdr_chunk.c = 0;
     payload_hdr->first_hdr_chunk.line_number = 10;
@@ -68,11 +68,11 @@ static int tx_anc_build_rtp_packet(tests_context *s, struct st40_rfc8331_rtp_hdr
     for (int i = 0; i < udw_size; i++) {
       st40_set_udw(i + 3,
                    st40_add_parity_bits(s->frame_buf[s->seq_id % TEST_SHA_HIST_NUM][i]),
-                   (uint8_t *)&payload_hdr->second_hdr_chunk);
+                   (uint8_t*)&payload_hdr->second_hdr_chunk);
     }
     uint16_t check_sum =
-        st40_calc_checksum(3 + udw_size, (uint8_t *)&payload_hdr->second_hdr_chunk);
-    st40_set_udw(udw_size + 3, check_sum, (uint8_t *)&payload_hdr->second_hdr_chunk);
+        st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
+    st40_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
     total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
                                                  // 10-bit words: DID, SDID, DATA_COUNT
                                                  // + size of buffer with data + checksum
@@ -88,10 +88,10 @@ static int tx_anc_build_rtp_packet(tests_context *s, struct st40_rfc8331_rtp_hdr
   return 0;
 }
 
-static void tx_feed_packet(void *args) {
-  auto ctx = (tests_context *)args;
-  void *mbuf;
-  void *usrptr = NULL;
+static void tx_feed_packet(void* args) {
+  auto ctx = (tests_context*)args;
+  void* mbuf;
+  void* usrptr = NULL;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
@@ -111,13 +111,13 @@ static void tx_feed_packet(void *args) {
     }
 
     /* build the rtp pkt */
-    tx_anc_build_rtp_packet(ctx, (struct st40_rfc8331_rtp_hdr *)usrptr, &mbuf_len);
+    tx_anc_build_rtp_packet(ctx, (struct st40_rfc8331_rtp_hdr*)usrptr, &mbuf_len);
     st40_tx_put_mbuf((st40_tx_handle)ctx->handle, mbuf, mbuf_len);
   }
 }
 
-static int tx_rtp_done(void *args) {
-  auto ctx = (tests_context *)args;
+static int tx_rtp_done(void* args) {
+  auto ctx = (tests_context*)args;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -128,9 +128,9 @@ static int tx_rtp_done(void *args) {
   return 0;
 }
 
-static void rx_handle_rtp(tests_context *s, struct st40_rfc8331_rtp_hdr *hdr) {
-  struct st40_rfc8331_payload_hdr *payload_hdr =
-      (struct st40_rfc8331_payload_hdr *)(&hdr[1]);
+static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
+  struct st40_rfc8331_payload_hdr* payload_hdr =
+      (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   int anc_count = hdr->anc_count;
   int idx, total_size, payload_len;
 
@@ -148,19 +148,19 @@ static void rx_handle_rtp(tests_context *s, struct st40_rfc8331_rtp_hdr *hdr) {
 
     // verify checksum
     uint16_t checksum = 0;
-    checksum = st40_get_udw(udw_size + 3, (uint8_t *)&payload_hdr->second_hdr_chunk);
+    checksum = st40_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
     payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
     if (checksum !=
-        st40_calc_checksum(3 + udw_size, (uint8_t *)&payload_hdr->second_hdr_chunk)) {
+        st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
       s->sha_fail_cnt++;
       return;
     }
     // get payload
     uint16_t data;
-    uint8_t *udw = (uint8_t *)st_test_zmalloc(udw_size);
+    uint8_t* udw = (uint8_t*)st_test_zmalloc(udw_size);
     ASSERT_TRUE(udw != NULL);
     for (int i = 0; i < udw_size; i++) {
-      data = st40_get_udw(i + 3, (uint8_t *)&payload_hdr->second_hdr_chunk);
+      data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
       if (!st40_check_parity_bits(data)) {
         err("anc RTP checkParityBits for udw error\n");
         s->rx_meta_fail_cnt++;
@@ -180,15 +180,14 @@ static void rx_handle_rtp(tests_context *s, struct st40_rfc8331_rtp_hdr *hdr) {
                                                      // word of ANC data packet
     payload_len =
         sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
-    payload_hdr =
-        (struct st40_rfc8331_payload_hdr *)((uint8_t *)payload_hdr + payload_len);
+    payload_hdr = (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
   }
 }
 
-static int rx_rtp_ready(void *priv) {
-  auto ctx = (tests_context *)priv;
-  void *useptr;
-  void *mbuf;
+static int rx_rtp_ready(void* priv) {
+  auto ctx = (tests_context*)priv;
+  void* useptr;
+  void* mbuf;
   uint16_t len;
 
   if (!ctx->handle) return -EIO;
@@ -197,7 +196,7 @@ static int rx_rtp_ready(void *priv) {
     mbuf = st40_rx_get_mbuf((st40_rx_handle)ctx->handle, &useptr, &len);
     if (!mbuf) break; /* no mbuf */
     if (ctx->check_sha) {
-      rx_handle_rtp(ctx, (struct st40_rfc8331_rtp_hdr *)useptr);
+      rx_handle_rtp(ctx, (struct st40_rfc8331_rtp_hdr*)useptr);
     }
     st40_rx_put_mbuf((st40_rx_handle)ctx->handle, mbuf);
     ctx->fb_rec++;
@@ -208,7 +207,7 @@ static int rx_rtp_ready(void *priv) {
   return 0;
 }
 
-static void st40_rx_ops_init(tests_context *st40, struct st40_rx_ops *ops) {
+static void st40_rx_ops_init(tests_context* st40, struct st40_rx_ops* ops) {
   auto ctx = st40->ctx;
 
   memset(ops, 0, sizeof(*ops));
@@ -233,7 +232,7 @@ static void st40_rx_ops_init(tests_context *st40, struct st40_rx_ops *ops) {
   ops->payload_type = ST40_TEST_PAYLOAD_TYPE;
 }
 
-static void st40_tx_ops_init(tests_context *st40, struct st40_tx_ops *ops) {
+static void st40_tx_ops_init(tests_context* st40, struct st40_tx_ops* ops) {
   auto ctx = st40->ctx;
 
   memset(ops, 0, sizeof(*ops));
@@ -341,7 +340,7 @@ TEST(St40_rx, create_expect_fail_ring_sz) {
   expect_fail_test_rtp_ring_2(st40_rx, ring_size);
 }
 
-static void st40_tx_frame_init(tests_context *st40, st40_tx_handle handle,
+static void st40_tx_frame_init(tests_context* st40, st40_tx_handle handle,
                                enum st40_type type) {
   size_t frame_size = 240;
   if (st40->st40_empty_frame) frame_size = 0;
@@ -350,12 +349,11 @@ static void st40_tx_frame_init(tests_context *st40, st40_tx_handle handle,
   st40->frame_size = frame_size;
 
   for (int frame = 0; frame < st40->fb_cnt; frame++) {
-    st40->frame_buf[frame] = (uint8_t *)st_test_zmalloc(frame_size);
+    st40->frame_buf[frame] = (uint8_t*)st_test_zmalloc(frame_size);
     ASSERT_TRUE(st40->frame_buf[frame] != NULL);
 
     if (ST40_TYPE_FRAME_LEVEL == type) {
-      struct st40_frame *dst =
-          (struct st40_frame *)st40_tx_get_framebuffer(handle, frame);
+      struct st40_frame* dst = (struct st40_frame*)st40_tx_get_framebuffer(handle, frame);
       ASSERT_TRUE(dst != NULL);
 
       dst->data_size = dst->meta[0].udw_size = frame_size;
@@ -376,7 +374,7 @@ static void st40_tx_frame_init(tests_context *st40, st40_tx_handle handle,
   }
 }
 
-static void st40_tx_frame_uinit(tests_context *st40) {
+static void st40_tx_frame_uinit(tests_context* st40) {
   for (int frame = 0; frame < st40->fb_cnt; frame++) {
     if (st40->frame_buf[frame]) {
       st_test_free(st40->frame_buf[frame]);
@@ -387,12 +385,12 @@ static void st40_tx_frame_uinit(tests_context *st40) {
 
 static void st40_tx_fps_test(enum st40_type type[], enum st_fps fps[],
                              enum st_test_level level, int sessions = 1) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st40_tx_ops ops;
 
-  std::vector<tests_context *> test_ctx;
+  std::vector<tests_context*> test_ctx;
   std::vector<st40_tx_handle> handle;
   std::vector<double> expect_framerate;
   std::vector<double> framerate;
@@ -471,7 +469,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
                              bool check_sha = false, bool user_timestamp = false,
                              bool empty_frame = false, bool interlaced = false,
                              bool dedicate_tx_queue = false) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st40_tx_ops ops_tx;
@@ -486,8 +484,8 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     return;
   }
 
-  std::vector<tests_context *> test_ctx_tx;
-  std::vector<tests_context *> test_ctx_rx;
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
   std::vector<st40_tx_handle> tx_handle;
   std::vector<st40_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -550,12 +548,12 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     test_ctx_tx[i]->check_sha = check_sha;
     st40_tx_frame_init(test_ctx_tx[i], tx_handle[i], type[i]);
     if (check_sha) {
-      uint8_t *fb;
+      uint8_t* fb;
       for (int frame = 0; frame < test_ctx_tx[i]->fb_cnt; frame++) {
         fb = test_ctx_tx[i]->frame_buf[frame];
         st_test_rand_data(fb, test_ctx_tx[i]->frame_size, frame);
-        unsigned char *result = test_ctx_tx[i]->shas[frame];
-        SHA256((unsigned char *)fb, test_ctx_tx[i]->frame_size, result);
+        unsigned char* result = test_ctx_tx[i]->shas[frame];
+        SHA256((unsigned char*)fb, test_ctx_tx[i]->frame_size, result);
         test_sha_dump("st40_rx", result);
       }
     }
@@ -637,7 +635,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
       }
       sha_check[i].join();
       while (!test_ctx_rx[i]->buf_q.empty()) {
-        void *frame = test_ctx_rx[i]->buf_q.front();
+        void* frame = test_ctx_rx[i]->buf_q.front();
         st_test_free(frame);
         test_ctx_rx[i]->buf_q.pop();
       }
@@ -662,7 +660,7 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
     }
     /* free all payload in buf_q */
     while (!test_ctx_rx[i]->buf_q.empty()) {
-      void *frame = test_ctx_rx[i]->buf_q.front();
+      void* frame = test_ctx_rx[i]->buf_q.front();
       st_test_free(frame);
       test_ctx_rx[i]->buf_q.pop();
     }
@@ -756,7 +754,7 @@ TEST(St40_rx, frame_interlaced_empty) {
 
 static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
                                     enum st_test_level level) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st40_tx_ops ops_tx;
@@ -775,8 +773,8 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
 
   int rx_sessions = 1;
 
-  std::vector<tests_context *> test_ctx_tx;
-  std::vector<tests_context *> test_ctx_rx;
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
   std::vector<st40_tx_handle> tx_handle;
   std::vector<st40_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -1012,7 +1010,7 @@ TEST(St40_tx, update_dest_rtp) {
 
 static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int sessions,
                                   int repeat) {
-  auto ctx = (struct st_tests_context *)st_test_ctx();
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st40_tx_ops ops_tx;
@@ -1024,8 +1022,8 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
     return;
   }
 
-  std::vector<tests_context *> test_ctx_tx;
-  std::vector<tests_context *> test_ctx_rx;
+  std::vector<tests_context*> test_ctx_tx;
+  std::vector<tests_context*> test_ctx_rx;
   std::vector<st40_tx_handle> tx_handle;
   std::vector<st40_rx_handle> rx_handle;
   std::vector<double> expect_framerate;

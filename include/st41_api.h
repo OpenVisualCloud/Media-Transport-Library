@@ -21,11 +21,11 @@ extern "C" {
 /**
  * Handle to tx st2110-41(fast metadata) session
  */
-typedef struct st_tx_fastmetadata_session_handle_impl *st41_tx_handle;
+typedef struct st_tx_fastmetadata_session_handle_impl* st41_tx_handle;
 /**
  * Handle to rx st2110-41(fast metadata) session
  */
-typedef struct st_rx_fastmetadata_session_handle_impl *st41_rx_handle;
+typedef struct st_rx_fastmetadata_session_handle_impl* st41_rx_handle;
 
 /**
  * Flag bit in flags of struct st41_tx_ops.
@@ -125,7 +125,7 @@ MTL_PACK(struct st41_rtp_hdr {
  */
 struct st41_frame {
   uint16_t data_item_length_bytes; /** Size of the User Data Words  */
-  uint8_t *data;                   /**<  Handle to data buffer  */
+  uint8_t* data;                   /**<  Handle to data buffer  */
 };
 
 /**
@@ -178,9 +178,9 @@ struct st41_tx_ops {
    * a random value */
   uint32_t ssrc;
   /** Optional. name */
-  const char *name;
+  const char* name;
   /** Optional. private data to the callback function */
-  void *priv;
+  void* priv;
   /** Optional. see ST41_TX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -195,8 +195,8 @@ struct st41_tx_ops {
    * implicit means the frame ownership will be transferred to lib, And only non-block
    * method can be used in this callback as it run from lcore tasklet routine.
    */
-  int (*get_next_frame)(void *priv, uint16_t *next_frame_idx,
-                        struct st41_tx_frame_meta *meta);
+  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
+                        struct st41_tx_frame_meta* meta);
   /**
    * Optional for ST41_TYPE_FRAME_LEVEL. callback when lib finish sending one frame.
    * frame_idx indicate the frame which finish the transmit.
@@ -204,8 +204,8 @@ struct st41_tx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_done)(void *priv, uint16_t frame_idx,
-                           struct st41_tx_frame_meta *meta);
+  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
+                           struct st41_tx_frame_meta* meta);
 
   /** Optional. UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
@@ -222,7 +222,7 @@ struct st41_tx_ops {
    * packet, And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_rtp_done)(void *priv);
+  int (*notify_rtp_done)(void* priv);
 };
 
 /**
@@ -262,9 +262,9 @@ struct st41_rx_ops {
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
   /** Optional. name */
-  const char *name;
+  const char* name;
   /** Optional. private data to the callback function */
-  void *priv;
+  void* priv;
   /** Optional. see ST41_RX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -274,7 +274,7 @@ struct st41_rx_ops {
    * Optional. the callback when lib finish the sending of one rtp packet. And only
    * non-block method can be used in this callback as it run from lcore tasklet routine.
    */
-  int (*notify_rtp_ready)(void *priv);
+  int (*notify_rtp_ready)(void* priv);
 };
 
 /**
@@ -289,7 +289,7 @@ struct st41_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-41(fast metadata) session.
  */
-st41_tx_handle st41_tx_create(mtl_handle mt, struct st41_tx_ops *ops);
+st41_tx_handle st41_tx_create(mtl_handle mt, struct st41_tx_ops* ops);
 
 /**
  * Free the tx st2110-41(fast metadata) session.
@@ -313,7 +313,7 @@ int st41_tx_free(st41_tx_handle handle);
  *   - 0: Success, tx st2110-41(fast metadata) session destination update succ.
  *   - <0: Error code of the rx st2110-41(fast metadata) session destination update.
  */
-int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info *dst);
+int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
  * Get the framebuffer pointer from the tx st2110-41(fast metadata) session.
@@ -327,7 +327,7 @@ int st41_tx_update_destination(st41_tx_handle handle, struct st_tx_dest_info *ds
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void *st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx);
+void* st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx);
 
 /**
  * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-41(fast metadata)
@@ -342,7 +342,7 @@ void *st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void *st41_tx_get_mbuf(st41_tx_handle handle, void **usrptr);
+void* st41_tx_get_mbuf(st41_tx_handle handle, void** usrptr);
 
 /**
  * Put back the mbuf which get by st41_tx_get_mbuf to the tx st2110-41(fast metadata)
@@ -358,7 +358,7 @@ void *st41_tx_get_mbuf(st41_tx_handle handle, void **usrptr);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st41_tx_put_mbuf(st41_tx_handle handle, void *mbuf, uint16_t len);
+int st41_tx_put_mbuf(st41_tx_handle handle, void* mbuf, uint16_t len);
 
 /**
  * Create one rx st2110-41(fast metadata) session.
@@ -372,7 +372,7 @@ int st41_tx_put_mbuf(st41_tx_handle handle, void *mbuf, uint16_t len);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-41(fast metadata) session.
  */
-st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops *ops);
+st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-41(fast metadata) session.
@@ -385,7 +385,7 @@ st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops *ops);
  *   - 0: Success, rx st2110-41(fast metadata) session source update succ.
  *   - <0: Error code of the rx st2110-41(fast metadata) session source update.
  */
-int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info *src);
+int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info* src);
 
 /**
  * Free the rx st2110-41(fast metadata) session.
@@ -413,7 +413,7 @@ int st41_rx_free(st41_rx_handle handle);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void *st41_rx_get_mbuf(st41_rx_handle handle, void **usrptr, uint16_t *len);
+void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len);
 
 /**
  * Put back the mbuf which get by st41_rx_get_mbuf to the rx st2110-41(fast metadata)
@@ -424,7 +424,7 @@ void *st41_rx_get_mbuf(st41_rx_handle handle, void **usrptr, uint16_t *len);
  * @param mbuf
  *   the dpdk mbuf pointer by st41_rx_get_mbuf.
  */
-void st41_rx_put_mbuf(st41_rx_handle handle, void *mbuf);
+void st41_rx_put_mbuf(st41_rx_handle handle, void* mbuf);
 
 /**
  * Get the queue meta attached to rx st2110-41(fast metadata) session.
@@ -437,7 +437,7 @@ void st41_rx_put_mbuf(st41_rx_handle handle, void *mbuf);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta *meta);
+int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta);
 
 #if defined(__cplusplus)
 }

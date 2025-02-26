@@ -29,12 +29,12 @@ static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static atomic_bool keep_running = true;
 
 #ifdef APP_HAS_SDL2
-static SDL_Window *window = NULL;
-static SDL_Renderer *renderer = NULL;
-static SDL_Texture *texture = NULL;
+static SDL_Window* window = NULL;
+static SDL_Renderer* renderer = NULL;
+static SDL_Texture* texture = NULL;
 #endif
 
-static int rx_notify_buffer_ready(void *priv, struct mtl_rdma_buffer *buffer) {
+static int rx_notify_buffer_ready(void* priv, struct mtl_rdma_buffer* buffer) {
   (void)(priv);
   (void)(buffer);
   pthread_mutex_lock(&mtx);
@@ -81,7 +81,7 @@ int sdl_init(size_t width, size_t height) {
   return 0;
 }
 
-void sdl_display_frame(void *frame, size_t width, size_t height) {
+void sdl_display_frame(void* frame, size_t width, size_t height) {
   (void)(height);
   SDL_UpdateTexture(texture, NULL, frame,
                     width * 2);  // Assuming UYVY (2 bytes per pixel)
@@ -98,7 +98,7 @@ void sdl_cleanup() {
 }
 #endif
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
 #ifdef APP_HAS_SDL2
   if (sdl_init(1920, 1080) != 0) {
     fprintf(stderr, "Failed to initialize SDL.\n");
@@ -113,7 +113,7 @@ int main(int argc, char **argv) {
   signal(SIGINT, int_handler);
 
   int ret = 0;
-  void *buffers[3] = {};
+  void* buffers[3] = {};
   mtl_rdma_handle mrh = NULL;
   mtl_rdma_rx_handle rx = NULL;
   struct mtl_rdma_init_params p = {
@@ -165,7 +165,7 @@ int main(int argc, char **argv) {
   printf("Starting to receive frames\n");
 
   int frames_consumed = 0;
-  struct mtl_rdma_buffer *buffer = NULL;
+  struct mtl_rdma_buffer* buffer = NULL;
   while (keep_running) {
     buffer = mtl_rdma_rx_get_buffer(rx);
     if (!buffer) {
@@ -181,7 +181,7 @@ int main(int argc, char **argv) {
       clock_gettime(CLOCK_REALTIME, &now);
       uint64_t recv_time_ns =
           ((uint64_t)now.tv_sec * NANOSECONDS_IN_SECOND) + now.tv_nsec;
-      uint64_t send_time_ns = *(uint64_t *)buffer->user_meta;
+      uint64_t send_time_ns = *(uint64_t*)buffer->user_meta;
       printf("Latency: %.2f us\n", (recv_time_ns - send_time_ns) / 1000.0);
     }
 

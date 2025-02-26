@@ -65,17 +65,17 @@ struct aes3_le {
 typedef struct aes3_le aes3_t;
 
 struct user_data {
-  uint8_t *cursor;
-  uint8_t *begin;
-  uint8_t *end;
+  uint8_t* cursor;
+  uint8_t* begin;
+  uint8_t* end;
 };
 
 static int g_pkt_idx = 0;
 
-void packetHandler(uint8_t *userData, const struct pcap_pkthdr *pkthdr,
-                   const uint8_t *packet) {
-  struct user_data *ud = (struct user_data *)userData;
-  uint8_t *payload = packet + sizeof(struct ether_header) + sizeof(struct iphdr) +
+void packetHandler(uint8_t* userData, const struct pcap_pkthdr* pkthdr,
+                   const uint8_t* packet) {
+  struct user_data* ud = (struct user_data*)userData;
+  uint8_t* payload = packet + sizeof(struct ether_header) + sizeof(struct iphdr) +
                      sizeof(struct udphdr) + RFC3550_RTP_HDR_LEN;
   uint16_t payload_len = pkthdr->len - sizeof(struct ether_header) -
                          sizeof(struct iphdr) - sizeof(struct udphdr) -
@@ -88,9 +88,9 @@ void packetHandler(uint8_t *userData, const struct pcap_pkthdr *pkthdr,
   int sample_per_packet = 48;  // 48khz, 1ms packet time
   int num_channels = num_subframes / sample_per_packet;
   printf("pkt %d, %d subframes of %d channels\n", g_pkt_idx, num_subframes, num_channels);
-  am824_t *am = (am824_t *)payload;
+  am824_t* am = (am824_t*)payload;
   for (int i = 0; i < num_subframes; i++) {
-    uint32_t am_32 = *(uint32_t *)am;
+    uint32_t am_32 = *(uint32_t*)am;
     printf("pkt %d, subframe %d, hex: %08x, channel bit: %u\n", g_pkt_idx, i, am_32,
            am->c);
     if (am->f) {
@@ -114,8 +114,8 @@ void packetHandler(uint8_t *userData, const struct pcap_pkthdr *pkthdr,
   g_pkt_idx++;
 }
 
-int main(int argc, char **argv) {
-  pcap_t *fp;
+int main(int argc, char** argv) {
+  pcap_t* fp;
   int fd;
   char errbuf[PCAP_ERRBUF_SIZE];
 
@@ -140,7 +140,7 @@ int main(int argc, char **argv) {
 
   struct user_data ud;
 
-  uint8_t *m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, f_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     printf("mmap fail\n");
     close(fd);

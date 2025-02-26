@@ -22,7 +22,7 @@ enum st40p_tx_frame_status {
 };
 
 struct st40p_tx_ctx {
-  struct mtl_main_impl *impl;
+  struct mtl_main_impl* impl;
   int idx;
   int socket_id;
   enum mt_handle_type type; /* for sanity check */
@@ -34,7 +34,7 @@ struct st40p_tx_ctx {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st40p_tx_frame *framebuffs;
+  struct st40p_tx_frame* framebuffs;
   pthread_mutex_t lock;
   bool ready;
 

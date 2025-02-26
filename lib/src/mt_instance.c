@@ -12,7 +12,7 @@
 #include "mt_log.h"
 #include "mt_util.h"
 
-static int instance_send_and_receive_message(int sock, mtl_message_t *msg,
+static int instance_send_and_receive_message(int sock, mtl_message_t* msg,
                                              mtl_message_type_t response_type) {
   ssize_t ret = send(sock, msg, sizeof(*msg), 0);
   if (ret < 0) {
@@ -31,7 +31,7 @@ static int instance_send_and_receive_message(int sock, mtl_message_t *msg,
   return ntohl(msg->body.response_msg.response);
 }
 
-int mt_instance_put_lcore(struct mtl_main_impl *impl, uint16_t lcore_id) {
+int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
@@ -43,7 +43,7 @@ int mt_instance_put_lcore(struct mtl_main_impl *impl, uint16_t lcore_id) {
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
-int mt_instance_get_lcore(struct mtl_main_impl *impl, uint16_t lcore_id) {
+int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
@@ -55,7 +55,7 @@ int mt_instance_get_lcore(struct mtl_main_impl *impl, uint16_t lcore_id) {
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
-int mt_instance_request_xsks_map_fd(struct mtl_main_impl *impl, unsigned int ifindex) {
+int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
   int ret;
   int xsks_map_fd = -1;
   int sock = impl->instance_fd;
@@ -73,7 +73,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl *impl, unsigned int ifi
   }
 
   char cms[CMSG_SPACE(sizeof(int))];
-  struct cmsghdr *cmsg;
+  struct cmsghdr* cmsg;
   struct msghdr msg;
   struct iovec iov;
   int value;
@@ -101,7 +101,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl *impl, unsigned int ifi
     return -EINVAL;
   }
 
-  xsks_map_fd = *(int *)CMSG_DATA(cmsg);
+  xsks_map_fd = *(int*)CMSG_DATA(cmsg);
   if (xsks_map_fd < 0) {
     err("%s(%u), get xsks_map_fd fail, %s\n", __func__, ifindex, strerror(errno));
     return errno;
@@ -110,7 +110,7 @@ int mt_instance_request_xsks_map_fd(struct mtl_main_impl *impl, unsigned int ifi
   return xsks_map_fd;
 }
 
-int mt_instance_update_udp_dp_filter(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_update_udp_dp_filter(struct mtl_main_impl* impl, unsigned int ifindex,
                                      uint16_t dst_port, bool add) {
   int sock = impl->instance_fd;
 
@@ -125,7 +125,7 @@ int mt_instance_update_udp_dp_filter(struct mtl_main_impl *impl, unsigned int if
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
-int mt_instance_get_queue(struct mtl_main_impl *impl, unsigned int ifindex) {
+int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex) {
   int sock = impl->instance_fd;
 
   mtl_message_t msg;
@@ -137,7 +137,7 @@ int mt_instance_get_queue(struct mtl_main_impl *impl, unsigned int ifindex) {
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_IF_QUEUE_ID);
 }
 
-int mt_instance_put_queue(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
                           uint16_t queue_id) {
   int sock = impl->instance_fd;
 
@@ -151,7 +151,7 @@ int mt_instance_put_queue(struct mtl_main_impl *impl, unsigned int ifindex,
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
-int mt_instance_add_flow(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_add_flow(struct mtl_main_impl* impl, unsigned int ifindex,
                          uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
                          uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
   int sock = impl->instance_fd;
@@ -171,7 +171,7 @@ int mt_instance_add_flow(struct mtl_main_impl *impl, unsigned int ifindex,
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_IF_FLOW_ID);
 }
 
-int mt_instance_del_flow(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_del_flow(struct mtl_main_impl* impl, unsigned int ifindex,
                          uint32_t flow_id) {
   int sock = impl->instance_fd;
 
@@ -185,7 +185,7 @@ int mt_instance_del_flow(struct mtl_main_impl *impl, unsigned int ifindex,
   return instance_send_and_receive_message(sock, &msg, MTL_MSG_TYPE_RESPONSE);
 }
 
-int mt_instance_init(struct mtl_main_impl *impl, struct mtl_init_params *p) {
+int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
   int sock = socket(AF_UNIX, SOCK_STREAM, 0);
   if (sock < 0) {
@@ -196,21 +196,21 @@ int mt_instance_init(struct mtl_main_impl *impl, struct mtl_init_params *p) {
   struct sockaddr_un addr;
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, MTL_MANAGER_SOCK_PATH, sizeof(addr.sun_path) - 1);
-  int ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+  int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
   if (ret < 0) {
     warn("%s, connect to manager fail, assume single instance mode\n", __func__);
     close(sock);
     return ret;
   }
 
-  struct mt_user_info *u_info = &impl->u_info;
+  struct mt_user_info* u_info = &impl->u_info;
 
   mtl_message_t msg;
   msg.header.magic = htonl(MTL_MANAGER_MAGIC);
   msg.header.type = htonl(MTL_MSG_TYPE_REGISTER);
   msg.header.body_len = sizeof(mtl_register_message_t);
 
-  mtl_register_message_t *reg_msg = &msg.body.register_msg;
+  mtl_register_message_t* reg_msg = &msg.body.register_msg;
   reg_msg->pid = htonl(u_info->pid);
   reg_msg->uid = htonl(getuid());
   strncpy(reg_msg->hostname, u_info->hostname, sizeof(reg_msg->hostname) - 1);
@@ -220,7 +220,7 @@ int mt_instance_init(struct mtl_main_impl *impl, struct mtl_init_params *p) {
   uint16_t num_xdp_if = 0;
   for (int i = 0; i < p->num_ports; i++) {
     if (mtl_pmd_is_af_xdp(p->pmd[i])) {
-      const char *if_name;
+      const char* if_name;
       if (p->pmd[i] == MTL_PMD_NATIVE_AF_XDP)
         if_name = mt_native_afxdp_port2if(p->port[i]);
       else
@@ -245,7 +245,7 @@ int mt_instance_init(struct mtl_main_impl *impl, struct mtl_init_params *p) {
   return 0;
 }
 
-int mt_instance_uinit(struct mtl_main_impl *impl) {
+int mt_instance_uinit(struct mtl_main_impl* impl) {
   int sock = impl->instance_fd;
   if (sock <= 0) return -EIO;
 
@@ -261,7 +261,7 @@ bool mtl_is_manager_alive(void) {
   struct sockaddr_un addr;
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, MTL_MANAGER_SOCK_PATH, sizeof(addr.sun_path) - 1);
-  int ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+  int ret = connect(sock, (struct sockaddr*)&addr, sizeof(addr));
   if (ret < 0) {
     err("%s, MTL manager is not alive\n", __func__);
     close(sock);
@@ -274,42 +274,42 @@ bool mtl_is_manager_alive(void) {
 
 #else /* not supported on Windows */
 
-int mt_instance_init(struct mtl_main_impl *impl, struct mtl_init_params *p) {
+int mt_instance_init(struct mtl_main_impl* impl, struct mtl_init_params* p) {
   impl->instance_fd = -1;
   MTL_MAY_UNUSED(p);
   return -ENOTSUP;
 }
 
-int mt_instance_uinit(struct mtl_main_impl *impl) {
+int mt_instance_uinit(struct mtl_main_impl* impl) {
   MTL_MAY_UNUSED(impl);
   return -ENOTSUP;
 }
 
-int mt_instance_get_lcore(struct mtl_main_impl *impl, uint16_t lcore_id) {
-  MTL_MAY_UNUSED(impl);
-  MTL_MAY_UNUSED(lcore_id);
-  return -ENOTSUP;
-}
-
-int mt_instance_put_lcore(struct mtl_main_impl *impl, uint16_t lcore_id) {
+int mt_instance_get_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(lcore_id);
   return -ENOTSUP;
 }
 
-int mt_instance_request_xsks_map_fd(struct mtl_main_impl *impl, unsigned int ifindex) {
+int mt_instance_put_lcore(struct mtl_main_impl* impl, uint16_t lcore_id) {
+  MTL_MAY_UNUSED(impl);
+  MTL_MAY_UNUSED(lcore_id);
+  return -ENOTSUP;
+}
+
+int mt_instance_request_xsks_map_fd(struct mtl_main_impl* impl, unsigned int ifindex) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
   return -ENOTSUP;
 }
 
-int mt_instance_get_queue(struct mtl_main_impl *impl, unsigned int ifindex) {
+int mt_instance_get_queue(struct mtl_main_impl* impl, unsigned int ifindex) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
   return -ENOTSUP;
 }
 
-int mt_instance_put_queue(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_put_queue(struct mtl_main_impl* impl, unsigned int ifindex,
                           uint16_t queue_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);
@@ -317,7 +317,7 @@ int mt_instance_put_queue(struct mtl_main_impl *impl, unsigned int ifindex,
   return -ENOTSUP;
 }
 
-int mt_instance_add_flow(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_add_flow(struct mtl_main_impl* impl, unsigned int ifindex,
                          uint16_t queue_id, uint32_t flow_type, uint32_t src_ip,
                          uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
   MTL_MAY_UNUSED(impl);
@@ -331,7 +331,7 @@ int mt_instance_add_flow(struct mtl_main_impl *impl, unsigned int ifindex,
   return -ENOTSUP;
 }
 
-int mt_instance_del_flow(struct mtl_main_impl *impl, unsigned int ifindex,
+int mt_instance_del_flow(struct mtl_main_impl* impl, unsigned int ifindex,
                          uint32_t flow_id) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(ifindex);

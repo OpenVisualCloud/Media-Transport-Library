@@ -254,7 +254,7 @@ struct st_var_info {
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st_get_var_info(mtl_handle mt, struct st_var_info *info);
+int st_get_var_info(mtl_handle mt, struct st_var_info* info);
 
 /**
  * Inline function to check the  rx frame is a completed frame.
@@ -297,7 +297,7 @@ enum st_fps st_frame_rate_to_st_fps(double framerate);
  * @return
  *   enum st_fps fps.
  */
-enum st_fps st_name_to_fps(const char *name);
+enum st_fps st_name_to_fps(const char* name);
 
 /**
  * Helper function to convert ST10_TIMESTAMP_FMT_TAI to ST10_TIMESTAMP_FMT_MEDIA_CLK.

@@ -13,31 +13,31 @@
 #define MT_SRSS_BURST_SIZE (128)
 #define MT_SRSS_RING_PREFIX "SR_"
 
-static inline struct mt_srss_list *srss_list_by_udp_port(struct mt_srss_impl *srss,
+static inline struct mt_srss_list* srss_list_by_udp_port(struct mt_srss_impl* srss,
                                                          uint16_t port) {
   int l_idx = port % srss->lists_sz;
   return &srss->lists[l_idx];
 }
 
-static inline void srss_list_lock(struct mt_srss_list *list) {
+static inline void srss_list_lock(struct mt_srss_list* list) {
   rte_spinlock_lock(&list->mutex);
 }
 
 /* return true if try lock succ */
-static inline bool srss_list_try_lock(struct mt_srss_list *list) {
+static inline bool srss_list_try_lock(struct mt_srss_list* list) {
   int ret = rte_spinlock_trylock(&list->mutex);
   return ret ? true : false;
 }
 
-static inline void srss_list_unlock(struct mt_srss_list *list) {
+static inline void srss_list_unlock(struct mt_srss_list* list) {
   rte_spinlock_unlock(&list->mutex);
 }
 
-static inline void srss_entry_pkts_enqueue(struct mt_srss_entry *entry,
-                                           struct rte_mbuf **pkts,
+static inline void srss_entry_pkts_enqueue(struct mt_srss_entry* entry,
+                                           struct rte_mbuf** pkts,
                                            const uint16_t nb_pkts) {
   /* use bulk version */
-  unsigned int n = rte_ring_mp_enqueue_bulk(entry->ring, (void **)pkts, nb_pkts, NULL);
+  unsigned int n = rte_ring_mp_enqueue_bulk(entry->ring, (void**)pkts, nb_pkts, NULL);
   entry->stat_enqueue_cnt += n;
   if (n == 0) {
     rte_pktmbuf_free_bulk(pkts, nb_pkts);
@@ -68,15 +68,15 @@ static inline void srss_entry_pkts_enqueue(struct mt_srss_entry *entry,
     last_list = list;                           \
   } while (0)
 
-static int srss_sch_tasklet_handler(void *priv) {
-  struct mt_srss_sch *srss_sch = priv;
-  struct mt_srss_impl *srss = srss_sch->parent;
-  struct mtl_main_impl *impl = srss->parent;
+static int srss_sch_tasklet_handler(void* priv) {
+  struct mt_srss_sch* srss_sch = priv;
+  struct mt_srss_impl* srss = srss_sch->parent;
+  struct mtl_main_impl* impl = srss->parent;
   struct rte_mbuf *pkts[MT_SRSS_BURST_SIZE], *matched_pkts[MT_SRSS_BURST_SIZE];
   struct mt_srss_entry *srss_entry, *last_srss_entry;
   struct mt_srss_list *list = NULL, *last_list = NULL;
-  struct mt_udp_hdr *hdr;
-  struct rte_ipv4_hdr *ipv4;
+  struct mt_udp_hdr* hdr;
+  struct rte_ipv4_hdr* ipv4;
 
   for (uint16_t queue = srss_sch->q_start; queue < srss_sch->q_end; queue++) {
     uint16_t matched_pkts_nb = 0;
@@ -94,7 +94,7 @@ static int srss_sch_tasklet_handler(void *priv) {
     last_srss_entry = NULL;
     for (uint16_t i = 0; i < rx; i++) {
       srss_entry = NULL;
-      hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr *);
+      hdr = rte_pktmbuf_mtod(pkts[i], struct mt_udp_hdr*);
       if (hdr->eth.ether_type !=
           htons(RTE_ETHER_TYPE_IPV4)) { /* non ip, redirect to cni */
         UPDATE_ENTRY();
@@ -114,7 +114,7 @@ static int srss_sch_tasklet_handler(void *priv) {
         UPDATE_LIST();
       }
       /* check if match any entry in current list */
-      struct mt_srss_entrys_list *head = &list->entrys_list;
+      struct mt_srss_entrys_list* head = &list->entrys_list;
       MT_TAILQ_FOREACH(srss_entry, head, next) {
         bool matched = mt_udp_matched(&srss_entry->flow, hdr);
         if (matched) {
@@ -138,13 +138,13 @@ static int srss_sch_tasklet_handler(void *priv) {
   return 0;
 }
 
-static void *srss_traffic_thread(void *arg) {
-  struct mt_srss_impl *srss = arg;
+static void* srss_traffic_thread(void* arg) {
+  struct mt_srss_impl* srss = arg;
 
   info("%s, start\n", __func__);
   while (rte_atomic32_read(&srss->stop_thread) == 0) {
     for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
-      struct mt_srss_sch *srss_sch = &srss->schs[s_idx];
+      struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
 
       srss_sch_tasklet_handler(srss_sch);
     }
@@ -155,7 +155,7 @@ static void *srss_traffic_thread(void *arg) {
   return NULL;
 }
 
-static int srss_traffic_thread_start(struct mt_srss_impl *srss) {
+static int srss_traffic_thread_start(struct mt_srss_impl* srss) {
   int ret;
 
   if (srss->tid) {
@@ -173,7 +173,7 @@ static int srss_traffic_thread_start(struct mt_srss_impl *srss) {
   return 0;
 }
 
-static int srss_traffic_thread_stop(struct mt_srss_impl *srss) {
+static int srss_traffic_thread_stop(struct mt_srss_impl* srss) {
   rte_atomic32_set(&srss->stop_thread, 1);
   if (srss->tid) {
     pthread_join(srss->tid, NULL);
@@ -183,8 +183,8 @@ static int srss_traffic_thread_stop(struct mt_srss_impl *srss) {
   return 0;
 }
 
-static int srss_sch_tasklet_start(void *priv) {
-  struct mt_srss_sch *srss_sch = priv;
+static int srss_sch_tasklet_start(void* priv) {
+  struct mt_srss_sch* srss_sch = priv;
 
   if (srss_sch->idx == 0) {
     /* tasklet will take over the srss thread */
@@ -194,8 +194,8 @@ static int srss_sch_tasklet_start(void *priv) {
   return 0;
 }
 
-static int srss_sch_tasklet_stop(void *priv) {
-  struct mt_srss_sch *srss_sch = priv;
+static int srss_sch_tasklet_stop(void* priv) {
+  struct mt_srss_sch* srss_sch = priv;
 
   if (srss_sch->idx == 0) {
     srss_traffic_thread_start(srss_sch->parent);
@@ -204,19 +204,19 @@ static int srss_sch_tasklet_stop(void *priv) {
   return 0;
 }
 
-static int srss_stat(void *priv) {
-  struct mt_srss_impl *srss = priv;
+static int srss_stat(void* priv) {
+  struct mt_srss_impl* srss = priv;
   enum mtl_port port = srss->port;
-  struct mt_srss_entry *entry;
+  struct mt_srss_entry* entry;
   int idx;
 
   for (int l_idx = 0; l_idx < srss->lists_sz; l_idx++) {
-    struct mt_srss_list *list = &srss->lists[l_idx];
+    struct mt_srss_list* list = &srss->lists[l_idx];
     if (!srss_list_try_lock(list)) {
       continue;
     }
 
-    struct mt_srss_entrys_list *head = &list->entrys_list;
+    struct mt_srss_entrys_list* head = &list->entrys_list;
     MT_TAILQ_FOREACH(entry, head, next) {
       idx = entry->idx;
       notice("%s(%d,%d,%d), enqueue %u dequeue %u\n", __func__, port, l_idx, idx,
@@ -233,7 +233,7 @@ static int srss_stat(void *priv) {
   }
 
   for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
-    struct mt_srss_sch *srss_sch = &srss->schs[s_idx];
+    struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
 
     notice("%s(%d,%d), pkts rx %u\n", __func__, port, s_idx, srss_sch->stat_pkts_rx);
     srss_sch->stat_pkts_rx = 0;
@@ -242,8 +242,8 @@ static int srss_stat(void *priv) {
   return 0;
 }
 
-static int srss_uinit_xdp(struct mt_srss_impl *srss) {
-  struct mt_rx_xdp_entry **xdps = srss->xdps;
+static int srss_uinit_xdp(struct mt_srss_impl* srss) {
+  struct mt_rx_xdp_entry** xdps = srss->xdps;
   if (!xdps) return 0;
 
   for (uint16_t queue = 0; queue < srss->nb_rx_q; queue++) {
@@ -258,8 +258,8 @@ static int srss_uinit_xdp(struct mt_srss_impl *srss) {
   return 0;
 }
 
-static int srss_init_xdp(struct mt_srss_impl *srss) {
-  struct mtl_main_impl *impl = srss->parent;
+static int srss_init_xdp(struct mt_srss_impl* srss) {
+  struct mtl_main_impl* impl = srss->parent;
   enum mtl_port port = srss->port;
 
   srss->xdps = mt_rte_zmalloc_socket(sizeof(*srss->xdps) * srss->nb_rx_q,
@@ -291,13 +291,13 @@ static int srss_init_xdp(struct mt_srss_impl *srss) {
   return 0;
 }
 
-struct mt_srss_entry *mt_srss_get(struct mtl_main_impl *impl, enum mtl_port port,
-                                  struct mt_rxq_flow *flow) {
-  struct mt_srss_impl *srss = impl->srss[port];
+struct mt_srss_entry* mt_srss_get(struct mtl_main_impl* impl, enum mtl_port port,
+                                  struct mt_rxq_flow* flow) {
+  struct mt_srss_impl* srss = impl->srss[port];
   int idx = srss->entry_idx;
-  struct mt_srss_entry *entry;
-  struct mt_srss_list *list;
-  struct mt_srss_entrys_list *head;
+  struct mt_srss_entry* entry;
+  struct mt_srss_list* list;
+  struct mt_srss_entrys_list* head;
 
   if (!mt_has_srss(impl, port)) {
     err("%s(%d,%d), shared rss not enabled\n", __func__, port, idx);
@@ -311,7 +311,7 @@ struct mt_srss_entry *mt_srss_get(struct mtl_main_impl *impl, enum mtl_port port
   MT_TAILQ_FOREACH(entry, head, next) {
     /* todo: check with flow flags */
     if (entry->flow.dst_port == flow->dst_port &&
-        *(uint32_t *)entry->flow.dip_addr == *(uint32_t *)flow->dip_addr) {
+        *(uint32_t*)entry->flow.dip_addr == *(uint32_t*)flow->dip_addr) {
       err("%s(%d,%d), already has entry %u.%u.%u.%u:%u\n", __func__, port, idx,
           flow->dip_addr[0], flow->dip_addr[1], flow->dip_addr[2], flow->dip_addr[3],
           flow->dst_port);
@@ -354,14 +354,14 @@ struct mt_srss_entry *mt_srss_get(struct mtl_main_impl *impl, enum mtl_port port
   return entry;
 }
 
-int mt_srss_put(struct mt_srss_entry *entry) {
-  struct mt_srss_impl *srss = entry->srss;
+int mt_srss_put(struct mt_srss_entry* entry) {
+  struct mt_srss_impl* srss = entry->srss;
   enum mtl_port port = srss->port;
-  struct mt_srss_list *list = srss_list_by_udp_port(srss, entry->flow.dst_port);
-  struct mt_srss_entrys_list *head = &list->entrys_list;
+  struct mt_srss_list* list = srss_list_by_udp_port(srss, entry->flow.dst_port);
+  struct mt_srss_entrys_list* head = &list->entrys_list;
 
   /* check if it's a known entry in the list */
-  struct mt_srss_entry *temp_entry;
+  struct mt_srss_entry* temp_entry;
   bool found = false;
   srss_list_lock(list);
   MT_TAILQ_FOREACH(temp_entry, head, next) {
@@ -396,9 +396,9 @@ int mt_srss_put(struct mt_srss_entry *entry) {
   return 0;
 }
 
-int mt_srss_init(struct mtl_main_impl *impl) {
+int mt_srss_init(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
-  struct mtl_init_params *p = mt_get_user_params(impl);
+  struct mtl_init_params* p = mt_get_user_params(impl);
   int ret;
 
   for (int port = 0; port < num_ports; port++) {
@@ -411,7 +411,7 @@ int mt_srss_init(struct mtl_main_impl *impl) {
       mt_srss_uinit(impl);
       return -ENOMEM;
     }
-    struct mt_srss_impl *srss = impl->srss[port];
+    struct mt_srss_impl* srss = impl->srss[port];
 
     srss->port = port;
     srss->parent = impl;
@@ -428,7 +428,7 @@ int mt_srss_init(struct mtl_main_impl *impl) {
       return -ENOMEM;
     }
     for (int l_idx = 0; l_idx < srss->lists_sz; l_idx++) {
-      struct mt_srss_list *list = &srss->lists[l_idx];
+      struct mt_srss_list* list = &srss->lists[l_idx];
 
       list->idx = l_idx;
       MT_TAILQ_INIT(&list->entrys_list);
@@ -459,7 +459,7 @@ int mt_srss_init(struct mtl_main_impl *impl) {
     uint16_t q_per_sch = srss->nb_rx_q / srss->schs_cnt;
     uint16_t q_remaining = srss->nb_rx_q % srss->schs_cnt;
     for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
-      struct mt_srss_sch *srss_sch = &srss->schs[s_idx];
+      struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
       srss_sch->parent = srss;
       srss_sch->idx = s_idx;
       srss_sch->quota_mps = 0;
@@ -469,7 +469,7 @@ int mt_srss_init(struct mtl_main_impl *impl) {
       srss_sch->q_end = q_end;
       q_idx = q_end;
 
-      struct mtl_sch_impl *sch =
+      struct mtl_sch_impl* sch =
           mt_sch_get(impl, srss_sch->quota_mps, MT_SCH_TYPE_DEFAULT, sch_mask);
       if (!sch) {
         err("%s(%d), get sch fail on %d\n", __func__, port, s_idx);
@@ -513,11 +513,11 @@ int mt_srss_init(struct mtl_main_impl *impl) {
   return 0;
 }
 
-int mt_srss_uinit(struct mtl_main_impl *impl) {
+int mt_srss_uinit(struct mtl_main_impl* impl) {
   int num_ports = mt_num_ports(impl);
 
   for (int i = 0; i < num_ports; i++) {
-    struct mt_srss_impl *srss = impl->srss[i];
+    struct mt_srss_impl* srss = impl->srss[i];
     if (!srss) continue;
 
     mt_stat_unregister(impl, srss_stat, srss);
@@ -525,7 +525,7 @@ int mt_srss_uinit(struct mtl_main_impl *impl) {
 
     if (srss->schs) {
       for (int s_idx = 0; s_idx < srss->schs_cnt; s_idx++) {
-        struct mt_srss_sch *srss_sch = &srss->schs[s_idx];
+        struct mt_srss_sch* srss_sch = &srss->schs[s_idx];
         if (srss_sch->tasklet) {
           mtl_sch_unregister_tasklet(srss_sch->tasklet);
           srss_sch->tasklet = NULL;
@@ -542,10 +542,10 @@ int mt_srss_uinit(struct mtl_main_impl *impl) {
 
     if (srss->lists) {
       for (int l_idx = 0; l_idx < srss->lists_sz; l_idx++) {
-        struct mt_srss_list *list = &srss->lists[l_idx];
+        struct mt_srss_list* list = &srss->lists[l_idx];
 
-        struct mt_srss_entrys_list *head = &list->entrys_list;
-        struct mt_srss_entry *entry;
+        struct mt_srss_entrys_list* head = &list->entrys_list;
+        struct mt_srss_entry* entry;
         while ((entry = MT_TAILQ_FIRST(head))) {
           warn("%s(%d), still has entry %p on list_heads %d\n", __func__, i, entry,
                l_idx);

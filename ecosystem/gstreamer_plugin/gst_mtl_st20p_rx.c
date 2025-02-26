@@ -117,22 +117,22 @@ G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St20p_Rx, gst_mtl_st20p_rx, GST_TYPE_BASE_SRC,
 GST_ELEMENT_REGISTER_DEFINE(mtl_st20p_rx, "mtl_st20p_rx", GST_RANK_NONE,
                             GST_TYPE_MTL_ST20P_RX);
 
-static void gst_mtl_st20p_rx_set_property(GObject *object, guint prop_id,
-                                          const GValue *value, GParamSpec *pspec);
-static void gst_mtl_st20p_rx_get_property(GObject *object, guint prop_id, GValue *value,
-                                          GParamSpec *pspec);
-static void gst_mtl_st20p_rx_finalize(GObject *object);
+static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec);
+static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue* value,
+                                          GParamSpec* pspec);
+static void gst_mtl_st20p_rx_finalize(GObject* object);
 
-static gboolean gst_mtl_st20p_rx_start(GstBaseSrc *basesrc);
-static gboolean gst_mtl_st20p_rx_stop(GstBaseSrc *basesrc);
-static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc *basesrc);
-static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc *basesrc, guint64 offset,
-                                             guint length, GstBuffer **buffer);
+static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc);
+static gboolean gst_mtl_st20p_rx_stop(GstBaseSrc* basesrc);
+static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc);
+static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset,
+                                             guint length, GstBuffer** buffer);
 
-static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass *klass) {
-  GObjectClass *gobject_class;
-  GstElementClass *gstelement_class;
-  GstBaseSrcClass *gstbasesrc_class;
+static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
+  GObjectClass* gobject_class;
+  GstElementClass* gstelement_class;
+  GstBaseSrcClass* gstbasesrc_class;
 
   gobject_class = G_OBJECT_CLASS(klass);
   gstelement_class = GST_ELEMENT_CLASS(klass);
@@ -197,11 +197,11 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass *klass) {
                           "v210", G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
-static gboolean gst_mtl_st20p_rx_start(GstBaseSrc *basesrc) {
-  struct st20p_rx_ops *ops_rx;
+static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
+  struct st20p_rx_ops* ops_rx;
   gint ret;
 
-  Gst_Mtl_St20p_Rx *src = GST_MTL_ST20P_RX(basesrc);
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
   ops_rx = &src->ops_rx;
 
   GST_DEBUG_OBJECT(src, "start");
@@ -298,9 +298,9 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc *basesrc) {
   return TRUE;
 }
 
-static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx *src) {
-  GstElement *element = GST_ELEMENT(src);
-  GstPad *srcpad;
+static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx* src) {
+  GstElement* element = GST_ELEMENT(src);
+  GstPad* srcpad;
 
   src->fps_n = DEFAULT_FRAMERATE;
   src->fps_d = 1;
@@ -312,9 +312,9 @@ static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx *src) {
   }
 }
 
-static void gst_mtl_st20p_rx_set_property(GObject *object, guint prop_id,
-                                          const GValue *value, GParamSpec *pspec) {
-  Gst_Mtl_St20p_Rx *self = GST_MTL_ST20P_RX(object);
+static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec) {
+  Gst_Mtl_St20p_Rx* self = GST_MTL_ST20P_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
     gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
@@ -351,9 +351,9 @@ static void gst_mtl_st20p_rx_set_property(GObject *object, guint prop_id,
   }
 }
 
-static void gst_mtl_st20p_rx_get_property(GObject *object, guint prop_id, GValue *value,
-                                          GParamSpec *pspec) {
-  Gst_Mtl_St20p_Rx *src = GST_MTL_ST20P_RX(object);
+static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue* value,
+                                          GParamSpec* pspec) {
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
     gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->devArgs),
@@ -394,12 +394,12 @@ static void gst_mtl_st20p_rx_get_property(GObject *object, guint prop_id, GValue
  * from caps negotiated by the pipeline.
  */
 
-static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc *basesrc) {
-  GstVideoInfo *info;
-  Gst_Mtl_St20p_Rx *src = GST_MTL_ST20P_RX(basesrc);
-  struct st20p_rx_ops *ops_rx = &src->ops_rx;
+static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
+  GstVideoInfo* info;
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
+  struct st20p_rx_ops* ops_rx = &src->ops_rx;
   gint ret;
-  GstCaps *caps;
+  GstCaps* caps;
 
   info = gst_video_info_new();
   if (!info) {
@@ -458,11 +458,11 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc *basesrc) {
   return TRUE;
 }
 
-static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc *basesrc, guint64 offset,
-                                             guint length, GstBuffer **buffer) {
-  GstBuffer *buf;
-  Gst_Mtl_St20p_Rx *src = GST_MTL_ST20P_RX(basesrc);
-  struct st_frame *frame;
+static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset,
+                                             guint length, GstBuffer** buffer) {
+  GstBuffer* buf;
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
+  struct st_frame* frame;
   GstMapInfo dest_info;
   gint ret;
   gsize fill_size;
@@ -509,8 +509,8 @@ static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc *basesrc, guint64 offset
   return ret;
 }
 
-static void gst_mtl_st20p_rx_finalize(GObject *object) {
-  Gst_Mtl_St20p_Rx *src = GST_MTL_ST20P_RX(object);
+static void gst_mtl_st20p_rx_finalize(GObject* object) {
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(object);
 
   if (src->rx_handle) {
     if (st20p_rx_free(src->rx_handle)) {
@@ -528,8 +528,8 @@ static void gst_mtl_st20p_rx_finalize(GObject *object) {
   }
 }
 
-static gboolean gst_mtl_st20p_rx_stop(GstBaseSrc *basesrc) {
-  Gst_Mtl_St20p_Rx *src = GST_MTL_ST20P_RX(basesrc);
+static gboolean gst_mtl_st20p_rx_stop(GstBaseSrc* basesrc) {
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
 
   if (src->mtl_lib_handle) {
     mtl_stop(src->mtl_lib_handle);
@@ -538,7 +538,7 @@ static gboolean gst_mtl_st20p_rx_stop(GstBaseSrc *basesrc) {
   return TRUE;
 }
 
-static gboolean plugin_init(GstPlugin *mtl_st20p_rx) {
+static gboolean plugin_init(GstPlugin* mtl_st20p_rx) {
   return gst_element_register(mtl_st20p_rx, "mtl_st20p_rx", GST_RANK_SECONDARY,
                               GST_TYPE_MTL_ST20P_RX);
 }

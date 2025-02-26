@@ -17,15 +17,15 @@ struct rv_sample_context {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_rx_frame *framebuffs;
+  struct st_rx_frame* framebuffs;
 
   mtl_dma_mem_handle dma_mem;
-  struct st20_ext_frame *ext_frames;
+  struct st20_ext_frame* ext_frames;
 };
 
-static int rx_video_enqueue_frame(struct rv_sample_context *s, void *frame, size_t size) {
+static int rx_video_enqueue_frame(struct rv_sample_context* s, void* frame, size_t size) {
   uint16_t producer_idx = s->framebuff_producer_idx;
-  struct st_rx_frame *framebuff = &s->framebuffs[producer_idx];
+  struct st_rx_frame* framebuff = &s->framebuffs[producer_idx];
 
   if (framebuff->frame) {
     return -EBUSY;
@@ -41,14 +41,14 @@ static int rx_video_enqueue_frame(struct rv_sample_context *s, void *frame, size
   return 0;
 }
 
-static int rx_video_frame_ready(void *priv, void *frame,
-                                struct st20_rx_frame_meta *meta) {
-  struct rv_sample_context *s = (struct rv_sample_context *)priv;
+static int rx_video_frame_ready(void* priv, void* frame,
+                                struct st20_rx_frame_meta* meta) {
+  struct rv_sample_context* s = (struct rv_sample_context*)priv;
 
   if (!s->handle) return -EIO;
 
   if (meta->user_meta) {
-    const struct st_frame_user_meta *user_meta = meta->user_meta;
+    const struct st_frame_user_meta* user_meta = meta->user_meta;
     if (meta->user_meta_size != sizeof(*user_meta)) {
       err("%s(%d), user_meta_size wrong\n", __func__, s->idx);
     }
@@ -76,7 +76,7 @@ static int rx_video_frame_ready(void *priv, void *frame,
   return 0;
 }
 
-static void rx_video_consume_frame(struct rv_sample_context *s, void *frame,
+static void rx_video_consume_frame(struct rv_sample_context* s, void* frame,
                                    size_t frame_size) {
   MTL_MAY_UNUSED(frame);
   MTL_MAY_UNUSED(frame_size);
@@ -87,11 +87,11 @@ static void rx_video_consume_frame(struct rv_sample_context *s, void *frame,
   s->fb_rec++;
 }
 
-static void *rx_video_frame_thread(void *arg) {
-  struct rv_sample_context *s = arg;
+static void* rx_video_frame_thread(void* arg) {
+  struct rv_sample_context* s = arg;
   int idx = s->idx;
   int consumer_idx;
-  struct st_rx_frame *framebuff;
+  struct st_rx_frame* framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->stop) {
@@ -122,7 +122,7 @@ static void *rx_video_frame_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -141,10 +141,10 @@ int main(int argc, char **argv) {
 
   uint32_t session_num = ctx.sessions;
   st20_rx_handle rx_handle[session_num];
-  struct rv_sample_context *app[session_num];
+  struct rv_sample_context* app[session_num];
   // create and register rx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct rv_sample_context *)malloc(sizeof(struct rv_sample_context));
+    app[i] = (struct rv_sample_context*)malloc(sizeof(struct rv_sample_context));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     st_pthread_mutex_init(&app[i]->wake_mutex, NULL);
     st_pthread_cond_init(&app[i]->wake_cond, NULL);
     app[i]->framebuffs =
-        (struct st_rx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+        (struct st_rx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -191,8 +191,8 @@ int main(int argc, char **argv) {
     ops_rx.notify_frame_ready = rx_video_frame_ready;
 
     if (ops_rx.ext_frames) {
-      app[i]->ext_frames = (struct st20_ext_frame *)malloc(sizeof(*app[i]->ext_frames) *
-                                                           app[i]->framebuff_cnt);
+      app[i]->ext_frames = (struct st20_ext_frame*)malloc(sizeof(*app[i]->ext_frames) *
+                                                          app[i]->framebuff_cnt);
       if (!app[i]->ext_frames) {
         err("%s(%d), ext_frames malloc fail\n", __func__, i);
         ret = -ENOMEM;

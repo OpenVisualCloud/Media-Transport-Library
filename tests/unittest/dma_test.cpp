@@ -5,7 +5,7 @@
 #include "log.h"
 #include "tests.h"
 
-static int test_dma_cnt(struct st_tests_context *ctx) {
+static int test_dma_cnt(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
   struct mtl_var_info var;
   int ret;
@@ -16,7 +16,7 @@ static int test_dma_cnt(struct st_tests_context *ctx) {
   return var.dma_dev_cnt;
 }
 
-static void test_dma_create_one(struct st_tests_context *ctx) {
+static void test_dma_create_one(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
   int base_cnt = test_dma_cnt(ctx), cnt, ret;
   mtl_udma_handle dma;
@@ -31,7 +31,7 @@ static void test_dma_create_one(struct st_tests_context *ctx) {
   EXPECT_EQ(base_cnt, cnt);
 }
 
-static void test_dma_create_max(struct st_tests_context *ctx) {
+static void test_dma_create_max(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;
   int base_cnt = test_dma_cnt(ctx), cnt, ret, dma_idx;
   mtl_udma_handle dma[MTL_DMA_DEV_MAX];
@@ -54,7 +54,7 @@ static void test_dma_create_max(struct st_tests_context *ctx) {
 }
 
 TEST(Dma, create) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -62,7 +62,7 @@ TEST(Dma, create) {
 }
 
 TEST(Dma, create_max) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -70,7 +70,7 @@ TEST(Dma, create_max) {
 }
 
 TEST(Dma, create_multi) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -89,7 +89,7 @@ static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
   src = mtl_hp_malloc(st, len, MTL_PORT_P);
   ASSERT_TRUE(src != NULL);
   src_iova = mtl_hp_virt2iova(st, src);
-  st_test_rand_data((uint8_t *)src, len, 0);
+  st_test_rand_data((uint8_t*)src, len, 0);
 
   ret = mtl_udma_copy(dma, dst_iova + off, src_iova + off, len - off);
   EXPECT_GE(ret, 0);
@@ -100,14 +100,14 @@ static void _test_dma_copy(mtl_handle st, mtl_udma_handle dma, uint32_t off,
     nb_dq = mtl_udma_completed(dma, 32);
   }
 
-  ret = memcmp((uint8_t *)src + off, (uint8_t *)dst + off, len - off);
+  ret = memcmp((uint8_t*)src + off, (uint8_t*)dst + off, len - off);
   EXPECT_EQ(ret, 0);
 
   mtl_hp_free(st, dst);
   mtl_hp_free(st, src);
 }
 
-static void test_dma_copy(struct st_tests_context *ctx, uint32_t off, uint32_t len) {
+static void test_dma_copy(struct st_tests_context* ctx, uint32_t off, uint32_t len) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
   int ret;
@@ -121,7 +121,7 @@ static void test_dma_copy(struct st_tests_context *ctx, uint32_t off, uint32_t l
   EXPECT_GE(ret, 0);
 }
 
-static void test_dma_copy_sanity(struct st_tests_context *ctx) {
+static void test_dma_copy_sanity(struct st_tests_context* ctx) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
   int ret;
@@ -141,7 +141,7 @@ static void test_dma_copy_sanity(struct st_tests_context *ctx) {
   EXPECT_GE(ret, 0);
 }
 
-static void test_dma_copy_fill_async(struct st_tests_context *ctx, bool fill) {
+static void test_dma_copy_fill_async(struct st_tests_context* ctx, bool fill) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
   int ret;
@@ -169,8 +169,8 @@ static void test_dma_copy_fill_async(struct st_tests_context *ctx, bool fill) {
   if (fill)
     memset(fb_src, pattern, fb_size);
   else
-    st_test_rand_data((uint8_t *)fb_src, fb_size, 0);
-  SHA256((unsigned char *)fb_src, fb_size, fb_src_shas);
+    st_test_rand_data((uint8_t*)fb_src, fb_size, 0);
+  SHA256((unsigned char*)fb_src, fb_size, fb_src_shas);
 
   while (fb_dst_iova_off < fb_size) {
     /* try to copy */
@@ -191,7 +191,7 @@ static void test_dma_copy_fill_async(struct st_tests_context *ctx, bool fill) {
   }
 
   /* all copy completed, check sha */
-  SHA256((unsigned char *)fb_dst, fb_size, fb_dst_shas);
+  SHA256((unsigned char*)fb_dst, fb_size, fb_dst_shas);
   ret = memcmp(fb_dst_shas, fb_src_shas, SHA256_DIGEST_LENGTH);
   EXPECT_EQ(ret, 0);
 
@@ -203,7 +203,7 @@ static void test_dma_copy_fill_async(struct st_tests_context *ctx, bool fill) {
 }
 
 TEST(Dma, copy) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -212,7 +212,7 @@ TEST(Dma, copy) {
 }
 
 TEST(Dma, copy_odd) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -221,7 +221,7 @@ TEST(Dma, copy_odd) {
 }
 
 TEST(Dma, copy_sanity) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -229,7 +229,7 @@ TEST(Dma, copy_sanity) {
 }
 
 TEST(Dma, copy_async) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -258,14 +258,14 @@ static void _test_dma_fill(mtl_handle st, mtl_udma_handle dma, uint32_t off, uin
     nb_dq = mtl_udma_completed(dma, 32);
   }
 
-  ret = memcmp((uint8_t *)src + off, (uint8_t *)dst + off, len - off);
+  ret = memcmp((uint8_t*)src + off, (uint8_t*)dst + off, len - off);
   EXPECT_EQ(ret, 0);
 
   mtl_hp_free(st, dst);
   mtl_hp_free(st, src);
 }
 
-static void test_dma_fill(struct st_tests_context *ctx, uint32_t off, uint32_t len,
+static void test_dma_fill(struct st_tests_context* ctx, uint32_t off, uint32_t len,
                           uint8_t pattern) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
@@ -280,7 +280,7 @@ static void test_dma_fill(struct st_tests_context *ctx, uint32_t off, uint32_t l
   EXPECT_GE(ret, 0);
 }
 
-static void test_dma_fill_sanity(struct st_tests_context *ctx) {
+static void test_dma_fill_sanity(struct st_tests_context* ctx) {
   mtl_handle st = ctx->handle;
   mtl_udma_handle dma;
   int ret;
@@ -301,7 +301,7 @@ static void test_dma_fill_sanity(struct st_tests_context *ctx) {
 }
 
 TEST(Dma, fill) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -310,7 +310,7 @@ TEST(Dma, fill) {
 }
 
 TEST(Dma, fill_odd) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -319,7 +319,7 @@ TEST(Dma, fill_odd) {
 }
 
 TEST(Dma, fill_sanity) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
@@ -327,14 +327,14 @@ TEST(Dma, fill_sanity) {
 }
 
 TEST(Dma, fill_async) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (!st_test_dma_available(ctx)) return;
 
   test_dma_copy_fill_async(ctx, true);
 }
 
-static void _test_dma_map(mtl_handle st, const void *vaddr, size_t size,
+static void _test_dma_map(mtl_handle st, const void* vaddr, size_t size,
                           bool expect_succ) {
   mtl_iova_t iova = mtl_dma_map(st, vaddr, size);
   if (expect_succ) {
@@ -345,21 +345,21 @@ static void _test_dma_map(mtl_handle st, const void *vaddr, size_t size,
     EXPECT_FALSE(iova != MTL_BAD_IOVA);
 }
 
-static void test_dma_map(struct st_tests_context *ctx, size_t size) {
+static void test_dma_map(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
-  uint8_t *p = (uint8_t *)malloc(size + 2 * pg_sz);
+  uint8_t* p = (uint8_t*)malloc(size + 2 * pg_sz);
   ASSERT_TRUE(p != NULL);
 
-  uint8_t *align = (uint8_t *)MTL_ALIGN((uint64_t)p, pg_sz);
+  uint8_t* align = (uint8_t*)MTL_ALIGN((uint64_t)p, pg_sz);
   _test_dma_map(st, align, size, true);
 
   free(p);
 }
 
 TEST(Dma, map) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
@@ -372,25 +372,25 @@ TEST(Dma, map) {
 }
 
 TEST(Dma, map_fail) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
-  uint8_t *p = (uint8_t *)malloc(pg_sz / 2);
+  uint8_t* p = (uint8_t*)malloc(pg_sz / 2);
 
   _test_dma_map(st, p, pg_sz / 2, false);
 
   free(p);
 }
 
-static void test_dma_map_continues(struct st_tests_context *ctx, size_t size, int count) {
+static void test_dma_map_continues(struct st_tests_context* ctx, size_t size, int count) {
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
-  uint8_t *p = (uint8_t *)malloc((size + 2 * pg_sz) * count);
+  uint8_t* p = (uint8_t*)malloc((size + 2 * pg_sz) * count);
   ASSERT_TRUE(p != NULL);
 
-  uint8_t *align = (uint8_t *)MTL_ALIGN((uint64_t)p, pg_sz);
-  mtl_iova_t *iovas = new mtl_iova_t[count];
+  uint8_t* align = (uint8_t*)MTL_ALIGN((uint64_t)p, pg_sz);
+  mtl_iova_t* iovas = new mtl_iova_t[count];
   int ret;
 
   for (int i = 0; i < count; i++) {
@@ -407,7 +407,7 @@ static void test_dma_map_continues(struct st_tests_context *ctx, size_t size, in
 }
 
 TEST(Dma, map_continues) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
@@ -418,14 +418,14 @@ TEST(Dma, map_continues) {
   test_dma_map_continues(ctx, 64 * mtl_page_size(st), 10);
 }
 
-static void test_dma_remap(struct st_tests_context *ctx, size_t size) {
+static void test_dma_remap(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
   size_t pg_sz = mtl_page_size(st);
   /* 2 more pages to hold the head and tail */
-  uint8_t *p = (uint8_t *)malloc(size + 2 * pg_sz);
+  uint8_t* p = (uint8_t*)malloc(size + 2 * pg_sz);
   ASSERT_TRUE(p != NULL);
 
-  uint8_t *align = (uint8_t *)MTL_ALIGN((uint64_t)p, pg_sz);
+  uint8_t* align = (uint8_t*)MTL_ALIGN((uint64_t)p, pg_sz);
   mtl_iova_t iova = mtl_dma_map(st, align, size);
   EXPECT_TRUE(iova != MTL_BAD_IOVA);
 
@@ -451,7 +451,7 @@ static void test_dma_remap(struct st_tests_context *ctx, size_t size) {
 }
 
 TEST(Dma, map_remap) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
@@ -468,17 +468,17 @@ static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_si
   /* 2 more pages to hold the head and tail */
   size_t size = copy_size + 2 * pg_sz;
 
-  dst = (uint8_t *)malloc(size);
+  dst = (uint8_t*)malloc(size);
   if (!dst) return;
-  src = (uint8_t *)malloc(size);
+  src = (uint8_t*)malloc(size);
   if (!src) {
     free(dst);
     return;
   }
-  st_test_rand_data((uint8_t *)src, size, 0);
+  st_test_rand_data((uint8_t*)src, size, 0);
 
-  void *src_align = (void *)MTL_ALIGN((uint64_t)src, pg_sz);
-  void *dst_align = (void *)MTL_ALIGN((uint64_t)dst, pg_sz);
+  void* src_align = (void*)MTL_ALIGN((uint64_t)src, pg_sz);
+  void* dst_align = (void*)MTL_ALIGN((uint64_t)dst, pg_sz);
   mtl_iova_t src_iova = mtl_dma_map(st, src_align, copy_size);
   mtl_iova_t dst_iova = mtl_dma_map(st, dst_align, copy_size);
   ASSERT_TRUE(src_iova != MTL_BAD_IOVA);
@@ -505,7 +505,7 @@ static void test_dma_map_copy(mtl_handle st, mtl_udma_handle dma, size_t copy_si
 }
 
 TEST(Dma, map_copy) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
   auto st = ctx->handle;
 
   if (!st_test_dma_available(ctx)) return;
@@ -519,7 +519,7 @@ TEST(Dma, map_copy) {
   EXPECT_GE(ret, 0);
 }
 
-static void test_dma_mem_alloc_free(struct st_tests_context *ctx, size_t size) {
+static void test_dma_mem_alloc_free(struct st_tests_context* ctx, size_t size) {
   auto st = ctx->handle;
   mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(st, size);
   ASSERT_TRUE(dma_mem != NULL);
@@ -531,7 +531,7 @@ static void test_dma_mem_alloc_free(struct st_tests_context *ctx, size_t size) {
 }
 
 TEST(Dma, mem_alloc_free) {
-  struct st_tests_context *ctx = st_test_ctx();
+  struct st_tests_context* ctx = st_test_ctx();
 
   if (ctx->iova == MTL_IOVA_MODE_PA) {
     info("%s, skip as it's IOVA PA mode\n", __func__);

@@ -19,7 +19,7 @@ struct tv_sample_context {
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
-  struct st_tx_frame *framebuffs;
+  struct st_tx_frame* framebuffs;
 
   mtl_dma_mem_handle dma_mem;
 
@@ -27,12 +27,12 @@ struct tv_sample_context {
   bool has_user_meta;
 };
 
-static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
-                               struct st20_tx_frame_meta *meta) {
-  struct tv_sample_context *s = priv;
+static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st20_tx_frame_meta* meta) {
+  struct tv_sample_context* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
-  struct st_tx_frame *framebuff = &s->framebuffs[consumer_idx];
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
   MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO; /* not ready */
@@ -62,11 +62,11 @@ static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
   return ret;
 }
 
-static int tx_video_frame_done(void *priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta *meta) {
-  struct tv_sample_context *s = priv;
+static int tx_video_frame_done(void* priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta* meta) {
+  struct tv_sample_context* s = priv;
   int ret;
-  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
   if (!s->handle) return -EIO; /* not ready */
@@ -88,7 +88,7 @@ static int tx_video_frame_done(void *priv, uint16_t frame_idx,
   return ret;
 }
 
-static void tx_video_build_frame(struct tv_sample_context *s, void *frame,
+static void tx_video_build_frame(struct tv_sample_context* s, void* frame,
                                  size_t frame_size) {
   MTL_MAY_UNUSED(s);
   MTL_MAY_UNUSED(frame);
@@ -98,10 +98,10 @@ static void tx_video_build_frame(struct tv_sample_context *s, void *frame,
   st_usleep(10 * 1000);
 }
 
-static void *tx_video_frame_thread(void *arg) {
-  struct tv_sample_context *s = arg;
+static void* tx_video_frame_thread(void* arg) {
+  struct tv_sample_context* s = arg;
   uint16_t producer_idx;
-  struct st_tx_frame *framebuff;
+  struct st_tx_frame* framebuff;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -124,7 +124,7 @@ static void *tx_video_frame_thread(void *arg) {
       ext_frame.buf_len = s->framebuff_size;
       st20_tx_set_ext_frame(s->handle, producer_idx, &ext_frame);
     } else {
-      void *frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
+      void* frame_addr = st20_tx_get_framebuffer(s->handle, producer_idx);
       tx_video_build_frame(s, frame_addr, s->framebuff_size);
     }
     st_pthread_mutex_lock(&s->wake_mutex);
@@ -141,7 +141,7 @@ static void *tx_video_frame_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -161,12 +161,12 @@ int main(int argc, char **argv) {
   uint32_t session_num = ctx.sessions;
   st20_tx_handle tx_handle[session_num];
   memset(tx_handle, 0, sizeof(tx_handle));
-  struct tv_sample_context *app[session_num];
+  struct tv_sample_context* app[session_num];
   memset(app, 0, sizeof(app));
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {
-    app[i] = (struct tv_sample_context *)malloc(sizeof(struct tv_sample_context));
+    app[i] = (struct tv_sample_context*)malloc(sizeof(struct tv_sample_context));
     if (!app[i]) {
       err("%s(%d), app context malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -182,7 +182,7 @@ int main(int argc, char **argv) {
     }
     app[i]->framebuff_cnt = ctx.framebuff_cnt;
     app[i]->framebuffs =
-        (struct st_tx_frame *)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
+        (struct st_tx_frame*)malloc(sizeof(*app[i]->framebuffs) * app[i]->framebuff_cnt);
     if (!app[i]->framebuffs) {
       err("%s(%d), framebuffs ctx malloc fail\n", __func__, i);
       ret = -ENOMEM;

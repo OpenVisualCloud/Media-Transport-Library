@@ -107,11 +107,11 @@ extern "C" {
 /**
  * Handle to MTL transport device context
  */
-typedef struct mtl_main_impl *mtl_handle;
+typedef struct mtl_main_impl* mtl_handle;
 /**
  * Handle to st user dma device
  */
-typedef struct mtl_dma_lender_dev *mtl_udma_handle;
+typedef struct mtl_dma_lender_dev* mtl_udma_handle;
 
 /**
  * IO virtual address type.
@@ -126,7 +126,7 @@ typedef uint64_t mtl_cpuva_t;
 /**
  * Handle to dma mem
  */
-typedef struct mtl_dma_mem *mtl_dma_mem_handle;
+typedef struct mtl_dma_mem* mtl_dma_mem_handle;
 
 /**
  * Bad IOVA address
@@ -201,10 +201,10 @@ enum mtl_log_level {
 #define MTL_LOG_LEVEL_ERROR (MTL_LOG_LEVEL_ERR)
 
 /* log formatter */
-typedef void (*mtl_log_prefix_formatter_t)(char *buf, size_t buf_sz);
+typedef void (*mtl_log_prefix_formatter_t)(char* buf, size_t buf_sz);
 
 /* log printer, similar to printf */
-typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char *format, ...);
+typedef void (*mtl_log_printer_t)(enum mtl_log_level level, const char* format, ...);
 
 /**
  * Poll mode driver type, not change the enum value any more if one PMD type is marked as
@@ -554,14 +554,14 @@ struct mtl_init_params {
   /** Optional. Flags to control MTL behaviors. See MTL_FLAG_* for possible value */
   uint64_t flags;
   /** Optional. Private data to the cb functions(ptp_get_time_fn and stat_dump_cb_fn) */
-  void *priv;
+  void* priv;
   /** Optional. log level control */
   enum mtl_log_level log_level;
   /**
    * Optional. The logical cores list can be used in the MTL, e.g. "28,29,30,31".
    * If not assigned, the core usage will be determined by MTL itself.
    */
-  char *lcores;
+  char* lcores;
 
   /**
    * Optional. Dma(CBDMA or DSA) device can be used in the MTL.
@@ -598,15 +598,15 @@ struct mtl_init_params {
    * If NULL, MTL will get from built-in ptp source(NIC) if built-in ptp4l is enabled or
    * system time if built-in ptp4l is not enabled.
    */
-  uint64_t (*ptp_get_time_fn)(void *priv);
+  uint64_t (*ptp_get_time_fn)(void* priv);
   /** Optional for MTL_FLAG_PTP_ENABLE. The callback is notified every time the built-in
    * PTP protocol receives a valid PTP_DELAY_RESP message from the PTP grandmaster. */
-  void (*ptp_sync_notify)(void *priv, struct mtl_ptp_sync_notify_meta *meta);
+  void (*ptp_sync_notify)(void* priv, struct mtl_ptp_sync_notify_meta* meta);
 
   /** Optional. Stats dump period in seconds, zero means determined by lib(10s default) */
   uint16_t dump_period_s;
   /** Optional. Stats dump callback for user in every dump_period_s */
-  void (*stat_dump_cb_fn)(void *priv);
+  void (*stat_dump_cb_fn)(void* priv);
 
   /**
    * Optional for MTL_TRANSPORT_ST2110. The st21 tx pacing way, leave to zero(auto) if you
@@ -752,7 +752,7 @@ struct mtl_port_status {
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info *info);
+int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info* info);
 
 /**
  * Retrieve the varied information of an MTL instance.
@@ -765,7 +765,7 @@ int mtl_get_fix_info(mtl_handle mt, struct mtl_fix_info *info);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_var_info(mtl_handle mt, struct mtl_var_info *info);
+int mtl_get_var_info(mtl_handle mt, struct mtl_var_info* info);
 
 /**
  * Retrieve the general statistics(I/O) for a MTL port.
@@ -780,7 +780,7 @@ int mtl_get_var_info(mtl_handle mt, struct mtl_var_info *info);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status *stats);
+int mtl_get_port_stats(mtl_handle mt, enum mtl_port port, struct mtl_port_status* stats);
 
 /**
  * Reset the general statistics(I/O) for a MTL port.
@@ -809,33 +809,33 @@ int mtl_reset_port_stats(mtl_handle mt, enum mtl_port port);
 int mtl_get_numa_id(mtl_handle mt, enum mtl_port port);
 
 /** Helper to set the port for struct mtl_init_params */
-int mtl_para_port_set(struct mtl_init_params *p, enum mtl_port port, char *name);
+int mtl_para_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
 /** Helper to set the sip for struct mtl_init_params */
-int mtl_para_sip_set(struct mtl_init_params *p, enum mtl_port port, char *ip);
+int mtl_para_sip_set(struct mtl_init_params* p, enum mtl_port port, char* ip);
 /** Helper to set the gateway for struct mtl_init_params */
-int mtl_para_gateway_set(struct mtl_init_params *p, enum mtl_port port, char *gateway);
+int mtl_para_gateway_set(struct mtl_init_params* p, enum mtl_port port, char* gateway);
 /** Helper to set the netmask for struct mtl_init_params */
-int mtl_para_netmask_set(struct mtl_init_params *p, enum mtl_port port, char *netmask);
+int mtl_para_netmask_set(struct mtl_init_params* p, enum mtl_port port, char* netmask);
 /** Helper to set the dma dev port for struct mtl_init_params */
-int mtl_para_dma_port_set(struct mtl_init_params *p, enum mtl_port port, char *name);
+int mtl_para_dma_port_set(struct mtl_init_params* p, enum mtl_port port, char* name);
 /** Helper to set the tx queues number for struct mtl_init_params */
-static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params *p,
+static inline void mtl_para_tx_queues_cnt_set(struct mtl_init_params* p,
                                               enum mtl_port port, uint16_t cnt) {
   p->tx_queues_cnt[port] = cnt;
 }
 /** Helper to set the rx queues number for struct mtl_init_params */
-static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params *p,
+static inline void mtl_para_rx_queues_cnt_set(struct mtl_init_params* p,
                                               enum mtl_port port, uint16_t cnt) {
   p->rx_queues_cnt[port] = cnt;
 }
 /** Helper to set the PMD type for struct mtl_init_params */
-static inline void mtl_para_pmd_set(struct mtl_init_params *p, enum mtl_port port,
+static inline void mtl_para_pmd_set(struct mtl_init_params* p, enum mtl_port port,
                                     enum mtl_pmd_type pmd) {
   p->pmd[port] = pmd;
 }
 
 /** Helper to get the port from struct mtl_init_params */
-static inline char *mtl_para_port_get(struct mtl_init_params *p, enum mtl_port port) {
+static inline char* mtl_para_port_get(struct mtl_init_params* p, enum mtl_port port) {
   return p->port[port];
 }
 
@@ -846,7 +846,7 @@ static inline char *mtl_para_port_get(struct mtl_init_params *p, enum mtl_port p
  * @return
  *     Primary port name pointer
  */
-static inline char *mtl_p_port(struct mtl_init_params *p) {
+static inline char* mtl_p_port(struct mtl_init_params* p) {
   return mtl_para_port_get(p, MTL_PORT_P);
 }
 
@@ -857,7 +857,7 @@ static inline char *mtl_p_port(struct mtl_init_params *p) {
  * @return
  *     Redundant port name pointer
  */
-static inline char *mtl_r_port(struct mtl_init_params *p) {
+static inline char* mtl_r_port(struct mtl_init_params* p) {
   return mtl_para_port_get(p, MTL_PORT_R);
 }
 
@@ -869,7 +869,7 @@ static inline char *mtl_r_port(struct mtl_init_params *p) {
  * @return
  *     Primary port IP address pointer
  */
-static inline uint8_t *mtl_p_sip_addr(struct mtl_init_params *p) {
+static inline uint8_t* mtl_p_sip_addr(struct mtl_init_params* p) {
   return p->sip_addr[MTL_PORT_P];
 }
 
@@ -881,7 +881,7 @@ static inline uint8_t *mtl_p_sip_addr(struct mtl_init_params *p) {
  * @return
  *     Redundant port IP address pointer
  */
-static inline uint8_t *mtl_r_sip_addr(struct mtl_init_params *p) {
+static inline uint8_t* mtl_r_sip_addr(struct mtl_init_params* p) {
   return p->sip_addr[MTL_PORT_R];
 }
 
@@ -890,7 +890,7 @@ static inline uint8_t *mtl_r_sip_addr(struct mtl_init_params *p) {
  * @return
  *     ST version string
  */
-const char *mtl_version(void);
+const char* mtl_version(void);
 
 /**
  * Initialize the MTL transport device context which based on DPDK.
@@ -901,7 +901,7 @@ const char *mtl_version(void);
  *   - NULL on error.
  *   - Otherwise, the handle to the MTL transport device context.
  */
-mtl_handle mtl_init(struct mtl_init_params *p);
+mtl_handle mtl_init(struct mtl_init_params* p);
 
 /**
  * Un-initialize the MTL transport device context.
@@ -1030,7 +1030,7 @@ int mtl_set_log_printer(mtl_log_printer_t f);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_openlog_stream(FILE *f);
+int mtl_openlog_stream(FILE* f);
 
 /**
  * Enable or disable sleep mode for sch.
@@ -1072,7 +1072,7 @@ int mtl_sch_set_sleep_us(mtl_handle mt, uint64_t us);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_get_lcore(mtl_handle mt, unsigned int *lcore);
+int mtl_get_lcore(mtl_handle mt, unsigned int* lcore);
 
 /**
  * Bind one thread to lcore.
@@ -1114,7 +1114,7 @@ int mtl_put_lcore(mtl_handle mt, unsigned int lcore);
  * @return
  *   - Pointer to the destination data.
  */
-void *mtl_memcpy(void *dest, const void *src, size_t n);
+void* mtl_memcpy(void* dest, const void* src, size_t n);
 
 /**
  * Read cached time from ptp source.
@@ -1151,7 +1151,7 @@ uint64_t mtl_ptp_read_time_raw(mtl_handle mt);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the pointer to the allocated memory.
  */
-void *mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
+void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
 
 /**
  * Allocate zero'ed memory from the huge-page area of memory.
@@ -1169,7 +1169,7 @@ void *mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port);
  *   - NULL on error. Not enough memory, or invalid arguments
  *   - Otherwise, the virtual address pointer to the allocated memory.
  */
-void *mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
+void* mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
 
 /**
  * Frees the memory pointed by the pointer.
@@ -1183,7 +1183,7 @@ void *mtl_hp_zmalloc(mtl_handle mt, size_t size, enum mtl_port port);
  * @param ptr
  *   The virtual address pointer to memory to be freed.
  */
-void mtl_hp_free(mtl_handle mt, void *ptr);
+void mtl_hp_free(mtl_handle mt, void* ptr);
 
 /**
  * Return the IO address of a virtual address from mtl_hp_malloc/mtl_hp_zmalloc
@@ -1196,7 +1196,7 @@ void mtl_hp_free(mtl_handle mt, void *ptr);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void *vaddr);
+mtl_iova_t mtl_hp_virt2iova(mtl_handle mt, const void* vaddr);
 
 /**
  * Return the detected page size on the system.
@@ -1239,7 +1239,7 @@ void mtl_delay_us(unsigned int us);
  *   MTL_BAD_IOVA on error
  *   otherwise return an address suitable for IO
  */
-mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size);
+mtl_iova_t mtl_dma_map(mtl_handle mt, const void* vaddr, size_t size);
 
 /**
  * Perform DMA unmapping on the mtl_dma_map
@@ -1257,7 +1257,7 @@ mtl_iova_t mtl_dma_map(mtl_handle mt, const void *vaddr, size_t size);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int mtl_dma_unmap(mtl_handle mt, const void *vaddr, mtl_iova_t iova, size_t size);
+int mtl_dma_unmap(mtl_handle mt, const void* vaddr, mtl_iova_t iova, size_t size);
 
 /**
  * Allocate memory block more than required and map valid data to IOVA.
@@ -1303,7 +1303,7 @@ void mtl_dma_mem_free(mtl_handle mt, mtl_dma_mem_handle handle);
  * @return
  *   - Begin address of dma mapped memory.
  */
-void *mtl_dma_mem_addr(mtl_dma_mem_handle handle);
+void* mtl_dma_mem_addr(mtl_dma_mem_handle handle);
 
 /**
  * Get the begin IOVA of dma mapped memory.
@@ -1505,7 +1505,7 @@ enum mtl_simd_level mtl_get_simd_level(void);
  * @return
  *     simd level name
  */
-const char *mtl_get_simd_level_name(enum mtl_simd_level level);
+const char* mtl_get_simd_level_name(enum mtl_simd_level level);
 
 /**
  * Helper function to get pmd type by port name.
@@ -1515,7 +1515,7 @@ const char *mtl_get_simd_level_name(enum mtl_simd_level level);
  * @return
  *   pmd type.
  */
-enum mtl_pmd_type mtl_pmd_by_port_name(const char *port);
+enum mtl_pmd_type mtl_pmd_by_port_name(const char* port);
 
 /**
  * Helper function to check if it's a af_xdp based pmd.
@@ -1543,7 +1543,7 @@ static inline bool mtl_pmd_is_af_xdp(enum mtl_pmd_type pmd) {
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_get_if_ip(char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
+int mtl_get_if_ip(char* if_name, uint8_t ip[MTL_IP_ADDR_LEN],
                   uint8_t netmask[MTL_IP_ADDR_LEN]);
 
 /**
@@ -1556,7 +1556,7 @@ int mtl_get_if_ip(char *if_name, uint8_t ip[MTL_IP_ADDR_LEN],
  *   - 0: Success.
  *   - <0: Error code.
  */
-int mtl_thread_setname(pthread_t tid, const char *name);
+int mtl_thread_setname(pthread_t tid, const char* name);
 
 /**
  * Helper function which align a size with pages
@@ -1580,8 +1580,8 @@ struct mtl_memcpy_ops {
   size_t sz;
 };
 /** Helper function to perform mtl_memcpy with mtl_cpuva_t */
-static inline int mtl_memcpy_action(struct mtl_memcpy_ops *ops) {
-  mtl_memcpy((void *)ops->dst, (const void *)ops->src, ops->sz);
+static inline int mtl_memcpy_action(struct mtl_memcpy_ops* ops) {
+  mtl_memcpy((void*)ops->dst, (const void*)ops->src, ops->sz);
   return 0;
 }
 

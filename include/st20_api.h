@@ -265,19 +265,19 @@ extern "C" {
 /**
  * Handle to tx st2110-20(video) session
  */
-typedef struct st_tx_video_session_handle_impl *st20_tx_handle;
+typedef struct st_tx_video_session_handle_impl* st20_tx_handle;
 /**
  * Handle to tx st2110-22(compressed video) session
  */
-typedef struct st22_tx_video_session_handle_impl *st22_tx_handle;
+typedef struct st22_tx_video_session_handle_impl* st22_tx_handle;
 /**
  * Handle to rx st2110-20(video) session
  */
-typedef struct st_rx_video_session_handle_impl *st20_rx_handle;
+typedef struct st_rx_video_session_handle_impl* st20_rx_handle;
 /**
  * Handle to rx st2110-22(compressed video) session
  */
-typedef struct st22_rx_video_session_handle_impl *st22_rx_handle;
+typedef struct st22_rx_video_session_handle_impl* st22_rx_handle;
 
 /**
  * Pacing type of st2110-20(video) sender
@@ -384,7 +384,7 @@ struct st20_pgroup {
   /** pixel group coverage(pixels), e.g. 2 for YUV422 10 bit */
   uint32_t coverage;
   /** name */
-  char *name;
+  char* name;
 };
 
 /**
@@ -414,7 +414,7 @@ struct st20_tx_frame_meta {
    * MTL_PKT_MAX_RTP_BYTES. This data will be transported to RX with video data and passed
    * to user by user_meta in st20_rx_frame_meta.
    */
-  const void *user_meta;
+  const void* user_meta;
   /** size for meta data buffer */
   size_t user_meta_size;
 };
@@ -539,7 +539,7 @@ struct st20_rx_frame_meta {
    */
   size_t frame_recv_size;
   /** Private data for user, get from query_ext_frame callback */
-  void *opaque;
+  void* opaque;
   /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
   uint64_t timestamp_first_pkt;
   /** timestamp(ST10_TIMESTAMP_FMT_TAI in ns, PTP) value for the first pkt */
@@ -551,7 +551,7 @@ struct st20_rx_frame_meta {
   /**
    * The received user meta data buffer for current frame.
    */
-  const void *user_meta;
+  const void* user_meta;
   /** size for meta data buffer */
   size_t user_meta_size;
   /** the total packets received, not include the redundant packets */
@@ -561,7 +561,7 @@ struct st20_rx_frame_meta {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
   /** st20 rx timing parser meta, only active if ST20_RX_FLAG_TIMING_PARSER_META */
-  struct st20_rx_tp_meta *tp[MTL_SESSION_PORT_MAX];
+  struct st20_rx_tp_meta* tp[MTL_SESSION_PORT_MAX];
 };
 
 /**
@@ -609,7 +609,7 @@ struct st20_rx_uframe_pg_meta {
   /** The total size for user frame */
   size_t uframe_total_size;
   /** Point to current pixel groups data */
-  void *payload;
+  void* payload;
   /** Number of octets of data included from current pixel groups data */
   uint16_t row_length;
   /** Scan line number */
@@ -1072,13 +1072,13 @@ MTL_PACK(struct st20_rfc4175_422_8_pg2_le {
 /** External framebuffer */
 struct st20_ext_frame {
   /** Virtual address of external framebuffer */
-  void *buf_addr;
+  void* buf_addr;
   /** DMA mapped IOVA of external framebuffer */
   mtl_iova_t buf_iova;
   /** Length of external framebuffer */
   size_t buf_len;
   /** Private data for user, will be retrieved with st_frame or st20_rx_frame_meta */
-  void *opaque;
+  void* opaque;
 };
 
 /**
@@ -1131,9 +1131,9 @@ struct st20_tx_ops {
    * a random value */
   uint32_t ssrc;
   /** Optional. Name */
-  const char *name;
+  const char* name;
   /** Optional. Private data to the cb functions(get_next_frame and others) */
-  void *priv;
+  void* priv;
   /** Optional. Flags to control session behaviors. See ST20_TX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -1151,8 +1151,8 @@ struct st20_tx_ops {
    * be transferred to lib. And only non-block method can be used within this callback, as
    * it run from lcore tasklet routine.
    */
-  int (*get_next_frame)(void *priv, uint16_t *next_frame_idx,
-                        struct st20_tx_frame_meta *meta);
+  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
+                        struct st20_tx_frame_meta* meta);
   /**
    * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    * The callback when lib finish the sending of one frame, frame_idx indicate the
@@ -1160,8 +1160,8 @@ struct st20_tx_ops {
    * non-block method can be used within this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_done)(void *priv, uint16_t frame_idx,
-                           struct st20_tx_frame_meta *meta);
+  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
+                           struct st20_tx_frame_meta* meta);
 
   /**
    * Optional. The event callback when there is some event(vsync or others) happened for
@@ -1169,7 +1169,7 @@ struct st20_tx_ops {
    * routine. Args point to the meta data of each event. Ex, cast to struct
    * st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void *priv, enum st_event event, void *args);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST20_TX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_tx_rtcp_ops rtcp;
   /**
@@ -1209,8 +1209,8 @@ struct st20_tx_ops {
    * The callback when lib requires new ready lines, user should provide the ready lines
    * number by the meta.
    */
-  int (*query_frame_lines_ready)(void *priv, uint16_t frame_idx,
-                                 struct st20_tx_slice_meta *meta);
+  int (*query_frame_lines_ready)(void* priv, uint16_t frame_idx,
+                                 struct st20_tx_slice_meta* meta);
 
   /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
@@ -1232,7 +1232,7 @@ struct st20_tx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_rtp_done)(void *priv);
+  int (*notify_rtp_done)(void* priv);
   /**  Use this socket if ST20_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -1274,9 +1274,9 @@ struct st22_tx_ops {
    * a random value */
   uint32_t ssrc;
   /** Optional. Name */
-  const char *name;
+  const char* name;
   /** Optional. Private data to the cb functions(get_next_frame and others) */
-  void *priv;
+  void* priv;
   /** Optional. Flags to control session behaviors. See ST22_TX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -1301,8 +1301,8 @@ struct st22_tx_ops {
    * implicit means the frame ownership will be transferred to lib. And only non-block
    * method can be used within this callback, as it run from lcore tasklet routine.
    */
-  int (*get_next_frame)(void *priv, uint16_t *next_frame_idx,
-                        struct st22_tx_frame_meta *meta);
+  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
+                        struct st22_tx_frame_meta* meta);
   /**
    * Optional for ST22_TYPE_FRAME_LEVEL.
    * The callback when lib finish the sending of current frame, frame_idx indicate the
@@ -1310,8 +1310,8 @@ struct st22_tx_ops {
    * non-block method can be used within this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_done)(void *priv, uint16_t frame_idx,
-                           struct st22_tx_frame_meta *meta);
+  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
+                           struct st22_tx_frame_meta* meta);
 
   /**
    * Optional. The event callback when there is some event(vsync or others) happened for
@@ -1319,7 +1319,7 @@ struct st22_tx_ops {
    * routine. Args point to the meta data of each event. Ex, cast to struct
    * st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void *priv, enum st_event event, void *args);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional. UDP source port number, leave as 0 to use same port as destination port */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /** Optional for ST20_TX_FLAG_ENABLE_RTCP. RTCP info */
@@ -1348,7 +1348,7 @@ struct st22_tx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_rtp_done)(void *priv);
+  int (*notify_rtp_done)(void* priv);
   /**  Use this socket if ST22_TX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -1462,9 +1462,9 @@ struct st20_rx_ops {
   enum st20_packing packing;
 
   /** Optional. Name */
-  const char *name;
+  const char* name;
   /** Optional. Private data to the cb functions(notify_frame_ready and others) */
-  void *priv;
+  void* priv;
   /** Optional. Flags to control session behaviors. See ST20_RX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -1491,20 +1491,20 @@ struct st20_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_ready)(void *priv, void *frame, struct st20_rx_frame_meta *meta);
+  int (*notify_frame_ready)(void* priv, void* frame, struct st20_rx_frame_meta* meta);
 
   /**
    * Optional. the ST20_TYPE_FRAME_LEVEL external frame buffer info array,
    * Only for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL.
    */
-  struct st20_ext_frame *ext_frames;
+  struct st20_ext_frame* ext_frames;
   /**
    * Optional. The event callback when there is some event(vsync or others) happened for
    * this session. Only non-block method can be used in this callback as it run from lcore
    * routine. Args point to the meta data of each event. Ex, cast to struct
    * st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void *priv, enum st_event event, void *args);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST20_RX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_rx_rtcp_ops rtcp;
   /**
@@ -1533,21 +1533,21 @@ struct st20_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*uframe_pg_callback)(void *priv, void *frame, struct st20_rx_uframe_pg_meta *meta);
+  int (*uframe_pg_callback)(void* priv, void* frame, struct st20_rx_uframe_pg_meta* meta);
   /**
    * Optional for ST20_TYPE_FRAME_LEVEL/ST20_TYPE_SLICE_LEVEL with
    * ST20_RX_FLAG_AUTO_DETECT. The callback when lib detected video format. And only
    * non-block method can be used in this callback as it run from lcore tasklet routine.
    */
-  int (*notify_detected)(void *priv, const struct st20_detect_meta *meta,
-                         struct st20_detect_reply *reply);
+  int (*notify_detected)(void* priv, const struct st20_detect_meta* meta,
+                         struct st20_detect_reply* reply);
   /**
    * Optional only for ST20_TYPE_FRAME_LEVEL with ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME.
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*query_ext_frame)(void *priv, struct st20_ext_frame *ext_frame,
-                         struct st20_rx_frame_meta *meta);
+  int (*query_ext_frame)(void* priv, struct st20_ext_frame* ext_frame,
+                         struct st20_rx_frame_meta* meta);
 
   /** Mandatory for ST20_TYPE_SLICE_LEVEL, lines in one slice */
   uint32_t slice_lines;
@@ -1557,7 +1557,7 @@ struct st20_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_slice_ready)(void *priv, void *frame, struct st20_rx_slice_meta *meta);
+  int (*notify_slice_ready)(void* priv, void* frame, struct st20_rx_slice_meta* meta);
 
   /** Mandatory for ST20_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
@@ -1566,13 +1566,13 @@ struct st20_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_rtp_ready)(void *priv);
+  int (*notify_rtp_ready)(void* priv);
   /**  Use this socket if ST20_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 
   /* use to store framebuffers on vram */
   bool gpu_direct_framebuffer_in_vram_device_address;
-  void *gpu_context;
+  void* gpu_context;
 };
 
 /**
@@ -1620,9 +1620,9 @@ struct st22_rx_ops {
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
   /** Optional. Name */
-  const char *name;
+  const char* name;
   /** Optional. Private data to the cb functions(notify_frame_ready and others) */
-  void *priv;
+  void* priv;
   /** Optional. Flags to control session behaviors. See ST22_RX_FLAG_* for possible value
    */
   uint32_t flags;
@@ -1652,7 +1652,7 @@ struct st22_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_ready)(void *priv, void *frame, struct st22_rx_frame_meta *meta);
+  int (*notify_frame_ready)(void* priv, void* frame, struct st22_rx_frame_meta* meta);
 
   /**
    * Optional. The event callback when there is some event(vsync or others) happened for
@@ -1660,7 +1660,7 @@ struct st22_rx_ops {
    * routine. Args point to the meta data of each event. Ex, cast to struct
    * st10_vsync_meta for ST_EVENT_VSYNC.
    */
-  int (*notify_event)(void *priv, enum st_event event, void *args);
+  int (*notify_event)(void* priv, enum st_event event, void* args);
   /** Optional for ST22_RX_FLAG_ENABLE_RTCP, RTCP info */
   struct st_rx_rtcp_ops rtcp;
 
@@ -1671,7 +1671,7 @@ struct st22_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_rtp_ready)(void *priv);
+  int (*notify_rtp_ready)(void* priv);
   /**  Use this socket if ST22_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
@@ -1715,7 +1715,7 @@ struct st20_rx_port_status {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-20(video) session.
  */
-st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops *ops);
+st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops);
 
 /**
  * Free the tx st2110-20(video) session.
@@ -1739,7 +1739,7 @@ int st20_tx_free(st20_tx_handle handle);
  *   - 0: Success, tx st2110-20(video) session destination update succ.
  *   - <0: Error code of the rx st2110-20(video) session destination update.
  */
-int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info *dst);
+int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
  * Set the frame virtual address and iova from user for the tx st2110-20(video) session.
@@ -1756,7 +1756,7 @@ int st20_tx_update_destination(st20_tx_handle handle, struct st_tx_dest_info *ds
  *   - <0: Error code if set fail.
  */
 int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
-                          struct st20_ext_frame *ext_frame);
+                          struct st20_ext_frame* ext_frame);
 
 /**
  * Get the framebuffer pointer from the tx st2110-20(video) session.
@@ -1770,7 +1770,7 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void *st20_tx_get_framebuffer(st20_tx_handle handle, uint16_t idx);
+void* st20_tx_get_framebuffer(st20_tx_handle handle, uint16_t idx);
 
 /**
  * Get the framebuffer size for the tx st2110-20(video) session.
@@ -1805,7 +1805,7 @@ int st20_tx_get_framebuffer_count(st20_tx_handle handle);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void *st20_tx_get_mbuf(st20_tx_handle handle, void **usrptr);
+void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr);
 
 /**
  * Put back the mbuf which get by st20_tx_get_mbuf to the tx st2110-20(video) session.
@@ -1821,7 +1821,7 @@ void *st20_tx_get_mbuf(st20_tx_handle handle, void **usrptr);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st20_tx_put_mbuf(st20_tx_handle handle, void *mbuf, uint16_t len);
+int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
 
 /**
  * Get the scheduler index for the tx st2110-20(video) session.
@@ -1848,7 +1848,7 @@ int st20_tx_get_sch_idx(st20_tx_handle handle);
  *   - <0: Error code.
  */
 int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
-                           struct st20_tx_port_status *stats);
+                           struct st20_tx_port_status* stats);
 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(video) session port.
@@ -1874,7 +1874,7 @@ int st20_tx_reset_port_stats(st20_tx_handle handle, enum mtl_session_port port);
  *   - 0 if successful.
  *   - <0: Error code if fail.
  */
-int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup *pg);
+int st20_get_pgroup(enum st20_fmt fmt, struct st20_pgroup* pg);
 
 /**
  * Retrieve the frame size from st2110-20(video) format.
@@ -1910,7 +1910,7 @@ size_t st20_frame_size(enum st20_fmt fmt, uint32_t width, uint32_t height);
  *   - <0: Error code if fail.
  */
 int st20_get_bandwidth_bps(int width, int height, enum st20_fmt fmt, enum st_fps fps,
-                           bool interlaced, uint64_t *bps);
+                           bool interlaced, uint64_t* bps);
 
 /**
  * Inline function returning bandwidth(mega per second) for 1080 p59 yuv422 10bit
@@ -1935,7 +1935,7 @@ static inline uint64_t st20_1080p59_yuv422_10bit_bandwidth_mps(void) {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-22(compressed video) session.
  */
-st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops *ops);
+st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops);
 
 /**
  * Online update the destination info for the tx st2110-22(compressed video) session.
@@ -1948,7 +1948,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops *ops);
  *   - 0: Success, tx st2110-22(compressed video) session destination update succ.
  *   - <0: Error code of the rx st2110-22(compressed video) session destination update.
  */
-int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info *dst);
+int st22_tx_update_destination(st22_tx_handle handle, struct st_tx_dest_info* dst);
 
 /**
  * Free the tx st2110-22(compressed video) session.
@@ -1974,7 +1974,7 @@ int st22_tx_free(st22_tx_handle handle);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void *st22_tx_get_mbuf(st22_tx_handle handle, void **usrptr);
+void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr);
 
 /**
  * Put back the mbuf which get by st22_tx_get_mbuf to the tx
@@ -1990,7 +1990,7 @@ void *st22_tx_get_mbuf(st22_tx_handle handle, void **usrptr);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st22_tx_put_mbuf(st22_tx_handle handle, void *mbuf, uint16_t len);
+int st22_tx_put_mbuf(st22_tx_handle handle, void* mbuf, uint16_t len);
 
 /**
  * Get the scheduler index for the tx st2110-22(compressed video) session.
@@ -2015,7 +2015,7 @@ int st22_tx_get_sch_idx(st22_tx_handle handle);
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void *st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
+void* st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
 
 /**
  * Create one rx st2110-20(video) session.
@@ -2028,7 +2028,7 @@ void *st22_tx_get_fb_addr(st22_tx_handle handle, uint16_t idx);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-20(video) session.
  */
-st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops *ops);
+st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-20(video) session.
@@ -2041,7 +2041,7 @@ st20_rx_handle st20_rx_create(mtl_handle mt, struct st20_rx_ops *ops);
  *   - 0: Success, rx st2110-20(video) session source update succ.
  *   - <0: Error code of the rx st2110-20(video) session source update.
  */
-int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info *src);
+int st20_rx_update_source(st20_rx_handle handle, struct st_rx_source_info* src);
 
 /**
  * Get the scheduler index for the rx st2110-20(video) session.
@@ -2071,7 +2071,7 @@ int st20_rx_get_sch_idx(st20_rx_handle handle);
  *   - <0: Error code of the rx st2110-20(video) session pcapng dump.
  */
 int st20_rx_pcapng_dump(st20_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                        struct st_pcap_dump_meta *meta);
+                        struct st_pcap_dump_meta* meta);
 
 /**
  * Free the rx st2110-20(video) session.
@@ -2116,7 +2116,7 @@ int st20_rx_get_framebuffer_count(st20_rx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20_rx_put_framebuff(st20_rx_handle handle, void *frame);
+int st20_rx_put_framebuff(st20_rx_handle handle, void* frame);
 
 /**
  * Get the mbuf pointer and usrptr of the mbuf from the rx st2110-20(video) session.
@@ -2133,7 +2133,7 @@ int st20_rx_put_framebuff(st20_rx_handle handle, void *frame);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void *st20_rx_get_mbuf(st20_rx_handle handle, void **usrptr, uint16_t *len);
+void* st20_rx_get_mbuf(st20_rx_handle handle, void** usrptr, uint16_t* len);
 
 /**
  * Put back the mbuf which get by st20_rx_get_mbuf to the rx st2110-20(video) session.
@@ -2144,7 +2144,7 @@ void *st20_rx_get_mbuf(st20_rx_handle handle, void **usrptr, uint16_t *len);
  * @param mbuf
  *   the dpdk mbuf pointer by st20_rx_get_mbuf.
  */
-void st20_rx_put_mbuf(st20_rx_handle handle, void *mbuf);
+void st20_rx_put_mbuf(st20_rx_handle handle, void* mbuf);
 
 /**
  * Get the queue meta attached to rx st2110-20(video) session.
@@ -2157,7 +2157,7 @@ void st20_rx_put_mbuf(st20_rx_handle handle, void *mbuf);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta *meta);
+int st20_rx_get_queue_meta(st20_rx_handle handle, struct st_queue_meta* meta);
 
 /**
  * Check if dma is enabled or not.
@@ -2182,7 +2182,7 @@ bool st20_rx_dma_enabled(st20_rx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass *pass);
+int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass* pass);
 
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-20(video) session port.
@@ -2198,7 +2198,7 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
  *   - <0: Error code.
  */
 int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
-                           struct st20_rx_port_status *stats);
+                           struct st20_rx_port_status* stats);
 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(video) session port.
@@ -2225,7 +2225,7 @@ int st20_rx_reset_port_stats(st20_rx_handle handle, enum mtl_session_port port);
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-22(compressed video) session.
  */
-st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops *ops);
+st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops* ops);
 
 /**
  * Online update the source info for the rx st2110-22(compressed video) session.
@@ -2238,7 +2238,7 @@ st22_rx_handle st22_rx_create(mtl_handle mt, struct st22_rx_ops *ops);
  *   - 0: Success, rx st2110-22(video) session source update succ.
  *   - <0: Error code of the rx st2110-22(compressed video) session source update.
  */
-int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info *src);
+int st22_rx_update_source(st22_rx_handle handle, struct st_rx_source_info* src);
 
 /**
  * Get the scheduler index for the rx st2110-22(compressed video) session.
@@ -2268,7 +2268,7 @@ int st22_rx_get_sch_idx(st22_rx_handle handle);
  *   - <0: Error code of the rx st2110-22 session pcapng dump.
  */
 int st22_rx_pcapng_dump(st22_rx_handle handle, uint32_t max_dump_packets, bool sync,
-                        struct st_pcap_dump_meta *meta);
+                        struct st_pcap_dump_meta* meta);
 
 /**
  * Free the rx st2110-22(compressed video) session.
@@ -2296,7 +2296,7 @@ int st22_rx_free(st22_rx_handle handle);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void *st22_rx_get_mbuf(st22_rx_handle handle, void **usrptr, uint16_t *len);
+void* st22_rx_get_mbuf(st22_rx_handle handle, void** usrptr, uint16_t* len);
 
 /**
  * Put back the mbuf which get by st22_rx_get_mbuf to the rx
@@ -2307,7 +2307,7 @@ void *st22_rx_get_mbuf(st22_rx_handle handle, void **usrptr, uint16_t *len);
  * @param mbuf
  *   the dpdk mbuf pointer by st22_rx_get_mbuf.
  */
-void st22_rx_put_mbuf(st22_rx_handle handle, void *mbuf);
+void st22_rx_put_mbuf(st22_rx_handle handle, void* mbuf);
 
 /**
  * Put back the received buff get from notify_frame_ready.
@@ -2321,7 +2321,7 @@ void st22_rx_put_mbuf(st22_rx_handle handle, void *mbuf);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st22_rx_put_framebuff(st22_rx_handle handle, void *frame);
+int st22_rx_put_framebuff(st22_rx_handle handle, void* frame);
 
 /**
  * Get the framebuffer pointer from the rx st2110-22(video) session.
@@ -2335,7 +2335,7 @@ int st22_rx_put_framebuff(st22_rx_handle handle, void *frame);
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void *st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx);
+void* st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx);
 
 /**
  * Get the queue meta attached to rx st2110-22(video) session.
@@ -2348,7 +2348,7 @@ void *st22_rx_get_fb_addr(st22_rx_handle handle, uint16_t idx);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta *meta);
+int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta* meta);
 
 /**
  * Get the name of st20_fmt
@@ -2359,7 +2359,7 @@ int st22_rx_get_queue_meta(st22_rx_handle handle, struct st_queue_meta *meta);
  *   The pointer to name.
  *   NULL: Fail.
  */
-const char *st20_fmt_name(enum st20_fmt fmt);
+const char* st20_fmt_name(enum st20_fmt fmt);
 
 /**
  * Get st20_fmt from name
@@ -2370,7 +2370,7 @@ const char *st20_fmt_name(enum st20_fmt fmt);
  *   The st20_fmt.
  *   ST20_FMT_MAX: Fail.
  */
-enum st20_fmt st20_name_to_fmt(const char *name);
+enum st20_fmt st20_name_to_fmt(const char* name);
 
 #if defined(__cplusplus)
 }

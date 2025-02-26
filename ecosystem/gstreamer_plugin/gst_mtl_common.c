@@ -18,8 +18,8 @@ struct gst_common_handle {
 static struct gst_common_handle common_handle = {0, 0, PTHREAD_MUTEX_INITIALIZER};
 guint gst_mtl_port_idx = MTL_PORT_P;
 
-gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo *finfo,
-                                          enum st_frame_fmt *fmt) {
+gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
+                                          enum st_frame_fmt* fmt) {
   if (finfo->format == GST_VIDEO_FORMAT_v210) {
     *fmt = ST_FRAME_FMT_V210;
   } else if (finfo->format == GST_VIDEO_FORMAT_I422_10LE) {
@@ -32,7 +32,7 @@ gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo *finfo,
 }
 
 /* includes all formats supported by the library for future support */
-gboolean gst_mtl_common_parse_pixel_format(const char *format, enum st_frame_fmt *fmt) {
+gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt* fmt) {
   if (!fmt || !format) {
     GST_ERROR("%s, invalid input\n", __func__);
     return FALSE;
@@ -90,7 +90,7 @@ gboolean gst_mtl_common_parse_pixel_format(const char *format, enum st_frame_fmt
   return TRUE;
 }
 
-gboolean gst_mtl_common_parse_ptime(const char *ptime_str, enum st30_ptime *ptime) {
+gboolean gst_mtl_common_parse_ptime(const char* ptime_str, enum st30_ptime* ptime) {
   if (!ptime_str || !ptime) {
     GST_ERROR("%s, invalid input\n", __func__);
     return FALSE;
@@ -122,7 +122,7 @@ gboolean gst_mtl_common_parse_ptime(const char *ptime_str, enum st30_ptime *ptim
   return TRUE;
 }
 
-gboolean gst_mtl_common_parse_audio_format(const char *format, enum st30_fmt *audio) {
+gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio) {
   if (!audio || !format) {
     GST_ERROR("%s, invalid input\n", __func__);
     return FALSE;
@@ -145,7 +145,7 @@ gboolean gst_mtl_common_parse_audio_format(const char *format, enum st30_fmt *au
 }
 
 gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
-                                           enum st30_sampling *st_sampling) {
+                                           enum st30_sampling* st_sampling) {
   if (!st_sampling) {
     GST_ERROR("Invalid st_sampling pointer");
     return FALSE;
@@ -168,7 +168,7 @@ gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
 }
 
 gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
-                                           gint *gst_sampling) {
+                                           gint* gst_sampling) {
   if (!gst_sampling) {
     GST_ERROR("Invalid gst_sampling pointer");
     return FALSE;
@@ -190,7 +190,7 @@ gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
   }
 }
 
-void gst_mtl_common_init_general_arguments(GObjectClass *gobject_class) {
+void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_LOG_LEVEL,
       g_param_spec_uint("log-level", "Log Level", "Set the log level (INFO 1 to CRIT 5).",
@@ -253,10 +253,10 @@ void gst_mtl_common_init_general_arguments(GObjectClass *gobject_class) {
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
-void gst_mtl_common_set_general_arguments(GObject *object, guint prop_id,
-                                          const GValue *value, GParamSpec *pspec,
-                                          StDevArgs *devArgs, SessionPortArgs *portArgs,
-                                          guint *log_level) {
+void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec,
+                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
+                                          guint* log_level) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
       *log_level = g_value_get_uint(value);
@@ -294,10 +294,10 @@ void gst_mtl_common_set_general_arguments(GObject *object, guint prop_id,
   }
 }
 
-void gst_mtl_common_get_general_arguments(GObject *object, guint prop_id,
-                                          const GValue *value, GParamSpec *pspec,
-                                          StDevArgs *devArgs, SessionPortArgs *portArgs,
-                                          guint *log_level) {
+void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
+                                          const GValue* value, GParamSpec* pspec,
+                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
+                                          guint* log_level) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
       g_value_set_uint(value, *log_level);
@@ -335,8 +335,8 @@ void gst_mtl_common_get_general_arguments(GObject *object, guint prop_id,
   }
 }
 
-gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params *mtl_init_params,
-                                            StDevArgs *devArgs) {
+gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
+                                            StDevArgs* devArgs) {
   gint ret;
 
   if (gst_mtl_port_idx > MTL_PORT_R) {
@@ -393,7 +393,7 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params *mtl_init_par
  * @param log_level Log level for the library (ignored if using an
  *                  existing MTL instance).
  */
-mtl_handle gst_mtl_common_init_handle(StDevArgs *devArgs, guint *log_level,
+mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
                                       gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
   mtl_handle ret;

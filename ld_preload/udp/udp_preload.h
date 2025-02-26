@@ -63,41 +63,41 @@ enum mtl_log_level upl_get_log_level(void);
   } while (0)
 
 /* child only can't use rte malloc */
-static inline void *upl_malloc(size_t sz) {
+static inline void* upl_malloc(size_t sz) {
   return malloc(sz);
 }
 
-static inline void *upl_zmalloc(size_t sz) {
-  void *p = malloc(sz);
+static inline void* upl_zmalloc(size_t sz) {
+  void* p = malloc(sz);
   if (p) memset(p, 0x0, sz);
   return p;
 }
 
-static inline void upl_free(void *p) {
+static inline void upl_free(void* p) {
   free(p);
 }
 
 struct upl_functions {
   int (*socket)(int domain, int type, int protocol);
   int (*close)(int sockfd);
-  int (*bind)(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
-  ssize_t (*send)(int sockfd, const void *buf, size_t len, int flags);
-  ssize_t (*sendto)(int sockfd, const void *buf, size_t len, int flags,
-                    const struct sockaddr *dest_addr, socklen_t addrlen);
-  ssize_t (*sendmsg)(int sockfd, const struct msghdr *msg, int flags);
-  int (*poll)(struct pollfd *fds, nfds_t nfds, int timeout);
-  int (*ppoll)(struct pollfd *fds, nfds_t nfds, const struct timespec *tmo_p,
-               const sigset_t *sigmask);
-  int (*select)(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-                struct timeval *timeout);
-  int (*pselect)(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-                 const struct timespec *timeout, const sigset_t *sigmask);
-  ssize_t (*recvfrom)(int sockfd, void *buf, size_t len, int flags,
-                      struct sockaddr *src_addr, socklen_t *addrlen);
-  ssize_t (*recv)(int sockfd, void *buf, size_t len, int flags);
-  ssize_t (*recvmsg)(int sockfd, struct msghdr *msg, int flags);
-  int (*getsockopt)(int sockfd, int level, int optname, void *optval, socklen_t *optlen);
-  int (*setsockopt)(int sockfd, int level, int optname, const void *optval,
+  int (*bind)(int sockfd, const struct sockaddr* addr, socklen_t addrlen);
+  ssize_t (*send)(int sockfd, const void* buf, size_t len, int flags);
+  ssize_t (*sendto)(int sockfd, const void* buf, size_t len, int flags,
+                    const struct sockaddr* dest_addr, socklen_t addrlen);
+  ssize_t (*sendmsg)(int sockfd, const struct msghdr* msg, int flags);
+  int (*poll)(struct pollfd* fds, nfds_t nfds, int timeout);
+  int (*ppoll)(struct pollfd* fds, nfds_t nfds, const struct timespec* tmo_p,
+               const sigset_t* sigmask);
+  int (*select)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+                struct timeval* timeout);
+  int (*pselect)(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,
+                 const struct timespec* timeout, const sigset_t* sigmask);
+  ssize_t (*recvfrom)(int sockfd, void* buf, size_t len, int flags,
+                      struct sockaddr* src_addr, socklen_t* addrlen);
+  ssize_t (*recv)(int sockfd, void* buf, size_t len, int flags);
+  ssize_t (*recvmsg)(int sockfd, struct msghdr* msg, int flags);
+  int (*getsockopt)(int sockfd, int level, int optname, void* optval, socklen_t* optlen);
+  int (*setsockopt)(int sockfd, int level, int optname, const void* optval,
                     socklen_t optlen);
   int (*fcntl)(int sockfd, int cmd, va_list args);
   int (*fcntl64)(int sockfd, int cmd, va_list args);
@@ -105,10 +105,10 @@ struct upl_functions {
   /* epoll */
   int (*epoll_create)(int size);
   int (*epoll_create1)(int flags);
-  int (*epoll_ctl)(int epfd, int op, int fd, struct epoll_event *event);
-  int (*epoll_wait)(int epfd, struct epoll_event *events, int maxevents, int timeout);
-  int (*epoll_pwait)(int epfd, struct epoll_event *events, int maxevents, int timeout,
-                     const sigset_t *sigmask);
+  int (*epoll_ctl)(int epfd, int op, int fd, struct epoll_event* event);
+  int (*epoll_wait)(int epfd, struct epoll_event* events, int maxevents, int timeout);
+  int (*epoll_pwait)(int epfd, struct epoll_event* events, int maxevents, int timeout,
+                     const sigset_t* sigmask);
 };
 
 enum upl_entry_type {
@@ -121,7 +121,7 @@ enum upl_entry_type {
 struct upl_ctx; /* forward declare */
 
 struct upl_base_entry {
-  struct upl_ctx *parent;
+  struct upl_ctx* parent;
   enum upl_entry_type upl_type;
   /* if created by child */
   bool child;
@@ -152,7 +152,7 @@ struct upl_ufd_entry {
 
 struct upl_efd_fd_item {
   struct epoll_event event;
-  struct upl_ufd_entry *ufd;
+  struct upl_ufd_entry* ufd;
   /* linked list */
   TAILQ_ENTRY(upl_efd_fd_item) next;
 };
@@ -169,9 +169,9 @@ struct upl_efd_entry {
   int fds_cnt;
   atomic_int kfd_cnt;
   /* for kfd query */
-  struct epoll_event *events;
+  struct epoll_event* events;
   int maxevents;
-  const sigset_t *sigmask;
+  const sigset_t* sigmask;
   int kfd_ret;
 };
 
@@ -186,29 +186,29 @@ struct upl_ctx {
   bool child; /* if it's for child process */
 
   int upl_entires_nb; /* the number of upl_entires */
-  void **upl_entires; /* upl entries */
+  void** upl_entires; /* upl entries */
 };
 
 struct upl_select_ctx {
-  struct upl_ctx *parent;
+  struct upl_ctx* parent;
   int nfds;
-  fd_set *readfds;
-  fd_set *writefds;
-  fd_set *exceptfds;
-  struct timeval *timeout;
+  fd_set* readfds;
+  fd_set* writefds;
+  fd_set* exceptfds;
+  struct timeval* timeout;
   /* for select */
-  const struct timespec *timeout_spec;
-  const sigset_t *sigmask;
+  const struct timespec* timeout_spec;
+  const sigset_t* sigmask;
 };
 
 struct upl_poll_ctx {
-  struct upl_ctx *parent;
-  struct pollfd *fds;
+  struct upl_ctx* parent;
+  struct pollfd* fds;
   nfds_t nfds;
   int timeout;
   /* for ppoll */
-  const struct timespec *tmo_p;
-  const sigset_t *sigmask;
+  const struct timespec* tmo_p;
+  const sigset_t* sigmask;
 };
 
 #endif

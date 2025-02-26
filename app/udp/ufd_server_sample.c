@@ -33,7 +33,7 @@ struct ufd_server_sample_ctx {
 };
 
 struct ufd_server_samples_ctx {
-  struct ufd_server_sample_ctx **apps;
+  struct ufd_server_sample_ctx** apps;
   int apps_cnt;
 
   bool stop;
@@ -42,8 +42,8 @@ struct ufd_server_samples_ctx {
   pthread_mutex_t wake_mutex;
 };
 
-static void *ufd_server_thread(void *arg) {
-  struct ufd_server_sample_ctx *s = arg;
+static void* ufd_server_thread(void* arg) {
+  struct ufd_server_sample_ctx* s = arg;
   int socket = s->socket;
   ssize_t ufd_len = MUDP_MAX_BYTES;
   char buf[ufd_len];
@@ -52,8 +52,8 @@ static void *ufd_server_thread(void *arg) {
 
   info("%s(%d), start socket %d\n", __func__, s->idx, socket);
   while (!s->stop) {
-    ssize_t recv = mufd_recvfrom(socket, buf, sizeof(buf), 0,
-                                 (struct sockaddr *)&cli_addr, &cli_addr_len);
+    ssize_t recv = mufd_recvfrom(socket, buf, sizeof(buf), 0, (struct sockaddr*)&cli_addr,
+                                 &cli_addr_len);
     if (recv < 0) {
       dbg("%s(%d), recv fail %d\n", __func__, s->idx, (int)recv);
       continue;
@@ -64,11 +64,11 @@ static void *ufd_server_thread(void *arg) {
     dbg("%s(%d), recv %d bytes\n", __func__, s->idx, (int)recv);
     dbg("%s(%d), sin_port %u\n", __func__, s->idx, ntohs(cli_addr.sin_port));
 #ifdef DEBUG
-    uint8_t *ip = (uint8_t *)&cli_addr.sin_addr.s_addr;
+    uint8_t* ip = (uint8_t*)&cli_addr.sin_addr.s_addr;
 #endif
     dbg("%s(%d), ip %u.%u.%u.%u\n", __func__, s->idx, ip[0], ip[1], ip[2], ip[3]);
 
-    ssize_t send = mufd_sendto(socket, buf, recv, 0, (const struct sockaddr *)&cli_addr,
+    ssize_t send = mufd_sendto(socket, buf, recv, 0, (const struct sockaddr*)&cli_addr,
                                cli_addr_len);
     if (send != recv) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
@@ -82,8 +82,8 @@ static void *ufd_server_thread(void *arg) {
   return NULL;
 }
 
-static void *ufd_server_transport_thread(void *arg) {
-  struct ufd_server_sample_ctx *s = arg;
+static void* ufd_server_transport_thread(void* arg) {
+  struct ufd_server_sample_ctx* s = arg;
   int socket = s->socket;
   ssize_t ufd_len = MUDP_MAX_BYTES;
   char buf[ufd_len];
@@ -104,8 +104,8 @@ static void *ufd_server_transport_thread(void *arg) {
   return NULL;
 }
 
-static void *ufd_server_transport_poll_thread(void *arg) {
-  struct ufd_server_sample_ctx *s = arg;
+static void* ufd_server_transport_poll_thread(void* arg) {
+  struct ufd_server_sample_ctx* s = arg;
   int socket = s->socket;
   ssize_t ufd_len = MUDP_MAX_BYTES;
   char buf[ufd_len];
@@ -133,9 +133,9 @@ static void *ufd_server_transport_poll_thread(void *arg) {
   return NULL;
 }
 
-static void *ufd_servers_poll_thread(void *arg) {
-  struct ufd_server_samples_ctx *ctxs = arg;
-  struct ufd_server_sample_ctx *s = NULL;
+static void* ufd_servers_poll_thread(void* arg) {
+  struct ufd_server_samples_ctx* ctxs = arg;
+  struct ufd_server_sample_ctx* s = NULL;
   int apps_cnt = ctxs->apps_cnt;
   int socket;
   ssize_t ufd_len = MUDP_MAX_BYTES;
@@ -172,7 +172,7 @@ static void *ufd_servers_poll_thread(void *arg) {
   return NULL;
 }
 
-static void ufd_server_status(struct ufd_server_sample_ctx *s) {
+static void ufd_server_status(struct ufd_server_sample_ctx* s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->recv_len * 8 / time_sec;
@@ -196,7 +196,7 @@ static void ufd_server_sig_handler(int signo) {
   return;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   struct ufd_server_samples_ctx ctxs;
   int ret;
@@ -210,7 +210,7 @@ int main(int argc, char **argv) {
   ctx.sig_handler = ufd_server_sig_handler;
 
   uint32_t session_num = ctx.sessions;
-  struct ufd_server_sample_ctx *app[session_num];
+  struct ufd_server_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
 
   ctxs.apps = NULL;
@@ -261,7 +261,7 @@ int main(int argc, char **argv) {
       mufd_port_ip_info(MTL_PORT_P, sip, NULL, NULL);
       mudp_init_sockaddr(&app[i]->bind_addr, sip, ctx.udp_port + i);
     }
-    ret = mufd_bind(app[i]->socket, (const struct sockaddr *)&app[i]->bind_addr,
+    ret = mufd_bind(app[i]->socket, (const struct sockaddr*)&app[i]->bind_addr,
                     sizeof(app[i]->bind_addr));
     if (ret < 0) {
       err("%s(%d), bind fail %d\n", __func__, i, ret);

@@ -31,8 +31,8 @@ struct usocket_client_sample_ctx {
   int recv_cnt_total;
 };
 
-static void *usocket_client_thread(void *arg) {
-  struct usocket_client_sample_ctx *s = arg;
+static void* usocket_client_thread(void* arg) {
+  struct usocket_client_sample_ctx* s = arg;
   int socket = s->socket;
 
   ssize_t udp_len = s->udp_len;
@@ -50,7 +50,7 @@ static void *usocket_client_thread(void *arg) {
   while (!s->stop) {
     send_buf[idx_pos] = send_idx++;
     ssize_t send = sendto(socket, send_buf, sizeof(send_buf), 0,
-                          (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
+                          (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -82,8 +82,8 @@ static void *usocket_client_thread(void *arg) {
   return NULL;
 }
 
-static void *usocket_client_transport_thread(void *arg) {
-  struct usocket_client_sample_ctx *s = arg;
+static void* usocket_client_transport_thread(void* arg) {
+  struct usocket_client_sample_ctx* s = arg;
   int socket = s->socket;
 
   ssize_t udp_len = s->udp_len;
@@ -96,7 +96,7 @@ static void *usocket_client_transport_thread(void *arg) {
        (int)udp_len);
   while (!s->stop) {
     ssize_t send = sendto(socket, send_buf, sizeof(send_buf), 0,
-                          (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
+                          (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
     if (send != udp_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -109,7 +109,7 @@ static void *usocket_client_transport_thread(void *arg) {
   return NULL;
 }
 
-static void usocket_client_status(struct usocket_client_sample_ctx *s) {
+static void usocket_client_status(struct usocket_client_sample_ctx* s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->send_cnt * s->udp_len * 8 / time_sec;
@@ -130,7 +130,7 @@ static void usocket_client_status(struct usocket_client_sample_ctx *s) {
   }
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
   if (ret < 0) return ret;
 
   uint32_t session_num = ctx.sessions;
-  struct usocket_client_sample_ctx *app[session_num];
+  struct usocket_client_sample_ctx* app[session_num];
   memset(app, 0, sizeof(app));
 
   for (int i = 0; i < session_num; i++) {

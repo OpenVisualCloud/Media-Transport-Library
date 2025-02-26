@@ -4,10 +4,10 @@
 
 #include "rx_ancillary_app.h"
 
-static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session *s, void *usrptr) {
-  struct st40_rfc8331_rtp_hdr *hdr = (struct st40_rfc8331_rtp_hdr *)usrptr;
-  struct st40_rfc8331_payload_hdr *payload_hdr =
-      (struct st40_rfc8331_payload_hdr *)(&hdr[1]);
+static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr) {
+  struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
+  struct st40_rfc8331_payload_hdr* payload_hdr =
+      (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   int anc_count = hdr->anc_count;
   int idx, total_size, payload_len;
   dbg("%s(%d), anc_count %d\n", __func__, s->idx, anc_count);
@@ -25,10 +25,10 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session *s, void *usrptr)
 
     // verify checksum
     uint16_t checksum = 0;
-    checksum = st40_get_udw(udw_size + 3, (uint8_t *)&payload_hdr->second_hdr_chunk);
+    checksum = st40_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
     payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
     if (checksum !=
-        st40_calc_checksum(3 + udw_size, (uint8_t *)&payload_hdr->second_hdr_chunk)) {
+        st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
       err("%s(%d), anc frame checksum error\n", __func__, s->idx);
       return;
     }
@@ -36,7 +36,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session *s, void *usrptr)
 #ifdef DEBUG
     uint16_t data;
     for (int i = 0; i < udw_size; i++) {
-      data = st40_get_udw(i + 3, (uint8_t *)&payload_hdr->second_hdr_chunk);
+      data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
       if (!st40_check_parity_bits(data)) err("anc udw checkParityBits error\n");
       dbg("%c", data & 0xff);
     }
@@ -49,8 +49,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session *s, void *usrptr)
                                                      // word of ANC data packet
     payload_len =
         sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
-    payload_hdr =
-        (struct st40_rfc8331_payload_hdr *)((uint8_t *)payload_hdr + payload_len);
+    payload_hdr = (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
   }
 
   s->stat_frame_total_received++;
@@ -58,12 +57,12 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session *s, void *usrptr)
     s->stat_frame_first_rx_time = st_app_get_monotonic_time();
 }
 
-static void *app_rx_anc_read_thread(void *arg) {
-  struct st_app_rx_anc_session *s = arg;
+static void* app_rx_anc_read_thread(void* arg) {
+  struct st_app_rx_anc_session* s = arg;
   int idx = s->idx;
-  void *usrptr;
+  void* usrptr;
   uint16_t len;
-  void *mbuf;
+  void* mbuf;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st40_app_thread_stop) {
@@ -85,8 +84,8 @@ static void *app_rx_anc_read_thread(void *arg) {
   return NULL;
 }
 
-static int app_rx_anc_rtp_ready(void *priv) {
-  struct st_app_rx_anc_session *s = priv;
+static int app_rx_anc_rtp_ready(void* priv) {
+  struct st_app_rx_anc_session* s = priv;
 
   st_pthread_mutex_lock(&s->st40_wake_mutex);
   st_pthread_cond_signal(&s->st40_wake_cond);
@@ -94,7 +93,7 @@ static int app_rx_anc_rtp_ready(void *priv) {
   return 0;
 }
 
-static int app_rx_anc_uinit(struct st_app_rx_anc_session *s) {
+static int app_rx_anc_uinit(struct st_app_rx_anc_session* s) {
   int ret, idx = s->idx;
   s->st40_app_thread_stop = true;
   if (s->st40_app_thread) {
@@ -116,8 +115,8 @@ static int app_rx_anc_uinit(struct st_app_rx_anc_session *s) {
   return 0;
 }
 
-static int app_rx_anc_init(struct st_app_context *ctx, st_json_ancillary_session_t *anc,
-                           struct st_app_rx_anc_session *s) {
+static int app_rx_anc_init(struct st_app_context* ctx, st_json_ancillary_session_t* anc,
+                           struct st_app_rx_anc_session* s) {
   int idx = s->idx, ret;
   struct st40_rx_ops ops;
   char name[32];
@@ -189,7 +188,7 @@ static bool app_rx_anc_fps_check(double framerate) {
   return false;
 }
 
-static int app_rx_anc_result(struct st_app_rx_anc_session *s) {
+static int app_rx_anc_result(struct st_app_rx_anc_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
@@ -203,10 +202,10 @@ static int app_rx_anc_result(struct st_app_rx_anc_session *s) {
   return 0;
 }
 
-int st_app_rx_anc_sessions_init(struct st_app_context *ctx) {
+int st_app_rx_anc_sessions_init(struct st_app_context* ctx) {
   int ret, i;
-  struct st_app_rx_anc_session *s;
-  ctx->rx_anc_sessions = (struct st_app_rx_anc_session *)st_app_zmalloc(
+  struct st_app_rx_anc_session* s;
+  ctx->rx_anc_sessions = (struct st_app_rx_anc_session*)st_app_zmalloc(
       sizeof(struct st_app_rx_anc_session) * ctx->rx_anc_session_cnt);
   if (!ctx->rx_anc_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
@@ -224,9 +223,9 @@ int st_app_rx_anc_sessions_init(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_rx_anc_sessions_uinit(struct st_app_context *ctx) {
+int st_app_rx_anc_sessions_uinit(struct st_app_context* ctx) {
   int i;
-  struct st_app_rx_anc_session *s;
+  struct st_app_rx_anc_session* s;
   if (!ctx->rx_anc_sessions) return 0;
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {
     s = &ctx->rx_anc_sessions[i];
@@ -236,9 +235,9 @@ int st_app_rx_anc_sessions_uinit(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_rx_anc_sessions_result(struct st_app_context *ctx) {
+int st_app_rx_anc_sessions_result(struct st_app_context* ctx) {
   int i, ret = 0;
-  struct st_app_rx_anc_session *s;
+  struct st_app_rx_anc_session* s;
   if (!ctx->rx_anc_sessions) return 0;
 
   for (i = 0; i < ctx->rx_anc_session_cnt; i++) {

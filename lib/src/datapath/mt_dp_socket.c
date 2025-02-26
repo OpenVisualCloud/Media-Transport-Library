@@ -23,14 +23,14 @@
 
 #ifndef WINDOWSENV
 
-static inline int tx_socket_verify_mbuf(struct rte_mbuf *m) {
+static inline int tx_socket_verify_mbuf(struct rte_mbuf* m) {
   if (m->nb_segs > 1) {
     err("%s, only support one nb_segs %u\n", __func__, m->nb_segs);
     return -ENOTSUP;
   }
 
-  struct mt_udp_hdr *hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr *);
-  struct rte_ether_hdr *eth = &hdr->eth;
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
+  struct rte_ether_hdr* eth = &hdr->eth;
   uint16_t ether_type = ntohs(eth->ether_type);
 
   if (ether_type != RTE_ETHER_TYPE_IPV4) {
@@ -41,12 +41,12 @@ static inline int tx_socket_verify_mbuf(struct rte_mbuf *m) {
   return 0;
 }
 
-static int tx_socket_send_mbuf(struct mt_tx_socket_thread *t, struct rte_mbuf *m) {
-  struct mt_tx_socket_entry *entry = t->parent;
+static int tx_socket_send_mbuf(struct mt_tx_socket_thread* t, struct rte_mbuf* m) {
+  struct mt_tx_socket_entry* entry = t->parent;
   enum mtl_port port = entry->port;
   int fd = t->fd, ret;
   struct sockaddr_in send_addr;
-  struct mtl_port_status *stats = mt_if(entry->parent, port)->dev_stats_sw;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
 
   /* check if suppoted */
   ret = tx_socket_verify_mbuf(m);
@@ -55,20 +55,20 @@ static int tx_socket_send_mbuf(struct mt_tx_socket_thread *t, struct rte_mbuf *m
     return ret;
   }
 
-  struct mt_udp_hdr *hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr *);
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(m, struct mt_udp_hdr*);
   // mt_mbuf_dump(port, 0, "socket_tx", m);
 
-  void *payload = rte_pktmbuf_mtod_offset(m, void *, sizeof(struct mt_udp_hdr));
+  void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
   ssize_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);
 
-  struct rte_ipv4_hdr *ipv4 = &hdr->ipv4;
-  struct rte_udp_hdr *udp = &hdr->udp;
-  mudp_init_sockaddr(&send_addr, (uint8_t *)&ipv4->dst_addr, ntohs(udp->dst_port));
+  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
+  struct rte_udp_hdr* udp = &hdr->udp;
+  mudp_init_sockaddr(&send_addr, (uint8_t*)&ipv4->dst_addr, ntohs(udp->dst_port));
 
   t->stat_tx_try++;
   /* nonblocking */
   ssize_t send = sendto(fd, payload, payload_len, MSG_DONTWAIT,
-                        (const struct sockaddr *)&send_addr, sizeof(send_addr));
+                        (const struct sockaddr*)&send_addr, sizeof(send_addr));
   dbg("%s(%d,%d), len %" PRId64 " send %" PRId64 "\n", __func__, port, fd, payload_len,
       send);
   if (send != payload_len) {
@@ -85,23 +85,23 @@ static int tx_socket_send_mbuf(struct mt_tx_socket_thread *t, struct rte_mbuf *m
   return 0;
 }
 
-static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread *t,
-                                        struct rte_mbuf **tx_pkts, uint16_t nb_pkts) {
+static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread* t,
+                                        struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = 0;
-  struct mt_tx_socket_entry *entry = t->parent;
+  struct mt_tx_socket_entry* entry = t->parent;
   enum mtl_port port = entry->port;
   int fd = t->fd, ret;
   uint16_t gso_sz = entry->gso_sz;
   struct iovec iovs[nb_pkts];
   uint16_t gso_cnt = 0;
-  struct msghdr *msg = &t->msg;
+  struct msghdr* msg = &t->msg;
   ssize_t write;
-  struct mtl_port_status *stats = mt_if(entry->parent, port)->dev_stats_sw;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
 
   msg->msg_iov = iovs;
 
   for (uint16_t i = 0; i < nb_pkts; i++) {
-    struct rte_mbuf *m = tx_pkts[i];
+    struct rte_mbuf* m = tx_pkts[i];
     ret = tx_socket_verify_mbuf(m);
     if (ret < 0) {
       err("%s(%d,%d), unsupported mbuf %p ret %d\n", __func__, port, fd, m, ret);
@@ -110,7 +110,7 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread *t,
 
     t->stat_tx_try++;
     uint16_t payload_len = m->data_len - sizeof(struct mt_udp_hdr);
-    void *payload = rte_pktmbuf_mtod_offset(m, void *, sizeof(struct mt_udp_hdr));
+    void* payload = rte_pktmbuf_mtod_offset(m, void*, sizeof(struct mt_udp_hdr));
     dbg("%s(%d,%d), mbuf %u payload_len %u\n", __func__, port, fd, i, payload_len);
 
     if (payload_len == gso_sz) {
@@ -174,16 +174,16 @@ static uint16_t tx_socket_send_mbuf_gso(struct mt_tx_socket_thread *t,
   return tx;
 }
 
-static void *tx_socket_thread_loop(void *arg) {
-  struct mt_tx_socket_thread *t = arg;
-  struct mt_tx_socket_entry *entry = t->parent;
+static void* tx_socket_thread_loop(void* arg) {
+  struct mt_tx_socket_thread* t = arg;
+  struct mt_tx_socket_entry* entry = t->parent;
   enum mtl_port port = entry->port;
-  struct rte_mbuf *m = NULL;
+  struct rte_mbuf* m = NULL;
   int ret;
 
   info("%s(%d,%d), start\n", __func__, port, t->fd);
   while (rte_atomic32_read(&t->stop_thread) == 0) {
-    ret = rte_ring_mc_dequeue(entry->ring, (void **)&m);
+    ret = rte_ring_mc_dequeue(entry->ring, (void**)&m);
     if (ret < 0) continue;
     do {
       ret = tx_socket_send_mbuf(t, m);
@@ -195,9 +195,9 @@ static void *tx_socket_thread_loop(void *arg) {
   return NULL;
 }
 
-static int tx_socket_init_thread_data(struct mt_tx_socket_thread *t) {
+static int tx_socket_init_thread_data(struct mt_tx_socket_thread* t) {
   int ret;
-  struct mt_tx_socket_entry *entry = t->parent;
+  struct mt_tx_socket_entry* entry = t->parent;
   enum mtl_port port = entry->port;
   int idx = t->idx;
   int fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -216,7 +216,7 @@ static int tx_socket_init_thread_data(struct mt_tx_socket_thread *t) {
   }
 
   /* bind to device */
-  const char *if_name = mt_kernel_if_name(entry->parent, port);
+  const char* if_name = mt_kernel_if_name(entry->parent, port);
   ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
   if (ret < 0) {
     err("%s(%d,%d), SO_BINDTODEVICE to %s fail %d\n", __func__, port, idx, if_name, ret);
@@ -231,33 +231,33 @@ static int tx_socket_init_thread_data(struct mt_tx_socket_thread *t) {
     /* gso size for sendmsg */
     t->msg.msg_control = t->msg_control;
     t->msg.msg_controllen = sizeof(t->msg_control);
-    struct cmsghdr *cmsg;
+    struct cmsghdr* cmsg;
     cmsg = CMSG_FIRSTHDR(&t->msg);
     cmsg->cmsg_level = SOL_UDP;
     cmsg->cmsg_type = UDP_SEGMENT;
     cmsg->cmsg_len = CMSG_LEN(sizeof(uint16_t));
-    uint16_t *val_p;
-    val_p = (uint16_t *)CMSG_DATA(cmsg);
+    uint16_t* val_p;
+    val_p = (uint16_t*)CMSG_DATA(cmsg);
     *val_p = entry->gso_sz;
   }
 
   return 0;
 }
 
-static int tx_socket_init_threads(struct mt_tx_socket_entry *entry) {
+static int tx_socket_init_threads(struct mt_tx_socket_entry* entry) {
   int idx = entry->threads_data[0].fd;
   int ret;
 
   /* fds[0] already init */
   for (int i = 1; i < entry->threads; i++) {
-    struct mt_tx_socket_thread *t = &entry->threads_data[i];
+    struct mt_tx_socket_thread* t = &entry->threads_data[i];
     ret = tx_socket_init_thread_data(t);
     if (ret < 0) return ret;
   }
 
   /* create the ring, multi producer single consumer */
   char ring_name[64];
-  struct rte_ring *ring;
+  struct rte_ring* ring;
   unsigned int flags, count;
   snprintf(ring_name, sizeof(ring_name), "%sRP%dFD%d", MT_TX_DP_SOCKET_PREFIX,
            entry->port, idx);
@@ -273,7 +273,7 @@ static int tx_socket_init_threads(struct mt_tx_socket_entry *entry) {
 
   /* create the threads */
   for (int i = 0; i < entry->threads; i++) {
-    struct mt_tx_socket_thread *t = &entry->threads_data[i];
+    struct mt_tx_socket_thread* t = &entry->threads_data[i];
 
     rte_atomic32_set(&t->stop_thread, 0);
     ret = pthread_create(&t->tid, NULL, tx_socket_thread_loop, t);
@@ -286,12 +286,12 @@ static int tx_socket_init_threads(struct mt_tx_socket_entry *entry) {
   return 0;
 }
 
-static int tx_socket_stat_dump(void *priv) {
-  struct mt_tx_socket_entry *entry = priv;
+static int tx_socket_stat_dump(void* priv) {
+  struct mt_tx_socket_entry* entry = priv;
   enum mtl_port port = entry->port;
 
   for (int i = 0; i < entry->threads; i++) {
-    struct mt_tx_socket_thread *t = &entry->threads_data[i];
+    struct mt_tx_socket_thread* t = &entry->threads_data[i];
     int fd = t->fd;
 
     info("%s(%d,%d), tx pkt %d gso %d try %d on thread %d\n", __func__, port, fd,
@@ -304,9 +304,9 @@ static int tx_socket_stat_dump(void *priv) {
   return 0;
 }
 
-struct mt_tx_socket_entry *mt_tx_socket_get(struct mtl_main_impl *impl,
+struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
                                             enum mtl_port port,
-                                            struct mt_txq_flow *flow) {
+                                            struct mt_txq_flow* flow) {
   int ret;
 
   if (!mt_drv_kernel_based(impl, port)) {
@@ -314,7 +314,7 @@ struct mt_tx_socket_entry *mt_tx_socket_get(struct mtl_main_impl *impl,
     return NULL;
   }
 
-  struct mt_tx_socket_entry *entry =
+  struct mt_tx_socket_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), entry malloc fail\n", __func__, port);
@@ -328,7 +328,7 @@ struct mt_tx_socket_entry *mt_tx_socket_get(struct mtl_main_impl *impl,
   rte_memcpy(&entry->flow, flow, sizeof(entry->flow));
 
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
-    struct mt_tx_socket_thread *t = &entry->threads_data[i];
+    struct mt_tx_socket_thread* t = &entry->threads_data[i];
     t->idx = i;
     t->fd = -1;
     t->parent = entry;
@@ -360,14 +360,14 @@ struct mt_tx_socket_entry *mt_tx_socket_get(struct mtl_main_impl *impl,
   }
   entry->stat_registered = true;
 
-  uint8_t *ip = flow->dip_addr;
+  uint8_t* ip = flow->dip_addr;
   info("%s(%d), fd %d ip %u.%u.%u.%u, port %u, threads %u gso_sz %u\n", __func__, port,
        entry->threads_data[0].fd, ip[0], ip[1], ip[2], ip[3], flow->dst_port,
        entry->threads, entry->gso_sz);
   return entry;
 }
 
-int mt_tx_socket_put(struct mt_tx_socket_entry *entry) {
+int mt_tx_socket_put(struct mt_tx_socket_entry* entry) {
   int idx = entry->threads_data[0].fd;
   enum mtl_port port = entry->port;
 
@@ -379,7 +379,7 @@ int mt_tx_socket_put(struct mt_tx_socket_entry *entry) {
 
   /* stop threads */
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
-    struct mt_tx_socket_thread *t = &entry->threads_data[i];
+    struct mt_tx_socket_thread* t = &entry->threads_data[i];
 
     rte_atomic32_set(&t->stop_thread, 1);
     if (t->tid) {
@@ -396,7 +396,7 @@ int mt_tx_socket_put(struct mt_tx_socket_entry *entry) {
 
   /* close fd */
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
-    struct mt_tx_socket_thread *t = &entry->threads_data[i];
+    struct mt_tx_socket_thread* t = &entry->threads_data[i];
 
     if (t->fd >= 0) {
       close(t->fd);
@@ -409,14 +409,14 @@ int mt_tx_socket_put(struct mt_tx_socket_entry *entry) {
   return 0;
 }
 
-uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry *entry, struct rte_mbuf **tx_pkts,
+uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** tx_pkts,
                             uint16_t nb_pkts) {
   uint16_t tx = 0;
   int ret;
 
   if (entry->ring) {
     unsigned int n =
-        rte_ring_sp_enqueue_bulk(entry->ring, (void **)&tx_pkts[0], nb_pkts, NULL);
+        rte_ring_sp_enqueue_bulk(entry->ring, (void**)&tx_pkts[0], nb_pkts, NULL);
     // tx_socket_dequeue(&entry->threads_data[0]);
     return n;
   }
@@ -425,7 +425,7 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry *entry, struct rte_mbuf **
     tx = tx_socket_send_mbuf_gso(&entry->threads_data[0], tx_pkts, nb_pkts);
   } else {
     for (tx = 0; tx < nb_pkts; tx++) {
-      struct rte_mbuf *m = tx_pkts[tx];
+      struct rte_mbuf* m = tx_pkts[tx];
       ret = tx_socket_send_mbuf(&entry->threads_data[0], m);
       if (ret < 0) break;
     }
@@ -435,11 +435,11 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry *entry, struct rte_mbuf **
   return tx;
 }
 
-static int rx_socket_init_fd(struct mt_rx_socket_entry *entry, int fd, bool reuse) {
+static int rx_socket_init_fd(struct mt_rx_socket_entry* entry, int fd, bool reuse) {
   int ret;
   enum mtl_port port = entry->port;
-  struct mtl_main_impl *impl = entry->parent;
-  struct mt_rxq_flow *flow = &entry->flow;
+  struct mtl_main_impl* impl = entry->parent;
+  struct mt_rxq_flow* flow = &entry->flow;
 
   if (reuse) {
     int optval = 1;
@@ -458,7 +458,7 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry *entry, int fd, bool reus
   }
 
   /* bind to device */
-  const char *if_name = mt_kernel_if_name(impl, port);
+  const char* if_name = mt_kernel_if_name(impl, port);
   info("%s(%d,%d), SO_BINDTODEVICE to %s\n", __func__, port, fd, if_name);
   ret = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, if_name, strlen(if_name));
   if (ret < 0) {
@@ -472,7 +472,7 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry *entry, int fd, bool reus
     mudp_init_sockaddr(&bind_addr, flow->dip_addr, flow->dst_port);
   else
     mudp_init_sockaddr(&bind_addr, mt_sip_addr(impl, port), flow->dst_port);
-  ret = bind(fd, (const struct sockaddr *)&bind_addr, sizeof(bind_addr));
+  ret = bind(fd, (const struct sockaddr*)&bind_addr, sizeof(bind_addr));
   if (ret < 0) {
     err("%s(%d,%d), bind to port %u fail %d\n", __func__, port, fd, flow->dst_port, ret);
     return ret;
@@ -490,12 +490,12 @@ static int rx_socket_init_fd(struct mt_rx_socket_entry *entry, int fd, bool reus
   return 0;
 }
 
-static struct rte_mbuf *rx_socket_recv_mbuf(struct mt_rx_socket_thread *t) {
-  struct mt_rx_socket_entry *entry = t->parent;
+static struct rte_mbuf* rx_socket_recv_mbuf(struct mt_rx_socket_thread* t) {
+  struct mt_rx_socket_entry* entry = t->parent;
   enum mtl_port port = entry->port;
-  struct mtl_port_status *stats = mt_if(entry->parent, port)->dev_stats_sw;
+  struct mtl_port_status* stats = mt_if(entry->parent, port)->dev_stats_sw;
   int fd = entry->fd;
-  struct rte_mbuf *pkt = t->mbuf;
+  struct rte_mbuf* pkt = t->mbuf;
 
   if (!pkt) {
     pkt = rte_pktmbuf_alloc(entry->pool);
@@ -506,10 +506,10 @@ static struct rte_mbuf *rx_socket_recv_mbuf(struct mt_rx_socket_thread *t) {
     t->mbuf = pkt;
   }
 
-  struct mt_udp_hdr *hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr *);
-  void *payload = &hdr[1];
-  struct rte_udp_hdr *udp = &hdr->udp;
-  struct rte_ipv4_hdr *ipv4 = &hdr->ipv4;
+  struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  void* payload = &hdr[1];
+  struct rte_udp_hdr* udp = &hdr->udp;
+  struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct sockaddr_in addr_in;
   socklen_t addr_in_len = sizeof(addr_in);
 
@@ -539,12 +539,12 @@ static struct rte_mbuf *rx_socket_recv_mbuf(struct mt_rx_socket_thread *t) {
   return pkt;
 }
 
-static void *rx_socket_thread_loop(void *arg) {
-  struct mt_rx_socket_thread *t = arg;
-  struct mt_rx_socket_entry *entry = t->parent;
+static void* rx_socket_thread_loop(void* arg) {
+  struct mt_rx_socket_thread* t = arg;
+  struct mt_rx_socket_entry* entry = t->parent;
   enum mtl_port port = entry->port;
   int idx = t->idx, fd = entry->fd;
-  struct rte_mbuf *m;
+  struct rte_mbuf* m;
   int ret;
 
   info("%s(%d,%d), start thread %d\n", __func__, port, fd, idx);
@@ -561,14 +561,14 @@ static void *rx_socket_thread_loop(void *arg) {
   return NULL;
 }
 
-static int rx_socket_init_threads(struct mt_rx_socket_entry *entry) {
+static int rx_socket_init_threads(struct mt_rx_socket_entry* entry) {
   int fd = entry->fd;
   enum mtl_port port = entry->port;
   int ret;
 
   /* create the ring, one producer multi consumer */
   char ring_name[64];
-  struct rte_ring *ring;
+  struct rte_ring* ring;
   unsigned int flags, count;
   snprintf(ring_name, sizeof(ring_name), "%sRP%dFD%d", MT_RX_DP_SOCKET_PREFIX, port, fd);
   flags = RING_F_SP_ENQ;
@@ -582,7 +582,7 @@ static int rx_socket_init_threads(struct mt_rx_socket_entry *entry) {
 
   /* create the threads except the base fd */
   for (int i = 0; i < entry->threads; i++) {
-    struct mt_rx_socket_thread *t = &entry->threads_data[i];
+    struct mt_rx_socket_thread* t = &entry->threads_data[i];
 
     rte_atomic32_set(&t->stop_thread, 0);
     ret = pthread_create(&t->tid, NULL, rx_socket_thread_loop, t);
@@ -595,13 +595,13 @@ static int rx_socket_init_threads(struct mt_rx_socket_entry *entry) {
   return 0;
 }
 
-static int rx_socket_stat_dump(void *priv) {
-  struct mt_rx_socket_entry *entry = priv;
+static int rx_socket_stat_dump(void* priv) {
+  struct mt_rx_socket_entry* entry = priv;
   enum mtl_port port = entry->port;
   int fd = entry->fd;
 
   for (int i = 0; i < entry->threads; i++) {
-    struct mt_rx_socket_thread *t = &entry->threads_data[i];
+    struct mt_rx_socket_thread* t = &entry->threads_data[i];
 
     info("%s(%d,%d), rx pkt %d try %d on thread %d\n", __func__, port, fd, t->stat_rx_pkt,
          t->stat_rx_try, i);
@@ -612,9 +612,9 @@ static int rx_socket_stat_dump(void *priv) {
   return 0;
 }
 
-struct mt_rx_socket_entry *mt_rx_socket_get(struct mtl_main_impl *impl,
+struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
                                             enum mtl_port port,
-                                            struct mt_rxq_flow *flow) {
+                                            struct mt_rxq_flow* flow) {
   int ret;
 
   if (!mt_drv_kernel_based(impl, port)) {
@@ -637,7 +637,7 @@ struct mt_rx_socket_entry *mt_rx_socket_get(struct mtl_main_impl *impl,
     return NULL;
   }
 
-  struct mt_rx_socket_entry *entry =
+  struct mt_rx_socket_entry* entry =
       mt_rte_zmalloc_socket(sizeof(*entry), mt_socket_id(impl, port));
   if (!entry) {
     err("%s(%d), entry malloc fail\n", __func__, port);
@@ -652,7 +652,7 @@ struct mt_rx_socket_entry *mt_rx_socket_get(struct mtl_main_impl *impl,
   entry->rate_limit_per_thread = (uint64_t)5 * 1000 * 1000 * 1000;
 
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
-    struct mt_rx_socket_thread *t = &entry->threads_data[i];
+    struct mt_rx_socket_thread* t = &entry->threads_data[i];
     t->idx = i;
     t->parent = entry;
   }
@@ -698,16 +698,16 @@ struct mt_rx_socket_entry *mt_rx_socket_get(struct mtl_main_impl *impl,
   }
   entry->stat_registered = true;
 
-  uint8_t *ip = flow->dip_addr;
+  uint8_t* ip = flow->dip_addr;
   info("%s(%d), fd %d ip %u.%u.%u.%u port %u threads %d\n", __func__, port, fd, ip[0],
        ip[1], ip[2], ip[3], flow->dst_port, entry->threads);
   return entry;
 }
 
-int mt_rx_socket_put(struct mt_rx_socket_entry *entry) {
+int mt_rx_socket_put(struct mt_rx_socket_entry* entry) {
   int fd = entry->fd;
   enum mtl_port port = entry->port;
-  struct mt_rx_socket_thread *t;
+  struct mt_rx_socket_thread* t;
 
   if (entry->stat_registered) {
     rx_socket_stat_dump(entry);
@@ -750,17 +750,17 @@ int mt_rx_socket_put(struct mt_rx_socket_entry *entry) {
   return 0;
 }
 
-uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry *entry, struct rte_mbuf **rx_pkts,
+uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** rx_pkts,
                             const uint16_t nb_pkts) {
   uint16_t rx = 0;
-  struct mt_rx_socket_thread *t = &entry->threads_data[0];
+  struct mt_rx_socket_thread* t = &entry->threads_data[0];
 
   if (entry->ring) {
-    return rte_ring_sc_dequeue_burst(entry->ring, (void **)rx_pkts, nb_pkts, NULL);
+    return rte_ring_sc_dequeue_burst(entry->ring, (void**)rx_pkts, nb_pkts, NULL);
   }
 
   for (rx = 0; rx < nb_pkts; rx++) {
-    struct rte_mbuf *pkt = rx_socket_recv_mbuf(t);
+    struct rte_mbuf* pkt = rx_socket_recv_mbuf(t);
     if (!pkt) break;
     rx_pkts[rx] = pkt;
   }
@@ -769,21 +769,21 @@ uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry *entry, struct rte_mbuf **
 }
 
 #else
-struct mt_tx_socket_entry *mt_tx_socket_get(struct mtl_main_impl *impl,
+struct mt_tx_socket_entry* mt_tx_socket_get(struct mtl_main_impl* impl,
                                             enum mtl_port port,
-                                            struct mt_txq_flow *flow) {
+                                            struct mt_txq_flow* flow) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(flow);
   err("%s(%d), not support on this platform\n", __func__, port);
   return NULL;
 }
 
-int mt_tx_socket_put(struct mt_tx_socket_entry *entry) {
+int mt_tx_socket_put(struct mt_tx_socket_entry* entry) {
   err("%s(%d), not support on this platform\n", __func__, entry->port);
   return 0;
 }
 
-uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry *entry, struct rte_mbuf **tx_pkts,
+uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry* entry, struct rte_mbuf** tx_pkts,
                             uint16_t nb_pkts) {
   MTL_MAY_UNUSED(entry);
   err("%s(%d), not support on this platform\n", __func__, entry->port);
@@ -791,21 +791,21 @@ uint16_t mt_tx_socket_burst(struct mt_tx_socket_entry *entry, struct rte_mbuf **
   return 0;
 }
 
-struct mt_rx_socket_entry *mt_rx_socket_get(struct mtl_main_impl *impl,
+struct mt_rx_socket_entry* mt_rx_socket_get(struct mtl_main_impl* impl,
                                             enum mtl_port port,
-                                            struct mt_rxq_flow *flow) {
+                                            struct mt_rxq_flow* flow) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(flow);
   err("%s(%d), not support on this platform\n", __func__, port);
   return NULL;
 }
 
-int mt_rx_socket_put(struct mt_rx_socket_entry *entry) {
+int mt_rx_socket_put(struct mt_rx_socket_entry* entry) {
   err("%s(%d), not support on this platform\n", __func__, entry->port);
   return 0;
 }
 
-uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry *entry, struct rte_mbuf **rx_pkts,
+uint16_t mt_rx_socket_burst(struct mt_rx_socket_entry* entry, struct rte_mbuf** rx_pkts,
                             const uint16_t nb_pkts) {
   MTL_MAY_UNUSED(entry);
   MTL_MAY_UNUSED(rx_pkts);

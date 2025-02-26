@@ -14,7 +14,7 @@
 #ifndef _RX_APP_ST22_HEAD_H_
 #define _RX_APP_ST22_HEAD_H_
 
-int st22_app_rx_sessions_init(struct st_app_context *ctx);
-int st22_app_rx_sessions_uinit(struct st_app_context *ctx);
+int st22_app_rx_sessions_init(struct st_app_context* ctx);
+int st22_app_rx_sessions_uinit(struct st_app_context* ctx);
 
 #endif

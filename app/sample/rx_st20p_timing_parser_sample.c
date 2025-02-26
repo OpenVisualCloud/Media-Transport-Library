@@ -43,7 +43,7 @@ struct rx_timing_parser_sample_ctx {
   uint8_t num_port;
 };
 
-static void rx_st20p_tp_stat_init(struct rx_tp_stat *stat) {
+static void rx_st20p_tp_stat_init(struct rx_tp_stat* stat) {
   memset(stat, 0, sizeof(*stat));
 
   stat->cinst_max = INT_MIN;
@@ -62,8 +62,8 @@ static void rx_st20p_tp_stat_init(struct rx_tp_stat *stat) {
   stat->rtp_ts_delta_min = INT_MAX;
 }
 
-static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx *s,
-                                   enum mtl_session_port port, struct rx_tp_stat *stat) {
+static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx* s,
+                                   enum mtl_session_port port, struct rx_tp_stat* stat) {
   int idx = s->idx;
   info("%s(%d,%d), COMPLIANT NARROW %d WIDE %d FAILED %d!\n", __func__, idx, port,
        stat->compliant_result[ST_RX_TP_COMPLIANT_NARROW],
@@ -81,15 +81,15 @@ static void rx_st20p_tp_stat_print(struct rx_timing_parser_sample_ctx *s,
        stat->rtp_ts_delta_max);
 }
 
-static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx *s,
-                               enum mtl_session_port port, struct st20_rx_tp_meta *tp) {
+static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx* s,
+                               enum mtl_session_port port, struct st20_rx_tp_meta* tp) {
   if (tp->compliant != ST_RX_TP_COMPLIANT_NARROW) {
     dbg("%s(%d), compliant failed %d cause: %s, frame idx %d\n", __func__, s->idx,
         tp->compliant, tp->failed_cause, s->fb_recv);
   }
 
   /* update stat */
-  struct rx_tp_stat *stat = &s->stat[port];
+  struct rx_tp_stat* stat = &s->stat[port];
   stat->vrx_min = ST_MIN(tp->vrx_min, stat->vrx_min);
   stat->vrx_max = ST_MAX(tp->vrx_max, stat->vrx_max);
   stat->cinst_min = ST_MIN(tp->cinst_min, stat->cinst_min);
@@ -110,10 +110,10 @@ static int rx_st20p_tp_consume(struct rx_timing_parser_sample_ctx *s,
   return 0;
 }
 
-static void *rx_st20p_tp_thread(void *arg) {
-  struct rx_timing_parser_sample_ctx *s = arg;
+static void* rx_st20p_tp_thread(void* arg) {
+  struct rx_timing_parser_sample_ctx* s = arg;
   st20p_rx_handle handle = s->handle;
-  struct st_frame *frame;
+  struct st_frame* frame;
   int idx = s->idx;
   int ret;
 
@@ -145,7 +145,7 @@ static void *rx_st20p_tp_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -166,7 +166,7 @@ int main(int argc, char **argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct rx_timing_parser_sample_ctx *app[session_num];
+  struct rx_timing_parser_sample_ctx* app[session_num];
 
   // create and register rx session
   for (int i = 0; i < session_num; i++) {

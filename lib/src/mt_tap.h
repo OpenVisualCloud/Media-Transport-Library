@@ -56,13 +56,13 @@ struct overlapped_io {
 };
 
 struct iovec {
-  void *iov_base; /* Pointer to data. */
+  void* iov_base; /* Pointer to data. */
   size_t iov_len; /* Length of data. */
 };
 
 struct tap_rt_context {
-  struct rte_mempool *mp;
-  struct rte_mbuf *pool;
+  struct rte_mempool* mp;
+  struct rte_mbuf* pool;
   struct iovec (*iovecs)[];
   HANDLE tap_handle;
   struct overlapped_io reads;
@@ -75,20 +75,20 @@ struct tap_rt_context {
   bool flow_control;
 };
 
-int mt_tap_init(struct mtl_main_impl *impl);
-int mt_tap_uinit(struct mtl_main_impl *impl);
-int mt_tap_handle(struct mtl_main_impl *impl, enum mtl_port port);
+int mt_tap_init(struct mtl_main_impl* impl);
+int mt_tap_uinit(struct mtl_main_impl* impl);
+int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port);
 
 #else
-static inline int mt_tap_init(struct mtl_main_impl *impl) {
+static inline int mt_tap_init(struct mtl_main_impl* impl) {
   MTL_MAY_UNUSED(impl);
   return 0;
 }
-static inline int mt_tap_uinit(struct mtl_main_impl *impl) {
+static inline int mt_tap_uinit(struct mtl_main_impl* impl) {
   MTL_MAY_UNUSED(impl);
   return 0;
 }
-static inline int mt_tap_handle(struct mtl_main_impl *impl, enum mtl_port port) {
+static inline int mt_tap_handle(struct mtl_main_impl* impl, enum mtl_port port) {
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(port);
   return -EIO;

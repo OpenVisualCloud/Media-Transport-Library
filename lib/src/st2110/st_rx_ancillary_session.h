@@ -11,6 +11,6 @@
 
 #define ST_RX_ANCILLARY_PREFIX "RC_"
 
-int st_rx_ancillary_sessions_sch_uinit(struct mtl_sch_impl *sch);
+int st_rx_ancillary_sessions_sch_uinit(struct mtl_sch_impl* sch);
 
 #endif

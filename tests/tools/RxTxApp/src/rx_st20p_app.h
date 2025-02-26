@@ -14,11 +14,11 @@
 #ifndef _RX_APP_ST20P_HEAD_H_
 #define _RX_APP_ST20P_HEAD_H_
 
-int st_app_rx_st20p_sessions_init(struct st_app_context *ctx);
-int st_app_rx_st20p_sessions_uinit(struct st_app_context *ctx);
-int st_app_rx_st20p_sessions_stat(struct st_app_context *ctx);
-int st_app_rx_st20p_sessions_result(struct st_app_context *ctx);
-int st_app_rx_st20p_sessions_pcap(struct st_app_context *ctx);
-int st_app_rx_st20p_io_stat(struct st_app_context *ctx);
+int st_app_rx_st20p_sessions_init(struct st_app_context* ctx);
+int st_app_rx_st20p_sessions_uinit(struct st_app_context* ctx);
+int st_app_rx_st20p_sessions_stat(struct st_app_context* ctx);
+int st_app_rx_st20p_sessions_result(struct st_app_context* ctx);
+int st_app_rx_st20p_sessions_pcap(struct st_app_context* ctx);
+int st_app_rx_st20p_io_stat(struct st_app_context* ctx);
 
 #endif

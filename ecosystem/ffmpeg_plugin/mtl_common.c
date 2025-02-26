@@ -28,7 +28,7 @@ enum st_fps framerate_to_st_fps(AVRational framerate) {
   return st_frame_rate_to_st_fps(fps);
 }
 
-mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args, int *idx) {
+mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* idx) {
   struct mtl_init_params p;
   mtl_handle handle = NULL;
 
@@ -66,7 +66,7 @@ mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args, int *
 
   if (args->dma_dev) {
     char devs[128] = {0};
-    char *next_dev;
+    char* next_dev;
 
     snprintf(devs, sizeof(devs), "%s", args->dma_dev);
 
@@ -93,7 +93,7 @@ mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args, int *
   return handle;
 }
 
-int mtl_instance_put(AVFormatContext *ctx, mtl_handle handle) {
+int mtl_instance_put(AVFormatContext* ctx, mtl_handle handle) {
   if (handle != g_mtl_shared_handle) {
     err(ctx, "%s, error handle %p %p\n", __func__, handle, g_mtl_shared_handle);
     return AVERROR(EIO);
@@ -110,8 +110,8 @@ int mtl_instance_put(AVFormatContext *ctx, mtl_handle handle) {
   return 0;
 }
 
-int mtl_parse_rx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
-                      const StRxSessionPortArgs *args, struct st_rx_port *port) {
+int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
+                      const StRxSessionPortArgs* args, struct st_rx_port* port) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     /* if no special port in StRxSessionPortArgs, get from StDevArgs */
     if (!args->port[i] && !devArgs->port[i]) break;
@@ -141,8 +141,8 @@ int mtl_parse_rx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
   return 0;
 }
 
-int mtl_parse_tx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
-                      const StTxSessionPortArgs *args, struct st_tx_port *port) {
+int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
+                      const StTxSessionPortArgs* args, struct st_tx_port* port) {
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     /* if no special port in StTxSessionPortArgs, get from StDevArgs */
     if (!args->port[i] && !devArgs->port[i]) break;
@@ -172,7 +172,7 @@ int mtl_parse_tx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
   return 0;
 }
 
-int mtl_parse_st30_sample_rate(enum st30_sampling *sample_rate, int value) {
+int mtl_parse_st30_sample_rate(enum st30_sampling* sample_rate, int value) {
   switch (value) {
     case 48000:
       *sample_rate = ST30_SAMPLING_48K;

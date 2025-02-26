@@ -9,6 +9,6 @@
 
 #define ST_TX_FASTMETADATA_PREFIX "TC_"
 
-int st_tx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl *sch);
+int st_tx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl* sch);
 
 #endif /* _ST_LIB_TX_FASTMETADATA_SESSION_HEAD_H_ */

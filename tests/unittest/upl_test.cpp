@@ -8,17 +8,17 @@
 
 #include "log.h"
 
-static struct uplt_ctx *g_uplt_ctx;
+static struct uplt_ctx* g_uplt_ctx;
 
-struct uplt_ctx *uplt_get_ctx(void) {
+struct uplt_ctx* uplt_get_ctx(void) {
   return g_uplt_ctx;
 }
 
-static void uplt_ctx_init(struct uplt_ctx *ctx) {
+static void uplt_ctx_init(struct uplt_ctx* ctx) {
   inet_pton(AF_INET, "192.168.89.80", ctx->sip_addr[UPLT_PORT_P]);
   inet_pton(AF_INET, "192.168.89.81", ctx->sip_addr[UPLT_PORT_R]);
 
-  uint8_t *p_ip;
+  uint8_t* p_ip;
   srand(st_test_get_monotonic_time());
   p_ip = ctx->mcast_ip_addr;
   p_ip[0] = 239;
@@ -27,7 +27,7 @@ static void uplt_ctx_init(struct uplt_ctx *ctx) {
   p_ip[3] = rand() % 0xFF;
 }
 
-static void uplt_ctx_uinit(struct uplt_ctx *ctx) {
+static void uplt_ctx_uinit(struct uplt_ctx* ctx) {
   st_test_free(ctx);
 }
 
@@ -64,15 +64,15 @@ TEST(Api, socket_single_port_max) {
   socket_single_test(32);
 }
 
-static int check_r_port_alive(struct uplt_ctx *ctx) {
+static int check_r_port_alive(struct uplt_ctx* ctx) {
   int tx_fd = -1;
   int rx_fd = -1;
   int ret = -EIO;
   struct sockaddr_in rx_addr;
   size_t payload_len = 1024;
-  char *send_buf = new char[payload_len];
-  char *recv_buf = new char[payload_len];
-  st_test_rand_data((uint8_t *)send_buf, payload_len, 0);
+  char* send_buf = new char[payload_len];
+  char* recv_buf = new char[payload_len];
+  st_test_rand_data((uint8_t*)send_buf, payload_len, 0);
   /* max timeout 3 min */
   int sleep_ms = 10;
   int max_retry = 1000 / sleep_ms * 60 * 3;
@@ -88,7 +88,7 @@ static int check_r_port_alive(struct uplt_ctx *ctx) {
   if (ret < 0) goto out;
   rx_fd = ret;
 
-  ret = bind(rx_fd, (const struct sockaddr *)&rx_addr, sizeof(rx_addr));
+  ret = bind(rx_fd, (const struct sockaddr*)&rx_addr, sizeof(rx_addr));
   if (ret < 0) goto out;
 
   struct timeval tv;
@@ -99,7 +99,7 @@ static int check_r_port_alive(struct uplt_ctx *ctx) {
 
   info("%s, start to rx port status\n", __func__);
   while (retry < max_retry) {
-    if (sendto(tx_fd, send_buf, payload_len, 0, (const struct sockaddr *)&rx_addr,
+    if (sendto(tx_fd, send_buf, payload_len, 0, (const struct sockaddr*)&rx_addr,
                sizeof(rx_addr)) < 0)
       continue;
     ssize_t recv = recvfrom(rx_fd, recv_buf, payload_len, 0, NULL, NULL);
@@ -131,7 +131,7 @@ static struct option uplt_args_options[] = {
     {"r_sip", required_argument, 0, UPLT_ARG_R_SIP},
     {0, 0, 0, 0}};
 
-static int uplt_parse_args(struct uplt_ctx *ctx, int argc, char **argv) {
+static int uplt_parse_args(struct uplt_ctx* ctx, int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
 
   while (1) {
@@ -154,14 +154,14 @@ static int uplt_parse_args(struct uplt_ctx *ctx, int argc, char **argv) {
   return 0;
 }
 
-GTEST_API_ int main(int argc, char **argv) {
-  struct uplt_ctx *ctx;
+GTEST_API_ int main(int argc, char** argv) {
+  struct uplt_ctx* ctx;
   int ret;
   bool link_flap_wa = true;
 
   testing::InitGoogleTest(&argc, argv);
 
-  ctx = (struct uplt_ctx *)st_test_zmalloc(sizeof(*ctx));
+  ctx = (struct uplt_ctx*)st_test_zmalloc(sizeof(*ctx));
   if (!ctx) {
     err("%s, ctx alloc fail\n", __func__);
     return -ENOMEM;

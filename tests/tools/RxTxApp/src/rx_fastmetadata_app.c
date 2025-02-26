@@ -4,7 +4,7 @@
 
 #include "rx_fastmetadata_app.h"
 
-static void app_rx_fmd_close_source(struct st_app_rx_fmd_session *session) {
+static void app_rx_fmd_close_source(struct st_app_rx_fmd_session* session) {
   if (session->st41_ref_fd >= 0) {
     munmap(session->st41_ref_begin, session->st41_ref_end - session->st41_ref_begin);
     close(session->st41_ref_fd);
@@ -12,7 +12,7 @@ static void app_rx_fmd_close_source(struct st_app_rx_fmd_session *session) {
   }
 }
 
-static int app_rx_fmd_open_ref(struct st_app_rx_fmd_session *session) {
+static int app_rx_fmd_open_ref(struct st_app_rx_fmd_session* session) {
   int fd, idx = session->idx;
   struct stat i;
   session->st41_ref_fd = -1;
@@ -29,7 +29,7 @@ static int app_rx_fmd_open_ref(struct st_app_rx_fmd_session *session) {
     return -EIO;
   }
 
-  uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
+  uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
   if (MAP_FAILED == m) {
     err("%s(%d), mmap '%s' fail.\n", __func__, idx, session->st41_ref_url);
     close(fd);
@@ -45,7 +45,7 @@ static int app_rx_fmd_open_ref(struct st_app_rx_fmd_session *session) {
   return 0;
 }
 
-static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session *session, void *frame,
+static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session* session, void* frame,
                                        int frame_size) {
   int ret = -1;
   uint32_t last_zeros = 0; /* 4 bytes with 0 */
@@ -74,8 +74,8 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session *session, vo
         dbg("%s() PASS: reference file comparison with ending frame.\n", __func__);
 
         /* Verify last 0-3 bytes of frame (filled with zero's) */
-        ret = memcmp(&(((uint8_t *)frame)[st41_ref_remaining_length]),
-                     (void *)&last_zeros, frame_size - st41_ref_remaining_length);
+        ret = memcmp(&(((uint8_t*)frame)[st41_ref_remaining_length]), (void*)&last_zeros,
+                     frame_size - st41_ref_remaining_length);
         if (ret) {
           session->errors_count++;
           err("%s() FAIL: frame comparison with ending zeros.\n", __func__);
@@ -90,13 +90,13 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session *session, vo
   if (ret) {
     err("%s() FRAME START>>", __func__);
     for (int i = 0; i < frame_size; i++) {
-      err("%c", ((char *)frame)[i]);
+      err("%c", ((char*)frame)[i]);
     }
     err("<<END FRAME.\n\n");
 
     err("%s() REFERENCE START>>", __func__);
     for (int i = 0; i < frame_size; i++) {
-      err("%c", ((char *)(session->st41_ref_cursor))[i]);
+      err("%c", ((char*)(session->st41_ref_cursor))[i]);
     }
     err("<<END REFERENCE.\n\n");
   }
@@ -110,9 +110,9 @@ static int app_rx_fmd_compare_with_ref(struct st_app_rx_fmd_session *session, vo
   return ret;
 }
 
-static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session *s, void *usrptr) {
-  struct st41_rtp_hdr *hdr = (struct st41_rtp_hdr *)usrptr;
-  void *payload = (void *)(&hdr[1]);
+static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session* s, void* usrptr) {
+  struct st41_rtp_hdr* hdr = (struct st41_rtp_hdr*)usrptr;
+  void* payload = (void*)(&hdr[1]);
 
   hdr->swaped_st41_hdr_chunk = ntohl(hdr->swaped_st41_hdr_chunk);
 
@@ -154,12 +154,12 @@ static void app_rx_fmd_handle_rtp(struct st_app_rx_fmd_session *s, void *usrptr)
   hdr->swaped_st41_hdr_chunk = htonl(hdr->swaped_st41_hdr_chunk);
 }
 
-static void *app_rx_fmd_read_thread(void *arg) {
-  struct st_app_rx_fmd_session *s = arg;
+static void* app_rx_fmd_read_thread(void* arg) {
+  struct st_app_rx_fmd_session* s = arg;
   int idx = s->idx;
-  void *usrptr;
+  void* usrptr;
   uint16_t len;
-  void *mbuf;
+  void* mbuf;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st41_app_thread_stop) {
@@ -181,8 +181,8 @@ static void *app_rx_fmd_read_thread(void *arg) {
   return NULL;
 }
 
-static int app_rx_fmd_rtp_ready(void *priv) {
-  struct st_app_rx_fmd_session *s = priv;
+static int app_rx_fmd_rtp_ready(void* priv) {
+  struct st_app_rx_fmd_session* s = priv;
 
   st_pthread_mutex_lock(&s->st41_wake_mutex);
   st_pthread_cond_signal(&s->st41_wake_cond);
@@ -190,7 +190,7 @@ static int app_rx_fmd_rtp_ready(void *priv) {
   return 0;
 }
 
-static int app_rx_fmd_uinit(struct st_app_rx_fmd_session *s) {
+static int app_rx_fmd_uinit(struct st_app_rx_fmd_session* s) {
   int ret, idx = s->idx;
   s->st41_app_thread_stop = true;
   if (s->st41_app_thread) {
@@ -214,9 +214,9 @@ static int app_rx_fmd_uinit(struct st_app_rx_fmd_session *s) {
   return 0;
 }
 
-static int app_rx_fmd_init(struct st_app_context *ctx,
-                           st_json_fastmetadata_session_t *fmd,
-                           struct st_app_rx_fmd_session *s) {
+static int app_rx_fmd_init(struct st_app_context* ctx,
+                           st_json_fastmetadata_session_t* fmd,
+                           struct st_app_rx_fmd_session* s) {
   int idx = s->idx, ret;
   struct st41_rx_ops ops;
   char name[32];
@@ -305,7 +305,7 @@ static bool app_rx_fmd_fps_check(double framerate) {
   return false;
 }
 
-static int app_rx_fmd_result(struct st_app_rx_fmd_session *s) {
+static int app_rx_fmd_result(struct st_app_rx_fmd_session* s) {
   int idx = s->idx;
   uint64_t cur_time_ns = st_app_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
@@ -319,10 +319,10 @@ static int app_rx_fmd_result(struct st_app_rx_fmd_session *s) {
   return 0;
 }
 
-int st_app_rx_fmd_sessions_init(struct st_app_context *ctx) {
+int st_app_rx_fmd_sessions_init(struct st_app_context* ctx) {
   int ret, i;
-  struct st_app_rx_fmd_session *s;
-  ctx->rx_fmd_sessions = (struct st_app_rx_fmd_session *)st_app_zmalloc(
+  struct st_app_rx_fmd_session* s;
+  ctx->rx_fmd_sessions = (struct st_app_rx_fmd_session*)st_app_zmalloc(
       sizeof(struct st_app_rx_fmd_session) * ctx->rx_fmd_session_cnt);
   if (!ctx->rx_fmd_sessions) return -ENOMEM;
   for (i = 0; i < ctx->rx_fmd_session_cnt; i++) {
@@ -340,9 +340,9 @@ int st_app_rx_fmd_sessions_init(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_rx_fmd_sessions_uinit(struct st_app_context *ctx) {
+int st_app_rx_fmd_sessions_uinit(struct st_app_context* ctx) {
   int i;
-  struct st_app_rx_fmd_session *s;
+  struct st_app_rx_fmd_session* s;
   if (!ctx->rx_fmd_sessions) return 0;
   for (i = 0; i < ctx->rx_fmd_session_cnt; i++) {
     s = &ctx->rx_fmd_sessions[i];
@@ -352,9 +352,9 @@ int st_app_rx_fmd_sessions_uinit(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_rx_fmd_sessions_result(struct st_app_context *ctx) {
+int st_app_rx_fmd_sessions_result(struct st_app_context* ctx) {
   int i, ret = 0;
-  struct st_app_rx_fmd_session *s;
+  struct st_app_rx_fmd_session* s;
   if (!ctx->rx_fmd_sessions) return 0;
 
   for (i = 0; i < ctx->rx_fmd_session_cnt; i++) {

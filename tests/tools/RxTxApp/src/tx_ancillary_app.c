@@ -4,12 +4,12 @@
 
 #include "tx_ancillary_app.h"
 
-static int app_tx_anc_next_frame(void *priv, uint16_t *next_frame_idx,
-                                 struct st40_tx_frame_meta *meta) {
-  struct st_app_tx_anc_session *s = priv;
+static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
+                                 struct st40_tx_frame_meta* meta) {
+  struct st_app_tx_anc_session* s = priv;
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
-  struct st_tx_frame *framebuff = &s->framebuffs[consumer_idx];
+  struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st40_wake_mutex);
@@ -34,11 +34,11 @@ static int app_tx_anc_next_frame(void *priv, uint16_t *next_frame_idx,
   return ret;
 }
 
-static int app_tx_anc_frame_done(void *priv, uint16_t frame_idx,
-                                 struct st40_tx_frame_meta *meta) {
-  struct st_app_tx_anc_session *s = priv;
+static int app_tx_anc_frame_done(void* priv, uint16_t frame_idx,
+                                 struct st40_tx_frame_meta* meta) {
+  struct st_app_tx_anc_session* s = priv;
   int ret;
-  struct st_tx_frame *framebuff = &s->framebuffs[frame_idx];
+  struct st_tx_frame* framebuff = &s->framebuffs[frame_idx];
   MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st40_wake_mutex);
@@ -61,8 +61,8 @@ static int app_tx_anc_frame_done(void *priv, uint16_t frame_idx,
   return ret;
 }
 
-static int app_tx_anc_rtp_done(void *priv) {
-  struct st_app_tx_anc_session *s = priv;
+static int app_tx_anc_rtp_done(void* priv) {
+  struct st_app_tx_anc_session* s = priv;
   st_pthread_mutex_lock(&s->st40_wake_mutex);
   st_pthread_cond_signal(&s->st40_wake_cond);
   st_pthread_mutex_unlock(&s->st40_wake_mutex);
@@ -70,8 +70,8 @@ static int app_tx_anc_rtp_done(void *priv) {
   return 0;
 }
 
-static void app_tx_anc_build_frame(struct st_app_tx_anc_session *s,
-                                   struct st40_frame *dst) {
+static void app_tx_anc_build_frame(struct st_app_tx_anc_session* s,
+                                   struct st40_frame* dst) {
   uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
                           ? 255
                           : s->st40_source_end - s->st40_frame_cursor;
@@ -92,11 +92,11 @@ static void app_tx_anc_build_frame(struct st_app_tx_anc_session *s,
     s->st40_frame_cursor = s->st40_source_begin;
 }
 
-static void *app_tx_anc_frame_thread(void *arg) {
-  struct st_app_tx_anc_session *s = arg;
+static void* app_tx_anc_frame_thread(void* arg) {
+  struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
   uint16_t producer_idx;
-  struct st_tx_frame *framebuff;
+  struct st_tx_frame* framebuff;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st40_app_thread_stop) {
@@ -112,7 +112,7 @@ static void *app_tx_anc_frame_thread(void *arg) {
     }
     st_pthread_mutex_unlock(&s->st40_wake_mutex);
 
-    struct st40_frame *frame_addr = st40_tx_get_framebuffer(s->handle, producer_idx);
+    struct st40_frame* frame_addr = st40_tx_get_framebuffer(s->handle, producer_idx);
     app_tx_anc_build_frame(s, frame_addr);
 
     st_pthread_mutex_lock(&s->st40_wake_mutex);
@@ -129,16 +129,16 @@ static void *app_tx_anc_frame_thread(void *arg) {
   return NULL;
 }
 
-static void *app_tx_anc_pcap_thread(void *arg) {
-  struct st_app_tx_anc_session *s = arg;
+static void* app_tx_anc_pcap_thread(void* arg) {
+  struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
-  void *mbuf;
-  void *usrptr = NULL;
+  void* mbuf;
+  void* usrptr = NULL;
   struct pcap_pkthdr hdr;
-  uint8_t *packet;
-  struct ether_header *eth_hdr;
-  struct ip *ip_hdr;
-  struct udphdr *udp_hdr;
+  uint8_t* packet;
+  struct ether_header* eth_hdr;
+  struct ip* ip_hdr;
+  struct udphdr* udp_hdr;
   uint16_t udp_data_len;
 
   info("%s(%d), start\n", __func__, idx);
@@ -159,14 +159,14 @@ static void *app_tx_anc_pcap_thread(void *arg) {
       }
     }
     udp_data_len = 0;
-    packet = (uint8_t *)pcap_next(s->st40_pcap, &hdr);
+    packet = (uint8_t*)pcap_next(s->st40_pcap, &hdr);
     if (packet) {
-      eth_hdr = (struct ether_header *)packet;
+      eth_hdr = (struct ether_header*)packet;
       if (ntohs(eth_hdr->ether_type) == ETHERTYPE_IP) {
-        ip_hdr = (struct ip *)(packet + sizeof(struct ether_header));
+        ip_hdr = (struct ip*)(packet + sizeof(struct ether_header));
         if (ip_hdr->ip_p == IPPROTO_UDP) {
           udp_hdr =
-              (struct udphdr *)(packet + sizeof(struct ether_header) + sizeof(struct ip));
+              (struct udphdr*)(packet + sizeof(struct ether_header) + sizeof(struct ip));
           udp_data_len = ntohs(udp_hdr->len) - sizeof(struct udphdr);
           mtl_memcpy(usrptr,
                      packet + sizeof(struct ether_header) + sizeof(struct ip) +
@@ -192,12 +192,12 @@ static void *app_tx_anc_pcap_thread(void *arg) {
   return NULL;
 }
 
-static void app_tx_anc_build_rtp(struct st_app_tx_anc_session *s, void *usrptr,
-                                 uint16_t *mbuf_len) {
+static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
+                                 uint16_t* mbuf_len) {
   /* generate one anc rtp for test purpose */
-  struct st40_rfc8331_rtp_hdr *hdr = (struct st40_rfc8331_rtp_hdr *)usrptr;
-  struct st40_rfc8331_payload_hdr *payload_hdr =
-      (struct st40_rfc8331_payload_hdr *)(&hdr[1]);
+  struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
+  struct st40_rfc8331_payload_hdr* payload_hdr =
+      (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
                           ? 255
                           : s->st40_source_end - s->st40_frame_cursor;
@@ -229,10 +229,10 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session *s, void *usrptr,
   payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
   for (int i = 0; i < udw_size; i++) {
     st40_set_udw(i + 3, st40_add_parity_bits(s->st40_frame_cursor[i]),
-                 (uint8_t *)&payload_hdr->second_hdr_chunk);
+                 (uint8_t*)&payload_hdr->second_hdr_chunk);
   }
-  check_sum = st40_calc_checksum(3 + udw_size, (uint8_t *)&payload_hdr->second_hdr_chunk);
-  st40_set_udw(udw_size + 3, check_sum, (uint8_t *)&payload_hdr->second_hdr_chunk);
+  check_sum = st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk);
+  st40_set_udw(udw_size + 3, check_sum, (uint8_t*)&payload_hdr->second_hdr_chunk);
   total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
                                                // 10-bit words: DID, SDID, DATA_COUNT
                                                // + size of buffer with data + checksum
@@ -247,11 +247,11 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session *s, void *usrptr,
     s->st40_frame_cursor = s->st40_source_begin;
 }
 
-static void *app_tx_anc_rtp_thread(void *arg) {
-  struct st_app_tx_anc_session *s = arg;
+static void* app_tx_anc_rtp_thread(void* arg) {
+  struct st_app_tx_anc_session* s = arg;
   int idx = s->idx;
-  void *mbuf;
-  void *usrptr = NULL;
+  void* mbuf;
+  void* usrptr = NULL;
   uint16_t mbuf_len = 0;
 
   info("%s(%d), start\n", __func__, idx);
@@ -282,7 +282,7 @@ static void *app_tx_anc_rtp_thread(void *arg) {
   return NULL;
 }
 
-static int app_tx_anc_open_source(struct st_app_tx_anc_session *s) {
+static int app_tx_anc_open_source(struct st_app_tx_anc_session* s) {
   if (!s->st40_pcap_input) {
     struct stat i;
 
@@ -295,7 +295,7 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session *s) {
         return -EIO;
       }
 
-      uint8_t *m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
+      uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, s->st40_source_fd, 0);
 
       if (MAP_FAILED != m) {
         s->st40_source_begin = m;
@@ -325,7 +325,7 @@ static int app_tx_anc_open_source(struct st_app_tx_anc_session *s) {
   return 0;
 }
 
-static int app_tx_anc_close_source(struct st_app_tx_anc_session *s) {
+static int app_tx_anc_close_source(struct st_app_tx_anc_session* s) {
   if (s->st40_source_fd >= 0) {
     munmap(s->st40_source_begin, s->st40_source_end - s->st40_source_begin);
     close(s->st40_source_fd);
@@ -339,17 +339,17 @@ static int app_tx_anc_close_source(struct st_app_tx_anc_session *s) {
   return 0;
 }
 
-static int app_tx_anc_start_source(struct st_app_tx_anc_session *s) {
+static int app_tx_anc_start_source(struct st_app_tx_anc_session* s) {
   int ret = -EINVAL;
   int idx = s->idx;
 
   s->st40_app_thread_stop = false;
   if (s->st40_pcap_input)
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_pcap_thread, (void *)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_pcap_thread, (void*)s);
   else if (s->st40_rtp_input)
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_rtp_thread, (void *)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_rtp_thread, (void*)s);
   else
-    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_frame_thread, (void *)s);
+    ret = pthread_create(&s->st40_app_thread, NULL, app_tx_anc_frame_thread, (void*)s);
   if (ret < 0) {
     err("%s(%d), thread create fail err = %d\n", __func__, idx, ret);
     return ret;
@@ -362,7 +362,7 @@ static int app_tx_anc_start_source(struct st_app_tx_anc_session *s) {
   return 0;
 }
 
-static void app_tx_anc_stop_source(struct st_app_tx_anc_session *s) {
+static void app_tx_anc_stop_source(struct st_app_tx_anc_session* s) {
   if (s->st40_source_fd >= 0) {
     s->st40_app_thread_stop = true;
     /* wake up the thread */
@@ -373,7 +373,7 @@ static void app_tx_anc_stop_source(struct st_app_tx_anc_session *s) {
   }
 }
 
-int app_tx_anc_uinit(struct st_app_tx_anc_session *s) {
+int app_tx_anc_uinit(struct st_app_tx_anc_session* s) {
   int ret;
 
   app_tx_anc_stop_source(s);
@@ -397,8 +397,8 @@ int app_tx_anc_uinit(struct st_app_tx_anc_session *s) {
   return 0;
 }
 
-static int app_tx_anc_init(struct st_app_context *ctx, st_json_ancillary_session_t *anc,
-                           struct st_app_tx_anc_session *s) {
+static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session_t* anc,
+                           struct st_app_tx_anc_session* s) {
   int idx = s->idx, ret;
   struct st40_tx_ops ops;
   char name[32];
@@ -409,7 +409,7 @@ static int app_tx_anc_init(struct st_app_context *ctx, st_json_ancillary_session
   s->st40_seq_id = 1;
 
   s->framebuffs =
-      (struct st_tx_frame *)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
+      (struct st_tx_frame*)st_app_zmalloc(sizeof(*s->framebuffs) * s->framebuff_cnt);
   if (!s->framebuffs) {
     return -ENOMEM;
   }
@@ -508,8 +508,8 @@ static int app_tx_anc_init(struct st_app_context *ctx, st_json_ancillary_session
   return 0;
 }
 
-int st_app_tx_anc_sessions_stop(struct st_app_context *ctx) {
-  struct st_app_tx_anc_session *s;
+int st_app_tx_anc_sessions_stop(struct st_app_context* ctx) {
+  struct st_app_tx_anc_session* s;
   if (!ctx->tx_anc_sessions) return 0;
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
     s = &ctx->tx_anc_sessions[i];
@@ -519,10 +519,10 @@ int st_app_tx_anc_sessions_stop(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_tx_anc_sessions_init(struct st_app_context *ctx) {
+int st_app_tx_anc_sessions_init(struct st_app_context* ctx) {
   int ret;
-  struct st_app_tx_anc_session *s;
-  ctx->tx_anc_sessions = (struct st_app_tx_anc_session *)st_app_zmalloc(
+  struct st_app_tx_anc_session* s;
+  ctx->tx_anc_sessions = (struct st_app_tx_anc_session*)st_app_zmalloc(
       sizeof(struct st_app_tx_anc_session) * ctx->tx_anc_session_cnt);
   if (!ctx->tx_anc_sessions) return -ENOMEM;
 
@@ -540,8 +540,8 @@ int st_app_tx_anc_sessions_init(struct st_app_context *ctx) {
   return 0;
 }
 
-int st_app_tx_anc_sessions_uinit(struct st_app_context *ctx) {
-  struct st_app_tx_anc_session *s;
+int st_app_tx_anc_sessions_uinit(struct st_app_context* ctx) {
+  struct st_app_tx_anc_session* s;
   if (!ctx->tx_anc_sessions) return 0;
 
   for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {

@@ -16,16 +16,16 @@ struct tx_st20p_sample_ctx {
   int fb_send_done;
 
   size_t frame_size;
-  uint8_t *source_begin;
+  uint8_t* source_begin;
   mtl_iova_t source_begin_iova;
-  uint8_t *source_end;
-  uint8_t *frame_cursor;
+  uint8_t* source_end;
+  uint8_t* frame_cursor;
 
   struct st_frame_user_meta meta;
   bool has_user_meta;
 };
 
-static int tx_st20p_close_source(struct tx_st20p_sample_ctx *s) {
+static int tx_st20p_close_source(struct tx_st20p_sample_ctx* s) {
   if (s->source_begin) {
     mtl_hp_free(s->st, s->source_begin);
     s->source_begin = NULL;
@@ -34,11 +34,11 @@ static int tx_st20p_close_source(struct tx_st20p_sample_ctx *s) {
   return 0;
 }
 
-static int tx_st20p_open_source(struct tx_st20p_sample_ctx *s, char *file) {
+static int tx_st20p_open_source(struct tx_st20p_sample_ctx* s, char* file) {
   int fd = -EIO;
   struct stat i;
   int frame_cnt = 2;
-  uint8_t *m = NULL;
+  uint8_t* m = NULL;
   size_t fbs_size = s->frame_size * frame_cnt;
 
   fd = st_open(file, O_RDONLY);
@@ -93,8 +93,8 @@ init_fb:
   return 0;
 }
 
-static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
-  struct tx_st20p_sample_ctx *s = priv;
+static int tx_st20p_frame_done(void* priv, struct st_frame* frame) {
+  struct tx_st20p_sample_ctx* s = priv;
   MTL_MAY_UNUSED(frame);
 
   s->fb_send_done++;
@@ -102,16 +102,16 @@ static int tx_st20p_frame_done(void *priv, struct st_frame *frame) {
   return 0;
 }
 
-static void tx_st20p_build_frame(struct tx_st20p_sample_ctx *s, struct st_frame *frame) {
-  uint8_t *src = s->frame_cursor;
+static void tx_st20p_build_frame(struct tx_st20p_sample_ctx* s, struct st_frame* frame) {
+  uint8_t* src = s->frame_cursor;
 
   mtl_memcpy(frame->addr[0], src, s->frame_size);
 }
 
-static void *tx_st20p_frame_thread(void *arg) {
-  struct tx_st20p_sample_ctx *s = arg;
+static void* tx_st20p_frame_thread(void* arg) {
+  struct tx_st20p_sample_ctx* s = arg;
   st20p_tx_handle handle = s->handle;
-  struct st_frame *frame;
+  struct st_frame* frame;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -142,7 +142,7 @@ static void *tx_st20p_frame_thread(void *arg) {
   return NULL;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
   }
 
   uint32_t session_num = ctx.sessions;
-  struct tx_st20p_sample_ctx *app[session_num];
+  struct tx_st20p_sample_ctx* app[session_num];
 
   // create and register tx session
   for (int i = 0; i < session_num; i++) {

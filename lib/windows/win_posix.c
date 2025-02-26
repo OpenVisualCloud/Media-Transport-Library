@@ -25,21 +25,21 @@ int shmget(key_t key, size_t size, int shmflg) {
   return id;
 }
 
-void *shmat(int shmid, const void *shmaddr, int shmflg) {
+void* shmat(int shmid, const void* shmaddr, int shmflg) {
   MTL_MAY_UNUSED(shmaddr);
   MTL_MAY_UNUSED(shmflg);
-  void *pBuf =
+  void* pBuf =
       MapViewOfFile(map_info[shmid].maphandle, FILE_MAP_ALL_ACCESS, 0,
                     map_info[shmid].size >> 32, map_info[shmid].size & 0xffffffff);
   return pBuf;
 }
 
-int shmdt(const void *shmaddr) {
+int shmdt(const void* shmaddr) {
   int ret = UnmapViewOfFile(shmaddr);
   return ret ? 0 : 1;
 }
 
-int shmctl(int shmid, int cmd, struct shmid_ds *buf) {
+int shmctl(int shmid, int cmd, struct shmid_ds* buf) {
   MTL_MAY_UNUSED(shmid);
 
   if (cmd == IPC_STAT) {
@@ -57,7 +57,7 @@ int shmctl(int shmid, int cmd, struct shmid_ds *buf) {
  */
 #define DELTA_EPOCH_IN_100NS INT64_C(116444736000000000)
 
-int clock_gettime(int clk_id, struct timespec *tp) {
+int clock_gettime(int clk_id, struct timespec* tp) {
   unsigned __int64 t;
   LARGE_INTEGER pf, pc;
   union {

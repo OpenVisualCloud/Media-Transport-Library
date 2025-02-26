@@ -97,7 +97,7 @@ struct tx_frame_buff {
 };
 
 struct tx_frame_buff_ct {
-  struct tx_frame_buff *buffs;
+  struct tx_frame_buff* buffs;
   unsigned int cnt;
   unsigned int receive_idx;
   unsigned int ready_idx;
@@ -108,19 +108,19 @@ struct tx_frame_buff_ct {
 
 struct st_display {
   int idx;
-  SDL_Window *window;
-  SDL_Renderer *renderer;
-  SDL_Texture *texture;
+  SDL_Window* window;
+  SDL_Renderer* renderer;
+  SDL_Texture* texture;
   SDL_PixelFormatEnum fmt;
 #ifdef APP_HAS_SDL2_TTF
-  TTF_Font *font;
+  TTF_Font* font;
 #endif
   SDL_Rect msg_rect;
   int window_w;
   int window_h;
   int pixel_w;
   int pixel_h;
-  void *front_frame;
+  void* front_frame;
   int front_frame_size;
   uint32_t last_time;
   uint32_t frame_cnt;
@@ -135,14 +135,14 @@ struct st_display {
 
 struct st_v4l2_tx_video_session {
   int idx;
-  struct st_v4l2_tx_context *ctx;
+  struct st_v4l2_tx_context* ctx;
 
   st20_tx_handle handle;
   struct st20_tx_ops ops_tx;
 
   int framebuff_size;
 
-  struct st20_ext_frame *ext_frames;
+  struct st20_ext_frame* ext_frames;
 
   int width;
   int height;
@@ -166,7 +166,7 @@ struct buffer {
   unsigned int idx;
   unsigned int padding[VIDEO_MAX_PLANES];
   unsigned int size[VIDEO_MAX_PLANES];
-  void *mem[VIDEO_MAX_PLANES];
+  void* mem[VIDEO_MAX_PLANES];
 };
 
 struct device {
@@ -176,7 +176,7 @@ struct device {
   enum v4l2_buf_type type;
   enum v4l2_memory memtype;
   unsigned int nbufs;
-  struct buffer *buffers;
+  struct buffer* buffers;
 
   unsigned int width;
   unsigned int height;
@@ -188,7 +188,7 @@ struct device {
   unsigned char num_planes;
   struct v4l2_plane_pix_format plane_fmt[VIDEO_MAX_PLANES];
 
-  void *pattern[VIDEO_MAX_PLANES];
+  void* pattern[VIDEO_MAX_PLANES];
   unsigned int patternsize[VIDEO_MAX_PLANES];
 
   bool write_data_prefix;
@@ -200,7 +200,7 @@ struct st_v4l2_tx_context {
 
   bool stop;
 
-  struct st_v4l2_tx_video_session *tx_video_sessions;
+  struct st_v4l2_tx_video_session* tx_video_sessions;
   int tx_video_session_cnt;
 
   struct device dev;
@@ -225,11 +225,11 @@ static uint8_t g_tx_video_local_ip[MTL_IP_ADDR_LEN] = {192, 168, 22, 85};
 /* dst ip address for tx video session */
 static uint8_t g_tx_video_dst_ip[MTL_IP_ADDR_LEN] = {239, 168, 22, 85};
 
-static struct st_v4l2_tx_context *g_st_v4l2_tx = NULL;
+static struct st_v4l2_tx_context* g_st_v4l2_tx = NULL;
 
 /*function dec*/
 
-int pthread_setaffinity_np(pthread_t thread, size_t cpusetsize, const cpu_set_t *cpuset);
+int pthread_setaffinity_np(pthread_t thread, size_t cpusetsize, const cpu_set_t* cpuset);
 
 /*code*/
 
@@ -288,7 +288,7 @@ static int app_player_init(void) {
   return 0;
 }
 
-static void destroy_display_context(struct st_display *d) {
+static void destroy_display_context(struct st_display* d) {
   if (d->texture) {
     SDL_DestroyTexture(d->texture);
     d->texture = NULL;
@@ -303,7 +303,7 @@ static void destroy_display_context(struct st_display *d) {
   }
 }
 
-static int create_display_context(struct st_display *d) {
+static int create_display_context(struct st_display* d) {
   char title[32];
   sprintf(title, "v4l2-display-%d", d->idx);
 
@@ -334,8 +334,8 @@ static int create_display_context(struct st_display *d) {
   return 0;
 }
 
-static void *display_thread_func(void *arg) {
-  struct st_display *d = arg;
+static void* display_thread_func(void* arg) {
+  struct st_display* d = arg;
   int idx = d->idx;
 
 #ifdef WINDOWSENV
@@ -375,8 +375,8 @@ static void *display_thread_func(void *arg) {
       char text[32];
       sprintf(text, "FPS:\t%.2f", d->fps);
       SDL_Color Red = {255, 0, 0};
-      SDL_Surface *surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
-      SDL_Texture *Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
+      SDL_Surface* surfaceMessage = TTF_RenderText_Solid(d->font, text, Red);
+      SDL_Texture* Message = SDL_CreateTextureFromSurface(d->renderer, surfaceMessage);
 
       SDL_RenderCopy(d->renderer, Message, NULL, &d->msg_rect);
       SDL_FreeSurface(surfaceMessage);
@@ -395,7 +395,7 @@ static void *display_thread_func(void *arg) {
   return NULL;
 }
 
-static int display_thread_create(struct st_v4l2_tx_video_session *tx_video_session,
+static int display_thread_create(struct st_v4l2_tx_video_session* tx_video_session,
                                  unsigned int priority, unsigned int cpu) {
   int ret = 0;
 
@@ -415,9 +415,9 @@ static int display_thread_create(struct st_v4l2_tx_video_session *tx_video_sessi
   return ret;
 }
 
-static void display_consume_frame(struct st_v4l2_tx_video_session *tx_video_session,
-                                  void *frame) {
-  struct st_display *display = &(tx_video_session->display);
+static void display_consume_frame(struct st_v4l2_tx_video_session* tx_video_session,
+                                  void* frame) {
+  struct st_display* display = &(tx_video_session->display);
 
   if (display->front_frame) {
     if (pthread_mutex_trylock(&display->display_frame_mutex) == 0) {
@@ -431,7 +431,7 @@ static void display_consume_frame(struct st_v4l2_tx_video_session *tx_video_sess
   }
 }
 
-static int app_uinit_display(struct st_display *d) {
+static int app_uinit_display(struct st_display* d) {
   if (!d) return 0;
   int idx = d->idx;
 
@@ -465,8 +465,8 @@ static int app_uinit_display(struct st_display *d) {
   return 0;
 }
 
-static int app_init_display(struct st_display *d, int idx, int width, int height,
-                            char *font) {
+static int app_init_display(struct st_display* d, int idx, int width, int height,
+                            char* font) {
   int ret;
   if (!d) return -ENOMEM;
   MTL_MAY_UNUSED(font);
@@ -519,23 +519,23 @@ static int app_init_display(struct st_display *d, int idx, int width, int height
 
 /**/
 
-static bool video_is_mplane(struct device *dev) {
+static bool video_is_mplane(struct device* dev) {
   return dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE ||
          dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 }
 
-static bool video_is_capture(struct device *dev) {
+static bool video_is_capture(struct device* dev) {
   return dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE ||
          dev->type == V4L2_BUF_TYPE_VIDEO_CAPTURE;
 }
 
-static bool video_is_output(struct device *dev) {
+static bool video_is_output(struct device* dev) {
   return dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE ||
          dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT;
 }
 
 static struct v4l2_format_info {
-  const char *name;
+  const char* name;
   unsigned int fourcc;
   unsigned char n_planes;
 } pixel_formats[] = {
@@ -618,7 +618,7 @@ static struct v4l2_format_info {
     //	{ "Y210", V4L2_PIX_FMT_Y210, 1 },
 };
 
-static const struct v4l2_format_info *v4l2_format_by_fourcc(unsigned int fourcc) {
+static const struct v4l2_format_info* v4l2_format_by_fourcc(unsigned int fourcc) {
   unsigned int i;
 
   for (i = 0; i < ARRAY_SIZE(pixel_formats); ++i) {
@@ -628,8 +628,8 @@ static const struct v4l2_format_info *v4l2_format_by_fourcc(unsigned int fourcc)
   return NULL;
 }
 
-static const char *v4l2_format_name(unsigned int fourcc) {
-  const struct v4l2_format_info *info;
+static const char* v4l2_format_name(unsigned int fourcc) {
+  const struct v4l2_format_info* info;
   static char name[5];
   unsigned int i;
 
@@ -646,7 +646,7 @@ static const char *v4l2_format_name(unsigned int fourcc) {
 }
 
 static const struct {
-  const char *name;
+  const char* name;
   enum v4l2_field field;
 } fields[] = {
     {"any", V4L2_FIELD_ANY},
@@ -661,7 +661,7 @@ static const struct {
     {"interlaced-bt", V4L2_FIELD_INTERLACED_BT},
 };
 
-static const char *v4l2_field_name(enum v4l2_field field) {
+static const char* v4l2_field_name(enum v4l2_field field) {
   unsigned int i;
 
   for (i = 0; i < ARRAY_SIZE(fields); ++i) {
@@ -671,11 +671,11 @@ static const char *v4l2_field_name(enum v4l2_field field) {
   return "unknown";
 }
 
-static void video_set_buf_type(struct device *dev, enum v4l2_buf_type type) {
+static void video_set_buf_type(struct device* dev, enum v4l2_buf_type type) {
   dev->type = type;
 }
 
-static void video_init(struct device *dev) {
+static void video_init(struct device* dev) {
   memset(dev, 0, sizeof *dev);
   dev->fd = -1;
   dev->memtype = V4L2_MEMORY_MMAP;
@@ -683,11 +683,11 @@ static void video_init(struct device *dev) {
   dev->type = (enum v4l2_buf_type) - 1;
 }
 
-static bool video_has_fd(struct device *dev) {
+static bool video_has_fd(struct device* dev) {
   return dev->fd != -1;
 }
 
-static int video_open(struct device *dev, const char *devname) {
+static int video_open(struct device* dev, const char* devname) {
   if (video_has_fd(dev)) {
     printf("Can't open device (already open).\n");
     return -1;
@@ -706,7 +706,7 @@ static int video_open(struct device *dev, const char *devname) {
   return 0;
 }
 
-static int do_print_ipu_version(struct device *dev) {
+static int do_print_ipu_version(struct device* dev) {
   unsigned int version;
   int ret;
 
@@ -718,7 +718,7 @@ static int do_print_ipu_version(struct device *dev) {
   return 0;
 }
 
-static int video_querycap(struct device *dev, unsigned int *capabilities) {
+static int video_querycap(struct device* dev, unsigned int* capabilities) {
   struct v4l2_capability cap;
   unsigned int caps;
   int ret;
@@ -758,7 +758,7 @@ static int cap_get_buf_type(unsigned int capabilities) {
   return 0;
 }
 
-static void video_close(struct device *dev) {
+static void video_close(struct device* dev) {
   unsigned int i;
 
   for (i = 0; i < dev->num_planes; i++) free(dev->pattern[i]);
@@ -767,7 +767,7 @@ static void video_close(struct device *dev) {
   if (dev->opened) close(dev->fd);
 }
 
-static void video_log_status(struct device *dev) {
+static void video_log_status(struct device* dev) {
   int ret;
   ret = ioctl(dev->fd, VIDIOC_LOG_STATUS);
   if (ret < 0) {
@@ -775,7 +775,7 @@ static void video_log_status(struct device *dev) {
   }
 }
 
-static int video_get_format(struct device *dev) {
+static int video_get_format(struct device* dev) {
   struct v4l2_format v_fmt;
   unsigned int i;
   int ret;
@@ -812,7 +812,7 @@ static int video_get_format(struct device *dev) {
   return 0;
 }
 
-static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
+static int video_set_format(struct device* dev, unsigned int w, unsigned int h,
                             unsigned int format, unsigned int stride,
                             unsigned int buffer_size, enum v4l2_field field,
                             unsigned int flags) {
@@ -824,7 +824,7 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
   fmt.type = dev->type;
 
   if (video_is_mplane(dev)) {
-    const struct v4l2_format_info *info = v4l2_format_by_fourcc(format);
+    const struct v4l2_format_info* info = v4l2_format_by_fourcc(format);
 
     fmt.fmt.pix_mp.width = w;
     fmt.fmt.pix_mp.height = h;
@@ -879,8 +879,8 @@ static int video_set_format(struct device *dev, unsigned int w, unsigned int h,
   return 0;
 }
 
-static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
-                             struct v4l2_buffer *v4l2buf) {
+static int video_buffer_mmap(struct device* dev, struct buffer* buffer,
+                             struct v4l2_buffer* v4l2buf) {
   unsigned int length;
   unsigned int offset;
   unsigned int i;
@@ -910,7 +910,7 @@ static int video_buffer_mmap(struct device *dev, struct buffer *buffer,
   return 0;
 }
 
-static int video_buffer_munmap(struct device *dev, struct buffer *buffer) {
+static int video_buffer_munmap(struct device* dev, struct buffer* buffer) {
   unsigned int i;
   int ret;
 
@@ -927,8 +927,8 @@ static int video_buffer_munmap(struct device *dev, struct buffer *buffer) {
   return 0;
 }
 
-static int video_buffer_alloc_userptr(struct device *dev, struct buffer *buffer,
-                                      struct v4l2_buffer *v4l2buf, unsigned int offset,
+static int video_buffer_alloc_userptr(struct device* dev, struct buffer* buffer,
+                                      struct v4l2_buffer* v4l2buf, unsigned int offset,
                                       unsigned int padding) {
   int page_size = getpagesize();
   unsigned int length;
@@ -959,7 +959,7 @@ static int video_buffer_alloc_userptr(struct device *dev, struct buffer *buffer,
   return 0;
 }
 
-static void video_buffer_free_userptr(struct device *dev, struct buffer *buffer) {
+static void video_buffer_free_userptr(struct device* dev, struct buffer* buffer) {
   unsigned int i;
 
   for (i = 0; i < dev->num_planes; i++) {
@@ -968,7 +968,7 @@ static void video_buffer_free_userptr(struct device *dev, struct buffer *buffer)
   }
 }
 
-static void get_ts_flags(uint32_t flags, const char **ts_type, const char **ts_source) {
+static void get_ts_flags(uint32_t flags, const char** ts_type, const char** ts_source) {
   switch (flags & V4L2_BUF_FLAG_TIMESTAMP_MASK) {
     case V4L2_BUF_FLAG_TIMESTAMP_UNKNOWN:
       *ts_type = "unk";
@@ -994,12 +994,12 @@ static void get_ts_flags(uint32_t flags, const char **ts_type, const char **ts_s
   }
 }
 
-static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offset,
+static int video_alloc_buffers(struct device* dev, int nbufs, unsigned int offset,
                                unsigned int padding) {
   struct v4l2_plane planes[VIDEO_MAX_PLANES];
   struct v4l2_requestbuffers rb;
   struct v4l2_buffer buf;
-  struct buffer *buffers;
+  struct buffer* buffers;
   unsigned int i;
   int ret;
 
@@ -1069,7 +1069,7 @@ static int video_alloc_buffers(struct device *dev, int nbufs, unsigned int offse
   return 0;
 }
 
-static int video_free_buffers(struct device *dev) {
+static int video_free_buffers(struct device* dev) {
   struct v4l2_requestbuffers rb;
   unsigned int i;
   int ret;
@@ -1110,7 +1110,7 @@ static int video_free_buffers(struct device *dev) {
   return 0;
 }
 
-static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mode fill) {
+static int video_queue_buffer(struct device* dev, int index, enum buffer_fill_mode fill) {
   struct v4l2_buffer buf;
   struct v4l2_plane planes[VIDEO_MAX_PLANES];
   int ret;
@@ -1176,7 +1176,7 @@ static int video_queue_buffer(struct device *dev, int index, enum buffer_fill_mo
   return ret;
 }
 
-static int video_enable(struct device *dev, int enable) {
+static int video_enable(struct device* dev, int enable) {
   int type = dev->type;
   int ret;
 
@@ -1190,7 +1190,7 @@ static int video_enable(struct device *dev, int enable) {
   return 0;
 }
 
-static int video_load_test_pattern(struct device *dev, const char *filename) {
+static int video_load_test_pattern(struct device* dev, const char* filename) {
   unsigned int plane;
   unsigned int size;
   int fd = -1;
@@ -1222,7 +1222,7 @@ static int video_load_test_pattern(struct device *dev, const char *filename) {
         goto done;
       }
     } else {
-      uint8_t *data = dev->pattern[plane];
+      uint8_t* data = dev->pattern[plane];
       unsigned int i;
 
       if (dev->plane_fmt[plane].bytesperline == 0) {
@@ -1249,8 +1249,8 @@ done:
   return ret;
 }
 
-static int video_prepare_capture(struct device *dev, int nbufs, unsigned int offset,
-                                 const char *filename, enum buffer_fill_mode fill) {
+static int video_prepare_capture(struct device* dev, int nbufs, unsigned int offset,
+                                 const char* filename, enum buffer_fill_mode fill) {
   unsigned int padding;
   int ret;
 
@@ -1266,7 +1266,7 @@ static int video_prepare_capture(struct device *dev, int nbufs, unsigned int off
   return 0;
 }
 
-static int video_queue_all_buffers(struct device *dev, enum buffer_fill_mode fill) {
+static int video_queue_all_buffers(struct device* dev, enum buffer_fill_mode fill) {
   unsigned int i;
   int ret;
 
@@ -1281,10 +1281,10 @@ static int video_queue_all_buffers(struct device *dev, enum buffer_fill_mode fil
 
 /*st20 s*/
 
-static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
-                               struct st20_tx_frame_meta *meta) {
-  struct st_v4l2_tx_video_session *tx_video_session = priv;
-  struct tx_frame_buff_ct *framebuff_ctl = &(tx_video_session->framebuff_ctl);
+static int tx_video_next_frame(void* priv, uint16_t* next_frame_idx,
+                               struct st20_tx_frame_meta* meta) {
+  struct st_v4l2_tx_video_session* tx_video_session = priv;
+  struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
   int ret;
   MTL_MAY_UNUSED(meta);
 
@@ -1314,11 +1314,11 @@ static int tx_video_next_frame(void *priv, uint16_t *next_frame_idx,
   return ret;
 }
 
-static int tx_video_frame_done(void *priv, uint16_t frame_idx,
-                               struct st20_tx_frame_meta *meta) {
-  struct st_v4l2_tx_video_session *tx_video_session = priv;
-  struct st_v4l2_tx_context *st_v4l2_tx = tx_video_session->ctx;
-  struct tx_frame_buff_ct *framebuff_ctl = &(tx_video_session->framebuff_ctl);
+static int tx_video_frame_done(void* priv, uint16_t frame_idx,
+                               struct st20_tx_frame_meta* meta) {
+  struct st_v4l2_tx_video_session* tx_video_session = priv;
+  struct st_v4l2_tx_context* st_v4l2_tx = tx_video_session->ctx;
+  struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
   int ret;
   MTL_MAY_UNUSED(meta);
 
@@ -1362,7 +1362,7 @@ static int tx_video_frame_done(void *priv, uint16_t frame_idx,
 }
 
 static void tx_video_debug_output(void) {
-  struct st_v4l2_tx_video_session *tx_video_session = g_st_v4l2_tx->tx_video_sessions;
+  struct st_v4l2_tx_video_session* tx_video_session = g_st_v4l2_tx->tx_video_sessions;
 
   for (int i = 0; i < tx_video_session->framebuff_ctl.cnt; i++) {
     printf("time %ld.%06ld %ld.%06ld %ld.%06ld\n",
@@ -1398,10 +1398,10 @@ static void tx_video_sig_handler(int signo) {
   }
 }
 
-static int tx_video_verify_buffer(struct st_v4l2_tx_video_session *tx_video_session,
-                                  struct v4l2_buffer *buf) {
-  struct st_v4l2_tx_context *st_v4l2_tx = tx_video_session->ctx;
-  struct device *dev = &(st_v4l2_tx->dev);
+static int tx_video_verify_buffer(struct st_v4l2_tx_video_session* tx_video_session,
+                                  struct v4l2_buffer* buf) {
+  struct st_v4l2_tx_context* st_v4l2_tx = tx_video_session->ctx;
+  struct device* dev = &(st_v4l2_tx->dev);
   unsigned int length;
 
   if (0 != buf->m.planes[0].data_offset) {
@@ -1428,14 +1428,14 @@ static int tx_video_verify_buffer(struct st_v4l2_tx_video_session *tx_video_sess
   return 0;
 }
 
-static int tx_video_copy_frame(struct st_v4l2_tx_video_session *tx_video_session,
-                               struct v4l2_buffer *buf) {
-  struct st_v4l2_tx_context *st_v4l2_tx = tx_video_session->ctx;
-  struct device *dev = &(st_v4l2_tx->dev);
-  struct tx_frame_buff_ct *framebuff_ctl = &(tx_video_session->framebuff_ctl);
-  void *frame_addr;
+static int tx_video_copy_frame(struct st_v4l2_tx_video_session* tx_video_session,
+                               struct v4l2_buffer* buf) {
+  struct st_v4l2_tx_context* st_v4l2_tx = tx_video_session->ctx;
+  struct device* dev = &(st_v4l2_tx->dev);
+  struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
+  void* frame_addr;
   unsigned int i;
-  void *data = NULL;
+  void* data = NULL;
   unsigned int length = 0;
 
   pthread_mutex_lock(&(framebuff_ctl->wake_mutex));
@@ -1505,12 +1505,12 @@ static int tx_video_copy_frame(struct st_v4l2_tx_video_session *tx_video_session
 
 /*st20 e*/
 
-static void *tx_video_thread_capture(void *arg) {
+static void* tx_video_thread_capture(void* arg) {
   int ret = 0;
-  struct st_v4l2_tx_video_session *tx_video_session =
-      (struct st_v4l2_tx_video_session *)arg;
-  struct st_v4l2_tx_context *st_v4l2_tx = tx_video_session->ctx;
-  struct tx_frame_buff_ct *framebuff_ctl = &(tx_video_session->framebuff_ctl);
+  struct st_v4l2_tx_video_session* tx_video_session =
+      (struct st_v4l2_tx_video_session*)arg;
+  struct st_v4l2_tx_context* st_v4l2_tx = tx_video_session->ctx;
+  struct tx_frame_buff_ct* framebuff_ctl = &(tx_video_session->framebuff_ctl);
 
   struct v4l2_plane planes[VIDEO_MAX_PLANES];
   struct v4l2_buffer buf;
@@ -1604,7 +1604,7 @@ static void *tx_video_thread_capture(void *arg) {
   return NULL;
 }
 
-static int tx_video_thread_create(struct st_v4l2_tx_video_session *tx_video_session,
+static int tx_video_thread_create(struct st_v4l2_tx_video_session* tx_video_session,
                                   unsigned int priority, unsigned int cpu) {
   int ret = 0;
 
@@ -1624,7 +1624,7 @@ static int tx_video_thread_create(struct st_v4l2_tx_video_session *tx_video_sess
   return ret;
 }
 
-static void usage(const char *argv0) {
+static void usage(const char* argv0) {
   printf("Usage: %s [options] device\n", argv0);
   printf("Supported options:\n");
   printf("-h, --help    Show this help screen\n");
@@ -1651,9 +1651,9 @@ static struct option opts[] = {{"capture", 1, 0, 'c'},
                                {"log-status", 0, 0, OPT_LOG_STATUS},
                                {0, 0, 0, 0}};
 
-int main(int argc, char *argv[]) {
-  struct st_v4l2_tx_context *st_v4l2_tx;
-  struct st_v4l2_tx_video_session *tx_video_session;
+int main(int argc, char* argv[]) {
+  struct st_v4l2_tx_context* st_v4l2_tx;
+  struct st_v4l2_tx_video_session* tx_video_session;
 
   int ret;
 
@@ -1678,7 +1678,7 @@ int main(int argc, char *argv[]) {
   /* Capture loop */
   enum buffer_fill_mode fill_mode = BUFFER_FILL_NONE;
   unsigned int nframes = (unsigned int)-1;
-  const char *filename = NULL;
+  const char* filename = NULL;
 
   unsigned int v4l2_thread_priority = 90;
   unsigned int v4l2_thread_cpu = V4L2_TX_THREAD_CORE;
@@ -1689,7 +1689,7 @@ int main(int argc, char *argv[]) {
   /*st20 s*/
   unsigned int session_num = 1;
   char port[] = TX_VIDEO_PORT_BDF;
-  char *tx_lcore = TX_VIDEO_LCORE;
+  char* tx_lcore = TX_VIDEO_LCORE;
   enum st_fps tx_fps = ST_FPS_P50;
   char dst_mac[] = TX_VIDEO_DST_MAC_ADDR;
 
@@ -1743,7 +1743,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  st_v4l2_tx = (struct st_v4l2_tx_context *)malloc(sizeof(struct st_v4l2_tx_context));
+  st_v4l2_tx = (struct st_v4l2_tx_context*)malloc(sizeof(struct st_v4l2_tx_context));
   if (!st_v4l2_tx) {
     printf("%s struct application malloc fail\n", __func__);
     return -EIO;
@@ -1877,7 +1877,7 @@ int main(int argc, char *argv[]) {
     return -EIO;
   }
 
-  tx_video_session = (struct st_v4l2_tx_video_session *)malloc(
+  tx_video_session = (struct st_v4l2_tx_video_session*)malloc(
       sizeof(struct st_v4l2_tx_video_session) * session_num);
   if (!tx_video_session) {
     printf("%s struct st_v4l2_tx_video_session is not correctly malloc", __func__);
@@ -1915,7 +1915,7 @@ int main(int argc, char *argv[]) {
     tx_video_session->framebuff_ctl.receive_idx = 0;
     tx_video_session->framebuff_ctl.transmit_idx = 0;
     tx_video_session->framebuff_ctl.buffs =
-        (struct tx_frame_buff *)malloc(sizeof(struct tx_frame_buff) * nbufs);
+        (struct tx_frame_buff*)malloc(sizeof(struct tx_frame_buff) * nbufs);
     if (!tx_video_session->framebuff_ctl.buffs) {
       printf("%s[%d], tx_frame_buffs malloc fail\n", __func__, i);
       ret = -ENOMEM;
@@ -1986,7 +1986,7 @@ int main(int argc, char *argv[]) {
       }
 
       tx_video_session->ext_frames =
-          (struct st20_ext_frame *)malloc(sizeof(struct st20_ext_frame) * nbufs);
+          (struct st20_ext_frame*)malloc(sizeof(struct st20_ext_frame) * nbufs);
       if (!tx_video_session->ext_frames) {
         printf("%s[%d], ext_frames malloc fail\n", __func__, i);
         ret = -EIO;
