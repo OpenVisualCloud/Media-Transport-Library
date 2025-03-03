@@ -396,7 +396,8 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
 mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
                                       gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
-  mtl_handle ret;
+  mtl_handle handle;
+  gint ret;
   pthread_mutex_lock(&common_handle.mutex);
 
   if (!force_to_initialize_new_instance && common_handle.mtl_handle) {
@@ -415,8 +416,8 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
   }
 
   mtl_init_params.num_ports = 0;
-
-  if (gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs) == FALSE) {
+  ret = gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs);
+  if (!ret) {
     GST_ERROR("Failed to parse dev arguments");
     pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
@@ -438,13 +439,34 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
   if (force_to_initialize_new_instance) {
     GST_INFO("MTL shared handle ignored");
 
-    ret = mtl_init(&mtl_init_params);
+    handle = mtl_init(&mtl_init_params);
+    if (!handle) {
+      GST_ERROR("Failed to initialize MTL library");
+      pthread_mutex_unlock(&common_handle.mutex);
+      return NULL;
+    }
+    ret = mtl_start(handle);
+    if (ret < 0) {
+      GST_ERROR("Failed to start MTL library");
+      pthread_mutex_unlock(&common_handle.mutex);
+      return NULL;
+    }
     pthread_mutex_unlock(&common_handle.mutex);
-
-    return ret;
+    
+    return handle;
   }
 
   common_handle.mtl_handle = mtl_init(&mtl_init_params);
+  if (!common_handle.mtl_handle) {
+    GST_ERROR("Failed to initialize MTL library");
+    pthread_mutex_unlock(&common_handle.mutex);
+    return NULL;
+  }
+  ret = mtl_start(common_handle.mtl_handle);
+  if (ret < 0) {
+    GST_ERROR("Failed to start MTL library");
+    return NULL;
+  }
   common_handle.mtl_handle_reference_count++;
   pthread_mutex_unlock(&common_handle.mutex);
 
@@ -466,6 +488,12 @@ gint gst_mtl_common_deinit_handle(mtl_handle handle) {
   pthread_mutex_lock(&common_handle.mutex);
 
   if (handle && handle != common_handle.mtl_handle) {
+    ret = mtl_stop(handle);
+    if (ret < 0) {
+      GST_ERROR("Failed to stop MTL library");
+      pthread_mutex_unlock(&common_handle.mutex);
+      return ret;
+    }
     ret = mtl_uninit(handle);
     pthread_mutex_unlock(&common_handle.mutex);
     return ret;
@@ -478,6 +506,12 @@ gint gst_mtl_common_deinit_handle(mtl_handle handle) {
 
     pthread_mutex_unlock(&common_handle.mutex);
     return 0;
+  }
+  ret = mtl_stop(common_handle.mtl_handle);
+  if (ret < 0) {
+    GST_ERROR("Failed to stop MTL library");
+    pthread_mutex_unlock(&common_handle.mutex);
+    return ret;
   }
   ret = mtl_uninit(common_handle.mtl_handle);
 

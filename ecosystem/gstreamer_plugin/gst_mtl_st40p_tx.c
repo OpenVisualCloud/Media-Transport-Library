@@ -280,7 +280,6 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
  */
 static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   struct st40p_tx_ops ops_tx = {0};
-  gint ret;
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("MTL library not initialized");
@@ -345,11 +344,6 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   sink->frame_size = MAX_UDW_SIZE;
   ops_tx.max_udw_buff_size = MAX_UDW_SIZE;
 
-  ret = mtl_start(sink->mtl_lib_handle);
-  if (ret < 0) {
-    GST_ERROR("Failed to start MTL library");
-    return FALSE;
-  }
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
   sink->tx_handle = st40p_tx_create(sink->mtl_lib_handle, &ops_tx);
   if (!sink->tx_handle) {
@@ -483,8 +477,7 @@ static void gst_mtl_st40p_tx_finalize(GObject* object) {
   }
 
   if (sink->mtl_lib_handle) {
-    if (mtl_stop(sink->mtl_lib_handle) ||
-        gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
+    if (gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }
