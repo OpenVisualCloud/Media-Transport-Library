@@ -134,23 +134,23 @@
   }
 
 typedef struct StDevArgs {
-  char* port[MTL_PORT_MAX];
-  char* sip[MTL_PORT_MAX];
+  char *port[MTL_PORT_MAX];
+  char *sip[MTL_PORT_MAX];
   int tx_queues_cnt[MTL_PORT_MAX];
   int rx_queues_cnt[MTL_PORT_MAX];
-  char* dma_dev;
+  char *dma_dev;
 } StDevArgs;
 
 typedef struct StTxSessionPortArgs {
-  char* dip[MTL_SESSION_PORT_MAX];
-  char* port[MTL_SESSION_PORT_MAX];
+  char *dip[MTL_SESSION_PORT_MAX];
+  char *port[MTL_SESSION_PORT_MAX];
   int udp_port;
   int payload_type;
 } StTxSessionPortArgs;
 
 typedef struct StRxSessionPortArgs {
-  char* sip[MTL_SESSION_PORT_MAX];
-  char* port[MTL_SESSION_PORT_MAX];
+  char *sip[MTL_SESSION_PORT_MAX];
+  char *port[MTL_SESSION_PORT_MAX];
   int udp_port;
   int payload_type;
 } StRxSessionPortArgs;
@@ -163,11 +163,11 @@ typedef struct StFpsDecs {
 
 enum st_fps framerate_to_st_fps(AVRational framerate);
 
-mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* idx);
-int mtl_instance_put(AVFormatContext* ctx, mtl_handle handle);
+mtl_handle mtl_dev_get(AVFormatContext *ctx, const struct StDevArgs *args, int *idx);
+int mtl_instance_put(AVFormatContext *ctx, mtl_handle handle);
 
-int mtl_parse_rx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
-                      const StRxSessionPortArgs* args, struct st_rx_port* port);
-int mtl_parse_tx_port(AVFormatContext* ctx, const struct StDevArgs* devArgs,
-                      const StTxSessionPortArgs* args, struct st_tx_port* port);
-int mtl_parse_st30_sample_rate(enum st30_sampling* sample_rate, int value);
+int mtl_parse_rx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
+                      const StRxSessionPortArgs *args, struct st_rx_port *port);
+int mtl_parse_tx_port(AVFormatContext *ctx, const struct StDevArgs *devArgs,
+                      const StTxSessionPortArgs *args, struct st_tx_port *port);
+int mtl_parse_st30_sample_rate(enum st30_sampling *sample_rate, int value);

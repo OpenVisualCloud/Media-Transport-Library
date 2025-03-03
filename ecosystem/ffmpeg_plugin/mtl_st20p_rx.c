@@ -25,7 +25,7 @@
 #endif /* MTL_GPU_DIRECT_ENABLED */
 
 typedef struct MtlSt20pDemuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -49,12 +49,12 @@ typedef struct MtlSt20pDemuxerContext {
   bool gpu_direct_enabled;
   int gpu_driver_index;
   int gpu_device_index;
-  void* gpu_context;
+  void *gpu_context;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 } MtlSt20pDemuxerContext;
 
-static int mtl_st20p_read_close(AVFormatContext* ctx) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_close(AVFormatContext *ctx) {
+  MtlSt20pDemuxerContext *s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy rx session
@@ -80,11 +80,11 @@ static int mtl_st20p_read_close(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_read_header(AVFormatContext* ctx) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
-  AVStream* st = NULL;
+static int mtl_st20p_read_header(AVFormatContext *ctx) {
+  MtlSt20pDemuxerContext *s = ctx->priv_data;
+  AVStream *st = NULL;
   enum AVPixelFormat pix_fmt = AV_PIX_FMT_NONE;
-  const AVPixFmtDescriptor* pix_fmt_desc = NULL;
+  const AVPixFmtDescriptor *pix_fmt_desc = NULL;
   struct st20p_rx_ops ops_rx;
   int ret;
   int img_buf_size;
@@ -185,7 +185,7 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
       err(ctx, "%s, app gpu initialization failed %d\n", __func__, ret);
       return -ENXIO;
     }
-    ops_rx.gpu_context = (void*)(&gpu_ctx);
+    ops_rx.gpu_context = (void *)(&gpu_ctx);
     ops_rx.flags |= ST20P_RX_FLAG_USE_GPU_DIRECT_FRAMEBUFFERS;
   }
 #endif /* MTL_GPU_DIRECT_ENABLED */
@@ -226,10 +226,10 @@ static int mtl_st20p_read_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  MtlSt20pDemuxerContext* s = ctx->priv_data;
+static int mtl_st20p_read_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  MtlSt20pDemuxerContext *s = ctx->priv_data;
   int ret = 0;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   dbg("%s(%d), start\n", __func__, s->idx);
 
@@ -268,8 +268,8 @@ static int mtl_st20p_read_packet(AVFormatContext* ctx, AVPacket* pkt) {
   /* This format is not supported by MTL plugin.
      This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
   if (s->pixel_format == AV_PIX_FMT_Y210LE) {
-    ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be*)frame,
-                                       (uint16_t*)pkt->data, s->width, s->height);
+    ret = st20_rfc4175_422be10_to_y210((struct st20_rfc4175_422_10_pg2_be *)frame,
+                                       (uint16_t *)pkt->data, s->width, s->height);
     if (ret != 0) {
       av_log(ctx, AV_LOG_ERROR, "st20_rfc4175_422be10_to_y210le failed with %d\n", ret);
       return ret;

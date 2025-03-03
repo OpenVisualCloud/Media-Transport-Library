@@ -13,14 +13,14 @@ extern "C" {
 #endif
 
 /** Handle to tx st2110-40 pipeline session of lib */
-typedef struct st40p_tx_ctx* st40p_tx_handle;
+typedef struct st40p_tx_ctx *st40p_tx_handle;
 
 /** The structure info for st40 frame meta. */
 struct st40_frame_info {
   /** frame buffer address */
-  struct st40_frame* anc_frame;
+  struct st40_frame *anc_frame;
   /** user data words buffer address */
-  void* udw_buff_addr;
+  void *udw_buff_addr;
   /** user data words buffer size */
   size_t udw_buffer_size;
   /** frame timestamp format */
@@ -39,7 +39,7 @@ struct st40_frame_info {
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
   /** priv pointer for lib, do not touch this */
-  void* priv;
+  void *priv;
 };
 
 /**
@@ -58,9 +58,9 @@ struct st40p_tx_ops {
   /** Maximum combined size of all user data words to send in single st40p frame */
   uint32_t max_udw_buff_size;
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST40P_TX_FLAG_* for possible flags */
   uint32_t flags;
   /**
@@ -68,13 +68,13 @@ struct st40p_tx_ops {
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_available)(void* priv);
+  int (*notify_frame_available)(void *priv);
   /**
    * Optional. Callback when frame done.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_frame_done)(void* priv, struct st40_frame_info* frame_info);
+  int (*notify_frame_done)(void *priv, struct st40_frame_info *frame_info);
 
   /**
    * Optional. tx destination mac address.
@@ -84,22 +84,22 @@ struct st40p_tx_ops {
 };
 
 /** Create one tx st2110-40 pipeline session */
-st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops);
+st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops *ops);
 
 /**
  * Get one tx frame from the tx st2110-40 pipeline session.
  * Call st40p_tx_put_frame to return the frame to session.
  */
-struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle);
+struct st40_frame_info *st40p_tx_get_frame(st40p_tx_handle handle);
 
 /** Return the frame that was requested by st40p_tx_get_frame. */
-int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_info);
+int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info *frame_info);
 
 /** Free the tx st2110-40 pipeline session. */
 int st40p_tx_free(st40p_tx_handle handle);
 
 /** Update the destination for the tx st2110-40 pipeline session. */
-int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info* dst);
+int st40p_tx_update_destination(st40p_tx_handle handle, struct st_tx_dest_info *dst);
 
 /** Wake up the block for the tx st2110-40 pipeline session. */
 int st40p_tx_wake_block(st40p_tx_handle handle);
@@ -111,10 +111,10 @@ int st40p_tx_set_block_timeout(st40p_tx_handle handle, uint64_t timedwait_ns);
 size_t st40p_tx_max_udw_buff_size(st40p_tx_handle handle);
 
 /** Get the user data words buffer address for the tx st2110-40 pipeline session. */
-void* st40p_tx_get_udw_buff_addr(st40p_tx_handle handle, uint16_t idx);
+void *st40p_tx_get_udw_buff_addr(st40p_tx_handle handle, uint16_t idx);
 
 /** Get the framebuffer address for the tx st2110-40 pipeline session. */
-void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx);
+void *st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx);
 
 #if defined(__cplusplus)
 }

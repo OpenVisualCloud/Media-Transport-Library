@@ -9,8 +9,8 @@
 
 #define ST22_TEST_PAYLOAD_TYPE (114)
 
-static int st22_tx_rtp_done(void* args) {
-  auto ctx = (tests_context*)args;
+static int st22_tx_rtp_done(void *args) {
+  auto ctx = (tests_context *)args;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -20,8 +20,8 @@ static int st22_tx_rtp_done(void* args) {
   return 0;
 }
 
-static int st22_rx_rtp_ready(void* args) {
-  auto ctx = (tests_context*)args;
+static int st22_rx_rtp_ready(void *args) {
+  auto ctx = (tests_context *)args;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -31,9 +31,9 @@ static int st22_rx_rtp_ready(void* args) {
   return 0;
 }
 
-static int st22_next_video_frame(void* priv, uint16_t* next_frame_idx,
-                                 struct st22_tx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
+static int st22_next_video_frame(void *priv, uint16_t *next_frame_idx,
+                                 struct st22_tx_frame_meta *meta) {
+  auto ctx = (tests_context *)priv;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -48,9 +48,9 @@ static int st22_next_video_frame(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-static int st22_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
-                                           struct st22_tx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
+static int st22_next_video_frame_timestamp(void *priv, uint16_t *next_frame_idx,
+                                           struct st22_tx_frame_meta *meta) {
+  auto ctx = (tests_context *)priv;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -67,13 +67,13 @@ static int st22_next_video_frame_timestamp(void* priv, uint16_t* next_frame_idx,
   return 0;
 }
 
-static int st22_frame_done(void* priv, uint16_t frame_idx,
-                           struct st22_tx_frame_meta* meta) {
+static int st22_frame_done(void *priv, uint16_t frame_idx,
+                           struct st22_tx_frame_meta *meta) {
   return 0;
 }
 
-static int st22_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
+static int st22_rx_frame_ready(void *priv, void *frame, struct st22_rx_frame_meta *meta) {
+  auto ctx = (tests_context *)priv;
 
   if (!ctx->handle) return -EIO;
 
@@ -88,7 +88,7 @@ static int st22_rx_frame_ready(void* priv, void* frame, struct st22_rx_frame_met
   return 0;
 }
 
-static void st22_tx_ops_init(tests_context* st22, struct st22_tx_ops* ops) {
+static void st22_tx_ops_init(tests_context *st22, struct st22_tx_ops *ops) {
   auto ctx = st22->ctx;
 
   memset(ops, 0, sizeof(*ops));
@@ -123,7 +123,7 @@ static void st22_tx_ops_init(tests_context* st22, struct st22_tx_ops* ops) {
   ops->get_next_frame = st22_next_video_frame;
 }
 
-static void st22_rx_ops_init(tests_context* st22, struct st22_rx_ops* ops) {
+static void st22_rx_ops_init(tests_context *st22, struct st22_rx_ops *ops) {
   auto ctx = st22->ctx;
 
   memset(ops, 0, sizeof(*ops));
@@ -242,8 +242,8 @@ TEST(St22_rx, create_expect_fail_fb_cnt) {
   expect_fail_test_fb_cnt(st22_rx, fbcnt);
 }
 
-static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hdr* rtp,
-                                    uint16_t* pkt_len) {
+static int st22_tx_build_rtp_packet(tests_context *s, struct st22_rfc9134_rtp_hdr *rtp,
+                                    uint16_t *pkt_len) {
   /* update hdr */
   rtp->base.csrc_count = 0;
   rtp->base.extension = 0;
@@ -259,7 +259,7 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
   *pkt_len = data_len + sizeof(*rtp);
   /* todo: build the payload data */
   if (s->check_sha) {
-    uint8_t* payload = (uint8_t*)rtp + sizeof(*rtp);
+    uint8_t *payload = (uint8_t *)rtp + sizeof(*rtp);
     mtl_memcpy(payload,
                s->frame_buf[s->fb_idx % ST22_TEST_SHA_HIST_NUM] + s->pkt_idx * data_len,
                data_len);
@@ -278,10 +278,10 @@ static int st22_tx_build_rtp_packet(tests_context* s, struct st22_rfc9134_rtp_hd
   return 0;
 }
 
-static void st22_tx_feed_packet(void* args) {
-  auto ctx = (tests_context*)args;
-  void* mbuf;
-  void* usrptr = NULL;
+static void st22_tx_feed_packet(void *args) {
+  auto ctx = (tests_context *)args;
+  void *mbuf;
+  void *usrptr = NULL;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   while (!ctx->stop) {
@@ -301,16 +301,16 @@ static void st22_tx_feed_packet(void* args) {
     }
 
     /* build the rtp pkt */
-    st22_tx_build_rtp_packet(ctx, (struct st22_rfc9134_rtp_hdr*)usrptr, &mbuf_len);
+    st22_tx_build_rtp_packet(ctx, (struct st22_rfc9134_rtp_hdr *)usrptr, &mbuf_len);
 
     st22_tx_put_mbuf((st22_tx_handle)ctx->handle, mbuf, mbuf_len);
   }
 }
 
-static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hdr,
+static void st22_rx_handle_rtp(tests_context *s, struct st22_rfc9134_rtp_hdr *hdr,
                                bool newframe, int mbuf_len) {
-  uint8_t* frame;
-  uint8_t* payload;
+  uint8_t *frame;
+  uint8_t *payload;
 
   if (newframe) {
     if (s->frame_buf[0]) {
@@ -318,12 +318,12 @@ static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hd
       s->buf_q.push(s->frame_buf[0]);
       s->cv.notify_all();
     }
-    s->frame_buf[0] = (uint8_t*)st_test_zmalloc(s->frame_size);
+    s->frame_buf[0] = (uint8_t *)st_test_zmalloc(s->frame_size);
     ASSERT_TRUE(s->frame_buf[0] != NULL);
   }
 
   frame = s->frame_buf[0];
-  payload = (uint8_t*)hdr + sizeof(*hdr);
+  payload = (uint8_t *)hdr + sizeof(*hdr);
   int index = ntohs(hdr->base.seq_number) - s->seq_id;
   if (index < 0) {
     index = index + 0x10000;
@@ -332,13 +332,13 @@ static void st22_rx_handle_rtp(tests_context* s, struct st22_rfc9134_rtp_hdr* hd
   return;
 }
 
-static void st22_rx_get_packet(void* args) {
-  auto ctx = (tests_context*)args;
-  void* mbuf;
-  void* usrptr = NULL;
+static void st22_rx_get_packet(void *args) {
+  auto ctx = (tests_context *)args;
+  void *mbuf;
+  void *usrptr = NULL;
   uint16_t mbuf_len = 0;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
-  struct st22_rfc9134_rtp_hdr* hdr;
+  struct st22_rfc9134_rtp_hdr *hdr;
   while (!ctx->stop) {
     /* get available buffer*/
     mbuf = st22_rx_get_mbuf((st22_rx_handle)ctx->handle, &usrptr, &mbuf_len);
@@ -354,7 +354,7 @@ static void st22_rx_get_packet(void* args) {
         continue;
       }
     }
-    hdr = (struct st22_rfc9134_rtp_hdr*)usrptr;
+    hdr = (struct st22_rfc9134_rtp_hdr *)usrptr;
     bool newframe = false;
     uint32_t tmstamp = ntohl(hdr->base.tmstamp);
     if (tmstamp != ctx->rtp_tmstamp) {
@@ -374,7 +374,7 @@ static void st22_rx_get_packet(void* args) {
 static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width[],
                              int height[], int pkt_data_len[], int total_pkts[],
                              enum st_test_level level, int sessions = 1) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
@@ -388,8 +388,8 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
   /* return if level lower than global */
   if (level < ctx->level) return;
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
+  std::vector<tests_context *> test_ctx_tx;
+  std::vector<tests_context *> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;
   std::vector<st22_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -584,7 +584,7 @@ TEST(St22_rx, fps_mix_s2) {
 }
 
 static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
@@ -600,8 +600,8 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
 
   int rx_sessions = 1;
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
+  std::vector<tests_context *> test_ctx_tx;
+  std::vector<tests_context *> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;
   std::vector<st22_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -824,7 +824,7 @@ TEST(St22_rx, update_source) {
 static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[],
                                      int pkt_data_len[], int total_pkts[], int sessions,
                                      int repeat) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
@@ -835,8 +835,8 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
     return;
   }
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
+  std::vector<tests_context *> test_ctx_tx;
+  std::vector<tests_context *> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;
   std::vector<st22_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -1000,7 +1000,7 @@ TEST(St22_rx, after_start_s2) {
 
 static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
                               int pkt_data_len[], int total_pkts[], int sessions = 1) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
@@ -1016,8 +1016,8 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
     return;
   }
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
+  std::vector<tests_context *> test_ctx_tx;
+  std::vector<tests_context *> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;
   std::vector<st22_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -1174,9 +1174,9 @@ TEST(St22_rx, pcap_dump) {
   st22_rx_dump_test(fps, width, height, pkt_data_len, total_pkts, 1);
 }
 
-static int st22_digest_rx_frame_ready(void* priv, void* frame,
-                                      struct st22_rx_frame_meta* meta) {
-  auto ctx = (tests_context*)priv;
+static int st22_digest_rx_frame_ready(void *priv, void *frame,
+                                      struct st22_rx_frame_meta *meta) {
+  auto ctx = (tests_context *)priv;
 
   if (!ctx->handle) return -EIO;
 
@@ -1199,8 +1199,8 @@ static int st22_digest_rx_frame_ready(void* priv, void* frame,
   return 0;
 }
 
-static void st22_digest_rx_frame_check(void* args) {
-  auto ctx = (tests_context*)args;
+static void st22_digest_rx_frame_check(void *args) {
+  auto ctx = (tests_context *)args;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   unsigned char result[SHA256_DIGEST_LENGTH];
   while (!ctx->stop) {
@@ -1210,13 +1210,13 @@ static void st22_digest_rx_frame_check(void* args) {
       lck.unlock();
       continue;
     } else {
-      void* frame = ctx->buf_q.front();
+      void *frame = ctx->buf_q.front();
       ctx->buf_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      SHA256((unsigned char*)frame, ctx->frame_size, result);
+      SHA256((unsigned char *)frame, ctx->frame_size, result);
       for (i = 0; i < ST22_TEST_SHA_HIST_NUM; i++) {
-        unsigned char* target_sha = ctx->shas[i];
+        unsigned char *target_sha = ctx->shas[i];
         if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
       if (i >= ST22_TEST_SHA_HIST_NUM) {
@@ -1234,7 +1234,7 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
                                 int pkt_data_len[], int total_pkts[],
                                 enum st_test_level level, int sessions = 1,
                                 bool enable_rtcp = false) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
@@ -1249,8 +1249,8 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
     return;
   }
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
+  std::vector<tests_context *> test_ctx_tx;
+  std::vector<tests_context *> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;
   std::vector<st22_rx_handle> rx_handle;
   std::vector<double> expect_framerate;
@@ -1322,13 +1322,13 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
 
     /* sha calculate */
     size_t frame_size = test_ctx_tx[i]->frame_size;
-    uint8_t* fb;
+    uint8_t *fb;
     for (int frame = 0; frame < ST22_TEST_SHA_HIST_NUM; frame++) {
-      fb = (uint8_t*)st22_tx_get_fb_addr(tx_handle[i], frame);
+      fb = (uint8_t *)st22_tx_get_fb_addr(tx_handle[i], frame);
       ASSERT_TRUE(fb != NULL);
       st_test_rand_data(fb, frame_size, frame);
-      unsigned char* result = test_ctx_tx[i]->shas[frame];
-      SHA256((unsigned char*)fb, frame_size, result);
+      unsigned char *result = test_ctx_tx[i]->shas[frame];
+      SHA256((unsigned char *)fb, frame_size, result);
       test_sha_dump("st20_rx", result);
     }
 
@@ -1457,7 +1457,7 @@ TEST(St22_rx, digest_rtcp_s2) {
 static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len[],
                                      int total_pkts[], enum st_test_level level,
                                      int sessions = 1) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto m_handle = ctx->handle;
   int ret;
   struct st22_tx_ops ops_tx;
@@ -1472,8 +1472,8 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
     return;
   }
 
-  std::vector<tests_context*> test_ctx_tx;
-  std::vector<tests_context*> test_ctx_rx;
+  std::vector<tests_context *> test_ctx_tx;
+  std::vector<tests_context *> test_ctx_rx;
   std::vector<st22_tx_handle> tx_handle;
   std::vector<st22_rx_handle> rx_handle;
   std::vector<double> expect_framerate;

@@ -7,7 +7,7 @@
 
 TEST(Cvt, simd_level) {
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
-  const char* name = mtl_get_simd_level_name(cpu_level);
+  const char *name = mtl_get_simd_level_name(cpu_level);
   info("simd level by cpu: %d(%s)\n", cpu_level, name);
 }
 
@@ -16,12 +16,12 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -31,7 +31,7 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_yuv422p10le_simd(
       pg, p10_u16, (p10_u16 + w * h), (p10_u16 + w * h * 3 / 2), w, h, cvt_level);
@@ -95,14 +95,14 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le_dma(mtl_udma_handle dma, int
                                                         enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be* pg_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be *pg_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -112,7 +112,7 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le_dma(mtl_udma_handle dma, int
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_yuv422p10le_simd_dma(
       dma, pg, mtl_hp_virt2iova(st, pg), p10_u16, (p10_u16 + w * h),
@@ -131,7 +131,7 @@ static void test_cvt_rfc4175_422be10_to_yuv422p10le_dma(mtl_udma_handle dma, int
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -143,7 +143,7 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p10le_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -155,7 +155,7 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p10le_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -178,7 +178,7 @@ TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_yuv422p10le_avx512_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -205,11 +205,11 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p10_u16_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -285,14 +285,14 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10_dma(mtl_udma_handle dma, int
                                                         enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)mtl_hp_zmalloc(st, planar_size, MTL_PORT_P);
+  uint16_t *p10_u16 = (uint16_t *)mtl_hp_zmalloc(st, planar_size, MTL_PORT_P);
   mtl_iova_t p10_u16_iova = mtl_hp_virt2iova(st, p10_u16);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p10_u16_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -324,7 +324,7 @@ static void test_cvt_yuv422p10le_to_rfc4175_422be10_dma(mtl_udma_handle dma, int
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -336,7 +336,7 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_dma) {
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -348,7 +348,7 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_scalar_dma) {
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -371,7 +371,7 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_dma) {
 }
 
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -398,12 +398,12 @@ static void test_cvt_rfc4175_422le10_to_yuv422p10le(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_le* pg =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_2 =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_2 =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -413,7 +413,7 @@ static void test_cvt_rfc4175_422le10_to_yuv422p10le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le10_to_yuv422p10le(pg, p10_u16, (p10_u16 + w * h),
                                             (p10_u16 + w * h * 3 / 2), w, h);
@@ -445,11 +445,11 @@ static void test_cvt_yuv422p10le_to_rfc4175_422le10(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_le* pg =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p10_u16_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -493,12 +493,12 @@ static void test_cvt_rfc4175_422be10_to_422le10(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -508,7 +508,7 @@ static void test_cvt_rfc4175_422be10_to_422le10(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_422le10_simd(pg_be, pg_le, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -581,14 +581,14 @@ static void test_cvt_rfc4175_422be10_to_422le10_dma(mtl_udma_handle dma, int w, 
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -598,7 +598,7 @@ static void test_cvt_rfc4175_422be10_to_422le10_dma(mtl_udma_handle dma, int w, 
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_422le10_simd_dma(dma, pg_be, mtl_hp_virt2iova(st, pg_be),
                                                  pg_le, w, h, cvt_level);
@@ -615,7 +615,7 @@ static void test_cvt_rfc4175_422be10_to_422le10_dma(mtl_udma_handle dma, int w, 
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -628,7 +628,7 @@ TEST(Cvt, rfc4175_422be10_to_422le10_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -639,7 +639,7 @@ TEST(Cvt, rfc4175_422be10_to_422le10_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -662,7 +662,7 @@ TEST(Cvt, rfc4175_422be10_to_422le10_avx512_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le10_avx512_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -689,12 +689,12 @@ static void test_cvt_rfc4175_422le10_to_422be10(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le_2 =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le_2 =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_le_2) {
     EXPECT_EQ(0, 1);
@@ -704,7 +704,7 @@ static void test_cvt_rfc4175_422le10_to_422be10(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le10_to_422be10_simd(pg_le, pg_be, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -725,12 +725,12 @@ static void test_cvt_rfc4175_422le10_to_422be10_2(int w, int h,
                                                   enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -740,7 +740,7 @@ static void test_cvt_rfc4175_422le10_to_422be10_2(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le10_to_422be10_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_NONE);
   EXPECT_EQ(0, ret);
@@ -815,14 +815,14 @@ static void test_cvt_rfc4175_422le10_to_422be10_dma(mtl_udma_handle dma, int w, 
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le_2 =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le_2 =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_le_2) {
     EXPECT_EQ(0, 1);
@@ -832,7 +832,7 @@ static void test_cvt_rfc4175_422le10_to_422be10_dma(mtl_udma_handle dma, int w, 
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le10_to_422be10_simd_dma(dma, pg_le, mtl_hp_virt2iova(st, pg_le),
                                                  pg_be, w, h, cvt_level);
@@ -849,7 +849,7 @@ static void test_cvt_rfc4175_422le10_to_422be10_dma(mtl_udma_handle dma, int w, 
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -862,7 +862,7 @@ TEST(Cvt, rfc4175_422le10_to_422be10_dma) {
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -873,7 +873,7 @@ TEST(Cvt, rfc4175_422le10_to_422be10_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -896,7 +896,7 @@ TEST(Cvt, rfc4175_422le10_to_422be10_avx512_dma) {
 }
 
 TEST(Cvt, rfc4175_422le10_to_422be10_avx512_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -919,8 +919,8 @@ TEST(Cvt, rfc4175_422le10_to_422be10_avx512_vbmi_dma) {
 }
 
 static int test_cvt_extend_rfc4175_422le8_to_422be10(
-    int w, int h, struct st20_rfc4175_422_8_pg2_le* pg_8,
-    struct st20_rfc4175_422_10_pg2_be* pg_10) {
+    int w, int h, struct st20_rfc4175_422_8_pg2_le *pg_8,
+    struct st20_rfc4175_422_10_pg2_be *pg_10) {
   uint32_t cnt = w * h / 2;
 
   for (uint32_t i = 0; i < cnt; i++) {
@@ -943,12 +943,12 @@ static void test_cvt_rfc4175_422be10_to_422le8(int w, int h,
   int ret;
   size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_8 = (size_t)w * h * 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_10 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size_10);
-  struct st20_rfc4175_422_8_pg2_le* pg_8 =
-      (struct st20_rfc4175_422_8_pg2_le*)st_test_zmalloc(fb_pg2_size_8);
-  struct st20_rfc4175_422_8_pg2_le* pg_8_2 =
-      (struct st20_rfc4175_422_8_pg2_le*)st_test_zmalloc(fb_pg2_size_8);
+  struct st20_rfc4175_422_10_pg2_be *pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size_10);
+  struct st20_rfc4175_422_8_pg2_le *pg_8 =
+      (struct st20_rfc4175_422_8_pg2_le *)st_test_zmalloc(fb_pg2_size_8);
+  struct st20_rfc4175_422_8_pg2_le *pg_8_2 =
+      (struct st20_rfc4175_422_8_pg2_le *)st_test_zmalloc(fb_pg2_size_8);
 
   if (!pg_10 || !pg_8 || !pg_8_2) {
     EXPECT_EQ(0, 1);
@@ -958,7 +958,7 @@ static void test_cvt_rfc4175_422be10_to_422le8(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_8, fb_pg2_size_8, 0);
+  st_test_rand_data((uint8_t *)pg_8, fb_pg2_size_8, 0);
   test_cvt_extend_rfc4175_422le8_to_422be10(w, h, pg_8, pg_10);
   ret = st20_rfc4175_422be10_to_422le8_simd(pg_10, pg_8_2, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -1017,14 +1017,14 @@ static void test_cvt_rfc4175_422be10_to_422le8_dma(mtl_udma_handle dma, int w, i
   int ret;
   size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_8 = (size_t)w * h * 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg_10 =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size_10, MTL_PORT_P);
-  struct st20_rfc4175_422_8_pg2_le* pg_8 =
-      (struct st20_rfc4175_422_8_pg2_le*)st_test_zmalloc(fb_pg2_size_8);
-  struct st20_rfc4175_422_8_pg2_le* pg_8_2 =
-      (struct st20_rfc4175_422_8_pg2_le*)st_test_zmalloc(fb_pg2_size_8);
+  struct st20_rfc4175_422_10_pg2_be *pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size_10, MTL_PORT_P);
+  struct st20_rfc4175_422_8_pg2_le *pg_8 =
+      (struct st20_rfc4175_422_8_pg2_le *)st_test_zmalloc(fb_pg2_size_8);
+  struct st20_rfc4175_422_8_pg2_le *pg_8_2 =
+      (struct st20_rfc4175_422_8_pg2_le *)st_test_zmalloc(fb_pg2_size_8);
 
   if (!pg_10 || !pg_8 || !pg_8_2) {
     EXPECT_EQ(0, 1);
@@ -1034,7 +1034,7 @@ static void test_cvt_rfc4175_422be10_to_422le8_dma(mtl_udma_handle dma, int w, i
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_8, fb_pg2_size_8, 0);
+  st_test_rand_data((uint8_t *)pg_8, fb_pg2_size_8, 0);
   test_cvt_extend_rfc4175_422le8_to_422be10(w, h, pg_8, pg_10);
   ret = st20_rfc4175_422be10_to_422le8_simd_dma(dma, pg_10, mtl_hp_virt2iova(st, pg_10),
                                                 pg_8_2, w, h, cvt_level);
@@ -1048,7 +1048,7 @@ static void test_cvt_rfc4175_422be10_to_422le8_dma(mtl_udma_handle dma, int w, i
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1061,7 +1061,7 @@ TEST(Cvt, rfc4175_422be10_to_422le8_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1072,7 +1072,7 @@ TEST(Cvt, rfc4175_422be10_to_422le8_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1095,7 +1095,7 @@ TEST(Cvt, rfc4175_422be10_to_422le8_avx512_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_422le8_avx512_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1118,8 +1118,8 @@ TEST(Cvt, rfc4175_422be10_to_422le8_avx512_vbmi_dma) {
 }
 
 static int test_cvt_extend_yuv422p8_to_rfc4175_422be10(
-    int w, int h, uint8_t* y, uint8_t* b, uint8_t* r,
-    struct st20_rfc4175_422_10_pg2_be* pg_10) {
+    int w, int h, uint8_t *y, uint8_t *b, uint8_t *r,
+    struct st20_rfc4175_422_10_pg2_be *pg_10) {
   uint32_t cnt = w * h / 2;
 
   for (uint32_t i = 0; i < cnt; i++) {
@@ -1146,10 +1146,10 @@ static void test_cvt_rfc4175_422be10_to_yuv422p8(int w, int h,
   int ret;
   size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
   size_t fb_yuv422p8_size = (size_t)w * h * 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_10 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size_10);
-  uint8_t* p8 = (uint8_t*)st_test_zmalloc(fb_yuv422p8_size);
-  uint8_t* p8_2 = (uint8_t*)st_test_zmalloc(fb_yuv422p8_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size_10);
+  uint8_t *p8 = (uint8_t *)st_test_zmalloc(fb_yuv422p8_size);
+  uint8_t *p8_2 = (uint8_t *)st_test_zmalloc(fb_yuv422p8_size);
 
   if (!pg_10 || !p8 || !p8_2) {
     EXPECT_EQ(0, 1);
@@ -1212,10 +1212,10 @@ static void test_cvt_rfc4175_422be10_to_yuv420p8(int w, int h) {
   int ret;
   size_t fb_pg2_size_10 = (size_t)w * h * 5 / 2;
   size_t fb_yuv420p8_size = (size_t)w * h * 3 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_10 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size_10);
-  uint8_t* p8 = (uint8_t*)st_test_zmalloc(fb_yuv420p8_size);
-  uint8_t* p8_2 = (uint8_t*)st_test_zmalloc(fb_yuv420p8_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size_10);
+  uint8_t *p8 = (uint8_t *)st_test_zmalloc(fb_yuv420p8_size);
+  uint8_t *p8_2 = (uint8_t *)st_test_zmalloc(fb_yuv420p8_size);
 
   if (!pg_10 || !p8 || !p8_2) {
     EXPECT_EQ(0, 1);
@@ -1225,7 +1225,7 @@ static void test_cvt_rfc4175_422be10_to_yuv420p8(int w, int h) {
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_10, fb_pg2_size_10, 0);
+  st_test_rand_data((uint8_t *)pg_10, fb_pg2_size_10, 0);
   ret = st20_rfc4175_422be10_to_yuv420p8_simd(pg_10, p8, p8 + w * h, p8 + w * h * 5 / 4,
                                               w, h, MTL_SIMD_LEVEL_NONE);
   EXPECT_EQ(0, ret);
@@ -1250,11 +1250,11 @@ static void test_cvt_rfc4175_422le10_to_v210(int w, int h, enum mtl_simd_level c
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le_2 =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  uint8_t* pg_v210 = (uint8_t*)st_test_zmalloc(fb_pg2_size_v210);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le_2 =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  uint8_t *pg_v210 = (uint8_t *)st_test_zmalloc(fb_pg2_size_v210);
 
   if (!pg_le || !pg_le_2 || !pg_v210) {
     EXPECT_EQ(0, 1);
@@ -1264,14 +1264,14 @@ static void test_cvt_rfc4175_422le10_to_v210(int w, int h, enum mtl_simd_level c
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
-  ret = st20_rfc4175_422le10_to_v210_simd((uint8_t*)pg_le, pg_v210, w, h, cvt_level);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
+  ret = st20_rfc4175_422le10_to_v210_simd((uint8_t *)pg_le, pg_v210, w, h, cvt_level);
   if (fail_case)
     EXPECT_NE(0, ret);
   else
     EXPECT_EQ(0, ret);
 
-  ret = st20_v210_to_rfc4175_422le10(pg_v210, (uint8_t*)pg_le_2, w, h);
+  ret = st20_v210_to_rfc4175_422le10(pg_v210, (uint8_t *)pg_le_2, w, h);
   if (fail_case)
     EXPECT_NE(0, ret);
   else
@@ -1331,13 +1331,13 @@ static void test_cvt_rfc4175_422be10_to_v210(int w, int h, enum mtl_simd_level c
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  uint8_t* pg_v210 = (uint8_t*)st_test_zmalloc(fb_pg2_size_v210);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  uint8_t *pg_v210 = (uint8_t *)st_test_zmalloc(fb_pg2_size_v210);
 
   if (!pg_le || !pg_be || !pg_v210 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -1348,14 +1348,14 @@ static void test_cvt_rfc4175_422be10_to_v210(int w, int h, enum mtl_simd_level c
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
   ret = st20_rfc4175_422be10_to_v210_simd(pg_be, pg_v210, w, h, cvt_level);
   if (fail_case)
     EXPECT_NE(0, ret);
   else
     EXPECT_EQ(0, ret);
 
-  ret = st20_v210_to_rfc4175_422le10(pg_v210, (uint8_t*)pg_le, w, h);
+  ret = st20_v210_to_rfc4175_422le10(pg_v210, (uint8_t *)pg_le, w, h);
   if (fail_case)
     EXPECT_NE(0, ret);
   else
@@ -1419,15 +1419,15 @@ static void test_cvt_rfc4175_422be10_to_v210_dma(mtl_udma_handle dma, int w, int
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  uint8_t* pg_v210 = (uint8_t*)st_test_zmalloc(fb_pg2_size_v210);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  uint8_t *pg_v210 = (uint8_t *)st_test_zmalloc(fb_pg2_size_v210);
 
   if (!pg_le || !pg_be || !pg_v210 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -1438,7 +1438,7 @@ static void test_cvt_rfc4175_422be10_to_v210_dma(mtl_udma_handle dma, int w, int
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
   ret = st20_rfc4175_422be10_to_v210_simd_dma(dma, pg_be, mtl_hp_virt2iova(st, pg_be),
                                               pg_v210, w, h, cvt_level);
   if (fail_case)
@@ -1446,7 +1446,7 @@ static void test_cvt_rfc4175_422be10_to_v210_dma(mtl_udma_handle dma, int w, int
   else
     EXPECT_EQ(0, ret);
 
-  ret = st20_v210_to_rfc4175_422le10(pg_v210, (uint8_t*)pg_le, w, h);
+  ret = st20_v210_to_rfc4175_422le10(pg_v210, (uint8_t *)pg_le, w, h);
   if (fail_case)
     EXPECT_NE(0, ret);
   else
@@ -1466,7 +1466,7 @@ static void test_cvt_rfc4175_422be10_to_v210_dma(mtl_udma_handle dma, int w, int
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1478,7 +1478,7 @@ TEST(Cvt, rfc4175_422be10_to_v210_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1490,7 +1490,7 @@ TEST(Cvt, rfc4175_422be10_to_v210_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1512,7 +1512,7 @@ TEST(Cvt, rfc4175_422be10_to_v210_avx512_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_v210_avx512_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1539,11 +1539,11 @@ static void test_cvt_v210_to_rfc4175_422be10(int w, int h, enum mtl_simd_level c
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  uint8_t* pg_v210 = (uint8_t*)st_test_zmalloc(fb_pg2_size_v210);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  uint8_t *pg_v210 = (uint8_t *)st_test_zmalloc(fb_pg2_size_v210);
 
   if (!pg_be || !pg_v210 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -1553,7 +1553,7 @@ static void test_cvt_v210_to_rfc4175_422be10(int w, int h, enum mtl_simd_level c
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
   ret = st20_rfc4175_422be10_to_v210_simd(pg_be, pg_v210, w, h, cvt_level);
   if (fail_case)
     EXPECT_NE(0, ret);
@@ -1622,10 +1622,10 @@ static void test_cvt_v210_to_rfc4175_422be10_2(int w, int h,
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  uint8_t* pg_v210 = (uint8_t*)st_test_zmalloc(fb_pg2_size_v210);
-  uint8_t* pg_v210_2 = (uint8_t*)st_test_zmalloc(fb_pg2_size_v210);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  uint8_t *pg_v210 = (uint8_t *)st_test_zmalloc(fb_pg2_size_v210);
+  uint8_t *pg_v210_2 = (uint8_t *)st_test_zmalloc(fb_pg2_size_v210);
 
   if (!pg_be || !pg_v210 || !pg_v210_2) {
     EXPECT_EQ(0, 1);
@@ -1705,13 +1705,13 @@ static void test_cvt_v210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
   bool fail_case = (w * h % 6); /* do not convert when pg_num is not multiple of 3 */
   size_t fb_pg2_size = w * h * 5 / 2;
   size_t fb_pg2_size_v210 = w * h * 8 / 3;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  uint8_t* pg_v210 = (uint8_t*)mtl_hp_zmalloc(st, fb_pg2_size_v210, MTL_PORT_P);
+  uint8_t *pg_v210 = (uint8_t *)mtl_hp_zmalloc(st, fb_pg2_size_v210, MTL_PORT_P);
 
   if (!pg_be || !pg_v210 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -1721,7 +1721,7 @@ static void test_cvt_v210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
   ret = st20_rfc4175_422be10_to_v210_simd(pg_be, pg_v210, w, h, cvt_level);
   if (fail_case)
     EXPECT_NE(0, ret);
@@ -1735,7 +1735,7 @@ static void test_cvt_v210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
   else
     EXPECT_EQ(0, ret);
 
-  st_test_cmp((uint8_t*)pg_be, (uint8_t*)pg_be_2, fb_pg2_size);
+  st_test_cmp((uint8_t *)pg_be, (uint8_t *)pg_be_2, fb_pg2_size);
   if (fail_case)
     EXPECT_NE(0, memcmp(pg_be, pg_be_2, fb_pg2_size));
   else
@@ -1747,7 +1747,7 @@ static void test_cvt_v210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1759,7 +1759,7 @@ TEST(Cvt, v210_to_rfc4175_422be10_dma) {
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1771,7 +1771,7 @@ TEST(Cvt, v210_to_rfc4175_422be10_scalar_dma) {
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1793,7 +1793,7 @@ TEST(Cvt, v210_to_rfc4175_422be10_avx512_dma) {
 }
 
 TEST(Cvt, v210_to_rfc4175_422be10_vbmi_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1818,12 +1818,12 @@ static void test_cvt_rfc4175_422be10_to_y210(int w, int h, enum mtl_simd_level c
                                              enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t fb_pg_y210_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* pg_y210 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
+  uint16_t *pg_y210 = (uint16_t *)st_test_zmalloc(fb_pg_y210_size);
 
   if (!pg || !pg_2 || !pg_y210) {
     EXPECT_EQ(0, 1);
@@ -1833,7 +1833,7 @@ static void test_cvt_rfc4175_422be10_to_y210(int w, int h, enum mtl_simd_level c
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_y210_simd(pg, pg_y210, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -1875,13 +1875,13 @@ static void test_cvt_rfc4175_422be10_to_y210_dma(mtl_udma_handle dma, int w, int
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
   size_t fb_pg2_size_y210 = (size_t)w * h * 4;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  uint16_t* pg_y210 = (uint16_t*)st_test_zmalloc(fb_pg2_size_y210);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  uint16_t *pg_y210 = (uint16_t *)st_test_zmalloc(fb_pg2_size_y210);
 
   if (!pg_be || !pg_y210 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -1891,7 +1891,7 @@ static void test_cvt_rfc4175_422be10_to_y210_dma(mtl_udma_handle dma, int w, int
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_y210_simd_dma(dma, pg_be, mtl_hp_virt2iova(st, pg_be),
                                               pg_y210, w, h, cvt_level);
@@ -1907,7 +1907,7 @@ static void test_cvt_rfc4175_422be10_to_y210_dma(mtl_udma_handle dma, int w, int
 }
 
 TEST(Cvt, rfc4175_422be10_to_y210_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1919,7 +1919,7 @@ TEST(Cvt, rfc4175_422be10_to_y210_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_y210_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1931,7 +1931,7 @@ TEST(Cvt, rfc4175_422be10_to_y210_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be10_to_y210_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -1957,11 +1957,11 @@ static void test_cvt_y210_to_rfc4175_422be10(int w, int h, enum mtl_simd_level c
                                              enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t fb_pg_y210_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* pg_y210 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
-  uint16_t* pg_y210_2 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
+  uint16_t *pg_y210 = (uint16_t *)st_test_zmalloc(fb_pg_y210_size);
+  uint16_t *pg_y210_2 = (uint16_t *)st_test_zmalloc(fb_pg_y210_size);
 
   if (!pg || !pg_y210_2 || !pg_y210) {
     EXPECT_EQ(0, 1);
@@ -2014,14 +2014,14 @@ static void test_cvt_y210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 5 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_10_pg2_be* pg =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t fb_pg_y210_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* pg_y210 = (uint16_t*)mtl_hp_zmalloc(st, fb_pg_y210_size, MTL_PORT_P);
+  uint16_t *pg_y210 = (uint16_t *)mtl_hp_zmalloc(st, fb_pg_y210_size, MTL_PORT_P);
   mtl_iova_t pg_y210_iova = mtl_hp_virt2iova(st, pg_y210);
-  uint16_t* pg_y210_2 = (uint16_t*)st_test_zmalloc(fb_pg_y210_size);
+  uint16_t *pg_y210_2 = (uint16_t *)st_test_zmalloc(fb_pg_y210_size);
 
   if (!pg || !pg_y210_2 || !pg_y210) {
     EXPECT_EQ(0, 1);
@@ -2050,7 +2050,7 @@ static void test_cvt_y210_to_rfc4175_422be10_dma(mtl_udma_handle dma, int w, int
 }
 
 TEST(Cvt, y210_to_rfc4175_422be10_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2062,7 +2062,7 @@ TEST(Cvt, y210_to_rfc4175_422be10_dma) {
 }
 
 TEST(Cvt, y210_to_rfc4175_422be10_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2074,7 +2074,7 @@ TEST(Cvt, y210_to_rfc4175_422be10_scalar_dma) {
 }
 
 TEST(Cvt, y210_to_rfc4175_422be10_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2101,14 +2101,14 @@ static void test_rotate_rfc4175_422be10_422le10_yuv422p10le(
     enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_le || !pg_be || !p10_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2119,7 +2119,7 @@ static void test_rotate_rfc4175_422be10_422le10_yuv422p10le(
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_422le10_simd(pg_be, pg_le, w, h, cvt1_level);
   EXPECT_EQ(0, ret);
@@ -2169,14 +2169,14 @@ static void test_rotate_rfc4175_422be10_yuv422p10le_422le10(
     enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_be =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_10_pg2_le* pg_le =
-      (struct st20_rfc4175_422_10_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_10_pg2_le *pg_le =
+      (struct st20_rfc4175_422_10_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_422_10_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_422_10_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_10_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_le || !pg_be || !p10_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2187,7 +2187,7 @@ static void test_rotate_rfc4175_422be10_yuv422p10le_422le10(
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be10_to_yuv422p10le_simd(
       pg_be, p10_u16, (p10_u16 + w * h), (p10_u16 + w * h * 3 / 2), w, h, cvt1_level);
@@ -2237,12 +2237,12 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_be* pg =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -2252,7 +2252,7 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be12_to_yuv422p12le_simd(
       pg, p12_u16, (p12_u16 + w * h), (p12_u16 + w * h * 3 / 2), w, h, cvt_level);
@@ -2316,14 +2316,14 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le_dma(mtl_udma_handle dma, int
                                                         enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_12_pg2_be* pg =
-      (struct st20_rfc4175_422_12_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_12_pg2_be* pg_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg =
+      (struct st20_rfc4175_422_12_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_12_pg2_be *pg_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -2333,7 +2333,7 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le_dma(mtl_udma_handle dma, int
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be12_to_yuv422p12le_simd_dma(
       dma, pg, mtl_hp_virt2iova(st, pg), p12_u16, (p12_u16 + w * h),
@@ -2352,7 +2352,7 @@ static void test_cvt_rfc4175_422be12_to_yuv422p12le_dma(mtl_udma_handle dma, int
 }
 
 TEST(Cvt, rfc4175_422be12_to_yuv422p12le_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2364,7 +2364,7 @@ TEST(Cvt, rfc4175_422be12_to_yuv422p12le_dma) {
 }
 
 TEST(Cvt, rfc4175_422be12_to_yuv422p12le_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2376,7 +2376,7 @@ TEST(Cvt, rfc4175_422be12_to_yuv422p12le_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be12_to_yuv422p12le_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2403,11 +2403,11 @@ static void test_cvt_yuv422p12le_to_rfc4175_422be12(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_be* pg =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p12_u16_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -2451,12 +2451,12 @@ static void test_cvt_rfc4175_422le12_to_yuv422p12le(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_le* pg =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_le* pg_2 =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_2 =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -2466,7 +2466,7 @@ static void test_cvt_rfc4175_422le12_to_yuv422p12le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le12_to_yuv422p12le(pg, p12_u16, (p12_u16 + w * h),
                                             (p12_u16 + w * h * 3 / 2), w, h);
@@ -2498,11 +2498,11 @@ static void test_cvt_yuv422p12le_to_rfc4175_422le12(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_le* pg =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p12_u16_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -2546,12 +2546,12 @@ static void test_cvt_rfc4175_422be12_to_422le12(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_be* pg_be =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_le* pg_le =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_le =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2561,7 +2561,7 @@ static void test_cvt_rfc4175_422be12_to_422le12(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be12_to_422le12_simd(pg_be, pg_le, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -2606,14 +2606,14 @@ static void test_cvt_rfc4175_422be12_to_422le12_dma(mtl_udma_handle dma, int w, 
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 6 / 2;
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle st = ctx->handle;
-  struct st20_rfc4175_422_12_pg2_be* pg_be =
-      (struct st20_rfc4175_422_12_pg2_be*)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
-  struct st20_rfc4175_422_12_pg2_le* pg_le =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be =
+      (struct st20_rfc4175_422_12_pg2_be *)mtl_hp_zmalloc(st, fb_pg2_size, MTL_PORT_P);
+  struct st20_rfc4175_422_12_pg2_le *pg_le =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2623,7 +2623,7 @@ static void test_cvt_rfc4175_422be12_to_422le12_dma(mtl_udma_handle dma, int w, 
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be12_to_422le12_simd_dma(dma, pg_be, mtl_hp_virt2iova(st, pg_be),
                                                  pg_le, w, h, cvt_level);
@@ -2640,7 +2640,7 @@ static void test_cvt_rfc4175_422be12_to_422le12_dma(mtl_udma_handle dma, int w, 
 }
 
 TEST(Cvt, rfc4175_422be12_to_422le12_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2653,7 +2653,7 @@ TEST(Cvt, rfc4175_422be12_to_422le12_dma) {
 }
 
 TEST(Cvt, rfc4175_422be12_to_422le12_scalar_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2664,7 +2664,7 @@ TEST(Cvt, rfc4175_422be12_to_422le12_scalar_dma) {
 }
 
 TEST(Cvt, rfc4175_422be12_to_422le12_avx512_dma) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   mtl_handle handle = ctx->handle;
   mtl_udma_handle dma = mtl_udma_create(handle, 128, MTL_PORT_P);
   if (!dma) return;
@@ -2691,12 +2691,12 @@ static void test_cvt_rfc4175_422le12_to_422be12(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_le* pg_le =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_le* pg_le_2 =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_le =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_le_2 =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_le_2) {
     EXPECT_EQ(0, 1);
@@ -2706,7 +2706,7 @@ static void test_cvt_rfc4175_422le12_to_422be12(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le12_to_422be12_simd(pg_le, pg_be, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -2727,12 +2727,12 @@ static void test_cvt_rfc4175_422le12_to_422be12_2(int w, int h,
                                                   enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_le* pg_le =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_le =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2742,7 +2742,7 @@ static void test_cvt_rfc4175_422le12_to_422be12_2(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422le12_to_422be12_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_NONE);
   EXPECT_EQ(0, ret);
@@ -2773,14 +2773,14 @@ static void test_rotate_rfc4175_422be12_422le12_yuv422p12le(
     enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_be* pg_be =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_le* pg_le =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_le =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_le || !pg_be || !p12_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2791,7 +2791,7 @@ static void test_rotate_rfc4175_422be12_422le12_yuv422p12le(
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be12_to_422le12_simd(pg_be, pg_le, w, h, cvt1_level);
   EXPECT_EQ(0, ret);
@@ -2822,14 +2822,14 @@ static void test_rotate_rfc4175_422be12_yuv422p12le_422le12(
     enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 6 / 2;
-  struct st20_rfc4175_422_12_pg2_be* pg_be =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_422_12_pg2_le* pg_le =
-      (struct st20_rfc4175_422_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_422_12_pg2_le *pg_le =
+      (struct st20_rfc4175_422_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_422_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_422_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_422_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_422_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_le || !pg_be || !p12_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -2840,7 +2840,7 @@ static void test_rotate_rfc4175_422be12_yuv422p12le_422le12(
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_422be12_to_yuv422p12le_simd(
       pg_be, p12_u16, (p12_u16 + w * h), (p12_u16 + w * h * 3 / 2), w, h, cvt1_level);
@@ -2871,12 +2871,12 @@ static void test_cvt_rfc4175_444be10_to_444p10le(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_be* pg =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_2 =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_2 =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -2886,7 +2886,7 @@ static void test_cvt_rfc4175_444be10_to_444p10le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444be10_to_444p10le_simd(pg, p10_u16, (p10_u16 + w * h),
                                               (p10_u16 + w * h * 2), w, h, cvt_level);
@@ -2918,11 +2918,11 @@ static void test_cvt_444p10le_to_rfc4175_444be10(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_be* pg =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p10_u16_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -2966,12 +2966,12 @@ static void test_cvt_rfc4175_444le10_to_yuv444p10le(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_le* pg =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_le* pg_2 =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_2 =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -2981,7 +2981,7 @@ static void test_cvt_rfc4175_444le10_to_yuv444p10le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444le10_to_yuv444p10le(pg, p10_u16, (p10_u16 + w * h),
                                             (p10_u16 + w * h * 2), w, h);
@@ -3013,12 +3013,12 @@ static void test_cvt_rfc4175_444le10_to_gbrp10le(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_le* pg =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_le* pg_2 =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_2 =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -3028,7 +3028,7 @@ static void test_cvt_rfc4175_444le10_to_gbrp10le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444le10_to_gbrp10le(pg, p10_u16, (p10_u16 + w * h),
                                          (p10_u16 + w * h * 2), w, h);
@@ -3060,11 +3060,11 @@ static void test_cvt_yuv444p10le_to_rfc4175_444le10(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_le* pg =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p10_u16_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -3108,11 +3108,11 @@ static void test_cvt_gbrp10le_to_rfc4175_444le10(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_le* pg =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p10_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p10_u16_2 || !p10_u16) {
     EXPECT_EQ(0, 1);
@@ -3156,12 +3156,12 @@ static void test_cvt_rfc4175_444be10_to_444le10(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_be* pg_be =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_le* pg_le =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_le =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3171,7 +3171,7 @@ static void test_cvt_rfc4175_444be10_to_444le10(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -3200,12 +3200,12 @@ static void test_cvt_rfc4175_444le10_to_444be10(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_le* pg_le =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_be =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_le* pg_le_2 =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_le =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_le_2 =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
 
   if (!pg_be || !pg_le || !pg_le_2) {
     EXPECT_EQ(0, 1);
@@ -3215,7 +3215,7 @@ static void test_cvt_rfc4175_444le10_to_444be10(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -3235,12 +3235,12 @@ static void test_cvt_rfc4175_444le10_to_444be10_2(int w, int h,
                                                   enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg4_size = w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_le* pg_le =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_be =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_le =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3250,7 +3250,7 @@ static void test_cvt_rfc4175_444le10_to_444be10_2(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444le10_to_444be10_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_NONE);
   EXPECT_EQ(0, ret);
@@ -3281,14 +3281,14 @@ static void test_rotate_rfc4175_444be10_444le10_444p10le(int w, int h,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_be* pg_be =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_le* pg_le =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_le =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
 
   if (!pg_le || !pg_be || !p10_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3299,7 +3299,7 @@ static void test_rotate_rfc4175_444be10_444le10_444p10le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444be10_to_444le10_simd(pg_be, pg_le, w, h, cvt1_level);
   EXPECT_EQ(0, ret);
@@ -3331,14 +3331,14 @@ static void test_rotate_rfc4175_444be10_444p10le_444le10(int w, int h,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg4_size = (size_t)w * h * 15 / 4;
-  struct st20_rfc4175_444_10_pg4_be* pg_be =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
-  struct st20_rfc4175_444_10_pg4_le* pg_le =
-      (struct st20_rfc4175_444_10_pg4_le*)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
+  struct st20_rfc4175_444_10_pg4_le *pg_le =
+      (struct st20_rfc4175_444_10_pg4_le *)st_test_zmalloc(fb_pg4_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_444_10_pg4_be* pg_be_2 =
-      (struct st20_rfc4175_444_10_pg4_be*)st_test_zmalloc(fb_pg4_size);
+  uint16_t *p10_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_444_10_pg4_be *pg_be_2 =
+      (struct st20_rfc4175_444_10_pg4_be *)st_test_zmalloc(fb_pg4_size);
 
   if (!pg_le || !pg_be || !p10_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3349,7 +3349,7 @@ static void test_rotate_rfc4175_444be10_444p10le_444le10(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg4_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg4_size, 0);
 
   ret = st20_rfc4175_444be10_to_444p10le_simd(pg_be, p10_u16, (p10_u16 + w * h),
                                               (p10_u16 + w * h * 2), w, h, cvt1_level);
@@ -3380,12 +3380,12 @@ static void test_cvt_rfc4175_444be12_to_444p12le(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_be* pg =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_2 =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_2 =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -3395,7 +3395,7 @@ static void test_cvt_rfc4175_444be12_to_444p12le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444be12_to_444p12le_simd(pg, p12_u16, (p12_u16 + w * h),
                                               (p12_u16 + w * h * 2), w, h, cvt_level);
@@ -3427,11 +3427,11 @@ static void test_cvt_444p12le_to_rfc4175_444be12(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_be* pg =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p12_u16_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -3475,12 +3475,12 @@ static void test_cvt_rfc4175_444le12_to_yuv444p12le(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_le* pg =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_le* pg_2 =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_2 =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -3490,7 +3490,7 @@ static void test_cvt_rfc4175_444le12_to_yuv444p12le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444le12_to_yuv444p12le(pg, p12_u16, (p12_u16 + w * h),
                                             (p12_u16 + w * h * 2), w, h);
@@ -3522,12 +3522,12 @@ static void test_cvt_rfc4175_444le12_to_gbrp12le(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_le* pg =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_le* pg_2 =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_2 =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !pg_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -3537,7 +3537,7 @@ static void test_cvt_rfc4175_444le12_to_gbrp12le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444le12_to_gbrp12le(pg, p12_u16, (p12_u16 + w * h),
                                          (p12_u16 + w * h * 2), w, h);
@@ -3569,11 +3569,11 @@ static void test_cvt_yuv444p12le_to_rfc4175_444le12(int w, int h,
                                                     enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_le* pg =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p12_u16_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -3617,11 +3617,11 @@ static void test_cvt_gbrp12le_to_rfc4175_444le12(int w, int h,
                                                  enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_le* pg =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p12_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  uint16_t *p12_u16_2 = (uint16_t *)st_test_zmalloc(planar_size);
 
   if (!pg || !p12_u16_2 || !p12_u16) {
     EXPECT_EQ(0, 1);
@@ -3665,12 +3665,12 @@ static void test_cvt_rfc4175_444be12_to_444le12(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_be* pg_be =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_le* pg_le =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_le =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3680,7 +3680,7 @@ static void test_cvt_rfc4175_444be12_to_444le12(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444be12_to_444le12_simd(pg_be, pg_le, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -3709,12 +3709,12 @@ static void test_cvt_rfc4175_444le12_to_444be12(int w, int h,
                                                 enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_le* pg_le =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_be =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_le* pg_le_2 =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_le =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_le_2 =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_le_2) {
     EXPECT_EQ(0, 1);
@@ -3724,7 +3724,7 @@ static void test_cvt_rfc4175_444le12_to_444be12(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444le12_to_444be12_simd(pg_le, pg_be, w, h, cvt_level);
   EXPECT_EQ(0, ret);
@@ -3744,12 +3744,12 @@ static void test_cvt_rfc4175_444le12_to_444be12_2(int w, int h,
                                                   enum mtl_simd_level back_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_le* pg_le =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_be =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_le =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_be || !pg_le || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3759,7 +3759,7 @@ static void test_cvt_rfc4175_444le12_to_444be12_2(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_le, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_le, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444le12_to_444be12_simd(pg_le, pg_be, w, h, MTL_SIMD_LEVEL_NONE);
   EXPECT_EQ(0, ret);
@@ -3790,14 +3790,14 @@ static void test_rotate_rfc4175_444be12_444le12_444p12le(int w, int h,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_be* pg_be =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_le* pg_le =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_le =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_le || !pg_be || !p12_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3808,7 +3808,7 @@ static void test_rotate_rfc4175_444be12_444le12_444p12le(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444be12_to_444le12_simd(pg_be, pg_le, w, h, cvt1_level);
   EXPECT_EQ(0, ret);
@@ -3840,14 +3840,14 @@ static void test_rotate_rfc4175_444be12_444p12le_444le12(int w, int h,
                                                          enum mtl_simd_level cvt3_level) {
   int ret;
   size_t fb_pg2_size = (size_t)w * h * 9 / 2;
-  struct st20_rfc4175_444_12_pg2_be* pg_be =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
-  struct st20_rfc4175_444_12_pg2_le* pg_le =
-      (struct st20_rfc4175_444_12_pg2_le*)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
+  struct st20_rfc4175_444_12_pg2_le *pg_le =
+      (struct st20_rfc4175_444_12_pg2_le *)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 3 * sizeof(uint16_t);
-  uint16_t* p12_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  struct st20_rfc4175_444_12_pg2_be* pg_be_2 =
-      (struct st20_rfc4175_444_12_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  uint16_t *p12_u16 = (uint16_t *)st_test_zmalloc(planar_size);
+  struct st20_rfc4175_444_12_pg2_be *pg_be_2 =
+      (struct st20_rfc4175_444_12_pg2_be *)st_test_zmalloc(fb_pg2_size);
 
   if (!pg_le || !pg_be || !p12_u16 || !pg_be_2) {
     EXPECT_EQ(0, 1);
@@ -3858,7 +3858,7 @@ static void test_rotate_rfc4175_444be12_444p12le_444le12(int w, int h,
     return;
   }
 
-  st_test_rand_data((uint8_t*)pg_be, fb_pg2_size, 0);
+  st_test_rand_data((uint8_t *)pg_be, fb_pg2_size, 0);
 
   ret = st20_rfc4175_444be12_to_444p12le_simd(pg_be, p12_u16, (p12_u16 + w * h),
                                               (p12_u16 + w * h * 2), w, h, cvt1_level);
@@ -3888,9 +3888,9 @@ static void test_am824_to_aes3(int blocks) {
   int ret;
   int subframes = blocks * 2 * 192;
   size_t blocks_size = subframes * 4;
-  struct st31_aes3* b_aes3 = (struct st31_aes3*)st_test_zmalloc(blocks_size);
-  struct st31_am824* b_am824 = (struct st31_am824*)st_test_zmalloc(blocks_size);
-  struct st31_am824* b_am824_2 = (struct st31_am824*)st_test_zmalloc(blocks_size);
+  struct st31_aes3 *b_aes3 = (struct st31_aes3 *)st_test_zmalloc(blocks_size);
+  struct st31_am824 *b_am824 = (struct st31_am824 *)st_test_zmalloc(blocks_size);
+  struct st31_am824 *b_am824_2 = (struct st31_am824 *)st_test_zmalloc(blocks_size);
   if (!b_aes3 || !b_am824 || !b_am824_2) {
     EXPECT_EQ(0, 1);
     if (b_aes3) st_test_free(b_aes3);
@@ -3899,9 +3899,9 @@ static void test_am824_to_aes3(int blocks) {
     return;
   }
 
-  st_test_rand_data((uint8_t*)b_am824, blocks_size, 0);
+  st_test_rand_data((uint8_t *)b_am824, blocks_size, 0);
   /* set 'b' and 'f' for subframes */
-  struct st31_am824* sf_am824 = b_am824;
+  struct st31_am824 *sf_am824 = b_am824;
   for (int i = 0; i < subframes; i++) {
     sf_am824->unused = 0;
     if (i % (192 * 2) == 0) {
@@ -3940,9 +3940,9 @@ static void test_aes3_to_am824(int blocks) {
   int ret;
   int subframes = blocks * 2 * 192;
   size_t blocks_size = subframes * 4;
-  struct st31_aes3* b_aes3 = (struct st31_aes3*)st_test_zmalloc(blocks_size);
-  struct st31_am824* b_am824 = (struct st31_am824*)st_test_zmalloc(blocks_size);
-  struct st31_aes3* b_aes3_2 = (struct st31_aes3*)st_test_zmalloc(blocks_size);
+  struct st31_aes3 *b_aes3 = (struct st31_aes3 *)st_test_zmalloc(blocks_size);
+  struct st31_am824 *b_am824 = (struct st31_am824 *)st_test_zmalloc(blocks_size);
+  struct st31_aes3 *b_aes3_2 = (struct st31_aes3 *)st_test_zmalloc(blocks_size);
   if (!b_aes3 || !b_am824 || !b_aes3_2) {
     EXPECT_EQ(0, 1);
     if (b_aes3) st_test_free(b_aes3);
@@ -3951,9 +3951,9 @@ static void test_aes3_to_am824(int blocks) {
     return;
   }
 
-  st_test_rand_data((uint8_t*)b_am824, blocks_size, 0);
+  st_test_rand_data((uint8_t *)b_am824, blocks_size, 0);
   /* set 'b' and 'f' for subframes */
-  struct st31_aes3* sf_aes3 = b_aes3;
+  struct st31_aes3 *sf_aes3 = b_aes3;
   for (int i = 0; i < subframes; i++) {
     if (i % (192 * 2) == 0) {
       sf_aes3->preamble = 0x2;
@@ -3984,7 +3984,7 @@ TEST(Cvt, st31_aes3_to_am824) {
   test_aes3_to_am824(100);
 }
 
-static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
+static void frame_malloc(struct st_frame *frame, uint8_t rand, bool align) {
   int planes = st_frame_fmt_planes(frame->fmt);
   size_t fb_size = 0;
   for (int plane = 0; plane < planes; plane++) {
@@ -3992,24 +3992,24 @@ static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
     frame->linesize[plane] = align ? MTL_ALIGN(least_line_size, 512) : least_line_size;
     fb_size += frame->linesize[plane] * frame->height;
   }
-  uint8_t* fb = (uint8_t*)st_test_zmalloc(fb_size);
+  uint8_t *fb = (uint8_t *)st_test_zmalloc(fb_size);
   if (!fb) return;
   if (rand) { /* fill the framebuffer */
     st_test_rand_data(fb, fb_size, rand);
     if (frame->fmt == ST_FRAME_FMT_YUV422PLANAR10LE) {
       /* only LSB 10 valid */
-      uint16_t* p10_u16 = (uint16_t*)fb;
+      uint16_t *p10_u16 = (uint16_t *)fb;
       for (size_t j = 0; j < (fb_size / 2); j++) {
         p10_u16[j] &= 0x3ff; /* only 10 bit */
       }
     } else if (frame->fmt == ST_FRAME_FMT_Y210) {
       /* only MSB 10 valid */
-      uint16_t* y210_u16 = (uint16_t*)fb;
+      uint16_t *y210_u16 = (uint16_t *)fb;
       for (size_t j = 0; j < (fb_size / 2); j++) {
         y210_u16[j] &= 0xffc0; /* only 10 bit */
       }
     } else if (frame->fmt == ST_FRAME_FMT_V210) {
-      uint32_t* v210_word = (uint32_t*)fb;
+      uint32_t *v210_word = (uint32_t *)fb;
       for (size_t j = 0; j < (fb_size / 4); j++) {
         v210_word[j] &= 0x3fffffff; /* only 30 bit */
       }
@@ -4018,12 +4018,12 @@ static void frame_malloc(struct st_frame* frame, uint8_t rand, bool align) {
   frame->addr[0] = fb;
   for (int plane = 1; plane < planes; plane++) {
     frame->addr[plane] =
-        (uint8_t*)frame->addr[plane - 1] + st_frame_plane_size(frame, plane - 1);
+        (uint8_t *)frame->addr[plane - 1] + st_frame_plane_size(frame, plane - 1);
   }
   frame->data_size = frame->buffer_size = fb_size;
 }
 
-static void frame_free(struct st_frame* frame) {
+static void frame_free(struct st_frame *frame) {
   if (frame->addr[0]) st_test_free(frame->addr[0]);
   int planes = st_frame_fmt_planes(frame->fmt);
   for (int plane = 0; plane < planes; plane++) {
@@ -4031,18 +4031,18 @@ static void frame_free(struct st_frame* frame) {
   }
 }
 
-static int frame_compare_each_line(struct st_frame* old_frame,
-                                   struct st_frame* new_frame) {
+static int frame_compare_each_line(struct st_frame *old_frame,
+                                   struct st_frame *new_frame) {
   int ret = 0;
   int planes = st_frame_fmt_planes(old_frame->fmt);
   uint32_t h = st_frame_data_height(old_frame);
 
   for (int plane = 0; plane < planes; plane++) {
     for (uint32_t line = 0; line < h; line++) {
-      uint8_t* old_addr =
-          (uint8_t*)old_frame->addr[plane] + old_frame->linesize[plane] * line;
-      uint8_t* new_addr =
-          (uint8_t*)new_frame->addr[plane] + new_frame->linesize[plane] * line;
+      uint8_t *old_addr =
+          (uint8_t *)old_frame->addr[plane] + old_frame->linesize[plane] * line;
+      uint8_t *new_addr =
+          (uint8_t *)new_frame->addr[plane] + new_frame->linesize[plane] * line;
       if (memcmp(old_addr, new_addr,
                  st_frame_least_linesize(old_frame->fmt, old_frame->width, plane)))
         ret += -EIO;
@@ -4052,8 +4052,8 @@ static int frame_compare_each_line(struct st_frame* old_frame,
   return ret;
 }
 
-static void test_st_frame_convert(struct st_frame* src, struct st_frame* dst,
-                                  struct st_frame* new_src, bool expect_fail) {
+static void test_st_frame_convert(struct st_frame *src, struct st_frame *dst,
+                                  struct st_frame *new_src, bool expect_fail) {
   int ret;
   ret = st_frame_convert(src, dst);
   if (expect_fail)
@@ -4252,10 +4252,10 @@ TEST(Cvt, st_frame_convert_rotate_mix_padding) {
 
 static void test_field_to_frame(mtl_handle mt, uint32_t width, uint32_t height,
                                 enum st_frame_fmt fmt) {
-  struct st_frame* frame = st_frame_create(mt, fmt, width, height, false);
-  struct st_frame* first = st_frame_create(mt, fmt, width, height, true);
-  struct st_frame* second = st_frame_create(mt, fmt, width, height, true);
-  struct st_frame* back = st_frame_create(mt, fmt, width, height, false);
+  struct st_frame *frame = st_frame_create(mt, fmt, width, height, false);
+  struct st_frame *first = st_frame_create(mt, fmt, width, height, true);
+  struct st_frame *second = st_frame_create(mt, fmt, width, height, true);
+  struct st_frame *back = st_frame_create(mt, fmt, width, height, false);
   int ret;
 
   if (!frame || !first || !second || !back) {
@@ -4267,7 +4267,7 @@ static void test_field_to_frame(mtl_handle mt, uint32_t width, uint32_t height,
     return;
   }
   second->second_field = true;
-  st_test_rand_data((uint8_t*)frame->addr[0], frame->buffer_size, 0);
+  st_test_rand_data((uint8_t *)frame->addr[0], frame->buffer_size, 0);
 
   ret = st_field_split(frame, first, second);
   EXPECT_GE(ret, 0);
@@ -4284,7 +4284,7 @@ static void test_field_to_frame(mtl_handle mt, uint32_t width, uint32_t height,
 }
 
 TEST(Cvt, field_to_frame) {
-  struct st_tests_context* ctx = st_test_ctx();
+  struct st_tests_context *ctx = st_test_ctx();
   test_field_to_frame(ctx->handle, 1920, 1080, ST_FRAME_FMT_YUV422RFC4175PG2BE10);
   test_field_to_frame(ctx->handle, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE);
 }

@@ -9,7 +9,7 @@ struct tx_ctx {
   size_t fb_offset;
   pthread_cond_t tx_wake_cond;
   pthread_mutex_t tx_wake_mutex;
-  void* app;
+  void *app;
 };
 
 struct split_fwd_sample_ctx {
@@ -27,9 +27,9 @@ struct split_fwd_sample_ctx {
   int fb_fwd;
 };
 
-static int tx_st20p_frame_available(void* priv) {
-  struct tx_ctx* s = priv;
-  struct split_fwd_sample_ctx* app = s->app;
+static int tx_st20p_frame_available(void *priv) {
+  struct tx_ctx *s = priv;
+  struct split_fwd_sample_ctx *app = s->app;
 
   if (!app->ready) return -EIO;
 
@@ -40,8 +40,8 @@ static int tx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static int rx_st20p_frame_available(void* priv) {
-  struct split_fwd_sample_ctx* s = priv;
+static int rx_st20p_frame_available(void *priv) {
+  struct split_fwd_sample_ctx *s = priv;
 
   if (!s->ready) return -EIO;
 
@@ -52,10 +52,10 @@ static int rx_st20p_frame_available(void* priv) {
   return 0;
 }
 
-static void* tx_st20p_fwd_thread(void* args) {
-  struct split_fwd_sample_ctx* s = args;
+static void *tx_st20p_fwd_thread(void *args) {
+  struct split_fwd_sample_ctx *s = args;
   st20p_rx_handle rx_handle = s->rx_handle;
-  struct st_frame* frame;
+  struct st_frame *frame;
 
   while (!s->stop) {
     frame = st20p_rx_get_frame(rx_handle);
@@ -67,9 +67,9 @@ static void* tx_st20p_fwd_thread(void* args) {
     }
 
     for (int i = 0; i < 4; i++) {
-      struct tx_ctx* tx = &s->tx[i];
+      struct tx_ctx *tx = &s->tx[i];
       st20p_tx_handle tx_handle = tx->tx_handle;
-      struct st_frame* tx_frame = NULL;
+      struct st_frame *tx_frame = NULL;
 
       while (!s->stop && !tx_frame) {
         tx_frame = st20p_tx_get_frame(tx_handle);
@@ -79,8 +79,8 @@ static void* tx_st20p_fwd_thread(void* args) {
           st_pthread_mutex_unlock(&tx->tx_wake_mutex);
           continue;
         }
-        uint8_t* src = frame->addr[0] + tx->fb_offset;
-        uint8_t* dst = tx_frame->addr[0];
+        uint8_t *src = frame->addr[0] + tx->fb_offset;
+        uint8_t *dst = tx_frame->addr[0];
         uint32_t src_linesize = frame->linesize[0];
         uint32_t dst_linesize = tx_frame->linesize[0];
         for (int line = 0; line < tx_frame->height; line++) {
@@ -102,7 +102,7 @@ static void* tx_st20p_fwd_thread(void* args) {
   return NULL;
 }
 
-static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
+static int split_fwd_sample_free_app(struct split_fwd_sample_ctx *app) {
   for (int i = 0; i < 4; i++) {
     if (app->tx[i].tx_handle) {
       st20p_tx_free(app->tx[i].tx_handle);
@@ -121,7 +121,7 @@ static int split_fwd_sample_free_app(struct split_fwd_sample_ctx* app) {
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   int session_num = 4;
   struct st_sample_context ctx;
   int ret;
@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
   app.rx_handle = rx_handle;
 
   for (int i = 0; i < 4; i++) {
-    struct tx_ctx* tx = &app.tx[i];
+    struct tx_ctx *tx = &app.tx[i];
     tx->app = &app;
     st_pthread_mutex_init(&tx->tx_wake_mutex, NULL);
     st_pthread_cond_init(&tx->tx_wake_cond, NULL);
@@ -239,7 +239,7 @@ int main(int argc, char** argv) {
   st_pthread_cond_signal(&app.rx_wake_cond);
   st_pthread_mutex_unlock(&app.rx_wake_mutex);
   for (int i = 0; i < 4; i++) {
-    struct tx_ctx* tx = &app.tx[i];
+    struct tx_ctx *tx = &app.tx[i];
     st_pthread_mutex_lock(&tx->tx_wake_mutex);
     st_pthread_cond_signal(&tx->tx_wake_cond);
     st_pthread_mutex_unlock(&tx->tx_wake_mutex);

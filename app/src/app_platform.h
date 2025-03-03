@@ -79,58 +79,58 @@ struct st_tx_frame {
 };
 
 struct st_rx_frame {
-  void* frame;
+  void *frame;
   size_t size;
   uint8_t shas[SHA256_DIGEST_LENGTH];
 };
 
-static inline int st_pthread_mutex_init(pthread_mutex_t* mutex,
-                                        pthread_mutexattr_t* attr) {
+static inline int st_pthread_mutex_init(pthread_mutex_t *mutex,
+                                        pthread_mutexattr_t *attr) {
   return pthread_mutex_init(mutex, attr);
 }
 
-static inline int st_pthread_mutex_trylock(pthread_mutex_t* mutex) {
+static inline int st_pthread_mutex_trylock(pthread_mutex_t *mutex) {
   return pthread_mutex_trylock(mutex);
 }
 
-static inline int st_pthread_mutex_lock(pthread_mutex_t* mutex) {
+static inline int st_pthread_mutex_lock(pthread_mutex_t *mutex) {
   return pthread_mutex_lock(mutex);
 }
 
-static inline int st_pthread_mutex_unlock(pthread_mutex_t* mutex) {
+static inline int st_pthread_mutex_unlock(pthread_mutex_t *mutex) {
   return pthread_mutex_unlock(mutex);
 }
 
-static inline int st_pthread_mutex_destroy(pthread_mutex_t* mutex) {
+static inline int st_pthread_mutex_destroy(pthread_mutex_t *mutex) {
   return pthread_mutex_destroy(mutex);
 }
 
-static inline int st_pthread_cond_init(pthread_cond_t* cond,
-                                       pthread_condattr_t* cond_attr) {
+static inline int st_pthread_cond_init(pthread_cond_t *cond,
+                                       pthread_condattr_t *cond_attr) {
   return pthread_cond_init(cond, cond_attr);
 }
 
-static inline int st_pthread_cond_wait(pthread_cond_t* cond, pthread_mutex_t* mutex) {
+static inline int st_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
   return pthread_cond_wait(cond, mutex);
 }
 
-static inline int st_pthread_cond_destroy(pthread_cond_t* cond) {
+static inline int st_pthread_cond_destroy(pthread_cond_t *cond) {
   return pthread_cond_destroy(cond);
 }
 
-static inline int st_pthread_cond_signal(pthread_cond_t* cond) {
+static inline int st_pthread_cond_signal(pthread_cond_t *cond) {
   return pthread_cond_signal(cond);
 }
 
-static inline int st_open(const char* path, int flags) {
+static inline int st_open(const char *path, int flags) {
   return open(path, flags);
 }
 
-static inline int st_open_mode(const char* path, int flags, mode_t mode) {
+static inline int st_open_mode(const char *path, int flags, mode_t mode) {
   return open(path, flags, mode);
 }
 
-static inline FILE* st_fopen(const char* path, const char* mode) {
+static inline FILE *st_fopen(const char *path, const char *mode) {
   return fopen(path, mode);
 }
 
@@ -162,22 +162,22 @@ static inline void st_usleep(
 #endif
 }
 
-static inline int st_get_real_time(struct timespec* ts) {
+static inline int st_get_real_time(struct timespec *ts) {
   return clock_gettime(CLOCK_REALTIME, ts);
 }
 
-static inline int st_set_real_time(struct timespec* ts) {
+static inline int st_set_real_time(struct timespec *ts) {
   return clock_settime(CLOCK_REALTIME, ts);
 }
 
 #ifdef APP_HAS_SSL
-static inline unsigned char* st_sha256(const unsigned char* d, size_t n,
-                                       unsigned char* md) {
+static inline unsigned char *st_sha256(const unsigned char *d, size_t n,
+                                       unsigned char *md) {
   return SHA256(d, n, md);
 }
 #else
-static inline unsigned char* st_sha256(const unsigned char* d, size_t n,
-                                       unsigned char* md) {
+static inline unsigned char *st_sha256(const unsigned char *d, size_t n,
+                                       unsigned char *md) {
   MTL_MAY_UNUSED(d);
   MTL_MAY_UNUSED(n);
   md[0] = rand();

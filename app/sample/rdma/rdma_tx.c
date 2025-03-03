@@ -15,29 +15,29 @@ static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 static int buffer_acked = -3;
 
-static int tx_notify_buffer_sent(void* priv, struct mtl_rdma_buffer* buffer) {
+static int tx_notify_buffer_sent(void *priv, struct mtl_rdma_buffer *buffer) {
   (void)(priv);
-  printf("Sent buffer: %s\n", (char*)buffer->addr);
+  printf("Sent buffer: %s\n", (char *)buffer->addr);
   return 0;
 }
 
-static int tx_notify_buffer_done(void* priv, struct mtl_rdma_buffer* buffer) {
+static int tx_notify_buffer_done(void *priv, struct mtl_rdma_buffer *buffer) {
   (void)(priv);
   buffer_acked++;
-  printf("ACKed buffer: %s\n", (char*)buffer->addr);
+  printf("ACKed buffer: %s\n", (char *)buffer->addr);
   pthread_mutex_lock(&mtx);
   pthread_cond_signal(&cond);
   pthread_mutex_unlock(&mtx);
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   if (argc != 3) {
     printf("Usage: %s <ip> <port>\n", argv[0]);
     return -1;
   }
   int ret = 0;
-  void* buffers[3] = {};
+  void *buffers[3] = {};
   int meta[3] = {};
   int meta_idx = 0;
   mtl_rdma_handle mrh = NULL;
@@ -80,7 +80,7 @@ int main(int argc, char** argv) {
   }
 
   int count = 100;
-  struct mtl_rdma_buffer* buffer = NULL;
+  struct mtl_rdma_buffer *buffer = NULL;
   for (int i = 0; i < count; i++) {
     buffer = mtl_rdma_tx_get_buffer(tx);
     if (!buffer) {
@@ -93,9 +93,9 @@ int main(int argc, char** argv) {
     }
 
     meta[meta_idx] = buffer_acked;
-    snprintf((char*)buffer->addr, buffer->capacity, "Hello, RDMA! id %d acked %d", i,
+    snprintf((char *)buffer->addr, buffer->capacity, "Hello, RDMA! id %d acked %d", i,
              meta[meta_idx]);
-    buffer->size = strlen((char*)buffer->addr) + 1;
+    buffer->size = strlen((char *)buffer->addr) + 1;
     buffer->user_meta = &meta[meta_idx];
     buffer->user_meta_size = sizeof(int);
     meta_idx = (meta_idx + 1) % 3;

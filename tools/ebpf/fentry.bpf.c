@@ -25,8 +25,8 @@ struct {
 } rb SEC(".maps");
 
 SEC("fentry/udp_send_skb")
-int BPF_PROG(udp_send_skb, struct sk_buff* skb, struct flowi4* fl4,
-             struct inet_cork* cork) {
+int BPF_PROG(udp_send_skb, struct sk_buff *skb, struct flowi4 *fl4,
+             struct inet_cork *cork) {
   u64 ts;
   u64 skb_addr = (u64)skb;
 
@@ -37,9 +37,9 @@ int BPF_PROG(udp_send_skb, struct sk_buff* skb, struct flowi4* fl4,
 }
 
 SEC("fexit/udp_send_skb")
-int BPF_PROG(udp_send_skb_exit, struct sk_buff* skb, struct flowi4* fl4,
-             struct inet_cork* cork, long ret) {
-  struct udp_send_event* e;
+int BPF_PROG(udp_send_skb_exit, struct sk_buff *skb, struct flowi4 *fl4,
+             struct inet_cork *cork, long ret) {
+  struct udp_send_event *e;
   pid_t pid;
   u64 *start_ts, duration_ns = 0;
   u64 skb_addr = (u64)skb;

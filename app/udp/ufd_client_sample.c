@@ -34,8 +34,8 @@ struct ufd_client_sample_ctx {
   int recv_cnt_total;
 };
 
-static void* ufd_client_thread(void* arg) {
-  struct ufd_client_sample_ctx* s = arg;
+static void *ufd_client_thread(void *arg) {
+  struct ufd_client_sample_ctx *s = arg;
   int socket = s->socket;
 
   ssize_t ufd_len = s->udp_len;
@@ -53,7 +53,7 @@ static void* ufd_client_thread(void* arg) {
     send_buf[idx_pos] = send_idx++;
     ssize_t send =
         mufd_sendto(socket, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+                    (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
     if (send != ufd_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -85,8 +85,8 @@ static void* ufd_client_thread(void* arg) {
   return NULL;
 }
 
-static void* ufd_client_transport_thread(void* arg) {
-  struct ufd_client_sample_ctx* s = arg;
+static void *ufd_client_transport_thread(void *arg) {
+  struct ufd_client_sample_ctx *s = arg;
   int socket = s->socket;
 
   ssize_t ufd_len = s->udp_len;
@@ -99,7 +99,7 @@ static void* ufd_client_transport_thread(void* arg) {
   while (!s->stop) {
     ssize_t send =
         mufd_sendto(socket, send_buf, sizeof(send_buf), 0,
-                    (const struct sockaddr*)&s->serv_addr, sizeof(s->serv_addr));
+                    (const struct sockaddr *)&s->serv_addr, sizeof(s->serv_addr));
     if (send != ufd_len) {
       err("%s(%d), only send %d bytes\n", __func__, s->idx, (int)send);
       continue;
@@ -112,7 +112,7 @@ static void* ufd_client_transport_thread(void* arg) {
   return NULL;
 }
 
-static void ufd_client_status(struct ufd_client_sample_ctx* s) {
+static void ufd_client_status(struct ufd_client_sample_ctx *s) {
   uint64_t cur_ts = sample_get_monotonic_time();
   double time_sec = (double)(cur_ts - s->last_stat_time) / NS_PER_S;
   double bps = (double)s->send_cnt * s->udp_len * 8 / time_sec;
@@ -143,7 +143,7 @@ static void ufd_client_sig_handler(int signo) {
   return;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
   ctx.sig_handler = ufd_client_sig_handler;
 
   uint32_t session_num = ctx.sessions;
-  struct ufd_client_sample_ctx* app[session_num];
+  struct ufd_client_sample_ctx *app[session_num];
   memset(app, 0, sizeof(app));
 
   for (int i = 0; i < session_num; i++) {

@@ -22,7 +22,7 @@
 #include "mtl_common.h"
 
 typedef struct mtlSt20pMuxerContext {
-  const AVClass* class; /**< Class for private options. */
+  const AVClass *class; /**< Class for private options. */
 
   int idx;
   /* arguments for devices */
@@ -42,8 +42,8 @@ typedef struct mtlSt20pMuxerContext {
   int frame_size;
 } mtlSt20pMuxerContext;
 
-static int mtl_st20p_write_close(AVFormatContext* ctx) {
-  mtlSt20pMuxerContext* s = ctx->priv_data;
+static int mtl_st20p_write_close(AVFormatContext *ctx) {
+  mtlSt20pMuxerContext *s = ctx->priv_data;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   // Destroy tx session
@@ -63,8 +63,8 @@ static int mtl_st20p_write_close(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_write_header(AVFormatContext* ctx) {
-  mtlSt20pMuxerContext* s = ctx->priv_data;
+static int mtl_st20p_write_header(AVFormatContext *ctx) {
+  mtlSt20pMuxerContext *s = ctx->priv_data;
   struct st20p_tx_ops ops_tx;
   int ret;
 
@@ -143,9 +143,9 @@ static int mtl_st20p_write_header(AVFormatContext* ctx) {
   return 0;
 }
 
-static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
-  mtlSt20pMuxerContext* s = ctx->priv_data;
-  struct st_frame* frame;
+static int mtl_st20p_write_packet(AVFormatContext *ctx, AVPacket *pkt) {
+  mtlSt20pMuxerContext *s = ctx->priv_data;
+  struct st_frame *frame;
 
   if (pkt->size != s->frame_size) {
     err(ctx, "%s(%d), unexpected pkt size: %d (%d expected)\n", __func__, s->idx,
@@ -164,8 +164,8 @@ static int mtl_st20p_write_packet(AVFormatContext* ctx, AVPacket* pkt) {
   /* This format is not supported by MTL plugin.
      This is workaround for Intel(R) Tiber(TM) Broadcast Suite */
   if (s->pixel_format == AV_PIX_FMT_Y210LE) {
-    st20_y210_to_rfc4175_422be10((uint16_t*)pkt->data,
-                                 (struct st20_rfc4175_422_10_pg2_be*)(frame->addr[0]),
+    st20_y210_to_rfc4175_422be10((uint16_t *)pkt->data,
+                                 (struct st20_rfc4175_422_10_pg2_be *)(frame->addr[0]),
                                  s->width, s->height);
   }
 

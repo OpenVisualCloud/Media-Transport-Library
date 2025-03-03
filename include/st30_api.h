@@ -21,11 +21,11 @@ extern "C" {
 /**
  * Handle to tx st2110-30(audio) session
  */
-typedef struct st_tx_audio_session_handle_impl* st30_tx_handle;
+typedef struct st_tx_audio_session_handle_impl *st30_tx_handle;
 /**
  * Handle to rx st2110-30(audio) session
  */
-typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
+typedef struct st_rx_audio_session_handle_impl *st30_rx_handle;
 
 /**
  * Flag bit in flags of struct st30_tx_ops.
@@ -348,9 +348,9 @@ struct st30_tx_ops {
    * a random value */
   uint32_t ssrc;
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST30_TX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -370,8 +370,8 @@ struct st30_tx_ops {
    * implicit means the frame ownership will be transferred to lib, And only non-block
    * method can be used in this callback as it run from lcore tasklet routine.
    */
-  int (*get_next_frame)(void* priv, uint16_t* next_frame_idx,
-                        struct st30_tx_frame_meta* meta);
+  int (*get_next_frame)(void *priv, uint16_t *next_frame_idx,
+                        struct st30_tx_frame_meta *meta);
   /**
    * Optional for ST30_TYPE_FRAME_LEVEL. The callback when lib finish sending a frame.
    * frame_idx indicate the frame which finish the transmit.
@@ -379,8 +379,8 @@ struct st30_tx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_done)(void* priv, uint16_t frame_idx,
-                           struct st30_tx_frame_meta* meta);
+  int (*notify_frame_done)(void *priv, uint16_t frame_idx,
+                           struct st30_tx_frame_meta *meta);
 
   /*
    * Optional. The size of fifo ring which used between the packet builder and pacing.
@@ -403,7 +403,7 @@ struct st30_tx_ops {
    * packet. And only non-block method can be used in this callback as it run from lcore
    * tasklet routine.
    */
-  int (*notify_rtp_done)(void* priv);
+  int (*notify_rtp_done)(void *priv);
   /** Optional for ST30_TX_PACING_WAY_RL, the required accuracy for warmup check point */
   uint32_t rl_accuracy_ns;
   /** Optional for ST30_TX_PACING_WAY_RL, the offset time(us) for warmup check point */
@@ -462,9 +462,9 @@ struct st30_rx_ops {
    * incoming RTP packets match the ssrc. Leave to zero to disable the ssrc check */
   uint32_t ssrc;
   /** Optional. name */
-  const char* name;
+  const char *name;
   /** Optional. private data to the callback function */
-  void* priv;
+  void *priv;
   /** Optional. see ST30_RX_FLAG_* for possible flags */
   uint32_t flags;
 
@@ -489,7 +489,7 @@ struct st30_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_frame_ready)(void* priv, void* frame, struct st30_rx_frame_meta* meta);
+  int (*notify_frame_ready)(void *priv, void *frame, struct st30_rx_frame_meta *meta);
 
   /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
@@ -498,14 +498,14 @@ struct st30_rx_ops {
    * And only non-block method can be used in this callback as it run from lcore tasklet
    * routine.
    */
-  int (*notify_rtp_ready)(void* priv);
+  int (*notify_rtp_ready)(void *priv);
   /**
    * Mandatory for ST30_RX_FLAG_TIMING_PARSER_META. The callback to notify the rx timing
    * parser result for every 200ms . And only non-block method can be used in this
    * callback as it run from lcore tasklet routine.
    */
-  int (*notify_timing_parser_result)(void* priv, enum mtl_session_port port,
-                                     struct st30_rx_tp_meta* tp);
+  int (*notify_timing_parser_result)(void *priv, enum mtl_session_port port,
+                                     struct st30_rx_tp_meta *tp);
   /**  Use this socket if ST30_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 
@@ -532,7 +532,7 @@ struct st30_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the tx st2110-30(audio) session.
  */
-st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops* ops);
+st30_tx_handle st30_tx_create(mtl_handle mt, struct st30_tx_ops *ops);
 
 /**
  * Free the tx st2110-30(audio) session.
@@ -556,7 +556,7 @@ int st30_tx_free(st30_tx_handle handle);
  *   - 0: Success, tx st2110-30(audio) session destination update succ.
  *   - <0: Error code of the rx st2110-30(audio) session destination update.
  */
-int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* dst);
+int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info *dst);
 
 /**
  * Get the framebuffer pointer from the tx st2110-30(audio) session.
@@ -570,7 +570,7 @@ int st30_tx_update_destination(st30_tx_handle handle, struct st_tx_dest_info* ds
  *   - NULL on error.
  *   - Otherwise, the framebuffer pointer.
  */
-void* st30_tx_get_framebuffer(st30_tx_handle handle, uint16_t idx);
+void *st30_tx_get_framebuffer(st30_tx_handle handle, uint16_t idx);
 
 /**
  * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-30(audio) session.
@@ -585,7 +585,7 @@ void* st30_tx_get_framebuffer(st30_tx_handle handle, uint16_t idx);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr);
+void *st30_tx_get_mbuf(st30_tx_handle handle, void **usrptr);
 
 /**
  * Put back the mbuf which get by st30_tx_get_mbuf to the tx st2110-30(audio) session.
@@ -601,7 +601,7 @@ void* st30_tx_get_mbuf(st30_tx_handle handle, void** usrptr);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len);
+int st30_tx_put_mbuf(st30_tx_handle handle, void *mbuf, uint16_t len);
 
 /**
  * Retrieve the packet time in nanoseconds from st2110-30(audio) ptime.
@@ -690,7 +690,7 @@ int st30_get_packet_size(enum st30_fmt fmt, enum st30_ptime ptime,
  */
 int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
                                   enum st30_sampling sampling, uint16_t channel,
-                                  uint64_t desired_frame_time_ns, double* fps);
+                                  uint64_t desired_frame_time_ns, double *fps);
 
 /**
  * Create one rx st2110-30(audio) session.
@@ -703,7 +703,7 @@ int st30_calculate_framebuff_size(enum st30_fmt fmt, enum st30_ptime ptime,
  *   - NULL on error.
  *   - Otherwise, the handle to the rx st2110-30(audio) session.
  */
-st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops);
+st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops *ops);
 
 /**
  * Online update the source info for the rx st2110-30(audio) session.
@@ -716,7 +716,7 @@ st30_rx_handle st30_rx_create(mtl_handle mt, struct st30_rx_ops* ops);
  *   - 0: Success, rx st2110-30(audio) session source update succ.
  *   - <0: Error code of the rx st2110-30(audio) session source update.
  */
-int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info* src);
+int st30_rx_update_source(st30_rx_handle handle, struct st_rx_source_info *src);
 
 /**
  * Free the rx st2110-30(audio) session.
@@ -741,7 +741,7 @@ int st30_rx_free(st30_rx_handle handle);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st30_rx_put_framebuff(st30_rx_handle handle, void* frame);
+int st30_rx_put_framebuff(st30_rx_handle handle, void *frame);
 
 /**
  * Get the mbuf pointer and usrptr of the mbuf from the rx st2110-30(audio) session.
@@ -758,7 +758,7 @@ int st30_rx_put_framebuff(st30_rx_handle handle, void* frame);
  *   - NULL if no available mbuf in the ring.
  *   - Otherwise, the dpdk mbuf pointer.
  */
-void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len);
+void *st30_rx_get_mbuf(st30_rx_handle handle, void **usrptr, uint16_t *len);
 
 /**
  * Put back the mbuf which get by st30_rx_get_mbuf to the rx st2110-30(audio) session.
@@ -769,7 +769,7 @@ void* st30_rx_get_mbuf(st30_rx_handle handle, void** usrptr, uint16_t* len);
  * @param mbuf
  *   the dpdk mbuf pointer by st30_rx_get_mbuf.
  */
-void st30_rx_put_mbuf(st30_rx_handle handle, void* mbuf);
+void st30_rx_put_mbuf(st30_rx_handle handle, void *mbuf);
 
 /**
  * Get the queue meta attached to rx st2110-30(audio) session.
@@ -782,7 +782,7 @@ void st30_rx_put_mbuf(st30_rx_handle handle, void* mbuf);
  *   - 0: Success.
  *   - <0: Error code.
  */
-int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta);
+int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta *meta);
 
 #if defined(__cplusplus)
 }

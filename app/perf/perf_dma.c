@@ -4,7 +4,7 @@
 
 #include "../sample/sample_util.h"
 
-static inline void rand_data(uint8_t* p, size_t sz, uint8_t base) {
+static inline void rand_data(uint8_t *p, size_t sz, uint8_t base) {
   for (size_t i = 0; i < sz; i++) {
     p[i] = rand() + base;
   }
@@ -45,7 +45,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
     return -ENOMEM;
   }
   fb_src_iova = mtl_hp_virt2iova(st, fb_src);
-  rand_data((uint8_t*)fb_src, fb_size, 0);
+  rand_data((uint8_t *)fb_src, fb_size, 0);
 
   clock_t start, end;
   float duration_cpu, duration_simd, duration_dma;
@@ -109,7 +109,7 @@ static int dma_copy_perf(mtl_handle st, int w, int h, int frames, int pkt_size) 
   return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 

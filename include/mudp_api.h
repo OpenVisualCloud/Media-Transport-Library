@@ -27,7 +27,7 @@ extern "C" {
 /**
  * Handle to udp transport context
  */
-typedef struct mudp_impl* mudp_handle;
+typedef struct mudp_impl *mudp_handle;
 
 /**
  * Create a udp transport socket.
@@ -70,7 +70,7 @@ int mudp_close(mudp_handle ut);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen);
+int mudp_bind(mudp_handle ut, const struct sockaddr *addr, socklen_t addrlen);
 
 /**
  * Send data on the udp transport socket.
@@ -92,8 +92,8 @@ int mudp_bind(mudp_handle ut, const struct sockaddr* addr, socklen_t addrlen);
  *   - >0: the number of bytes sent.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
-                    const struct sockaddr* dest_addr, socklen_t addrlen);
+ssize_t mudp_sendto(mudp_handle ut, const void *buf, size_t len, int flags,
+                    const struct sockaddr *dest_addr, socklen_t addrlen);
 
 /**
  * Send data on the udp transport socket.
@@ -108,7 +108,7 @@ ssize_t mudp_sendto(mudp_handle ut, const void* buf, size_t len, int flags,
  *   - >0: the number of bytes sent.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr* msg, int flags);
+ssize_t mudp_sendmsg(mudp_handle ut, const struct msghdr *msg, int flags);
 
 /**
  * The structure describing a polling request on mudp.
@@ -143,7 +143,7 @@ typedef unsigned long int mudp_nfds_t;
  *   - =0: Timeout.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout);
+int mudp_poll(struct mudp_pollfd *fds, mudp_nfds_t nfds, int timeout);
 
 /**
  * Receive data on the udp transport socket.
@@ -164,8 +164,8 @@ int mudp_poll(struct mudp_pollfd* fds, mudp_nfds_t nfds, int timeout);
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
-                      struct sockaddr* src_addr, socklen_t* addrlen);
+ssize_t mudp_recvfrom(mudp_handle ut, void *buf, size_t len, int flags,
+                      struct sockaddr *src_addr, socklen_t *addrlen);
 
 /**
  * Receive data on the udp transport socket.
@@ -182,7 +182,7 @@ ssize_t mudp_recvfrom(mudp_handle ut, void* buf, size_t len, int flags,
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-static inline ssize_t mudp_recv(mudp_handle ut, void* buf, size_t len, int flags) {
+static inline ssize_t mudp_recv(mudp_handle ut, void *buf, size_t len, int flags) {
   return mudp_recvfrom(ut, buf, len, flags, NULL, NULL);
 }
 
@@ -199,7 +199,7 @@ static inline ssize_t mudp_recv(mudp_handle ut, void* buf, size_t len, int flags
  *   - >0: the number of bytes received.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags);
+ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr *msg, int flags);
 
 /**
  * getsockopt on the udp transport socket.
@@ -219,8 +219,8 @@ ssize_t mudp_recvmsg(mudp_handle ut, struct msghdr* msg, int flags);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
-                    socklen_t* optlen);
+int mudp_getsockopt(mudp_handle ut, int level, int optname, void *optval,
+                    socklen_t *optlen);
 
 /**
  * setsockopt on the udp transport socket.
@@ -240,7 +240,7 @@ int mudp_getsockopt(mudp_handle ut, int level, int optname, void* optval,
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mudp_setsockopt(mudp_handle ut, int level, int optname, const void* optval,
+int mudp_setsockopt(mudp_handle ut, int level, int optname, const void *optval,
                     socklen_t optlen);
 
 /**
@@ -466,7 +466,7 @@ int mudp_tx_valid_ip(mudp_handle ut, uint8_t dip[MTL_IP_ADDR_LEN]);
  *   - 0: Success.
  *   - <0: Error code. -1 is returned, and errno is set appropriately.
  */
-int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void* priv), void* priv);
+int mudp_register_stat_dump_cb(mudp_handle ut, int (*dump)(void *priv), void *priv);
 
 /**
  * Create a udp transport socket on a PCIE port.
@@ -496,7 +496,7 @@ mudp_handle mudp_socket_port(mtl_handle mt, int domain, int type, int protocol,
  * @param port
  *   UDP port.
  */
-static void inline mudp_init_sockaddr_any(struct sockaddr_in* saddr, uint16_t port) {
+static void inline mudp_init_sockaddr_any(struct sockaddr_in *saddr, uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = INADDR_ANY;
@@ -513,7 +513,7 @@ static void inline mudp_init_sockaddr_any(struct sockaddr_in* saddr, uint16_t po
  * @param port
  *   UDP port.
  */
-static void inline mudp_init_sockaddr(struct sockaddr_in* saddr,
+static void inline mudp_init_sockaddr(struct sockaddr_in *saddr,
                                       uint8_t ip[MTL_IP_ADDR_LEN], uint16_t port) {
   memset(saddr, 0, sizeof(*saddr));
   saddr->sin_family = AF_INET;
@@ -529,7 +529,7 @@ static void inline mudp_init_sockaddr(struct sockaddr_in* saddr,
  * @return
  *   - multicast or not.
  */
-bool mudp_is_multicast(const struct sockaddr_in* saddr);
+bool mudp_is_multicast(const struct sockaddr_in *saddr);
 
 #if defined(__cplusplus)
 }

@@ -65,33 +65,33 @@ typedef struct SessionPortArgs {
   gint payload_type;
 } SessionPortArgs;
 
-gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
-                                          enum st_frame_fmt* fmt);
-gboolean gst_mtl_common_parse_pixel_format(const char* format, enum st_frame_fmt* fmt);
+gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo *finfo,
+                                          enum st_frame_fmt *fmt);
+gboolean gst_mtl_common_parse_pixel_format(const char *format, enum st_frame_fmt *fmt);
 
-gboolean gst_mtl_common_parse_audio_format(const char* format, enum st30_fmt* audio);
-gboolean gst_mtl_common_parse_ptime(const char* ptime_str, enum st30_ptime* ptime);
+gboolean gst_mtl_common_parse_audio_format(const char *format, enum st30_fmt *audio);
+gboolean gst_mtl_common_parse_ptime(const char *ptime_str, enum st30_ptime *ptime);
 gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
-                                           enum st30_sampling* st_sampling);
+                                           enum st30_sampling *st_sampling);
 gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
-                                           gint* gst_sampling);
+                                           gint *gst_sampling);
 
-gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
-                                            StDevArgs* devArgs);
+gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params *mtl_init_params,
+                                            StDevArgs *devArgs);
 
-void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class);
+void gst_mtl_common_init_general_arguments(GObjectClass *gobject_class);
 
-void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
-                                          const GValue* value, GParamSpec* pspec,
-                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
-                                          guint* log_level);
+void gst_mtl_common_set_general_arguments(GObject *object, guint prop_id,
+                                          const GValue *value, GParamSpec *pspec,
+                                          StDevArgs *devArgs, SessionPortArgs *portArgs,
+                                          guint *log_level);
 
-void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
-                                          const GValue* value, GParamSpec* pspec,
-                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
-                                          guint* log_level);
+void gst_mtl_common_get_general_arguments(GObject *object, guint prop_id,
+                                          const GValue *value, GParamSpec *pspec,
+                                          StDevArgs *devArgs, SessionPortArgs *portArgs,
+                                          guint *log_level);
 
-mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+mtl_handle gst_mtl_common_init_handle(StDevArgs *devArgs, guint *log_level,
                                       gboolean force_to_initialize_new_instance);
 
 gint gst_mtl_common_deinit_handle(mtl_handle handle);

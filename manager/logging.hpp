@@ -14,7 +14,7 @@ enum class log_level { DEBUG, INFO, WARNING, ERROR };
 
 class logger {
  public:
-  static void log(log_level level, const std::string& message) {
+  static void log(log_level level, const std::string &message) {
     if (level >= log_level_min) {
       print_log_header(level);
       std::cout << message << std::endl;
@@ -30,13 +30,13 @@ class logger {
 
   static void print_log_header(log_level level) {
     auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-    const char* level_str = get_log_level_string(level);
+    const char *level_str = get_log_level_string(level);
 
     std::cout << "[" << std::put_time(std::localtime(&now), "%F %T") << "] [" << level_str
               << "] ";
   }
 
-  static const char* get_log_level_string(log_level level) {
+  static const char *get_log_level_string(log_level level) {
     switch (level) {
       case log_level::DEBUG:
         return "DEBUG";

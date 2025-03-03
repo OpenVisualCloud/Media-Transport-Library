@@ -26,12 +26,12 @@ extern "C" {
 /**
  * Handle to MTL RDMA transport context.
  */
-typedef struct mt_rdma_impl* mtl_rdma_handle;
+typedef struct mt_rdma_impl *mtl_rdma_handle;
 
 /** Handle to RDMA TX session of lib. */
-typedef struct mt_rdma_tx_ctx* mtl_rdma_tx_handle;
+typedef struct mt_rdma_tx_ctx *mtl_rdma_tx_handle;
 /** Handle to RDMA RX session of lib. */
-typedef struct mt_rdma_rx_ctx* mtl_rdma_rx_handle;
+typedef struct mt_rdma_rx_ctx *mtl_rdma_rx_handle;
 
 /**
  * Log level type to MTL RDMA transport context
@@ -56,7 +56,7 @@ enum mtl_rdma_log_level {
 /** The structure info for buffer meta. */
 struct mtl_rdma_buffer {
   /** Buffer address, immutable at runtime */
-  void* addr;
+  void *addr;
   /** Buffer data capacity, immutable at runtime */
   size_t capacity;
   /** Buffer valid data offset, mutable at runtime */
@@ -69,7 +69,7 @@ struct mtl_rdma_buffer {
   uint64_t timestamp;
 
   /** User metadata */
-  void* user_meta;
+  void *user_meta;
   /** User metadata size */
   size_t user_meta_size;
 };
@@ -77,30 +77,30 @@ struct mtl_rdma_buffer {
 /** The structure describing how to create a TX session. */
 struct mtl_rdma_tx_ops {
   /** RDMA server ip. */
-  char* ip;
+  char *ip;
   /** RDMA server port. */
-  char* port;
+  char *port;
   /** The number of buffers. */
   uint16_t num_buffers;
   /** Buffers addresses. */
-  void** buffers;
+  void **buffers;
   /** The max size of each buffer, all buffers should have the same capacity. */
   size_t buffer_capacity;
 
   /** Session name */
-  const char* name;
+  const char *name;
   /** Optional. Private data to the callback function */
-  void* priv;
+  void *priv;
   /**
    * Optional. Callback function to notify the buffer is sent by local side.
    * Implement with non-blocking function as it runs in the polling thread.
    */
-  int (*notify_buffer_sent)(void* priv, struct mtl_rdma_buffer* buffer);
+  int (*notify_buffer_sent)(void *priv, struct mtl_rdma_buffer *buffer);
   /**
    * Optional. Callback function to notify the buffer is consumed by remote side.
    * Implement with non-blocking function as it runs in the polling thread.
    */
-  int (*notify_buffer_done)(void* priv, struct mtl_rdma_buffer* buffer);
+  int (*notify_buffer_done)(void *priv, struct mtl_rdma_buffer *buffer);
 };
 
 /**
@@ -115,7 +115,7 @@ struct mtl_rdma_tx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the TX session.
  */
-mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_ops* ops);
+mtl_rdma_tx_handle mtl_rdma_tx_create(mtl_rdma_handle mrh, struct mtl_rdma_tx_ops *ops);
 
 /**
  * Free the TX session.
@@ -138,7 +138,7 @@ int mtl_rdma_tx_free(mtl_rdma_tx_handle handle);
  *   - NULL if no available buffer in the session.
  *   - Otherwise, the buffer pointer.
  */
-struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle);
+struct mtl_rdma_buffer *mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle);
 
 /**
  * Put back the buffer which get by mtl_rdma_tx_get_buffer to the TX
@@ -152,32 +152,32 @@ struct mtl_rdma_buffer* mtl_rdma_tx_get_buffer(mtl_rdma_tx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer* buffer);
+int mtl_rdma_tx_put_buffer(mtl_rdma_tx_handle handle, struct mtl_rdma_buffer *buffer);
 
 /** The structure describing how to create an RX session. */
 struct mtl_rdma_rx_ops {
   /** Local RDMA interface ip */
-  char* local_ip;
+  char *local_ip;
   /** RDMA server ip */
-  char* ip;
+  char *ip;
   /** RDMA server port */
-  char* port;
+  char *port;
   /** The number of buffers. */
   uint16_t num_buffers;
   /** buffers addresses */
-  void** buffers;
+  void **buffers;
   /** The max size of each buffer, all buffers should have the same capacity. */
   size_t buffer_capacity;
 
   /** Session name */
-  const char* name;
+  const char *name;
   /** Optional. Private data to the callback function */
-  void* priv;
+  void *priv;
   /**
    * Callback function to notify the buffer is ready to consume.
    * Implement with non-blocking function as it runs in the polling thread.
    */
-  int (*notify_buffer_ready)(void* priv, struct mtl_rdma_buffer* buffer);
+  int (*notify_buffer_ready)(void *priv, struct mtl_rdma_buffer *buffer);
 };
 
 /**
@@ -192,7 +192,7 @@ struct mtl_rdma_rx_ops {
  *   - NULL on error.
  *   - Otherwise, the handle to the RX session.
  */
-mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh, struct mtl_rdma_rx_ops* ops);
+mtl_rdma_rx_handle mtl_rdma_rx_create(mtl_rdma_handle mrh, struct mtl_rdma_rx_ops *ops);
 
 /**
  * Free the RX session.
@@ -215,7 +215,7 @@ int mtl_rdma_rx_free(mtl_rdma_rx_handle handle);
  *   - NULL if no available buffer in the session.
  *   - Otherwise, the buffer pointer.
  */
-struct mtl_rdma_buffer* mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle);
+struct mtl_rdma_buffer *mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle);
 
 /**
  * Put back the buffer which get by mtl_rdma_rx_get_buffer to the RX
@@ -229,7 +229,7 @@ struct mtl_rdma_buffer* mtl_rdma_rx_get_buffer(mtl_rdma_rx_handle handle);
  *   - 0 if successful.
  *   - <0: Error code if put fail.
  */
-int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer* buffer);
+int mtl_rdma_rx_put_buffer(mtl_rdma_rx_handle handle, struct mtl_rdma_buffer *buffer);
 
 /** MTL RDMA init flag */
 enum mtl_rdma_init_flag {
@@ -254,7 +254,7 @@ struct mtl_rdma_init_params {
   /** Number of RDMA devices. (reserved for future) */
   uint32_t num_devices;
   /** RDMA devices names. (reserved for future) */
-  char** devices;
+  char **devices;
   /** RDMA flags. (reserved for future) */
   uint64_t flags;
   /** Log Level */
@@ -271,7 +271,7 @@ struct mtl_rdma_init_params {
  *   - NULL on error.
  *   - Otherwise, the handle to the RDMA transport context.
  */
-mtl_rdma_handle mtl_rdma_init(struct mtl_rdma_init_params* p);
+mtl_rdma_handle mtl_rdma_init(struct mtl_rdma_init_params *p);
 
 /**
  * Uninitialize RDMA transport.

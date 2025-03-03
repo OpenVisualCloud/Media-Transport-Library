@@ -23,7 +23,7 @@ extern "C" {
 /** Structure describing iovec for sendmsg and recvmsg */
 struct iovec {
   /** Pointer to data. */
-  void* iov_base;
+  void *iov_base;
   /** Length of data. */
   size_t iov_len;
 };
@@ -31,15 +31,15 @@ struct iovec {
 /** Structure describing messages sent by `sendmsg' and received by `recvmsg'. */
 struct msghdr {
   /** Address to send to/receive from.  */
-  void* msg_name;
+  void *msg_name;
   /** Length of address data.  */
   socklen_t msg_namelen;
   /** Vector of data to send/receive into.  */
-  struct iovec* msg_iov;
+  struct iovec *msg_iov;
   /** Number of elements in the vector.  */
   size_t msg_iovlen;
   /** Ancillary data (eg BSD filedesc passing). */
-  void* msg_control;
+  void *msg_control;
   /** Ancillary data buffer length. */
   size_t msg_controllen;
   /** Flags on received message.  */

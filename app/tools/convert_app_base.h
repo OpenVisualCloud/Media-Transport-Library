@@ -64,16 +64,16 @@ struct conv_app_context {
   bool frame2field;
 };
 
-static inline void* conv_app_zmalloc(size_t sz) {
-  void* p = malloc(sz);
+static inline void *conv_app_zmalloc(size_t sz) {
+  void *p = malloc(sz);
   if (p) memset(p, 0x0, sz);
   return p;
 }
 
-static inline void conv_app_free(void* p) {
+static inline void conv_app_free(void *p) {
   free(p);
 }
 
-int conv_app_parse_args(struct conv_app_context* ctx, int argc, char** argv);
+int conv_app_parse_args(struct conv_app_context *ctx, int argc, char **argv);
 
 #endif

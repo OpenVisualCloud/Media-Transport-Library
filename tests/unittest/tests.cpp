@@ -88,19 +88,19 @@ static struct option test_args_options[] = {
 
     {0, 0, 0, 0}};
 
-static struct st_tests_context* g_test_ctx;
+static struct st_tests_context *g_test_ctx;
 
-struct st_tests_context* st_test_ctx(void) {
+struct st_tests_context *st_test_ctx(void) {
   return g_test_ctx;
 }
 
-static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
+static int test_args_dma_dev(struct mtl_init_params *p, const char *in_dev) {
   if (!in_dev) return -EIO;
   char devs[128] = {0};
   snprintf(devs, 128 - 1, "%s", in_dev);
 
   dbg("%s, dev list %s\n", __func__, devs);
-  char* next_dev = strtok(devs, ",");
+  char *next_dev = strtok(devs, ",");
   while (next_dev && (p->num_dma_dev_port < MTL_DMA_DEV_MAX)) {
     dbg("next_dev: %s\n", next_dev);
     snprintf(p->dma_dev_port[p->num_dma_dev_port], MTL_PORT_MAX_LEN - 1, "%s", next_dev);
@@ -110,8 +110,8 @@ static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   return 0;
 }
 
-static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params* p,
-                           int argc, char** argv) {
+static int test_parse_args(struct st_tests_context *ctx, struct mtl_init_params *p,
+                           int argc, char **argv) {
   int cmd = -1, opt_idx = 0;
   int nb;
 
@@ -292,10 +292,10 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
   return 0;
 }
 
-static void test_random_ip(struct st_tests_context* ctx) {
-  struct mtl_init_params* p = &ctx->para;
-  uint8_t* p_ip = mtl_p_sip_addr(p);
-  uint8_t* r_ip = mtl_r_sip_addr(p);
+static void test_random_ip(struct st_tests_context *ctx) {
+  struct mtl_init_params *p = &ctx->para;
+  uint8_t *p_ip = mtl_p_sip_addr(p);
+  uint8_t *r_ip = mtl_r_sip_addr(p);
 
   srand(st_test_get_monotonic_time());
 
@@ -329,8 +329,8 @@ static void test_random_ip(struct st_tests_context* ctx) {
   }
 }
 
-static uint64_t test_ptp_from_real_time(void* priv) {
-  auto ctx = (struct st_tests_context*)priv;
+static uint64_t test_ptp_from_real_time(void *priv) {
+  auto ctx = (struct st_tests_context *)priv;
   struct timespec spec;
 #ifndef WINDOWSENV
   clock_gettime(CLOCK_REALTIME, &spec);
@@ -350,10 +350,10 @@ static uint64_t test_ptp_from_real_time(void* priv) {
   return ctx->ptp_time;
 }
 
-static void test_ctx_init(struct st_tests_context* ctx) {
-  struct mtl_init_params* p = &ctx->para;
+static void test_ctx_init(struct st_tests_context *ctx) {
+  struct mtl_init_params *p = &ctx->para;
   int cpus_per_soc = 4;
-  char* lcores_list = ctx->lcores_list;
+  char *lcores_list = ctx->lcores_list;
   int pos = 0;
 #ifndef WINDOWSENV
   int numa_nodes = 0;
@@ -401,7 +401,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->lcores = ctx->lcores_list;
 }
 
-static void test_ctx_uinit(struct st_tests_context* ctx) {
+static void test_ctx_uinit(struct st_tests_context *ctx) {
   mtl_uninit(ctx->handle);
   ctx->handle = NULL;
   st_test_free(ctx);
@@ -430,8 +430,8 @@ TEST(Misc, version_compare) {
 
 static void mtl_memcpy_test(size_t size) {
   ASSERT_TRUE(size > 0);
-  char* src = new char[size];
-  char* dst = new char[size];
+  char *src = new char[size];
+  char *dst = new char[size];
 
   for (size_t i = 0; i < size; i++) src[i] = i;
   memset(dst, 0, size);
@@ -449,10 +449,10 @@ TEST(Misc, memcpy) {
   mtl_memcpy_test(4096 + 100);
 }
 
-static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_port port,
+static void hp_malloc_test(struct st_tests_context *ctx, size_t size, enum mtl_port port,
                            bool zero, bool expect_succ) {
   auto m_handle = ctx->handle;
-  void* p;
+  void *p;
 
   if (zero)
     p = mtl_hp_malloc(m_handle, size, port);
@@ -464,7 +464,7 @@ static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_p
     EXPECT_TRUE(p == NULL);
   if (p) {
     if (zero) {
-      void* dst = malloc(size);
+      void *dst = malloc(size);
       memset(dst, 0, size);
       EXPECT_EQ(0, memcmp(p, dst, size));
       free(dst);
@@ -474,14 +474,14 @@ static void hp_malloc_test(struct st_tests_context* ctx, size_t size, enum mtl_p
   }
 }
 
-static void hp_malloc_tests(struct st_tests_context* ctx, enum mtl_port port, bool zero) {
+static void hp_malloc_tests(struct st_tests_context *ctx, enum mtl_port port, bool zero) {
   hp_malloc_test(ctx, 1, port, zero, true);
   hp_malloc_test(ctx, 1024, port, zero, true);
   hp_malloc_test(ctx, 1024 + 3, port, zero, true);
 }
 
 TEST(Misc, hp_malloc) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_tests(ctx, MTL_PORT_P, false);
@@ -489,7 +489,7 @@ TEST(Misc, hp_malloc) {
 }
 
 TEST(Misc, hp_zmalloc) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_tests(ctx, MTL_PORT_P, true);
@@ -497,7 +497,7 @@ TEST(Misc, hp_zmalloc) {
 }
 
 TEST(Misc, hp_malloc_expect_fail) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_test(ctx, 0, MTL_PORT_P, false, false);
@@ -505,7 +505,7 @@ TEST(Misc, hp_malloc_expect_fail) {
 }
 
 TEST(Misc, hp_zmalloc_expect_fail) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   int num_port = st_test_num_port(ctx);
 
   hp_malloc_test(ctx, 0, MTL_PORT_P, true, false);
@@ -513,7 +513,7 @@ TEST(Misc, hp_zmalloc_expect_fail) {
 }
 
 TEST(Misc, ptp) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto handle = ctx->handle;
   uint64_t real_time;
   uint64_t diff;
@@ -536,7 +536,7 @@ TEST(Misc, ptp) {
 }
 
 TEST(Misc, log_level) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto handle = ctx->handle;
   int ret;
 
@@ -550,7 +550,7 @@ TEST(Misc, log_level) {
 }
 
 TEST(Misc, get_numa_id) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto handle = ctx->handle;
   int ret;
 
@@ -567,7 +567,7 @@ TEST(Misc, get_numa_id) {
 }
 
 static void st10_timestamp_test(uint32_t sampling_rate) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context *)st_test_ctx();
   auto handle = ctx->handle;
 
   uint64_t ptp1 = mtl_ptp_read_time(handle);
@@ -591,14 +591,14 @@ TEST(Misc, st10_timestamp) {
   st10_timestamp_test(96 * 1000);
 }
 
-GTEST_API_ int main(int argc, char** argv) {
-  struct st_tests_context* ctx;
+GTEST_API_ int main(int argc, char **argv) {
+  struct st_tests_context *ctx;
   int ret;
   bool link_flap_wa = false;
 
   testing::InitGoogleTest(&argc, argv);
 
-  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
+  ctx = (struct st_tests_context *)st_test_zmalloc(sizeof(*ctx));
   if (!ctx) {
     err("%s, ctx alloc fail\n", __func__);
     return -ENOMEM;
@@ -631,7 +631,7 @@ GTEST_API_ int main(int argc, char** argv) {
   for (int i = 0; i < ctx->para.num_ports; i++) {
     mtl_port_ip_info(ctx->handle, (enum mtl_port)i, ctx->para.sip_addr[i],
                      ctx->para.netmask[i], ctx->para.gateway[i]);
-    uint8_t* ip = ctx->para.sip_addr[i];
+    uint8_t *ip = ctx->para.sip_addr[i];
     info("%s, if ip %u.%u.%u.%u for port %s\n", __func__, ip[0], ip[1], ip[2], ip[3],
          ctx->para.port[i]);
   }
@@ -669,8 +669,8 @@ GTEST_API_ int main(int argc, char** argv) {
   return ret;
 }
 
-int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
-  auto ctx = (tests_context*)priv;
+int tx_next_frame(void *priv, uint16_t *next_frame_idx) {
+  auto ctx = (tests_context *)priv;
 
   if (!ctx->handle) return -EIO; /* not ready */
 
@@ -683,8 +683,8 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx) {
   return 0;
 }
 
-void sha_frame_check(void* args) {
-  auto ctx = (tests_context*)args;
+void sha_frame_check(void *args) {
+  auto ctx = (tests_context *)args;
   std::unique_lock<std::mutex> lck(ctx->mtx, std::defer_lock);
   unsigned char result[SHA256_DIGEST_LENGTH];
   while (!ctx->stop) {
@@ -694,13 +694,13 @@ void sha_frame_check(void* args) {
       lck.unlock();
       continue;
     } else {
-      void* frame = ctx->buf_q.front();
+      void *frame = ctx->buf_q.front();
       ctx->buf_q.pop();
       dbg("%s, frame %p\n", __func__, frame);
       int i;
-      SHA256((unsigned char*)frame, ctx->frame_size, result);
+      SHA256((unsigned char *)frame, ctx->frame_size, result);
       for (i = 0; i < TEST_SHA_HIST_NUM; i++) {
-        unsigned char* target_sha = ctx->shas[i];
+        unsigned char *target_sha = ctx->shas[i];
         if (!memcmp(result, target_sha, SHA256_DIGEST_LENGTH)) break;
       }
       if (i >= TEST_SHA_HIST_NUM) {
@@ -713,7 +713,7 @@ void sha_frame_check(void* args) {
   }
 }
 
-int tests_context_unit(tests_context* ctx) {
+int tests_context_unit(tests_context *ctx) {
   for (int frame = 0; frame < TEST_SHA_HIST_NUM; frame++) {
     if (ctx->frame_buf[frame]) st_test_free(ctx->frame_buf[frame]);
     ctx->frame_buf[frame] = NULL;
@@ -738,13 +738,13 @@ int tests_context_unit(tests_context* ctx) {
   return 0;
 }
 
-int test_ctx_notify_event(void* priv, enum st_event event, void* args) {
+int test_ctx_notify_event(void *priv, enum st_event event, void *args) {
   if (event == ST_EVENT_VSYNC) {
-    tests_context* s = (tests_context*)priv;
+    tests_context *s = (tests_context *)priv;
     s->vsync_cnt++;
     if (!s->first_vsync_time) s->first_vsync_time = st_test_get_monotonic_time();
 #ifdef DEBUG
-    struct st10_vsync_meta* meta = (struct st10_vsync_meta*)args;
+    struct st10_vsync_meta *meta = (struct st10_vsync_meta *)args;
     dbg("%s(%d,%p), epoch %" PRIu64 " vsync_cnt %d\n", __func__, s->idx, s, meta->epoch,
         s->vsync_cnt);
 #endif

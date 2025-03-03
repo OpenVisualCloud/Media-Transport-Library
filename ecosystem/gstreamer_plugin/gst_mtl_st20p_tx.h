@@ -72,7 +72,7 @@ struct _Gst_Mtl_St20p_Tx {
   gboolean gpu_direct_enabled;
   gint gpu_driver_index;
   gint gpu_device_index;
-  guint8* gpu_context;
+  guint8 *gpu_context;
 #endif /* MTL_GPU_DIRECT_ENABLED */
 };
 

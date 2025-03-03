@@ -7,16 +7,16 @@
 static int perf_cvt_422_10_pg2_be_to_p8(mtl_handle st, int w, int h, int frames,
                                         int fb_cnt) {
   size_t fb_pg10_size = (size_t)w * h * 5 / 2;
-  struct st20_rfc4175_422_10_pg2_be* pg_10 =
-      (struct st20_rfc4175_422_10_pg2_be*)mtl_hp_malloc(st, fb_pg10_size * fb_cnt,
-                                                        MTL_PORT_P);
+  struct st20_rfc4175_422_10_pg2_be *pg_10 =
+      (struct st20_rfc4175_422_10_pg2_be *)mtl_hp_malloc(st, fb_pg10_size * fb_cnt,
+                                                         MTL_PORT_P);
   size_t fb_pg8_size = (size_t)w * h * 2;
   float fb_pg8_size_m = (float)fb_pg8_size / 1024 / 1024;
-  uint8_t* pg_8 = (uint8_t*)malloc(fb_pg8_size * fb_cnt);
+  uint8_t *pg_8 = (uint8_t *)malloc(fb_pg8_size * fb_cnt);
   enum mtl_simd_level cpu_level = mtl_get_simd_level();
 
-  struct st20_rfc4175_422_10_pg2_be* pg_10_in;
-  uint8_t* pg_8_out;
+  struct st20_rfc4175_422_10_pg2_be *pg_10_in;
+  uint8_t *pg_8_out;
 
   for (int i = 0; i < fb_cnt; i++) {
     pg_10_in = pg_10 + (i % fb_cnt) * (fb_pg10_size / sizeof(*pg_10));
@@ -61,8 +61,8 @@ static int perf_cvt_422_10_pg2_be_to_p8(mtl_handle st, int w, int h, int frames,
   return 0;
 }
 
-static void* perf_thread(void* arg) {
-  struct st_sample_context* ctx = arg;
+static void *perf_thread(void *arg) {
+  struct st_sample_context *ctx = arg;
   mtl_handle dev_handle = ctx->st;
   int frames = ctx->perf_frames;
   int fb_cnt = ctx->perf_fb_cnt;
@@ -86,7 +86,7 @@ static void* perf_thread(void* arg) {
   return NULL;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   struct st_sample_context ctx;
   int ret;
 

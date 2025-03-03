@@ -10,37 +10,37 @@
 #include "st_fastmetadata_transmitter.h"
 
 /* call rx_fastmetadata_session_put always if get successfully */
-static inline struct st_rx_fastmetadata_session_impl* rx_fastmetadata_session_get(
-    struct st_rx_fastmetadata_sessions_mgr* mgr, int idx) {
+static inline struct st_rx_fastmetadata_session_impl *rx_fastmetadata_session_get(
+    struct st_rx_fastmetadata_sessions_mgr *mgr, int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
-  struct st_rx_fastmetadata_session_impl* s = mgr->sessions[idx];
+  struct st_rx_fastmetadata_session_impl *s = mgr->sessions[idx];
   if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
 /* call rx_fastmetadata_session_put always if get successfully */
-static inline struct st_rx_fastmetadata_session_impl* rx_fastmetadata_session_try_get(
-    struct st_rx_fastmetadata_sessions_mgr* mgr, int idx) {
+static inline struct st_rx_fastmetadata_session_impl *rx_fastmetadata_session_try_get(
+    struct st_rx_fastmetadata_sessions_mgr *mgr, int idx) {
   if (!rte_spinlock_trylock(&mgr->mutex[idx])) return NULL;
-  struct st_rx_fastmetadata_session_impl* s = mgr->sessions[idx];
+  struct st_rx_fastmetadata_session_impl *s = mgr->sessions[idx];
   if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
 /* call rx_fastmetadata_session_put always if get successfully */
-static inline struct st_rx_fastmetadata_session_impl* rx_fastmetadata_session_get_timeout(
-    struct st_rx_fastmetadata_sessions_mgr* mgr, int idx, int timeout_us) {
+static inline struct st_rx_fastmetadata_session_impl *rx_fastmetadata_session_get_timeout(
+    struct st_rx_fastmetadata_sessions_mgr *mgr, int idx, int timeout_us) {
   if (!mt_spinlock_lock_timeout(mgr->parent, &mgr->mutex[idx], timeout_us)) return NULL;
-  struct st_rx_fastmetadata_session_impl* s = mgr->sessions[idx];
+  struct st_rx_fastmetadata_session_impl *s = mgr->sessions[idx];
   if (!s) rte_spinlock_unlock(&mgr->mutex[idx]);
   return s;
 }
 
 /* call rx_fastmetadata_session_put always if get successfully */
 static inline bool rx_fastmetadata_session_get_empty(
-    struct st_rx_fastmetadata_sessions_mgr* mgr, int idx) {
+    struct st_rx_fastmetadata_sessions_mgr *mgr, int idx) {
   rte_spinlock_lock(&mgr->mutex[idx]);
-  struct st_rx_fastmetadata_session_impl* s = mgr->sessions[idx];
+  struct st_rx_fastmetadata_session_impl *s = mgr->sessions[idx];
   if (s) {
     rte_spinlock_unlock(&mgr->mutex[idx]); /* not null, unlock it */
     return false;
@@ -50,47 +50,47 @@ static inline bool rx_fastmetadata_session_get_empty(
 }
 
 static inline void rx_fastmetadata_session_put(
-    struct st_rx_fastmetadata_sessions_mgr* mgr, int idx) {
+    struct st_rx_fastmetadata_sessions_mgr *mgr, int idx) {
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
-static inline uint16_t rx_fastmetadata_queue_id(struct st_rx_fastmetadata_session_impl* s,
+static inline uint16_t rx_fastmetadata_queue_id(struct st_rx_fastmetadata_session_impl *s,
                                                 enum mtl_session_port s_port) {
   return mt_rxq_queue_id(s->rxq[s_port]);
 }
 
-static int rx_fastmetadata_session_init(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                        struct st_rx_fastmetadata_session_impl* s,
+static int rx_fastmetadata_session_init(struct st_rx_fastmetadata_sessions_mgr *mgr,
+                                        struct st_rx_fastmetadata_session_impl *s,
                                         int idx) {
   MTL_MAY_UNUSED(mgr);
   s->idx = idx;
   return 0;
 }
 
-static int rx_fastmetadata_sessions_tasklet_start(void* priv) {
-  struct st_rx_fastmetadata_sessions_mgr* mgr = priv;
+static int rx_fastmetadata_sessions_tasklet_start(void *priv) {
+  struct st_rx_fastmetadata_sessions_mgr *mgr = priv;
   int idx = mgr->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static int rx_fastmetadata_sessions_tasklet_stop(void* priv) {
-  struct st_rx_fastmetadata_sessions_mgr* mgr = priv;
+static int rx_fastmetadata_sessions_tasklet_stop(void *priv) {
+  struct st_rx_fastmetadata_sessions_mgr *mgr = priv;
   int idx = mgr->idx;
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
 }
 
-static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
-                                              struct st_rx_fastmetadata_session_impl* s,
-                                              struct rte_mbuf* mbuf,
+static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl *impl,
+                                              struct st_rx_fastmetadata_session_impl *s,
+                                              struct rte_mbuf *mbuf,
                                               enum mtl_session_port s_port) {
-  struct st41_rx_ops* ops = &s->ops;
+  struct st41_rx_ops *ops = &s->ops;
   size_t hdr_offset = sizeof(struct st_rfc3550_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
-  struct st_rfc3550_rtp_hdr* rtp =
-      rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
+  struct st_rfc3550_rtp_hdr *rtp =
+      rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr *, hdr_offset);
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
   MTL_MAY_UNUSED(s_port);
@@ -129,7 +129,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   s->latest_seq_id = seq_id;
 
   /* enqueue to packet ring to let app to handle */
-  int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
+  int ret = rte_ring_sp_enqueue(s->packet_ring, (void *)mbuf);
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
@@ -159,11 +159,11 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_fastmetadata_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
+static int rx_fastmetadata_session_handle_mbuf(void *priv, struct rte_mbuf **mbuf,
                                                uint16_t nb) {
-  struct st_rx_session_priv* s_priv = priv;
-  struct st_rx_fastmetadata_session_impl* s = s_priv->session;
-  struct mtl_main_impl* impl = s_priv->impl;
+  struct st_rx_session_priv *s_priv = priv;
+  struct st_rx_fastmetadata_session_impl *s = s_priv->session;
+  struct mtl_main_impl *impl = s_priv->impl;
   enum mtl_session_port s_port = s_priv->s_port;
 
   if (!s->attached) {
@@ -177,8 +177,8 @@ static int rx_fastmetadata_session_handle_mbuf(void* priv, struct rte_mbuf** mbu
   return 0;
 }
 
-static int rx_fastmetadata_session_tasklet(struct st_rx_fastmetadata_session_impl* s) {
-  struct rte_mbuf* mbuf[ST_RX_FASTMETADATA_BURST_SIZE];
+static int rx_fastmetadata_session_tasklet(struct st_rx_fastmetadata_session_impl *s) {
+  struct rte_mbuf *mbuf[ST_RX_FASTMETADATA_BURST_SIZE];
   uint16_t rv;
   int num_port = s->ops.num_port;
   bool done = true;
@@ -198,10 +198,10 @@ static int rx_fastmetadata_session_tasklet(struct st_rx_fastmetadata_session_imp
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
 }
 
-static int rx_fastmetadata_sessions_tasklet_handler(void* priv) {
-  struct st_rx_fastmetadata_sessions_mgr* mgr = priv;
-  struct mtl_main_impl* impl = mgr->parent;
-  struct st_rx_fastmetadata_session_impl* s;
+static int rx_fastmetadata_sessions_tasklet_handler(void *priv) {
+  struct st_rx_fastmetadata_sessions_mgr *mgr = priv;
+  struct mtl_main_impl *impl = mgr->parent;
+  struct st_rx_fastmetadata_session_impl *s;
   int pending = MTL_TASKLET_ALL_DONE;
   uint64_t tsc_s = 0;
   bool time_measure = mt_sessions_time_measure(impl);
@@ -223,7 +223,7 @@ static int rx_fastmetadata_sessions_tasklet_handler(void* priv) {
   return pending;
 }
 
-static int rx_fastmetadata_session_uinit_hw(struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_uinit_hw(struct st_rx_fastmetadata_session_impl *s) {
   int num_port = s->ops.num_port;
 
   for (int i = 0; i < num_port; i++) {
@@ -236,8 +236,8 @@ static int rx_fastmetadata_session_uinit_hw(struct st_rx_fastmetadata_session_im
   return 0;
 }
 
-static int rx_fastmetadata_session_init_hw(struct mtl_main_impl* impl,
-                                           struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_init_hw(struct mtl_main_impl *impl,
+                                           struct st_rx_fastmetadata_session_impl *s) {
   int idx = s->idx, num_port = s->ops.num_port;
   struct mt_rxq_flow flow;
   enum mtl_port port;
@@ -279,8 +279,8 @@ static int rx_fastmetadata_session_init_hw(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_session_uinit_mcast(
-    struct mtl_main_impl* impl, struct st_rx_fastmetadata_session_impl* s) {
-  struct st41_rx_ops* ops = &s->ops;
+    struct mtl_main_impl *impl, struct st_rx_fastmetadata_session_impl *s) {
+  struct st41_rx_ops *ops = &s->ops;
   enum mtl_port port;
 
   for (int i = 0; i < ops->num_port; i++) {
@@ -293,9 +293,9 @@ static int rx_fastmetadata_session_uinit_mcast(
   return 0;
 }
 
-static int rx_fastmetadata_session_init_mcast(struct mtl_main_impl* impl,
-                                              struct st_rx_fastmetadata_session_impl* s) {
-  struct st41_rx_ops* ops = &s->ops;
+static int rx_fastmetadata_session_init_mcast(struct mtl_main_impl *impl,
+                                              struct st_rx_fastmetadata_session_impl *s) {
+  struct st41_rx_ops *ops = &s->ops;
   int ret;
   enum mtl_port port;
 
@@ -315,10 +315,10 @@ static int rx_fastmetadata_session_init_mcast(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_fastmetadata_session_init_sw(struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                           struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_init_sw(struct st_rx_fastmetadata_sessions_mgr *mgr,
+                                           struct st_rx_fastmetadata_session_impl *s) {
   char ring_name[32];
-  struct rte_ring* ring;
+  struct rte_ring *ring;
   unsigned int flags, count;
   int mgr_idx = mgr->idx, idx = s->idx;
 
@@ -339,7 +339,7 @@ static int rx_fastmetadata_session_init_sw(struct st_rx_fastmetadata_sessions_mg
   return 0;
 }
 
-static int rx_fastmetadata_session_uinit_sw(struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_uinit_sw(struct st_rx_fastmetadata_session_impl *s) {
   if (s->packet_ring) {
     mt_ring_dequeue_clean(s->packet_ring);
     rte_ring_free(s->packet_ring);
@@ -349,21 +349,21 @@ static int rx_fastmetadata_session_uinit_sw(struct st_rx_fastmetadata_session_im
   return 0;
 }
 
-static int rx_fastmetadata_session_uinit(struct mtl_main_impl* impl,
-                                         struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_uinit(struct mtl_main_impl *impl,
+                                         struct st_rx_fastmetadata_session_impl *s) {
   rx_fastmetadata_session_uinit_mcast(impl, s);
   rx_fastmetadata_session_uinit_sw(s);
   rx_fastmetadata_session_uinit_hw(s);
   return 0;
 }
 
-static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
-                                          struct st_rx_fastmetadata_sessions_mgr* mgr,
-                                          struct st_rx_fastmetadata_session_impl* s,
-                                          struct st41_rx_ops* ops) {
+static int rx_fastmetadata_session_attach(struct mtl_main_impl *impl,
+                                          struct st_rx_fastmetadata_sessions_mgr *mgr,
+                                          struct st_rx_fastmetadata_session_impl *s,
+                                          struct st41_rx_ops *ops) {
   int ret;
   int idx = s->idx, num_port = ops->num_port;
-  char* ports[MTL_SESSION_PORT_MAX];
+  char *ports[MTL_SESSION_PORT_MAX];
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
@@ -414,7 +414,7 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   return 0;
 }
 
-static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl* s) {
+static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl *s) {
   int idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->st41_stat_last_time) / NS_PER_S;
@@ -468,7 +468,7 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
     s->stat_interlace_second_field = 0;
   }
 
-  struct mt_stat_u64* stat_time = &s->stat_time;
+  struct mt_stat_u64 *stat_time = &s->stat_time;
   if (stat_time->cnt) {
     uint64_t avg_ns = stat_time->sum / stat_time->cnt;
     notice("RX_FMD_SESSION(%d): tasklet time avg %.2fus max %.2fus min %.2fus\n", idx,
@@ -482,20 +482,20 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
   s->stat_max_notify_rtp_us = 0;
 }
 
-static int rx_fastmetadata_session_detach(struct mtl_main_impl* impl,
-                                          struct st_rx_fastmetadata_session_impl* s) {
+static int rx_fastmetadata_session_detach(struct mtl_main_impl *impl,
+                                          struct st_rx_fastmetadata_session_impl *s) {
   s->attached = false;
   rx_fastmetadata_session_stat(s);
   rx_fastmetadata_session_uinit(impl, s);
   return 0;
 }
 
-static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
-                                              struct st_rx_fastmetadata_session_impl* s,
-                                              struct st_rx_source_info* src) {
+static int rx_fastmetadata_session_update_src(struct mtl_main_impl *impl,
+                                              struct st_rx_fastmetadata_session_impl *s,
+                                              struct st_rx_source_info *src) {
   int ret = -EIO;
   int idx = s->idx, num_port = s->ops.num_port;
-  struct st41_rx_ops* ops = &s->ops;
+  struct st41_rx_ops *ops = &s->ops;
 
   rx_fastmetadata_session_uinit_mcast(impl, s);
   rx_fastmetadata_session_uinit_hw(s);
@@ -526,8 +526,8 @@ static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
 }
 
 static int rx_fastmetadata_sessions_mgr_update_src(
-    struct st_rx_fastmetadata_sessions_mgr* mgr,
-    struct st_rx_fastmetadata_session_impl* s, struct st_rx_source_info* src) {
+    struct st_rx_fastmetadata_sessions_mgr *mgr,
+    struct st_rx_fastmetadata_session_impl *s, struct st_rx_source_info *src) {
   int ret = -EIO, midx = mgr->idx, idx = s->idx;
 
   s = rx_fastmetadata_session_get(mgr, idx); /* get the lock */
@@ -546,9 +546,9 @@ static int rx_fastmetadata_sessions_mgr_update_src(
   return 0;
 }
 
-static int st_rx_fastmetadata_sessions_stat(void* priv) {
-  struct st_rx_fastmetadata_sessions_mgr* mgr = priv;
-  struct st_rx_fastmetadata_session_impl* s;
+static int st_rx_fastmetadata_sessions_stat(void *priv) {
+  struct st_rx_fastmetadata_sessions_mgr *mgr = priv;
+  struct st_rx_fastmetadata_session_impl *s;
 
   for (int j = 0; j < mgr->max_idx; j++) {
     s = rx_fastmetadata_session_get_timeout(mgr, j, ST_SESSION_STAT_TIMEOUT_US);
@@ -561,8 +561,8 @@ static int st_rx_fastmetadata_sessions_stat(void* priv) {
 }
 
 static int rx_fastmetadata_sessions_mgr_init(
-    struct mtl_main_impl* impl, struct mtl_sch_impl* sch,
-    struct st_rx_fastmetadata_sessions_mgr* mgr) {
+    struct mtl_main_impl *impl, struct mtl_sch_impl *sch,
+    struct st_rx_fastmetadata_sessions_mgr *mgr) {
   int idx = sch->idx;
   struct mtl_tasklet_ops ops;
 
@@ -591,12 +591,12 @@ static int rx_fastmetadata_sessions_mgr_init(
   return 0;
 }
 
-static struct st_rx_fastmetadata_session_impl* rx_fastmetadata_sessions_mgr_attach(
-    struct mtl_sch_impl* sch, struct st41_rx_ops* ops) {
-  struct st_rx_fastmetadata_sessions_mgr* mgr = &sch->rx_fmd_mgr;
+static struct st_rx_fastmetadata_session_impl *rx_fastmetadata_sessions_mgr_attach(
+    struct mtl_sch_impl *sch, struct st41_rx_ops *ops) {
+  struct st_rx_fastmetadata_sessions_mgr *mgr = &sch->rx_fmd_mgr;
   int midx = mgr->idx;
   int ret;
-  struct st_rx_fastmetadata_session_impl* s;
+  struct st_rx_fastmetadata_session_impl *s;
   int socket = mt_sch_socket_id(sch);
 
   /* find one empty slot in the mgr */
@@ -636,8 +636,8 @@ static struct st_rx_fastmetadata_session_impl* rx_fastmetadata_sessions_mgr_atta
 }
 
 static int rx_fastmetadata_sessions_mgr_detach(
-    struct st_rx_fastmetadata_sessions_mgr* mgr,
-    struct st_rx_fastmetadata_session_impl* s) {
+    struct st_rx_fastmetadata_sessions_mgr *mgr,
+    struct st_rx_fastmetadata_session_impl *s) {
   int midx = mgr->idx;
   int idx = s->idx;
 
@@ -657,7 +657,7 @@ static int rx_fastmetadata_sessions_mgr_detach(
 }
 
 static int rx_fastmetadata_sessions_mgr_update(
-    struct st_rx_fastmetadata_sessions_mgr* mgr) {
+    struct st_rx_fastmetadata_sessions_mgr *mgr) {
   int max_idx = 0;
 
   for (int i = 0; i < ST_MAX_RX_FMD_SESSIONS; i++) {
@@ -669,9 +669,9 @@ static int rx_fastmetadata_sessions_mgr_update(
 }
 
 static int rx_fastmetadata_sessions_mgr_uinit(
-    struct st_rx_fastmetadata_sessions_mgr* mgr) {
+    struct st_rx_fastmetadata_sessions_mgr *mgr) {
   int m_idx = mgr->idx;
-  struct st_rx_fastmetadata_session_impl* s;
+  struct st_rx_fastmetadata_session_impl *s;
 
   mt_stat_unregister(mgr->parent, st_rx_fastmetadata_sessions_stat, mgr);
 
@@ -693,9 +693,9 @@ static int rx_fastmetadata_sessions_mgr_uinit(
   return 0;
 }
 
-static int rx_fastmetadata_ops_check(struct st41_rx_ops* ops) {
+static int rx_fastmetadata_ops_check(struct st41_rx_ops *ops) {
   int num_ports = ops->num_port, ret;
-  uint8_t* ip = NULL;
+  uint8_t *ip = NULL;
 
   if ((num_ports > MTL_SESSION_PORT_MAX) || (num_ports <= 0)) {
     err("%s, invalid num_ports %d\n", __func__, num_ports);
@@ -737,7 +737,7 @@ static int rx_fastmetadata_ops_check(struct st41_rx_ops* ops) {
   return 0;
 }
 
-static int st_rx_fmd_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch) {
+static int st_rx_fmd_init(struct mtl_main_impl *impl, struct mtl_sch_impl *sch) {
   int ret;
 
   if (sch->rx_fmd_init) return 0;
@@ -753,7 +753,7 @@ static int st_rx_fmd_init(struct mtl_main_impl* impl, struct mtl_sch_impl* sch) 
   return 0;
 }
 
-int st_rx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl* sch) {
+int st_rx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl *sch) {
   if (!sch->rx_fmd_init) return 0;
 
   rx_fastmetadata_sessions_mgr_uinit(&sch->rx_fmd_mgr);
@@ -762,11 +762,11 @@ int st_rx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl* sch) {
   return 0;
 }
 
-st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops* ops) {
-  struct mtl_main_impl* impl = mt;
-  struct mtl_sch_impl* sch;
-  struct st_rx_fastmetadata_session_handle_impl* s_impl;
-  struct st_rx_fastmetadata_session_impl* s;
+st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops *ops) {
+  struct mtl_main_impl *impl = mt;
+  struct mtl_sch_impl *sch;
+  struct st_rx_fastmetadata_session_handle_impl *s_impl;
+  struct st_rx_fastmetadata_session_impl *s;
   int ret;
   int quota_mbs;
 
@@ -834,10 +834,10 @@ st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops* ops) {
   return s_impl;
 }
 
-int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info* src) {
-  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
-  struct st_rx_fastmetadata_session_impl* s;
-  struct mtl_sch_impl* sch;
+int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info *src) {
+  struct st_rx_fastmetadata_session_handle_impl *s_impl = handle;
+  struct st_rx_fastmetadata_session_impl *s;
+  struct mtl_sch_impl *sch;
   int idx, ret, sch_idx;
 
   if (s_impl->type != MT_HANDLE_RX_FMD) {
@@ -864,10 +864,10 @@ int st41_rx_update_source(st41_rx_handle handle, struct st_rx_source_info* src) 
 }
 
 int st41_rx_free(st41_rx_handle handle) {
-  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
-  struct mtl_main_impl* impl;
-  struct st_rx_fastmetadata_session_impl* s;
-  struct mtl_sch_impl* sch;
+  struct st_rx_fastmetadata_session_handle_impl *s_impl = handle;
+  struct mtl_main_impl *impl;
+  struct st_rx_fastmetadata_session_impl *s;
+  struct mtl_sch_impl *sch;
   int ret, idx;
   int sch_idx;
 
@@ -903,11 +903,11 @@ int st41_rx_free(st41_rx_handle handle) {
   return 0;
 }
 
-void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len) {
-  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
-  struct rte_mbuf* pkt;
-  struct st_rx_fastmetadata_session_impl* s;
-  struct rte_ring* packet_ring;
+void *st41_rx_get_mbuf(st41_rx_handle handle, void **usrptr, uint16_t *len) {
+  struct st_rx_fastmetadata_session_handle_impl *s_impl = handle;
+  struct rte_mbuf *pkt;
+  struct st_rx_fastmetadata_session_impl *s;
+  struct rte_ring *packet_ring;
   int idx, ret;
 
   if (s_impl->type != MT_HANDLE_RX_FMD) {
@@ -923,22 +923,22 @@ void* st41_rx_get_mbuf(st41_rx_handle handle, void** usrptr, uint16_t* len) {
     return NULL;
   }
 
-  ret = rte_ring_sc_dequeue(packet_ring, (void**)&pkt);
+  ret = rte_ring_sc_dequeue(packet_ring, (void **)&pkt);
   if (ret == 0) {
     int header_len = sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) +
                      sizeof(struct rte_udp_hdr);
     *len = pkt->data_len - header_len;
-    *usrptr = rte_pktmbuf_mtod_offset(pkt, void*, header_len);
-    return (void*)pkt;
+    *usrptr = rte_pktmbuf_mtod_offset(pkt, void *, header_len);
+    return (void *)pkt;
   }
 
   return NULL;
 }
 
-void st41_rx_put_mbuf(st41_rx_handle handle, void* mbuf) {
-  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
-  struct rte_mbuf* pkt = (struct rte_mbuf*)mbuf;
-  struct st_rx_fastmetadata_session_impl* s;
+void st41_rx_put_mbuf(st41_rx_handle handle, void *mbuf) {
+  struct st_rx_fastmetadata_session_handle_impl *s_impl = handle;
+  struct rte_mbuf *pkt = (struct rte_mbuf *)mbuf;
+  struct st_rx_fastmetadata_session_impl *s;
 
   if (s_impl->type != MT_HANDLE_RX_FMD) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -952,9 +952,9 @@ void st41_rx_put_mbuf(st41_rx_handle handle, void* mbuf) {
   MT_USDT_ST41_RX_MBUF_PUT(s->mgr->idx, s->idx, mbuf);
 }
 
-int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta) {
-  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
-  struct st_rx_fastmetadata_session_impl* s;
+int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta *meta) {
+  struct st_rx_fastmetadata_session_handle_impl *s_impl = handle;
+  struct st_rx_fastmetadata_session_impl *s;
 
   if (s_impl->type != MT_HANDLE_RX_FMD) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
