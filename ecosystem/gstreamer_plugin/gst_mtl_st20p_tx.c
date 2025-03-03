@@ -254,7 +254,6 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
 static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps* caps) {
   GstVideoInfo* info;
   struct st20p_tx_ops ops_tx = {0};
-  gint ret;
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("MTL library not initialized");
@@ -325,12 +324,6 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
 
   ops_tx.port.payload_type = sink->portArgs.payload_type;
   gst_video_info_free(info);
-
-  ret = mtl_start(sink->mtl_lib_handle);
-  if (ret < 0) {
-    GST_ERROR("Failed to start MTL library");
-    return FALSE;
-  }
 
   sink->tx_handle = st20p_tx_create(sink->mtl_lib_handle, &ops_tx);
   if (!sink->tx_handle) {
@@ -442,8 +435,7 @@ static void gst_mtl_st20p_tx_finalize(GObject* object) {
   }
 
   if (sink->mtl_lib_handle) {
-    if (mtl_stop(sink->mtl_lib_handle) ||
-        gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
+    if (gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }
