@@ -109,7 +109,7 @@ typedef struct {
 static GstStaticPadTemplate gst_mtl_st30p_tx_sink_pad_template =
     GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
                             GST_STATIC_CAPS("audio/x-raw, "
-                                            "format = (string) {S8, S16LE, S24LE},"
+                                            "format = (string) {S8, S16BE, S24BE},"
                                             "channels = (int) [1, 2], "
                                             "rate = (int) {44100, 48000, 96000}"));
 
@@ -308,19 +308,21 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
   }
   ops_tx.name = "st30sink";
   ops_tx.fmt = ST30_FMT_PCM16;
-  if (!info->finfo) {
-    ops_tx.fmt = ST30_FMT_PCM24;
-  } else {
-    if (info->finfo->format == GST_AUDIO_FORMAT_S24LE) {
-      ops_tx.fmt = ST30_FMT_PCM24;
-    } else if (info->finfo->format == GST_AUDIO_FORMAT_S16LE) {
-      ops_tx.fmt = ST30_FMT_PCM16;
-    } else if (info->finfo->format == GST_AUDIO_FORMAT_S8) {
-      ops_tx.fmt = ST30_FMT_PCM8;
-    } else {
-      gst_audio_info_free(info);
-      GST_ERROR(" invalid format audio");
-      return FALSE;
+  if (info->finfo) {
+    switch (info->finfo->format) {
+      case GST_AUDIO_FORMAT_S24BE:
+        ops_tx.fmt = ST30_FMT_PCM24;
+        break;
+      case GST_AUDIO_FORMAT_S16BE:
+        ops_tx.fmt = ST30_FMT_PCM16;
+        break;
+      case GST_AUDIO_FORMAT_S8:
+        ops_tx.fmt = ST30_FMT_PCM8;
+        break;
+      default:
+        gst_audio_info_free(info);
+        GST_ERROR(" invalid format audio");
+        return FALSE;
     }
   }
   ops_tx.channel = info->channels;
