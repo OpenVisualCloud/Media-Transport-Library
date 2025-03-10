@@ -8,11 +8,6 @@ cc = meson.get_compiler('c')
 
 plugins_install_dir = join_paths(get_option('libdir'), 'gstreamer-1.0')
 
-gst_dep = dependency('gstreamer-1.0', version : '>=1.19',
-    required : true, fallback : ['gstreamer', 'gst_dep'])
-gstbase_dep = dependency('gstreamer-base-1.0', version : '>=1.19',
-  fallback : ['gstreamer', 'gst_base_dep'])
-
 plugin_c_args = [
   '-Wno-redundant-decls',
   '-Wno-discarded-qualifiers',
@@ -22,22 +17,29 @@ plugin_c_args = [
   '-Wno-stringop-truncation'
 ]
 
+gst_dep = dependency('gstreamer-1.0', version : '>=1.19', required : true)
+gstbase_dep = dependency('gstreamer-base-1.0', version : '>=1.19', required : true)
+gstreamer_video_dep = dependency('gstreamer-video-1.0', required : true)
+gstreamer_audio_dep = dependency('gstreamer-audio-1.0', required : true)
+mtl_dep             = dependency('mtl', required : true)
+
 if run_command('test', '-d', '/usr/local/include/gstreamer-1.0', check: false).returncode() == 0
-    gstreamer_inc_dir = '/usr/local/include/gstreamer-1.0'
+    gstreamer_inc_dir  = '/usr/local/include/gstreamer-1.0'
 else
-    gstreamer_inc_dir = '/usr/include/gstreamer-1.0'
+    gstreamer_inc_dir  = '/usr/include/gstreamer-1.0'
+endif
+
+if run_command('test', '-d', '/usr/local/include/glib-2.0', check: false).returncode() == 0
+    glib_2_0_inc_dir  = '/usr/local/include/glib-2.0'
+else
+    glib_2_0_inc_dir  = '/usr/include/glib-2.0'
 endif
 
 inc_dirs = include_directories(
-    '/usr/include/glib-2.0',
-    '/usr/lib/x86_64-linux-gnu/glib-2.0/include',
     '/usr/local/include/mtl',
+    glib_2_0_inc_dir,
     gstreamer_inc_dir
 )
-
-gstreamer_video_dep = dependency('gstreamer-video-1.0')
-gstreamer_audio_dep = dependency('gstreamer-audio-1.0')
-mtl_dep             = dependency('mtl')
 
 # mtl_common_library
 gst_mtl_common_sources = [
