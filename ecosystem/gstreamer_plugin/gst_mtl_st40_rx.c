@@ -120,7 +120,6 @@ static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue*
 static void gst_mtl_st40_rx_finalize(GObject* object);
 
 static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc);
-static gboolean gst_mtl_st40_rx_stop(GstBaseSrc* basesrc);
 static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc* basesrc, guint64 offset,
                                             guint length, GstBuffer** buffer);
 
@@ -163,7 +162,6 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
   gobject_class->finalize = GST_DEBUG_FUNCPTR(gst_mtl_st40_rx_finalize);
 
   gstbasesrc_class->start = GST_DEBUG_FUNCPTR(gst_mtl_st40_rx_start);
-  gstbasesrc_class->stop = GST_DEBUG_FUNCPTR(gst_mtl_st40_rx_stop);
   gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st40_rx_create);
 
   gst_mtl_common_init_general_arguments(gobject_class);
@@ -183,7 +181,6 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
 
 static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   struct st40_rx_ops ops_rx = {0};
-  gint ret;
 
   Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(basesrc);
 
@@ -246,12 +243,6 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
     GST_ERROR("%s, invalid payload_type: %d\n", __func__, src->portArgs.payload_type);
   } else {
     ops_rx.payload_type = src->portArgs.payload_type;
-  }
-
-  ret = mtl_start(src->mtl_lib_handle);
-  if (ret < 0) {
-    GST_ERROR("Failed to start MTL");
-    return FALSE;
   }
 
   if (pthread_mutex_init(&(src->mbuff_mutex), NULL) ||
@@ -463,21 +454,10 @@ static void gst_mtl_st40_rx_finalize(GObject* object) {
   pthread_cond_destroy(&src->mbuff_cond);
 
   if (src->mtl_lib_handle) {
-    if (mtl_stop(src->mtl_lib_handle) ||
-        gst_mtl_common_deinit_handle(src->mtl_lib_handle)) {
+    if (gst_mtl_common_deinit_handle(src->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
     }
   }
-}
-
-static gboolean gst_mtl_st40_rx_stop(GstBaseSrc* basesrc) {
-  Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(basesrc);
-
-  if (src->mtl_lib_handle) {
-    mtl_stop(src->mtl_lib_handle);
-  }
-
-  return TRUE;
 }
 
 static gboolean plugin_init(GstPlugin* mtl_st40_rx) {
