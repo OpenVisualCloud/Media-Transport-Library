@@ -441,6 +441,7 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
     pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
+
   ret = mtl_start(handle);
   if (ret) {
     GST_ERROR("Failed to start MTL library");
@@ -449,7 +450,7 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
   }
 
   if (force_to_initialize_new_instance) {
-    GST_INFO("MTL shared handle ignored");
+    GST_INFO("Forced initialization: Bypassing MTL shared handle functionality");
     pthread_mutex_unlock(&common_handle.mutex);
     return handle;
   }
@@ -493,6 +494,7 @@ gint gst_mtl_common_deinit_handle(mtl_handle handle) {
     pthread_mutex_unlock(&common_handle.mutex);
     return ret;
   }
+
   ret = mtl_uninit(handle);
   pthread_mutex_unlock(&common_handle.mutex);
   return ret;
