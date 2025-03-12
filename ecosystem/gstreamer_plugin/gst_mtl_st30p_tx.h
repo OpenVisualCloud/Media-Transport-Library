@@ -60,6 +60,11 @@ struct _Gst_Mtl_St30p_Tx {
   st30p_tx_handle tx_handle;
   guint frame_size;
 
+  bool async_session_create;
+  bool session_ready;
+  pthread_mutex_t session_mutex;
+  pthread_t session_thread;
+
   /*
    * Handles incomplete frame buffers when their size does not match the expected size.
    */

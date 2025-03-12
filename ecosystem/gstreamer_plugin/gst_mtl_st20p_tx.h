@@ -60,6 +60,11 @@ struct _Gst_Mtl_St20p_Tx {
   st20p_tx_handle tx_handle;
   guint frame_size;
 
+  bool async_session_create;
+  bool session_ready;
+  pthread_mutex_t session_mutex;
+  pthread_t session_thread;
+
   /* arguments */
   guint log_level;
   guint retry_frame;

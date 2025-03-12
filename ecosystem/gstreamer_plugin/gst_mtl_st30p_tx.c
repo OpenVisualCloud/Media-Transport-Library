@@ -65,6 +65,7 @@
 #endif
 
 #include <gst/gst.h>
+#include <pthread.h>
 #include <unistd.h>
 
 #include "gst_mtl_st30p_tx.h"
@@ -94,8 +95,15 @@ enum {
   PROP_ST30P_TX_RETRY = PROP_GENERAL_MAX,
   PROP_ST30P_TX_FRAMEBUFF_NUM,
   PROP_ST30P_TX_PTIME,
+  PROP_ST30P_TX_ASYNC_SESSION_CREATE,
   PROP_MAX
 };
+
+/* Structure to pass arguments to the thread function */
+typedef struct {
+  Gst_Mtl_St30p_Tx* sink;
+  GstCaps* caps;
+} GstMtlSt30pTxThreadData;
 
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st30p_tx_sink_pad_template =
@@ -163,6 +171,12 @@ static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
       g_param_spec_string("tx-ptime", "Packetization time",
                           "Packetization time for the audio stream", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST30P_TX_ASYNC_SESSION_CREATE,
+      g_param_spec_boolean("async-session-create", "Async Session Create",
+                           "Create TX session in a separate thread.", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
@@ -199,6 +213,9 @@ static void gst_mtl_st30p_tx_init(Gst_Mtl_St30p_Tx* sink) {
   gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_sink_event));
 
   gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_chain));
+
+  pthread_mutex_init(&sink->session_mutex, NULL);
+  sink->session_ready = FALSE;
 }
 
 static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
@@ -220,6 +237,9 @@ static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
       break;
     case PROP_ST30P_TX_PTIME:
       g_strlcpy(self->ptime, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_ST30P_TX_ASYNC_SESSION_CREATE:
+      self->async_session_create = g_value_get_boolean(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -246,6 +266,9 @@ static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST30P_TX_PTIME:
       g_value_set_string(value, sink->ptime);
+      break;
+    case PROP_ST30P_TX_ASYNC_SESSION_CREATE:
+      g_value_set_boolean(value, sink->async_session_create);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -362,7 +385,25 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
   }
 
   sink->frame_size = st30p_tx_frame_size(sink->tx_handle);
+
+  pthread_mutex_lock(&sink->session_mutex);
+  sink->session_ready = TRUE;
+  pthread_mutex_unlock(&sink->session_mutex);
+
   return TRUE;
+}
+
+static void* gst_mtl_st30p_tx_session_create_thread(void* data) {
+  GstMtlSt30pTxThreadData* thread_data = (GstMtlSt30pTxThreadData*)data;
+
+  gboolean result = gst_mtl_st30p_tx_session_create(thread_data->sink, thread_data->caps);
+  if (!result) {
+    GST_ELEMENT_ERROR(thread_data->sink, RESOURCE, FAILED, (NULL),
+                      ("Failed to create TX session in worker thread"));
+  }
+  gst_caps_unref(thread_data->caps);
+  free(thread_data);
+  return NULL;
 }
 
 static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
@@ -379,20 +420,22 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
   ret = GST_EVENT_TYPE(event);
 
   switch (GST_EVENT_TYPE(event)) {
-    case GST_EVENT_SEGMENT:
-      if (!sink->tx_handle) {
-        GST_ERROR("Tx handle not initialized");
-        return FALSE;
-      }
-      ret = gst_pad_event_default(pad, parent, event);
-      break;
     case GST_EVENT_CAPS:
       gst_event_parse_caps(event, &caps);
-      ret = gst_mtl_st30p_tx_session_create(sink, caps);
-      if (!ret) {
-        GST_ERROR("Failed to create TX session");
-        return FALSE;
+      if (sink->async_session_create) {
+        GstMtlSt30pTxThreadData* thread_data = malloc(sizeof(GstMtlSt30pTxThreadData));
+        thread_data->sink = sink;
+        thread_data->caps = gst_caps_ref(caps);
+        pthread_create(&sink->session_thread, NULL,
+                       gst_mtl_st30p_tx_session_create_thread, thread_data);
+      } else {
+        ret = gst_mtl_st30p_tx_session_create(sink, caps);
+        if (!ret) {
+          GST_ERROR("Failed to create TX session");
+          return FALSE;
+        }
       }
+
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
@@ -437,6 +480,16 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
     return GST_FLOW_ERROR;
   }
 
+  pthread_mutex_lock(&sink->session_mutex);
+  gboolean session_ready = sink->session_ready;
+  pthread_mutex_unlock(&sink->session_mutex);
+
+  if (!session_ready) {
+    GST_WARNING("Session not ready, dropping buffer");
+    gst_buffer_unref(buf);
+    return GST_FLOW_OK;
+  }
+
   for (int i = 0; i < buffer_n; i++) {
     bytes_to_write = gst_buffer_get_size(buf);
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
@@ -477,18 +530,18 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
 static void gst_mtl_st30p_tx_finalize(GObject* object) {
   Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(object);
 
+  if (sink->async_session_create && sink->session_thread) {
+    pthread_join(sink->session_thread, NULL);
+  }
+  pthread_mutex_destroy(&sink->session_mutex);
+
   if (sink->tx_handle) {
-    if (st30p_tx_free(sink->tx_handle)) {
-      GST_ERROR("Failed to free tx handle");
-      return;
-    }
+    if (st30p_tx_free(sink->tx_handle)) GST_ERROR("Failed to free tx handle");
   }
 
   if (sink->mtl_lib_handle) {
-    if (gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
+    if (gst_mtl_common_deinit_handle(sink->mtl_lib_handle))
       GST_ERROR("Failed to uninitialize MTL library");
-      return;
-    }
   }
 }
 
