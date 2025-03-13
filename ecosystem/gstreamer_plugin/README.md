@@ -170,10 +170,10 @@ To be fixed in the future.
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 
 **Arguments**
-| Property Name       | Type     | Description                                           | Range                   | Default Value |
-|---------------------|----------|-------------------------------------------------------|-------------------------|---------------|
-| retry               | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
-| tx-framebuff-num    | uint     | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
+| Property Name        | Type     | Description                                           | Range                   | Default Value |
+|----------------------|----------|-------------------------------------------------------|-------------------------|---------------|
+| retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
+| tx-framebuff-num     | uint     | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
 | async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 
 #### 3.1.2. Preparing Input Video

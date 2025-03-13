@@ -194,7 +194,18 @@ static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
     return FALSE;
   }
 
-  sink->retry_frame = 10;
+  if (sink->retry_frame == 0) {
+    sink->retry_frame = 10;
+  } else if (sink->retry_frame < 3) {
+    GST_WARNING("Retry count is too low, setting to 3");
+    sink->retry_frame = 3;
+  }
+
+  if (sink->async_session_create) {
+    pthread_mutex_init(&sink->session_mutex, NULL);
+    sink->session_ready = FALSE;
+  }
+
   gst_element_set_state(GST_ELEMENT(sink), GST_STATE_PLAYING);
 
   return true;
@@ -213,9 +224,6 @@ static void gst_mtl_st30p_tx_init(Gst_Mtl_St30p_Tx* sink) {
   gst_pad_set_event_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_sink_event));
 
   gst_pad_set_chain_function(sinkpad, GST_DEBUG_FUNCPTR(gst_mtl_st30p_tx_chain));
-
-  pthread_mutex_init(&sink->session_mutex, NULL);
-  sink->session_ready = FALSE;
 }
 
 static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
@@ -386,9 +394,11 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
 
   sink->frame_size = st30p_tx_frame_size(sink->tx_handle);
 
-  pthread_mutex_lock(&sink->session_mutex);
-  sink->session_ready = TRUE;
-  pthread_mutex_unlock(&sink->session_mutex);
+  if (sink->async_session_create) {
+    pthread_mutex_lock(&sink->session_mutex);
+    sink->session_ready = TRUE;
+    pthread_mutex_unlock(&sink->session_mutex);
+  }
 
   return TRUE;
 }
@@ -408,6 +418,7 @@ static void* gst_mtl_st30p_tx_session_create_thread(void* data) {
 
 static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
                                             GstEvent* event) {
+  GstMtlSt30pTxThreadData* thread_data;
   Gst_Mtl_St30p_Tx* sink;
   GstCaps* caps;
   gint ret;
@@ -423,7 +434,7 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
     case GST_EVENT_CAPS:
       gst_event_parse_caps(event, &caps);
       if (sink->async_session_create) {
-        GstMtlSt30pTxThreadData* thread_data = malloc(sizeof(GstMtlSt30pTxThreadData));
+        thread_data = malloc(sizeof(GstMtlSt30pTxThreadData));
         thread_data->sink = sink;
         thread_data->caps = gst_caps_ref(caps);
         pthread_create(&sink->session_thread, NULL,
@@ -475,19 +486,21 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
   void* cur_addr_frame;
   void* cur_addr_buf;
 
+  if (sink->async_session_create) {
+    pthread_mutex_lock(&sink->session_mutex);
+    gboolean session_ready = sink->session_ready;
+    pthread_mutex_unlock(&sink->session_mutex);
+
+    if (!session_ready) {
+      GST_WARNING("Session not ready, dropping buffer");
+      gst_buffer_unref(buf);
+      return GST_FLOW_OK;
+    }
+  }
+
   if (!sink->tx_handle) {
     GST_ERROR("Tx handle not initialized");
     return GST_FLOW_ERROR;
-  }
-
-  pthread_mutex_lock(&sink->session_mutex);
-  gboolean session_ready = sink->session_ready;
-  pthread_mutex_unlock(&sink->session_mutex);
-
-  if (!session_ready) {
-    GST_WARNING("Session not ready, dropping buffer");
-    gst_buffer_unref(buf);
-    return GST_FLOW_OK;
   }
 
   for (int i = 0; i < buffer_n; i++) {
@@ -530,10 +543,10 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
 static void gst_mtl_st30p_tx_finalize(GObject* object) {
   Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(object);
 
-  if (sink->async_session_create && sink->session_thread) {
-    pthread_join(sink->session_thread, NULL);
+  if (sink->async_session_create) {
+    if (sink->session_thread) pthread_join(sink->session_thread, NULL);
+    pthread_mutex_destroy(&sink->session_mutex);
   }
-  pthread_mutex_destroy(&sink->session_mutex);
 
   if (sink->tx_handle) {
     if (st30p_tx_free(sink->tx_handle)) GST_ERROR("Failed to free tx handle");

@@ -60,8 +60,7 @@ struct _Gst_Mtl_St20p_Tx {
   st20p_tx_handle tx_handle;
   guint frame_size;
 
-  bool async_session_create;
-  bool session_ready;
+  gboolean session_ready;
   pthread_mutex_t session_mutex;
   pthread_t session_thread;
 
@@ -71,6 +70,7 @@ struct _Gst_Mtl_St20p_Tx {
   StDevArgs devArgs;        /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuffer_num;
+  gboolean async_session_create;
 
   /* TODO add support for gpu direct */
 #ifdef MTL_GPU_DIRECT_ENABLED
