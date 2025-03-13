@@ -321,7 +321,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
         break;
       default:
         gst_audio_info_free(info);
-        GST_ERROR(" invalid format audio");
+        GST_ERROR(" invalid audio format");
         return FALSE;
     }
   }
