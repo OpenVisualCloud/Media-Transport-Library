@@ -60,6 +60,10 @@ struct _Gst_Mtl_St30p_Tx {
   st30p_tx_handle tx_handle;
   guint frame_size;
 
+  gboolean session_ready;
+  pthread_mutex_t session_mutex;
+  pthread_t session_thread;
+
   /*
    * Handles incomplete frame buffers when their size does not match the expected size.
    */
@@ -73,6 +77,7 @@ struct _Gst_Mtl_St30p_Tx {
   SessionPortArgs portArgs; /* imtl tx session */
   guint framebuffer_num;
   gchar ptime[MTL_PORT_MAX_LEN];
+  gboolean async_session_create;
 };
 
 G_END_DECLS

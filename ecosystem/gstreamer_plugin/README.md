@@ -170,10 +170,11 @@ To be fixed in the future.
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 
 **Arguments**
-| Property Name       | Type   | Description                                           | Range                   | Default Value |
-|---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
-| retry               | uint   | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
-| tx-framebuff-num    | uint   | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
+| Property Name        | Type     | Description                                           | Range                   | Default Value |
+|----------------------|----------|-------------------------------------------------------|-------------------------|---------------|
+| retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
+| tx-framebuff-num     | uint     | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
+| async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 
 #### 3.1.2. Preparing Input Video
 
@@ -271,11 +272,12 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 - **Channels Range**: 1 to 8
 
 **Arguments**
-| Property Name       | Type   | Description                                           | Range                   | Default Value |
-|---------------------|--------|-------------------------------------------------------|-------------------------|---------------|
-| tx-samplerate       | uint   | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
-| tx-channels         | uint   | Number of audio channels.                             | 1 to 8                  | 2             |
-| tx-ptime            | string | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
+| Property Name        | Type    | Description                                           | Range                   | Default Value |
+|----------------------|---------|-------------------------------------------------------|-------------------------|---------------|
+| tx-samplerate        | uint    | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
+| tx-channels          | uint    | Number of audio channels.                             | 1 to 8                  | 2             |
+| tx-ptime             | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
+| async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16LE format
 
