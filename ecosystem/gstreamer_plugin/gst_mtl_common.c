@@ -235,13 +235,13 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_SESSION_PORT,
       g_param_spec_string("port", "Transmission Device Port",
-                          "DPDK device port initialized for the transmission.", NULL,
+                          "DPDK device for the session to use.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_PORT_RED,
+      gobject_class, PROP_GENERAL_SESSION_PORT_RED,
       g_param_spec_string("port-red", "Transmission Device Port",
-                          "DPDK device port initialized for the transmission.", NULL,
+                          "DPDK device for the session to use as redundant port.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(

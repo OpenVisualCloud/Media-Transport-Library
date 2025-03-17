@@ -250,18 +250,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  /*
-  * If the user did not specify the port argument, copy it from the general initialization ports.
-  * If the primary port was not specified, the port-red argument will be copied from the general
-  * initialization ports regardless of whether it was specified or not.
-  */
-  if (strlen(src->portArgs.port[MTL_PORT_P]) == 0) {
-    strncpy(ops_rx->port.port[MTL_PORT_P], src->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-
-    if (strlen(src->generalArgs.port[MTL_PORT_R]) > 0) {
-      strncpy(ops_rx->port.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    }
-  }
+  gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
   ops_rx->port.num_port = gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
   if (!ops_rx->port.num_port) {
