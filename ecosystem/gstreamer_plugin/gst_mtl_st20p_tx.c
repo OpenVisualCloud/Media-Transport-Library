@@ -329,11 +329,11 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   }
 
   if (strlen(sink->portArgs.port[MTL_PORT_P]) == 0) {
-    strncpy(ops_tx.port.port[MTL_PORT_P], sink->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    strncpy(sink->portArgs.port[MTL_PORT_P], sink->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
   }
 
   if (strlen(sink->portArgs.port[MTL_PORT_R]) == 0 && strlen(sink->generalArgs.port[MTL_PORT_R]) > 0) {
-    strncpy(ops_tx.port.port[MTL_PORT_R], sink->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    strncpy(sink->portArgs.port[MTL_PORT_P], sink->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
   }
 
   ops_tx.port.num_port = gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);

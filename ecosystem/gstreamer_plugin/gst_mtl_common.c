@@ -384,7 +384,6 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
  */
 guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPortArgs* port_args) {
   guint mtl_port_idx = MTL_PORT_P;
-  guint initalized_ports = 0;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx]) > 0) {
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
@@ -406,7 +405,7 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
     }
 
     port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
-    initalized_ports++;
+    mtl_port_idx++;
   }
 
   if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
@@ -416,7 +415,7 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
 
   port->payload_type = port_args->payload_type;
 
-  return initalized_ports;
+  return mtl_port_idx;
 }
 
 /**
@@ -429,7 +428,6 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
  */
 guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPortArgs* port_args) {
   guint mtl_port_idx = MTL_PORT_P;
-  guint initalized_ports = 0;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
@@ -451,7 +449,7 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
     }
 
     port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
-    initalized_ports++;
+    mtl_port_idx++;
   }
 
   if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
@@ -461,7 +459,7 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
 
   port->payload_type = port_args->payload_type;
 
-  return initalized_ports;
+  return mtl_port_idx;
 }
 
 gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,

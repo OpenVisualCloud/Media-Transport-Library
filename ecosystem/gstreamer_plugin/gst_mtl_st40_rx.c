@@ -184,7 +184,6 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
                                                   SessionPortArgs* port_args) {
   guint mtl_port_idx = MTL_PORT_P;
-  guint initalized_ports = 0;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
@@ -206,7 +205,7 @@ static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
     }
 
     ops_rx->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
-    initalized_ports++;
+    mtl_port_idx++;
   }
 
   if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
@@ -216,7 +215,7 @@ static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
 
   ops_rx->payload_type = port_args->payload_type;
 
-  return initalized_ports;
+  return mtl_port_idx;
 }
 
 static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
