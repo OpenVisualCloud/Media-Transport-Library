@@ -239,6 +239,12 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_PORT,
+      g_param_spec_string("port-red", "Transmission Device Port",
+                          "DPDK device port initialized for the transmission.", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
       gobject_class, PROP_GENERAL_PORT_IP,
       g_param_spec_string("ip", "Sender node's IP", "Receiving MTL node IP address.",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -246,6 +252,11 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_PORT_UDP_PORT,
       g_param_spec_uint("udp-port", "Sender UDP port", "Receiving MTL node UDP port.", 0,
+                        G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_PORT_UDP_PORT,
+      g_param_spec_uint("udp-port-red", "Sender UDP port", "Receiving MTL node UDP port.", 0,
                         G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(

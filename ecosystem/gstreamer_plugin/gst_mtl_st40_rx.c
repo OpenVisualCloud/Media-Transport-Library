@@ -271,13 +271,19 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
+  /*
+  * If the user did not specify the port argument, copy it from the general initialization ports.
+  * If the primary port was not specified, the port-red argument will be copied from the general
+  * initialization ports regardless of whether it was specified or not.
+  */
   if (strlen(src->portArgs.port[MTL_PORT_P]) == 0) {
     strncpy(ops_rx.port[MTL_PORT_P], src->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+
+    if (strlen(src->portArgs.port[MTL_PORT_R]) == 0 && strlen(src->generalArgs.port[MTL_PORT_R]) > 0) {
+      strncpy(ops_rx.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+    }
   }
 
-  if (strlen(src->portArgs.port[MTL_PORT_R]) == 0 && strlen(src->generalArgs.port[MTL_PORT_R]) > 0) {
-    strncpy(ops_rx.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-  }
 
   ops_rx.num_port = gst_mtl_st40_rx_parse_port_arguments(&ops_rx, &src->portArgs);
   if (!ops_rx.num_port) {
