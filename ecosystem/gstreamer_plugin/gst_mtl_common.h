@@ -87,6 +87,7 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
 guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPortArgs* port_args);
 gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,
                                             GeneralArgs* generalArgs);
+void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args, SessionPortArgs* port_args);
 
 void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class);
 

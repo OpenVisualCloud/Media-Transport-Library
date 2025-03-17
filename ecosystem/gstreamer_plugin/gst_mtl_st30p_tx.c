@@ -358,18 +358,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     ops_tx.framebuff_cnt = 3;
   }
 
-  /*
-  * If the user did not specify the port argument, copy it from the general initialization ports.
-  * If the primary port was not specified, the port-red argument will be copied from the general
-  * initialization ports regardless of whether it was specified or not.
-  */
-  if (strlen(sink->portArgs.port[MTL_PORT_P]) == 0) {
-    strncpy(sink->portArgs.port[MTL_PORT_P], sink->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
-
-    if (strlen(sink->portArgs.port[MTL_PORT_R]) == 0 && strlen(sink->generalArgs.port[MTL_PORT_R]) > 0) {
-      strncpy(sink->portArgs.port[MTL_PORT_P], sink->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
-    }
-  }
+  gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
 
   ops_tx.port.num_port = gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
