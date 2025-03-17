@@ -129,6 +129,8 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
                                                    uint16_t* size);
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buf,
                                                  void* usrptr);
+static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
+                                                 SessionPortArgs* portArgs);
 
 static gint gst_mtl_st40_rx_mbuff_available(void* priv) {
   Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
@@ -177,6 +179,44 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
       g_param_spec_uint("timeout", "Timeout for Mbuf",
                         "Timeout in seconds for getting mbuf", 0, G_MAXUINT, 10,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+}
+
+static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
+                                                  SessionPortArgs* port_args) {
+  guint mtl_port_idx = MTL_PORT_P;
+  guint initalized_ports = 0;
+
+  while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
+    if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
+      ops_rx->ip_addr[mtl_port_idx]) != 1) {
+    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string[mtl_port_idx]);
+    return 0;
+    }
+
+    /* check primary port */
+    if (strlen(port_args->port[MTL_PORT_P]) == 0) {
+      GST_ERROR("Invalid port number %u", mtl_port_idx);
+      return 0;
+    }
+    strncpy(ops_rx->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
+
+    if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
+    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port[mtl_port_idx]);
+    return 0;
+    }
+
+    ops_rx->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
+    initalized_ports++;
+  }
+
+  if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
+  GST_ERROR("%s, invalid payload_type: %d\n", __func__, port_args->payload_type);
+  return 0;
+  }
+
+  ops_rx->payload_type = port_args->payload_type;
+
+  return initalized_ports;
 }
 
 static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
@@ -240,7 +280,7 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
     strncpy(ops_rx.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
   }
 
-  ops_rx.num_port = gst_mtl_common_parse_rx_port_arguments(src, &ops_rx);
+  ops_rx.num_port = gst_mtl_st40_rx_parse_port_arguments(&ops_rx, &src->portArgs);
   if (!ops_rx.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;

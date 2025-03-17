@@ -387,9 +387,9 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
   guint initalized_ports = 0;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx]) > 0) {
-    if (inet_pton(AF_INET, port_args->session_ip_string,
+    if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
       port->dip_addr[mtl_port_idx]) != 1) {
-    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string);
+    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string[mtl_port_idx]);
     return 0;
     }
 
@@ -398,10 +398,10 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
       GST_ERROR("Invalid port number %u", mtl_port_idx);
       return 0;
     }
-    strncpy(port->port[mtl_port_idx], port_args->port, MTL_PORT_MAX_LEN);
+    strncpy(port->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
-    if ((port_args->udp_port < 0) || (port_args->udp_port > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port);
+    if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
+    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port[mtl_port_idx]);
     return 0;
     }
 
@@ -432,9 +432,9 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
   guint initalized_ports = 0;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
-    if (inet_pton(AF_INET, port_args->session_ip_string,
+    if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
       port->ip_addr[mtl_port_idx]) != 1) {
-    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string);
+    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string[mtl_port_idx]);
     return 0;
     }
 
@@ -443,10 +443,10 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
       GST_ERROR("Invalid port number %u", mtl_port_idx);
       return 0;
     }
-    strncpy(port->port[mtl_port_idx], port_args->port, MTL_PORT_MAX_LEN);
+    strncpy(port->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
-    if ((port_args->udp_port < 0) || (port_args->udp_port > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port);
+    if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
+    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port[mtl_port_idx]);
     return 0;
     }
 
@@ -482,11 +482,11 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
   generalArgs->log_level = mtl_init_params->log_level;
 
 
-  while (mtl_port_idx <= MTL_PORT_R && strlen(generalArgs->port[mtl_port_idx] != 0)) {
-    strncpy(mtl_init_params->port[mtl_port_idx], generalArgs->port, MTL_PORT_MAX_LEN);
+  while (mtl_port_idx <= MTL_PORT_R && strlen(generalArgs->port[mtl_port_idx]) != 0) {
+    strncpy(mtl_init_params->port[mtl_port_idx], generalArgs->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
-    ret = inet_pton(AF_INET, generalArgs->local_ip_string,
-                    mtl_init_params->sip_addr[mtl_port_idx][0]);
+    ret = inet_pton(AF_INET, generalArgs->local_ip_string[mtl_port_idx],
+                    mtl_init_params->sip_addr[mtl_port_idx]);
     if (ret != 1) {
       GST_ERROR("%s, sip %s is not valid ip address\n", __func__, generalArgs->local_ip_string[MTL_PORT_P]);
       return FALSE;

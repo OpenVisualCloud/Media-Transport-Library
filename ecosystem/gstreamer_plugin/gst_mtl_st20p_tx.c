@@ -336,7 +336,7 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     strncpy(ops_tx.port.port[MTL_PORT_R], sink->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
   }
 
-  ops_tx.port.num_port = gst_mtl_common_parse_rx_port_arguments(sink, &ops_tx);
+  ops_tx.port.num_port = gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;

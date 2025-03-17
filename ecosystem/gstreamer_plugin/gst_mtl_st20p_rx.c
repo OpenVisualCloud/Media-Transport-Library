@@ -258,7 +258,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
     strncpy(ops_rx->port.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
   }
 
-  ops_rx->port.num_port = gst_mtl_common_parse_rx_port_arguments(src, ops_rx);
+  ops_rx->port.num_port = gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
   if (!ops_rx->port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
