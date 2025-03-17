@@ -55,7 +55,7 @@
  * media transport and includes a built-in  SMPTE ST 2110-compliant
  * implementation for Professional Media over Managed IP Networks.
  *
- * This element allows GStreamer pipelines to recive media data using the MTL
+ * This element allows GStreamer pipelines to receive media data using the MTL
  * framework, ensuring efficient and reliable media transport over IP networks.
  *
  */
@@ -205,7 +205,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(src->devArgs), &(src->log_level), FALSE);
+      gst_mtl_common_init_handle(&(src->generalArgs), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -229,7 +229,6 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   ops_rx->width = src->width;
   ops_rx->height = src->height;
   ops_rx->transport_fmt = ST20_FMT_YUV_422_10BIT;
-  ops_rx->port.num_port = 1;
   ops_rx->interlaced = src->interlaced;
   ops_rx->flags |= ST20P_RX_FLAG_BLOCK_GET;
 
@@ -251,28 +250,18 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  if (inet_pton(AF_INET, src->portArgs.session_ip_string,
-                ops_rx->port.ip_addr[MTL_PORT_P]) != 1) {
-    GST_ERROR("Invalid destination IP address: %s", src->portArgs.session_ip_string);
+  if (strlen(src->portArgs.port[MTL_PORT_P]) == 0) {
+    strncpy(ops_rx->port.port[MTL_PORT_P], src->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  }
+
+  if (strlen(src->portArgs.port[MTL_PORT_R]) == 0 && strlen(src->generalArgs.port[MTL_PORT_R]) > 0) {
+    strncpy(ops_rx->port.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+  }
+
+  ops_rx->port.num_port = gst_mtl_common_parse_rx_port_arguments(src, ops_rx);
+  if (!ops_rx->port.num_port) {
+    GST_ERROR("Failed to parse port arguments");
     return FALSE;
-  }
-
-  if (strlen(src->portArgs.port) == 0) {
-    strncpy(ops_rx->port.port[MTL_PORT_P], src->devArgs.port, MTL_PORT_MAX_LEN);
-  } else {
-    strncpy(ops_rx->port.port[MTL_PORT_P], src->portArgs.port, MTL_PORT_MAX_LEN);
-  }
-
-  if ((src->portArgs.udp_port < 0) || (src->portArgs.udp_port > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, src->portArgs.udp_port);
-  } else {
-    ops_rx->port.udp_port[0] = src->portArgs.udp_port;
-  }
-
-  if ((src->portArgs.payload_type < 0) || (src->portArgs.payload_type > 0x7F)) {
-    GST_ERROR("%s, invalid payload_type: %d\n", __func__, src->portArgs.payload_type);
-  } else {
-    ops_rx->port.payload_type = src->portArgs.payload_type;
   }
 
   src->rx_handle = st20p_rx_create(src->mtl_lib_handle, &src->ops_rx);
@@ -309,8 +298,8 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St20p_Rx* self = GST_MTL_ST20P_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
-                                         &(self->portArgs), &self->log_level);
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->generalArgs),
+                                         &(self->portArgs));
     return;
   }
 
@@ -348,8 +337,8 @@ static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->devArgs),
-                                         &(src->portArgs), &src->log_level);
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->generalArgs),
+                                         &(src->portArgs));
     return;
   }
 

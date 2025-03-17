@@ -16,7 +16,6 @@ struct gst_common_handle {
 };
 
 static struct gst_common_handle common_handle = {0, 0, PTHREAD_MUTEX_INITIALIZER};
-guint gst_mtl_port_idx = MTL_PORT_P;
 
 gboolean gst_mtl_common_parse_input_finfo(const GstVideoFormatInfo* finfo,
                                           enum st_frame_fmt* fmt) {
@@ -205,12 +204,27 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
+    gobject_class, PROP_GENERAL_DEV_ARGS_PORT_RED,
+    g_param_spec_string("dev-port-red", "DPDK device port redundant",
+                        "DPDK redundant port for synchronous ST 2110 data"
+                        "video transmission, bound to the VFIO DPDK driver. ",
+                        NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_SIP,
       g_param_spec_string("dev-ip", "Local device IP",
                           "Local IP address that the port will be "
                           "identified by. This is the address from which ARP "
                           "responses will be sent.",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+                            gobject_class, PROP_GENERAL_DEV_ARGS_SIP_RED,
+                            g_param_spec_string("dev-ip-red", "Local redundant device IP",
+                                                "Local IP address redundant that the port will be "
+                                                "identified by. This is the address from which ARP "
+                                                "responses will be sent.",
+                                                NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_DMA_DEV,
@@ -251,42 +265,59 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
       g_param_spec_uint("payload-type", "ST 2110 payload type",
                         "SMPTE ST 2110 payload type.", 0, G_MAXUINT, 112,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_ENABLE_ONBOARD_PTP,
+      g_param_spec_boolean("enable-ptp", "Enable onboard PTP", 
+                            "Enable onboard PTP client", 
+                            FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
-                                          guint* log_level) {
+                                          GeneralArgs* generalArgs, SessionPortArgs* portArgs) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
-      *log_level = g_value_get_uint(value);
+      generalArgs->log_level = g_value_get_uint(value);
       break;
     case PROP_GENERAL_DEV_ARGS_PORT:
-      strncpy(devArgs->port, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(generalArgs->port[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_DEV_ARGS_PORT_RED:
+      strncpy(generalArgs->port[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_SIP:
-      strncpy(devArgs->local_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(generalArgs->local_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_DEV_ARGS_SIP_RED:
+      strncpy(generalArgs->local_ip_string[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
-      strncpy(devArgs->dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
-      break;
-    case PROP_GENERAL_PORT_PORT:
-      strncpy(portArgs->port, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(generalArgs->dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_IP:
-      strncpy(portArgs->session_ip_string, g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(portArgs->session_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_PORT_IP_RED:
+      strncpy(portArgs->session_ip_string[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
-      portArgs->udp_port = g_value_get_uint(value);
+      portArgs->udp_port[MTL_PORT_P] = g_value_get_uint(value);
+      break;
+      case PROP_GENERAL_PORT_UDP_PORT_RED:
+      portArgs->udp_port[MTL_PORT_FLAG_FORCE_NUMA] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
       portArgs->payload_type = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_RX_QUEUES:
-      devArgs->rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      generalArgs->rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_TX_QUEUES:
-      devArgs->tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      generalArgs->tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      break;
+    case PROP_GENERAL_ENABLE_ONBOARD_PTP:
+      generalArgs->enable_onboard_ptp = g_value_get_boolean(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -296,38 +327,46 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
 
 void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
-                                          guint* log_level) {
+                                          GeneralArgs* generalArgs, SessionPortArgs* portArgs) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
-      g_value_set_uint(value, *log_level);
+      g_value_set_uint(value, generalArgs->log_level);
       break;
-    case PROP_GENERAL_DEV_ARGS_PORT:
-      g_value_set_string(value, devArgs->port);
+      case PROP_GENERAL_DEV_ARGS_PORT:
+      g_value_set_string(value, generalArgs->port[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_DEV_ARGS_PORT_RED:
+      g_value_set_string(value, generalArgs->port[MTL_PORT_R]);
       break;
     case PROP_GENERAL_DEV_ARGS_SIP:
-      g_value_set_string(value, devArgs->local_ip_string);
+      g_value_set_string(value, generalArgs->local_ip_string[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_DEV_ARGS_SIP_RED:
+      g_value_set_string(value, generalArgs->local_ip_string[MTL_PORT_R]);
       break;
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
-      g_value_set_string(value, devArgs->dma_dev);
-      break;
-    case PROP_GENERAL_PORT_PORT:
-      g_value_set_string(value, portArgs->port);
+      g_value_set_string(value, generalArgs->dma_dev);
       break;
     case PROP_GENERAL_PORT_IP:
-      g_value_set_string(value, portArgs->session_ip_string);
+      g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_PORT_IP_RED:
+      g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_R]);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
-      g_value_set_uint(value, portArgs->udp_port);
+      g_value_set_uint(value, portArgs->udp_port[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_PORT_UDP_PORT_RED:
+      g_value_set_uint(value, portArgs->udp_port[MTL_PORT_R]);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
       g_value_set_uint(value, portArgs->payload_type);
       break;
     case PROP_GENERAL_PORT_RX_QUEUES:
-      g_value_set_uint(value, devArgs->rx_queues_cnt[MTL_PORT_P]);
+      g_value_set_uint(value, generalArgs->rx_queues_cnt[MTL_PORT_P]);
       break;
     case PROP_GENERAL_PORT_TX_QUEUES:
-      g_value_set_uint(value, devArgs->tx_queues_cnt[MTL_PORT_P]);
+      g_value_set_uint(value, generalArgs->tx_queues_cnt[MTL_PORT_P]);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -335,45 +374,147 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
   }
 }
 
-gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
-                                            StDevArgs* devArgs) {
+/**
+ * Parses the transmission port arguments and initializes the tranmission port structure.
+ * Validates and sets the destination IP address, port number, UDP port, and payload type.
+ * 
+ * @param port Pointer to the transmission port structure to be initialized.
+ * @param port_args Pointer to the structure containing the port arguments.
+ * @return The number of initialized ports, or 0 if an error occurred.
+ */
+guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPortArgs* port_args) {
+  guint mtl_port_idx = MTL_PORT_P;
+  guint initalized_ports = 0;
+
+  while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx]) > 0) {
+    if (inet_pton(AF_INET, port_args->session_ip_string,
+      port->dip_addr[mtl_port_idx]) != 1) {
+    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string);
+    return 0;
+    }
+
+    /* check primary port */
+    if (strlen(port_args->port[MTL_PORT_P]) == 0) {
+      GST_ERROR("Invalid port number %u", mtl_port_idx);
+      return 0;
+    }
+    strncpy(port->port[mtl_port_idx], port_args->port, MTL_PORT_MAX_LEN);
+
+    if ((port_args->udp_port < 0) || (port_args->udp_port > 0xFFFF)) {
+    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port);
+    return 0;
+    }
+
+    port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
+    initalized_ports++;
+  }
+
+  if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
+  GST_ERROR("%s, invalid payload_type: %d\n", __func__, port_args->payload_type);
+  return 0;
+  }
+
+  port->payload_type = port_args->payload_type;
+
+  return initalized_ports;
+}
+
+/**
+ * Parses the transmission port arguments and initializes the receive port structure.
+ * Validates and sets the destination IP address, port number, UDP port, and payload type.
+ * 
+ * @param port Pointer to the transmission port structure to be initialized.
+ * @param port_args Pointer to the structure containing the port arguments.
+ * @return The number of initialized ports, or 0 if an error occurred.
+ */
+guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPortArgs* port_args) {
+  guint mtl_port_idx = MTL_PORT_P;
+  guint initalized_ports = 0;
+
+  while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
+    if (inet_pton(AF_INET, port_args->session_ip_string,
+      port->ip_addr[mtl_port_idx]) != 1) {
+    GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string);
+    return 0;
+    }
+
+    /* check primary port */
+    if (strlen(port_args->port[MTL_PORT_P]) == 0) {
+      GST_ERROR("Invalid port number %u", mtl_port_idx);
+      return 0;
+    }
+    strncpy(port->port[mtl_port_idx], port_args->port, MTL_PORT_MAX_LEN);
+
+    if ((port_args->udp_port < 0) || (port_args->udp_port > 0xFFFF)) {
+    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port);
+    return 0;
+    }
+
+    port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
+    initalized_ports++;
+  }
+
+  if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
+  GST_ERROR("%s, invalid payload_type: %d\n", __func__, port_args->payload_type);
+  return 0;
+  }
+
+  port->payload_type = port_args->payload_type;
+
+  return initalized_ports;
+}
+
+gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,
+                                            GeneralArgs* generalArgs) {
+  gint mtl_port_idx = MTL_PORT_P;
   gint ret;
 
-  if (gst_mtl_port_idx > MTL_PORT_R) {
-    GST_ERROR("%s, invalid port number %d\n", __func__, gst_mtl_port_idx);
-    return FALSE;
-  }
-
-  strncpy(mtl_init_params->port[gst_mtl_port_idx], devArgs->port, MTL_PORT_MAX_LEN);
-
-  ret = inet_pton(AF_INET, devArgs->local_ip_string,
-                  mtl_init_params->sip_addr[gst_mtl_port_idx]);
-  if (ret != 1) {
-    GST_ERROR("%s, sip %s is not valid ip address\n", __func__, devArgs->local_ip_string);
-    return FALSE;
-  }
-
-  if (devArgs->rx_queues_cnt[gst_mtl_port_idx]) {
-    mtl_init_params->rx_queues_cnt[gst_mtl_port_idx] =
-        devArgs->rx_queues_cnt[gst_mtl_port_idx];
+  /*
+   * Log levels range from 1 to LOG_LEVEL_MAX.
+   * We avoid using 0 (DEBUG) in normal scenarios,
+   * so it's acceptable to use 0 as a placeholder.
+   */
+  if (generalArgs->log_level && generalArgs->log_level < MTL_LOG_LEVEL_MAX) {
+    mtl_init_params->log_level = generalArgs->log_level;
   } else {
-    mtl_init_params->rx_queues_cnt[gst_mtl_port_idx] = 16;
+    mtl_init_params->log_level = MTL_LOG_LEVEL_INFO;
+  }
+  generalArgs->log_level = mtl_init_params->log_level;
+
+
+  while (mtl_port_idx <= MTL_PORT_R && strlen(generalArgs->port[mtl_port_idx] != 0)) {
+    strncpy(mtl_init_params->port[mtl_port_idx], generalArgs->port, MTL_PORT_MAX_LEN);
+
+    ret = inet_pton(AF_INET, generalArgs->local_ip_string,
+                    mtl_init_params->sip_addr[mtl_port_idx][0]);
+    if (ret != 1) {
+      GST_ERROR("%s, sip %s is not valid ip address\n", __func__, generalArgs->local_ip_string[MTL_PORT_P]);
+      return FALSE;
+    }
+
+    if (generalArgs->rx_queues_cnt[mtl_port_idx]) {
+      mtl_init_params->rx_queues_cnt[mtl_port_idx] =
+          generalArgs->rx_queues_cnt[mtl_port_idx];
+    } else {
+      mtl_init_params->rx_queues_cnt[mtl_port_idx] = 16;
+    }
+
+    if (generalArgs->tx_queues_cnt[mtl_port_idx]) {
+      mtl_init_params->tx_queues_cnt[mtl_port_idx] =
+          generalArgs->tx_queues_cnt[mtl_port_idx];
+    } else {
+      mtl_init_params->tx_queues_cnt[mtl_port_idx] = 16;
+    }
+
+    mtl_init_params->num_ports++;
+
+    if (generalArgs->dma_dev && strlen(generalArgs->dma_dev)) {
+      strncpy(mtl_init_params->dma_dev_port[0], generalArgs->dma_dev, MTL_PORT_MAX_LEN);
+    }
+
+    mtl_port_idx++;
   }
 
-  if (devArgs->tx_queues_cnt[gst_mtl_port_idx]) {
-    mtl_init_params->tx_queues_cnt[gst_mtl_port_idx] =
-        devArgs->tx_queues_cnt[gst_mtl_port_idx];
-  } else {
-    mtl_init_params->tx_queues_cnt[gst_mtl_port_idx] = 16;
-  }
-
-  mtl_init_params->num_ports++;
-
-  if (devArgs->dma_dev && strlen(devArgs->dma_dev)) {
-    strncpy(mtl_init_params->dma_dev_port[0], devArgs->dma_dev, MTL_PORT_MAX_LEN);
-  }
-
-  gst_mtl_port_idx++;
   return ret;
 }
 
@@ -388,16 +529,17 @@ gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_par
  *
  * @param force_to_initialize_new_instance Force the creation of a new MTL
  *                                         instance, ignoring any existing one.
- * @param devArgs Initialization parameters for the DPDK port
+ * @param generalArgs Initialization parameters for the DPDK port
  *                (ignored if using an existing MTL instance).
  * @param log_level Log level for the library (ignored if using an
  *                  existing MTL instance).
  */
-mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance) {
   struct mtl_init_params mtl_init_params = {0};
   mtl_handle handle;
   gint ret;
+
   pthread_mutex_lock(&common_handle.mutex);
 
   if (!force_to_initialize_new_instance && common_handle.mtl_handle) {
@@ -409,31 +551,25 @@ mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
     return common_handle.mtl_handle;
   }
 
-  if (!devArgs || !log_level) {
+  if (!generalArgs) {
     GST_ERROR("Invalid input");
     pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
 
-  ret = gst_mtl_common_parse_dev_arguments(&mtl_init_params, devArgs);
+  ret = gst_mtl_common_parse_general_arguments(&mtl_init_params, generalArgs);
   if (!ret) {
     GST_ERROR("Failed to parse dev arguments");
     pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
   }
-  mtl_init_params.flags |= MTL_FLAG_BIND_NUMA;
 
-  /*
-   * Log levels range from 1 to LOG_LEVEL_MAX.
-   * We avoid using 0 (DEBUG) in normal scenarios,
-   * so it's acceptable to use 0 as a placeholder.
-   */
-  if (*log_level && *log_level < MTL_LOG_LEVEL_MAX) {
-    mtl_init_params.log_level = *log_level;
-  } else {
-    mtl_init_params.log_level = MTL_LOG_LEVEL_INFO;
+
+  if (generalArgs->enable_onboard_ptp) {
+    mtl_init_params.flags |= MTL_FLAG_PTP_ENABLE;
+    GST_INFO("Using MTL library's onboard PTP");
   }
-  *log_level = mtl_init_params.log_level;
+
 
   handle = mtl_init(&mtl_init_params);
   if (!handle) {

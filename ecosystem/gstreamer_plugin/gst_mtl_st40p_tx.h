@@ -64,7 +64,7 @@ struct _Gst_Mtl_St40p_Tx {
 
   /* arguments */
   guint log_level;
-  StDevArgs devArgs;        /* imtl initialization device */
+  GeneralArgs generalArgs;  /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuff_cnt;
   guint fps_n, fps_d;

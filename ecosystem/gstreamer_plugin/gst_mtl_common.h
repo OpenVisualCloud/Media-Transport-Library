@@ -33,14 +33,19 @@ enum {
   PROP_GENERAL_0,
   PROP_GENERAL_LOG_LEVEL,
   PROP_GENERAL_DEV_ARGS_PORT,
+  PROP_GENERAL_DEV_ARGS_PORT_RED,
   PROP_GENERAL_DEV_ARGS_SIP,
+  PROP_GENERAL_DEV_ARGS_SIP_RED,
   PROP_GENERAL_DEV_ARGS_DMA_DEV,
   PROP_GENERAL_PORT_PORT,
   PROP_GENERAL_PORT_IP,
+  PROP_GENERAL_PORT_IP_RED,
   PROP_GENERAL_PORT_UDP_PORT,
+  PROP_GENERAL_PORT_UDP_PORT_RED,
   PROP_GENERAL_PORT_PAYLOAD_TYPE,
   PROP_GENERAL_PORT_RX_QUEUES,
   PROP_GENERAL_PORT_TX_QUEUES,
+  PROP_GENERAL_ENABLE_ONBOARD_PTP,
   PROP_GENERAL_MAX
 };
 
@@ -50,18 +55,20 @@ enum gst_mtl_supported_audio_sampling {
   GST_MTL_SUPPORTED_AUDIO_SAMPLING_96K = 96000
 };
 
-typedef struct StDevArgs {
-  gchar port[MTL_PORT_MAX_LEN];
-  gchar local_ip_string[MTL_PORT_MAX_LEN];
+typedef struct GeneralArgs {
+  gchar port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  gchar local_ip_string[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
   gint tx_queues_cnt[MTL_PORT_MAX];
   gint rx_queues_cnt[MTL_PORT_MAX];
   gchar dma_dev[MTL_PORT_MAX_LEN];
-} StDevArgs;
+  gint log_level;
+  gboolean enable_onboard_ptp;
+} GeneralArgs;
 
 typedef struct SessionPortArgs {
-  gchar session_ip_string[MTL_PORT_MAX_LEN];
-  gchar port[MTL_PORT_MAX_LEN];
-  gint udp_port;
+  gchar session_ip_string[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  gchar port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+  gint udp_port[MTL_PORT_MAX];
   gint payload_type;
 } SessionPortArgs;
 
@@ -76,22 +83,22 @@ gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
 gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
                                            gint* gst_sampling);
 
-gboolean gst_mtl_common_parse_dev_arguments(struct mtl_init_params* mtl_init_params,
-                                            StDevArgs* devArgs);
+guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPortArgs* port_args);
+guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPortArgs* port_args);
+gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,
+                                            GeneralArgs* generalArgs);
 
 void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class);
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
-                                          guint* log_level);
+                                          GeneralArgs* generalArgs, SessionPortArgs* portArgs);
 
 void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          StDevArgs* devArgs, SessionPortArgs* portArgs,
-                                          guint* log_level);
+                                          GeneralArgs* generalArgs, SessionPortArgs* portArgs);
 
-mtl_handle gst_mtl_common_init_handle(StDevArgs* devArgs, guint* log_level,
+mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance);
 
 gint gst_mtl_common_deinit_handle(mtl_handle handle);

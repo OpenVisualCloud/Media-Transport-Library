@@ -187,7 +187,7 @@ static gboolean gst_mtl_st30p_tx_start(GstBaseSink* bsink) {
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
   sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(sink->devArgs), &(sink->log_level), FALSE);
+      gst_mtl_common_init_handle(&(sink->generalArgs), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -231,8 +231,8 @@ static void gst_mtl_st30p_tx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St30p_Tx* self = GST_MTL_ST30P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
-                                         &(self->portArgs), &self->log_level);
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->generalArgs),
+                                         &(self->portArgs));
     return;
   }
 
@@ -260,8 +260,8 @@ static void gst_mtl_st30p_tx_get_property(GObject* object, guint prop_id, GValue
   Gst_Mtl_St30p_Tx* sink = GST_MTL_ST30P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(sink->devArgs),
-                                         &(sink->portArgs), &sink->log_level);
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(sink->generalArgs),
+                                         &(sink->portArgs));
     return;
   }
 
@@ -331,6 +331,7 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     gst_audio_info_free(info);
     return FALSE;
   }
+
   gst_audio_info_free(info);
   if (sink->ptime[0] != '\0') {
     if (!gst_mtl_common_parse_ptime(sink->ptime, &ops_tx.ptime)) {
@@ -343,8 +344,6 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     else
       ops_tx.ptime = ST30_PTIME_1MS;
   }
-
-  ops_tx.port.num_port = 1;
 
   ops_tx.framebuff_size = st30_calculate_framebuff_size(
       ops_tx.fmt, ops_tx.ptime, ops_tx.sampling, ops_tx.channel, 10 * NS_PER_MS, NULL);
@@ -359,31 +358,20 @@ static gboolean gst_mtl_st30p_tx_session_create(Gst_Mtl_St30p_Tx* sink, GstCaps*
     ops_tx.framebuff_cnt = 3;
   }
 
-  if (inet_pton(AF_INET, sink->portArgs.session_ip_string,
-                ops_tx.port.dip_addr[MTL_PORT_P]) != 1) {
-    GST_ERROR("Invalid destination IP address: %s", sink->portArgs.session_ip_string);
+  if (strlen(sink->portArgs.port[MTL_PORT_P]) == 0) {
+    strncpy(ops_tx.port.port[MTL_PORT_P], sink->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  }
+
+  if (strlen(sink->portArgs.port[MTL_PORT_R]) == 0 && strlen(sink->generalArgs.port[MTL_PORT_R]) > 0) {
+    strncpy(ops_tx.port.port[MTL_PORT_R], sink->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+  }
+
+  ops_tx.port.num_port = gst_mtl_common_parse_rx_port_arguments(sink, &ops_tx);
+  if (!ops_tx.port.num_port) {
+    GST_ERROR("Failed to parse port arguments");
     return FALSE;
   }
 
-  if (strlen(sink->portArgs.port) == 0) {
-    strncpy(ops_tx.port.port[MTL_PORT_P], sink->devArgs.port, MTL_PORT_MAX_LEN);
-  } else {
-    strncpy(ops_tx.port.port[MTL_PORT_P], sink->portArgs.port, MTL_PORT_MAX_LEN);
-  }
-
-  if ((sink->portArgs.udp_port < 0) || (sink->portArgs.udp_port > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, sink->portArgs.udp_port);
-    return FALSE;
-  }
-
-  ops_tx.port.udp_port[0] = sink->portArgs.udp_port;
-
-  if ((sink->portArgs.payload_type < 0) || (sink->portArgs.payload_type > 0x7F)) {
-    GST_ERROR("%s, invalid payload_type: %d\n", __func__, sink->portArgs.payload_type);
-    return FALSE;
-  }
-
-  ops_tx.port.payload_type = sink->portArgs.payload_type;
   ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
 
   sink->tx_handle = st30p_tx_create(sink->mtl_lib_handle, &ops_tx);

@@ -67,7 +67,7 @@ struct _Gst_Mtl_St20p_Tx {
   /* arguments */
   guint log_level;
   guint retry_frame;
-  StDevArgs devArgs;        /* imtl initialization device */
+  GeneralArgs generalArgs;  /* imtl initialization device */
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuffer_num;
   gboolean async_session_create;

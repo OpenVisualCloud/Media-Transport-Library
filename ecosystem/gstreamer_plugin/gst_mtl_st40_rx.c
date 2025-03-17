@@ -55,7 +55,7 @@
  * media transport and includes a built-in  SMPTE ST 2110-compliant
  * implementation for Professional Media over Managed IP Networks.
  *
- * This element allows GStreamer pipelines to recive media data using the MTL,
+ * This element allows GStreamer pipelines to receive media data using the MTL,
  * ensuring efficient and reliable media transport over IP networks.
  *
  */
@@ -123,14 +123,14 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc);
 static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc* basesrc, guint64 offset,
                                             guint length, GstBuffer** buffer);
 
-static gint gst_mtl_st40_rx_mbuff_avalible(void* priv);
+static gint gst_mtl_st40_rx_mbuff_available(void* priv);
 static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
                                                    st40_rx_handle handle, void** usrptr,
                                                    uint16_t* size);
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buf,
                                                  void* usrptr);
 
-static gint gst_mtl_st40_rx_mbuff_avalible(void* priv) {
+static gint gst_mtl_st40_rx_mbuff_available(void* priv) {
   Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
 
   pthread_mutex_lock(&(src->mbuff_mutex));
@@ -188,7 +188,7 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG("Media Transport Initialization start");
 
   src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(src->devArgs), &(src->log_level), FALSE);
+      gst_mtl_common_init_handle(&(src->generalArgs), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -203,7 +203,7 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   }
   ops_rx.name = "st40src";
   ops_rx.priv = basesrc;
-  ops_rx.notify_rtp_ready = gst_mtl_st40_rx_mbuff_avalible;
+  ops_rx.notify_rtp_ready = gst_mtl_st40_rx_mbuff_available;
 
   if (src->mbuff_size) {
     if (!IS_POWER_OF_2(src->mbuff_size)) {
@@ -218,25 +218,6 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
     src->mbuff_size = 1024;
   }
 
-  if (inet_pton(AF_INET, src->portArgs.session_ip_string, ops_rx.ip_addr[MTL_PORT_P]) !=
-      1) {
-    GST_ERROR("Invalid destination IP address: %s", src->portArgs.session_ip_string);
-    return FALSE;
-  }
-
-  if (strlen(src->portArgs.port) == 0) {
-    strncpy(ops_rx.port[MTL_PORT_P], src->devArgs.port, MTL_PORT_MAX_LEN);
-  } else {
-    strncpy(ops_rx.port[MTL_PORT_P], src->portArgs.port, MTL_PORT_MAX_LEN);
-  }
-  ops_rx.num_port = 1;
-
-  if ((src->portArgs.udp_port < 0) || (src->portArgs.udp_port > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, src->portArgs.udp_port);
-  } else {
-    ops_rx.udp_port[0] = src->portArgs.udp_port;
-  }
-
   if (src->portArgs.payload_type == 0) {
     ops_rx.payload_type = PAYLOAD_TYPE_ANCILLARY;
   } else if ((src->portArgs.payload_type < 0) || (src->portArgs.payload_type > 0x7F)) {
@@ -248,6 +229,20 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   if (pthread_mutex_init(&(src->mbuff_mutex), NULL) ||
       pthread_cond_init(&(src->mbuff_cond), NULL)) {
     GST_ERROR("Failed to initialize mutex or condition variable");
+    return FALSE;
+  }
+
+  if (strlen(src->portArgs.port[MTL_PORT_P]) == 0) {
+    strncpy(ops_rx.port[MTL_PORT_P], src->generalArgs.port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+  }
+
+  if (strlen(src->portArgs.port[MTL_PORT_R]) == 0 && strlen(src->generalArgs.port[MTL_PORT_R]) > 0) {
+    strncpy(ops_rx.port[MTL_PORT_R], src->generalArgs.port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+  }
+
+  ops_rx.num_port = gst_mtl_common_parse_rx_port_arguments(src, &ops_rx);
+  if (!ops_rx.num_port) {
+    GST_ERROR("Failed to parse port arguments");
     return FALSE;
   }
 
@@ -276,8 +271,8 @@ static void gst_mtl_st40_rx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St40_Rx* self = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
-                                         &(self->portArgs), &self->log_level);
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->generalArgs),
+                                         &(self->portArgs));
     return;
   }
 
@@ -299,8 +294,8 @@ static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue*
   Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->devArgs),
-                                         &(src->portArgs), &src->log_level);
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->generalArgs),
+                                         &(src->portArgs));
     return;
   }
 
@@ -362,7 +357,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     src->udw_size = udw_size;
     src->anc_data = (char*)malloc(udw_size);
   } else if (src->udw_size != udw_size) {
-    GST_INFO("Size of recieved ancillary data has changed");
+    GST_INFO("Size of received ancillary data has changed");
     if (src->anc_data) {
       free(src->anc_data);
       src->anc_data = NULL;
@@ -423,7 +418,7 @@ static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc* basesrc, guint64 offset,
   }
 
   if (size == 0) {
-    GST_ERROR("No anciallry data recived");
+    GST_ERROR("No ancillary data received");
     GST_OBJECT_UNLOCK(src);
     return GST_FLOW_ERROR;
   }

@@ -66,9 +66,8 @@ struct _Gst_Mtl_St40_Rx {
   st40_rx_handle rx_handle;
 
   /* arguments */
-  StDevArgs devArgs;        /* imtl initialization device */
-  SessionPortArgs portArgs; /* imtl session device */
-  guint log_level;
+  GeneralArgs generalArgs;        /* imtl initialization device */
+  SessionPortArgs portArgs;   /* imtl session device */
   guint timeout_mbuf_get_seconds;
   guint16 mbuff_size;
   guint16 udw_size;
