@@ -19,9 +19,10 @@
 
 set -e
 
+CLANG_FORMAT_TOOL="clang-format-14" # for super-linter v6 action
 echo "clang-format check"
 find . -path ./build -prune -o -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' ! -name 'pymtl_wrap.c' \
-	! -name 'vmlinux.h' -exec clang-format --verbose -i {} +
+	! -name 'vmlinux.h' -exec ${CLANG_FORMAT_TOOL} --verbose -i {} +
 
 black python/
 isort python/
