@@ -219,12 +219,12 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-                            gobject_class, PROP_GENERAL_DEV_ARGS_SIP_RED,
-                            g_param_spec_string("dev-ip-red", "Local redundant device IP",
-                                                "Local IP address redundant that the port will be "
-                                                "identified by. This is the address from which ARP "
-                                                "responses will be sent.",
-                                                NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gobject_class, PROP_GENERAL_DEV_ARGS_SIP_RED,
+      g_param_spec_string("dev-ip-red", "Local redundant device IP",
+                          "Local IP address redundant that the port will be "
+                          "identified by. This is the address from which ARP "
+                          "responses will be sent.",
+                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_DMA_DEV,
@@ -233,13 +233,13 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_PORT_PORT,
+      gobject_class, PROP_GENERAL_SESSION_PORT,
       g_param_spec_string("port", "Transmission Device Port",
                           "DPDK device port initialized for the transmission.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_PORT_PORT,
+      gobject_class, PROP_GENERAL_PORT_RED,
       g_param_spec_string("port-red", "Transmission Device Port",
                           "DPDK device port initialized for the transmission.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
