@@ -311,6 +311,12 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
       strncpy(general_args->dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
+    case PROP_GENERAL_SESSION_PORT:
+      strncpy(portArgs->port[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
+    case PROP_GENERAL_SESSION_PORT_RED:
+      strncpy(portArgs->port[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      break;
     case PROP_GENERAL_PORT_IP:
       strncpy(portArgs->session_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
@@ -416,8 +422,6 @@ void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args, Sess
   }
 }
 
-
-
 /**
  * Parses the transmission port arguments and initializes the tranmission port structure.
  * Validates and sets the destination IP address, port number, UDP port, and payload type.
@@ -437,8 +441,7 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
       return 0;
     }
 
-    /* check primary port */
-    if (strlen(port_args->port[MTL_PORT_P]) == 0) {
+    if (strlen(port_args->port[mtl_port_idx]) == 0) {
       GST_ERROR("Invalid port number %u", mtl_port_idx);
       return 0;
     }
@@ -476,14 +479,14 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
   guint mtl_port_idx = MTL_PORT_P;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
+
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
       port->ip_addr[mtl_port_idx]) != 1) {
       GST_ERROR("Invalid source IP address: %s", port_args->session_ip_string[mtl_port_idx]);
       return 0;
     }
 
-    /* check primary port */
-    if (strlen(port_args->port[MTL_PORT_P]) == 0) {
+    if (strlen(port_args->port[mtl_port_idx]) == 0) {
       GST_ERROR("Invalid port number %u", mtl_port_idx);
       return 0;
     }
