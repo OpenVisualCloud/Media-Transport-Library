@@ -486,10 +486,6 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
       return 0;
     }
 
-    if (strlen(port_args->port[mtl_port_idx]) == 0) {
-      GST_ERROR("Invalid port number %u", mtl_port_idx);
-      return 0;
-    }
     strncpy(port->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
     if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
@@ -499,6 +495,12 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
 
     port->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
     mtl_port_idx++;
+  }
+
+  /* check primary port */
+  if (strlen(port_args->port[MTL_PORT_P]) == 0) {
+    GST_ERROR("Invalid port number %u", mtl_port_idx);
+    return 0;
   }
 
   if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {

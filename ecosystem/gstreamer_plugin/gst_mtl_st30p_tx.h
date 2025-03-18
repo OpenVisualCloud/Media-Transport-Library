@@ -73,7 +73,7 @@ struct _Gst_Mtl_St30p_Tx {
   /* arguments */
   guint retry_frame;
   guint log_level;
-  GeneralArgs generalArgs;  /* imtl initialization device */
+  GeneralArgs generalArgs;  /* imtl initialization arguments */
   SessionPortArgs portArgs; /* imtl tx session */
   guint framebuffer_num;
   gchar ptime[MTL_PORT_MAX_LEN];
