@@ -204,7 +204,7 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-    gobject_class, PROP_GENERAL_DEV_ARGS_PORT_RED,
+    gobject_class, PROP_GENERAL_DEV_ARGS_PORT_R,
     g_param_spec_string("dev-port-red", "DPDK device port redundant",
                         "DPDK redundant port for synchronous ST 2110 data"
                         "video transmission, bound to the VFIO DPDK driver. ",
@@ -219,7 +219,7 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_DEV_ARGS_SIP_RED,
+      gobject_class, PROP_GENERAL_DEV_ARGS_SIP_R,
       g_param_spec_string("dev-ip-red", "Local redundant device IP",
                           "Local IP address redundant that the port will be "
                           "identified by. This is the address from which ARP "
@@ -239,7 +239,7 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_SESSION_PORT_RED,
+      gobject_class, PROP_GENERAL_SESSION_PORT_R,
       g_param_spec_string("port-red", "Transmission Device Port",
                           "DPDK device for the session to use as redundant port.", NULL,
                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
@@ -250,7 +250,7 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_PORT_IP_RED,
+      gobject_class, PROP_GENERAL_PORT_IP_R,
       g_param_spec_string("ip-red", "Sender node's IP", "Receiving MTL node IP address.",
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
@@ -299,13 +299,13 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_DEV_ARGS_PORT:
       strncpy(general_args->port[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
-    case PROP_GENERAL_DEV_ARGS_PORT_RED:
+    case PROP_GENERAL_DEV_ARGS_PORT_R:
       strncpy(general_args->port[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_SIP:
       strncpy(general_args->local_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
-    case PROP_GENERAL_DEV_ARGS_SIP_RED:
+    case PROP_GENERAL_DEV_ARGS_SIP_R:
       strncpy(general_args->local_ip_string[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
@@ -314,19 +314,19 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_SESSION_PORT:
       strncpy(portArgs->port[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
-    case PROP_GENERAL_SESSION_PORT_RED:
+    case PROP_GENERAL_SESSION_PORT_R:
       strncpy(portArgs->port[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_IP:
       strncpy(portArgs->session_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
-    case PROP_GENERAL_PORT_IP_RED:
+    case PROP_GENERAL_PORT_IP_R:
       strncpy(portArgs->session_ip_string[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
       portArgs->udp_port[MTL_PORT_P] = g_value_get_uint(value);
       break;
-      case PROP_GENERAL_PORT_UDP_PORT_RED:
+      case PROP_GENERAL_PORT_UDP_PORT_R:
       portArgs->udp_port[MTL_PORT_FLAG_FORCE_NUMA] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
@@ -357,13 +357,13 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
       case PROP_GENERAL_DEV_ARGS_PORT:
       g_value_set_string(value, general_args->port[MTL_PORT_P]);
       break;
-    case PROP_GENERAL_DEV_ARGS_PORT_RED:
+    case PROP_GENERAL_DEV_ARGS_PORT_R:
       g_value_set_string(value, general_args->port[MTL_PORT_R]);
       break;
     case PROP_GENERAL_DEV_ARGS_SIP:
       g_value_set_string(value, general_args->local_ip_string[MTL_PORT_P]);
       break;
-    case PROP_GENERAL_DEV_ARGS_SIP_RED:
+    case PROP_GENERAL_DEV_ARGS_SIP_R:
       g_value_set_string(value, general_args->local_ip_string[MTL_PORT_R]);
       break;
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
@@ -372,13 +372,13 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_PORT_IP:
       g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_P]);
       break;
-    case PROP_GENERAL_PORT_IP_RED:
+    case PROP_GENERAL_PORT_IP_R:
       g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_R]);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
       g_value_set_uint(value, portArgs->udp_port[MTL_PORT_P]);
       break;
-    case PROP_GENERAL_PORT_UDP_PORT_RED:
+    case PROP_GENERAL_PORT_UDP_PORT_R:
       g_value_set_uint(value, portArgs->udp_port[MTL_PORT_R]);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
