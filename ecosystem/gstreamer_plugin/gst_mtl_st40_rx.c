@@ -130,7 +130,7 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buf,
                                                  void* usrptr);
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
-                                                 SessionPortArgs* portArgs);
+                                                  SessionPortArgs* portArgs);
 
 static gint gst_mtl_st40_rx_mbuff_available(void* priv) {
   Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
@@ -187,16 +187,19 @@ static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
-      ops_rx->ip_addr[mtl_port_idx]) != 1) {
-      GST_ERROR("Invalid destination IP address: %s", port_args->session_ip_string[mtl_port_idx]);
+                  ops_rx->ip_addr[mtl_port_idx]) != 1) {
+      GST_ERROR("Invalid destination IP address: %s",
+                port_args->session_ip_string[mtl_port_idx]);
       return 0;
     }
 
     strncpy(ops_rx->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
-    if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port[mtl_port_idx]);
-    return 0;
+    if ((port_args->udp_port[mtl_port_idx] < 0) ||
+        (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
+      GST_ERROR("%s, invalid UDP port: %d\n", __func__,
+                port_args->udp_port[mtl_port_idx]);
+      return 0;
     }
 
     ops_rx->udp_port[mtl_port_idx] = port_args->udp_port[mtl_port_idx];
@@ -210,8 +213,8 @@ static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
   }
 
   if ((port_args->payload_type < 0) || (port_args->payload_type > 0x7F)) {
-  GST_ERROR("%s, invalid payload_type: %d\n", __func__, port_args->payload_type);
-  return 0;
+    GST_ERROR("%s, invalid payload_type: %d\n", __func__, port_args->payload_type);
+    return 0;
   }
 
   ops_rx->payload_type = port_args->payload_type;
@@ -227,8 +230,7 @@ static gboolean gst_mtl_st40_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
 
-  src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(src->generalArgs), FALSE);
+  src->mtl_lib_handle = gst_mtl_common_init_handle(&(src->generalArgs), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -305,8 +307,8 @@ static void gst_mtl_st40_rx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St40_Rx* self = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->generalArgs),
-                                         &(self->portArgs));
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec,
+                                         &(self->generalArgs), &(self->portArgs));
     return;
   }
 
@@ -328,8 +330,8 @@ static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue*
   Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->generalArgs),
-                                         &(src->portArgs));
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec,
+                                         &(src->generalArgs), &(src->portArgs));
     return;
   }
 

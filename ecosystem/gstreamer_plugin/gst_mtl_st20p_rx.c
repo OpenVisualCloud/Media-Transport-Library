@@ -204,8 +204,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
 
-  src->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(src->generalArgs), FALSE);
+  src->mtl_lib_handle = gst_mtl_common_init_handle(&(src->generalArgs), FALSE);
 
   if (!src->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -252,7 +251,8 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
 
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
-  ops_rx->port.num_port = gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
+  ops_rx->port.num_port =
+      gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
   if (!ops_rx->port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
@@ -292,8 +292,8 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St20p_Rx* self = GST_MTL_ST20P_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->generalArgs),
-                                         &(self->portArgs));
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec,
+                                         &(self->generalArgs), &(self->portArgs));
     return;
   }
 
@@ -331,8 +331,8 @@ static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(src->generalArgs),
-                                         &(src->portArgs));
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec,
+                                         &(src->generalArgs), &(src->portArgs));
     return;
   }
 

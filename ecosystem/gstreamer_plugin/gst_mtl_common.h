@@ -84,21 +84,26 @@ gboolean gst_mtl_common_gst_to_st_sampling(gint sampling,
 gboolean gst_mtl_common_st_to_gst_sampling(enum st30_sampling st_sampling,
                                            gint* gst_sampling);
 
-guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPortArgs* port_args);
-guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPortArgs* port_args);
+guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port,
+                                             SessionPortArgs* port_args);
+guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
+                                             SessionPortArgs* port_args);
 gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,
-                                            GeneralArgs* generalArgs);
-void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args, SessionPortArgs* port_args);
+                                                GeneralArgs* generalArgs);
+void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args,
+                                                 SessionPortArgs* port_args);
 
 void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class);
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          GeneralArgs* generalArgs, SessionPortArgs* portArgs);
+                                          GeneralArgs* generalArgs,
+                                          SessionPortArgs* portArgs);
 
 void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          GeneralArgs* generalArgs, SessionPortArgs* portArgs);
+                                          GeneralArgs* generalArgs,
+                                          SessionPortArgs* portArgs);
 
 mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance);

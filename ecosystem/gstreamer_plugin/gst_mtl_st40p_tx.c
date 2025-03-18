@@ -182,8 +182,7 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
   GST_DEBUG("Media Transport Initialization start");
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
-  sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(sink->generalArgs), FALSE);
+  sink->mtl_lib_handle = gst_mtl_common_init_handle(&(sink->generalArgs), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -220,8 +219,8 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St40p_Tx* self = GST_MTL_ST40P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->generalArgs),
-                                         &(self->portArgs));
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec,
+                                         &(self->generalArgs), &(self->portArgs));
     return;
   }
 
@@ -250,8 +249,8 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(sink->generalArgs),
-                                         &(sink->portArgs));
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec,
+                                         &(sink->generalArgs), &(sink->portArgs));
     return;
   }
 
@@ -301,7 +300,8 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
 
   gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
 
-  ops_tx.port.num_port = gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
+  ops_tx.port.num_port =
+      gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
   if (!ops_tx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;

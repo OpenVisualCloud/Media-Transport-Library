@@ -204,11 +204,11 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-    gobject_class, PROP_GENERAL_DEV_ARGS_PORT_R,
-    g_param_spec_string("dev-port-red", "DPDK device port redundant",
-                        "DPDK redundant port for synchronous ST 2110 data"
-                        "video transmission, bound to the VFIO DPDK driver. ",
-                        NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gobject_class, PROP_GENERAL_DEV_ARGS_PORT_R,
+      g_param_spec_string("dev-port-red", "DPDK device port redundant",
+                          "DPDK redundant port for synchronous ST 2110 data"
+                          "video transmission, bound to the VFIO DPDK driver. ",
+                          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_DEV_ARGS_SIP,
@@ -261,8 +261,8 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_PORT_UDP_PORT,
-      g_param_spec_uint("udp-port-red", "Sender UDP port", "Receiving MTL node UDP port.", 0,
-                        G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_uint("udp-port-red", "Sender UDP port", "Receiving MTL node UDP port.",
+                        0, G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_PORT_TX_QUEUES,
@@ -284,29 +284,34 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
 
   g_object_class_install_property(
       gobject_class, PROP_GENERAL_ENABLE_ONBOARD_PTP,
-      g_param_spec_boolean("enable-ptp", "Enable onboard PTP", 
-                            "Enable onboard PTP client", 
-                            FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean("enable-ptp", "Enable onboard PTP",
+                           "Enable onboard PTP client", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          GeneralArgs* general_args, SessionPortArgs* portArgs) {
+                                          GeneralArgs* general_args,
+                                          SessionPortArgs* portArgs) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
       general_args->log_level = g_value_get_uint(value);
       break;
     case PROP_GENERAL_DEV_ARGS_PORT:
-      strncpy(general_args->port[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(general_args->port[MTL_PORT_P], g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_PORT_R:
-      strncpy(general_args->port[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(general_args->port[MTL_PORT_R], g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_SIP:
-      strncpy(general_args->local_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(general_args->local_ip_string[MTL_PORT_P], g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_SIP_R:
-      strncpy(general_args->local_ip_string[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(general_args->local_ip_string[MTL_PORT_R], g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
       strncpy(general_args->dma_dev, g_value_get_string(value), MTL_PORT_MAX_LEN);
@@ -318,15 +323,17 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
       strncpy(portArgs->port[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_IP:
-      strncpy(portArgs->session_ip_string[MTL_PORT_P], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(portArgs->session_ip_string[MTL_PORT_P], g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_IP_R:
-      strncpy(portArgs->session_ip_string[MTL_PORT_R], g_value_get_string(value), MTL_PORT_MAX_LEN);
+      strncpy(portArgs->session_ip_string[MTL_PORT_R], g_value_get_string(value),
+              MTL_PORT_MAX_LEN);
       break;
     case PROP_GENERAL_PORT_UDP_PORT:
       portArgs->udp_port[MTL_PORT_P] = g_value_get_uint(value);
       break;
-      case PROP_GENERAL_PORT_UDP_PORT_R:
+    case PROP_GENERAL_PORT_UDP_PORT_R:
       portArgs->udp_port[MTL_PORT_FLAG_FORCE_NUMA] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
@@ -349,12 +356,13 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
 
 void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
                                           const GValue* value, GParamSpec* pspec,
-                                          GeneralArgs* general_args, SessionPortArgs* portArgs) {
+                                          GeneralArgs* general_args,
+                                          SessionPortArgs* portArgs) {
   switch (prop_id) {
     case PROP_GENERAL_LOG_LEVEL:
       g_value_set_uint(value, general_args->log_level);
       break;
-      case PROP_GENERAL_DEV_ARGS_PORT:
+    case PROP_GENERAL_DEV_ARGS_PORT:
       g_value_set_string(value, general_args->port[MTL_PORT_P]);
       break;
     case PROP_GENERAL_DEV_ARGS_PORT_R:
@@ -397,23 +405,27 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
 }
 
 /**
- * Copies general initialization port values to session-specific port arguments if not specified.
- * If the primary port is not specified, the redundant port argument will be copied from the general
- * initialization ports regardless of its specification.
- * If the UDP port for the redundant port is not specified, it will be incremented by one over
+ * Copies general initialization port values to session-specific port arguments if not
+ * specified. If the primary port is not specified, the redundant port argument will be
+ * copied from the general initialization ports regardless of its specification. If the
+ * UDP port for the redundant port is not specified, it will be incremented by one over
  * the primary port.
  *
- * @param general_args Pointer to the structure containing general initialization parameters.
+ * @param general_args Pointer to the structure containing general initialization
+ * parameters.
  * @param port_args Pointer to the structure containing session-specific port arguments.
  */
-void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args, SessionPortArgs* port_args) {
+void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args,
+                                                 SessionPortArgs* port_args) {
   gboolean redundant = (strlen(general_args->port[MTL_PORT_R]) > 0);
 
   if (strlen(port_args->port[MTL_PORT_P]) == 0) {
-    strncpy(port_args->port[MTL_PORT_P], general_args->port[MTL_PORT_P], MTL_PORT_MAX_LEN);
+    strncpy(port_args->port[MTL_PORT_P], general_args->port[MTL_PORT_P],
+            MTL_PORT_MAX_LEN);
 
     if (redundant && strlen(port_args->port[MTL_PORT_R]) == 0) {
-      strncpy(port_args->port[MTL_PORT_R], general_args->port[MTL_PORT_R], MTL_PORT_MAX_LEN);
+      strncpy(port_args->port[MTL_PORT_R], general_args->port[MTL_PORT_R],
+              MTL_PORT_MAX_LEN);
     }
   }
 
@@ -425,19 +437,20 @@ void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args, Sess
 /**
  * Parses the transmission port arguments and initializes the tranmission port structure.
  * Validates and sets the destination IP address, port number, UDP port, and payload type.
- * 
+ *
  * @param port Pointer to the transmission port structure to be initialized.
  * @param port_args Pointer to the structure containing the port arguments.
  * @return The number of initialized ports, or 0 if an error occurred.
  */
-guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPortArgs* port_args) {
+guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port,
+                                             SessionPortArgs* port_args) {
   guint mtl_port_idx = MTL_PORT_P;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx]) > 0) {
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
-      port->dip_addr[mtl_port_idx]) != 1) {
+                  port->dip_addr[mtl_port_idx]) != 1) {
       GST_ERROR("Invalid destination IP address: \"%s\" on port %u",
-          port_args->session_ip_string[mtl_port_idx], mtl_port_idx);
+                port_args->session_ip_string[mtl_port_idx], mtl_port_idx);
       return 0;
     }
 
@@ -448,8 +461,10 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
 
     strncpy(port->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
-    if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
-      GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port[mtl_port_idx]);
+    if ((port_args->udp_port[mtl_port_idx] < 0) ||
+        (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
+      GST_ERROR("%s, invalid UDP port: %d\n", __func__,
+                port_args->udp_port[mtl_port_idx]);
       return 0;
     }
 
@@ -470,26 +485,29 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port, SessionPor
 /**
  * Parses the transmission port arguments and initializes the receive port structure.
  * Validates and sets the destination IP address, port number, UDP port, and payload type.
- * 
+ *
  * @param port Pointer to the transmission port structure to be initialized.
  * @param port_args Pointer to the structure containing the port arguments.
  * @return The number of initialized ports, or 0 if an error occurred.
  */
-guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPortArgs* port_args) {
+guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port,
+                                             SessionPortArgs* port_args) {
   guint mtl_port_idx = MTL_PORT_P;
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(port_args->port[mtl_port_idx])) {
-
     if (inet_pton(AF_INET, port_args->session_ip_string[mtl_port_idx],
-      port->ip_addr[mtl_port_idx]) != 1) {
-      GST_ERROR("Invalid source IP address: %s", port_args->session_ip_string[mtl_port_idx]);
+                  port->ip_addr[mtl_port_idx]) != 1) {
+      GST_ERROR("Invalid source IP address: %s",
+                port_args->session_ip_string[mtl_port_idx]);
       return 0;
     }
 
     strncpy(port->port[mtl_port_idx], port_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
 
-    if ((port_args->udp_port[mtl_port_idx] < 0) || (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
-      GST_ERROR("%s, invalid UDP port: %d\n", __func__, port_args->udp_port[mtl_port_idx]);
+    if ((port_args->udp_port[mtl_port_idx] < 0) ||
+        (port_args->udp_port[mtl_port_idx] > 0xFFFF)) {
+      GST_ERROR("%s, invalid UDP port: %d\n", __func__,
+                port_args->udp_port[mtl_port_idx]);
       return 0;
     }
 
@@ -514,7 +532,7 @@ guint gst_mtl_common_parse_rx_port_arguments(struct st_rx_port* port, SessionPor
 }
 
 gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init_params,
-                                            GeneralArgs* general_args) {
+                                                GeneralArgs* general_args) {
   gint mtl_port_idx = MTL_PORT_P;
   gint ret;
 
@@ -537,12 +555,14 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
   }
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(general_args->port[mtl_port_idx]) != 0) {
-    strncpy(mtl_init_params->port[mtl_port_idx], general_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
+    strncpy(mtl_init_params->port[mtl_port_idx], general_args->port[mtl_port_idx],
+            MTL_PORT_MAX_LEN);
 
     ret = inet_pton(AF_INET, general_args->local_ip_string[mtl_port_idx],
                     mtl_init_params->sip_addr[mtl_port_idx]);
     if (ret != 1) {
-      GST_ERROR("%s, sip %s is not valid ip address\n", __func__, general_args->local_ip_string[MTL_PORT_P]);
+      GST_ERROR("%s, sip %s is not valid ip address\n", __func__,
+                general_args->local_ip_string[MTL_PORT_P]);
       return FALSE;
     }
 
