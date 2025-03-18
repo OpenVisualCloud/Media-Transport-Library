@@ -526,8 +526,13 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
   } else {
     mtl_init_params->log_level = MTL_LOG_LEVEL_INFO;
   }
+
   general_args->log_level = mtl_init_params->log_level;
 
+  if (general_args->enable_onboard_ptp) {
+    mtl_init_params->flags |= MTL_FLAG_PTP_ENABLE;
+    GST_INFO("Using MTL library's onboard PTP");
+  }
 
   while (mtl_port_idx <= MTL_PORT_R && strlen(general_args->port[mtl_port_idx]) != 0) {
     strncpy(mtl_init_params->port[mtl_port_idx], general_args->port[mtl_port_idx], MTL_PORT_MAX_LEN);
@@ -607,11 +612,6 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* general_args,
     GST_ERROR("Failed to parse dev arguments");
     pthread_mutex_unlock(&common_handle.mutex);
     return NULL;
-  }
-
-  if (general_args->enable_onboard_ptp) {
-    mtl_init_params.flags |= MTL_FLAG_PTP_ENABLE;
-    GST_INFO("Using MTL library's onboard PTP");
   }
 
   handle = mtl_init(&mtl_init_params);
