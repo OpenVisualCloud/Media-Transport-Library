@@ -341,9 +341,11 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
       break;
     case PROP_GENERAL_PORT_RX_QUEUES:
       general_args->rx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      general_args->rx_queues_cnt[MTL_PORT_R] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_TX_QUEUES:
       general_args->tx_queues_cnt[MTL_PORT_P] = g_value_get_uint(value);
+      general_args->tx_queues_cnt[MTL_PORT_R] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_ENABLE_ONBOARD_PTP:
       general_args->enable_onboard_ptp = g_value_get_boolean(value);
