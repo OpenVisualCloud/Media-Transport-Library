@@ -460,7 +460,7 @@ static void gst_mtl_st40p_tx_finalize(GObject* object) {
   }
 
   if (sink->mtl_lib_handle) {
-    if (gst_mtl_common_deinit_handle(sink->mtl_lib_handle)) {
+    if (gst_mtl_common_deinit_handle(&sink->mtl_lib_handle)) {
       GST_ERROR("Failed to uninitialize MTL library");
       return;
     }

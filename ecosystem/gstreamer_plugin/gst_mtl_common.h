@@ -67,9 +67,9 @@ typedef struct GeneralArgs {
 } GeneralArgs;
 
 typedef struct SessionPortArgs {
-  gchar session_ip_string[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  gchar port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-  gint udp_port[MTL_PORT_MAX];
+  gchar session_ip_string[2][MTL_PORT_MAX_LEN];
+  gchar port[2][MTL_PORT_MAX_LEN];
+  gint udp_port[2];
   gint payload_type;
 } SessionPortArgs;
 
@@ -108,5 +108,5 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
 mtl_handle gst_mtl_common_init_handle(GeneralArgs* generalArgs,
                                       gboolean force_to_initialize_new_instance);
 
-gint gst_mtl_common_deinit_handle(mtl_handle handle);
+gint gst_mtl_common_deinit_handle(mtl_handle* handle);
 #endif /* __GST_MTL_COMMON_H__ */
