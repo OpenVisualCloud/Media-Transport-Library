@@ -68,7 +68,7 @@ struct _Gst_Mtl_St20p_Rx {
   guint retry_frame;
   guint frame_size;
 
-  StDevArgs devArgs;        /* imtl initialization device */
+  GeneralArgs generalArgs;  /* imtl initialization arguments */
   SessionPortArgs portArgs; /* imtl session device */
 
   /* arguments for session */

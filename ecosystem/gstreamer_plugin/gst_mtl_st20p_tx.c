@@ -186,8 +186,7 @@ static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink) {
   GST_DEBUG("Media Transport Initialization start");
   gst_base_sink_set_async_enabled(bsink, FALSE);
 
-  sink->mtl_lib_handle =
-      gst_mtl_common_init_handle(&(sink->devArgs), &(sink->log_level), FALSE);
+  sink->mtl_lib_handle = gst_mtl_common_init_handle(&(sink->generalArgs), FALSE);
 
   if (!sink->mtl_lib_handle) {
     GST_ERROR("Could not initialize MTL");
@@ -231,8 +230,8 @@ static void gst_mtl_st20p_tx_set_property(GObject* object, guint prop_id,
   Gst_Mtl_St20p_Tx* self = GST_MTL_ST20P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec, &(self->devArgs),
-                                         &(self->portArgs), &self->log_level);
+    gst_mtl_common_set_general_arguments(object, prop_id, value, pspec,
+                                         &(self->generalArgs), &(self->portArgs));
     return;
   }
 
@@ -257,8 +256,8 @@ static void gst_mtl_st20p_tx_get_property(GObject* object, guint prop_id, GValue
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
 
   if (prop_id < PROP_GENERAL_MAX) {
-    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec, &(sink->devArgs),
-                                         &(sink->portArgs), &sink->log_level);
+    gst_mtl_common_get_general_arguments(object, prop_id, value, pspec,
+                                         &(sink->generalArgs), &(sink->portArgs));
     return;
   }
 
@@ -297,7 +296,6 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
   ops_tx.width = info->width;
   ops_tx.height = info->height;
   ops_tx.transport_fmt = ST20_FMT_YUV_422_10BIT;
-  ops_tx.port.num_port = 1;
   ops_tx.flags |= ST20P_TX_FLAG_BLOCK_GET;
 
   if (sink->framebuffer_num) {
@@ -329,31 +327,15 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     return FALSE;
   }
 
-  if (inet_pton(AF_INET, sink->portArgs.session_ip_string,
-                ops_tx.port.dip_addr[MTL_PORT_P]) != 1) {
-    GST_ERROR("Invalid destination IP address: %s", sink->portArgs.session_ip_string);
+  gst_mtl_common_copy_general_to_session_args(&(sink->generalArgs), &(sink->portArgs));
+
+  ops_tx.port.num_port =
+      gst_mtl_common_parse_tx_port_arguments(&ops_tx.port, &sink->portArgs);
+  if (!ops_tx.port.num_port) {
+    GST_ERROR("Failed to parse port arguments");
     return FALSE;
   }
 
-  if (strlen(sink->portArgs.port) == 0) {
-    strncpy(ops_tx.port.port[MTL_PORT_P], sink->devArgs.port, MTL_PORT_MAX_LEN);
-  } else {
-    strncpy(ops_tx.port.port[MTL_PORT_P], sink->portArgs.port, MTL_PORT_MAX_LEN);
-  }
-
-  if ((sink->portArgs.udp_port < 0) || (sink->portArgs.udp_port > 0xFFFF)) {
-    GST_ERROR("%s, invalid UDP port: %d\n", __func__, sink->portArgs.udp_port);
-    return FALSE;
-  }
-
-  ops_tx.port.udp_port[0] = sink->portArgs.udp_port;
-
-  if ((sink->portArgs.payload_type < 0) || (sink->portArgs.payload_type > 0x7F)) {
-    GST_ERROR("%s, invalid payload_type: %d\n", __func__, sink->portArgs.payload_type);
-    return FALSE;
-  }
-
-  ops_tx.port.payload_type = sink->portArgs.payload_type;
   gst_video_info_free(info);
 
   sink->tx_handle = st20p_tx_create(sink->mtl_lib_handle, &ops_tx);

@@ -96,18 +96,24 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 |---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
 | log-level     | uint   | Set the log level (INFO 1 to CRIT 5).                                                             | 1 (INFO) TO 5 (CRITICAL) |
 | dev-port      | string | DPDK port for synchronous transmission and reception, bound to the VFIO DPDK driver.              | N/A                      |
+| dev-port-red  | string | DPDK port for redundant transmission, bound to the VFIO DPDK driver.                              | N/A                      |
 | dev-ip        | string | Local IP address that the port will be identified by. This is the address from which ARP responses will be sent. | N/A       |
+| dev-ip-red    | string | Local IP address that the port will be identified by. For the redundant transmission port.        | N/A                      |
 | ip            | string | Receiving MTL node IP address.                                                                    | N/A                      |
+| ip-red        | string | Receiving MTL node IP address for redundant transmission.                                         | N/A                      |
 | udp-port      | uint   | Receiving MTL node UDP port.                                                                      | 0 to G_MAXUINT           |
+| udp-port-red  | uint   | Receiving MTL node UDP port for redundant transmission.                                           | 0 to G_MAXUINT           |
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
+| port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
+| port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
 | Property Name | Type   | Description                                                                                       | Range                    |
 |---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
 | dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
-| port          | string | **RESERVED FOR FUTURE USE** DPDK device port. Utilized when multiple ports are passed to the MTL library to select the port for the session. | N/A |
+
 
 > **Warning:**
 > Generally, the `log-level`, `dev-port`, `dev-ip`, `tx-queues`, and `rx-queues` are used to initialize the MTLlibrary. As the MTL library handle is shared between MTL

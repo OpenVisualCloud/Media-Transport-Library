@@ -69,7 +69,7 @@ struct _Gst_Mtl_St30p_Rx {
   /* arguments */
   guint log_level;
   guint retry_frame;
-  StDevArgs devArgs;        /* imtl initialization device */
+  GeneralArgs generalArgs;  /* imtl initialization arguments */
   SessionPortArgs portArgs; /* imtl session device */
   gint framebuffer_num;
 
