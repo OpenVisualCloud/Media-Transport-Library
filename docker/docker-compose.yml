@@ -1,8 +1,8 @@
 version: '3'
 
 services:
-  imtl:
-    image: mtl:latest
+  mtl_ubuntu:
+    image: mtl_ubuntu:latest
     ulimits:
       memlock:
         soft: -1
@@ -11,6 +11,31 @@ services:
       - "/dev/vfio:/dev/vfio" # or add /dev/vfio/vfio and /dev/vfio/<specific_device>
     volumes:
       - "/var/run/imtl:/var/run/imtl" # For connection with MTL Manager
+    # For kernel / AF_XDP backend
+    # network_mode: host
+    cap_add:
+      - SYS_NICE
+      - IPC_LOCK
+      # For kernel / AF_XDP backend
+      # - NET_RAW
+      # - CAP_BPF
+      
+      # For Adjtime
+      # - SYS_TIME
+
+  mtl_rockos:
+    image: mtl_rockos:latest
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    devices:
+      - "/dev/vfio:/dev/vfio" # or add /dev/vfio/vfio and /dev/vfio/<specific_device>
+    volumes:
+      - "/var/run/imtl:/var/run/imtl" # For connection with MTL Manager
+      - "/hugepages:/hugepages"
+      # If you have issues with ice driver not finding ddp location
+      # - /lib/firmware/intel/ice/ddp:/lib/firmware/intel/ice/ddp
     # For kernel / AF_XDP backend
     # network_mode: host
     cap_add:
