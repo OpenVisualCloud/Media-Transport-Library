@@ -659,6 +659,8 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* general_args,
   }
 
   common_handle.mtl_handle_reference_count++;
+  GST_INFO("MTL shared handle reference count incremented to: %d",
+           common_handle.mtl_handle_reference_count);
   common_handle.mtl_handle = handle;
   pthread_mutex_unlock(&common_handle.mutex);
   return common_handle.mtl_handle;
@@ -669,11 +671,8 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* general_args,
  * If the handle is the shared handle, the reference count is decremented.
  * If the reference count reaches zero, the handle is deinitialized.
  * If the handle is not the shared handle, it is deinitialized immediately.
- *
- * @param handle MTL handle to deinitialize (Null is an acceptable value then
- * shared value will be used).
  */
-gint gst_mtl_common_deinit_handle(mtl_handle handle) {
+gint gst_mtl_common_deinit_handle(mtl_handle* handle) {
   gint ret;
 
   if (!handle) {
@@ -682,23 +681,33 @@ gint gst_mtl_common_deinit_handle(mtl_handle handle) {
   }
 
   pthread_mutex_lock(&common_handle.mutex);
-  if (handle == common_handle.mtl_handle) {
+
+  if (*handle == common_handle.mtl_handle) {
     common_handle.mtl_handle_reference_count--;
 
     if (common_handle.mtl_handle_reference_count > 0) {
+      GST_INFO("Shared handle is still in use, reference count: %d",
+               common_handle.mtl_handle_reference_count);
       pthread_mutex_unlock(&common_handle.mutex);
       return 0;
+    } else if (common_handle.mtl_handle_reference_count < 0) {
+      GST_ERROR("Invalid reference count: %d", common_handle.mtl_handle_reference_count);
+      pthread_mutex_unlock(&common_handle.mutex);
+      return -EINVAL;
     }
+
+    GST_INFO("Deinitializing shared handle");
   }
 
-  ret = mtl_stop(handle);
+  ret = mtl_stop(*handle);
   if (ret) {
     GST_ERROR("Failed to stop MTL library");
     pthread_mutex_unlock(&common_handle.mutex);
     return ret;
   }
 
-  ret = mtl_uninit(handle);
+  ret = mtl_uninit(*handle);
+  *handle = NULL;
   pthread_mutex_unlock(&common_handle.mutex);
   return ret;
 }
