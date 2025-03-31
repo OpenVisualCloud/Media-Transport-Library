@@ -2,7 +2,7 @@
 
 ## Linux Kernel
 
-Possible Linux kernel level optimizations to network stack that can improve performance as well as maximize throughput. Every variable comes with proposed value to be set - this can be done by using for example `sysctl -w` commandline helper, for example: `sysctl -w net.ipv4.ip_forward=1`:
+Possible Linux kernel level optimizations to network stack that can improve performance as well as maximize throughput. Every variable comes with proposed value to be set - this can be done by using for example `sysctl -w` command-line helper, for example: `sysctl -w net.ipv4.ip_forward=1`:
 
 ### Generic
 
