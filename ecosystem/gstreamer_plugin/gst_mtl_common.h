@@ -47,6 +47,7 @@ enum {
   PROP_GENERAL_PORT_RX_QUEUES,
   PROP_GENERAL_PORT_TX_QUEUES,
   PROP_GENERAL_ENABLE_ONBOARD_PTP,
+  PROP_GENERAL_LCORE_MASK,
   PROP_GENERAL_MAX
 };
 
@@ -64,6 +65,7 @@ typedef struct GeneralArgs {
   gchar dma_dev[MTL_PORT_MAX_LEN];
   gint log_level;
   gboolean enable_onboard_ptp;
+  gchar lcore_mask[MTL_PORT_MAX_LEN];
 } GeneralArgs;
 
 typedef struct SessionPortArgs {
