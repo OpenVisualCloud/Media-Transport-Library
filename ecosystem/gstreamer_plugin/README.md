@@ -108,6 +108,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
+| lcore-list     | string | Map lcore set to physical cpu set. The argument format is: <lcores[@cpus]>[<,lcores[@cpus]>...]   | N/A                      |
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
 | Property Name | Type   | Description                                                                                       | Range                    |
