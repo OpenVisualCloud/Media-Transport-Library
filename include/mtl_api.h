@@ -93,6 +93,11 @@ extern "C" {
  */
 #define MTL_DMA_DEV_MAX (8)
 
+/** 
+ * Max core list size
+ */
+#define MTL_CORE_LIST_MAX_SIZE (128)
+
 /**
  * Max length of a pcap dump filename
  */
