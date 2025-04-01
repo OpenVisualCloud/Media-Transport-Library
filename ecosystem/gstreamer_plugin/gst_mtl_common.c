@@ -579,6 +579,8 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
     mtl_init_params->lcores = general_args->lcore_map;
   }
 
+  strncpy(mtl_init_params->lcores, "1,3,5,7", MTL_PORT_MAX_LEN);
+
   while (mtl_port_idx <= MTL_PORT_R && strlen(general_args->port[mtl_port_idx]) != 0) {
     strncpy(mtl_init_params->port[mtl_port_idx], general_args->port[mtl_port_idx],
             MTL_PORT_MAX_LEN);
