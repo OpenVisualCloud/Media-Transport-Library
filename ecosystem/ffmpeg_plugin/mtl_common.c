@@ -53,8 +53,7 @@ mtl_handle mtl_dev_get(AVFormatContext* ctx, const struct StDevArgs* args, int* 
         return NULL;
       }
     }
-    p.tx_queues_cnt[i] = args->tx_queues_cnt[i] ? args->tx_queues_cnt[i] : 8;
-    p.rx_queues_cnt[i] = args->rx_queues_cnt[i] ? args->rx_queues_cnt[i] : 8;
+
     p.num_ports++;
   }
 
