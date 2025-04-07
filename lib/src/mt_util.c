@@ -386,8 +386,13 @@ void mt_lcore_dump() {
 
 void mt_eth_link_dump(uint16_t port_id) {
   struct rte_eth_link eth_link;
+  int err;
 
-  rte_eth_link_get_nowait(port_id, &eth_link);
+  err = rte_eth_link_get_nowait(port_id, &eth_link);
+  if (err < 0) {
+    err("%s, failed to get link status for port %d, ret %d\n", __func__, port_id, err);
+    return;
+  }
 
   critical("%s(%d), link_speed %dg link_status %d link_duplex %d link_autoneg %d\n",
            __func__, port_id, eth_link.link_speed / 1000, eth_link.link_status,
