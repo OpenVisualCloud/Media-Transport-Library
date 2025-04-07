@@ -638,6 +638,9 @@ mtl_handle gst_mtl_common_init_handle(GeneralArgs* general_args,
     return NULL;
   }
 
+  mtl_init_params.flags |= MTL_FLAG_NOT_BIND_PROCESS_NUMA;
+  mtl_init_params.main_lcore = 1;
+  mtl_init_params.lcores= "3,5,7,9,11,13,15,17";
   handle = mtl_init(&mtl_init_params);
   if (!handle) {
     GST_ERROR("Failed to initialize MTL library");
