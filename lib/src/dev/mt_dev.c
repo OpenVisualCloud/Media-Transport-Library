@@ -795,6 +795,7 @@ static int dev_detect_link(struct mt_interface* inf) {
   struct rte_eth_link eth_link;
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
+  int err;
 
   if (inf->drv_info.flags & MT_DRV_F_NOT_DPDK_PMD) {
     dbg("%s(%d), not dpdk based\n", __func__, port);
@@ -804,7 +805,12 @@ static int dev_detect_link(struct mt_interface* inf) {
   memset(&eth_link, 0, sizeof(eth_link));
 
   for (int i = 0; i < 100; i++) {
-    rte_eth_link_get_nowait(port_id, &eth_link);
+    err = rte_eth_link_get_nowait(port_id, &eth_link);
+    if (err < 0) {
+      err("%s, failed to get link status for port %d, ret %d\n", __func__, port_id, err);
+      return err;
+    }
+
     if (eth_link.link_status) {
       inf->link_speed = eth_link.link_speed;
       mt_eth_link_dump(port_id);
