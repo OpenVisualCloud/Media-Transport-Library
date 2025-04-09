@@ -31,13 +31,10 @@ jobs:
   build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    container:
-      image: ubuntu:latest
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
 
     steps:
       - name: Harden Runner
@@ -57,9 +54,7 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@1a162644f9a7e87d8f4b053101d1d9a712edc18c # v6.3.0
         with:
-          load: true
           push: false
-          outputs: type=docker
           file: docker/ubuntu.dockerfile
           tags: mtl:latest
           cache-from: type=gha,scope=mtl
