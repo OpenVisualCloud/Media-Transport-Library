@@ -61,3 +61,6 @@ jobs:
           tags: mtl:latest
           cache-from: type=gha,scope=mtl
           cache-to: type=gha,mode=max,scope=mtl
+          build-args: |
+              HTTP_PROXY=$http_proxy
+              HTTPS_PROXY=$https_proxy
