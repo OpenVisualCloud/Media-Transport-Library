@@ -1,3 +1,4 @@
+name: Docker Build
 on:
   # allow manually trigger
   workflow_dispatch:
