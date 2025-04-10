@@ -31,7 +31,7 @@ jobs:
 
   build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    if: ${{ needs.changes.outputs.changed == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
