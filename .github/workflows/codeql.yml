@@ -24,6 +24,10 @@ on:
 
 permissions:
   contents: read
+env:
+  # Customize the env if
+  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
+  DPDK_VERSION: 25.03
 
 jobs:
   analyze:
@@ -62,14 +66,27 @@ jobs:
         run: |
           sudo apt-get update --fix-missing -y
           sudo apt-get install --no-install-recommends -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev llvm clang
-          sudo apt-get install --no-install-recommends -y dpdk-dev systemtap-sdt-dev software-properties-common
+          sudo apt-get install --no-install-recommends -y systemtap-sdt-dev software-properties-common
 
+      - name: checkout dpdk repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{  env.DPDK_VERSION  }}
+          path: dpdk
       - name: Git config
         run: |
           git config --global user.email "you@example.com"
           git config --global user.name "Your Name"
-
+      - name: Build DPDK from source
+        working-directory: dpdk
+        run: |
+          meson build
+          ninja -C build
+          cd build
+          sudo ninja install
       - name: Build
+        working-directory: "${{ github.workspace }}"
         run: |
           ./build.sh
 
