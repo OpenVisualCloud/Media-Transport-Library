@@ -54,6 +54,8 @@ dkms.conf
 # Ours
 .*
 *.log
+*.log_*
+logs_*
 *.patch
 !patches/*.patch
 !ecosystem/*.patch
