@@ -53,7 +53,7 @@ jobs:
 
 
       - name: Run Trivy vulnerability scanner with sarif output
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           scan-type: config
           scan-ref: ./docker
@@ -91,7 +91,7 @@ jobs:
           ref: ${{ inputs.branch }}
 
       - name: Run Trivy vulnerability scanner with sarif output
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           scan-type: config
           scan-ref: ./manager
@@ -127,7 +127,7 @@ jobs:
           ref: ${{ inputs.branch }}
 
       - name: Run Trivy vulnerability scanner with table output
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           scan-type: config
           scan-ref: ./docker
@@ -137,7 +137,7 @@ jobs:
           vuln-type: os,library
 
       - name: Run Trivy manager vulnerability scanner with table output
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@6c175e9c4083a92bbca2f9724c8a5e33bc2d97a5 # v0.30.0
         with:
           scan-type: config
           scan-ref: ./manager
