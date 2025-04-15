@@ -40,7 +40,7 @@ sudo ldconfig
 
 > Note: For FFmpeg version 4.4 or 6.1, replace 7.0 with 4.4 or 6.1 respectively in above commands.
 
-> Note: In order to build the FFmpeg in a non-default path (e.g., not to overwrite an existing instance), use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
+In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
 ## 2. ST20P raw video run guide
 
