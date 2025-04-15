@@ -63,7 +63,9 @@ app_c_args += ['-Wunused-parameter']
 if is_windows
   app_c_args += ['-DWINDOWSENV']
   windows_include_dir = '..\..\lib\windows'
+  windows_include_dir_2 = '..\..\..\..\lib\windows'
   app_c_args += ['-I' + windows_include_dir]
+  app_c_args += ['-I' + windows_include_dir_2]
 endif
 
 # simd build option, enable sse4.2 default, todo: do we need AVX2/AVX512 for app ?

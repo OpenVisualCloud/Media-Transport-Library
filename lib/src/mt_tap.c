@@ -366,15 +366,15 @@ static struct rte_flow* tap_create_flow(struct mt_cni_impl* cni, uint16_t port_i
   action[1].type = RTE_FLOW_ACTION_TYPE_END;
   memset(pkt_buf, 0, sizeof(pkt_buf));
   memset(msk_buf, 0, sizeof(msk_buf));
-  snprintf(pkt_buf, 84, "%s",
+  snprintf(pkt_buf, 85, "%s",
            "00000000000100000000000208060001080006040000000000000001010101010000000000020"
            "2020202");
-  snprintf(pkt_buf, 12, "%02x%02x%02x%02x%02x%02x", tap_ctx->mac_addr.addr_bytes[0],
+  snprintf(pkt_buf, 13, "%02x%02x%02x%02x%02x%02x", tap_ctx->mac_addr.addr_bytes[0],
            tap_ctx->mac_addr.addr_bytes[1], tap_ctx->mac_addr.addr_bytes[2],
            tap_ctx->mac_addr.addr_bytes[3], tap_ctx->mac_addr.addr_bytes[4],
            tap_ctx->mac_addr.addr_bytes[5]);
   info("Flow bind to mac address %12.12s \n", pkt_buf);
-  snprintf(msk_buf, 84, "%s",
+  snprintf(msk_buf, 85, "%s",
            "FFFFFFFFFFFF000000000000FFFF0000000000000000000000000000000000000000000000000"
            "0000000");
   memset(pattern, 0, sizeof(pattern));

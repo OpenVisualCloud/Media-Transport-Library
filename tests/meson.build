@@ -51,6 +51,7 @@ test_cpp_args += ['-Wvla']
 if is_windows
   test_c_args += ['-DWINDOWSENV']
   test_cpp_args += ['-DWINDOWSENV']
+  test_c_args += ['-I' + '..\..\lib\windows']
   ws2_32_dep = cpp_c.find_library('ws2_32', required: true)
 else
   ws2_32_dep = [] # add this when the code uses hton/ntoh
