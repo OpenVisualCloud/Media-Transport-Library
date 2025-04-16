@@ -38,7 +38,7 @@ jobs:
         sys:
           - mingw64
           - ucrt64
-        dpdk: [23.11, 23.07]
+        dpdk: [25.03, 23.11]
     defaults:
       run:
         shell: msys2 {0}

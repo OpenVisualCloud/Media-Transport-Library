@@ -16,7 +16,7 @@ inputs:
   dpdk:
     description: DPDK support version on Media Transport
     required: true
-    default: 23.11
+    default: 25.03
   tap:
     description: Enable TAP device
     required: true

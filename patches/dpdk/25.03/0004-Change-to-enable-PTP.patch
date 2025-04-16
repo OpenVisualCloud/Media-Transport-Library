@@ -1,0 +1,47 @@
+From 5bafac2314550708f5f015f535aeff35b2888884 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Mon, 31 Mar 2025 12:37:40 +0000
+Subject: [PATCH 4/6] Change to enable PTP
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/ice_rxtx.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
+index 40ac01e782..807dbdc9e0 100644
+--- a/drivers/net/intel/ice/ice_rxtx.c
++++ b/drivers/net/intel/ice/ice_rxtx.c
+@@ -1809,8 +1809,7 @@ ice_rx_scan_hw_ring(struct ice_rx_queue *rxq)
+ 				pkt_flags |= ice_timestamp_dynflag;
+ 			}
+ 
+-			if (ad->ptp_ena && ((mb->packet_type &
+-			    RTE_PTYPE_L2_MASK) == RTE_PTYPE_L2_ETHER_TIMESYNC)) {
++			if (ad->ptp_ena) {
+ 				rxq->time_high =
+ 				   rte_le_to_cpu_32(rxdp[j].wb.flex_ts.ts_high);
+ 				mb->timesync = rxq->queue_id;
+@@ -2176,8 +2175,7 @@ ice_recv_scattered_pkts(void *rx_queue,
+ 			pkt_flags |= ice_timestamp_dynflag;
+ 		}
+ 
+-		if (ad->ptp_ena && ((first_seg->packet_type & RTE_PTYPE_L2_MASK)
+-		    == RTE_PTYPE_L2_ETHER_TIMESYNC)) {
++		if (ad->ptp_ena) {
+ 			rxq->time_high =
+ 			   rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high);
+ 			first_seg->timesync = rxq->queue_id;
+@@ -2674,8 +2672,7 @@ ice_recv_pkts(void *rx_queue,
+ 			pkt_flags |= ice_timestamp_dynflag;
+ 		}
+ 
+-		if (ad->ptp_ena && ((rxm->packet_type & RTE_PTYPE_L2_MASK) ==
+-		    RTE_PTYPE_L2_ETHER_TIMESYNC)) {
++		if (ad->ptp_ena) {
+ 			rxq->time_high =
+ 			   rte_le_to_cpu_32(rxd.wb.flex_ts.ts_high);
+ 			rxm->timesync = rxq->queue_id;
+-- 
+2.34.1
+
