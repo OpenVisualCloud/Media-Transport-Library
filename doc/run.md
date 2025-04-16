@@ -144,6 +144,18 @@ The number is dependent on the workloads you wish to execute. Consider increasin
 
 ## 5. Run the Sample Application
 
+> **WARNING:** It is crucial to run the MTL Manager using the Bash command
+> ```bash
+> sudo MtlManager
+> ```
+> before attempting to run more than one MTL process per machine or server.
+>
+> Failure to do so will result in improper logical core (lcore) management, as all MTL
+> processes will allocate on the same cores, leading to severe performance degradation
+> and potential system instability.
+>
+> For detailed instructions and further information, please refer to the [manager/README.md](../manager/README.md)
+
 ### 5.1. Prepare Source Files
 
 Please note that the input YUV source file for the sample application is in the RFC4175 YUV422BE10 (big-endian 10-bit) pixel group format, which is defined in the ST2110 specification. This project includes a simple tool to convert the format from YUV422 planar 10-bit little-endian format.
