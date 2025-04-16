@@ -97,6 +97,7 @@ typedef struct st_rx_audio_session_handle_impl* st30_rx_handle;
 
 /**
  * Payload format of st2110-30/31(audio) streaming
+ * Note: PCM format is interpreted as big endian.
  */
 enum st30_fmt {
   ST30_FMT_PCM8 = 0, /**< 8 bits per channel */
