@@ -5,7 +5,7 @@ For Mtl commit messages generally follows Conventional Commit messages rules
 For more details on the Conventional Commit messages rules, refer to the
 [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/).
 
-The only deviations are that structural elements should be written in either camel case or uppercase,
+The only deviations are that structural elements (like Add or Fix) should be capitalized,
 and we also allow `add` as an replacement for feat and `build(deps)` for CiCd dependencies bumps.
 
 - `Build`: Changes that affect the build tool or external dependencies (example scopes: gulp, broccoli, - npm)
