@@ -1,0 +1,216 @@
+From b4b8c41ed4243a3f77031c70e1de94abaefdcda5 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Fri, 11 Apr 2025 12:41:46 +0000
+Subject: [PATCH] net/intel/ice: support hdr split mbuf callback
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/ice_ethdev.c |  1 +
+ drivers/net/intel/ice/ice_rxtx.c   | 46 ++++++++++++++++++++++++++++++
+ drivers/net/intel/ice/ice_rxtx.h   |  5 ++++
+ lib/ethdev/ethdev_driver.h         |  6 ++++
+ lib/ethdev/rte_ethdev.c            | 14 +++++++++
+ lib/ethdev/rte_ethdev.h            | 14 +++++++++
+ lib/ethdev/version.map             |  1 +
+ 7 files changed, 87 insertions(+)
+
+diff --git a/drivers/net/intel/ice/ice_ethdev.c b/drivers/net/intel/ice/ice_ethdev.c
+index 21d3795954..a1059bb21a 100644
+--- a/drivers/net/intel/ice/ice_ethdev.c
++++ b/drivers/net/intel/ice/ice_ethdev.c
+@@ -324,6 +324,7 @@ static const struct eth_dev_ops ice_eth_dev_ops = {
+ 	.fec_get_capability           = ice_fec_get_capability,
+ 	.fec_get                      = ice_fec_get,
+ 	.fec_set                      = ice_fec_set,
++	.hdrs_mbuf_set_cb             = ice_hdrs_mbuf_set_cb,
+ 	.buffer_split_supported_hdr_ptypes_get = ice_buffer_split_supported_hdr_ptypes_get,
+ };
+ 
+diff --git a/drivers/net/intel/ice/ice_rxtx.c b/drivers/net/intel/ice/ice_rxtx.c
+index 807dbdc9e0..eaf87baf7f 100644
+--- a/drivers/net/intel/ice/ice_rxtx.c
++++ b/drivers/net/intel/ice/ice_rxtx.c
+@@ -488,6 +488,14 @@ ice_alloc_rx_queue_mbufs(struct ice_rx_queue *rxq)
+ 				PMD_DRV_LOG(ERR, "Failed to allocate payload mbuf for RX");
+ 				return -ENOMEM;
+ 			}
++			if (rxq->hdrs_mbuf_cb) {
++				struct rte_eth_hdrs_mbuf hdrs_mbuf;
++				int ret = rxq->hdrs_mbuf_cb(rxq->hdrs_mbuf_cb_priv, &hdrs_mbuf);
++				if (ret >= 0) {
++					mbuf_pay->buf_addr = hdrs_mbuf.buf_addr;
++					mbuf_pay->buf_iova = hdrs_mbuf.buf_iova;
++				}
++			}
+ 
+ 			mbuf_pay->next = NULL;
+ 			mbuf_pay->data_off = RTE_PKTMBUF_HEADROOM;
+@@ -1913,6 +1921,14 @@ ice_rx_alloc_bufs(struct ice_rx_queue *rxq)
+ 		} else {
+ 			mb->next = rxq->sw_split_buf[i].mbuf;
+ 			pay_addr = rte_cpu_to_le_64(rte_mbuf_data_iova_default(mb->next));
++			if (rxq->hdrs_mbuf_cb) {
++				struct rte_eth_hdrs_mbuf hdrs_mbuf;
++				int ret = rxq->hdrs_mbuf_cb(rxq->hdrs_mbuf_cb_priv, &hdrs_mbuf);
++				if (ret >= 0) {
++					mb->next->buf_addr = hdrs_mbuf.buf_addr;
++					mb->next->buf_iova = hdrs_mbuf.buf_iova;
++				}
++			}
+ 			rxdp[i].read.hdr_addr = dma_addr;
+ 			rxdp[i].read.pkt_addr = pay_addr;
+ 		}
+@@ -2602,6 +2618,14 @@ ice_recv_pkts(void *rx_queue,
+ 				rte_pktmbuf_free(nmb);
+ 				break;
+ 			}
++			if (rxq->hdrs_mbuf_cb) {
++				struct rte_eth_hdrs_mbuf hdrs_mbuf;
++				int ret = rxq->hdrs_mbuf_cb(rxq->hdrs_mbuf_cb_priv, &hdrs_mbuf);
++				if (ret >= 0) {
++					nmb_pay->buf_addr = hdrs_mbuf.buf_addr;
++					nmb_pay->buf_iova = hdrs_mbuf.buf_iova;
++				}
++			}
+ 
+ 			nmb->next = nmb_pay;
+ 			nmb_pay->next = NULL;
+@@ -4740,3 +4764,25 @@ ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc)
+ 
+ 
+ }
++
++int
++ice_hdrs_mbuf_set_cb(struct rte_eth_dev *dev, uint16_t rx_queue_id,
++					void *priv, rte_eth_hdrs_mbuf_callback_fn cb) {
++	struct ice_rx_queue *rxq;
++
++	rxq = dev->data->rx_queues[rx_queue_id];
++	if (!rxq) {
++		PMD_DRV_LOG(ERR, "RX queue %u not available or setup", rx_queue_id);
++		return -EINVAL;
++	}
++
++	if (rxq->hdrs_mbuf_cb) {
++		PMD_DRV_LOG(ERR, "RX queue %u has hdrs mbuf cb already", rx_queue_id);
++		return -EINVAL;
++	}
++
++	rxq->hdrs_mbuf_cb_priv = priv;
++	rxq->hdrs_mbuf_cb = cb;
++	PMD_DRV_LOG(NOTICE, "RX queue %u register hdrs mbuf cb at %p", rx_queue_id, cb);
++	return 0;
++}
+\ No newline at end of file
+diff --git a/drivers/net/intel/ice/ice_rxtx.h b/drivers/net/intel/ice/ice_rxtx.h
+index 276d40b57f..130a22885a 100644
+--- a/drivers/net/intel/ice/ice_rxtx.h
++++ b/drivers/net/intel/ice/ice_rxtx.h
+@@ -144,6 +144,9 @@ struct ice_rx_queue {
+ 	struct rte_eth_rxseg_split rxseg[ICE_RX_MAX_NSEG];
+ 	uint32_t rxseg_nb;
+ 	bool ts_enable; /* if rxq timestamp is enabled */
++
++	rte_eth_hdrs_mbuf_callback_fn hdrs_mbuf_cb;
++	void *hdrs_mbuf_cb_priv;
+ };
+ 
+ /* Offload features */
+@@ -295,6 +298,8 @@ uint16_t ice_xmit_pkts_vec_avx512_offload(void *tx_queue,
+ int ice_fdir_programming(struct ice_pf *pf, struct ice_fltr_desc *fdir_desc);
+ int ice_tx_done_cleanup(void *txq, uint32_t free_cnt);
+ int ice_get_monitor_addr(void *rx_queue, struct rte_power_monitor_cond *pmc);
++int ice_hdrs_mbuf_set_cb(struct rte_eth_dev *dev, uint16_t rx_queue_id,
++				void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
+ 
+ #define FDIR_PARSING_ENABLE_PER_QUEUE(ad, on) do { \
+ 	int i; \
+diff --git a/lib/ethdev/ethdev_driver.h b/lib/ethdev/ethdev_driver.h
+index 2b4d2ae9c3..6cbffcabe1 100644
+--- a/lib/ethdev/ethdev_driver.h
++++ b/lib/ethdev/ethdev_driver.h
+@@ -1254,6 +1254,9 @@ typedef int (*eth_cman_config_set_t)(struct rte_eth_dev *dev,
+ typedef int (*eth_cman_config_get_t)(struct rte_eth_dev *dev,
+ 				struct rte_eth_cman_config *config);
+ 
++typedef int (*eth_hdrs_mbuf_set_cb_t)(struct rte_eth_dev *dev, uint16_t rx_queue_id,
++				void *priv, rte_eth_hdrs_mbuf_callback_fn cb);
++
+ /**
+  * @internal
+  * Dump Rx descriptor info to a file.
+@@ -1612,6 +1615,9 @@ struct eth_dev_ops {
+ 	/** Dump Tx descriptor info */
+ 	eth_tx_descriptor_dump_t eth_tx_descriptor_dump;
+ 
++	/** Set buffer split mbuf call back func */
++	eth_hdrs_mbuf_set_cb_t hdrs_mbuf_set_cb;
++
+ 	/** Get congestion management information */
+ 	eth_cman_info_get_t cman_info_get;
+ 	/** Initialize congestion management structure with default values */
+diff --git a/lib/ethdev/rte_ethdev.c b/lib/ethdev/rte_ethdev.c
+index 85798d0ebc..88f4e41a9d 100644
+--- a/lib/ethdev/rte_ethdev.c
++++ b/lib/ethdev/rte_ethdev.c
+@@ -7070,6 +7070,20 @@ rte_eth_ip_reassembly_conf_set(uint16_t port_id,
+ 	return ret;
+ }
+ 
++int
++rte_eth_hdrs_set_mbuf_callback(uint16_t port_id, uint16_t rx_queue_id, void *priv,
++			    rte_eth_hdrs_mbuf_callback_fn cb)
++{
++	struct rte_eth_dev *dev;
++
++	RTE_ETH_VALID_PORTID_OR_ERR_RET(port_id, -ENODEV);
++	dev = &rte_eth_devices[port_id];
++
++	if (*dev->dev_ops->hdrs_mbuf_set_cb == NULL)
++		return -ENOTSUP;
++	return eth_err(port_id, (*dev->dev_ops->hdrs_mbuf_set_cb)(dev, rx_queue_id, priv, cb));
++}
++
+ int
+ rte_eth_dev_priv_dump(uint16_t port_id, FILE *file)
+ {
+diff --git a/lib/ethdev/rte_ethdev.h b/lib/ethdev/rte_ethdev.h
+index ea7f8c4a1a..b48d2feaf5 100644
+--- a/lib/ethdev/rte_ethdev.h
++++ b/lib/ethdev/rte_ethdev.h
+@@ -6899,6 +6899,20 @@ rte_eth_tx_buffer(uint16_t port_id, uint16_t queue_id,
+ 	return rte_eth_tx_buffer_flush(port_id, queue_id, buffer);
+ }
+ 
++#define ST_HAS_DPDK_HDR_SPLIT
++
++struct rte_eth_hdrs_mbuf {
++	void *buf_addr;
++	rte_iova_t buf_iova;
++};
++
++typedef int (*rte_eth_hdrs_mbuf_callback_fn)(void *priv, struct rte_eth_hdrs_mbuf *mbuf);
++
++__rte_experimental
++int rte_eth_hdrs_set_mbuf_callback(uint16_t port_id, uint16_t rx_queue_id, void *priv,
++			rte_eth_hdrs_mbuf_callback_fn cb);
++
++
+ /**
+  * @warning
+  * @b EXPERIMENTAL: this API may change, or be removed, without prior notice
+diff --git a/lib/ethdev/version.map b/lib/ethdev/version.map
+index 3aacba8614..6dc32b5388 100644
+--- a/lib/ethdev/version.map
++++ b/lib/ethdev/version.map
+@@ -312,6 +312,7 @@ EXPERIMENTAL {
+ 
+ 	# added in 23.11
+ 	rte_eth_dev_rss_algo_name;
++	rte_eth_hdrs_set_mbuf_callback;
+ 	rte_eth_recycle_rx_queue_info_get;
+ 	rte_flow_group_set_miss_actions;
+ 	rte_flow_calc_table_hash;
+-- 
+2.34.1
+

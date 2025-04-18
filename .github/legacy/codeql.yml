@@ -24,6 +24,10 @@ on:
 
 permissions:
   contents: read
+env:
+  # Customize the env if
+  PKG_CONFIG_PATH: /usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
+  DPDK_VERSION: 25.03
 
 jobs:
   analyze:
@@ -51,7 +55,7 @@ jobs:
 
       # Initializes the CodeQL tools for scanning.
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        uses: github/codeql-action/init@45775bd8235c68ba998cffa5171334d58593da47 # v3.28.15
         with:
           languages: ${{ matrix.language }}
           # If you wish to specify custom queries, you can do so here or in a config file.
@@ -62,18 +66,31 @@ jobs:
         run: |
           sudo apt-get update --fix-missing -y
           sudo apt-get install --no-install-recommends -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev llvm clang
-          sudo apt-get install --no-install-recommends -y dpdk-dev systemtap-sdt-dev software-properties-common
+          sudo apt-get install --no-install-recommends -y systemtap-sdt-dev software-properties-common
 
+      - name: checkout dpdk repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 'DPDK/dpdk'
+          ref: v${{  env.DPDK_VERSION  }}
+          path: dpdk
       - name: Git config
         run: |
           git config --global user.email "you@example.com"
           git config --global user.name "Your Name"
-
+      - name: Build DPDK from source
+        working-directory: dpdk
+        run: |
+          meson build
+          ninja -C build
+          cd build
+          sudo ninja install
       - name: Build
+        working-directory: "${{ github.workspace }}"
         run: |
           ./build.sh
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@b56ba49b26e50535fa1e7f7db0f4f7b4bf65d80d # v3.28.10
+        uses: github/codeql-action/analyze@45775bd8235c68ba998cffa5171334d58593da47 # v3.28.15
         with:
           category: "/language:${{matrix.language}}"

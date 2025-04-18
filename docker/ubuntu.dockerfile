@@ -19,7 +19,7 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 ENV MTL_REPO=Media-Transport-Library
-ENV DPDK_VER=23.11
+ENV DPDK_VER=25.03
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib64/pkgconfig
 
 COPY . $MTL_REPO

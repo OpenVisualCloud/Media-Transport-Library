@@ -103,7 +103,7 @@ enum {
 static GstStaticPadTemplate gst_mtl_st30p_rx_src_pad_template =
     GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
                             GST_STATIC_CAPS("audio/x-raw, "
-                                            "format = (string) {S8, S16LE, S24LE},"
+                                            "format = (string) {S8, S16BE, S24BE},"
                                             "channels = (int) [1, 2], "
                                             "rate = (int) {44100, 48000, 96000}"));
 
@@ -362,11 +362,11 @@ static gboolean gst_mtl_st30p_rx_negotiate(GstBaseSrc* basesrc) {
 
   switch (ops_rx->fmt) {
     case ST30_FMT_PCM24:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24LE, sampling, ops_rx->channel,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S24BE, sampling, ops_rx->channel,
                                 NULL);
       break;
     case ST30_FMT_PCM16:
-      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16LE, sampling, ops_rx->channel,
+      gst_audio_info_set_format(info, GST_AUDIO_FORMAT_S16BE, sampling, ops_rx->channel,
                                 NULL);
       break;
     case ST30_FMT_PCM8:

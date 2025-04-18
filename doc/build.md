@@ -64,7 +64,7 @@ sudo pacman -Syu --needed  sdl2 sdl2_ttf
 
 ### 1.2. Build dependency from source code
 
-It's true that not all operating systems, including RHEL 9, come with all the libraries required for every software package. If you're trying to install a software that has dependencies not provided by default on your OS, you might need to install these dependencies manually. Skip these part if your setup has all dependencies resolved.
+It's true that not all operating systems, including RHEL 9, come with all the libraries required for every software package. If you're trying to install a software that has dependencies not provided by default by your package manager, you might need to install these dependencies manually. Skip these step if your setup has all dependencies resolved.
 
 Refer to below commands for how to build from code.
 
@@ -107,7 +107,7 @@ cd ../../
 
 ### 1.3. secure_path for root user
 
-The build steps use `sudo ninja install` to install the built to system. Some operating systems, including CentOS stream and RHEL 9, not has `/usr/local/bin/` into secure_path defaults.
+The build steps use `sudo ninja install` to install the build to the system. Some operating systems, including CentOS Stream and RHEL 9, do not have `/usr/local/bin/` in the secure_path defaults.
 
 Edit the file `/etc/sudoers`, find `secure_path` and append `/usr/local/bin`
 
@@ -128,13 +128,13 @@ export mtl_source_code=${PWD}/Media-Transport-Library
 
 ## 2. DPDK build and install
 
-### 2.1. Get DPDK 23.11 source code
+### 2.1. Get DPDK 25.03 source code
 
 ```bash
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v23.11
-git switch -c v23.11
+git checkout v25.03
+git switch -c v25.03
 cd ..
 ```
 
@@ -144,7 +144,7 @@ Note: $mtl_source_code should be pointed to top source code tree of Media Transp
 
 ```bash
 cd dpdk
-git am $mtl_source_code/patches/dpdk/23.11/*.patch
+git am $mtl_source_code/patches/dpdk/25.03/*.patch
 ```
 
 ### 2.3. Build and install DPDK library

@@ -119,7 +119,7 @@ struct mt_ptp_port_id {
 struct mt_ipv4_udp {
   struct rte_ipv4_hdr ip;
   struct rte_udp_hdr udp;
-} __attribute__((__packed__));
+} __attribute__((__packed__)) __attribute__((__aligned__(2)));
 
 enum mt_port_type {
   MT_PORT_ERR = 0,

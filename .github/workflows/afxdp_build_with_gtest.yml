@@ -19,7 +19,7 @@ concurrency:
 env:
   # Customize the env if
   BUILD_TYPE: Release
-  DPDK_VERSION: 23.11
+  DPDK_VERSION: 25.03
   MTL_BUILD_DISABLE_USDT: true
 
 permissions:

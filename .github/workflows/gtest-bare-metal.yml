@@ -25,7 +25,7 @@ concurrency:
 env:
   # Customize the env if
   BUILD_TYPE: 'Release'
-  DPDK_VERSION: '23.11'
+  DPDK_VERSION: '25.03'
   # Bellow ENV variables are required to be defined on runner side:
   # TEST_PF_PORT_P: '0000:49:00.0'
   # TEST_PF_PORT_R: '0000:49:00.1'

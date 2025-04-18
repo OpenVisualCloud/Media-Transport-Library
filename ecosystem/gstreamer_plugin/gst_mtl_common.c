@@ -260,7 +260,7 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
                         G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-      gobject_class, PROP_GENERAL_PORT_UDP_PORT,
+      gobject_class, PROP_GENERAL_PORT_UDP_PORT_R,
       g_param_spec_uint("udp-port-red", "Sender UDP port", "Receiving MTL node UDP port.",
                         0, G_MAXUINT, 20000, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
@@ -334,7 +334,7 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
       portArgs->udp_port[MTL_PORT_P] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_UDP_PORT_R:
-      portArgs->udp_port[MTL_PORT_FLAG_FORCE_NUMA] = g_value_get_uint(value);
+      portArgs->udp_port[MTL_PORT_R] = g_value_get_uint(value);
       break;
     case PROP_GENERAL_PORT_PAYLOAD_TYPE:
       portArgs->payload_type = g_value_get_uint(value);
