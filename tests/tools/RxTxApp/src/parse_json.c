@@ -2091,7 +2091,9 @@ static int st_json_parse_rx_st20p(int idx, json_object* st20p_obj,
 
   /* parse st20p url */
   ret = parse_url(st20p_obj, "st20p_url", st20p->info.st20p_url);
-  if (ret < 0) return ret;
+  if (ret < 0) {
+    info("%s, no st20p url no file will be saved\n", __func__);
+  }
 
   /* parse display option */
   st20p->display =
