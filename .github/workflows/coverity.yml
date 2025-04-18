@@ -1,4 +1,5 @@
-name: Coverity Scan
+name: Coverity Build
+
 
 on:
   schedule:
