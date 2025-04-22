@@ -278,13 +278,13 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 - **Channels Range**: 1 to 8
 
 **Arguments**
-| Property Name        | Type    | Description                                           | Range                   | Default Value |
-|----------------------|---------|-------------------------------------------------------|-------------------------|---------------|
-| tx-samplerate        | uint    | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
-| tx-channels          | uint    | Number of audio channels.                             | 1 to 8                  | 2             |
-| tx-ptime             | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
-| async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
-
+| Property Name         | Type    | Description                                           | Range                   | Default Value |
+|-----------------------|---------|-------------------------------------------------------|-------------------------|---------------|
+| tx-samplerate         | uint    | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
+| tx-channels           | uint    | Number of audio channels.                             | 1 to 8                  | 2             |
+| tx-ptime              | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
+| async-session-create  | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| use-pts-for-timestamp | boolean | Use the pts timestamps as base for the RTS timestamp  | TRUE/FALSE             | FALSE         |
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16BE format
 
 To run the `mtl_st30p_tx` plugin, you need to setup metadata (Here we are using pipeline capabilities).
