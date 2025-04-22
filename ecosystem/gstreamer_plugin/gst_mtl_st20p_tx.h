@@ -71,6 +71,7 @@ struct _Gst_Mtl_St20p_Tx {
   SessionPortArgs portArgs; /* imtl session device */
   guint framebuffer_num;
   gboolean async_session_create;
+  gboolean use_pts_for_timestamp;
 
   /* TODO add support for gpu direct */
 #ifdef MTL_GPU_DIRECT_ENABLED
