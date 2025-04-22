@@ -78,6 +78,7 @@ struct _Gst_Mtl_St30p_Tx {
   guint framebuffer_num;
   gchar ptime[MTL_PORT_MAX_LEN];
   gboolean async_session_create;
+  gboolean use_pts_for_timestamp;
 };
 
 G_END_DECLS

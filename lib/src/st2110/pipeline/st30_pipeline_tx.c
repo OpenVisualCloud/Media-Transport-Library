@@ -163,6 +163,9 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     ops_tx.socket_id = ops->socket_id;
     ops_tx.flags |= ST30_TX_FLAG_FORCE_NUMA;
   }
+  if (ops->flags & ST30P_TX_FLAG_USER_TIMESTAMP)
+    ops_tx.flags |= ST30_TX_FLAG_USER_TIMESTAMP;
+
   ops_tx.pacing_way = ops->pacing_way;
 
   ops_tx.fmt = ops->fmt;

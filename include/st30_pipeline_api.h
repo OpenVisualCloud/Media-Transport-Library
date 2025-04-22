@@ -37,6 +37,11 @@ enum st30p_tx_flag {
    */
   ST30P_TX_FLAG_USER_R_MAC = (MTL_BIT32(1)),
   /**
+   * If enabled, lib will assign the rtp timestamp to the value in
+   * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+   */
+  ST30P_TX_FLAG_USER_TIMESTAMP = (MTL_BIT32(4)),
+  /**
    * Flag bit in flags of struct st30p_tx_ops.
    * If use dedicated queue for TX.
    */
