@@ -98,6 +98,7 @@ enum {
   PROP_ST40P_TX_FRAMERATE,
   PROP_ST40P_TX_DID,
   PROP_ST40P_TX_SDID,
+  PROP_ST40P_TX_USE_PTS_FOR_TIMESTAMP,
   PROP_MAX
 };
 
@@ -173,6 +174,12 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
       g_param_spec_uint("tx-sdid", "Secondary Data ID",
                         "Secondary Data ID for the ancillary data", 0, 0xff, 0,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_USE_PTS_FOR_TIMESTAMP,
+      g_param_spec_boolean("use-pts-for-timestamp", "Use PTS for Timestamp",
+                           "Use PTS from buffer as timestamp.", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
@@ -238,6 +245,9 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_TX_SDID:
       self->sdid = g_value_get_uint(value);
       break;
+    case PROP_ST40P_TX_USE_PTS_FOR_TIMESTAMP:
+      self->use_pts_for_timestamp = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -266,6 +276,9 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_TX_SDID:
       g_value_set_uint(value, sink->sdid);
+      break;
+    case PROP_ST40P_TX_USE_PTS_FOR_TIMESTAMP:
+      g_value_set_boolean(value, sink->use_pts_for_timestamp);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -322,12 +335,16 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     return FALSE;
   }
 
+  if (sink->use_pts_for_timestamp) {
+    ops_tx.flags |= ST40P_TX_FLAG_USER_TIMESTAMP;
+  }
+
   ops_tx.interlaced = false;
   /* Only single ANC data packet is possible per frame. ANC_Count = 1 TODO: allow more */
   sink->frame_size = MAX_UDW_SIZE;
   ops_tx.max_udw_buff_size = MAX_UDW_SIZE;
 
-  ops_tx.flags |= ST30P_TX_FLAG_BLOCK_GET;
+  ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
   sink->tx_handle = st40p_tx_create(sink->mtl_lib_handle, &ops_tx);
   if (!sink->tx_handle) {
     GST_ERROR("Failed to create st40p tx handle");
@@ -434,6 +451,13 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
         GST_ERROR("Failed to get frame");
         return GST_FLOW_ERROR;
       }
+
+      // By default, timestamping is handled by MTL.
+      if (sink->use_pts_for_timestamp) {
+        frame->timestamp = GST_BUFFER_PTS(buf);
+        frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      }
+
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
       bytes_to_write_cur =
           bytes_to_write > sink->frame_size ? sink->frame_size : bytes_to_write;

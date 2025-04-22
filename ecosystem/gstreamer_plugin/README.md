@@ -369,6 +369,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 | tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
 | tx-did            | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
 | tx-sdid           | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| use-pts-for-timestamp | boolean | Use the pts timestamps as base for the RTS timestamp        | TRUE/FALSE    | FALSE         |
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 
