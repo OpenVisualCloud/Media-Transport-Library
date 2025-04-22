@@ -180,7 +180,8 @@ To be fixed in the future.
 |----------------------|----------|-------------------------------------------------------|-------------------------|---------------|
 | retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
 | tx-framebuff-num     | uint     | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
-| async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| async-session-create | boolean  | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| use-pts-for-timestamp | boolean | Use the pts timestamps as base for the RTS timestamp  | TRUE/FALSE              | FALSE         |
 
 #### 3.1.2. Preparing Input Video
 
