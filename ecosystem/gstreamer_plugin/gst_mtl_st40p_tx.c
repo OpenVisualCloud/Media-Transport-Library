@@ -337,6 +337,7 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
 
   if (sink->use_pts_for_timestamp) {
     ops_tx.flags |= ST40P_TX_FLAG_USER_TIMESTAMP;
+    ops_tx.flags |= ST40P_TX_FLAG_USER_PACING;
   }
 
   ops_tx.interlaced = false;
@@ -455,7 +456,7 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
       // By default, timestamping is handled by MTL.
       if (sink->use_pts_for_timestamp) {
         frame_info->timestamp = GST_BUFFER_PTS(buf);
-        frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+        frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
       }
 
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
