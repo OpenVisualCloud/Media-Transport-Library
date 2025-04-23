@@ -454,8 +454,8 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
 
       // By default, timestamping is handled by MTL.
       if (sink->use_pts_for_timestamp) {
-        frame->timestamp = GST_BUFFER_PTS(buf);
-        frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+        frame_info->timestamp = GST_BUFFER_PTS(buf);
+        frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
       }
 
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
