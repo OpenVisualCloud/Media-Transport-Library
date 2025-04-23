@@ -70,6 +70,7 @@ struct _Gst_Mtl_St40p_Tx {
   guint fps_n, fps_d;
   guint did;
   guint sdid;
+  gboolean use_pts_for_timestamp;
 };
 
 G_END_DECLS

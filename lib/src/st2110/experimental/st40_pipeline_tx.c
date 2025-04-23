@@ -477,9 +477,18 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
-  if (ops->flags & ST40P_TX_FLAG_BLOCK_GET) {
+
+  if (ops->flags & ST40P_TX_FLAG_BLOCK_GET)
     ctx->block_get = true;
-  }
+
+  if (ops->flags & ST40P_TX_FLAG_USER_TIMESTAMP)
+    ctx->ops.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+
+  if (ops->flags & ST40P_TX_FLAG_USER_PACING)
+    ctx->ops.flags |= ST40_TX_FLAG_USER_PACING;
+
+  if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP)
+    ctx->ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
   /* copy ops */
   if (ops->name) {
