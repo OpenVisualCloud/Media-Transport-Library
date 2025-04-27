@@ -150,6 +150,7 @@ These are also general parameters accepted by plugins, but the functionality the
 
 For selected plugins
 - SMPTE ST 2110-20 transmission plugin mtl_st20p_tx
+- SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
 
 There is a feature called user-controlled pacing that allows you to control the
 pacing of packet transmission using the Presentation timestamp (PTS) of the buffer.
@@ -311,6 +312,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 | tx-channels          | uint    | Number of audio channels.                             | 1 to 8                  | 2             |
 | tx-ptime             | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
 | async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| use-pts-for-pacing   | uint    | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16BE format
 
