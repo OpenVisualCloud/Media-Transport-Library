@@ -70,6 +70,8 @@ struct _Gst_Mtl_St40p_Tx {
   guint fps_n, fps_d;
   guint did;
   guint sdid;
+  gboolean use_pts_for_pacing;
+  guint pts_for_pacing_offset;
 };
 
 G_END_DECLS

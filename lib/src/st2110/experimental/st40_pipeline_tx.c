@@ -193,11 +193,11 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
   }
 
   if (ops->flags & ST40P_TX_FLAG_USER_TIMESTAMP)
-    ctx->ops.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+  ops_tx.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
 
-  if (ops->flags & ST40P_TX_FLAG_USER_PACING) ctx->ops.flags |= ST40_TX_FLAG_USER_PACING;
+  if (ops->flags & ST40P_TX_FLAG_USER_PACING) ops_tx.flags |= ST40_TX_FLAG_USER_PACING;
 
-  if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ctx->ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
+  if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
   ops_tx.interlaced = false;
   ops_tx.fps = ops->fps;

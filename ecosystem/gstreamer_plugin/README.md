@@ -151,6 +151,7 @@ These are also general parameters accepted by plugins, but the functionality the
 For selected plugins
 - SMPTE ST 2110-20 transmission plugin mtl_st20p_tx
 - SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
+- SMPTE ST 2110-40 transmission plugin mtl_st40p_tx
 
 There is a feature called user-controlled pacing that allows you to control the
 pacing of packet transmission using the Presentation timestamp (PTS) of the buffer.
@@ -392,12 +393,13 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name     | Type | Description                                                        | Range         | Default Value |
-|-------------------|------|--------------------------------------------------------------------|---------------|---------------|
-| tx-framebuff-cnt  | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
-| tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
-| tx-did            | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
-| tx-sdid           | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| Property Name      | Type | Description                                                        | Range         | Default Value |
+|--------------------|------|--------------------------------------------------------------------|---------------|---------------|
+| tx-framebuff-cnt   | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
+| tx-fps             | uint | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| tx-did             | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
+| tx-sdid            | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| use-pts-for-pacing | uint | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT | 0            |
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 
