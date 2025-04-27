@@ -146,6 +146,32 @@ These are also general parameters accepted by plugins, but the functionality the
 | 48 kHz        | `48000` |
 | 96 kHz        | `96000` |
 
+#### 2.3.3 PTS controlled pacing
+
+For selected plugins
+- SMPTE ST 2110-20 transmission plugin mtl_st20p_tx
+
+There is a feature called user-controlled pacing that allows you to control the
+pacing of packet transmission using the Presentation timestamp (PTS) of the buffer.
+As long as the PTS fits within the pacing window, packets will be sent at the exact
+time specified by the PTS.
+
+This feature requires:
+- Your system clock to be synchronized via PTP.
+- GStreamer buffers to provide a 64-bit timestamp (TUI) since epoch (PTP time).
+- MTL to be synchronized via ptp (onboard or user-controlled).
+
+The following message informs you about the amount of frames that had incorrectly
+defined timestamps by the user (this error message should be 0).
+
+```log
+ TX_VIDEO_SESSION(0,0): error user timestamp 250
+```
+
+When using this feature, you must specify an offset for the packets. The offset
+should be large enough to account for any delays between placing the frame in
+the framebuffer and the actual transmission of packets onto the wire.
+
 ## 3. SMPTE ST 2110-20 Rawvideo plugins
 
 Video plugins for MTL that are able to send, receive synchronous video via the MTL pipeline API.
@@ -181,6 +207,7 @@ To be fixed in the future.
 | retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
 | tx-framebuff-num     | uint     | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
 | async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| use-pts-for-pacing   | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 
 #### 3.1.2. Preparing Input Video
 
