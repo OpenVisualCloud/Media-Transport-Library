@@ -86,6 +86,12 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   framebuff->stat = ST40P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
+
+  if (ctx->ops.flags & (ST40P_TX_FLAG_USER_PACING)) {
+    meta->tfmt = framebuff->frame_info.tfmt;
+    meta->timestamp = framebuff->frame_info.timestamp;
+  }
+
   /* point to next */
   ctx->framebuff_consumer_idx = tx_st40p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
@@ -185,6 +191,13 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
     err("%s(%d), interlaced mode not supported\n", __func__, ctx->idx);
     return -EINVAL;
   }
+
+  if (ops->flags & ST40P_TX_FLAG_USER_TIMESTAMP)
+    ctx->ops.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+
+  if (ops->flags & ST40P_TX_FLAG_USER_PACING) ctx->ops.flags |= ST40_TX_FLAG_USER_PACING;
+
+  if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ctx->ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
   ops_tx.interlaced = false;
   ops_tx.fps = ops->fps;
@@ -477,9 +490,8 @@ st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops) {
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
-  if (ops->flags & ST40P_TX_FLAG_BLOCK_GET) {
-    ctx->block_get = true;
-  }
+
+  if (ops->flags & ST40P_TX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */
   if (ops->name) {
