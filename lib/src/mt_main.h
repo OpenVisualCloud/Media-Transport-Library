@@ -304,6 +304,8 @@ struct mt_ptp_impl {
   int32_t stat_sync_cnt;
   int32_t stat_t2_t1_delta_calibrate;
   int32_t stat_t4_t3_delta_calibrate;
+  int32_t stat_t2_t1_delta_delta_excess_count;
+  int32_t stat_t4_t3_delta_delta_excess_count;
   uint16_t stat_sync_keep;
 };
 
