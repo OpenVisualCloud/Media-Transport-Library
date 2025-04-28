@@ -18,7 +18,7 @@ export LIBFDT_DIR="${BUILD_DIR}/libfdt"
 export JSONC_DIR="${BUILD_DIR}/json-c"
 export NASM_DIR="${BUILD_DIR}/nasm"
 
-ICE_VER="${ICE_VER:-1.14.9}"
+ICE_VER="${ICE_VER:-1.16.3}"
 IAVF_VER="${IAVF_VER:-4.13.3}"
 IRDMA_VER="${IRDMA_VER:-1.16.10}"
 export ICE_DIR="${DRIVERS_DIR}/ice/${ICE_VER}"
