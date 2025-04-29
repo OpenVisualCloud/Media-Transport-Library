@@ -4,13 +4,54 @@
 
 #include "rx_st20p_app.h"
 
+#include <intel-ipsec-mb.h>
+
+static IMB_MGR* mgr;
+
+static uint8_t cipher_key[16] = {0};
+static uint8_t cipher_iv[16] = {0};
+DECLARE_ALIGNED(static uint32_t exp_enc_key[4 * 15], 16);
+DECLARE_ALIGNED(static uint32_t exp_dec_key[4 * 15], 16);
+static IMB_JOB* job;
+
 static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
                                        struct st_frame* frame) {
   struct st_display* d = s->display;
   int idx = s->idx;
 
   if (s->st20p_destination_file) {
-    if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
+    job = IMB_GET_NEXT_JOB(mgr);
+    job->src = frame->addr[0];
+    job->dst = s->tmp_framebuff;
+    job->cipher_mode = IMB_CIPHER_CNTR;
+    job->hash_alg = IMB_AUTH_NULL;
+    job->enc_keys = exp_enc_key;
+    job->dec_keys = exp_dec_key;
+    job->iv = cipher_iv;
+    job->cipher_direction = IMB_DIR_DECRYPT;
+    job->chain_order = IMB_ORDER_HASH_CIPHER;
+    job->key_len_in_bytes = 16;
+    job->iv_len_in_bytes = 16;
+    job->cipher_start_src_offset_in_bytes = 0;
+    job->msg_len_to_cipher_in_bytes = s->st20p_frame_size;
+    job = IMB_SUBMIT_JOB(mgr);
+    if (job == NULL) {
+      const int err = imb_get_errno(mgr);
+      printf(
+          "%d Unexpected null return from submit job()\n"
+          "\t Error code %d, %s\n",
+          __LINE__, err, imb_get_strerror(err));
+      exit(1);
+    }
+    if (job->status != IMB_STATUS_COMPLETED) {
+      const int err = imb_get_errno(mgr);
+      printf(
+          "%d Wrong job status\n"
+          "\t Error code %d, %s\n",
+          __LINE__, err, imb_get_strerror(err));
+    }
+
+    if (!fwrite(s->tmp_framebuff, 1, s->st20p_frame_size, s->st20p_destination_file)) {
       err("%s(%d), failed to write frame to file %s\n", __func__, idx,
           s->st20p_destination_url);
     }
@@ -57,6 +98,10 @@ static void* app_rx_st20p_frame_thread(void* arg) {
   uint8_t shas[SHA256_DIGEST_LENGTH];
   int idx = s->idx;
 
+  mgr = alloc_mb_mgr(0);
+  init_mb_mgr_auto(mgr, NULL);
+  IMB_AES_KEYEXP_128(mgr, cipher_key, exp_enc_key, exp_dec_key);
+
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st20p_app_thread_stop) {
     frame = st20p_rx_get_frame(s->handle);
@@ -102,6 +147,8 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     st20p_rx_put_frame(s->handle, frame);
   }
   info("%s(%d), stop\n", __func__, s->idx);
+
+  free_mb_mgr(mgr);
 
   return NULL;
 }
@@ -286,6 +333,12 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   s->handle = handle;
 
   s->st20p_frame_size = st20p_rx_frame_size(handle);
+  s->tmp_framebuff = malloc(s->st20p_frame_size);
+  if (!s->tmp_framebuff) {
+    err("%s(%d), failed to allocate tmp frame buffer\n", __func__, idx);
+    app_rx_st20p_uinit(s);
+    return -ENOMEM;
+  }
 
   ret = app_rx_st20p_init_frame_thread(s);
   if (ret < 0) {
@@ -374,6 +427,7 @@ int st_app_rx_st20p_sessions_uinit(struct st_app_context* ctx) {
   for (i = 0; i < ctx->rx_st20p_session_cnt; i++) {
     s = &ctx->rx_st20p_sessions[i];
     app_rx_st20p_uinit(s);
+    free(s->tmp_framebuff);
   }
   st_app_free(ctx->rx_st20p_sessions);
 
