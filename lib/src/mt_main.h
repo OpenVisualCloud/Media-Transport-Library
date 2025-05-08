@@ -708,6 +708,8 @@ struct mt_interface {
   struct rte_ether_addr* mcast_mac_lists; /* pool of multicast mac addrs */
   uint32_t mcast_nb;                      /* number of address */
   uint32_t status;                        /* MT_IF_STAT_* */
+  /* The port is temporarily off, e.g. during rte_tm_hierarchy_commit */
+  rte_atomic32_t resetting;
 
   /* default tx mbuf_pool */
   struct rte_mempool* tx_mbuf_pool;
