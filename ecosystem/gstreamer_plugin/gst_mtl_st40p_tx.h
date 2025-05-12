@@ -62,6 +62,10 @@ struct _Gst_Mtl_St40p_Tx {
   st40p_tx_handle tx_handle;
   guint frame_size;
 
+  gboolean session_ready;
+  pthread_mutex_t session_mutex;
+  pthread_t session_thread;
+
   /* arguments */
   guint log_level;
   GeneralArgs generalArgs;  /* imtl initialization arguments */
@@ -70,6 +74,7 @@ struct _Gst_Mtl_St40p_Tx {
   guint fps_n, fps_d;
   guint did;
   guint sdid;
+  gboolean async_session_create;
 };
 
 G_END_DECLS

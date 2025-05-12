@@ -392,6 +392,11 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   } else if (src->udw_size == 0) {
     src->udw_size = udw_size;
     src->anc_data = (char*)malloc(udw_size);
+    if(!src->anc_data) {
+      GST_ERROR("Failed to allocate memory for ancillary data");
+      return GST_FLOW_ERROR;
+    }
+
   } else if (src->udw_size != udw_size) {
     GST_INFO("Size of received ancillary data has changed");
     if (src->anc_data) {
@@ -400,6 +405,10 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     }
     src->udw_size = udw_size;
     src->anc_data = (char*)malloc(udw_size);
+    if(!src->anc_data) {
+      GST_ERROR("Failed to allocate memory for ancillary data");
+      return GST_FLOW_ERROR;
+    }
   }
 
   *buffer = gst_buffer_new_allocate(NULL, src->udw_size, NULL);
