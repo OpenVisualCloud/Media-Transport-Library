@@ -363,12 +363,13 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name     | Type | Description                                                        | Range         | Default Value |
-|-------------------|------|--------------------------------------------------------------------|---------------|---------------|
-| tx-framebuff-cnt  | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
-| tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
-| tx-did            | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
-| tx-sdid           | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| Property Name        | Type    | Description                                                        | Range         | Default Value |
+|----------------------|---------|--------------------------------------------------------------------|---------------|---------------|
+| tx-framebuff-cnt     | uint    | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
+| tx-fps               | uint    | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| tx-did               | uint    | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
+| tx-sdid              | uint    | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped. | TRUE/FALSE | FALSE |
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 
