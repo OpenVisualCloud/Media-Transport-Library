@@ -204,7 +204,11 @@ static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
   }
 
   if (sink->async_session_create) {
-    pthread_mutex_init(&sink->session_mutex, NULL);
+    if (pthread_mutex_init(&sink->session_mutex, NULL)) {
+      GST_ERROR("Failed to initialize mutex");
+      return FALSE;
+    }
+
     sink->session_ready = FALSE;
   }
 
@@ -395,9 +399,18 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
     case GST_EVENT_STREAM_START:
       if (sink->async_session_create) {
         thread_data = malloc(sizeof(GstMtlSt40pTxThreadData));
+        if (!thread_data) {
+          GST_ERROR("Failed to allocate memory for thread data");
+          return FALSE;
+        }
+
         thread_data->sink = sink;
-        pthread_create(&sink->session_thread, NULL,
-                       gst_mtl_st40p_tx_session_create_thread, thread_data);
+        if (pthread_create(&sink->session_thread, NULL,
+          gst_mtl_st40p_tx_session_create_thread, thread_data)) {
+          GST_ERROR("Failed to create session thread");
+          free(thread_data);
+          return FALSE;
+        }
       } else {
         ret = gst_mtl_st40p_tx_session_create(sink);
         if (!ret) {
