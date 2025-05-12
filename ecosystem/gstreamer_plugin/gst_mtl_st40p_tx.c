@@ -378,7 +378,6 @@ static void* gst_mtl_st40p_tx_session_create_thread(void* data) {
   return NULL;
 }
 
-
 static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
                                             GstEvent* event) {
   GstMtlSt40pTxThreadData* thread_data;
@@ -517,10 +516,10 @@ static void gst_mtl_st40p_tx_finalize(GObject* object) {
   }
 
   if (sink->tx_handle && st40p_tx_free(sink->tx_handle))
-      GST_ERROR("Failed to free tx handle");
+    GST_ERROR("Failed to free tx handle");
 
   if (sink->mtl_lib_handle && gst_mtl_common_deinit_handle(&sink->mtl_lib_handle))
-      GST_ERROR("Failed to uninitialize MTL library");
+    GST_ERROR("Failed to uninitialize MTL library");
 }
 
 static gboolean plugin_init(GstPlugin* mtl_st40p_tx) {
