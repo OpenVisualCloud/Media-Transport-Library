@@ -37,6 +37,11 @@ enum st30p_tx_flag {
    */
   ST30P_TX_FLAG_USER_R_MAC = (MTL_BIT32(1)),
   /**
+   * User control the frame pacing by pass a timestamp in st30_tx_frame_meta,
+   * lib will wait until timestamp is reached for each frame.
+   */
+  ST30P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
+  /**
    * Flag bit in flags of struct st30p_tx_ops.
    * If use dedicated queue for TX.
    */

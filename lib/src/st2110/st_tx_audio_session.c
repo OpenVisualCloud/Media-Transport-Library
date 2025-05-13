@@ -270,31 +270,35 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
   double to_epoch;
+  uint64_t ptp_epochs;
+  uint64_t diff;
 
   if (required_tai) {
-    uint64_t ptp_epochs = ptp_time / pkt_time;
+    ptp_epochs = ptp_time / pkt_time;
     epochs = required_tai / pkt_time;
-    dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
-        __func__, s->idx, required_tai, ptp_epochs, epochs);
-    if (epochs < ptp_epochs) s->stat_error_user_timestamp++;
+    if (epochs < ptp_epochs) {
+      s->stat_error_user_timestamp++;
+      dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
+          __func__, s->idx, required_tai, ptp_epochs, epochs);
+    }
   } else {
     epochs = ptp_time / pkt_time;
+  }
 
-    dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
-        pacing->cur_epochs);
-    if (epochs <= pacing->cur_epochs) {
-      uint64_t diff = pacing->cur_epochs - epochs;
-      if (diff < pacing->max_onward_epochs) {
-        /* point to next epoch since if it in the range of onward */
-        epochs = next_epochs;
-      }
-    } else if (epochs > next_epochs) {
-      uint64_t diff = epochs - next_epochs;
-      if (diff < pacing->max_late_epochs) {
-        /* point to next epoch since if it in the range of late */
-        epochs = next_epochs;
-        s->stat_epoch_late++;
-      }
+  dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
+      pacing->cur_epochs);
+  if (epochs <= pacing->cur_epochs) {
+    diff = pacing->cur_epochs - epochs;
+    if (diff < pacing->max_onward_epochs) {
+      /* point to next epoch since if it in the range of onward */
+      epochs = next_epochs;
+    }
+  } else if (epochs > next_epochs) {
+    diff = epochs - next_epochs;
+    if (diff < pacing->max_late_epochs) {
+      /* point to next epoch since if it in the range of late */
+      epochs = next_epochs;
+      s->stat_epoch_late++;
     }
   }
 

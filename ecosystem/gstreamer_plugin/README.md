@@ -146,6 +146,34 @@ These are also general parameters accepted by plugins, but the functionality the
 | 48 kHz        | `48000` |
 | 96 kHz        | `96000` |
 
+#### 2.3.3 PTS controlled pacing
+
+For selected plugins
+- SMPTE ST 2110-20 transmission plugin mtl_st20p_tx
+- SMPTE ST 2110-30 transmission plugin mtl_st30p_tx
+- SMPTE ST 2110-40 transmission plugin mtl_st40p_tx
+
+There is a feature called user-controlled pacing that allows you to control the
+pacing of packet transmission using the Presentation timestamp (PTS) of the buffer.
+As long as the PTS fits within the pacing window, packets will be sent at the exact
+time specified by the PTS.
+
+This feature requires:
+- MTL time synchronized with the system clock. If you are using onboard PTP,
+you must also synchronize the system's physical clock using `phc2sys`.
+- GStreamer buffers to provide a 64-bit timestamp (TUI) since epoch (PTP time).
+
+The following message informs you about the amount of frames that had incorrectly
+defined timestamps by the user (this error message should be 0).
+
+```log
+ TX_VIDEO_SESSION(0,0): error user timestamp 250
+```
+
+When using this feature, you can specify an offset for the packets. The offset
+should be large enough to account for any delays between placing the frame in
+the framebuffer and the actual transmission of packets onto the wire.
+
 ## 3. SMPTE ST 2110-20 Rawvideo plugins
 
 Video plugins for MTL that are able to send, receive synchronous video via the MTL pipeline API.
@@ -180,7 +208,9 @@ To be fixed in the future.
 |----------------------|----------|-------------------------------------------------------|-------------------------|---------------|
 | retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
 | tx-framebuff-num     | uint     | Number of framebuffers to be used for transmission.   | 0 to 8                  | 3             |
-| async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| async-session-create | boolean  | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| use-pts-for-pacing   | boolean  | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
+| pts-pacing-offset    | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 
 #### 3.1.2. Preparing Input Video
 
@@ -284,6 +314,8 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 | tx-channels          | uint    | Number of audio channels.                             | 1 to 8                  | 2             |
 | tx-ptime             | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |
 | async-session-create | boolean | Improve initialization time by creating a session in a separate thread. All buffers that arrive before the session is ready will be dropped | TRUE/FALSE              | FALSE         |
+| use-pts-for-pacing   | boolean | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
+| pts-pacing-offset    | uint    | [User controlled timestamping offset](#233-pts-controlled-pacing) | 0 to G_MAXUINT | 0          |
 
 #### 4.1.2. Example GStreamer Pipeline for Transmission with s16BE format
 
@@ -363,12 +395,14 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name     | Type | Description                                                        | Range         | Default Value |
-|-------------------|------|--------------------------------------------------------------------|---------------|---------------|
-| tx-framebuff-cnt  | uint | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
-| tx-fps            | uint | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
-| tx-did            | uint | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
-| tx-sdid           | uint | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| Property Name      | Type     | Description                                                        | Range         | Default Value |
+|--------------------|----------|--------------------------------------------------------------------|---------------|---------------|
+| tx-framebuff-cnt   | uint     | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
+| tx-fps             | uint     | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| tx-did             | uint     | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
+| tx-sdid            | uint     | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
+| use-pts-for-pacing | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT | 0            |
+| pts-pacing-offset  | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT | 0            |
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 

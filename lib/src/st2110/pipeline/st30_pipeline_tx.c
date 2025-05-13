@@ -71,6 +71,7 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
                                struct st30_tx_frame_meta* meta) {
   struct st30p_tx_ctx* ctx = priv;
   struct st30p_tx_frame* framebuff;
+  struct st30_frame* frame;
   MTL_MAY_UNUSED(meta);
 
   if (!ctx->ready) return -EBUSY; /* not ready */
@@ -86,6 +87,13 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
 
   framebuff->stat = ST30P_TX_FRAME_IN_TRANSMITTING;
   *next_frame_idx = framebuff->idx;
+
+  if (ctx->ops.flags & (ST30P_TX_FLAG_USER_PACING)) {
+    frame = &framebuff->frame;
+    meta->tfmt = frame->tfmt;
+    meta->timestamp = frame->timestamp;
+  }
+
   /* point to next */
   ctx->framebuff_consumer_idx = tx_st30p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
@@ -163,6 +171,7 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     ops_tx.socket_id = ops->socket_id;
     ops_tx.flags |= ST30_TX_FLAG_FORCE_NUMA;
   }
+  if (ops->flags & ST30P_TX_FLAG_USER_PACING) ops_tx.flags |= ST30_TX_FLAG_USER_PACING;
   ops_tx.pacing_way = ops->pacing_way;
 
   ops_tx.fmt = ops->fmt;
