@@ -99,6 +99,7 @@ enum {
   PROP_ST40P_TX_DID,
   PROP_ST40P_TX_SDID,
   PROP_ST40P_TX_USE_PTS_FOR_PACING,
+  PROP_ST40P_TX_PTS_PACING_OFFSET,
   PROP_MAX
 };
 
@@ -175,15 +176,23 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         "Secondary Data ID for the ancillary data", 0, 0xff, 0,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  /* Enabling this property will set the boolean 'set_pts_for_pacing' to TRUE */
   g_object_class_install_property(
-    gobject_class, PROP_ST40P_TX_USE_PTS_FOR_PACING,
-    g_param_spec_uint(
-        "use-pts-for-pacing", "Use PTS with offset for packet pacing",
-        "This property modifies the default behavior where MTL handles packet pacing. "
-        "Instead, it uses the buffer's PTS (Presentation Timestamp) plus a defined "
-        "offset to determine the precise time for sending packets.",
-        0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gobject_class, PROP_ST40P_TX_USE_PTS_FOR_PACING,
+      g_param_spec_boolean(
+          "use-pts-for-pacing", "Use PTS for packet pacing",
+          "This property modifies the default behavior where MTL handles packet pacing. "
+          "Instead, it uses the buffer's PTS (Presentation Timestamp) to determine the "
+          "precise time for sending packets.",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_PTS_PACING_OFFSET,
+      g_param_spec_uint("pts-pacing-offset", "PTS offset for packet pacing",
+                        "Specifies the offset (in nanoseconds) to be added to the "
+                        "Presentation Timestamp (PTS) "
+                        "for precise packet pacing. This allows fine-tuning of the "
+                        "transmission timing when using PTS-based pacing.",
+                        0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
@@ -250,7 +259,9 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
       self->sdid = g_value_get_uint(value);
       break;
     case PROP_ST40P_TX_USE_PTS_FOR_PACING:
-      self->use_pts_for_pacing = TRUE;
+      self->use_pts_for_pacing = g_value_get_boolean(value);
+      break;
+    case PROP_ST40P_TX_PTS_PACING_OFFSET:
       self->pts_for_pacing_offset = g_value_get_uint(value);
       break;
     default:
@@ -282,9 +293,10 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST40P_TX_SDID:
       g_value_set_uint(value, sink->sdid);
       break;
-    /* The boolean 'use_pts_for_pacing' is linked to this property, allowing a 0 offset to
-     * be valid. */
     case PROP_ST40P_TX_USE_PTS_FOR_PACING:
+      g_value_set_boolean(value, sink->use_pts_for_pacing);
+      break;
+    case PROP_ST40P_TX_PTS_PACING_OFFSET:
       g_value_set_uint(value, sink->pts_for_pacing_offset);
       break;
     default:
@@ -350,6 +362,8 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
   if (sink->use_pts_for_pacing) {
     ops_tx.flags |= ST40P_TX_FLAG_USER_PACING;
+  } else if (sink->pts_for_pacing_offset) {
+    GST_WARNING("PTS offset specified but PTS-based pacing is not enabled");
   }
 
   sink->tx_handle = st40p_tx_create(sink->mtl_lib_handle, &ops_tx);

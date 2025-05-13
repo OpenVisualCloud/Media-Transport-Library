@@ -279,14 +279,14 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
     if (epochs < ptp_epochs) {
       s->stat_error_user_timestamp++;
       dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
-        __func__, s->idx, required_tai, ptp_epochs, epochs);
+          __func__, s->idx, required_tai, ptp_epochs, epochs);
     }
   } else {
     epochs = ptp_time / pkt_time;
   }
 
   dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
-    pacing->cur_epochs);
+      pacing->cur_epochs);
   if (epochs <= pacing->cur_epochs) {
     diff = pacing->cur_epochs - epochs;
     if (diff < pacing->max_onward_epochs) {
