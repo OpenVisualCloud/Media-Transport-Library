@@ -341,14 +341,14 @@ mtl_st30p_tx tx-queues=4 rx-queues=0 udp-port=30000 payload-type=113 dev-ip="192
 The `mtl_st30p_rx` plugin supports the following pad capabilities:
 
 - **Formats**: `S8`, `S16BE`, `S24BE`
-- **Channels Range**: 1 to 2
+- **Channels Range**: 1 to 8
 - **Sample Rate Range**: 44100, 48000, 96000
 
 **Arguments**
 | Property Name       | Type    | Description                                           | Range                    | Default Value |
 |---------------------|---------|-------------------------------------------------------|--------------------------|---------------|
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT           | 3             |
-| rx-channel          | uint    | Audio channel number.                                 | 0 to G_MAXUINT           | 2             |
+| rx-channel          | uint    | Audio channel number.                                 | 0 to 8                   | 2             |
 | rx-sampling         | uint    | Audio sampling rate.                                  | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 48000         |
 | rx-audio-format     | string  | Audio format type.                                    | `PCM8`, `PCM16`, `PCM24` | `PCM16`       |
 | rx-ptime            | string  | Packetization time for the audio stream.              | `1ms`, `125us`, `250us`, `333us`, `4ms`, `80us`, `1.09ms`, `0.14ms`, `0.09ms` | `1.09ms` for 44.1kHz, `1ms` for others |

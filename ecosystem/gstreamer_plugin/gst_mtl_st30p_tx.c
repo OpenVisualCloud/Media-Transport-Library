@@ -112,7 +112,7 @@ static GstStaticPadTemplate gst_mtl_st30p_tx_sink_pad_template =
     GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
                             GST_STATIC_CAPS("audio/x-raw, "
                                             "format = (string) {S8, S16BE, S24BE},"
-                                            "channels = (int) [1, 2], "
+                                            "channels = (int) [1, 8], "
                                             "rate = (int) {44100, 48000, 96000}"));
 
 #define gst_mtl_st30p_tx_parent_class parent_class
