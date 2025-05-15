@@ -57,8 +57,8 @@ dkms.conf
 *.log_*
 logs_*
 *.patch
-!patches/*.patch
-!ecosystem/*.patch
+!patches/**/*.patch
+!ecosystem/**/*.patch
 *.diff
 *.yuv
 *.pcapng
