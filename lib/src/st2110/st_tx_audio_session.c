@@ -1257,7 +1257,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
     port = mt_port_logic2phy(s->port_maps, i);
 
     uint64_t initial_bytes_per_sec = tx_audio_session_initial_rl_bps(s);
-    int profiled = mt_audio_pacing_train_result_search(impl, port, initial_bytes_per_sec,
+    int profiled = mt_pacing_train_bps_result_search(impl, port, initial_bytes_per_sec,
                                                        &profiled_per_sec);
 
     /* pad pkt */
@@ -1297,7 +1297,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
           return -EIO;
         }
 
-        mt_audio_pacing_train_result_add(impl, port, initial_bytes_per_sec, trained);
+        mt_pacing_train_bps_result_add(impl, port, initial_bytes_per_sec, trained);
         info("%s(%d), trained bytes_per_sec %" PRIu64 "\n", __func__, idx, trained);
         int ret = mt_txq_set_tx_bps(rl_port->queue[j], trained);
         if (ret < 0) {
