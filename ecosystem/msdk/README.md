@@ -1,5 +1,9 @@
 # The MSDK Sample Encode
 
+> **⚠️ WARNING: This is experimental and unsupported code.**
+>
+> Use at your own risk. There is no guarantee of stability, security, or future updates. This code is intended for development and evaluation purposes only.
+
 ## Build
 
 run `build_msdk_mtl.sh`

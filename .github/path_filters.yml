@@ -18,6 +18,7 @@ build: &build
   - kahawai.json
   - meson.build
   - meson_options.txt
+  - .github/workflows/ubuntu_build.yml
   - VERSION
 
 windows_gtest: &windows_gtest
@@ -75,6 +76,7 @@ msys2_build: &msys2_build
 
 afxdp_build: &afxdp_build
   - .github/workflows/afxdp_build.yml
+  - script/build_ebpf_xdp.sh
   - *src
   - *build
 

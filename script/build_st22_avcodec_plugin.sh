@@ -5,6 +5,12 @@
 
 set -e
 
+script_name=$(basename "${BASH_SOURCE[0]}")
+script_path=$(readlink -qe "${BASH_SOURCE[0]}")
+script_folder=${script_path/$script_name/}
+
+cd "${script_folder}"
+
 function usage() {
 	echo "Usage: $0 [debug]"
 	exit 0
@@ -30,7 +36,7 @@ WORKSPACE=$PWD
 ST22_AVCODEC_PLUGIN_BUILD_DIR=${WORKSPACE}/build/st22_avcodec_plugin
 
 # build st22 avcodec plugin
-pushd plugins/st22_avcodec/
+pushd "${script_folder}/../plugins/st22_avcodec/"
 meson "${ST22_AVCODEC_PLUGIN_BUILD_DIR}" -Dbuildtype="$buildtype"
 popd
 pushd "${ST22_AVCODEC_PLUGIN_BUILD_DIR}"

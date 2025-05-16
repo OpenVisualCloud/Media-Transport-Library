@@ -83,6 +83,9 @@ mtl_system_status_*
 *.mp4
 *.pcm
 *.wav
+script/ice-*
+script/dpdk
+script/xdp-tools
 
 #Generated documentation
 doc/_build
@@ -93,3 +96,14 @@ gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap
 _temp*
+/**/gpu_offline_install
+
+# Ecosystem
+/**/FFmpeg
+/**/librist
+/**/MediaSDK
+/**/dpdk_*
+/**/readpcap_*
+/**/swig
+/**/openh264
+
