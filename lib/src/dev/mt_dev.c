@@ -649,19 +649,9 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   struct mt_tx_queue* tx_queue;
   struct mt_rl_shaper* shaper;
   uint64_t bps = ST_DEFAULT_RL_BPS;
-  uint32_t last_nonleaf_node_id;
-  uint32_t leaf_level_id;
   int ret;
 
   memset(&error, 0, sizeof(error));
-
-  if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-    last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_VF;
-    leaf_level_id = ST_TM_NONLEAF_NODES_NUM_VF;
-  } else {
-    last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_PF;
-    leaf_level_id = ST_TM_NONLEAF_NODES_NUM_PF;
-  }
 
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
@@ -675,8 +665,13 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
     qp.shaper_profile_id = shaper->shaper_profile_id;
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
-    ret = rte_tm_node_add(port_id, q, last_nonleaf_node_id, 0, 1, leaf_level_id, &qp,
-                          &error);
+    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
+      ret = rte_tm_node_add(port_id, q, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
+    } else {
+      ret = rte_tm_node_add(port_id, q, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
+    }
     if (ret < 0) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, q, ret,
           mt_string_safe(error.message));
@@ -707,8 +702,6 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   struct rte_tm_error error;
   struct rte_tm_node_params qp;
   struct mt_rl_shaper* shaper;
-  uint32_t last_nonleaf_node_id;
-  uint32_t leaf_level_id;
 
   memset(&error, 0, sizeof(error));
 
@@ -736,20 +729,17 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
       err("%s(%d), rl shaper get fail for q %d\n", __func__, port, queue);
       return -EIO;
     }
-    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_VF;
-      leaf_level_id = ST_TM_NONLEAF_NODES_NUM_VF;
-    } else {
-      last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_PF;
-      leaf_level_id = ST_TM_NONLEAF_NODES_NUM_PF;
-    }
-
     memset(&qp, 0, sizeof(qp));
     qp.shaper_profile_id = shaper->shaper_profile_id;
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
-    ret = rte_tm_node_add(port_id, queue, last_nonleaf_node_id, 0, 1, leaf_level_id, &qp,
-                          &error);
+    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
+      ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
+    } else {
+      ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
+    }
     if (ret < 0) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
