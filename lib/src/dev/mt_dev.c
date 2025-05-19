@@ -552,9 +552,11 @@ static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queu
 #define ST_ROOT_NODE_ID 256
 #define ST_TM_NONLEAF_NODES_NUM_PF 7
 #define ST_TM_NONLEAF_NODES_NUM_VF 2
+#define ST_TM_LAST_NONLEAF_NODE_ID_VF (ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_VF - 1)
+#define ST_TM_LAST_NONLEAF_NODE_ID_PF (ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_PF - 1)
 #define ST_DEFAULT_RL_BPS (1024 * 1024 * 1024 / 8) /* 1g bit per second */
 
-static int dev_rl_init_root(struct mt_interface* inf) {
+static int dev_rl_init_nonleaf_nodes(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   int ret;
@@ -654,10 +656,10 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   memset(&error, 0, sizeof(error));
 
   if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-    last_nonleaf_node_id = ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_VF - 1;
+    last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_VF;
     leaf_level_id = ST_TM_NONLEAF_NODES_NUM_VF;
   } else {
-    last_nonleaf_node_id = ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_PF - 1;
+    last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_PF;
     leaf_level_id = ST_TM_NONLEAF_NODES_NUM_PF;
   }
 
@@ -735,10 +737,10 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
       return -EIO;
     }
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      last_nonleaf_node_id = ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_VF - 1;
+      last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_VF;
       leaf_level_id = ST_TM_NONLEAF_NODES_NUM_VF;
     } else {
-      last_nonleaf_node_id = ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_PF - 1;
+      last_nonleaf_node_id = ST_TM_LAST_NONLEAF_NODE_ID_PF;
       leaf_level_id = ST_TM_NONLEAF_NODES_NUM_PF;
     }
 
@@ -1422,7 +1424,7 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       /* detect done in the xdp pacing init already */
       return 0;
     }
-    ret = dev_rl_init_root(inf);
+    ret = dev_rl_init_nonleaf_nodes(inf);
     if (ret < 0) {
       err("%s(%d), root init error %d\n", __func__, port, ret);
       return ret;
@@ -1559,13 +1561,11 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active || tx_queue->fatal_error) continue;
 
-    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
-      if (bytes_per_sec) {
-        ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
-        if (ret < 0) {
-          err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
-          inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
-        }
+    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL && bytes_per_sec) {
+      ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
+      if (ret < 0) {
+        err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
+        inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
       }
     }
     tx_queue->active = true;
