@@ -550,38 +550,43 @@ static int dev_flush_rx_queue(struct mt_interface* inf, struct mt_rx_queue* queu
 
 #define ST_SHAPER_PROFILE_ID 1
 #define ST_ROOT_NODE_ID 256
-#define ST_DEFAULT_NODE_ID 246
+#define ST_TM_NONLEAF_NODES_NUM_PF 7
+#define ST_TM_NONLEAF_NODES_NUM_VF 2
+#define ST_TM_LAST_NONLEAF_NODE_ID_VF (ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_VF - 1)
+#define ST_TM_LAST_NONLEAF_NODE_ID_PF (ST_ROOT_NODE_ID + ST_TM_NONLEAF_NODES_NUM_PF - 1)
 #define ST_DEFAULT_RL_BPS (1024 * 1024 * 1024 / 8) /* 1g bit per second */
 
-static int dev_rl_init_root(struct mt_interface* inf, uint32_t shaper_profile_id) {
+static int dev_rl_init_nonleaf_nodes(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   int ret;
   struct rte_tm_error error;
   struct rte_tm_node_params np;
+  uint32_t parent_id = RTE_TM_NODE_ID_NULL;
+  uint32_t node_id = ST_ROOT_NODE_ID;
+  uint32_t nonleaf_nodes_num;
 
   if (inf->tx_rl_root_active) return 0;
 
   memset(&error, 0, sizeof(error));
   memset(&np, 0, sizeof(np));
 
-  /* root node */
-  np.shaper_profile_id = shaper_profile_id;
+  np.shaper_profile_id = RTE_TM_SHAPER_PROFILE_ID_NONE;
   np.nonleaf.n_sp_priorities = 1;
-  ret = rte_tm_node_add(port_id, ST_ROOT_NODE_ID, -1, 0, 1, 0, &np, &error);
-  if (ret < 0) {
-    err("%s(%d), root add error: (%d)%s\n", __func__, port, ret,
-        mt_string_safe(error.message));
-    return ret;
-  }
+  if (inf->drv_info.drv_type == MT_DRV_IAVF)
+    nonleaf_nodes_num = ST_TM_NONLEAF_NODES_NUM_VF;
+  else
+    nonleaf_nodes_num = ST_TM_NONLEAF_NODES_NUM_PF;
 
-  /* nonleaf node based on root */
-  ret =
-      rte_tm_node_add(port_id, ST_DEFAULT_NODE_ID, ST_ROOT_NODE_ID, 0, 1, 1, &np, &error);
-  if (ret < 0) {
-    err("%s(%d), node add error: (%d)%s\n", __func__, port, ret,
-        mt_string_safe(error.message));
-    return ret;
+  for (int i = 0; i < nonleaf_nodes_num; i++) {
+    node_id = ST_ROOT_NODE_ID + i;
+    ret = rte_tm_node_add(port_id, node_id, parent_id, 0, 1, i, &np, &error);
+    if (ret < 0) {
+      err("%s(%d), node add error: (%d)%s\n", __func__, port, ret,
+          mt_string_safe(error.message));
+      return ret;
+    }
+    parent_id = node_id;
   }
 
   inf->tx_rl_root_active = true;
@@ -614,13 +619,6 @@ static struct mt_rl_shaper* dev_rl_shaper_add(struct mt_interface* inf, uint64_t
       return NULL;
     }
 
-    ret = dev_rl_init_root(inf, shaper_profile_id);
-    if (ret < 0) {
-      err("%s(%d), root init error %d\n", __func__, port, ret);
-      rte_tm_shaper_profile_delete(port_id, shaper_profile_id, &error);
-      return NULL;
-    }
-
     info("%s(%d), bps %" PRIu64 " on shaper %d\n", __func__, port, bps,
          shaper_profile_id);
     shapers[i].rl_bps = bps;
@@ -646,15 +644,15 @@ static struct mt_rl_shaper* dev_rl_shaper_get(struct mt_interface* inf, uint64_t
 static int dev_init_ratelimit_all(struct mt_interface* inf) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
-  int ret;
   struct rte_tm_error error;
   struct rte_tm_node_params qp;
+  struct mt_tx_queue* tx_queue;
   struct mt_rl_shaper* shaper;
   uint64_t bps = ST_DEFAULT_RL_BPS;
+  int ret;
 
   memset(&error, 0, sizeof(error));
 
-  struct mt_tx_queue* tx_queue;
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
 
@@ -667,7 +665,13 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
     qp.shaper_profile_id = shaper->shaper_profile_id;
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
-    ret = rte_tm_node_add(port_id, q, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
+    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
+      ret = rte_tm_node_add(port_id, q, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
+    } else {
+      ret = rte_tm_node_add(port_id, q, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
+    }
     if (ret < 0) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, q, ret,
           mt_string_safe(error.message));
@@ -729,7 +733,13 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     qp.shaper_profile_id = shaper->shaper_profile_id;
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
-    ret = rte_tm_node_add(port_id, queue, ST_DEFAULT_NODE_ID, 0, 1, 2, &qp, &error);
+    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
+      ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
+    } else {
+      ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
+                            ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
+    }
     if (ret < 0) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
@@ -739,10 +749,11 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
-
+  rte_atomic32_set(&inf->resetting, true);
   mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  rte_atomic32_set(&inf->resetting, false);
   if (ret < 0) {
     err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
         mt_string_safe(error.message));
@@ -1403,6 +1414,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       /* detect done in the xdp pacing init already */
       return 0;
     }
+    ret = dev_rl_init_nonleaf_nodes(inf);
+    if (ret < 0) {
+      err("%s(%d), root init error %d\n", __func__, port, ret);
+      return ret;
+    }
     /* IAVF require all q config with RL */
     if (inf->drv_info.drv_type == MT_DRV_IAVF) {
       ret = dev_init_ratelimit_all(inf);
@@ -1535,7 +1551,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active || tx_queue->fatal_error) continue;
 
-    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL && bytes_per_sec) {
       ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
       if (ret < 0) {
         err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
