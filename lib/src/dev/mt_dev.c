@@ -683,13 +683,8 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
          shaper->shaper_profile_id);
   }
 
-  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
-  if (ret < 0)
-    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
-        mt_string_safe(error.message));
-
   dbg("%s(%d), succ\n", __func__, port);
-  return ret;
+  return 0;
 }
 
 static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
@@ -712,13 +707,22 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   /* not changed */
   if (bps == tx_queue->bps) return 0;
 
+  rte_atomic32_set(&inf->resetting, true);
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
+
+  ret = rte_eth_dev_stop(port_id);
+  if (ret) {
+    err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
+    goto exit;
+  }
+
   /* delete old queue node */
   if (tx_queue->rl_shapers_mapping >= 0) {
     ret = rte_tm_node_delete(port_id, queue, &error);
     if (ret < 0) {
       err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
-      return ret;
+      goto exit;
     }
     tx_queue->rl_shapers_mapping = -1;
   }
@@ -727,7 +731,8 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     shaper = dev_rl_shaper_get(inf, bps);
     if (!shaper) {
       err("%s(%d), rl shaper get fail for q %d\n", __func__, port, queue);
-      return -EIO;
+      ret = -EIO;
+      goto exit;
     }
     memset(&qp, 0, sizeof(qp));
     qp.shaper_profile_id = shaper->shaper_profile_id;
@@ -740,29 +745,64 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
       ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
                             ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
     }
-    if (ret < 0) {
+    if (ret) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
-      return ret;
+      goto exit;
     }
+
     tx_queue->rl_shapers_mapping = shaper->idx;
     info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
-  rte_atomic32_set(&inf->resetting, true);
-  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
-  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
-  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  rte_atomic32_set(&inf->resetting, false);
-  if (ret < 0) {
-    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
-        mt_string_safe(error.message));
-    return ret;
+
+  if (inf->drv_info.drv_type == MT_DRV_IAVF) {
+    /* Note: IAVF behavior in DPDK 25.03:
+     * 1. If the hierarchy is committed on a started device, nodes cannot be removed after
+     * the commit.
+     * 2. After committing the hierarchy, the device must be restarted for changes to take
+     * effect.
+     */
+    ret = rte_eth_dev_start(port_id);
+    if (ret) {
+      err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
+      goto exit;
+    }
+
+    ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+    if (ret) {
+      err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
+          mt_string_safe(error.message));
+      goto exit;
+    }
+
+    ret = rte_eth_dev_stop(port_id);
+    if (ret) {
+      err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
+      goto exit;
+    }
+
+  } else {
+    ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+    if (ret) {
+      err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
+          mt_string_safe(error.message));
+      goto exit;
+    }
+  }
+
+  ret = rte_eth_dev_start(port_id);
+  if (ret) {
+    err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
+    goto exit;
   }
 
   tx_queue->bps = bps;
 
-  return 0;
+exit:
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  rte_atomic32_set(&inf->resetting, false);
+  return ret;
 }
 
 static int dev_stop_port(struct mt_interface* inf) {
@@ -1420,13 +1460,11 @@ static int dev_if_init_pacing(struct mt_interface* inf) {
       return ret;
     }
     /* IAVF require all q config with RL */
-    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
+    if (inf->drv_info.drv_type == MT_DRV_IAVF)
       ret = dev_init_ratelimit_all(inf);
-    } else {
+    else
       ret = dev_tx_queue_set_rl_rate(inf, 0, ST_DEFAULT_RL_BPS);
-      if (ret >= 0) dev_tx_queue_set_rl_rate(inf, 0, 0);
-    }
-    if (ret < 0) { /* fallback to tsc if no rl */
+    if (ret) { /* fallback to tsc if no rl */
       if (auto_detect) {
         warn("%s(%d), fallback to tsc as rl init fail\n", __func__, port);
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;

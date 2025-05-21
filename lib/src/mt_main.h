@@ -617,7 +617,7 @@ struct mt_sch_mgr {
 };
 
 struct mt_pacing_train_result {
-  uint64_t input_bps;           /* input, byte per sec */
+  uint64_t input_bps;        /* input, byte per sec */
   uint64_t profiled_bps;     /* profiled result */
   float pacing_pad_interval; /* result */
 };

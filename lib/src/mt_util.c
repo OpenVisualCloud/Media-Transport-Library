@@ -252,7 +252,7 @@ int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
 }
 
 int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                               uint64_t input_bps, float pad_interval) {
+                                   uint64_t input_bps, float pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
@@ -267,7 +267,7 @@ int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port por
 }
 
 int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                  uint64_t rl_bps, float* pad_interval) {
+                                      uint64_t rl_bps, float* pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
@@ -282,7 +282,7 @@ int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port 
 }
 
 int mt_pacing_train_bps_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                                     uint64_t input_bps, uint64_t profiled_bps) {
+                                   uint64_t input_bps, uint64_t profiled_bps) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
@@ -297,7 +297,7 @@ int mt_pacing_train_bps_result_add(struct mtl_main_impl* impl, enum mtl_port por
 }
 
 int mt_pacing_train_bps_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                        uint64_t input_bps, uint64_t* profiled_bps) {
+                                      uint64_t input_bps, uint64_t* profiled_bps) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
