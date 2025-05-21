@@ -1258,7 +1258,7 @@ static int tx_audio_session_init_rl(struct mtl_main_impl* impl,
 
     uint64_t initial_bytes_per_sec = tx_audio_session_initial_rl_bps(s);
     int profiled = mt_pacing_train_bps_result_search(impl, port, initial_bytes_per_sec,
-                                                       &profiled_per_sec);
+                                                     &profiled_per_sec);
 
     /* pad pkt */
     rl_port->pad = mt_build_pad(impl, mt_sys_tx_mempool(impl, port), port,

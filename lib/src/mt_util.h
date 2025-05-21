@@ -59,12 +59,12 @@ void mt_mbuf_sanity_check(struct rte_mbuf** mbufs, uint16_t nb, char* tag);
 int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                    uint64_t input_bps, float pad_interval);
 int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                  uint64_t input_bps, float* pad_interval);
+                                      uint64_t input_bps, float* pad_interval);
 
 int mt_pacing_train_bps_result_add(struct mtl_main_impl* impl, enum mtl_port port,
                                    uint64_t input_bps, uint64_t profiled_bps);
 int mt_pacing_train_bps_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                  uint64_t input_bps, uint64_t* profiled_bps);
+                                      uint64_t input_bps, uint64_t* profiled_bps);
 
 enum mtl_port mt_port_by_name(struct mtl_main_impl* impl, const char* name);
 int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* maps,
