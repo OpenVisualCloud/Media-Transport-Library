@@ -12,17 +12,56 @@
 extern "C" {
 #endif
 
+MTL_PACK(struct st40_rfc8331_payload_hdr_be {
+  union {
+    struct {
+      /** the ANC data uses luma (Y) data channel */
+      uint32_t c : 1;
+      /** line number corresponds to the location (vertical) of the ANC data packet */
+      uint32_t line_number : 11;
+      /** the location of the ANC data packet in the SDI raster */
+      uint32_t horizontal_offset : 12;
+      /** whether the data stream number of a multi-stream data mapping */
+      uint32_t s : 1;
+      /** the source data stream number of the ANC data packet */
+      uint32_t stream_num : 7;
+    } first_hdr_chunk;
+    /** Handle to make operating on first_hdr_chunk buffer easier */
+    uint32_t swapped_first_hdr_chunk;
+  };
+  union {
+    struct {
+      /** Data Identification Word */
+      uint32_t did : 10;
+      /** Secondary Data Identification Word */
+      uint32_t sdid : 10;
+      /** Data Count */
+      uint32_t data_count : 10;
+      /** Starting point of the UDW (user data words) */
+      uint32_t rsvd_for_udw : 2;
+    } second_hdr_chunk;
+    /** Handle to make operating on second_hdr_chunk buffer easier */
+    uint32_t swapped_second_hdr_chunk;
+  };
+});
+
 /** Handle to tx st2110-40 pipeline session of lib */
 typedef struct st40p_tx_ctx* st40p_tx_handle;
 
 /** The structure info for st40 frame meta. */
 struct st40_frame_info {
-  /** frame buffer address */
+  /** Pointer to the main ancillary frame buffer */
   struct st40_frame* anc_frame;
+ /** Pointer to the metadata array for this frame */
+  struct st40_meta* meta;
+  /** Pointer to the number of metadata entries in the frame */
+  uint32_t meta_num;
   /** user data words buffer address */
-  void* udw_buff_addr;
+  uint8_t* udw_buff_addr;
   /** user data words buffer size */
   size_t udw_buffer_size;
+  /** user data words fill of the buffer */
+  uint32_t udw_buffer_fill;
   /** frame timestamp format */
   enum st10_timestamp_fmt tfmt;
   /** frame timestamp value */
