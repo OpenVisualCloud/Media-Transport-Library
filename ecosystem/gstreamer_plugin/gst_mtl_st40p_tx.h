@@ -50,11 +50,19 @@
 #include <experimental/st40_pipeline_api.h>
 
 #include "gst_mtl_common.h"
+#include <st40_api.h>
 
 G_BEGIN_DECLS
 
 #define GST_TYPE_MTL_ST40P_TX (gst_mtl_st40p_tx_get_type())
 G_DECLARE_FINAL_TYPE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST, MTL_ST40P_TX, GstBaseSink)
+
+enum gst_st40p_rfc8331_payload_endian {
+  ST40_RFC8331_PAYLOAD_ENDIAN_SYSTEM,
+  ST40_RFC8331_PAYLOAD_ENDIAN_BIG,
+  ST40_RFC8331_PAYLOAD_ENDIAN_LITTLE,
+  ST40_RFC8331_PAYLOAD_ENDIAN_MAX
+};
 
 struct _Gst_Mtl_St40p_Tx {
   GstBaseSink element;
@@ -72,6 +80,40 @@ struct _Gst_Mtl_St40p_Tx {
   guint sdid;
   gboolean use_pts_for_pacing;
   guint pts_for_pacing_offset;
+  gboolean parse_8331_meta_from_gstbuffer;
+  guint parse_8331_meta_endianness;
+  guint max_combined_udw_size;
+};
+
+
+struct gst_st40_rfc8331_hdr1_le {
+  union {
+    struct {
+      /** the ANC data uses luma (Y) data channel */
+      uint32_t c : 1;
+      /** line number corresponds to the location (vertical) of the ANC data packet */
+      uint32_t line_number : 11;
+      /** the location of the ANC data packet in the SDI raster */
+      uint32_t horizontal_offset : 12;
+      /** whether the data stream number of a multi-stream data mapping */
+      uint32_t s : 1;
+      /** the source data stream number of the ANC data packet */
+      uint32_t stream_num : 7;
+    } header;
+    uint32_t handle;
+  };
+};
+
+
+struct gst_st40_rfc8331_meta {
+  struct gst_st40_rfc8331_hdr1_le hdr;
+  /** Data Count */
+  guint16 data_count;
+  /** Secondary Data Identification Word */
+  guint16 sdid;
+  /** Data Identification Word */
+  guint16 did;
+  guint16 size;
 };
 
 G_END_DECLS

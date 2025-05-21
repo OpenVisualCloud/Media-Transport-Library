@@ -65,6 +65,7 @@
 #endif
 
 #include <gst/gst.h>
+#include <st40_api.h>
 #include <unistd.h>
 
 #include "gst_mtl_st40p_tx.h"
@@ -90,8 +91,18 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
 #define PACKAGE_VERSION "1.0"
 #endif
 
-/* Maximum size for single User Data Words defined in ST 0291-1  */
-#define MAX_UDW_SIZE 255
+#define ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT 20
+/* Maximum size for single User Data Words */
+#define DEFAULT_MAX_UDW_SIZE (ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT * 255)
+/* rfc8331 header consist of rows 3 * 10 bits + 2 bits  */
+#define RFC_8331_WORD_BYTE_SIZE ((3 * 10 + 2) / 8)
+#define RFC_8331_PAYLOAD_HEADER_SIZE 8
+
+#define ST40P_TX_SHIFT_BUFFER(buffer_ptr, bytes_left_to_process, shift) \
+    { \
+        (buffer_ptr) += (shift); \
+        (bytes_left_to_process) -= (shift); \
+    }
 
 enum {
   PROP_ST40P_TX_FRAMEBUFF_CNT = PROP_GENERAL_MAX,
@@ -100,6 +111,9 @@ enum {
   PROP_ST40P_TX_SDID,
   PROP_ST40P_TX_USE_PTS_FOR_PACING,
   PROP_ST40P_TX_PTS_PACING_OFFSET,
+  PROP_ST40P_TX_PARSE_8331_META,
+  PROP_ST40P_TX_PARSE_8331_META_ENDIANNESS,
+  PROP_ST40P_TX_MAX_UDW_SIZE,
   PROP_MAX
 };
 
@@ -127,7 +141,32 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf);
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink);
+
+
 static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink);
+
+/**
+ * Main processing functions for ST40p TX GStreamer plugin.
+ */
+static GstFlowReturn st40p_tx_parse_gstbuffer(Gst_Mtl_St40p_Tx* sink,
+                                              GstMapInfo map_info,
+                                              gint* bytes_left_to_process,
+                                              GstBuffer* buf);
+
+static void st40p_tx_fill_meta(struct st40_frame* frame, void* data, guint32 data_size,
+                           guint did, guint sdid);
+
+static GstFlowReturn st40p_tx_parse_8331_meta(struct st40_frame* frame,
+                                              struct gst_st40_rfc8331_meta meta,
+                                              guint anc_idx,
+                                              void* data_ptr,
+                                              guint data_offset);
+
+static GstFlowReturn st40p_tx_parse_8331_gstbuffer(Gst_Mtl_St40p_Tx* sink,
+                                              GstMapInfo map_info,
+                                              gint* bytes_left_to_process,
+                                              GstBuffer* buf,
+                                              guint anc_count);
 
 static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   GObjectClass* gobject_class;
@@ -193,6 +232,33 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         "for precise packet pacing. This allows fine-tuning of the "
                         "transmission timing when using PTS-based pacing.",
                         0, G_MAXUINT, 1080, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_PARSE_8331_META,
+      g_param_spec_boolean("parse-8331-meta", "Parse 8331 meta",
+                           "Parse 8331 meta data from the ancillary data, requires you "
+                           "to send the whole 8331 header in the buffer",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+  gobject_class, PROP_ST40P_TX_PARSE_8331_META_ENDIANNESS,
+  g_param_spec_uint("parse-8331-meta-endianness",
+                            "Parse 8331 meta endianness",
+                            "Parse 8331 meta data endianness, "
+                            "0 - system endianness, 1 - big endian, 2 - little endian",
+                            0, ST40_RFC8331_PAYLOAD_ENDIAN_MAX - 1,
+                            ST40_RFC8331_PAYLOAD_ENDIAN_SYSTEM,
+                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+g_object_class_install_property(
+    gobject_class, PROP_ST40P_TX_MAX_UDW_SIZE,
+    g_param_spec_uint("max-combined-udw-size", "Max combined UDW size",
+                     "Maximum combined size of all user data words to send in "
+                     "single st40p frame",
+                     0, G_MAXUINT, DEFAULT_MAX_UDW_SIZE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
@@ -264,6 +330,16 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_TX_PTS_PACING_OFFSET:
       self->pts_for_pacing_offset = g_value_get_uint(value);
       break;
+    case PROP_ST40P_TX_PARSE_8331_META:
+      self->parse_8331_meta_from_gstbuffer = g_value_get_boolean(value);
+      break;
+    case PROP_ST40P_TX_PARSE_8331_META_ENDIANNESS:
+      self->parse_8331_meta_endianness =
+          g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_MAX_UDW_SIZE:
+      self->max_combined_udw_size = g_value_get_uint(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -298,6 +374,15 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_TX_PTS_PACING_OFFSET:
       g_value_set_uint(value, sink->pts_for_pacing_offset);
+      break;
+    case PROP_ST40P_TX_PARSE_8331_META:
+      g_value_set_boolean(value, sink->parse_8331_meta_from_gstbuffer);
+      break;
+    case PROP_ST40P_TX_PARSE_8331_META_ENDIANNESS:
+      g_value_set_uint(value, sink->parse_8331_meta_endianness);
+      break;
+    case PROP_ST40P_TX_MAX_UDW_SIZE:
+      g_value_set_uint(value, sink->max_combined_udw_size);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -339,13 +424,19 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     return FALSE;
   }
 
-  if (sink->did > 0xFF) {
-    GST_ERROR("Invalid DID value: %d", sink->did);
-    return FALSE;
-  }
-  if (sink->sdid > 0xFF) {
-    GST_ERROR("Invalid SDID value: %d", sink->sdid);
-    return FALSE;
+  if (sink->parse_8331_meta_from_gstbuffer && (sink->did || sink->sdid))
+    GST_WARNING("DID %d and SDID %d ignored when using 8331 meta parsing", sink->did,
+               sink->sdid);
+  else {
+    if (sink->did > 0xFF) {
+      GST_ERROR("Invalid DID value: %d", sink->did);
+      return FALSE;
+    }
+
+    if (sink->sdid > 0xFF) {
+      GST_ERROR("Invalid SDID value: %d", sink->sdid);
+      return FALSE;
+    }
   }
 
   ops_tx.fps = st_frame_rate_to_st_fps((double)sink->fps_n / sink->fps_d);
@@ -355,9 +446,14 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   }
 
   ops_tx.interlaced = false;
-  /* Only single ANC data packet is possible per frame. ANC_Count = 1 TODO: allow more */
-  sink->frame_size = MAX_UDW_SIZE;
-  ops_tx.max_udw_buff_size = MAX_UDW_SIZE;
+  /* Only single ANC data packet is possible when metadata is not being parsed from
+   * parse_8331_meta_from_gstbuffer mode per frame. anc_count = 1 TODO: allow more */
+  sink->frame_size = 255;
+
+  if (sink->max_combined_udw_size)
+    ops_tx.max_udw_buff_size = sink->max_combined_udw_size;
+  else
+    ops_tx.max_udw_buff_size = DEFAULT_MAX_UDW_SIZE;
 
   ops_tx.flags |= ST40P_TX_FLAG_BLOCK_GET;
   if (sink->use_pts_for_pacing) {
@@ -413,16 +509,20 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
  * This function initializes the metadata fields of a given st40 frame with the provided
  * data and metadata values. It sets the first metadata entry with the specified DID,
  * SDID, and data size, and assigns the data pointer to the frame.
- * Note: Most of the fields are hardcoded, and only first metadata block is filled as
- * only one ANC Data packet per frame is allowed.
+ * Note: Most of the fields are hardcoded.
+ *
+ * This function is expected to be called multiple times per frame, with the anc_count
+ * parameter indicating the current ANC packet index. Calls should be made in increasing
+ * anc_count order for each ANC packet in the frame.
  *
  * @param frame Pointer to the st40_frame structure to be filled. Cannot be NULL.
  * @param data Pointer to the data to be associated with the frame.
  * @param data_size Size of the data in bytes.
  * @param did Data Identifier (DID) to be set in the metadata.
  * @param sdid Secondary Data Identifier (SDID) to be set in the metadata.
+ * @param anc_count The index of the ANC packet for which metadata is being filled.
  */
-static void fill_st40_meta(struct st40_frame* frame, void* data, guint32 data_size,
+static void st40p_tx_fill_meta(struct st40_frame* frame, void* data, guint32 data_size,
                            guint did, guint sdid) {
   frame->meta[0].c = 0;
   frame->meta[0].line_number = 0;
@@ -437,6 +537,198 @@ static void fill_st40_meta(struct st40_frame* frame, void* data, guint32 data_si
   frame->meta_num = 1;
 }
 
+/**
+ * @brief Parses a GstBuffer and prepares a frame for transmission.
+ *
+ * This function retrieves a frame from the ST40p transmitter handle, copies the relevant
+ * data from the provided GstBuffer into the frame buffer, fills in ancillary metadata,
+ * and submits the frame for transmission. It also handles timestamping if pacing is enabled.
+ *
+ * @param sink Pointer to the Gst_Mtl_St40p_Tx sink element.
+ * @param map_info GstMapInfo structure containing mapped buffer data.
+ * @param bytes_left_to_process Pointer to the number of bytes left to process in the buffer.
+ * @param buf GstBuffer to be parsed and transmitted.
+ *
+ * @return GST_FLOW_OK on success, GST_FLOW_ERROR on failure.
+ */
+static GstFlowReturn st40p_tx_parse_gstbuffer(Gst_Mtl_St40p_Tx* sink,
+                                              GstMapInfo map_info,
+                                              gint* bytes_left_to_process,
+                                              GstBuffer* buf) {
+  struct st40_frame_info* frame_info = NULL;
+  uint8_t* cur_addr_buf;
+  gint bytes_left_to_process_cur;
+
+  frame_info = st40p_tx_get_frame(sink->tx_handle);
+  if (!frame_info) {
+    GST_ERROR("Failed to get frame");
+    return GST_FLOW_ERROR;
+  }
+
+  cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - *bytes_left_to_process;
+  bytes_left_to_process_cur =
+      *bytes_left_to_process > sink->frame_size ? sink->frame_size : *bytes_left_to_process;
+
+  mtl_memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_left_to_process_cur);
+
+  st40p_tx_fill_meta(frame_info->anc_frame, frame_info->udw_buff_addr, bytes_left_to_process_cur,
+                 sink->did, sink->sdid);
+
+  if (sink->use_pts_for_pacing) {
+    frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+    frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  }
+
+  if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
+    GST_ERROR("Failed to put frame");
+    return GST_FLOW_ERROR;
+  }
+  bytes_left_to_process -= bytes_left_to_process_cur;
+
+  return GST_FLOW_OK;
+}
+
+/* we dont' really check the data here we let the st40 ancillary data to do so */
+static GstFlowReturn st40p_tx_parse_8331_meta(struct st40_frame* frame,
+                                              struct gst_st40_rfc8331_meta meta,
+                                              guint anc_idx,
+                                              void* data_ptr,
+                                              guint udw_offset) {
+  if (!frame || !data_ptr) {
+    GST_ERROR("Invalid parameters for parsing 8331 meta");
+    return GST_FLOW_ERROR;
+  }
+
+  if (anc_idx >= ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
+    GST_ERROR("ANC index out of bounds: %u", anc_idx);
+    return GST_FLOW_ERROR;
+  }
+
+  frame->meta[anc_idx].c = meta.hdr.header.c;
+  frame->meta[anc_idx].line_number = meta.hdr.header.line_number;
+  frame->meta[anc_idx].hori_offset = meta.hdr.header.horizontal_offset;
+  frame->meta[anc_idx].s = meta.hdr.header.s;
+  frame->meta[anc_idx].stream_num = meta.hdr.header.stream_num;
+  frame->meta[anc_idx].did = meta.did;
+  frame->meta[anc_idx].sdid = meta.sdid;
+  frame->meta[anc_idx].udw_size = meta.data_count;
+  frame->meta[anc_idx].udw_offset = udw_offset;
+
+  return GST_FLOW_OK;
+}
+
+
+
+static GstFlowReturn st40p_tx_parse_8331_gstbuffer(Gst_Mtl_St40p_Tx* sink,
+                                              GstMapInfo map_info,
+                                              gint* bytes_left_to_process,
+                                              GstBuffer* buf,
+                                              guint anc_count) {
+  struct st40_frame_info* frame_info = NULL;
+  /* Pointer used to navigate through the RFC8331 payload headers and data in the GstBuffer */
+  uint8_t* payload_cursor, *udw_cursor;
+  guint buffer_size = gst_buffer_get_size(buf);
+  struct gst_st40_rfc8331_meta rfc8331_meta = {0};
+  guint count_bytes_to_hold_udw, bytes_to_hold_udw = 0;
+  guint16 udw;
+
+  if (buffer_size < *bytes_left_to_process) {
+    GST_ERROR("Buffer size (%u) is smaller than bytes left to process (%u)", buffer_size, *bytes_left_to_process);
+    return GST_FLOW_ERROR; 
+  }
+
+  frame_info = st40p_tx_get_frame(sink->tx_handle);
+  if (!frame_info) {
+    GST_ERROR("Failed to get frame");
+    return GST_FLOW_ERROR;
+  }
+
+  frame_info->anc_frame->data = frame_info->udw_buff_addr;
+
+  count_bytes_to_hold_udw = 0;
+
+  for (int i = 0; i < anc_count; i++) {
+    /* Processing of the input 8331 header */
+    if (*bytes_left_to_process < RFC_8331_WORD_BYTE_SIZE * 2) {
+      GST_ERROR("Buffer size (%u) is too small to contain rfc8331 header (%lu)",
+                *bytes_left_to_process, sizeof(struct st40_rfc8331_payload_hdr));
+      return GST_FLOW_ERROR;
+    }
+
+    /* Get the ANC 8331 header and move the goalpost variables */
+    payload_cursor = map_info.data + (buffer_size - *bytes_left_to_process);
+    memcpy(&rfc8331_meta.hdr, payload_cursor, sizeof(struct gst_st40_rfc8331_hdr1_le));
+
+    ST40P_TX_SHIFT_BUFFER(payload_cursor, *bytes_left_to_process, RFC_8331_WORD_BYTE_SIZE);
+    /*TODO add support for parity bit checking we are ignoring the parity bits  */
+    rfc8331_meta.did = st40_get_udw(0, payload_cursor) & 0xff;
+    rfc8331_meta.sdid = st40_get_udw(1, payload_cursor) & 0xff;
+    rfc8331_meta.data_count = st40_get_udw(2, payload_cursor) & 0xff;
+    bytes_to_hold_udw = (rfc8331_meta.data_count * 10); // 10 bits per UDW
+    bytes_to_hold_udw = (bytes_to_hold_udw + 7) / 8; // crude round up to byte size
+
+    if (count_bytes_to_hold_udw + bytes_to_hold_udw > frame_info->udw_buffer_size) {
+      GST_ERROR("UDW buffer address (%p) exceeds maximum allowed size (%u)",
+                frame_info->udw_buff_addr + count_bytes_to_hold_udw, sink->max_combined_udw_size);
+      return GST_FLOW_ERROR;
+    } else {
+      udw_cursor = frame_info->udw_buff_addr + count_bytes_to_hold_udw;
+      count_bytes_to_hold_udw += bytes_to_hold_udw;
+    }
+
+    if (bytes_to_hold_udw > *bytes_left_to_process) {
+      GST_ERROR("Buffer size (%u) is too small to contain rfc8331 payload (%u)",
+                *bytes_left_to_process, bytes_to_hold_udw);
+      return GST_FLOW_ERROR;
+    }
+
+    if (st40p_tx_parse_8331_meta(frame_info->anc_frame, rfc8331_meta, i, payload_cursor, 0)) {
+      GST_ERROR("Failed to fill RFC 8331 meta");
+      return GST_FLOW_ERROR;
+    }
+
+    if (st40p_tx_parse_8331_meta(frame_info->anc_frame, rfc8331_meta, i, payload_cursor, 0)) {
+      GST_ERROR("Failed to fill RFC 8331 meta");
+      return GST_FLOW_ERROR;
+    }
+
+      /*
+    * Skip the first three UDW entries:
+    * - 0th UDW: DID (Data Identifier)
+    * - 1st UDW: SDID (Secondary Data Identifier)
+    * - 2nd UDW: Data_Count (number of user data words)
+    * Start processing actual user data words from the 3rd UDW onward.
+    */
+    for (int j = 0; j < rfc8331_meta.data_count; j++) {
+      udw = st40_get_udw((j + 3), payload_cursor);
+      st40_set_udw(j ,udw, udw_cursor);
+    }
+
+    if (sink->use_pts_for_pacing) {
+      frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+      frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+    }
+
+    /* calculate the shift via calculating the size of UDW and checksum */
+    bytes_to_hold_udw = ((rfc8331_meta.data_count + 1) * 10);
+    bytes_to_hold_udw = (bytes_to_hold_udw + 7) / 8;
+    ST40P_TX_SHIFT_BUFFER(payload_cursor, *bytes_left_to_process, bytes_to_hold_udw + RFC_8331_WORD_BYTE_SIZE);
+
+    /* word align */
+    if (*bytes_left_to_process > 0)
+      ST40P_TX_SHIFT_BUFFER(payload_cursor, *bytes_left_to_process, *bytes_left_to_process % RFC_8331_WORD_BYTE_SIZE);
+
+  }
+
+  frame_info->anc_frame->data_size = count_bytes_to_hold_udw;
+  if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
+    GST_ERROR("Failed to put frame");
+    return GST_FLOW_ERROR;
+  }
+
+  return GST_FLOW_OK;
+}
+
 /*
  * Takes the buffer from the source pad and sends it to the mtl library via
  * frame buffers, supports incomplete frames. But buffers needs to add up to the
@@ -446,11 +738,11 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(parent);
   gint buffer_n = gst_buffer_n_memory(buf);
-  struct st40_frame_info* frame_info = NULL;
   GstMemory* gst_buffer_memory;
   GstMapInfo map_info;
-  gint bytes_to_write, bytes_to_write_cur;
-  void* cur_addr_buf;
+  gint bytes_left_to_process;
+  GstFlowReturn ret = GST_FLOW_OK;
+  guint8 rfc8331_f, rfc8331_anc_count;
 
   if (!sink->tx_handle) {
     GST_ERROR("Tx handle not initialized");
@@ -458,7 +750,7 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
   }
 
   for (int i = 0; i < buffer_n; i++) {
-    bytes_to_write = gst_buffer_get_size(buf);
+    bytes_left_to_process = gst_buffer_get_size(buf);
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
@@ -466,32 +758,61 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
       return GST_FLOW_ERROR;
     }
 
-    while (bytes_to_write > 0) {
-      frame_info = st40p_tx_get_frame(sink->tx_handle);
-      if (!frame_info) {
-        GST_ERROR("Failed to get frame");
+    if (sink->parse_8331_meta_from_gstbuffer) {
+      if (bytes_left_to_process < RFC_8331_WORD_BYTE_SIZE) {
+        GST_ERROR("Buffer too small for rfc8331 header");
+        gst_memory_unmap(gst_buffer_memory, &map_info);
+        gst_buffer_unref(buf);
         return GST_FLOW_ERROR;
       }
-      cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
-      bytes_to_write_cur =
-          bytes_to_write > sink->frame_size ? sink->frame_size : bytes_to_write;
-      mtl_memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_to_write_cur);
-      fill_st40_meta(frame_info->anc_frame, frame_info->udw_buff_addr, bytes_to_write_cur,
-                     sink->did, sink->sdid);
-      // By default, timestamping is handled by MTL.
-      if (sink->use_pts_for_pacing) {
-        frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
-        frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+
+      rfc8331_anc_count = map_info.data[0];
+      /* next 2 bits are the f field 0b00000111 */
+      rfc8331_f = (map_info.data[1] & 0x03);
+
+      /* ignore an ANC data packet with an F field value of 0b01 */
+      if (rfc8331_f == 1){
+        gst_memory_unmap(gst_buffer_memory, &map_info);
+        continue;
+      /* TODO: Support */
+      } else if (rfc8331_f != 0) {
+        GST_ERROR("Unsupported F field value: 0b%d", rfc8331_f);
+        gst_memory_unmap(gst_buffer_memory, &map_info);
+        gst_buffer_unref(buf);
+        return GST_FLOW_ERROR;
       }
 
-      st40p_tx_put_frame(sink->tx_handle, frame_info);
-      bytes_to_write -= bytes_to_write_cur;
+      bytes_left_to_process -= RFC_8331_WORD_BYTE_SIZE;
+      ret = st40p_tx_parse_8331_gstbuffer(sink, map_info, &bytes_left_to_process, buf, rfc8331_anc_count);
+
+      if (ret) {
+        GST_ERROR("Failed to parse 8331 gst buffer %d", ret);
+        gst_memory_unmap(gst_buffer_memory, &map_info);
+        gst_buffer_unref(buf);
+        return ret;
+      } else if (bytes_left_to_process) {
+        GST_WARNING("Leftover bytes in the buffer %d", bytes_left_to_process);
+      }
     }
+
+    /* main processing the GSTbuffer into the anc frames omit if parsing 8331 gst_buffer */
+    while (ret != GST_FLOW_OK && bytes_left_to_process > 0 && !sink->parse_8331_meta_from_gstbuffer)
+      ret = st40p_tx_parse_gstbuffer(sink, map_info, &bytes_left_to_process, buf);
+
+    if (ret) {
+      GST_ERROR("Failed to parse gst buffer %d", ret);
+      gst_memory_unmap(gst_buffer_memory, &map_info);
+      gst_buffer_unref(buf);
+      return ret;
+    }
+
     gst_memory_unmap(gst_buffer_memory, &map_info);
   }
   gst_buffer_unref(buf);
-  return GST_FLOW_OK;
+  return ret;
 }
+
+
 
 static void gst_mtl_st40p_tx_finalize(GObject* object) {
   Gst_Mtl_St40p_Tx* sink = GST_MTL_ST40P_TX(object);

@@ -30,15 +30,15 @@ else
 endif
 
 if run_command('test', '-d', '/usr/local/include/glib-2.0', check: false).returncode() == 0
-    glib_2_0_inc_dir  = '/usr/local/include/glib-2.0'
+  glib_2_0_inc_dir  = '/usr/local/include/glib-2.0'
 else
-    glib_2_0_inc_dir  = '/usr/include/glib-2.0'
+  glib_2_0_inc_dir  = '/usr/include/glib-2.0'
 endif
 
 inc_dirs = include_directories(
-    '/usr/local/include/mtl',
-    glib_2_0_inc_dir,
-    gstreamer_inc_dir
+  '/usr/local/include/mtl',
+  glib_2_0_inc_dir,
+  gstreamer_inc_dir
 )
 
 # mtl_common_library
@@ -106,16 +106,16 @@ gst_mtl_st30p_rx = library('gstmtl_st30p_rx',
 
 # mtl_st30p_tx Plugin
 gstmtl_st30p_tx_sources = [
-    'gst_mtl_st30p_tx.c',
+  'gst_mtl_st30p_tx.c',
 ]
 
 gstmtl_st30p_tx = library('gstmtl_st30p_tx',
-    gstmtl_st30p_tx_sources,
-    dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
-    install : true,
-    install_dir : plugins_install_dir,
-    include_directories: inc_dirs,
-    c_args: plugin_c_args
+  gstmtl_st30p_tx_sources,
+  dependencies : [gst_dep, gstbase_dep, gstreamer_audio_dep, mtl_dep, gst_mtl_common_dep],
+  install : true,
+  install_dir : plugins_install_dir,
+  include_directories: inc_dirs,
+  c_args: plugin_c_args
 )
 
 # mtl_st40_rx Plugin
@@ -133,13 +133,22 @@ gst_mtl_st40_rx = library('gstmtl_st40_rx',
 )
 
 # mtl_st40p_tx Plugin
-gst_mtl_st40p_tx_sources = [
+gst_mtl_st40_tx_sources = [
   'gst_mtl_st40p_tx.c'
 ]
 
-gst_mtl_st40p_tx = library('gstmtl_st40p_tx',
-  gst_mtl_st40p_tx_sources,
+gst_mtl_st40_tx = library('gstmtl_st40p_tx',
+  gst_mtl_st40_tx_sources,
   dependencies : [gst_dep, gstbase_dep, mtl_dep, gst_mtl_common_dep],
+  install : true,
+  install_dir : plugins_install_dir,
+  include_directories: inc_dirs,
+  c_args: plugin_c_args
+)
+
+gst_mtl_anc_inserter = library('ancinserter',
+  'gst_anc_inserter.c',
+  dependencies : [gst_dep, gstbase_dep, gstreamer_video_dep, mtl_dep, gst_mtl_common_dep],
   install : true,
   install_dir : plugins_install_dir,
   include_directories: inc_dirs,
