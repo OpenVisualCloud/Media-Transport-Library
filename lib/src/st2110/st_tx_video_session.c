@@ -427,18 +427,18 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   pkts_per_frame = pkts_per_frame * reactive;
   measured_bps = s->st20_pkt_size * pkts_per_sec * reactive;
 
-  /* If the measured speed is lower then expected. Set higher bps and retrain to add
+  /* If the measured speed is lower than expected. Set higher bps and retrain to add
    * padding */
   if (measured_bps < rl_bps) {
-    info("%s(%d), measured bps %ld is lower then set bps %ld\n", __func__, idx,
-         (uint64_t)measured_bps, rl_bps);
+    info("%s(%d), measured bps %"PRIu64" is lower then set bps %"PRIu64"\n",
+         __func__, idx, (uint64_t)measured_bps, rl_bps);
     if (!mt_pacing_train_bps_result_search(impl, port, rl_bps, &bps_to_set)) {
       err("%s(%d), measured speed is too low on already trained bps\n", __func__, idx);
       return -EINVAL;
     }
 
-    bps_to_set = rl_bps / measured_bps * rl_bps;
-    info("%s(%d), increase bps to %ld\n", __func__, idx, bps_to_set);
+    bps_to_set = (rl_bps * rl_bps) / measured_bps;
+    info("%s(%d), increase bps to %"PRIu64"\n", __func__, idx, bps_to_set);
     mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
     mt_txq_set_tx_bps(queue, bps_to_set);
     ret = tv_train_pacing(impl, s, s_port);
