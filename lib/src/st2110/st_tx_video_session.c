@@ -437,7 +437,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       return -EINVAL;
     }
 
-    bps_to_set = rl_bps / measured_bps * rl_bps;
+    bps_to_set = (rl_bps * rl_bps) / measured_bps;
     info("%s(%d), increase bps to %ld\n", __func__, idx, bps_to_set);
     mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
     mt_txq_set_tx_bps(queue, bps_to_set);
