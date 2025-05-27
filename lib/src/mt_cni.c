@@ -344,7 +344,6 @@ static int cni_traffic(struct mtl_main_impl* impl) {
   for (int i = 0; i < num_ports; i++) {
     cni = cni_get_entry(impl, i);
     if (!cni->rxq) continue;
-    if (rte_atomic32_read(&impl->inf[i].resetting)) continue;
 
     struct mt_rx_pcap* pcap = &cni->pcap;
     /* if any pcap progress */

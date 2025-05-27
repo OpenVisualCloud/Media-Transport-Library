@@ -704,8 +704,6 @@ struct mt_interface {
   struct rte_ether_addr* mcast_mac_lists; /* pool of multicast mac addrs */
   uint32_t mcast_nb;                      /* number of address */
   uint32_t status;                        /* MT_IF_STAT_* */
-  /* The port is temporarily off, e.g. during rte_tm_hierarchy_commit */
-  rte_atomic32_t resetting;
 
   /* default tx mbuf_pool */
   struct rte_mempool* tx_mbuf_pool;
@@ -715,11 +713,9 @@ struct mt_interface {
   uint16_t nb_rx_desc;
 
   struct rte_mbuf* pad;
-  /*
-   * protect rl and fdir for vf.
-   * _atomic_set_cmd(): There is incomplete cmd 112
-   */
-  pthread_mutex_t vf_cmd_mutex;
+
+  /* protect port during reset when changing RL speed */
+  pthread_rwlock_t rl_rwlock;
 
   /* tx queue resources */
   uint16_t nb_tx_q;
