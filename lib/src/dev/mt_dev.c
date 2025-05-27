@@ -707,8 +707,11 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   /* not changed */
   if (bps == tx_queue->bps) return 0;
 
-  rte_atomic32_set(&inf->resetting, true);
-  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
+  ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
+  if (ret) {
+    err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port, ret);
+    return ret;
+  }
 
   ret = rte_eth_dev_stop(port_id);
   if (ret) {
@@ -800,8 +803,9 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   tx_queue->bps = bps;
 
 exit:
-  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
-  rte_atomic32_set(&inf->resetting, false);
+  ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
+  if (ret) err("%s(%d), failed to release write lock, ret %d\n", __func__, port, ret);
+
   return ret;
 }
 
@@ -2115,7 +2119,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
 
     mt_pthread_mutex_destroy(&inf->tx_queues_mutex);
     mt_pthread_mutex_destroy(&inf->rx_queues_mutex);
-    mt_pthread_mutex_destroy(&inf->vf_cmd_mutex);
+    mt_pthread_rwlock_destroy(&inf->rl_rwlock);
 
     dev_close_port(inf);
   }
@@ -2181,7 +2185,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->tx_pacing_way = p->pacing;
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
-    mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
+    mt_pthread_rwlock_pref_wr_init(&inf->rl_rwlock);
     rte_spinlock_init(&inf->stats_lock);
 
     if (mt_user_ptp_tsc_source(impl)) {
