@@ -17,6 +17,7 @@ if [ $# -lt 2 ]; then
 	echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
 	echo "   disable_vf               Disable VF"
 	echo "   list all                 List all NIC devices and the brief"
+	echo "   list <bb:dd:ff.x>        List VFs of the specified PF"
 	exit 0
 fi
 
@@ -112,6 +113,23 @@ create_kvf() {
 	done
 }
 
+list_vf() {
+	pci_device_path="/sys/bus/pci/devices/$1/"
+	if [ ! -d "$pci_device_path" ]; then
+		echo "PCI device $1 does not exist."
+		exit 1
+	fi
+	vf_names=$(find "$pci_device_path" -name "virtfn*" -exec basename {} \; | sort)
+	if [ -z "$vf_names" ]; then
+		echo "No VFs found for $1"
+		return
+	fi
+	for vf in $vf_names; do
+		vfport=$(basename "$(readlink "$pci_device_path/$vf")")
+		printf "%s\n" "$vfport"
+	done
+}
+
 list() {
 	printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" "ID" "PCI BDF" "Driver" "NUMA" "IOMMU" "IF Name"
 
@@ -149,8 +167,13 @@ if [ -z "$cmd" ]; then
 fi
 
 if [ "$cmd" == "list" ]; then
-	list
-	exit 0
+	if [ "$2" == "all" ]; then
+		list
+		exit 0
+	else
+		list_vf "$2"
+		exit 0
+	fi
 fi
 
 bdf=$2
