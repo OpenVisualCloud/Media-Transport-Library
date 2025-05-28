@@ -450,6 +450,13 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .planes = 1,
         .sampling = ST_FRAME_SAMPLING_MAX,
     },
+    {
+        /* ST_FRAME_FMT_YUV422PLANAR16LE (6 bit padding) */
+        .fmt = ST_FRAME_FMT_YUV422PLANAR16LE,
+        .name = "YUV422PLANAR16LE",
+        .planes = 3,
+        .sampling = ST_FRAME_SAMPLING_422,
+    },
 };
 
 enum st_frame_fmt st_codec_codestream_fmt(enum st22_codec codec) {
@@ -590,6 +597,9 @@ size_t st_frame_size(enum st_frame_fmt fmt, uint32_t width, uint32_t height,
     case ST_FRAME_FMT_YUV420CUSTOM8:
     case ST_FRAME_FMT_YUV420PLANAR8:
       size = st20_frame_size(ST20_FMT_YUV_420_8BIT, width, height);
+      break;
+    case ST_FRAME_FMT_YUV422PLANAR16LE:
+      size = st20_frame_size(ST20_FMT_YUV_422_16BIT, width, height);
       break;
     default:
       err("%s, invalid fmt %d\n", __func__, fmt);
