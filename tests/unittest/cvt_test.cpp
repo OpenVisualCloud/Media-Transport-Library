@@ -4288,3 +4288,46 @@ TEST(Cvt, field_to_frame) {
   test_field_to_frame(ctx->handle, 1920, 1080, ST_FRAME_FMT_YUV422RFC4175PG2BE10);
   test_field_to_frame(ctx->handle, 1920, 1080, ST_FRAME_FMT_YUV422PLANAR10LE);
 }
+
+static void test_cvt_yuv422p16le_to_rfc4175_422be10(int w, int h,
+                                                    enum mtl_simd_level cvt_level,
+                                                    enum mtl_simd_level back_level) {
+  int ret;
+  size_t fb_pg2_size = (size_t)w * h * 5 / 2;
+  struct st20_rfc4175_422_10_pg2_be* pg =
+      (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
+  size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
+  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+
+  if (!pg || !p10_u16_2 || !p10_u16) {
+    EXPECT_EQ(0, 1);
+    if (pg) st_test_free(pg);
+    if (p10_u16_2) st_test_free(p10_u16_2);
+    if (p10_u16) st_test_free(p10_u16);
+    return;
+  }
+
+  for (size_t i = 0; i < (planar_size / 2); i++) {
+    p10_u16[i] = (rand() & 0x3ff) << 6; /* 10 bit with 6bit padding*/
+  }
+
+  ret = st20_yuv422p16le_to_rfc4175_422be10_simd(
+      p10_u16, (p10_u16 + w * h), (p10_u16 + w * h * 3 / 2), pg, w, h, cvt_level);
+  EXPECT_EQ(0, ret);
+
+  ret = st20_rfc4175_422be10_to_yuv422p16le_simd(
+      pg, p10_u16_2, (p10_u16_2 + w * h), (p10_u16_2 + w * h * 3 / 2), w, h, back_level);
+  EXPECT_EQ(0, ret);
+
+  EXPECT_EQ(0, memcmp(p10_u16, p10_u16_2, planar_size));
+
+  st_test_free(pg);
+  st_test_free(p10_u16);
+  st_test_free(p10_u16_2);
+}
+
+TEST(Cvt, yuv422p16le_to_rfc4175_422be10_scalar) {
+  test_cvt_yuv422p16le_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_NONE,
+                                          MTL_SIMD_LEVEL_NONE);
+}

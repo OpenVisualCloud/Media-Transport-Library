@@ -998,6 +998,20 @@ static inline int st20_rfc4175_444le12_to_gbrp12le(struct st20_rfc4175_444_12_pg
   return st20_rfc4175_444le12_to_444p12le(pg, g, r, b, w, h);
 }
 
+// Convert rfc4175_422be10 to yuv422p16le with 6 bit padding (no optimization so far).
+static inline int st20_rfc4175_422be10_to_yuv422p16le(
+    struct st20_rfc4175_422_10_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
+    uint32_t w, uint32_t h) {
+  return st20_rfc4175_422be10_to_yuv422p16le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
+}
+
+// Lossy conversion from yuv422p16le to rfc4175_422be10 (no optimization so far).
+static inline int st20_yuv422p16le_to_rfc4175_422be10(
+    uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_10_pg2_be* pg,
+    uint32_t w, uint32_t h) {
+  return st20_yuv422p16le_to_rfc4175_422be10_simd(y, b, r, pg, w, h, MTL_SIMD_LEVEL_MAX);
+}
+
 /**
  * Convert AM824 subframe to AES3 subframe.
  *

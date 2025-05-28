@@ -42,6 +42,8 @@ static enum st_frame_fmt fmt_cvt2frame(enum cvt_frame_fmt fmt) {
       return ST_FRAME_FMT_RGBRFC4175PG4BE10;
     case CVT_FRAME_FMT_RGBRFC4175PG2BE12:
       return ST_FRAME_FMT_RGBRFC4175PG2BE12;
+    case CVT_FRAME_FMT_YUV422PLANAR16LE:
+      return ST_FRAME_FMT_YUV422PLANAR16LE;
     default:
       break;
   }
@@ -212,6 +214,13 @@ static int convert(struct conv_app_context* ctx) {
         r = b + w * h / 2;
         st20_rfc4175_422be10_to_yuv422p10le((struct st20_rfc4175_422_10_pg2_be*)buf_in, y,
                                             b, r, w, h);
+      } else if (fmt_out == CVT_FRAME_FMT_YUV422PLANAR16LE) {
+        uint16_t *y, *b, *r;
+        y = (uint16_t*)buf_out;
+        b = y + w * h;
+        r = b + w * h / 2;
+        st20_rfc4175_422be10_to_yuv422p16le((struct st20_rfc4175_422_10_pg2_be*)buf_in, y,
+                                            b, r, w, h);
       } else if (fmt_out == CVT_FRAME_FMT_V210) {
         st20_rfc4175_422be10_to_v210((struct st20_rfc4175_422_10_pg2_be*)buf_in, buf_out,
                                      w, h);
@@ -288,6 +297,20 @@ static int convert(struct conv_app_context* ctx) {
         ret = -EIO;
         goto out;
       }
+    } else if (fmt_in == CVT_FRAME_FMT_YUV422PLANAR16LE) {
+      if (fmt_out == CVT_FRAME_FMT_YUV422RFC4175PG2BE10) {
+        uint16_t *y, *b, *r;
+        y = (uint16_t*)buf_in;
+        b = y + w * h;
+        r = b + w * h / 2;
+        st20_yuv422p16le_to_rfc4175_422be10(
+            y, b, r, (struct st20_rfc4175_422_10_pg2_be*)buf_out, w, h);
+      } else {
+        err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
+        ret = -EIO;
+        goto out;
+      }
+
     } else {
       err("%s, err fmt in %d out %d\n", __func__, fmt_in, fmt_out);
       ret = -EIO;
