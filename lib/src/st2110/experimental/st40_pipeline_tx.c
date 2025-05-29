@@ -379,8 +379,7 @@ struct st40_frame_info* st40p_tx_get_frame(st40p_tx_handle handle) {
 
   frame_info = &framebuff->frame_info;
   ctx->stat_get_frame_succ++;
-  dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx,
-      frame_info);
+  dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, framebuff->idx, frame_info);
   return frame_info;
 }
 

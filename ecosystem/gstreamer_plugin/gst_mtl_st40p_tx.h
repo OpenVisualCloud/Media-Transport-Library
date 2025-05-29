@@ -55,9 +55,9 @@
 #define RFC_8331_PAYLOAD_HEADER_SIZE 8
 
 #include <experimental/st40_pipeline_api.h>
+#include <st40_api.h>
 
 #include "gst_mtl_common.h"
-#include <st40_api.h>
 
 G_BEGIN_DECLS
 
@@ -91,10 +91,9 @@ struct _Gst_Mtl_St40p_Tx {
   guint max_combined_udw_size;
 };
 
-
 struct gst_st40_rfc8331_meta {
-  struct st40_rfc8331_payload_hdr_common *header_common;
-  struct st40_rfc8331_payload_hdr *headers[ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT];
+  struct st40_rfc8331_payload_hdr_common* header_common;
+  struct st40_rfc8331_payload_hdr* headers[ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT];
 };
 
 G_END_DECLS
