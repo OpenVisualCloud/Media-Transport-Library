@@ -48,8 +48,9 @@
 #define __GST_MTL_ST40P_TX_H__
 
 #define ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT 20
+#define MAX_UDW_SIZE 255
 /* Maximum size for single User Data Words */
-#define DEFAULT_MAX_UDW_SIZE (ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT * 255)
+#define DEFAULT_MAX_UDW_SIZE (ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT * MAX_UDW_SIZE)
 /* rfc8331 header consist of rows 3 * 10 bits + 2 bits  */
 #define RFC_8331_WORD_BYTE_SIZE (4)
 #define RFC_8331_PAYLOAD_HEADER_SIZE 8
@@ -63,13 +64,6 @@ G_BEGIN_DECLS
 
 #define GST_TYPE_MTL_ST40P_TX (gst_mtl_st40p_tx_get_type())
 G_DECLARE_FINAL_TYPE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST, MTL_ST40P_TX, GstBaseSink)
-
-enum gst_st40p_rfc8331_payload_endian {
-  ST40_RFC8331_PAYLOAD_ENDIAN_SYSTEM,
-  ST40_RFC8331_PAYLOAD_ENDIAN_BIG,
-  ST40_RFC8331_PAYLOAD_ENDIAN_LITTLE,
-  ST40_RFC8331_PAYLOAD_ENDIAN_MAX
-};
 
 struct _Gst_Mtl_St40p_Tx {
   GstBaseSink element;

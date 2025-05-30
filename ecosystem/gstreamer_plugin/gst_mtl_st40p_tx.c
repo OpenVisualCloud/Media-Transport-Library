@@ -412,7 +412,7 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   ops_tx.interlaced = false;
   /* Only single ANC data packet is possible when metadata is not being parsed from
    * parse_rfc8331_input mode per frame. anc_count = 1 TODO: allow more */
-  sink->frame_size = 255;
+  sink->frame_size = MAX_UDW_SIZE;
 
   if (sink->max_combined_udw_size)
     ops_tx.max_udw_buff_size = sink->max_combined_udw_size;
@@ -567,16 +567,20 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     bytes_left_to_process -= sizeof(struct st40_rfc8331_payload_hdr);
     data_count = payload_header.second_hdr_chunk.data_count & 0xff;
 
-    udw_byte_size = (((data_count + 1) * 10) + 7) / 8;
-    /* data count * 10 bits + 10 bit checksum / 8 bytes */
+    /* data count * 10 bits + 10 bit checksum*/
+    udw_byte_size = (((data_count)*10) + 10);
+    /* round up to the nearest byte */
+    udw_byte_size = (udw_byte_size + 7) / 8;
+
     if (bytes_left_to_process < udw_byte_size) {
       GST_ERROR("Buffer size (%u) is too small for data count (%d)",
                 bytes_left_to_process, udw_byte_size);
       return GST_FLOW_ERROR;
     }
 
-    /* we can use data_size for offset here as the data size is increased with every
-    processed udw so it shows the offset */
+    /* Use data_size as the offset for the next UDW block.
+     * data_size points to the correct offset for the current ANC packet
+     */
     if (gst_mtl_st40p_tx_parse_8331_meta(frame_info, payload_header, i,
                                          frame_info->anc_frame->data_size)) {
       GST_ERROR("Failed to parse 8331 meta");

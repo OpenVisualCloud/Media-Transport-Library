@@ -122,7 +122,7 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
 });
 #endif
 
-/* This structure is too hold the */
+/* A structure describing the first 32 bits of an ST 2110-40 (ancillary) payload header */
 #ifdef MTL_LITTLE_ENDIAN
 MTL_PACK(struct st40_rfc8331_payload_hdr_common {
   union {
