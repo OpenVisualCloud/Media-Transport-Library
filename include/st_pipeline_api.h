@@ -446,9 +446,11 @@ enum st20p_tx_flag {
    */
   ST20P_TX_FLAG_ENABLE_VSYNC = (MTL_BIT32(5)),
   /**
-   * If disable the static RL pad interval profiling.
+   * If enable the static RL pad interval profiling.
+   * Static padding is trained only for e810, it is not recommended to use this flag
+   * for other NICs.
    */
-  ST20P_TX_FLAG_DISABLE_STATIC_PAD_P = (MTL_BIT32(6)),
+  ST20P_TX_FLAG_ENABLE_STATIC_PAD_P = (MTL_BIT32(6)),
   /**
    * If enable the rtcp.
    */
