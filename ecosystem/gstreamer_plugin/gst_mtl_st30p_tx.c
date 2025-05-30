@@ -546,12 +546,12 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
       cur_addr_buf = map_info.data + gst_buffer_get_size(buf) - bytes_to_write;
 
       if (sink->cur_frame_available_size > bytes_to_write) {
-        mtl_memcpy(cur_addr_frame, cur_addr_buf, bytes_to_write);
+        memcpy(cur_addr_frame, cur_addr_buf, bytes_to_write);
         sink->cur_frame_available_size -= bytes_to_write;
         bytes_to_write = 0;
         break;
       } else {
-        mtl_memcpy(cur_addr_frame, cur_addr_buf, sink->cur_frame_available_size);
+        memcpy(cur_addr_frame, cur_addr_buf, sink->cur_frame_available_size);
 
         // By default, timestamping is handled by MTL.
         if (sink->use_pts_for_pacing) {
