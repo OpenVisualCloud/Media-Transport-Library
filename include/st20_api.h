@@ -62,9 +62,11 @@ extern "C" {
 #define ST20_TX_FLAG_ENABLE_VSYNC (MTL_BIT32(5))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * If disable the static RL pad interval profiling.
+ * If enable the static RL pad interval profiling.
+ * Static padding is trained only for e810, it is not recommended to use this flag
+ * for other NICs.
  */
-#define ST20_TX_FLAG_DISABLE_STATIC_PAD_P (MTL_BIT32(6))
+#define ST20_TX_FLAG_ENABLE_STATIC_PAD_P (MTL_BIT32(6))
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * If enable the rtcp.
