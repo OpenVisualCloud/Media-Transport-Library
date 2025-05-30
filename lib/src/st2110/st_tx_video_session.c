@@ -331,7 +331,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     info("%s(%d), user customized pad_interval %u\n", __func__, idx, resolved);
     return 0;
   }
-  if (!(s->ops.flags & ST20_TX_FLAG_DISABLE_STATIC_PAD_P)) {
+  if ((s->ops.flags & ST20_TX_FLAG_ENABLE_STATIC_PAD_P)) {
     resolved = st20_pacing_static_profiling(impl, s, s_port);
     if (resolved) {
       s->pacing.pad_interval = resolved;
