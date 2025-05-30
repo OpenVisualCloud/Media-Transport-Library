@@ -687,8 +687,14 @@ static int dev_init_ratelimit_all(struct mt_interface* inf) {
   return 0;
 }
 
-static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
-                                    uint64_t bytes_per_sec) {
+/* Note: IAVF behavior in DPDK 25.03:
+ * 1. If the hierarchy is committed on a started device, nodes cannot be removed after
+ * the commit.
+ * 2. After committing the hierarchy, the device must be restarted for changes to take
+ * effect.
+ */
+static int dev_tx_queue_set_rl_rate_vf(struct mt_interface* inf, uint16_t queue,
+                                       uint64_t bytes_per_sec) {
   uint16_t port_id = inf->port_id;
   enum mtl_port port = inf->port;
   struct mt_tx_queue* tx_queue = &inf->tx_queues[queue];
@@ -700,13 +706,6 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
 
   memset(&error, 0, sizeof(error));
 
-  if (!bps) { /* default */
-    bps = ST_DEFAULT_RL_BPS;
-  }
-
-  /* not changed */
-  if (bps == tx_queue->bps) return 0;
-
   ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
   if (ret) {
     err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port, ret);
@@ -716,7 +715,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
   ret = rte_eth_dev_stop(port_id);
   if (ret) {
     err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
-    goto exit;
+    goto error_unlock_rwlock;
   }
 
   /* delete old queue node */
@@ -725,7 +724,7 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     if (ret < 0) {
       err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
-      goto exit;
+      goto error_unlock_rwlock;
     }
     tx_queue->rl_shapers_mapping = -1;
   }
@@ -735,23 +734,103 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
     if (!shaper) {
       err("%s(%d), rl shaper get fail for q %d\n", __func__, port, queue);
       ret = -EIO;
-      goto exit;
+      goto error_unlock_rwlock;
     }
     memset(&qp, 0, sizeof(qp));
     qp.shaper_profile_id = shaper->shaper_profile_id;
     qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
     qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
-    if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-      ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
-                            ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
-    } else {
-      ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
-                            ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
-    }
+    ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_VF, 0, 1,
+                          ST_TM_NONLEAF_NODES_NUM_VF, &qp, &error);
     if (ret) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
-      goto exit;
+      goto error_unlock_rwlock;
+    }
+
+    tx_queue->rl_shapers_mapping = shaper->idx;
+    info("%s(%d), q %d link to shaper id %d(%" PRIu64 ")\n", __func__, port, queue,
+         shaper->shaper_profile_id, shaper->rl_bps);
+  }
+  /* start the port so that vf->tm_conf.committed in IAVF is not set to true If it is
+   * set, the node cannot be removed afterwards. stupid, yes I know. */
+  ret = rte_eth_dev_start(port_id);
+  if (ret) {
+    err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
+    goto error_unlock_rwlock;
+  }
+
+  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+  if (ret) {
+    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
+        mt_string_safe(error.message));
+    goto error_unlock_rwlock;
+  }
+
+  /* restart the port to apply the new rate limit */
+  ret = rte_eth_dev_stop(port_id);
+  if (ret) {
+    err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
+    goto error_unlock_rwlock;
+  }
+
+  ret = rte_eth_dev_start(port_id);
+  if (ret) {
+    err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
+    goto error_unlock_rwlock;
+  }
+
+  tx_queue->bps = bps;
+
+error_unlock_rwlock:
+  ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
+  if (ret) err("%s(%d), failed to release write lock, ret %d\n", __func__, port, ret);
+
+  return ret;
+}
+
+static int dev_tx_queue_set_rl_rate_pf(struct mt_interface* inf, uint16_t queue,
+                                       uint64_t bytes_per_sec) {
+  uint16_t port_id = inf->port_id;
+  enum mtl_port port = inf->port;
+  struct mt_tx_queue* tx_queue = &inf->tx_queues[queue];
+  uint64_t bps = bytes_per_sec;
+  int ret;
+  struct rte_tm_error error;
+  struct rte_tm_node_params qp;
+  struct mt_rl_shaper* shaper;
+
+  memset(&error, 0, sizeof(error));
+
+  /* delete old queue node */
+  if (tx_queue->rl_shapers_mapping >= 0) {
+    ret = rte_tm_node_delete(port_id, queue, &error);
+    if (ret < 0) {
+      err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
+          mt_string_safe(error.message));
+      return ret;
+    }
+    tx_queue->rl_shapers_mapping = -1;
+  }
+
+  if (bps) {
+    shaper = dev_rl_shaper_get(inf, bps);
+    if (!shaper) {
+      err("%s(%d), rl shaper get fail for q %d\n", __func__, port, queue);
+      return -EIO;
+    }
+    memset(&qp, 0, sizeof(qp));
+    qp.shaper_profile_id = shaper->shaper_profile_id;
+    qp.leaf.cman = RTE_TM_CMAN_TAIL_DROP;
+    qp.leaf.wred.wred_profile_id = RTE_TM_WRED_PROFILE_ID_NONE;
+
+    ret = rte_tm_node_add(port_id, queue, ST_TM_LAST_NONLEAF_NODE_ID_PF, 0, 1,
+                          ST_TM_NONLEAF_NODES_NUM_PF, &qp, &error);
+
+    if (ret) {
+      err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
+          mt_string_safe(error.message));
+      return ret;
     }
 
     tx_queue->rl_shapers_mapping = shaper->idx;
@@ -759,54 +838,42 @@ static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
 
-  if (inf->drv_info.drv_type == MT_DRV_IAVF) {
-    /* Note: IAVF behavior in DPDK 25.03:
-     * 1. If the hierarchy is committed on a started device, nodes cannot be removed after
-     * the commit.
-     * 2. After committing the hierarchy, the device must be restarted for changes to take
-     * effect.
-     */
-    ret = rte_eth_dev_start(port_id);
-    if (ret) {
-      err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
-      goto exit;
-    }
-
-    ret = rte_tm_hierarchy_commit(port_id, 1, &error);
-    if (ret) {
-      err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
-          mt_string_safe(error.message));
-      goto exit;
-    }
-
-    ret = rte_eth_dev_stop(port_id);
-    if (ret) {
-      err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
-      goto exit;
-    }
-
-  } else {
-    ret = rte_tm_hierarchy_commit(port_id, 1, &error);
-    if (ret) {
-      err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
-          mt_string_safe(error.message));
-      goto exit;
-    }
-  }
-
-  ret = rte_eth_dev_start(port_id);
+  ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
   if (ret) {
-    err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
-    goto exit;
+    err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port, ret);
+    return ret;
   }
 
-  tx_queue->bps = bps;
+  ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+  if (ret) {
+    err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
+        mt_string_safe(error.message));
+  } else {
+    tx_queue->bps = bps;
+  }
 
-exit:
   ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
   if (ret) err("%s(%d), failed to release write lock, ret %d\n", __func__, port, ret);
 
   return ret;
+}
+
+static int dev_tx_queue_set_rl_rate(struct mt_interface* inf, uint16_t queue,
+                                    uint64_t bytes_per_sec) {
+  struct mt_tx_queue* tx_queue = &inf->tx_queues[queue];
+  uint64_t bps = bytes_per_sec;
+
+  if (!bps) { /* default */
+    bps = ST_DEFAULT_RL_BPS;
+  }
+
+  /* not changed */
+  if (bps == tx_queue->bps) return 0;
+
+  if (inf->drv_info.drv_type == MT_DRV_IAVF)
+    return dev_tx_queue_set_rl_rate_vf(inf, queue, bps);
+  else
+    return dev_tx_queue_set_rl_rate_pf(inf, queue, bps);
 }
 
 static int dev_stop_port(struct mt_interface* inf) {
@@ -1564,6 +1631,7 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
   struct mt_interface* inf = mt_if(impl, port);
   uint64_t bytes_per_sec = flow->bytes_per_sec;
   struct mt_tx_queue* tx_queue;
+  float bps_g;
   int ret;
 
   if (mt_user_shared_txq(impl, port)) {
@@ -1598,16 +1666,15 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
       if (ret < 0) {
         err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
         inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      } else {
+        bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
+        info("%s(%d), q %d with speed %fg bps\n", __func__, port, q, bps_g);
       }
-    }
-    tx_queue->active = true;
-    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
-    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
-      float bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
-      info("%s(%d), q %d with speed %fg bps\n", __func__, port, q, bps_g);
     } else {
       info("%s(%d), q %d without rl\n", __func__, port, q);
     }
+    tx_queue->active = true;
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     return tx_queue;
   }
   mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
