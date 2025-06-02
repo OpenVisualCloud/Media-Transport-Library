@@ -144,15 +144,15 @@ static int tx_st40p_asign_anc_frames(struct st40p_tx_ctx* ctx) {
   for (i = 0; i < ctx->framebuff_cnt; i++) {
     frame_info = &frames[i].frame_info;
 
-    frame_info->anc_frame = st40_tx_get_framebuffer(ctx->transport, i);
-    if (!frame_info->anc_frame) {
+    frames[i].anc_frame = st40_tx_get_framebuffer(ctx->transport, i);
+    if (!frames[i].anc_frame) {
       err("%s(%d), Failed to get framebuffer %u \n", __func__, idx, i);
       return -EIO;
     }
-    dbg("%s(%d), fb %p\n", __func__, idx, frame_info->anc_frame);
+    dbg("%s(%d), fb %p\n", __func__, idx, frames[i].anc_frame);
 
-    frame_info->meta = frame_info->anc_frame->meta;
-    frame_info->anc_frame->data = frame_info->udw_buff_addr;
+    frame_info->meta = frames[i].anc_frame->meta;
+    frames[i].anc_frame->data = frame_info->udw_buff_addr;
   }
   return 0;
 }
@@ -400,19 +400,19 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
     return -EIO;
   }
 
-  if (!frame_info->anc_frame->data_size && frame_info->meta_num)
-    frame_info->anc_frame->data_size = frame_info->udw_buffer_fill;
+  if (!framebuff->anc_frame->data_size && frame_info->meta_num)
+    framebuff->anc_frame->data_size = frame_info->udw_buffer_fill;
 
-  if (!frame_info->anc_frame->data_size) {
+  if (!framebuff->anc_frame->data_size) {
     err("%s(%d), frame %u data size is 0\n", __func__, idx, producer_idx);
     return -EIO;
   }
 
-  if (!frame_info->anc_frame->meta_num && frame_info->meta_num)
-    frame_info->anc_frame->meta_num = frame_info->meta_num;
+  if (!framebuff->anc_frame->meta_num && frame_info->meta_num)
+    framebuff->anc_frame->meta_num = frame_info->meta_num;
 
-  if (frame_info->anc_frame->meta_num > ST40_MAX_META ||
-      frame_info->anc_frame->meta_num < 1) {
+  if (framebuff->anc_frame->meta_num > ST40_MAX_META ||
+      framebuff->anc_frame->meta_num < 1) {
     err("%s(%d), frame %u meta_num %u invalid\n", __func__, idx, producer_idx,
         frame_info->meta_num);
     return -EIO;
@@ -421,7 +421,7 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
   framebuff->frame_info.udw_buffer_fill = 0;
   framebuff->stat = ST40P_TX_FRAME_READY;
   ctx->stat_put_frame++;
-  dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame_info->anc_frame);
+  dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, framebuff->anc_frame);
   return 0;
 }
 
@@ -630,5 +630,5 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
     return NULL;
   }
 
-  return ctx->framebuffs[idx].frame_info.anc_frame;
+  return ctx->framebuffs[idx].anc_frame;
 }

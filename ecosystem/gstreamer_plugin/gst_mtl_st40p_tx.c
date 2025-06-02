@@ -140,7 +140,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
                                                               GstMapInfo map_info,
                                                               GstBuffer* buf);
 
-static void gst_mtl_st40p_tx_fill_meta(struct st40_frame* frame, void* data,
+static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info *frame_info, void* data,
                                        guint32 data_size, guint did, guint sdid);
 
 static GstFlowReturn gst_mtl_st40p_tx_parse_8331_meta(
@@ -482,19 +482,19 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
  * @param did Data Identifier (DID) to be set in the metadata.
  * @param sdid Secondary Data Identifier (SDID) to be set in the metadata.
  */
-static void gst_mtl_st40p_tx_fill_meta(struct st40_frame* frame, void* data,
+static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info *frame_info, void* data,
                                        guint32 data_size, guint did, guint sdid) {
-  frame->meta[0].c = 0;
-  frame->meta[0].line_number = 0;
-  frame->meta[0].hori_offset = 0;
-  frame->meta[0].s = 0;
-  frame->meta[0].stream_num = 0;
-  frame->meta[0].did = did;
-  frame->meta[0].sdid = sdid;
-  frame->meta[0].udw_size = data_size;
-  frame->meta[0].udw_offset = 0;
-  frame->data = data;
-  frame->meta_num = 1;
+  frame_info->meta[0].c = 0;
+  frame_info->meta[0].line_number = 0;
+  frame_info->meta[0].hori_offset = 0;
+  frame_info->meta[0].s = 0;
+  frame_info->meta[0].stream_num = 0;
+  frame_info->meta[0].did = did;
+  frame_info->meta[0].sdid = sdid;
+  frame_info->meta[0].udw_size = data_size;
+  frame_info->meta[0].udw_offset = 0;
+  frame_info->udw_buffer_fill = data_size;
+  frame_info->meta_num = 1;
 }
 
 /* we dont' really check the data here we let the st40 ancillary data to do so */
@@ -716,12 +716,8 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
                                     : bytes_left_to_process;
 
     memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_left_to_process_cur);
-    for (int i = 0; i < bytes_left_to_process_cur; i++) {
-      printf("%d", frame_info->udw_buff_addr[i]);
-    }
-    printf("\n");
 
-    gst_mtl_st40p_tx_fill_meta(frame_info->anc_frame, frame_info->udw_buff_addr,
+    gst_mtl_st40p_tx_fill_meta(frame_info, frame_info->udw_buff_addr,
                                bytes_left_to_process_cur, sink->did, sink->sdid);
 
     if (sink->use_pts_for_pacing) {

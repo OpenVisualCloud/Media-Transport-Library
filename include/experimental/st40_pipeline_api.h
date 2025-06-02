@@ -17,8 +17,6 @@ typedef struct st40p_tx_ctx* st40p_tx_handle;
 
 /** The structure info for st40 frame meta. */
 struct st40_frame_info {
-  /** Pointer to the main ancillary frame buffer */
-  struct st40_frame* anc_frame;
   /** Pointer to the metadata array for this frame */
   struct st40_meta* meta;
   /** Pointer to the number of metadata entries in the frame */
