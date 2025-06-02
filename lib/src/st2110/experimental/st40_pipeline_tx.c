@@ -400,19 +400,24 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
     return -EIO;
   }
 
-  frame_info->anc_frame->data_size = frame_info->udw_buffer_size;
-  if (frame_info->udw_buffer_size == 0 && frame_info->anc_frame->data_size == 0) {
+  if(!frame_info->anc_frame->data_size && frame_info->meta_num)
+    frame_info->anc_frame->data_size = frame_info->udw_buffer_fill;
+
+  if (!frame_info->anc_frame->data_size) {
     err("%s(%d), frame %u data size is 0\n", __func__, idx, producer_idx);
     return -EIO;
   }
 
-  frame_info->anc_frame->meta_num = frame_info->meta_num;
-  if (frame_info->meta_num > ST40_MAX_META || frame_info->meta_num < 1) {
+  if(!frame_info->anc_frame->meta_num && frame_info->meta_num)
+    frame_info->anc_frame->meta_num = frame_info->meta_num;
+
+  if (frame_info->anc_frame->meta_num > ST40_MAX_META || frame_info->anc_frame->meta_num < 1) {
     err("%s(%d), frame %u meta_num %u invalid\n", __func__, idx, producer_idx,
         frame_info->meta_num);
     return -EIO;
   }
 
+  framebuff->frame_info.udw_buffer_fill = 0;
   framebuff->stat = ST40P_TX_FRAME_READY;
   ctx->stat_put_frame++;
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame_info->anc_frame);

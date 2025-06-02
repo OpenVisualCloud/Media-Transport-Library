@@ -582,7 +582,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
      * data_size points to the correct offset for the current ANC packet
      */
     if (gst_mtl_st40p_tx_parse_8331_meta(frame_info, payload_header, i,
-                                         frame_info->anc_frame->data_size)) {
+                                         frame_info->udw_buffer_fill)) {
       GST_ERROR("Failed to parse 8331 meta");
       return GST_FLOW_ERROR;
     }
@@ -595,13 +595,17 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
      * Start processing actual user data words from the 3rd UDW onward.
      */
     for (int j = 0; j < data_count; j++) {
+      if (frame_info->udw_buffer_fill >= frame_info->udw_buffer_size) {
+        GST_ERROR("UDW buffer overflow: fill=%u size=%zu", frame_info->udw_buffer_fill, frame_info->udw_buffer_size);
+        return GST_FLOW_ERROR;
+      }
+
       udw = st40_get_udw((j + 3), payload_cursor);
       if (!st40_check_parity_bits(udw)) {
         GST_ERROR("Ancillary data parity bits check failed");
         return GST_FLOW_ERROR;
       }
-
-      frame_info->udw_buff_addr[frame_info->udw_buffer_fill++] = udw & 0xff;
+      frame_info->udw_buff_addr[frame_info->udw_buffer_fill++] = (udw & 0xff);
     }
 
     bytes_left_to_process -= udw_byte_size;
@@ -711,6 +715,10 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
                                     : bytes_left_to_process;
 
     memcpy(frame_info->udw_buff_addr, cur_addr_buf, bytes_left_to_process_cur);
+    for (int i = 0; i < bytes_left_to_process_cur; i++) {
+      printf("%d", frame_info->udw_buff_addr[i]);
+    }
+    printf("\n");
 
     gst_mtl_st40p_tx_fill_meta(frame_info->anc_frame, frame_info->udw_buff_addr,
                                bytes_left_to_process_cur, sink->did, sink->sdid);
