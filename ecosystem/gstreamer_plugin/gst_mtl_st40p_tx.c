@@ -568,7 +568,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     data_count = payload_header.second_hdr_chunk.data_count & 0xff;
 
     /* data count * 10 bits + 10 bit checksum*/
-    udw_byte_size = (((data_count) * UDW_WORD_BIT_SIZE) + UDW_WORD_BIT_SIZE);
+    udw_byte_size = (data_count * UDW_WORD_BIT_SIZE) + UDW_WORD_BIT_SIZE;
     /* round up to the nearest byte */
     udw_byte_size = (udw_byte_size + 7) / 8;
 
