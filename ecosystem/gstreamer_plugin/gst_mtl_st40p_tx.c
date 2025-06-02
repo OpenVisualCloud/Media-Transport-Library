@@ -140,7 +140,7 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
                                                               GstMapInfo map_info,
                                                               GstBuffer* buf);
 
-static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info *frame_info, void* data,
+static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info* frame_info, void* data,
                                        guint32 data_size, guint did, guint sdid);
 
 static GstFlowReturn gst_mtl_st40p_tx_parse_8331_meta(
@@ -482,7 +482,7 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
  * @param did Data Identifier (DID) to be set in the metadata.
  * @param sdid Secondary Data Identifier (SDID) to be set in the metadata.
  */
-static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info *frame_info, void* data,
+static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info* frame_info, void* data,
                                        guint32 data_size, guint did, guint sdid) {
   frame_info->meta[0].c = 0;
   frame_info->meta[0].line_number = 0;
