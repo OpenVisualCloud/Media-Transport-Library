@@ -219,9 +219,8 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PARSE_8331_META,
       g_param_spec_boolean("parse-8331-meta", "Parse 8331 meta",
-                           "Parse 8331 meta data from the ancillary data, requires you   "
-                           "to send the whole 8331 header in the buffer",
-                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                           "Interpret incoming buffers as RFC 8331 payload.", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_MAX_UDW_SIZE,
