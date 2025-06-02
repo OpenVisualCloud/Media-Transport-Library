@@ -457,8 +457,7 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
 static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(parent);
-  gint buffer_size = gst_buffer_get_size(buf);
-  gint buffer_n = gst_buffer_n_memory(buf);
+  gint buffer_size, buffer_n = gst_buffer_n_memory(buf);
   struct st_frame* frame = NULL;
   gint frame_size = sink->frame_size;
   GstMemory* gst_buffer_memory;
@@ -481,16 +480,18 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
     return GST_FLOW_ERROR;
   }
 
-  if (buffer_size != frame_size) {
-    GST_ERROR("Buffer size %d does not match frame size %d", buffer_size, frame_size);
-    return GST_FLOW_ERROR;
-  }
-
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
       GST_ERROR("Failed to map memory");
+      return GST_FLOW_ERROR;
+    }
+    buffer_size = map_info.size;
+
+    if (buffer_size < frame_size) {
+      GST_ERROR("Buffer size %d is smaller than frame size %d", buffer_size, frame_size);
+      gst_memory_unmap(gst_buffer_memory, &map_info);
       return GST_FLOW_ERROR;
     }
 
