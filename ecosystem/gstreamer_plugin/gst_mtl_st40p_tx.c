@@ -596,7 +596,8 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
      */
     for (int j = 0; j < data_count; j++) {
       if (frame_info->udw_buffer_fill >= frame_info->udw_buffer_size) {
-        GST_ERROR("UDW buffer overflow: fill=%u size=%zu", frame_info->udw_buffer_fill, frame_info->udw_buffer_size);
+        GST_ERROR("UDW buffer overflow: fill=%u size=%zu", frame_info->udw_buffer_fill,
+                  frame_info->udw_buffer_size);
         return GST_FLOW_ERROR;
       }
 
