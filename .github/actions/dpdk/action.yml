@@ -1,15 +1,13 @@
-name: build images
+name: intal dpdk from source
 
-on:
-  workflow_call:
-    inputs:
-     version:
-        required: true
-        type: string
-     shell:
-        required: false
-        type: string
-        default: 'bash'
+inputs:
+  version:
+    required: true
+    type: string
+  shell:
+    required: false
+    type: string
+    default: 'bash'
 runs:
   using: "composite"
   steps:

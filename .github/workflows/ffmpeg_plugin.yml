@@ -14,7 +14,8 @@ on:
 
 permissions:
   contents: read
-
+env: 
+    DPDK_VERSION: 25.03
 jobs:
   changes:
     runs-on: ubuntu-latest
