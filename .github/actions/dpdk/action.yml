@@ -1,0 +1,37 @@
+name: build images
+
+on:
+  workflow_call:
+    inputs:
+     version:
+        required: true
+        type: string
+     shell:
+        required: false
+        type: string
+        default: 'bash'
+runs:
+  using: "composite"
+  steps:
+    - name: checkout dpdk repo
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        repository: 'DPDK/dpdk'
+        ref: "v${{  inputs.version  }}"
+        path: dpdk
+    - name: Install the build dependency
+      shell: ${{ inputs.shell }}
+      run: |
+        apt-get update -y
+        apt-get install -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev llvm clang
+        apt-get install -y doxygen
+        apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
+
+    - name: Build DPDK from source
+      working-directory: dpdk
+      shell: ${{ inputs.shell }}
+      run: |
+          meson build
+          ninja -C build
+          cd build
+          sudo ninja install
