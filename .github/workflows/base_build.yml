@@ -32,8 +32,8 @@ jobs:
           filters: .github/path_filters.yml
 
   build:
-    #needs: changes
-    #if:${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     container:
