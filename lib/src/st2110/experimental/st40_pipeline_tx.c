@@ -244,6 +244,11 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
   struct st40p_tx_frame *frames, *framebuff;
   struct st40_frame_info* frame_info;
 
+  if (!ops->max_udw_buff_size) {
+    err("%s(%d), invalid max_udw_buff_size %u\n", __func__, idx, ops->max_udw_buff_size);
+    return -EINVAL;
+  }
+
   frames = mt_rte_zmalloc_socket(sizeof(*frames) * ctx->framebuff_cnt, soc_id);
   if (!frames) {
     err("%s(%d), frames malloc failed\n", __func__, idx);
