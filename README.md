@@ -2,7 +2,7 @@
 
 > [!TIP]
 > [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/README.html) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/README.html).
-[![Ubuntu build](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build.yml)
+[![Base build](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml)
 [![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
 [![OpenSSF
 Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)

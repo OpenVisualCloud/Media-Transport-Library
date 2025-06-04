@@ -105,7 +105,7 @@ function setup_ubuntu_install_dependencies() {
 	pip install pyelftools ninja
 
 	# Ice driver dependencies
-	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
 		if sudo apt-get install -y "linux-headers-$(uname -r)"; then
@@ -129,7 +129,7 @@ function setup_ubuntu_install_dependencies() {
 		fi
 	fi
 
-	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing eBPF/XDP dependencies"
 		sudo apt-get install -y \
 			make \
@@ -142,7 +142,7 @@ function setup_ubuntu_install_dependencies() {
 			# clang llvm
 	fi
 
-	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing GPU Direct dependencies"
 		ONE_API_TGZ="oneapi.tgz"
 
@@ -171,13 +171,13 @@ function setup_ubuntu_install_dependencies() {
 		cmake --build . --target install
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing FFMPEG dependencies"
 		sudo apt install -y \
 			nasm
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing GStreamer dependencies"
 		sudo apt install -y \
 			gstreamer1.0-plugins-base \
@@ -187,20 +187,20 @@ function setup_ubuntu_install_dependencies() {
 			libgstreamer1.0-dev
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing MSDK dependencies"
 		sudo apt install -y \
 			curl \
 			libva-dev
 	fi
 
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing OBS dependencies"
 		sudo apt install -y \
 			libobs-dev
 	fi
 
-	if [ "${HOOK_PYTHON}" == "1" ]; then
+	if [ "${HOOK_PYTHON}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing Python hook dependencies"
 		sudo apt-get install -y \
 			swig \
@@ -210,14 +210,14 @@ function setup_ubuntu_install_dependencies() {
 		pip install setuptools
 	fi
 
-	if [ "${HOOK_RUST}" == "1" ]; then
+	if [ "${HOOK_RUST}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing Rust hook dependencies"
 		sudo apt-get install -y \
 			cargo \
 			rustc
 	fi
 
-	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
+	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
 		echo "Installing MTL readpcap dependencies"
 		sudo apt-get install -y \
 			libpcap-dev
