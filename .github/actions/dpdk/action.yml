@@ -1,0 +1,28 @@
+name: intal dpdk from source
+
+inputs:
+  version:
+    required: true
+    type: string
+  shell:
+    required: false
+    type: string
+    default: 'bash'
+runs:
+  using: "composite"
+  steps:
+    - name: checkout dpdk repo
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      with:
+        repository: 'DPDK/dpdk'
+        ref: "v${{  inputs.version  }}"
+        path: dpdk
+
+    - name: Build DPDK from source
+      working-directory: dpdk
+      shell: ${{ inputs.shell }}
+      run: |
+          meson build
+          ninja -C build
+          cd build
+          sudo ninja install

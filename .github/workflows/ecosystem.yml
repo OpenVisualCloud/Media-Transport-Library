@@ -14,7 +14,8 @@ on:
 
 permissions:
   contents: read
-
+env: 
+    DPDK_VERSION: 25.03
 jobs:
   changes:
     runs-on: 'ubuntu-22.04'
@@ -51,8 +52,13 @@ jobs:
         run: |
           sudo apt-get update --fix-missing -y
           sudo apt-get install --no-install-recommends -y sudo git gcc gcc-multilib meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev llvm clang
-          sudo apt-get install --no-install-recommends -y dpdk-dev systemtap-sdt-dev software-properties-common
+          sudo apt-get install --no-install-recommends -y systemtap-sdt-dev software-properties-common
           sudo apt-get install --no-install-recommends -y libobs-dev swig
+
+      - name: Install DPDK
+        uses: ./.github/actions/dpdk
+        with:
+          version: ${{ env.DPDK_VERSION }}
 
       - name: Git config
         run: |

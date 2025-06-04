@@ -54,14 +54,6 @@ jobs:
           clangFormatVersion: '14'
           source: '.'
           extensions: 'hpp,h,cpp,c,cc'
-
-      - name: checkout dpdk repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'DPDK/dpdk'
-          ref: v${{  env.DPDK_VERSION  }}
-          path: dpdk
-
       - name: Install the build dependency
         run: |
           apt-get update -y
@@ -69,13 +61,11 @@ jobs:
           apt-get install -y doxygen
           apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
 
-      - name: Build DPDK from source
-        working-directory: dpdk
-        run: |
-            meson build
-            ninja -C build
-            cd build
-            sudo ninja install
+      - name: install DPDK
+        uses: ./.github/actions/dpdk
+        with:
+          version: ${{ env.DPDK_VERSION }}
+
       - name: Git config
         working-directory: "${{ github.workspace }}"
         run: |

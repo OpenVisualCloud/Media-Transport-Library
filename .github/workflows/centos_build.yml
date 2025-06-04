@@ -14,7 +14,8 @@ on:
 
 permissions:
   contents: read
-
+env: 
+    DPDK_VERSION: 25.03
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -62,8 +63,12 @@ jobs:
           dnf config-manager --set-enabled powertools
           yum install -y epel-release
           yum install -y sudo git gcc gcc-c++ meson python3 python3-pyelftools pkg-config json-c-devel libpcap-devel gtest-devel SDL2-devel openssl-devel numactl-devel libasan
-          yum install -y dpdk-devel
           yum install -y systemtap-sdt-devel clang llvm-devel
+
+      - name: Install DPDK
+        uses: ./.github/actions/dpdk
+        with:
+          version: ${{ env.DPDK_VERSION }}
 
       - name: Git config
         run: |
