@@ -49,13 +49,13 @@ script_folder=${script_path/$script_name/}
 
 if [ "$ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN" == "1" ]; then
 	if [ "${CICD_BUILD}" != "0" ]; then
-		ret=n
+		ret=0
 	else
 		log_warning "Error: MSDK is not activly supported"
-		get_user_input_confirm  "Do you want to proceed? [y/N]: " ret
+		ret=$(get_user_input_confirm)
 	fi
 
-	if [[ "$ret" =~ ^[Yy]$ ]]; then
+	if [ "$ret" == "1" ]; then
 		log_warning "Proceeding with MSDK plugin build, but this feature is not fully supported."
 	else
 		log_warning "Installation aborted by user.."
@@ -90,7 +90,6 @@ function setup_ubuntu_install_dependencies() {
 
 	# CiCd only
 	if [ "${CICD_BUILD}" == "1" ]; then
-		
 		apt install -y tzdata python3-venv sudo wget doxygen
 		ln -fs /usr/share/zoneinfo/Europe/Warsaw /etc/localtime
 		dpkg-reconfigure -f noninteractive tzdata
@@ -110,13 +109,15 @@ function setup_ubuntu_install_dependencies() {
 
 		if sudo apt-get install -y "linux-headers-$(uname -r)"; then
 			if [ "${CICD_BUILD}" != "0" ]; then
-				ret=y
+				ret=0
 			else
 				log_error "Error: Failed to install linux-headers-$(uname -r)."
-				read -rp "Do you want to try installing the generic linux-headers-generic package instead? [y/N]: " ret
+				echo "Do you want to try installing the generic linux-headers-generic package instead?"
+				echo "It may work for your system, but it is not guaranteed."
+				ret=$(get_user_input_confirm)
 			fi
 
-			if [[ "$ret" =~ ^[Yy]$ ]]; then
+			if [ "$ret" == "1" ]; then
 				if ! sudo apt-get install -y linux-headers-generic; then
 					log_error "Error: Failed to install linux-headers-generic as well."
 				else
@@ -138,8 +139,7 @@ function setup_ubuntu_install_dependencies() {
 			libelf-dev \
 			libcap-ng-dev \
 			libcap2-bin \
-			gcc-multilib
-			# clang llvm
+			gcc-multilib # clang llvm
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
@@ -181,9 +181,9 @@ function setup_ubuntu_install_dependencies() {
 		echo "Installing GStreamer dependencies"
 		sudo apt install -y \
 			gstreamer1.0-plugins-base \
-			gstreamer1.0-plugins-good  \
-			gstreamer1.0-tools  \
-			gstreamer1.0-libav  \
+			gstreamer1.0-plugins-good \
+			gstreamer1.0-tools \
+			gstreamer1.0-libav \
 			libgstreamer1.0-dev
 	fi
 
@@ -227,15 +227,16 @@ function setup_ubuntu_install_dependencies() {
 	echo -e "${GREEN}All dependencies installed successfully."
 }
 
-if [ "$SETUP_ENVIRONMENT" == "1" ]; then
-	echo "$STEP Environment setup."
+# Allow sourcing of the script.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
+	if [ "$SETUP_ENVIRONMENT" == "1" ]; then
+		echo "$STEP Environment setup."
 
-
-	if [ -f /etc/os-release ]; then
-		# shellcheck disable=SC1091
-		. /etc/os-release
-		case "$ID" in
+		if [ -f /etc/os-release ]; then
+			# shellcheck disable=SC1091
+			. /etc/os-release
+			case "$ID" in
 			ubuntu)
 				echo "Detected OS: Ubuntu"
 				setup_ubuntu_install_dependencies
@@ -250,7 +251,7 @@ if [ "$SETUP_ENVIRONMENT" == "1" ]; then
 				echo "For now unsuported OS, please use Ubuntu"
 				exit 2
 				;;
-			rockos|rocky)
+			rockos | rocky)
 				echo "Detected OS: Rocky Linux"
 				echo "For now unsuported OS, please use Ubuntu"
 				exit 2
@@ -260,237 +261,239 @@ if [ "$SETUP_ENVIRONMENT" == "1" ]; then
 				echo "For now unsuported OS, please use Ubuntu"
 				exit 2
 				;;
-		esac
-	else
-		echo "/etc/os-release not found. Cannot determine OS."
-		exit 2
-	fi
-	STEP=$((STEP + 1))
-fi
-
-if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
-	echo "$STEP Install the build dependency for GPU Direct"
-	# shellcheck disable=SC1091
-	cd "${script_folder}/../../gpu_direct" || exit 1
-
-	if [[ ":$LIBRARY_PATH:" != *":/usr/local/lib:"* ]]; then
-		export LIBRARY_PATH="/usr/local/lib:$LIBRARY_PATH"
+			esac
+		else
+			echo "/etc/os-release not found. Cannot determine OS."
+			exit 2
+		fi
+		STEP=$((STEP + 1))
 	fi
 
-	meson setup build
-	sudo meson install -C build
-
-	if pkg-config --libs mtl_gpu_direct >/dev/null 2>&1; then
-		echo "mtl_gpu_direct is available via pkg-config."
-	else
-		echo "mtl_gpu_direct is NOT available via pkg-config."
-	fi
-
-	STEP=$((STEP + 1))
-fi
-
-if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
-	echo "$STEP Install the build dependency from OS software store"
-	bash "${script_folder}/../../script/build_ebpf_xdp.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
-	echo "$STEP DPDK build and install"
-	bash "${script_folder}/../../script/build_dpdk.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${CICD_BUILD_BUILD_ICE_DRIVER}" == "1" ]; then
-	echo "$STEP ICE driver build"
-	# shellcheck disable=SC1091
-	. "${script_folder}/../../script/build_ice_driver.sh"
-	if [ -z "$script_folder" ] || [ -z "$ice_driver_ver" ] || [ -z "$download_mirror" ]; then
-		exit 3
-	fi
-	cd "${script_folder}"
-
-	echo "Building e810 driver version: $ice_driver_ver form mirror $download_mirror"
-
-	wget "https://downloadmirror.intel.com/${download_mirror}/ice-${ice_driver_ver}.tar.gz"
-	tar xvzf "ice-${ice_driver_ver}.tar.gz"
-	cd "ice-${ice_driver_ver}"
-
-	git init
-	git add .
-	git commit -m "init version ${ice_driver_ver}"
-	git am ../../patches/ice_drv/"${ice_driver_ver}"/*.patch
-
-	cd src
-	make
-	STEP=$((STEP + 1))
-fi
-
-if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
-	echo "$STEP ICE driver build and install"
-	bash "${script_folder}/../../script/build_ice_driver.sh"
-	STEP=$((STEP + 1))
-fi
-
-# MTL build and install
-
-if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
-	echo "$STEP MTL debug build and install"
-	bash "${script_folder}/../../build.sh" "debug"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
-	echo "$STEP MTL build and install"
-	bash "${script_folder}/../../build.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${MTL_BUILD_AND_INSTALL_DOCKER}" == "1" ]; then
-	echo "$STEP MTL docker build and install"
-	cd "${script_folder}/../../docker" || exit 1
-
-	if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
-		docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" ../
-	else
-		docker build -t mtl:latest -f ubuntu.dockerfile ../
-	fi
-
-	STEP=$((STEP + 1))
-fi
-
-if [ "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER}" == "1" ]; then
-	echo "$STEP MTL docker manager build and install"
-
-	cd "${script_folder}/../../manager" | exit 1
-
-	if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
-		docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" .
-	else
-		docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest .
-	fi
-
-	STEP=$((STEP + 1))
-fi
-
-# After MTL build
-if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
-	echo "$STEP Ecosystem FFMPEG plugin build and install"
 	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
-		echo "Building FFMPEG plugin with GPU Direct support"
-		enable_gpu="-g"
-	else
-		echo "Building FFMPEG plugin without GPU Direct support"
+		echo "$STEP Install the build dependency for GPU Direct"
+		# shellcheck disable=SC1091
+		cd "${script_folder}/../../gpu_direct" || exit 1
+
+		if [[ ":$LIBRARY_PATH:" != *":/usr/local/lib:"* ]]; then
+			export LIBRARY_PATH="/usr/local/lib:$LIBRARY_PATH"
+		fi
+
+		meson setup build
+		sudo meson install -C build
+
+		if pkg-config --libs mtl_gpu_direct >/dev/null 2>&1; then
+			echo "mtl_gpu_direct is available via pkg-config."
+		else
+			echo "mtl_gpu_direct is NOT available via pkg-config."
+		fi
+
+		STEP=$((STEP + 1))
 	fi
 
-	bash "${script_folder}/../../ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
-	echo "$STEP Ecosystem GStreamer plugin build and install"
-
-	bash "${script_folder}/../../ecosystem/gstreamer_plugin/build.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-	echo "$STEP Ecosystem RIST plugin build and install"
-	bash "${script_folder}/../../ecosystem/librist/build_librist_mtl.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
-	echo "$STEP Ecosystem RIST plugin build and install"
-	bash "${script_folder}/../../ecosystem/librist/build_librist_mtl.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
-	echo "$STEP Ecosystem RIST plugin build and install"
-	bash "${script_folder}/../../ecosystem/msdk/build_msdk_mtl.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
-	echo "$STEP Ecosystem OBS plugin build and install"
-	cd "${script_folder}/../../ecosystem/obs_mtl" || exit 1
-	cd linux-mtl
-	meson setup build
-	meson compile -C build
-	sudo meson install -C build
-	STEP=$((STEP + 1))
-fi
-
-if [ "${PLUGIN_BUILD_AND_INSTALL_SAMPLE}" == "1" ]; then
-	echo "$STEP Plugin sample build and install"
-	cd "${script_folder}/../../plugins" || exit 1
-	meson setup build
-	meson compile -C build
-	sudo meson install -C build
-	STEP=$((STEP + 1))
-fi
-
-if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-	echo "$STEP Plugin sample build and install"
-	bash "${script_folder}/../../script/build_st22_avcodec_plugin.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
-	echo "$STEP Plugin sample build and install"
-	bash "${script_folder}/../../script/build_st22_avcodec_plugin.sh"
-	STEP=$((STEP + 1))
-fi
-
-if [ "${HOOK_PYTHON}" == "1" ]; then
-	echo "$STEP Hook Python"
-	cd "${script_folder}/../.." || exit 1
-	if [ -d swig ]; then
-		echo "SWIG directory already exists, skipping clone."
-	else
-		echo "Cloning SWIG repository..."
-		git clone https://github.com/swig/swig.git
+	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
+		echo "$STEP Install the build dependency from OS software store"
+		bash "${script_folder}/../../script/build_ebpf_xdp.sh"
+		STEP=$((STEP + 1))
 	fi
-	cd swig/
-	git checkout v4.1.1
-	./autogen.sh
-	./configure
-	make
-	sudo make install
-	cd "${script_folder}/../../python/swig"
-	swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
-	python3 setup.py build_ext --inplace
-	sudo python3 setup.py install
-	STEP=$((STEP + 1))
-fi
 
-if [ "${HOOK_RUST}" == "1" ]; then
-	echo "$STEP Hook Rust"
-	cd "${script_folder}/../../rust" || exit 1
-	cargo update home --precise "${RUST_HOOK_CARGO_VER}"
-	cargo build --release
-	STEP=$((STEP + 1))
-fi
+	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
+		echo "$STEP DPDK build and install"
+		bash "${script_folder}/../../script/build_dpdk.sh"
+		STEP=$((STEP + 1))
+	fi
 
-if [ "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS}" == "1" ]; then
-	echo "$STEP Tools MTL monitors build and install"
-	cd "${script_folder}/../../tools/ebpf" || exit 1
-	make lcore_monitor
-	make udp_monitor
-	STEP=$((STEP + 1))
-fi
+	if [ "${CICD_BUILD_BUILD_ICE_DRIVER}" == "1" ]; then
+		echo "$STEP ICE driver build"
+		# shellcheck disable=SC1091
+		. "${script_folder}/../../script/build_ice_driver.sh"
+		if [ -z "$script_folder" ] || [ -z "$ice_driver_ver" ] || [ -z "$download_mirror" ]; then
+			exit 3
+		fi
+		cd "${script_folder}"
 
-if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
-	echo "$STEP Tools MTL readpcap build and install"
-	cd "${script_folder}/../../tools/readpcap" || exit 1
-	make
-	STEP=$((STEP + 1))
-fi
+		echo "Building e810 driver version: $ice_driver_ver form mirror $download_mirror"
 
-if [ "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR}" == "1" ]; then
-	echo "$STEP Tools MTL CPU emulator build and install"
-	cd "${script_folder}/../../tools/sch_smi_emulate" || exit 1
-	make
-	STEP=$((STEP + 1))
-fi
+		wget "https://downloadmirror.intel.com/${download_mirror}/ice-${ice_driver_ver}.tar.gz"
+		tar xvzf "ice-${ice_driver_ver}.tar.gz"
+		cd "ice-${ice_driver_ver}"
+
+		git init
+		git add .
+		git commit -m "init version ${ice_driver_ver}"
+		git am ../../patches/ice_drv/"${ice_driver_ver}"/*.patch
+
+		cd src
+		make
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
+		echo "$STEP ICE driver build and install"
+		bash "${script_folder}/../../script/build_ice_driver.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	# MTL build and install
+
+	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
+		echo "$STEP MTL debug build and install"
+		bash "${script_folder}/../../build.sh" "debug"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
+		echo "$STEP MTL build and install"
+		bash "${script_folder}/../../build.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${MTL_BUILD_AND_INSTALL_DOCKER}" == "1" ]; then
+		echo "$STEP MTL docker build and install"
+		cd "${script_folder}/../../docker" || exit 1
+
+		if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
+			docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" ../
+		else
+			docker build -t mtl:latest -f ubuntu.dockerfile ../
+		fi
+
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER}" == "1" ]; then
+		echo "$STEP MTL docker manager build and install"
+
+		cd "${script_folder}/../../manager" | exit 1
+
+		if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
+			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" .
+		else
+			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest .
+		fi
+
+		STEP=$((STEP + 1))
+	fi
+
+	# After MTL build
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem FFMPEG plugin build and install"
+		if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
+			echo "Building FFMPEG plugin with GPU Direct support"
+			enable_gpu="-g"
+		else
+			echo "Building FFMPEG plugin without GPU Direct support"
+		fi
+
+		bash "${script_folder}/../../ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem GStreamer plugin build and install"
+
+		bash "${script_folder}/../../ecosystem/gstreamer_plugin/build.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem RIST plugin build and install"
+		bash "${script_folder}/../../ecosystem/librist/build_librist_mtl.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem RIST plugin build and install"
+		bash "${script_folder}/../../ecosystem/librist/build_librist_mtl.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem RIST plugin build and install"
+		bash "${script_folder}/../../ecosystem/msdk/build_msdk_mtl.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
+		echo "$STEP Ecosystem OBS plugin build and install"
+		cd "${script_folder}/../../ecosystem/obs_mtl" || exit 1
+		cd linux-mtl
+		meson setup build
+		meson compile -C build
+		sudo meson install -C build
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${PLUGIN_BUILD_AND_INSTALL_SAMPLE}" == "1" ]; then
+		echo "$STEP Plugin sample build and install"
+		cd "${script_folder}/../../plugins" || exit 1
+		meson setup build
+		meson compile -C build
+		sudo meson install -C build
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
+		echo "$STEP Plugin sample build and install"
+		bash "${script_folder}/../../script/build_st22_avcodec_plugin.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
+		echo "$STEP Plugin sample build and install"
+		bash "${script_folder}/../../script/build_st22_avcodec_plugin.sh"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${HOOK_PYTHON}" == "1" ]; then
+		echo "$STEP Hook Python"
+		cd "${script_folder}/../.." || exit 1
+		if [ -d swig ]; then
+			echo "SWIG directory already exists, skipping clone."
+		else
+			echo "Cloning SWIG repository..."
+			git clone https://github.com/swig/swig.git
+		fi
+		cd swig/
+		git checkout v4.1.1
+		./autogen.sh
+		./configure
+		make
+		sudo make install
+		cd "${script_folder}/../../python/swig"
+		swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
+		python3 setup.py build_ext --inplace
+		sudo python3 setup.py install
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${HOOK_RUST}" == "1" ]; then
+		echo "$STEP Hook Rust"
+		cd "${script_folder}/../../rust" || exit 1
+		cargo update home --precise "${RUST_HOOK_CARGO_VER}"
+		cargo build --release
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS}" == "1" ]; then
+		echo "$STEP Tools MTL monitors build and install"
+		cd "${script_folder}/../../tools/ebpf" || exit 1
+		make lcore_monitor
+		make udp_monitor
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
+		echo "$STEP Tools MTL readpcap build and install"
+		cd "${script_folder}/../../tools/readpcap" || exit 1
+		make
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR}" == "1" ]; then
+		echo "$STEP Tools MTL CPU emulator build and install"
+		cd "${script_folder}/../../tools/sch_smi_emulate" || exit 1
+		make
+		STEP=$((STEP + 1))
+	fi
+
+fi # End of execution block for script

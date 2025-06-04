@@ -96,14 +96,14 @@ gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap
 _temp*
-/**/gpu_offline_install
+gpu_offline_install
 
 # Ecosystem
-/**/FFmpeg
-/**/librist
-/**/MediaSDK
-/**/dpdk_*
-/**/readpcap_*
-/**/swig
-/**/openh264
-/**/level-zero-*
+script/FFmpeg
+script/dpdk_*
+ecosystem/librist/librsit
+ecosystem/msdk/MediaSDK
+tools/readpcap/readpcap_*
+swig
+openh264
+level-zero-*
