@@ -6,24 +6,15 @@
 REPO_DIR="$(readlink -f "$(dirname -- "${BASH_SOURCE[0]}")/..")"
 BUILD_DIR="${BUILD_DIR:-${REPO_DIR}/_build}"
 DRIVERS_DIR="${DRIVERS_DIR:-/opt/intel/drivers}"
+VERSIONS_ENV_PATH="${REPO_DIR}/versions.env"
 
-export MTL_DIR="${BUILD_DIR}/mtl"
-export DPDK_DIR="${BUILD_DIR}/dpdk"
-export XDP_DIR="${BUILD_DIR}/xdp"
-export BPF_DIR="${XDP_DIR}/lib/libbpf"
-export GRPC_DIR="${BUILD_DIR}/grpc"
-export JPEGXS_DIR="${BUILD_DIR}/jpegxs"
-export LIBFABRIC_DIR="${BUILD_DIR}/libfabric"
-export LIBFDT_DIR="${BUILD_DIR}/libfdt"
-export JSONC_DIR="${BUILD_DIR}/json-c"
-export NASM_DIR="${BUILD_DIR}/nasm"
-
-ICE_VER="${ICE_VER:-1.16.3}"
-IAVF_VER="${IAVF_VER:-4.13.3}"
-IRDMA_VER="${IRDMA_VER:-1.16.10}"
-export ICE_DIR="${DRIVERS_DIR}/ice/${ICE_VER}"
-export IAVF_DIR="${DRIVERS_DIR}/iavf/${IAVF_VER}"
-export IRDMA_DIR="${DRIVERS_DIR}/irdma/${IRDMA_VER}"
+if [ -f "$VERSIONS_ENV_PATH" ]; then
+	# shellcheck disable=SC1090
+	. "$VERSIONS_ENV_PATH"
+else
+	echo -e "${RED}Error: versions.env file not found at $VERSIONS_ENV_PATH.${NC}"
+	exit 1
+fi
 
 PM="${PM:-apt-get}"
 KERNEL_VERSION="${KERNEL_VERSION:-$(uname -r)}"

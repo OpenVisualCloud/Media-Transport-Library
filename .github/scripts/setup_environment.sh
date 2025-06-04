@@ -41,30 +41,24 @@ set -xe
 : "${CICD_BUILD:=0}"
 : "${CICD_BUILD_BUILD_ICE_DRIVER:=0}"
 
-
-# Variables for the script internal use
-STEP=0
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
-
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
-VERSIONS_ENV_PATH="${script_folder}/../../versions.env"
+# shellcheck disable=SC1091
+. "${script_folder}/../../script/common.sh"
 
 if [ "$ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN" == "1" ]; then
 	if [ "${CICD_BUILD}" != "0" ]; then
 		ret=n
 	else
-		echo -e "${RED}Error: MSDK is not activly supported ${NC}"
-		read -rp "Do you want to proceed? [y/N]: " ret
+		log_warning "Error: MSDK is not activly supported"
+		get_user_input_confirm  "Do you want to proceed? [y/N]: " ret
 	fi
 
 	if [[ "$ret" =~ ^[Yy]$ ]]; then
-		echo -e "${YELLOW}Proceeding with MSDK plugin build, but this feature is not fully supported.${NC}"
+		log_warning "Proceeding with MSDK plugin build, but this feature is not fully supported."
 	else
-		echo -e "${YELLOW}Installation aborted by user..${NC}"
+		log_warning "Installation aborted by user.."
 		exit 0
 	fi
 fi
@@ -72,14 +66,6 @@ fi
 # Before MTL build install
 function setup_ubuntu_install_dependencies() {
 	echo "1.1. Install the build dependency from OS software store"
-
-	if [ -f "$VERSIONS_ENV_PATH" ]; then
-		# shellcheck disable=SC1090
-		. "$VERSIONS_ENV_PATH"
-	else
-		echo -e "${RED}Error: versions.env file not found at $VERSIONS_ENV_PATH.${NC}"
-		exit 1
-	fi
 
 	# Mtl library dependencies
 	apt-get update
@@ -126,18 +112,18 @@ function setup_ubuntu_install_dependencies() {
 			if [ "${CICD_BUILD}" != "0" ]; then
 				ret=y
 			else
-				echo -e "${RED}Error: Failed to install linux-headers-$(uname -r).${NC}"
+				log_error "Error: Failed to install linux-headers-$(uname -r)."
 				read -rp "Do you want to try installing the generic linux-headers-generic package instead? [y/N]: " ret
 			fi
 
 			if [[ "$ret" =~ ^[Yy]$ ]]; then
 				if ! sudo apt-get install -y linux-headers-generic; then
-					echo -e "${RED}Error: Failed to install linux-headers-generic as well.${NC}"
+					log_error "Error: Failed to install linux-headers-generic as well."
 				else
-					echo -e "${YELLOW}Installed linux-headers-generic.${NC}"
+					log_warning "Installed linux-headers-generic."
 				fi
 			else
-				echo -e "${YELLOW}Installation aborted by user..${NC}"
+				log_warning "Installation aborted by user.."
 				exit 0
 			fi
 		fi
@@ -168,13 +154,16 @@ function setup_ubuntu_install_dependencies() {
 			rm "${ONE_API_TGZ}"
 			echo "OneAPI installed to /opt"
 		else
-			echo -e "${RED}Error: Failed to download OneAPI repository.${NC}"
+			log_error "Error: Failed to download OneAPI repository."
 			exit 1
 		fi
 
 		cd "level-zero-${ONE_API_GPU_VER}" || exit 1
 
-		mkdir build || rm -rf build && mkdir build
+		if mkdir build; then
+			rm -rf build
+			mkdir build
+		fi
 		cd build || exit 1
 		cmake .. -D CMAKE_BUILD_TYPE=Release
 		cmake --build . --target package
@@ -235,7 +224,7 @@ function setup_ubuntu_install_dependencies() {
 	fi
 
 	ldconfig
-	echo -e "${GREEN}All dependencies installed successfully.${NC}"
+	echo -e "${GREEN}All dependencies installed successfully."
 }
 
 if [ "$SETUP_ENVIRONMENT" == "1" ]; then

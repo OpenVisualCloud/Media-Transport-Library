@@ -4,25 +4,20 @@
 # Copyright 2022 Intel Corporation
 
 set -e
-VERSIONS_ENV_PATH="$(dirname "$(readlink -qe "${BASH_SOURCE[0]}")")/../versions.env"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
+# shellcheck disable=SC1091
+. "${script_folder}/common.sh"
+cd "${script_folder}" || exit 1
 
-cd "${script_folder}"
-if [ -f "$VERSIONS_ENV_PATH" ]; then
-	# shellcheck disable=SC1090
-	. "$VERSIONS_ENV_PATH"
-else
-	echo -e "${RED}Error: versions.env file not found at $VERSIONS_ENV_PATH.${NC}"
-	exit 1
-fi
-dpdk_folder="dpdk_${DPDK_VER}"
+set -x
 
 if [ -n "$1" ]; then
 	DPDK_VER=$1
 fi
+dpdk_folder="dpdk_${DPDK_VER}"
 
 (return 0 2>/dev/null) && sourced=1 || sourced=0
 
