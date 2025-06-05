@@ -16,7 +16,7 @@ refer to: <https://obsproject.com/wiki/build-instructions-for-linux>
 
 ```bash
 cd linux-mtl
-meson build
+meson setup build
 meson complile -C build
 sudo meson install -C build
 ```

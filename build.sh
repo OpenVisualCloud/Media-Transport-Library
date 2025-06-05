@@ -17,26 +17,24 @@ enable_asan=false
 enable_tap=false
 enable_usdt=true
 
-if [ -n "$MTL_BUILD_ENABLE_ASAN" ]; then
-	if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
-		enable_asan=true
-		buildtype=debug # use debug build as default for asan
-		echo "Enable asan check."
-	fi
+: "${MTL_BUILD_ENABLE_ASAN:=false}"
+: "${MTL_BUILD_ENABLE_TAP:=false}"
+: "${MTL_BUILD_DISABLE_USDT:=false}"
+
+if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
+	enable_asan=true
+	buildtype=debug # use debug build as default for asan
+	echo "Enable asan check."
 fi
 
-if [ -n "$MTL_BUILD_ENABLE_TAP" ]; then
-	if [ "$MTL_BUILD_ENABLE_TAP" == "true" ]; then
-		enable_tap=true
-		echo "Enable tap"
-	fi
+if [ "$MTL_BUILD_ENABLE_TAP" == "true" ]; then
+	enable_tap=true
+	echo "Enable tap"
 fi
 
-if [ -n "$MTL_BUILD_DISABLE_USDT" ]; then
-	if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
-		enable_usdt=false
-		echo "Disable USDT"
-	fi
+if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
+	enable_usdt=false
+	echo "Disable USDT"
 fi
 
 if [ -n "$1" ]; then

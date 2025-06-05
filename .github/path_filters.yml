@@ -75,6 +75,7 @@ msys2_build: &msys2_build
 
 afxdp_build: &afxdp_build
   - .github/workflows/afxdp_build.yml
+  - script/build_ebpf_xdp.sh
   - *src
   - *build
 
