@@ -527,7 +527,6 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
   }
 
   for (int i = 0; i < buffer_n; i++) {
-    bytes_to_write = gst_buffer_get_size(buf);
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
 
     if (!gst_memory_map(gst_buffer_memory, &map_info, GST_MAP_READ)) {
@@ -535,6 +534,7 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
       return GST_FLOW_ERROR;
     }
 
+    bytes_to_write = map_info.size;
     /* This could be done with GstAdapter */
     while (bytes_to_write > 0) {
       frame = mtl_st30p_fetch_frame(sink);
@@ -566,6 +566,7 @@ static GstFlowReturn gst_mtl_st30p_tx_chain(GstPad* pad, GstObject* parent,
     }
     gst_memory_unmap(gst_buffer_memory, &map_info);
   }
+
   gst_buffer_unref(buf);
   return GST_FLOW_OK;
 }
