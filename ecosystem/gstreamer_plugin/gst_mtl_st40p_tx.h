@@ -47,7 +47,18 @@
 #ifndef __GST_MTL_ST40P_TX_H__
 #define __GST_MTL_ST40P_TX_H__
 
+#define ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT 20
+/* Maximum size for single User Data Words */
+#define MAX_UDW_SIZE 255
+#define UDW_WORD_BIT_SIZE 10
+/* Maximum buffer size for User Data Words */
+#define DEFAULT_MAX_UDW_SIZE (ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT * MAX_UDW_SIZE)
+/* rfc8331 header consist of rows 3 * 10 bits + 2 bits  */
+#define RFC_8331_WORD_BYTE_SIZE (4)
+#define RFC_8331_PAYLOAD_HEADER_SIZE 8
+
 #include <experimental/st40_pipeline_api.h>
+#include <st40_api.h>
 
 #include "gst_mtl_common.h"
 
@@ -72,6 +83,13 @@ struct _Gst_Mtl_St40p_Tx {
   guint sdid;
   gboolean use_pts_for_pacing;
   guint pts_for_pacing_offset;
+  gboolean parse_rfc8331_input;
+  guint max_combined_udw_size;
+};
+
+struct gst_st40_rfc8331_meta {
+  struct st40_rfc8331_payload_hdr_common* header_common;
+  struct st40_rfc8331_payload_hdr* headers[ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT];
 };
 
 G_END_DECLS

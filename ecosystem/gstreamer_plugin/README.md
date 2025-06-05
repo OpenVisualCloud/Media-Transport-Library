@@ -395,14 +395,19 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name      | Type     | Description                                                        | Range         | Default Value |
-|--------------------|----------|--------------------------------------------------------------------|---------------|---------------|
-| tx-framebuff-cnt   | uint     | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT| 3             |
-| tx-fps             | uint     | Framerate of the video to which the ancillary data is synchronized.| [Supported video fps fractions](#231-supported-video-fps-fractions) | 25/1 |
-| tx-did             | uint     | Data ID for the ancillary data.                                    | 0 to 255      | 0             |
-| tx-sdid            | uint     | Secondary Data ID for the ancillary data.                          | 0 to 255      | 0             |
-| use-pts-for-pacing | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT | 0            |
-| pts-pacing-offset  | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT | 0            |
+| Property Name         | Type     | Description                                                        | Range            | Default Value |
+|-----------------------|----------|--------------------------------------------------------------------|------------------|---------------|
+| tx-framebuff-cnt      | uint     | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT   | 3             |
+| tx-fps                | uint     | Framerate of the video to which the ancillary data is synchronized.| [Supported vid eo fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| tx-did                | uint     | Data ID for the ancillary data.                                    | 0 to 255         | 0             |
+| tx-sdid               | uint     | Secondary Data ID for the ancillary data.                          | 0 to 255         | 0             |
+| use-pts-for-pacing    | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | TRUE/FALSE       | FALSE         |
+| pts-pacing-offset     | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT   | 0             |
+| parse-8331-meta       | gboolean | Treat the input as rfc8331 payload data                            | TRUE/FALSE       | FALSE         |
+| max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |
+
+> **Note:**  
+> If `parse-8331-meta` is not enabled, only one ANC packet per frame is supported. It is recommended to limit the `max-combined-udw-size` if you are only using this option, since by default `max-combined-udw-size` is set to its maximum value.
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 

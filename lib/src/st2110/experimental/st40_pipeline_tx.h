@@ -56,6 +56,8 @@ struct st40p_tx_frame {
   enum st40p_tx_frame_status stat;
   struct st40_frame_info frame_info;
   uint16_t idx;
+  /** Pointer to the main ancillary frame buffer */
+  struct st40_frame* anc_frame;
 };
 
 #if defined(__cplusplus)

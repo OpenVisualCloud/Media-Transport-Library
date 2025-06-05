@@ -507,7 +507,7 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
     }
 
-    mtl_memcpy(frame->addr[0], map_info.data, buffer_size);
+    memcpy(frame->addr[0], map_info.data, buffer_size);
     gst_memory_unmap(gst_buffer_memory, &map_info);
     st20p_tx_put_frame(sink->tx_handle, frame);
   }

@@ -17,12 +17,16 @@ typedef struct st40p_tx_ctx* st40p_tx_handle;
 
 /** The structure info for st40 frame meta. */
 struct st40_frame_info {
-  /** frame buffer address */
-  struct st40_frame* anc_frame;
+  /** Pointer to the metadata array for this frame */
+  struct st40_meta* meta;
+  /** Pointer to the number of metadata entries in the frame */
+  uint32_t meta_num;
   /** user data words buffer address */
-  void* udw_buff_addr;
+  uint8_t* udw_buff_addr;
   /** user data words buffer size */
   size_t udw_buffer_size;
+  /** user data words fill of the buffer */
+  uint32_t udw_buffer_fill;
   /** frame timestamp format */
   enum st10_timestamp_fmt tfmt;
   /** frame timestamp value */

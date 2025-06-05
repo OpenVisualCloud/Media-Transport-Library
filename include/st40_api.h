@@ -102,6 +102,31 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
   };
 });
 
+/* A structure describing the first 32 bits of an ST 2110-40 (ancillary) payload header */
+#ifdef MTL_LITTLE_ENDIAN
+MTL_PACK(struct st40_rfc8331_payload_hdr_common {
+  union {
+    struct {
+      uint32_t reserved : 22;
+      uint32_t f : 2;
+      uint32_t anc_count : 8;
+    } first_hdr_chunk;
+    uint32_t swapped_handle;
+  };
+});
+#else
+MTL_PACK(struct st40_rfc8331_payload_hdr_common {
+  union {
+    struct {
+      uint32_t anc_count : 8;
+      uint32_t f : 2;
+      uint32_t reserved : 22;
+    } first_hdr_chunk;
+    uint32_t swapped_handle;
+  };
+});
+#endif
+
 /**
  * A structure describing a st2110-40(ancillary) rfc8331 payload header
  */
@@ -121,7 +146,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t c : 1;
     } first_hdr_chunk;
     /** Handle to make operating on first_hdr_chunk buffer easier */
-    uint32_t swaped_first_hdr_chunk;
+    uint32_t swapped_first_hdr_chunk;
   };
   union {
     struct {
@@ -135,7 +160,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t did : 10;
     } second_hdr_chunk;
     /** Handle to make operating on second_hdr_chunk buffer easier */
-    uint32_t swaped_second_hdr_chunk;
+    uint32_t swapped_second_hdr_chunk;
   };
 });
 #else
@@ -154,7 +179,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t stream_num : 7;
     } first_hdr_chunk;
     /** Handle to make operating on first_hdr_chunk buffer easier */
-    uint32_t swaped_first_hdr_chunk;
+    uint32_t swapped_first_hdr_chunk;
   };
   union {
     struct {
@@ -168,7 +193,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t rsvd_for_udw : 2;
     } second_hdr_chunk;
     /** Handle to make operating on second_hdr_chunk buffer easier */
-    uint32_t swaped_second_hdr_chunk;
+    uint32_t swapped_second_hdr_chunk;
   };
 });
 #endif
