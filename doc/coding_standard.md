@@ -21,7 +21,7 @@ and we also allow `add` as an replacement for feat and `build(deps)` for CiCd de
 
 ## Coding standard
 
-The coding standard for the Media Transport Library project is defined using a [.clang-format configuration file](./.clang-format)
+The coding standard for the Media Transport Library project is defined using a [.clang-format configuration file](../.github/linters/.clang-format)
 which ensures consistent code formatting across the project.
 
 Use `format-code.sh` script to format the code for mtl repository ( requires `clang-format-14` ).
