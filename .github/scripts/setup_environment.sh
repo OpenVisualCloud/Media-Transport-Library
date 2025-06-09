@@ -104,7 +104,7 @@ function setup_ubuntu_install_dependencies() {
 	pip install pyelftools ninja
 
 	# Ice driver dependencies
-	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ] || [ "${CICD_BUILD}" == "1" ]; then
+	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
 		if sudo apt-get install -y "linux-headers-$(uname -r)"; then
@@ -124,7 +124,7 @@ function setup_ubuntu_install_dependencies() {
 					log_warning "Installed linux-headers-generic."
 				fi
 			else
-				log_warning "Installation aborted by user.."
+				log_warning "ICE cannot be installed in CI, quitting..."
 				exit 0
 			fi
 		fi
