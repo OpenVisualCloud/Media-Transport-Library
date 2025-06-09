@@ -14,8 +14,7 @@ on:
 
 permissions:
   contents: read
-env: 
-    DPDK_VERSION: 25.03
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -31,7 +30,7 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  build:
+  ubuntu-build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
     runs-on: ${{ matrix.os }}
@@ -48,34 +47,11 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: DoozyX/clang-format-lint-action@v0.20
-        with:
-          clangFormatVersion: '14'
-          source: '.'
-          extensions: 'hpp,h,cpp,c,cc'
-      - name: Install the build dependency
-        run: |
-          apt-get update -y
-          apt-get install -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev llvm clang
-          apt-get install -y doxygen
-          apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
-
-      - name: install DPDK
-        uses: ./.github/actions/dpdk
-        with:
-          version: ${{ env.DPDK_VERSION }}
-
-      - name: Git config
-        working-directory: "${{ github.workspace }}"
-        run: |
-          git config --global user.email "you@example.com"
-          git config --global user.name "Your Name"
-
-      - name: Build
-        working-directory: "${{ github.workspace }}"
-        run: |
-          ./build.sh
+      - name: Build with release
+        working-directory: "${{ github.workspace }}/.github/scripts"
+        run: ./setup_environment.sh
+        env:
+          MTL_BUILD_AND_INSTALL: 1
 
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -84,12 +60,7 @@ jobs:
           path: '${{ github.workspace }}/build/'
 
       - name: Build with debug
-        run: |
-          rm build -rf
-          ./build.sh debug
-
-      - name: doxygen
-        run: |
-          cd doc/doxygen
-          ./build-doc.sh
-          cd ../../
+        working-directory: "${{ github.workspace }}/.github/scripts"
+        run: ./setup_environment.sh
+        env:
+          MTL_BUILD_AND_INSTALL_DEBUG: 1
