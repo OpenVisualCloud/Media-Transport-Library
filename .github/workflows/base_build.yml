@@ -17,6 +17,7 @@ permissions:
 env:
     CICD_BUILD: 1
     SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
+    CICD_BUILD_BUILD_ICE_DRIVER: 1
 jobs:
   changes:
     runs-on: ubuntu-latest
