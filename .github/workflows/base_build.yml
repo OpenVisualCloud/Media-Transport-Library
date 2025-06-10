@@ -45,14 +45,14 @@ jobs:
   ubuntu-build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
-    runs-on: [Linux, self-hosted, XDP]
+    runs-on: [Linux, self-hosted]
     timeout-minutes: 60
     steps:
       - uses: ./.github/actions/ubuntu-build
 
   ubuntu_tests:
     needs: ubuntu-build
-    runs-on: [Linux, self-hosted, XDP]
+    runs-on: [Linux, self-hosted]
     timeout-minutes: 60
     steps:
       - uses: ./.github/actions/ubuntu-gtest
