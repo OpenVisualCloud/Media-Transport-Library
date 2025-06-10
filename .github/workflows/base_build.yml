@@ -11,6 +11,11 @@ on:
     branches:
       - main
       - 'maint-**'
+env:
+  SETUP_ENVIRONMENT: 0
+  CICD_BUILD: 1
+  SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
+  CICD_BUILD_BUILD_ICE_DRIVER: 1
 
 permissions:
   contents: read
@@ -47,8 +52,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build Release
         uses: ./.github/actions/setup-environment
-        with:
-          mtl-build-and-install: 1
+        env:
+          MTL_BUILD_AND_INSTALL: 1
 
 
       - name: 'upload release build artifacts'
@@ -57,79 +62,79 @@ jobs:
           name: mtl-release-bin
           path: '${{ github.workspace }}/build/'
   
-  ubuntu-build-debug:
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Build Debug
-        uses: ./.github/actions/setup-enviroment
-        with:
-          mtl-build-and-install-debug: 1
+  # ubuntu-build-debug:
+  #   needs: changes
+  #   if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: Build Debug
+  #       uses: ./.github/actions/setup-enviroment
+  #       with:
+  #         mtl-build-and-install-debug: 1
 
-  ice_driver_build:
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ice_build == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Ice driver build
-        uses: ./.github/actions/setup-enviroment
-        with:
-          setup-build-and-install-ice-driver:  1
+  # ice_driver_build:
+  #   needs: changes
+  #   if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ice_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: Ice driver build
+  #       uses: ./.github/actions/setup-enviroment
+  #       with:
+  #         setup-build-and-install-ice-driver:  1
 
-  ebpf-xdp-build:
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.manager_build == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: ebpf-xdp build
-        uses: ./.github/actions/setup-enviroment
-        with:
-          setup-build-and-install-ebpf-xdp: 1
+  # ebpf-xdp-build:
+  #   needs: changes
+  #   if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.manager_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: ebpf-xdp build
+  #       uses: ./.github/actions/setup-enviroment
+  #       with:
+  #         setup-build-and-install-ebpf-xdp: 1
   
-  plugins-build:
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.plugin_build == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Plugin build
-        uses: ./.github/actions/setup-enviroment
-        with:
-          ecosystem-build-and-install-ffmpeg-plugin: 1
-          ecosystem-build-and-install-gstreamer-plugin: 1
-          ecosystem-build-and-install-rist-plugin: 1
-          ecosystem-build-and-install-msdk-plugin: 1
-          plugin-build-and-install-sample: 1
-          plugin-build-and-install-plugin-avcodec: 1
+  # plugins-build:
+  #   needs: changes
+  #   if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.plugin_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: Plugin build
+  #       uses: ./.github/actions/setup-enviroment
+  #       with:
+  #         ecosystem-build-and-install-ffmpeg-plugin: 1
+  #         ecosystem-build-and-install-gstreamer-plugin: 1
+  #         ecosystem-build-and-install-rist-plugin: 1
+  #         ecosystem-build-and-install-msdk-plugin: 1
+  #         plugin-build-and-install-sample: 1
+  #         plugin-build-and-install-plugin-avcodec: 1
 
-  rust-build: 
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.rust_build == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Rust hook
-        uses: ./.github/actions/setup-enviroment
-        with:
-          hook-rust: 1
+  # rust-build: 
+  #   needs: changes
+  #   if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.rust_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: Rust hook
+  #       uses: ./.github/actions/setup-enviroment
+  #       with:
+  #         hook-rust: 1
 
-  python-build: 
-    needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.rust_build == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Python hook
-        uses: ./.github/actions/setup-enviroment
-        with:
-          hook-python: 1
+  # python-build: 
+  #   needs: changes
+  #   if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.rust_build == 'true' }}
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #     - name: Python hook
+  #       uses: ./.github/actions/setup-enviroment
+  #       with:
+  #         hook-python: 1
