@@ -57,7 +57,7 @@ jobs:
       - name: Build with release
         working-directory: "${{ github.workspace }}/.github/scripts"
         shell: bash
-        run: sudo ./setup_environment.sh
+        run: ./setup_environment.sh
         env:
           MTL_BUILD_AND_INSTALL: 1
 
@@ -70,7 +70,7 @@ jobs:
       - name: Build with debug
         working-directory: "${{ github.workspace }}/.github/scripts"
         shell: bash
-        run: sudo ./setup_environment.sh
+        run: ./setup_environment.sh
         env:
           MTL_BUILD_AND_INSTALL_DEBUG: 1
 
