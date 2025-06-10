@@ -5,7 +5,9 @@ inputs:
     required: false
     type: string
     default: 'bash'
-  
+defaults:
+  run:
+    shell: ${{ inputs.shell }}
 runs:
   using: "composite"
   env:
