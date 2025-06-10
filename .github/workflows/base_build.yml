@@ -14,10 +14,6 @@ on:
 
 permissions:
   contents: read
-env:
-  CICD_BUILD: 1
-  SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
-  CICD_BUILD_BUILD_ICE_DRIVER: 1
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -48,18 +44,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build with release
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          MTL_BUILD_AND_INSTALL: 1
+          mtl-build-and-install: 1
 
 
       - name: 'upload release build artifacts'
@@ -74,18 +62,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build with release
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          MTL_BUILD_AND_INSTALL_DEBUG: 1
+          mtl-build-and-install-debug: 1
 
   ice_driver_build:
     needs: changes
@@ -93,18 +73,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build ICE driver
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 1
+          setup-build-and-install-ice-driver:  1
 
   ebpf-xdp-build:
     needs: changes
@@ -112,18 +84,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build manager
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
+          setup-build-and-install-ebpf-xdp: 1
   
   plugins-build:
     needs: changes
@@ -131,23 +95,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build plugins
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
-          ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
-          ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: 1
-          ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
-          PLUGIN_BUILD_AND_INSTALL_SAMPLE: 1
-          PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC: 1
+          ecosystem-build-and-install-ffmpeg-plugin: 1
+          ecosystem-build-and-install-gstreamer-plugin: 1
+          ecosystem-build-and-install-rist-plugin: 1
+          ecosystem-build-and-install-msdk-plugin: 1
+          plugin-build-and-install-sample: 1
+          plugin-build-and-install-plugin-avcodec: 1
 
   rust-build: 
     needs: changes
@@ -155,18 +111,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build Rust components
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          HOOK_RUST: 1
+          hook-rust: 1
 
   python-build: 
     needs: changes
@@ -174,15 +122,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      - name: Build Release
+        uses: .github/actions/setup-environment
         with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Build Rust components
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        shell: bash
-        run: sudo -E ./setup_environment.sh
-        env:
-          HOOK_PYTHON: 1
+          hook-python: 1
