@@ -1,0 +1,45 @@
+name: ubuntu-gtest
+
+inputs:
+  shell:
+    required: false
+    type: string
+    default: 'bash'
+  
+runs:
+  using: "composite"
+  env:
+    LD_LIBRARY_PATH: /usr/local/lib:/usr/lib64
+    TEST_PORT_P: native_af_xdp:enp7s0np0
+    TEST_PORT_R: native_af_xdp:enp8s0np0
+    INTERFACE_P: enp7s0np0
+    INTERFACE_R: enp8s0np0
+  steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+      with:
+        egress-policy: audit
+
+    - name: Kill previous gtest routine
+      run: |
+        sudo killall -SIGINT KahawaiTest || true
+        sudo killall -SIGINT KahawaiUfdTest || true
+        sudo killall -SIGINT KahawaiUplTest || true
+        sudo killall -SIGINT MtlManager || true
+
+    - name: Setup network interfaces
+      run: |
+        sudo ifconfig ${{  env.INTERFACE_P  }} 192.167.97.10/24
+        sudo ifconfig ${{  env.INTERFACE_R  }} 192.167.97.11/24
+        echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/napi_defer_hard_irqs
+        echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_P  }}/gro_flush_timeout
+        echo 2 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/napi_defer_hard_irqs
+        echo 200000 | sudo tee /sys/class/net/${{  env.INTERFACE_R  }}/gro_flush_timeout
+
+    - name: Start MtlManager at background
+      run: |
+        sudo MtlManager &
+
+    - name: Run st2110 test case
+      run: |
+        sudo ./build/tests/KahawaiTest --auto_start_stop --mcast_only --p_port ${{  env.TEST_PORT_P  }} --r_port ${{  env.TEST_PORT_R  }} --pacing_way tsc --gtest_filter=St*:-St22_?x.*:*pacing*:*ext*:*create_free_max*:*detect*:*rtcp*:*4096_2160*

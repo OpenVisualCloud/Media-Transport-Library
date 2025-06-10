@@ -24,7 +24,16 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed:  'true' # {{ steps.filter.outputs.ubuntu_build == 'true' }}
+      ubuntu_build: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
+      ice_build: ${{ steps.filter.outputs.ice_build == 'true' }}
+      manager_build: ${{ steps.filter.outputs.manager_build == 'true' }}
+      plugin_build: ${{ steps.filter.outputs.plugin_build == 'true' }}
+      rust_build: ${{ steps.filter.outputs.rust_build == 'true' }}
+      python_build: ${{ steps.filter.outputs.python_build == 'true' }}
+      mtl_monitors_build: ${{ steps.filter.outputs.mtl_monitors_build == 'true' }}
+      mtl_readcap_build: ${{ steps.filter.outputs.mtl_readcap_build == 'true' }}
+      mtl_cpu_emulator_build: ${{ steps.filter.outputs.mtl_cpu_emulator_build == 'true' }}
+
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       
@@ -35,36 +44,15 @@ jobs:
 
   ubuntu-build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: ${{ matrix.os }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
+    runs-on: [Linux, self-hosted, XDP]
     timeout-minutes: 60
-    container:
-      image: ubuntu:latest
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ./.github/actions/ubuntu-build
 
-      - name: Build with release
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        run: ./setup_environment.sh
-        env:
-          MTL_BUILD_AND_INSTALL: 1
-
-      - name: 'upload release build artifacts'
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: mtl-release-bin
-          path: '${{ github.workspace }}/build/'
-
-      - name: Build with debug
-        working-directory: "${{ github.workspace }}/.github/scripts"
-        run: ./setup_environment.sh
-        env:
-          MTL_BUILD_AND_INSTALL_DEBUG: 1
+  ubuntu_tests:
+    needs: ubuntu-build
+    runs-on: [Linux, self-hosted, XDP]
+    timeout-minutes: 60
+    steps:
+      - uses: ./.github/actions/ubuntu-gtest
