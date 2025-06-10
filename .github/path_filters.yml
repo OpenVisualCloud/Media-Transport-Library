@@ -3,7 +3,7 @@
 ubuntu_build: &ubuntu_build
   - .github/workflows/base_build.yml
   - '**'
-  
+
 ice_build: &ice_build
   - .github/workflows/base_build.yml
   - 'paths/ice_drv/**'
@@ -28,7 +28,7 @@ python_build: &python_build
 
 tools_monitors_build: &mtl_monitors_build
   - .github/workflows/base_build.yml
-  - 'tools/ebpf/**
+  - 'tools/ebpf/**'
 
 tools_readcap_build: &mtl_readcap_build
   - .github/workflows/base_build.yml
