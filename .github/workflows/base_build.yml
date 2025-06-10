@@ -53,7 +53,7 @@ jobs:
       - name: Build with release
         working-directory: "${{ github.workspace }}/.github/scripts"
         shell: bash
-        run: ./setup_environment.sh
+        run: sudo -E ./setup_environment.sh
         env:
           MTL_BUILD_AND_INSTALL: 1
           CICD_BUILD: 1
