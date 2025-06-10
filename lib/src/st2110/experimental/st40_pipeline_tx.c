@@ -92,6 +92,10 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->timestamp = framebuff->frame_info.timestamp;
   }
 
+  if (ctx->ops.flags & (ST40P_TX_FLAG_ACCURATE_FRAMEBUFF_STATISTICS)) {
+    ctx->stat_enable_detailed_framebuffer_status = true;
+  }
+
   /* point to next */
   ctx->framebuff_consumer_idx = tx_st40p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
@@ -283,17 +287,36 @@ static int tx_st40p_stat(void* priv) {
   struct st40p_tx_frame* framebuff = ctx->framebuffs;
   uint16_t producer_idx;
   uint16_t consumer_idx;
+  uint16_t status_counts[ST40P_TX_FRAME_STATUS_MAX] = {0};
+  enum st40p_tx_frame_status stat;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   producer_idx = ctx->framebuff_producer_idx;
   consumer_idx = ctx->framebuff_consumer_idx;
-  notice("TX_st40p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
-         tx_st40p_stat_name(framebuff[producer_idx].stat), consumer_idx,
-         tx_st40p_stat_name(framebuff[consumer_idx].stat));
+
+  if (ctx->stat_enable_detailed_framebuffer_status) {
+    for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
+      stat = framebuff[j].stat;
+
+      if (stat < ST40P_TX_FRAME_STATUS_MAX) {
+        status_counts[stat]++;
+      }
+    }
+
+    for (uint16_t i = 0; i < ST40P_TX_FRAME_STATUS_MAX; i++) {
+      notice("TX_st40p(%d,%s), framebuffer queue %s: %u\n", ctx->idx, ctx->ops_name,
+             tx_st40p_stat_name(i), status_counts[i]);
+    }
+  } else {
+    notice("TX_st40p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
+           tx_st40p_stat_name(framebuff[producer_idx].stat), consumer_idx,
+           tx_st40p_stat_name(framebuff[consumer_idx].stat));
+  }
 
   notice("TX_st40p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
+
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
   ctx->stat_put_frame = 0;
