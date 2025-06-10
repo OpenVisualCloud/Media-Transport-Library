@@ -14,6 +14,10 @@ on:
 
 permissions:
   contents: read
+env:
+  CICD_BUILD: 1
+  SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
+  CICD_BUILD_BUILD_ICE_DRIVER: 1
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -38,7 +42,7 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  ubuntu-build:
+  ubuntu-build-release:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
     runs-on: ubuntu-latest
@@ -56,19 +60,28 @@ jobs:
         run: sudo -E ./setup_environment.sh
         env:
           MTL_BUILD_AND_INSTALL: 1
-          CICD_BUILD: 1
-          SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
-          CICD_BUILD_BUILD_ICE_DRIVER: 1
 
-      # - name: 'upload release build artifacts'
-      #   uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-      #   with:
-      #     name: mtl-release-bin
-      #     path: '${{ github.workspace }}/build/'
 
-      # - name: Build with debug
-      #   working-directory: "${{ github.workspace }}/.github/scripts"
-      #   shell: bash
-      #   run: ./setup_environment.sh
-      #   env:
-      #     MTL_BUILD_AND_INSTALL_DEBUG: 1
+      - name: 'upload release build artifacts'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: mtl-release-bin
+          path: '${{ github.workspace }}/build/'
+  ubuntu-build-debug:
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build with release
+        working-directory: "${{ github.workspace }}/.github/scripts"
+        shell: bash
+        run: sudo -E ./setup_environment.sh
+        env:
+          MTL_BUILD_AND_INSTALL_DEBUG: 1
