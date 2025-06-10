@@ -20,7 +20,8 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
+      ubuntu_build: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
+      manager_build: ${{ steps.filter.outputs.manager_build == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       
@@ -29,9 +30,9 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  build:
+  ubuntu-docker-build:
     needs: changes
-    if: ${{ needs.changes.outputs.changed == 'true' }}
+    if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
@@ -58,3 +59,41 @@ jobs:
           push: false
           file: docker/ubuntu.dockerfile
           tags: mtl:latest
+
+
+
+  manager-docker-build:
+    needs: changes
+    if: ${{ needs.changes.outputs.manager_build == 'true' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
+      - name: Checkout repository
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4fd812986e6c8c2a69e18311145f9371337f27d4 # v3.4.0
+        with:
+          buildkitd-flags: "--debug --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host"
+          platforms: "linux/amd64"
+          driver-opts: memory=14Gib,memory-swap=25Gib,env.BUILDKIT_STEP_LOG_MAX_SIZE=50000000,env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
+
+      - name: Cache version from version file
+        id: version
+        working-directory: ${{ github.workspace }}
+        run: echo "VERSION=$(cat VERSION) >> "$GITHUB_OUTPUT"
+
+      - name: Build manager image
+        uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
+        with:
+          push: false
+          file: manager/Dockerfile
+          tags: mtl-manager:latest
+          build-args: VERSION=${{ steps.version.outputs.VERSION}}
