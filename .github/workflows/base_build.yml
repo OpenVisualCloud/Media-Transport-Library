@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Build Debug
-        uses: ./.github/actions/setup-environment
+        uses: ./.github/actions/setup-enviroment
         with:
           mtl-build-and-install-debug: 1
 
@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Ice driver build
-        uses: ./.github/actions/setup-environment
+        uses: ./.github/actions/setup-enviroment
         with:
           setup-build-and-install-ice-driver:  1
 
@@ -89,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: ebpf-xdp build
-        uses: ./.github/actions/setup-environment
+        uses: ./.github/actions/setup-enviroment
         with:
           setup-build-and-install-ebpf-xdp: 1
   
@@ -101,7 +101,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Plugin build
-        uses: ./.github/actions/setup-environment
+        uses: ./.github/actions/setup-enviroment
         with:
           ecosystem-build-and-install-ffmpeg-plugin: 1
           ecosystem-build-and-install-gstreamer-plugin: 1
@@ -118,7 +118,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Rust hook
-        uses: ./.github/actions/setup-environment
+        uses: ./.github/actions/setup-enviroment
         with:
           hook-rust: 1
 
@@ -130,6 +130,6 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Python hook
-        uses: ./.github/actions/setup-environment
+        uses: ./.github/actions/setup-enviroment
         with:
           hook-python: 1
