@@ -45,7 +45,7 @@ jobs:
   ubuntu-build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Harden Runner
@@ -57,7 +57,7 @@ jobs:
       - name: Build with release
         working-directory: "${{ github.workspace }}/.github/scripts"
         shell: bash
-        run: ./setup_environment.sh
+        run: sudo ./setup_environment.sh
         env:
           MTL_BUILD_AND_INSTALL: 1
 
@@ -70,7 +70,7 @@ jobs:
       - name: Build with debug
         working-directory: "${{ github.workspace }}/.github/scripts"
         shell: bash
-        run: ./setup_environment.sh
+        run: sudo ./setup_environment.sh
         env:
           MTL_BUILD_AND_INSTALL_DEBUG: 1
 
