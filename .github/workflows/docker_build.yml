@@ -88,7 +88,7 @@ jobs:
       - name: Cache version from version file
         id: version
         working-directory: ${{ github.workspace }}
-        run: echo "VERSION=$(cat VERSION) >> "$GITHUB_OUTPUT"
+        run: echo "VERSION=$(cat VERSION)">> "$GITHUB_OUTPUT"
 
       - name: Build manager image
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
