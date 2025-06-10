@@ -48,6 +48,7 @@ jobs:
     runs-on: [Linux, self-hosted]
     timeout-minutes: 60
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/ubuntu-build
 
   ubuntu_tests:
@@ -55,4 +56,5 @@ jobs:
     runs-on: [Linux, self-hosted]
     timeout-minutes: 60
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/ubuntu-gtest
