@@ -124,8 +124,8 @@ function setup_ubuntu_install_dependencies() {
 					log_warning "Installed linux-headers-generic."
 				fi
 			else
-				log_warning "ICE cannot be installed in when CICD_BUILD is set, quitting..."
-				exit 1
+				log_warning "Installation aborted by user.."
+				exit 0
 			fi
 		fi
 	fi
