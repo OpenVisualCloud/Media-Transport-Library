@@ -93,7 +93,7 @@ static int tx_st40p_next_frame(void* priv, uint16_t* next_frame_idx,
   }
 
   if (ctx->ops.flags & (ST40P_TX_FLAG_ACCURATE_FRAMEBUFF_STATISTICS)) {
-    ctx->stat_enable_detailed_framebuffer_status = true;
+    ctx->stat_enable_verbose_framebuffers_status = true;
   }
 
   /* point to next */
@@ -295,7 +295,7 @@ static int tx_st40p_stat(void* priv) {
   producer_idx = ctx->framebuff_producer_idx;
   consumer_idx = ctx->framebuff_consumer_idx;
 
-  if (ctx->stat_enable_detailed_framebuffer_status) {
+  if (ctx->stat_enable_verbose_framebuffers_status) {
     for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
       stat = framebuff[j].stat;
 

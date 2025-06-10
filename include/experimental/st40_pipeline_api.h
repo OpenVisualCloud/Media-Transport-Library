@@ -89,7 +89,7 @@ enum st40p_tx_flag {
    available or timeout(default: 1s, use st40p_tx_set_block_timeout to customize)*/
   ST40P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
   /**
-   * Enable accurate statistics to be shown in the stat dump for the frmaebuffers
+   ** Enable verbose reporting of framebuffer statuses in statistics output
    */
   ST40P_TX_FLAG_ACCURATE_FRAMEBUFF_STATISTICS = (MTL_BIT32(25)),
 };
