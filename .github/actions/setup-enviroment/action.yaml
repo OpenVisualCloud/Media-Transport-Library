@@ -104,43 +104,44 @@ inputs:
     required: false
     default: "1"
 
-env:
-  # Before MTL build install
-  SETUP_ENVIRONMENT: ${{ inputs.setup-environment }}
-  SETUP_BUILD_AND_INSTALL_DPDK: ${{ inputs.setup-build-and-install-dpdk }}
-  SETUP_BUILD_AND_INSTALL_ICE_DRIVER: ${{ inputs.setup-build-and-install-ice-driver }}
-  SETUP_BUILD_AND_INSTALL_EBPF_XDP: ${{ inputs.setup-build-and-install-ebpf-xdp }}
-  SETUP_BUILD_AND_INSTALL_GPU_DIRECT: ${{ inputs.setup-build-and-install-gpu-direct }}
 
-  # MTL build and install
-  MTL_BUILD_AND_INSTALL_DEBUG: ${{ inputs.mtl-build-and-install-debug }}
-  MTL_BUILD_AND_INSTALL: ${{ inputs.mtl-build-and-install }}
-  MTL_BUILD_AND_INSTALL_DOCKER: ${{ inputs.mtl-build-and-install-docker }}
-  MTL_BUILD_AND_INSTALL_DOCKER_MANAGER: ${{ inputs.mtl-build-and-install-docker-manager }}
-
-  # After MTL build
-  ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: ${{ inputs.ecosystem-build-and-install-ffmpeg-plugin }}
-  ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: ${{ inputs.ecosystem-build-and-install-gstreamer-plugin }}
-  ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: ${{ inputs.ecosystem-build-and-install-rist-plugin }}
-  ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN: ${{ inputs.ecosystem-build-and-install-msdk-plugin }}
-  ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: ${{ inputs.ecosystem-build-and-install-obs-plugin }}
-
-  PLUGIN_BUILD_AND_INSTALL_SAMPLE: ${{ inputs.plugin-build-and-install-sample }}
-  PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC: ${{ inputs.plugin-build-and-install-plugin-avcodec }}
-
-  HOOK_PYTHON: ${{ inputs.hook-python }}
-  HOOK_RUST: ${{ inputs.hook-rust }}
-
-  TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: ${{ inputs.tools-build-and-install-mtl-monitors }}
-  TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: ${{ inputs.tools-build-and-install-mtl-readpcap }}
-  TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: ${{ inputs.tools-build-and-install-mtl-cpu-emulator }}
-
-  # CICD ONLY ARGUMENTS
-  CICD_BUILD: ${{ inputs.cicd-build }}
-  CICD_BUILD_BUILD_ICE_DRIVER: ${{ inputs.cicd-build-build-ice-driver }}
 
 runs:
   using: "composite"
+  env:
+    # Before MTL build install
+    SETUP_ENVIRONMENT: ${{ inputs.setup-environment }}
+    SETUP_BUILD_AND_INSTALL_DPDK: ${{ inputs.setup-build-and-install-dpdk }}
+    SETUP_BUILD_AND_INSTALL_ICE_DRIVER: ${{ inputs.setup-build-and-install-ice-driver }}
+    SETUP_BUILD_AND_INSTALL_EBPF_XDP: ${{ inputs.setup-build-and-install-ebpf-xdp }}
+    SETUP_BUILD_AND_INSTALL_GPU_DIRECT: ${{ inputs.setup-build-and-install-gpu-direct }}
+
+    # MTL build and install
+    MTL_BUILD_AND_INSTALL_DEBUG: ${{ inputs.mtl-build-and-install-debug }}
+    MTL_BUILD_AND_INSTALL: ${{ inputs.mtl-build-and-install }}
+    MTL_BUILD_AND_INSTALL_DOCKER: ${{ inputs.mtl-build-and-install-docker }}
+    MTL_BUILD_AND_INSTALL_DOCKER_MANAGER: ${{ inputs.mtl-build-and-install-docker-manager }}
+
+    # After MTL build
+    ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: ${{ inputs.ecosystem-build-and-install-ffmpeg-plugin }}
+    ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: ${{ inputs.ecosystem-build-and-install-gstreamer-plugin }}
+    ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: ${{ inputs.ecosystem-build-and-install-rist-plugin }}
+    ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN: ${{ inputs.ecosystem-build-and-install-msdk-plugin }}
+    ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: ${{ inputs.ecosystem-build-and-install-obs-plugin }}
+
+    PLUGIN_BUILD_AND_INSTALL_SAMPLE: ${{ inputs.plugin-build-and-install-sample }}
+    PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC: ${{ inputs.plugin-build-and-install-plugin-avcodec }}
+
+    HOOK_PYTHON: ${{ inputs.hook-python }}
+    HOOK_RUST: ${{ inputs.hook-rust }}
+
+    TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: ${{ inputs.tools-build-and-install-mtl-monitors }}
+    TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: ${{ inputs.tools-build-and-install-mtl-readpcap }}
+    TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: ${{ inputs.tools-build-and-install-mtl-cpu-emulator }}
+
+    # CICD ONLY ARGUMENTS
+    CICD_BUILD: ${{ inputs.cicd-build }}
+    CICD_BUILD_BUILD_ICE_DRIVER: ${{ inputs.cicd-build-build-ice-driver }}
   steps:
     - name: Harden Runner
       uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
