@@ -306,21 +306,21 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		echo "$STEP ICE driver build"
 		# shellcheck disable=SC1091
 		. "${script_folder}/../../script/build_ice_driver.sh"
-		if [ -z "$script_folder" ] || [ -z "$ice_driver_ver" ] || [ -z "$download_mirror" ]; then
+		if [ -z "$script_folder" ] || [ -z "$ICE_VER" ] || [ -z "$ICE_DMID" ]; then
 			exit 3
 		fi
 		cd "${script_folder}"
 
-		echo "Building e810 driver version: $ice_driver_ver form mirror $download_mirror"
+		echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
 
-		wget "https://downloadmirror.intel.com/${download_mirror}/ice-${ice_driver_ver}.tar.gz"
-		tar xvzf "ice-${ice_driver_ver}.tar.gz"
-		cd "ice-${ice_driver_ver}"
+		wget "https://downloadmirror.intel.com/${ICE_DMID}/ice-${ICE_VER}.tar.gz"
+		tar xvzf "ice-${ICE_VER}.tar.gz"
+		cd "ice-${ICE_VER}"
 
 		git init
 		git add .
-		git commit -m "init version ${ice_driver_ver}"
-		git am ../../patches/ice_drv/"${ice_driver_ver}"/*.patch
+		git commit -m "init version ${ICE_VER}"
+		git am ../../patches/ice_drv/"${ICE_VER}"/*.patch
 
 		cd src
 		make
