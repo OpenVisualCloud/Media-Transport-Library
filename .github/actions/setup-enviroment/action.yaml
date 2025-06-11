@@ -4,7 +4,7 @@ inputs:
   target-os:
     description: "Target OS for the runner"
     required: false
-    default: "ubuntu-22_04"
+    default: "ubuntu-24.04"
     type: string
 
 runs:
