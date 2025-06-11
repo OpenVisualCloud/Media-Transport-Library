@@ -338,13 +338,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
 		echo "$STEP MTL debug build and install"
-		bash "${root_folder}/build.sh" "debug"
+		cd "${root_folder}" && ./build.sh debug
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
 		echo "$STEP MTL build and install"
-		bash "${root_folder}/build.sh"
+		cd ${root_folder} && ./build.sh
 		STEP=$((STEP + 1))
 	fi
 
@@ -441,7 +441,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
 		echo "$STEP Plugin sample build and install"
-		bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
+		"${root_folder}/script/build_st22_avcodec_plugin.sh"
 		STEP=$((STEP + 1))
 	fi
 
