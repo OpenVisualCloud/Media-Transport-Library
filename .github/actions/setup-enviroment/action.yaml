@@ -1,5 +1,11 @@
 name: ubuntu-build
 
+inputs:
+  target-os:
+    description: "Target OS for the runner"
+    required: true
+
+
 runs:
   using: "composite"
   steps:
@@ -7,6 +13,49 @@ runs:
       uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
       with:
         egress-policy: audit
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Restore APT and pip dependencies cache
+      id: cache-deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          /var/cache/apt/archives
+          /var/lib/apt/lists
+          ~/.cache/pip
+          /tmp/mtl-venv
+        key: $${{ inputs.target-os }}-deps-${{ hashFiles('.github/scripts/setup_environment.sh') }}
+        restore-keys: |
+          $${{ inputs.target-os }}-deps-
+
+    - name: Run setup_environment.sh with minimal environment and update cache
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+      run: .github/scripts/setup_environment.sh
+      env:
+        SETUP_ENVIRONMENT: 1
+        SETUP_BUILD_AND_INSTALL_DPDK: 0
+        SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
+        SETUP_BUILD_AND_INSTALL_EBPF_XDP: 0
+        SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 0
+        MTL_BUILD_AND_INSTALL_DEBUG: 0
+        MTL_BUILD_AND_INSTALL: 0
+        MTL_BUILD_AND_INSTALL_DOCKER: 0
+        MTL_BUILD_AND_INSTALL_DOCKER_MANAGER: 0
+        ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 0
+        ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 0
+        ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: 0
+        ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN: 0
+        ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 0
+        PLUGIN_BUILD_AND_INSTALL_SAMPLE: 0
+        PLUGIN_BUILD_AND_INSTALL_PLUGIN_AVCODEC: 0
+        HOOK_PYTHON: 0
+        HOOK_RUST: 0
+        TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 0
+        TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 0
+        TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 0
+        CICD_BUILD: 1
+        CICD_BUILD_BUILD_ICE_DRIVER: 0
 
     - name: run script  
       shell: bash
