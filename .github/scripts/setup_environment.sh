@@ -44,8 +44,9 @@ set -xe
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 setup_script_folder=${script_path/$script_name/}
+root_folder="${setup_script_folder}/../.."
 # shellcheck disable=SC1091
-. "${setup_script_folder}/../../script/common.sh"
+. "${root_folder}/script/common.sh"
 
 if [ "$ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN" == "1" ]; then
 	if [ "${CICD_BUILD}" != "0" ]; then
@@ -272,7 +273,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "${SETUP_BUILD_AND_INSTALL_GPU_DIRECT}" == "1" ]; then
 		echo "$STEP Install the build dependency for GPU Direct"
 		# shellcheck disable=SC1091
-		cd "${setup_script_folder}/../../gpu_direct" || exit 1
+		cd "${root_folder}/gpu_direct" || exit 1
 
 		if [[ ":$LIBRARY_PATH:" != *":/usr/local/lib:"* ]]; then
 			export LIBRARY_PATH="/usr/local/lib:$LIBRARY_PATH"
@@ -292,20 +293,20 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
 		echo "$STEP Install the build dependency from OS software store"
-		bash "${setup_script_folder}/../../script/build_ebpf_xdp.sh"
+		bash "${root_folder}/script/build_ebpf_xdp.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		echo "$STEP DPDK build and install"
-		bash "${setup_script_folder}/../../script/build_dpdk.sh"
+		bash "${root_folder}/script/build_dpdk.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${CICD_BUILD_BUILD_ICE_DRIVER}" == "1" ]; then
 		echo "$STEP ICE driver build"
 		# shellcheck disable=SC1091
-		. "${setup_script_folder}/../../script/build_ice_driver.sh"
+		. "${root_folder}/script/build_ice_driver.sh"
 		if [ -z "$setup_script_folder" ] || [ -z "$ICE_VER" ] || [ -z "$ICE_DMID" ]; then
 			exit 3
 		fi
@@ -320,7 +321,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		git init
 		git add .
 		git commit -m "init version ${ICE_VER}"
-		git am ../../patches/ice_drv/"${ICE_VER}"/*.patch
+		git am ${root_folder}/patches/ice_drv/"${ICE_VER}"/*.patch
 
 		cd src
 		make
@@ -329,7 +330,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "$STEP ICE driver build and install"
-		bash "${setup_script_folder}/../../script/build_ice_driver.sh"
+		bash "${root_folder}/script/build_ice_driver.sh"
 		STEP=$((STEP + 1))
 	fi
 
@@ -337,19 +338,19 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
 		echo "$STEP MTL debug build and install"
-		bash "${setup_script_folder}/../../build.sh" "debug"
+		bash "${root_folder}/build.sh" "debug"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
 		echo "$STEP MTL build and install"
-		bash "${setup_script_folder}/../../build.sh"
+		bash "${root_folder}/build.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL_DOCKER}" == "1" ]; then
 		echo "$STEP MTL docker build and install"
-		cd "${setup_script_folder}/../../docker" || exit 1
+		cd "${root_folder}/docker" || exit 1
 
 		if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
 			docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" ../
@@ -363,7 +364,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER}" == "1" ]; then
 		echo "$STEP MTL docker manager build and install"
 
-		cd "${setup_script_folder}/../../manager" | exit 1
+		cd "${root_folder}/manager" | exit 1
 
 		if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
 			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" .
@@ -384,38 +385,38 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 			echo "Building FFMPEG plugin without GPU Direct support"
 		fi
 
-		bash "${setup_script_folder}/../../ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
+		bash "${root_folder}/ecosystem/ffmpeg_plugin/build.sh" "${enable_gpu}"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem GStreamer plugin build and install"
 
-		bash "${setup_script_folder}/../../ecosystem/gstreamer_plugin/build.sh"
+		bash "${root_folder}/ecosystem/gstreamer_plugin/build.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${setup_script_folder}/../../ecosystem/librist/build_librist_mtl.sh"
+		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${setup_script_folder}/../../ecosystem/librist/build_librist_mtl.sh"
+		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${setup_script_folder}/../../ecosystem/msdk/build_msdk_mtl.sh"
+		bash "${root_folder}/ecosystem/msdk/build_msdk_mtl.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem OBS plugin build and install"
-		cd "${setup_script_folder}/../../ecosystem/obs_mtl" || exit 1
+		cd "${root_folder}/ecosystem/obs_mtl" || exit 1
 		cd linux-mtl
 		meson setup build
 		meson compile -C build
@@ -425,7 +426,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_SAMPLE}" == "1" ]; then
 		echo "$STEP Plugin sample build and install"
-		cd "${setup_script_folder}/../../plugins" || exit 1
+		cd "${root_folder}/plugins" || exit 1
 		meson setup build
 		meson compile -C build
 		sudo meson install -C build
@@ -434,19 +435,19 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
 		echo "$STEP Plugin sample build and install"
-		bash "${setup_script_folder}/../../script/build_st22_avcodec_plugin.sh"
+		bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${PLUGIN_BUILD_AND_INSTALL_AVCODEC}" == "1" ]; then
 		echo "$STEP Plugin sample build and install"
-		bash "${setup_script_folder}/../../script/build_st22_avcodec_plugin.sh"
+		bash "${root_folder}/script/build_st22_avcodec_plugin.sh"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${HOOK_PYTHON}" == "1" ]; then
 		echo "$STEP Hook Python"
-		cd "${setup_script_folder}/../.." || exit 1
+		cd "${root_folder}" || exit 1
 		if [ -d swig ]; then
 			echo "SWIG directory already exists, skipping clone."
 		else
@@ -459,7 +460,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		./configure
 		make
 		sudo make install
-		cd "${setup_script_folder}/../../python/swig"
+		cd "${root_folder}/python/swig"
 		swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
 		python3 setup.py build_ext --inplace
 		sudo python3 setup.py install
@@ -468,7 +469,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${HOOK_RUST}" == "1" ]; then
 		echo "$STEP Hook Rust"
-		cd "${setup_script_folder}/../../rust" || exit 1
+		cd "${root_folder}/rust" || exit 1
 		cargo update home --precise "${RUST_HOOK_CARGO_VER}"
 		cargo build --release
 		STEP=$((STEP + 1))
@@ -476,7 +477,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS}" == "1" ]; then
 		echo "$STEP Tools MTL monitors build and install"
-		cd "${setup_script_folder}/../../tools/ebpf" || exit 1
+		cd "${root_folder}/tools/ebpf" || exit 1
 		make lcore_monitor
 		make udp_monitor
 		STEP=$((STEP + 1))
@@ -484,14 +485,14 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
 		echo "$STEP Tools MTL readpcap build and install"
-		cd "${setup_script_folder}/../../tools/readpcap" || exit 1
+		cd "${root_folder}/tools/readpcap" || exit 1
 		make
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR}" == "1" ]; then
 		echo "$STEP Tools MTL CPU emulator build and install"
-		cd "${setup_script_folder}/../../tools/sch_smi_emulate" || exit 1
+		cd "${root_folder}/tools/sch_smi_emulate" || exit 1
 		make
 		STEP=$((STEP + 1))
 	fi
