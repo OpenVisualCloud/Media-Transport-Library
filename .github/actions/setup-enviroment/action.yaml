@@ -17,23 +17,23 @@ runs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Restore APT and pip dependencies cache
-      id: cache-deps
-      uses: actions/cache@v4
-      with:
-        path: |
-          /var/cache/apt/archives
-          /var/lib/apt/lists
-          ~/.cache/pip
-          /tmp/mtl-venv
-        key: ${{ inputs.target-os }}-deps-${{ hashFiles('.github/scripts/setup_environment.sh') }}
-        restore-keys: |
-          ${{ inputs.target-os }}-deps-
+    # - name: Restore APT and pip dependencies cache
+    #   id: cache-deps
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: |
+    #       /var/cache/apt/archives
+    #       /var/lib/apt/lists
+    #       ~/.cache/pip
+    #       /tmp/mtl-venv
+    #     key: ${{ inputs.target-os }}-deps-${{ hashFiles('.github/scripts/setup_environment.sh') }}
+    #     restore-keys: |
+    #       ${{ inputs.target-os }}-deps-
 
     - name: Run setup_environment.sh with minimal environment and update cache
       if: steps.cache-deps.outputs.cache-hit != 'true'
       shell: bash
-      run: sudo -E .github/scripts/setup_environment.sh
+      run: .github/scripts/setup_environment.sh
       env:
         SETUP_ENVIRONMENT: 1
         SETUP_BUILD_AND_INSTALL_DPDK: 1
