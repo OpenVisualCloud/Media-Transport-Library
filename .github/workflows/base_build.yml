@@ -133,8 +133,8 @@ jobs:
       - name: Rust hook
         run: sudo -E .github/scripts/setup_environment.sh
         with:
-            MTL_BUILD_AND_INSTALL: 1
-          hook-rust: 1
+          MTL_BUILD_AND_INSTALL: 1
+          HOOK_RUST: 1
 
   python-build: 
     needs: changes
@@ -146,5 +146,5 @@ jobs:
       - name: Python hook
         run: sudo -E .github/scripts/setup_environment.sh
         with:
-            MTL_BUILD_AND_INSTALL: 1
-          hook-python: 1
+          MTL_BUILD_AND_INSTALL: 1
+          HOOK_PYTHON: 1
