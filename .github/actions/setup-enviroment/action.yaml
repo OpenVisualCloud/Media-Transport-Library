@@ -33,7 +33,7 @@ runs:
     - name: Run setup_environment.sh with minimal environment and update cache
       if: steps.cache-deps.outputs.cache-hit != 'true'
       shell: bash
-      run: .github/scripts/setup_environment.sh
+      run: sudo -E .github/scripts/setup_environment.sh
       env:
         SETUP_ENVIRONMENT: 1
         SETUP_BUILD_AND_INSTALL_DPDK: 1
