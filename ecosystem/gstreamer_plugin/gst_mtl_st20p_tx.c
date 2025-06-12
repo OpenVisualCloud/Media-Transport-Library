@@ -105,6 +105,18 @@ typedef struct {
   GstCaps* caps;
 } GstMtlSt20pTxThreadData;
 
+typedef struct {
+  GstBuffer* buf;
+  uint32_t child_count;
+  pthread_mutex_t parent_mutex;
+} GstSt20pTxExternalDataParent;
+
+typedef struct {
+  GstSt20pTxExternalDataParent* parent;
+  GstMemory* gst_buffer_memory;
+  GstMapInfo map_info;
+} GstSt20pTxExternalDataChild;
+
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st20p_tx_sink_pad_template =
     GST_STATIC_PAD_TEMPLATE("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
@@ -136,6 +148,11 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
 static gboolean gst_mtl_st20p_tx_start(GstBaseSink* bsink);
 
 static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps* caps);
+
+static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame);
+
+static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf);
+static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf);
 
 static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   GObjectClass* gobject_class;
@@ -349,6 +366,14 @@ static gboolean gst_mtl_st20p_tx_session_create(Gst_Mtl_St20p_Tx* sink, GstCaps*
     return FALSE;
   }
 
+  sink->zero_copy = (ops_tx.transport_fmt != st_frame_fmt_to_transport(ops_tx.input_fmt));
+  if (sink->zero_copy) {
+    ops_tx.flags |= ST20P_TX_FLAG_EXT_FRAME;
+    ops_tx.notify_frame_done = gst_mtl_st20p_tx_frame_done;
+  } else {
+    GST_WARNING("Using memcpy path");
+  }
+
   if (info->fps_d != 0) {
     ops_tx.fps = st_frame_rate_to_st_fps((double)info->fps_n / info->fps_d);
     if (ops_tx.fps == ST_FPS_MAX) {
@@ -457,11 +482,6 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
 static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
                                             GstBuffer* buf) {
   Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(parent);
-  gint buffer_size, buffer_n = gst_buffer_n_memory(buf);
-  struct st_frame* frame = NULL;
-  gint frame_size = sink->frame_size;
-  GstMemory* gst_buffer_memory;
-  GstMapInfo map_info;
 
   if (sink->async_session_create) {
     pthread_mutex_lock(&sink->session_mutex);
@@ -479,6 +499,154 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
     GST_ERROR("Tx handle not initialized");
     return GST_FLOW_ERROR;
   }
+
+  if (sink->zero_copy) {
+    return gst_mtl_st20p_tx_zero_copy(sink, buf);
+  } else {
+    return gst_mtl_st20p_tx_mem_copy(sink, buf);
+  }
+}
+
+static void gst_mtl_st20p_tx_finalize(GObject* object) {
+  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
+
+  if (sink->async_session_create) {
+    if (sink->session_thread) pthread_join(sink->session_thread, NULL);
+    pthread_mutex_destroy(&sink->session_mutex);
+  }
+
+  if (sink->tx_handle) {
+    if (st20p_tx_free(sink->tx_handle)) GST_ERROR("Failed to free tx handle");
+  }
+
+  if (sink->mtl_lib_handle) {
+    if (gst_mtl_common_deinit_handle(&sink->mtl_lib_handle))
+      GST_ERROR("Failed to uninitialize MTL library");
+  }
+}
+
+static gboolean plugin_init(GstPlugin* mtl_st20p_tx) {
+  return gst_element_register(mtl_st20p_tx, "mtl_st20p_tx", GST_RANK_SECONDARY,
+                              GST_TYPE_MTL_ST20P_TX);
+}
+
+GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_tx,
+                  "software-based solution designed for high-throughput transmission",
+                  plugin_init, PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME,
+                  GST_PACKAGE_ORIGIN)
+
+static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
+  /* In case of format conversion (transmit vs input), MTL may call
+   * gst_mtl_st20p_tx_frame_done twice.
+   * To avoid double free, we set (frame->opaque = NULL) in first call so that the second
+   * call can exit gracefully.
+   */
+  if (frame == NULL || frame->opaque == NULL) {
+    return 0;
+  }
+
+  GstSt20pTxExternalDataChild* child = frame->opaque;
+  GstSt20pTxExternalDataParent* parent = child->parent;
+
+  gst_memory_unmap(child->gst_buffer_memory, &child->map_info);
+
+  frame->opaque = NULL;
+  free(child);
+
+  pthread_mutex_lock(&parent->parent_mutex);
+  parent->child_count--;
+  if (parent->child_count > 0) {
+    pthread_mutex_unlock(&parent->parent_mutex);
+    return 0;
+  }
+
+  pthread_mutex_unlock(&parent->parent_mutex);
+  gst_buffer_unref(parent->buf);
+  pthread_mutex_destroy(&parent->parent_mutex);
+  free(parent);
+
+  return 0;
+}
+
+static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
+  GstSt20pTxExternalDataChild* child;
+  GstSt20pTxExternalDataParent* parent;
+  struct st_frame* frame;
+  struct st_ext_frame ext_frame;
+  GstVideoMeta* video_meta = gst_buffer_get_video_meta(buf);
+  gint buffer_n = gst_buffer_n_memory(buf);
+  if (!video_meta) {
+    g_print("Failed to get video meta from buffer\n");
+    return GST_FLOW_ERROR;
+  }
+
+  parent = malloc(sizeof(GstSt20pTxExternalDataParent));
+  if (!parent) {
+    GST_ERROR("Failed to allocate memory for parent structure");
+    return GST_FLOW_ERROR;
+  }
+  parent->buf = buf;
+  parent->child_count = buffer_n;
+  pthread_mutex_init(&parent->parent_mutex, NULL);
+
+  for (int i = 0; i < buffer_n; i++) {
+    child = malloc(sizeof(GstSt20pTxExternalDataChild));
+    if (!child) {
+      GST_ERROR("Failed to allocate memory for child structure");
+      free(parent);
+    }
+    child->parent = parent;
+    child->gst_buffer_memory = gst_buffer_peek_memory(buf, i);
+
+    if (!gst_memory_map(child->gst_buffer_memory, &child->map_info, GST_MAP_READ)) {
+      GST_ERROR("Failed to map memory");
+      free(child);
+      free(parent);
+      return GST_FLOW_ERROR;
+    }
+
+    if (child->map_info.size < sink->frame_size) {
+      GST_ERROR("Buffer size %lu is smaller than frame size %d", child->map_info.size,
+                sink->frame_size);
+      gst_memory_unmap(child->gst_buffer_memory, &child->map_info);
+      free(child);
+      free(parent);
+      return GST_FLOW_ERROR;
+    }
+
+    frame = st20p_tx_get_frame(sink->tx_handle);
+    if (!frame) {
+      GST_ERROR("Failed to get frame");
+      return GST_FLOW_ERROR;
+    }
+
+    // By default, timestamping is handled by MTL.
+    if (sink->use_pts_for_pacing) {
+      frame->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+      frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+    }
+
+    for (int i = 0; i < video_meta->n_planes; i++) {
+      ext_frame.addr[i] = child->map_info.data + video_meta->offset[i];
+      ext_frame.linesize[i] = video_meta->stride[i];
+      ext_frame.iova[i] = 0;
+    }
+    ext_frame.size = child->map_info.size;
+    ext_frame.opaque = child;
+    frame->opaque = NULL;
+
+    st20p_tx_put_ext_frame(sink->tx_handle, frame, &ext_frame);
+  }
+
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn gst_mtl_st20p_tx_mem_copy(Gst_Mtl_St20p_Tx* sink, GstBuffer* buf) {
+  gint buffer_size, buffer_n = gst_buffer_n_memory(buf);
+  struct st_frame* frame = NULL;
+  gint frame_size = sink->frame_size;
+  GstMemory* gst_buffer_memory;
+  GstMapInfo map_info;
 
   for (int i = 0; i < buffer_n; i++) {
     gst_buffer_memory = gst_buffer_peek_memory(buf, i);
@@ -515,31 +683,3 @@ static GstFlowReturn gst_mtl_st20p_tx_chain(GstPad* pad, GstObject* parent,
   gst_buffer_unref(buf);
   return GST_FLOW_OK;
 }
-
-static void gst_mtl_st20p_tx_finalize(GObject* object) {
-  Gst_Mtl_St20p_Tx* sink = GST_MTL_ST20P_TX(object);
-
-  if (sink->async_session_create) {
-    if (sink->session_thread) pthread_join(sink->session_thread, NULL);
-    pthread_mutex_destroy(&sink->session_mutex);
-  }
-
-  if (sink->tx_handle) {
-    if (st20p_tx_free(sink->tx_handle)) GST_ERROR("Failed to free tx handle");
-  }
-
-  if (sink->mtl_lib_handle) {
-    if (gst_mtl_common_deinit_handle(&sink->mtl_lib_handle))
-      GST_ERROR("Failed to uninitialize MTL library");
-  }
-}
-
-static gboolean plugin_init(GstPlugin* mtl_st20p_tx) {
-  return gst_element_register(mtl_st20p_tx, "mtl_st20p_tx", GST_RANK_SECONDARY,
-                              GST_TYPE_MTL_ST20P_TX);
-}
-
-GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_tx,
-                  "software-based solution designed for high-throughput transmission",
-                  plugin_init, PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME,
-                  GST_PACKAGE_ORIGIN)

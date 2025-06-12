@@ -59,6 +59,7 @@ struct _Gst_Mtl_St20p_Tx {
   mtl_handle mtl_lib_handle;
   st20p_tx_handle tx_handle;
   guint frame_size;
+  gboolean zero_copy;
 
   gboolean session_ready;
   pthread_mutex_t session_mutex;
