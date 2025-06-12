@@ -46,7 +46,7 @@ jobs:
   ubuntu-build-release:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, Linux, X64, docker, kubernetes]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
