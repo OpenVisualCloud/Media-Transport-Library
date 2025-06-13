@@ -321,7 +321,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		git init
 		git add .
 		git commit -m "init version ${ICE_VER}"
-		git am ${root_folder}/patches/ice_drv/"${ICE_VER}"/*.patch
+		git am "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch
 
 		cd src
 		make
@@ -344,7 +344,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
 		echo "$STEP MTL build and install"
-		cd ${root_folder} && ./build.sh
+		cd "${root_folder}" && ./build.sh
 		STEP=$((STEP + 1))
 	fi
 

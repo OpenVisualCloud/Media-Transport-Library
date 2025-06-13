@@ -24,7 +24,7 @@ permissions:
   contents: read
 jobs:
   changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       pull-requests: read
     outputs:
