@@ -91,7 +91,7 @@ function setup_ubuntu_install_dependencies() {
 
 	# CiCd only
 	if [ "${CICD_BUILD}" == "1" ]; then
-		apt install -y tzdata python3-venv  wget doxygen
+		apt install -y tzdata python3-venv wget doxygen
 		ln -fs /usr/share/zoneinfo/Europe/Warsaw /etc/localtime
 		dpkg-reconfigure -f noninteractive tzdata
 		python3 -m venv /tmp/mtl-venv
@@ -108,7 +108,7 @@ function setup_ubuntu_install_dependencies() {
 	if [ "${SETUP_BUILD_AND_INSTALL_ICE_DRIVER}" == "1" ]; then
 		echo "Installing Ice driver dependencies"
 
-		if  apt-get install -y "linux-headers-$(uname -r)"; then
+		if apt-get install -y "linux-headers-$(uname -r)"; then
 			if [ "${CICD_BUILD}" != "0" ]; then
 				ret=0
 			else
@@ -119,7 +119,7 @@ function setup_ubuntu_install_dependencies() {
 			fi
 
 			if [ "$ret" == "1" ]; then
-				if !  apt-get install -y linux-headers-generic; then
+				if ! apt-get install -y linux-headers-generic; then
 					log_error "Error: Failed to install linux-headers-generic as well."
 				else
 					log_warning "Installed linux-headers-generic."
@@ -133,7 +133,7 @@ function setup_ubuntu_install_dependencies() {
 
 	if [ "${SETUP_BUILD_AND_INSTALL_EBPF_XDP}" == "1" ]; then
 		echo "Installing eBPF/XDP dependencies"
-		 apt-get install -y \
+		apt-get install -y \
 			make \
 			m4 \
 			zlib1g-dev \
@@ -174,13 +174,13 @@ function setup_ubuntu_install_dependencies() {
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
 		echo "Installing FFMPEG dependencies"
-		 apt install -y \
+		apt install -y \
 			nasm
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "Installing GStreamer dependencies"
-		 apt install -y \
+		apt install -y \
 			gstreamer1.0-plugins-base \
 			gstreamer1.0-plugins-good \
 			gstreamer1.0-tools \
@@ -190,20 +190,20 @@ function setup_ubuntu_install_dependencies() {
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
 		echo "Installing MSDK dependencies"
-		 apt install -y \
+		apt install -y \
 			curl \
 			libva-dev
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
 		echo "Installing OBS dependencies"
-		 apt install -y \
+		apt install -y \
 			libobs-dev
 	fi
 
 	if [ "${HOOK_PYTHON}" == "1" ]; then
 		echo "Installing Python hook dependencies"
-		 apt-get install -y \
+		apt-get install -y \
 			swig \
 			automake \
 			yacc
@@ -213,14 +213,14 @@ function setup_ubuntu_install_dependencies() {
 
 	if [ "${HOOK_RUST}" == "1" ]; then
 		echo "Installing Rust hook dependencies"
-		 apt-get install -y \
+		apt-get install -y \
 			cargo \
 			rustc
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
 		echo "Installing MTL readpcap dependencies"
-		 apt-get install -y \
+		apt-get install -y \
 			libpcap-dev
 	fi
 
@@ -280,7 +280,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		fi
 
 		meson setup build
-		 meson install -C build
+		meson install -C build
 
 		if pkg-config --libs mtl_gpu_direct >/dev/null 2>&1; then
 			echo "mtl_gpu_direct is available via pkg-config."
@@ -420,7 +420,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		cd linux-mtl
 		meson setup build
 		meson compile -C build
-		 meson install -C build
+		meson install -C build
 		STEP=$((STEP + 1))
 	fi
 
@@ -429,7 +429,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		cd "${root_folder}/plugins" || exit 1
 		meson setup build
 		meson compile -C build
-		 meson install -C build
+		meson install -C build
 		STEP=$((STEP + 1))
 	fi
 
@@ -459,11 +459,11 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		./autogen.sh
 		./configure
 		make
-		 make install
+		make install
 		cd "${root_folder}/python/swig"
 		swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
 		python3 setup.py build_ext --inplace
-		 python3 setup.py install
+		python3 setup.py install
 		STEP=$((STEP + 1))
 	fi
 
