@@ -352,7 +352,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		echo "$STEP MTL docker build and install"
 		cd "${root_folder}/docker" || exit 1
 
-		if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
+		if [ -n "${http_proxy}" ] && [ -n "${https_proxy}" ]; then
 			docker build -t mtl:latest -f ubuntu.dockerfile --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" ../
 		else
 			docker build -t mtl:latest -f ubuntu.dockerfile ../
@@ -366,7 +366,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 		cd "${root_folder}/manager" | exit 1
 
-		if [ -z "${http_proxy}" ] && [ -z "${https_proxy}" ]; then
+		if [ -n "${http_proxy}" ] && [ -n "${https_proxy}" ]; then
 			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest --build-arg HTTP_PROXY="${http_proxy}" --build-arg HTTPS_PROXY="${https_proxy}" .
 		else
 			docker build --build-arg VERSION="$(cat ../VERSION)" -t mtl-manager:latest .
