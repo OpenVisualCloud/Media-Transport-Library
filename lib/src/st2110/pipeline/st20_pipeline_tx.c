@@ -131,7 +131,15 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   frame->rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    /*
+    ** Skip notify if ext_frame is used and derive is false (input_fmt != transport_fmt).
+    ** In this case, the frame done notification is not needed since the notification is
+    ** already done after convert callback.
+    ** This is to avoid double notification for the same frame.
+    */
+    if (!(ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME && !ctx->derive)) {
+      ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    }
   }
 
   /* notify app can get frame */
