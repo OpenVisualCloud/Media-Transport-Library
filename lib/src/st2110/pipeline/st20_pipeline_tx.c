@@ -130,16 +130,10 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
 
-  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
-    /*
-    ** Skip notify if ext_frame is used and derive is false (input_fmt != transport_fmt).
-    ** In this case, the frame done notification is not needed since the notification is
-    ** already done after convert callback.
-    ** This is to avoid double notification for the same frame.
-    */
-    if (!(ctx->ops.flags & ST20P_TX_FLAG_EXT_FRAME && !ctx->derive)) {
-      ctx->ops.notify_frame_done(ctx->ops.priv, frame);
-    }
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
+    ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
   }
 
   /* notify app can get frame */
@@ -610,6 +604,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_USER;
+  framebuff->frame_done_cb_called = false;
   /* point to next */
   ctx->framebuff_producer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
@@ -756,8 +751,10 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     if (ctx->internal_converter) { /* convert internal */
       ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
       framebuff->stat = ST20P_TX_FRAME_CONVERTED;
-      if (ctx->ops.notify_frame_done)
+      if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
         ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+        framebuff->frame_done_cb_called = true;
+      }
     } else {
       framebuff->stat = ST20P_TX_FRAME_READY;
       st20_convert_notify_frame_ready(ctx->convert_impl);
