@@ -100,6 +100,11 @@ enum {
   PROP_MAX
 };
 
+typedef struct {
+  GstBuffer* buf;
+  GstMapInfo dest_info;
+} GstSt20pRxExternalData;
+
 /* pad template */
 static GstStaticPadTemplate gst_mtl_st20p_rx_src_pad_template =
     GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS,
@@ -125,8 +130,15 @@ static void gst_mtl_st20p_rx_finalize(GObject* object);
 
 static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc);
 static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc);
-static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset,
-                                             guint length, GstBuffer** buffer);
+static GstFlowReturn gst_mtl_st20p_rx_chain(GstBaseSrc* basesrc, guint64 offset,
+                                            guint length, GstBuffer** buffer);
+
+static GstFlowReturn gst_mtl_st20p_rx_get_external_frame(Gst_Mtl_St20p_Rx* src,
+                                                         GstBuffer** buffer);
+static GstFlowReturn gst_mtl_st20p_rx_get_internal_frame(Gst_Mtl_St20p_Rx* src,
+                                                         GstBuffer** buffer);
+static int gst_mtl_st20p_rx_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
+                                            struct st20_rx_frame_meta* meta);
 
 static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
   GObjectClass* gobject_class;
@@ -151,7 +163,7 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
 
   gstbasesrc_class->start = GST_DEBUG_FUNCPTR(gst_mtl_st20p_rx_start);
   gstbasesrc_class->negotiate = GST_DEBUG_FUNCPTR(gst_mtl_st20p_rx_negotiate);
-  gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st20p_rx_create);
+  gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st20p_rx_chain);
 
   gst_mtl_common_init_general_arguments(gobject_class);
 
@@ -196,10 +208,9 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
 }
 
 static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
-  struct st20p_rx_ops* ops_rx;
+  struct st20p_rx_ops ops_rx = {0};
 
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
-  ops_rx = &src->ops_rx;
 
   GST_DEBUG_OBJECT(src, "start");
   GST_DEBUG("Media Transport Initialization start");
@@ -223,42 +234,62 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
     return FALSE;
   }
 
-  ops_rx->name = "st20src";
-  ops_rx->device = ST_PLUGIN_DEVICE_AUTO;
-  ops_rx->width = src->width;
-  ops_rx->height = src->height;
-  ops_rx->transport_fmt = ST20_FMT_YUV_422_10BIT;
-  ops_rx->interlaced = src->interlaced;
-  ops_rx->flags |= ST20P_RX_FLAG_BLOCK_GET;
+  ops_rx.name = "st20src";
+  ops_rx.device = ST_PLUGIN_DEVICE_AUTO;
+  ops_rx.width = src->width;
+  ops_rx.height = src->height;
+  ops_rx.transport_fmt = ST20_FMT_YUV_422_10BIT;
+  ops_rx.interlaced = src->interlaced;
+  ops_rx.flags |= ST20P_RX_FLAG_BLOCK_GET;
 
-  ops_rx->fps = st_frame_rate_to_st_fps((double)src->fps_n / src->fps_d);
-  if (ops_rx->fps == ST_FPS_MAX) {
+  ops_rx.fps = st_frame_rate_to_st_fps((double)src->fps_n / src->fps_d);
+  if (ops_rx.fps == ST_FPS_MAX) {
     GST_ERROR("Invalid framerate: %d/%d", src->fps_n, src->fps_d);
     return FALSE;
   }
 
   if (src->framebuffer_num) {
-    ops_rx->framebuff_cnt = src->framebuffer_num;
+    ops_rx.framebuff_cnt = src->framebuffer_num;
   } else {
-    ops_rx->framebuff_cnt = 3;
+    ops_rx.framebuff_cnt = 3;
   }
 
-  if (!gst_mtl_common_parse_pixel_format(src->pixel_format, &ops_rx->output_fmt)) {
+  if (!gst_mtl_common_parse_pixel_format(src->pixel_format, &ops_rx.output_fmt)) {
     GST_ERROR("Failed to parse input format \"%s\"", src->pixel_format);
-    ops_rx = NULL;
     return FALSE;
+  }
+
+  switch (ops_rx.output_fmt) {
+    case ST_FRAME_FMT_V210:
+      src->format = GST_VIDEO_FORMAT_v210;
+      break;
+    case ST_FRAME_FMT_YUV422PLANAR10LE:
+      src->format = GST_VIDEO_FORMAT_I422_10LE;
+      break;
+    default:
+      GST_ERROR("Unsupported pixel format");
+      return FALSE;
+  }
+
+  src->zero_copy = (ops_rx.transport_fmt != st_frame_fmt_to_transport(ops_rx.output_fmt));
+  if (src->zero_copy) {
+    ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
+    ops_rx.query_ext_frame = gst_mtl_st20p_rx_query_ext_frame;
+    ops_rx.priv = src;
+  } else {
+    GST_WARNING("Using memcpy path");
   }
 
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
 
-  ops_rx->port.num_port =
-      gst_mtl_common_parse_rx_port_arguments(&ops_rx->port, &src->portArgs);
-  if (!ops_rx->port.num_port) {
+  ops_rx.port.num_port =
+      gst_mtl_common_parse_rx_port_arguments(&ops_rx.port, &src->portArgs);
+  if (!ops_rx.port.num_port) {
     GST_ERROR("Failed to parse port arguments");
     return FALSE;
   }
 
-  src->rx_handle = st20p_rx_create(src->mtl_lib_handle, &src->ops_rx);
+  src->rx_handle = st20p_rx_create(src->mtl_lib_handle, &ops_rx);
   if (!src->rx_handle) {
     GST_ERROR("Failed to create st20p rx handle");
     return FALSE;
@@ -372,7 +403,6 @@ static void gst_mtl_st20p_rx_get_property(GObject* object, guint prop_id, GValue
 static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
   GstVideoInfo* info;
   Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
-  struct st20p_rx_ops* ops_rx = &src->ops_rx;
   gint ret;
   GstCaps* caps;
 
@@ -393,18 +423,7 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
   info->fps_n = src->fps_n;
   info->fps_d = src->fps_d;
 
-  switch (ops_rx->output_fmt) {
-    case ST_FRAME_FMT_V210:
-      info->finfo = gst_video_format_get_info(GST_VIDEO_FORMAT_v210);
-      break;
-    case ST20_FMT_YUV_422_10BIT:
-      info->finfo = gst_video_format_get_info(GST_VIDEO_FORMAT_I422_10LE);
-      break;
-    default:
-      GST_ERROR("Unsupported pixel format");
-      gst_video_info_free(info);
-      return FALSE;
-  }
+  info->finfo = gst_video_format_get_info(src->format);
 
   caps = gst_caps_new_simple(
       "video/x-raw", "format", G_TYPE_STRING,
@@ -433,26 +452,12 @@ static gboolean gst_mtl_st20p_rx_negotiate(GstBaseSrc* basesrc) {
   return TRUE;
 }
 
-static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset,
-                                             guint length, GstBuffer** buffer) {
-  GstBuffer* buf;
-  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
+static GstFlowReturn gst_mtl_st20p_rx_get_external_frame(Gst_Mtl_St20p_Rx* src,
+                                                         GstBuffer** buffer) {
   struct st_frame* frame;
-  GstMapInfo dest_info;
-  gint ret;
-  gsize fill_size;
+  GstSt20pRxExternalData* ext_data;
 
-  buf = gst_buffer_new_allocate(NULL, src->frame_size, NULL);
-  if (!buf) {
-    GST_ERROR("Failed to allocate buffer");
-    return GST_FLOW_ERROR;
-  }
-
-  *buffer = buf;
-
-  GST_OBJECT_LOCK(src);
-
-  for (int i = 0; i < src->retry_frame; i++) {
+  for (guint i = 0; i < src->retry_frame; i++) {
     frame = st20p_rx_get_frame(src->rx_handle);
     if (frame) {
       break;
@@ -461,25 +466,74 @@ static GstFlowReturn gst_mtl_st20p_rx_create(GstBaseSrc* basesrc, guint64 offset
 
   if (!frame) {
     GST_INFO("Failed to get frame EOS");
-    GST_OBJECT_UNLOCK(src);
     return GST_FLOW_EOS;
   }
 
-  gst_buffer_map(buf, &dest_info, GST_MAP_WRITE);
+  ext_data = frame->opaque;
+  *buffer = ext_data->buf;
+  GST_BUFFER_PTS(*buffer) = frame->timestamp;
 
-  fill_size = gst_buffer_fill(buf, 0, frame->addr[0], src->frame_size);
-  GST_BUFFER_PTS(buf) = frame->timestamp;
+  gst_buffer_unmap(ext_data->buf, &ext_data->dest_info);
+  st20p_rx_put_frame(src->rx_handle, frame);
+  free(ext_data);
 
-  gst_buffer_unmap(buf, &dest_info);
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn gst_mtl_st20p_rx_get_internal_frame(Gst_Mtl_St20p_Rx* src,
+                                                         GstBuffer** buffer) {
+  struct st_frame* frame;
+  GstMapInfo dest_info;
+  gsize fill_size;
+
+  *buffer = gst_buffer_new_allocate(NULL, src->frame_size, NULL);
+  if (!*buffer) {
+    GST_ERROR("Failed to allocate buffer");
+    return GST_FLOW_ERROR;
+  }
+
+  for (guint i = 0; i < src->retry_frame; i++) {
+    frame = st20p_rx_get_frame(src->rx_handle);
+    if (frame) {
+      break;
+    }
+  }
+
+  if (!frame) {
+    GST_INFO("Failed to get frame EOS");
+    return GST_FLOW_EOS;
+  }
+
+  gst_buffer_map(*buffer, &dest_info, GST_MAP_WRITE);
+
+  fill_size = gst_buffer_fill(*buffer, 0, frame->addr[0], src->frame_size);
+  GST_BUFFER_PTS(*buffer) = frame->timestamp;
+
+  gst_buffer_unmap(*buffer, &dest_info);
 
   if (fill_size != src->frame_size) {
     GST_ERROR("Failed to fill buffer");
-    ret = GST_FLOW_ERROR;
-  } else {
-    ret = GST_FLOW_OK;
+    return GST_FLOW_ERROR;
   }
 
   st20p_rx_put_frame(src->rx_handle, frame);
+
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn gst_mtl_st20p_rx_chain(GstBaseSrc* basesrc, guint64 offset,
+                                            guint length, GstBuffer** buffer) {
+  Gst_Mtl_St20p_Rx* src = GST_MTL_ST20P_RX(basesrc);
+  gint ret = GST_FLOW_OK;
+
+  GST_OBJECT_LOCK(src);
+
+  if (src->zero_copy) {
+    ret = gst_mtl_st20p_rx_get_external_frame(src, buffer);
+  } else {
+    ret = gst_mtl_st20p_rx_get_internal_frame(src, buffer);
+  }
+
   GST_OBJECT_UNLOCK(src);
   return ret;
 }
@@ -511,3 +565,47 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_rx,
                   "software-based solution designed for high-throughput transmission",
                   plugin_init, PACKAGE_VERSION, GST_LICENSE, GST_PACKAGE_NAME,
                   GST_PACKAGE_ORIGIN)
+
+static int gst_mtl_st20p_rx_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
+                                            struct st20_rx_frame_meta* meta) {
+  GstVideoMeta* video_meta;
+  guint8 planes;
+  Gst_Mtl_St20p_Rx* s = (Gst_Mtl_St20p_Rx*)priv;
+
+  GstSt20pRxExternalData* ext_data =
+      (GstSt20pRxExternalData*)malloc(sizeof(GstSt20pRxExternalData));
+  if (!ext_data) {
+    GST_ERROR("Failed to allocate memory for external data");
+    return GST_FLOW_ERROR;
+  }
+
+  ext_data->buf = gst_buffer_new_allocate(NULL, s->frame_size, NULL);
+  if (!ext_data->buf) {
+    GST_ERROR("Failed to allocate buffer");
+    free(ext_data);
+    return GST_FLOW_ERROR;
+  }
+
+  video_meta = gst_buffer_add_video_meta(ext_data->buf, GST_VIDEO_FRAME_FLAG_NONE,
+                                         s->format, s->width, s->height);
+  if (!video_meta) {
+    GST_ERROR("Failed to add video meta to buffer");
+    gst_buffer_unref(ext_data->buf);
+    free(ext_data);
+    return GST_FLOW_ERROR;
+  }
+
+  gst_buffer_map(ext_data->buf, &ext_data->dest_info, GST_MAP_WRITE);
+
+  /* fill the ext frame */
+  planes = st_frame_fmt_planes(video_meta->n_planes);
+  for (guint8 i = 0; i < planes; i++) {
+    ext_frame->addr[i] = ext_data->dest_info.data + video_meta->offset[i];
+    ext_frame->linesize[i] = video_meta->stride[i];
+    ext_frame->iova[i] = 0;
+  }
+  ext_frame->size = s->frame_size;
+  ext_frame->opaque = ext_data;
+
+  return GST_FLOW_OK;
+}
