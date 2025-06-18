@@ -214,6 +214,11 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
   }
 
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+    framebuff->frame_done_cb_called = true;
+  }
+
   return 0;
 }
 
