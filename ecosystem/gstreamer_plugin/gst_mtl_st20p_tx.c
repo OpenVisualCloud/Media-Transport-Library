@@ -536,21 +536,10 @@ GST_PLUGIN_DEFINE(GST_VERSION_MAJOR, GST_VERSION_MINOR, mtl_st20p_tx,
                   GST_PACKAGE_ORIGIN)
 
 static int gst_mtl_st20p_tx_frame_done(void* priv, struct st_frame* frame) {
-  /* In case of format conversion (transmit vs input), MTL may call
-   * gst_mtl_st20p_tx_frame_done twice.
-   * To avoid double free, we set (frame->opaque = NULL) in first call so that the second
-   * call can exit gracefully.
-   */
-  if (frame == NULL || frame->opaque == NULL) {
-    return 0;
-  }
-
   GstSt20pTxExternalDataChild* child = frame->opaque;
   GstSt20pTxExternalDataParent* parent = child->parent;
 
   gst_memory_unmap(child->gst_buffer_memory, &child->map_info);
-
-  frame->opaque = NULL;
   free(child);
 
   pthread_mutex_lock(&parent->parent_mutex);

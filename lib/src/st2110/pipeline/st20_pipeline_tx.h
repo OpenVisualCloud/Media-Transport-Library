@@ -27,6 +27,7 @@ struct st20p_tx_frame {
   void* user_meta; /* the meta data from user */
   size_t user_meta_buffer_size;
   size_t user_meta_data_size;
+  bool frame_done_cb_called; /* frame done callback called */
 };
 
 struct st20p_tx_ctx {
