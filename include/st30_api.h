@@ -397,6 +397,12 @@ struct st30_tx_ops {
    */
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 
+  /**
+   * Optional. The rtp timestamp delta(us) to the start time of frame.
+   * Zero means the rtp timestamp at the start of the frame.
+   */
+  int32_t rtp_timestamp_delta_us;
+
   /** Mandatory for ST30_TYPE_RTP_LEVEL. rtp ring queue size, must be power of 2 */
   uint32_t rtp_ring_size;
   /**
