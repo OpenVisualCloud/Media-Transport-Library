@@ -19,7 +19,7 @@ env:
   CICD_BUILD_BUILD_ICE_DRIVER: 0
   SETUP_BUILD_AND_INSTALL_DPDK: 1
   SETUP_BUILD_AND_INSTALL_EBPF_XDP: 0
-  SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 0
+  SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 1
   HOOK_RUST: 1
   HOOK_PYTHON: 1
   ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
@@ -27,6 +27,9 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN: 0 # not supported yet
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_READCAP: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
 
 permissions:
   contents: read
@@ -36,6 +39,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
+      # https://stackoverflow.com/questions/70326569/github-workflow-how-to-conditionally-setup-env-for-all-subsequent-jobs
       ubuntu_build: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
       ice_build: ${{ steps.filter.outputs.ice_build == 'true' }}
       manager_build: ${{ steps.filter.outputs.manager_build == 'true' }}
