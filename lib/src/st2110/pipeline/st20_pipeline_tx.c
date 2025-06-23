@@ -130,8 +130,10 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
 
-  if (ctx->ops.notify_frame_done) { /* notify app which frame done */
+  if (ctx->ops.notify_frame_done &&
+      !framebuff->frame_done_cb_called) { /* notify app which frame done */
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);
+    framebuff->frame_done_cb_called = true;
   }
 
   /* notify app can get frame */
@@ -210,6 +212,11 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     rte_atomic32_inc(&ctx->stat_convert_fail);
   } else {
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
+  }
+
+  if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
+    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+    framebuff->frame_done_cb_called = true;
   }
 
   return 0;
@@ -602,6 +609,7 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_USER;
+  framebuff->frame_done_cb_called = false;
   /* point to next */
   ctx->framebuff_producer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
@@ -748,8 +756,10 @@ int st20p_tx_put_ext_frame(st20p_tx_handle handle, struct st_frame* frame,
     if (ctx->internal_converter) { /* convert internal */
       ctx->internal_converter->convert_func(&framebuff->src, &framebuff->dst);
       framebuff->stat = ST20P_TX_FRAME_CONVERTED;
-      if (ctx->ops.notify_frame_done)
+      if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
         ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->src);
+        framebuff->frame_done_cb_called = true;
+      }
     } else {
       framebuff->stat = ST20P_TX_FRAME_READY;
       st20_convert_notify_frame_ready(ctx->convert_impl);
