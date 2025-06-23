@@ -53,7 +53,7 @@ jobs:
         with:
           filters: .github/path_filters.yml
   
-   ubuntu-build:
+  ubuntu-build:
     needs: changes
     if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
     runs-on: ubuntu-latest
