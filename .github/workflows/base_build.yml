@@ -12,6 +12,7 @@ on:
       - main
       - 'maint-**'
 env:
+  MTL_BUILD_AND_INSTALL: 1
   SETUP_ENVIRONMENT: 1
   CICD_BUILD: 1
   SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
@@ -68,8 +69,7 @@ jobs:
 
       - name: Build Release
         run: sudo -E .github/scripts/setup_environment.sh
-        env:
-          MTL_BUILD_AND_INSTALL: 1
+
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
@@ -78,7 +78,7 @@ jobs:
 
   ubuntu-ebpf-xdp-build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.manager_build == 'true' }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
