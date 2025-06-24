@@ -17,12 +17,12 @@ plugin_build: &plugin_build
   - .github/workflows/base_build.yml
   - 'plugins/**'
 
-rust_build: &rust_build
+rust_build: &rust_hooks_build
   - .github/workflows/base_build.yml
   - 'rust/**'
 
 
-python_build: &python_build
+python_build: &python_hooks_build
   - .github/workflows/base_build.yml
   - 'python/**'
 
