@@ -130,6 +130,21 @@ executable('PerfP10LeToRfc4175422be10', perf_p10le_to_rfc4175_422be10_sources,
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
 )
 
+executable('PerfRfc4175422be10ToP16Le', perf_rfc4175_422be10_to_p16le_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
+)
+
+executable('PerfP16LeToRfc4175422be10', perf_p16le_to_rfc4175_422be10_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep]
+)
+
+
 executable('PerfRfc4175422be10ToLe', perf_rfc4175_422be10_to_le_sources,
   c_args : app_c_args,
   link_args: app_ld_args,

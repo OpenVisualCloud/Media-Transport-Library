@@ -23,6 +23,8 @@ perf_func() {
 
 perf_func PerfRfc4175422be10ToP10Le
 perf_func PerfP10LeToRfc4175422be10
+perf_func PerfRfc4175422be10ToP16Le
+perf_func PerfP16LeToRfc4175422be10
 perf_func PerfRfc4175422be10ToLe
 perf_func PerfRfc4175422le10ToBe
 perf_func PerfRfc4175422be10ToLe8

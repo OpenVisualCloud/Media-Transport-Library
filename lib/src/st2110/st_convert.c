@@ -577,14 +577,7 @@ int st20_rfc4175_422be10_to_yuv422p16le_scalar(struct st20_rfc4175_422_10_pg2_be
   uint16_t cb, y0, cr, y1;
 
   for (uint32_t pg2 = 0; pg2 < cnt; pg2++) {
-    cb = (pg->Cb00 << 2) + pg->Cb00_;
-    cb <<= 6;
-    y0 = (pg->Y00 << 4) + pg->Y00_;
-    y0 <<= 6;
-    cr = (pg->Cr00 << 6) + pg->Cr00_;
-    cr <<= 6;
-    y1 = (pg->Y01 << 8) + pg->Y01_;
-    y1 <<= 6;
+    st20_unpack_pg2be_422le16(pg, &cb, &y0, &cr, &y1);
 
     *b++ = cb;
     *y++ = y0;
@@ -607,6 +600,15 @@ int st20_rfc4175_422be10_to_yuv422p16le_simd(struct st20_rfc4175_422_10_pg2_be* 
   MTL_MAY_UNUSED(ret);
   MTL_MAY_UNUSED(level);
 
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) /*&& (cpu_level >= MTL_SIMD_LEVEL_AVX512)*/) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_rfc4175_422be10_to_yuv422p16le_avx512(pg, y, b, r, w, h);
+    if (ret == 0) return 0;
+    dbg("%s, avx512 ways failed\n", __func__);
+  }
+#endif
+
   /* the last option */
   return st20_rfc4175_422be10_to_yuv422p16le_scalar(pg, y, b, r, w, h);
 }
@@ -623,18 +625,14 @@ static int st20_yuv422p16le_to_rfc4175_422be10_scalar(
     cr = *r++;
     y1 = *y++;
 
-    cb >>= 6;
-    pg->Cb00 = cb >> 2;
-    pg->Cb00_ = cb;
-    y0 >>= 6;
-    pg->Y00 = y0 >> 4;
-    pg->Y00_ = y0;
-    cr >>= 6;
-    pg->Cr00 = cr >> 6;
-    pg->Cr00_ = cr;
-    y1 >>= 6;
-    pg->Y01 = y1 >> 8;
-    pg->Y01_ = y1;
+    pg->Cb00 = cb >> 8;
+    pg->Cb00_ = cb >> 6;
+    pg->Y00 = y0 >> 10;
+    pg->Y00_ = y0 >> 6;
+    pg->Cr00 = cr >> 12;
+    pg->Cr00_ = cr >> 6;
+    pg->Y01 = y1 >> 14;
+    pg->Y01_ = y1 >> 6;
 
     pg++;
   }
@@ -652,6 +650,15 @@ int st20_yuv422p16le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t*
   MTL_MAY_UNUSED(level);
   MTL_MAY_UNUSED(cpu_level);
   MTL_MAY_UNUSED(ret);
+
+#ifdef MTL_HAS_AVX512
+  if ((level >= MTL_SIMD_LEVEL_AVX512) /*&& (cpu_level >= MTL_SIMD_LEVEL_AVX512)*/) {
+    dbg("%s, avx512 ways\n", __func__);
+    ret = st20_yuv422p16le_to_rfc4175_422be10_avx512(y, b, r, pg, w, h);
+    if (ret == 0) return 0;
+    err("%s, avx512 ways failed %d\n", __func__, ret);
+  }
+#endif
 
   /* the last option */
   return st20_yuv422p16le_to_rfc4175_422be10_scalar(y, b, r, pg, w, h);
@@ -755,7 +762,7 @@ static const struct st_frame_converter converters[] = {
     },
     {
         .src_fmt = ST_FRAME_FMT_YUV422RFC4175PG2BE10,
-        .dst_fmt = ST_FRAME_FMT_YUV422PLANAR16LE,  // 6bit padding
+        .dst_fmt = ST_FRAME_FMT_YUV422PLANAR16LE,
         .convert_func = convert_rfc4175_422be10_to_yuv422p16le,
     },
     {
