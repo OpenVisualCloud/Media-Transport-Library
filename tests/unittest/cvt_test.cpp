@@ -251,8 +251,6 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_scalar) {
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512) {
   test_cvt_yuv422p10le_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                           MTL_SIMD_LEVEL_AVX512);
-  test_cvt_yuv422p10le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
-                                          MTL_SIMD_LEVEL_AVX512);
   test_cvt_yuv422p10le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_NONE,
                                           MTL_SIMD_LEVEL_AVX512);
   test_cvt_yuv422p10le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
@@ -4297,37 +4295,52 @@ static void test_cvt_yuv422p16le_to_rfc4175_422be10(int w, int h,
   struct st20_rfc4175_422_10_pg2_be* pg =
       (struct st20_rfc4175_422_10_pg2_be*)st_test_zmalloc(fb_pg2_size);
   size_t planar_size = (size_t)w * h * 2 * sizeof(uint16_t);
-  uint16_t* p10_u16 = (uint16_t*)st_test_zmalloc(planar_size);
-  uint16_t* p10_u16_2 = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t* p10_u16_in = (uint16_t*)st_test_zmalloc(planar_size);
+  uint16_t* p10_u16_out = (uint16_t*)st_test_zmalloc(planar_size);
 
-  if (!pg || !p10_u16_2 || !p10_u16) {
+  if (!pg || !p10_u16_out || !p10_u16_in) {
     EXPECT_EQ(0, 1);
     if (pg) st_test_free(pg);
-    if (p10_u16_2) st_test_free(p10_u16_2);
-    if (p10_u16) st_test_free(p10_u16);
+    if (p10_u16_out) st_test_free(p10_u16_out);
+    if (p10_u16_in) st_test_free(p10_u16_in);
     return;
   }
 
+  uint16_t padding = 0b111111;
   for (size_t i = 0; i < (planar_size / 2); i++) {
-    p10_u16[i] = (rand() & 0x3ff) << 6; /* 10 bit with 6bit padding*/
+    p10_u16_in[i] = (rand() & 0x3ff) << 6; /* 10-bit payload*/
+    p10_u16_in[i] |= padding;              /* add 6-bits of padding for testing */
   }
 
-  ret = st20_yuv422p16le_to_rfc4175_422be10_simd(
-      p10_u16, (p10_u16 + w * h), (p10_u16 + w * h * 3 / 2), pg, w, h, cvt_level);
+  ret = st20_yuv422p16le_to_rfc4175_422be10_simd(p10_u16_in, (p10_u16_in + w * h),
+                                                 (p10_u16_in + w * h * 3 / 2), pg, w, h,
+                                                 cvt_level);
   EXPECT_EQ(0, ret);
 
-  ret = st20_rfc4175_422be10_to_yuv422p16le_simd(
-      pg, p10_u16_2, (p10_u16_2 + w * h), (p10_u16_2 + w * h * 3 / 2), w, h, back_level);
+  ret = st20_rfc4175_422be10_to_yuv422p16le_simd(pg, p10_u16_out, (p10_u16_out + w * h),
+                                                 (p10_u16_out + w * h * 3 / 2), w, h,
+                                                 back_level);
   EXPECT_EQ(0, ret);
 
-  EXPECT_EQ(0, memcmp(p10_u16, p10_u16_2, planar_size));
+  for (size_t i = 0; i < (planar_size / 2); i++) {
+    p10_u16_in[i] &= ~padding; /* clear padding, expected be zero */
+  }
+
+  EXPECT_EQ(0, memcmp(p10_u16_in, p10_u16_out, planar_size));
 
   st_test_free(pg);
-  st_test_free(p10_u16);
-  st_test_free(p10_u16_2);
+  st_test_free(p10_u16_in);
+  st_test_free(p10_u16_out);
 }
 
 TEST(Cvt, yuv422p16le_to_rfc4175_422be10_scalar) {
   test_cvt_yuv422p16le_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_NONE,
                                           MTL_SIMD_LEVEL_NONE);
+}
+
+TEST(Cvt, yuv422p16le_to_rfc4175_422be10_avx512) {
+  test_cvt_yuv422p16le_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512,
+                                          MTL_SIMD_LEVEL_AVX512);
+  test_cvt_yuv422p16le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                          MTL_SIMD_LEVEL_AVX512);
 }

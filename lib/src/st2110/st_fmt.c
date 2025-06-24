@@ -451,7 +451,7 @@ static const struct st_frame_fmt_desc st_frame_fmt_descs[] = {
         .sampling = ST_FRAME_SAMPLING_MAX,
     },
     {
-        /* ST_FRAME_FMT_YUV422PLANAR16LE (6 bit padding) */
+        /* ST_FRAME_FMT_YUV422PLANAR16LE */
         .fmt = ST_FRAME_FMT_YUV422PLANAR16LE,
         .name = "YUV422PLANAR16LE",
         .planes = 3,

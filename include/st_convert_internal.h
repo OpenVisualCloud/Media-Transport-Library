@@ -1483,7 +1483,7 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le_2way_cpuva(
 }
 
 /* Convert rfc4175_422be10 to yuv422p16le (10 bit with 6-bit padding) without
- * optiomzation*/
+ * optimization*/
 int st20_rfc4175_422be10_to_yuv422p16le_simd(struct st20_rfc4175_422_10_pg2_be* pg,
                                              uint16_t* y, uint16_t* b, uint16_t* r,
                                              uint32_t w, uint32_t h,
