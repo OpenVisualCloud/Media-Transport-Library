@@ -86,7 +86,6 @@ jobs:
       - name: Build
         run: |
           ./build.sh
-          ./script/build_ice_dirver.sh
           sudo ldconfig
 
   gtest-perform-tests:
