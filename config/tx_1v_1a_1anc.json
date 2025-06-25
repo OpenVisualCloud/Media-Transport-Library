@@ -1,7 +1,7 @@
 {
     "interfaces": [
         {
-            "name": "0000:af:01.0",
+            "name": "0000:ca:01.1",
             "ip": "192.168.30.10"
         }
     ],
@@ -33,7 +33,9 @@
                     "start_port": 30000,
                     "payload_type": 111,
                     "audio_format": "PCM24",
-                    "audio_channel": ["U02"],
+                    "audio_channel": [
+                        "U02"
+                    ],
                     "audio_sampling": "96kHz",
                     "audio_ptime": "1",
                     "audio_url": "./test.pcm"

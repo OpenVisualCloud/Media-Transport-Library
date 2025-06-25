@@ -1,25 +1,31 @@
 {
     "interfaces": [
         {
-            "name": "0000:af:01.1",
+            "name": "0000:ca:01.4",
             "ip": "192.168.30.11"
+        },
+        {
+            "name": "0000:ca:01.5",
+            "ip": "192.168.30.12"
         }
     ],
     "rx_sessions": [
         {
             "ip": [
-                "239.1.1.1"
+                "239.1.1.1",
+                "239.2.1.2"
             ],
             "interface": [
-                0
+                0,
+                1
             ],
             "st20p": [
                 {
                     "replicas": 1,
                     "start_port": 20000,
                     "payload_type": 112,
-                    "width": 1920,
-                    "height": 1080,
+                    "width": 3840,
+                    "height": 2160,
                     "fps": "p59",
                     "device": "AUTO",
                     "output_format": "YUV422PLANAR10LE",

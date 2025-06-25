@@ -1,0 +1,264 @@
+MTL: 2025-06-25 13:34:36, dev_eal_init(0), port_param: 0000:ca:01.4
+MTL: 2025-06-25 13:34:36, dev_eal_init(1), port_param: 0000:ca:01.5
+MTL: 2025-06-25 13:34:36, dev_eal_init, wait eal_init_thread done
+EAL: Detected CPU lcores: 128
+EAL: Detected NUMA nodes: 2
+EAL: Detected shared linkage of DPDK
+EAL: Selected IOVA mode 'VA'
+EAL: No free 1048576 kB hugepages reported on node 1
+EAL: VFIO support initialized
+EAL: Using IOMMU type 1 (Type 1)
+MTL: 2025-06-25 13:34:37, mtl_init, MTL version: 25.2.0.DEV Wed Jun 11 11:13:48 2025 f3da799a gcc-11.4.0, dpdk version: DPDK 25.03.0
+MTL: 2025-06-25 13:34:37, mtl_init, MTL_HAS_USDT is defined for this build
+MTL: 2025-06-25 13:34:37, mtl_init, bind to socket 1, numa_nodes 2
+MTL: 2025-06-25 13:34:37, mt_instance_init, succ
+MTL: 2025-06-25 13:34:37, mtl_init(0), socket_id 1 port 0000:ca:01.4
+MTL: 2025-06-25 13:34:37, mtl_init(1), socket_id 1 port 0000:ca:01.5
+MTL: 2025-06-25 13:34:37, stat_thread, start
+MTL: 2025-06-25 13:34:37, mt_stat_init, stat period 10s
+MTL: 2025-06-25 13:34:37, mt_dev_if_init(0), use user ptp source
+MTL: 2025-06-25 13:34:37, mt_dev_if_init(0), user request queues tx 0 rx 1
+MTL: 2025-06-25 13:34:37, mt_dev_if_init(0), deprecated sessions tx 0 rx 0
+MTL: 2025-06-25 13:34:37, dev_config_port(0), tx_q(2 with 512 desc) rx_q (2 with 2048 desc)
+MTL: 2025-06-25 13:34:37, mt_mempool_create_by_ops(1), succ at 0x3200a67500 size 4.310394m n 2047 d 2048 for T_P0_SYS_0
+MTL: 2025-06-25 13:34:37, dev_if_init_tx_queues(0), tx_queues 2 malloc succ
+MTL: 2025-06-25 13:34:38, mt_mempool_create_by_ops(1), succ at 0x3200c1da80 size 8.622894m n 4095 d 2048 for R_P0Q0_MBUF_1
+MTL: 2025-06-25 13:34:38, mt_mempool_create_by_ops(1), succ at 0x3201cfdf00 size 6.623383m n 4095 d 1536 for R_P0Q1_MBUF_2
+MTL: 2025-06-25 13:34:38, dev_if_init_rx_queues(0), rx_queues 2 malloc succ
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), port_id 0 port_type 1 drv_type 4
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), dev_capa 0x0, offload 0x119fbf:0x9666f queue offload 0x0:0x0, rss : 0x3ffc
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), system_rx_queues_end 1 hdr_split_rx_queues_end 1
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), sip: 192.168.30.11
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), netmask: 255.255.255.0
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), gateway: 0.0.0.0
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(0), mac: fe:59:43:eb:7a:9c
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(1), use user ptp source
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(1), user request queues tx 0 rx 1
+MTL: 2025-06-25 13:34:38, mt_dev_if_init(1), deprecated sessions tx 0 rx 0
+MTL: 2025-06-25 13:34:38, dev_config_port(1), tx_q(2 with 512 desc) rx_q (2 with 2048 desc)
+MTL: 2025-06-25 13:34:38, mt_mempool_create_by_ops(1), succ at 0x32026fdf00 size 4.310394m n 2047 d 2048 for T_P1_SYS_3
+MTL: 2025-06-25 13:34:38, dev_if_init_tx_queues(1), tx_queues 2 malloc succ
+MTL: 2025-06-25 13:34:39, mt_mempool_create_by_ops(1), succ at 0x320281da80 size 8.622894m n 4095 d 2048 for R_P1Q0_MBUF_4
+MTL: 2025-06-25 13:34:39, mt_mempool_create_by_ops(1), succ at 0x32038fdf00 size 6.623383m n 4095 d 1536 for R_P1Q1_MBUF_5
+MTL: 2025-06-25 13:34:39, dev_if_init_rx_queues(1), rx_queues 2 malloc succ
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), port_id 1 port_type 1 drv_type 4
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), dev_capa 0x0, offload 0x119fbf:0x9666f queue offload 0x0:0x0, rss : 0x3ffc
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), system_rx_queues_end 1 hdr_split_rx_queues_end 1
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), sip: 192.168.30.12
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), netmask: 255.255.255.0
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), gateway: 0.0.0.0
+MTL: 2025-06-25 13:34:39, mt_dev_if_init(1), mac: 1e:c3:eb:e6:a4:79
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[0]
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[1]
+MTL: 2025-06-25 13:34:39, dev_start_port(0), rx_defer 0
+MTL: 2025-06-25 13:34:39, mt_eth_link_dump(0), link_speed 100g link_status 1 link_duplex 1 link_autoneg 1
+MTL: 2025-06-25 13:34:39, dev_if_init_pacing(0), try rl as drv support TM
+MTL: 2025-06-25 13:34:39, dev_rl_shaper_add(0), bps 134217728 on shaper 1
+MTL: 2025-06-25 13:34:39, dev_init_ratelimit_all(0), q 0 link to shaper id 1
+MTL: 2025-06-25 13:34:39, dev_init_ratelimit_all(0), q 1 link to shaper id 1
+MTL: 2025-06-25 13:34:39, mt_dev_create(0), feature 0x30, tx pacing ratelimit
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[0]
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[1]
+MTL: 2025-06-25 13:34:39, dev_start_port(1), rx_defer 0
+MTL: 2025-06-25 13:34:39, mt_eth_link_dump(1), link_speed 100g link_status 1 link_duplex 1 link_autoneg 1
+MTL: 2025-06-25 13:34:39, dev_if_init_pacing(1), try rl as drv support TM
+MTL: 2025-06-25 13:34:39, dev_rl_shaper_add(1), bps 134217728 on shaper 1
+MTL: 2025-06-25 13:34:39, dev_init_ratelimit_all(1), q 0 link to shaper id 1
+MTL: 2025-06-25 13:34:39, dev_init_ratelimit_all(1), q 1 link to shaper id 1
+MTL: 2025-06-25 13:34:39, mt_dev_create(1), feature 0x30, tx pacing ratelimit
+MTL: 2025-06-25 13:34:39, mt_sch_mrg_init, succ with data quota 31068 M
+MTL: 2025-06-25 13:34:39, sch_request(0), name sch_0 with 16 tasklets, type 0 socket 1
+MTL: 2025-06-25 13:34:39, mt_sch_add_quota(0:0), quota 0 total now 0
+MTL: 2025-06-25 13:34:39, mt_dev_get_tx_queue(0), q 0 with speed 1.073742g bps
+MTL: 2025-06-25 13:34:39, mt_dev_get_tx_queue(1), q 0 with speed 1.073742g bps
+MTL: 2025-06-25 13:34:39, mt_mcast_init, report every 10 seconds
+MTL: 2025-06-25 13:34:39, mt_dev_get_rx_queue(0), q 0 ip 0.0.0.0 port 0
+MTL: 2025-06-25 13:34:39, cni_queues_init(0), rxq 0
+MTL: 2025-06-25 13:34:39, mt_dev_get_rx_queue(1), q 0 ip 0.0.0.0 port 0
+MTL: 2025-06-25 13:34:39, cni_queues_init(1), rxq 0
+MTL: 2025-06-25 13:34:39, cni_traffic_thread, start
+MTL: 2025-06-25 13:34:39, st_plugins_init, succ
+MTL: 2025-06-25 13:34:39, admin_thread, start
+MTL: 2025-06-25 13:34:39, config_parse_json, parse kahawai.json with json-c version: 0.16
+MTL: 2025-06-25 13:34:39, st22_decoder_register(0), st22_decoder_sample registered, device 1 cap(0x300000000000000:0x70000402b)
+MTL: 2025-06-25 13:34:39, st22_encoder_register(0), st22_encoder_sample registered, device 1 cap(0x70000402b:0x300000000000000)
+MTL: 2025-06-25 13:34:39, st_plugin_register(0), /usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_sample.so registered, version 1
+MTL: 2025-06-25 13:34:39, Warn: st_plugin_register, dlopen /usr/local/lib64/libst_plugin_st22_sample.so fail
+MTL: 2025-06-25 13:34:39, mt_ptp_port_id(0), port_number: 0000, clk_id: fe:59:43:ff:fe:eb:7a:9c
+MTL: 2025-06-25 13:34:39, mt_main_create, succ
+MTL: 2025-06-25 13:34:39, mtl_init, succ, tsc_hz 2194800000
+MTL: 2025-06-25 13:34:39, mtl_init, simd level avx512_vbmi, flags 0x1d
+MTL: 2025-06-25 13:34:39, st20p_rx_create, start for app_rx_st20p_0
+MTL: 2025-06-25 13:34:39, st20_get_converter, plugin not found, input fmt: YUV422RFC4175PG2BE10, output fmt: YUV422PLANAR10LE
+MTL: 2025-06-25 13:34:39, rx_st20p_get_converter(0), use internal converter
+MTL: 2025-06-25 13:34:39, rx_st20p_init_dst_fbs(0), size 33177600 fmt 0 with 3 frames
+MTL: 2025-06-25 13:34:39, mt_sch_add_quota(0:1), quota 20714 total now 20714
+MTL: 2025-06-25 13:34:39, mt_sch_get_by_socket(0), succ with quota_mbs 20714 socket 1
+MTL: 2025-06-25 13:34:39, mtl_sch_register_tasklet(0), tasklet rvs_pkt_rx registered into slot 0
+MTL: 2025-06-25 13:34:39, rvs_mgr_init(0), succ
+MTL: 2025-06-25 13:34:39, rte_rx_flow_create(0), queue 1 succ, ip 239.1.1.1 port 20000
+MTL: 2025-06-25 13:34:39, mt_dev_get_rx_queue(0), q 1 ip 239.1.1.1 port 20000
+MTL: 2025-06-25 13:34:39, rv_init_hw(0), port(l:0,p:0), queue 1 udp 20000
+MTL: 2025-06-25 13:34:39, rte_rx_flow_create(1), queue 1 succ, ip 239.2.1.2 port 20000
+MTL: 2025-06-25 13:34:39, mt_dev_get_rx_queue(1), q 1 ip 239.2.1.2 port 20000
+MTL: 2025-06-25 13:34:39, rv_init_hw(0), port(l:1,p:1), queue 1 udp 20000
+MTL: 2025-06-25 13:34:39, rv_init_dma(0), fail, can not request dma dev
+MTL: 2025-06-25 13:34:39, mcast_membership_report_on_action(0), send join pkt, mb_report_len 16
+MTL: 2025-06-25 13:34:39, mt_mcast_join(0), join group 239.1.1.1
+MTL: 2025-06-25 13:34:39, mcast_membership_report_on_action(1), send join pkt, mb_report_len 16
+MTL: 2025-06-25 13:34:39, mt_mcast_join(1), join group 239.2.1.2
+MTL: 2025-06-25 13:34:39, rv_attach(0), 3 frames with size 20736000(3240,0), type 0, progressive
+MTL: 2025-06-25 13:34:39, rv_attach(0), w 3840 h 2160 fmt ST20_FMT_YUV_422_10BIT packing 0 pt 112 flags 0x20000 frame time 16.683333ms fps 59.940060
+MTL: 2025-06-25 13:34:39, st20_rx_create_with_mask, succ on sch 0 session 0
+MTL: 2025-06-25 13:34:39, st20p_rx_create(0), transport fmt ST20_FMT_YUV_422_10BIT, output fmt YUV422PLANAR10LE, flags 0x28000
+MTL: 2025-06-25 13:34:40, mt_calibrate_tsc, tscHz 2194843166
+MTL: 2025-06-25 13:34:40, mt_sch_get_lcore, succ on manager lcore 33 for lib_sch socket 1
+MTL: 2025-06-25 13:34:40, sch_start(0), succ on lcore 33 socket 1
+MTL: 2025-06-25 13:34:40, mt_dev_start, succ
+MTL: 2025-06-25 13:34:40, _mt_start, succ, avail ports 2
+MTL: 2025-06-25 13:34:40, sch_tasklet_func(0), start with 1 tasklets, t_pid 66090
+MTL: 2025-06-25 13:34:40, rvs_pkt_rx_tasklet_start(0), succ
+MTL: 2025-06-25 13:34:47, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-25 13:34:47, DEV(0): Avr rate, tx: 0.000096 Mb/s, rx: 8139.893536 Mb/s, pkts, tx: 2, rx: 6765107
+MTL: 2025-06-25 13:34:47, Error: DEV(0): Status: rx_hw_dropped_packets 947943 rx_err_packets 0 rx_nombuf_packets 0 tx_err_packets 0
+MTL: 2025-06-25 13:34:47, Error: rx_good_packets: 2231
+MTL: 2025-06-25 13:34:47, Error: rx_good_bytes: 2942126
+MTL: 2025-06-25 13:34:47, Error: rx_bytes: 1509254
+MTL: 2025-06-25 13:34:47, Error: rx_multicast_packets: 1141
+MTL: 2025-06-25 13:34:47, DEV(1): Avr rate, tx: 0.000096 Mb/s, rx: 8143.384957 Mb/s, pkts, tx: 2, rx: 6770597
+MTL: 2025-06-25 13:34:47, Error: DEV(1): Status: rx_hw_dropped_packets 945768 rx_err_packets 0 rx_nombuf_packets 0 tx_err_packets 0
+MTL: 2025-06-25 13:34:47, Error: rx_good_packets: 2189
+MTL: 2025-06-25 13:34:47, Error: rx_good_bytes: 2886740
+MTL: 2025-06-25 13:34:47, Error: rx_bytes: 1458994
+MTL: 2025-06-25 13:34:47, Error: rx_multicast_packets: 1104
+MTL: 2025-06-25 13:34:47, SCH(0:sch_0): tasklets 1, lcore 33(t_pid: 66090), avg loop 100 ns
+MTL: 2025-06-25 13:34:47, CNI(0): eth_rx_rate 0.000259 Mb/s, eth_rx_cnt 1
+MTL: 2025-06-25 13:34:47, CNI(1): eth_rx_rate 0.000259 Mb/s, eth_rx_cnt 1
+MTL: 2025-06-25 13:34:47, PTP(0): time 1750851250514541931, 2025-06-25 13:34:10
+MTL: 2025-06-25 13:34:47, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 52.149412 frames 410 pkts 6779817
+MTL: 2025-06-25 13:34:47, RX_VIDEO_SESSION(0,0): throughput 14342.340072 Mb/s, cpu busy 3.425325
+MTL: 2025-06-25 13:34:47, RX_VIDEO_SESSION(0,0): incomplete frames 4, pkts (idx error: 0, offset error: 0, idx out of bitmap: 0, missed: 49809)
+MTL: 2025-06-25 13:34:47, RX_VIDEO_SESSION(0,0): out of order pkts 76
+MTL: 2025-06-25 13:34:47, RX_VIDEO_SESSION(0,0): redundant pkts 6774491
+MTL: 2025-06-25 13:34:47, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.078981
+MTL: 2025-06-25 13:34:47, RX_st20p(0,app_rx_st20p_0), p(2:free) c(2:free)
+MTL: 2025-06-25 13:34:47, RX_st20p(0), frame get try 411 succ 410, put 410
+MTL: 2025-06-25 13:34:47, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-25 13:34:57, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-25 13:34:57, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10401.588408 Mb/s, pkts, tx: 1, rx: 9859818
+MTL: 2025-06-25 13:34:57, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10399.320157 Mb/s, pkts, tx: 1, rx: 9857668
+MTL: 2025-06-25 13:34:57, SCH(0:sch_0): tasklets 1, lcore 33(t_pid: 66090), avg loop 101 ns
+MTL: 2025-06-25 13:34:57, CNI(0): eth_rx_rate 0.000776 Mb/s, eth_rx_cnt 3
+MTL: 2025-06-25 13:34:57, CNI(1): eth_rx_rate 0.000776 Mb/s, eth_rx_cnt 3
+MTL: 2025-06-25 13:34:57, PTP(0): time 1750851260510448372, 2025-06-25 13:34:20
+MTL: 2025-06-25 13:34:57, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 60.024535 frames 600 pkts 9860324
+MTL: 2025-06-25 13:34:57, RX_VIDEO_SESSION(0,0): throughput 20867.175035 Mb/s, cpu busy 3.425325
+MTL: 2025-06-25 13:34:57, RX_VIDEO_SESSION(0,0): redundant pkts 9860324
+MTL: 2025-06-25 13:34:57, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.081391
+MTL: 2025-06-25 13:34:57, RX_st20p(0,app_rx_st20p_0), p(2:free) c(1:ready)
+MTL: 2025-06-25 13:34:57, RX_st20p(0), frame get try 599 succ 599, put 599
+MTL: 2025-06-25 13:34:57, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-25 13:35:07, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-25 13:35:07, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10401.928058 Mb/s, pkts, tx: 1, rx: 9860139
+MTL: 2025-06-25 13:35:07, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10402.653710 Mb/s, pkts, tx: 1, rx: 9860825
+MTL: 2025-06-25 13:35:07, SCH(0:sch_0): tasklets 1, lcore 33(t_pid: 66090), avg loop 101 ns
+MTL: 2025-06-25 13:35:07, CNI(0): eth_rx_rate 0.000528 Mb/s, eth_rx_cnt 2
+MTL: 2025-06-25 13:35:07, CNI(1): eth_rx_rate 0.000528 Mb/s, eth_rx_cnt 2
+MTL: 2025-06-25 13:35:07, PTP(0): time 1750851270510456005, 2025-06-25 13:34:30
+MTL: 2025-06-25 13:35:07, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.899944 frames 599 pkts 9865220
+MTL: 2025-06-25 13:35:07, RX_VIDEO_SESSION(0,0): throughput 20877.545187 Mb/s, cpu busy 3.459578
+MTL: 2025-06-25 13:35:07, RX_VIDEO_SESSION(0,0): redundant pkts 9865220
+MTL: 2025-06-25 13:35:07, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.079411
+MTL: 2025-06-25 13:35:07, RX_st20p(0,app_rx_st20p_0), p(1:free) c(1:free)
+MTL: 2025-06-25 13:35:07, RX_st20p(0), frame get try 600 succ 600, put 600
+MTL: 2025-06-25 13:35:07, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-25 13:35:17, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-25 13:35:17, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10402.667152 Mb/s, pkts, tx: 1, rx: 9860839
+MTL: 2025-06-25 13:35:17, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10402.675602 Mb/s, pkts, tx: 1, rx: 9860847
+MTL: 2025-06-25 13:35:17, SCH(0:sch_0): tasklets 1, lcore 33(t_pid: 66090), avg loop 101 ns
+MTL: 2025-06-25 13:35:17, CNI(0): eth_rx_rate 0.000264 Mb/s, eth_rx_cnt 1
+MTL: 2025-06-25 13:35:17, CNI(1): eth_rx_rate 0.000264 Mb/s, eth_rx_cnt 1
+MTL: 2025-06-25 13:35:17, PTP(0): time 1750851280510477632, 2025-06-25 13:34:40
+MTL: 2025-06-25 13:35:17, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.899880 frames 599 pkts 9865230
+MTL: 2025-06-25 13:35:17, RX_VIDEO_SESSION(0,0): throughput 20877.550499 Mb/s, cpu busy 3.459578
+MTL: 2025-06-25 13:35:17, RX_VIDEO_SESSION(0,0): redundant pkts 9865228
+MTL: 2025-06-25 13:35:17, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.079743
+MTL: 2025-06-25 13:35:17, RX_st20p(0,app_rx_st20p_0), p(0:free) c(0:free)
+MTL: 2025-06-25 13:35:17, RX_st20p(0), frame get try 599 succ 599, put 599
+MTL: 2025-06-25 13:35:17, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-25 13:35:23, sch_tasklet_func(0), end with 1 tasklets
+MTL: 2025-06-25 13:35:23, mt_sch_put_lcore, succ on manager lcore 33 for lib_sch
+MTL: 2025-06-25 13:35:23, sch_stop(0), succ
+MTL: 2025-06-25 13:35:23, mt_sch_stop_all, succ
+MTL: 2025-06-25 13:35:23, _mt_stop, succ
+MTL: 2025-06-25 13:35:23, st20p_rx_free(0), start
+MTL: 2025-06-25 13:35:23, st20_rx_free(0,0), start
+MTL: 2025-06-25 13:35:23, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.840431 frames 378 pkts 6221187
+MTL: 2025-06-25 13:35:23, RX_VIDEO_SESSION(0,0): throughput 13165.736834 Mb/s, cpu busy 3.459578
+MTL: 2025-06-25 13:35:23, RX_VIDEO_SESSION(0,0): redundant pkts 6221188
+MTL: 2025-06-25 13:35:23, RX_VIDEO_SESSION(0,0): succ burst max 48, avg 2.077770
+MTL: 2025-06-25 13:35:23, mt_mcast_leave(0), delete group 10101ef
+MTL: 2025-06-25 13:35:23, mcast_membership_report_on_action(0), send leave pkt, mb_report_len 16
+MTL: 2025-06-25 13:35:23, mt_mcast_leave(0), leave group 239.1.1.1
+MTL: 2025-06-25 13:35:23, mt_mcast_leave(1), delete group 20102ef
+MTL: 2025-06-25 13:35:23, mcast_membership_report_on_action(1), send leave pkt, mb_report_len 16
+MTL: 2025-06-25 13:35:23, mt_mcast_leave(1), leave group 239.2.1.2
+MTL: 2025-06-25 13:35:23, mt_dev_put_rx_queue(0), q 1
+MTL: 2025-06-25 13:35:23, mt_dev_put_rx_queue(1), q 1
+MTL: 2025-06-25 13:35:23, sch_free_quota(0), quota 20714 total now 0
+MTL: 2025-06-25 13:35:23, st20_rx_free, succ on sch 0 session 0
+MTL: 2025-06-25 13:35:23, st20p_rx_free(0), succ
+MTL: 2025-06-25 13:35:23, st22_decoder_unregister(0), unregister st22_decoder_sample
+MTL: 2025-06-25 13:35:23, st22_encoder_unregister(0), unregister st22_encoder_sample
+MTL: 2025-06-25 13:35:23, admin_thread, stop
+MTL: 2025-06-25 13:35:23, cni_traffic_thread, stop
+MTL: 2025-06-25 13:35:23, mt_dev_put_rx_queue(0), q 0
+MTL: 2025-06-25 13:35:23, mt_dev_put_rx_queue(1), q 0
+MTL: 2025-06-25 13:35:23, mt_cni_uinit, succ
+MTL: 2025-06-25 13:35:23, sch_free_quota(0), quota 0 total now 0
+MTL: 2025-06-25 13:35:23, mt_sch_put(0), ref_cnt now zero
+MTL: 2025-06-25 13:35:23, Warn: sch_stop(0), not started
+MTL: 2025-06-25 13:35:23, mtl_sch_unregister_tasklet(0), tasklet rvs_pkt_rx(0) unregistered
+MTL: 2025-06-25 13:35:23, rvs_mgr_uinit(0), succ
+MTL: 2025-06-25 13:35:23, sch_free(0), start to free sch: sch_0 
+MTL: 2025-06-25 13:35:23, mt_dpdk_flush_tx_queue(0), queue 0 burst_pkts 1024
+MTL: 2025-06-25 13:35:23, mt_dev_put_tx_queue(0), q 0
+MTL: 2025-06-25 13:35:23, mt_dpdk_flush_tx_queue(1), queue 0 burst_pkts 1024
+MTL: 2025-06-25 13:35:23, mt_dev_put_tx_queue(1), q 0
+MTL: 2025-06-25 13:35:23, dev_stop_port(0), succ
+MTL: 2025-06-25 13:35:23, dev_stop_port(1), succ
+MTL: 2025-06-25 13:35:23, mt_dev_free, succ
+MTL: 2025-06-25 13:35:23, mt_main_free, succ
+MTL: 2025-06-25 13:35:23, mt_mempool_free, free mempool R_P0Q0_MBUF_1
+MTL: 2025-06-25 13:35:23, mt_mempool_free, free mempool R_P0Q1_MBUF_2
+MTL: 2025-06-25 13:35:23, mt_mempool_free, free mempool T_P0_SYS_0
+MTL: 2025-06-25 13:35:23, dev_close_port(0), succ
+MTL: 2025-06-25 13:35:23, mt_mempool_free, free mempool R_P1Q0_MBUF_4
+MTL: 2025-06-25 13:35:23, mt_mempool_free, free mempool R_P1Q1_MBUF_5
+MTL: 2025-06-25 13:35:23, mt_mempool_free, free mempool T_P1_SYS_3
+MTL: 2025-06-25 13:35:23, dev_close_port(1), succ
+MTL: 2025-06-25 13:35:23, stat_thread, stop
+MTL: 2025-06-25 13:35:23, mt_dev_uinit, succ
+MTL: 2025-06-25 13:35:23, mtl_uninit, succ
+st_app_parse_json, using json-c version: 0.16
+parse_url, can not parse url_src
+st_json_parse_rx_st20p, no st20p url no file will be saved
+app_args_json, json_file config/rx_1v.json succ
+st_plugin_create, succ with st22 sample plugin
+app_rx_st20p_frame_thread(0), start
+main, app lunch succ, test time 0s
+app_rx_st20p_stat(0), avrage latency 23.612924ms
+app_rx_st20p_stat(0), avrage latency 23.651040ms
+app_rx_st20p_stat(0), avrage latency 23.630608ms
+app_rx_st20p_stat(0), avrage latency 23.697119ms
+st_app_sig_handler, signal 2
+main, start to ending
+app_rx_st20p_result(0), OK, fps 59.933415, 2586 frame received
+app_rx_st20p_uinit(0), wait app thread stop
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), stop
+st_plugin_free, succ with st22 sample plugin

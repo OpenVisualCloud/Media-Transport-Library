@@ -1,0 +1,339 @@
+MTL: 2025-06-24 14:37:15, dev_eal_init(0), port_param: 0000:ca:01.4
+MTL: 2025-06-24 14:37:15, dev_eal_init(1), port_param: 0000:ca:01.5
+MTL: 2025-06-24 14:37:15, dev_eal_init, wait eal_init_thread done
+EAL: Detected CPU lcores: 128
+EAL: Detected NUMA nodes: 2
+EAL: Detected shared linkage of DPDK
+EAL: Selected IOVA mode 'VA'
+EAL: VFIO support initialized
+EAL: Using IOMMU type 1 (Type 1)
+MTL: 2025-06-24 14:37:16, mtl_init, MTL version: 25.2.0.DEV Wed Jun 11 11:13:48 2025 f3da799a gcc-11.4.0, dpdk version: DPDK 25.03.0
+MTL: 2025-06-24 14:37:16, mtl_init, MTL_HAS_USDT is defined for this build
+MTL: 2025-06-24 14:37:16, mtl_init, bind to socket 1, numa_nodes 2
+MTL: 2025-06-24 14:37:16, mt_instance_init, succ
+MTL: 2025-06-24 14:37:16, mtl_init(0), socket_id 1 port 0000:ca:01.4
+MTL: 2025-06-24 14:37:16, mtl_init(1), socket_id 1 port 0000:ca:01.5
+MTL: 2025-06-24 14:37:16, mt_stat_init, stat period 10s
+MTL: 2025-06-24 14:37:16, stat_thread, start
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), use user ptp source
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), user request queues tx 0 rx 1
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), deprecated sessions tx 0 rx 0
+MTL: 2025-06-24 14:37:16, dev_config_port(0), tx_q(2 with 512 desc) rx_q (2 with 2048 desc)
+MTL: 2025-06-24 14:37:16, mt_mempool_create_by_ops(1), succ at 0x11ffefdf00 size 4.310394m n 2047 d 2048 for T_P0_SYS_0
+MTL: 2025-06-24 14:37:16, dev_if_init_tx_queues(0), tx_queues 2 malloc succ
+MTL: 2025-06-24 14:37:16, mt_mempool_create_by_ops(1), succ at 0x11ff91b900 size 8.622894m n 4095 d 2048 for R_P0Q0_MBUF_1
+MTL: 2025-06-24 14:37:16, mt_mempool_create_by_ops(1), succ at 0x11fee58f00 size 6.623383m n 4095 d 1536 for R_P0Q1_MBUF_2
+MTL: 2025-06-24 14:37:16, dev_if_init_rx_queues(0), rx_queues 2 malloc succ
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), port_id 0 port_type 1 drv_type 4
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), dev_capa 0x0, offload 0x119fbf:0x9666f queue offload 0x0:0x0, rss : 0x3ffc
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), system_rx_queues_end 1 hdr_split_rx_queues_end 1
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), sip: 192.168.30.11
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), netmask: 255.255.255.0
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), gateway: 0.0.0.0
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(0), mac: fe:59:43:eb:7a:9c
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), use user ptp source
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), user request queues tx 0 rx 1
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), deprecated sessions tx 0 rx 0
+MTL: 2025-06-24 14:37:16, dev_config_port(1), tx_q(2 with 512 desc) rx_q (2 with 2048 desc)
+MTL: 2025-06-24 14:37:16, mt_mempool_create_by_ops(1), succ at 0x11fe596c40 size 4.310394m n 2047 d 2048 for T_P1_SYS_3
+MTL: 2025-06-24 14:37:16, dev_if_init_tx_queues(1), tx_queues 2 malloc succ
+MTL: 2025-06-24 14:37:16, mt_mempool_create_by_ops(1), succ at 0x11fdfb4640 size 8.622894m n 4095 d 2048 for R_P1Q0_MBUF_4
+MTL: 2025-06-24 14:37:16, mt_mempool_create_by_ops(1), succ at 0x11fd4f1c40 size 6.623383m n 4095 d 1536 for R_P1Q1_MBUF_5
+MTL: 2025-06-24 14:37:16, dev_if_init_rx_queues(1), rx_queues 2 malloc succ
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), port_id 1 port_type 1 drv_type 4
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), dev_capa 0x0, offload 0x119fbf:0x9666f queue offload 0x0:0x0, rss : 0x3ffc
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), system_rx_queues_end 1 hdr_split_rx_queues_end 1
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), sip: 192.168.30.12
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), netmask: 255.255.255.0
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), gateway: 0.0.0.0
+MTL: 2025-06-24 14:37:16, mt_dev_if_init(1), mac: 1e:c3:eb:e6:a4:79
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[0]
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[1]
+MTL: 2025-06-24 14:37:16, dev_start_port(0), rx_defer 0
+MTL: 2025-06-24 14:37:16, mt_eth_link_dump(0), link_speed 100g link_status 1 link_duplex 1 link_autoneg 1
+MTL: 2025-06-24 14:37:16, dev_if_init_pacing(0), try rl as drv support TM
+MTL: 2025-06-24 14:37:16, dev_rl_shaper_add(0), bps 134217728 on shaper 1
+MTL: 2025-06-24 14:37:16, dev_init_ratelimit_all(0), q 0 link to shaper id 1
+MTL: 2025-06-24 14:37:16, dev_init_ratelimit_all(0), q 1 link to shaper id 1
+MTL: 2025-06-24 14:37:16, mt_dev_create(0), feature 0x30, tx pacing ratelimit
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[0]
+IAVF_DRIVER: iavf_configure_queues(): request RXDID[22] in Queue[1]
+MTL: 2025-06-24 14:37:16, dev_start_port(1), rx_defer 0
+MTL: 2025-06-24 14:37:16, mt_eth_link_dump(1), link_speed 100g link_status 1 link_duplex 1 link_autoneg 1
+MTL: 2025-06-24 14:37:16, dev_if_init_pacing(1), try rl as drv support TM
+MTL: 2025-06-24 14:37:16, dev_rl_shaper_add(1), bps 134217728 on shaper 1
+MTL: 2025-06-24 14:37:16, dev_init_ratelimit_all(1), q 0 link to shaper id 1
+MTL: 2025-06-24 14:37:16, dev_init_ratelimit_all(1), q 1 link to shaper id 1
+MTL: 2025-06-24 14:37:16, mt_dev_create(1), feature 0x30, tx pacing ratelimit
+MTL: 2025-06-24 14:37:16, mt_sch_mrg_init, succ with data quota 31068 M
+MTL: 2025-06-24 14:37:16, sch_request(0), name sch_0 with 16 tasklets, type 0 socket 1
+MTL: 2025-06-24 14:37:16, mt_sch_add_quota(0:0), quota 0 total now 0
+MTL: 2025-06-24 14:37:16, mt_dev_get_tx_queue(0), q 0 with speed 1.073742g bps
+MTL: 2025-06-24 14:37:16, mt_dev_get_tx_queue(1), q 0 with speed 1.073742g bps
+MTL: 2025-06-24 14:37:16, mt_mcast_init, report every 10 seconds
+MTL: 2025-06-24 14:37:16, mt_dev_get_rx_queue(0), q 0 ip 0.0.0.0 port 0
+MTL: 2025-06-24 14:37:16, cni_queues_init(0), rxq 0
+MTL: 2025-06-24 14:37:16, mt_dev_get_rx_queue(1), q 0 ip 0.0.0.0 port 0
+MTL: 2025-06-24 14:37:16, cni_queues_init(1), rxq 0
+MTL: 2025-06-24 14:37:16, cni_traffic_thread, start
+MTL: 2025-06-24 14:37:16, st_plugins_init, succ
+MTL: 2025-06-24 14:37:16, admin_thread, start
+MTL: 2025-06-24 14:37:16, config_parse_json, parse kahawai.json with json-c version: 0.16
+MTL: 2025-06-24 14:37:16, st22_decoder_register(0), st22_decoder_sample registered, device 1 cap(0x300000000000000:0x70000402b)
+MTL: 2025-06-24 14:37:16, st22_encoder_register(0), st22_encoder_sample registered, device 1 cap(0x70000402b:0x300000000000000)
+MTL: 2025-06-24 14:37:16, st_plugin_register(0), /usr/local/lib/x86_64-linux-gnu/libst_plugin_st22_sample.so registered, version 1
+MTL: 2025-06-24 14:37:16, Warn: st_plugin_register, dlopen /usr/local/lib64/libst_plugin_st22_sample.so fail
+MTL: 2025-06-24 14:37:16, mt_ptp_port_id(0), port_number: 0000, clk_id: fe:59:43:ff:fe:eb:7a:9c
+MTL: 2025-06-24 14:37:16, mt_main_create, succ
+MTL: 2025-06-24 14:37:16, mtl_init, succ, tsc_hz 2194800000
+MTL: 2025-06-24 14:37:16, mtl_init, simd level avx512_vbmi, flags 0x1d
+MTL: 2025-06-24 14:37:16, st20p_rx_create, start for app_rx_st20p_0
+MTL: 2025-06-24 14:37:16, st20_get_converter, plugin not found, input fmt: YUV422RFC4175PG2BE10, output fmt: YUV422PLANAR10LE
+MTL: 2025-06-24 14:37:16, rx_st20p_get_converter(0), use internal converter
+MTL: 2025-06-24 14:37:16, rx_st20p_init_dst_fbs(0), size 33177600 fmt 0 with 3 frames
+MTL: 2025-06-24 14:37:16, mt_sch_add_quota(0:1), quota 20714 total now 20714
+MTL: 2025-06-24 14:37:16, mt_sch_get_by_socket(0), succ with quota_mbs 20714 socket 1
+MTL: 2025-06-24 14:37:16, mtl_sch_register_tasklet(0), tasklet rvs_pkt_rx registered into slot 0
+MTL: 2025-06-24 14:37:16, rvs_mgr_init(0), succ
+MTL: 2025-06-24 14:37:16, rte_rx_flow_create(0), queue 1 succ, ip 239.1.1.1 port 20000
+MTL: 2025-06-24 14:37:16, mt_dev_get_rx_queue(0), q 1 ip 239.1.1.1 port 20000
+MTL: 2025-06-24 14:37:16, rv_init_hw(0), port(l:0,p:0), queue 1 udp 20000
+MTL: 2025-06-24 14:37:16, rte_rx_flow_create(1), queue 1 succ, ip 239.2.1.2 port 20000
+MTL: 2025-06-24 14:37:16, mt_dev_get_rx_queue(1), q 1 ip 239.2.1.2 port 20000
+MTL: 2025-06-24 14:37:16, rv_init_hw(0), port(l:1,p:1), queue 1 udp 20000
+MTL: 2025-06-24 14:37:16, rv_init_dma(0), fail, can not request dma dev
+MTL: 2025-06-24 14:37:16, mcast_membership_report_on_action(0), send join pkt, mb_report_len 16
+MTL: 2025-06-24 14:37:16, mt_mcast_join(0), join group 239.1.1.1
+MTL: 2025-06-24 14:37:16, mcast_membership_report_on_action(1), send join pkt, mb_report_len 16
+MTL: 2025-06-24 14:37:16, mt_mcast_join(1), join group 239.2.1.2
+MTL: 2025-06-24 14:37:16, rv_attach(0), 3 frames with size 20736000(3240,0), type 0, progressive
+MTL: 2025-06-24 14:37:16, rv_attach(0), w 3840 h 2160 fmt ST20_FMT_YUV_422_10BIT packing 0 pt 112 flags 0x20000 frame time 16.683333ms fps 59.940060
+MTL: 2025-06-24 14:37:16, st20_rx_create_with_mask, succ on sch 0 session 0
+MTL: 2025-06-24 14:37:16, st20p_rx_create(0), transport fmt ST20_FMT_YUV_422_10BIT, output fmt YUV422PLANAR10LE, flags 0x28000
+MTL: 2025-06-24 14:37:16, cni_udp_detect_analyses(0), new udp stream:
+MTL: 2025-06-24 14:37:16, cni_udp_detect_dump(0), sip: 192.168.106.10, dip: 239.1.1.1, src_port 40000 dst_port 40000, pkt 0
+MTL: 2025-06-24 14:37:17, mt_calibrate_tsc, tscHz 2194842144
+MTL: 2025-06-24 14:37:17, mt_sch_get_lcore, succ on manager lcore 32 for lib_sch socket 1
+MTL: 2025-06-24 14:37:17, sch_start(0), succ on lcore 32 socket 1
+MTL: 2025-06-24 14:37:17, mt_dev_start, succ
+MTL: 2025-06-24 14:37:17, sch_tasklet_func(0), start with 1 tasklets, t_pid 2971647
+MTL: 2025-06-24 14:37:17, _mt_start, succ, avail ports 2
+MTL: 2025-06-24 14:37:17, rvs_pkt_rx_tasklet_start(0), succ
+MTL: 2025-06-24 14:37:26, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:37:26, DEV(0): Avr rate, tx: 0.000096 Mb/s, rx: 2870.348714 Mb/s, pkts, tx: 2, rx: 2721362
+MTL: 2025-06-24 14:37:26, DEV(1): Avr rate, tx: 0.000096 Mb/s, rx: 2873.693316 Mb/s, pkts, tx: 2, rx: 2724020
+MTL: 2025-06-24 14:37:26, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 101 ns
+MTL: 2025-06-24 14:37:26, CNI(0): eth_rx_rate 0.079262 Mb/s, eth_rx_cnt 592
+MTL: 2025-06-24 14:37:26, CNI(1): eth_rx_rate 0.001308 Mb/s, eth_rx_cnt 5
+MTL: 2025-06-24 14:37:26, PTP(0): time 1750768609184925292, 2025-06-24 14:36:49
+MTL: 2025-06-24 14:37:26, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 16.817132 frames 165 pkts 2727290
+MTL: 2025-06-24 14:37:26, RX_VIDEO_SESSION(0,0): throughput 5771.437770 Mb/s, cpu busy 2.071510
+MTL: 2025-06-24 14:37:26, RX_VIDEO_SESSION(0,0): redundant pkts 2727288
+MTL: 2025-06-24 14:37:26, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.100100
+MTL: 2025-06-24 14:37:26, RX_st20p(0,app_rx_st20p_0), p(0:free) c(0:free)
+MTL: 2025-06-24 14:37:26, RX_st20p(0), frame get try 173 succ 165, put 165
+MTL: 2025-06-24 14:37:26, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:37:36, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:37:36, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10402.737988 Mb/s, pkts, tx: 1, rx: 9861434
+MTL: 2025-06-24 14:37:36, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10402.696431 Mb/s, pkts, tx: 1, rx: 9860870
+MTL: 2025-06-24 14:37:36, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 102 ns
+MTL: 2025-06-24 14:37:36, CNI(0): eth_rx_rate 0.080601 Mb/s, eth_rx_cnt 603
+MTL: 2025-06-24 14:37:36, CNI(1): eth_rx_rate 0.001054 Mb/s, eth_rx_cnt 4
+MTL: 2025-06-24 14:37:36, PTP(0): time 1750768619185006692, 2025-06-24 14:36:59
+MTL: 2025-06-24 14:37:36, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.999478 frames 600 pkts 9864614
+MTL: 2025-06-24 14:37:36, RX_VIDEO_SESSION(0,0): throughput 20875.374466 Mb/s, cpu busy 3.528084
+MTL: 2025-06-24 14:37:36, RX_VIDEO_SESSION(0,0): redundant pkts 9864613
+MTL: 2025-06-24 14:37:36, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.115004
+MTL: 2025-06-24 14:37:36, RX_st20p(0,app_rx_st20p_0), p(0:free) c(2:ready)
+MTL: 2025-06-24 14:37:36, RX_st20p(0), frame get try 599 succ 599, put 599
+MTL: 2025-06-24 14:37:36, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:37:46, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:37:46, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10403.566957 Mb/s, pkts, tx: 1, rx: 9862220
+MTL: 2025-06-24 14:37:46, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10403.875642 Mb/s, pkts, tx: 1, rx: 9861987
+MTL: 2025-06-24 14:37:46, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 102 ns
+MTL: 2025-06-24 14:37:46, CNI(0): eth_rx_rate 0.080466 Mb/s, eth_rx_cnt 603
+MTL: 2025-06-24 14:37:46, CNI(1): eth_rx_rate 0.000786 Mb/s, eth_rx_cnt 3
+MTL: 2025-06-24 14:37:46, PTP(0): time 1750768629185087973, 2025-06-24 14:37:09
+MTL: 2025-06-24 14:37:46, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.899383 frames 599 pkts 9865314
+MTL: 2025-06-24 14:37:46, RX_VIDEO_SESSION(0,0): throughput 20876.856810 Mb/s, cpu busy 3.528084
+MTL: 2025-06-24 14:37:46, RX_VIDEO_SESSION(0,0): redundant pkts 9865317
+MTL: 2025-06-24 14:37:46, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.116222
+MTL: 2025-06-24 14:37:46, RX_st20p(0,app_rx_st20p_0), p(2:free) c(2:free)
+MTL: 2025-06-24 14:37:46, RX_st20p(0), frame get try 600 succ 600, put 600
+MTL: 2025-06-24 14:37:46, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:37:56, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:37:56, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10402.792179 Mb/s, pkts, tx: 1, rx: 9861486
+MTL: 2025-06-24 14:37:56, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10403.362178 Mb/s, pkts, tx: 1, rx: 9861503
+MTL: 2025-06-24 14:37:56, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 103 ns
+MTL: 2025-06-24 14:37:56, CNI(0): eth_rx_rate 0.080850 Mb/s, eth_rx_cnt 604
+MTL: 2025-06-24 14:37:56, CNI(1): eth_rx_rate 0.001302 Mb/s, eth_rx_cnt 5
+MTL: 2025-06-24 14:37:56, PTP(0): time 1750768639185082192, 2025-06-24 14:37:19
+MTL: 2025-06-24 14:37:56, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.900163 frames 599 pkts 9865183
+MTL: 2025-06-24 14:37:56, RX_VIDEO_SESSION(0,0): throughput 20876.585915 Mb/s, cpu busy 3.528084
+MTL: 2025-06-24 14:37:56, RX_VIDEO_SESSION(0,0): redundant pkts 9865182
+MTL: 2025-06-24 14:37:56, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.115557
+MTL: 2025-06-24 14:37:56, RX_st20p(0,app_rx_st20p_0), p(1:free) c(1:free)
+MTL: 2025-06-24 14:37:56, RX_st20p(0), frame get try 599 succ 599, put 599
+MTL: 2025-06-24 14:37:56, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:38:06, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:38:06, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10402.686299 Mb/s, pkts, tx: 1, rx: 9861384
+MTL: 2025-06-24 14:38:06, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10401.852619 Mb/s, pkts, tx: 1, rx: 9860071
+MTL: 2025-06-24 14:38:06, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 103 ns
+MTL: 2025-06-24 14:38:06, CNI(0): eth_rx_rate 0.080602 Mb/s, eth_rx_cnt 603
+MTL: 2025-06-24 14:38:06, CNI(1): eth_rx_rate 0.001054 Mb/s, eth_rx_cnt 4
+MTL: 2025-06-24 14:38:06, PTP(0): time 1750768649184981106, 2025-06-24 14:37:29
+MTL: 2025-06-24 14:38:06, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 60.000645 frames 600 pkts 9864411
+MTL: 2025-06-24 14:38:06, RX_VIDEO_SESSION(0,0): throughput 20874.928966 Mb/s, cpu busy 3.528084
+MTL: 2025-06-24 14:38:06, RX_VIDEO_SESSION(0,0): redundant pkts 9864412
+MTL: 2025-06-24 14:38:06, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.115838
+MTL: 2025-06-24 14:38:06, RX_st20p(0,app_rx_st20p_0), p(1:free) c(0:ready)
+MTL: 2025-06-24 14:38:06, RX_st20p(0), frame get try 599 succ 599, put 599
+MTL: 2025-06-24 14:38:06, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:38:16, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:38:16, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10404.044732 Mb/s, pkts, tx: 1, rx: 9862675
+MTL: 2025-06-24 14:38:16, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10403.941849 Mb/s, pkts, tx: 1, rx: 9862052
+MTL: 2025-06-24 14:38:16, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 103 ns
+MTL: 2025-06-24 14:38:16, CNI(0): eth_rx_rate 0.081257 Mb/s, eth_rx_cnt 606
+MTL: 2025-06-24 14:38:16, CNI(1): eth_rx_rate 0.001577 Mb/s, eth_rx_cnt 6
+MTL: 2025-06-24 14:38:16, PTP(0): time 1750768659185155525, 2025-06-24 14:37:39
+MTL: 2025-06-24 14:38:16, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.898920 frames 599 pkts 9865397
+MTL: 2025-06-24 14:38:16, RX_VIDEO_SESSION(0,0): throughput 20877.007075 Mb/s, cpu busy 3.528084
+MTL: 2025-06-24 14:38:16, RX_VIDEO_SESSION(0,0): redundant pkts 9865396
+MTL: 2025-06-24 14:38:16, RX_VIDEO_SESSION(0,0): succ burst max 88, avg 2.114037
+MTL: 2025-06-24 14:38:16, RX_st20p(0,app_rx_st20p_0), p(0:free) c(0:free)
+MTL: 2025-06-24 14:38:16, RX_st20p(0), frame get try 600 succ 600, put 600
+MTL: 2025-06-24 14:38:16, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:38:26, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:38:26, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10402.815402 Mb/s, pkts, tx: 1, rx: 9861504
+MTL: 2025-06-24 14:38:26, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10402.733883 Mb/s, pkts, tx: 1, rx: 9860904
+MTL: 2025-06-24 14:38:26, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 102 ns
+MTL: 2025-06-24 14:38:26, CNI(0): eth_rx_rate 0.080074 Mb/s, eth_rx_cnt 601
+MTL: 2025-06-24 14:38:26, CNI(1): eth_rx_rate 0.000526 Mb/s, eth_rx_cnt 2
+MTL: 2025-06-24 14:38:26, PTP(0): time 1750768669185241858, 2025-06-24 14:37:49
+MTL: 2025-06-24 14:38:26, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.999476 frames 600 pkts 9864615
+MTL: 2025-06-24 14:38:26, RX_VIDEO_SESSION(0,0): throughput 20875.398790 Mb/s, cpu busy 3.493831
+MTL: 2025-06-24 14:38:26, RX_VIDEO_SESSION(0,0): redundant pkts 9864616
+MTL: 2025-06-24 14:38:26, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.118518
+MTL: 2025-06-24 14:38:26, RX_st20p(0,app_rx_st20p_0), p(0:free) c(2:ready)
+MTL: 2025-06-24 14:38:26, RX_st20p(0), frame get try 599 succ 599, put 599
+MTL: 2025-06-24 14:38:26, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:38:36, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:38:36, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 10401.968812 Mb/s, pkts, tx: 1, rx: 9860706
+MTL: 2025-06-24 14:38:36, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 10402.615980 Mb/s, pkts, tx: 1, rx: 9860793
+MTL: 2025-06-24 14:38:36, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 102 ns
+MTL: 2025-06-24 14:38:36, CNI(0): eth_rx_rate 0.080460 Mb/s, eth_rx_cnt 603
+MTL: 2025-06-24 14:38:36, CNI(1): eth_rx_rate 0.000780 Mb/s, eth_rx_cnt 3
+MTL: 2025-06-24 14:38:36, PTP(0): time 1750768679185228190, 2025-06-24 14:37:59
+MTL: 2025-06-24 14:38:36, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 59.900091 frames 599 pkts 9865193
+MTL: 2025-06-24 14:38:36, RX_VIDEO_SESSION(0,0): throughput 20876.593323 Mb/s, cpu busy 3.493831
+MTL: 2025-06-24 14:38:36, RX_VIDEO_SESSION(0,0): redundant pkts 9865192
+MTL: 2025-06-24 14:38:36, RX_VIDEO_SESSION(0,0): succ burst max 76, avg 2.119242
+MTL: 2025-06-24 14:38:36, RX_st20p(0,app_rx_st20p_0), p(2:free) c(2:free)
+MTL: 2025-06-24 14:38:36, RX_st20p(0), frame get try 600 succ 600, put 600
+MTL: 2025-06-24 14:38:36, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:38:46, * *    M T    D E V   S T A T E   * * 
+MTL: 2025-06-24 14:38:46, DEV(0): Avr rate, tx: 0.000048 Mb/s, rx: 9712.982426 Mb/s, pkts, tx: 1, rx: 9207601
+MTL: 2025-06-24 14:38:46, DEV(1): Avr rate, tx: 0.000048 Mb/s, rx: 9709.059577 Mb/s, pkts, tx: 1, rx: 9203358
+MTL: 2025-06-24 14:38:46, SCH(0:sch_0): tasklets 1, lcore 32(t_pid: 2971647), avg loop 102 ns
+MTL: 2025-06-24 14:38:46, CNI(0): eth_rx_rate 0.080074 Mb/s, eth_rx_cnt 601
+MTL: 2025-06-24 14:38:46, CNI(1): eth_rx_rate 0.000527 Mb/s, eth_rx_cnt 2
+MTL: 2025-06-24 14:38:46, PTP(0): time 1750768689185189429, 2025-06-24 14:38:09
+MTL: 2025-06-24 14:38:46, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 55.900239 frames 559 pkts 9203320
+MTL: 2025-06-24 14:38:46, RX_VIDEO_SESSION(0,0): throughput 19475.939378 Mb/s, cpu busy 3.493831
+MTL: 2025-06-24 14:38:46, RX_VIDEO_SESSION(0,0): redundant pkts 9203318
+MTL: 2025-06-24 14:38:46, RX_VIDEO_SESSION(0,0): succ burst max 128, avg 2.115035
+MTL: 2025-06-24 14:38:46, RX_st20p(0,app_rx_st20p_0), p(0:free) c(0:free)
+MTL: 2025-06-24 14:38:46, RX_st20p(0), frame get try 559 succ 559, put 559
+MTL: 2025-06-24 14:38:46, * *    E N D    S T A T E   * * 
+
+MTL: 2025-06-24 14:38:46, sch_tasklet_func(0), end with 1 tasklets
+MTL: 2025-06-24 14:38:46, mt_sch_put_lcore, succ on manager lcore 32 for lib_sch
+MTL: 2025-06-24 14:38:46, sch_stop(0), succ
+MTL: 2025-06-24 14:38:46, mt_sch_stop_all, succ
+MTL: 2025-06-24 14:38:46, _mt_stop, succ
+MTL: 2025-06-24 14:38:46, st20p_rx_free(0), start
+MTL: 2025-06-24 14:38:46, st20_rx_free(0,0), start
+MTL: 2025-06-24 14:38:46, RX_VIDEO_SESSION(0,0:app_rx_st20p_0): fps 0.000000 frames 0 pkts 0
+MTL: 2025-06-24 14:38:46, RX_VIDEO_SESSION(0,0): throughput 0.000000 Mb/s, cpu busy 3.493831
+MTL: 2025-06-24 14:38:46, mt_mcast_leave(0), delete group 10101ef
+MTL: 2025-06-24 14:38:46, mcast_membership_report_on_action(0), send leave pkt, mb_report_len 16
+MTL: 2025-06-24 14:38:46, mt_mcast_leave(0), leave group 239.1.1.1
+MTL: 2025-06-24 14:38:46, mt_mcast_leave(1), delete group 20102ef
+MTL: 2025-06-24 14:38:46, mcast_membership_report_on_action(1), send leave pkt, mb_report_len 16
+MTL: 2025-06-24 14:38:46, mt_mcast_leave(1), leave group 239.2.1.2
+MTL: 2025-06-24 14:38:46, mt_dev_put_rx_queue(0), q 1
+MTL: 2025-06-24 14:38:46, mt_dev_put_rx_queue(1), q 1
+MTL: 2025-06-24 14:38:46, sch_free_quota(0), quota 20714 total now 0
+MTL: 2025-06-24 14:38:46, st20_rx_free, succ on sch 0 session 0
+MTL: 2025-06-24 14:38:46, st20p_rx_free(0), succ
+MTL: 2025-06-24 14:38:46, st22_decoder_unregister(0), unregister st22_decoder_sample
+MTL: 2025-06-24 14:38:46, st22_encoder_unregister(0), unregister st22_encoder_sample
+MTL: 2025-06-24 14:38:46, admin_thread, stop
+MTL: 2025-06-24 14:38:46, cni_udp_detect_dump(0), sip: 192.168.106.10, dip: 239.1.1.1, src_port 40000 dst_port 40000, pkt 5387
+MTL: 2025-06-24 14:38:46, cni_traffic_thread, stop
+MTL: 2025-06-24 14:38:46, mt_dev_put_rx_queue(0), q 0
+MTL: 2025-06-24 14:38:46, mt_dev_put_rx_queue(1), q 0
+MTL: 2025-06-24 14:38:46, mt_cni_uinit, succ
+MTL: 2025-06-24 14:38:46, sch_free_quota(0), quota 0 total now 0
+MTL: 2025-06-24 14:38:46, mt_sch_put(0), ref_cnt now zero
+MTL: 2025-06-24 14:38:46, Warn: sch_stop(0), not started
+MTL: 2025-06-24 14:38:46, mtl_sch_unregister_tasklet(0), tasklet rvs_pkt_rx(0) unregistered
+MTL: 2025-06-24 14:38:46, rvs_mgr_uinit(0), succ
+MTL: 2025-06-24 14:38:46, sch_free(0), start to free sch: sch_0 
+MTL: 2025-06-24 14:38:46, mt_dpdk_flush_tx_queue(0), queue 0 burst_pkts 1024
+MTL: 2025-06-24 14:38:46, mt_dev_put_tx_queue(0), q 0
+MTL: 2025-06-24 14:38:46, mt_dpdk_flush_tx_queue(1), queue 0 burst_pkts 1024
+MTL: 2025-06-24 14:38:46, mt_dev_put_tx_queue(1), q 0
+MTL: 2025-06-24 14:38:46, dev_stop_port(0), succ
+MTL: 2025-06-24 14:38:46, dev_stop_port(1), succ
+MTL: 2025-06-24 14:38:46, mt_dev_free, succ
+MTL: 2025-06-24 14:38:46, mt_main_free, succ
+MTL: 2025-06-24 14:38:46, mt_mempool_free, free mempool R_P0Q0_MBUF_1
+MTL: 2025-06-24 14:38:46, mt_mempool_free, free mempool R_P0Q1_MBUF_2
+MTL: 2025-06-24 14:38:46, mt_mempool_free, free mempool T_P0_SYS_0
+MTL: 2025-06-24 14:38:46, dev_close_port(0), succ
+MTL: 2025-06-24 14:38:46, mt_mempool_free, free mempool R_P1Q0_MBUF_4
+MTL: 2025-06-24 14:38:46, mt_mempool_free, free mempool R_P1Q1_MBUF_5
+MTL: 2025-06-24 14:38:46, mt_mempool_free, free mempool T_P1_SYS_3
+MTL: 2025-06-24 14:38:46, dev_close_port(1), succ
+MTL: 2025-06-24 14:38:46, stat_thread, stop
+MTL: 2025-06-24 14:38:46, mt_dev_uinit, succ
+MTL: 2025-06-24 14:38:46, mtl_uninit, succ
+st_app_parse_json, using json-c version: 0.16
+parse_url, can not parse url_src
+st_json_parse_rx_st20p, no st20p url no file will be saved
+app_args_json, json_file config/rx_1v.json succ
+st_plugin_create, succ with st22 sample plugin
+app_rx_st20p_frame_thread(0), start
+main, app lunch succ, test time 0s
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_stat(0), avrage latency 23.647339ms
+app_rx_st20p_stat(0), avrage latency 23.642977ms
+app_rx_st20p_stat(0), avrage latency 23.645490ms
+app_rx_st20p_stat(0), avrage latency 23.644010ms
+app_rx_st20p_stat(0), avrage latency 23.617053ms
+app_rx_st20p_stat(0), avrage latency 23.644345ms
+app_rx_st20p_stat(0), avrage latency 23.644235ms
+app_rx_st20p_stat(0), avrage latency 23.642683ms
+app_rx_st20p_stat(0), avrage latency 23.643140ms
+st_app_sig_handler, signal 2
+main, start to ending
+app_rx_st20p_result(0), OK, fps 59.387857, 4920 frame received
+app_rx_st20p_uinit(0), wait app thread stop
+app_rx_st20p_frame_thread(0), get frame time out
+app_rx_st20p_frame_thread(0), stop
+st_plugin_free, succ with st22 sample plugin
