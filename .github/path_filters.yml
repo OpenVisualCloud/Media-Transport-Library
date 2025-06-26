@@ -1,88 +1,39 @@
 # This is used by the action https://github.com/dorny/paths-filter
 
-src: &src
-  - 'include/**'
-  - 'lib/**'
-  - 'ld_preload/**'
-  - 'patches/dpdk/**'
-  - 'tests/src/**'
-  - tests/meson.build
-  - tests/meson_options.txt
+ubuntu_build: &ubuntu_build
+  - .github/workflows/base_build.yml
+  - '**'
+
+ice_build: &ice_build
+  - .github/workflows/base_build.yml
+  - 'paths/ice_drv/**'
+  - 'script/build_ice_driver.sh'
+
+manager_build: &manager_build
+  - .github/workflows/base_build.yml
   - 'manager/**'
 
-app_src: &app_src
-  - 'app/**'
+plugin_build: &plugin_build
+  - .github/workflows/base_build.yml
+  - 'plugins/**'
 
-build: &build
-  - build.sh
-  - kahawai.json
-  - meson.build
-  - meson_options.txt
-  - VERSION
+rust_build: &rust_hooks_build
+  - .github/workflows/base_build.yml
+  - 'rust/**'
 
-windows_gtest: &windows_gtest
-  - .github/workflows/windows_build_with_gtest.yml
-  - *src
-  - *build
 
-linux_gtest: &linux_gtest
-  - .github/workflows/ubuntu_build_with_gtest.yml
-  - '.github/workflows/upl*'
-  - 'patches/ice_drv/**'
-  - *src
-  - *build
+python_build: &python_hooks_build
+  - .github/workflows/base_build.yml
+  - 'python/**'
 
-api: &api
-  - 'include/**'
+tools_monitors_build: &mtl_monitors_build
+  - .github/workflows/base_build.yml
+  - 'tools/ebpf/**'
 
-ffmpeg_plugin: &ffmpeg_plugin
-  - *api
-  - 'ecosystem/ffmpeg_plugin/**'
-  - .github/workflows/ffmpeg_plugin.yml
+tools_readcap_build: &mtl_readcap_build
+  - .github/workflows/base_build.yml
+  - 'tools/readcap/**'
 
-ecosystem: &ecosystem
-  - *api
-  - .github/workflows/ecosystem.yml
-  - 'ecosystem/obs_mtl/**'
-  - "ecosystem/librist/**"
-
-dpdk_patches: &dpdk_patches
-  - 'patches/dpdk/**'
-  - .github/workflows/dpdk_patches_build.yml
-
-centos_build: &centos_build
-  - .github/workflows/centos_build.yml
-  - *src
-  - *build
-  - *app_src
-
-ubuntu_build: &ubuntu_build
-  - .github/workflows/ubuntu_build.yml
-  - *src
-  - *build
-  - *app_src
-
-clang_build: &clang_build
-  - .github/workflows/clang_build.yml
-  - *src
-  - *build
-  - *app_src
-
-msys2_build: &msys2_build
-  - .github/workflows/msys2_build.yml
-  - *src
-  - *build
-
-afxdp_build: &afxdp_build
-  - .github/workflows/afxdp_build.yml
-  - script/build_ebpf_xdp.sh
-  - *src
-  - *build
-
-afxdp_test: &afxdp_test
-  - .github/workflows/afxdp_build_with_gtest.yml
-  - *src
-  - *build
-
-tools_build: &tools_build
-  - 'tools/**'
+tools_cpu_emulator_build: &mtl_cpu_emulator_build
+  - .github/workflows/base_build.yml
+  - 'tools/sch_smi_emulate/**'

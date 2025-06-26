@@ -11,37 +11,58 @@ on:
     branches:
       - main
       - 'maint-**'
+env:
+  MTL_BUILD_AND_INSTALL: 1
+  SETUP_ENVIRONMENT: 1
+  CICD_BUILD: 1
+  SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
+  CICD_BUILD_BUILD_ICE_DRIVER: 0
+  SETUP_BUILD_AND_INSTALL_DPDK: 1
+  SETUP_BUILD_AND_INSTALL_EBPF_XDP: 0
+  SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 1
+  HOOK_RUST: 1
+  HOOK_PYTHON: 1
+  ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
+  ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
+  ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: 1
+  ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN: 0 # not supported yet
+  ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 0
+  TOOLS_BUILD_AND_INSTALL_MTL_READCAP: 1
+  TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
 
 permissions:
   contents: read
-env: 
-    DPDK_VERSION: 25.03
 jobs:
   changes:
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
+      # https://stackoverflow.com/questions/70326569/github-workflow-how-to-conditionally-setup-env-for-all-subsequent-jobs
+      ubuntu_build: ${{ steps.filter.outputs.ubuntu_build == 'true' }}
+      ice_build: ${{ steps.filter.outputs.ice_build == 'true' }}
+      manager_build: ${{ steps.filter.outputs.manager_build == 'true' }}
+      plugin_build: ${{ steps.filter.outputs.plugin_build == 'true' }}
+      rust_hooks_build: ${{ steps.filter.outputs.rust_build == 'true' }}
+      python_hooks_build: ${{ steps.filter.outputs.python_build == 'true' }}
+      mtl_monitors_build: ${{ steps.filter.outputs.mtl_monitors_build == 'true' }}
+      mtl_readcap_build: ${{ steps.filter.outputs.mtl_readcap_build == 'true' }}
+      mtl_cpu_emulator_build: ${{ steps.filter.outputs.mtl_cpu_emulator_build == 'true' }}
+
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      
+
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v2
         id: filter
         with:
           filters: .github/path_filters.yml
-
-  build:
+  
+  ubuntu-build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.changed == 'true' }}
-    runs-on: ${{ matrix.os }}
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 60
-    container:
-      image: ubuntu:latest
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
@@ -49,33 +70,9 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: DoozyX/clang-format-lint-action@v0.20
-        with:
-          clangFormatVersion: '14'
-          source: '.'
-          extensions: 'hpp,h,cpp,c,cc'
-      - name: Install the build dependency
-        run: |
-          apt-get update -y
-          apt-get install -y sudo git gcc meson python3 python3-pyelftools pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev libsdl2-ttf-dev libssl-dev systemtap-sdt-dev llvm clang
-          apt-get install -y doxygen
-          apt-get install -y make m4 clang llvm zlib1g-dev libelf-dev libcap-ng-dev libcap2-bin gcc-multilib
 
-      - name: install DPDK
-        uses: ./.github/actions/dpdk
-        with:
-          version: ${{ env.DPDK_VERSION }}
-
-      - name: Git config
-        working-directory: "${{ github.workspace }}"
-        run: |
-          git config --global user.email "you@example.com"
-          git config --global user.name "Your Name"
-
-      - name: Build
-        working-directory: "${{ github.workspace }}"
-        run: |
-          ./build.sh
+      - name: Build Release
+        run: sudo -E .github/scripts/setup_environment.sh
 
       - name: 'upload release build artifacts'
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
@@ -83,13 +80,21 @@ jobs:
           name: mtl-release-bin
           path: '${{ github.workspace }}/build/'
 
-      - name: Build with debug
-        run: |
-          rm build -rf
-          ./build.sh debug
+  ubuntu-ebpf-xdp-build:
+    needs: changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@4d991eb9b905ef189e4c376166672c3f2f230481 # v2.11.0
+        with:
+          egress-policy: audit
 
-      - name: doxygen
-        run: |
-          cd doc/doxygen
-          ./build-doc.sh
-          cd ../../
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: ebpf-xdp build
+        run: sudo -E .github/scripts/setup_environment.sh
+        env:
+          SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1
+          TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
