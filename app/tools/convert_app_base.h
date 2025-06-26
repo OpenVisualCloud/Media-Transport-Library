@@ -50,6 +50,8 @@ enum cvt_frame_fmt {
   CVT_FRAME_FMT_RGBRFC4175PG4BE10,
   /** RFC4175 in ST2110, two RGB 12 bit pixel groups on 9 bytes, big endian */
   CVT_FRAME_FMT_RGBRFC4175PG2BE12,
+  /** YUV 422 planar 16bit little endian */
+  CVT_FRAME_FMT_YUV422PLANAR16LE,
   /** max value of this enum */
   CVT_FRAME_FMT_MAX,
 };

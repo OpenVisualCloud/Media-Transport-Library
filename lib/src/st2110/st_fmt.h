@@ -78,6 +78,22 @@ static inline void st20_unpack_pg2be_422le12(struct st20_rfc4175_422_12_pg2_be* 
   *y01 = y1;
 }
 
+static inline void st20_unpack_pg2be_422le16(struct st20_rfc4175_422_10_pg2_be* pg,
+                                             uint16_t* cb00, uint16_t* y00,
+                                             uint16_t* cr00, uint16_t* y01) {
+  uint16_t cb, y0, cr, y1;
+
+  cb = (pg->Cb00 << 8) + (pg->Cb00_ << 6);
+  y0 = (pg->Y00 << 10) + (pg->Y00_ << 6);
+  cr = (pg->Cr00 << 12) + (pg->Cr00_ << 6);
+  y1 = (pg->Y01 << 14) + (pg->Y01_ << 6);
+
+  *cb00 = cb;
+  *y00 = y0;
+  *cr00 = cr;
+  *y01 = y1;
+}
+
 void st_frame_init_plane_single_src(struct st_frame* frame, void* addr, mtl_iova_t iova);
 
 enum st_frame_fmt st_codec_codestream_fmt(enum st22_codec codec);

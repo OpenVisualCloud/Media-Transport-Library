@@ -22,7 +22,6 @@ static uint16_t be10_to_ple_srlv_tbl_128[8] = {
 static uint16_t be10_to_ple_and_mask_tbl_128[8] = {
     0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff, 0x03ff,
 };
-
 /*
  * for all 10, 12, 14 or 16 bit to permute
  * {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7}
@@ -2827,5 +2826,202 @@ int st20_rfc4175_422be12_to_yuv422p12le_avx512_dma(
   return 0;
 }
 /* end st20_rfc4175_422be12_to_yuv422p12le_avx512 */
+
+/* begin st20_rfc4175_422be10_to_yuv422p16le_avx512 */
+static uint16_t be10_to_p16le_sllv_tbl_128[8] = {
+    0x0000, 0x0000, 0x0004, 0x0004, 0x0002, 0x0006, 0x0002, 0x0006,
+};
+
+// similar to st20_rfc4175_422be10_to_yuv422p10le_avx512
+// but instead of right shift, left shift is performed
+int st20_rfc4175_422be10_to_yuv422p16le_avx512(struct st20_rfc4175_422_10_pg2_be* pg,
+                                               uint16_t* y, uint16_t* b, uint16_t* r,
+                                               uint32_t w, uint32_t h) {
+  __m128i shuffle_le_mask = _mm_loadu_si128((__m128i*)be10_to_ple_shuffle_tbl_128);
+  __m128i sllv_le_mask = _mm_loadu_si128((__m128i*)be10_to_p16le_sllv_tbl_128);
+  __m128i and_mask =
+      _mm_setr_epi16(0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0);
+  __m512i permute_mask = _mm512_loadu_si512((__m512i*)be10_to_ple_permute_tbl_512);
+  __mmask16 k = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+  int pg_cnt = w * h / 2;
+  dbg("%s, pg_cnt %d\n", __func__, pg_cnt);
+
+  /* each m512i batch handle 4 __m512i(16 __m128i), each __m128i with 2 pg group */
+  while (pg_cnt >= 32) {
+    /* cvt the result to __m128i(2 pg group) */
+    __m128i stage_m128i[16];
+    for (int j = 0; j < 16; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+      __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+      __m128i sllv_le_result = _mm_sllv_epi16(shuffle_le_result, sllv_le_mask);
+      stage_m128i[j] = _mm_and_si128(sllv_le_result, and_mask);
+      pg += 2;
+    }
+    /* shift result to m128i */
+    __m512i stage_m512i[4];
+    for (int j = 0; j < 4; j++) {
+      /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+      __m512i input_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[j * 4]);
+      /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+      stage_m512i[j] = _mm512_permutexvar_epi32(permute_mask, input_m512i);
+    }
+    /* shift m128i to m512i */
+    /* {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7} */
+    __m512i result_m512i[4];
+    /* {B0, R0, B1, R1} */
+    result_m512i[0] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b01000100);
+    /* {Y0, Y1, Y2, Y3} */
+    result_m512i[1] = _mm512_shuffle_i32x4(stage_m512i[0], stage_m512i[1], 0b11101110);
+    _mm512_storeu_si512((__m512i*)y, result_m512i[1]);
+    y += 32;
+    /* {B2, R2, B3, R3} */
+    result_m512i[2] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b01000100);
+    /* {Y4, Y5, Y6, Y7} */
+    result_m512i[3] = _mm512_shuffle_i32x4(stage_m512i[2], stage_m512i[3], 0b11101110);
+    _mm512_storeu_si512((__m512i*)y, result_m512i[3]);
+    y += 32;
+    __m512i b_result_m512i =
+        _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b10001000);
+    _mm512_storeu_si512((__m512i*)b, b_result_m512i);
+    b += 32;
+    __m512i r_result_m512i =
+        _mm512_shuffle_i32x4(result_m512i[0], result_m512i[2], 0b11011101);
+    _mm512_storeu_si512((__m512i*)r, r_result_m512i);
+    r += 32;
+
+    pg_cnt -= 32;
+  }
+
+  /* each __m128i batch handle 4 16 __m128i, each __m128i with 2 pg group */
+  while (pg_cnt >= 8) {
+    __m128i stage_m128i[4];
+    for (int j = 0; j < 4; j++) {
+      __m128i input = _mm_maskz_loadu_epi8(k, (__m128i*)pg);
+      __m128i shuffle_le_result = _mm_shuffle_epi8(input, shuffle_le_mask);
+      __m128i sllv_le_result = _mm_sllv_epi16(shuffle_le_result, sllv_le_mask);
+      stage_m128i[j] = _mm_and_si128(sllv_le_result, and_mask);
+      pg += 2;
+    }
+    // {B0, R0, Y0, Y1}, {B1, R1, Y2, Y3}, {B2, R2, Y4, Y5}, {B3, R3, Y6, Y7}
+    __m512i stage_m512i = _mm512_loadu_si512((__m512i*)&stage_m128i[0]);
+    /* {B0, B1, B2, B3}, {R0, R1, R2, R3}, {Y0, Y1, Y2, Y3}, {Y4, Y5, Y6, Y7} */
+    __m512i permute = _mm512_permutexvar_epi32(permute_mask, stage_m512i);
+
+    __m128i result_B = _mm512_extracti32x4_epi32(permute, 0);
+    __m128i result_R = _mm512_extracti32x4_epi32(permute, 1);
+    __m128i result_Y0 = _mm512_extracti32x4_epi32(permute, 2);
+    __m128i result_Y1 = _mm512_extracti32x4_epi32(permute, 3);
+
+    _mm_storeu_si128((__m128i*)b, result_B);
+    b += 2 * 4;
+    _mm_storeu_si128((__m128i*)r, result_R);
+    r += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y0);
+    y += 2 * 4;
+    _mm_storeu_si128((__m128i*)y, result_Y1);
+    y += 2 * 4;
+
+    pg_cnt -= 8;
+  }
+
+  dbg("%s, remaining pg_cnt %d\n", __func__, pg_cnt);
+  while (pg_cnt > 0) {
+    st20_unpack_pg2be_422le16(pg, b, y, r, y + 1);
+    b++;
+    r++;
+    y += 2;
+    pg++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+/* end st20_rfc4175_422be10_to_yuv422p16le_avx512 */
+
+/* begin st20_yuv422p16le_to_rfc4175_422be10_avx512 */
+/* b0, r0, y0, y1, b1, r1, y2, y3 */
+static uint16_t p16le_to_be10_srlv_tbl_128[8] = {
+    0x0000, 0x0004, 0x0002, 0x0006, 0x0000, 0x0004, 0x0002, 0x0006,
+};
+
+// similar to st20_yuv422p10le_to_rfc4175_422be10_avx512
+// but 6-bit padding will be in least significant bits
+int st20_yuv422p16le_to_rfc4175_422be10_avx512(uint16_t* y, uint16_t* b, uint16_t* r,
+                                               struct st20_rfc4175_422_10_pg2_be* pg,
+                                               uint32_t w, uint32_t h) {
+  uint32_t pg_cnt = w * h / 2; /* two pgs in one convert */
+  uint16_t cb, y0, cr, y1;
+  __m128i srlv_le_mask = _mm_loadu_si128((__m128i*)p16le_to_be10_srlv_tbl_128);
+  __m128i shuffle_hi_mask = _mm_loadu_si128((__m128i*)ple_to_be10_shuffle_hi_tbl_128);
+  __m128i shuffle_lo_mask = _mm_loadu_si128((__m128i*)ple_to_be10_shuffle_lo_tbl_128);
+  __m128i and_mask =
+      _mm_setr_epi16(0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0);
+  __mmask16 k = 0x3FF; /* each __m128i with 2 pg group, 10 bytes */
+
+  /* each __m128i batch handle 4 __m128i, each __m128i with 2 pg group */
+  while (pg_cnt >= 8) {
+    __m128i src_y0 = _mm_loadu_si128((__m128i*)y); /* y0-y7 */
+    src_y0 = _mm_and_si128(src_y0, and_mask);
+    y += 8;
+    __m128i src_y8 = _mm_loadu_si128((__m128i*)y); /* y8-y15 */
+    src_y8 = _mm_and_si128(src_y8, and_mask);
+    y += 8;
+    __m128i src_b = _mm_loadu_si128((__m128i*)b); /* b0-b7 */
+    src_b = _mm_and_si128(src_b, and_mask);
+    b += 8;
+    __m128i src_r = _mm_loadu_si128((__m128i*)r); /* r0-r7 */
+    src_r = _mm_and_si128(src_r, and_mask);
+    r += 8;
+
+    __m128i src_br_lo =
+        _mm_unpacklo_epi16(src_b, src_r); /* b0, r0, b1, r1, b2, r2, b3, r3 */
+    __m128i src_br_hi =
+        _mm_unpackhi_epi16(src_b, src_r); /* b4, r4, b5, r5, b6, r6, b7, r7 */
+
+    __m128i src[4];
+    /* b0, r0, y0, y1, b1, r1, y2, y3 */
+    src[0] = _mm_unpacklo_epi32(src_br_lo, src_y0);
+    /* b2, r2, y4, y5, b3, r3, y6, y7 */
+    src[1] = _mm_unpackhi_epi32(src_br_lo, src_y0);
+    src[2] = _mm_unpacklo_epi32(src_br_hi, src_y8);
+    src[3] = _mm_unpackhi_epi32(src_br_hi, src_y8);
+
+    for (int j = 0; j < 4; j++) {
+      /* convert to PGs in __m128i */
+      __m128i srlv_le_result = _mm_srlv_epi16(src[j], srlv_le_mask);
+      __m128i shuffle_hi_result = _mm_shuffle_epi8(srlv_le_result, shuffle_hi_mask);
+      __m128i shuffle_lo_result = _mm_shuffle_epi8(srlv_le_result, shuffle_lo_mask);
+      __m128i result = _mm_or_si128(shuffle_hi_result, shuffle_lo_result);
+      _mm_mask_storeu_epi8(pg, k, result);
+      pg += 2;
+    }
+
+    pg_cnt -= 8;
+  }
+
+  dbg("%s, remaining pg_cnt %d\n", __func__, pg_cnt);
+  while (pg_cnt > 0) {
+    cb = *b++;
+    y0 = *y++;
+    cr = *r++;
+    y1 = *y++;
+
+    pg->Cb00 = cb >> 8;
+    pg->Cb00_ = cb >> 6;
+    pg->Y00 = y0 >> 10;
+    pg->Y00_ = y0 >> 6;
+    pg->Cr00 = cr >> 12;
+    pg->Cr00_ = cr >> 6;
+    pg->Y01 = y1 >> 14;
+    pg->Y01_ = y1 >> 6;
+    pg++;
+
+    pg_cnt--;
+  }
+
+  return 0;
+}
+
 MT_TARGET_CODE_STOP
 #endif
