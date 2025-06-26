@@ -558,6 +558,8 @@ struct st_app_rx_st20p_session {
 
   bool measure_latency;
   uint64_t stat_latency_us_sum;
+
+  void* tmp_framebuff;
 };
 
 struct st_app_tx_st30p_session {
