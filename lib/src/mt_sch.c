@@ -641,6 +641,21 @@ static inline bool sch_socket_match(int cpu_socket, int dev_socket,
   return mt_socket_match(cpu_socket, dev_socket);
 }
 
+/*
+ * check if the lcore has not been properly released by previous(currently dead) process,
+ * if so, clean it up
+ */
+static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
+                                      struct mt_user_info* info) {
+  if (!shm_entry->active) return;
+  struct mt_user_info* u_info = &shm_entry->u_info;
+  if (0 != strncmp(u_info->hostname, info->hostname, sizeof(u_info->hostname))) return;
+  if (0 != strncmp(u_info->user, info->user, sizeof(u_info->user))) return;
+  if (kill(shm_entry->pid, 0) != 0) {
+    shm_entry->active = false;
+  }
+}
+
 int mt_sch_get_lcore(struct mtl_main_impl* impl, unsigned int* lcore,
                      enum mt_lcore_type type, int socket) {
   unsigned int cur_lcore;
@@ -690,6 +705,7 @@ again:
 
       if ((cur_lcore < RTE_MAX_LCORE) &&
           sch_socket_match(rte_lcore_to_socket_id(cur_lcore), socket, skip_numa_check)) {
+        lcore_shm_check_and_clean(shm_entry, info);
         if (!shm_entry->active) {
           *lcore = cur_lcore;
           shm_entry->active = true;
