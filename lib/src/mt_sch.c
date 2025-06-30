@@ -653,6 +653,7 @@ static void lcore_shm_check_and_clean(struct mt_lcore_shm_entry* shm_entry,
   if (0 != strncmp(u_info->user, info->user, sizeof(u_info->user))) return;
   if (kill(shm_entry->pid, 0) != 0) {
     shm_entry->active = false;
+    info("%s, releasing lcore for dead process pid %d \n", __func__, shm_entry->pid);
   }
 }
 
