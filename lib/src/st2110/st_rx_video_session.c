@@ -2778,8 +2778,7 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
 
       check_err_code = rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
       if (check_err_code < 0) {
-        err("%s(%d,%d), handle mbuf fail %d\n", __func__, s->idx, s_port,
-            check_err_code);
+        err("%s(%d,%d), handle mbuf fail %d\n", __func__, s->idx, s_port, check_err_code);
       }
 
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
