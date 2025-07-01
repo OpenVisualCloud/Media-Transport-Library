@@ -2719,14 +2719,14 @@ static int rv_handle_mbuf(void* priv, struct rte_mbuf** mbuf, uint16_t nb) {
       mt_rtcp_rx_parse_rtp_packet(s->rtcp_rx[s_port], rtp);
     }
     int handler_ret = s->pkt_handler(s, mbuf[i], s_port, ctl_thread);
-    ret += handler_ret;
-    if (ret < 0) {
+    if (handler_ret < 0) {
       s->port_user_stats[s_port].err_packets++;
     } else {
       s->stat_bytes_received += mbuf[i]->pkt_len;
       s->port_user_stats[s_port].packets++;
       s->port_user_stats[s_port].bytes += mbuf[i]->pkt_len;
     }
+    ret += handler_ret;
   }
   return ret;
 }
@@ -2737,6 +2737,8 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
   int num_port = s->ops.num_port;
 
   bool done = true;
+
+  static int check_err_code;
 
   if (s->dma_dev) {
     rv_dma_dequeue(s);
@@ -2774,7 +2776,12 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
         s->in_continuous_burst[s_port] = true;
       }
 
-      rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+      check_err_code = rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+      if (check_err_code < 0) {
+        err("%s(%d,%d), handle mbuf fail %d\n", __func__, s->idx, s_port,
+            check_err_code);
+      }
+
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
 
       done = false;
