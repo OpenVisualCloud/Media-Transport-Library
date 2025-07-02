@@ -8,8 +8,7 @@ linux_gtest: &linux_gtest
   - .github/workflows/ubuntu_build_with_gtest.yml
   - '.github/workflows/upl*'
   - 'patches/ice_drv/**'
-  - '*src'
-  - '*build'
+  - *ubuntu_build
 
 ice_build: &ice_build
   - .github/workflows/base_build.yml
