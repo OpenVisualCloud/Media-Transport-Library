@@ -2736,6 +2736,8 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
   uint16_t rv;
   int num_port = s->ops.num_port;
 
+  int check_err_status;
+
   bool done = true;
 
   if (s->dma_dev) {
@@ -2774,7 +2776,13 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
         s->in_continuous_burst[s_port] = true;
       }
 
-      rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+      check_err_status = rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
+
+     if (check_err_status < 0) {
+        dbg("%s(%d,%d), handle mbuf fail %d\n", __func__, s->idx, s_port,
+            check_err_status);
+      }
+
       rte_pktmbuf_free_bulk(&mbuf[0], rv);
 
       done = false;
