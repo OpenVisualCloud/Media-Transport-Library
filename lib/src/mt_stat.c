@@ -180,7 +180,7 @@ int mt_stat_uinit(struct mtl_main_impl* impl) {
     mt_free(item);
   }
 
-  ret = rte_eal_alarm_cancel(stat_alarm_handler, impl);
+  ret = rte_eal_alarm_cancel(stat_alarm_handler, (void *)-1);
   if (ret < 0) err("%s, alarm cancel fail %d\n", __func__, ret);
   if (mgr->stat_tid) {
     rte_atomic32_set(&mgr->stat_stop, 1);
