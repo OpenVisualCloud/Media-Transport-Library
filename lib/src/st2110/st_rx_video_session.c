@@ -2778,7 +2778,7 @@ static int rv_pkt_rx_tasklet(struct st_rx_video_session_impl* s) {
 
       check_err_status = rv_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
 
-     if (check_err_status < 0) {
+      if (check_err_status < 0) {
         dbg("%s(%d,%d), handle mbuf fail %d\n", __func__, s->idx, s_port,
             check_err_status);
       }
