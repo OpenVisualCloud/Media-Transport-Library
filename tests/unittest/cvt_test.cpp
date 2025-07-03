@@ -251,6 +251,8 @@ TEST(Cvt, yuv422p10le_to_rfc4175_422be10_scalar) {
 TEST(Cvt, yuv422p10le_to_rfc4175_422be10_avx512) {
   test_cvt_yuv422p10le_to_rfc4175_422be10(1920, 1080, MTL_SIMD_LEVEL_AVX512,
                                           MTL_SIMD_LEVEL_AVX512);
+  test_cvt_yuv422p10le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,
+                                          MTL_SIMD_LEVEL_AVX512);
   test_cvt_yuv422p10le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_NONE,
                                           MTL_SIMD_LEVEL_AVX512);
   test_cvt_yuv422p10le_to_rfc4175_422be10(722, 111, MTL_SIMD_LEVEL_AVX512,

@@ -998,14 +998,50 @@ static inline int st20_rfc4175_444le12_to_gbrp12le(struct st20_rfc4175_444_12_pg
   return st20_rfc4175_444le12_to_444p12le(pg, g, r, b, w, h);
 }
 
-// Convert rfc4175_422be10 to yuv422p16le with 6 bit padding (no optimization so far).
+/**
+ * Convert rfc4175_422be10 to yuv422p16le (10 bit with 6-bit padding).
+ *
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param y
+ *   Point to Y(yuv422p16le) vector.
+ * @param b
+ *   Point to b(yuv422p16le) vector.
+ * @param r
+ *   Point to r(yuv422p16le) vector.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
 static inline int st20_rfc4175_422be10_to_yuv422p16le(
     struct st20_rfc4175_422_10_pg2_be* pg, uint16_t* y, uint16_t* b, uint16_t* r,
     uint32_t w, uint32_t h) {
   return st20_rfc4175_422be10_to_yuv422p16le_simd(pg, y, b, r, w, h, MTL_SIMD_LEVEL_MAX);
 }
 
-// Lossy conversion from yuv422p16le to rfc4175_422be10 (no optimization so far).
+/**
+ * Lossy conversion from yuv422p16le to rfc4175_422be10.
+ *
+ * @param y
+ *   Point to Y(yuv422p16le) vector.
+ * @param b
+ *   Point to b(yuv422p16le) vector.
+ * @param r
+ *   Point to r(yuv422p16le) vector.
+ * @param pg
+ *   Point to pg(rfc4175_422be10) data.
+ * @param w
+ *   The st2110-20(video) width.
+ * @param h
+ *   The st2110-20(video) height.
+ * @return
+ *   - 0 if successful.
+ *   - <0: Error code if convert fail.
+ */
 static inline int st20_yuv422p16le_to_rfc4175_422be10(
     uint16_t* y, uint16_t* b, uint16_t* r, struct st20_rfc4175_422_10_pg2_be* pg,
     uint32_t w, uint32_t h) {
