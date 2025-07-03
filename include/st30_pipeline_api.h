@@ -132,6 +132,12 @@ struct st30p_tx_ops {
    */
   int (*notify_frame_done)(void* priv, struct st30_frame* frame);
 
+  /**
+   * Optional. The rtp timestamp delta(us) to the start time of frame.
+   * Zero means the rtp timestamp at the start of the frame.
+   */
+  int32_t rtp_timestamp_delta_us;
+
   /*
    * Optional. The size of fifo ring which used between the packet builder and pacing.
    * Leave to zero to use default value: the packet number within
