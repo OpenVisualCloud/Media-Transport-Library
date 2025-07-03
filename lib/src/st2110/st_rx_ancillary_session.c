@@ -114,22 +114,20 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  /* check interlace */
-  if (s->ops.interlaced) {
-    if (!(rfc8331->f & 0x2)) {
-      s->stat_pkts_wrong_interlace_dropped++;
-      return -EINVAL;
-    }
+  /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
+  if ((rfc8331->f & 0x3) == 0x1) {
+    s->stat_pkts_wrong_interlace_dropped++;
+    return -EINVAL;
+  }
+  /* 0b10: first field (bit 1 set, bit 0 clear)
+     0b11: second field (bit 1 set, bit 0 set) */
+  if (rfc8331->f & 0x2) {
     if (rfc8331->f & 0x1)
       s->stat_interlace_second_field++;
     else
       s->stat_interlace_first_field++;
-  } else {
-    if (rfc8331->f) {
-      s->stat_pkts_wrong_interlace_dropped++;
-      return -EINVAL;
-    }
   }
+  /* 0b00: progressive or not specified, do nothing */
 
   /* set if it is first pkt */
   if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
