@@ -14,6 +14,13 @@ on:
 permissions:
   contents: read
 
+env:
+  DOCKER_IMAGE_TAG: "${{ github.sha }}"
+  DOCKER_IMAGE_NAME: "mtl"
+  DOCKER_REGISTRY: "ghcr.io"
+  DOCKER_REGISTRY_PREFIX: "openvisualcloud/media-transport-library"
+  DOCKER_REGISTRY_LOGIN: "${{ github.repository == 'openvisualcloud/media-transport-library' }}"
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -37,7 +44,7 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
-
+      packages: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
@@ -50,17 +57,27 @@ jobs:
         uses: docker/setup-buildx-action@4fd812986e6c8c2a69e18311145f9371337f27d4 # v3.4.0
         with:
           buildkitd-flags: "--debug --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host"
-          platforms: "linux/amd64"
+          platforms: "linux/amd64/v4"
           driver-opts: memory=14Gib,memory-swap=25Gib,env.BUILDKIT_STEP_LOG_MAX_SIZE=50000000,env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
+
+      - name: Login to Docker Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        if: ${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}
+        continue-on-error: true
+        with:
+          registry: "${{ env.DOCKER_REGISTRY }}"
+          username: "${{ github.repository_owner }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Build image
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
-          push: false
-          file: docker/ubuntu.dockerfile
-          tags: mtl:latest
-
-
+          push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}"
+          context: "${{ github.workspace }}"
+          file: "${{ github.workspace }}/docker/ubuntu.dockerfile"
+          tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
+          cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}"
+          cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
 
   manager-docker-build:
     needs: changes
@@ -69,20 +86,23 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
-
+      packages: write
+    env:
+      DOCKER_IMAGE_NAME: mtl-manager
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
+
       - name: Checkout repository
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@4fd812986e6c8c2a69e18311145f9371337f27d4 # v3.4.0
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
         with:
           buildkitd-flags: "--debug --allow-insecure-entitlement security.insecure --allow-insecure-entitlement network.host"
-          platforms: "linux/amd64"
+          platforms: "linux/amd64/v4"
           driver-opts: memory=14Gib,memory-swap=25Gib,env.BUILDKIT_STEP_LOG_MAX_SIZE=50000000,env.BUILDKIT_STEP_LOG_MAX_SPEED=10000000
 
       - name: Cache version from version file
@@ -90,10 +110,23 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: echo "VERSION=$(cat VERSION)">> "$GITHUB_OUTPUT"
 
+      - name: Login to Docker Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        if: ${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}
+        continue-on-error: true
+        with:
+          registry: "${{ env.DOCKER_REGISTRY }}"
+          username: "${{ github.repository_owner }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+
       - name: Build manager image
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
-          push: false
-          context: ${{ github.workspace }}/manager
-          tags: mtl-manager:latest
+          push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}"
+          context: "${{ github.workspace }}/manager"
+          file: "${{ github.workspace }}/manager/Dockerfile"
+          tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
+          cache-from: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }}"
+          cache-to: "type=gha,scope=${{ env.DOCKER_IMAGE_NAME }},mode=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'max' || 'min' }}"
           build-args: VERSION=${{ steps.version.outputs.VERSION }}
+
