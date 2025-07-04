@@ -60,6 +60,9 @@ static enum cvt_frame_fmt cvt_parse_fmt(const char* sfmt) {
   if (!strcmp(sfmt, "yuv422p12le")) {
     return CVT_FRAME_FMT_YUV422PLANAR12LE;
   }
+  if (!strcmp(sfmt, "yuv422p16le")) {
+    return CVT_FRAME_FMT_YUV422PLANAR16LE;
+  }
   if (!strcmp(sfmt, "yuv444p10le")) {
     return CVT_FRAME_FMT_YUV444PLANAR10LE;
   }

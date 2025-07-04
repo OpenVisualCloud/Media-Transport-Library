@@ -119,4 +119,12 @@ int st20_rfc4175_422be10_to_yuv420p8_avx512(struct st20_rfc4175_422_10_pg2_be* p
                                             uint8_t* y, uint8_t* b, uint8_t* r,
                                             uint32_t w, uint32_t h);
 
+int st20_rfc4175_422be10_to_yuv422p16le_avx512(struct st20_rfc4175_422_10_pg2_be* pg,
+                                               uint16_t* y, uint16_t* b, uint16_t* r,
+                                               uint32_t w, uint32_t h);
+
+int st20_yuv422p16le_to_rfc4175_422be10_avx512(uint16_t* y, uint16_t* b, uint16_t* r,
+                                               struct st20_rfc4175_422_10_pg2_be* pg,
+                                               uint32_t w, uint32_t h);
+
 #endif

@@ -1909,6 +1909,8 @@ static int parse_st20p_format(json_object* st20p_obj, st_json_st20p_session_t* s
     st20p->info.format = ST_FRAME_FMT_GBRPLANAR12LE;
   } else if (strcmp(format, "RGBRFC4175PG2BE12") == 0) {
     st20p->info.format = ST_FRAME_FMT_RGBRFC4175PG2BE12;
+  } else if (strcmp(format, "YUV422PLANAR16LE") == 0) {
+    st20p->info.format = ST_FRAME_FMT_YUV422PLANAR16LE;
   } else {
     err("%s, invalid output format %s\n", __func__, format);
     return -ST_JSON_NOT_VALID;

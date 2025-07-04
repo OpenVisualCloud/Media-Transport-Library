@@ -498,8 +498,8 @@ static int rx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_rx
   if (ops->flags & ST20P_RX_FLAG_USE_MULTI_THREADS)
     ops_rx.flags |= ST20_RX_FLAG_USE_MULTI_THREADS;
   if (ops->flags & ST20P_RX_FLAG_PKT_CONVERT) {
-    uint64_t pkt_cvt_output_cap =
-        ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_Y210 | ST_FMT_CAP_UYVY;
+    uint64_t pkt_cvt_output_cap = ST_FMT_CAP_YUV422PLANAR10LE | ST_FMT_CAP_Y210 |
+                                  ST_FMT_CAP_UYVY | ST_FMT_CAP_YUV422PLANAR16LE;
     if (ops->transport_fmt != ST20_FMT_YUV_422_10BIT) {
       err("%s(%d), only 422 10bit support packet convert\n", __func__, idx);
       return -EIO;

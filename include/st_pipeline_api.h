@@ -148,6 +148,8 @@ enum st_frame_fmt {
   ST_FRAME_FMT_YUV422CUSTOM8 = 13,
   /** YUV 420 planar 8bit */
   ST_FRAME_FMT_YUV420PLANAR8 = 14,
+  /** YUV 422 planar 10bit little endian, with 6-bit padding in least significant bits*/
+  ST_FRAME_FMT_YUV422PLANAR16LE = 15,
   /** End of yuv format list, new yuv should be inserted before this */
   ST_FRAME_FMT_YUV_END,
 
@@ -208,6 +210,8 @@ enum st_frame_fmt {
 #define ST_FMT_CAP_UYVY (MTL_BIT64(ST_FRAME_FMT_UYVY))
 /** ST format cap of ST_FRAME_FMT_YUV422RFC4175PG2BE10 */
 #define ST_FMT_CAP_YUV422RFC4175PG2BE10 (MTL_BIT64(ST_FRAME_FMT_YUV422RFC4175PG2BE10))
+/** ST format cap of ST_FRAME_FMT_YUV422PLANAR16LE (10 bit with 6 bit padding)*/
+#define ST_FMT_CAP_YUV422PLANAR16LE (MTL_BIT64(ST_FRAME_FMT_YUV422PLANAR16LE))
 
 /** ST format cap of ST_FRAME_FMT_ARGB */
 #define ST_FMT_CAP_ARGB (MTL_BIT64(ST_FRAME_FMT_ARGB))

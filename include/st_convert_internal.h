@@ -1482,6 +1482,18 @@ static inline int st20_rfc4175_422be10_to_yuv422p10le_2way_cpuva(
       (uint16_t*)r_decimated, decimator);
 }
 
+/* Convert rfc4175_422be10 to yuv422p16le (10 bit with 6-bit padding)*/
+int st20_rfc4175_422be10_to_yuv422p16le_simd(struct st20_rfc4175_422_10_pg2_be* pg,
+                                             uint16_t* y, uint16_t* b, uint16_t* r,
+                                             uint32_t w, uint32_t h,
+                                             enum mtl_simd_level level);
+
+/* Lossy conversion from yuv422p16le to rfc4175_422be10 */
+int st20_yuv422p16le_to_rfc4175_422be10_simd(uint16_t* y, uint16_t* b, uint16_t* r,
+                                             struct st20_rfc4175_422_10_pg2_be* pg,
+                                             uint32_t w, uint32_t h,
+                                             enum mtl_simd_level level);
+
 #if defined(__cplusplus)
 }
 #endif
