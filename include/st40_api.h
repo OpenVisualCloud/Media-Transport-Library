@@ -84,6 +84,7 @@ enum st40_type {
 /**
  * A structure describing a st2110-40(ancillary) rfc8331 rtp header
  */
+#ifdef MTL_LITTLE_ENDIAN
 MTL_PACK(struct st40_rfc8331_rtp_hdr {
   /** Rtp rfc3550 base hdr */
   struct st_rfc3550_rtp_hdr base;
@@ -91,7 +92,28 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
   uint16_t seq_number_ext;
   /** Number of octets of the ANC data RTP payload */
   uint16_t length;
-
+union 
+{
+  struct {
+    /** reserved */
+    uint32_t reserved : 22;
+    /** signaling the field specified by the RTP timestamp in an interlaced SDI raster */
+    uint32_t f : 2;
+    /** the count of the total number of ANC data packets carried in the RTP payload */
+    uint32_t anc_count : 8;
+  } st40_rfc8331_hdr;
+  uint32_t swapped_handle_rtp_hdr;
+};
+});
+#else
+MTL_PACK(struct st40_rfc8331_rtp_hdr {
+  /** Rtp rfc3550 base hdr */
+  struct st_rfc3550_rtp_hdr base;
+  /** Extended Sequence Number */
+  uint16_t seq_number_ext;
+  /** Number of octets of the ANC data RTP payload */
+  uint16_t length;
+union {
   struct {
     /** the count of the total number of ANC data packets carried in the RTP payload */
     uint32_t anc_count : 8;
@@ -99,8 +121,11 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
     uint32_t f : 2;
     /** reserved */
     uint32_t reserved : 22;
-  };
+  } st40_rfc8331_hdr;
+  uint32_t swapped_handle_rtp_hdr;
+};
 });
+#endif
 
 /* A structure describing the first 32 bits of an ST 2110-40 (ancillary) payload header */
 #ifdef MTL_LITTLE_ENDIAN
