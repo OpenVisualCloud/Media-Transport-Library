@@ -1,45 +1,61 @@
 # This is used by the action https://github.com/dorny/paths-filter
 
+src: &src
+  - 'patches/dpdk/**'
+  - 'include/**'
+  - 'lib/**'
+  - 'ld_preload/**'
+  - 'gpu_direct/**'
+  - 'tests/src/**'
+  - 'tests/tools/**'
+  - tests/meson.build
+  - tests/meson_options.txt
+  - 'manager/**'
+
+build: &build
+  - build.sh
+  - kahawai.json
+  - meson.build
+  - meson_options.txt
+  - VERSION
+  - versions.env
+  - "script/**"
+
+docker: &docker
+  - docker/**
+  - manager/Dockerfile
+  - manager/.dockerignore
+  - '.dockerignore'
+
+ecosystem: &ecosystem
+  - 'app/**'
+  - 'tests/tools/**'
+  - 'tools/**'
+  - 'ecosystem/**'
+  - 'rust/**'
+  - 'index.rst'
+  - 'python/**'
+  - 'plugins/**'
+  - 'script/build_app.sh'
+  - 'script/build_python.sh'
+  - 'script/build_ebpf_xdp.sh'
+  - 'script/build_obs_plugin.sh'
+  - 'script/build_st22_avcodec_plugin.sh'
+
+ice_build: &ice_build
+  - 'paths/ice_drv/**'
+  - 'script/build_ice_driver.sh'
+
 ubuntu_build: &ubuntu_build
   - .github/workflows/base_build.yml
-  - '**'
+  - *src
+  - *build
+  - *docker
+  - *ecosystem
 
 linux_gtest: &linux_gtest
   - .github/workflows/ubuntu_build_with_gtest.yml
   - '.github/workflows/upl*'
-  - 'patches/ice_drv/**'
-  - '*src'
-  - '*build'
+  - *ice_build
+  - *ubuntu_build
 
-ice_build: &ice_build
-  - .github/workflows/base_build.yml
-  - 'paths/ice_drv/**'
-  - 'script/build_ice_driver.sh'
-
-manager_build: &manager_build
-  - .github/workflows/base_build.yml
-  - 'manager/**'
-
-plugin_build: &plugin_build
-  - .github/workflows/base_build.yml
-  - 'plugins/**'
-
-rust_build: &rust_hooks_build
-  - .github/workflows/base_build.yml
-  - 'rust/**'
-
-python_build: &python_hooks_build
-  - .github/workflows/base_build.yml
-  - 'python/**'
-
-tools_monitors_build: &mtl_monitors_build
-  - .github/workflows/base_build.yml
-  - 'tools/ebpf/**'
-
-tools_readcap_build: &mtl_readcap_build
-  - .github/workflows/base_build.yml
-  - 'tools/readcap/**'
-
-tools_cpu_emulator_build: &mtl_cpu_emulator_build
-  - .github/workflows/base_build.yml
-  - 'tools/sch_smi_emulate/**'
