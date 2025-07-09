@@ -45,6 +45,7 @@ script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 setup_script_folder=${script_path/$script_name/}
 root_folder="${setup_script_folder}/../.."
+nproc=$(nproc 2>/dev/null || echo 50)
 # shellcheck disable=SC1091
 . "${root_folder}/script/common.sh"
 
@@ -167,9 +168,8 @@ function setup_ubuntu_install_dependencies() {
 		fi
 		cd build || exit 1
 		cmake .. -D CMAKE_BUILD_TYPE=Release
-		cmake --build . --target package
-
-		cmake --build . --target install
+		cmake --build . --target package -j"${nproc}"
+		cmake --build . --target install -j"${nproc}"
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
@@ -324,7 +324,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		git am "${root_folder}"/patches/ice_drv/"${ICE_VER}"/*.patch
 
 		cd src
-		make
+		make -j"${nproc}"
 		STEP=$((STEP + 1))
 	fi
 
@@ -458,7 +458,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		git checkout v4.1.1
 		./autogen.sh
 		./configure
-		make
+		make -j"${nproc}"
 		make install
 		cd "${root_folder}/python/swig"
 		swig -python -I/usr/local/include -o pymtl_wrap.c pymtl.i
@@ -478,22 +478,22 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_MONITORS}" == "1" ]; then
 		echo "$STEP Tools MTL monitors build and install"
 		cd "${root_folder}/tools/ebpf" || exit 1
-		make lcore_monitor
-		make udp_monitor
+		make lcore_monitor -j"${nproc}"
+		make udp_monitor -j"${nproc}"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_READPCAP}" == "1" ]; then
 		echo "$STEP Tools MTL readpcap build and install"
 		cd "${root_folder}/tools/readpcap" || exit 1
-		make
+		make -j"${nproc}"
 		STEP=$((STEP + 1))
 	fi
 
 	if [ "${TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR}" == "1" ]; then
 		echo "$STEP Tools MTL CPU emulator build and install"
 		cd "${root_folder}/tools/sch_smi_emulate" || exit 1
-		make
+		make -j"${nproc}"
 		STEP=$((STEP + 1))
 	fi
 
