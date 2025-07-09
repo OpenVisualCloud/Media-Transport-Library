@@ -73,7 +73,7 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
-          push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' }}"
+          push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' && github.ref == 'refs/heads/main' }}"
           context: "${{ github.workspace }}"
           file: "${{ github.workspace }}/docker/ubuntu.dockerfile"
           tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
@@ -114,6 +114,7 @@ jobs:
       - name: Login to Docker Container Registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         if: ${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}
+        id: dockerLoginStep
         continue-on-error: true
         with:
           registry: "${{ env.DOCKER_REGISTRY }}"
@@ -123,7 +124,7 @@ jobs:
       - name: Build manager image
         uses: docker/build-push-action@14487ce63c7a62a4a324b0bfb37086795e31c6c1 # v6.16.0
         with:
-          push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' }}"
+          push: "${{ env.DOCKER_REGISTRY_LOGIN == 'true' && steps.dockerLoginStep.outcome == 'SUCCESS' && github.ref == 'refs/heads/main' }}"
           context: "${{ github.workspace }}/manager"
           file: "${{ github.workspace }}/manager/Dockerfile"
           tags: "${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REGISTRY_PREFIX }}/${{ env.DOCKER_IMAGE_NAME }}:${{ env.DOCKER_IMAGE_TAG }}"
