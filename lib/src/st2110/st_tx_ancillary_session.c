@@ -131,7 +131,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
   struct st40_rfc8331_rtp_hdr* rtp = &hdr->rtp;
-   uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
+  uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
   rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
@@ -420,9 +420,6 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   s->st40_seq_id++;
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
 
-  uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
-  rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
-
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st40_frames[s->st40_frame_idx];
@@ -658,8 +655,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
     if (ops->type == ST40_TYPE_RTP_LEVEL) {
       struct st40_rfc8331_rtp_hdr* rtp =
           rte_pktmbuf_mtod(pkt_rtp, struct st40_rfc8331_rtp_hdr*);
-      uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
-      rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+      rtp->swapped_handle_rtp_hdr = ntohl(rtp->swapped_handle_rtp_hdr);
       if (rtp->base.tmstamp != s->st40_rtp_time) {
         /* start of a new frame */
         s->st40_pkt_idx = 0;
@@ -668,9 +664,8 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         bool second_field = false;
         if (s->ops.interlaced) {
           struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
-          uint32_t rtp_header = rfc8331->swapped_handle_rtp_hdr;
-          rfc8331->swapped_handle_rtp_hdr = ntohl(rtp_header);
-          second_field = (rfc8331->f == 0b11) ? true : false;
+          rfc8331->swapped_handle_rtp_hdr = ntohl(rfc8331->swapped_handle_rtp_hdr);
+          second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
         }
         tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
       }
