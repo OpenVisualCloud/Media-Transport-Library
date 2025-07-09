@@ -133,6 +133,8 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   struct st40_rfc8331_rtp_hdr* rtp = &hdr->rtp;
   uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
   rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+  /* Print rtp_header in both host and network byte order to check endianness */
+  info("%s(%d,%d), ANC-DEBUG 1 rtp_header host 0x%08x, network 0x%08x\n", __func__, idx, s_port, rtp_header, rtp->swapped_handle_rtp_hdr);
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
@@ -400,6 +402,8 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
 
   uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
   rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+  /* Print rtp_header in both host and network byte order to check endianness */
+  info("%s, RTP header host - ANC-DEBUG 2 network 0x%08x, host 0x%08x\n", __func__, rtp_header, rtp->swapped_handle_rtp_hdr);
 
   /* copy the hdr: eth, ip, udp */
   rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
@@ -501,9 +505,10 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   rtp = rte_pktmbuf_mtod(pkt, struct st40_rfc8331_rtp_hdr*);
   rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
-  // Swap RTP header
   uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
   rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+
+  info("%s, RTP header host - ANC-DEBUG 3  network 0x%08x, host 0x%08x\n", __func__, rtp_header, rtp->swapped_handle_rtp_hdr);
 
   // TODO How to handle it?
   /* update rtp */
@@ -607,6 +612,7 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
       struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
       uint32_t rtp_header = rfc8331->swapped_handle_rtp_hdr;
       rfc8331->swapped_handle_rtp_hdr = ntohl(rtp_header);
+      info("%s, RTP header host - ANC-DEBUG 4 network 0x%08x, host 0x%08x\n", __func__, rtp_header, rfc8331->swapped_handle_rtp_hdr);
       second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
     }
     tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
@@ -655,7 +661,11 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
     if (ops->type == ST40_TYPE_RTP_LEVEL) {
       struct st40_rfc8331_rtp_hdr* rtp =
           rte_pktmbuf_mtod(pkt_rtp, struct st40_rfc8331_rtp_hdr*);
+      info("%s, RTP header host - ANC-DEBUG 11 network 0x%08x\n", __func__, rtp->swapped_handle_rtp_hdr);
+
       rtp->swapped_handle_rtp_hdr = ntohl(rtp->swapped_handle_rtp_hdr);
+      info("%s, RTP header local 5 - ANC-DEBUG 12  host 0x%08x\n", __func__, rtp->swapped_handle_rtp_hdr);
+
       if (rtp->base.tmstamp != s->st40_rtp_time) {
         /* start of a new frame */
         s->st40_pkt_idx = 0;
@@ -664,7 +674,11 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         bool second_field = false;
         if (s->ops.interlaced) {
           struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
+          info("%s, RTP header host - ANC-DEBUG 13 network 0x%08x\n", __func__, rfc8331->swapped_handle_rtp_hdr);
+
           rfc8331->swapped_handle_rtp_hdr = ntohl(rfc8331->swapped_handle_rtp_hdr);
+
+          info("%s, RTP header local 6 - ANC-DEBUG 14 host 0x%08x\n", __func__, rfc8331->swapped_handle_rtp_hdr);
           second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
         }
         tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);

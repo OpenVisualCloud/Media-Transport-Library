@@ -197,7 +197,11 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   /* generate one anc rtp for test purpose */
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   uint32_t rtp_header = hdr->swapped_handle_rtp_hdr;
-  hdr->swapped_handle_rtp_hdr = ntohs(rtp_header);
+  hdr->swapped_handle_rtp_hdr = ntohl(rtp_header);
+
+  printf("rtp_header ANC-DEBUG (network order): 0x%08x\n", rtp_header);
+  printf("rtp_header ANC-DEBUG ( host order): 0x%08x\n", hdr->swapped_handle_rtp_hdr);
+
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
