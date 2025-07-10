@@ -706,16 +706,13 @@ static int dev_tx_queue_set_rl_rate_vf(struct mt_interface* inf, uint16_t queue,
 
   memset(&error, 0, sizeof(error));
 
-  ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
-  if (ret) {
-    err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port, ret);
-    return ret;
-  }
+  rte_atomic32_set(&inf->resetting, true);
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
 
   ret = rte_eth_dev_stop(port_id);
   if (ret) {
     err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
-    goto error_unlock_rwlock;
+    goto error_unlock;
   }
 
   /* delete old queue node */
@@ -724,7 +721,7 @@ static int dev_tx_queue_set_rl_rate_vf(struct mt_interface* inf, uint16_t queue,
     if (ret < 0) {
       err("%s(%d), node %d delete fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
-      goto error_unlock_rwlock;
+      goto error_unlock;
     }
     tx_queue->rl_shapers_mapping = -1;
   }
@@ -734,7 +731,7 @@ static int dev_tx_queue_set_rl_rate_vf(struct mt_interface* inf, uint16_t queue,
     if (!shaper) {
       err("%s(%d), rl shaper get fail for q %d\n", __func__, port, queue);
       ret = -EIO;
-      goto error_unlock_rwlock;
+      goto error_unlock;
     }
     memset(&qp, 0, sizeof(qp));
     qp.shaper_profile_id = shaper->shaper_profile_id;
@@ -745,7 +742,7 @@ static int dev_tx_queue_set_rl_rate_vf(struct mt_interface* inf, uint16_t queue,
     if (ret) {
       err("%s(%d), q %d add fail %d(%s)\n", __func__, port, queue, ret,
           mt_string_safe(error.message));
-      goto error_unlock_rwlock;
+      goto error_unlock;
     }
 
     tx_queue->rl_shapers_mapping = shaper->idx;
@@ -757,34 +754,34 @@ static int dev_tx_queue_set_rl_rate_vf(struct mt_interface* inf, uint16_t queue,
   ret = rte_eth_dev_start(port_id);
   if (ret) {
     err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
-    goto error_unlock_rwlock;
+    goto error_unlock;
   }
 
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
   if (ret) {
     err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
         mt_string_safe(error.message));
-    goto error_unlock_rwlock;
+    goto error_unlock;
   }
 
   /* restart the port to apply the new rate limit */
   ret = rte_eth_dev_stop(port_id);
   if (ret) {
     err("%s(%d), stop port %d fail %d\n", __func__, port, port_id, ret);
-    goto error_unlock_rwlock;
+    goto error_unlock;
   }
 
   ret = rte_eth_dev_start(port_id);
   if (ret) {
     err("%s(%d), start port %d fail %d\n", __func__, port, port_id, ret);
-    goto error_unlock_rwlock;
+    goto error_unlock;
   }
 
   tx_queue->bps = bps;
 
-error_unlock_rwlock:
-  ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-  if (ret) err("%s(%d), failed to release write lock, ret %d\n", __func__, port, ret);
+error_unlock:
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  rte_atomic32_set(&inf->resetting, false);
 
   return ret;
 }
@@ -838,22 +835,17 @@ static int dev_tx_queue_set_rl_rate_pf(struct mt_interface* inf, uint16_t queue,
          shaper->shaper_profile_id, shaper->rl_bps);
   }
 
-  ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
-  if (ret) {
-    err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port, ret);
-    return ret;
-  }
-
+  rte_atomic32_set(&inf->resetting, true);
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   ret = rte_tm_hierarchy_commit(port_id, 1, &error);
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
+  rte_atomic32_set(&inf->resetting, false);
   if (ret) {
     err("%s(%d), commit error (%d)%s\n", __func__, port, ret,
         mt_string_safe(error.message));
   } else {
     tx_queue->bps = bps;
   }
-
-  ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-  if (ret) err("%s(%d), failed to release write lock, ret %d\n", __func__, port, ret);
 
   return ret;
 }
@@ -2186,7 +2178,7 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
 
     mt_pthread_mutex_destroy(&inf->tx_queues_mutex);
     mt_pthread_mutex_destroy(&inf->rx_queues_mutex);
-    mt_pthread_rwlock_destroy(&inf->rl_rwlock);
+    mt_pthread_mutex_destroy(&inf->vf_cmd_mutex);
 
     dev_close_port(inf);
   }
@@ -2252,7 +2244,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->tx_pacing_way = p->pacing;
     mt_pthread_mutex_init(&inf->tx_queues_mutex, NULL);
     mt_pthread_mutex_init(&inf->rx_queues_mutex, NULL);
-    mt_pthread_rwlock_pref_wr_init(&inf->rl_rwlock);
+    mt_pthread_mutex_init(&inf->vf_cmd_mutex, NULL);
     rte_spinlock_init(&inf->stats_lock);
 
     if (mt_user_ptp_tsc_source(impl)) {

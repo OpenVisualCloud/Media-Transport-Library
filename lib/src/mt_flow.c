@@ -27,7 +27,6 @@ static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_
   struct rte_flow_item_raw spec = {0};
   struct rte_flow_item_raw mask = {0};
   struct rte_flow_action_queue to_queue = {0};
-  int ret;
 
   uint16_t port_id = inf->port_id;
   char pkt_buf[] =
@@ -59,17 +58,9 @@ static struct rte_flow* rte_rx_flow_create_raw(struct mt_interface* inf, uint16_
   action[0].conf = &to_queue;
   action[1].type = RTE_FLOW_ACTION_TYPE_END;
 
-  ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
-  if (ret) {
-    err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port_id, ret);
-    return NULL;
-  }
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
-  ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-  if (ret) {
-    err("%s(%d), failed to release write lock, ret %d\n", __func__, port_id, ret);
-    return NULL;
-  }
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   if (!r_flow) {
     err("%s(%d), rte_flow_create fail for queue %d, %s\n", __func__, port_id, q,
         mt_string_safe(error.message));
@@ -184,17 +175,9 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
     return NULL;
   }
 
-  ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
-  if (ret) {
-    err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port_id, ret);
-    return NULL;
-  }
+  mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
   r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
-  ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-  if (ret) {
-    err("%s(%d), failed to release write lock, ret %d\n", __func__, port_id, ret);
-    return NULL;
-  }
+  mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
 
   /* WA specific for e810 for PF interfaces */
   if (!has_ip_flow && !r_flow) {
@@ -209,17 +192,9 @@ static struct rte_flow* rte_rx_flow_create(struct mt_interface* inf, uint16_t q,
       return NULL;
     }
 
-    ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
-    if (ret) {
-      err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port_id, ret);
-      return NULL;
-    }
+    mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
     r_flow = rte_flow_create(port_id, &attr, pattern, action, &error);
-    ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-    if (ret) {
-      err("%s(%d), failed to release write lock, ret %d\n", __func__, port_id, ret);
-      return NULL;
-    }
+    mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
   }
 
   if (!r_flow) {
@@ -289,7 +264,6 @@ static int rx_flow_free(struct mt_interface* inf, struct mt_rx_flow_rsp* rsp) {
   enum mtl_port port = inf->port;
   struct rte_flow_error error;
   int ret;
-  int rwlock_ret;
   int max_retry = 5;
   int retry = 0;
 
@@ -299,18 +273,9 @@ retry:
     rsp->flow_id = -1;
   }
   if (rsp->flow) {
-    rwlock_ret = mt_pthread_rwlock_wrlock(&inf->rl_rwlock);
-    if (rwlock_ret) {
-      err("%s(%d), failed to acquire write lock, ret %d\n", __func__, port, rwlock_ret);
-      return rwlock_ret;
-    }
+    mt_pthread_mutex_lock(&inf->vf_cmd_mutex);
     ret = rte_flow_destroy(inf->port_id, rsp->flow, &error);
-    rwlock_ret = mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-    if (rwlock_ret) {
-      err("%s(%d), failed to release write lock, ret %d\n", __func__, port, rwlock_ret);
-      return rwlock_ret;
-    }
-
+    mt_pthread_mutex_unlock(&inf->vf_cmd_mutex);
     if (ret < 0) {
       err("%s(%d), flow destroy fail, queue %d, retry %d\n", __func__, port,
           rsp->queue_id, retry);

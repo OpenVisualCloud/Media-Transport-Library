@@ -93,55 +93,6 @@ static inline int mt_pthread_mutex_destroy(pthread_mutex_t* mutex) {
   return pthread_mutex_destroy(mutex);
 }
 
-static inline int mt_pthread_rwlock_init(pthread_rwlock_t* rwlock,
-                                         pthread_rwlockattr_t* attr) {
-  return pthread_rwlock_init(rwlock, attr);
-}
-
-static inline int mt_pthread_rwlock_pref_wr_init(pthread_rwlock_t* rwlock) {
-  pthread_rwlockattr_t rwlock_attr;
-  int ret;
-
-  ret = pthread_rwlockattr_init(&rwlock_attr);
-  if (ret) return ret;
-
-  ret = pthread_rwlockattr_setkind_np(&rwlock_attr,
-                                      PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP);
-  if (ret) {
-    pthread_rwlockattr_destroy(&rwlock_attr);
-    return ret;
-  }
-
-  ret = pthread_rwlock_init(rwlock, &rwlock_attr);
-  pthread_rwlockattr_destroy(&rwlock_attr);
-
-  return ret;
-}
-
-static inline int mt_pthread_rwlock_rdlock(pthread_rwlock_t* rwlock) {
-  return pthread_rwlock_rdlock(rwlock);
-}
-
-static inline int mt_pthread_rwlock_tryrdlock(pthread_rwlock_t* rwlock) {
-  return pthread_rwlock_tryrdlock(rwlock);
-}
-
-static inline int mt_pthread_rwlock_wrlock(pthread_rwlock_t* rwlock) {
-  return pthread_rwlock_wrlock(rwlock);
-}
-
-static inline int mt_pthread_rwlock_trywrlock(pthread_rwlock_t* rwlock) {
-  return pthread_rwlock_trywrlock(rwlock);
-}
-
-static inline int mt_pthread_rwlock_unlock(pthread_rwlock_t* rwlock) {
-  return pthread_rwlock_unlock(rwlock);
-}
-
-static inline int mt_pthread_rwlock_destroy(pthread_rwlock_t* rwlock) {
-  return pthread_rwlock_destroy(rwlock);
-}
-
 static inline int mt_pthread_cond_init(pthread_cond_t* cond,
                                        pthread_condattr_t* cond_attr) {
   return pthread_cond_init(cond, cond_attr);

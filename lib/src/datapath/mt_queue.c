@@ -45,20 +45,7 @@ static uint16_t rx_csq_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pk
 
 static uint16_t rx_dpdk_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                               const uint16_t nb_pkts) {
-  enum mtl_port port_id = entry->rxq->port;
-  struct mt_interface* inf = mt_if(entry->parent, port_id);
-  int ret;
-
-  /* Trylock as we should not block in tasklates */
-  ret = mt_pthread_rwlock_tryrdlock(&inf->rl_rwlock);
-  if (ret) {
-    dbg("%s(%d), try lock fail %d\n", __func__, port_id, ret);
-    return 0;
-  }
-  ret = mt_dpdk_rx_burst(entry->rxq, rx_pkts, nb_pkts);
-  mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-
-  return ret;
+  return mt_dpdk_rx_burst(entry->rxq, rx_pkts, nb_pkts);
 }
 
 struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
@@ -176,20 +163,7 @@ static uint16_t tx_tsq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pk
 
 static uint16_t tx_dpdk_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                               uint16_t nb_pkts) {
-  enum mtl_port port_id = entry->txq->port;
-  struct mt_interface* inf = mt_if(entry->parent, port_id);
-  uint16_t ret;
-
-  /* Trylock as we should not block in tasklates */
-  ret = mt_pthread_rwlock_tryrdlock(&inf->rl_rwlock);
-  if (ret) {
-    dbg("%s(%d), try lock fail %d\n", __func__, port_id, ret);
-    return 0;
-  }
-  ret = mt_dpdk_tx_burst(entry->txq, tx_pkts, nb_pkts);
-  mt_pthread_rwlock_unlock(&inf->rl_rwlock);
-
-  return ret;
+  return mt_dpdk_tx_burst(entry->txq, tx_pkts, nb_pkts);
 }
 
 struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
