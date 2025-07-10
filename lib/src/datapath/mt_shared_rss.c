@@ -85,6 +85,8 @@ static int srss_sch_tasklet_handler(void* priv) {
     if (srss->xdps) {
       rx = mt_rx_xdp_burst(srss->xdps[queue], pkts, MT_SRSS_BURST_SIZE);
     } else {
+      struct mt_interface* inf = mt_if(impl, mt_port_id(impl, srss->port));
+      if (rte_atomic32_read(&inf->resetting)) continue;
       rx =
           rte_eth_rx_burst(mt_port_id(impl, srss->port), queue, pkts, MT_SRSS_BURST_SIZE);
     }
