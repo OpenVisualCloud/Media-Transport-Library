@@ -95,7 +95,6 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
   uint32_t rtp_header = rfc8331->swapped_handle_rtp_hdr;
   rfc8331->swapped_handle_rtp_hdr = ntohl(rtp_header);
-  printf("rtp_header: ANC-DEBUG 0x%08x (network order), 0x%08x (host order)\n", rtp_header,  rfc8331->swapped_handle_rtp_hdr);
   MTL_MAY_UNUSED(s_port);
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
   MTL_MAY_UNUSED(pkt_len);
