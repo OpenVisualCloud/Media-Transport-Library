@@ -131,6 +131,9 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
   struct st40_rfc8331_rtp_hdr* rtp = &hdr->rtp;
+  uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
+  rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+  /* Print rtp_header in both host and network byte order to check endianness */
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
@@ -396,6 +399,10 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   udp = &hdr->udp;
   rtp = (struct st40_rfc8331_rtp_hdr*)&udp[1];
 
+  uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
+  rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+  /* Print rtp_header in both host and network byte order to check endianness */
+
   /* copy the hdr: eth, ip, udp */
   rte_memcpy(&hdr->eth, &s->hdr[MTL_SESSION_PORT_P].eth, sizeof(hdr->eth));
   rte_memcpy(ipv4, &s->hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
@@ -465,14 +472,14 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   pkt->data_len += payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->anc_count = idx - s->st40_pkt_idx;
+  rtp->st40_rfc8331_hdr.anc_count = idx - s->st40_pkt_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
-      rtp->f = 0b11;
+      rtp->st40_rfc8331_hdr.f = 0b11;
     else
-      rtp->f = 0b10;
+      rtp->st40_rfc8331_hdr.f = 0b10;
   } else {
-    rtp->f = 0b00;
+    rtp->st40_rfc8331_hdr.f = 0b00;
   }
   if (idx == anc_count) rtp->base.marker = 1;
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
@@ -496,6 +503,10 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   rtp = rte_pktmbuf_mtod(pkt, struct st40_rfc8331_rtp_hdr*);
   rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
+  uint32_t rtp_header = rtp->swapped_handle_rtp_hdr;
+  rtp->swapped_handle_rtp_hdr = ntohl(rtp_header);
+
+  // TODO How to handle it?
   /* update rtp */
   rtp->base.seq_number = htons(s->st40_seq_id);
   rtp->seq_number_ext = htons(s->st40_ext_seq_id);
@@ -553,14 +564,14 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   pkt->data_len = payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->anc_count = idx - anc_idx;
+  rtp->st40_rfc8331_hdr.anc_count = idx - anc_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
-      rtp->f = 0b11;
+      rtp->st40_rfc8331_hdr.f = 0b11;
     else
-      rtp->f = 0b10;
+      rtp->st40_rfc8331_hdr.f = 0b10;
   } else {
-    rtp->f = 0b00;
+    rtp->st40_rfc8331_hdr.f = 0b00;
   }
   if (idx == anc_count) rtp->base.marker = 1;
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
@@ -595,7 +606,9 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     bool second_field = false;
     if (s->ops.interlaced) {
       struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
-      second_field = (rfc8331->f == 0b11) ? true : false;
+      uint32_t rtp_header = rfc8331->swapped_handle_rtp_hdr;
+      rfc8331->swapped_handle_rtp_hdr = ntohl(rtp_header);
+      second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
     }
     tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
   }
@@ -643,6 +656,9 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
     if (ops->type == ST40_TYPE_RTP_LEVEL) {
       struct st40_rfc8331_rtp_hdr* rtp =
           rte_pktmbuf_mtod(pkt_rtp, struct st40_rfc8331_rtp_hdr*);
+
+      rtp->swapped_handle_rtp_hdr = ntohl(rtp->swapped_handle_rtp_hdr);
+
       if (rtp->base.tmstamp != s->st40_rtp_time) {
         /* start of a new frame */
         s->st40_pkt_idx = 0;
@@ -651,7 +667,10 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         bool second_field = false;
         if (s->ops.interlaced) {
           struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
-          second_field = (rfc8331->f == 0b11) ? true : false;
+
+          rfc8331->swapped_handle_rtp_hdr = ntohl(rfc8331->swapped_handle_rtp_hdr);
+
+          second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
         }
         tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
       }
