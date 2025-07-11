@@ -48,7 +48,7 @@
 #define MT_MAX_SCH_NUM (18) /* max 18 scheduler lcore */
 
 /* max RL items */
-#define MT_MAX_RL_ITEMS (64)
+#define MT_MAX_RL_ITEMS (128)
 
 #define MT_ARP_ENTRY_MAX (60)
 
