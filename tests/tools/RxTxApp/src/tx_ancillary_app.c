@@ -196,8 +196,6 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
                                  uint16_t* mbuf_len) {
   /* generate one anc rtp for test purpose */
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
-  uint32_t rtp_header = hdr->swapped_handle_rtp_hdr;
-  hdr->swapped_handle_rtp_hdr = ntohl(rtp_header);
 
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
@@ -245,6 +243,7 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
       sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
+  hdr->swapped_handle_rtp_hdr = ntohl(hdr->swapped_handle_rtp_hdr);
   s->st40_frame_cursor += udw_size;
   if (s->st40_frame_cursor == s->st40_source_end)
     s->st40_frame_cursor = s->st40_source_begin;
