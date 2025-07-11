@@ -85,7 +85,7 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
   } else {
     *pkt_len = sizeof(struct st40_rfc8331_rtp_hdr);
   }
-  rtp->swapped_handle_rtp_hdr = ntohl(rtp->swapped_handle_rtp_hdr);
+  rtp->swapped_handle_rtp_hdr = htonl(rtp->swapped_handle_rtp_hdr);
   return 0;
 }
 
