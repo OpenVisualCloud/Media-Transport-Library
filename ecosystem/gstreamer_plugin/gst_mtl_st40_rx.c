@@ -381,6 +381,8 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   gint udw_size;
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
+  hdr->swapped_handle_rtp_hdr = ntohl(hdr->swapped_handle_rtp_hdr);
+
   payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   payload_hdr_swapped.swapped_second_hdr_chunk =
       ntohl(payload_hdr->swapped_second_hdr_chunk);
