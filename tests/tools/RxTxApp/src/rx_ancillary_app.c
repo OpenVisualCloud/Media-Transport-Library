@@ -6,9 +6,7 @@
 
 static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr) {
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
-  uint32_t rtp_header = hdr->swapped_handle_rtp_hdr;
-
-  hdr->swapped_handle_rtp_hdr = ntohl(rtp_header);
+  hdr->swapped_handle_rtp_hdr = ntohl(hdr->swapped_handle_rtp_hdr);
 
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
