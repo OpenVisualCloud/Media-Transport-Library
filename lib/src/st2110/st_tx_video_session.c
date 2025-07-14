@@ -437,6 +437,11 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
       err("%s(%d), measured speed is too low on already trained bps\n", __func__, idx);
       return -EINVAL;
     }
+
+/* Slightly increase the target bitrate to compensate for measurement inaccuracies,
+ * rounding errors, and system overhead. This helps ensure the actual transmission bitrate
+ * meets or exceeds the required rate
+ */
 #define INCREASE_BPS_FACTOR 1.005
     bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
     info("%s(%d), increase bps to %" PRIu64 "\n", __func__, idx, bps_to_set);
