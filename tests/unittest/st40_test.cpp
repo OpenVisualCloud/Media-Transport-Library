@@ -85,7 +85,6 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
   } else {
     *pkt_len = sizeof(struct st40_rfc8331_rtp_hdr);
   }
-  rtp->swapped_handle_rtp_hdr = htonl(rtp->swapped_handle_rtp_hdr);
   return 0;
 }
 
@@ -130,7 +129,6 @@ static int tx_rtp_done(void* args) {
 }
 
 static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
-  hdr->swapped_handle_rtp_hdr = ntohl(hdr->swapped_handle_rtp_hdr);
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   int anc_count = hdr->st40_rfc8331_hdr.anc_count;
