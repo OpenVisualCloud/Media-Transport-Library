@@ -101,8 +101,8 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
       uint32_t f : 2;
       /** the count of the total number of ANC data packets carried in the RTP payload */
       uint32_t anc_count : 8;
-    } st40_rfc8331_hdr;
-    uint32_t swapped_handle_rtp_hdr;
+    } first_hdr_chunk;
+    uint32_t swapped_first_hdr_chunk;
   };
 });
 #else
@@ -122,8 +122,8 @@ MTL_PACK(struct st40_rfc8331_rtp_hdr {
       uint32_t f : 2;
       /** reserved */
       uint32_t reserved : 22;
-    } st40_rfc8331_hdr;
-    uint32_t swapped_handle_rtp_hdr;
+    } first_hdr_chunk;
+    uint32_t swapped_first_hdr_chunk;
   };
 });
 #endif

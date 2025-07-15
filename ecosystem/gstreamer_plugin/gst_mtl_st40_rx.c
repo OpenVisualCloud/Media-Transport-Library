@@ -384,7 +384,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
 
-  hdr->swapped_handle_rtp_hdr = ntohl(hdr->swapped_handle_rtp_hdr);
+  hdr->swapped_first_hdr_chunk = ntohl(hdr->swapped_first_hdr_chunk);
 
   payload_hdr_swapped.swapped_second_hdr_chunk =
       ntohl(payload_hdr->swapped_second_hdr_chunk);

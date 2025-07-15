@@ -190,7 +190,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   s->st40_seq_id = 0;
   s->st40_ext_seq_id = 0;
 
-  rtp->swapped_handle_rtp_hdr = htonl(rtp->swapped_handle_rtp_hdr);
+  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st40_src_port[s_port], s->st40_dst_port[s_port]);
@@ -469,20 +469,20 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   pkt->data_len += payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->st40_rfc8331_hdr.anc_count = idx - s->st40_pkt_idx;
+  rtp->first_hdr_chunk.anc_count = idx - s->st40_pkt_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
-      rtp->st40_rfc8331_hdr.f = 0b11;
+      rtp->first_hdr_chunk.f = 0b11;
     else
-      rtp->st40_rfc8331_hdr.f = 0b10;
+      rtp->first_hdr_chunk.f = 0b10;
   } else {
-    rtp->st40_rfc8331_hdr.f = 0b00;
+    rtp->first_hdr_chunk.f = 0b00;
   }
   if (idx == anc_count) rtp->base.marker = 1;
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
 
-  rtp->swapped_handle_rtp_hdr = htonl(rtp->swapped_handle_rtp_hdr);
+  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -559,18 +559,18 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   pkt->data_len = payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->st40_rfc8331_hdr.anc_count = idx - anc_idx;
+  rtp->first_hdr_chunk.anc_count = idx - anc_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
-      rtp->st40_rfc8331_hdr.f = 0b11;
+      rtp->first_hdr_chunk.f = 0b11;
     else
-      rtp->st40_rfc8331_hdr.f = 0b10;
+      rtp->first_hdr_chunk.f = 0b10;
   } else {
-    rtp->st40_rfc8331_hdr.f = 0b00;
+    rtp->first_hdr_chunk.f = 0b00;
   }
   if (idx == anc_count) rtp->base.marker = 1;
 
-  rtp->swapped_handle_rtp_hdr = htonl(rtp->swapped_handle_rtp_hdr);
+  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
@@ -604,8 +604,8 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     bool second_field = false;
     if (s->ops.interlaced) {
       struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
-      second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
-      rfc8331->swapped_handle_rtp_hdr = htonl(rfc8331->swapped_handle_rtp_hdr);
+      second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
+      rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
     }
     tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
   }
@@ -661,8 +661,8 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         bool second_field = false;
         if (s->ops.interlaced) {
           struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
-          second_field = (rfc8331->st40_rfc8331_hdr.f == 0b11) ? true : false;
-          rfc8331->swapped_handle_rtp_hdr = htonl(rfc8331->swapped_handle_rtp_hdr);
+          second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
+          rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
         }
         tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
       }
@@ -670,7 +670,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         s->pacing.rtp_time_stamp = ntohl(rtp->base.tmstamp);
       }
       rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
-      rtp->swapped_handle_rtp_hdr = htonl(rtp->swapped_handle_rtp_hdr);
+      rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
     }
   }
 

@@ -204,13 +204,13 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
                           : s->st40_source_end - s->st40_frame_cursor;
   uint16_t check_sum, total_size, payload_len;
   hdr->base.marker = 1;
-  hdr->st40_rfc8331_hdr.anc_count = 1;
+  hdr->first_hdr_chunk.anc_count = 1;
   hdr->base.payload_type = s->st40_payload_type;
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
   hdr->base.csrc_count = 0;
-  hdr->st40_rfc8331_hdr.f = 0b00;
+  hdr->first_hdr_chunk.f = 0b00;
   hdr->base.tmstamp = s->st40_rtp_tmstamp;
   hdr->base.ssrc = htonl(0x88888888 + s->idx);
   /* update rtp seq*/
@@ -244,7 +244,7 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
 
-  hdr->swapped_handle_rtp_hdr = htonl(hdr->swapped_handle_rtp_hdr);
+  hdr->swapped_first_hdr_chunk = htonl(hdr->swapped_first_hdr_chunk);
 
   s->st40_frame_cursor += udw_size;
   if (s->st40_frame_cursor == s->st40_source_end)
