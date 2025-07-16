@@ -36,13 +36,13 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
   /* rtp hdr */
   memset(rtp, 0x0, sizeof(*rtp));
   rtp->base.marker = 1;
-  rtp->anc_count = 0;
+  rtp->first_hdr_chunk.anc_count = 0;
   rtp->base.payload_type = ST40_TEST_PAYLOAD_TYPE;
   rtp->base.version = 2;
   rtp->base.extension = 0;
   rtp->base.padding = 0;
   rtp->base.csrc_count = 0;
-  rtp->f = 0b00;
+  rtp->first_hdr_chunk.f = 0b00;
   rtp->base.tmstamp = s->rtp_tmstamp;
   rtp->base.ssrc = htonl(0x88888888 + s->idx);
   /* update rtp seq*/
@@ -64,7 +64,7 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
     payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
     payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
     payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
-    rtp->anc_count = 1;
+    rtp->first_hdr_chunk.anc_count = 1;
     for (int i = 0; i < udw_size; i++) {
       st40_set_udw(i + 3,
                    st40_add_parity_bits(s->frame_buf[s->seq_id % TEST_SHA_HIST_NUM][i]),
@@ -131,7 +131,7 @@ static int tx_rtp_done(void* args) {
 static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
-  int anc_count = hdr->anc_count;
+  int anc_count = hdr->first_hdr_chunk.anc_count;
   int idx, total_size, payload_len;
 
   for (idx = 0; idx < anc_count; idx++) {

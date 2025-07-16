@@ -93,6 +93,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
   struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
+  rfc8331->swapped_first_hdr_chunk = ntohl(rfc8331->swapped_first_hdr_chunk);
   MTL_MAY_UNUSED(s_port);
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st40_rfc8331_rtp_hdr);
   MTL_MAY_UNUSED(pkt_len);
@@ -115,15 +116,15 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   }
 
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
-  if ((rfc8331->f & 0x3) == 0x1) {
+  if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
     return -EINVAL;
   }
   /* 0b10: first field (bit 1 set, bit 0 clear)
      0b11: second field (bit 1 set, bit 0 set) */
-  if (rfc8331->f & 0x2) {
-    if (rfc8331->f & 0x1)
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+  if (rfc8331->first_hdr_chunk.f & 0x2) {
+    if (rfc8331->first_hdr_chunk.f & 0x1)
+      s->stat_interlace_second_field++;
     else
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
   }
