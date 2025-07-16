@@ -244,8 +244,6 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
 
-  hdr->swapped_first_hdr_chunk = htonl(hdr->swapped_first_hdr_chunk);
-
   s->st40_frame_cursor += udw_size;
   if (s->st40_frame_cursor == s->st40_source_end)
     s->st40_frame_cursor = s->st40_source_begin;

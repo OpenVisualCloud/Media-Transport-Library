@@ -9,8 +9,6 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
 
-  hdr->swapped_first_hdr_chunk = ntohl(hdr->swapped_first_hdr_chunk);
-
   int anc_count = hdr->first_hdr_chunk.anc_count;
   int idx, total_size, payload_len;
   dbg("%s(%d), anc_count %d\n", __func__, s->idx, anc_count);

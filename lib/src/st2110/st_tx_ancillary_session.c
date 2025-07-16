@@ -190,8 +190,6 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   s->st40_seq_id = 0;
   s->st40_ext_seq_id = 0;
 
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
-
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st40_src_port[s_port], s->st40_dst_port[s_port]);
   info("%s(%d), mac: %02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx, ssrc %u\n", __func__, idx,
