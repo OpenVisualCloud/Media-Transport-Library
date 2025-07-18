@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
@@ -23,7 +23,9 @@ k_bit_mapping = {
 
 
 @pytest.mark.parametrize("dit", ["dit0", "dit1"])
-def test_dit(hosts, build, media, nic_port_list, test_time, dit, test_config, prepare_ramdisk):
+def test_dit(
+    hosts, build, media, nic_port_list, test_time, dit, test_config, prepare_ramdisk
+):
     """
     Test the Data Item Type (DIT) fastmetadata_data_item_type
     functionality to ensure it is not hardcoded and can handle different values.
@@ -53,4 +55,10 @@ def test_dit(hosts, build, media, nic_port_list, test_time, dit, test_config, pr
     )
     host = list(hosts.values())[0]
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

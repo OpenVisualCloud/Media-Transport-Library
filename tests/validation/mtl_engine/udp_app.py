@@ -7,9 +7,10 @@ import os
 import re
 
 from mtl_engine import udp_app_config
+from mtl_engine.RxTxApp import prepare_tcpdump
+
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait
-from mtl_engine.RxTxApp import prepare_tcpdump
 
 sample_ip_dict = {
     "client": "192.168.106.10",
@@ -23,7 +24,10 @@ librist_ip_dict = {
 
 
 def execute_test_sample(
-    build: str, test_time: int, nic_port_list: list, sessions_cnt: int,
+    build: str,
+    test_time: int,
+    nic_port_list: list,
+    sessions_cnt: int,
     capture_cfg=None,
     host=None,
 ) -> None:

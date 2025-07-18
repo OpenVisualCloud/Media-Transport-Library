@@ -3,8 +3,8 @@
 
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
@@ -13,7 +13,17 @@ from mtl_engine.media_files import yuv_files_422p10le
     ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
 )
 @pytest.mark.parametrize("codec", ["JPEG-XS", "H264_CBR"])
-def test_fps(hosts, build, media, nic_port_list, test_time, fps, codec, test_config, prepare_ramdisk):
+def test_fps(
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    fps,
+    codec,
+    test_config,
+    prepare_ramdisk,
+):
     st22p_file = yuv_files_422p10le["Penguin_1080p"]
     host = list(hosts.values())[0]
 
@@ -38,4 +48,10 @@ def test_fps(hosts, build, media, nic_port_list, test_time, fps, codec, test_con
         codec_thread_count=16,
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

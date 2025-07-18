@@ -3,8 +3,8 @@
 
 import os
 
-import pytest
 import mtl_engine.media_creator as media_create
+import pytest
 from mtl_engine import GstreamerApp
 
 
@@ -25,9 +25,9 @@ def test_st40p_fps_size(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
-    
+
     input_file_path = media_create.create_text_file(
-        size_kb=file_size_kb, 
+        size_kb=file_size_kb,
         output_path=os.path.join(media, "test_anc.txt"),
         host=host,
     )
@@ -92,9 +92,9 @@ def test_st40p_framebuff(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
-    
+
     input_file_path = media_create.create_text_file(
-        size_kb=file_size_kb, 
+        size_kb=file_size_kb,
         output_path=os.path.join(media, "test_anc.txt"),
         host=host,
     )

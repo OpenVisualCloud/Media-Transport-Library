@@ -3,8 +3,8 @@
 
 import os
 
-import pytest
 import mtl_engine.media_creator as media_create
+import pytest
 from mtl_engine import GstreamerApp
 
 
@@ -13,11 +13,11 @@ from mtl_engine import GstreamerApp
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
 def test_audio_format(
     hosts,
-    build, 
-    media, 
-    nic_port_list, 
-    audio_format, 
-    audio_channel, 
+    build,
+    media,
+    nic_port_list,
+    audio_format,
+    audio_channel,
     audio_rate,
     test_time,
     test_config,
@@ -25,7 +25,7 @@ def test_audio_format(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
-    
+
     input_file_path = os.path.join(media, "test_audio.pcm")
 
     media_create.create_audio_file_sox(
@@ -61,7 +61,9 @@ def test_audio_format(
     )
 
     capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
-    capture_cfg["test_name"] = f"test_audio_format_{audio_format}_{audio_channel}_{audio_rate}"
+    capture_cfg["test_name"] = (
+        f"test_audio_format_{audio_format}_{audio_channel}_{audio_rate}"
+    )
 
     try:
         GstreamerApp.execute_test(

@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files, yuv_files_422rfc10
 
 
@@ -12,7 +12,16 @@ from mtl_engine.media_files import yuv_files, yuv_files_422rfc10
 @pytest.mark.parametrize("video_format", ["i1080p59"])
 @pytest.mark.parametrize("replicas", [1, 2])
 def test_xdp_standard(
-    hosts, build, media, test_time, test_mode, video_format, replicas, standard_mode, test_config, prepare_ramdisk
+    hosts,
+    build,
+    media,
+    test_time,
+    test_mode,
+    video_format,
+    replicas,
+    standard_mode,
+    test_config,
+    prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
 
@@ -22,7 +31,9 @@ def test_xdp_standard(
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_xdp_standard_{standard_mode}_{test_mode}_{video_format}_replicas{replicas}"
+    capture_cfg["test_name"] = (
+        f"test_xdp_standard_{standard_mode}_{test_mode}_{video_format}_replicas{replicas}"
+    )
 
     config = rxtxapp.create_empty_config()
     if standard_mode == "st20p":
@@ -57,4 +68,10 @@ def test_xdp_standard(
         config = rxtxapp.change_replicas(
             config=config, session_type="st22p", replicas=replicas
         )
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

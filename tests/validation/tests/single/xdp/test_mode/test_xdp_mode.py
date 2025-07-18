@@ -2,15 +2,25 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import anc_files, audio_files, yuv_files
 
 
 @pytest.mark.parametrize("test_mode", ["multicast", "unicast"])
 @pytest.mark.parametrize("video_format", ["i1080p59"])
 @pytest.mark.parametrize("replicas", [1, 4])
-def test_xdp_mode(hosts, build, media, test_time, test_mode, video_format, replicas, test_config, prepare_ramdisk):
+def test_xdp_mode(
+    hosts,
+    build,
+    media,
+    test_time,
+    test_mode,
+    video_format,
+    replicas,
+    test_config,
+    prepare_ramdisk,
+):
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
@@ -19,7 +29,9 @@ def test_xdp_mode(hosts, build, media, test_time, test_mode, video_format, repli
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_xdp_mode_{test_mode}_{video_format}_replicas{replicas}"
+    capture_cfg["test_name"] = (
+        f"test_xdp_mode_{test_mode}_{video_format}_replicas{replicas}"
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -63,4 +75,10 @@ def test_xdp_mode(hosts, build, media, test_time, test_mode, video_format, repli
     config = rxtxapp.change_replicas(
         config=config, session_type="ancillary", replicas=replicas
     )
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

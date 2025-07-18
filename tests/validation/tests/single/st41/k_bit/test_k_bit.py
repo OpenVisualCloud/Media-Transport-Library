@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
@@ -23,7 +23,9 @@ k_bit_mapping = {
 
 
 @pytest.mark.parametrize("k_bit", ["k0", "k1"])
-def test_k_bit(hosts, build, media, nic_port_list, test_time, k_bit, test_config, prepare_ramdisk):
+def test_k_bit(
+    hosts, build, media, nic_port_list, test_time, k_bit, test_config, prepare_ramdisk
+):
     """
     This test function verifies that the fastmetadata_k_bit value is correctly transmitted
     using the default payload type, data item type, and fps.
@@ -53,4 +55,10 @@ def test_k_bit(hosts, build, media, nic_port_list, test_time, k_bit, test_config
     )
     host = list(hosts.values())[0]
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

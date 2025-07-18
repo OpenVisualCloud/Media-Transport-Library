@@ -21,7 +21,15 @@ from mtl_engine import udp_app
     ],
 )
 def test_udp_sessions_cnt(
-    hosts, build, nic_port_list, test_time, sleep_us, sleep_step, sessions_cnt, test_config, prepare_ramdisk
+    hosts,
+    build,
+    nic_port_list,
+    test_time,
+    sleep_us,
+    sleep_step,
+    sessions_cnt,
+    test_config,
+    prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
     capture_cfg = dict(test_config.get("capture_cfg", {}))

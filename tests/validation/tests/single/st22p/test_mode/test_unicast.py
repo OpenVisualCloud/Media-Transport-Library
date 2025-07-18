@@ -6,7 +6,9 @@ import mtl_engine.RxTxApp as rxtxapp
 from mtl_engine.media_files import yuv_files_422p10le
 
 
-def test_unicast(hosts, build, media, nic_port_list, test_time, test_config, prepare_ramdisk):
+def test_unicast(
+    hosts, build, media, nic_port_list, test_time, test_config, prepare_ramdisk
+):
     st22p_file = yuv_files_422p10le["Penguin_1080p"]
     host = list(hosts.values())[0]
 
@@ -31,4 +33,10 @@ def test_unicast(hosts, build, media, nic_port_list, test_time, test_config, pre
         codec_thread_count=2,
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

@@ -12,7 +12,14 @@ class RamdiskPreparer:
     Uses the host's connection object for command execution.
     """
 
-    def __init__(self, host, pcap_dir, tmpfs_size="768G", tmpfs_name="new_disk_name", use_sudo=True):
+    def __init__(
+        self,
+        host,
+        pcap_dir,
+        tmpfs_size="768G",
+        tmpfs_name="new_disk_name",
+        use_sudo=True,
+    ):
         self.host = host
         self.connection = self.host.connection
         self.pcap_dir = pcap_dir

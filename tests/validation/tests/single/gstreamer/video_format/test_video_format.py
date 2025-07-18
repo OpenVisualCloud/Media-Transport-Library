@@ -3,8 +3,8 @@
 
 import os
 
-import pytest
 import mtl_engine.media_creator as media_create
+import pytest
 from mtl_engine import GstreamerApp
 from mtl_engine.media_files import gstreamer_formats
 

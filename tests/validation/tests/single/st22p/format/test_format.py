@@ -3,13 +3,15 @@
 
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
 @pytest.mark.parametrize("format", yuv_files_422p10le.keys())
-def test_format(hosts, build, media, nic_port_list, test_time, format, test_config, prepare_ramdisk):
+def test_format(
+    hosts, build, media, nic_port_list, test_time, format, test_config, prepare_ramdisk
+):
     st22p_file = yuv_files_422p10le[format]
     host = list(hosts.values())[0]
 
@@ -34,4 +36,10 @@ def test_format(hosts, build, media, nic_port_list, test_time, format, test_conf
         codec_thread_count=2,
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

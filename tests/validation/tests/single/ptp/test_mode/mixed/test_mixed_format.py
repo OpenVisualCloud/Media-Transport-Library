@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import anc_files, audio_files, yuv_files
 
 
@@ -13,7 +13,15 @@ from mtl_engine.media_files import anc_files, audio_files, yuv_files
     ["i1080p30", "i1080p50", "i1080p59", "i2160p30", "i2160p50", "i2160p59"],
 )
 def test_ptp_mixed_format(
-    hosts, build, media, nic_port_list, test_time, test_mode, video_format, test_config, prepare_ramdisk
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    test_mode,
+    video_format,
+    test_config,
+    prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
@@ -59,4 +67,11 @@ def test_ptp_mixed_format(
         ancillary_url=os.path.join(media, ancillary_file["filename"]),
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, ptp=True, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        ptp=True,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

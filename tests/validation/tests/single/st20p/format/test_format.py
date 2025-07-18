@@ -3,8 +3,8 @@
 import os
 import re
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.execute import log_fail
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
@@ -29,7 +29,7 @@ def test_422p10le(
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_format_{file}" # Set a unique pcap file name
+    capture_cfg["test_name"] = f"test_format_{file}"  # Set a unique pcap file name
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -45,7 +45,14 @@ def test_422p10le(
         st20p_url=os.path.join(media, st20p_file["filename"]),
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )
+
 
 # List of supported formats based on st_frame_fmt_from_transport()
 pixel_formats = dict(
@@ -102,6 +109,7 @@ def convert_on_rx(
 
     rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host)
 
+
 # List of supported two-way convertions based on st_frame_get_converter()
 convert2_formats = dict(
     V210=("ST20_FMT_YUV_422_10BIT", "YUV_422_10bit", "YUV422RFC4175PG2BE10"),
@@ -157,6 +165,7 @@ def tx_rx_conversion(
 
     rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host)
 
+
 @pytest.mark.parametrize("format", pixel_formats.keys())
 def test_formats(
     hosts,
@@ -177,7 +186,9 @@ def test_formats(
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_format_formats_{format}" # Set a unique pcap file name
+    capture_cfg["test_name"] = (
+        f"test_format_formats_{format}"  # Set a unique pcap file name
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -194,4 +205,10 @@ def test_formats(
         st20p_url=os.path.join(media, "test_8k.yuv"),
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )
