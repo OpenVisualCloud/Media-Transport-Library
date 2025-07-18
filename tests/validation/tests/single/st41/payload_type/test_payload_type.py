@@ -2,9 +2,9 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
+import mtl_engine.RxTxApp as rxtxapp
 import pytest
-import tests.Engine.RxTxApp as rxtxapp
-from tests.Engine.media_files import st41_files
+from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
     "pt115": 115,
@@ -24,7 +24,17 @@ k_bit_mapping = {
 
 @pytest.mark.parametrize("payload_type", ["pt115", "pt120"])
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
-def test_payload_type(build, media, nic_port_list, test_time, payload_type, type_mode):
+def test_payload_type(
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    payload_type,
+    type_mode,
+    test_config,
+    prepare_ramdisk,
+):
     """
     Test the functionality of different payload types payload_type (115, 120)
     in both transmission modes (RTP, frame) to ensure proper handling.
@@ -32,6 +42,11 @@ def test_payload_type(build, media, nic_port_list, test_time, payload_type, type
     st41_file = st41_files["st41_p29_long_file"]["filename"]
     dit = dit_mapping["dit0"]
     k_bit = k_bit_mapping["k0"]
+
+    # Get capture configuration from test_config.yaml
+    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = f"test_payload_type_{payload_type}_{type_mode}"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
@@ -47,4 +62,11 @@ def test_payload_type(build, media, nic_port_list, test_time, payload_type, type
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time)
+    host = list(hosts.values())[0]
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

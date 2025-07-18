@@ -1,7 +1,0 @@
----
-pre_action:
-    shell:
-post_action:
-    shell:
-running_test:
-    shell: kahawai_function_test_script.py

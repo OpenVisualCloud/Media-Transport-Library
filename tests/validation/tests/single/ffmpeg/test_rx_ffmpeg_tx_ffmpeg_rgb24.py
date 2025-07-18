@@ -4,8 +4,8 @@
 import os
 
 import pytest
-from tests.Engine import ffmpeg_app
-from tests.Engine.media_files import yuv_files
+from mtl_engine import ffmpeg_app
+from mtl_engine.media_files import yuv_files
 
 
 @pytest.mark.parametrize(
@@ -19,16 +19,29 @@ from tests.Engine.media_files import yuv_files
     ],
 )
 def test_rx_ffmpeg_tx_ffmpeg_rgb24(
-    test_time, build, media, nic_port_list, video_format, test_time_mutlipler
+    hosts,
+    test_time,
+    build,
+    media,
+    nic_port_list,
+    video_format,
+    test_time_mutlipler,
+    test_config,
+    prepare_ramdisk,
 ):
+    host = list(hosts.values())[0]
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = f"test_rx_ffmpeg_tx_ffmpeg_rgb24_{video_format}"
+
     video_file = yuv_files[video_format]
 
     ffmpeg_app.execute_test_rgb24(
         test_time=test_time * test_time_mutlipler,
         build=build,
-        nic_port_list=nic_port_list,
+        host=host,
         type_="frame",
         video_format=video_format,
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
+        capture_cfg=capture_cfg,
     )
