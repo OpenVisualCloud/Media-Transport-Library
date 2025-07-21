@@ -80,7 +80,7 @@ def audio_file_format_to_format_dict(audio_format: str) -> dict:
         return matching_audio_formats.get(FFmpegAudioFormat.pcm24, {})
     elif audio_format == "pcm_s8":
         raise Exception(
-            f"PCM 8 is not supported by Media Communications Mesh FFmpeg plugin!"
+            "PCM 8 is not supported by Media Communications Mesh FFmpeg plugin!"
         )
     else:
         raise Exception(f"Not expected audio format {audio_format}")

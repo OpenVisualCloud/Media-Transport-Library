@@ -42,8 +42,9 @@ def test_integrity(
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
+    # Set a unique pcap file name
     capture_cfg["test_name"] = (
-        f"test_integrity_{os.path.splitext(os.path.basename(st20p_file['filename']))[0]}_{fps}"  # Set a unique pcap file name
+        f"test_integrity_{os.path.splitext(os.path.basename(st20p_file['filename']))[0]}_{fps}"
     )
 
     config = rxtxapp.create_empty_config()

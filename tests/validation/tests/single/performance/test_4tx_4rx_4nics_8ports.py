@@ -168,7 +168,7 @@ def test_perf_4tx_4rx_4nics_8ports(
                 build,
             )
             rxtxapp.log_to_file(
-                f"Failure reason: Test returned False, check RxTxApp output above for details",
+                "Failure reason: Test returned False, check RxTxApp output above for details",
                 host,
                 build,
             )
@@ -257,7 +257,7 @@ def test_perf_4tx_4rx_4nics_8ports(
                 f"{video_format} failed with {replicas_midpoint} replicas", host, build
             )
             rxtxapp.log_to_file(
-                f"Binary search failure reason: Test returned False, check RxTxApp output above for details",
+                "Binary search failure reason: Test returned False, check RxTxApp output above for details",
                 host,
                 build,
             )

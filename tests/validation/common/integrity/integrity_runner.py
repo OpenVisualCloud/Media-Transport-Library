@@ -55,9 +55,7 @@ class VideoIntegrityRunner:
         logger.info(
             f"Setting up integrity check on {self.host.name} for {self.out_name}"
         )
-        self.host.connection.execute_command(
-            f"apt install tesseract-ocr -y", shell=True
-        )
+        self.host.connection.execute_command("apt install tesseract-ocr -y", shell=True)
         reqs = str(
             self.host.connection.path(self.integrity_path).parents[0]
             / "requirements.txt"
