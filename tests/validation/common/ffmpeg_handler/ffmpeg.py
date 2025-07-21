@@ -88,7 +88,8 @@ class FFmpegExecutor:
         ):  # wait for the process to start
             retries_counter += 1
             time.sleep(SLEEP_BETWEEN_CHECKS)
-        # FIXME: Find a better way to check if the process is running; code below throws an error when the process is actually running sometimes
+        # FIXME: Find a better way to check if the process is running; code below throws an error when the process is
+        # actually running sometimes
         if ffmpeg_process.running:
             logger.info(
                 f"FFmpeg process started on {self.host.name} with command: {cmd}"
@@ -172,7 +173,8 @@ class FFmpegExecutor:
                 logger.warning(
                     f"FFmpeg process on {self.host.name} return code is {process.return_code}"
                 )
-            # assert process.return_code == 0 # Sometimes a different return code is returned for a graceful stop, so we do not assert it here
+            # assert process.return_code == 0 # Sometimes a different return code is returned for a graceful stop, so
+            # we do not assert it here
         else:
             logger.info("No FFmpeg process to stop!")
         return elapsed

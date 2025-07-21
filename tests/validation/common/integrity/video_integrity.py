@@ -64,7 +64,8 @@ class VideoIntegritor:
     ):
         self.logger = logger
         self.logger.info(
-            f"Verify integrity for src {src_url} out file names: {out_name}\nresolution: {resolution}, file_format: {file_format}"
+            f"Verify integrity for src {src_url} out file names: {out_name}\nresolution: {resolution}, "
+            + f"file_format: {file_format}"
         )
         self.resolution = resolution
         self.file_format = file_format
@@ -126,7 +127,8 @@ class VideoIntegritor:
                 self.logger.error(f"Received bad frame number {ids} in {out_url}.")
                 if chunk_sum in self.src_chunk_sums:
                     self.logger.error(
-                        f"Chunk: {chunk_sum} received in position: {ids}, expected in {self.src_chunk_sums.index(chunk_sum)}"
+                        f"Chunk: {chunk_sum} received in position: {ids}, "
+                        + f"expected in {self.src_chunk_sums.index(chunk_sum)}"
                     )
                 else:
                     self.logger.error(
@@ -322,9 +324,11 @@ Stream mode is for video streams saved into files segmented by time, while file 
 Run script with mode type and --help for more information.
 
 Example of command: 
-python videointe.py stream src.yuv out_name 1920x1080 yuv422p10le --output_path /mnt/ramdisk --segment_duration 3 --workers 5
+python videointe.py stream src.yuv out_name 1920x1080 yuv422p10le --output_path /mnt/ramdisk --segment_duration 3
+--workers 5
 
-First frame of the video is determined by running ffmpeg command to extract the first frame and using OCR to read the frame number from it.
+First frame of the video is determined by running ffmpeg command to extract the first frame and using OCR to read the
+frame number from it.
 Coordinates for the frame number extraction are set by default to X=0, Y=20, FONT=10, LENGTH=350.
 You can change them by modifying the constants at the beginning of the script.""",
         formatter_class=argparse.RawDescriptionHelpFormatter,
