@@ -41,7 +41,7 @@ class FFmpegIO:
                 "output_path",
                 "segment",
             ]:  # make sure they are printed at the end
-                if type(value) == bool and value == True:
+                if value.isinstance(bool) and value == True:
                     response += f" -{key}"
                 if type(value) in [int, str, float] and value:
                     response += f" -{key} {value}"
