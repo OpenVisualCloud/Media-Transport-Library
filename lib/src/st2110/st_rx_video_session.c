@@ -1526,19 +1526,19 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   if (!slot || !slot->frame) {
-    // exists_ts means if found target slot by timestamp
+    /* exists_ts is true when the target slot is found by timestamp */
     if (exist_ts) {
-      // Check if packet is redundant (already received)
-      // Check if the same pkt got already and bitmap is allocated by timestamp
+      /* Check if the packet has been already received and the bitmap is allocated by
+       * timestamp */
       if (slot->seq_id_got && slot->frame_bitmap) {
         int pkt_idx = -1;
-        // Check if the same pkt got already
+        /* Check if the same packet has been already received */
         if (seq_id_u32 >= slot->seq_id_base_u32)
           pkt_idx = seq_id_u32 - slot->seq_id_base_u32;
         else
           pkt_idx = seq_id_u32 + (0xFFFFFFFF - slot->seq_id_base_u32) + 1;
         if ((pkt_idx >= 0) && (pkt_idx < (s->st20_frame_bitmap_size * 8))) {
-          // checks if a specific bit is set in a bitmap - if packet is already received
+          /* Check if a specific bit is set in a bitmap - if packet is already received */
           bool is_set = mt_bitmap_test(slot->frame_bitmap, pkt_idx);
           if (is_set) {
             s->stat_pkts_redundant_dropped++;
