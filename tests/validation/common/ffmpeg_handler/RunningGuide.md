@@ -37,7 +37,7 @@ This document describes how to prepare FFmpeg classes in order to execute a test
 </table>
 <!-- End of table with FFmpegExecutor structure -->
 
-Object of an `FFmpeg` class is directly responsible of building the commands, used by `FFmpegExecutor` and should be treated as an encapsulating element consisting of mainly two components - `ffmpeg_input` and `ffmpeg_output` - both of `FFmpegIO` class or dependent (child class). `prefix_variables` is a dictionary with keys and values that are added at the beginning of the command with `key=value ` (with a space at the end). `ffmpeg_path` is used to determine a path to a specific FFmpeg executable (by default: `ffmpeg` - which means the one available in `$PATH`).
+Object of an `FFmpeg` class is directly responsible of building the commands, used by `FFmpegExecutor` and should be treated as an encapsulating element consisting of mainly two components - `ffmpeg_input` and `ffmpeg_output` - both of `FFmpegIO` class or dependent (child class). `prefix_variables` is a dictionary with keys and values that are added at the beginning of the command with `key=value` (with a space at the end). `ffmpeg_path` is used to determine a path to a specific FFmpeg executable (by default: `ffmpeg` - which means the one available in `$PATH`).
 
 > Notes:
 > 1. It is not possible to execute more than a single input and output per instance at the moment. This should be achievable using filters, but they are not implemented yet.
