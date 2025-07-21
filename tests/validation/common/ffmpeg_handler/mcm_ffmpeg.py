@@ -5,8 +5,15 @@
 # https://github.com/OpenVisualCloud/Media-Communications-Mesh/blob/main/ffmpeg-plugin/mcm_audio_rx.c
 # https://github.com/OpenVisualCloud/Media-Communications-Mesh/blob/main/ffmpeg-plugin/mcm_audio_tx.c
 
-from .ffmpeg_enums import McmConnectionType, FFmpegAudioRate, PacketTime, McmFAudioFormat, matching_sample_rates, \
-    McmTransport, McmTransportPixelFormat
+from .ffmpeg_enums import (
+    FFmpegAudioRate,
+    McmConnectionType,
+    McmFAudioFormat,
+    McmTransport,
+    McmTransportPixelFormat,
+    PacketTime,
+    matching_sample_rates,
+)
 from .ffmpeg_io import FFmpegIO
 
 
@@ -23,6 +30,7 @@ class FFmpegMcmMemifAudioIO(FFmpegIO):
         self.channels = channels
         self.sample_rate = sample_rate
         self.f = f
+
 
 class FFmpegMcmMemifVideoIO(FFmpegIO):
     def __init__(
@@ -53,7 +61,7 @@ class FFmpegMcmST2110CommonIO(FFmpegIO):
         port: int = 9001,
         socket_name: str | None = None,
         interface_id: int | None = 0,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.buf_queue_cap = buf_queue_cap
@@ -81,7 +89,9 @@ class FFmpegMcmST2110AudioIO(FFmpegMcmST2110CommonIO):
         self.payload_type = payload_type
         self.channels = channels
         if sample_rate and ptime not in matching_sample_rates[sample_rate]:
-            raise Exception(f"Sample rate {sample_rate} Hz does not work with {ptime} packet time (ptime).")
+            raise Exception(
+                f"Sample rate {sample_rate} Hz does not work with {ptime} packet time (ptime)."
+            )
         self.sample_rate = sample_rate
         self.ptime = ptime
         self.f = f
@@ -100,11 +110,7 @@ class FFmpegMcmST2110AudioRx(FFmpegMcmST2110AudioIO):
 
 
 class FFmpegMcmST2110AudioTx(FFmpegMcmST2110AudioIO):
-    def __init__(
-        self,
-        ip_addr: str = "192.168.96.2",
-        **kwargs
-    ):
+    def __init__(self, ip_addr: str = "192.168.96.2", **kwargs):
         super().__init__(**kwargs)
         self.ip_addr = ip_addr
 
@@ -134,11 +140,7 @@ class FFmpegMcmST2110VideoIO(FFmpegMcmST2110CommonIO):
 
 
 class FFmpegMcmST2110VideoTx(FFmpegMcmST2110VideoIO):
-    def __init__(
-        self,
-        ip_addr: str = "192.168.96.2",
-        **kwargs
-    ):
+    def __init__(self, ip_addr: str = "192.168.96.2", **kwargs):
         super().__init__(**kwargs)
         self.ip_addr = ip_addr
 
@@ -148,11 +150,12 @@ class FFmpegMcmST2110VideoRx(FFmpegMcmST2110VideoIO):
         self,
         ip_addr: str = "239.168.68.190",
         mcast_sip_addr: str | None = None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.ip_addr = ip_addr
         self.mcast_sip_addr = mcast_sip_addr
+
 
 # Multipoint Group
 class FFmpegMcmMultipointGroupCommonIO(FFmpegIO):
@@ -161,13 +164,12 @@ class FFmpegMcmMultipointGroupCommonIO(FFmpegIO):
         buf_queue_cap: int | None = 64,
         conn_delay: int | None = 0,
         conn_type: str = McmConnectionType.mpg.value,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.buf_queue_cap = buf_queue_cap
         self.conn_delay = conn_delay
         self.conn_type = conn_type
-        
 
 
 class FFmpegMcmMultipointGroupAudioIO(FFmpegMcmMultipointGroupCommonIO):
@@ -184,6 +186,7 @@ class FFmpegMcmMultipointGroupAudioIO(FFmpegMcmMultipointGroupCommonIO):
         self.sample_rate = sample_rate
         self.ptime = ptime
         self.f = f
+
 
 class FFmpegMcmMultipointGroupVideoIO(FFmpegMcmMultipointGroupCommonIO):
     def __init__(

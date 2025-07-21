@@ -99,8 +99,17 @@ def readproc(process: subprocess.Popen):
     return "".join(output)
 
 
-def call(command: str, cwd: str, timeout: int = 60, sigint: bool = False, env: dict = None, host=None) -> AsyncProcess:
-    processes = calls([command], cwd=cwd, timeout=timeout, sigint=sigint, env=env, host=host)
+def call(
+    command: str,
+    cwd: str,
+    timeout: int = 60,
+    sigint: bool = False,
+    env: dict = None,
+    host=None,
+) -> AsyncProcess:
+    processes = calls(
+        [command], cwd=cwd, timeout=timeout, sigint=sigint, env=env, host=host
+    )
     return processes[0]
 
 
@@ -169,7 +178,9 @@ def wait(ap: AsyncProcess) -> str:
         ap.timer.cancel()
         ap.timer.join(30)
         ap.output = ap.reader.join(30)
-        logger.debug(f"Process {ap.process.pid} finished with RC: {ap.process.returncode}")
+        logger.debug(
+            f"Process {ap.process.pid} finished with RC: {ap.process.returncode}"
+        )
     return ap.output
 
 
@@ -238,7 +249,9 @@ def run(
     return process
 
 
-def run_in_background(command: str, cwd: str, env: dict, result_queue: Queue, timeout: int = 60) -> None:
+def run_in_background(
+    command: str, cwd: str, env: dict, result_queue: Queue, timeout: int = 60
+) -> None:
     logger.debug(command)
 
     args = ["exec"]

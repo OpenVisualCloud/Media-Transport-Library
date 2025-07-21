@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import audio_files
 
 
@@ -42,4 +42,10 @@ def test_rss_mode_audio(
     )
     config = rxtxapp.change_rss_mode(content=config, rss_mode=rss_mode)
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

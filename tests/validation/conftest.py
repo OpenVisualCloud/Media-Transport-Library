@@ -3,14 +3,14 @@
 # # Media Communications Mesh
 import logging
 import os
-from pathlib import Path
-import pytest
 import time
+from pathlib import Path
 from typing import Dict
 
+import pytest
 from common.nicctl import Nicctl
-from mtl_engine.stash import clear_result_media, remove_result_media
 from create_pcap_file.ramdisk import RamdiskPreparer
+from mtl_engine.stash import clear_result_media, remove_result_media
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
@@ -152,10 +152,16 @@ def prepare_ramdisk(hosts, test_config):
 
 
 def pytest_addoption(parser):
-    parser.addoption("--keep", help="keep result media files: all, failed, none (default)")
-    parser.addoption("--dmesg", help="method of dmesg gathering: clear (dmesg -C), keep (default)")
+    parser.addoption(
+        "--keep", help="keep result media files: all, failed, none (default)"
+    )
+    parser.addoption(
+        "--dmesg", help="method of dmesg gathering: clear (dmesg -C), keep (default)"
+    )
     parser.addoption("--media", help="path to media asset (default /mnt/media)")
-    parser.addoption("--build", help="path to build (default ../Media-Transport-Library)")
+    parser.addoption(
+        "--build", help="path to build (default ../Media-Transport-Library)"
+    )
     parser.addoption("--nic", help="list of PCI IDs of network devices")
     parser.addoption("--dma", help="list of PCI IDs of DMA devices")
     parser.addoption("--time", help="seconds to run every test (default=15)")

@@ -19,7 +19,15 @@ from mtl_engine.media_files import yuv_files
     ],
 )
 def test_rx_ffmpeg_tx_ffmpeg_rgb24(
-    hosts, test_time, build, media, nic_port_list, video_format, test_time_mutlipler, test_config, prepare_ramdisk
+    hosts,
+    test_time,
+    build,
+    media,
+    nic_port_list,
+    video_format,
+    test_time_mutlipler,
+    test_config,
+    prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
     capture_cfg = dict(test_config.get("capture_cfg", {}))

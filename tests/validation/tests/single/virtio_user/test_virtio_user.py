@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files
 
 
@@ -18,14 +18,26 @@ from mtl_engine.media_files import yuv_files
         ("i2160p60", 9),
     ],
 )
-def test_virtio_user(hosts, build, media, nic_port_list, test_time, video_format, replicas, test_config, prepare_ramdisk):
+def test_virtio_user(
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    video_format,
+    replicas,
+    test_config,
+    prepare_ramdisk,
+):
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_virtio_user_multicast_{video_format}_replicas{replicas}"
+    capture_cfg["test_name"] = (
+        f"test_virtio_user_multicast_{video_format}_replicas{replicas}"
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -45,5 +57,10 @@ def test_virtio_user(hosts, build, media, nic_port_list, test_time, video_format
     )
 
     rxtxapp.execute_test(
-        config=config, build=build, test_time=test_time, virtio_user=True, host=host, capture_cfg=capture_cfg
+        config=config,
+        build=build,
+        test_time=test_time,
+        virtio_user=True,
+        host=host,
+        capture_cfg=capture_cfg,
     )

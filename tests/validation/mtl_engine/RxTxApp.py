@@ -8,10 +8,11 @@ import subprocess
 import sys
 import time
 
+from create_pcap_file.tcpdump import TcpDumpRecorder
+
 from . import rxtxapp_config
 from .const import LOG_FOLDER
 from .execute import log_fail, log_info, run
-from create_pcap_file.tcpdump import TcpDumpRecorder
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 
@@ -97,6 +98,7 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
 
     return config
 
+
 def prepare_tcpdump(capture_cfg, host=None):
     """
     Prepare and (optionally) start TcpDumpRecorder if capture_cfg is enabled.
@@ -111,6 +113,7 @@ def prepare_tcpdump(capture_cfg, host=None):
         )
         return tcpdump
     return None
+
 
 def add_perf_video_session_tx(
     config: dict,
@@ -156,6 +159,7 @@ def add_perf_video_session_rx(
     config["rx_sessions"].append(session)
     return config
 
+
 def add_perf_st20p_session_tx(
     config: dict,
     nic_port: str,
@@ -187,6 +191,7 @@ def add_perf_st20p_session_tx(
     config["tx_sessions"].append(session)
     return config
 
+
 def add_perf_st20p_session_rx(
     config: dict,
     nic_port: str,
@@ -215,6 +220,7 @@ def add_perf_st20p_session_rx(
     session["st20p"][0]["transport_format"] = transport_format
     config["rx_sessions"].append(session)
     return config
+
 
 def add_video_sessions(
     config: dict,
@@ -507,7 +513,7 @@ def execute_test(
     case_id = case_id[: case_id.rfind("(") - 1]
 
     config_json = json.dumps(config, indent=4)
-    
+
     log_info(f"Starting RxTxApp test: {get_case_id()}")
     log_to_file(f"Starting RxTxApp test: {get_case_id()}", host, build)
     log_to_file(f"Test configuration: {config_json}", host, build)
@@ -552,7 +558,7 @@ def execute_test(
 
     if rx_timing_parser:
         command += " --rx_timing_parser"
-        
+
     if ptp:
         command += " --ptp"
 
@@ -570,7 +576,9 @@ def execute_test(
         timeout = test_time + 120
 
     log_info(f"Running RxTxApp for {test_time} seconds with timeout {timeout}")
-    log_to_file(f"Running RxTxApp for {test_time} seconds with timeout {timeout}", host, build)
+    log_to_file(
+        f"Running RxTxApp for {test_time} seconds with timeout {timeout}", host, build
+    )
 
     # Use run() for both local and remote
     cp = run(
@@ -616,7 +624,9 @@ def execute_test(
     log_to_file(f"RxTxApp Output:\n{cp.stdout_text}", host, build)
 
     if cp.return_code != 0:
-        log_to_file(f"RxTxApp returned non-zero exit code: {cp.return_code}", host, build)
+        log_to_file(
+            f"RxTxApp returned non-zero exit code: {cp.return_code}", host, build
+        )
         if cp.stderr_text:
             log_to_file(f"RxTxApp stderr: {cp.stderr_text}", host, build)
         return False
@@ -739,9 +749,9 @@ def execute_perf_test(
 
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "rxtxapp_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
-    
+
     config_json = json.dumps(config, indent=4)
-    
+
     log_info(f"Starting RxTxApp performance test: {get_case_id()}")
     log_to_file(f"Starting RxTxApp performance test: {get_case_id()}", host, build)
     log_to_file(f"Performance test configuration: {config_json}", host, build)
@@ -752,7 +762,9 @@ def execute_perf_test(
     json_content = config_json.replace('"', '\\"')
     f.write_text(json_content)
     config_path = os.path.join(build, config_file)
-    log_to_file(f"Performance config file written to remote host: {config_path}", host, build)
+    log_to_file(
+        f"Performance config file written to remote host: {config_path}", host, build
+    )
 
     command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
 
@@ -774,21 +786,35 @@ def execute_perf_test(
 
     # Base timeout
     timeout = test_time + 120
-    
+
     # Additional timeout for high resolution content
     if any(format in str(config) for format in ["4320", "2160"]):
         timeout = test_time + 180
-    
+
     # Scale timeout with replica count - more replicas need more time to stabilize
     if total_replicas > 1:
         # Add 10 seconds per replica beyond the first one, with a cap
-        additional_timeout = min(total_replicas * 10, 300)  # Cap at 5 minutes additional
+        additional_timeout = min(
+            total_replicas * 10, 300
+        )  # Cap at 5 minutes additional
         timeout += additional_timeout
-        log_info(f"Scaling timeout for {total_replicas} replicas: +{additional_timeout}s")
-        log_to_file(f"Scaling timeout for {total_replicas} replicas: +{additional_timeout}s", host, build)
+        log_info(
+            f"Scaling timeout for {total_replicas} replicas: +{additional_timeout}s"
+        )
+        log_to_file(
+            f"Scaling timeout for {total_replicas} replicas: +{additional_timeout}s",
+            host,
+            build,
+        )
 
-    log_info(f"Running performance RxTxApp for {test_time} seconds with timeout {timeout}")
-    log_to_file(f"Running performance RxTxApp for {test_time} seconds with timeout {timeout}", host, build)
+    log_info(
+        f"Running performance RxTxApp for {test_time} seconds with timeout {timeout}"
+    )
+    log_to_file(
+        f"Running performance RxTxApp for {test_time} seconds with timeout {timeout}",
+        host,
+        build,
+    )
 
     cp = run(
         command,
@@ -798,7 +824,7 @@ def execute_perf_test(
         host=host,
         background=background,
     )
-    
+
     # Start tcpdump capture (blocking, so it captures during traffic)
     try:
         if tcpdump:
@@ -806,14 +832,22 @@ def execute_perf_test(
             log_to_file("Started performance test tcpdump capture", host, build)
     finally:
         cp.wait()
-    
+
     # Enhanced logging for process completion
-    log_info(f"Performance RxTxApp process completed with return code: {cp.return_code}")
-    log_to_file(f"Performance RxTxApp process completed with return code: {cp.return_code}", host, build)
-    
+    log_info(
+        f"Performance RxTxApp process completed with return code: {cp.return_code}"
+    )
+    log_to_file(
+        f"Performance RxTxApp process completed with return code: {cp.return_code}",
+        host,
+        build,
+    )
+
     # Check if process was killed or terminated unexpectedly
     if cp.return_code < 0:
-        log_to_file(f"Performance RxTxApp was killed with signal {-cp.return_code}", host, build)
+        log_to_file(
+            f"Performance RxTxApp was killed with signal {-cp.return_code}", host, build
+        )
         log_info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
         return False
     elif cp.return_code == 124:  # timeout return code
@@ -835,7 +869,11 @@ def execute_perf_test(
         log_info(line)
 
     if cp.return_code != 0:
-        log_to_file(f"Performance RxTxApp returned non-zero exit code: {cp.return_code}", host, build)
+        log_to_file(
+            f"Performance RxTxApp returned non-zero exit code: {cp.return_code}",
+            host,
+            build,
+        )
         log_info(f"Performance RxTxApp returned non-zero exit code: {cp.return_code}")
         if cp.stderr_text:
             log_to_file(f"Performance RxTxApp stderr: {cp.stderr_text}", host, build)
@@ -857,11 +895,18 @@ def execute_perf_test(
     log_to_file(f"Performance test session type detected: {session_type}", host, build)
 
     result = check_tx_output(
-        config=config, output=output, session_type=session_type, fail_on_error=fail_on_error, host=host, build=build
+        config=config,
+        output=output,
+        session_type=session_type,
+        fail_on_error=fail_on_error,
+        host=host,
+        build=build,
     )
-    
+
     log_info(f"Performance RxTxApp test completed with result: {result}")
-    log_to_file(f"Performance RxTxApp test completed with result: {result}", host, build)
+    log_to_file(
+        f"Performance RxTxApp test completed with result: {result}", host, build
+    )
 
     return result
 
@@ -911,20 +956,33 @@ def change_replicas(
 
 
 def check_tx_output(
-    config: dict, output: list, session_type: str, fail_on_error: bool, host=None, build: str = ""
+    config: dict,
+    output: list,
+    session_type: str,
+    fail_on_error: bool,
+    host=None,
+    build: str = "",
 ) -> bool:
     # Check if this is a performance config with st20p sessions
     is_performance_st20p = False
-    if (len(config["tx_sessions"]) > 0 and 
-        session_type == "st20p" and
-        any("st20p" in session and len(session.get("st20p", [])) > 0 and
-            "video" not in session or len(session.get("video", [])) == 0
-            for session in config["tx_sessions"])):
+    if (
+        len(config["tx_sessions"]) > 0
+        and session_type == "st20p"
+        and any(
+            "st20p" in session
+            and len(session.get("st20p", [])) > 0
+            and "video" not in session
+            or len(session.get("video", [])) == 0
+            for session in config["tx_sessions"]
+        )
+    ):
         is_performance_st20p = True
-    
+
     if is_performance_st20p:
-        return check_tx_fps_performance(config, output, session_type, fail_on_error, host, build)
-    
+        return check_tx_fps_performance(
+            config, output, session_type, fail_on_error, host, build
+        )
+
     # Regular check for OK results
     ok_cnt = 0
     log_info(f"Checking TX {session_type} output for OK results")
@@ -946,33 +1004,55 @@ def check_tx_output(
 
     log_info(f"TX {session_type} check: {ok_cnt}/{replicas} OK results found")
     if host:
-        log_to_file(f"TX {session_type} check: {ok_cnt}/{replicas} OK results found", host, build)
+        log_to_file(
+            f"TX {session_type} check: {ok_cnt}/{replicas} OK results found",
+            host,
+            build,
+        )
 
     if ok_cnt == replicas:
         log_info(f"TX {session_type} check PASSED: all {replicas} sessions OK")
         if host:
-            log_to_file(f"TX {session_type} check PASSED: all {replicas} sessions OK", host, build)
+            log_to_file(
+                f"TX {session_type} check PASSED: all {replicas} sessions OK",
+                host,
+                build,
+            )
         return True
 
     if fail_on_error:
         log_fail(f"tx {session_type} session failed")
         if host:
-            log_to_file(f"TX {session_type} check FAILED: {ok_cnt}/{replicas} sessions OK", host, build)
+            log_to_file(
+                f"TX {session_type} check FAILED: {ok_cnt}/{replicas} sessions OK",
+                host,
+                build,
+            )
     else:
         log_info(f"tx {session_type} session failed")
         if host:
-            log_to_file(f"TX {session_type} check FAILED (non-fatal): {ok_cnt}/{replicas} sessions OK", host, build)
+            log_to_file(
+                f"TX {session_type} check FAILED (non-fatal): {ok_cnt}/{replicas} sessions OK",
+                host,
+                build,
+            )
 
     return False
 
+
 def check_tx_fps_performance(
-    config: dict, output: list, session_type: str, fail_on_error: bool, host=None, build: str = ""
+    config: dict,
+    output: list,
+    session_type: str,
+    fail_on_error: bool,
+    host=None,
+    build: str = "",
 ) -> bool:
-    
+
     # Get expected FPS from config
     expected_fps = None
     replicas = 0
-    
+
     for session in config["tx_sessions"]:
         if session_type in session and session[session_type]:
             for s in session[session_type]:
@@ -981,59 +1061,95 @@ def check_tx_fps_performance(
                     expected_fps = int(fps_str[1:])  # Remove 'p' or 'i' prefix
                 replicas += s["replicas"]
                 break
-    
+
     if expected_fps is None:
         log_info("Could not determine expected FPS from config")
         if host:
             log_to_file("Could not determine expected FPS from config", host, build)
         return False
-    
-    log_info(f"Checking TX FPS performance: expected {expected_fps} fps for {replicas} replicas")
+
+    log_info(
+        f"Checking TX FPS performance: expected {expected_fps} fps for {replicas} replicas"
+    )
     if host:
-        log_to_file(f"Checking TX FPS performance: expected {expected_fps} fps for {replicas} replicas", host, build)
-    
+        log_to_file(
+            f"Checking TX FPS performance: expected {expected_fps} fps for {replicas} replicas",
+            host,
+            build,
+        )
+
     # Look for TX_VIDEO_SESSION fps lines - check if any reading reaches target
-    fps_pattern = re.compile(r"TX_VIDEO_SESSION\(\d+,(\d+):app_tx_st20p_(\d+)\):\s+fps\s+([\d.]+)")
-    
+    fps_pattern = re.compile(
+        r"TX_VIDEO_SESSION\(\d+,(\d+):app_tx_st20p_(\d+)\):\s+fps\s+([\d.]+)"
+    )
+
     # Set to track which sessions have achieved target FPS
     successful_sessions = set()
     fps_tolerance = 2  # Allow 2 fps tolerance (e.g., 49 is pass for 50 fps)
-    
+
     # Check all FPS values to see if any session reaches target
     for line in output:
         match = fps_pattern.search(line)
         if match:
             session_id = int(match.group(2))  # Extract session ID from app_tx_st20p_X
             actual_fps = float(match.group(3))
-            
+
             # Check if FPS is within tolerance
             if abs(actual_fps - expected_fps) <= fps_tolerance:
                 if session_id not in successful_sessions:
                     successful_sessions.add(session_id)
-    
+
     successful_count = len(successful_sessions)
-    log_info(f"TX FPS performance check: {successful_count}/{replicas} sessions achieved target")
+    log_info(
+        f"TX FPS performance check: {successful_count}/{replicas} sessions achieved target"
+    )
     if host:
-        log_to_file(f"TX FPS performance check: {successful_count}/{replicas} sessions achieved target", host, build)
-    
+        log_to_file(
+            f"TX FPS performance check: {successful_count}/{replicas} sessions achieved target",
+            host,
+            build,
+        )
+
     if successful_count == replicas:
         if host:
-            log_to_file(f"TX FPS performance check PASSED: all {replicas} sessions achieved target FPS", host, build)
+            log_to_file(
+                f"TX FPS performance check PASSED: all {replicas} sessions achieved target FPS",
+                host,
+                build,
+            )
         return True
-    
+
     if fail_on_error:
-        log_fail(f"tx {session_type} fps performance failed: {successful_count}/{replicas} sessions")
+        log_fail(
+            f"tx {session_type} fps performance failed: {successful_count}/{replicas} sessions"
+        )
         if host:
-            log_to_file(f"TX FPS performance check FAILED: {successful_count}/{replicas} sessions achieved target", host, build)
+            log_to_file(
+                f"TX FPS performance check FAILED: {successful_count}/{replicas} sessions achieved target",
+                host,
+                build,
+            )
     else:
-        log_info(f"tx {session_type} fps performance failed: {successful_count}/{replicas} sessions")
+        log_info(
+            f"tx {session_type} fps performance failed: {successful_count}/{replicas} sessions"
+        )
         if host:
-            log_to_file(f"TX FPS performance check FAILED (non-fatal): {successful_count}/{replicas} sessions achieved target", host, build)
-    
+            log_to_file(
+                f"TX FPS performance check FAILED (non-fatal): {successful_count}/{replicas} sessions achieved target",
+                host,
+                build,
+            )
+
     return False
 
+
 def check_rx_output(
-    config: dict, output: list, session_type: str, fail_on_error: bool, host=None, build: str = ""
+    config: dict,
+    output: list,
+    session_type: str,
+    fail_on_error: bool,
+    host=None,
+    build: str = "",
 ) -> bool:
     ok_cnt = 0
     log_info(f"Checking RX {session_type} output for OK results")
@@ -1065,42 +1181,67 @@ def check_rx_output(
             log_info(f"Found RX {session_type} OK result: {line}")
             if host:
                 log_to_file(f"Found RX {session_type} OK result: {line}", host, build)
-            
+
     replicas = config["rx_sessions"][0][session_type][0]["replicas"]
-    
+
     log_info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
     if host:
-        log_to_file(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found", host, build)
+        log_to_file(
+            f"RX {session_type} check: {ok_cnt}/{replicas} OK results found",
+            host,
+            build,
+        )
 
     if ok_cnt == replicas:
         log_info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
         if host:
-            log_to_file(f"RX {session_type} check PASSED: all {replicas} sessions OK", host, build)
+            log_to_file(
+                f"RX {session_type} check PASSED: all {replicas} sessions OK",
+                host,
+                build,
+            )
         return True
 
     if fail_on_error:
         log_fail(f"rx {session_type} session failed")
         if host:
-            log_to_file(f"RX {session_type} check FAILED: {ok_cnt}/{replicas} sessions OK", host, build)
+            log_to_file(
+                f"RX {session_type} check FAILED: {ok_cnt}/{replicas} sessions OK",
+                host,
+                build,
+            )
     else:
         log_info(f"rx {session_type} session failed")
         if host:
-            log_to_file(f"RX {session_type} check FAILED (non-fatal): {ok_cnt}/{replicas} sessions OK", host, build)
+            log_to_file(
+                f"RX {session_type} check FAILED (non-fatal): {ok_cnt}/{replicas} sessions OK",
+                host,
+                build,
+            )
 
     return False
 
 
 def check_tx_converter_output(
-    config: dict, output: list, session_type: str, fail_on_error: bool, host=None, build: str = ""
+    config: dict,
+    output: list,
+    session_type: str,
+    fail_on_error: bool,
+    host=None,
+    build: str = "",
 ) -> bool:
     ok_cnt = 0
     transport_format = config["tx_sessions"][0]["st20p"][0]["transport_format"]
     input_format = config["tx_sessions"][0]["st20p"][0]["input_format"]
-    
+
     log_info(f"Checking TX {session_type} converter output")
     if host:
-        log_to_file(f"Checking TX {session_type} converter output for format {transport_format}/{input_format}", host, build)
-    
+        log_to_file(
+            f"Checking TX {session_type} converter output for format {transport_format}/{input_format}",
+            host,
+            build,
+        )
+
     for line in output:
         if (
             f"st20p_tx_create({ok_cnt}), transport fmt ST20_FMT_{transport_format.upper()}, input fmt: {input_format}"
@@ -1110,35 +1251,58 @@ def check_tx_converter_output(
             log_info(f"Found TX converter creation: {line}")
             if host:
                 log_to_file(f"Found TX converter creation: {line}", host, build)
-    
+
     if session_type == "anc":
         session_type = "ancillary"
     replicas = config["tx_sessions"][0][session_type][0]["replicas"]
 
-    log_info(f"TX {session_type} converter check: {ok_cnt}/{replicas} converters created")
+    log_info(
+        f"TX {session_type} converter check: {ok_cnt}/{replicas} converters created"
+    )
     if host:
-        log_to_file(f"TX {session_type} converter check: {ok_cnt}/{replicas} converters created", host, build)
+        log_to_file(
+            f"TX {session_type} converter check: {ok_cnt}/{replicas} converters created",
+            host,
+            build,
+        )
 
     if ok_cnt == replicas:
         log_info(f"TX {session_type} converter check PASSED")
         if host:
-            log_to_file(f"TX {session_type} converter check PASSED: all {replicas} converters created", host, build)
+            log_to_file(
+                f"TX {session_type} converter check PASSED: all {replicas} converters created",
+                host,
+                build,
+            )
         return True
 
     if fail_on_error:
         log_fail(f"tx {session_type} session failed")
         if host:
-            log_to_file(f"TX {session_type} converter check FAILED: {ok_cnt}/{replicas} converters created", host, build)
+            log_to_file(
+                f"TX {session_type} converter check FAILED: {ok_cnt}/{replicas} converters created",
+                host,
+                build,
+            )
     else:
         log_info(f"tx {session_type} session failed")
         if host:
-            log_to_file(f"TX {session_type} converter check FAILED (non-fatal): {ok_cnt}/{replicas} converters created", host, build)
+            log_to_file(
+                f"TX {session_type} converter check FAILED (non-fatal): {ok_cnt}/{replicas} converters created",
+                host,
+                build,
+            )
 
     return False
 
 
 def check_rx_converter_output(
-    config: dict, output: list, session_type: str, fail_on_error: bool, host=None, build: str = ""
+    config: dict,
+    output: list,
+    session_type: str,
+    fail_on_error: bool,
+    host=None,
+    build: str = "",
 ) -> bool:
     ok_cnt = 0
 
@@ -1147,7 +1311,11 @@ def check_rx_converter_output(
 
     log_info(f"Checking RX {session_type} converter output")
     if host:
-        log_to_file(f"Checking RX {session_type} converter output for format {transport_format}/{output_format}", host, build)
+        log_to_file(
+            f"Checking RX {session_type} converter output for format {transport_format}/{output_format}",
+            host,
+            build,
+        )
 
     for line in output:
         if (
@@ -1158,29 +1326,47 @@ def check_rx_converter_output(
             log_info(f"Found RX converter creation: {line}")
             if host:
                 log_to_file(f"Found RX converter creation: {line}", host, build)
-    
+
     if session_type == "anc":
         session_type = "ancillary"
     replicas = config["rx_sessions"][0][session_type][0]["replicas"]
 
-    log_info(f"RX {session_type} converter check: {ok_cnt}/{replicas} converters created")
+    log_info(
+        f"RX {session_type} converter check: {ok_cnt}/{replicas} converters created"
+    )
     if host:
-        log_to_file(f"RX {session_type} converter check: {ok_cnt}/{replicas} converters created", host, build)
+        log_to_file(
+            f"RX {session_type} converter check: {ok_cnt}/{replicas} converters created",
+            host,
+            build,
+        )
 
     if ok_cnt == replicas:
         log_info(f"RX {session_type} converter check PASSED")
         if host:
-            log_to_file(f"RX {session_type} converter check PASSED: all {replicas} converters created", host, build)
+            log_to_file(
+                f"RX {session_type} converter check PASSED: all {replicas} converters created",
+                host,
+                build,
+            )
         return True
 
     if fail_on_error:
         log_fail(f"rx {session_type} session failed")
         if host:
-            log_to_file(f"RX {session_type} converter check FAILED: {ok_cnt}/{replicas} converters created", host, build)
+            log_to_file(
+                f"RX {session_type} converter check FAILED: {ok_cnt}/{replicas} converters created",
+                host,
+                build,
+            )
     else:
         log_info(f"rx {session_type} session failed")
         if host:
-            log_to_file(f"RX {session_type} converter check FAILED (non-fatal): {ok_cnt}/{replicas} converters created", host, build)
+            log_to_file(
+                f"RX {session_type} converter check FAILED (non-fatal): {ok_cnt}/{replicas} converters created",
+                host,
+                build,
+            )
 
     return False
 
@@ -1285,26 +1471,39 @@ def log_to_file(message: str, host, build: str):
     else:
         f.write_text(log_entry)
 
+
 read_ip_addresses_from_json(json_filename)
+
 
 def create_empty_dual_config() -> dict:
     return {
         "tx_config": copy.deepcopy(rxtxapp_config.config_empty_tx),
-        "rx_config": copy.deepcopy(rxtxapp_config.config_empty_rx)
+        "rx_config": copy.deepcopy(rxtxapp_config.config_empty_rx),
     }
 
-def add_dual_interfaces(tx_config: dict, rx_config: dict, tx_nic_port_list: list, rx_nic_port_list: list, test_mode: str) -> tuple:
+
+def add_dual_interfaces(
+    tx_config: dict,
+    rx_config: dict,
+    tx_nic_port_list: list,
+    rx_nic_port_list: list,
+    test_mode: str,
+) -> tuple:
     # Configure TX host interface only
     tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
-    
-    # Configure RX host interface only  
+
+    # Configure RX host interface only
     rx_config["interfaces"][0]["name"] = rx_nic_port_list[1]
 
     if test_mode == "unicast":
         tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
         rx_config["interfaces"][0]["ip"] = unicast_ip_dict["rx_interfaces"]
-        tx_config["tx_sessions"][0]["dip"][0] = unicast_ip_dict["rx_interfaces"]  # TX sends to RX IP
-        rx_config["rx_sessions"][0]["ip"][0] = unicast_ip_dict["tx_interfaces"]   # RX listens for TX IP
+        tx_config["tx_sessions"][0]["dip"][0] = unicast_ip_dict[
+            "rx_interfaces"
+        ]  # TX sends to RX IP
+        rx_config["rx_sessions"][0]["ip"][0] = unicast_ip_dict[
+            "tx_interfaces"
+        ]  # RX listens for TX IP
     elif test_mode == "multicast":
         tx_config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
         rx_config["interfaces"][0]["ip"] = multicast_ip_dict["rx_interfaces"]
@@ -1317,6 +1516,7 @@ def add_dual_interfaces(tx_config: dict, rx_config: dict, tx_nic_port_list: list
         log_fail(f"wrong test_mode {test_mode}")
 
     return tx_config, rx_config
+
 
 def add_st20p_dual_sessions(
     config: dict,
@@ -1339,18 +1539,18 @@ def add_st20p_dual_sessions(
 ) -> dict:
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
-    
+
     tx_config, rx_config = add_dual_interfaces(
         tx_config=tx_config,
         rx_config=rx_config,
         tx_nic_port_list=tx_nic_port_list,
         rx_nic_port_list=rx_nic_port_list,
-        test_mode=test_mode
+        test_mode=test_mode,
     )
-    
+
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_st20p_session)
     tx_config["tx_sessions"][0]["st20p"].append(tx_session)
-    
+
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_st20p_session)
     rx_config["rx_sessions"][0]["st20p"].append(rx_session)
 
@@ -1381,6 +1581,7 @@ def add_st20p_dual_sessions(
 
     return {"tx_config": tx_config, "rx_config": rx_config}
 
+
 def add_st30p_dual_sessions(
     config: dict,
     tx_nic_port_list: list,
@@ -1395,18 +1596,18 @@ def add_st30p_dual_sessions(
 ) -> dict:
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
-    
+
     tx_config, rx_config = add_dual_interfaces(
         tx_config=tx_config,
         rx_config=rx_config,
         tx_nic_port_list=tx_nic_port_list,
         rx_nic_port_list=rx_nic_port_list,
-        test_mode=test_mode
+        test_mode=test_mode,
     )
-    
+
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_st30p_session)
     tx_config["tx_sessions"][0]["st30p"].append(tx_session)
-    
+
     rx_session = copy.deepcopy(rxtxapp_config.config_rx_st30p_session)
     rx_config["rx_sessions"][0]["st30p"].append(rx_session)
 
@@ -1445,7 +1646,7 @@ def add_st40p_dual_sessions(
         rx_config=rx_config,
         tx_nic_port_list=tx_nic_port_list,
         rx_nic_port_list=rx_nic_port_list,
-        test_mode=test_mode
+        test_mode=test_mode,
     )
 
     tx_session = copy.deepcopy(rxtxapp_config.config_tx_ancillary_session)
@@ -1464,6 +1665,7 @@ def add_st40p_dual_sessions(
 
     return {"tx_config": tx_config, "rx_config": rx_config}
 
+
 def execute_dual_test(
     config: dict,
     build: str,
@@ -1478,7 +1680,7 @@ def execute_dual_test(
 ) -> bool:
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
-    
+
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
 
@@ -1500,7 +1702,10 @@ def execute_dual_test(
     rx_f.write_text(rx_json_content)
 
     # Adjust test_time for high-res/fps/replicas
-    if "st20p" in tx_config["tx_sessions"][0] and len(tx_config["tx_sessions"][0]["st20p"]) > 0:
+    if (
+        "st20p" in tx_config["tx_sessions"][0]
+        and len(tx_config["tx_sessions"][0]["st20p"]) > 0
+    ):
         video_format = tx_config["tx_sessions"][0]["st20p"][0]["height"]
         video_fps = tx_config["tx_sessions"][0]["st20p"][0]["fps"]
         if any(format == video_format for format in [4320, 2160]):
@@ -1552,14 +1757,14 @@ def execute_dual_test(
     # Get output from both hosts
     tx_output = tx_cp.stdout_text.splitlines()
     rx_output = rx_cp.stdout_text.splitlines()
-    
+
     # Log outputs
     log_info("=== TX OUTPUT ===")
     log_to_file("=== TX OUTPUT ===", tx_host, build)
     for line in tx_output:
         log_info(line)
         log_to_file(line, tx_host, build)
-    
+
     log_info("=== RX OUTPUT ===")
     log_to_file("=== RX OUTPUT ===", rx_host, build)
     for line in rx_output:
@@ -1572,7 +1777,7 @@ def execute_dual_test(
 
     # Check results
     passed = True
-    
+
     if len(tx_config["tx_sessions"][0]["st20p"]) > 0:
         passed = passed and check_tx_output(
             config=tx_config,

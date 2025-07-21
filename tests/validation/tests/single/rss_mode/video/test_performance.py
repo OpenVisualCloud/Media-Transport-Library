@@ -3,8 +3,8 @@
 
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.execute import log_info, log_result_note
 from mtl_engine.media_files import yuv_files
 
@@ -12,7 +12,15 @@ from mtl_engine.media_files import yuv_files
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 @pytest.mark.parametrize("video_format", ["i1080p60", "i2160p60"])
 def test_rss_mode_video_performance(
-    hosts, build, media, nic_port_list, test_time, rss_mode, video_format, test_config, prepare_ramdisk
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    rss_mode,
+    video_format,
+    test_config,
+    prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
@@ -20,7 +28,9 @@ def test_rss_mode_video_performance(
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_rss_mode_video_performance_{video_format}_{rss_mode}"
+    capture_cfg["test_name"] = (
+        f"test_rss_mode_video_performance_{video_format}_{rss_mode}"
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -46,7 +56,12 @@ def test_rss_mode_video_performance(
             config=config, session_type="st20p", replicas=replicas_b
         )
         passed = rxtxapp.execute_test(
-            config=config, build=build, test_time=test_time, fail_on_error=False, host=host, capture_cfg=capture_cfg
+            config=config,
+            build=build,
+            test_time=test_time,
+            fail_on_error=False,
+            host=host,
+            capture_cfg=capture_cfg,
         )
 
         if passed:
@@ -78,7 +93,12 @@ def test_rss_mode_video_performance(
             config=config, session_type="st20p", replicas=replicas_midpoint
         )
         passed = rxtxapp.execute_test(
-            config=config, build=build, test_time=test_time, fail_on_error=False, host=host, capture_cfg=capture_cfg
+            config=config,
+            build=build,
+            test_time=test_time,
+            fail_on_error=False,
+            host=host,
+            capture_cfg=capture_cfg,
         )
 
         if passed:

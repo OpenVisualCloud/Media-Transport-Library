@@ -3,11 +3,11 @@
 
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
+from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_info
 from mtl_engine.integrity import calculate_st30p_framebuff_size, check_st30p_integrity
-from mtl_engine.const import LOG_FOLDER
 from mtl_engine.media_files import audio_files
 
 
@@ -27,7 +27,7 @@ def test_integrity_dual(
     host_list = list(hosts.values())
     if len(host_list) < 2:
         pytest.skip("Dual tests require at least 2 hosts")
-    
+
     tx_host = host_list[0]
     rx_host = host_list[1]
 
@@ -51,9 +51,9 @@ def test_integrity_dual(
     )
 
     rxtxapp.execute_dual_test(
-        config=config, 
-        build=build, 
-        test_time=test_time, 
+        config=config,
+        build=build,
+        test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,
     )

@@ -1,10 +1,11 @@
+import logging
 import os
 import time
-import logging
 
 from mfd_connect.exceptions import ConnectionCalledProcessError
 
 logger = logging.getLogger(__name__)
+
 
 class TcpDumpRecorder:
     """
@@ -41,15 +42,24 @@ class TcpDumpRecorder:
                 cmd = [
                     "sudo",
                     "tcpdump",
-                    "-i", self.interface,
-                    "-s", "65535",
-                    "-w", self.pcap_file,
-                    "--time-stamp-type=adapter_unsynced"
+                    "-i",
+                    self.interface,
+                    "-s",
+                    "65535",
+                    "-w",
+                    self.pcap_file,
+                    "--time-stamp-type=adapter_unsynced",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
-                self.tcpdump_process = connection.start_process(" ".join(cmd), stderr_to_stdout=True)
-                logger.info(f"PCAP file will be saved at: {os.path.abspath(self.pcap_file)}")
-                time.sleep(startup_wait) # Give tcpdump a moment to start and possibly error out
+                self.tcpdump_process = connection.start_process(
+                    " ".join(cmd), stderr_to_stdout=True
+                )
+                logger.info(
+                    f"PCAP file will be saved at: {os.path.abspath(self.pcap_file)}"
+                )
+                time.sleep(
+                    startup_wait
+                )  # Give tcpdump a moment to start and possibly error out
                 if not self.tcpdump_process.running:
                     err = self.tcpdump_process.stderr_text
                     logger.error(f"tcpdump failed to start. Error output:\n{err}")
@@ -59,7 +69,7 @@ class TcpDumpRecorder:
             except ConnectionCalledProcessError as e:
                 logger.error(f"Failed to start tcpdump: {e}")
                 return False
-            
+
     def capture(self, capture_time=20, startup_wait=2):
         """
         Starts tcpdump, captures for capture_time seconds, then stops.
@@ -86,6 +96,7 @@ class TcpDumpRecorder:
             logger.info("tcpdump stopped (via pkill).")
         except ConnectionCalledProcessError as e:
             logger.error(f"Failed to stop tcpdump: {e}")
+
 
 # Example usage:
 # Default, first network interface will be used

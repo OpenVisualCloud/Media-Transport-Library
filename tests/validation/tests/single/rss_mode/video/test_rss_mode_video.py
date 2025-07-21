@@ -2,14 +2,24 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files
 
 
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 @pytest.mark.parametrize("video_format", ["i1080p60", "i2160p60"])
-def test_rss_mode_video(hosts, build, media, nic_port_list, test_time, video_format, rss_mode, test_config, prepare_ramdisk):
+def test_rss_mode_video(
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    video_format,
+    rss_mode,
+    test_config,
+    prepare_ramdisk,
+):
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
 
@@ -25,7 +35,7 @@ def test_rss_mode_video(hosts, build, media, nic_port_list, test_time, video_for
         test_mode="unicast",
         width=video_file["width"],
         height=video_file["height"],
-        fps=f"p{video_file['fps']}",        
+        fps=f"p{video_file['fps']}",
         input_format=video_file["file_format"],
         transport_format=video_file["format"],
         output_format=video_file["file_format"],
@@ -33,4 +43,10 @@ def test_rss_mode_video(hosts, build, media, nic_port_list, test_time, video_for
     )
     config = rxtxapp.change_rss_mode(content=config, rss_mode=rss_mode)
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

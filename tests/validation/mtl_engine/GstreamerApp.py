@@ -6,9 +6,10 @@ import json
 import os
 import time
 
-from .execute import run, log_fail, log_info
-from .const import LOG_FOLDER
 from mtl_engine.RxTxApp import prepare_tcpdump
+
+from .const import LOG_FOLDER
+from .execute import log_fail, log_info, run
 
 
 def create_connection_params(
@@ -306,10 +307,10 @@ def execute_test(
 ):
     """
     Execute GStreamer test with remote host support following RxTxApp pattern.
-    
+
     :param build: Build path on the remote host
     :param tx_command: TX pipeline command list
-    :param rx_command: RX pipeline command list  
+    :param rx_command: RX pipeline command list
     :param input_file: Input file path
     :param output_file: Output file path
     :param test_time: Test duration in seconds
@@ -320,9 +321,9 @@ def execute_test(
     """
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "gstreamer_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
-    
+
     remote_host = host
-    
+
     log_info(f"TX Command: {' '.join(tx_command)}")
     log_info(f"RX Command: {' '.join(rx_command)}")
 
@@ -344,7 +345,7 @@ def execute_test(
                 enable_sudo=True,
             )
             time.sleep(sleep_interval)
-            
+
             # Start RX pipeline
             log_info("Starting RX pipeline...")
             rx_process = run(
@@ -369,7 +370,7 @@ def execute_test(
                 enable_sudo=True,
             )
             time.sleep(sleep_interval)
-            
+
             # Start TX pipeline
             log_info("Starting TX pipeline...")
             tx_process = run(
@@ -408,7 +409,7 @@ def execute_test(
 
         # Get output after processes have been terminated
         try:
-            if rx_process and hasattr(rx_process, 'stdout_text'):
+            if rx_process and hasattr(rx_process, "stdout_text"):
                 output_rx = rx_process.stdout_text.splitlines()
                 for line in output_rx:
                     log_info(f"RX Output: {line}")
@@ -416,13 +417,13 @@ def execute_test(
             log_info("Could not retrieve RX output")
 
         try:
-            if tx_process and hasattr(tx_process, 'stdout_text'):
+            if tx_process and hasattr(tx_process, "stdout_text"):
                 output_tx = tx_process.stdout_text.splitlines()
                 for line in output_tx:
                     log_info(f"TX Output: {line}")
         except:
             log_info("Could not retrieve TX output")
-        
+
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         raise
@@ -436,7 +437,7 @@ def execute_test(
                 pass
         if rx_process:
             try:
-                rx_process.terminate() 
+                rx_process.terminate()
                 rx_process.wait(timeout=10)
             except:
                 pass
@@ -453,20 +454,20 @@ def execute_test(
 def build_gstreamer_command(pipeline_config: dict, build: str) -> list:
     """
     Build GStreamer command from pipeline configuration.
-    
+
     :param pipeline_config: Pipeline configuration dictionary
     :param build: Build path
     :return: Command as list of strings
     """
     command = ["gst-launch-1.0", "-v"]
-    
+
     # Add pipeline elements from config
     if "elements" in pipeline_config:
         command.extend(pipeline_config["elements"])
-    
+
     # Add plugin path
     command.append(f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/")
-    
+
     return command
 
 

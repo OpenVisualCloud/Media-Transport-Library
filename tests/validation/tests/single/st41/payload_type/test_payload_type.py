@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
@@ -24,7 +24,17 @@ k_bit_mapping = {
 
 @pytest.mark.parametrize("payload_type", ["pt115", "pt120"])
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
-def test_payload_type(hosts, build, media, nic_port_list, test_time, payload_type, type_mode, test_config, prepare_ramdisk):
+def test_payload_type(
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    payload_type,
+    type_mode,
+    test_config,
+    prepare_ramdisk,
+):
     """
     Test the functionality of different payload types payload_type (115, 120)
     in both transmission modes (RTP, frame) to ensure proper handling.
@@ -53,4 +63,10 @@ def test_payload_type(hosts, build, media, nic_port_list, test_time, payload_typ
     )
 
     host = list(hosts.values())[0]
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

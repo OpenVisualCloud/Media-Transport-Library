@@ -2,15 +2,23 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import audio_files
 
 
 @pytest.mark.parametrize("audio_sampling", ["48kHz", "96kHz"])
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
 def test_st30p_sampling(
-    hosts, build, media, nic_port_list, test_time, audio_format, audio_sampling, test_config, prepare_ramdisk
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    audio_format,
+    audio_sampling,
+    test_config,
+    prepare_ramdisk,
 ):
 
     audio_file = audio_files[audio_format]
@@ -19,7 +27,9 @@ def test_st30p_sampling(
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_st30p_sampling_{audio_format}" # Set a unique pcap file name
+    capture_cfg["test_name"] = (
+        f"test_st30p_sampling_{audio_format}"  # Set a unique pcap file name
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
@@ -34,4 +44,10 @@ def test_st30p_sampling(
         out_url=os.path.join(media, audio_file["filename"]),
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host, capture_cfg=capture_cfg)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

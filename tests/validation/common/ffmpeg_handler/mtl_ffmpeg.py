@@ -4,7 +4,7 @@
 # based on:
 # https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/ecosystem/ffmpeg_plugin/mtl_common.h
 
-from .ffmpeg_enums import FFmpegAudioRate, MtlPcmFmt, PacketTime, MtlFAudioFormat
+from .ffmpeg_enums import FFmpegAudioRate, MtlFAudioFormat, MtlPcmFmt, PacketTime
 from .ffmpeg_io import FFmpegIO
 
 
@@ -69,7 +69,7 @@ class FFmpegMtlSt20pRx(FFmpegMtlCommonRx):
         gpu_direct: bool = False,
         gpu_driver: int = 0,
         gpu_device: int = 0,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.video_size = video_size
@@ -81,19 +81,15 @@ class FFmpegMtlSt20pRx(FFmpegMtlCommonRx):
         self.gpu_direct = gpu_direct
         self.gpu_driver = gpu_driver
         self.gpu_device = gpu_device
-        self.f = "mtl_st20p" # constant
+        self.f = "mtl_st20p"  # constant
 
 
 # https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/ecosystem/ffmpeg_plugin/mtl_st20p_tx.c
 class FFmpegMtlSt20pTx(FFmpegMtlCommonTx):
-    def __init__(
-        self,
-        fb_cnt: int = 3,
-        **kwargs
-    ):
+    def __init__(self, fb_cnt: int = 3, **kwargs):
         super().__init__(**kwargs)
         self.fb_cnt = fb_cnt
-        self.f = "mtl_st20p" # constant
+        self.f = "mtl_st20p"  # constant
 
 
 # for Media Transport Library based on AVOption elements from
@@ -121,7 +117,7 @@ class FFmpegMtlSt22pRx(FFmpegMtlCommonRx):
         self.fb_cnt = fb_cnt
         self.codec_thread_cnt = codec_thread_cnt
         self.st22_codec = st22_codec
-        self.f = "mtl_st22p" # constant
+        self.f = "mtl_st22p"  # constant
 
 
 # https://github.com/OpenVisualCloud/Media-Transport-Library/blob/main/ecosystem/ffmpeg_plugin/mtl_st22p_tx.c
@@ -139,7 +135,7 @@ class FFmpegMtlSt22pTx(FFmpegMtlCommonTx):
         self.bpp = bpp
         self.codec_thread_cnt = codec_thread_cnt
         self.st22_codec = st22_codec
-        self.f = "mtl_st22p" # constant
+        self.f = "mtl_st22p"  # constant
 
 
 # for Media Transport Library based on AVOption elements from

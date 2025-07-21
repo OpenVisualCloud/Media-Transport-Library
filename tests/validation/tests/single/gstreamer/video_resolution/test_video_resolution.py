@@ -3,8 +3,8 @@
 
 import os
 
-import pytest
 import mtl_engine.media_creator as media_create
+import pytest
 from mtl_engine import GstreamerApp
 from mtl_engine.media_files import yuv_files
 from tests.xfail import SDBQ1971_conversion_v210_720p_error

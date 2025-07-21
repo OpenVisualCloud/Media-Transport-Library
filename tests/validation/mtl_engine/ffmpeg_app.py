@@ -7,9 +7,10 @@ import os
 import re
 import time
 
+from mtl_engine.RxTxApp import prepare_tcpdump
+
 from . import rxtxapp_config
 from .execute import log_fail, log_info, run
-from mtl_engine.RxTxApp import prepare_tcpdump
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 
@@ -30,6 +31,7 @@ ip_dict_rgb24_multiple = dict(
 # Global variable to store timestamp for consistent logging
 _log_timestamp = None
 
+
 def get_case_id() -> str:
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     # Extract the test function name and parameters
@@ -44,9 +46,11 @@ def init_test_logging():
     global _log_timestamp
     _log_timestamp = time.strftime("%Y%m%d_%H%M%S")
 
+
 def sanitize_filename(name: str) -> str:
     # Replace unsafe characters with underscores
-    return re.sub(r'[^A-Za-z0-9_.-]', '_', name)
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+
 
 def log_to_file(message: str, host, build: str):
     """Log message to a file on the remote host"""
@@ -58,7 +62,7 @@ def log_to_file(message: str, host, build: str):
 
     test_name = sanitize_filename(get_case_id())
     log_file = f"{build}/tests/{test_name}_{_log_timestamp}_ffmpeg.log"
-    
+
     remote_conn = host.connection
     f = remote_conn.path(log_file)
 
@@ -75,6 +79,7 @@ def log_to_file(message: str, host, build: str):
         f.write_text(current_content + log_entry)
     else:
         f.write_text(log_entry)
+
 
 def execute_test(
     test_time: int,
@@ -182,7 +187,7 @@ def execute_test(
             background=True,
             enable_sudo=True,
         )
-         # Start tcpdump after pipelines are running
+        # Start tcpdump after pipelines are running
         if tcpdump:
             log_info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
@@ -274,6 +279,7 @@ def execute_test(
         log_fail("test failed")
     return passed
 
+
 def execute_test_rgb24(
     test_time: int,
     build: str,
@@ -299,7 +305,9 @@ def execute_test_rgb24(
             nic_port_list[0], video_format, host, build
         )
         log_info(f"Successfully created RX config file: {rx_config_file}")
-        log_to_file(f"Successfully created RX config file: {rx_config_file}", host, build)
+        log_to_file(
+            f"Successfully created RX config file: {rx_config_file}", host, build
+        )
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
         log_to_file(f"Failed to create RX config file: {e}", host, build)
@@ -378,9 +386,7 @@ def execute_test_rgb24(
                 log_info("RX output captured successfully")
             else:
                 log_info("Could not retrieve RX output")
-                log_to_file(
-                    "Could not retrieve RX output", host, build
-                )
+                log_to_file("Could not retrieve RX output", host, build)
         except Exception as e:
             log_info(f"Error retrieving RX output: {e}")
             log_to_file(f"Error retrieving RX output: {e}", host, build)
@@ -434,6 +440,7 @@ def execute_test_rgb24(
     time.sleep(5)
     return True
 
+
 def execute_test_rgb24_multiple(
     test_time: int,
     build: str,
@@ -462,7 +469,9 @@ def execute_test_rgb24_multiple(
             nic_port_list[:2], video_format_list, host, build, True
         )
         log_info(f"Successfully created RX config file: {rx_config_file}")
-        log_to_file(f"Successfully created RX config file: {rx_config_file}", host, build)
+        log_to_file(
+            f"Successfully created RX config file: {rx_config_file}", host, build
+        )
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
         log_to_file(f"Failed to create RX config file: {e}", host, build)
@@ -531,9 +540,7 @@ def execute_test_rgb24_multiple(
             log_info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        log_info(
-            f"Waiting for RX process (test_time: {test_time} seconds)..."
-        )
+        log_info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
         log_info("RX process completed")
 
@@ -560,9 +567,7 @@ def execute_test_rgb24_multiple(
                 log_info("RX output captured successfully")
             else:
                 log_info("Could not retrieve RX output")
-                log_to_file(
-                    "Could not retrieve RX output", host, build
-                )
+                log_to_file("Could not retrieve RX output", host, build)
         except Exception as e:
             log_info(f"Error retrieving RX output: {e}")
             log_to_file(f"Error retrieving RX output: {e}", host, build)
@@ -609,6 +614,7 @@ def execute_test_rgb24_multiple(
     time.sleep(5)
     return True
 
+
 def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
     # Log input file size
     try:
@@ -617,7 +623,9 @@ def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
             input_file_size = int(input_stat_proc.stdout_text.strip())
             log_info(f"Input file size: {input_file_size} bytes for {input_file}")
             log_to_file(
-                f"Input file size: {input_file_size} bytes for {input_file}", host, build
+                f"Input file size: {input_file_size} bytes for {input_file}",
+                host,
+                build,
             )
         else:
             log_info(f"Could not get input file size for {input_file}")
@@ -655,7 +663,9 @@ def check_output_video_h264(
             input_file_size = int(input_stat_proc.stdout_text.strip())
             log_info(f"Input file size: {input_file_size} bytes for {input_file}")
             log_to_file(
-                f"Input file size: {input_file_size} bytes for {input_file}", host, build
+                f"Input file size: {input_file_size} bytes for {input_file}",
+                host,
+                build,
             )
         else:
             log_info(f"Could not get input file size for {input_file}")
@@ -677,7 +687,9 @@ def check_output_video_h264(
             )
         else:
             log_info(f"Could not get output file size for {output_file}")
-            log_to_file(f"Could not get output file size for {output_file}", host, build)
+            log_to_file(
+                f"Could not get output file size for {output_file}", host, build
+            )
     except Exception as e:
         log_info(f"Error checking output file size: {e}")
         log_to_file(f"Error checking output file size: {e}", host, build)

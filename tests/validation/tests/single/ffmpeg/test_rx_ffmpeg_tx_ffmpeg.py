@@ -32,7 +32,9 @@ def test_rx_ffmpeg_tx_ffmpeg(
 ):
     host = list(hosts.values())[0]
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_rx_ffmpeg_tx_ffmpeg_{video_format}_{output_format}"
+    capture_cfg["test_name"] = (
+        f"test_rx_ffmpeg_tx_ffmpeg_{video_format}_{output_format}"
+    )
 
     video_file = yuv_files[video_format]
 

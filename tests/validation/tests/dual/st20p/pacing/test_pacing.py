@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
@@ -11,12 +11,12 @@ from mtl_engine.media_files import yuv_files_422rfc10
 @pytest.mark.parametrize("file", ["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"])
 def test_pacing_dual(hosts, build, media, nic_port_list, test_time, file, pacing):
     st20p_file = yuv_files_422rfc10[file]
-    
+
     # Get TX and RX hosts
     host_list = list(hosts.values())
     if len(host_list) < 2:
         pytest.skip("Dual tests require at least 2 hosts")
-    
+
     tx_host = host_list[0]
     rx_host = host_list[1]
 
@@ -37,9 +37,9 @@ def test_pacing_dual(hosts, build, media, nic_port_list, test_time, file, pacing
     )
 
     rxtxapp.execute_dual_test(
-        config=config, 
-        build=build, 
-        test_time=test_time, 
+        config=config,
+        build=build,
+        test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,
     )

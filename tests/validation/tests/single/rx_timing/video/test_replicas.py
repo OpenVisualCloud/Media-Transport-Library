@@ -39,5 +39,10 @@ def test_rx_timing_video_replicas(
     config = rxtxapp.change_replicas(config=config, session_type="st20p", replicas=2)
 
     rxtxapp.execute_test(
-        config=config, build=build, test_time=test_time, rx_timing_parser=True, host=host, capture_cfg=capture_cfg
+        config=config,
+        build=build,
+        test_time=test_time,
+        rx_timing_parser=True,
+        host=host,
+        capture_cfg=capture_cfg,
     )

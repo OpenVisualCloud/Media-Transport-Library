@@ -2,17 +2,17 @@
 # Copyright 2025 Intel Corporation
 # Media Communications Mesh
 
-from .ffmpeg_enums import FFmpegVideoFormat, FFmpegAudioRate, FFmpegAudioFormat
+from .ffmpeg_enums import FFmpegAudioFormat, FFmpegAudioRate, FFmpegVideoFormat
 
 
 class FFmpegIO:
     def __init__(
         self,
-        read_at_native_rate: bool = False, # keep reading with given framerate (novalue, true/false)
-        stream_loop: int | None = None, # how many loops (-1 = inf)
-        input_path: str | None = None, # -i, empty = no -i
-        output_path: str | None = None, # "-" or path at the end
-        segment: int | bool = False, # segment the output (True/False)
+        read_at_native_rate: bool = False,  # keep reading with given framerate (novalue, true/false)
+        stream_loop: int | None = None,  # how many loops (-1 = inf)
+        input_path: str | None = None,  # -i, empty = no -i
+        output_path: str | None = None,  # "-" or path at the end
+        segment: int | bool = False,  # segment the output (True/False)
         **kwargs,
     ):
         self.re = read_at_native_rate
@@ -36,7 +36,11 @@ class FFmpegIO:
         response = ""
         for key, value in self.__dict__.items():
             # print(f"key:{key};value:{value};type:{type(value)}")
-            if key not in ["input_path", "output_path", "segment"]: # make sure they are printed at the end
+            if key not in [
+                "input_path",
+                "output_path",
+                "segment",
+            ]:  # make sure they are printed at the end
                 if type(value) == bool and value == True:
                     response += f" -{key}"
                 if type(value) in [int, str, float] and value:
@@ -54,7 +58,7 @@ class FFmpegVideoIO(FFmpegIO):
     def __init__(
         self,
         video_size: str | None = "1920x1080",
-        f: str | None = FFmpegVideoFormat.raw.value, # video format
+        f: str | None = FFmpegVideoFormat.raw.value,  # video format
         pix_fmt: str | None = "yuv422p10le",
         **kwargs,
     ):
@@ -67,9 +71,9 @@ class FFmpegVideoIO(FFmpegIO):
 class FFmpegAudioIO(FFmpegIO):
     def __init__(
         self,
-        ar: int | None = FFmpegAudioRate.k48.value, # audio sample rate
-        f: str | None = FFmpegAudioFormat.pcm24.value, # audio format (bit depth)
-        ac: int | None = 2, # audio channels
+        ar: int | None = FFmpegAudioRate.k48.value,  # audio sample rate
+        f: str | None = FFmpegAudioFormat.pcm24.value,  # audio format (bit depth)
+        ac: int | None = 2,  # audio channels
         **kwargs,
     ):
         super().__init__(**kwargs)

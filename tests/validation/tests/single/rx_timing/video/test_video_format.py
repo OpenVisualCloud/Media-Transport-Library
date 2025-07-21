@@ -2,8 +2,8 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
-import pytest
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files
 
 
@@ -52,5 +52,10 @@ def test_rx_timing_video_video_format(
     )
 
     rxtxapp.execute_test(
-        config=config, build=build, test_time=test_time, rx_timing_parser=True, host=host, capture_cfg=capture_cfg
+        config=config,
+        build=build,
+        test_time=test_time,
+        rx_timing_parser=True,
+        host=host,
+        capture_cfg=capture_cfg,
     )

@@ -37,7 +37,9 @@ def test_rx_ffmpeg_tx_rxtxapp(
 ):
     host = list(hosts.values())[0]
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_rx_ffmpeg_tx_rxtxapp_{video_format}_{output_format}_{multiple_sessions}_{test_time_multipler}"
+    capture_cfg["test_name"] = (
+        f"test_rx_ffmpeg_tx_rxtxapp_{video_format}_{output_format}_{multiple_sessions}_{test_time_multipler}"
+    )
 
     video_file = yuv_files[video_format]
 

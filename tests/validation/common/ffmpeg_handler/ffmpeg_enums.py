@@ -79,7 +79,9 @@ def audio_file_format_to_format_dict(audio_format: str) -> dict:
     elif audio_format == "pcm_s24be":
         return matching_audio_formats.get(FFmpegAudioFormat.pcm24, {})
     elif audio_format == "pcm_s8":
-        raise Exception(f"PCM 8 is not supported by Media Communications Mesh FFmpeg plugin!")
+        raise Exception(
+            f"PCM 8 is not supported by Media Communications Mesh FFmpeg plugin!"
+        )
     else:
         raise Exception(f"Not expected audio format {audio_format}")
 
@@ -181,4 +183,6 @@ video_format_matches = {
 
 
 def video_file_format_to_payload_format(pixel_format: str) -> str:
-    return video_format_matches.get(pixel_format, pixel_format)  # matched if matches, else original
+    return video_format_matches.get(
+        pixel_format, pixel_format
+    )  # matched if matches, else original
