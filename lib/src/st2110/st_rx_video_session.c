@@ -1530,7 +1530,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (exist_ts) {
       // Check if packet is redundant (already received)
       // Check if the same pkt got already and bitmap is allocated by timestamp
-      if (slot->seq_id_got && slot->frame_bitmap) { 
+      if (slot->seq_id_got && slot->frame_bitmap) {
         int pkt_idx = -1;
         // Check if the same pkt got already
         if (seq_id_u32 >= slot->seq_id_base_u32)
@@ -1542,7 +1542,6 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
           bool is_set = mt_bitmap_test(slot->frame_bitmap, pkt_idx);
           if (is_set) {
             s->stat_pkts_redundant_dropped++;
-            slot->pkts_recv_per_port[s_port]++;
             return 0;
           }
         }
@@ -1617,8 +1616,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
-      s->stat_pkts_redundant_dropped++;
       slot->pkts_recv_per_port[s_port]++;
+
       /* tp for the redundant packet */
       if (s->enable_timing_parser)
         rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
@@ -4191,8 +4190,6 @@ int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
   }
 
   memcpy(stats, &s->port_user_stats[port], sizeof(*stats));
-  printf("st20_rx_get_port_stats 1607MTLIC packets: %lu, bytes: %zu, frames: %lu, errors: %lu\n",
-    stats->packets, stats->bytes, stats->frames, stats->err_packets);
   return 0;
 }
 
