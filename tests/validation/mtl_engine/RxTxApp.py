@@ -1286,3 +1286,331 @@ def log_to_file(message: str, host, build: str):
         f.write_text(log_entry)
 
 read_ip_addresses_from_json(json_filename)
+
+def create_empty_dual_config() -> dict:
+    return {
+        "tx_config": copy.deepcopy(rxtxapp_config.config_empty_tx),
+        "rx_config": copy.deepcopy(rxtxapp_config.config_empty_rx)
+    }
+
+def add_dual_interfaces(tx_config: dict, rx_config: dict, tx_nic_port_list: list, rx_nic_port_list: list, test_mode: str) -> tuple:
+    # Configure TX host interface only
+    tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
+    
+    # Configure RX host interface only  
+    rx_config["interfaces"][0]["name"] = rx_nic_port_list[1]
+
+    if test_mode == "unicast":
+        tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
+        rx_config["interfaces"][0]["ip"] = unicast_ip_dict["rx_interfaces"]
+        tx_config["tx_sessions"][0]["dip"][0] = unicast_ip_dict["rx_interfaces"]  # TX sends to RX IP
+        rx_config["rx_sessions"][0]["ip"][0] = unicast_ip_dict["tx_interfaces"]   # RX listens for TX IP
+    elif test_mode == "multicast":
+        tx_config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
+        rx_config["interfaces"][0]["ip"] = multicast_ip_dict["rx_interfaces"]
+        tx_config["tx_sessions"][0]["dip"][0] = multicast_ip_dict["tx_sessions"]
+        rx_config["rx_sessions"][0]["ip"][0] = multicast_ip_dict["rx_sessions"]
+    elif test_mode == "kernel":
+        tx_config["tx_sessions"][0]["dip"][0] = kernel_ip_dict["tx_sessions"]
+        rx_config["rx_sessions"][0]["ip"][0] = kernel_ip_dict["rx_sessions"]
+    else:
+        log_fail(f"wrong test_mode {test_mode}")
+
+    return tx_config, rx_config
+
+def add_st20p_dual_sessions(
+    config: dict,
+    tx_nic_port_list: list,
+    rx_nic_port_list: list,
+    test_mode: str,
+    width: int,
+    height: int,
+    fps: str,
+    input_format: str,
+    transport_format: str,
+    output_format: str,
+    st20p_url: str,
+    interlaced: bool = False,
+    pacing: str = "gap",
+    packing: str = "BPM",
+    enable_rtcp: bool = False,
+    measure_latency: bool = False,
+    out_url: str = "",
+) -> dict:
+    tx_config = config["tx_config"]
+    rx_config = config["rx_config"]
+    
+    tx_config, rx_config = add_dual_interfaces(
+        tx_config=tx_config,
+        rx_config=rx_config,
+        tx_nic_port_list=tx_nic_port_list,
+        rx_nic_port_list=rx_nic_port_list,
+        test_mode=test_mode
+    )
+    
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st20p_session)
+    tx_config["tx_sessions"][0]["st20p"].append(tx_session)
+    
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st20p_session)
+    rx_config["rx_sessions"][0]["st20p"].append(rx_session)
+
+    # Configure TX session
+    tx_config["tx_sessions"][0]["st20p"][0]["width"] = width
+    tx_config["tx_sessions"][0]["st20p"][0]["height"] = height
+    tx_config["tx_sessions"][0]["st20p"][0]["fps"] = fps
+    tx_config["tx_sessions"][0]["st20p"][0]["input_format"] = input_format
+    tx_config["tx_sessions"][0]["st20p"][0]["transport_format"] = transport_format
+    tx_config["tx_sessions"][0]["st20p"][0]["interlaced"] = interlaced
+    tx_config["tx_sessions"][0]["st20p"][0]["pacing"] = pacing
+    tx_config["tx_sessions"][0]["st20p"][0]["packing"] = packing
+    tx_config["tx_sessions"][0]["st20p"][0]["enable_rtcp"] = enable_rtcp
+    tx_config["tx_sessions"][0]["st20p"][0]["st20p_url"] = st20p_url
+
+    # Configure RX session
+    rx_config["rx_sessions"][0]["st20p"][0]["width"] = width
+    rx_config["rx_sessions"][0]["st20p"][0]["height"] = height
+    rx_config["rx_sessions"][0]["st20p"][0]["fps"] = fps
+    rx_config["rx_sessions"][0]["st20p"][0]["transport_format"] = transport_format
+    rx_config["rx_sessions"][0]["st20p"][0]["output_format"] = output_format
+    rx_config["rx_sessions"][0]["st20p"][0]["interlaced"] = interlaced
+    rx_config["rx_sessions"][0]["st20p"][0]["pacing"] = pacing
+    rx_config["rx_sessions"][0]["st20p"][0]["packing"] = packing
+    rx_config["rx_sessions"][0]["st20p"][0]["enable_rtcp"] = enable_rtcp
+    rx_config["rx_sessions"][0]["st20p"][0]["measure_latency"] = measure_latency
+    rx_config["rx_sessions"][0]["st20p"][0]["st20p_url"] = out_url
+
+    return {"tx_config": tx_config, "rx_config": rx_config}
+
+def add_st30p_dual_sessions(
+    config: dict,
+    tx_nic_port_list: list,
+    rx_nic_port_list: list,
+    test_mode: str,
+    filename: str,
+    audio_format: str = "PCM24",
+    audio_channel: list = ["U02"],
+    audio_sampling: str = "96kHz",
+    audio_ptime: str = "1",
+    out_url: str = "",
+) -> dict:
+    tx_config = config["tx_config"]
+    rx_config = config["rx_config"]
+    
+    tx_config, rx_config = add_dual_interfaces(
+        tx_config=tx_config,
+        rx_config=rx_config,
+        tx_nic_port_list=tx_nic_port_list,
+        rx_nic_port_list=rx_nic_port_list,
+        test_mode=test_mode
+    )
+    
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st30p_session)
+    tx_config["tx_sessions"][0]["st30p"].append(tx_session)
+    
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st30p_session)
+    rx_config["rx_sessions"][0]["st30p"].append(rx_session)
+
+    # Configure TX session
+    tx_config["tx_sessions"][0]["st30p"][0]["audio_format"] = audio_format
+    tx_config["tx_sessions"][0]["st30p"][0]["audio_channel"] = audio_channel
+    tx_config["tx_sessions"][0]["st30p"][0]["audio_sampling"] = audio_sampling
+    tx_config["tx_sessions"][0]["st30p"][0]["audio_ptime"] = audio_ptime
+    tx_config["tx_sessions"][0]["st30p"][0]["audio_url"] = filename
+
+    # Configure RX session
+    rx_config["rx_sessions"][0]["st30p"][0]["audio_format"] = audio_format
+    rx_config["rx_sessions"][0]["st30p"][0]["audio_channel"] = audio_channel
+    rx_config["rx_sessions"][0]["st30p"][0]["audio_sampling"] = audio_sampling
+    rx_config["rx_sessions"][0]["st30p"][0]["audio_ptime"] = audio_ptime
+    rx_config["rx_sessions"][0]["st30p"][0]["audio_url"] = out_url
+
+    return {"tx_config": tx_config, "rx_config": rx_config}
+
+
+def add_st40p_dual_sessions(
+    config: dict,
+    tx_nic_port_list: list,
+    rx_nic_port_list: list,
+    test_mode: str,
+    type_: str,
+    ancillary_format: str,
+    ancillary_fps: str,
+    ancillary_url: str,
+) -> dict:
+    tx_config = config["tx_config"]
+    rx_config = config["rx_config"]
+
+    tx_config, rx_config = add_dual_interfaces(
+        tx_config=tx_config,
+        rx_config=rx_config,
+        tx_nic_port_list=tx_nic_port_list,
+        rx_nic_port_list=rx_nic_port_list,
+        test_mode=test_mode
+    )
+
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_ancillary_session)
+    tx_config["tx_sessions"][0]["ancillary"].append(tx_session)
+    tx_config["tx_sessions"][0]["ancillary"][0]["type"] = type_
+    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_format"] = ancillary_format
+    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_fps"] = ancillary_fps
+    tx_config["tx_sessions"][0]["ancillary"][0]["ancillary_url"] = ancillary_url
+
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_ancillary_session)
+    rx_config["rx_sessions"][0]["ancillary"].append(rx_session)
+    rx_config["rx_sessions"][0]["ancillary"][0]["type"] = type_
+    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_format"] = ancillary_format
+    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_fps"] = ancillary_fps
+    rx_config["rx_sessions"][0]["ancillary"][0]["ancillary_url"] = ancillary_url
+
+    return {"tx_config": tx_config, "rx_config": rx_config}
+
+def execute_dual_test(
+    config: dict,
+    build: str,
+    test_time: int,
+    tx_host,
+    rx_host,
+    fail_on_error: bool = True,
+    virtio_user: bool = False,
+    rx_timing_parser: bool = False,
+    ptp: bool = False,
+    capture_cfg=None,
+) -> bool:
+    case_id = os.environ["PYTEST_CURRENT_TEST"]
+    case_id = case_id[: case_id.rfind("(") - 1]
+    
+    tx_config = config["tx_config"]
+    rx_config = config["rx_config"]
+
+    # Log test start
+    log_info(f"Starting dual RxTxApp test: {get_case_id()}")
+    log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", tx_host, build)
+    log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", rx_host, build)
+    log_to_file(f"TX config: {json.dumps(tx_config, indent=4)}", tx_host, build)
+    log_to_file(f"RX config: {json.dumps(rx_config, indent=4)}", rx_host, build)
+
+    # Prepare TX config
+    tx_f = tx_host.connection.path(build, "tests", "tx_config.json")
+    tx_json_content = tx_config.replace('"', '\\"')
+    tx_f.write_text(tx_json_content)
+
+    # Prepare RX config
+    rx_f = tx_host.connection.path(build, "tests", "tx_config.json")
+    rx_json_content = rx_config.replace('"', '\\"')
+    rx_f.write_text(rx_json_content)
+
+    # Adjust test_time for high-res/fps/replicas
+    if "st20p" in tx_config["tx_sessions"][0] and len(tx_config["tx_sessions"][0]["st20p"]) > 0:
+        video_format = tx_config["tx_sessions"][0]["st20p"][0]["height"]
+        video_fps = tx_config["tx_sessions"][0]["st20p"][0]["fps"]
+        if any(format == video_format for format in [4320, 2160]):
+            test_time = test_time * 2
+            if any(fps in video_fps for fps in ["p50", "p59", "p60", "p119"]):
+                test_time = test_time * 2
+            test_time = test_time * tx_config["tx_sessions"][0]["st20p"][0]["replicas"]
+
+    # Prepare commands
+    base_command = f"sudo {RXTXAPP_PATH} --test_time {test_time}"
+    if virtio_user:
+        base_command += " --virtio_user"
+    if rx_timing_parser:
+        base_command += " --rx_timing_parser"
+    if ptp:
+        base_command += " --ptp"
+
+    tx_command = f"{base_command} --config_file {tx_config}"
+    rx_command = f"{base_command} --config_file {rx_config}"
+
+    log_info(f"TX Command: {tx_command}")
+    log_info(f"RX Command: {rx_command}")
+    log_to_file(f"TX Command: {tx_command}", tx_host, build)
+    log_to_file(f"RX Command: {rx_command}", rx_host, build)
+
+    # Start RX first
+    rx_cp = run(
+        rx_command,
+        cwd=build,
+        timeout=test_time + 90,
+        testcmd=True,
+        host=rx_host,
+        background=True,
+    )
+
+    # Start TX
+    tx_cp = run(
+        tx_command,
+        cwd=build,
+        timeout=test_time + 90,
+        testcmd=True,
+        host=tx_host,
+    )
+
+    # Wait for both processes
+    tx_cp.wait()
+    rx_cp.wait()
+
+    # Get output from both hosts
+    tx_output = tx_cp.stdout_text.splitlines()
+    rx_output = rx_cp.stdout_text.splitlines()
+    
+    # Log outputs
+    log_info("=== TX OUTPUT ===")
+    log_to_file("=== TX OUTPUT ===", tx_host, build)
+    for line in tx_output:
+        log_info(line)
+        log_to_file(line, tx_host, build)
+    
+    log_info("=== RX OUTPUT ===")
+    log_to_file("=== RX OUTPUT ===", rx_host, build)
+    for line in rx_output:
+        log_info(line)
+        log_to_file(line, rx_host, build)
+
+    # Log the complete output to file
+    log_to_file(f"TX RxTxApp Output:\n{tx_cp.stdout_text}", tx_host, build)
+    log_to_file(f"RX RxTxApp Output:\n{rx_cp.stdout_text}", rx_host, build)
+
+    # Check results
+    passed = True
+    
+    if len(tx_config["tx_sessions"][0]["st20p"]) > 0:
+        passed = passed and check_tx_output(
+            config=tx_config,
+            output=tx_output,
+            session_type="st20p",
+            fail_on_error=fail_on_error,
+        )
+        passed = passed and check_tx_converter_output(
+            config=tx_config,
+            output=tx_output,
+            session_type="st20p",
+            fail_on_error=fail_on_error,
+        )
+
+    if len(rx_config["rx_sessions"][0]["st20p"]) > 0:
+        passed = passed and check_rx_output(
+            config=rx_config,
+            output=rx_output,
+            session_type="st20p",
+            fail_on_error=fail_on_error,
+        )
+        passed = passed and check_rx_converter_output(
+            config=rx_config,
+            output=rx_output,
+            session_type="st20p",
+            fail_on_error=fail_on_error,
+        )
+
+    if len(rx_config["rx_sessions"][0]["st30p"]) > 0:
+        passed = passed and check_rx_output(
+            config=rx_config,
+            output=rx_output,
+            session_type="st30p",
+            fail_on_error=fail_on_error,
+        )
+
+    log_info(f"Dual RxTxApp test completed with result: {passed}")
+    log_to_file(f"Dual RxTxApp test completed with result: {passed}", tx_host, build)
+    log_to_file(f"Dual RxTxApp test completed with result: {passed}", rx_host, build)
+
+    return passed
