@@ -10,9 +10,9 @@ pixel_formats=("yuv422p" "yuv422p10le")
 
 function check_if_ffmpeg_properly_configured(){
     cmd_result=$(ffmpeg -version)
-    echo $cmd_result | grep "\--enable-libfreetype" > /dev/null; libfreetype=$?
-    echo $cmd_result | grep "\--enable-libharfbuzz" > /dev/null; libharfbuzz=$?
-    echo $cmd_result | grep "\--enable-libfontconfig" > /dev/null; libfontconfig=$?
+    echo "$cmd_result" | grep "\--enable-libfreetype" > /dev/null; libfreetype=$?
+    echo "$cmd_result" | grep "\--enable-libharfbuzz" > /dev/null; libharfbuzz=$?
+    echo "$cmd_result" | grep "\--enable-libfontconfig" > /dev/null; libfontconfig=$?
 
     if (( libfreetype + libharfbuzz + libfontconfig == 0 )); then
         echo "All required FFmpeg libraries are properly enabled."
