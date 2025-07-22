@@ -322,7 +322,7 @@ Two modes available: stream and file.
 Stream mode is for video streams saved into files segmented by time, while file mode is for single video files.
 Run script with mode type and --help for more information.
 
-Example of command: 
+Example of command:
 python videointe.py stream src.yuv out_name 1920x1080 yuv422p10le --output_path /mnt/ramdisk --segment_duration 3
 --workers 5
 
