@@ -4,7 +4,6 @@
 import logging
 import os
 import time
-from pathlib import Path
 from typing import Dict
 
 import pytest
@@ -91,7 +90,7 @@ def dma_port_list(request):
 @pytest.fixture(scope="session")
 def nic_port_list(hosts: dict, mtl_path) -> list:
     for host in hosts.values():
-        connection = host.connection
+        # connection = host.connection
         # connection.enable_sudo()
         nicctl = Nicctl(mtl_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:

@@ -89,7 +89,7 @@ def create_video_file(
                 log_info("Process terminated successfully after duration")
             else:
                 log_info(f"Process ended with return code {return_code}")
-        except Exception as e:
+        except Exception:
             # Ensure termination thread completes
             termination_thread.join(timeout=1)
             raise
