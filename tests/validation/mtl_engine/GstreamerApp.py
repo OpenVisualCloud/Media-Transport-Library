@@ -2,13 +2,11 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import hashlib
-import json
 import os
 import time
 
 from mtl_engine.RxTxApp import prepare_tcpdump
 
-from .const import LOG_FOLDER
 from .execute import log_fail, log_info, run
 
 

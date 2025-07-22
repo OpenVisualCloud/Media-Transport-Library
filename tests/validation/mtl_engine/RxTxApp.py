@@ -11,7 +11,6 @@ import time
 from create_pcap_file.tcpdump import TcpDumpRecorder
 
 from . import rxtxapp_config
-from .const import LOG_FOLDER
 from .execute import log_fail, log_info, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"

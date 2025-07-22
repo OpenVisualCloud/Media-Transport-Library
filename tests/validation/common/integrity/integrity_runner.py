@@ -1,8 +1,4 @@
 import logging
-from doctest import debug
-from sys import stderr
-
-from mfd_connect.exceptions import ConnectionCalledProcessError
 
 logger = logging.getLogger(__name__)
 

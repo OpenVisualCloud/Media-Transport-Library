@@ -10,7 +10,6 @@ import re
 import subprocess
 import sys
 import time
-from math import floor
 from pathlib import Path
 
 import cv2
