@@ -19,13 +19,13 @@ def _terminate_gst_process_after_duration(duration: int, host):
     try:
         run(terminate_cmd, host=host, enable_sudo=True)
         log_info("Sent SIGINT to gst-launch process")
-    except:
+    except Exception:
         # Fallback to SIGTERM
         terminate_cmd = "pkill -SIGTERM gst-launch-1.0"
         try:
             run(terminate_cmd, host=host, enable_sudo=True)
             log_info("Sent SIGTERM to gst-launch process")
-        except:
+        except Exception:
             pass
 
 

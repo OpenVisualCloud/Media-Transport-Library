@@ -394,12 +394,12 @@ def execute_test(
         if tx_process:
             try:
                 tx_process.terminate()
-            except:
+            except Exception:
                 pass
         if rx_process:
             try:
                 rx_process.terminate()
-            except:
+            except Exception:
                 pass
 
         # Wait a bit for termination
@@ -411,7 +411,7 @@ def execute_test(
                 output_rx = rx_process.stdout_text.splitlines()
                 for line in output_rx:
                     log_info(f"RX Output: {line}")
-        except:
+        except Exception:
             log_info("Could not retrieve RX output")
 
         try:
@@ -419,7 +419,7 @@ def execute_test(
                 output_tx = tx_process.stdout_text.splitlines()
                 for line in output_tx:
                     log_info(f"TX Output: {line}")
-        except:
+        except Exception:
             log_info("Could not retrieve TX output")
 
     except Exception as e:
@@ -431,13 +431,13 @@ def execute_test(
             try:
                 tx_process.terminate()
                 tx_process.wait(timeout=10)
-            except:
+            except Exception:
                 pass
         if rx_process:
             try:
                 rx_process.terminate()
                 rx_process.wait(timeout=10)
-            except:
+            except Exception:
                 pass
         if tcpdump:
             tcpdump.stop()

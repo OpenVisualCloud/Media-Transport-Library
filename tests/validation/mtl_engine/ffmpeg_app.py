@@ -200,12 +200,12 @@ def execute_test(
         if tx_proc:
             try:
                 tx_proc.terminate()
-            except:
+            except Exception:
                 pass
         if rx_proc:
             try:
                 rx_proc.terminate()
-            except:
+            except Exception:
                 pass
         # Wait a bit for termination
         time.sleep(2)
@@ -213,12 +213,12 @@ def execute_test(
         try:
             if rx_proc and hasattr(rx_proc, "stdout_text"):
                 log_to_file(f"RX Output: {rx_proc.stdout_text}", host, build)
-        except:
+        except Exception:
             log_info("Could not retrieve RX output")
         try:
             if tx_proc and hasattr(tx_proc, "stdout_text"):
                 log_to_file(f"TX Output: {tx_proc.stdout_text}", host, build)
-        except:
+        except Exception:
             log_info("Could not retrieve TX output")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
@@ -226,12 +226,12 @@ def execute_test(
         if tx_proc:
             try:
                 tx_proc.terminate()
-            except:
+            except Exception:
                 pass
         if rx_proc:
             try:
                 rx_proc.terminate()
-            except:
+            except Exception:
                 pass
         raise
     finally:
@@ -240,23 +240,23 @@ def execute_test(
             try:
                 tx_proc.terminate()
                 tx_proc.wait(timeout=5)
-            except:
+            except Exception:
                 try:
                     # Force kill if terminate didn't work
                     tx_proc.kill()
                     tx_proc.wait(timeout=5)
-                except:
+                except Exception:
                     pass
         if rx_proc:
             try:
                 rx_proc.terminate()
                 rx_proc.wait(timeout=5)
-            except:
+            except Exception:
                 try:
                     # Force kill if terminate didn't work
                     rx_proc.kill()
                     rx_proc.wait(timeout=5)
-                except:
+                except Exception:
                     pass
         if tcpdump:
             tcpdump.stop()
@@ -371,12 +371,12 @@ def execute_test_rgb24(
                 tx_proc.terminate()
                 tx_proc.wait(timeout=5)
                 log_info("TX process terminated successfully")
-            except:
+            except Exception:
                 try:
                     tx_proc.kill()
                     tx_proc.wait(timeout=5)
                     log_info("TX process killed")
-                except:
+                except Exception:
                     log_info("Could not terminate TX process")
         rx_output = ""
         try:
@@ -402,12 +402,12 @@ def execute_test_rgb24(
         if tx_proc:
             try:
                 tx_proc.terminate()
-            except:
+            except Exception:
                 pass
         if rx_proc:
             try:
                 rx_proc.terminate()
-            except:
+            except Exception:
                 pass
         raise
     finally:
@@ -416,21 +416,21 @@ def execute_test_rgb24(
             try:
                 tx_proc.terminate()
                 tx_proc.wait(timeout=3)
-            except:
+            except Exception:
                 try:
                     tx_proc.kill()
                     tx_proc.wait(timeout=3)
-                except:
+                except Exception:
                     pass
         if rx_proc:
             try:
                 rx_proc.terminate()
                 rx_proc.wait(timeout=3)
-            except:
+            except Exception:
                 try:
                     rx_proc.kill()
                     rx_proc.wait(timeout=3)
-                except:
+                except Exception:
                     pass
         if tcpdump:
             tcpdump.stop()
@@ -552,12 +552,12 @@ def execute_test_rgb24_multiple(
                     proc.terminate()
                     proc.wait(timeout=5)
                     log_info("TX process terminated successfully")
-                except:
+                except Exception:
                     try:
                         proc.kill()
                         proc.wait(timeout=5)
                         log_info("TX process killed")
-                    except:
+                    except Exception:
                         log_info("Could not terminate TX process")
         rx_output = ""
         try:
@@ -590,7 +590,7 @@ def execute_test_rgb24_multiple(
             if proc:
                 try:
                     proc.terminate()
-                except:
+                except Exception:
                     pass
         raise
     finally:
@@ -600,11 +600,11 @@ def execute_test_rgb24_multiple(
                 try:
                     proc.terminate()
                     proc.wait(timeout=3)
-                except:
+                except Exception:
                     try:
                         proc.kill()
                         proc.wait(timeout=3)
-                    except:
+                    except Exception:
                         pass
         if tcpdump:
             tcpdump.stop()
