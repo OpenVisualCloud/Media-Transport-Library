@@ -4,8 +4,8 @@
 import os
 
 import pytest
-from tests.Engine import ffmpeg_app
-from tests.Engine.media_files import yuv_files
+from mtl_engine import ffmpeg_app
+from mtl_engine.media_files import yuv_files
 
 
 @pytest.mark.parametrize(
@@ -19,6 +19,7 @@ from tests.Engine.media_files import yuv_files
 )
 @pytest.mark.parametrize("output_format", ["yuv", "h264"])
 def test_rx_ffmpeg_tx_ffmpeg(
+    hosts,
     test_time,
     build,
     media,
@@ -26,16 +27,25 @@ def test_rx_ffmpeg_tx_ffmpeg(
     video_format,
     test_time_multipler,
     output_format,
+    test_config,
+    prepare_ramdisk,
 ):
+    host = list(hosts.values())[0]
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = (
+        f"test_rx_ffmpeg_tx_ffmpeg_{video_format}_{output_format}"
+    )
+
     video_file = yuv_files[video_format]
 
     ffmpeg_app.execute_test(
         test_time=test_time * test_time_multipler,
         build=build,
-        nic_port_list=nic_port_list,
+        host=host,
         type_="frame",
         video_format=video_format,
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
         output_format=output_format,
+        capture_cfg=capture_cfg,
     )

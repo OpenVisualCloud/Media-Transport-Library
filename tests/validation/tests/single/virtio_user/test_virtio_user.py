@@ -2,9 +2,9 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
+import mtl_engine.RxTxApp as rxtxapp
 import pytest
-import tests.Engine.RxTxApp as rxtxapp
-from tests.Engine.media_files import yuv_files
+from mtl_engine.media_files import yuv_files
 
 
 @pytest.mark.parametrize(
@@ -18,23 +18,49 @@ from tests.Engine.media_files import yuv_files
         ("i2160p60", 9),
     ],
 )
-def test_virtio_user(build, media, nic_port_list, test_time, video_format, replicas):
+def test_virtio_user(
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    video_format,
+    replicas,
+    test_config,
+    prepare_ramdisk,
+):
     video_file = yuv_files[video_format]
+    host = list(hosts.values())[0]
+
+    # Get capture configuration from test_config.yaml
+    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = (
+        f"test_virtio_user_multicast_{video_format}_replicas{replicas}"
+    )
 
     config = rxtxapp.create_empty_config()
-    config = rxtxapp.add_video_sessions(
+    config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=nic_port_list,
+        nic_port_list=host.vfs,
         test_mode="multicast",
-        type_="frame",
-        video_format=video_format,
-        pg_format=video_file["format"],
-        video_url=os.path.join(media, video_file["filename"]),
+        width=video_file["width"],
+        height=video_file["height"],
+        fps=f"p{video_file['fps']}",
+        transport_format=video_file["format"],
+        output_format=video_file["file_format"],
+        st20p_url=os.path.join(media, video_file["filename"]),
+        input_format=video_file["file_format"],
     )
     config = rxtxapp.change_replicas(
-        config=config, session_type="video", replicas=replicas
+        config=config, session_type="st20p", replicas=replicas
     )
 
     rxtxapp.execute_test(
-        config=config, build=build, test_time=test_time, virtio_user=True
+        config=config,
+        build=build,
+        test_time=test_time,
+        virtio_user=True,
+        host=host,
+        capture_cfg=capture_cfg,
     )

@@ -2,7 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
-from tests.Engine import udp_app
+from mtl_engine import udp_app
 
 
 @pytest.mark.parametrize(
@@ -21,8 +21,20 @@ from tests.Engine import udp_app
     ],
 )
 def test_udp_sessions_cnt(
-    build, nic_port_list, test_time, sleep_us, sleep_step, sessions_cnt
+    hosts,
+    build,
+    nic_port_list,
+    test_time,
+    sleep_us,
+    sleep_step,
+    sessions_cnt,
+    test_config,
+    prepare_ramdisk,
 ):
+    host = list(hosts.values())[0]
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = f"test_librist_udp_sessions_cnt_{sessions_cnt}"
+
     udp_app.execute_test_librist(
         build=build,
         nic_port_list=nic_port_list,
@@ -30,4 +42,6 @@ def test_udp_sessions_cnt(
         sleep_us=sleep_us,
         sleep_step=sleep_step,
         sessions_cnt=sessions_cnt,
+        capture_cfg=capture_cfg,
+        host=host,
     )

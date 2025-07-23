@@ -2,18 +2,33 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
+import mtl_engine.RxTxApp as rxtxapp
 import pytest
-import tests.Engine.RxTxApp as rxtxapp
-from tests.Engine.media_files import yuv_files_422p10le
+from mtl_engine.media_files import yuv_files_422p10le
 
 
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize("file", ["Penguin_1080p"])
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st20p_video_format(
-    build, media, test_time, test_mode, file, replicas
+    hosts,
+    build,
+    media,
+    test_time,
+    test_mode,
+    file,
+    replicas,
+    test_config,
+    prepare_ramdisk,
 ):
     st20p_file = yuv_files_422p10le[file]
+
+    # Get capture configuration from test_config.yaml
+    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = (
+        f"test_kernel_lo_st20p_{test_mode}_{file}_replicas{replicas}"
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -22,7 +37,7 @@ def test_kernello_st20p_video_format(
         test_mode=test_mode,
         width=st20p_file["width"],
         height=st20p_file["height"],
-        fps="p30",
+        fps=f"p{st20p_file['fps']}",
         input_format=st20p_file["file_format"],
         transport_format=st20p_file["format"],
         output_format=st20p_file["file_format"],
@@ -31,4 +46,11 @@ def test_kernello_st20p_video_format(
     config = rxtxapp.change_replicas(
         config=config, session_type="st20p", replicas=replicas
     )
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time * replicas)
+    host = list(hosts.values())[0]
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time * replicas,
+        host=host,
+        capture_cfg=capture_cfg,
+    )
