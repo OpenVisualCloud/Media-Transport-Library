@@ -654,7 +654,7 @@ struct st_app_context {
   int tx_video_rtp_ring_size; /* the ring size for tx video rtp type */
   uint16_t tx_start_vrx;
   uint16_t tx_pad_interval;
-  bool tx_no_static_pad;
+  bool tx_static_pad;
   bool tx_ts_first_pkt;
   bool tx_ts_epoch;
   int32_t tx_ts_delta_us;

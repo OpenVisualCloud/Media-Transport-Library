@@ -322,6 +322,8 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   float pad_interval;
   uint64_t rl_bps = tv_rl_bps(s);
   uint64_t train_start_time, train_end_time;
+  double measured_bps;
+  uint64_t bps_to_set;
 
   uint16_t resolved = s->ops.pad_interval;
   if (resolved) {
@@ -329,7 +331,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     info("%s(%d), user customized pad_interval %u\n", __func__, idx, resolved);
     return 0;
   }
-  if (!(s->ops.flags & ST20_TX_FLAG_DISABLE_STATIC_PAD_P)) {
+  if ((s->ops.flags & ST20_TX_FLAG_ENABLE_STATIC_PAD_P)) {
     resolved = st20_pacing_static_profiling(impl, s, s_port);
     if (resolved) {
       s->pacing.pad_interval = resolved;
@@ -338,7 +340,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     }
   }
 
-  ret = mt_pacing_train_result_search(impl, port, rl_bps, &pad_interval);
+  ret = mt_pacing_train_pad_result_search(impl, port, rl_bps, &pad_interval);
   if (ret >= 0) {
     s->pacing.pad_interval = pad_interval;
     info("%s(%d), use pre-train pad_interval %f\n", __func__, idx, pad_interval);
@@ -423,10 +425,30 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
     reactive = (s->ops.height == 480) ? 487.0 / 525.0 : 576.0 / 625.0;
   }
   pkts_per_frame = pkts_per_frame * reactive;
-  if (pkts_per_frame < s->st20_total_pkts) {
-    err("%s(%d), error pkts_per_frame %f, st20_total_pkts %d\n", __func__, idx,
-        pkts_per_frame, s->st20_total_pkts);
-    return -EINVAL;
+  measured_bps = s->st20_pkt_size * pkts_per_sec * reactive;
+
+  /* If the measured speed is lower than expected. Set higher bps and retrain to add
+   * padding */
+  if (measured_bps < rl_bps) {
+    info("%s(%d), measured bps %" PRIu64 " is lower then set bps %" PRIu64 "\n", __func__,
+         idx, (uint64_t)measured_bps, rl_bps);
+
+    if (!mt_pacing_train_bps_result_search(impl, port, rl_bps, &bps_to_set)) {
+      err("%s(%d), measured speed is too low on already trained bps\n", __func__, idx);
+      return -EINVAL;
+    }
+
+/* Slightly increase the target bitrate to compensate for measurement inaccuracies,
+ * rounding errors, and system overhead. This helps ensure the actual transmission bitrate
+ * meets or exceeds the required rate
+ */
+#define INCREASE_BPS_FACTOR 1.005
+    bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
+    info("%s(%d), increase bps to %" PRIu64 "\n", __func__, idx, bps_to_set);
+    mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
+    mt_txq_set_tx_bps(queue, bps_to_set);
+    ret = tv_train_pacing(impl, s, s_port);
+    return ret;
   }
 
   pad_interval = (float)s->st20_total_pkts / (pkts_per_frame - s->st20_total_pkts);
@@ -437,7 +459,7 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
 
   s->pacing.pad_interval = pad_interval;
-  mt_pacing_train_result_add(impl, port, rl_bps, pad_interval);
+  mt_pacing_train_pad_result_add(impl, port, rl_bps, pad_interval);
   train_end_time = mt_get_tsc(impl);
   info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
        idx, s_port, pad_interval, pkts_per_frame,
@@ -2526,6 +2548,7 @@ static int tv_init_hw(struct mtl_main_impl* impl, struct st_tx_video_sessions_mg
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.bytes_per_sec = tv_rl_bps(s);
+    mt_pacing_train_bps_result_search(impl, i, flow.bytes_per_sec, &flow.bytes_per_sec);
     mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[i], MTL_IP_ADDR_LEN);
     flow.dst_port = s->ops.udp_port[i];
     if (ST21_TX_PACING_WAY_TSN == s->pacing_way[i])
@@ -3858,6 +3881,8 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   struct mt_txq_flow flow;
   memset(&flow, 0, sizeof(flow));
   flow.bytes_per_sec = tv_rl_bps(s);
+  mt_pacing_train_bps_result_search(impl, s_port, flow.bytes_per_sec,
+                                    &flow.bytes_per_sec);
   mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[s_port], MTL_IP_ADDR_LEN);
   flow.dst_port = s->ops.udp_port[s_port];
   s->queue[s_port] = mt_txq_get(impl, port, &flow);
