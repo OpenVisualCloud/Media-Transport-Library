@@ -360,9 +360,9 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
-  payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
+  payload_hdr->swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
   udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
-  payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+  payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
 
   if (udw_size == 0) {
     GST_ERROR("Ancillary data size is 0");

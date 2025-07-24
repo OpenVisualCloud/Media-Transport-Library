@@ -439,8 +439,8 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
     pktBuff->second_hdr_chunk.sdid = st40_add_parity_bits(src->meta[idx].sdid);
     pktBuff->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
 
-    pktBuff->swaped_first_hdr_chunk = htonl(pktBuff->swaped_first_hdr_chunk);
-    pktBuff->swaped_second_hdr_chunk = htonl(pktBuff->swaped_second_hdr_chunk);
+    pktBuff->swapped_first_hdr_chunk = htonl(pktBuff->swapped_first_hdr_chunk);
+    pktBuff->swapped_second_hdr_chunk = htonl(pktBuff->swapped_second_hdr_chunk);
     int i = 0;
     int offset = src->meta[idx].udw_offset;
     for (; i < udw_size; i++) {
@@ -527,8 +527,8 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
     pktBuff->second_hdr_chunk.sdid = st40_add_parity_bits(src->meta[idx].sdid);
     pktBuff->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
 
-    pktBuff->swaped_first_hdr_chunk = htonl(pktBuff->swaped_first_hdr_chunk);
-    pktBuff->swaped_second_hdr_chunk = htonl(pktBuff->swaped_second_hdr_chunk);
+    pktBuff->swapped_first_hdr_chunk = htonl(pktBuff->swapped_first_hdr_chunk);
+    pktBuff->swapped_second_hdr_chunk = htonl(pktBuff->swapped_second_hdr_chunk);
     int i = 0;
     int offset = src->meta[idx].udw_offset;
     for (; i < udw_size; i++) {
