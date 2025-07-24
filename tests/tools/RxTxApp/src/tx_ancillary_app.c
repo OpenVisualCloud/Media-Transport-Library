@@ -225,8 +225,8 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
   payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
   payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
   payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
-  payload_hdr->swaped_first_hdr_chunk = htonl(payload_hdr->swaped_first_hdr_chunk);
-  payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+  payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
+  payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
   for (int i = 0; i < udw_size; i++) {
     st40_set_udw(i + 3, st40_add_parity_bits(s->st40_frame_cursor[i]),
                  (uint8_t*)&payload_hdr->second_hdr_chunk);

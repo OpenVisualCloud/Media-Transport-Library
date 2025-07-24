@@ -62,8 +62,8 @@ static int tx_anc_build_rtp_packet(tests_context* s, struct st40_rfc8331_rtp_hdr
     payload_hdr->second_hdr_chunk.did = st40_add_parity_bits(0x43);
     payload_hdr->second_hdr_chunk.sdid = st40_add_parity_bits(0x02);
     payload_hdr->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
-    payload_hdr->swaped_first_hdr_chunk = htonl(payload_hdr->swaped_first_hdr_chunk);
-    payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+    payload_hdr->swapped_first_hdr_chunk = htonl(payload_hdr->swapped_first_hdr_chunk);
+    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
     rtp->anc_count = 1;
     for (int i = 0; i < udw_size; i++) {
       st40_set_udw(i + 3,
@@ -135,8 +135,8 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
   int idx, total_size, payload_len;
 
   for (idx = 0; idx < anc_count; idx++) {
-    payload_hdr->swaped_first_hdr_chunk = ntohl(payload_hdr->swaped_first_hdr_chunk);
-    payload_hdr->swaped_second_hdr_chunk = ntohl(payload_hdr->swaped_second_hdr_chunk);
+    payload_hdr->swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
+    payload_hdr->swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
     if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid) ||
         !st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
@@ -149,7 +149,7 @@ static void rx_handle_rtp(tests_context* s, struct st40_rfc8331_rtp_hdr* hdr) {
     // verify checksum
     uint16_t checksum = 0;
     checksum = st40_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-    payload_hdr->swaped_second_hdr_chunk = htonl(payload_hdr->swaped_second_hdr_chunk);
+    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
     if (checksum !=
         st40_calc_checksum(3 + udw_size, (uint8_t*)&payload_hdr->second_hdr_chunk)) {
       s->sha_fail_cnt++;

@@ -121,7 +121,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t c : 1;
     } first_hdr_chunk;
     /** Handle to make operating on first_hdr_chunk buffer easier */
-    uint32_t swaped_first_hdr_chunk;
+    uint32_t swapped_first_hdr_chunk;
   };
   union {
     struct {
@@ -135,7 +135,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t did : 10;
     } second_hdr_chunk;
     /** Handle to make operating on second_hdr_chunk buffer easier */
-    uint32_t swaped_second_hdr_chunk;
+    uint32_t swapped_second_hdr_chunk;
   };
 });
 #else
@@ -154,7 +154,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t stream_num : 7;
     } first_hdr_chunk;
     /** Handle to make operating on first_hdr_chunk buffer easier */
-    uint32_t swaped_first_hdr_chunk;
+    uint32_t swapped_first_hdr_chunk;
   };
   union {
     struct {
@@ -168,7 +168,7 @@ MTL_PACK(struct st40_rfc8331_payload_hdr {
       uint32_t rsvd_for_udw : 2;
     } second_hdr_chunk;
     /** Handle to make operating on second_hdr_chunk buffer easier */
-    uint32_t swaped_second_hdr_chunk;
+    uint32_t swapped_second_hdr_chunk;
   };
 });
 #endif
