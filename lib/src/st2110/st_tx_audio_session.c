@@ -321,7 +321,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   if (s->ops.rtp_timestamp_delta_us) {
     double rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
     int32_t rtp_timestamp_delta =
-        (rtp_timestamp_delta_us * NS_PER_US) * pacing->pkt_time_sampling / pacing->trs;
+        (rtp_timestamp_delta_us * NS_PER_US) * pacing->pkt_time_sampling / pkt_time;
     pacing->rtp_time_stamp += rtp_timestamp_delta;
   }
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
