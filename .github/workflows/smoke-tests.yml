@@ -92,3 +92,54 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
+
+  validation-run-tests:
+    needs: [validation-build-mtl]
+    runs-on: [Linux, self-hosted, DPDK]
+    timeout-minutes: 720
+    env:
+      PYTEST_ALIAS: 'sudo --preserve-env python3 -m pipenv run pytest'
+      PYTEST_PARAMS: '--media=/mnt/media --build="../.."'
+      PYTEST_RETRIES: '3'
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
+        run: |
+          eval "export TEST_PORT_P=\$${{ inputs.validation-test-port-p }}"
+          eval "export TEST_PORT_R=\$${{ inputs.validation-test-port-r }}"
+          echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
+          echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
+          echo "TEST_PORT_P=${TEST_PORT_P}"
+          echo "TEST_PORT_R=${TEST_PORT_R}"
+
+      - name: 'preparation: Kill MtlManager and pytest routines'
+        run: |
+          sudo killall -SIGINT pipenv || true
+          sudo killall -SIGINT pytest || true
+          sudo killall -SIGINT MtlManager || true
+
+      - name: 'preparation: Binding network adapter pf to kernel driver'
+        if: inputs.validation-iface-binding != 'bind_pmd'
+        run: |
+          sudo rmmod irdma || true
+          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
+          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
+
+      - name: 'preparation: Binding network adapter ${{ inputs.validation-iface-binding }}'
+        run: |
+          sudo rmmod irdma || true
+          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
+          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
+
+      - name: 'preparation: Start MtlManager at background'
+        run: |
+          sudo MtlManager &
+
+      - name: 'execution: Run validation-bare-metal tests in virtual environment'
+        run: |
+          sudo pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml 
+        
