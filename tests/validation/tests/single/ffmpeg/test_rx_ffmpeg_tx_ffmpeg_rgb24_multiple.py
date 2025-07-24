@@ -7,11 +7,10 @@ import pytest
 from mtl_engine import ffmpeg_app
 from mtl_engine.media_files import yuv_files
 
-
 @pytest.mark.parametrize(
     "video_format_1, video_format_2, test_time_mutlipler",
     [
-        ("i1080p25", "i1080p25", 4),
+        pytest.param("i1080p25", "i1080p25", 4, marks=pytest.mark.smoke),
         ("i1080p30", "i1080p30", 4),
         ("i1080p60", "i1080p60", 8),
         ("i1080p60", "i1080p50", 8),

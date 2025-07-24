@@ -141,5 +141,4 @@ jobs:
 
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         run: |
-          sudo pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml 
-        
+          sudo pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke
