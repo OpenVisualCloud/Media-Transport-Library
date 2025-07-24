@@ -1525,30 +1525,15 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
-  if (!slot || !slot->frame) {
-    /* exists_ts is true when the target slot is found by timestamp */
-    if (exist_ts) {
-      /* Check if the packet has been already received and the bitmap is allocated by
-       * timestamp */
-      if (slot->seq_id_got && slot->frame_bitmap) {
-        int pkt_idx = -1;
-        /* Check if the same packet has been already received */
-        if (seq_id_u32 >= slot->seq_id_base_u32)
-          pkt_idx = seq_id_u32 - slot->seq_id_base_u32;
-        else
-          pkt_idx = seq_id_u32 + (0xFFFFFFFF - slot->seq_id_base_u32) + 1;
-        if ((pkt_idx >= 0) && (pkt_idx < (s->st20_frame_bitmap_size * 8))) {
-          /* Check if a specific bit is set in a bitmap - if packet is already received */
-          bool is_set = mt_bitmap_test(slot->frame_bitmap, pkt_idx);
-          if (is_set) {
-            s->stat_pkts_redundant_dropped++;
-            return 0;
-          }
-        }
-      }
-    } else {
+  /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
+  if (slot && exist_ts) {
+    s->stat_pkts_redundant_dropped++;
+    slot->pkts_recv_per_port[s_port]++;
+    return 0;
+  }
+
+  if ((!slot || !slot->frame) && !exist_ts) {
       s->stat_pkts_no_slot++;
-    }
     return -EIO;
   }
 
@@ -1958,13 +1943,15 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
-  if (!slot || !slot->frame) {
-    if (exist_ts) {
-      s->stat_pkts_redundant_dropped++;
-      slot->pkts_recv_per_port[s_port]++;
-    } else {
+   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
+  if (slot && exist_ts) {
+    s->stat_pkts_redundant_dropped++;
+    slot->pkts_recv_per_port[s_port]++;
+    return 0;
+  }
+
+  if ((!slot || !slot->frame) && !exist_ts) {
       s->stat_pkts_no_slot++;
-    }
     return -EIO;
   }
   uint8_t* bitmap = slot->frame_bitmap;
@@ -2128,13 +2115,15 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload, &exist_ts);
-  if (!slot || !slot->frame) {
-    if (exist_ts) {
-      s->stat_pkts_redundant_dropped++;
-      slot->pkts_recv_per_port[s_port]++;
-    } else {
+   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
+  if (slot && exist_ts) {
+    s->stat_pkts_redundant_dropped++;
+    slot->pkts_recv_per_port[s_port]++;
+    return 0;
+  }
+
+  if ((!slot || !slot->frame) && !exist_ts) {
       s->stat_pkts_no_slot++;
-    }
     return -EIO;
   }
   uint8_t* bitmap = slot->frame_bitmap;
