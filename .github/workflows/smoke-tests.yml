@@ -1,0 +1,93 @@
+name: smoke-tests-bare-metal
+
+on:
+  push:
+    branches:
+      - 'pstaszczuk/smoke-tests'
+
+env:
+  BUILD_TYPE: 'Release'
+  DPDK_VERSION: '23.11'
+  DPDK_REBUILD: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  validation-build-mtl:
+    runs-on: [Linux, self-hosted]
+    timeout-minutes: 60
+    outputs:
+      pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Restore valid repository owner and print env'
+        if: always()
+        run: |
+          sudo chown -R "${USER}" "$(pwd)" || true
+          env | grep TEST_ || true
+
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: 'main'
+
+      - name: 'preparation: Checkout DPDK'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: env.DPDK_REBUILD == 'true'
+        with:
+          repository: 'DPDK/dpdk'
+          ref: 'v${{  env.DPDK_VERSION  }}'
+          path: 'dpdk'
+
+      - name: 'configuration: Install the build dependency'
+        run: |
+          sudo apt update
+          sudo apt-get remove -y pipenv || true
+          sudo apt-get install -y \
+              git gcc meson tar zip \
+              pkg-config \
+              python3 \
+              python3-pyelftools \
+              python3-virtualenv \
+              python3-pip \
+              libnuma-dev \
+              libjson-c-dev \
+              libpcap-dev \
+              libgtest-dev \
+              libsdl2-dev \
+              libsdl2-ttf-dev \
+              libssl-dev \
+              systemtap-sdt-dev \
+              libbpf-dev \
+              libelf1
+
+      - name: 'configuration: Apply dpdk patches'
+        if: env.DPDK_REBUILD == 'true'
+        run: |
+          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
+
+      - name: 'installation: Build dpdk'
+        working-directory: dpdk
+        if: env.DPDK_REBUILD == 'true'
+        run: |
+          meson build
+          ninja -C build
+          sudo ninja -C build install
+
+      - name: 'installation: Build mtl'
+        run: |
+          ./build.sh
+          sudo ldconfig
+
+      - name: 'installation: Install pipenv environment'
+        working-directory: tests/validation
+        id: pipenv-install
+        run: |
+          python3 -m pip install pipenv
+          python3 -m pipenv install -r requirements.txt
+          echo "VIRTUAL_ENV=$(python3 -m pipenv --venv)/bin/activate" >> "$GITHUB_ENV"
