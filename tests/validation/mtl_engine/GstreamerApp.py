@@ -2,12 +2,15 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import hashlib
+import logging
 import os
 import time
 
 from mtl_engine.RxTxApp import prepare_tcpdump
 
-from .execute import log_fail, log_info, run
+from .execute import log_fail, run
+
+logger = logging.getLogger(__name__)
 
 
 def create_connection_params(
@@ -322,8 +325,8 @@ def execute_test(
 
     remote_host = host
 
-    log_info(f"TX Command: {' '.join(tx_command)}")
-    log_info(f"RX Command: {' '.join(rx_command)}")
+    logger.info(f"TX Command: {' '.join(tx_command)}")
+    logger.info(f"RX Command: {' '.join(rx_command)}")
 
     tx_process = None
     rx_process = None
@@ -332,7 +335,7 @@ def execute_test(
     try:
         if tx_first:
             # Start TX pipeline first
-            log_info("Starting TX pipeline...")
+            logger.info("Starting TX pipeline...")
             tx_process = run(
                 " ".join(tx_command),
                 cwd=build,
@@ -345,7 +348,7 @@ def execute_test(
             time.sleep(sleep_interval)
 
             # Start RX pipeline
-            log_info("Starting RX pipeline...")
+            logger.info("Starting RX pipeline...")
             rx_process = run(
                 " ".join(rx_command),
                 cwd=build,
@@ -357,7 +360,7 @@ def execute_test(
             )
         else:
             # Start RX pipeline first
-            log_info("Starting RX pipeline...")
+            logger.info("Starting RX pipeline...")
             rx_process = run(
                 " ".join(rx_command),
                 cwd=build,
@@ -370,7 +373,7 @@ def execute_test(
             time.sleep(sleep_interval)
 
             # Start TX pipeline
-            log_info("Starting TX pipeline...")
+            logger.info("Starting TX pipeline...")
             tx_process = run(
                 " ".join(tx_command),
                 cwd=build,
@@ -382,15 +385,15 @@ def execute_test(
             )
         # --- Start tcpdump after pipelines are running ---
         if tcpdump:
-            log_info("Starting tcpdump capture...")
+            logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
-        log_info(f"Running test for {test_time} seconds...")
+        logger.info(f"Running test for {test_time} seconds...")
         time.sleep(test_time)
 
         # Terminate processes gracefully
-        log_info("Terminating processes...")
+        logger.info("Terminating processes...")
         if tx_process:
             try:
                 tx_process.terminate()
@@ -410,17 +413,17 @@ def execute_test(
             if rx_process and hasattr(rx_process, "stdout_text"):
                 output_rx = rx_process.stdout_text.splitlines()
                 for line in output_rx:
-                    log_info(f"RX Output: {line}")
+                    logger.info(f"RX Output: {line}")
         except Exception:
-            log_info("Could not retrieve RX output")
+            logger.info("Could not retrieve RX output")
 
         try:
             if tx_process and hasattr(tx_process, "stdout_text"):
                 output_tx = tx_process.stdout_text.splitlines()
                 for line in output_tx:
-                    log_info(f"TX Output: {line}")
+                    logger.info(f"TX Output: {line}")
         except Exception:
-            log_info("Could not retrieve TX output")
+            logger.info("Could not retrieve TX output")
 
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
@@ -444,7 +447,7 @@ def execute_test(
 
     # Compare files for validation
     file_compare = compare_files(input_file, output_file)
-    log_info(f"File comparison: {file_compare}")
+    logger.info(f"File comparison: {file_compare}")
 
     return file_compare
 
@@ -473,8 +476,8 @@ def compare_files(input_file, output_file):
     if os.path.exists(input_file) and os.path.exists(output_file):
         input_file_size = os.path.getsize(input_file)
         output_file_size = os.path.getsize(output_file)
-        log_info(f"Input file size: {input_file_size}")
-        log_info(f"Output file size: {output_file_size}")
+        logger.info(f"Input file size: {input_file_size}")
+        logger.info(f"Output file size: {output_file_size}")
         if input_file_size != output_file_size:
             log_fail("File size is different")
             return False
@@ -482,8 +485,8 @@ def compare_files(input_file, output_file):
         with open(input_file, "rb") as i_file, open(output_file, "rb") as o_file:
             i_hash = hashlib.md5(i_file.read()).hexdigest()
             o_hash = hashlib.md5(o_file.read()).hexdigest()
-            log_info(f"Input file hash: {i_hash}")
-            log_info(f"Output file hash: {o_hash}")
+            logger.info(f"Input file hash: {i_hash}")
+            logger.info(f"Output file hash: {o_hash}")
             if i_hash == o_hash:
                 return True
 
