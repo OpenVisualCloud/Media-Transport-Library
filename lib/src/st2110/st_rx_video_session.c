@@ -1526,7 +1526,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
-  if (slot && exist_ts) {
+  if (!slot->frame && exist_ts) {
     s->stat_pkts_redundant_dropped++;
     slot->pkts_recv_per_port[s_port]++;
     return 0;
@@ -1601,8 +1601,8 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
     if (is_set) {
       dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
+      s->stat_pkts_redundant_dropped++;
       slot->pkts_recv_per_port[s_port]++;
-
       /* tp for the redundant packet */
       if (s->enable_timing_parser)
         rv_tp_pkt_handle(s, mbuf, s_port, slot, tmstamp, pkt_idx);
