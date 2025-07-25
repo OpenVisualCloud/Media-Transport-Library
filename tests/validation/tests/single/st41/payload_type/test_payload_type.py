@@ -22,8 +22,18 @@ k_bit_mapping = {
 }
 
 
-@pytest.mark.parametrize("payload_type", ["pt115", "pt120"])
-@pytest.mark.parametrize("type_mode", ["rtp", "frame"])
+@pytest.mark.parametrize(
+    "payload_type,type_mode",
+    [
+        pytest.param(
+            "pt115", "rtp",
+            marks=pytest.mark.smoke
+        ),
+        ("pt115", "frame"),
+        ("pt120", "rtp"),
+        ("pt120", "frame"),
+    ]
+)
 def test_payload_type(
     hosts,
     build,
