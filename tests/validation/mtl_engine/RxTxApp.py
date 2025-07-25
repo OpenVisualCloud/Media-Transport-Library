@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import copy
 import json
+import logging
 import os
 import re
 import subprocess
@@ -11,11 +12,12 @@ import time
 from create_pcap_file.tcpdump import TcpDumpRecorder
 
 from . import rxtxapp_config
-from .execute import log_fail, log_info, run
+from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
-
 json_filename = os.path.join(sys.path[0], "ip_addresses.json")
+logger = logging.getLogger(__name__)
+
 
 unicast_ip_dict = dict(
     tx_interfaces="192.168.17.101",
@@ -513,7 +515,7 @@ def execute_test(
 
     config_json = json.dumps(config, indent=4)
 
-    log_info(f"Starting RxTxApp test: {get_case_id()}")
+    logger.info(f"Starting RxTxApp test: {get_case_id()}")
     log_to_file(f"Starting RxTxApp test: {get_case_id()}", host, build)
     log_to_file(f"Test configuration: {config_json}", host, build)
 
@@ -561,7 +563,6 @@ def execute_test(
     if ptp:
         command += " --ptp"
 
-    log_info(f"RxTxApp Command: {command}")
     log_to_file(f"RxTxApp Command: {command}", host, build)
 
     # Prepare tcpdump recorder if capture is enabled in the test configuration.
@@ -574,7 +575,7 @@ def execute_test(
     ):
         timeout = test_time + 120
 
-    log_info(f"Running RxTxApp for {test_time} seconds with timeout {timeout}")
+    logger.info(f"Running RxTxApp for {test_time} seconds with timeout {timeout}")
     log_to_file(
         f"Running RxTxApp for {test_time} seconds with timeout {timeout}", host, build
     )
@@ -592,64 +593,47 @@ def execute_test(
     try:
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
+            logger.info(f"Started tcpdump capture on host {host.name}")
             log_to_file("Started tcpdump capture", host, build)
     finally:
         cp.wait()
 
     # Check if process was killed or terminated unexpectedly
-    if cp.return_code < 0:
-        log_to_file(f"RxTxApp was killed with signal {-cp.return_code}", host, build)
-        log_info(f"RxTxApp was killed with signal {-cp.return_code}")
-        return False
-    elif cp.return_code == 124:  # timeout return code
-        log_to_file("RxTxApp timed out", host, build)
-        log_info("RxTxApp timed out")
-        return False
-    elif cp.return_code == 137:  # SIGKILL
-        log_to_file("RxTxApp was killed (SIGKILL)", host, build)
-        log_info("RxTxApp was killed (SIGKILL)")
-        return False
-    elif cp.return_code == 143:  # SIGTERM
-        log_to_file("RxTxApp was terminated (SIGTERM)", host, build)
-        log_info("RxTxApp was terminated (SIGTERM)")
-        return False
-
-    # Get output lines
-    output = cp.stdout_text.splitlines()
-    for line in output:
-        log_info(line)
-
-    # Log the complete output to file
-    log_to_file(f"RxTxApp Output:\n{cp.stdout_text}", host, build)
-
+    bad_rc = {124: "timeout", 137: "SIGKILL", 143: "SIGTERM"}
     if cp.return_code != 0:
+        if cp.return_code < 0:
+            log_to_file(
+                f"RxTxApp was killed with signal {-cp.return_code}", host, build
+            )
+            log_fail(f"RxTxApp was killed with signal {-cp.return_code}")
+            return False
+        for rc, reason in bad_rc.items():
+            if cp.return_code == rc:
+                log_fail(f"RxTxApp stopped by reason: {reason}")
+                log_to_file(f"RxTxApp stopped by reason: {reason}", host, build)
+                return False
+        log_fail(f"RxTxApp returned non-zero exit code: {cp.return_code}")
         log_to_file(
             f"RxTxApp returned non-zero exit code: {cp.return_code}", host, build
         )
-        if cp.stderr_text:
-            log_to_file(f"RxTxApp stderr: {cp.stderr_text}", host, build)
         return False
 
-    passed = True
-    if len(config["tx_sessions"][0]["video"]) > 0:
-        passed = passed and check_tx_output(
-            config=config,
-            output=output,
-            session_type="video",
-            fail_on_error=fail_on_error,
-            host=host,
-            build=build,
-        )
+    output = cp.stdout_text.splitlines()
+    log_to_file(f"RxTxApp Output:\n{cp.stdout_text}", host, build)
 
-    if len(config["rx_sessions"][0]["video"]) > 0:
-        passed = passed and check_rx_output(
-            config=config,
-            output=output,
-            session_type="video",
-            fail_on_error=fail_on_error,
-            host=host,
-            build=build,
-        )
+    passed = True
+    for session, check_output in zip(
+        ("tx_sessions", "rx_sessions"), (check_tx_output, check_rx_output)
+    ):
+        if len(config[session][0]["video"]) > 0:
+            passed = passed and check_output(
+                config=config,
+                output=output,
+                session_type="video",
+                fail_on_error=fail_on_error,
+                host=host,
+                build=build,
+            )
 
     if len(config["tx_sessions"][0]["st20p"]) > 0:
         passed = passed and check_rx_output(
@@ -726,10 +710,11 @@ def execute_test(
             host=host,
             build=build,
         )
-
-    log_info(f"RxTxApp test completed with result: {passed}")
+    if passed:
+        logger.info(f"RxTxApp test completed with result: {passed}")
+    else:
+        log_fail(f"RxTxApp test failed with result: {passed}")
     log_to_file(f"RxTxApp test completed with result: {passed}", host, build)
-
     return passed
 
 
@@ -751,7 +736,7 @@ def execute_perf_test(
 
     config_json = json.dumps(config, indent=4)
 
-    log_info(f"Starting RxTxApp performance test: {get_case_id()}")
+    logger.info(f"Starting RxTxApp performance test: {get_case_id()}")
     log_to_file(f"Starting RxTxApp performance test: {get_case_id()}", host, build)
     log_to_file(f"Performance test configuration: {config_json}", host, build)
 
@@ -767,7 +752,7 @@ def execute_perf_test(
 
     command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
 
-    log_info(f"Performance RxTxApp Command: {command}")
+    logger.info(f"Performance RxTxApp Command: {command}")
     log_to_file(f"Performance RxTxApp Command: {command}", host, build)
 
     # Prepare tcpdump recorder if capture is enabled in the test configuration.
@@ -797,7 +782,7 @@ def execute_perf_test(
             total_replicas * 10, 300
         )  # Cap at 5 minutes additional
         timeout += additional_timeout
-        log_info(
+        logger.info(
             f"Scaling timeout for {total_replicas} replicas: +{additional_timeout}s"
         )
         log_to_file(
@@ -806,7 +791,7 @@ def execute_perf_test(
             build,
         )
 
-    log_info(
+    logger.info(
         f"Running performance RxTxApp for {test_time} seconds with timeout {timeout}"
     )
     log_to_file(
@@ -833,7 +818,7 @@ def execute_perf_test(
         cp.wait()
 
     # Enhanced logging for process completion
-    log_info(
+    logger.info(
         f"Performance RxTxApp process completed with return code: {cp.return_code}"
     )
     log_to_file(
@@ -847,25 +832,25 @@ def execute_perf_test(
         log_to_file(
             f"Performance RxTxApp was killed with signal {-cp.return_code}", host, build
         )
-        log_info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
+        logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
         return False
     elif cp.return_code == 124:  # timeout return code
         log_to_file("Performance RxTxApp timed out", host, build)
-        log_info("Performance RxTxApp timed out")
+        logger.info("Performance RxTxApp timed out")
         return False
     elif cp.return_code == 137:  # SIGKILL
         log_to_file("Performance RxTxApp was killed (SIGKILL)", host, build)
-        log_info("Performance RxTxApp was killed (SIGKILL)")
+        logger.info("Performance RxTxApp was killed (SIGKILL)")
         return False
     elif cp.return_code == 143:  # SIGTERM
         log_to_file("Performance RxTxApp was terminated (SIGTERM)", host, build)
-        log_info("Performance RxTxApp was terminated (SIGTERM)")
+        logger.info("Performance RxTxApp was terminated (SIGTERM)")
         return False
 
     # Get output lines
     output = cp.stdout_text.splitlines()
     for line in output:
-        log_info(line)
+        logger.info(line)
 
     if cp.return_code != 0:
         log_to_file(
@@ -873,10 +858,12 @@ def execute_perf_test(
             host,
             build,
         )
-        log_info(f"Performance RxTxApp returned non-zero exit code: {cp.return_code}")
+        logger.info(
+            f"Performance RxTxApp returned non-zero exit code: {cp.return_code}"
+        )
         if cp.stderr_text:
             log_to_file(f"Performance RxTxApp stderr: {cp.stderr_text}", host, build)
-            log_info(f"Performance RxTxApp stderr: {cp.stderr_text}")
+            logger.info(f"Performance RxTxApp stderr: {cp.stderr_text}")
         # For performance tests, non-zero exit code means test failed
         return False
 
@@ -902,7 +889,7 @@ def execute_perf_test(
         build=build,
     )
 
-    log_info(f"Performance RxTxApp test completed with result: {result}")
+    logger.info(f"Performance RxTxApp test completed with result: {result}")
     log_to_file(
         f"Performance RxTxApp test completed with result: {result}", host, build
     )
@@ -984,14 +971,14 @@ def check_tx_output(
 
     # Regular check for OK results
     ok_cnt = 0
-    log_info(f"Checking TX {session_type} output for OK results")
+    logger.info(f"Checking TX {session_type} output for OK results")
     if host:
         log_to_file(f"Checking TX {session_type} output for OK results", host, build)
 
     for line in output:
         if f"app_tx_{session_type}_result" in line and "OK" in line:
             ok_cnt += 1
-            log_info(f"Found TX {session_type} OK result: {line}")
+            logger.info(f"Found TX {session_type} OK result: {line}")
             if host:
                 log_to_file(f"Found TX {session_type} OK result: {line}", host, build)
 
@@ -1001,7 +988,7 @@ def check_tx_output(
             for s in session[session_type]:
                 replicas += s["replicas"]
 
-    log_info(f"TX {session_type} check: {ok_cnt}/{replicas} OK results found")
+    logger.info(f"TX {session_type} check: {ok_cnt}/{replicas} OK results found")
     if host:
         log_to_file(
             f"TX {session_type} check: {ok_cnt}/{replicas} OK results found",
@@ -1010,7 +997,7 @@ def check_tx_output(
         )
 
     if ok_cnt == replicas:
-        log_info(f"TX {session_type} check PASSED: all {replicas} sessions OK")
+        logger.info(f"TX {session_type} check PASSED: all {replicas} sessions OK")
         if host:
             log_to_file(
                 f"TX {session_type} check PASSED: all {replicas} sessions OK",
@@ -1028,7 +1015,7 @@ def check_tx_output(
                 build,
             )
     else:
-        log_info(f"tx {session_type} session failed")
+        logger.info(f"tx {session_type} session failed")
         if host:
             log_to_file(
                 f"TX {session_type} check FAILED (non-fatal): {ok_cnt}/{replicas} sessions OK",
@@ -1062,12 +1049,12 @@ def check_tx_fps_performance(
                 break
 
     if expected_fps is None:
-        log_info("Could not determine expected FPS from config")
+        logger.info("Could not determine expected FPS from config")
         if host:
             log_to_file("Could not determine expected FPS from config", host, build)
         return False
 
-    log_info(
+    logger.info(
         f"Checking TX FPS performance: expected {expected_fps} fps for {replicas} replicas"
     )
     if host:
@@ -1099,7 +1086,7 @@ def check_tx_fps_performance(
                     successful_sessions.add(session_id)
 
     successful_count = len(successful_sessions)
-    log_info(
+    logger.info(
         f"TX FPS performance check: {successful_count}/{replicas} sessions achieved target"
     )
     if host:
@@ -1129,7 +1116,7 @@ def check_tx_fps_performance(
                 build,
             )
     else:
-        log_info(
+        logger.info(
             f"tx {session_type} fps performance failed: {successful_count}/{replicas} sessions"
         )
         if host:
@@ -1151,7 +1138,7 @@ def check_rx_output(
     build: str = "",
 ) -> bool:
     ok_cnt = 0
-    log_info(f"Checking RX {session_type} output for OK results")
+    logger.info(f"Checking RX {session_type} output for OK results")
     if host:
         log_to_file(f"Checking RX {session_type} output for OK results", host, build)
 
@@ -1177,13 +1164,13 @@ def check_rx_output(
     for line in output:
         if pattern.search(line) and "OK" in line:
             ok_cnt += 1
-            log_info(f"Found RX {session_type} OK result: {line}")
+            logger.info(f"Found RX {session_type} OK result: {line}")
             if host:
                 log_to_file(f"Found RX {session_type} OK result: {line}", host, build)
 
     replicas = config["rx_sessions"][0][session_type][0]["replicas"]
 
-    log_info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
+    logger.info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
     if host:
         log_to_file(
             f"RX {session_type} check: {ok_cnt}/{replicas} OK results found",
@@ -1192,7 +1179,7 @@ def check_rx_output(
         )
 
     if ok_cnt == replicas:
-        log_info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
+        logger.info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
         if host:
             log_to_file(
                 f"RX {session_type} check PASSED: all {replicas} sessions OK",
@@ -1210,7 +1197,7 @@ def check_rx_output(
                 build,
             )
     else:
-        log_info(f"rx {session_type} session failed")
+        logger.info(f"rx {session_type} session failed")
         if host:
             log_to_file(
                 f"RX {session_type} check FAILED (non-fatal): {ok_cnt}/{replicas} sessions OK",
@@ -1233,7 +1220,7 @@ def check_tx_converter_output(
     transport_format = config["tx_sessions"][0]["st20p"][0]["transport_format"]
     input_format = config["tx_sessions"][0]["st20p"][0]["input_format"]
 
-    log_info(f"Checking TX {session_type} converter output")
+    logger.info(f"Checking TX {session_type} converter output")
     if host:
         log_to_file(
             f"Checking TX {session_type} converter output for format {transport_format}/{input_format}",
@@ -1247,7 +1234,7 @@ def check_tx_converter_output(
             in line
         ):
             ok_cnt += 1
-            log_info(f"Found TX converter creation: {line}")
+            logger.info(f"Found TX converter creation: {line}")
             if host:
                 log_to_file(f"Found TX converter creation: {line}", host, build)
 
@@ -1255,7 +1242,7 @@ def check_tx_converter_output(
         session_type = "ancillary"
     replicas = config["tx_sessions"][0][session_type][0]["replicas"]
 
-    log_info(
+    logger.info(
         f"TX {session_type} converter check: {ok_cnt}/{replicas} converters created"
     )
     if host:
@@ -1266,7 +1253,7 @@ def check_tx_converter_output(
         )
 
     if ok_cnt == replicas:
-        log_info(f"TX {session_type} converter check PASSED")
+        logger.info(f"TX {session_type} converter check PASSED")
         if host:
             log_to_file(
                 f"TX {session_type} converter check PASSED: all {replicas} converters created",
@@ -1284,7 +1271,7 @@ def check_tx_converter_output(
                 build,
             )
     else:
-        log_info(f"tx {session_type} session failed")
+        logger.info(f"tx {session_type} session failed")
         if host:
             log_to_file(
                 f"TX {session_type} converter check FAILED (non-fatal): {ok_cnt}/{replicas} converters created",
@@ -1308,7 +1295,7 @@ def check_rx_converter_output(
     transport_format = config["rx_sessions"][0]["st20p"][0]["transport_format"]
     output_format = config["rx_sessions"][0]["st20p"][0]["output_format"]
 
-    log_info(f"Checking RX {session_type} converter output")
+    logger.info(f"Checking RX {session_type} converter output")
     if host:
         log_to_file(
             f"Checking RX {session_type} converter output for format {transport_format}/{output_format}",
@@ -1322,7 +1309,7 @@ def check_rx_converter_output(
             in line
         ):
             ok_cnt += 1
-            log_info(f"Found RX converter creation: {line}")
+            logger.info(f"Found RX converter creation: {line}")
             if host:
                 log_to_file(f"Found RX converter creation: {line}", host, build)
 
@@ -1330,7 +1317,7 @@ def check_rx_converter_output(
         session_type = "ancillary"
     replicas = config["rx_sessions"][0][session_type][0]["replicas"]
 
-    log_info(
+    logger.info(
         f"RX {session_type} converter check: {ok_cnt}/{replicas} converters created"
     )
     if host:
@@ -1341,7 +1328,7 @@ def check_rx_converter_output(
         )
 
     if ok_cnt == replicas:
-        log_info(f"RX {session_type} converter check PASSED")
+        logger.info(f"RX {session_type} converter check PASSED")
         if host:
             log_to_file(
                 f"RX {session_type} converter check PASSED: all {replicas} converters created",
@@ -1359,7 +1346,7 @@ def check_rx_converter_output(
                 build,
             )
     else:
-        log_info(f"rx {session_type} session failed")
+        logger.info(f"rx {session_type} session failed")
         if host:
             log_to_file(
                 f"RX {session_type} converter check FAILED (non-fatal): {ok_cnt}/{replicas} converters created",
@@ -1684,7 +1671,7 @@ def execute_dual_test(
     rx_config = config["rx_config"]
 
     # Log test start
-    log_info(f"Starting dual RxTxApp test: {get_case_id()}")
+    logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
     log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", tx_host, build)
     log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", rx_host, build)
     log_to_file(f"TX config: {json.dumps(tx_config, indent=4)}", tx_host, build)
@@ -1725,8 +1712,8 @@ def execute_dual_test(
     tx_command = f"{base_command} --config_file {tx_config}"
     rx_command = f"{base_command} --config_file {rx_config}"
 
-    log_info(f"TX Command: {tx_command}")
-    log_info(f"RX Command: {rx_command}")
+    logger.info(f"TX Command: {tx_command}")
+    logger.info(f"RX Command: {rx_command}")
     log_to_file(f"TX Command: {tx_command}", tx_host, build)
     log_to_file(f"RX Command: {rx_command}", rx_host, build)
 
@@ -1758,16 +1745,16 @@ def execute_dual_test(
     rx_output = rx_cp.stdout_text.splitlines()
 
     # Log outputs
-    log_info("=== TX OUTPUT ===")
+    logger.info("=== TX OUTPUT ===")
     log_to_file("=== TX OUTPUT ===", tx_host, build)
     for line in tx_output:
-        log_info(line)
+        logger.info(line)
         log_to_file(line, tx_host, build)
 
-    log_info("=== RX OUTPUT ===")
+    logger.info("=== RX OUTPUT ===")
     log_to_file("=== RX OUTPUT ===", rx_host, build)
     for line in rx_output:
-        log_info(line)
+        logger.info(line)
         log_to_file(line, rx_host, build)
 
     # Log the complete output to file
@@ -1813,7 +1800,7 @@ def execute_dual_test(
             fail_on_error=fail_on_error,
         )
 
-    log_info(f"Dual RxTxApp test completed with result: {passed}")
+    logger.info(f"Dual RxTxApp test completed with result: {passed}")
     log_to_file(f"Dual RxTxApp test completed with result: {passed}", tx_host, build)
     log_to_file(f"Dual RxTxApp test completed with result: {passed}", rx_host, build)
 
