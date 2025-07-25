@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+import logging
 import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.execute import log_info, log_result_note
+from mtl_engine.execute import log_result_note
 from mtl_engine.media_files import yuv_files
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
@@ -65,12 +68,12 @@ def test_rss_mode_video_performance(
         )
 
         if passed:
-            log_info(
+            logger.info(
                 f"test_rss_mode_video_performance passed with {replicas_b} replicas"
             )
             replicas_b *= 2
         else:
-            log_info(
+            logger.info(
                 f"test_rss_mode_video_performance failed with {replicas_b} replicas"
             )
             break
@@ -83,7 +86,7 @@ def test_rss_mode_video_performance(
         replicas_midpoint = round((replicas_a + replicas_b) / 2)
 
         if replicas_midpoint == replicas_a or replicas_midpoint == replicas_b:
-            log_info(
+            logger.info(
                 f"test_rss_mode_video_performance finished with {replicas_a} replicas"
             )
             log_result_note(f"{replicas_a} replicas")
@@ -102,12 +105,12 @@ def test_rss_mode_video_performance(
         )
 
         if passed:
-            log_info(
+            logger.info(
                 f"test_rss_mode_video_performance passed with {replicas_midpoint} replicas"
             )
             replicas_a = replicas_midpoint
         else:
-            log_info(
+            logger.info(
                 f"test_rss_mode_video_performance failed with {replicas_midpoint} replicas"
             )
             replicas_b = replicas_midpoint

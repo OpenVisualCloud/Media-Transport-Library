@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+import logging
 import os
 import random
 import string
@@ -8,7 +9,9 @@ import subprocess
 import threading
 import time
 
-from .execute import log_fail, log_info, run
+from .execute import log_fail, run
+
+logger = logging.getLogger(__name__)
 
 
 def _terminate_gst_process_after_duration(duration: int, host):
@@ -18,13 +21,13 @@ def _terminate_gst_process_after_duration(duration: int, host):
     terminate_cmd = "pkill -SIGINT gst-launch-1.0"
     try:
         run(terminate_cmd, host=host, enable_sudo=True)
-        log_info("Sent SIGINT to gst-launch process")
+        logger.info("Sent SIGINT to gst-launch process")
     except Exception:
         # Fallback to SIGTERM
         terminate_cmd = "pkill -SIGTERM gst-launch-1.0"
         try:
             run(terminate_cmd, host=host, enable_sudo=True)
-            log_info("Sent SIGTERM to gst-launch process")
+            logger.info("Sent SIGTERM to gst-launch process")
         except Exception:
             pass
 
@@ -60,7 +63,7 @@ def create_video_file(
         f"location={file_path}",
     ]
 
-    log_info(f"Creating video file with command: {' '.join(command)}")
+    logger.info(f"Creating video file with command: {' '.join(command)}")
 
     try:
         # Remote execution - start process and terminate after duration
@@ -86,15 +89,15 @@ def create_video_file(
                 -15,
                 130,
             ]:  # 0=success, -2=SIGINT, -15=SIGTERM, 130=SIGINT in bash
-                log_info("Process terminated successfully after duration")
+                logger.info("Process terminated successfully after duration")
             else:
-                log_info(f"Process ended with return code {return_code}")
+                logger.info(f"Process ended with return code {return_code}")
         except Exception:
             # Ensure termination thread completes
             termination_thread.join(timeout=1)
             raise
 
-        log_info(f"Video file created at {file_path}")
+        logger.info(f"Video file created at {file_path}")
     except Exception as e:
         log_fail(f"Failed to create video file: {e}")
         raise
@@ -132,13 +135,13 @@ def create_audio_file_sox(
         str(frequency),
     ]
 
-    log_info(f"Creating audio file with command: {' '.join(command)}")
+    logger.info(f"Creating audio file with command: {' '.join(command)}")
 
     try:
         result = run(" ".join(command), host=host, enable_sudo=True)
         return_code = getattr(result, "returncode", getattr(result, "exit_code", 0))
         if return_code == 0:
-            log_info(f"Audio file created at {output_path}")
+            logger.info(f"Audio file created at {output_path}")
         else:
             raise subprocess.CalledProcessError(return_code, command)
     except Exception as e:
@@ -181,7 +184,7 @@ def create_text_file(size_kb: int, output_path: str = "test_anc.txt", host=None)
         log_fail(f"Failed to create text file: {e}")
         raise
 
-    log_info(f"Text file created at {output_path} with size {size_kb} KB")
+    logger.info(f"Text file created at {output_path} with size {size_kb} KB")
     return output_path
 
 
@@ -198,9 +201,9 @@ def remove_file(file_path: str, host=None):
 
         if return_code != 0:
             # File does not exist (removal successful or file wasn't there)
-            log_info(f"Removed file: {file_path}")
+            logger.info(f"Removed file: {file_path}")
         else:
             # File still exists (removal failed)
-            log_info(f"Failed to remove file: {file_path}")
+            logger.info(f"Failed to remove file: {file_path}")
     except Exception as e:
         log_fail(f"Failed to remove file: {e}")

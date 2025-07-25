@@ -2,21 +2,23 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import csv
 
-report = []
+report = {}
 
 
 def csv_add_test(
-    test_case: str, commands: str, result: str, issue: str, result_note: str = None
+    test_case: str,
+    commands: str,
+    result: str,
+    issue: str,
+    result_note: str | None = None,
 ):
-    report.append(
-        {
-            "Test case": test_case,
-            "Commands": commands,
-            "Result": result,
-            "Issue": issue,
-            "Result note": result_note,
-        }
-    )
+    report[test_case] = {
+        "Test case": test_case,
+        "Commands": commands,
+        "Result": result,
+        "Issue": issue,
+        "Result note": result_note,
+    }
 
 
 def csv_write_report(filename: str):
@@ -33,7 +35,12 @@ def csv_write_report(filename: str):
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        for nr, r in enumerate(report):
+        for nr, r in enumerate(report.values()):
             r["ID"] = nr + 1
             r["Status"] = "Executed"
             writer.writerow(r)
+
+
+def update_compliance_result(test_case: str, result: str):
+    if test_case in report:
+        report[test_case]["Compliance"] = result

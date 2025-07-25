@@ -1,15 +1,34 @@
 # # SPDX-License-Identifier: BSD-3-Clause
 # # Copyright 2024-2025 Intel Corporation
 # # Media Communications Mesh
+import datetime
 import logging
 import os
+import shutil
 import time
 from typing import Dict
 
 import pytest
 from common.nicctl import Nicctl
 from create_pcap_file.ramdisk import RamdiskPreparer
-from mtl_engine.stash import clear_result_media, remove_result_media
+from mfd_common_libs.custom_logger import add_logging_level
+from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
+from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
+from mtl_engine.csv_report import (
+    csv_add_test,
+    csv_write_report,
+    update_compliance_result,
+)
+from mtl_engine.stash import (
+    clear_issue,
+    clear_result_log,
+    clear_result_media,
+    clear_result_note,
+    get_issue,
+    get_result_note,
+    remove_result_media,
+)
+from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
@@ -88,32 +107,14 @@ def dma_port_list(request):
 
 
 @pytest.fixture(scope="session")
-def nic_port_list(hosts: dict, mtl_path) -> list:
+def nic_port_list(hosts: dict, mtl_path) -> None:
     for host in hosts.values():
-        # connection = host.connection
-        # connection.enable_sudo()
         nicctl = Nicctl(mtl_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address)
         vfs = nicctl.vfio_list()
         # Store VFs on the host object for later use
         host.vfs = vfs
-        # connection.disable_sudo()
-
-
-# def nic_port_list(request, media_config, hosts: dict = None) -> list:
-# vfs = []
-# if hosts:
-#     for host in hosts.values():
-#         if hasattr(host, "vfs"):
-#             vfs.extend(host.vfs)
-# if vfs:
-#     return vfs
-# # Fallback: use --nic parameter
-# nic_option = request.config.getoption("--nic")
-# if nic_option:
-#     return [nic.strip() for nic in nic_option.split(",") if nic.strip()]
-# raise RuntimeError("No VFs found and --nic parameter not provided!")
 
 
 @pytest.fixture(scope="session")
@@ -164,3 +165,94 @@ def pytest_addoption(parser):
     parser.addoption("--nic", help="list of PCI IDs of network devices")
     parser.addoption("--dma", help="list of PCI IDs of DMA devices")
     parser.addoption("--time", help="seconds to run every test (default=15)")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def log_session():
+    add_logging_level("TESTCMD", TESTCMD_LVL)
+
+    today = datetime.datetime.today()
+    folder = today.strftime("%Y-%m-%dT%H:%M:%S")
+    path = os.path.join(LOG_FOLDER, folder)
+    path_symlink = os.path.join(LOG_FOLDER, "latest")
+    try:
+        os.remove(path_symlink)
+    except FileNotFoundError:
+        pass
+    os.makedirs(path, exist_ok=True)
+    os.symlink(folder, path_symlink)
+    yield
+    shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+    csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def compliance_report(request, log_session, test_config):
+    """
+    This function is used for compliance check and report.
+    """
+    # TODO: Implement compliance check logic. When tcpdump pcap is enabled, at the end of the test session all pcaps
+    # shall be send into EBU list.
+    # Pcaps shall be stored in the ramdisk, and then moved to the compliance
+    # folder or send into EBU list after each test finished and remove it from the ramdisk.
+    # Compliance report generation logic goes here after yield. Or in another class / function but triggered here.
+    # AFAIK names of pcaps contains test name so it can be matched with result of each test like in code below.
+    yield
+    if test_config.get("compliance", False):
+        logging.info("Compliance mode enabled, updating compliance results")
+        for item in request.session.items:
+            test_case = item.nodeid
+            update_compliance_result(test_case, "Fail")
+
+
+@pytest.fixture(scope="function", autouse=True)
+def log_case(request, caplog: pytest.LogCaptureFixture):
+    case_id = request.node.nodeid
+    case_folder = os.path.dirname(case_id)
+    os.makedirs(os.path.join(LOG_FOLDER, "latest", case_folder), exist_ok=True)
+    logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.log")
+    fh = logging.FileHandler(logfile)
+    formatter = request.session.config.pluginmanager.get_plugin(
+        "logging-plugin"
+    ).formatter
+    format = AmberLogFormatter(formatter)
+    fh.setFormatter(format)
+    fh.setLevel(logging.DEBUG)
+    logger = logging.getLogger()
+    logger.addHandler(fh)
+    clear_result_log()
+    clear_issue()
+    yield
+    report = request.node.stash[phase_report_key]
+    if report["setup"].failed:
+        logging.log(level=TEST_FAIL, msg=f"Setup failed for {case_id}")
+        os.chmod(logfile, 0o4755)
+        result = "Fail"
+    elif ("call" not in report) or report["call"].failed:
+        logging.log(level=TEST_FAIL, msg=f"Test failed for {case_id}")
+        os.chmod(logfile, 0o4755)
+        result = "Fail"
+    elif report["call"].passed:
+        logging.log(level=TEST_PASS, msg=f"Test passed for {case_id}")
+        os.chmod(logfile, 0o755)
+        result = "Pass"
+    else:
+        logging.log(level=TEST_INFO, msg=f"Test skipped for {case_id}")
+        result = "Skip"
+
+    logger.removeHandler(fh)
+
+    commands = []
+    for record in caplog.get_records("call"):
+        if record.levelno == TESTCMD_LVL:
+            commands.append(record.message)
+
+    csv_add_test(
+        test_case=case_id,
+        commands="\n".join(commands),
+        result=result,
+        issue=get_issue(),
+        result_note=get_result_note(),
+    )
+
+    clear_result_note()
