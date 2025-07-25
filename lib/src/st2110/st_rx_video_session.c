@@ -1944,7 +1944,7 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
-  if (slot && exist_ts) {
+  if (!slot->frame && exist_ts) {
     s->stat_pkts_redundant_dropped++;
     slot->pkts_recv_per_port[s_port]++;
     return 0;
@@ -2116,7 +2116,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload, &exist_ts);
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
-  if (slot && exist_ts) {
+  if (!slot->frame && exist_ts) {
     s->stat_pkts_redundant_dropped++;
     slot->pkts_recv_per_port[s_port]++;
     return 0;
