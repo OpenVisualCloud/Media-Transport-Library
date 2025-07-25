@@ -182,7 +182,10 @@ def log_session():
     os.makedirs(path, exist_ok=True)
     os.symlink(folder, path_symlink)
     yield
-    shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+    if os.path.exists("pytest.log"):
+        shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+    else:
+        logging.warning("pytest.log not found, skipping copy")
     csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
 
 
