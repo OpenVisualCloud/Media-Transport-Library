@@ -314,12 +314,14 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
 
   pacing->cur_epochs = epochs;
   pacing->cur_epoch_time = tx_audio_pacing_time(pacing, epochs);
-  pacing->pacing_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
-  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
+  pacing->rtp_time_stamp =
+      required_tai ? ((uint64_t)((required_tai / pkt_time) * pacing->pkt_time_sampling) &
+                      0xffffffff)
+                   : tx_audio_pacing_time_stamp(pacing, epochs);
   if (s->ops.rtp_timestamp_delta_us) {
     double rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
     int32_t rtp_timestamp_delta =
-        (rtp_timestamp_delta_us * NS_PER_US) * pacing->pkt_time_sampling / pacing->trs;
+        (rtp_timestamp_delta_us * NS_PER_US) * pacing->pkt_time_sampling / pkt_time;
     pacing->rtp_time_stamp += rtp_timestamp_delta;
   }
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
