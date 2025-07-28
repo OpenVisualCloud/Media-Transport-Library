@@ -739,6 +739,7 @@ def check_output_rgb24(rx_output: str, number_of_sessions: int):
 
     return ok_cnt == number_of_sessions
 
+
 def check_output_video_mp4(output_file: str, video_size: str, host, build: str):
     # Check output file size
     try:
@@ -753,7 +754,9 @@ def check_output_video_mp4(output_file: str, video_size: str, host, build: str):
             )
         else:
             logger.info(f"Could not get output file size for {output_file}")
-            log_to_file(f"Could not get output file size for {output_file}", host, build)
+            log_to_file(
+                f"Could not get output file size for {output_file}", host, build
+            )
             return False
     except Exception as e:
         logger.info(f"Error checking output file size: {e}")
@@ -761,9 +764,7 @@ def check_output_video_mp4(output_file: str, video_size: str, host, build: str):
         return False
 
     # Use ffprobe to check for a video stream and resolution
-    ffprobe_proc = run(
-        f"ffprobe -v error -show_streams {output_file}", host=host
-    )
+    ffprobe_proc = run(f"ffprobe -v error -show_streams {output_file}", host=host)
 
     codec_name_match = re.search(r"codec_name=([^\n]+)", ffprobe_proc.stdout_text)
     width_match = re.search(r"width=(\d+)", ffprobe_proc.stdout_text)
@@ -787,6 +788,7 @@ def check_output_video_mp4(output_file: str, video_size: str, host, build: str):
         logger.info("MP4 check failed")
         log_to_file("MP4 check failed", host, build)
         return False
+
 
 def create_empty_output_files(
     output_format: str, number_of_files: int = 1, host=None, build: str = ""
@@ -1038,14 +1040,16 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
         log_fail(f"Invalid video format: {video_format}")
         return None
 
-def check_latency_from_script(script_path, recv_file, latency_jpg, expected_latency, host):
-    """
-    Runs the latency measurement script and checks if the measured latency is within expectation.
-    Returns True if passed, False if failed.
-    """
+
+def check_latency_from_script(
+    script_path, recv_file, latency_jpg, expected_latency, host
+):
+    # Runs the latency measurement script and checks if the measured latency is within expectation.
+    # Returns True if passed, False if failed.
+
     logger.info("Installing all dependencies for script...")
-    #run("python3 -m pip install opencv-python matplotlib pytesseract", host=host, enable_sudo=True)
-    
+    # run("python3 -m pip install opencv-python matplotlib pytesseract", host=host, enable_sudo=True)
+
     logger.info("Checking the end-to-end latency...")
     script_cmd = f"python3 {script_path} {recv_file} {latency_jpg}"
     result = run(script_cmd, host=host, enable_sudo=True)
@@ -1060,10 +1064,14 @@ def check_latency_from_script(script_path, recv_file, latency_jpg, expected_late
         avg_latency_ms = float(match.group(1))
         logger.info(f"Extracted average latency: {avg_latency_ms} ms")
         if avg_latency_ms <= expected_latency:
-            logger.info(f"Test passed: average latency {avg_latency_ms} ms is within expected {expected_latency} ms")
+            logger.info(
+                f"Test passed: average latency {avg_latency_ms} ms is within expected {expected_latency} ms"
+            )
             passed = True
         else:
-            log_fail(f"Test failed: average latency {avg_latency_ms} ms exceeds expected {expected_latency} ms")
+            log_fail(
+                f"Test failed: average latency {avg_latency_ms} ms exceeds expected {expected_latency} ms"
+            )
             passed = False
     else:
         log_fail("Could not extract average latency from script output.")
@@ -1072,6 +1080,7 @@ def check_latency_from_script(script_path, recv_file, latency_jpg, expected_late
     if not passed:
         log_fail("test failed")
     return passed
+
 
 def cleanup_output_files(cleanup_pattern):
     """
@@ -1084,16 +1093,21 @@ def cleanup_output_files(cleanup_pattern):
 
     output_files = glob.glob(cleanup_pattern)
     if not output_files:
-        logging.info(f"No output files found for cleanup with pattern: {cleanup_pattern}")
+        logging.info(
+            f"No output files found for cleanup with pattern: {cleanup_pattern}"
+        )
     for output_file in output_files:
         try:
             if os.path.exists(output_file):
                 os.remove(output_file)
                 logging.info(f"Removed output file: {output_file}")
             else:
-                logging.info(f"Output file already removed or does not exist: {output_file}")
+                logging.info(
+                    f"Output file already removed or does not exist: {output_file}"
+                )
         except Exception as file_exc:
             logging.warning(f"Could not remove output file {output_file}: {file_exc}")
+
 
 def execute_test_latency_single_or_dual(
     test_time: int,
@@ -1164,7 +1178,7 @@ def execute_test_latency_single_or_dual(
 
     # TX command with drawtext filter and readrate
     tx_fps_filter = ""
-    readrate = f" -readrate {(fps/25)/2} " # Reduce readrate by half to simulate sending from partially empty buffers
+    readrate = f" -readrate {(fps/25)/2} "  # Reduce readrate by half to simulate sending from partially empty buffers
     tx_cmd = (
         f"ffmpeg -video_size {video_size} -f rawvideo{readrate} -pix_fmt yuv422p10le "
         f"-i {video_url} {tx_vf}{tx_fps_filter} -p_port {tx_nic_port_list[1]} "
@@ -1227,9 +1241,7 @@ def execute_test_latency_single_or_dual(
                 output_files[0], video_size, rx_host, build, video_url
             )
         case "mp4":
-            passed = check_output_video_mp4(
-                output_files[0], video_size, rx_host, build
-            )
+            passed = check_output_video_mp4(output_files[0], video_size, rx_host, build)
 
     if not passed:
         log_fail("test failed")
