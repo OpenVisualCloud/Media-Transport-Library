@@ -1138,8 +1138,8 @@ def execute_test_latency_single_or_dual(
         "x=10:y=10:fontcolor=white:box=1:boxcolor=black:boxborderw=10"
     )
 
-    rx_vf = f' -vf "{drawtext_rx}" '
-    tx_vf = f' -vf "{drawtext_tx}" '
+    rx_vf = f' -vf "{drawtext_rx}"'
+    tx_vf = f' -vf "{drawtext_tx}"'
 
     output_files = create_empty_output_files(output_format, 1, rx_host, build)
     rx_output_opts = ""

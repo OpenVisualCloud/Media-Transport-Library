@@ -3,15 +3,11 @@
 
 import os
 import pytest
-import logging
-import subprocess
 import glob
-import re
 import time
 from mtl_engine import ffmpeg_app
+from mtl_engine.ffmpeg_app import check_latency_from_script, cleanup_output_files
 from mtl_engine.media_files import yuv_files_end_to_end
-from mtl_engine.ffmpeg_app import check_latency_from_script
-from mtl_engine.ffmpeg_app import cleanup_output_files
 
 
 # Parametrize test for different video formats and time multipliers
@@ -40,9 +36,6 @@ def test_ffmpeg_end_to_end_latency(
     output_format,
     expected_latency,
 ):
-    # Select the first host from the hosts dictionary
-    host = list(hosts.values())
-
 
     # Cleanup before test
     cleanup_pattern = f"{build}/tests/test_ffmpeg_end_to_end_latency_*_out_0.{output_format}"
