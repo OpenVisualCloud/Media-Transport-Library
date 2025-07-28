@@ -1,18 +1,14 @@
 name: smoke-tests-bare-metal
-
 on:
   push:
     branches:
       - 'pstaszczuk/smoke-tests'
-
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
   DPDK_REBUILD: 'false'
-
 permissions:
   contents: read
-
 jobs:
   validation-build-mtl:
     runs-on: [Linux, self-hosted]
@@ -24,18 +20,15 @@ jobs:
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
-
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
           sudo chown -R "${USER}" "$(pwd)" || true
           env | grep TEST_ || true
-
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: 'pstaszczuk/smoke-tests'
-
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         if: env.DPDK_REBUILD == 'true'
@@ -43,7 +36,18 @@ jobs:
           repository: 'DPDK/dpdk'
           ref: 'v${{  env.DPDK_VERSION  }}'
           path: 'dpdk'
-
+      - name: 'preparation: Checkout openh264'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 'cisco/openh264'
+          ref: 'openh264v2.4.0'
+          path: 'openh264'
+      - name: 'preparation: Checkout FFmpeg'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: 'FFmpeg/FFmpeg'
+          ref: 'release/7.0'
+          path: 'ffmpeg'
       - name: 'configuration: Install the build dependency'
         run: |
           sudo apt update
@@ -65,12 +69,10 @@ jobs:
               systemtap-sdt-dev \
               libbpf-dev \
               libelf1
-
       - name: 'configuration: Apply dpdk patches'
         if: env.DPDK_REBUILD == 'true'
         run: |
           patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
-
       - name: 'installation: Build dpdk'
         working-directory: dpdk
         if: env.DPDK_REBUILD == 'true'
@@ -78,12 +80,26 @@ jobs:
           meson build
           ninja -C build
           sudo ninja -C build install
-
       - name: 'installation: Build mtl'
         run: |
           ./build.sh
           sudo ldconfig
-
+      - name: 'installation: Build openh264'
+        working-directory: openh264
+        run: |
+          make -j "$(nproc)"
+          sudo make install
+          sudo ldconfig
+      - name: 'installation: Build FFmpeg'
+        working-directory: ffmpeg
+        run: |
+          git am ../ecosystem/ffmpeg_plugin/7.0/*.patch
+          cp ../ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
+          cp ../ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
+          ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+          make -j "$(nproc)"
+          sudo make install
+          sudo ldconfig
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
         id: pipenv-install
@@ -92,7 +108,6 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
-
   validation-run-tests:
     needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
@@ -104,7 +119,6 @@ jobs:
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
-
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
           eval "export TEST_PORT_P=\$${{ inputs.validation-test-port-p }}"
@@ -113,30 +127,25 @@ jobs:
           echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
           echo "TEST_PORT_P=${TEST_PORT_P}"
           echo "TEST_PORT_R=${TEST_PORT_R}"
-
       - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
-
       - name: 'preparation: Binding network adapter pf to kernel driver'
         if: inputs.validation-iface-binding != 'bind_pmd'
         run: |
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
-
       - name: 'preparation: Binding network adapter ${{ inputs.validation-iface-binding }}'
         run: |
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
-
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
-
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         run: |
           sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
