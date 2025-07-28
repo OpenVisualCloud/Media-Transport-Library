@@ -566,3 +566,62 @@ gstreamer_formats = dict(
         "fps": "25",
     },
 )
+
+yuv_files_end_to_end = dict(
+    i720p25={
+        "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 1280,
+        "height": 720,
+        "fps": "25",
+    },
+    i720p60={
+        "filename": "Netflix_Crosswalk_1280x720_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 1280,
+        "height": 720,
+        "fps": "60",
+    },
+    i1080p25={
+        "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_P422_180frames.yuv",
+        "file_format": "YUV422PLANAR10LE",
+        "format": "YUV_422_10bit",
+        "fps": "25",
+        "width": 1920,
+        "height": 1080,
+    },
+    i1080p60={
+        "filename": "Netflix_Crosswalk_1920x1080_10bit_60Hz_P422_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 1920,
+        "height": 1080,
+        "fps": "60",
+    },
+    i2160p119={
+        "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 3840,
+        "height": 2160,
+        "fps": "11988/100",
+    },
+    i2160p30={
+        "filename": "Plalaedit_Pedestrian_10bit_3840x2160_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 3840,
+        "height": 2160,
+        "fps": "30",
+    },
+    i2160p60={
+        "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "file_format": "YUV422RFC4175PG2BE10",
+        "format": "YUV_422_10bit",
+        "width": 3840,
+        "height": 2160,
+        "fps": "60",
+    },
+)

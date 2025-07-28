@@ -739,6 +739,54 @@ def check_output_rgb24(rx_output: str, number_of_sessions: int):
 
     return ok_cnt == number_of_sessions
 
+def check_output_video_mp4(output_file: str, video_size: str, host, build: str):
+    # Check output file size
+    try:
+        stat_proc = run(f"stat -c '%s' {output_file}", host=host)
+        if stat_proc.return_code == 0:
+            output_file_size = int(stat_proc.stdout_text.strip())
+            logger.info(f"Output file size: {output_file_size} bytes for {output_file}")
+            log_to_file(
+                f"Output file size: {output_file_size} bytes for {output_file}",
+                host,
+                build,
+            )
+        else:
+            logger.info(f"Could not get output file size for {output_file}")
+            log_to_file(f"Could not get output file size for {output_file}", host, build)
+            return False
+    except Exception as e:
+        logger.info(f"Error checking output file size: {e}")
+        log_to_file(f"Error checking output file size: {e}", host, build)
+        return False
+
+    # Use ffprobe to check for a video stream and resolution
+    ffprobe_proc = run(
+        f"ffprobe -v error -show_streams {output_file}", host=host
+    )
+
+    codec_name_match = re.search(r"codec_name=([^\n]+)", ffprobe_proc.stdout_text)
+    width_match = re.search(r"width=(\d+)", ffprobe_proc.stdout_text)
+    height_match = re.search(r"height=(\d+)", ffprobe_proc.stdout_text)
+
+    if codec_name_match and width_match and height_match:
+        codec_name = codec_name_match.group(1)
+        width = width_match.group(1)
+        height = height_match.group(1)
+        result = f"{width}x{height}" == video_size
+        logger.info(
+            f"MP4 check result: {result} (codec: {codec_name}, size: {width}x{height})"
+        )
+        log_to_file(
+            f"MP4 check result: {result} (codec: {codec_name}, size: {width}x{height})",
+            host,
+            build,
+        )
+        return result
+    else:
+        logger.info("MP4 check failed")
+        log_to_file("MP4 check failed", host, build)
+        return False
 
 def create_empty_output_files(
     output_format: str, number_of_files: int = 1, host=None, build: str = ""
@@ -989,3 +1037,200 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
     else:
         log_fail(f"Invalid video format: {video_format}")
         return None
+
+def check_latency_from_script(script_path, recv_file, latency_jpg, expected_latency, host):
+    """
+    Runs the latency measurement script and checks if the measured latency is within expectation.
+    Returns True if passed, False if failed.
+    """
+    logger.info("Installing all dependencies for script...")
+    #run("python3 -m pip install opencv-python matplotlib pytesseract", host=host, enable_sudo=True)
+    
+    logger.info("Checking the end-to-end latency...")
+    script_cmd = f"python3 {script_path} {recv_file} {latency_jpg}"
+    result = run(script_cmd, host=host, enable_sudo=True)
+    stdout = result.stdout_text
+    if isinstance(stdout, list):
+        stdout = "\n".join(stdout)
+    logger.info(f"Latency script output:\n{stdout}")
+
+    passed = False
+    match = re.search(r"Average End-to-End Latency:\s*([\d.]+)\s*ms", stdout)
+    if match:
+        avg_latency_ms = float(match.group(1))
+        logger.info(f"Extracted average latency: {avg_latency_ms} ms")
+        if avg_latency_ms <= expected_latency:
+            logger.info(f"Test passed: average latency {avg_latency_ms} ms is within expected {expected_latency} ms")
+            passed = True
+        else:
+            log_fail(f"Test failed: average latency {avg_latency_ms} ms exceeds expected {expected_latency} ms")
+            passed = False
+    else:
+        log_fail("Could not extract average latency from script output.")
+        passed = False
+
+    if not passed:
+        log_fail("test failed")
+    return passed
+
+def cleanup_output_files(cleanup_pattern):
+    """
+    Removes all files matching the given glob pattern.
+    Logs actions and errors.
+    """
+    import glob
+    import os
+    import logging
+
+    output_files = glob.glob(cleanup_pattern)
+    if not output_files:
+        logging.info(f"No output files found for cleanup with pattern: {cleanup_pattern}")
+    for output_file in output_files:
+        try:
+            if os.path.exists(output_file):
+                os.remove(output_file)
+                logging.info(f"Removed output file: {output_file}")
+            else:
+                logging.info(f"Output file already removed or does not exist: {output_file}")
+        except Exception as file_exc:
+            logging.warning(f"Could not remove output file {output_file}: {file_exc}")
+
+def execute_test_latency_single_or_dual(
+    test_time: int,
+    build: str,
+    hosts,
+    type_: str,
+    video_format: str,
+    pg_format: str,
+    video_url: str,
+    output_format: str,
+    multiple_sessions: bool = False,
+    tx_is_ffmpeg: bool = True,
+    capture_cfg=None,
+    dual: bool = False,
+):
+    """
+    Runs latency test using either single host or dual host setup.
+    If dual=True, RX and TX run on separate hosts.
+    """
+    init_test_logging()
+
+    if dual:
+        rx_host = list(hosts.values())[0]
+        tx_host = list(hosts.values())[1]
+        rx_nic_port_list = rx_host.vfs
+        tx_nic_port_list = tx_host.vfs
+    else:
+        rx_host = tx_host = list(hosts.values())[0]
+        rx_nic_port_list = tx_nic_port_list = rx_host.vfs
+
+    video_size, fps = decode_video_format_16_9(video_format)
+
+    # Drawtext filter strings for timestamp overlays
+    drawtext_rx = (
+        "drawtext=fontsize=40:"
+        "text='Rx timestamp %{localtime\\\\:%H\\\\\\\\\\:%M\\\\\\\\\\:%S\\\\\\\\\\:%3N}':"
+        "x=10:y=70:fontcolor=white:box=1:boxcolor=black:boxborderw=10"
+    )
+    drawtext_tx = (
+        "drawtext=fontsize=40:"
+        "text='Tx timestamp %{localtime\\\\:%H\\\\\\\\\\:%M\\\\\\\\\\:%S\\\\\\\\\\:%3N}':"
+        "x=10:y=10:fontcolor=white:box=1:boxcolor=black:boxborderw=10"
+    )
+
+    rx_vf = f' -vf "{drawtext_rx}" '
+    tx_vf = f' -vf "{drawtext_tx}" '
+
+    output_files = create_empty_output_files(output_format, 1, rx_host, build)
+    rx_output_opts = ""
+    rx_input_flag = "-"
+
+    # Output options for ffmpeg RX depending on format
+    if output_format == "yuv":
+        rx_output_opts = f" -f rawvideo -pix_fmt yuv422p10le -video_size {video_size}"
+    elif output_format == "mp4":
+        rx_output_opts = f" -vcodec mpeg4 -qscale:v 3 "
+
+    # RX command with drawtext filter
+    rx_cmd = (
+        f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_dict['rx_interfaces']} "
+        f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 -payload_type 112 "
+        f"-fps {fps} -pix_fmt yuv422p10le -video_size {video_size} "
+        f"-f mtl_st20p -i {rx_input_flag}"
+        f"{rx_vf}"
+        f"{rx_output_opts} "
+        f"{output_files[0]} -y"
+    )
+
+    # TX command with drawtext filter and readrate
+    tx_fps_filter = ""
+    readrate = f" -readrate {(fps/25)/2} " # Reduce readrate by half to simulate sending from partially empty buffers
+    tx_cmd = (
+        f"ffmpeg -video_size {video_size} -f rawvideo{readrate} -pix_fmt yuv422p10le "
+        f"-i {video_url} {tx_vf}{tx_fps_filter} -p_port {tx_nic_port_list[1]} "
+        f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+        f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
+    )
+
+    logger.info(f"RX Command: {rx_cmd}")
+    logger.info(f"TX Command: {tx_cmd}")
+    log_to_file(f"RX Command: {rx_cmd}", rx_host, build)
+    log_to_file(f"TX Command: {tx_cmd}", tx_host, build)
+
+    # Start RX pipeline
+    rx_proc = run(
+        rx_cmd,
+        cwd=build,
+        timeout=test_time + 60,
+        testcmd=True,
+        host=rx_host,
+        background=True,
+        enable_sudo=True,
+    )
+
+    # Start TX pipeline
+    tx_proc = run(
+        tx_cmd,
+        cwd=build,
+        timeout=test_time + 60,
+        testcmd=True,
+        host=tx_host,
+        background=True,
+        enable_sudo=True,
+    )
+
+    try:
+        # ... run test ...
+        logger.info(f"Running test for {test_time} seconds...")
+        time.sleep(test_time)
+    finally:
+        # Ensure processes are terminated and waited on
+        for proc in [tx_proc, rx_proc]:
+            if proc:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except Exception:
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        pass
+
+    # Validate output file
+    passed = False
+    match output_format:
+        case "yuv":
+            passed = check_output_video_yuv(output_files[0], rx_host, build, video_url)
+        case "h264":
+            passed = check_output_video_h264(
+                output_files[0], video_size, rx_host, build, video_url
+            )
+        case "mp4":
+            passed = check_output_video_mp4(
+                output_files[0], video_size, rx_host, build
+            )
+
+    if not passed:
+        log_fail("test failed")
+    return passed
