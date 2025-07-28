@@ -1088,8 +1088,8 @@ def cleanup_output_files(cleanup_pattern):
     Logs actions and errors.
     """
     import glob
-    import os
     import logging
+    import os
 
     output_files = glob.glob(cleanup_pattern)
     if not output_files:
@@ -1163,7 +1163,7 @@ def execute_test_latency_single_or_dual(
     if output_format == "yuv":
         rx_output_opts = f" -f rawvideo -pix_fmt yuv422p10le -video_size {video_size}"
     elif output_format == "mp4":
-        rx_output_opts = f" -vcodec mpeg4 -qscale:v 3 "
+        rx_output_opts = " -vcodec mpeg4 -qscale:v 3 "
 
     # RX command with drawtext filter
     rx_cmd = (
