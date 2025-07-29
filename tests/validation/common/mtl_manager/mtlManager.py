@@ -1,4 +1,5 @@
 import logging
+
 from mfd_connect.exceptions import ConnectionCalledProcessError
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class MtlManager:
         self.host = host
         self.cmd = None
         self.mtl_manager_process = None
+
 
     def start(self):
         """
