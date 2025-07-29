@@ -9,6 +9,7 @@ import time
 from typing import Dict
 
 import pytest
+from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import Nicctl
 from create_pcap_file.ramdisk import RamdiskPreparer
 from mfd_common_libs.custom_logger import add_logging_level
@@ -149,6 +150,22 @@ def prepare_ramdisk(hosts, test_config):
                 use_sudo=use_sudo,
             )
             preparer.start()
+
+
+@pytest.fixture(scope="session")
+def mtl_manager(hosts):
+    """
+    Automatically start MtlManager on all hosts at the beginning of the test session,
+    and stop it at the end.
+    """
+    managers = {}
+    for host in hosts.values():
+        mgr = MtlManager(host)
+        mgr.start()
+        managers[host.name] = mgr
+    yield managers
+    for mgr in managers.values():
+        mgr.stop()
 
 
 def pytest_addoption(parser):
