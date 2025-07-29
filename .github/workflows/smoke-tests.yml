@@ -121,8 +121,8 @@ jobs:
           egress-policy: audit
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
-          eval "export TEST_PORT_P=\$${{ inputs.validation-test-port-p }}"
-          eval "export TEST_PORT_R=\$${{ inputs.validation-test-port-r }}"
+          eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
+          eval "export TEST_PORT_R=TEST_VF_PORT_P_1"
           echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
           echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
           echo "TEST_PORT_P=${TEST_PORT_P}"
@@ -132,17 +132,11 @@ jobs:
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
-      - name: 'preparation: Binding network adapter pf to kernel driver'
-        if: inputs.validation-iface-binding != 'bind_pmd'
+      - name: 'preparation: Create VFs'
         run: |
           sudo rmmod irdma || true
-          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh bind_kernel "${TEST_PF_PORT_R}" || true
-      - name: 'preparation: Binding network adapter ${{ inputs.validation-iface-binding }}'
-        run: |
-          sudo rmmod irdma || true
-          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh ${{ inputs.validation-iface-binding }} "${TEST_PF_PORT_R}" || true
+          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
+          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
