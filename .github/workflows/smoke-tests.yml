@@ -68,7 +68,11 @@ jobs:
               libssl-dev \
               systemtap-sdt-dev \
               libbpf-dev \
-              libelf1
+              libelf1 \
+              gstreamer1.0-plugins-base \
+              gstreamer1.0-plugins-good \
+              gstreamer1.0-tools gstreamer1.0-libav \
+              libgstreamer1.0-dev
       - name: 'configuration: Apply dpdk patches'
         if: env.DPDK_REBUILD == 'true'
         run: |
@@ -100,6 +104,10 @@ jobs:
           make -j "$(nproc)"
           sudo make install
           sudo ldconfig
+      - name: 'installation: Build GStreamer'
+        working-directory: ecosystem/gstreamer_plugin
+        run: |
+          ./build.sh
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
         id: pipenv-install
