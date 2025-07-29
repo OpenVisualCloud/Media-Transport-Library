@@ -526,7 +526,7 @@ def execute_test(
     f = remote_conn.path(config_file)
     if isinstance(remote_conn, SSHConnection):
         config_json = config_json.replace('"', '\\"')
-    f.write_text(config_json, encoding='utf-8')
+    f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
     log_to_file(f"Config file written to remote host: {config_path}", host, build)
 
@@ -747,7 +747,7 @@ def execute_perf_test(
     f = remote_conn.path(config_file)
     if isinstance(remote_conn, SSHConnection):
         config_json = config_json.replace('"', '\\"')
-    f.write_text(config_json, encoding='utf-8')
+    f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
     log_to_file(
         f"Performance config file written to remote host: {config_path}", host, build
@@ -1682,11 +1682,11 @@ def execute_dual_test(
 
     # Prepare TX config
     tx_f = tx_host.connection.path(build, "tests", "tx_config.json")
-    tx_f.write_text(tx_config, encoding='utf-8')
+    tx_f.write_text(tx_config, encoding="utf-8")
 
     # Prepare RX config
     rx_f = tx_host.connection.path(build, "tests", "rx_config.json")
-    rx_f.write_text(rx_config, encoding='utf-8')
+    rx_f.write_text(rx_config, encoding="utf-8")
 
     # Adjust test_time for high-res/fps/replicas
     if (

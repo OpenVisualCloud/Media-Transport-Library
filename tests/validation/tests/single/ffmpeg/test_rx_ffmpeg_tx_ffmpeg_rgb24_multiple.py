@@ -7,6 +7,7 @@ import pytest
 from mtl_engine import ffmpeg_app
 from mtl_engine.media_files import yuv_files
 
+
 @pytest.mark.parametrize(
     "video_format_1, video_format_2, test_time_mutlipler",
     [
