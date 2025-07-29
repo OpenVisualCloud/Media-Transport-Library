@@ -7,7 +7,17 @@ import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
-@pytest.mark.parametrize("file", yuv_files_422rfc10.keys())
+@pytest.mark.parametrize(
+    "file",
+    [
+        (
+            pytest.param(f, marks=pytest.mark.smoke)
+            if f in ["Penguin_720p", "ParkJoy_4K"]
+            else ()
+        )
+        for f in yuv_files_422rfc10.keys()
+    ],
+)
 def test_resolutions(
     hosts,
     build,
