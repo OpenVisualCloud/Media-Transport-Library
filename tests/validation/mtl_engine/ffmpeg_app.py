@@ -12,7 +12,7 @@ from mfd_connect import SSHConnection
 from mtl_engine.RxTxApp import prepare_tcpdump
 
 from . import rxtxapp_config
-from .execute import log_fail, log_info, run
+from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
