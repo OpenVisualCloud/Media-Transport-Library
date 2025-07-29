@@ -18,9 +18,8 @@ static inline double pacing_time(struct st_tx_video_pacing* pacing, uint64_t epo
   return epochs * pacing->frame_time;
 }
 
-static inline double pacing_first_pkt_time(struct st_tx_video_pacing* pacing,
-                                           uint64_t epochs) {
-  return pacing_time(pacing, epochs) + pacing->tr_offset - (pacing->vrx * pacing->trs);
+static inline double pacing_first_pkt_time(struct st_tx_video_pacing* pacing) {
+  return pacing->tr_offset - (pacing->vrx * pacing->trs);
 }
 
 /* pacing start time(warmup pkt if has warmup stage) of the frame */
@@ -33,25 +32,26 @@ static inline double pacing_start_time(struct st_tx_video_pacing* pacing,
 /* time stamp on the first pkt video pkt(not the warmup) */
 static inline uint32_t pacing_time_stamp(struct st_tx_video_session_impl* s,
                                          struct st_tx_video_pacing* pacing,
-                                         uint64_t epochs) {
+                                         uint64_t epochs, uint64_t tai) {
   uint64_t tmstamp64;
-  double time;
-  if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-    /* the start of epoch */
-    time = pacing_first_pkt_time(pacing, epochs);
-  } else if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT) {
+  long double frame_time = pacing->frame_time;
+  double time = pacing_time(pacing, epochs);
+
+  if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+    time = tai;
+  } else if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+    time += pacing_first_pkt_time(pacing);
+  } else {  // if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT) {
     /* the start of first pkt */
-    time = pacing_first_pkt_time(pacing, epochs);
-    if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
-  } else if (s->ops.rtp_timestamp_delta_us) {
-    int32_t rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
-    time = pacing_time(pacing, epochs) + (rtp_timestamp_delta_us * NS_PER_US);
-  } else {
-    /* default to the start of first pkt */
-    time = pacing_first_pkt_time(pacing, epochs);
+    time += pacing_first_pkt_time(pacing);
     if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
   }
-  tmstamp64 = (time / pacing->frame_time) * pacing->frame_time_sampling;
+
+  if (s->ops.rtp_timestamp_delta_us) {
+    time += (s->ops.rtp_timestamp_delta_us * NS_PER_US);
+  }
+
+  tmstamp64 = (time / frame_time) * pacing->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
 
   return tmstamp32;
@@ -602,14 +602,16 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   int idx = s->idx;
   struct st_tx_video_pacing* pacing = &s->pacing;
   double frame_time = pacing->frame_time;
+  double to_epoch;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
   uint64_t epochs;
+  uint64_t ptp_epochs;
   bool interlaced = s->ops.interlaced;
 
   if (required_tai) {
-    uint64_t ptp_epochs = ptp_time / frame_time;
+    ptp_epochs = ptp_time / frame_time;
     epochs = required_tai / frame_time;
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, idx, required_tai, ptp_epochs, epochs);
@@ -642,7 +644,22 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
   /* epoch resolved */
   double start_time_ptp = pacing_start_time(pacing, epochs);
-  double to_epoch = start_time_ptp - ptp_time;
+  if (required_tai) {
+    to_epoch = (double)required_tai - ptp_time;
+    if (to_epoch > NS_PER_S) {
+      dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
+          __func__, s->idx, required_tai, ptp_epochs, epochs);
+      s->stat_error_user_timestamp++;
+      to_epoch = NS_PER_S;  // do our best to slow down
+    }
+    if (to_epoch < 0) {
+      /* time bigger than the assigned epoch time */
+      to_epoch = 0; /* send asap */
+    }
+  } else {
+    to_epoch = start_time_ptp - ptp_time;
+  }
+
   if (to_epoch < 0) {
     /* time larger than the next assigned epoch time */
     dbg("%s(%d), to_epoch %f, ptp epochs %" PRIu64 " cur_epochs %" PRIu64
@@ -680,8 +697,13 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   }
 
   pacing->cur_epochs = epochs;
-  pacing->cur_epoch_time = pacing_time(pacing, epochs);
-  pacing->rtp_time_stamp = pacing_time_stamp(s, pacing, epochs);
+  if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+    pacing->cur_epoch_time = required_tai;
+  } else {
+    pacing->cur_epoch_time = pacing_time(pacing, epochs);
+  }
+
+  pacing->rtp_time_stamp = pacing_time_stamp(s, pacing, epochs, required_tai);
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
 
