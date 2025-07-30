@@ -22,8 +22,15 @@ k_bit_mapping = {
 }
 
 
-@pytest.mark.parametrize("payload_type", ["pt115", "pt120"])
-@pytest.mark.parametrize("type_mode", ["rtp", "frame"])
+@pytest.mark.parametrize(
+    "payload_type,type_mode",
+    [
+        pytest.param("pt115", "rtp", marks=pytest.mark.smoke),
+        ("pt115", "frame"),
+        ("pt120", "rtp"),
+        ("pt120", "frame"),
+    ],
+)
 def test_payload_type(
     hosts,
     build,
@@ -48,11 +55,13 @@ def test_payload_type(
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_payload_type_{payload_type}_{type_mode}"
 
+    host = list(hosts.values())[0]
+
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=nic_port_list,
+        nic_port_list=host.vfs,
         test_mode="unicast",
         payload_type=payload_type_mapping[payload_type],
         type_=type_mode,
@@ -62,7 +71,6 @@ def test_payload_type(
         fastmetadata_url=os.path.join(media, st41_file),
     )
 
-    host = list(hosts.values())[0]
     rxtxapp.execute_test(
         config=config,
         build=build,
