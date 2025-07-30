@@ -264,7 +264,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
                                         struct st_tx_audio_session_impl* s, bool sync,
                                         uint64_t required_tai) {
   struct st_tx_audio_session_pacing* pacing = &s->pacing;
-  double pkt_time = pacing->trs;
+  long double pkt_time = pacing->trs;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
@@ -313,11 +313,23 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
 
   pacing->cur_epochs = epochs;
-  pacing->cur_epoch_time = tx_audio_pacing_time(pacing, epochs);
-  pacing->rtp_time_stamp =
-      required_tai ? ((uint64_t)((required_tai / pkt_time) * pacing->pkt_time_sampling) &
-                      0xffffffff)
-                   : tx_audio_pacing_time_stamp(pacing, epochs);
+
+  if (required_tai) {
+    pacing->cur_epoch_time = required_tai + pkt_time;  // prepare next packet
+    /*
+     * Cast [double] to intermediate [uint64_t] to extract 32 least significant bits.
+     * If calculated time stored in [double] is larger than max uint32_t,
+     * then result of direct cast to [uint32_t] results in max uint32_t which is not
+     * what we want. "& 0xffffffff" is used to extract 32 least significant bits
+     * without compiler trying to optimize-out intermediate cast.
+     */
+    pacing->rtp_time_stamp =
+        ((uint64_t)((required_tai / pkt_time) * pacing->pkt_time_sampling) & 0xffffffff);
+  } else {
+    pacing->cur_epoch_time = tx_audio_pacing_time(pacing, epochs);
+    pacing->rtp_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
+  }
+
   if (s->ops.rtp_timestamp_delta_us) {
     double rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
     int32_t rtp_timestamp_delta =
