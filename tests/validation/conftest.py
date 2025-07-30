@@ -5,6 +5,7 @@ import datetime
 import logging
 import os
 import shutil
+import subprocess
 import time
 from typing import Dict
 
@@ -256,3 +257,159 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     )
 
     clear_result_note()
+
+
+@pytest.fixture(scope="session")
+def build_openh264(hosts, test_config):
+    """
+    Build and install openh264 on all hosts in the specified directory.
+    """
+    openh264_dir = test_config.get("openh264_path", "/tmp/openh264")
+    for host in hosts.values():
+        conn = host.connection
+        logger.info(f"[{host.name}] Building and installing openh264 in {openh264_dir}")
+        # Ensure the parent directory exists
+        conn.execute_command(f"mkdir -p {openh264_dir}")
+        # Remove any previous openh264 directory
+        conn.execute_command(f"rm -rf {os.path.join(openh264_dir, 'openh264')}")
+        # Clone openh264 into the specified directory
+        conn.execute_command(f"cd {openh264_dir} && git clone https://github.com/cisco/openh264.git")
+        # Build and install openh264
+        conn.execute_command(f"cd {os.path.join(openh264_dir, 'openh264')} && git checkout openh264v2.4.0")
+        conn.execute_command(f"cd {os.path.join(openh264_dir, 'openh264')} && make -j $(nproc)")
+        conn.execute_command(f"cd {os.path.join(openh264_dir, 'openh264')} && sudo make install")
+        conn.execute_command("sudo ldconfig")
+    yield
+
+
+@pytest.fixture(scope="session")
+def build_openh264(hosts, test_config):
+    """
+    Build and install openh264 on all hosts in the specified directory.
+    Only clones and builds if not already present.
+    """
+    openh264_dir = test_config.get("openh264_path", "/tmp/openh264")
+    for host in hosts.values():
+        conn = host.connection
+        logger.info(f"[{host.name}] Building and installing openh264 in {openh264_dir}")
+        # Ensure the parent directory exists
+        conn.execute_command(f"mkdir -p {openh264_dir}")
+        openh264_repo_dir = os.path.join(openh264_dir, "openh264")
+        # Only clone if not present
+        if conn.execute_command(f"test -d {openh264_repo_dir} && echo 1 || echo 0").stdout.strip() == "1":
+            logger.info(f"[{host.name}] openh264 repo exists, pulling latest changes")
+            conn.execute_command(f"cd {openh264_repo_dir} && git fetch && git checkout openh264v2.4.0 && git pull")
+        else:
+            logger.info(f"[{host.name}] Cloning openh264 repo")
+            conn.execute_command(f"cd {openh264_dir} && git clone https://github.com/cisco/openh264.git")
+            conn.execute_command(f"cd {openh264_repo_dir} && git checkout openh264v2.4.0")
+        conn.execute_command(f"cd {openh264_repo_dir} && make -j $(nproc)")
+        conn.execute_command(f"cd {openh264_repo_dir} && sudo make install")
+        conn.execute_command("sudo ldconfig")
+    yield
+
+
+@pytest.fixture(scope="session")
+def build_mtl_ffmpeg(hosts, test_config, build_openh264):
+    """
+    Build and install FFmpeg with the MTL plugin on all hosts.
+    Removes any previous FFmpeg Plugin directory before proceeding.
+    """
+    ffmpeg_dir = test_config.get("ffmpeg_path", "/path/to/ffmpeg")
+    ffmpeg_version = str(test_config.get("ffmpeg_version", "7.0"))
+    repo_dir = test_config.get("mtl_path", "/path/to/Media-Transport-Library")
+    ffmpeg_plugin_dir = os.path.join(repo_dir, "ecosystem", "ffmpeg_plugin")
+    ffmpeg_clone_dir = os.path.join(ffmpeg_dir, "FFmpeg")
+
+    for host in hosts.values():
+        conn = host.connection
+        # openh264 is built by the build_openh264 fixture
+
+        # 1. Remove previous FFmpeg Plugin directory if it exists
+        logger.info(f"[{host.name}] 1. Removing previous FFmpeg directory: {ffmpeg_clone_dir}")
+        conn.execute_command(f"rm -rf {ffmpeg_clone_dir}")
+
+        # 2. Install required system packages
+        required_packages = [
+        "libfreetype6-dev",
+        "libharfbuzz-dev",
+        "libfontconfig1-dev",
+        "tesseract-ocr"
+        ]
+        for pkg in required_packages:
+            result = conn.execute_command(f"dpkg -s {pkg} > /dev/null 2>&1 && echo 1 || echo 0")
+            if result.stdout.strip() == "0":
+                logger.info(f"[{host.name}] Installing missing package: {pkg}")
+                conn.execute_command(f"sudo apt install -y {pkg}")
+            else:
+                logger.info(f"[{host.name}] Package already installed: {pkg}")
+
+        # 3. Clone FFmpeg and checkout the specified version
+        logger.info(f"[{host.name}] 3. Cloning FFmpeg and checking out version {ffmpeg_version}")
+        conn.execute_command(
+            f"git clone https://github.com/FFmpeg/FFmpeg.git {ffmpeg_clone_dir}"
+        )
+        conn.execute_command(
+            f"cd {ffmpeg_clone_dir} && git checkout release/{ffmpeg_version}"
+        )
+
+        # 4. Apply the build patch
+        patch_dir = os.path.join(ffmpeg_plugin_dir, str(ffmpeg_version))
+        logger.info(f"[{host.name}] 4. Applying build patches from {patch_dir}")
+        for patch_file in sorted(os.listdir(patch_dir)):
+            if patch_file.endswith(".patch"):
+                conn.execute_command(
+                    f"cd {ffmpeg_clone_dir} && git apply {os.path.join(patch_dir, patch_file)}"
+                )
+
+        # 5. Copy mtl in/out implementation code
+        logger.info(f"[{host.name}] 5. Copying mtl in/out implementation code")
+        for fname in os.listdir(ffmpeg_plugin_dir):
+            if fname.startswith("mtl_") and (fname.endswith(".c") or fname.endswith(".h")):
+                conn.execute_command(
+                    f"cp {os.path.join(ffmpeg_plugin_dir, fname)} {os.path.join(ffmpeg_clone_dir, 'libavdevice')}/"
+                )
+
+        # 6. Configure, build, and install FFmpeg
+        logger.info(f"[{host.name}] 6. Configuring FFmpeg build")
+
+        # Define configure options as a list:
+        configure_options = [
+            "--enable-shared",
+            "--enable-mtl",
+            "--enable-libfreetype",
+            "--enable-libharfbuzz",
+            "--enable-libfontconfig",
+            "--disable-static",
+            "--enable-nonfree",
+            "--enable-pic",
+            "--enable-gpl",
+            "--enable-libopenh264",
+            "--enable-encoder=libopenh264",
+        ]
+
+        # Join options into a single string
+        configure_opts_str = " ".join(configure_options)
+
+        # Use in command
+        conn.execute_command(
+            f"cd {ffmpeg_clone_dir} && ./configure {configure_opts_str}"
+        )
+        logger.info(f"[{host.name}] 7. Building FFmpeg")
+        conn.execute_command(
+            f"cd {ffmpeg_clone_dir} && make -j $(nproc)"
+        )
+        logger.info(f"[{host.name}] 8. Installing FFmpeg")
+        conn.execute_command(
+            f"cd {ffmpeg_clone_dir} && sudo make install"
+        )
+        logger.info(f"[{host.name}] 9. Running ldconfig")
+        conn.execute_command("sudo ldconfig")
+
+        # 9. Install Python packages
+        logger.info(f"[{host.name}] 11. Installing Python packages")
+        conn.execute_command(
+            "python3 -m pip install opencv-python~=4.11.0 pytesseract~=0.3.13 matplotlib~=3.10.3"
+        )
+
+    yield ffmpeg_clone_dir  # Path to the built FFmpeg directory on each host
