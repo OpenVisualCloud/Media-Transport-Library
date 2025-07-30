@@ -302,7 +302,18 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
     }
   }
 
-  to_epoch = tx_audio_pacing_time(pacing, epochs) - ptp_time;
+  if (required_tai) {
+    to_epoch = (double)required_tai - ptp_time;
+    if (to_epoch > NS_PER_S) {
+      dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
+          __func__, s->idx, required_tai, ptp_epochs, epochs);
+      s->stat_error_user_timestamp++;
+      to_epoch = NS_PER_S;  // do our best to slow down
+    }
+  } else {
+    to_epoch = tx_audio_pacing_time(pacing, epochs) - ptp_time;
+  }
+
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
     s->stat_epoch_mismatch++;
