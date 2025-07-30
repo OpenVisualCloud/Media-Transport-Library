@@ -285,10 +285,10 @@ def build_openh264(hosts, test_config):
         else:
             logger.info(f"[{host.name}] Cloning openh264 repo")
             conn.execute_command(
-            f"cd {openh264_dir} && git clone https://github.com/cisco/openh264.git"
+                f"cd {openh264_dir} && git clone https://github.com/cisco/openh264.git"
             )
             conn.execute_command(
-            f"cd {os.path.join(openh264_dir, 'openh264')} && git checkout openh264v2.4.0"
+                f"cd {os.path.join(openh264_dir, 'openh264')} && git checkout openh264v2.4.0"
             )
         conn.execute_command(f"cd {openh264_repo_dir} && make -j $(nproc)")
         conn.execute_command(f"cd {openh264_repo_dir} && sudo make install")
