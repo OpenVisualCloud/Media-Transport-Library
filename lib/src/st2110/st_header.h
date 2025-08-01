@@ -1054,8 +1054,6 @@ struct st_tx_ancillary_session_pacing {
   uint64_t cur_epochs;        /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
   uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
@@ -1224,8 +1222,6 @@ struct st_tx_fastmetadata_session_pacing {
   uint64_t cur_epochs;        /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
   uint64_t cur_epoch_time;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
