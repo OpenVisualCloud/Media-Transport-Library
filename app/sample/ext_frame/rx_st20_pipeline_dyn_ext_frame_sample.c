@@ -42,7 +42,6 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   struct rx_st20p_sample_ctx* s = priv;
   int i = s->ext_idx;
   MTL_MAY_UNUSED(meta);
-
   /* you can check the timestamp from lib by meta->timestamp */
 
   ext_frame->addr[0] = s->ext_frames[i].buf_addr;
@@ -52,6 +51,9 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   uint8_t* addr = ext_frame->addr[0];
   uint8_t planes = st_frame_fmt_planes(meta->fmt);
   for (int plane = 0; plane < planes; plane++) {
+    if (plane > 0)
+      ext_frame->iova[plane] =
+          ext_frame->iova[plane - 1] + ext_frame->linesize[plane - 1] * meta->height;
     ext_frame->linesize[plane] = st_frame_least_linesize(meta->fmt, meta->width, plane);
     ext_frame->addr[plane] = addr;
     addr += ext_frame->linesize[plane] * meta->height;
@@ -157,6 +159,15 @@ int main(int argc, char** argv) {
   memset(&ctx, 0, sizeof(ctx));
   ret = rx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
+
+  bool is_output_yuv420 = ctx.output_fmt == ST_FRAME_FMT_YUV420CUSTOM8 ||
+                          ctx.output_fmt == ST_FRAME_FMT_YUV420PLANAR8;
+  if (ctx.ext_frame && is_output_yuv420) {
+    warn(
+        "%s: external frame mode does not support yuv420 output format, use other format "
+        "e.g. yuv422\n",
+        __func__);
+  }
 
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
