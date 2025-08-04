@@ -77,7 +77,7 @@ convert1_formats = dict(
 
 
 @pytest.mark.parametrize("format", convert1_formats.keys())
-def convert_on_rx(
+def test_convert_on_rx(
     hosts,
     build,
     media,
@@ -133,7 +133,7 @@ convert2_formats = dict(
 
 
 @pytest.mark.parametrize("format", convert2_formats.keys())
-def tx_rx_conversion(
+def test_tx_rx_conversion(
     hosts,
     build,
     media,
