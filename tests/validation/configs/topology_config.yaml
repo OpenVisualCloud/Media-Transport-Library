@@ -10,6 +10,4 @@ hosts:
         interface_index: 0 # all
     connections:
       - ip_address: 127.0.0.1
-        connection_type: SSHConnection
-        connection_options:
-          port: 22
+        connection_type: LocalConnection
