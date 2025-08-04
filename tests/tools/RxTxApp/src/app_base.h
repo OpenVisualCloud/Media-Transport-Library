@@ -50,6 +50,8 @@
 
 #define ST_APP_DEFAULT_FB_CNT (3)
 
+#define ST_APP_USER_PACING_DEFAULT_OFFSET (10 * NS_PER_MS) /* 10ms */
+
 #define ST_APP_EXPECT_NEAR(val, expect, delta) \
   ((val > (expect - delta)) && (val < (expect + delta)))
 
@@ -97,6 +99,12 @@ struct st_display {
   pthread_cond_t display_wake_cond;
   pthread_mutex_t display_wake_mutex;
   pthread_mutex_t display_frame_mutex;
+};
+
+struct st_user_pacing {
+  uint64_t base_tai_time;
+  pthread_mutex_t base_tai_time_mutex;
+  uint64_t user_pacing_offset;
 };
 
 struct st_app_frameinfo {
@@ -514,6 +522,11 @@ struct st_app_tx_st20p_session {
   uint8_t num_port;
   uint64_t last_stat_time_ns;
   bool sha_check;
+  /* for now used only with user pacing to keep track of the frame timestamps */
+  uint64_t frame_time;
+  uint64_t local_tai_base_time;
+  bool enabled_user_pacing;
+  struct st_user_pacing* user_pacing;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st20p_source_begin;
@@ -523,8 +536,9 @@ struct st_app_tx_st20p_session {
   bool st20p_frames_copied;
 
   struct st_display* display;
-  double expect_fps;
+  /* user pacing should point to ctx->user_pacing */
 
+  double expect_fps;
   pthread_t st20p_app_thread;
   bool st20p_app_thread_stop;
 };
@@ -741,6 +755,8 @@ struct st_app_context {
   uint32_t pcapng_max_pkts;
   char ttf_file[ST_APP_URL_MAX_LEN];
   int utc_offset;
+
+  struct st_user_pacing user_pacing;
 };
 
 static inline void* st_app_malloc(size_t sz) {
@@ -783,5 +799,7 @@ uint8_t* st_json_ip(struct st_app_context* ctx, st_json_session_base_t* base,
 int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
 
 void st_sha_dump(const char* tag, const unsigned char* sha);
+
+uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing *user_pacing, uint64_t frame_time, bool restart_base_time);
 
 #endif
