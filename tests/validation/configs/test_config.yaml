@@ -1,6 +1,7 @@
 build: /path/to/Media-Transport-Library
 mtl_path: /path/to/Media-Transport-Library
 media_path: /path/to/media
+media_ramdisk_mountpoint: /path/to/media_ramdisk
 capture_cfg:
   enable: false
   test_name: test_name

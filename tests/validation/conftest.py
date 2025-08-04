@@ -9,6 +9,8 @@ from typing import Dict
 import pytest
 from common.nicctl import Nicctl
 from create_pcap_file.ramdisk import RamdiskPreparer
+from mfd_connect.exceptions import ConnectionCalledProcessError
+from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.stash import clear_result_media, remove_result_media
 
 logger = logging.getLogger(__name__)
@@ -148,6 +150,49 @@ def prepare_ramdisk(hosts, test_config):
                 use_sudo=use_sudo,
             )
             preparer.start()
+
+
+@pytest.fixture(scope="session")
+def media_ramdisk(hosts, test_config):
+    ramdisks = [
+        Ramdisk(
+            host=host, mount_point=test_config["media_ramdisk_mountpoint"], size_gib=32
+        )
+        for host in hosts.values()
+    ]
+    for ramdisk in ramdisks:
+        ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
+
+
+@pytest.fixture(scope="function")
+def media_file(media_ramdisk, request, hosts, test_config):
+    media_file_info = request.param
+    src_media_file_path = os.path.join(
+        test_config["media_path"], media_file_info["filename"]
+    )
+    ramdisk_media_file_path = os.path.join(
+        test_config["media_ramdisk_mountpoint"], media_file_info["filename"]
+    )
+    for host in hosts.values():
+        cmd = f"cp {src_media_file_path} {ramdisk_media_file_path}"
+        try:
+            host.connection.execute_command(cmd)
+        except ConnectionCalledProcessError as e:
+            logging.log(
+                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
+            )
+    yield media_file_info, ramdisk_media_file_path
+    for host in hosts.values():
+        cmd = f"rm {ramdisk_media_file_path}"
+        try:
+            host.connection.execute_command(cmd)
+        except ConnectionCalledProcessError as e:
+            logging.log(
+                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
+            )
 
 
 def pytest_addoption(parser):
