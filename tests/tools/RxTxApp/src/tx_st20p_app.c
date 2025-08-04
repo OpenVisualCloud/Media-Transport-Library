@@ -88,7 +88,8 @@ static void* app_tx_st20p_frame_thread(void* arg) {
         restart_base_time = false;
       }
 
-      frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time, restart_base_time);
+      frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time,
+                                                 restart_base_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->frame_time += s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
       s->local_tai_base_time = s->user_pacing->base_tai_time;

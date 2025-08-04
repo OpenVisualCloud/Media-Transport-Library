@@ -633,13 +633,13 @@ int main(int argc, char** argv) {
   return ret;
 }
 
-
 /**
  * Returns the pacing time based on the user_pacing structure.
  * If user_pacing is NULL, disabled, or an error occurs, returns 0.
  * Otherwise, returns the calculated time.
  */
-uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing *user_pacing, uint64_t frame_time, bool restart_base_time) {
+uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing* user_pacing,
+                                 uint64_t frame_time, bool restart_base_time) {
   uint64_t tai_time, offset;
 
   if (!user_pacing) return 0;
@@ -648,7 +648,7 @@ uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing *user_pacing, 
     pthread_mutex_lock(&user_pacing->base_tai_time_mutex);
 
     user_pacing->base_tai_time = app_ptp_from_tai_time(ctx);
-    info ("%s, restart base tai time %lu\n", __func__, user_pacing->base_tai_time);
+    info("%s, restart base tai time %lu\n", __func__, user_pacing->base_tai_time);
 
     if (user_pacing->base_tai_time == 0) {
       err("%s, get tai time fail\n", __func__);
@@ -693,4 +693,3 @@ void st_sha_dump(const char* tag, const unsigned char* sha) {
   }
   info("\n");
 }
-

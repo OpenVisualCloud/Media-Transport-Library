@@ -803,6 +803,7 @@ int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
 
 void st_sha_dump(const char* tag, const unsigned char* sha);
 
-uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing *user_pacing, uint64_t frame_time, bool restart_base_time);
+uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing* user_pacing,
+                                 uint64_t frame_time, bool restart_base_time);
 
 #endif

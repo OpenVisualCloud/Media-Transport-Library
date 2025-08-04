@@ -1043,7 +1043,7 @@ static int st_json_parse_st30p(int idx, json_object* st30p_obj,
   st30p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st30p_obj, "enable_rtcp"));
 
-  st30p->user_pacing = 
+  st30p->user_pacing =
       json_object_get_boolean(st_json_object_object_get(st30p_obj, "user_pacing"));
   return ST_JSON_SUCCESS;
 }
@@ -2719,7 +2719,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       }
       /* parse global pacing offset options*/
       json_object* pacing_obj = st_json_object_object_get(tx_group, "user_pacing_offset");
-      if(pacing_obj) {
+      if (pacing_obj) {
         ctx->user_pacing_offset = json_object_get_int(pacing_obj);
       } else {
         ctx->user_pacing_offset = ST_APP_USER_PACING_DEFAULT_OFFSET;
