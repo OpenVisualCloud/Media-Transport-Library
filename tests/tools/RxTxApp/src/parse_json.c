@@ -1043,6 +1043,8 @@ static int st_json_parse_st30p(int idx, json_object* st30p_obj,
   st30p->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(st30p_obj, "enable_rtcp"));
 
+  st30p->user_pacing = 
+      json_object_get_boolean(st_json_object_object_get(st30p_obj, "user_pacing"));
   return ST_JSON_SUCCESS;
 }
 

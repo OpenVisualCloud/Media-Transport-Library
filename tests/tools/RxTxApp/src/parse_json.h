@@ -242,6 +242,7 @@ typedef struct st_json_st30p_session {
   st_json_session_base_t base;
   st_json_audio_info_t info;
   bool enable_rtcp;
+  bool user_pacing;
 } st_json_st30p_session_t;
 
 typedef struct st_json_ancillary_session {

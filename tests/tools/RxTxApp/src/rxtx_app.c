@@ -206,7 +206,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   /* st22 */
   ctx->st22_bpp = 3; /* 3bit per pixel */
 
-  ctx->utc_offset = UTC_OFFSET;
+  ctx->utc_offset = 0;
 
   ctx->ptp_sync_delta_min = INT64_MAX;
   ctx->ptp_sync_delta_max = INT64_MIN;
@@ -661,11 +661,6 @@ uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing *user_pacing, 
 
   offset = user_pacing->user_pacing_offset;
   tai_time = user_pacing->base_tai_time + offset + frame_time;
-
-  int64_t debug = tai_time - app_ptp_from_tai_time(ctx);;
-
-  if (debug < 0)
-    info("DEBUG %lld\n", (long long int)(debug));
 
   return tai_time;
 }

@@ -67,8 +67,6 @@
 #define NS_PER_MS (1000 * 1000)
 #endif
 
-#define UTC_OFFSET (37) /* 2022/07 */
-
 #define ST_MAX(a, b) ((a) > (b) ? (a) : (b))
 #define ST_MIN(a, b) ((a) < (b) ? (a) : (b))
 
@@ -536,9 +534,8 @@ struct st_app_tx_st20p_session {
   bool st20p_frames_copied;
 
   struct st_display* display;
-  /* user pacing should point to ctx->user_pacing */
-
   double expect_fps;
+
   pthread_t st20p_app_thread;
   bool st20p_app_thread_stop;
 };
@@ -584,6 +581,12 @@ struct st_app_tx_st30p_session {
   int st30p_frame_size;
   uint8_t num_port;
   uint64_t last_stat_time_ns;
+  /* for now used only with user pacing to keep track of the frame timestamps */
+  uint64_t frame_time;
+  uint64_t packet_time;
+  uint64_t local_tai_base_time;
+  bool enabled_user_pacing;
+  struct st_user_pacing* user_pacing;
 
   char st30p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st30p_source_begin;
