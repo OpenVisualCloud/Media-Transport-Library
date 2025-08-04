@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'pstaszczuk/smoke-tests'
+  workflow_dispatch:
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '23.11'
