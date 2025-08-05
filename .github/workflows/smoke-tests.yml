@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 env:
   BUILD_TYPE: 'Release'
-  DPDK_VERSION: '23.11'
+  DPDK_VERSION: '25.03'
   DPDK_REBUILD: 'false'
 permissions:
   contents: read
