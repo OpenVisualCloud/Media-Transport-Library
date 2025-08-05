@@ -12,7 +12,7 @@ permissions:
   contents: read
 jobs:
   validation-build-mtl:
-    runs-on: [Linux, self-hosted]
+    runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
     outputs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
