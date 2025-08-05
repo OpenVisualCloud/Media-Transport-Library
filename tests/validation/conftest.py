@@ -282,6 +282,8 @@ def cleanup_output_files():
                         f"Output file already removed or does not exist: {output_file}"
                     )
             except Exception as file_exc:
-                logging.warning(f"Could not remove output file {output_file}: {file_exc}")
+                logging.warning(
+                    f"Could not remove output file {output_file}: {file_exc}"
+                )
 
     return _cleanup_output
