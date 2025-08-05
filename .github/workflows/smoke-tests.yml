@@ -153,4 +153,4 @@ jobs:
           sudo MtlManager &
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         run: |
-          sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml --template=html/index.html --report=report.html
+          sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
