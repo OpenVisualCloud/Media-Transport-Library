@@ -8,7 +8,7 @@ import time
 import pytest
 from mtl_engine import ffmpeg_app
 from mtl_engine.const import LOG_FOLDER
-from mtl_engine.ffmpeg_app import check_latency_from_script, cleanup_output_files
+from mtl_engine.ffmpeg_app import check_latency_from_script
 from mtl_engine.media_files import yuv_files_end_to_end
 
 
