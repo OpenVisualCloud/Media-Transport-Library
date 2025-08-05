@@ -302,9 +302,9 @@ def build_mtl_ffmpeg(hosts, test_config, build_openh264):
     Build and install FFmpeg with the MTL plugin on all hosts.
     Removes any previous FFmpeg Plugin directory before proceeding.
     """
-    ffmpeg_dir = test_config.get("ffmpeg_path", "/path/to/ffmpeg")
+    ffmpeg_dir = test_config.get("ffmpeg_path", "/temp/ffmpeg")
     ffmpeg_version = str(test_config.get("ffmpeg_version", "7.0"))
-    repo_dir = test_config.get("mtl_path", "/path/to/Media-Transport-Library")
+    repo_dir = test_config.get("mtl_path", "/temp/Media-Transport-Library")
     ffmpeg_plugin_dir = os.path.join(repo_dir, "ecosystem", "ffmpeg_plugin")
     ffmpeg_clone_dir = os.path.join(ffmpeg_dir, "FFmpeg")
 
