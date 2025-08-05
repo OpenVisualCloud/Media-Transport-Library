@@ -1082,33 +1082,6 @@ def check_latency_from_script(
     return passed
 
 
-def cleanup_output_files(cleanup_pattern):
-    """
-    Removes all files matching the given glob pattern.
-    Logs actions and errors.
-    """
-    import glob
-    import logging
-    import os
-
-    output_files = glob.glob(cleanup_pattern)
-    if not output_files:
-        logging.info(
-            f"No output files found for cleanup with pattern: {cleanup_pattern}"
-        )
-    for output_file in output_files:
-        try:
-            if os.path.exists(output_file):
-                os.remove(output_file)
-                logging.info(f"Removed output file: {output_file}")
-            else:
-                logging.info(
-                    f"Output file already removed or does not exist: {output_file}"
-                )
-        except Exception as file_exc:
-            logging.warning(f"Could not remove output file {output_file}: {file_exc}")
-
-
 def execute_test_latency_single_or_dual(
     test_time: int,
     build: str,

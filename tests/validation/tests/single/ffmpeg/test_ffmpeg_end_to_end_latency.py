@@ -7,6 +7,7 @@ import time
 
 import pytest
 from mtl_engine import ffmpeg_app
+from mtl_engine.const import LOG_FOLDER
 from mtl_engine.ffmpeg_app import check_latency_from_script, cleanup_output_files
 from mtl_engine.media_files import yuv_files_end_to_end
 
@@ -36,6 +37,7 @@ def test_ffmpeg_end_to_end_latency(
     test_time_multiplier,
     output_format,
     expected_latency,
+    cleanup_output_files,
 ):
 
     # Cleanup before test
@@ -70,7 +72,7 @@ def test_ffmpeg_end_to_end_latency(
     recv_file = max(recv_files, key=os.path.getmtime)
 
     # Path for the latency measurement output image
-    latency_jpg = f"{build}/tests/ffmpeg_latency_{video_format}_latency.jpg"
+    latency_jpg = f"{LOG_FOLDER}/ffmpeg_latency_{video_format}_latency.jpg"
     script_path = f"{build}/tests/tools/latency_measurement/text_detection.py"
 
     # Run the latency measurement script and check if latency is within expected bounds
@@ -83,9 +85,6 @@ def test_ffmpeg_end_to_end_latency(
     )
 
     # Cleanup after test
-    cleanup_pattern = (
-        f"{build}/tests/test_ffmpeg_end_to_end_latency_*_out_0.{output_format}"
-    )
     cleanup_output_files(cleanup_pattern)
 
     time.sleep(5)

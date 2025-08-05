@@ -2,6 +2,7 @@
 # # Copyright 2024-2025 Intel Corporation
 # # Media Communications Mesh
 import datetime
+import glob
 import logging
 import os
 import shutil
@@ -256,3 +257,31 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     )
 
     clear_result_note()
+
+
+@pytest.fixture
+def cleanup_output_files():
+    """
+    Fixture to remove all files matching a given glob pattern.
+    Usage: cleanup_output_files_fixture(pattern)
+    """
+
+    def _cleanup_output(cleanup_pattern):
+        output_files = glob.glob(cleanup_pattern)
+        if not output_files:
+            logging.info(
+                f"No output files found for cleanup with pattern: {cleanup_pattern}"
+            )
+        for output_file in output_files:
+            try:
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+                    logging.info(f"Removed output file: {output_file}")
+                else:
+                    logging.info(
+                        f"Output file already removed or does not exist: {output_file}"
+                    )
+            except Exception as file_exc:
+                logging.warning(f"Could not remove output file {output_file}: {file_exc}")
+
+    return _cleanup_output
