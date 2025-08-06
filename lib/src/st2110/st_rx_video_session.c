@@ -1525,13 +1525,15 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
-  if (!slot || !slot->frame) {
-    if (exist_ts) {
-      s->stat_pkts_redundant_dropped++;
-      slot->pkts_recv_per_port[s_port]++;
-    } else {
-      s->stat_pkts_no_slot++;
-    }
+  /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
+  if (exist_ts && !slot->frame) {
+    s->stat_pkts_redundant_dropped++;
+    slot->pkts_recv_per_port[s_port]++;
+    return 0;
+  }
+
+  if ((!slot || !slot->frame) && !exist_ts) {
+    s->stat_pkts_no_slot++;
     return -EIO;
   }
 
@@ -1941,13 +1943,15 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, NULL, &exist_ts);
-  if (!slot || !slot->frame) {
-    if (exist_ts) {
-      s->stat_pkts_redundant_dropped++;
-      slot->pkts_recv_per_port[s_port]++;
-    } else {
-      s->stat_pkts_no_slot++;
-    }
+  /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
+  if (exist_ts && !slot->frame) {
+    s->stat_pkts_redundant_dropped++;
+    slot->pkts_recv_per_port[s_port]++;
+    return 0;
+  }
+
+  if ((!slot || !slot->frame) && !exist_ts) {
+    s->stat_pkts_no_slot++;
     return -EIO;
   }
   uint8_t* bitmap = slot->frame_bitmap;
@@ -2111,13 +2115,15 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   /* find the target slot by tmstamp */
   bool exist_ts = false;
   struct st_rx_video_slot_impl* slot = rv_slot_by_tmstamp(s, tmstamp, payload, &exist_ts);
-  if (!slot || !slot->frame) {
-    if (exist_ts) {
-      s->stat_pkts_redundant_dropped++;
-      slot->pkts_recv_per_port[s_port]++;
-    } else {
-      s->stat_pkts_no_slot++;
-    }
+  /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
+  if (exist_ts && !slot->frame) {
+    s->stat_pkts_redundant_dropped++;
+    slot->pkts_recv_per_port[s_port]++;
+    return 0;
+  }
+
+  if ((!slot || !slot->frame) && !exist_ts) {
+    s->stat_pkts_no_slot++;
     return -EIO;
   }
   uint8_t* bitmap = slot->frame_bitmap;
