@@ -523,7 +523,6 @@ struct st_app_tx_st20p_session {
   /* for now used only with user pacing to keep track of the frame timestamps */
   uint64_t frame_time;
   uint64_t local_tai_base_time;
-  bool enabled_user_pacing;
   struct st_user_pacing* user_pacing;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
@@ -585,7 +584,6 @@ struct st_app_tx_st30p_session {
   uint64_t frame_time;
   uint64_t packet_time;
   uint64_t local_tai_base_time;
-  bool enabled_user_pacing;
   struct st_user_pacing* user_pacing;
 
   char st30p_source_url[ST_APP_URL_MAX_LEN];

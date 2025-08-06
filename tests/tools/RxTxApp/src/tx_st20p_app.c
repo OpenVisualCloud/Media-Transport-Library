@@ -79,14 +79,8 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       frame->user_meta_size = sizeof(shas);
     }
 
-    if (s->enabled_user_pacing && s->user_pacing) {
-      bool restart_base_time;
-
-      if (!s->local_tai_base_time) {
-        restart_base_time = true;
-      } else {
-        restart_base_time = false;
-      }
+    if (s->user_pacing) {
+      bool restart_base_time = !s->local_tai_base_time;
 
       frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time,
                                                  restart_base_time);
@@ -308,10 +302,9 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
 
   if (st20p && st20p->user_pacing) {
     ops.flags |= ST20P_TX_FLAG_USER_PACING;
-    s->enabled_user_pacing = true;
 
     /* use global user pacing */
-    s->user_pacing = &(ctx->user_pacing);
+    s->user_pacing = &ctx->user_pacing;
     s->frame_time = 0;
     s->local_tai_base_time = 0;
   }

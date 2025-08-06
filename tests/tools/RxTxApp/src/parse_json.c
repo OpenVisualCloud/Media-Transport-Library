@@ -2435,7 +2435,7 @@ int st_app_parse_json(st_json_context_t* ctx, const char* filename) {
       json_object* dip_p = NULL;
       json_object* dip_r = NULL;
       json_object* dip_array = st_json_object_object_get(tx_group, "dip");
-      if (dip_array == NULL) { /* allow us to just use ip instead */
+      if (!dip_array) { /* allow us to just use ip instead */
         dip_array = st_json_object_object_get(tx_group, "ip");
       }
 
