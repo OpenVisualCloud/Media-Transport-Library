@@ -159,3 +159,47 @@ jobs:
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         run: |
           sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+      - name: "upload report"
+        id: upload-report
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: smoke-tests-report
+          path: |
+            report.html
+      - name: "Add report to summary"
+        if: always()
+        run: |
+          {
+            echo "## Smoke Tests Report"
+            echo ""
+            # Check if JSON report exists
+            if [ -f "report.json" ]; then
+              # Parse JSON report
+                PASSED=$(jq '.summary.passed // 0' report.json)
+                FAILED=$(jq '.summary.failed // 0' report.json)
+                SKIPPED=$(jq '.summary.skipped // 0' report.json)
+                ERROR=$(jq '.summary.errors // 0' report.json)
+              # Add summary stats
+              echo "| Status | Count |"
+              echo "| ------ | ----- |"
+              echo "| ✅ Passed | ${PASSED:-0} |"
+              echo "| ❌ Failed | ${FAILED:-0} |"
+              echo "| ⚠️ Error | ${ERROR:-0} |"
+              echo "| ⏭️ Skipped | ${SKIPPED:-0} |"
+              echo ""
+              # Add test result details if available
+              TOTAL=$((${PASSED:-0} + ${FAILED:-0} + ${ERROR:-0} + ${SKIPPED:-0}))
+              echo "**Total Tests:** $TOTAL"
+              echo ""
+              if [ "${FAILED:-0}" -gt 0 ] || [ "${ERROR:-0}" -gt 0 ]; then
+                echo "❌ **Some tests failed!** Please check the detailed report."
+              else
+                echo "✅ **All tests passed!**"
+              fi
+              echo ""
+              # Add link to full report artifact
+              echo "📄 [Download Full HTML Report](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts/${{ steps.upload-report.outputs.artifact-id }})"
+            else
+              echo "❌ No report.json file was generated"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
