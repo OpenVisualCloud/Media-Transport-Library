@@ -1,9 +1,14 @@
 name: smoke-tests-bare-metal
 on:
+  workflow_dispatch:
   push:
     branches:
-      - 'pstaszczuk/smoke-tests'
-  workflow_dispatch:
+      - main
+      - 'maint-**'
+  pull_request:
+    branches:
+      - main
+      - 'maint-**'
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
