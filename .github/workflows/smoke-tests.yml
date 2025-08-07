@@ -34,7 +34,7 @@ jobs:
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: 'pstaszczuk/smoke-tests'
+          ref: '${{ github.ref }}'
       - name: 'preparation: Checkout DPDK'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         if: env.DPDK_REBUILD == 'true'
