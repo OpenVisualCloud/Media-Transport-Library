@@ -32,6 +32,17 @@ static void* app_tx_st30p_frame_thread(void* arg) {
       continue;
     }
     app_tx_st30p_build_frame(s, frame, s->st30p_frame_size);
+
+    if (s->user_pacing) {
+      bool restart_base_time = !s->local_tai_base_time;
+
+      frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time,
+                                                 restart_base_time);
+      frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+      s->frame_time += s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
+      s->local_tai_base_time = s->user_pacing->base_tai_time;
+    }
+
     st30p_tx_put_frame(handle, frame);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -196,11 +207,27 @@ static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t
   ops.channel = st30p ? st30p->info.audio_channel : 2;
   ops.sampling = st30p ? st30p->info.audio_sampling : ST30_SAMPLING_48K;
   ops.ptime = st30p ? st30p->info.audio_ptime : ST30_PTIME_1MS;
+
+  if (st30p && st30p->user_pacing) {
+    s->packet_time = st30_get_packet_time(ops.ptime);
+  } else {
+    s->packet_time = ST_APP_TX_ST30P_DEFAULT_PACKET_TIME;
+  }
+
   /* set frame size to 10ms time */
   int framebuff_size = st30_calculate_framebuff_size(
-      ops.fmt, ops.ptime, ops.sampling, ops.channel, 10 * NS_PER_MS, &s->expect_fps);
+      ops.fmt, ops.ptime, ops.sampling, ops.channel, s->packet_time, &s->expect_fps);
   ops.framebuff_size = framebuff_size;
   ops.framebuff_cnt = 3;
+
+  if (st30p && st30p->user_pacing) {
+    ops.flags |= ST30P_TX_FLAG_USER_PACING;
+
+    /* use global user pacing */
+    s->user_pacing = &ctx->user_pacing;
+    s->frame_time = 0;
+    s->local_tai_base_time = 0;
+  }
 
   ops.flags |= ST30P_TX_FLAG_BLOCK_GET;
   s->num_port = ops.port.num_port;

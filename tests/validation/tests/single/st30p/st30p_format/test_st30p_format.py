@@ -8,6 +8,7 @@ from mtl_engine.media_files import audio_files
 
 
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
+@pytest.mark.smoke
 def test_st30p_format(
     hosts,
     build,

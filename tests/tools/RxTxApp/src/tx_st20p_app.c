@@ -78,6 +78,17 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       frame->user_meta = shas;
       frame->user_meta_size = sizeof(shas);
     }
+
+    if (s->user_pacing) {
+      bool restart_base_time = !s->local_tai_base_time;
+
+      frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time,
+                                                 restart_base_time);
+      frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
+      s->frame_time += s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
+      s->local_tai_base_time = s->user_pacing->base_tai_time;
+    }
+
     st20p_tx_put_frame(handle, frame);
   }
   info("%s(%d), stop\n", __func__, idx);
@@ -288,6 +299,16 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   ops.notify_event = app_tx_st20p_notify_event;
   if (ctx->tx_static_pad) ops.flags |= ST20P_TX_FLAG_ENABLE_STATIC_PAD_P;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
+
+  if (st20p && st20p->user_pacing) {
+    ops.flags |= ST20P_TX_FLAG_USER_PACING;
+
+    /* use global user pacing */
+    s->user_pacing = &ctx->user_pacing;
+    s->frame_time = 0;
+    s->local_tai_base_time = 0;
+  }
+
   if (ctx->tx_ts_first_pkt) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
   if (ctx->tx_ts_epoch) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20P_TX_FLAG_DISABLE_BULK;

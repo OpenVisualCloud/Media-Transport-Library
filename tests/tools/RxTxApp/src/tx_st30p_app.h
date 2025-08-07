@@ -16,6 +16,8 @@
 #ifndef _TX_APP_ST30P_HEAD_H_
 #define _TX_APP_ST30P_HEAD_H_
 
+#define ST_APP_TX_ST30P_DEFAULT_PACKET_TIME (10 * NS_PER_MS) /* 10ms */
+
 int st_app_tx_st30p_sessions_init(struct st_app_context* ctx);
 
 int st_app_tx_st30p_sessions_stop(struct st_app_context* ctx);

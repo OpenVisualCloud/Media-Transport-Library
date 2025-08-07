@@ -162,12 +162,12 @@ static inline void st_usleep(
 #endif
 }
 
-static inline int st_get_real_time(struct timespec* ts) {
-  return clock_gettime(CLOCK_REALTIME, ts);
+static inline int st_get_tai_time(struct timespec* ts) {
+  return clock_gettime(CLOCK_TAI, ts);
 }
 
-static inline int st_set_real_time(struct timespec* ts) {
-  return clock_settime(CLOCK_REALTIME, ts);
+static inline int st_set_tai_time(struct timespec* ts) {
+  return clock_settime(CLOCK_TAI, ts);
 }
 
 #ifdef APP_HAS_SSL

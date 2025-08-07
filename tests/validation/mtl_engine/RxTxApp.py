@@ -10,6 +10,7 @@ import sys
 import time
 
 from create_pcap_file.tcpdump import TcpDumpRecorder
+from mfd_connect import SSHConnection
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -523,8 +524,9 @@ def execute_test(
     remote_conn = remote_host.connection
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
-    json_content = config_json.replace('"', '\\"')
-    f.write_text(json_content)
+    if isinstance(remote_conn, SSHConnection):
+        config_json = config_json.replace('"', '\\"')
+    f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
     log_to_file(f"Config file written to remote host: {config_path}", host, build)
 
@@ -743,8 +745,9 @@ def execute_perf_test(
     remote_conn = host.connection
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
-    json_content = config_json.replace('"', '\\"')
-    f.write_text(json_content)
+    if isinstance(remote_conn, SSHConnection):
+        config_json = config_json.replace('"', '\\"')
+    f.write_text(config_json, encoding="utf-8")
     config_path = os.path.join(build, config_file)
     log_to_file(
         f"Performance config file written to remote host: {config_path}", host, build
@@ -1679,13 +1682,11 @@ def execute_dual_test(
 
     # Prepare TX config
     tx_f = tx_host.connection.path(build, "tests", "tx_config.json")
-    tx_json_content = tx_config.replace('"', '\\"')
-    tx_f.write_text(tx_json_content)
+    tx_f.write_text(tx_config, encoding="utf-8")
 
     # Prepare RX config
-    rx_f = tx_host.connection.path(build, "tests", "tx_config.json")
-    rx_json_content = rx_config.replace('"', '\\"')
-    rx_f.write_text(rx_json_content)
+    rx_f = tx_host.connection.path(build, "tests", "rx_config.json")
+    rx_f.write_text(rx_config, encoding="utf-8")
 
     # Adjust test_time for high-res/fps/replicas
     if (
