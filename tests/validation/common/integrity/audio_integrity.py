@@ -6,6 +6,7 @@ import hashlib
 import logging
 from pathlib import Path
 
+
 def calculate_chunk_hashes(file_url: str, chunk_size: int) -> list:
     chunk_sums = []
     with open(file_url, "rb") as f:
@@ -19,6 +20,7 @@ def calculate_chunk_hashes(file_url: str, chunk_size: int) -> list:
             chunk_sums.append(chunk_sum)
             chunk_index += 1
     return chunk_sums
+
 
 def get_pcm_frame_size(sample_size: int, sample_num: int, channel_num: int) -> int:
     return sample_size * sample_num * channel_num
@@ -78,19 +80,26 @@ class AudioStreamIntegritor(AudioIntegritor):
         bad_frames_total = 0
         out_files = self.get_out_files()
         if not out_files:
-            self.logger.error(f"No output files found for stream in {self.out_path} with prefix {self.out_name}")
+            self.logger.error(
+                f"No output files found for stream in {self.out_path} with prefix {self.out_name}"
+            )
             return False
         for out_file in out_files:
             self.logger.info(f"Checking integrity for segment file: {out_file}")
             out_chunk_sums = calculate_chunk_hashes(str(out_file), self.frame_size)
             for idx, chunk_sum in enumerate(out_chunk_sums):
-                if idx >= len(self.src_chunk_sums) or chunk_sum != self.src_chunk_sums[idx]:
+                if (
+                    idx >= len(self.src_chunk_sums)
+                    or chunk_sum != self.src_chunk_sums[idx]
+                ):
                     self.logger.error(f"Bad audio frame at index {idx} in {out_file}")
                     bad_frames_total += 1
             if self.delete_file:
                 out_file.unlink()
         if bad_frames_total:
-            self.logger.error(f"Received {bad_frames_total} bad frames in stream segments.")
+            self.logger.error(
+                f"Received {bad_frames_total} bad frames in stream segments."
+            )
             return False
         self.logger.info(f"All frames in stream segments are correct.")
         return True
