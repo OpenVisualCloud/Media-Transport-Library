@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - 'maint-**'
   pull_request:
     branches:
       - main
+      - 'maint-**'
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
