@@ -152,6 +152,7 @@ enum st_args_cmd {
   ST_ARG_RSS_SCH_NB,
   ST_ARG_ALLOW_ACROSS_NUMA_CORE,
   ST_ARG_NO_MULTICAST,
+  ST_ARG_TX_USER_PACING_OFFSET,
   ST_ARG_MAX,
 };
 
@@ -300,6 +301,7 @@ static struct option st_app_args_options[] = {
     {"rss_sch_nb", required_argument, 0, ST_ARG_RSS_SCH_NB},
     {"allow_across_numa_core", no_argument, 0, ST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"no_multicast", no_argument, 0, ST_ARG_NO_MULTICAST},
+    {"tx_user_pacing_offset", required_argument, 0, ST_ARG_TX_USER_PACING_OFFSET},
 
     {0, 0, 0, 0}};
 
@@ -926,6 +928,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_NO_MULTICAST:
         p->flags |= MTL_FLAG_NO_MULTICAST;
+        break;
+      case ST_ARG_TX_USER_PACING_OFFSET:
+        ctx->user_pacing.user_pacing_offset = atoi(optarg);
         break;
       case '?':
         break;
