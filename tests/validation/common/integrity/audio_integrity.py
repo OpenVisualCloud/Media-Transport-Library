@@ -101,5 +101,5 @@ class AudioStreamIntegritor(AudioIntegritor):
                 f"Received {bad_frames_total} bad frames in stream segments."
             )
             return False
-        self.logger.info(f"All frames in stream segments are correct.")
+        self.logger.info("All frames in stream segments are correct.")
         return True
