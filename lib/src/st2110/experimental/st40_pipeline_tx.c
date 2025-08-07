@@ -660,3 +660,28 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
 
   return ctx->framebuffs[idx].anc_frame;
 }
+
+int st40p_tx_get_session_stats(st40p_tx_handle handle,
+                               struct st40_tx_users_stats* stats) {
+  struct st40p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st40_tx_get_session_stats(ctx->transport, stats);
+}
+
+int st40p_tx_reset_session_stats(st40p_tx_handle handle) {
+  struct st40p_tx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st40_tx_reset_session_stats(ctx->transport);
+}

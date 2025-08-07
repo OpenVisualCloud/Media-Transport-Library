@@ -984,8 +984,8 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
   return st20_tx_get_sch_idx(ctx->transport);
 }
 
-int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
-                            struct st20_tx_port_status* stats) {
+int st20p_tx_get_session_stats(st20p_tx_handle handle,
+                               struct st20_tx_users_stats* stats) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
@@ -994,10 +994,10 @@ int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
     return 0;
   }
 
-  return st20_tx_get_port_stats(ctx->transport, port, stats);
+  return st20_tx_get_session_stats(ctx->transport, stats);
 }
 
-int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port) {
+int st20p_tx_reset_session_stats(st20p_tx_handle handle) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 
@@ -1006,7 +1006,7 @@ int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port
     return 0;
   }
 
-  return st20_tx_reset_port_stats(ctx->transport, port);
+  return st20_tx_reset_session_stats(ctx->transport);
 }
 
 int st20p_tx_update_destination(st20p_tx_handle handle, struct st_tx_dest_info* dst) {

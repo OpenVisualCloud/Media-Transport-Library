@@ -493,6 +493,30 @@ int st30p_rx_get_queue_meta(st30p_rx_handle handle, struct st_queue_meta* meta) 
   return st30_rx_get_queue_meta(ctx->transport, meta);
 }
 
+int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats* stats) {
+  struct st30p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st30_rx_get_session_stats(ctx->transport, stats);
+}
+
+int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
+  struct st30p_rx_ctx* ctx = handle;
+  int cidx = ctx->idx;
+
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st30_rx_reset_session_stats(ctx->transport);
+}
+
 int st30p_rx_update_source(st30p_rx_handle handle, struct st_rx_source_info* src) {
   struct st30p_rx_ctx* ctx = handle;
   int cidx = ctx->idx;

@@ -135,6 +135,34 @@ struct st40p_tx_ops {
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 };
 
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(pipeline) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_users_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-40(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(pipeline) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40p_tx_reset_session_stats(st40p_tx_handle handle);
+
 /** Create one tx st2110-40 pipeline session */
 st40p_tx_handle st40p_tx_create(mtl_handle mt, struct st40p_tx_ops* ops);
 

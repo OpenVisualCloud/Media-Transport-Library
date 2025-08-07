@@ -159,6 +159,34 @@ struct st30p_tx_ops {
 };
 
 /**
+ * Retrieve the general statistics(I/O) for one rx st2110-30(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-30(pipeline) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_users_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-30(pipeline) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30p_tx_reset_session_stats(st30p_tx_handle handle);
+
+/**
  * Get one tx frame from the tx st2110-30 pipeline session.
  * Call st30p_tx_put_frame to return the frame to session.
  */
@@ -234,6 +262,34 @@ struct st30p_rx_ops {
   /**  Use this socket if ST30P_RX_FLAG_FORCE_NUMA is on, default use the NIC numa */
   int socket_id;
 };
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-30(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-30(pipeline) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-30(pipeline) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30p_rx_reset_session_stats(st30p_rx_handle handle);
 
 /**
  * Get one rx frame from the rx st2110-30 pipeline session.

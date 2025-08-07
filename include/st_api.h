@@ -244,6 +244,36 @@ struct st_var_info {
 };
 
 /**
+ * A structure used to retrieve general statistics(I/O) for a session tx port.
+ */
+struct st_tx_port_stats {
+  /** Total number of transmitted packets. */
+  uint64_t packets;
+  /** Total number of transmitted bytes. */
+  uint64_t bytes;
+  /** Total number of build packets. */
+  uint64_t build;
+  /** Total number of transmitted frames / memory buffers. */
+  uint64_t frames;
+};
+
+/**
+ * A structure used to retrieve general statistics(I/O) for a session rx port.
+ */
+struct st_rx_port_stats {
+  /** Total number of received packets. */
+  uint64_t packets;
+  /** Total number of received bytes. */
+  uint64_t bytes;
+  /** Total number of received frames / memory buffers. */
+  uint64_t frames;
+  /** Total number of incomplete frames */
+  uint64_t incomplete_frames;
+  /** Total number of received packets which are not valid. */
+  uint64_t err_packets;
+};
+
+/**
  * Retrieve the varied info of the media transport device context.
  *
  * @param mt
