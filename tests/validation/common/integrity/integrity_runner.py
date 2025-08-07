@@ -388,6 +388,11 @@ class StreamAudioIntegrityRunner(AudioIntegrityRunner):
 
     def stop_and_verify(self, timeout: int = 10):
         self.stop(timeout)
+        if not self.process:
+            logger.error(
+                f"No process was started for stream audio integrity check on {self.host.name} for {self.out_name}"
+            )
+            return False
         if self.process.return_code != 0:
             logger.error(
                 f"Stream audio integrity check failed on {self.host.name} for {self.out_name}"
