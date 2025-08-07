@@ -22,6 +22,12 @@ k_bit_mapping = {
 }
 
 
+@pytest.mark.parametrize(
+    "media_file",
+    [st41_files["st41_p29_long_file"]],
+    indirect=["media_file"],
+    ids=["st41_p29_long_file"],
+)
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_no_chain(
     hosts,
@@ -32,15 +38,16 @@ def test_no_chain(
     type_mode,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     """
     Test the functionality with the tx_no_chain configuration set to True
     to ensure proper handling of unchained sessions for type modes rtp and frame.
     """
+    media_file_info, media_file_path = media_file
     payload_type = payload_type_mapping["pt115"]
     k_bit = k_bit_mapping["k0"]
     dit = dit_mapping["dit0"]
-    st41_file = st41_files["st41_p29_long_file"]["filename"]
 
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
@@ -51,14 +58,14 @@ def test_no_chain(
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=True,
-        nic_port_list=nic_port_list,
+        nic_port_list=nic_port_list,  # TODO: Fix vfs
         test_mode="unicast",
         payload_type=payload_type,
         type_=type_mode,
         fastmetadata_data_item_type=dit,
         fastmetadata_k_bit=k_bit,
         fastmetadata_fps="p59",
-        fastmetadata_url=os.path.join(media, st41_file),
+        fastmetadata_url=media_file_path,
     )
 
     host = list(hosts.values())[0]

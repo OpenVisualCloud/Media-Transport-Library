@@ -22,6 +22,12 @@ k_bit_mapping = {
 }
 
 
+@pytest.mark.parametrize(
+    "media_file",
+    [st41_files["st41_p29_long_file"]],
+    indirect=["media_file"],
+    ids=["st41_p29_long_file"],
+)
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_type_mode(
@@ -34,12 +40,13 @@ def test_type_mode(
     type_mode,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     """
     Test the functionality of different transmission modes (unicast, multicast)
     and data types (RTP, frame) to ensure proper handling of long files and frame splitting.
     """
-    st41_file = st41_files["st41_p29_long_file"]["filename"]
+    media_file_info, media_file_path = media_file
     payload_type = payload_type_mapping["pt115"]
     k_bit = k_bit_mapping["k0"]
     dit = dit_mapping["dit0"]
@@ -53,14 +60,14 @@ def test_type_mode(
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=nic_port_list,
+        nic_port_list=nic_port_list,  # TODO: Fix vfs
         test_mode=test_mode,
         payload_type=payload_type,
         type_=type_mode,
         fastmetadata_data_item_type=dit,
         fastmetadata_k_bit=k_bit,
         fastmetadata_fps="p59",
-        fastmetadata_url=os.path.join(media, st41_file),
+        fastmetadata_url=media_file_path,
     )
     host = list(hosts.values())[0]
 

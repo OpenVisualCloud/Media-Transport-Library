@@ -23,6 +23,12 @@ k_bit_mapping = {
 
 
 @pytest.mark.parametrize(
+    "media_file",
+    [st41_files["st41_p29_long_file"]],
+    indirect=["media_file"],
+    ids=["st41_p29_long_file"],
+)
+@pytest.mark.parametrize(
     "fps",
     ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
 )
@@ -35,12 +41,13 @@ def test_fps(
     fps,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     """
     Test the functionality of different frame rates (fps) fastmetadata_fps to ensure the system handles various
     frame rates correctly.
     """
-    st41_file = st41_files["st41_p29_long_file"]["filename"]
+    media_file_info, media_file_path = media_file
     payload_type = payload_type_mapping["pt115"]
     type_mode = "rtp"
     dit = dit_mapping["dit0"]
@@ -55,14 +62,14 @@ def test_fps(
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=nic_port_list,
+        nic_port_list=nic_port_list,  # TODO: Fix vfs
         test_mode="unicast",
         payload_type=payload_type,
         type_=type_mode,
         fastmetadata_data_item_type=dit,
         fastmetadata_k_bit=k_bit,
         fastmetadata_fps=fps,
-        fastmetadata_url=os.path.join(media, st41_file),
+        fastmetadata_url=media_file_path,
     )
     host = list(hosts.values())[0]
 
