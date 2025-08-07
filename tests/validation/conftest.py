@@ -66,7 +66,7 @@ def mtl_path(test_config: dict) -> str:
 
 @pytest.fixture(scope="session", autouse=True)
 def keep(request):
-    keep = request.config.getoption("--keep")
+    keep = request.config.getoption("--keep", None)
     if keep is None:
         keep = "none"
     if keep.lower() not in ["all", "failed", "none"]:
@@ -77,7 +77,7 @@ def keep(request):
 
 @pytest.fixture(scope="session", autouse=True)
 def dmesg(request):
-    dmesg = request.config.getoption("--dmesg")
+    dmesg = request.config.getoption("--dmesg", None)
     if dmesg is None:
         dmesg = "keep"
     if dmesg.lower() not in ["clear", "keep"]:
@@ -183,7 +183,10 @@ def log_session():
     os.makedirs(path, exist_ok=True)
     os.symlink(folder, path_symlink)
     yield
-    shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+    if os.path.exists("pytest.log"):
+        shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+    else:
+        logging.warning("pytest.log not found, skipping copy")
     csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
 
 
