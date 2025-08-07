@@ -8,31 +8,43 @@ import pytest
 from mtl_engine.media_files import yuv_files_interlace
 
 
-@pytest.mark.parametrize("format", yuv_files_interlace.keys())
+@pytest.mark.parametrize(
+    "media_file",
+    list(yuv_files_interlace.values()),
+    indirect=["media_file"],
+    ids=list(yuv_files_interlace.keys()),
+)
 def test_interlace(
-    hosts, build, media, nic_port_list, test_time, format, test_config, prepare_ramdisk
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    test_config,
+    prepare_ramdisk,
+    media_file,
 ):
-    st22p_file = yuv_files_interlace[format]
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_interlace_{format}"
+    capture_cfg["test_name"] = f"test_interlace_{media_file_info['filename']}"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st22p_sessions(
         config=config,
         nic_port_list=host.vfs,
         test_mode="multicast",
-        width=st22p_file["width"],
-        height=st22p_file["height"],
-        fps=f"p{st22p_file['fps']}",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=f"p{media_file_info['fps']}",
         codec="JPEG-XS",
         quality="speed",
-        input_format=st22p_file["file_format"],
-        output_format=st22p_file["file_format"],
-        st22p_url=os.path.join(media, st22p_file["filename"]),
+        input_format=media_file_info["file_format"],
+        output_format=media_file_info["file_format"],
+        st22p_url=media_file_path,
         codec_thread_count=2,
         interlaced=True,
     )
