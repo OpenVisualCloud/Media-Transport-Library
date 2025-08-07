@@ -117,7 +117,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
   if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
-    s->stat_pkts_wrong_interlace_dropped++;
+    ST_SESSION_STAT_INC(s, stat_pkts_wrong_interlace_dropped);
     return -EINVAL;
   }
   /* 0b10: first field (bit 1 set, bit 0 clear)
@@ -157,6 +157,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->st40_stat_frames_received);
+    s->port_user_stats->port[MTL_PORT_P].frames++;
     s->tmstamp = tmstamp;
   }
   s->st40_stat_pkts_received++;
@@ -982,5 +983,31 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rx_ancillary_queue_id(s, i);
   }
 
+  return 0;
+}
+
+int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* stats) {
+  struct st_rx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_RX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_rx_ancillary_session_impl* s = s_impl->impl;
+
+  memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  return 0;
+}
+
+int st40_rx_reset_session_stats(st40_rx_handle handle) {
+  struct st_rx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_RX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_rx_ancillary_session_impl* s = s_impl->impl;
+
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   return 0;
 }

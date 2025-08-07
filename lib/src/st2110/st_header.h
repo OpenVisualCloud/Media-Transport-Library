@@ -78,6 +78,18 @@
 
 #define ST_SESSION_STAT_TIMEOUT_US (10)
 
+#define ST_SESSION_STAT_INC(s, stat) \
+  do { \
+    (s)->stat++; \
+    (s)->port_user_stats->stat++; \
+  } while (0)
+
+  #define ST_SESSION_STAT_ADD(s, stat, val) \
+    do { \
+      (s)->stat += (val); \
+      (s)->port_user_stats->stat += (val); \
+    } while (0)
+
 enum st21_tx_frame_status {
   ST21_TX_STAT_UNKNOWN = 0,
   ST21_TX_STAT_WAIT_FRAME,
@@ -370,7 +382,7 @@ struct st_tx_video_session_impl {
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
   /* use atomic safe? */
-  struct st20_tx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st20_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
 
   /* stat */
   rte_atomic32_t stat_frame_cnt;
@@ -584,6 +596,7 @@ struct st_rx_video_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
 
@@ -666,7 +679,7 @@ struct st_rx_video_session_impl {
   uint16_t burst_loss_cnt;
 
   /* use atomic safe? */
-  struct st20_rx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st20_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
 
   int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                      enum mtl_session_port s_port, bool ctrl_thread);
@@ -824,6 +837,8 @@ struct st_tx_audio_session_impl {
   /* dedicated queue tx mode */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
+
+  struct st30_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
 
   enum st30_tx_pacing_way tx_pacing_way;
   /* for rl based pacing */
@@ -1031,6 +1046,7 @@ struct st_rx_audio_session_impl {
   int st30_stat_pkts_rtp_ring_full;
   uint64_t st30_stat_last_time;
   uint32_t stat_max_notify_frame_us;
+  struct st30_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
 };
@@ -1084,6 +1100,8 @@ struct st_tx_ancillary_session_impl {
   /* dedicated queue tx mode */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
+
+  struct st40_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
 
   uint32_t max_pkt_len; /* max data len(byte) for each pkt */
 
@@ -1187,6 +1205,7 @@ struct st_rx_ancillary_session_impl {
   int st40_stat_pkts_received;
   uint64_t st40_stat_last_time;
   uint32_t stat_max_notify_rtp_us;
+  struct st40_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
   /* for interlace */
@@ -1250,6 +1269,8 @@ struct st_tx_fastmetadata_session_impl {
   int inflight_cnt[MTL_SESSION_PORT_MAX]; /* for stats */
   struct rte_ring* packet_ring;
   bool second_field;
+
+  struct st41_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
 
   /* dedicated queue tx mode */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
@@ -1356,6 +1377,7 @@ struct st_rx_fastmetadata_session_impl {
   int st41_stat_pkts_received;
   uint64_t st41_stat_last_time;
   uint32_t stat_max_notify_rtp_us;
+  struct st41_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
   /* for interlace */

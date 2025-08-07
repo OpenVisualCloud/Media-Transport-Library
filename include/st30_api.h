@@ -529,6 +529,101 @@ struct st30_rx_ops {
 };
 
 /**
+ * A structure used to retrieve general statistics(I/O) for a st30 tx port.
+ */
+struct st30_tx_users_stats {
+  struct st_tx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Base structure for tx port status */
+  uint64_t stat_epoch_mismatch;
+  uint64_t stat_epoch_drop;
+  uint64_t stat_epoch_onward;
+  uint64_t stat_epoch_late;
+  uint64_t stat_exceed_frame_time;
+  uint64_t stat_error_user_timestamp;
+  uint64_t stat_recoverable_error;
+  uint64_t stat_unrecoverable_error;
+  /* rate limit stats only */
+  uint64_t stat_pkts_burst;
+  uint64_t stat_pad_pkts_burst;
+  uint64_t stat_warmup_pkts_burst;
+  uint64_t stat_mismatch_sync_point;
+  uint64_t stat_recalculate_warmup;
+  uint64_t stat_hit_backup_cp;
+
+};
+
+/**
+ * A structure used to retrieve general statistics(I/O) for a st30 rx port.
+ */
+struct st30_rx_user_stats {
+  struct st_rx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Base structure for rx port status */
+  uint64_t st30_stat_pkts_redundant; /**< Total number of redundant packets */
+  uint64_t st30_stat_pkts_out_of_order; /**< Total number of out of order packets */
+  uint64_t st30_stat_pkts_dropped;
+  uint64_t st30_stat_pkts_wrong_ssrc_dropped; /**< Total number of packets dropped due to wrong ssrc */
+  uint64_t st30_stat_pkts_wrong_pt_dropped; /**< Total number of packets dropped
+                                                   due to wrong payload type */
+  uint64_t st30_stat_pkts_len_mismatch_dropped; /**< Total number of bytes received */
+  uint64_t st30_stat_slot_get_frame_fail;
+  uint64_t st30_stat_pkts_rtp_ring_full;
+};
+
+/**
+ * Retrieve the general statistics(I/O) for one tx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_users_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one tx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30_tx_reset_session_stats(st30_tx_handle handle);
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-30(audio) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-30(audio) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-30(audio) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-30(audio) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st30_rx_reset_session_stats(st30_rx_handle handle);
+
+/**
  * Create one tx st2110-30(audio) session.
  *
  * @param mt

@@ -353,6 +353,23 @@ static void st_app_sig_handler(int signo) {
   return;
 }
 
+// Helper functions to print base stats
+void print_tx_users_stats(const char* tag, int session_idx, int port_idx, struct st_tx_port_stats* stats) {
+  info("%s TX Session %d (port %d):\n", tag, session_idx, port_idx);
+  info("  Packets: %" PRIu64 "\n", stats->packets);
+  info("  Bytes:   %" PRIu64 "\n", stats->bytes);
+  info("  Build:   %" PRIu64 "\n", stats->build);
+  info("  Frames:  %" PRIu64 "\n", stats->frames);
+}
+
+void print_rx_user_stats(const char* tag, int session_idx, int port_idx, struct st_rx_port_stats* stats) {
+  info("%s RX Session %d (port %d):\n", tag, session_idx, port_idx);
+  info("  Packets: %" PRIu64 "\n", stats->packets);
+  info("  Bytes:   %" PRIu64 "\n", stats->bytes);
+  info("  Frames:  %" PRIu64 "\n", stats->frames);
+  info("  Err_packets:   %" PRIu64 "\n", stats->err_packets);
+}
+
 int main(int argc, char** argv) {
   int ret;
   struct st_app_context* ctx;
@@ -617,8 +634,121 @@ int main(int argc, char** argv) {
     if (ctx->pcapng_max_pkts && (run_time_s == 10)) { /* trigger pcap dump if */
       st_app_pcap(ctx);
     }
+
+    for (int j = 0; j < 2; j++) {
+      struct mtl_port_status stats;
+      int ret = mtl_get_port_stats(ctx->st, j, &stats);
+
+      if (ret == 0) {
+      info("MTL Port Status:\n");
+      info("  RX Packets:        %" PRIu64 "\n", stats.rx_packets);
+      info("  TX Packets:        %" PRIu64 "\n", stats.tx_packets);
+      info("  RX Bytes:          %" PRIu64 "\n", stats.rx_bytes);
+      info("  TX Bytes:          %" PRIu64 "\n", stats.tx_bytes);
+      info("  RX Err Packets:    %" PRIu64 "\n", stats.rx_err_packets);
+      info("  RX HW Dropped:     %" PRIu64 "\n", stats.rx_hw_dropped_packets);
+      info("  RX No Mbuf:        %" PRIu64 "\n", stats.rx_nombuf_packets);
+      info("  TX Err Packets:    %" PRIu64 "\n", stats.tx_err_packets);
+      }
+    }
+
+    // Print statistics for all tx_st20 sessions
+    for (int i = 0; i < ctx->tx_video_session_cnt; i++) {
+      struct st_app_tx_video_session* session = &ctx->tx_video_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st20_tx_users_stats stats_st20;
+        int ret = st20_tx_get_session_stats(session->handle, &stats_st20);
+        if (ret == 0) {
+          print_tx_users_stats("ST20", i, j, &stats_st20.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all tx_st30 sessions
+    for (int i = 0; i < ctx->tx_audio_session_cnt; i++) {
+      struct st_app_tx_audio_session* session = &ctx->tx_audio_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st30_tx_users_stats stats_st30;
+        int ret = st30_tx_get_session_stats(session->handle, &stats_st30);
+        if (ret == 0) {
+          print_tx_users_stats("ST30", i, j, &stats_st30.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all tx_st40 sessions
+    for (int i = 0; i < ctx->tx_anc_session_cnt; i++) {
+      struct st_app_tx_anc_session* session = &ctx->tx_anc_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st40_tx_users_stats stats_st40;
+        int ret = st40_tx_get_session_stats(session->handle, &stats_st40);
+        if (ret == 0) {
+          print_tx_users_stats("ST40", i, j, &stats_st40.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all tx_st41 sessions
+    for (int i = 0; i < ctx->tx_fmd_session_cnt; i++) {
+      struct st_app_tx_fmd_session* session = &ctx->tx_fmd_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st41_tx_users_stats stats_st41;
+        int ret = st41_tx_get_session_stats(session->handle, &stats_st41);
+        if (ret == 0) {
+          print_tx_users_stats("ST41", i, j, &stats_st41.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all rx_st20 sessions
+    for (int i = 0; i < ctx->rx_video_session_cnt; i++) {
+      struct st_app_rx_video_session* session = &ctx->rx_video_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st20_rx_user_stats stats_st20;
+        int ret = st20_rx_get_session_stats(session->handle, &stats_st20);
+        if (ret == 0) {
+          print_rx_user_stats("ST20", i, j, &stats_st20.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all rx_st30 sessions
+    for (int i = 0; i < ctx->rx_audio_session_cnt; i++) {
+      struct st_app_rx_audio_session* session = &ctx->rx_audio_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st30_rx_user_stats stats_st30;
+        int ret = st30_rx_get_session_stats(session->handle, &stats_st30);
+        if (ret == 0) {
+          print_rx_user_stats("ST30", i, j, &stats_st30.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all rx_st40 sessions
+    for (int i = 0; i < ctx->rx_anc_session_cnt; i++) {
+      struct st_app_rx_anc_session* session = &ctx->rx_anc_sessions[i];
+        for (int j = 0; j < 2; j++) {
+        struct st40_rx_user_stats stats_st40;
+        int ret = st40_rx_get_session_stats(session->handle, &stats_st40);
+        if (ret == 0) {
+          print_rx_user_stats("ST40", i, j, &stats_st40.port[j]);
+        }
+      }
+    }
+
+    // Print statistics for all rx_st41 sessions
+    for (int i = 0; i < ctx->rx_fmd_session_cnt; i++) {
+      struct st_app_rx_fmd_session* session = &ctx->rx_fmd_sessions[i];
+      for (int j = 0; j < 2; j++) {
+        struct st41_rx_user_stats stats_st41;
+        int ret = st41_rx_get_session_stats(session->handle, &stats_st41);
+        if (ret == 0) {
+          print_rx_user_stats("ST41", i, j, &stats_st41.port[j]);
+        }
+      }
+    }
+    info("%s, start to ending\n", __func__);
   }
-  info("%s, start to ending\n", __func__);
 
   if (!ctx->runtime_session) {
     /* stop st first */

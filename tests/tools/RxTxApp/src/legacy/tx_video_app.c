@@ -706,19 +706,19 @@ static int app_tx_video_io_stat(struct st_app_tx_video_session* s) {
   double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
   double tx_rate_m, fps;
   int ret;
-  struct st20_tx_port_status stats;
+  struct st20_tx_users_stats stats;
 
   if (!s->handle) return 0;
 
   for (uint8_t port = 0; port < s->num_port; port++) {
-    ret = st20_tx_get_port_stats(s->handle, port, &stats);
+    ret = st20_tx_get_session_stats(s->handle, &stats);
     if (ret < 0) return ret;
-    tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
-    fps = (double)stats.frames / time_sec;
+    tx_rate_m = (double)stats.port[port].bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.port[port].frames / time_sec;
 
     info("%s(%d,%u), tx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
-    st20_tx_reset_port_stats(s->handle, port);
   }
+  st20_tx_reset_session_stats(s->handle);
 
   s->last_stat_time_ns = cur_time;
   return 0;

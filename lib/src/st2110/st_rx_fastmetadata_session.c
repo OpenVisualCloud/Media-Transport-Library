@@ -124,6 +124,8 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     s->st41_stat_pkts_out_of_order++;
+    s->port_user_stats->port[s_port].err_packets++;
+    s->port_user_stats->stat_pkts_out_of_order++;
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -141,6 +143,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 
   if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->st41_stat_frames_received);
+    s->port_user_stats->port[MTL_PORT_P].frames++;
     s->tmstamp = tmstamp;
   }
   s->st41_stat_pkts_received++;
@@ -969,5 +972,31 @@ int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta) {
     meta->queue_id[i] = rx_fastmetadata_queue_id(s, i);
   }
 
+  return 0;
+}
+
+int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* stats) {
+  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_RX_FMD) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
+
+  memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  return 0;
+}
+
+int st41_rx_reset_session_stats(st41_rx_handle handle) {
+  struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_RX_FMD) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_rx_fastmetadata_session_impl* s = s_impl->impl;
+
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   return 0;
 }
