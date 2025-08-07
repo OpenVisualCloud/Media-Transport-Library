@@ -57,12 +57,13 @@ def test_fps(
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_fps_st41_{fps}"
+    host = list(hosts.values())[0]
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=nic_port_list,  # TODO: Fix vfs
+        nic_port_list=host.vfs,
         test_mode="unicast",
         payload_type=payload_type,
         type_=type_mode,
@@ -71,7 +72,6 @@ def test_fps(
         fastmetadata_fps=fps,
         fastmetadata_url=media_file_path,
     )
-    host = list(hosts.values())[0]
 
     rxtxapp.execute_test(
         config=config,

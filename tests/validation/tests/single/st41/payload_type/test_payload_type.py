@@ -55,11 +55,13 @@ def test_payload_type(
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_payload_type_{payload_type}_{type_mode}"
 
+    host = list(hosts.values())[0]
+
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=nic_port_list,  # TODO: Fix vfs
+        nic_port_list=host.vfs,
         test_mode="unicast",
         payload_type=payload_type_mapping[payload_type],
         type_=type_mode,
@@ -69,7 +71,6 @@ def test_payload_type(
         fastmetadata_url=media_file_path,
     )
 
-    host = list(hosts.values())[0]
     rxtxapp.execute_test(
         config=config,
         build=build,

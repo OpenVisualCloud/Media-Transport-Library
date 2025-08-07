@@ -56,11 +56,13 @@ def test_type_mode(
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_type_mode_{test_mode}_{type_mode}"
 
+    host = list(hosts.values())[0]
+
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=nic_port_list,  # TODO: Fix vfs
+        nic_port_list=host.vfs,
         test_mode=test_mode,
         payload_type=payload_type,
         type_=type_mode,
@@ -69,7 +71,6 @@ def test_type_mode(
         fastmetadata_fps="p59",
         fastmetadata_url=media_file_path,
     )
-    host = list(hosts.values())[0]
 
     rxtxapp.execute_test(
         config=config,
