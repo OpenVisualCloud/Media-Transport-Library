@@ -152,7 +152,7 @@ def prepare_ramdisk(hosts, test_config):
             preparer.start()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def mtl_manager(hosts):
     """
     Automatically start MtlManager on all hosts at the beginning of the test session,

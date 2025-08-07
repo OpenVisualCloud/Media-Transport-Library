@@ -20,7 +20,7 @@ class MtlManager:
         :param host: Host object with a .connection attribute.
         """
         self.host = host
-        self.cmd = None
+        self.cmd = "sudo MtlManager"
         self.mtl_manager_process = None
 
     def start(self):
@@ -30,7 +30,6 @@ class MtlManager:
         """
         if not self.mtl_manager_process or not self.mtl_manager_process.running:
             connection = self.host.connection
-            self.cmd = "sudo MtlManager"
             try:
                 logger.info(f"Running command on host {self.host.name}: {self.cmd}")
                 self.mtl_manager_process = connection.start_process(
