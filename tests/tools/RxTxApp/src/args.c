@@ -57,7 +57,7 @@ enum st_args_cmd {
   ST_ARG_PACING_WAY,
   ST_ARG_START_VRX,
   ST_ARG_PAD_INTERVAL,
-  ST_ARG_NO_PAD_STATIC,
+  ST_ARG_PAD_STATIC,
   ST_ARG_SHAPING,
   ST_ARG_TIMESTAMP_FIRST_PKT,
   ST_ARG_TIMESTAMP_EPOCH,
@@ -152,6 +152,7 @@ enum st_args_cmd {
   ST_ARG_RSS_SCH_NB,
   ST_ARG_ALLOW_ACROSS_NUMA_CORE,
   ST_ARG_NO_MULTICAST,
+  ST_ARG_TX_USER_PACING_OFFSET,
   ST_ARG_MAX,
 };
 
@@ -209,7 +210,7 @@ static struct option st_app_args_options[] = {
     {"pacing_way", required_argument, 0, ST_ARG_PACING_WAY},
     {"start_vrx", required_argument, 0, ST_ARG_START_VRX},
     {"pad_interval", required_argument, 0, ST_ARG_PAD_INTERVAL},
-    {"no_static_pad", no_argument, 0, ST_ARG_NO_PAD_STATIC},
+    {"static_pad", no_argument, 0, ST_ARG_PAD_STATIC},
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
     {"ts_first_pkt", no_argument, 0, ST_ARG_TIMESTAMP_FIRST_PKT},
     {"ts_delta_us", required_argument, 0, ST_ARG_TIMESTAMP_DELTA_US},
@@ -300,6 +301,7 @@ static struct option st_app_args_options[] = {
     {"rss_sch_nb", required_argument, 0, ST_ARG_RSS_SCH_NB},
     {"allow_across_numa_core", no_argument, 0, ST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"no_multicast", no_argument, 0, ST_ARG_NO_MULTICAST},
+    {"tx_user_pacing_offset", required_argument, 0, ST_ARG_TX_USER_PACING_OFFSET},
 
     {0, 0, 0, 0}};
 
@@ -600,8 +602,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_PAD_INTERVAL:
         ctx->tx_pad_interval = atoi(optarg);
         break;
-      case ST_ARG_NO_PAD_STATIC:
-        ctx->tx_no_static_pad = true;
+      case ST_ARG_PAD_STATIC:
+        ctx->tx_static_pad = true;
         break;
       case ST_ARG_TIMESTAMP_FIRST_PKT:
         ctx->tx_ts_first_pkt = true;
@@ -926,6 +928,9 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_NO_MULTICAST:
         p->flags |= MTL_FLAG_NO_MULTICAST;
+        break;
+      case ST_ARG_TX_USER_PACING_OFFSET:
+        ctx->user_pacing.user_pacing_offset = atoi(optarg);
         break;
       case '?':
         break;

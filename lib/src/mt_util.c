@@ -251,13 +251,13 @@ int mt_build_port_map(struct mtl_main_impl* impl, char** ports, enum mtl_port* m
   return 0;
 }
 
-int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                               uint64_t rl_bps, float pad_interval) {
+int mt_pacing_train_pad_result_add(struct mtl_main_impl* impl, enum mtl_port port,
+                                   uint64_t input_bps, float pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
-    if (ptr[i].rl_bps) continue;
-    ptr[i].rl_bps = rl_bps;
+    if (ptr[i].input_bps) continue;
+    ptr[i].input_bps = input_bps;
     ptr[i].pacing_pad_interval = pad_interval;
     return 0;
   }
@@ -266,12 +266,12 @@ int mt_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
   return -ENOMEM;
 }
 
-int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                  uint64_t rl_bps, float* pad_interval) {
+int mt_pacing_train_pad_result_search(struct mtl_main_impl* impl, enum mtl_port port,
+                                      uint64_t rl_bps, float* pad_interval) {
   struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
-    if (rl_bps == ptr[i].rl_bps) {
+    if (rl_bps == ptr[i].input_bps && ptr[i].pacing_pad_interval) {
       *pad_interval = ptr[i].pacing_pad_interval;
       return 0;
     }
@@ -281,9 +281,9 @@ int mt_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port
   return -EINVAL;
 }
 
-int mt_audio_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port port,
-                                     uint64_t input_bps, uint64_t profiled_bps) {
-  struct mt_audio_pacing_train_result* ptr = &mt_if(impl, port)->audio_pt_results[0];
+int mt_pacing_train_bps_result_add(struct mtl_main_impl* impl, enum mtl_port port,
+                                   uint64_t input_bps, uint64_t profiled_bps) {
+  struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
     if (ptr[i].input_bps) continue;
@@ -296,12 +296,12 @@ int mt_audio_pacing_train_result_add(struct mtl_main_impl* impl, enum mtl_port p
   return -ENOMEM;
 }
 
-int mt_audio_pacing_train_result_search(struct mtl_main_impl* impl, enum mtl_port port,
-                                        uint64_t input_bps, uint64_t* profiled_bps) {
-  struct mt_audio_pacing_train_result* ptr = &mt_if(impl, port)->audio_pt_results[0];
+int mt_pacing_train_bps_result_search(struct mtl_main_impl* impl, enum mtl_port port,
+                                      uint64_t input_bps, uint64_t* profiled_bps) {
+  struct mt_pacing_train_result* ptr = &mt_if(impl, port)->pt_results[0];
 
   for (int i = 0; i < MT_MAX_RL_ITEMS; i++) {
-    if (input_bps == ptr[i].input_bps) {
+    if (input_bps == ptr[i].input_bps && ptr[i].profiled_bps) {
       *profiled_bps = ptr[i].profiled_bps;
       return 0;
     }

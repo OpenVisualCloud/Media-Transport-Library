@@ -2,9 +2,9 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import os
 
+import mtl_engine.RxTxApp as rxtxapp
 import pytest
-import tests.Engine.RxTxApp as rxtxapp
-from tests.Engine.media_files import st41_files
+from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
     "pt115": 115,
@@ -27,11 +27,14 @@ k_bit_mapping = {
     ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
 )
 def test_fps(
+    hosts,
     build,
     media,
     nic_port_list,
     test_time,
     fps,
+    test_config,
+    prepare_ramdisk,
 ):
     """
     Test the functionality of different frame rates (fps) fastmetadata_fps to ensure the system handles various
@@ -42,6 +45,11 @@ def test_fps(
     type_mode = "rtp"
     dit = dit_mapping["dit0"]
     k_bit = k_bit_mapping["k0"]
+
+    # Get capture configuration from test_config.yaml
+    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    capture_cfg = dict(test_config.get("capture_cfg", {}))
+    capture_cfg["test_name"] = f"test_fps_st41_{fps}"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
@@ -56,5 +64,12 @@ def test_fps(
         fastmetadata_fps=fps,
         fastmetadata_url=os.path.join(media, st41_file),
     )
+    host = list(hosts.values())[0]
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        capture_cfg=capture_cfg,
+    )

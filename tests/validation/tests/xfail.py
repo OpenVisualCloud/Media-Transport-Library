@@ -3,7 +3,7 @@
 import logging
 
 import pytest
-from tests.Engine.stash import set_issue
+from mtl_engine.stash import set_issue
 
 
 def add_issue(issue: str, request):
