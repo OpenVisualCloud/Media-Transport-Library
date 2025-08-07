@@ -13,7 +13,7 @@ from mtl_engine.media_files import yuv_files
     [
         ("i1080p25", 2),
         ("i1080p50", 2),
-        pytest.param("i1080p60", 4, marks=pytest.mark.smoke),
+        ("i1080p60", 4),
         ("i2160p60", 6),
     ],
 )

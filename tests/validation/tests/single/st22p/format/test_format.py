@@ -8,13 +8,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
-@pytest.mark.parametrize(
-    "format",
-    [
-        pytest.param(f, marks=pytest.mark.smoke) if f == "Penguin_1080p" else ()
-        for f in yuv_files_422p10le.keys()
-    ],
-)
+@pytest.mark.parametrize("format", yuv_files_422p10le.keys())
 def test_format(
     hosts, build, media, nic_port_list, test_time, format, test_config, prepare_ramdisk
 ):

@@ -9,5 +9,9 @@ hosts:
       - pci_device: 8086:1592
         interface_index: 0 # all
     connections:
-      - ip_address: 127.0.0.1
-        connection_type: LocalConnection
+      - ip_address: ip_address
+        connection_type: SSHConnection
+        connection_options:
+          port: 22
+          username: username
+          password: passowrd

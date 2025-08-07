@@ -8,7 +8,6 @@ import os
 import re
 import time
 
-from mfd_connect import SSHConnection
 from mtl_engine.RxTxApp import prepare_tcpdump
 
 from . import rxtxapp_config
@@ -79,9 +78,9 @@ def log_to_file(message: str, host, build: str):
 
     if f.exists():
         current_content = f.read_text()
-        f.write_text(current_content + log_entry, encoding="utf-8")
+        f.write_text(current_content + log_entry)
     else:
-        f.write_text(log_entry, encoding="utf-8")
+        f.write_text(log_entry)
 
 
 def execute_test(
@@ -822,9 +821,8 @@ def generate_rxtxapp_rx_config(
         config_json = json.dumps(config, indent=4)
         remote_conn = host.connection
         f = remote_conn.path(config_file)
-        if isinstance(remote_conn, SSHConnection):
-            config_json = config_json.replace('"', '\\"')
-        f.write_text(config_json, encoding="utf-8")
+        json_content = config_json.replace('"', '\\"')
+        f.write_text(json_content)
 
         logger.info("Config file written successfully")
         log_to_file(f"Generated RX config file: {config_file}", host, build)
@@ -889,9 +887,8 @@ def generate_rxtxapp_rx_config_multiple(
         config_json = json.dumps(config, indent=4)
         remote_conn = host.connection
         f = remote_conn.path(config_file)
-        if isinstance(remote_conn, SSHConnection):
-            config_json = config_json.replace('"', '\\"')
-        f.write_text(config_json, encoding="utf-8")
+        json_content = config_json.replace('"', '\\"')
+        f.write_text(json_content)
 
         logger.info("Multiple config file written successfully")
         log_to_file(f"Generated RX multiple config file: {config_file}", host, build)
@@ -953,9 +950,8 @@ def generate_rxtxapp_tx_config(
         config_json = json.dumps(config, indent=4)
         remote_conn = host.connection
         f = remote_conn.path(config_file)
-        if isinstance(remote_conn, SSHConnection):
-            config_json = config_json.replace('"', '\\"')
-        f.write_text(config_json, encoding="utf-8")
+        json_content = config_json.replace('"', '\\"')
+        f.write_text(json_content)
 
         logger.info("TX Config file written successfully")
         log_to_file(f"Generated TX config file: {config_file}", host, build)
