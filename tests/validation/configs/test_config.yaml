@@ -2,16 +2,16 @@ build: /path/to/Media-Transport-Library
 ffmpeg_path: /path/to/ffmpeg
 ffmpeg_version: "7.0"
 mtl_path: /path/to/Media-Transport-Library
-media_path: /path/to/media
+media_path: /mnt/media
 openh264_path: /path/to/openh264
 capture_cfg:
   enable: false
   test_name: test_name
-  pcap_dir: /path/to/pcap_files
+  pcap_dir: /home/ubuntu/pcap_files
   capture_time: 5
   interface: null
 ramdisk:
-  pcap_dir: /path/to/pcap_files
+  pcap_dir: /home/ubuntu/pcap_files
   tmpfs_size: 768G
   tmpfs_name: tmpfs_name
   use_sudo: true
