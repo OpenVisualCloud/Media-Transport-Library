@@ -304,7 +304,9 @@ class FileAudioIntegrityRunner(AudioIntegrityRunner):
             cmd, shell=True, stderr_to_stdout=True, expected_return_codes=(0, 1)
         )
         if result.return_code > 0:
-            logger.error(f"Audio integrity check failed on {self.host.name}: {self.out_name}")
+            logger.error(
+                f"Audio integrity check failed on {self.host.name}: {self.out_name}"
+            )
             logger.error(result.stdout)
             return False
         logger.info(
