@@ -4,6 +4,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from mtl_engine.execute import LOG_FOLDER
 from mtl_engine.media_files import audio_files
 
 
@@ -43,6 +44,11 @@ def test_st30p_sampling(
         f"test_st30p_sampling_{media_file_info['format']}"  # Set a unique pcap file name
     )
 
+    # Ensure the output directory exists.
+    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
+    os.makedirs(log_dir, exist_ok=True)
+    out_file_url = os.path.join(log_dir, "out.wav")
+
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
         config=config,
@@ -53,7 +59,7 @@ def test_st30p_sampling(
         audio_sampling=audio_sampling,
         audio_ptime="1",
         filename=media_file_path,
-        out_url=media_file_path,  # TODO: Fix path
+        out_url=out_file_url,
     )
 
     rxtxapp.execute_test(
