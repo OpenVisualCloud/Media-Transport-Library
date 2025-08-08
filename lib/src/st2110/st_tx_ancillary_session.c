@@ -305,7 +305,11 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
     to_epoch = 0; /* send asap */
   }
 
-  if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
+  if (epochs > next_epochs) {
+    s->stat_epoch_drop += (epochs - next_epochs);
+    // s->port_user_stats->stat_epoch_drop += (epochs - next_epochs);
+
+  }
   if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
 
   pacing->cur_epochs = epochs;
@@ -2211,4 +2215,30 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx) {
   struct st_frame_trans* frame_info = &s->st40_frames[idx];
 
   return frame_info->addr;
+}
+
+int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_users_stats* stats) {
+  struct st_tx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_TX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_tx_ancillary_session_impl* s = s_impl->impl;
+
+  memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  return 0;
+}
+
+int st40_tx_reset_session_stats(st40_tx_handle handle) {
+  struct st_tx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (s_impl->type != MT_HANDLE_TX_ANC) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_tx_ancillary_session_impl* s = s_impl->impl;
+
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  return 0;
 }

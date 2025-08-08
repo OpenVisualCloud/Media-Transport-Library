@@ -1770,8 +1770,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
-                            struct st20_tx_port_status* stats);
+int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_users_stats* stats);
 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session port.
@@ -1784,7 +1783,7 @@ int st20p_tx_get_port_stats(st20p_tx_handle handle, enum mtl_session_port port,
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20p_tx_reset_port_stats(st20p_tx_handle handle, enum mtl_session_port port);
+int st20p_tx_reset_session_stats(st20p_tx_handle handle);
 
 /**
  * Online update the destination info for the tx st2110-20(pipeline) session.
@@ -1953,8 +1952,7 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle);
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20p_rx_get_port_stats(st20p_rx_handle handle, enum mtl_session_port port,
-                            struct st20_rx_port_status* stats);
+int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats* stats);
 
 /**
  * Reset the general statistics(I/O) for one rx st2110-20(pipeline) session port.
@@ -1967,7 +1965,7 @@ int st20p_rx_get_port_stats(st20p_rx_handle handle, enum mtl_session_port port,
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20p_rx_reset_port_stats(st20p_rx_handle handle, enum mtl_session_port port);
+int st20p_rx_reset_session_stats(st20p_rx_handle handle);
 
 /**
  * Online update the source info for the rx st2110-20(pipeline) session.

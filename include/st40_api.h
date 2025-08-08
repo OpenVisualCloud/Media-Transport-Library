@@ -402,6 +402,50 @@ struct st40_rx_ops {
 };
 
 /**
+ * A structure used to retrieve general statistics(I/O) for a st40 tx port.
+ */
+struct st40_tx_users_stats {
+  struct st_tx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Base structure for tx port status */
+};
+
+/**
+ * A structure used to retrieve general statistics(I/O) for a st40 rx port.
+ */
+struct st40_rx_user_stats {
+  struct st_rx_port_stats port[MTL_SESSION_PORT_MAX];
+  uint64_t stat_pkts_wrong_interlace_dropped; /**< Base structure for rx port status */
+};
+
+/**
+ * Retrieve the general statistics(I/O) for one tx st2110-40(ancillary) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-40(video) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_users_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one tx st2110-40(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-40(video) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40_tx_reset_session_stats(st40_tx_handle handle);
+
+
+/**
  * Create one tx st2110-40(ancillary) session.
  *
  * @param mt
@@ -452,6 +496,34 @@ int st40_tx_update_destination(st40_tx_handle handle, struct st_tx_dest_info* ds
  *   - Otherwise, the framebuffer pointer.
  */
 void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx);
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-40(ancillary) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(ancillary) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-40(ancillary) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(ancillary) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40_rx_reset_session_stats(st40_rx_handle handle);
 
 /**
  * Get the mbuf pointer and usrptr of the mbuf from the tx st2110-40(ancillary) session.

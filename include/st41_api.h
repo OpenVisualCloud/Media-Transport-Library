@@ -278,6 +278,78 @@ struct st41_rx_ops {
 };
 
 /**
+ * A structure used to retrieve general statistics(I/O) for a st41 tx port.
+ */
+struct st41_tx_users_stats {
+  struct st_tx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Base structure for tx port stats */
+};
+
+/**
+ * A structure used to retrieve general statistics(I/O) for a st41 rx port.
+ */
+struct st41_rx_user_stats {
+  struct st_rx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Base structure for rx port stats */
+  uint64_t stat_pkts_out_of_order;
+};
+
+/**
+ * Retrieve the general statistics(I/O) for one tx st2110-20(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_users_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one tx st2110-41(video) session port.
+ *
+ * @param handle
+ *   The handle to the tx st2110-41(video) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st41_tx_reset_session_stats(st41_tx_handle handle);
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-40(fastmetadata) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(fastmetadata) session.
+ * @param port
+ *   The port index.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-41(fastmetadata) session port.
+ *
+ * @param handle
+ *   The handle to the rx st2110-41(fastmetadata) session.
+ * @param port
+ *   The port index.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st41_rx_reset_session_stats(st41_rx_handle handle);
+
+
+/**
  * Create one tx st2110-41(fast metadata) session.
  *
  * @param mt
