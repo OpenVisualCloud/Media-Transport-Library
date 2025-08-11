@@ -993,3 +993,325 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
     else:
         log_fail(f"Invalid video format: {video_format}")
         return None
+
+
+def execute_dual_test(
+    test_time: int,
+    build: str,
+    tx_host,
+    rx_host,
+    type_: str,
+    video_format: str,
+    pg_format: str,
+    video_url: str,
+    output_format: str,
+    multiple_sessions: bool = False,
+    tx_is_ffmpeg: bool = True,
+    capture_cfg=None,
+):
+    init_test_logging()
+
+    case_id = os.environ.get("PYTEST_CURRENT_TEST", "ffmpeg_dual_test")
+    case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
+
+    tx_nic_port_list = tx_host.vfs
+    rx_nic_port_list = rx_host.vfs
+    video_size, fps = decode_video_format_16_9(video_format)
+    
+    match output_format:
+        case "yuv":
+            ffmpeg_rx_f_flag = "-f rawvideo"
+        case "h264":
+            ffmpeg_rx_f_flag = "-c:v libopenh264"
+
+    if not multiple_sessions:
+        output_files = create_empty_output_files(output_format, 1, rx_host, build)
+        rx_cmd = (
+            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_dict['rx_interfaces']} "
+            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 -payload_type 112 "
+            f"-fps {fps} -pix_fmt yuv422p10le -video_size {video_size} "
+            f"-f mtl_st20p -i k {ffmpeg_rx_f_flag} {output_files[0]} -y"
+        )
+        if tx_is_ffmpeg:
+            tx_cmd = (
+                f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
+                f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+                f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
+            )
+        else:
+            tx_config_file = generate_rxtxapp_tx_config(
+                tx_nic_port_list[0], video_format, video_url, tx_host, build, multiple_sessions
+            )
+            tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file} --test_time {test_time}"
+    else:  # multiple sessions
+        output_files = create_empty_output_files(output_format, 2, rx_host, build)
+        # Implementation for multiple sessions would go here
+
+    logger.info(f"TX Command (host {tx_host.name}): {tx_cmd}")
+    logger.info(f"RX Command (host {rx_host.name}): {rx_cmd}")
+    log_to_file(f"TX Command (host {tx_host.name}): {tx_cmd}", tx_host, build)
+    log_to_file(f"RX Command (host {rx_host.name}): {rx_cmd}", rx_host, build)
+
+    rx_proc = None
+    tx_proc = None
+    tcpdump_tx = prepare_tcpdump(capture_cfg, tx_host)
+    tcpdump_rx = prepare_tcpdump(capture_cfg, rx_host)
+
+    try:
+        # Start RX first
+        rx_proc = run(rx_cmd, background=True, host=rx_host)
+        time.sleep(2)
+        
+        # Start TX
+        tx_proc = run(tx_cmd, background=True, host=tx_host)
+        
+        # Wait for test completion
+        time.sleep(test_time + 5)
+        
+    except Exception as e:
+        logger.error(f"Error during dual test execution: {e}")
+        log_to_file(f"Error during dual test execution: {e}", tx_host, build)
+        log_to_file(f"Error during dual test execution: {e}", rx_host, build)
+        raise
+    finally:
+        # Stop processes
+        if tx_proc:
+            run(f"pkill -f '{tx_cmd.split()[0]}'", host=tx_host)
+        if rx_proc:
+            run(f"pkill -f '{rx_cmd.split()[0]}'", host=rx_host)
+        
+        # Stop tcpdump if running
+        if tcpdump_tx:
+            tcpdump_tx.stop()
+        if tcpdump_rx:
+            tcpdump_rx.stop()
+            
+        time.sleep(2)
+
+    passed = False
+    match output_format:
+        case "yuv":
+            passed = check_output_video_yuv(output_files[0], rx_host, build, video_url)
+        case "h264":
+            passed = check_output_video_h264(
+                output_files[0], video_size, rx_host, build, video_url
+            )
+    
+    # Clean up output files after validation
+    try:
+        for output_file in output_files:
+            run(f"rm -f {output_file}", host=rx_host)
+    except Exception as e:
+        logger.warning(f"Failed to clean up output files: {e}")
+
+    if not passed:
+        log_fail(f"Dual ffmpeg test failed for {video_format}")
+        
+    return passed
+
+
+def execute_dual_test_rgb24(
+    test_time: int,
+    build: str,
+    tx_host,
+    rx_host,
+    type_: str,
+    video_format: str,
+    pg_format: str,
+    video_url: str,
+    capture_cfg=None,
+):
+    """Execute dual host RGB24 ffmpeg test"""
+    # Initialize logging for this test
+    init_test_logging()
+    
+    tx_nic_port_list = tx_host.vfs
+    rx_nic_port_list = rx_host.vfs
+    video_size, fps = decode_video_format_16_9(video_format)
+    
+    logger.info(f"Creating RX config for dual RGB24 test with video_format: {video_format}")
+    log_to_file(
+        f"Creating RX config for dual RGB24 test with video_format: {video_format}",
+        rx_host,
+        build,
+    )
+    
+    try:
+        rx_config_file = generate_rxtxapp_rx_config(
+            rx_nic_port_list[0], video_format, rx_host, build
+        )
+    except Exception as e:
+        logger.error(f"Failed to create RX config: {e}")
+        log_to_file(f"Failed to create RX config: {e}", rx_host, build)
+        raise
+
+    rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
+    tx_cmd = (
+        f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
+        f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
+        f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+        f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
+    )
+
+    logger.info(f"TX Command (host {tx_host.name}): {tx_cmd}")
+    logger.info(f"RX Command (host {rx_host.name}): {rx_cmd}")
+    log_to_file(f"TX Command (host {tx_host.name}): {tx_cmd}", tx_host, build)
+    log_to_file(f"RX Command (host {rx_host.name}): {rx_cmd}", rx_host, build)
+
+    rx_proc = None
+    tx_proc = None
+    tcpdump_tx = prepare_tcpdump(capture_cfg, tx_host)
+    tcpdump_rx = prepare_tcpdump(capture_cfg, rx_host)
+
+    try:
+        # Start RX first
+        rx_proc = run(rx_cmd, background=True, host=rx_host)
+        time.sleep(2)
+        
+        # Start TX
+        tx_proc = run(tx_cmd, background=True, host=tx_host)
+        
+        # Wait for test completion
+        time.sleep(test_time + 5)
+        
+        # Get RX output
+        rx_output = rx_proc.stdout_text if rx_proc else ""
+        
+    except Exception as e:
+        logger.error(f"Error during dual RGB24 test execution: {e}")
+        log_to_file(f"Error during dual RGB24 test execution: {e}", tx_host, build)
+        log_to_file(f"Error during dual RGB24 test execution: {e}", rx_host, build)
+        raise
+    finally:
+        # Stop processes
+        if tx_proc:
+            run(f"pkill -f '{tx_cmd.split()[0]}'", host=tx_host)
+        if rx_proc:
+            run(f"pkill -f '{rx_cmd.split()[0]}'", host=rx_host)
+            
+        # Stop tcpdump if running
+        if tcpdump_tx:
+            tcpdump_tx.stop()
+        if tcpdump_rx:
+            tcpdump_rx.stop()
+            
+        time.sleep(2)
+
+    if not check_output_rgb24(rx_output, 1):
+        log_fail(f"Dual RGB24 ffmpeg test failed for {video_format}")
+        
+    time.sleep(5)
+    return True
+
+
+def execute_dual_test_rgb24_multiple(
+    test_time: int,
+    build: str,
+    tx_host,
+    rx_host,
+    type_: str,
+    video_format_list: list,
+    pg_format: str,
+    video_url_list: list,
+    capture_cfg=None,
+):
+    """Execute dual host RGB24 multiple sessions ffmpeg test"""
+    # Initialize logging for this test
+    init_test_logging()
+    
+    tx_nic_port_list = tx_host.vfs
+    rx_nic_port_list = rx_host.vfs
+    video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
+    video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
+    
+    logger.info(
+        f"Creating RX config for dual RGB24 multiple test with video_formats: {video_format_list}"
+    )
+    log_to_file(
+        f"Creating RX config for dual RGB24 multiple test with video_formats: {video_format_list}",
+        rx_host,
+        build,
+    )
+    
+    try:
+        rx_config_file = generate_rxtxapp_rx_config_multiple(
+            rx_nic_port_list[:2], video_format_list, rx_host, build, True
+        )
+    except Exception as e:
+        logger.error(f"Failed to create RX config: {e}")
+        log_to_file(f"Failed to create RX config: {e}", rx_host, build)
+        raise
+
+    rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
+    tx_1_cmd = (
+        f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
+        f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {tx_nic_port_list[0]} "
+        f"-p_sip {ip_dict_rgb24_multiple['p_sip_1']} "
+        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_1']} "
+        f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
+    )
+    tx_2_cmd = (
+        f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
+        f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {tx_nic_port_list[1]} "
+        f"-p_sip {ip_dict_rgb24_multiple['p_sip_2']} "
+        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_2']} "
+        f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
+    )
+
+    logger.info(f"TX1 Command (host {tx_host.name}): {tx_1_cmd}")
+    logger.info(f"TX2 Command (host {tx_host.name}): {tx_2_cmd}")
+    logger.info(f"RX Command (host {rx_host.name}): {rx_cmd}")
+    log_to_file(f"TX1 Command (host {tx_host.name}): {tx_1_cmd}", tx_host, build)
+    log_to_file(f"TX2 Command (host {tx_host.name}): {tx_2_cmd}", tx_host, build)
+    log_to_file(f"RX Command (host {rx_host.name}): {rx_cmd}", rx_host, build)
+
+    rx_proc = None
+    tx_1_proc = None
+    tx_2_proc = None
+    tcpdump_tx = prepare_tcpdump(capture_cfg, tx_host)
+    tcpdump_rx = prepare_tcpdump(capture_cfg, rx_host)
+
+    try:
+        # Start RX first
+        rx_proc = run(rx_cmd, background=True, host=rx_host)
+        time.sleep(2)
+        
+        # Start TX processes
+        tx_1_proc = run(tx_1_cmd, background=True, host=tx_host)
+        time.sleep(1)
+        tx_2_proc = run(tx_2_cmd, background=True, host=tx_host)
+        
+        # Wait for test completion
+        time.sleep(test_time + 5)
+        
+        # Get RX output
+        rx_output = rx_proc.stdout_text if rx_proc else ""
+        
+    except Exception as e:
+        logger.error(f"Error during dual RGB24 multiple test execution: {e}")
+        log_to_file(f"Error during dual RGB24 multiple test execution: {e}", tx_host, build)
+        log_to_file(f"Error during dual RGB24 multiple test execution: {e}", rx_host, build)
+        raise
+    finally:
+        # Stop processes
+        if tx_1_proc:
+            run(f"pkill -f '{tx_1_cmd.split()[0]}'", host=tx_host)
+        if tx_2_proc:
+            run(f"pkill -f '{tx_2_cmd.split()[0]}'", host=tx_host)
+        if rx_proc:
+            run(f"pkill -f '{rx_cmd.split()[0]}'", host=rx_host)
+            
+        # Stop tcpdump if running
+        if tcpdump_tx:
+            tcpdump_tx.stop()
+        if tcpdump_rx:
+            tcpdump_rx.stop()
+            
+        time.sleep(2)
+
+    if not check_output_rgb24(rx_output, 2):
+        log_fail(f"Dual RGB24 multiple ffmpeg test failed for {video_format_list}")
+        
+    time.sleep(5)
+    return True
