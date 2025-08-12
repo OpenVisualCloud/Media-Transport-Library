@@ -1,5 +1,6 @@
 name: smoke-tests-bare-metal
 on:
+  workflow_call:
   workflow_dispatch:
   push:
     branches:
@@ -9,18 +10,24 @@ on:
     branches:
       - main
       - 'maint-**'
+
 env:
+  DEBIAN_FRONTEND: noninteractive
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
   DPDK_REBUILD: 'false'
+
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   validation-build-mtl:
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
-    outputs:
-      pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
@@ -61,7 +68,7 @@ jobs:
           sudo apt-get install -y \
               git gcc meson tar zip \
               pkg-config \
-              python3 \
+              python3-dev \
               python3-pyelftools \
               python3-virtualenv \
               python3-pip \
@@ -112,23 +119,18 @@ jobs:
           make -j "$(nproc)"
           sudo make install
           sudo ldconfig
+
       - name: 'installation: Build GStreamer'
         working-directory: ecosystem/gstreamer_plugin
         run: |
           ./build.sh
-      - name: 'installation: Install pipenv environment'
-        working-directory: tests/validation
-        id: pipenv-install
-        run: |
-          python3 -m venv venv
-          source venv/bin/activate
-          pip install -r requirements.txt
-          echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
+
   validation-run-tests:
     needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 720
     env:
+      PIPENV_VENV_IN_PROJECT: '1'
       PYTEST_RETRIES: '3'
     steps:
       - name: 'preparation: Harden Runner'
@@ -153,12 +155,28 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
+
+      - name: 'installation: Install pipenv environment'
+        working-directory: tests/validation
+        run: |
+          sudo apt update && \
+          sudo apt install -y \
+              python3-dev \
+              python3-pyelftools \
+              python3-virtualenv \
+              python3-pip \
+              pipenv && \
+          pipenv install -r requirements.txt
+
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
+          
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
+        working-directory: tests/validation
         run: |
-          sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+          sudo pipenv run pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+
       - name: "upload report"
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
