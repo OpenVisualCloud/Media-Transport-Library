@@ -12,7 +12,8 @@ on:
       - 'maint-**'
 
 env:
-  DEBIAN_FRONTEND: noninteractive
+  DEBIAN_FRONTEND: 'noninteractive'
+  CONCURRENCY_GROUP: '${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}'
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
   DPDK_REBUILD: 'false'
@@ -21,135 +22,166 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  group: '${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}'
   cancel-in-progress: true
 
 jobs:
-  validation-build-mtl:
-    runs-on: [Linux, self-hosted, DPDK]
-    timeout-minutes: 60
-    steps:
-      - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
-      - name: 'preparation: Restore valid repository owner and print env'
-        if: always()
-        run: |
-          sudo chown -R "${USER}" "$(pwd)" || true
-          env | grep TEST_ || true
-      - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: '${{ github.ref }}'
-      - name: 'preparation: Checkout DPDK'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        if: env.DPDK_REBUILD == 'true'
-        with:
-          repository: 'DPDK/dpdk'
-          ref: 'v${{  env.DPDK_VERSION  }}'
-          path: 'dpdk'
-      - name: 'preparation: Checkout openh264'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'cisco/openh264'
-          ref: 'openh264v2.4.0'
-          path: 'openh264'
-      - name: 'preparation: Checkout FFmpeg'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'FFmpeg/FFmpeg'
-          ref: 'release/7.0'
-          path: 'ffmpeg'
-      - name: 'configuration: Install the build dependency'
-        run: |
-          sudo apt update
-          sudo apt-get remove -y pipenv || true
-          sudo apt-get install -y \
-              git gcc meson tar zip \
-              pkg-config \
-              python3-dev \
-              python3-pyelftools \
-              python3-virtualenv \
-              python3-pip \
-              libnuma-dev \
-              libjson-c-dev \
-              libpcap-dev \
-              libgtest-dev \
-              libsdl2-dev \
-              libsdl2-ttf-dev \
-              libssl-dev \
-              systemtap-sdt-dev \
-              libbpf-dev \
-              libelf1 \
-              gstreamer1.0-plugins-base \
-              gstreamer1.0-plugins-good \
-              gstreamer1.0-tools \
-              gstreamer1.0-libav \
-              libgstreamer1.0-dev \
-              libgstreamer-plugins-base1.0-dev
-      - name: 'configuration: Apply dpdk patches'
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
-      - name: 'installation: Build dpdk'
-        working-directory: dpdk
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          meson build
-          ninja -C build
-          sudo ninja -C build install
-      - name: 'installation: Build mtl'
-        run: |
-          ./build.sh
-          sudo ldconfig
-      - name: 'installation: Build openh264'
-        working-directory: openh264
-        run: |
-          make -j "$(nproc)"
-          sudo make install
-          sudo ldconfig
-      - name: 'installation: Build FFmpeg'
-        working-directory: ffmpeg
-        run: |
-          git am ../ecosystem/ffmpeg_plugin/7.0/*.patch
-          cp ../ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
-          cp ../ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
-          ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
-          make -j "$(nproc)"
-          sudo make install
-          sudo ldconfig
+  # validation-build-mtl:
+  #   runs-on: [Linux, self-hosted, DPDK]
+  #   timeout-minutes: 60
+  #   steps:
+  #     - name: 'preparation: Harden Runner'
+  #       uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+  #       with:
+  #         egress-policy: audit
+          
+  #     - name: 'preparation: Restore valid repository owner and print env'
+  #       if: always()
+  #       run: |
+  #         sudo chown -R "${USER}" "$(pwd)" || true
+  #         env | grep TEST_ || true
+  #     - name: 'preparation: Checkout MTL'
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #       with:
+  #         ref: '${{ github.ref }}'
+  #     - name: 'preparation: Checkout DPDK'
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #       if: env.DPDK_REBUILD == 'true'
+  #       with:
+  #         repository: 'DPDK/dpdk'
+  #         ref: 'v${{  env.DPDK_VERSION  }}'
+  #         path: 'dpdk'
+  #     - name: 'preparation: Checkout openh264'
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #       with:
+  #         repository: 'cisco/openh264'
+  #         ref: 'openh264v2.4.0'
+  #         path: 'openh264'
+  #     - name: 'preparation: Checkout FFmpeg'
+  #       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  #       with:
+  #         repository: 'FFmpeg/FFmpeg'
+  #         ref: 'release/7.0'
+  #         path: 'ffmpeg'
+  #     - name: 'configuration: Install the build dependency'
+  #       run: |
+  #         sudo apt update
+  #         sudo apt-get remove -y pipenv || true
+  #         sudo apt-get install -y \
+  #             git gcc meson tar zip \
+  #             pkg-config \
+  #             python3-dev \
+  #             python3-pyelftools \
+  #             python3-virtualenv \
+  #             python3-pip \
+  #             libnuma-dev \
+  #             libjson-c-dev \
+  #             libpcap-dev \
+  #             libgtest-dev \
+  #             libsdl2-dev \
+  #             libsdl2-ttf-dev \
+  #             libssl-dev \
+  #             systemtap-sdt-dev \
+  #             libbpf-dev \
+  #             libelf1 \
+  #             gstreamer1.0-plugins-base \
+  #             gstreamer1.0-plugins-good \
+  #             gstreamer1.0-tools \
+  #             gstreamer1.0-libav \
+  #             libgstreamer1.0-dev \
+  #             libgstreamer-plugins-base1.0-dev
+  #     - name: 'configuration: Apply dpdk patches'
+  #       if: env.DPDK_REBUILD == 'true'
+  #       run: |
+  #         patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
 
-      - name: 'installation: Build GStreamer'
-        working-directory: ecosystem/gstreamer_plugin
-        run: |
-          ./build.sh
+  #     - name: 'installation: Build dpdk'
+  #       working-directory: dpdk
+  #       if: env.DPDK_REBUILD == 'true'
+  #       run: |
+  #         meson build
+  #         ninja -C build
+  #         sudo ninja -C build install
+
+  #     - name: 'installation: Build mtl'
+  #       run: |
+  #         ./build.sh
+  #         sudo ldconfig
+
+  #     - name: 'installation: Build openh264'
+  #       working-directory: openh264
+  #       run: |
+  #         make -j "$(nproc)"
+  #         sudo make install
+  #         sudo ldconfig
+  #     - name: 'installation: Build FFmpeg'
+  #       working-directory: ffmpeg
+  #       run: |
+  #         git am ../ecosystem/ffmpeg_plugin/7.0/*.patch
+  #         cp ../ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
+  #         cp ../ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
+  #         ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
+  #         make -j "$(nproc)"
+  #         sudo make install
+  #         sudo ldconfig
+
+  #     - name: 'installation: Build GStreamer'
+  #       working-directory: ecosystem/gstreamer_plugin
+  #       run: |
+  #         ./build.sh
 
   validation-run-tests:
-    needs: [validation-build-mtl]
+    # needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 720
     env:
       PIPENV_VENV_IN_PROJECT: '1'
       PYTEST_RETRIES: '3'
+      CICD_BUILD: 1
+      CICD_BUILD_BUILD_ICE_DRIVER: 0
+      SETUP_BUILD_AND_INSTALL_GPU_DIRECT: 0
+      SETUP_BUILD_AND_INSTALL_ICE_DRIVER: 0
+      SETUP_BUILD_AND_INSTALL_DPDK: 0
+      HOOK_PYTHON: 1
+      MTL_BUILD_AND_INSTALL: 1
+      TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 1
+      TOOLS_BUILD_AND_INSTALL_MTL_READPCAP: 1
+      TOOLS_BUILD_AND_INSTALL_MTL_CPU_EMULATOR: 1
+      ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
+      ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
+      
+      - name: 'preparation: Restore valid repository owner and print env'
+        if: always()
+        run: |
+          sudo chown -R "${USER}" "$(pwd)" || true
+          env | grep TEST_ || true
+
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: '${{ env.CONCURRENCY_GROUP }}/mtl'
+
+      - name: 'preparation: build all needed components'
+        working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl'
+        run: |
+          .github/scripts/setup_environment.sh
+
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
-          eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
-          eval "export TEST_PORT_R=TEST_VF_PORT_P_1"
-          echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_P=${TEST_PORT_P}"
-          echo "TEST_PORT_R=${TEST_PORT_R}"
+          echo "TEST_PORT_P=${TEST_VF_PORT_P_0}" >> "$GITHUB_ENV"
+          echo "TEST_PORT_R=${TEST_VF_PORT_P_1}" >> "$GITHUB_ENV"
+
       - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
+
       - name: 'preparation: Create VFs'
         run: |
           sudo rmmod irdma || true
@@ -157,7 +189,7 @@ jobs:
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
 
       - name: 'installation: Install pipenv environment'
-        working-directory: tests/validation
+        working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl/tests/validation'
         run: |
           sudo apt update && \
           sudo apt install -y \
@@ -173,17 +205,18 @@ jobs:
           sudo MtlManager &
           
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
-        working-directory: tests/validation
+        working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl/tests/validation'
         run: |
           sudo pipenv run pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
 
-      - name: "upload report"
+      - name: "post-run: Upload report as an artifact"
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: smoke-tests-report
           path: |
-            report.html
+            '${{ env.CONCURRENCY_GROUP }}/mtl/tests/validation/report.html'
+
       - name: "Add report to summary"
         if: always()
         run: |
