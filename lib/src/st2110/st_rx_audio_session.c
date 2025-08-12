@@ -441,7 +441,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     ST_SESSION_STAT_INC(s, stat_pkts_redundant);
-    s->port_user_stats->port[MTL_PORT_R].packets++;
     return -EIO;
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {

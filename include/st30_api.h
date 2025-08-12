@@ -531,7 +531,7 @@ struct st30_rx_ops {
 /**
  * A structure used to retrieve general statistics(I/O) for a st30 tx session.
  */
-struct st30_tx_users_stats {
+struct st30_tx_user_stats {
   struct st_tx_port_stats port[MTL_SESSION_PORT_MAX];
   uint64_t stat_epoch_mismatch;
   uint64_t stat_epoch_drop;
@@ -577,7 +577,7 @@ struct st30_rx_user_stats {
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_users_stats* stats);
+int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* stats);
 
 /**
  * Reset the general statistics(I/O) for one tx st2110-30(audio) session.

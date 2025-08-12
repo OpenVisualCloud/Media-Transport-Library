@@ -2970,7 +2970,7 @@ int st30_tx_put_mbuf(st30_tx_handle handle, void* mbuf, uint16_t len) {
   return 0;
 }
 
-int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_users_stats* stats) {
+int st30_tx_get_session_stats(st30_tx_handle handle, struct st30_tx_user_stats* stats) {
   struct st_tx_audio_session_handle_impl* s_impl = handle;
 
   if (s_impl->type != MT_HANDLE_TX_AUDIO) {

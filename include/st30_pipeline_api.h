@@ -171,7 +171,7 @@ struct st30p_tx_ops {
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_users_stats* stats);
+int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats);
 
 /**
  * Reset the general statistics(I/O) for one rx st2110-30(pipeline) session.

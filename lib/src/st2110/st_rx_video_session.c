@@ -907,7 +907,6 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
                                      meta->frame_recv_size, s->st20_frame_size);
     meta->status = ST_FRAME_STATUS_CORRUPTED;
     ST_SESSION_STAT_INC(s, stat_frames_dropped);
-    s->port_user_stats->stat_frames_dropped++;
 
     /* record the miss pkts */
     float pd_sz_per_pkt = (float)meta->frame_recv_size / slot->pkts_received;
@@ -978,7 +977,7 @@ static void rv_st22_frame_notify(struct st_rx_video_session_impl* s,
   int ret = -EIO;
 
   if (st_is_frame_complete(status)) {
-    rte_atomic32_inc(&s->stat_frames_received);
+    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
     ret = st22_notify_frame_ready(s, frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready return fail %d\n", __func__, s->idx, ret);
@@ -1825,7 +1824,7 @@ static int rv_handle_rtp_pkt(struct st_rx_video_session_impl* s, struct rte_mbuf
       slot->seq_id_base_u32 = seq_id_u32;
       slot->seq_id_got = true;
       rte_atomic32_inc(&s->stat_frames_received);
-      s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
+      s->port_user_stats->port[s_port].frames++;
       mt_bitmap_test_and_set(bitmap, 0);
       pkt_idx = 0;
       dbg("%s(%d,%d), seq_id_base %d tmstamp %u\n", __func__, s->idx, s_port, seq_id,

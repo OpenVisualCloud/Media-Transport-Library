@@ -706,7 +706,7 @@ static int app_tx_video_io_stat(struct st_app_tx_video_session* s) {
   double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
   double tx_rate_m, fps;
   int ret;
-  struct st20_tx_users_stats stats;
+  struct st20_tx_user_stats stats;
 
   if (!s->handle) return 0;
 

@@ -1770,7 +1770,7 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle);
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_users_stats* stats);
+int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats* stats);
 
 /**
  * Reset the general statistics(I/O) for one tx st2110-20(pipeline) session.

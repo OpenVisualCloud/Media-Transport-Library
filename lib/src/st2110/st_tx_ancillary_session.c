@@ -606,6 +606,8 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     /* start of a new frame */
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
+    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats->port[MTL_SESSION_PORT_R].frames++;
     s->st40_rtp_time = rtp->tmstamp;
     bool second_field = false;
     if (s->ops.interlaced) {
@@ -663,6 +665,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         /* start of a new frame */
         s->st40_pkt_idx = 0;
         rte_atomic32_inc(&s->stat_frame_cnt);
+        s->port_user_stats->port[s_port].frames++;
         s->st40_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
         if (s->ops.interlaced) {
@@ -967,6 +970,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
+    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
+    if (send_r) s->port_user_stats->port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
 
     MT_USDT_ST40_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st40_frame_idx,

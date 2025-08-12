@@ -4312,7 +4312,7 @@ int st20_tx_get_sch_idx(st20_tx_handle handle) {
   return s_impl->sch->idx;
 }
 
-int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_users_stats* stats) {
+int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
 
   if (s_impl->type != MT_HANDLE_TX_VIDEO) {

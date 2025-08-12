@@ -635,8 +635,7 @@ void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
   return ctx->framebuffs[idx].frame.addr;
 }
 
-int st30p_tx_get_session_stats(st30p_tx_handle handle,
-                               struct st30_tx_users_stats* stats) {
+int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats) {
   struct st30p_tx_ctx* ctx = handle;
   int cidx = ctx->idx;
 

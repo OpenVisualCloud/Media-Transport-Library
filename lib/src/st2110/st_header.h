@@ -416,7 +416,7 @@ struct st_tx_video_session_impl {
   double stat_cpu_busy_score;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  struct st20_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st20_tx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
 };
 
 struct st_tx_video_sessions_mgr {
@@ -834,7 +834,7 @@ struct st_tx_audio_session_impl {
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
 
-  struct st30_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st30_tx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
 
   enum st30_tx_pacing_way tx_pacing_way;
   /* for rl based pacing */

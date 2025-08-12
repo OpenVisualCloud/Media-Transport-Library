@@ -145,7 +145,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 
   if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats->port[MTL_PORT_P].frames++;
+    s->port_user_stats->port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
   ST_SESSION_STAT_INC(s, stat_pkts_received);

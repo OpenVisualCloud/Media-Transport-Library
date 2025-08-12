@@ -136,7 +136,7 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
     /* wake up the thread */
     info("%s(%d), wait app thread stop\n", __func__, idx);
     if (s->handle) st20p_rx_wake_block(s->handle);
-    pthread_join(s->st20p_app_thread, NULL);
+    if (s->st20p_app_thread) pthread_join(s->st20p_app_thread, NULL);
   }
 
   if (s->handle) {

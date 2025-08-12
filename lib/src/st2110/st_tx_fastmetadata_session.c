@@ -540,6 +540,8 @@ static int tx_fastmetadata_session_rtp_update_packet(
     /* start of a new frame */
     s->st41_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
+    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats->port[MTL_SESSION_PORT_R].frames++;
     s->st41_rtp_time = rtp->tmstamp;
     bool second_field = false;
 
@@ -590,6 +592,7 @@ static int tx_fastmetadata_session_build_packet_chain(
         /* start of a new frame */
         s->st41_pkt_idx = 0;
         rte_atomic32_inc(&s->stat_frame_cnt);
+        s->port_user_stats->port[s_port].frames++;
         s->st41_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
         tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
@@ -887,6 +890,8 @@ static int tx_fastmetadata_session_tasklet_frame(
     s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
     s->st41_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
+    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats->port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
 
     MT_USDT_ST41_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st41_frame_idx,
