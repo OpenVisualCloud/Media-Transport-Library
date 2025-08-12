@@ -1,6 +1,7 @@
-# # SPDX-License-Identifier: BSD-3-Clause
-# # Copyright 2024-2025 Intel Corporation
-# # Media Communications Mesh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2024-2025 Intel Corporation
+# Media Communications Mesh
+
 import datetime
 import logging
 import os
@@ -9,26 +10,20 @@ import time
 from typing import Dict
 
 import pytest
-from common.nicctl import Nicctl
-from create_pcap_file.ramdisk import RamdiskPreparer
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
-from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
-from mtl_engine.csv_report import (
-    csv_add_test,
-    csv_write_report,
-    update_compliance_result,
-)
-from mtl_engine.stash import (
-    clear_issue,
-    clear_result_log,
-    clear_result_media,
-    clear_result_note,
-    get_issue,
-    get_result_note,
-    remove_result_media,
-)
+from mfd_connect.exceptions import ConnectionCalledProcessError
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
+
+from common.nicctl import Nicctl
+from create_pcap_file.ramdisk import RamdiskPreparer
+from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
+from mtl_engine.csv_report import (csv_add_test, csv_write_report,
+                                   update_compliance_result)
+from mtl_engine.ramdisk import Ramdisk
+from mtl_engine.stash import (clear_issue, clear_result_log,
+                              clear_result_media, clear_result_note, get_issue,
+                              get_result_note, remove_result_media)
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
@@ -149,6 +144,49 @@ def prepare_ramdisk(hosts, test_config):
                 use_sudo=use_sudo,
             )
             preparer.start()
+
+
+@pytest.fixture(scope="session")
+def media_ramdisk(hosts, test_config):
+    ramdisks = [
+        Ramdisk(
+            host=host, mount_point=test_config["media_ramdisk_mountpoint"], size_gib=32
+        )
+        for host in hosts.values()
+    ]
+    for ramdisk in ramdisks:
+        ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
+
+
+@pytest.fixture(scope="function")
+def media_file(media_ramdisk, request, hosts, test_config):
+    media_file_info = request.param
+    src_media_file_path = os.path.join(
+        test_config["media_path"], media_file_info["filename"]
+    )
+    ramdisk_media_file_path = os.path.join(
+        test_config["media_ramdisk_mountpoint"], media_file_info["filename"]
+    )
+    for host in hosts.values():
+        cmd = f"cp {src_media_file_path} {ramdisk_media_file_path}"
+        try:
+            host.connection.execute_command(cmd)
+        except ConnectionCalledProcessError as e:
+            logging.log(
+                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
+            )
+    yield media_file_info, ramdisk_media_file_path
+    for host in hosts.values():
+        cmd = f"rm {ramdisk_media_file_path}"
+        try:
+            host.connection.execute_command(cmd)
+        except ConnectionCalledProcessError as e:
+            logging.log(
+                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
+            )
 
 
 def pytest_addoption(parser):

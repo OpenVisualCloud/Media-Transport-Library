@@ -1,35 +1,48 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files_422p10le["Penguin_1080p"]],
+    indirect=["media_file"],
+    ids=["Penguin_1080p"],
+)
 def test_unicast(
-    hosts, build, media, nic_port_list, test_time, test_config, prepare_ramdisk
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    test_config,
+    prepare_ramdisk,
+    media_file,
 ):
-    st22p_file = yuv_files_422p10le["Penguin_1080p"]
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = "test_unicast_Penguin_1080p"
+    capture_cfg["test_name"] = f"test_unicast_{media_file_info['filename']}"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st22p_sessions(
         config=config,
         nic_port_list=host.vfs,
         test_mode="unicast",
-        width=st22p_file["width"],
-        height=st22p_file["height"],
-        fps=f"p{st22p_file['fps']}",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=f"p{media_file_info['fps']}",
         codec="JPEG-XS",
         quality="speed",
-        input_format=st22p_file["file_format"],
-        output_format=st22p_file["file_format"],
-        st22p_url=os.path.join(media, st22p_file["filename"]),
+        input_format=media_file_info["file_format"],
+        output_format=media_file_info["file_format"],
+        st22p_url=media_file_path,
         codec_thread_count=2,
     )
 
