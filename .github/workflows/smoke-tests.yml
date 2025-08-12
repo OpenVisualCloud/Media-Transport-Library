@@ -183,6 +183,7 @@ jobs:
           sudo killall -SIGINT MtlManager || true
 
       - name: 'preparation: Create VFs'
+        working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl'
         run: |
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
@@ -201,13 +202,15 @@ jobs:
           pipenv install -r requirements.txt
 
       - name: 'preparation: Start MtlManager at background'
+        working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl'
         run: |
           sudo MtlManager &
           
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl/tests/validation'
         run: |
-          sudo pipenv run pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+          ln -s "./../../script" "./script" && \
+          sudo -E pipenv run pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
 
       - name: "post-run: Upload report as an artifact"
         id: upload-report
