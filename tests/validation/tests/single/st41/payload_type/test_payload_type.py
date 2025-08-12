@@ -6,18 +6,18 @@ import mtl_engine.RxTxApp as rxtxapp
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
-    "pt115": 115,
-    "pt120": 120,
+    "pt115": "115",
+    "pt120": "120",
 }
 
 dit_mapping = {
-    "dit0": 3648364,
-    "dit1": 1234567,
+    "dit0": "3648364",
+    "dit1": "1234567",
 }
 
 k_bit_mapping = {
-    "k0": 0,
-    "k1": 1,
+    "k0": "0",
+    "k1": "1",
 }
 
 
