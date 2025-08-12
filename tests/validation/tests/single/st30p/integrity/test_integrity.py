@@ -1,13 +1,18 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+import logging
 import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.execute import LOG_FOLDER, log_info
+from mfd_common_libs.log_levels import TEST_PASS
+from mtl_engine.const import LOG_FOLDER
+from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_st30p_framebuff_size, check_st30p_integrity
 from mtl_engine.media_files import audio_files
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.parametrize(
@@ -76,6 +81,6 @@ def test_integrity(
     )
 
     if result:
-        log_info("INTEGRITY PASS")
+        logger.log(TEST_PASS, "INTEGRITY PASS")
     else:
-        log_info("INTEGRITY FAIL")
+        log_fail("INTEGRITY FAIL")

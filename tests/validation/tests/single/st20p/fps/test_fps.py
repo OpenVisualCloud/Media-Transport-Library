@@ -15,7 +15,19 @@ from mtl_engine.media_files import yuv_files_422rfc10
 )
 @pytest.mark.parametrize(
     "fps",
-    ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
+    [
+        "p23",
+        "p24",
+        "p25",
+        pytest.param("p29", marks=pytest.mark.smoke),
+        "p30",
+        "p50",
+        "p59",
+        "p60",
+        "p100",
+        "p119",
+        "p120",
+    ],
 )
 def test_fps(
     hosts,

@@ -9,9 +9,10 @@ from queue import Queue
 from typing import Any, List
 
 import pytest
+from mfd_common_libs.log_levels import TEST_FAIL
 from pytest_check import check
 
-from .const import LOG_FOLDER
+from .const import LOG_FOLDER, TESTCMD_LVL
 from .stash import add_result_log, set_result_note
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,7 @@ def run(
     enable_sudo: bool = False,
 ) -> any:
     if testcmd:
-        logger.debug(f"Test command: {command}")
+        logger.log(level=TESTCMD_LVL, msg=f"Test command: {command}")
     else:
         logger.debug(f"Run command: {command}")
 
@@ -241,11 +242,9 @@ def run(
     if not background:
         process.wait(timeout=timeout)
         logger.debug(process.stdout_text)
-        logger.debug(f"RC: {getattr(process, 'returncode', 'unknown')}")
+        logger.debug(f"RC: {process.return_code}")
     else:
         logger.debug("Process started in background mode.")
-    # if enable_sudo:
-    #     host.connection.disable_sudo()
     return process
 
 
@@ -277,8 +276,7 @@ def run_in_background(
 
 
 def log_fail(msg: str):
-    add_result_log(msg)
-    logger.error(msg)
+    logger.log(level=TEST_FAIL, msg=msg)
 
     with check:
         pytest.fail(msg)

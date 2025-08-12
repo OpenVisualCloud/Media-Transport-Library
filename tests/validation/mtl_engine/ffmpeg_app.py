@@ -3,16 +3,19 @@
 
 import copy
 import json
+import logging
 import os
 import re
 import time
 
+from mfd_connect import SSHConnection
 from mtl_engine.RxTxApp import prepare_tcpdump
 
 from . import rxtxapp_config
-from .execute import log_fail, log_info, run
+from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
+logger = logging.getLogger(__name__)
 
 ip_dict = dict(
     rx_interfaces="192.168.96.2",
@@ -76,9 +79,9 @@ def log_to_file(message: str, host, build: str):
 
     if f.exists():
         current_content = f.read_text()
-        f.write_text(current_content + log_entry)
+        f.write_text(current_content + log_entry, encoding="utf-8")
     else:
-        f.write_text(log_entry)
+        f.write_text(log_entry, encoding="utf-8")
 
 
 def execute_test(
@@ -153,8 +156,8 @@ def execute_test(
             )
             tx_cmd = f"{RXTXAPP_PATH} --config_file {tx_config_file}"
 
-    log_info(f"RX Command: {rx_cmd}")
-    log_info(f"TX Command: {tx_cmd}")
+    logger.info(f"RX Command: {rx_cmd}")
+    logger.info(f"TX Command: {tx_cmd}")
     log_to_file(f"RX Command: {rx_cmd}", host, build)
     log_to_file(f"TX Command: {tx_cmd}", host, build)
 
@@ -164,7 +167,7 @@ def execute_test(
 
     try:
         # Start RX pipeline first
-        log_info("Starting RX pipeline...")
+        logger.info("Starting RX pipeline...")
         rx_proc = run(
             rx_cmd,
             cwd=build,
@@ -177,7 +180,7 @@ def execute_test(
         time.sleep(2)
 
         # Start TX pipeline
-        log_info("Starting TX pipeline...")
+        logger.info("Starting TX pipeline...")
         tx_proc = run(
             tx_cmd,
             cwd=build,
@@ -189,14 +192,14 @@ def execute_test(
         )
         # Start tcpdump after pipelines are running
         if tcpdump:
-            log_info("Starting tcpdump capture...")
+            logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
-        log_info(f"Running test for {test_time} seconds...")
+        logger.info(f"Running test for {test_time} seconds...")
         time.sleep(test_time)
 
-        log_info("Terminating processes...")
+        logger.info("Terminating processes...")
         if tx_proc:
             try:
                 tx_proc.terminate()
@@ -214,12 +217,12 @@ def execute_test(
             if rx_proc and hasattr(rx_proc, "stdout_text"):
                 log_to_file(f"RX Output: {rx_proc.stdout_text}", host, build)
         except Exception:
-            log_info("Could not retrieve RX output")
+            logger.info("Could not retrieve RX output")
         try:
             if tx_proc and hasattr(tx_proc, "stdout_text"):
                 log_to_file(f"TX Output: {tx_proc.stdout_text}", host, build)
         except Exception:
-            log_info("Could not retrieve TX output")
+            logger.info("Could not retrieve TX output")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
@@ -272,9 +275,9 @@ def execute_test(
     try:
         for output_file in output_files:
             run(f"rm -f {output_file}", host=host)
-            log_info(f"Removed output file: {output_file}")
+            logger.info(f"Removed output file: {output_file}")
     except Exception as e:
-        log_info(f"Could not remove output files: {e}")
+        logger.info(f"Could not remove output files: {e}")
     if not passed:
         log_fail("test failed")
     return passed
@@ -294,7 +297,7 @@ def execute_test_rgb24(
     init_test_logging()
     nic_port_list = host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
-    log_info(f"Creating RX config for RGB24 test with video_format: {video_format}")
+    logger.info(f"Creating RX config for RGB24 test with video_format: {video_format}")
     log_to_file(
         f"Creating RX config for RGB24 test with video_format: {video_format}",
         host,
@@ -304,7 +307,7 @@ def execute_test_rgb24(
         rx_config_file = generate_rxtxapp_rx_config(
             nic_port_list[0], video_format, host, build
         )
-        log_info(f"Successfully created RX config file: {rx_config_file}")
+        logger.info(f"Successfully created RX config file: {rx_config_file}")
         log_to_file(
             f"Successfully created RX config file: {rx_config_file}", host, build
         )
@@ -320,8 +323,8 @@ def execute_test_rgb24(
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
-    log_info(f"RX Command: {rx_cmd}")
-    log_info(f"TX Command: {tx_cmd}")
+    logger.info(f"RX Command: {rx_cmd}")
+    logger.info(f"TX Command: {tx_cmd}")
     log_to_file(f"RX Command: {rx_cmd}", host, build)
     log_to_file(f"TX Command: {tx_cmd}", host, build)
 
@@ -331,7 +334,7 @@ def execute_test_rgb24(
 
     try:
         # Start RX pipeline first
-        log_info("Starting RX pipeline...")
+        logger.info("Starting RX pipeline...")
         rx_proc = run(
             rx_cmd,
             cwd=build,
@@ -343,7 +346,7 @@ def execute_test_rgb24(
         )
         time.sleep(5)
         # Start TX pipeline
-        log_info("Starting TX pipeline...")
+        logger.info("Starting TX pipeline...")
         tx_proc = run(
             tx_cmd,
             cwd=build,
@@ -355,47 +358,47 @@ def execute_test_rgb24(
         )
         # Start tcpdump after pipelines are running
         if tcpdump:
-            log_info("Starting tcpdump capture...")
+            logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        log_info(
+        logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
         )
         rx_proc.wait()
-        log_info("RX process completed")
+        logger.info("RX process completed")
 
         # Terminate TX process after RX completes
-        log_info("Terminating TX process...")
+        logger.info("Terminating TX process...")
         if tx_proc:
             try:
                 tx_proc.terminate()
                 tx_proc.wait(timeout=5)
-                log_info("TX process terminated successfully")
+                logger.info("TX process terminated successfully")
             except Exception:
                 try:
                     tx_proc.kill()
                     tx_proc.wait(timeout=5)
-                    log_info("TX process killed")
+                    logger.info("TX process killed")
                 except Exception:
-                    log_info("Could not terminate TX process")
+                    logger.info("Could not terminate TX process")
         rx_output = ""
         try:
             if rx_proc and hasattr(rx_proc, "stdout_text"):
                 rx_output = rx_proc.stdout_text
                 log_to_file(f"RX Output: {rx_output}", host, build)
-                log_info("RX output captured successfully")
+                logger.info("RX output captured successfully")
             else:
-                log_info("Could not retrieve RX output")
+                logger.info("Could not retrieve RX output")
                 log_to_file("Could not retrieve RX output", host, build)
         except Exception as e:
-            log_info(f"Error retrieving RX output: {e}")
+            logger.info(f"Error retrieving RX output: {e}")
             log_to_file(f"Error retrieving RX output: {e}", host, build)
         try:
             if tx_proc and hasattr(tx_proc, "stdout_text"):
                 log_to_file(f"TX Output: {tx_proc.stdout_text}", host, build)
-                log_info("TX output captured successfully")
+                logger.info("TX output captured successfully")
         except Exception as e:
-            log_info(f"Error retrieving TX output: {e}")
+            logger.info(f"Error retrieving TX output: {e}")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
@@ -456,7 +459,7 @@ def execute_test_rgb24_multiple(
     init_test_logging()
     video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
     video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
-    log_info(
+    logger.info(
         f"Creating RX config for RGB24 multiple test with video_formats: {video_format_list}"
     )
     log_to_file(
@@ -468,7 +471,7 @@ def execute_test_rgb24_multiple(
         rx_config_file = generate_rxtxapp_rx_config_multiple(
             nic_port_list[:2], video_format_list, host, build, True
         )
-        log_info(f"Successfully created RX config file: {rx_config_file}")
+        logger.info(f"Successfully created RX config file: {rx_config_file}")
         log_to_file(
             f"Successfully created RX config file: {rx_config_file}", host, build
         )
@@ -492,9 +495,9 @@ def execute_test_rgb24_multiple(
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
-    log_info(f"RX Command: {rx_cmd}")
-    log_info(f"TX1 Command: {tx_1_cmd}")
-    log_info(f"TX2 Command: {tx_2_cmd}")
+    logger.info(f"RX Command: {rx_cmd}")
+    logger.info(f"TX1 Command: {tx_1_cmd}")
+    logger.info(f"TX2 Command: {tx_2_cmd}")
     log_to_file(f"RX Command: {rx_cmd}", host, build)
     log_to_file(f"TX1 Command: {tx_1_cmd}", host, build)
     log_to_file(f"TX2 Command: {tx_2_cmd}", host, build)
@@ -516,7 +519,7 @@ def execute_test_rgb24_multiple(
         )
         time.sleep(5)
         # Start TX pipelines
-        log_info("Starting TX pipelines...")
+        logger.info("Starting TX pipelines...")
         tx_1_proc = run(
             tx_1_cmd,
             cwd=build,
@@ -537,52 +540,52 @@ def execute_test_rgb24_multiple(
         )
         # Start tcpdump after pipelines are running
         if tcpdump:
-            log_info("Starting tcpdump capture...")
+            logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        log_info(f"Waiting for RX process (test_time: {test_time} seconds)...")
+        logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
-        log_info("RX process completed")
+        logger.info("RX process completed")
 
         # Terminate TX processes after RX completes
-        log_info("Terminating TX processes...")
+        logger.info("Terminating TX processes...")
         for proc in [tx_1_proc, tx_2_proc]:
             if proc:
                 try:
                     proc.terminate()
                     proc.wait(timeout=5)
-                    log_info("TX process terminated successfully")
+                    logger.info("TX process terminated successfully")
                 except Exception:
                     try:
                         proc.kill()
                         proc.wait(timeout=5)
-                        log_info("TX process killed")
+                        logger.info("TX process killed")
                     except Exception:
-                        log_info("Could not terminate TX process")
+                        logger.info("Could not terminate TX process")
         rx_output = ""
         try:
             if rx_proc and hasattr(rx_proc, "stdout_text"):
                 rx_output = rx_proc.stdout_text
                 log_to_file(f"RX Output: {rx_output}", host, build)
-                log_info("RX output captured successfully")
+                logger.info("RX output captured successfully")
             else:
-                log_info("Could not retrieve RX output")
+                logger.info("Could not retrieve RX output")
                 log_to_file("Could not retrieve RX output", host, build)
         except Exception as e:
-            log_info(f"Error retrieving RX output: {e}")
+            logger.info(f"Error retrieving RX output: {e}")
             log_to_file(f"Error retrieving RX output: {e}", host, build)
         try:
             if tx_1_proc and hasattr(tx_1_proc, "stdout_text"):
                 log_to_file(f"TX1 Output: {tx_1_proc.stdout_text}", host, build)
-                log_info("TX1 output captured successfully")
+                logger.info("TX1 output captured successfully")
         except Exception as e:
-            log_info(f"Error retrieving TX1 output: {e}")
+            logger.info(f"Error retrieving TX1 output: {e}")
         try:
             if tx_2_proc and hasattr(tx_2_proc, "stdout_text"):
                 log_to_file(f"TX2 Output: {tx_2_proc.stdout_text}", host, build)
-                log_info("TX2 output captured successfully")
+                logger.info("TX2 output captured successfully")
         except Exception as e:
-            log_info(f"Error retrieving TX2 output: {e}")
+            logger.info(f"Error retrieving TX2 output: {e}")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
@@ -621,17 +624,17 @@ def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
         input_stat_proc = run(f"stat -c '%s' {input_file}", host=host)
         if input_stat_proc.return_code == 0:
             input_file_size = int(input_stat_proc.stdout_text.strip())
-            log_info(f"Input file size: {input_file_size} bytes for {input_file}")
+            logger.info(f"Input file size: {input_file_size} bytes for {input_file}")
             log_to_file(
                 f"Input file size: {input_file_size} bytes for {input_file}",
                 host,
                 build,
             )
         else:
-            log_info(f"Could not get input file size for {input_file}")
+            logger.info(f"Could not get input file size for {input_file}")
             log_to_file(f"Could not get input file size for {input_file}", host, build)
     except Exception as e:
-        log_info(f"Error checking input file size: {e}")
+        logger.info(f"Error checking input file size: {e}")
         log_to_file(f"Error checking input file size: {e}", host, build)
 
     # Use run() to check output file size
@@ -639,16 +642,16 @@ def check_output_video_yuv(output_file: str, host, build: str, input_file: str):
 
     if stat_proc.return_code == 0:
         output_file_size = int(stat_proc.stdout_text.strip())
-        log_info(f"Output file size: {output_file_size} bytes for {output_file}")
+        logger.info(f"Output file size: {output_file_size} bytes for {output_file}")
         log_to_file(
             f"Output file size: {output_file_size} bytes for {output_file}", host, build
         )
         result = output_file_size > 0
-        log_info(f"YUV check result: {result}")
+        logger.info(f"YUV check result: {result}")
         log_to_file(f"YUV check result: {result}", host, build)
         return result
     else:
-        log_info(f"Could not get output file size for {output_file}")
+        logger.info(f"Could not get output file size for {output_file}")
         log_to_file(f"Could not get output file size for {output_file}", host, build)
         return False
 
@@ -661,17 +664,17 @@ def check_output_video_h264(
         input_stat_proc = run(f"stat -c '%s' {input_file}", host=host)
         if input_stat_proc.return_code == 0:
             input_file_size = int(input_stat_proc.stdout_text.strip())
-            log_info(f"Input file size: {input_file_size} bytes for {input_file}")
+            logger.info(f"Input file size: {input_file_size} bytes for {input_file}")
             log_to_file(
                 f"Input file size: {input_file_size} bytes for {input_file}",
                 host,
                 build,
             )
         else:
-            log_info(f"Could not get input file size for {input_file}")
+            logger.info(f"Could not get input file size for {input_file}")
             log_to_file(f"Could not get input file size for {input_file}", host, build)
     except Exception as e:
-        log_info(f"Error checking input file size: {e}")
+        logger.info(f"Error checking input file size: {e}")
         log_to_file(f"Error checking input file size: {e}", host, build)
 
     # Log output file size first
@@ -679,19 +682,19 @@ def check_output_video_h264(
         stat_proc = run(f"stat -c '%s' {output_file}", host=host)
         if stat_proc.return_code == 0:
             output_file_size = int(stat_proc.stdout_text.strip())
-            log_info(f"Output file size: {output_file_size} bytes for {output_file}")
+            logger.info(f"Output file size: {output_file_size} bytes for {output_file}")
             log_to_file(
                 f"Output file size: {output_file_size} bytes for {output_file}",
                 host,
                 build,
             )
         else:
-            log_info(f"Could not get output file size for {output_file}")
+            logger.info(f"Could not get output file size for {output_file}")
             log_to_file(
                 f"Could not get output file size for {output_file}", host, build
             )
     except Exception as e:
-        log_info(f"Error checking output file size: {e}")
+        logger.info(f"Error checking output file size: {e}")
         log_to_file(f"Error checking output file size: {e}", host, build)
 
     code_name_pattern = r"codec_name=([^\n]+)"
@@ -712,7 +715,7 @@ def check_output_video_h264(
         height = height_match.group(1)
 
         result = codec_name == "h264" and f"{width}x{height}" == video_size
-        log_info(
+        logger.info(
             f"H264 check result: {result} (codec: {codec_name}, size: {width}x{height})"
         )
         log_to_file(
@@ -722,7 +725,7 @@ def check_output_video_h264(
         )
         return result
     else:
-        log_info("H264 check failed")
+        logger.info("H264 check failed")
         log_to_file("H264 check failed", host, build)
         return False
 
@@ -779,7 +782,7 @@ def generate_rxtxapp_rx_config(
     build: str,
     multiple_sessions: bool = False,
 ) -> str:
-    log_info(
+    logger.info(
         f"Generating RX ST20P config for nic_port: {nic_port}, video_format: {video_format}"
     )
 
@@ -790,7 +793,7 @@ def generate_rxtxapp_rx_config(
         config["rx_sessions"][0]["ip"][0] = ip_dict["rx_sessions"]
 
         width, height, fps = decode_video_format_to_st20p(video_format)
-        log_info(f"Decoded video format: width={width}, height={height}, fps={fps}")
+        logger.info(f"Decoded video format: width={width}, height={height}, fps={fps}")
 
         rx_session = copy.deepcopy(rxtxapp_config.config_rx_st20p_session)
         config["rx_sessions"][0]["st20p"].append(rx_session)
@@ -814,15 +817,16 @@ def generate_rxtxapp_rx_config(
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         config_file = f"{build}/tests/{test_name}_{timestamp}_rx.json"
 
-        log_info(f"Writing config file to: {config_file}")
+        logger.info(f"Writing config file to: {config_file}")
 
         config_json = json.dumps(config, indent=4)
         remote_conn = host.connection
         f = remote_conn.path(config_file)
-        json_content = config_json.replace('"', '\\"')
-        f.write_text(json_content)
+        if isinstance(remote_conn, SSHConnection):
+            config_json = config_json.replace('"', '\\"')
+        f.write_text(config_json, encoding="utf-8")
 
-        log_info("Config file written successfully")
+        logger.info("Config file written successfully")
         log_to_file(f"Generated RX config file: {config_file}", host, build)
 
         return config_file
@@ -839,7 +843,7 @@ def generate_rxtxapp_rx_config_multiple(
     build: str,
     multiple_sessions: bool = False,
 ) -> str:
-    log_info(
+    logger.info(
         f"Generating RX ST20P multiple config for nic_ports: {nic_port_list}, "
         f"video_formats: {video_format_list}"
     )
@@ -857,8 +861,8 @@ def generate_rxtxapp_rx_config_multiple(
         width_1, height_1, fps_1 = decode_video_format_to_st20p(video_format_list[0])
         width_2, height_2, fps_2 = decode_video_format_to_st20p(video_format_list[1])
 
-        log_info(f"Session 1: width={width_1}, height={height_1}, fps={fps_1}")
-        log_info(f"Session 2: width={width_2}, height={height_2}, fps={fps_2}")
+        logger.info(f"Session 1: width={width_1}, height={height_1}, fps={fps_1}")
+        logger.info(f"Session 2: width={width_2}, height={height_2}, fps={fps_2}")
 
         rx_session_1 = copy.deepcopy(rxtxapp_config.config_rx_st20p_session)
         config["rx_sessions"][0]["st20p"].append(rx_session_1)
@@ -880,15 +884,16 @@ def generate_rxtxapp_rx_config_multiple(
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         config_file = f"{build}/tests/{test_name}_{timestamp}_rx.json"
 
-        log_info(f"Writing multiple config file to: {config_file}")
+        logger.info(f"Writing multiple config file to: {config_file}")
 
         config_json = json.dumps(config, indent=4)
         remote_conn = host.connection
         f = remote_conn.path(config_file)
-        json_content = config_json.replace('"', '\\"')
-        f.write_text(json_content)
+        if isinstance(remote_conn, SSHConnection):
+            config_json = config_json.replace('"', '\\"')
+        f.write_text(config_json, encoding="utf-8")
 
-        log_info("Multiple config file written successfully")
+        logger.info("Multiple config file written successfully")
         log_to_file(f"Generated RX multiple config file: {config_file}", host, build)
 
         return config_file
@@ -906,7 +911,7 @@ def generate_rxtxapp_tx_config(
     build: str,
     multiple_sessions: bool = False,
 ) -> str:
-    log_info(
+    logger.info(
         f"Generating TX ST20P config for nic_port: {nic_port}, video_format: {video_format}"
     )
 
@@ -917,7 +922,7 @@ def generate_rxtxapp_tx_config(
         config["tx_sessions"][0]["dip"][0] = ip_dict["tx_sessions"]
 
         width, height, fps = decode_video_format_to_st20p(video_format)
-        log_info(f"Decoded video format: width={width}, height={height}, fps={fps}")
+        logger.info(f"Decoded video format: width={width}, height={height}, fps={fps}")
 
         tx_session = copy.deepcopy(rxtxapp_config.config_tx_st20p_session)
         config["tx_sessions"][0]["st20p"].append(tx_session)
@@ -943,15 +948,16 @@ def generate_rxtxapp_tx_config(
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         config_file = f"{build}/tests/{test_name}_{timestamp}_tx.json"
 
-        log_info(f"Writing TX config file to: {config_file}")
+        logger.info(f"Writing TX config file to: {config_file}")
 
         config_json = json.dumps(config, indent=4)
         remote_conn = host.connection
         f = remote_conn.path(config_file)
-        json_content = config_json.replace('"', '\\"')
-        f.write_text(json_content)
+        if isinstance(remote_conn, SSHConnection):
+            config_json = config_json.replace('"', '\\"')
+        f.write_text(config_json, encoding="utf-8")
 
-        log_info("TX Config file written successfully")
+        logger.info("TX Config file written successfully")
         log_to_file(f"Generated TX config file: {config_file}", host, build)
 
         return config_file
@@ -963,7 +969,7 @@ def generate_rxtxapp_tx_config(
 
 def decode_video_format_to_st20p(video_format: str) -> tuple:
     """Convert video format string to st20p parameters (width, height, fps)"""
-    log_info(f"Decoding video format: {video_format}")
+    logger.info(f"Decoding video format: {video_format}")
 
     pattern = r"i(\d+)([ip])(\d+)"
     match = re.search(pattern, video_format)
@@ -980,7 +986,7 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
         else:
             fps = f"p{fps_num}"
 
-        log_info(
+        logger.info(
             f"Decoded: width={width}, height={height}, fps={fps}, interlaced={interlaced}"
         )
         return width, height, fps

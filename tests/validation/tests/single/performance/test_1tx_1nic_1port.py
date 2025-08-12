@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+import logging
 import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.execute import log_info, log_result_note
+from mtl_engine.execute import log_result_note
 from mtl_engine.media_files import yuv_files
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.parametrize(
@@ -71,7 +74,7 @@ def test_perf_1tx_1nic_1port(
         capture_cfg["test_name"] = (
             f"test_perf_1tx_1nic_1port_upper_{video_format}_{replicas_b}"
         )
-        log_info(f"capture_cfg for upper bound: {capture_cfg}")
+        logger.info(f"capture_cfg for upper bound: {capture_cfg}")
 
         try:
             passed = rxtxapp.execute_perf_test(
@@ -83,7 +86,7 @@ def test_perf_1tx_1nic_1port(
                 capture_cfg=capture_cfg,
             )
         except Exception as e:
-            log_info(
+            logger.info(
                 f"Exception occurred during performance test with {replicas_b} replicas: {e}"
             )
             rxtxapp.log_to_file(
@@ -94,13 +97,13 @@ def test_perf_1tx_1nic_1port(
             passed = False
 
         if passed:
-            log_info(f"{__name__} {video_format} passed with {replicas_b} replicas")
+            logger.info(f"{__name__} {video_format} passed with {replicas_b} replicas")
             rxtxapp.log_to_file(
                 f"{video_format} passed with {replicas_b} replicas", host, build
             )
             replicas_b *= 2
         else:
-            log_info(f"{__name__} {video_format} failed with {replicas_b} replicas")
+            logger.info(f"{__name__} {video_format} failed with {replicas_b} replicas")
             rxtxapp.log_to_file(
                 f"{video_format} failed with {replicas_b} replicas - found upper bound",
                 host,
@@ -117,7 +120,7 @@ def test_perf_1tx_1nic_1port(
     replicas_a = round(replicas_b / 2)
     if replicas_a == 0:
         # If we only tested 1 replica and it failed, log and exit
-        log_info(
+        logger.info(
             f"{__name__} {video_format} finished with 0 replicas (no successful runs)"
         )
         log_result_note("0 replicas")
@@ -137,7 +140,9 @@ def test_perf_1tx_1nic_1port(
         replicas_midpoint = round((replicas_a + replicas_b) / 2)
 
         if replicas_midpoint == replicas_a or replicas_midpoint == replicas_b:
-            log_info(f"{__name__} {video_format} finished with {replicas_a} replicas")
+            logger.info(
+                f"{__name__} {video_format} finished with {replicas_a} replicas"
+            )
             log_result_note(f"{replicas_a} replicas")
             rxtxapp.log_to_file(
                 f"Performance test completed: {video_format} finished with {replicas_a} replicas",
@@ -159,7 +164,7 @@ def test_perf_1tx_1nic_1port(
         capture_cfg["test_name"] = (
             f"test_perf_1tx_1nic_1port_search_{video_format}_{replicas_midpoint}"
         )
-        log_info(f"capture_cfg for binary search: {capture_cfg}")
+        logger.info(f"capture_cfg for binary search: {capture_cfg}")
 
         try:
             passed = rxtxapp.execute_perf_test(
@@ -171,7 +176,7 @@ def test_perf_1tx_1nic_1port(
                 capture_cfg=capture_cfg,
             )
         except Exception as e:
-            log_info(
+            logger.info(
                 f"Exception occurred during binary search with {replicas_midpoint} replicas: {e}"
             )
             rxtxapp.log_to_file(
@@ -182,7 +187,7 @@ def test_perf_1tx_1nic_1port(
             passed = False
 
         if passed:
-            log_info(
+            logger.info(
                 f"{__name__} {video_format} passed with {replicas_midpoint} replicas"
             )
             rxtxapp.log_to_file(
@@ -190,7 +195,7 @@ def test_perf_1tx_1nic_1port(
             )
             replicas_a = replicas_midpoint
         else:
-            log_info(
+            logger.info(
                 f"{__name__} {video_format} failed with {replicas_midpoint} replicas"
             )
             rxtxapp.log_to_file(

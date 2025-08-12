@@ -747,8 +747,6 @@ struct st_tx_audio_session_pacing {
   uint64_t cur_epochs;      /* epoch of current pkt */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
   uint64_t cur_epoch_time;
   /* in ns, tsc time cursor for packet pacing */
   uint64_t tsc_time_cursor;
