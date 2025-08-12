@@ -169,7 +169,7 @@ jobs:
       - name: 'preparation: build all needed components'
         working-directory: '${{ env.CONCURRENCY_GROUP }}/mtl'
         run: |
-          .github/scripts/setup_environment.sh
+          sudo -E .github/scripts/setup_environment.sh
 
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
