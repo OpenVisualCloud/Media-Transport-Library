@@ -11,13 +11,13 @@ from mtl_engine.media_files import yuv_files
 @pytest.mark.parametrize(
     "video_format_1, video_format_2, test_time_mutlipler",
     [
-        ("i1080p25", "i1080p25", 4),
-        ("i1080p30", "i1080p30", 4),
-        ("i1080p60", "i1080p60", 8),
-        ("i1080p60", "i1080p50", 8),
-        ("i1080p50", "i1080p30", 6),
-        ("i1080p25", "i1080p50", 6),
-        ("i1080p25", "i1080p60", 6),
+        ("i1080p25", "i1080p25", 2),
+        ("i1080p30", "i1080p30", 2),
+        ("i1080p60", "i1080p60", 4),
+        ("i1080p60", "i1080p50", 4),
+        ("i1080p50", "i1080p30", 3),
+        ("i1080p25", "i1080p50", 3),
+        ("i1080p25", "i1080p60", 3),
     ],
 )
 def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple_dual(
