@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest

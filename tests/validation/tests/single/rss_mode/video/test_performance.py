@@ -2,7 +2,6 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
