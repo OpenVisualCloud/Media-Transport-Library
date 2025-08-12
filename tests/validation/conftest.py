@@ -2,42 +2,28 @@
 # Copyright 2024-2025 Intel Corporation
 # Media Communications Mesh
 
-# Standard libraries
 import datetime
 import logging
 import os
 import shutil
 import time
-import pytest
 from typing import Dict
 
-# MFD libraries
+import pytest
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
-# Common engine libraries
-from create_pcap_file.ramdisk import RamdiskPreparer
 from common.nicctl import Nicctl
-
-# MTL libraries
-from mtl_engine.ramdisk import Ramdisk
-from mtl_engine.stash import (
-    clear_issue,
-    clear_result_log,
-    clear_result_media,
-    clear_result_note,
-    get_issue,
-    get_result_note,
-    remove_result_media,
-)
+from create_pcap_file.ramdisk import RamdiskPreparer
 from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
-from mtl_engine.csv_report import (
-    csv_add_test,
-    csv_write_report,
-    update_compliance_result,
-)
+from mtl_engine.csv_report import (csv_add_test, csv_write_report,
+                                   update_compliance_result)
+from mtl_engine.ramdisk import Ramdisk
+from mtl_engine.stash import (clear_issue, clear_result_log,
+                              clear_result_media, clear_result_note, get_issue,
+                              get_result_note, remove_result_media)
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
