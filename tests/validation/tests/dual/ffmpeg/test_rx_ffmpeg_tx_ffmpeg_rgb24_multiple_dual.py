@@ -39,7 +39,7 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple_dual(
 
     tx_host = host_list[0]
     rx_host = host_list[1]
-    
+
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = (
         f"test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple_dual_{video_format_1}_{video_format_2}"

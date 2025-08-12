@@ -1222,13 +1222,15 @@ def execute_dual_test_rgb24(
 ):
     # Initialize logging for this test
     init_test_logging()
-    
+
     # Use separate NIC port lists for TX and RX hosts
     tx_nic_port_list = tx_host.vfs
     rx_nic_port_list = rx_host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
-    
-    logger.info(f"Creating RX config for RGB24 dual test with video_format: {video_format}")
+
+    logger.info(
+        f"Creating RX config for RGB24 dual test with video_format: {video_format}"
+    )
     log_to_file(
         f"Creating RX config for RGB24 dual test with video_format: {video_format}",
         rx_host,
@@ -1246,7 +1248,7 @@ def execute_dual_test_rgb24(
         log_fail(f"Failed to create RX config file: {e}")
         log_to_file(f"Failed to create RX config file: {e}", rx_host, build)
         return False
-    
+
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
@@ -1282,7 +1284,7 @@ def execute_dual_test_rgb24(
             enable_sudo=True,
         )
         time.sleep(5)
-        
+
         # Start TX pipeline on TX host
         logger.info("Starting TX pipeline on TX host...")
         tx_proc = run(
@@ -1294,7 +1296,7 @@ def execute_dual_test_rgb24(
             background=True,
             enable_sudo=True,
         )
-        
+
         # Start tcpdump after pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
@@ -1320,7 +1322,7 @@ def execute_dual_test_rgb24(
                     logger.info("TX process killed")
                 except Exception:
                     logger.info("Could not terminate TX process")
-        
+
         rx_output = ""
         try:
             rx_output = rx_proc.stdout_text
@@ -1335,7 +1337,7 @@ def execute_dual_test_rgb24(
             logger.info("TX output captured successfully")
         except Exception as e:
             log_to_file(f"Error retrieving TX output: {e}", tx_host, build)
-        
+
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
@@ -1374,7 +1376,7 @@ def execute_dual_test_rgb24(
                     pass
         if tcpdump:
             tcpdump.stop()
-    
+
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -1395,13 +1397,13 @@ def execute_dual_test_rgb24_multiple(
 ):
     # Initialize logging for this test
     init_test_logging()
-    
-    # Use separate NIC port lists for TX and RX hosts  
+
+    # Use separate NIC port lists for TX and RX hosts
     tx_nic_port_list = tx_host.vfs
     rx_nic_port_list = rx_host.vfs
     video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
     video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
-    
+
     logger.info(
         f"Creating RX config for RGB24 multiple dual test with video_formats: {video_format_list}"
     )
@@ -1422,7 +1424,7 @@ def execute_dual_test_rgb24_multiple(
         log_fail(f"Failed to create RX config file: {e}")
         log_to_file(f"Failed to create RX config file: {e}", rx_host, build)
         return False
-    
+
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
@@ -1469,7 +1471,7 @@ def execute_dual_test_rgb24_multiple(
             enable_sudo=True,
         )
         time.sleep(5)
-        
+
         # Start TX pipelines on TX host
         logger.info("Starting TX pipelines on TX host...")
         tx_1_proc = run(
@@ -1490,7 +1492,7 @@ def execute_dual_test_rgb24_multiple(
             background=True,
             enable_sudo=True,
         )
-        
+
         # Start tcpdump after pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
@@ -1515,7 +1517,7 @@ def execute_dual_test_rgb24_multiple(
                         logger.info("TX process killed")
                     except Exception:
                         logger.info("Could not terminate TX process")
-        
+
         rx_output = ""
         try:
             rx_output = rx_proc.stdout_text
@@ -1524,13 +1526,13 @@ def execute_dual_test_rgb24_multiple(
         except Exception as e:
             logger.info(f"Error retrieving RX output: {e}")
             log_to_file(f"Error retrieving RX output: {e}", rx_host, build)
-        
+
         try:
             log_to_file(f"TX1 Output:\n{tx_1_proc.stdout_text}", tx_host, build)
             logger.info("TX1 output captured successfully")
         except Exception as e:
             logger.info(f"Error retrieving TX1 output: {e}")
-        
+
         try:
             log_to_file(f"TX2 Output:\n{tx_2_proc.stdout_text}", tx_host, build)
             logger.info("TX2 output captured successfully")
@@ -1561,7 +1563,7 @@ def execute_dual_test_rgb24_multiple(
                         pass
         if tcpdump:
             tcpdump.stop()
-    
+
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
