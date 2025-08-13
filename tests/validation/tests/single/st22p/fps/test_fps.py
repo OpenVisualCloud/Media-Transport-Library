@@ -28,7 +28,7 @@ def test_fps(
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    # Collect packet capture configuration and assign test_name
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_fps_{codec}_Penguin_1080p_{fps}"
 
