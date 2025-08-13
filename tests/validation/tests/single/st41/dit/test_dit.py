@@ -36,7 +36,7 @@ def test_dit(
     st41_file = st41_files["st41_p29_long_file"]["filename"]
 
     # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    # Collect packet capture configuration and assign test_name
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_dit_{dit}"
 

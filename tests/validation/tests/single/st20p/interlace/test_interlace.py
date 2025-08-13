@@ -15,7 +15,7 @@ def test_interlace(
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
+    # Collect packet capture configuration and assign test_name
     # capture_time: 15
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = f"test_interlace_{file}"  # Set a unique pcap file name
