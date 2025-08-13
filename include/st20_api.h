@@ -1170,6 +1170,12 @@ struct st20_tx_ops {
                            struct st20_tx_frame_meta* meta);
 
   /**
+   * Optional. Callback when frame done in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
+  /**
    * Optional. The event callback when there is some event(vsync or others) happened for
    * this session. Only non-block method can be used in this callback as it run from lcore
    * routine. Args point to the meta data of each event. Ex, cast to struct
@@ -1318,6 +1324,12 @@ struct st22_tx_ops {
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st22_tx_frame_meta* meta);
+  /**
+   * Optional. Callback when frame done in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /**
    * Optional. The event callback when there is some event(vsync or others) happened for

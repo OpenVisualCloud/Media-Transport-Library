@@ -20,6 +20,7 @@ struct st30p_tx_frame {
   enum st30p_tx_frame_status stat;
   struct st30_frame frame;
   uint16_t idx;
+  uint32_t seq_number;
 };
 
 struct st30p_tx_ctx {
@@ -33,8 +34,7 @@ struct st30p_tx_ctx {
 
   st30_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint16_t framebuff_producer_idx;
-  uint16_t framebuff_consumer_idx;
+  uint32_t framebuff_seq_number;
   struct st30p_tx_frame* framebuffs;
   pthread_mutex_t lock;
   bool ready;

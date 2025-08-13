@@ -32,8 +32,7 @@ struct st40p_tx_ctx {
 
   st40_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint16_t framebuff_producer_idx;
-  uint16_t framebuff_consumer_idx;
+  uint32_t framebuff_seq_number;
   struct st40p_tx_frame* framebuffs;
   pthread_mutex_t lock;
   bool ready;
@@ -59,6 +58,7 @@ struct st40p_tx_frame {
   uint16_t idx;
   /** Pointer to the main ancillary frame buffer */
   struct st40_frame* anc_frame;
+  uint32_t seq_number;
 };
 
 #if defined(__cplusplus)
