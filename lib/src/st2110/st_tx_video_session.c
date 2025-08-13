@@ -571,6 +571,23 @@ static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
   return 0;
 }
 
+static void validate_user_timestamp(struct st_tx_video_session_impl* s,
+                                    uint64_t requested_frame_count,
+                                    uint64_t current_frame_count) {
+  if (requested_frame_count < current_frame_count) {
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    dbg("%s(%d), user requested transmission time in the past, required_tai %" PRIu64
+        ", cur_tai %" PRIu64 "\n",
+        __func__, s->idx, requested_frame_count, current_frame_count);
+  } else if (requested_frame_count >
+             current_frame_count + (NS_PER_S / s->pacing.frame_time)) {
+    dbg("%s(%d), requested frame count %" PRIu64
+        " too far in the future, current frame count %" PRIu64 "\n",
+        __func__, s->idx, requested_frame_count, current_frame_count);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+  }
+}
+
 static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_impl* s,
                                                     uint64_t cur_tai,
                                                     uint64_t required_tai) {
@@ -580,50 +597,40 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
 
   if (required_tai) {
     frame_count = (required_tai + s->pacing.frame_time / 2) / s->pacing.frame_time;
-  } else {
-    if (frame_count_tai <= next_free_frame_slot) {
-      /* There is time buffer until the next available frame time window */
-      if (next_free_frame_slot - frame_count_tai > s->pacing.max_onward_epochs) {
-        /* current time is out of onward range, just note this and still move to next free
-         * slot */
-        dbg("%s(%d), onward range exceeded, next_free_frame_slot %" PRIu64
-            ", frame_count_tai %" PRIu64 "\n",
-            __func__, s->idx, next_free_frame_slot, frame_count_tai);
-        ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                            (next_free_frame_slot - frame_count_tai));
-      }
+    validate_user_timestamp(s, frame_count, frame_count_tai);
+  }
 
-      frame_count = next_free_frame_slot;
-
-    } else {
-      dbg("%s(%d), frame is late, frame_count_tai %" PRIu64
-          " next_free_frame_slot %" PRIu64 "\n",
-          __func__, s->idx, frame_count_tai, next_free_frame_slot);
-      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                          (frame_count_tai - next_free_frame_slot));
-
-      frame_count = frame_count_tai;
+  if (frame_count_tai <= next_free_frame_slot) {
+    /* There is time buffer until the next available frame time window */
+    if (next_free_frame_slot - frame_count_tai > s->pacing.max_onward_epochs) {
+      /* current time is out of onward range, just note this and still move to next free
+       * slot */
+      dbg("%s(%d), onward range exceeded, next_free_frame_slot %" PRIu64
+          ", frame_count_tai %" PRIu64 "\n",
+          __func__, s->idx, next_free_frame_slot, frame_count_tai);
+      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
+                          (next_free_frame_slot - frame_count_tai));
     }
+
+    if (!required_tai) {
+      frame_count = next_free_frame_slot;
+    }
+
+  } else {
+    dbg("%s(%d), frame is late, frame_count_tai %" PRIu64 " next_free_frame_slot %" PRIu64
+        "\n",
+        __func__, s->idx, frame_count_tai, next_free_frame_slot);
+    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                        (frame_count_tai - next_free_frame_slot));
+
+    if (s->ops.notify_frame_late) {
+      s->ops.notify_frame_late(s->ops.priv, frame_count_tai - next_free_frame_slot);
+    }
+
+    frame_count = frame_count_tai;
   }
+
   return frame_count;
-}
-
-static inline uint64_t validate_and_adjust_user_timestamp(
-    struct st_tx_video_session_impl* s, uint64_t required_tai, uint64_t cur_tai) {
-  if (required_tai < cur_tai) {
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
-    dbg("%s(%d), user requested transmission time in the past, required_tai %" PRIu64
-        ", cur_tai %" PRIu64 "\n",
-        __func__, s->idx, required_tai, cur_tai);
-    required_tai = cur_tai; /* send asap */
-
-  } else if (required_tai > cur_tai + NS_PER_S) {
-    dbg("%s(%d), required tai %" PRIu64 " too far in the future, cur_tai %" PRIu64 "\n",
-        __func__, s->idx, required_tai, cur_tai);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
-    required_tai = cur_tai + NS_PER_S;  // do our best to slow down
-  }
-  return required_tai;
 }
 
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
@@ -634,11 +641,8 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   uint64_t start_time_tai;
   uint64_t time_to_tx_ns;
 
-  if (required_tai) {
-    required_tai = validate_and_adjust_user_timestamp(s, required_tai, cur_tai);
-  }
-
   pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
+
   if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
     start_time_tai = required_tai;
   } else {
