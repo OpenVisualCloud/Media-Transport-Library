@@ -80,6 +80,7 @@ provider st20p {
   probe tx_frame_put(int idx, int f_idx, void* va, int stat);
   probe tx_frame_next(int idx, int f_idx);
   probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  probe tx_frame_spurn(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int idx, char* dump_file, void* va, uint32_t data_size);
   /* rx */
@@ -94,6 +95,7 @@ provider st22 {
   /* tx */
   probe tx_frame_next(int m_idx, int s_idx, int f_idx, void* va, uint32_t tmstamp, uint32_t codestream_size);
   probe tx_frame_done(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
+  probe tx_frame_spurn(int m_idx, int s_idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int m_idx, int s_idx, char* dump_file, void* va, uint32_t data_size);
   /* rx */
@@ -110,6 +112,7 @@ provider st22p {
   probe tx_frame_put(int idx, int f_idx, void* va, int stat, uint32_t data_size);
   probe tx_frame_next(int idx, int f_idx);
   probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  probe tx_frame_spurn(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int idx, char* dump_file, void* va, uint32_t data_size);
   /* rx */
@@ -132,6 +135,7 @@ provider st30p {
   probe tx_frame_put(int idx, int f_idx, void* va);
   probe tx_frame_next(int idx, int f_idx);
   probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  probe tx_frame_spurn(int idx, int f_idx, uint32_t tmstamp);
   /* attach to enable the frame dump at runtime */
   probe tx_frame_dump(int idx, char* dump_file, int frames);
   /* rx */
@@ -143,6 +147,12 @@ provider st30p {
 }
 
 provider st40p {
+  /* tx */
+  probe tx_frame_get(int idx, int f_idx, void* va);
+  probe tx_frame_put(int idx, int f_idx, void* va);
+  probe tx_frame_next(int idx, int f_idx);
+  probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  probe tx_frame_spurn(int idx, int f_idx, uint32_t tmstamp)
   /* rx */
   probe rx_frame_get(int idx, int f_idx, uint32_t meta_num);
   probe rx_frame_put(int idx, int f_idx, uint32_t meta_num);
