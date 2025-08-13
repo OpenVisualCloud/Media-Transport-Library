@@ -385,6 +385,14 @@ struct st30_tx_ops {
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st30_tx_frame_meta* meta);
 
+  /**
+   * Optional. Callback triggered when a frame epoch is omitted/skipped in the lib.
+   * This occurs when the transmission timing falls behind schedule and an epoch
+   * must be skipped to maintain synchronization. (or in the user pacing mode
+   * when the user time is behind the lib sending time).
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
+
   /*
    * Optional. The size of fifo ring which used between the packet builder and pacing.
    * Leave to zero to use default value: the packet number within
