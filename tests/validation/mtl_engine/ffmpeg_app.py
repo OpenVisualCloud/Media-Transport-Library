@@ -9,7 +9,7 @@ import re
 import time
 
 from mfd_connect import SSHConnection
-from mtl_engine.RxTxApp import prepare_tcpdump
+from mtl_engine.RxTxApp import prepare_tcpdump, prepare_netsniff
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -164,6 +164,7 @@ def execute_test(
     rx_proc = None
     tx_proc = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     try:
         # Start RX pipeline first
@@ -190,10 +191,13 @@ def execute_test(
             background=True,
             enable_sudo=True,
         )
-        # Start tcpdump after pipelines are running
+        # Start packet capture when pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -263,6 +267,8 @@ def execute_test(
                     pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
     passed = False
     match output_format:
         case "yuv":
@@ -331,6 +337,7 @@ def execute_test_rgb24(
     rx_proc = None
     tx_proc = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     try:
         # Start RX pipeline first
@@ -356,10 +363,13 @@ def execute_test_rgb24(
             background=True,
             enable_sudo=True,
         )
-        # Start tcpdump after pipelines are running
+        # Start packet capture when pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
@@ -437,6 +447,8 @@ def execute_test_rgb24(
                     pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -506,6 +518,7 @@ def execute_test_rgb24_multiple(
     tx_1_proc = None
     tx_2_proc = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     try:
         rx_proc = run(
@@ -538,10 +551,13 @@ def execute_test_rgb24_multiple(
             background=True,
             enable_sudo=True,
         )
-        # Start tcpdump after pipelines are running
+        # Start packet capture when pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
@@ -611,6 +627,8 @@ def execute_test_rgb24_multiple(
                         pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False

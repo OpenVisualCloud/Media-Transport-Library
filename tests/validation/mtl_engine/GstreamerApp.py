@@ -6,7 +6,7 @@ import logging
 import os
 import time
 
-from mtl_engine.RxTxApp import prepare_tcpdump
+from mtl_engine.RxTxApp import prepare_tcpdump, prepare_netsniff
 
 from .execute import log_fail, run
 
@@ -331,6 +331,7 @@ def execute_test(
     tx_process = None
     rx_process = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     try:
         if tx_first:
@@ -383,10 +384,13 @@ def execute_test(
                 background=True,
                 enable_sudo=True,
             )
-        # --- Start tcpdump after pipelines are running ---
+        # --- Start packet capture after pipelines are running ---
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -444,6 +448,8 @@ def execute_test(
                 pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
 
     # Compare files for validation
     file_compare = compare_files(input_file, output_file)
