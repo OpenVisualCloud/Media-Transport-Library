@@ -9,9 +9,10 @@ import subprocess
 import sys
 import time
 
-from create_pcap_file.tcpdump import TcpDumpRecorder
-from create_pcap_file.netsniff import NetsniffRecorder
 from mfd_connect import SSHConnection
+
+from create_pcap_file.netsniff import NetsniffRecorder
+from create_pcap_file.tcpdump import TcpDumpRecorder
 
 from . import rxtxapp_config
 from .execute import log_fail, run

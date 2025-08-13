@@ -7,7 +7,7 @@ import os
 import re
 
 from mtl_engine import udp_app_config
-from mtl_engine.RxTxApp import prepare_tcpdump, prepare_netsniff
+from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait

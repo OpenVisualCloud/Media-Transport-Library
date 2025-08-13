@@ -9,7 +9,8 @@ import re
 import time
 
 from mfd_connect import SSHConnection
-from mtl_engine.RxTxApp import prepare_tcpdump, prepare_netsniff
+
+from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 
 from . import rxtxapp_config
 from .execute import log_fail, run

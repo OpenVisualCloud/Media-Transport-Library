@@ -2,7 +2,6 @@
 # Copyright 2025 Intel Corporation
 import logging
 import os
-
 from time import sleep
 
 from mfd_connect.exceptions import ConnectionCalledProcessError

@@ -6,7 +6,7 @@ import logging
 import os
 import time
 
-from mtl_engine.RxTxApp import prepare_tcpdump, prepare_netsniff
+from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 
 from .execute import log_fail, run
 
