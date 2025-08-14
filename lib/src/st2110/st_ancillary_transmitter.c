@@ -42,7 +42,7 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
       trs->inflight[port] = NULL;
     }
   }
-  mgr->st40_stat_pkts_burst = 0;
+  mgr->stat_pkts_burst = 0;
 
   return 0;
 }
@@ -68,7 +68,7 @@ static int st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MTL_TASKLET_HAS_PENDING;
     }
-    mgr->st40_stat_pkts_burst += n;
+    mgr->stat_pkts_burst += n;
   }
 
   /* try to dequeue */
@@ -81,7 +81,7 @@ static int st_ancillary_trs_session_tasklet(struct st_ancillary_transmitter_impl
     }
 
     n = mt_txq_burst(mgr->queue[port], &pkt, 1);
-    mgr->st40_stat_pkts_burst += n;
+    mgr->stat_pkts_burst += n;
     if (n < 1) {
       trs->inflight[port] = pkt;
       trs->inflight_cnt[port]++;

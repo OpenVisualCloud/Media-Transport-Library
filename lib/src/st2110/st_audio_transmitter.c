@@ -42,7 +42,7 @@ static int st_audio_trs_tasklet_stop(void* priv) {
       trs->inflight[port] = NULL;
     }
   }
-  mgr->st30_stat_pkts_burst = 0;
+  mgr->stat_pkts_burst = 0;
 
   return 0;
 }
@@ -95,7 +95,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
       mgr->stat_trs_ret_code[port] = -STI_TSCTRS_BURST_INFLIGHT_FAIL;
       return MTL_TASKLET_HAS_PENDING;
     }
-    mgr->st30_stat_pkts_burst += n;
+    mgr->stat_pkts_burst += n;
   }
 
   for (int i = 0; i < mgr->max_idx; i++) {
@@ -107,7 +107,7 @@ static int st_audio_trs_session_tasklet(struct mtl_main_impl* impl,
     }
 
     n = st_audio_trs_burst(impl, mgr, port, pkt);
-    mgr->st30_stat_pkts_burst += n;
+    mgr->stat_pkts_burst += n;
     if (n < 1) {
       trs->inflight[port] = pkt;
       trs->inflight_cnt[port]++;
