@@ -81,13 +81,13 @@
 #define ST_SESSION_STAT_INC(s, stat) \
   do {                               \
     (s)->stat++;                     \
-    (s)->port_user_stats->stat++;    \
+    (s)->port_user_stats.stat++;     \
   } while (0)
 
 #define ST_SESSION_STAT_ADD(s, stat, val) \
   do {                                    \
     (s)->stat += (val);                   \
-    (s)->port_user_stats->stat += (val);  \
+    (s)->port_user_stats.stat += (val);   \
   } while (0)
 
 enum st21_tx_frame_status {
@@ -416,7 +416,7 @@ struct st_tx_video_session_impl {
   double stat_cpu_busy_score;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
-  struct st20_tx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st20_tx_user_stats port_user_stats;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -735,7 +735,7 @@ struct st_rx_video_session_impl {
   int stat_burst_succ_cnt;
   uint16_t stat_burst_pkts_max;
   uint64_t stat_burst_pkts_sum;
-  struct st20_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st20_rx_user_stats port_user_stats;
 };
 
 struct st_rx_video_sessions_mgr {
@@ -834,7 +834,7 @@ struct st_tx_audio_session_impl {
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
 
-  struct st30_tx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st30_tx_user_stats port_user_stats;
 
   enum st30_tx_pacing_way tx_pacing_way;
   /* for rl based pacing */
@@ -1041,7 +1041,7 @@ struct st_rx_audio_session_impl {
   rte_atomic32_t stat_frames_received;
   uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
-  struct st30_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st30_rx_user_stats port_user_stats;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
 };
@@ -1139,7 +1139,7 @@ struct st_tx_ancillary_session_impl {
   /* interlace */
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
-  struct st40_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st40_tx_user_stats port_user_stats;
 };
 
 struct st_tx_ancillary_sessions_mgr {
@@ -1205,7 +1205,7 @@ struct st_rx_ancillary_session_impl {
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
   int stat_pkts_wrong_interlace_dropped;
-  struct st40_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st40_rx_user_stats port_user_stats;
 };
 
 struct st_rx_ancillary_sessions_mgr {
@@ -1264,7 +1264,7 @@ struct st_tx_fastmetadata_session_impl {
   struct rte_ring* packet_ring;
   bool second_field;
 
-  struct st41_tx_users_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st41_tx_user_stats port_user_stats;
 
   /* dedicated queue tx mode */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
@@ -1376,7 +1376,7 @@ struct st_rx_fastmetadata_session_impl {
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
   int stat_pkts_wrong_interlace_dropped;
-  struct st41_rx_user_stats port_user_stats[MTL_SESSION_PORT_MAX];
+  struct st41_rx_user_stats port_user_stats;
 };
 
 struct st_rx_fastmetadata_sessions_mgr {

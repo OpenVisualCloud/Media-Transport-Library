@@ -158,11 +158,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats->port[s_port].frames++;
+    s->port_user_stats.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
   ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats->port[s_port].packets++;
+  s->port_user_stats.port[s_port].packets++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
@@ -990,6 +990,11 @@ int st40_rx_get_queue_meta(st40_rx_handle handle, struct st_queue_meta* meta) {
 int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* stats) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
 
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
   if (s_impl->type != MT_HANDLE_RX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
     return -EINVAL;
@@ -1002,6 +1007,11 @@ int st40_rx_get_session_stats(st40_rx_handle handle, struct st40_rx_user_stats* 
 
 int st40_rx_reset_session_stats(st40_rx_handle handle) {
   struct st_rx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
 
   if (s_impl->type != MT_HANDLE_RX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);

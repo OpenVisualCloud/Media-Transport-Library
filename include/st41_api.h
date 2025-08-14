@@ -280,7 +280,7 @@ struct st41_rx_ops {
 /**
  * A structure used to retrieve general statistics(I/O) for a st41 tx port.
  */
-struct st41_tx_users_stats {
+struct st41_tx_user_stats {
   struct st_tx_port_stats
       port[MTL_SESSION_PORT_MAX]; /**< Base structure for tx port stats */
   uint64_t stat_pkts_redundant;
@@ -331,7 +331,7 @@ struct st41_rx_user_stats {
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_users_stats* stats);
+int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* stats);
 
 /**
  * Reset the general statistics(I/O) for one tx st2110-41(fastmetadata) session.

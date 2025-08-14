@@ -495,8 +495,14 @@ int st30p_rx_get_queue_meta(st30p_rx_handle handle, struct st_queue_meta* meta) 
 
 int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats* stats) {
   struct st30p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int cidx;
 
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
+  cidx = ctx->idx;
   if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
@@ -507,8 +513,14 @@ int st30p_rx_get_session_stats(st30p_rx_handle handle, struct st30_rx_user_stats
 
 int st30p_rx_reset_session_stats(st30p_rx_handle handle) {
   struct st30p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int cidx;
 
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
+
+  cidx = ctx->idx;
   if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;

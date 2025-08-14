@@ -102,7 +102,6 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
-    s->port_user_stats->port[s_port].err_packets++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -111,7 +110,6 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
       ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
-      s->port_user_stats->port[s_port].err_packets++;
       return -EINVAL;
     }
   }
@@ -126,7 +124,6 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, stat_pkts_out_of_order);
-    s->port_user_stats->port[s_port].err_packets++;
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -137,7 +134,6 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
     ST_SESSION_STAT_INC(s, stat_pkts_enqueue_fail);
-    s->port_user_stats->port[s_port].err_packets++;
     MT_USDT_ST41_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
@@ -145,11 +141,11 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
 
   if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats->port[s_port].frames++;
+    s->port_user_stats.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
   ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats->port[s_port].packets++;
+  s->port_user_stats.port[s_port].packets++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;
@@ -975,6 +971,11 @@ int st41_rx_get_queue_meta(st41_rx_handle handle, struct st_queue_meta* meta) {
 int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* stats) {
   struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
 
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
   if (s_impl->type != MT_HANDLE_RX_FMD) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
     return -EINVAL;
@@ -987,6 +988,11 @@ int st41_rx_get_session_stats(st41_rx_handle handle, struct st41_rx_user_stats* 
 
 int st41_rx_reset_session_stats(st41_rx_handle handle) {
   struct st_rx_fastmetadata_session_handle_impl* s_impl = handle;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
 
   if (s_impl->type != MT_HANDLE_RX_FMD) {
     err("%s, invalid type %d\n", __func__, s_impl->type);

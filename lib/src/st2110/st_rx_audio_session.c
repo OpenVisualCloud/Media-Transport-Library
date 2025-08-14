@@ -266,7 +266,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
-    s->port_user_stats->port[s_port].err_packets++;
 
     return -EINVAL;
   }
@@ -276,7 +275,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
       ST_SESSION_STAT_INC(s, stat_pkts_wrong_ssrc_dropped);
-      s->port_user_stats->port[s_port].err_packets++;
 
       return -EINVAL;
     }
@@ -286,7 +284,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), drop as pkt_len mismatch now %u expect %u\n", __func__, s->idx,
         s_port, pkt_len, s->pkt_len);
     ST_SESSION_STAT_INC(s, stat_pkts_len_mismatch_dropped);
-    s->port_user_stats->port[s_port].err_packets++;
     return -EINVAL;
   }
 
@@ -304,7 +301,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, stat_pkts_out_of_order);
-    s->port_user_stats->port[s_port].err_packets++;
     info("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
          s->latest_seq_id);
   }
@@ -326,13 +322,12 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
         offset, s->st30_frame_size);
     ST_SESSION_STAT_INC(s, stat_pkts_dropped);
-    s->port_user_stats->port[s_port].err_packets++;
     return -EIO;
   }
   rte_memcpy(s->st30_cur_frame->addr + offset, payload, s->pkt_len);
   s->frame_recv_size += s->pkt_len;
   ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats->port[s_port].packets++;
+  s->port_user_stats.port[s_port].packets++;
   s->st30_pkt_idx++;
 
   if (s->enable_timing_parser) {
@@ -395,7 +390,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats->port[s_port].frames++;
+    s->port_user_stats.port[s_port].frames++;
     s->st30_cur_frame = NULL;
   }
 
@@ -421,7 +416,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
-    s->port_user_stats->port[s_port].err_packets++;
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -430,7 +424,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
       ST_SESSION_STAT_INC(s, stat_pkts_wrong_ssrc_dropped);
-      s->port_user_stats->port[s_port].err_packets++;
       return -EINVAL;
     }
   }
@@ -445,7 +438,6 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, stat_pkts_out_of_order);
-    s->port_user_stats->port[s_port].err_packets++;
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -461,7 +453,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   ops->notify_rtp_ready(ops->priv);
   ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats->port[s_port].packets++;
+  s->port_user_stats.port[s_port].packets++;
 
   return 0;
 }
@@ -1481,6 +1473,11 @@ int st30_rx_get_queue_meta(st30_rx_handle handle, struct st_queue_meta* meta) {
 int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* stats) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
 
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
   if (s_impl->type != MT_HANDLE_RX_AUDIO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
     return -EINVAL;
@@ -1493,6 +1490,11 @@ int st30_rx_get_session_stats(st30_rx_handle handle, struct st30_rx_user_stats* 
 
 int st30_rx_reset_session_stats(st30_rx_handle handle) {
   struct st_rx_audio_session_handle_impl* s_impl = handle;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
 
   if (s_impl->type != MT_HANDLE_RX_AUDIO) {
     err("%s, invalid type %d\n", __func__, s_impl->type);

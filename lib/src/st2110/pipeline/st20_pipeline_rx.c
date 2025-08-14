@@ -1156,8 +1156,14 @@ int st20p_rx_get_sch_idx(st20p_rx_handle handle) {
 
 int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats* stats) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int cidx;
 
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
+  cidx = ctx->idx;
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;
@@ -1168,8 +1174,14 @@ int st20p_rx_get_session_stats(st20p_rx_handle handle, struct st20_rx_user_stats
 
 int st20p_rx_reset_session_stats(st20p_rx_handle handle) {
   struct st20p_rx_ctx* ctx = handle;
-  int cidx = ctx->idx;
+  int cidx;
 
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
+
+  cidx = ctx->idx;
   if (ctx->type != MT_ST20_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
     return 0;

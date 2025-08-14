@@ -606,8 +606,8 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     /* start of a new frame */
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
-    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
-    if (s->ops.num_port > 1) s->port_user_stats->port[MTL_SESSION_PORT_R].frames++;
+    s->port_user_stats.port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats.port[MTL_SESSION_PORT_R].frames++;
     s->st40_rtp_time = rtp->tmstamp;
     bool second_field = false;
     if (s->ops.interlaced) {
@@ -665,7 +665,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         /* start of a new frame */
         s->st40_pkt_idx = 0;
         rte_atomic32_inc(&s->stat_frame_cnt);
-        s->port_user_stats->port[s_port].frames++;
+        s->port_user_stats.port[s_port].frames++;
         s->st40_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
         if (s->ops.interlaced) {
@@ -970,8 +970,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
-    s->port_user_stats->port[MTL_SESSION_PORT_P].frames++;
-    if (send_r) s->port_user_stats->port[MTL_SESSION_PORT_R].frames++;
+    s->port_user_stats.port[MTL_SESSION_PORT_P].frames++;
+    if (send_r) s->port_user_stats.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
 
     MT_USDT_ST40_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st40_frame_idx,
@@ -2226,8 +2226,13 @@ void* st40_tx_get_framebuffer(st40_tx_handle handle, uint16_t idx) {
   return frame_info->addr;
 }
 
-int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_users_stats* stats) {
+int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_user_stats* stats) {
   struct st_tx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
 
   if (s_impl->type != MT_HANDLE_TX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
@@ -2241,6 +2246,11 @@ int st40_tx_get_session_stats(st40_tx_handle handle, struct st40_tx_users_stats*
 
 int st40_tx_reset_session_stats(st40_tx_handle handle) {
   struct st_tx_ancillary_session_handle_impl* s_impl = handle;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
 
   if (s_impl->type != MT_HANDLE_TX_ANC) {
     err("%s, invalid type %d\n", __func__, s_impl->type);
