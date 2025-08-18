@@ -1,6 +1,7 @@
 build: .
 mtl_path: .
 media_path: /mnt/media
+media_ramdisk_mountpoint: /mnt/ramdisk/media
 capture_cfg:
   enable: false
   test_name: test_name
