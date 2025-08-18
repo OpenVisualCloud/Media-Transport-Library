@@ -135,10 +135,11 @@ def prepare_netsniff(capture_cfg, host=None):
 
     returns: NetsniffRecorder instance or None.
     """
+    breakpoint()
     if (
         capture_cfg
         and capture_cfg.get("enable")
-        and capture_cfg.get("tool" in ["netsniff", "netsniff-ng"])
+        and capture_cfg.get("tool") in ["netsniff", "netsniff-ng"]
     ):
         netsniff = NetsniffRecorder(
             host=host,
