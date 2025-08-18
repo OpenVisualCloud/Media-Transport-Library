@@ -274,6 +274,38 @@ struct st_rx_port_stats {
 };
 
 /**
+ * A structure used to retrieve general statistics for a tx session.
+ * Contains per-port statistics and additional counters for transmission events.
+ */
+struct st_tx_user_stats {
+  struct st_tx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Per-port TX statistics */
+  /** Total number of epoch mismatch events */
+  uint64_t stat_epoch_drop;
+  /** Total number of onward epoch events */
+  uint64_t stat_epoch_onward;
+  /** Total number of frames exceeding expected frame time */
+  uint64_t stat_exceed_frame_time;
+  /** Total number of errors due to user timestamp issues */
+  uint64_t stat_error_user_timestamp;
+};
+
+/**
+ * A structure used to retrieve general statistics for a rx session.
+ * Contains per-port statistics and additional counters for reception events.
+ */
+struct st_rx_user_stats {
+  struct st_rx_port_stats port[MTL_SESSION_PORT_MAX]; /**< Per-port RX statistics */
+  /** Total number of received packets */
+  uint64_t stat_pkts_received;
+  /** Total number of out-of-order packets received */
+  uint64_t stat_pkts_out_of_order;
+  /** Total number of packets dropped due to wrong SSRC */
+  uint64_t stat_pkts_wrong_ssrc_dropped;
+  /** Total number of packets dropped due to wrong payload type */
+  uint64_t stat_pkts_wrong_pt_dropped;
+};
+
+/**
  * Retrieve the varied info of the media transport device context.
  *
  * @param mt

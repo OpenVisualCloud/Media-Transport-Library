@@ -102,7 +102,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -110,23 +110,23 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, stat_pkts_wrong_ssrc_dropped);
+      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
       return -EINVAL;
     }
   }
 
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
   if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
-    ST_SESSION_STAT_INC(s, stat_pkts_wrong_interlace_dropped);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
     return -EINVAL;
   }
   /* 0b10: first field (bit 1 set, bit 0 clear)
      0b11: second field (bit 1 set, bit 0 set) */
   if (rfc8331->first_hdr_chunk.f & 0x2) {
     if (rfc8331->first_hdr_chunk.f & 0x1) {
-      ST_SESSION_STAT_INC(s, stat_interlace_second_field);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
     } else {
-      ST_SESSION_STAT_INC(s, stat_interlace_first_field);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
     }
   }
   /* 0b00: progressive or not specified, do nothing */
@@ -136,11 +136,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   /* drop old packet */
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    ST_SESSION_STAT_INC(s, stat_pkts_redundant);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     return 0;
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
-    ST_SESSION_STAT_INC(s, stat_pkts_out_of_order);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -150,7 +150,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
-    ST_SESSION_STAT_INC(s, stat_pkts_enqueue_fail);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_enqueue_fail);
     MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
   }
@@ -158,11 +158,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   if (tmstamp != s->tmstamp) {
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats.port[s_port].frames++;
+    s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
-  ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats.port[s_port].packets++;
+  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
+  s->port_user_stats.common.port[s_port].packets++;
 
   /* get a valid packet */
   uint64_t tsc_start = 0;

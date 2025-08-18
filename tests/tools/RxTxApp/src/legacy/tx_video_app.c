@@ -713,8 +713,8 @@ static int app_tx_video_io_stat(struct st_app_tx_video_session* s) {
   for (uint8_t port = 0; port < s->num_port; port++) {
     ret = st20_tx_get_session_stats(s->handle, &stats);
     if (ret < 0) return ret;
-    tx_rate_m = (double)stats.port[port].bytes * 8 / time_sec / MTL_STAT_M_UNIT;
-    fps = (double)stats.port[port].frames / time_sec;
+    tx_rate_m = (double)stats.common.port[port].bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.common.port[port].frames / time_sec;
 
     info("%s(%d,%u), tx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
   }

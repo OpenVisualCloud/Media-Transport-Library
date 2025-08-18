@@ -265,7 +265,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
 
     return -EINVAL;
   }
@@ -274,7 +274,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, stat_pkts_wrong_ssrc_dropped);
+      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
 
       return -EINVAL;
     }
@@ -283,7 +283,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if (pkt_len != s->pkt_len) {
     dbg("%s(%d,%d), drop as pkt_len mismatch now %u expect %u\n", __func__, s->idx,
         s_port, pkt_len, s->pkt_len);
-    ST_SESSION_STAT_INC(s, stat_pkts_len_mismatch_dropped);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_len_mismatch_dropped);
     return -EINVAL;
   }
 
@@ -292,7 +292,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   /* drop old packet */
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    ST_SESSION_STAT_INC(s, stat_pkts_redundant);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     if (s->enable_timing_parser) {
       enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
       ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
@@ -300,7 +300,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     return -EIO;
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
-    ST_SESSION_STAT_INC(s, stat_pkts_out_of_order);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
     info("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
          s->latest_seq_id);
   }
@@ -312,7 +312,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->st30_cur_frame = rx_audio_session_get_frame(s);
     if (!s->st30_cur_frame) {
       dbg("%s(%d,%d), seq %d drop as frame run out\n", __func__, s->idx, s_port, seq_id);
-      ST_SESSION_STAT_INC(s, stat_slot_get_frame_fail);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_slot_get_frame_fail);
       MT_USDT_ST30_RX_NO_FRAMEBUFFER(s->mgr->idx, s->idx, tmstamp);
       return -EIO;
     }
@@ -321,13 +321,13 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   if ((offset + s->pkt_len) > s->st30_frame_size) {
     dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
         offset, s->st30_frame_size);
-    ST_SESSION_STAT_INC(s, stat_pkts_dropped);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_dropped);
     return -EIO;
   }
   rte_memcpy(s->st30_cur_frame->addr + offset, payload, s->pkt_len);
   s->frame_recv_size += s->pkt_len;
-  ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats.port[s_port].packets++;
+  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
+  s->port_user_stats.common.port[s_port].packets++;
   s->st30_pkt_idx++;
 
   if (s->enable_timing_parser) {
@@ -390,7 +390,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->frame_recv_size = 0;
     s->st30_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frames_received);
-    s->port_user_stats.port[s_port].frames++;
+    s->port_user_stats.common.port[s_port].frames++;
     s->st30_cur_frame = NULL;
   }
 
@@ -415,7 +415,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
-    ST_SESSION_STAT_INC(s, stat_pkts_wrong_pt_dropped);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
     return -EINVAL;
   }
   if (ops->ssrc) {
@@ -423,7 +423,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     if (ssrc != ops->ssrc) {
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
-      ST_SESSION_STAT_INC(s, stat_pkts_wrong_ssrc_dropped);
+      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
       return -EINVAL;
     }
   }
@@ -433,11 +433,11 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   /* drop old packet */
   if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    ST_SESSION_STAT_INC(s, stat_pkts_redundant);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     return -EIO;
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
-    ST_SESSION_STAT_INC(s, stat_pkts_out_of_order);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -446,14 +446,14 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
   if (ret < 0) {
     dbg("%s(%d,%d), drop as rtps ring full\n", __func__, seq_id, s_port);
-    ST_SESSION_STAT_INC(s, stat_slot_get_frame_fail);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_slot_get_frame_fail);
     return -EIO;
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   ops->notify_rtp_ready(ops->priv);
-  ST_SESSION_STAT_INC(s, stat_pkts_received);
-  s->port_user_stats.port[s_port].packets++;
+  ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
+  s->port_user_stats.common.port[s_port].packets++;
 
   return 0;
 }

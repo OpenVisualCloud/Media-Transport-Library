@@ -274,7 +274,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) {
-      ST_SESSION_STAT_INC(s, stat_error_user_timestamp);
+      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
     }
   } else {
     epochs = ptp_time / frame_time;
@@ -293,27 +293,28 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   if (interlaced) {
     if (second_field) { /* align to odd epoch */
       if (!(epochs & 0x1)) epochs++;
-      ST_SESSION_STAT_INC(s, stat_interlace_second_field);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
     } else { /* align to even epoch */
       if (epochs & 0x1) epochs++;
-      ST_SESSION_STAT_INC(s, stat_interlace_first_field);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
     }
   }
 
   to_epoch = tx_ancillary_pacing_time(pacing, epochs) - ptp_time;
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
-    ST_SESSION_STAT_INC(s, stat_epoch_mismatch);
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
     to_epoch = 0; /* send asap */
   }
 
   if (epochs > next_epochs) {
     uint drop = (epochs - next_epochs);
-    ST_SESSION_STAT_ADD(s, stat_epoch_drop, drop);
+    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop, drop);
   }
 
   if (epochs < next_epochs) {
-    ST_SESSION_STAT_ADD(s, stat_epoch_onward, (next_epochs - epochs));
+    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
+                        (next_epochs - epochs));
   }
 
   pacing->cur_epochs = epochs;
@@ -606,8 +607,8 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     /* start of a new frame */
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
-    s->port_user_stats.port[MTL_SESSION_PORT_P].frames++;
-    if (s->ops.num_port > 1) s->port_user_stats.port[MTL_SESSION_PORT_R].frames++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st40_rtp_time = rtp->tmstamp;
     bool second_field = false;
     if (s->ops.interlaced) {
@@ -665,7 +666,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         /* start of a new frame */
         s->st40_pkt_idx = 0;
         rte_atomic32_inc(&s->stat_frame_cnt);
-        s->port_user_stats.port[s_port].frames++;
+        s->port_user_stats.common.port[s_port].frames++;
         s->st40_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
         if (s->ops.interlaced) {
@@ -780,7 +781,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
       if (frame_end_time > pacing->tsc_time_cursor) {
-        ST_SESSION_STAT_INC(s, stat_exceed_frame_time);
+        ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
         dbg("%s(%d), frame %d build time out %" PRIu64 " us\n", __func__, idx,
             s->st40_frame_idx,
             (uint64_t)((frame_end_time - pacing->tsc_time_cursor) / NS_PER_US));
@@ -970,8 +971,8 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
-    s->port_user_stats.port[MTL_SESSION_PORT_P].frames++;
-    if (send_r) s->port_user_stats.port[MTL_SESSION_PORT_R].frames++;
+    s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
+    if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
 
     MT_USDT_ST40_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st40_frame_idx,

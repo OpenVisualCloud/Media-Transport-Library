@@ -1682,15 +1682,11 @@ struct st22_rx_ops {
  * A structure used to retrieve general statistics(I/O) for a st20 tx session.
  */
 struct st20_tx_user_stats {
-  struct st_tx_port_stats port[MTL_SESSION_PORT_MAX];
+  struct st_tx_user_stats common;
   uint64_t stat_pkts_dummy;
   uint64_t stat_epoch_troffset_mismatch;
   uint64_t stat_trans_troffset_mismatch;
   uint64_t stat_trans_recalculate_warmup;
-  uint64_t stat_epoch_drop;
-  uint64_t stat_epoch_onward;
-  uint64_t stat_exceed_frame_time;
-  uint64_t stat_error_user_timestamp;
   uint64_t stat_user_busy;
   uint64_t stat_lines_not_ready;
   uint64_t stat_vsync_mismatch;
@@ -1707,8 +1703,7 @@ struct st20_tx_user_stats {
  * A structure used to retrieve general statistics(I/O) for a st20 rx session.
  */
 struct st20_rx_user_stats {
-  struct st_rx_port_stats port[MTL_SESSION_PORT_MAX];
-  uint64_t stat_pkts_received;
+  struct st_rx_user_stats common;
   uint64_t stat_bytes_received;
   uint64_t stat_slices_received;
   uint64_t stat_pkts_idx_dropped;
@@ -1718,9 +1713,7 @@ struct st20_rx_user_stats {
   uint64_t stat_frames_pks_missed;
   uint64_t stat_pkts_rtp_ring_full;
   uint64_t stat_pkts_no_slot;
-  uint64_t stat_pkts_out_of_order;
   uint64_t stat_pkts_redundant_dropped;
-  uint64_t stat_pkts_wrong_pt_dropped;
   uint64_t stat_pkts_wrong_interlace_dropped;
   uint64_t stat_pkts_wrong_len_dropped;
   uint64_t stat_pkts_enqueue_fallback;
@@ -1745,7 +1738,6 @@ struct st20_rx_user_stats {
   uint64_t stat_burst_pkts_max;
   uint64_t stat_burst_succ_cnt;
   uint64_t stat_burst_pkts_sum;
-  uint64_t stat_pkts_wrong_ssrc_dropped;
   uint64_t incomplete_frames_cnt;
   uint64_t stat_pkts_wrong_kmod_dropped;
 };

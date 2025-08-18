@@ -532,13 +532,9 @@ struct st30_rx_ops {
  * A structure used to retrieve general statistics(I/O) for a st30 tx session.
  */
 struct st30_tx_user_stats {
-  struct st_tx_port_stats port[MTL_SESSION_PORT_MAX];
+  struct st_tx_user_stats common;
   uint64_t stat_epoch_mismatch;
-  uint64_t stat_epoch_drop;
-  uint64_t stat_epoch_onward;
   uint64_t stat_epoch_late;
-  uint64_t stat_exceed_frame_time;
-  uint64_t stat_error_user_timestamp;
   uint64_t stat_recoverable_error;
   uint64_t stat_unrecoverable_error;
   uint64_t stat_pkts_burst;
@@ -553,13 +549,9 @@ struct st30_tx_user_stats {
  * A structure used to retrieve general statistics(I/O) for a st30 rx session.
  */
 struct st30_rx_user_stats {
-  struct st_rx_port_stats port[MTL_SESSION_PORT_MAX];
-  uint64_t stat_pkts_received;
+  struct st_rx_user_stats common;
   uint64_t stat_pkts_redundant;
-  uint64_t stat_pkts_out_of_order;
   uint64_t stat_pkts_dropped;
-  uint64_t stat_pkts_wrong_ssrc_dropped;
-  uint64_t stat_pkts_wrong_pt_dropped;
   uint64_t stat_pkts_len_mismatch_dropped;
   uint64_t stat_slot_get_frame_fail;
 };

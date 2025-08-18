@@ -78,16 +78,16 @@
 
 #define ST_SESSION_STAT_TIMEOUT_US (10)
 
-#define ST_SESSION_STAT_INC(s, stat) \
-  do {                               \
-    (s)->stat++;                     \
-    (s)->port_user_stats.stat++;     \
+#define ST_SESSION_STAT_INC(s, struct, stat) \
+  do {                                       \
+    (s)->stat++;                             \
+    (s)->struct.stat++;                      \
   } while (0)
 
-#define ST_SESSION_STAT_ADD(s, stat, val) \
-  do {                                    \
-    (s)->stat += (val);                   \
-    (s)->port_user_stats.stat += (val);   \
+#define ST_SESSION_STAT_ADD(s, struct, stat, val) \
+  do {                                            \
+    (s)->stat += (val);                           \
+    (s)->struct.stat += (val);                    \
   } while (0)
 
 enum st21_tx_frame_status {
