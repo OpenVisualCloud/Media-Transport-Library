@@ -1532,7 +1532,7 @@ def add_dual_interfaces(
     tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
 
     # Configure RX host interface only
-    rx_config["interfaces"][0]["name"] = rx_nic_port_list[1]
+    rx_config["interfaces"][0]["name"] = rx_nic_port_list[0]
 
     if test_mode == "unicast":
         tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
@@ -1723,20 +1723,27 @@ def execute_dual_test(
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
 
+    tx_config_json = json.dumps(tx_config, indent=4)
+    rx_config_json = json.dumps(rx_config, indent=4)
+
     # Log test start
     logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
     log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", tx_host, build)
     log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", rx_host, build)
-    log_to_file(f"TX config: {json.dumps(tx_config, indent=4)}", tx_host, build)
-    log_to_file(f"RX config: {json.dumps(rx_config, indent=4)}", rx_host, build)
+    log_to_file(f"TX config: {tx_config_json}", tx_host, build)
+    log_to_file(f"RX config: {rx_config_json}", rx_host, build)
 
     # Prepare TX config
+    tx_config_file = f"{build}/tests/tx_config.json"
     tx_f = tx_host.connection.path(build, "tests", "tx_config.json")
-    tx_f.write_text(tx_config, encoding="utf-8")
+    tx_json_content = tx_config_json.replace('"', '\\"')
+    tx_f.write_text(tx_json_content)
 
     # Prepare RX config
-    rx_f = tx_host.connection.path(build, "tests", "rx_config.json")
-    rx_f.write_text(rx_config, encoding="utf-8")
+    rx_config_file = f"{build}/tests/rx_config.json"
+    rx_f = rx_host.connection.path(build, "tests", "rx_config.json")
+    rx_json_content = rx_config_json.replace('"', '\\"')
+    rx_f.write_text(rx_json_content)
 
     # Adjust test_time for high-res/fps/replicas
     if (
@@ -1760,8 +1767,8 @@ def execute_dual_test(
     if ptp:
         base_command += " --ptp"
 
-    tx_command = f"{base_command} --config_file {tx_config}"
-    rx_command = f"{base_command} --config_file {rx_config}"
+    tx_command = f"{base_command} --config_file {tx_config_file}"
+    rx_command = f"{base_command} --config_file {rx_config_file}"
 
     logger.info(f"TX Command: {tx_command}")
     logger.info(f"RX Command: {rx_command}")
