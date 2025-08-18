@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 ### Audio Integrity
 
-#### File Mode
+#### Audio File Mode
 
 Compares a single audio file against a reference source file:
 
@@ -32,7 +32,7 @@ python audio_integrity.py file <source_file> <output_file> \
     --output_path /path/to/output/dir
 ```
 
-#### Stream Mode
+#### Audio Stream Mode
 
 Checks the integrity of segmented audio files from a stream:
 
@@ -44,7 +44,7 @@ python audio_integrity.py stream <source_file> <segment_prefix> \
 
 ### Video Integrity
 
-#### File Mode
+#### Video File Mode
 
 Compares a single video file against a reference source file:
 
@@ -53,7 +53,7 @@ python video_integrity.py file <source_file> <output_file> <resolution> <format>
     --output_path /path/to/output/dir
 ```
 
-#### Stream Mode
+#### Video Stream Mode
 
 Checks the integrity of segmented video files from a stream:
 

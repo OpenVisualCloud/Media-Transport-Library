@@ -14,12 +14,11 @@ TEST_DIR="/tmp/mtl_audio_integrity_test"
 mkdir -p $TEST_DIR
 
 # Define parameters for our test
-SAMPLE_SIZE=2     # 16-bit samples (2 bytes)
-SAMPLE_NUM=480    # 480 samples per frame
-CHANNEL_NUM=2     # stereo
+SAMPLE_SIZE=2  # 16-bit samples (2 bytes)
+SAMPLE_NUM=480 # 480 samples per frame
+CHANNEL_NUM=2  # stereo
 FRAME_SIZE=$((SAMPLE_SIZE * SAMPLE_NUM * CHANNEL_NUM))
-FRAME_COUNT=100   # generate 100 frames
-SEGMENT_COUNT=3   # for stream test, use 3 segments
+FRAME_COUNT=100 # generate 100 frames
 
 echo "Creating test audio files..."
 echo "Frame size: $FRAME_SIZE bytes"
@@ -54,15 +53,15 @@ cp $SOURCE_FILE $SEGMENT_FILE
 # Test file integrity - should pass
 echo -e "\n\n### TEST 1: File integrity check (should pass) ###"
 python3 "$SCRIPT_DIR/audio_integrity.py" file \
-    $SOURCE_FILE $DEST_FILE \
-    --sample_size $SAMPLE_SIZE --sample_num $SAMPLE_NUM --channel_num $CHANNEL_NUM \
-    --output_path $TEST_DIR --no_delete_file
+	$SOURCE_FILE $DEST_FILE \
+	--sample_size $SAMPLE_SIZE --sample_num $SAMPLE_NUM --channel_num $CHANNEL_NUM \
+	--output_path $TEST_DIR --no_delete_file
 RESULT=$?
 if [ $RESULT -eq 0 ]; then
-    echo "✅ File integrity check passed as expected"
+	echo "✅ File integrity check passed as expected"
 else
-    echo "❌ File integrity check failed unexpectedly"
-    exit 1
+	echo "❌ File integrity check failed unexpectedly"
+	exit 1
 fi
 
 # Test file integrity with corrupt file - should fail
@@ -70,16 +69,16 @@ echo -e "\n\n### TEST 2: File integrity check with corrupt file (should fail) ##
 # Temporarily disable exit on error for this test since we expect it to fail
 set +e
 python3 "$SCRIPT_DIR/audio_integrity.py" file \
-    $SOURCE_FILE $CORRUPT_FILE \
-    --sample_size $SAMPLE_SIZE --sample_num $SAMPLE_NUM --channel_num $CHANNEL_NUM \
-    --output_path $TEST_DIR --no_delete_file
+	$SOURCE_FILE $CORRUPT_FILE \
+	--sample_size $SAMPLE_SIZE --sample_num $SAMPLE_NUM --channel_num $CHANNEL_NUM \
+	--output_path $TEST_DIR --no_delete_file
 RESULT=$?
-set -e  # Re-enable exit on error
+set -e # Re-enable exit on error
 if [ $RESULT -eq 1 ]; then
-    echo "✅ Corrupt file check correctly failed"
+	echo "✅ Corrupt file check correctly failed"
 else
-    echo "❌ Corrupt file check incorrectly passed"
-    exit 1
+	echo "❌ Corrupt file check incorrectly passed"
+	exit 1
 fi
 
 # Test stream integrity - should pass
@@ -87,16 +86,16 @@ echo -e "\n\n### TEST 3: Stream integrity check (should pass) ###"
 # Temporarily disable exit on error for this test
 set +e
 python3 "$SCRIPT_DIR/audio_integrity.py" stream \
-    $SOURCE_FILE segment \
-    --sample_size $SAMPLE_SIZE --sample_num $SAMPLE_NUM --channel_num $CHANNEL_NUM \
-    --output_path $TEST_DIR/segments --no_delete_file
+	$SOURCE_FILE segment \
+	--sample_size $SAMPLE_SIZE --sample_num $SAMPLE_NUM --channel_num $CHANNEL_NUM \
+	--output_path $TEST_DIR/segments --no_delete_file
 RESULT=$?
-set -e  # Re-enable exit on error
+set -e # Re-enable exit on error
 if [ $RESULT -eq 0 ]; then
-    echo "✅ Stream integrity check passed as expected"
+	echo "✅ Stream integrity check passed as expected"
 else
-    echo "❌ Stream integrity check failed unexpectedly"
-    exit 1
+	echo "❌ Stream integrity check failed unexpectedly"
+	exit 1
 fi
 
 # Clean up test files
