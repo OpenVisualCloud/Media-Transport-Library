@@ -1109,6 +1109,7 @@ def execute_dual_test(
     tx_proc = None
     # Use RX host for tcpdump capture
     tcpdump = prepare_tcpdump(capture_cfg, rx_host)
+    netsniff = prepare_netsniff(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -1139,6 +1140,9 @@ def execute_dual_test(
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff capture...")
+            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -1208,6 +1212,8 @@ def execute_dual_test(
                     pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
     passed = False
     match output_format:
         case "yuv":
