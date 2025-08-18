@@ -1679,31 +1679,67 @@ struct st22_rx_ops {
 };
 
 /**
- * A structure used to retrieve general statistics(I/O) for a st20 tx port.
+ * A structure used to retrieve general statistics(I/O) for a st20 tx session.
  */
-struct st20_tx_port_status {
-  /** Total number of transmitted packets. */
-  uint64_t packets;
-  /** Total number of transmitted bytes. */
-  uint64_t bytes;
-  /** Total number of build packets. */
-  uint64_t build;
-  /** Total number of transmitted frames. */
-  uint64_t frames;
+struct st20_tx_user_stats {
+  struct st_tx_user_stats common;
+  uint64_t stat_pkts_dummy;
+  uint64_t stat_epoch_troffset_mismatch;
+  uint64_t stat_trans_troffset_mismatch;
+  uint64_t stat_trans_recalculate_warmup;
+  uint64_t stat_user_busy;
+  uint64_t stat_lines_not_ready;
+  uint64_t stat_vsync_mismatch;
+  uint64_t stat_pkts_chain_realloc_fail;
+  uint64_t stat_user_meta_cnt;
+  uint64_t stat_user_meta_pkt_cnt;
+  uint64_t stat_recoverable_error;
+  uint64_t stat_unrecoverable_error;
+  uint64_t stat_interlace_first_field;
+  uint64_t stat_interlace_second_field;
 };
 
 /**
- * A structure used to retrieve general statistics(I/O) for a st20 rx port.
+ * A structure used to retrieve general statistics(I/O) for a st20 rx session.
  */
-struct st20_rx_port_status {
-  /** Total number of received packets. */
-  uint64_t packets;
-  /** Total number of received bytes. */
-  uint64_t bytes;
-  /** Total number of received frames. */
-  uint64_t frames;
-  /** Total number of received packets which are not valid. */
-  uint64_t err_packets;
+struct st20_rx_user_stats {
+  struct st_rx_user_stats common;
+  uint64_t stat_bytes_received;
+  uint64_t stat_slices_received;
+  uint64_t stat_pkts_idx_dropped;
+  uint64_t stat_pkts_offset_dropped;
+  uint64_t stat_frames_dropped;
+  uint64_t stat_pkts_idx_oo_bitmap;
+  uint64_t stat_frames_pks_missed;
+  uint64_t stat_pkts_rtp_ring_full;
+  uint64_t stat_pkts_no_slot;
+  uint64_t stat_pkts_redundant_dropped;
+  uint64_t stat_pkts_wrong_interlace_dropped;
+  uint64_t stat_pkts_wrong_len_dropped;
+  uint64_t stat_pkts_enqueue_fallback;
+  uint64_t stat_pkts_dma;
+  uint64_t stat_pkts_slice_fail;
+  uint64_t stat_pkts_slice_merged;
+  uint64_t stat_pkts_multi_segments_received;
+  uint64_t stat_pkts_not_bpm;
+  uint64_t stat_pkts_wrong_payload_hdr_split;
+  uint64_t stat_mismatch_hdr_split_frame;
+  uint64_t stat_pkts_copy_hdr_split;
+  uint64_t stat_vsync_mismatch;
+  uint64_t stat_slot_get_frame_fail;
+  uint64_t stat_slot_query_ext_fail;
+  uint64_t stat_pkts_simulate_loss;
+  uint64_t stat_pkts_user_meta;
+  uint64_t stat_pkts_user_meta_err;
+  uint64_t stat_pkts_retransmit;
+  uint64_t stat_interlace_first_field;
+  uint64_t stat_interlace_second_field;
+  uint64_t stat_st22_boxes;
+  uint64_t stat_burst_pkts_max;
+  uint64_t stat_burst_succ_cnt;
+  uint64_t stat_burst_pkts_sum;
+  uint64_t incomplete_frames_cnt;
+  uint64_t stat_pkts_wrong_kmod_dropped;
 };
 
 /**
@@ -1837,7 +1873,7 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
 int st20_tx_get_sch_idx(st20_tx_handle handle);
 
 /**
- * Retrieve the general statistics(I/O) for one tx st2110-20(video) session port.
+ * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.
@@ -1849,11 +1885,10 @@ int st20_tx_get_sch_idx(st20_tx_handle handle);
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
-                           struct st20_tx_port_status* stats);
+int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* stats);
 
 /**
- * Reset the general statistics(I/O) for one tx st2110-20(video) session port.
+ * Reset the general statistics(I/O) for one tx st2110-20(video) session.
  *
  * @param handle
  *   The handle to the tx st2110-20(video) session.
@@ -1863,7 +1898,7 @@ int st20_tx_get_port_stats(st20_tx_handle handle, enum mtl_session_port port,
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20_tx_reset_port_stats(st20_tx_handle handle, enum mtl_session_port port);
+int st20_tx_reset_session_stats(st20_tx_handle handle);
 
 /**
  * Retrieve the pixel group info from st2110-20(video) format.
@@ -2187,7 +2222,7 @@ bool st20_rx_dma_enabled(st20_rx_handle handle);
 int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass* pass);
 
 /**
- * Retrieve the general statistics(I/O) for one rx st2110-20(video) session port.
+ * Retrieve the general statistics(I/O) for one rx st2110-20(video) session.
  *
  * @param handle
  *   The handle to the rx st2110-20(video) session.
@@ -2199,11 +2234,10 @@ int st20_rx_timing_parser_critical(st20_rx_handle handle, struct st20_rx_tp_pass
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
-                           struct st20_rx_port_status* stats);
+int st20_rx_get_session_stats(st20_rx_handle handle, struct st20_rx_user_stats* stats);
 
 /**
- * Reset the general statistics(I/O) for one rx st2110-20(video) session port.
+ * Reset the general statistics(I/O) for one rx st2110-20(video) session.
  *
  * @param handle
  *   The handle to the rx st2110-20(video) session.
@@ -2213,7 +2247,7 @@ int st20_rx_get_port_stats(st20_rx_handle handle, enum mtl_session_port port,
  *   - >=0 succ.
  *   - <0: Error code.
  */
-int st20_rx_reset_port_stats(st20_rx_handle handle, enum mtl_session_port port);
+int st20_rx_reset_session_stats(st20_rx_handle handle);
 
 /**
  * Create one rx st2110-22(compressed video) session.
