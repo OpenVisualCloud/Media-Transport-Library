@@ -105,7 +105,7 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
 
 def prepare_tcpdump(capture_cfg, host=None):
     """
-    Prepare and TcpDumpRecorder if capture_cfg is enabled and tool is tcpdump.
+    Prepare TcpDumpRecorder if capture_cfg is enabled and tool is tcpdump.
 
     returns: TcpDumpRecorder instance or None.
     """
@@ -131,11 +131,10 @@ def prepare_tcpdump(capture_cfg, host=None):
 
 def prepare_netsniff(capture_cfg, host=None):
     """
-    Prepare and NetsniffRecorder if capture_cfg is enabled.
+    Prepare NetsniffRecorder if capture_cfg is enabled.
 
     returns: NetsniffRecorder instance or None.
     """
-    breakpoint()
     if (
         capture_cfg
         and capture_cfg.get("enable")
