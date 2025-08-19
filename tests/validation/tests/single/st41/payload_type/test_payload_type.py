@@ -22,6 +22,7 @@ k_bit_mapping = {
 }
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "payload_type,type_mode",
     [

@@ -10,7 +10,19 @@ from mtl_engine.media_files import yuv_files_422p10le
 
 @pytest.mark.parametrize(
     "fps",
-    ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
+    [
+        "p23",
+        "p24",
+        pytest.param("p25", marks=pytest.mark.nightly),
+        "p29",
+        "p30",
+        "p50",
+        "p59",
+        "p60",
+        "p100",
+        "p119",
+        "p120",
+    ],
 )
 @pytest.mark.parametrize("codec", ["JPEG-XS", "H264_CBR"])
 def test_fps(

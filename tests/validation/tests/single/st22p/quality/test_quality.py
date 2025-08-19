@@ -8,6 +8,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("quality", ["quality", "speed"])
 def test_quality(
     hosts, build, media, nic_port_list, test_time, quality, test_config, prepare_ramdisk
