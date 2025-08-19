@@ -11,7 +11,6 @@ from typing import Dict
 
 import pytest
 from common.nicctl import Nicctl
-from create_pcap_file.ramdisk import RamdiskPreparer
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
@@ -138,29 +137,21 @@ def prepare_ramdisk(hosts, test_config):
     ramdisk_cfg = test_config.get("ramdisk", {})
     capture_cfg = test_config.get("capture_cfg", {})
     pcap_dir = ramdisk_cfg.get("pcap_dir", "/home/pcap_files")
-    tmpfs_size = ramdisk_cfg.get("tmpfs_size", "768G")
-    tmpfs_name = ramdisk_cfg.get("tmpfs_name", "new_disk_name")
-    use_sudo = ramdisk_cfg.get("use_sudo", True)
+    tmpfs_size_gib = ramdisk_cfg.get("tmpfs_size_gib", "768")
 
     if capture_cfg.get("enable", False):
-        for host in hosts.values():
-            preparer = RamdiskPreparer(
-                host=host,
-                pcap_dir=pcap_dir,
-                tmpfs_size=tmpfs_size,
-                tmpfs_name=tmpfs_name,
-                use_sudo=use_sudo,
-            )
-            preparer.start()
+        ramdisks = [Ramdisk(host=host, mount_point=pcap_dir, size_gib=tmpfs_size_gib) for host in hosts.values()]
+        for ramdisk in ramdisks:
+            ramdisk.mount()
 
 
 @pytest.fixture(scope="session")
 def media_ramdisk(hosts, test_config):
+    ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
+    ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
+    ramdisk_size_gib = ramdisk_config.get("size_gib", 32)
     ramdisks = [
-        Ramdisk(
-            host=host, mount_point=test_config["media_ramdisk_mountpoint"], size_gib=32
-        )
-        for host in hosts.values()
+        Ramdisk(host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib) for host in hosts.values()
     ]
     for ramdisk in ramdisks:
         ramdisk.mount()
@@ -172,42 +163,31 @@ def media_ramdisk(hosts, test_config):
 @pytest.fixture(scope="function")
 def media_file(media_ramdisk, request, hosts, test_config):
     media_file_info = request.param
-    src_media_file_path = os.path.join(
-        test_config["media_path"], media_file_info["filename"]
-    )
-    ramdisk_media_file_path = os.path.join(
-        test_config["media_ramdisk_mountpoint"], media_file_info["filename"]
-    )
+    ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
+    ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
+    media_path = test_config.get("media_path", "/mnt/media")
+    src_media_file_path = os.path.join(media_path, media_file_info["filename"])
+    ramdisk_media_file_path = os.path.join(ramdisk_mountpoint, media_file_info["filename"])
     for host in hosts.values():
         cmd = f"cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
         except ConnectionCalledProcessError as e:
-            logging.log(
-                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
-            )
+            logging.log(level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}")
     yield media_file_info, ramdisk_media_file_path
     for host in hosts.values():
         cmd = f"rm {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
         except ConnectionCalledProcessError as e:
-            logging.log(
-                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
-            )
+            logging.log(level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}")
 
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--keep", help="keep result media files: all, failed, none (default)"
-    )
-    parser.addoption(
-        "--dmesg", help="method of dmesg gathering: clear (dmesg -C), keep (default)"
-    )
+    parser.addoption("--keep", help="keep result media files: all, failed, none (default)")
+    parser.addoption("--dmesg", help="method of dmesg gathering: clear (dmesg -C), keep (default)")
     parser.addoption("--media", help="path to media asset (default /mnt/media)")
-    parser.addoption(
-        "--build", help="path to build (default ../Media-Transport-Library)"
-    )
+    parser.addoption("--build", help="path to build (default ../Media-Transport-Library)")
     parser.addoption("--nic", help="list of PCI IDs of network devices")
     parser.addoption("--dma", help="list of PCI IDs of DMA devices")
     parser.addoption("--time", help="seconds to run every test (default=15)")
@@ -261,9 +241,7 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     os.makedirs(os.path.join(LOG_FOLDER, "latest", case_folder), exist_ok=True)
     logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.log")
     fh = logging.FileHandler(logfile)
-    formatter = request.session.config.pluginmanager.get_plugin(
-        "logging-plugin"
-    ).formatter
+    formatter = request.session.config.pluginmanager.get_plugin("logging-plugin").formatter
     format = AmberLogFormatter(formatter)
     fh.setFormatter(format)
     fh.setLevel(logging.DEBUG)
