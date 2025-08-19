@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import pytest
-
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {

@@ -10,20 +10,28 @@ import time
 from typing import Dict
 
 import pytest
+from common.nicctl import Nicctl
+from create_pcap_file.ramdisk import RamdiskPreparer
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
-from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
-
-from common.nicctl import Nicctl
-from create_pcap_file.ramdisk import RamdiskPreparer
 from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
-from mtl_engine.csv_report import (csv_add_test, csv_write_report,
-                                   update_compliance_result)
+from mtl_engine.csv_report import (
+    csv_add_test,
+    csv_write_report,
+    update_compliance_result,
+)
 from mtl_engine.ramdisk import Ramdisk
-from mtl_engine.stash import (clear_issue, clear_result_log,
-                              clear_result_media, clear_result_note, get_issue,
-                              get_result_note, remove_result_media)
+from mtl_engine.stash import (
+    clear_issue,
+    clear_result_log,
+    clear_result_media,
+    clear_result_note,
+    get_issue,
+    get_result_note,
+    remove_result_media,
+)
+from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
