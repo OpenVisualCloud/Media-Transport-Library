@@ -1,0 +1,12 @@
+# These templates are designed to encourage clear communication and efficient issue tracking, reflecting Intel's commitment to quality and customer focus
+blank_issues_enabled: false
+contact_links:
+  - name: Support
+    url: https://github.com/OpenVisualCloud/Media-Transport-Library/issues
+    about: If you have questions or need support, please visit our issue tracker.
+  - name: Documentation
+    url: https://github.com/OpenVisualCloud/Media-Transport-Library/wiki
+    about: For detailed documentation and guides, please visit our documentation sub-page.
+  - name: Community
+    url: https://community.intel.com/
+    about: Join our community discussions and connect with other users.
