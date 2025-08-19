@@ -173,8 +173,12 @@ def execute_test(
     rx_proc = None
     tx_proc = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
-    netsniff = prepare_netsniff(capture_cfg, host)
-
+    netsniff = prepare_netsniff(
+        capture_cfg,
+        host,
+        src_ip = str(ip_dict['tx_interfaces']),
+        dst_ip = str(ip_dict['tx_sessions'])
+    )
     try:
         # Start RX pipeline first
         logger.info("Starting RX pipeline...")
@@ -346,7 +350,12 @@ def execute_test_rgb24(
     rx_proc = None
     tx_proc = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
-    netsniff = prepare_netsniff(capture_cfg, host)
+    netsniff = prepare_netsniff(
+        capture_cfg,
+        host,
+        src_ip = str(ip_dict['tx_interfaces']),
+        dst_ip = str(ip_dict['tx_sessions'])
+    )
 
     try:
         # Start RX pipeline first
@@ -527,7 +536,12 @@ def execute_test_rgb24_multiple(
     tx_1_proc = None
     tx_2_proc = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
-    netsniff = prepare_netsniff(capture_cfg, host)
+    netsniff = prepare_netsniff(
+        capture_cfg,
+        host,
+        src_ip = f"({ip_dict_rgb24_multiple['p_sip_1']} or {ip_dict_rgb24_multiple['p_sip_2']})",
+        dst_ip = f"({ip_dict_rgb24_multiple['p_tx_ip_1']} or {ip_dict_rgb24_multiple['p_tx_ip_2']})"
+    )
 
     try:
         rx_proc = run(
@@ -1109,7 +1123,12 @@ def execute_dual_test(
     tx_proc = None
     # Use RX host for tcpdump capture
     tcpdump = prepare_tcpdump(capture_cfg, rx_host)
-    netsniff = prepare_netsniff(capture_cfg, rx_host)
+    netsniff = prepare_netsniff(
+        capture_cfg,
+        rx_host,
+        src_ip = str(ip_dict['tx_interfaces']),
+        dst_ip = str(ip_dict['tx_sessions'])
+    )
 
     try:
         # Start RX pipeline first on RX host
