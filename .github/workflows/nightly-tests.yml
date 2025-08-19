@@ -1,8 +1,7 @@
 name: nightly-tests-bare-metal
 on:
-  push:
-    branches:
-      - nwochtma/nightly-tests
+  schedule:
+    - cron: '0 0 * * *' # Every day at midnight UTC
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
