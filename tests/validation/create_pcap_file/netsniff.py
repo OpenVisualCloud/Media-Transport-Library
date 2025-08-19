@@ -61,7 +61,7 @@ class NetsniffRecorder:
                     str(self.interface), # FIXME: It is not a proper interface name to be used here
                     "--out",
                     self.pcap_file,
-                    f"-f {self.filter}" if filter else "",
+                    f"-f {self.filter}" if self.filter else "",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
                 self.netsniff_process = connection.start_process(
