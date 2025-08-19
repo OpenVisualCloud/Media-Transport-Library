@@ -196,7 +196,6 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
                                  uint16_t* mbuf_len) {
   /* generate one anc rtp for test purpose */
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
-
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
   uint16_t udw_size = s->st40_source_end - s->st40_frame_cursor > 255
@@ -204,13 +203,13 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
                           : s->st40_source_end - s->st40_frame_cursor;
   uint16_t check_sum, total_size, payload_len;
   hdr->base.marker = 1;
-  hdr->first_hdr_chunk.anc_count = 1;
+  hdr->anc_count = 1;
   hdr->base.payload_type = s->st40_payload_type;
   hdr->base.version = 2;
   hdr->base.extension = 0;
   hdr->base.padding = 0;
   hdr->base.csrc_count = 0;
-  hdr->first_hdr_chunk.f = 0b00;
+  hdr->f = 0b00;
   hdr->base.tmstamp = s->st40_rtp_tmstamp;
   hdr->base.ssrc = htonl(0x88888888 + s->idx);
   /* update rtp seq*/
@@ -243,7 +242,6 @@ static void app_tx_anc_build_rtp(struct st_app_tx_anc_session* s, void* usrptr,
       sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
   *mbuf_len = payload_len + sizeof(struct st40_rfc8331_rtp_hdr);
   hdr->length = htons(payload_len);
-
   s->st40_frame_cursor += udw_size;
   if (s->st40_frame_cursor == s->st40_source_end)
     s->st40_frame_cursor = s->st40_source_begin;

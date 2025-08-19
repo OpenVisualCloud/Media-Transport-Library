@@ -455,6 +455,11 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
 
   switch (GST_EVENT_TYPE(event)) {
     case GST_EVENT_CAPS:
+      if (sink->session_capabilites_set) {
+        GST_WARNING("Capabilities already set, ignoring");
+        return gst_pad_event_default(pad, parent, event);
+      }
+
       gst_event_parse_caps(event, &caps);
       if (sink->async_session_create) {
         thread_data = malloc(sizeof(GstMtlSt30pTxThreadData));
@@ -470,6 +475,7 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
         }
       }
 
+      sink->session_capabilites_set = TRUE;
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:

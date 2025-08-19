@@ -55,6 +55,7 @@ dkms.conf
 .*
 *.log
 *.log_*
+tests/validation/logs
 logs_*
 tests/validation/logs
 *.patch

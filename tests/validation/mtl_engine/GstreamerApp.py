@@ -8,7 +8,7 @@ import time
 
 from mtl_engine.RxTxApp import prepare_tcpdump
 
-from .execute import log_fail, run
+from .execute import log_fail, run, is_process_running, get_process_returncode
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,13 @@ def create_connection_params(
         )
     return params
 
+def setup_gstreamer_plugins_paths (build):
+    plugin_paths = [
+        f"{build}/ecosystem/gstreamer_plugin/builddir",
+        f"{build}/tests/tools/gstreamer_tools/builddir"
+    ]
+
+    return ":".join(plugin_paths)
 
 def fract_format(framerate: str) -> str:
     """
@@ -111,15 +118,28 @@ def setup_gstreamer_st20p_tx_pipeline(
     # st20 tx GStreamer command line
     pipeline_command = [
         "gst-launch-1.0",
-        "-v",
-        "filesrc",
-        f"location={input_path}",
-        "!",
-        f"rawvideoparse format={format} height={height} width={width} framerate={framerate}",
-        "!",
+        "-v"]
+
+    rawvideoparse_supported_formats = ["v210"]
+
+
+    if format in rawvideoparse_supported_formats:
+        pipeline_command.extend([
+            "filesrc",
+            f"location={input_path}",
+            "!",
+            f"rawvideoparse format={format} height={height} width={width} framerate={framerate}",
+            "!"])
+    elif format == "I422_10LE":
+        pipeline_command.extend([
+            "filesrc",
+            f"location={input_path}",
+            f"blocksize={width * height * 10}"])
+
+    pipeline_command.extend([
         "mtl_st20p_tx",
-        f"tx-queues={tx_queues}",
-    ]
+        f"tx-queues={tx_queues}"
+    ])
 
     if tx_framebuff_num is not None:
         pipeline_command.append(f"tx-framebuff-num={tx_framebuff_num}")
@@ -131,7 +151,7 @@ def setup_gstreamer_st20p_tx_pipeline(
         pipeline_command.append(f"tx-fps={tx_fps}")
 
     pipeline_command.append(
-        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+        f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}"
     )
 
     return pipeline_command
@@ -180,7 +200,7 @@ def setup_gstreamer_st20p_rx_pipeline(
     pipeline_command.extend(["!", "filesink", f"location={output_path}"])
 
     pipeline_command.append(
-        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+        f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}"
     )
 
     return pipeline_command
@@ -215,7 +235,7 @@ def setup_gstreamer_st30_tx_pipeline(
         pipeline_command.append(f"{key}={value}")
 
     pipeline_command.append(
-        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+        f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}"
     )
 
     return pipeline_command
@@ -256,7 +276,7 @@ def setup_gstreamer_st30_rx_pipeline(
         pipeline_command.append(x)
 
     pipeline_command.append(
-        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+        f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}"
     )
 
     return pipeline_command
@@ -272,34 +292,51 @@ def setup_gstreamer_st40p_tx_pipeline(
     tx_fps: int,
     tx_did: int,
     tx_sdid: int,
+    tx_rfc8331: bool = False,
+    tx_user_pacing: bool = False,
+    tx_user_controlled_pacing: bool = False,
+    tx_user_controlled_pacing_offset: int = 0
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=40000, is_tx=True
     )
 
-    # st40 tx GStreamer command line
-    pipeline_command = [
-        "gst-launch-1.0",
-        "filesrc",
-        f"location={input_path}",
-        "!",
-        "mtl_st40p_tx",
-        f"tx-queues={tx_queues}",
-        f"tx-framebuff-cnt={tx_framebuff_cnt}",
-        f"tx-fps={tx_fps}",
-        f"tx-did={tx_did}",
-        f"tx-sdid={tx_sdid}",
-    ]
+    pipeline_command = ["gst-launch-1.0"]
+
+    if tx_rfc8331:
+        pipeline_command.extend(
+            ["ancgenerator",
+             f"num-frames={tx_fps * 10}",
+             f"fps={tx_fps}",
+             "!"])
+    else:
+        pipeline_command.extend(["filesrc", f"location={input_path}", "!"])
+
+    if tx_user_pacing:
+        pipeline_command.extend(
+            ["timeinserter", "!"]
+        )
+
+    pipeline_command.extend(
+        ["mtl_st40p_tx",
+         f"tx-queues={tx_queues}",
+         f"tx-framebuff-cnt={tx_framebuff_cnt}",
+         f"tx-fps={tx_fps}",
+         f"tx-did={tx_did}",
+         f"tx-sdid={tx_sdid}",
+         f"parse-8331-meta={'true' if tx_rfc8331 else 'false'}",
+         f"use-pts-for-pacing={'true' if tx_user_controlled_pacing else 'false'}",
+         f"pts-pacing-offset={tx_user_controlled_pacing_offset}"]
+    )
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
 
     pipeline_command.append(
-        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+        f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}"
     )
 
     return pipeline_command
-
 
 def setup_gstreamer_st40p_rx_pipeline(
     build: str,
@@ -308,6 +345,7 @@ def setup_gstreamer_st40p_rx_pipeline(
     rx_payload_type: int,
     rx_queues: int,
     timeout: int,
+    capture_metadata: bool = False
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -323,6 +361,7 @@ def setup_gstreamer_st40p_rx_pipeline(
         "mtl_st40_rx",
         f"rx-queues={rx_queues}",
         f"timeout={timeout}",
+        f"include-metadata-in-buffer={'true' if capture_metadata else 'false'}"
     ]
 
     for key, value in connection_params.items():
@@ -331,11 +370,10 @@ def setup_gstreamer_st40p_rx_pipeline(
     pipeline_command.extend(["!", "filesink", f"location={output_path}"])
 
     pipeline_command.append(
-        f"--gst-plugin-path={build}/ecosystem/gstreamer_plugin/builddir/"
+        f"--gst-plugin-path={setup_gstreamer_plugins_paths(build)}"
     )
 
     return pipeline_command
-
 
 def execute_test(
     build: str,
@@ -343,7 +381,7 @@ def execute_test(
     rx_command: dict,
     input_file: str,
     output_file: str,
-    test_time: int = 30,
+    test_time: int = 10,
     host=None,
     tx_host=None,
     rx_host=None,
@@ -430,7 +468,7 @@ def execute_test(
                 host=rx_remote_host,
                 background=True,
             )
-            time.sleep(sleep_interval)
+            logger.info(f"Started RX process with PID: {getattr(rx_process, 'pid', None)}")
 
             # Start TX pipeline
             logger.info("Starting TX pipeline...")
@@ -447,31 +485,93 @@ def execute_test(
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        logger.info(
-            f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
-        )
+        # Let the test run for the specified duration
+        logger.info(f"Running test for {test_time} seconds...")
+        time.sleep(test_time)
 
-        try:
-            rx_process.wait(timeout=test_time + 30)  # Allow extra time for cleanup
-            logger.info("RX process completed naturally")
-        except Exception:
-            logger.info("RX process did not complete in time, will clean up")
+        if rx_process:
+            try:
+                logger.info(f"Terminating rx process (timeout == {sleep_interval})...")
+                start_time = time.time()
+
+                if hasattr(rx_process, 'wait'):
+                    rx_process.wait(sleep_interval)
+                else:
+                    timeout_end = time.time() + sleep_interval
+                    while time.time() < timeout_end and is_process_running(rx_process):
+                        time.sleep(0.1)
+
+                end_time = time.time()
+                if not is_process_running(rx_process):
+                    logger.info(f"RX process exited gracefully after {end_time - start_time:.2f} seconds.")
+                else:
+                    logger.info("RX process did not exit gracefully, killing it.")
+                    if hasattr(rx_process, 'kill'):
+                        rx_process.kill()
+                    elif hasattr(rx_process, 'terminate'):
+                        rx_process.terminate()
+            except Exception as e:
+                logger.warning(f"Error terminating RX process: {e}")
+
         if tx_process:
             try:
-                tx_process.wait(timeout=10)  # Give TX time to finish
-                logger.info("TX process completed naturally")
+                logger.info(f"Terminating tx process (timeout == {sleep_interval})...")
+                start_time = time.time()
+
+                if hasattr(tx_process, 'wait'):
+                    tx_process.wait(sleep_interval)
+                else:
+                    timeout_end = time.time() + sleep_interval
+                    while time.time() < timeout_end and is_process_running(tx_process):
+                        time.sleep(0.1)
+
+                end_time = time.time()
+                if not is_process_running(tx_process):
+                    logger.info(f"TX process exited gracefully after {end_time - start_time:.2f} seconds.")
+                else:
+                    logger.info("TX process did not exit gracefully, killing it.")
+                    if hasattr(tx_process, 'kill'):
+                        tx_process.kill()
+                    elif hasattr(tx_process, 'terminate'):
+                        tx_process.terminate()
+
+            except Exception as e:
+                logger.warning(f"Error terminating TX process: {e}")
+
+        if (tx_process and is_process_running(tx_process)) or (rx_process and is_process_running(rx_process)):
+            logger.warning("Something went wrong waiting for RX/TX to terminate")
+            time.sleep(sleep_interval)
+
+        if tx_process and is_process_running(tx_process):
+            logger.error("Something went wrong killing the TX process")
+            tx_process.kill()
+
+        if rx_process and is_process_running(rx_process):
+            logger.error("Something went wrong killing the RX process")
+            rx_process.kill()
+
+        try:
+            if tx_process and hasattr(tx_process, "stdout_text"):
+                output_tx = tx_process.stdout_text.splitlines()
+                for line in output_tx:
+                    logger.info(f"TX Output: {line}")
+        except Exception:
+            logger.info("Could not retrieve TX output")
+
+        try:
+            if rx_process and hasattr(rx_process, "stdout_text"):
+                output_rx = rx_process.stdout_text.splitlines()
+                for line in output_rx:
+                    logger.info(f"RX Output: {line}")
+        except Exception:
+            logger.info("Could not retrieve RX output")
+            try:
+                if rx_process and hasattr(rx_process, "stdout_text"):
+                    output_rx = rx_process.stdout_text.splitlines()
+                    for line in output_rx:
+                        logger.info(f"RX Output: {line}")
             except Exception:
-                logger.info("TX process cleanup needed")
-                tx_process.kill()
-
-        # Get output after processes have completed
-        output_rx = capture_stdout(rx_process, "RX")
-        if output_rx:
-            logger.info(f"RX Output: {output_rx}")
-
-        output_tx = capture_stdout(tx_process, "TX")
-        if output_tx:
-            logger.info(f"TX Output: {output_tx}")
+                logger.info(f"Could not retrieve RX output")
 
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
