@@ -53,15 +53,14 @@ class NetsniffRecorder:
         if not self.netsniff_process or not self.netsniff_process.running:
             connection = self.host.connection
             try:
-                logger.debug(f"NETSNIFF INTERFACE NAME: {self.interface}") # TODO: Remove this debug log after testing
                 cmd = [
                     "netsniff-ng",
                     "--silent" if self.silent else "",
                     "--in",
-                    str(self.interface), # FIXME: It is not a proper interface name to be used here
+                    str(self.interface),
                     "--out",
                     self.pcap_file,
-                    f"-f {self.filter}" if self.filter else "",
+                    f"-f \"{self.filter}\"" if self.filter else "",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
                 self.netsniff_process = connection.start_process(
