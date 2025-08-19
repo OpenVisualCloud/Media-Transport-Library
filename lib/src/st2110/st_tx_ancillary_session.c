@@ -131,8 +131,6 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
   struct rte_udp_hdr* udp = &hdr->udp;
   struct st40_rfc8331_rtp_hdr* rtp = &hdr->rtp;
-
-  /* Print rtp_header in both host and network byte order to check endianness */
   uint8_t* dip = ops->dip_addr[s_port];
   uint8_t* sip = mt_sip_addr(impl, port);
   struct rte_ether_addr* d_addr = mt_eth_d_addr(eth);
@@ -476,20 +474,18 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   pkt->data_len += payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->first_hdr_chunk.anc_count = idx - s->st40_pkt_idx;
+  rtp->anc_count = idx - s->st40_pkt_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
-      rtp->first_hdr_chunk.f = 0b11;
+      rtp->f = 0b11;
     else
-      rtp->first_hdr_chunk.f = 0b10;
+      rtp->f = 0b10;
   } else {
-    rtp->first_hdr_chunk.f = 0b00;
+    rtp->f = 0b00;
   }
   if (idx == anc_count) rtp->base.marker = 1;
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
-
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -566,19 +562,16 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   pkt->data_len = payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->first_hdr_chunk.anc_count = idx - anc_idx;
+  rtp->anc_count = idx - anc_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
-      rtp->first_hdr_chunk.f = 0b11;
+      rtp->f = 0b11;
     else
-      rtp->first_hdr_chunk.f = 0b10;
+      rtp->f = 0b10;
   } else {
-    rtp->first_hdr_chunk.f = 0b00;
+    rtp->f = 0b00;
   }
   if (idx == anc_count) rtp->base.marker = 1;
-
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
-
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
   return idx;
@@ -613,8 +606,7 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     bool second_field = false;
     if (s->ops.interlaced) {
       struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)rtp;
-      second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
-      rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
+      second_field = (rfc8331->f == 0b11) ? true : false;
     }
     tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
   }
@@ -671,8 +663,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         bool second_field = false;
         if (s->ops.interlaced) {
           struct st40_rfc8331_rtp_hdr* rfc8331 = (struct st40_rfc8331_rtp_hdr*)&udp[1];
-          second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
-          rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
+          second_field = (rfc8331->f == 0b11) ? true : false;
         }
         tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
       }
@@ -680,7 +671,6 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
         s->pacing.rtp_time_stamp = ntohl(rtp->base.tmstamp);
       }
       rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
-      rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
     }
   }
 

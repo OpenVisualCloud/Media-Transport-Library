@@ -8,8 +8,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
   struct st40_rfc8331_rtp_hdr* hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   struct st40_rfc8331_payload_hdr* payload_hdr =
       (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
-
-  int anc_count = hdr->first_hdr_chunk.anc_count;
+  int anc_count = hdr->anc_count;
   int idx, total_size, payload_len;
   dbg("%s(%d), anc_count %d\n", __func__, s->idx, anc_count);
 
@@ -24,6 +23,18 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     }
     int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
 
+
+    printf("ANC[%d]: c=%u line=%u h_off=%u s=%u stream=%u did=0x%02x sdid=0x%02x dc=%u | ",
+          idx,
+          payload_hdr->first_hdr_chunk.c,
+          payload_hdr->first_hdr_chunk.line_number, 
+          payload_hdr->first_hdr_chunk.horizontal_offset,
+          payload_hdr->first_hdr_chunk.s,
+          payload_hdr->first_hdr_chunk.stream_num,
+          payload_hdr->second_hdr_chunk.did & 0xff,
+          payload_hdr->second_hdr_chunk.sdid & 0xff,
+          payload_hdr->second_hdr_chunk.data_count & 0xff);
+
     // verify checksum
     uint16_t checksum = 0;
     checksum = st40_get_udw(udw_size + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
@@ -34,15 +45,15 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
       return;
     }
     // get payload
-#ifdef DEBUG
+
     uint16_t data;
     for (int i = 0; i < udw_size; i++) {
       data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
       if (!st40_check_parity_bits(data)) err("anc udw checkParityBits error\n");
-      dbg("%c", data & 0xff);
+      printf("%02x ", data & 0xff);
     }
-    dbg("\n");
-#endif
+    printf("\n");
+
     total_size = ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
                                                  // 10-bit words: DID, SDID, DATA_COUNT
                                                  // + size of buffer with data + checksum
@@ -52,6 +63,7 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
         sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
     payload_hdr = (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
   }
+  printf("\n");
 
   s->stat_frame_total_received++;
   if (!s->stat_frame_first_rx_time)
