@@ -19,8 +19,12 @@ logger = logging.getLogger(__name__)
     "st20p_file, fps",
     [
         (yuv_files_422rfc10["Penguin_720p"], "p25"),
-        pytest.param(yuv_files_422rfc10["Penguin_1080p"], "p25", marks=pytest.mark.nightly),
-        pytest.param(yuv_files_422p10le["Penguin_720p"], "p25", marks=pytest.mark.nightly),
+        pytest.param(
+            yuv_files_422rfc10["Penguin_1080p"], "p25", marks=pytest.mark.nightly
+        ),
+        pytest.param(
+            yuv_files_422p10le["Penguin_720p"], "p25", marks=pytest.mark.nightly
+        ),
         (yuv_files_422p10le["Penguin_1080p"], "p25"),
     ],
 )
