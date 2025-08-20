@@ -8,6 +8,8 @@ from mtl_engine.execute import LOG_FOLDER
 from mtl_engine.media_files import audio_files
 
 
+@pytest.mark.smoke
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [

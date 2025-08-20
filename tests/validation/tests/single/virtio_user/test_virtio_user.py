@@ -8,10 +8,10 @@ from mtl_engine.media_files import yuv_files
 @pytest.mark.parametrize(
     "media_file, replicas",
     [
-        (yuv_files["i1080p60"], 1),
+        pytest.param(yuv_files["i1080p60"], 1, marks=pytest.mark.nightly),
         (yuv_files["i1080p60"], 3),
         (yuv_files["i1080p60"], 30),
-        (yuv_files["i2160p60"], 1),
+        pytest.param(yuv_files["i2160p60"], 1, marks=pytest.mark.nightly),
         (yuv_files["i2160p60"], 3),
         (yuv_files["i2160p60"], 9),
     ],

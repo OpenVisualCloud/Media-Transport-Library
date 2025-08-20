@@ -9,6 +9,7 @@ from mtl_engine.media_files import audio_files
 from tests.xfail import SDBQ1001_audio_channel_check
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [
