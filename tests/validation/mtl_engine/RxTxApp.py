@@ -150,7 +150,7 @@ def prepare_netsniff(
         if src_ip:
             capture_filter += f"src {src_ip}"
         if dst_ip and not capture_filter == "":
-            capture_filter += f"and dst {dst_ip}"
+            capture_filter += f" and dst {dst_ip}"
         elif dst_ip:
             capture_filter += f"dst {dst_ip}"
         # Class prep
