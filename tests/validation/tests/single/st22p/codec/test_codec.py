@@ -8,6 +8,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("codec", ["JPEG-XS", "H264_CBR"])
 def test_codec(
     hosts, build, media, nic_port_list, test_time, codec, test_config, prepare_ramdisk

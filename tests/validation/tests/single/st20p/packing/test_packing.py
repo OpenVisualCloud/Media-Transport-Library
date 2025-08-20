@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("packing", ["GPM_SL", "GPM"])
 @pytest.mark.parametrize("file", ["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"])
 def test_packing(

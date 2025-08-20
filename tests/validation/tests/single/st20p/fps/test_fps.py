@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "fps",
     [
