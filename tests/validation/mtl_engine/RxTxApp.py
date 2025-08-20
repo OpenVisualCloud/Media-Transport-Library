@@ -159,7 +159,7 @@ def prepare_netsniff(
             test_name=capture_cfg.get("test_name", "capture"),
             pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
             interface=capture_cfg.get("interface"),
-            filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
+            capture_filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
         )
         return netsniff
     else:

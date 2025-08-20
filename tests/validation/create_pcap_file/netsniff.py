@@ -22,7 +22,7 @@ class NetsniffRecorder:
         interface: Network interface to capture traffic on.
         interface_index (int): Index of the network interface if not specified by interface.
         silent (bool): Whether to run netsniff-ng in silent mode (no stdout) (default: True).
-        filter (str): Optional filter to apply to the capture. (default: None)
+        capture_filter (str): Optional filter to apply to the capture. (default: None)
     """
 
     def __init__(
@@ -33,7 +33,7 @@ class NetsniffRecorder:
             interface = None,
             interface_index: int = 0,
             silent: bool = True,
-            filter: str | None = None,
+            capture_filter: str | None = None,
         ):
         self.host = host
         self.test_name = test_name
@@ -45,7 +45,7 @@ class NetsniffRecorder:
             self.interface = self.host.network_interfaces[interface_index].name
         self.netsniff_process = None
         self.silent = silent
-        self.filter = filter
+        self.capture_filter = capture_filter
 
     def start(self, startup_wait=STARTUP_WAIT):
         """
@@ -61,7 +61,7 @@ class NetsniffRecorder:
                     str(self.interface),
                     "--out",
                     self.pcap_file,
-                    f"-f \"{self.filter}\"" if self.filter else "",
+                    f"-f \"{self.capture_filter}\"" if self.capture_filter else "",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
                 self.netsniff_process = connection.start_process(
