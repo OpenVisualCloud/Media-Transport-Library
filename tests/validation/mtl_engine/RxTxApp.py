@@ -42,6 +42,22 @@ kernel_ip_dict = dict(
 )
 
 
+def capture_stdout(proc, proc_name: str):
+    """Capture and log stdout from a process"""
+    try:
+        if proc and hasattr(proc, "stdout_text"):
+            output = proc.stdout_text
+            if output and output.strip():
+                logger.info(f"{proc_name} Output:\n{output}")
+            return output
+        else:
+            logger.debug(f"No stdout available for {proc_name}")
+            return ""
+    except Exception as e:
+        logger.warning(f"Failed to capture stdout for {proc_name}: {e}")
+        return ""
+
+
 def read_ip_addresses_from_json(filename: str):
     global unicast_ip_dict, multicast_ip_dict, kernel_ip_dict
     try:
@@ -52,14 +68,14 @@ def read_ip_addresses_from_json(filename: str):
                 multicast_ip_dict = ip_addresses["multicast_ip_dict"]
                 kernel_ip_dict = ip_addresses["kernel_ip_dict"]
             except Exception:
-                print(
+                logger.warning(
                     f"File {filename} does not contain proper input, check "
                     "ip_addresses.json.example for a schema. It might have "
                     "been loaded partially. Where not specified, "
                     "default was set."
                 )
     except Exception:
-        print(
+        logger.warning(
             f"File {filename} could not be loaded properly! "
             "Default values are set for all IPs."
         )
@@ -593,6 +609,9 @@ def execute_test(
     finally:
         cp.wait()
 
+    # Capture stdout output for logging
+    capture_stdout(cp, "RxTxApp")
+
     # Check if process was killed or terminated unexpectedly
     bad_rc = {124: "timeout", 137: "SIGKILL", 143: "SIGTERM"}
     if cp.return_code != 0:
@@ -607,7 +626,6 @@ def execute_test(
         return False
 
     output = cp.stdout_text.splitlines()
-    logger.info(f"RxTxApp Output:\n{cp.stdout_text}")
 
     passed = True
     for session, check_output in zip(
@@ -791,6 +809,9 @@ def execute_perf_test(
     finally:
         cp.wait()
 
+    # Capture stdout output for logging
+    capture_stdout(cp, "RxTxApp Performance")
+
     # Enhanced logging for process completion
     logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
 
@@ -810,8 +831,6 @@ def execute_perf_test(
 
     # Get output lines
     output = cp.stdout_text.splitlines()
-    for line in output:
-        logger.info(line)
 
     if cp.return_code != 0:
         logger.info(
@@ -1250,7 +1269,7 @@ def add_dual_interfaces(
     tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
 
     # Configure RX host interface only
-    rx_config["interfaces"][0]["name"] = rx_nic_port_list[1]
+    rx_config["interfaces"][0]["name"] = rx_nic_port_list[0]
 
     if test_mode == "unicast":
         tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
@@ -1506,22 +1525,27 @@ def execute_dual_test(
         host=tx_host,
     )
 
+    # Start tcpdump capture if enabled
+    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
+    if tcpdump:
+        tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
+        logger.info("Started dual test tcpdump capture")
+
     # Wait for both processes
     tx_cp.wait()
     rx_cp.wait()
 
+    # Capture stdout output for logging
+    capture_stdout(tx_cp, "TX RxTxApp")
+    capture_stdout(rx_cp, "RX RxTxApp")
+
+    # Stop tcpdump if it was started
+    if tcpdump:
+        tcpdump.stop()
+
     # Get output from both hosts
     tx_output = tx_cp.stdout_text.splitlines()
     rx_output = rx_cp.stdout_text.splitlines()
-
-    # Log outputs
-    logger.info("=== TX OUTPUT ===")
-    for line in tx_output:
-        logger.info(line)
-
-    logger.info("=== RX OUTPUT ===")
-    for line in rx_output:
-        logger.info(line)
 
     # Check results
     passed = True
