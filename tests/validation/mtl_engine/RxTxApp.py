@@ -792,15 +792,11 @@ def execute_perf_test(
         cp.wait()
 
     # Enhanced logging for process completion
-    logger.info(
-        f"Performance RxTxApp process completed with return code: {cp.return_code}"
-    )
+    logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
 
     # Check if process was killed or terminated unexpectedly
     if cp.return_code < 0:
-        logger.info(
-            f"Performance RxTxApp was killed with signal {-cp.return_code}"
-        )
+        logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
         return False
     elif cp.return_code == 124:  # timeout return code
         logger.info("Performance RxTxApp timed out")
