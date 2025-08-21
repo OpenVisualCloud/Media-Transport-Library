@@ -80,5 +80,5 @@ def test_audio_format(
         )
     finally:
         pass
-        #media_create.remove_file(input_file_path, host=host)
+        # media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(os.path.join(media, "output_audio.pcm"), host=host)

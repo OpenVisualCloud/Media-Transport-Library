@@ -46,7 +46,9 @@ def test_audio_format_dual(
     # )
 
     # Create output file path for RX host
-    output_file_path = os.path.join(media, f"output_audio_dual_{audio_format}_{audio_channel}_{audio_rate}.pcm")
+    output_file_path = os.path.join(
+        media, f"output_audio_dual_{audio_format}_{audio_channel}_{audio_rate}.pcm"
+    )
 
     # Setup TX pipeline using existing function
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
@@ -92,7 +94,9 @@ def test_audio_format_dual(
             capture_cfg=capture_cfg,
         )
 
-        assert result, f"GStreamer dual audio format test failed for format {audio_format}"
+        assert (
+            result
+        ), f"GStreamer dual audio format test failed for format {audio_format}"
 
     finally:
         # Remove the output file on RX host

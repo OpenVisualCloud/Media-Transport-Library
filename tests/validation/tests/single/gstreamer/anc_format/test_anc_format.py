@@ -133,7 +133,7 @@ def test_st40p_framebuff(
             tx_first=False,
             sleep_interval=3,
             capture_cfg=capture_cfg,
-            )
+        )
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)

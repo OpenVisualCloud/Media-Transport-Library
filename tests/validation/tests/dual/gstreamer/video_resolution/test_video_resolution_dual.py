@@ -10,9 +10,7 @@ from mtl_engine.media_files import yuv_files
 from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
-@pytest.mark.parametrize(
-    "file", yuv_files.keys()
-)
+@pytest.mark.parametrize("file", yuv_files.keys())
 def test_video_resolutions_dual(
     hosts,
     build,
@@ -99,7 +97,9 @@ def test_video_resolutions_dual(
             capture_cfg=capture_cfg,
         )
 
-        assert result, f"GStreamer dual video resolution test failed for resolution {file}"
+        assert (
+            result
+        ), f"GStreamer dual video resolution test failed for resolution {file}"
 
     finally:
         # Remove the input file on TX host and output file on RX host

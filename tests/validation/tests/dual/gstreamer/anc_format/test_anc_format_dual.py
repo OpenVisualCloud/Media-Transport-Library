@@ -85,7 +85,9 @@ def test_st40p_fps_size_dual(
             capture_cfg=capture_cfg,
         )
 
-        assert result, f"GStreamer dual ST40P test failed for fps={fps}, size={file_size_kb}KB"
+        assert (
+            result
+        ), f"GStreamer dual ST40P test failed for fps={fps}, size={file_size_kb}KB"
 
     finally:
         # Remove the input file on TX host and output file on RX host

@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
-import hashlib
 import logging
 import os
-import time
 import re
+import time
 
 from mtl_engine.RxTxApp import prepare_tcpdump
 
@@ -54,20 +53,20 @@ def fract_format(framerate: str) -> str:
     # If already in fractional format, return as-is
     if "/" in framerate:
         return framerate
-    
+
     # Convert specific decimal framerates to fractional format
     framerate_map = {
         "23.98": "2398/100",
-        "23.976": "2398/100", 
+        "23.976": "2398/100",
         "29.97": "2997/100",
         "59.94": "5994/100",
-        "119.88": "11988/100"
+        "119.88": "11988/100",
     }
-    
+
     # Check if it's one of the special decimal framerates
     if framerate in framerate_map:
         return framerate_map[framerate]
-    
+
     # For integer framerates, add /1
     try:
         int(framerate)  # Validate it's a number
@@ -324,6 +323,7 @@ def setup_gstreamer_st40p_rx_pipeline(
 
     return pipeline_command
 
+
 def execute_test(
     build: str,
     tx_command: dict,
@@ -357,7 +357,7 @@ def execute_test(
     :return: True if test passed, False otherwise
     """
     is_dual = tx_host is not None and rx_host is not None
-    
+
     if is_dual:
         logger.info("Executing dual host GStreamer test")
         tx_remote_host = tx_host
@@ -365,7 +365,7 @@ def execute_test(
     else:
         logger.info("Executing single host GStreamer test")
         tx_remote_host = rx_remote_host = host
-    
+
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "gstreamer_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
 
@@ -374,10 +374,10 @@ def execute_test(
 
     tx_process = None
     rx_process = None
-    
+
     if is_dual:
         tx_tcpdump = prepare_tcpdump(capture_cfg, tx_host) if capture_cfg else None
-        rx_tcpdump = prepare_tcpdump(capture_cfg, rx_host) if capture_cfg else None
+        # rx_tcpdump = prepare_tcpdump(capture_cfg, rx_host) if capture_cfg else None  # Unused
         tcpdump = tx_tcpdump
     else:
         tcpdump = prepare_tcpdump(capture_cfg, host)
@@ -492,14 +492,19 @@ def execute_test(
     # Compare files for validation
     if is_dual:
         # For dual host tests, files are on different hosts
-        file_compare = compare_files(input_file, output_file, tx_remote_host, rx_remote_host)
+        file_compare = compare_files(
+            input_file, output_file, tx_remote_host, rx_remote_host
+        )
     else:
         # For single host tests, both files are on the same host
-        file_compare = compare_files(input_file, output_file, tx_remote_host, rx_remote_host)
-    
+        file_compare = compare_files(
+            input_file, output_file, tx_remote_host, rx_remote_host
+        )
+
     logger.info(f"File comparison: {file_compare}")
 
     return file_compare
+
 
 def compare_files(input_file, output_file, input_host=None, output_host=None):
     """
@@ -513,13 +518,15 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         # Check if input file exists (for cases where input file might not be created)
         input_stat_proc = run(f"stat -c '%s' {input_file}", host=input_host)
         input_file_exists = input_stat_proc.return_code == 0
-        
+
         if input_file_exists:
             input_file_size = int(input_stat_proc.stdout_text.strip())
             logger.info(f"Input file size: {input_file_size}")
         else:
-            logger.info(f"Input file {input_file} does not exist - skipping input validation")
-        
+            logger.info(
+                f"Input file {input_file} does not exist - skipping input validation"
+            )
+
         # Check output file size (always remote)
         output_stat_proc = run(f"stat -c '%s' {output_file}", host=output_host)
         if output_stat_proc.return_code != 0:
@@ -536,7 +543,7 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
             else:
                 log_fail("Output file is empty")
                 return False
-        
+
         # If input file exists, do full comparison
         if input_file_size != output_file_size:
             log_fail("File size is different")
@@ -546,20 +553,28 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         if input_hash_proc.return_code != 0:
             log_fail(f"Could not calculate hash for input file {input_file}")
             return False
-        i_hash = input_hash_proc.stdout_text.split()[0] if input_hash_proc.stdout_text.strip() else ""
+        i_hash = (
+            input_hash_proc.stdout_text.split()[0]
+            if input_hash_proc.stdout_text.strip()
+            else ""
+        )
 
         output_hash_proc = run(f"md5sum {output_file}", host=output_host)
         if output_hash_proc.return_code != 0:
             log_fail(f"Could not calculate hash for output file {output_file}")
             return False
-        o_hash = output_hash_proc.stdout_text.split()[0] if output_hash_proc.stdout_text.strip() else ""
+        o_hash = (
+            output_hash_proc.stdout_text.split()[0]
+            if output_hash_proc.stdout_text.strip()
+            else ""
+        )
 
         logger.info(f"Input file hash: {i_hash}")
         logger.info(f"Output file hash: {o_hash}")
-        
+
         if i_hash and o_hash and i_hash == o_hash:
             return True
-            
+
     except Exception as e:
         log_fail(f"Error during file comparison: {e}")
         return False
@@ -604,5 +619,4 @@ def get_case_id() -> str:
 
 def sanitize_filename(name: str) -> str:
     """Replace unsafe characters with underscores"""
-    import re
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
