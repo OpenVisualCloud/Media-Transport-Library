@@ -16,12 +16,19 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.parametrize(
-    "st20p_file, fps",
+    "media_file",
     [
-        (yuv_files_422rfc10["Penguin_720p"], "p25"),
-        (yuv_files_422rfc10["Penguin_1080p"], "p25"),
-        (yuv_files_422p10le["Penguin_720p"], "p25"),
-        (yuv_files_422p10le["Penguin_1080p"], "p25"),
+        yuv_files_422rfc10["Penguin_720p"],
+        yuv_files_422rfc10["Penguin_1080p"],
+        pytest.param(yuv_files_422p10le["Penguin_720p"], marks=pytest.mark.nightly),
+        yuv_files_422p10le["Penguin_1080p"],
+    ],
+    indirect=["media_file"],
+    ids=[
+        "Penguin_720p_422rfc10",
+        "Penguin_1080p_422rfc10",
+        "Penguin_720p_422p10le",
+        "Penguin_1080p_422p10le",
     ],
 )
 def test_integrity(
@@ -30,12 +37,11 @@ def test_integrity(
     media,
     nic_port_list,
     test_time,
-    st20p_file,
-    fps,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
-    st20p_file_url = os.path.join(media, st20p_file["filename"])
+    media_file_info, media_file_path = media_file
 
     # Ensure the output directory exists for the integrity test output file.
     log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
@@ -47,22 +53,20 @@ def test_integrity(
     # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     # Set a unique pcap file name
-    capture_cfg["test_name"] = (
-        f"test_integrity_{os.path.splitext(os.path.basename(st20p_file['filename']))[0]}_{fps}"
-    )
+    capture_cfg["test_name"] = f"test_integrity_{media_file_info['filename']}"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
         nic_port_list=host.vfs,
         test_mode="unicast",
-        height=st20p_file["height"],
-        width=st20p_file["width"],
-        fps=fps,
-        input_format=st20p_file["file_format"],
-        transport_format=st20p_file["format"],
-        output_format=st20p_file["file_format"],
-        st20p_url=st20p_file_url,
+        height=media_file_info["height"],
+        width=media_file_info["width"],
+        fps="p25",
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
         out_url=out_file_url,
     )
 
@@ -75,10 +79,12 @@ def test_integrity(
     )
 
     frame_size = calculate_yuv_frame_size(
-        st20p_file["width"], st20p_file["height"], st20p_file["file_format"]
+        media_file_info["width"],
+        media_file_info["height"],
+        media_file_info["file_format"],
     )
     result = check_st20p_integrity(
-        src_url=st20p_file_url, out_url=out_file_url, frame_size=frame_size
+        src_url=media_file_path, out_url=out_file_url, frame_size=frame_size
     )
 
     if result:

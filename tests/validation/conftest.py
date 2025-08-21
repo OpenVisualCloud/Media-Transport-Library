@@ -1,6 +1,7 @@
-# # SPDX-License-Identifier: BSD-3-Clause
-# # Copyright 2024-2025 Intel Corporation
-# # Media Communications Mesh
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright 2024-2025 Intel Corporation
+# Media Communications Mesh
+
 import datetime
 import logging
 import os
@@ -10,15 +11,16 @@ from typing import Dict
 
 import pytest
 from common.nicctl import Nicctl
-from create_pcap_file.ramdisk import RamdiskPreparer
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
+from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
 from mtl_engine.csv_report import (
     csv_add_test,
     csv_write_report,
     update_compliance_result,
 )
+from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.stash import (
     clear_issue,
     clear_result_log,
@@ -111,8 +113,8 @@ def nic_port_list(hosts: dict, mtl_path) -> None:
     for host in hosts.values():
         nicctl = Nicctl(mtl_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
-            vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address)
-        vfs = nicctl.vfio_list()
+            vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
+        vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
 
@@ -135,20 +137,60 @@ def prepare_ramdisk(hosts, test_config):
     ramdisk_cfg = test_config.get("ramdisk", {})
     capture_cfg = test_config.get("capture_cfg", {})
     pcap_dir = ramdisk_cfg.get("pcap_dir", "/home/pcap_files")
-    tmpfs_size = ramdisk_cfg.get("tmpfs_size", "768G")
-    tmpfs_name = ramdisk_cfg.get("tmpfs_name", "new_disk_name")
-    use_sudo = ramdisk_cfg.get("use_sudo", True)
+    tmpfs_size_gib = ramdisk_cfg.get("tmpfs_size_gib", "768")
 
     if capture_cfg.get("enable", False):
-        for host in hosts.values():
-            preparer = RamdiskPreparer(
-                host=host,
-                pcap_dir=pcap_dir,
-                tmpfs_size=tmpfs_size,
-                tmpfs_name=tmpfs_name,
-                use_sudo=use_sudo,
+        ramdisks = [
+            Ramdisk(host=host, mount_point=pcap_dir, size_gib=tmpfs_size_gib)
+            for host in hosts.values()
+        ]
+        for ramdisk in ramdisks:
+            ramdisk.mount()
+
+
+@pytest.fixture(scope="session")
+def media_ramdisk(hosts, test_config):
+    ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
+    ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
+    ramdisk_size_gib = ramdisk_config.get("size_gib", 32)
+    ramdisks = [
+        Ramdisk(host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib)
+        for host in hosts.values()
+    ]
+    for ramdisk in ramdisks:
+        ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
+
+
+@pytest.fixture(scope="function")
+def media_file(media_ramdisk, request, hosts, test_config):
+    media_file_info = request.param
+    ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
+    ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
+    media_path = test_config.get("media_path", "/mnt/media")
+    src_media_file_path = os.path.join(media_path, media_file_info["filename"])
+    ramdisk_media_file_path = os.path.join(
+        ramdisk_mountpoint, media_file_info["filename"]
+    )
+    for host in hosts.values():
+        cmd = f"cp {src_media_file_path} {ramdisk_media_file_path}"
+        try:
+            host.connection.execute_command(cmd)
+        except ConnectionCalledProcessError as e:
+            logging.log(
+                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
             )
-            preparer.start()
+    yield media_file_info, ramdisk_media_file_path
+    for host in hosts.values():
+        cmd = f"rm {ramdisk_media_file_path}"
+        try:
+            host.connection.execute_command(cmd)
+        except ConnectionCalledProcessError as e:
+            logging.log(
+                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
+            )
 
 
 def pytest_addoption(parser):
