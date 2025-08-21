@@ -113,8 +113,8 @@ def nic_port_list(hosts: dict, mtl_path) -> None:
     for host in hosts.values():
         nicctl = Nicctl(mtl_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
-            vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address)
-        vfs = nicctl.vfio_list()
+            vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
+        vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
 
