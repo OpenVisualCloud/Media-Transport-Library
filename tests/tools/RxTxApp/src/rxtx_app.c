@@ -618,7 +618,6 @@ int main(int argc, char** argv) {
       st_app_pcap(ctx);
     }
   }
-  info("%s, start to ending\n", __func__);
 
   if (!ctx->runtime_session) {
     /* stop st first */
