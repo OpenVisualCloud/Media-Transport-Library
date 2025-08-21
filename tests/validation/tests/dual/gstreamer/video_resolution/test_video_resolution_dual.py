@@ -11,11 +11,7 @@ from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
 @pytest.mark.parametrize(
-    "file",
-    [
-        pytest.param(f, marks=pytest.mark.smoke) if f == "i1080p59" else f
-        for f in yuv_files.keys()
-    ],
+    "file", yuv_files.keys()
 )
 def test_video_resolutions_dual(
     hosts,
@@ -53,32 +49,59 @@ def test_video_resolutions_dual(
         framerate=video_file["fps"],
         format=GstreamerApp.video_format_change(video_file["format"]),
         media_path=media,
+        duration=2,
         host=tx_host,
+    )
+
+    # Create output file path for RX host
+    output_file_path = os.path.join(media, f"output_video_resolution_dual_{file}.yuv")
+
+    # Setup TX pipeline using existing function
+    tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
+        build=build,
+        nic_port_list=tx_host.vfs[0],
+        input_path=input_file_path,
+        width=video_file["width"],
+        height=video_file["height"],
+        framerate=video_file["fps"],
+        format=GstreamerApp.video_format_change(video_file["format"]),
+        tx_payload_type=112,
+        tx_queues=4,
+    )
+
+    # Setup RX pipeline using existing function
+    rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
+        build=build,
+        nic_port_list=rx_host.vfs[0],
+        output_path=output_file_path,
+        width=video_file["width"],
+        height=video_file["height"],
+        framerate=video_file["fps"],
+        format=GstreamerApp.video_format_change(video_file["format"]),
+        rx_payload_type=112,
+        rx_queues=4,
     )
 
     capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
     capture_cfg["test_name"] = f"test_video_resolutions_dual_{file}"
 
     try:
-        result = GstreamerApp.execute_dual_st20p_test(
+        result = GstreamerApp.execute_test(
             build=build,
-            tx_nic_port=tx_host.vfs[0],
-            rx_nic_port=rx_host.vfs[0],
-            input_path=input_file_path,
-            width=video_file["width"],
-            height=video_file["height"],
-            framerate=video_file["fps"],
-            format=GstreamerApp.video_format_change(video_file["format"]),
-            payload_type=112,
-            queues=4,
+            tx_command=tx_config,
+            rx_command=rx_config,
+            input_file=input_file_path,
+            output_file=output_file_path,
             test_time=test_time,
             tx_host=tx_host,
             rx_host=rx_host,
+            tx_first=False,
             capture_cfg=capture_cfg,
         )
 
         assert result, f"GStreamer dual video resolution test failed for resolution {file}"
 
     finally:
-        # Remove the input file on TX host
+        # Remove the input file on TX host and output file on RX host
         media_create.remove_file(input_file_path, host=tx_host)
+        media_create.remove_file(output_file_path, host=rx_host)
