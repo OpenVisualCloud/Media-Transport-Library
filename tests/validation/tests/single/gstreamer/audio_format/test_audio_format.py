@@ -8,8 +8,8 @@ import pytest
 from mtl_engine import GstreamerApp
 
 
-@pytest.mark.parametrize("audio_format", ["s8", "s16le", "s24le"])
-@pytest.mark.parametrize("audio_channel", [1, 2])
+@pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
+@pytest.mark.parametrize("audio_channel", [1, 2, 6, 8])
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
 def test_audio_format(
     hosts,
@@ -28,15 +28,15 @@ def test_audio_format(
 
     input_file_path = os.path.join(media, "test_audio.pcm")
 
-    media_create.create_audio_file_sox(
-        sample_rate=audio_rate,
-        channels=audio_channel,
-        bit_depth=GstreamerApp.audio_format_change(audio_format),
-        duration=10,
-        frequency=440,
-        output_path=input_file_path,
-        host=host,
-    )
+    # media_create.create_audio_file_sox(
+    #     sample_rate=audio_rate,
+    #     channels=audio_channel,
+    #     bit_depth=GstreamerApp.audio_format_change(audio_format),
+    #     duration=10,
+    #     frequency=440,
+    #     output_path=input_file_path,
+    #     host=host,
+    # )
 
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
         build=build,
@@ -79,5 +79,6 @@ def test_audio_format(
             capture_cfg=capture_cfg,
         )
     finally:
-        media_create.remove_file(input_file_path, host=host)
+        pass
+        #media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(os.path.join(media, "output_audio.pcm"), host=host)
