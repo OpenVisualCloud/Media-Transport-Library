@@ -38,3 +38,16 @@ tar xvz "${NETSNIFF_VERSION}" # 2.
 > **Note:** The [document](https://github.com/netsniff-ng/netsniff-ng/blob/main/INSTALL) is also available online (main branch)
 
 1. Use the INSTALL document from repository root to install the tool
+
+
+## Usage
+
+After the tool is installed on the capturing machine, it can be used within the test code.
+
+In order to create and receive a `NetsniffRecorder` class instance, that can be used to start and stop the packet capture, use the `prepare_netsniff()` function. It takes the capture config (`capture_cfg`), host (`host`) and optional filters for source and destination IP addresses (`src_ip` and `dst_ip` respectively). The filtering IPs should be used to avoid capturing unrelated traffic during the test.
+
+To start the capture, call `start()` function within the `NetsniffRecorder` class object, with optional `startup_wait` parameter specifying the number of seconds that should be waited before the capture starts (initialization delay).
+
+To capture for predetermined number of seconds, call the `capture()` function with `capture_time` parameter. It starts the capture in a blocking manner. This function can optionally pass the `startup_wait` parameter to the `start()` function.
+
+Analogically, to stop the capture, call `stop()` function. This function stops the capture immediately.
