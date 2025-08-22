@@ -239,7 +239,7 @@ class AudioIntegrityRunner:
             return str(self.host.connection.path(integrity_path, self.module_name))
         return str(
             self.host.connection.path(
-                self.test_repo_path, "tests", "common", "integrity", self.module_name
+                self.test_repo_path, "tests", "validation", "common", "integrity", self.module_name
             )
         )
 

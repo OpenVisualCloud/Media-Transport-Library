@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import os
-
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.execute import LOG_FOLDER
+from common.integrity.integrity_runner import FileAudioIntegrityRunner
+from mtl_engine.execute import log_fail
 from mtl_engine.media_files import audio_files
 from tests.xfail import SDBQ1001_audio_channel_check
 
@@ -52,10 +51,7 @@ def test_st30p_channel(
         f"test_st30p_channel_{media_file_info['format']}_{audio_channel}"  # e.g., test_st30p_channel_PCM8_M
     )
 
-    # Ensure the output directory exists.
-    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
-    os.makedirs(log_dir, exist_ok=True)
-    out_file_url = os.path.join(log_dir, "out.wav")
+    out_file_url = host.connection.path(media_file_path).parent / "out.wav"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
@@ -67,7 +63,7 @@ def test_st30p_channel(
         audio_sampling="48kHz",
         audio_ptime="1",
         filename=media_file_path,
-        out_url=out_file_url,
+        out_url=str(out_file_url),
     )
 
     rxtxapp.execute_test(
@@ -77,3 +73,14 @@ def test_st30p_channel(
         host=host,
         capture_cfg=capture_cfg,
     )
+
+    integrity = FileAudioIntegrityRunner(
+        host=host,
+        test_repo_path=build,
+        src_url=media_file_path,
+        out_name=out_file_url.name,
+        out_path=str(out_file_url.parent)
+    )
+    result = integrity.run()
+    if not result:
+        log_fail("Audio integrity check failed")
