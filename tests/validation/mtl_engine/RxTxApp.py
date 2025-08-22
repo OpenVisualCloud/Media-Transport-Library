@@ -653,7 +653,7 @@ def execute_test(
             log_to_file("Started tcpdump capture", host, build)
         # Start netsniff-ng capture (blocking, so it captures during traffic)
         if netsniff:
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", 0.5))
+            netsniff.start()
             logger.info(f"Started netsniff-ng capture on host {host.name}")
             log_to_file("Started netsniff-ng capture", host, build)
     finally:
@@ -878,7 +878,7 @@ def execute_perf_test(
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
             log_to_file("Started performance test tcpdump capture", host, build)
         if netsniff:
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", 0.5))
+            netsniff.start()
             log_to_file("Started performance test netsniff-ng capture", host, build)
     finally:
         cp.wait()

@@ -390,7 +390,7 @@ def execute_test(
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             logger.info("Starting netsniff-ng capture...")
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
+            netsniff.start()
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")

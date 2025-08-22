@@ -73,7 +73,7 @@ def execute_test_sample(
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
+            netsniff.start()
         # Wait for both processes to finish
         wait(client_proc)
         wait(server_proc)

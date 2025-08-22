@@ -210,7 +210,7 @@ def execute_test(
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             logger.info("Starting netsniff-ng capture...")
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
+            netsniff.start()
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -387,7 +387,7 @@ def execute_test_rgb24(
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             logger.info("Starting netsniff-ng capture...")
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
+            netsniff.start()
 
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
@@ -580,7 +580,7 @@ def execute_test_rgb24_multiple(
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             logger.info("Starting netsniff-ng capture...")
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
+            netsniff.start()
 
         logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
@@ -1161,7 +1161,7 @@ def execute_dual_test(
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             logger.info("Starting netsniff capture...")
-            netsniff.capture(capture_time=capture_cfg.get("capture_time", test_time))
+            netsniff.start()
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
