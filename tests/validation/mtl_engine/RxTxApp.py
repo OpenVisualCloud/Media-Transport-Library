@@ -9,8 +9,10 @@ import subprocess
 import sys
 import time
 
-from create_pcap_file.tcpdump import TcpDumpRecorder
 from mfd_connect import SSHConnection
+
+from create_pcap_file.netsniff import NetsniffRecorder
+from create_pcap_file.tcpdump import TcpDumpRecorder
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -103,10 +105,15 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
 
 def prepare_tcpdump(capture_cfg, host=None):
     """
-    Prepare and (optionally) start TcpDumpRecorder if capture_cfg is enabled.
-    Returns the TcpDumpRecorder instance or None.
+    Prepare TcpDumpRecorder if capture_cfg is enabled and tool is tcpdump.
+
+    returns: TcpDumpRecorder instance or None.
     """
-    if capture_cfg and capture_cfg.get("enable"):
+    if (
+        capture_cfg
+        and capture_cfg.get("enable")
+        and capture_cfg.get("tool") == "tcpdump"
+    ):
         tcpdump = TcpDumpRecorder(
             host=host,
             test_name=capture_cfg.get("test_name", "capture"),
@@ -114,6 +121,52 @@ def prepare_tcpdump(capture_cfg, host=None):
             interface=capture_cfg.get("interface"),
         )
         return tcpdump
+    else:
+        logger.info(
+            "Not preparing tcpdump for capture as capturing not enabled "
+            "or tool is not tcpdump."
+        )
+    return None
+
+
+def prepare_netsniff(
+        capture_cfg,
+        host=None,
+        src_ip: str|None = None,
+        dst_ip: str|None = None
+    ):
+    """
+    Prepare NetsniffRecorder if capture_cfg is enabled.
+
+    returns: NetsniffRecorder instance or None.
+    """
+    if (
+        capture_cfg
+        and capture_cfg.get("enable")
+        and capture_cfg.get("tool") in ["netsniff", "netsniff-ng"]
+    ):
+        # Filtering
+        capture_filter = ""
+        if src_ip:
+            capture_filter += f"src {src_ip}"
+        if dst_ip and not capture_filter == "":
+            capture_filter += f" and dst {dst_ip}"
+        elif dst_ip:
+            capture_filter += f"dst {dst_ip}"
+        # Class prep
+        netsniff = NetsniffRecorder(
+            host=host,
+            test_name=capture_cfg.get("test_name", "capture"),
+            pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
+            interface=capture_cfg.get("interface"),
+            capture_filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
+        )
+        return netsniff
+    else:
+        logger.info(
+            "Not preparing netsniff-ng for capture as capturing not enabled "
+            "or tool is not in [netsniff, netsniff-ng]."
+        )
     return None
 
 
@@ -567,8 +620,9 @@ def execute_test(
 
     log_to_file(f"RxTxApp Command: {command}", host, build)
 
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
+    # Prepare capturing programs if capture is enabled in the test configuration.
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     # For 4TX and 8k streams more timeout is needed
     timeout = test_time + 90
@@ -591,12 +645,17 @@ def execute_test(
         host=remote_host,
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
     try:
+        # Start tcpdump capture (blocking, so it captures during traffic)
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
             logger.info(f"Started tcpdump capture on host {host.name}")
             log_to_file("Started tcpdump capture", host, build)
+        # Start netsniff-ng capture (blocking, so it captures during traffic)
+        if netsniff:
+            netsniff.start()
+            logger.info(f"Started netsniff-ng capture on host {host.name}")
+            log_to_file("Started netsniff-ng capture", host, build)
     finally:
         cp.wait()
 
@@ -760,7 +819,8 @@ def execute_perf_test(
 
     # Prepare tcpdump recorder if capture is enabled in the test configuration.
     tcpdump = prepare_tcpdump(capture_cfg, host)
-    background = tcpdump is not None
+    netsniff = prepare_netsniff(capture_cfg, host)
+    background = (tcpdump is not None) or (netsniff is not None)
 
     # For 4TX and 8k streams more timeout is needed
     # Also scale timeout with replica count for performance tests
@@ -812,11 +872,14 @@ def execute_perf_test(
         background=background,
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
     try:
+        # Start tcpdump capture (blocking, so it captures during traffic)
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
             log_to_file("Started performance test tcpdump capture", host, build)
+        if netsniff:
+            netsniff.start()
+            log_to_file("Started performance test netsniff-ng capture", host, build)
     finally:
         cp.wait()
 
@@ -1482,7 +1545,7 @@ def add_dual_interfaces(
     tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
 
     # Configure RX host interface only
-    rx_config["interfaces"][0]["name"] = rx_nic_port_list[1]
+    rx_config["interfaces"][0]["name"] = rx_nic_port_list[0]
 
     if test_mode == "unicast":
         tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
@@ -1673,20 +1736,27 @@ def execute_dual_test(
     tx_config = config["tx_config"]
     rx_config = config["rx_config"]
 
+    tx_config_json = json.dumps(tx_config, indent=4)
+    rx_config_json = json.dumps(rx_config, indent=4)
+
     # Log test start
     logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
     log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", tx_host, build)
     log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", rx_host, build)
-    log_to_file(f"TX config: {json.dumps(tx_config, indent=4)}", tx_host, build)
-    log_to_file(f"RX config: {json.dumps(rx_config, indent=4)}", rx_host, build)
+    log_to_file(f"TX config: {tx_config_json}", tx_host, build)
+    log_to_file(f"RX config: {rx_config_json}", rx_host, build)
 
     # Prepare TX config
+    tx_config_file = f"{build}/tests/tx_config.json"
     tx_f = tx_host.connection.path(build, "tests", "tx_config.json")
-    tx_f.write_text(tx_config, encoding="utf-8")
+    tx_json_content = tx_config_json.replace('"', '\\"')
+    tx_f.write_text(tx_json_content)
 
     # Prepare RX config
-    rx_f = tx_host.connection.path(build, "tests", "rx_config.json")
-    rx_f.write_text(rx_config, encoding="utf-8")
+    rx_config_file = f"{build}/tests/rx_config.json"
+    rx_f = rx_host.connection.path(build, "tests", "rx_config.json")
+    rx_json_content = rx_config_json.replace('"', '\\"')
+    rx_f.write_text(rx_json_content)
 
     # Adjust test_time for high-res/fps/replicas
     if (
@@ -1710,8 +1780,8 @@ def execute_dual_test(
     if ptp:
         base_command += " --ptp"
 
-    tx_command = f"{base_command} --config_file {tx_config}"
-    rx_command = f"{base_command} --config_file {rx_config}"
+    tx_command = f"{base_command} --config_file {tx_config_file}"
+    rx_command = f"{base_command} --config_file {rx_config_file}"
 
     logger.info(f"TX Command: {tx_command}")
     logger.info(f"RX Command: {rx_command}")
