@@ -1,12 +1,18 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files_422rfc10["ParkJoy_1080p"]],
+    indirect=["media_file"],
+    ids=["ParkJoy_1080p"],
+)
 @pytest.mark.parametrize(
     "fps",
     [
@@ -23,38 +29,39 @@ from mtl_engine.media_files import yuv_files_422rfc10
         "p120",
     ],
 )
-@pytest.mark.parametrize("file", ["ParkJoy_1080p"])
 def test_fps(
     hosts,
     build,
     media,
     nic_port_list,
     test_time,
-    file,
     fps,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
-    st20p_file = yuv_files_422rfc10[file]
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
     # Collect packet capture configuration and assign test_name
     capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_fps_{file}_{fps}"  # Set a unique pcap file name
+    capture_cfg["test_name"] = (
+        f"test_fps_{media_file_info['filename']}_{fps}"  # Set a unique pcap file name
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
         nic_port_list=host.vfs,
         test_mode="unicast",
-        width=st20p_file["width"],
-        height=st20p_file["height"],
+        width=media_file_info["width"],
+        height=media_file_info["height"],
         fps=fps,
-        input_format=st20p_file["file_format"],
-        transport_format=st20p_file["format"],
-        output_format=st20p_file["file_format"],
-        st20p_url=os.path.join(media, st20p_file["filename"]),
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
     )
 
     rxtxapp.execute_test(

@@ -10,7 +10,14 @@ from mtl_engine.media_files import anc_files, audio_files, yuv_files
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize(
     "video_format",
-    ["i1080p30", "i1080p50", "i1080p59", "i2160p30", "i2160p50", "i2160p59"],
+    [
+        pytest.param("i1080p30", marks=pytest.mark.nightly),
+        pytest.param("i1080p50", marks=pytest.mark.nightly),
+        "i1080p59",
+        pytest.param("i2160p30", marks=pytest.mark.nightly),
+        pytest.param("i2160p50", marks=pytest.mark.nightly),
+        "i2160p59",
+    ],
 )
 def test_ptp_mixed_format(
     hosts,

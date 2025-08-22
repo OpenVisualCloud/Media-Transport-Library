@@ -2,7 +2,6 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
@@ -12,8 +11,19 @@ from mtl_engine.media_files import yuv_files
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.parametrize(
+    "media_file",
+    [
+        yuv_files["i1080p60"],
+        yuv_files["i2160p60"],
+    ],
+    indirect=["media_file"],
+    ids=[
+        "i1080p60",
+        "i2160p60",
+    ],
+)
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
-@pytest.mark.parametrize("video_format", ["i1080p60", "i2160p60"])
 def test_rss_mode_video_performance(
     hosts,
     build,
@@ -21,18 +31,18 @@ def test_rss_mode_video_performance(
     nic_port_list,
     test_time,
     rss_mode,
-    video_format,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
-    video_file = yuv_files[video_format]
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
     # Collect packet capture configuration and assign test_name
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = (
-        f"test_rss_mode_video_performance_{video_format}_{rss_mode}"
+        f"test_rss_mode_video_performance_{media_file_info['filename']}_{rss_mode}"
     )
 
     config = rxtxapp.create_empty_config()
@@ -40,13 +50,13 @@ def test_rss_mode_video_performance(
         config=config,
         nic_port_list=host.vfs,
         test_mode="unicast",
-        width=video_file["width"],
-        height=video_file["height"],
-        fps=f"p{video_file['fps']}",
-        input_format=video_file["file_format"],
-        transport_format=video_file["format"],
-        output_format=video_file["file_format"],
-        st20p_url=os.path.join(media, video_file["filename"]),
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=f"p{media_file_info['fps']}",
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
     )
     config = rxtxapp.change_rss_mode(content=config, rss_mode=rss_mode)
 

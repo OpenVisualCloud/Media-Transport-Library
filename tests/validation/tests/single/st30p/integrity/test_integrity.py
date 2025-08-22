@@ -15,19 +15,30 @@ from mtl_engine.media_files import audio_files
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("audio_format", ["PCM8", "PCM24"])
+@pytest.mark.nightly
+@pytest.mark.parametrize(
+    "media_file",
+    [
+        audio_files["PCM8"],
+        audio_files["PCM24"],
+    ],
+    indirect=["media_file"],
+    ids=[
+        "PCM8",
+        "PCM24",
+    ],
+)
 def test_integrity(
     hosts,
     build,
     media,
     nic_port_list,
     test_time,
-    audio_format,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
-    st30p_file = audio_files[audio_format]
-    st30p_file_url = os.path.join(media, st30p_file["filename"])
+    media_file_info, media_file_path = media_file
 
     # Ensure the output directory exists.
     log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
@@ -39,7 +50,7 @@ def test_integrity(
     # Collect packet capture configuration and assign test_name
     capture_cfg = dict(test_config.get("capture_cfg", {}))
     capture_cfg["test_name"] = (
-        f"test_integrity_{audio_format}"  # Set a unique pcap file name
+        f"test_integrity_{media_file_info['format']}"  # Set a unique pcap file name
     )
 
     config = rxtxapp.create_empty_config()
@@ -47,11 +58,11 @@ def test_integrity(
         config=config,
         nic_port_list=host.vfs,
         test_mode="unicast",
-        audio_format=audio_format,
+        audio_format=media_file_info["format"],
         audio_channel=["U02"],
         audio_sampling="48kHz",
         audio_ptime="1",
-        filename=st30p_file_url,
+        filename=media_file_path,
         out_url=out_file_url,
     )
 
@@ -64,10 +75,10 @@ def test_integrity(
     )
 
     size = calculate_st30p_framebuff_size(
-        format=audio_format, ptime="1", sampling="48kHz", channel="U02"
+        format=media_file_info["format"], ptime="1", sampling="48kHz", channel="U02"
     )
     result = check_st30p_integrity(
-        src_url=st30p_file_url, out_url=out_file_url, size=size
+        src_url=media_file_path, out_url=out_file_url, size=size
     )
 
     if result:
