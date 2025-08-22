@@ -132,8 +132,9 @@ def delay_between_tests(test_config: dict):
     yield
 
 
+# TODO: Legacy, remove in the future
 @pytest.fixture
-def prepare_ramdisk(hosts, test_config):
+def legacy_prepare_ramdisk(hosts, test_config):
     ramdisk_cfg = test_config.get("ramdisk", {})
     capture_cfg = test_config.get("capture_cfg", {})
     pcap_dir = ramdisk_cfg.get("pcap_dir", "/home/pcap_files")
@@ -146,6 +147,24 @@ def prepare_ramdisk(hosts, test_config):
         ]
         for ramdisk in ramdisks:
             ramdisk.mount()
+
+
+@pytest.fixture(scope="session")
+def prepare_ramdisk(hosts, test_config):
+    ramdisks = []
+    ramdisks_configs = test_config.get("ramdisk", {})
+    for ramdisk_name, ramdisk_config in ramdisks_configs.items():
+        ramdisk_mountpoint = ramdisk_config.get("mountpoint", f"/mnt/ramdisk_{ramdisk_name}")
+        ramdisk_size_gib = ramdisk_config.get("size_gib", 32)
+        ramdisks += [
+            Ramdisk(host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib)
+            for host in hosts.values()
+        ]
+    for ramdisk in ramdisks:
+        ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
 
 
 @pytest.fixture(scope="session")
