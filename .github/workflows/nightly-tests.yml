@@ -1,13 +1,11 @@
 name: nightly-tests-bare-metal
 on:
-  push:
-    branches: 
-      - nwochtma/nightly-add-logs
+  schedule: 
+  - cron: '0 0 * * *' # Every day at midnight UTC
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
   DPDK_REBUILD: 'false'
-  LOG_DIR: "${{ github.workspace }}/logs"
 permissions:
   contents: read
 jobs:
