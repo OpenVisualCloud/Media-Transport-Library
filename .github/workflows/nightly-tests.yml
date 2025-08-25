@@ -1,6 +1,6 @@
 name: nightly-tests-bare-metal
 on:
-  schedule: 
+  schedule:
   - cron: '0 0 * * *' # Every day at midnight UTC
 env:
   BUILD_TYPE: 'Release'
