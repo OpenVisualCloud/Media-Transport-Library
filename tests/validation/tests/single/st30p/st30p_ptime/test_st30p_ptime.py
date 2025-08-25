@@ -8,7 +8,6 @@ from common.integrity.integrity_runner import FileAudioIntegrityRunner
 from mtl_engine.execute import log_fail
 from mtl_engine.media_files import audio_files
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -71,7 +70,7 @@ def test_st30p_ptime(
         host=host,
         capture_cfg=capture_cfg,
     )
-    
+
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
         integrity = FileAudioIntegrityRunner(
@@ -79,9 +78,11 @@ def test_st30p_ptime(
             test_repo_path=build,
             src_url=media_file_path,
             out_name=out_file_url.name,
-            out_path=str(out_file_url.parent)
+            out_path=str(out_file_url.parent),
         )
         result = integrity.run()
         if not result:
             # log_fail("Audio integrity check failed")
-            logger.warning("Integrity check failed probably because incorrect source file.")
+            logger.warning(
+                "Integrity check failed probably because incorrect source file."
+            )

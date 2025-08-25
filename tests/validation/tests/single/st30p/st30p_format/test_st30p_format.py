@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 import logging
+
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.media_files import audio_files
 from common.integrity.integrity_runner import FileAudioIntegrityRunner
 from mtl_engine.execute import log_fail
-
+from mtl_engine.media_files import audio_files
 
 logger = logging.getLogger(__name__)
 
@@ -76,9 +76,11 @@ def test_st30p_format(
             test_repo_path=build,
             src_url=media_file_path,
             out_name=out_file_url.name,
-            out_path=str(out_file_url.parent)
+            out_path=str(out_file_url.parent),
         )
         result = integrity.run()
         if not result:
             # log_fail("Audio integrity check failed")
-            logger.warning("Integrity check failed probably because incorrect source file.")
+            logger.warning(
+                "Integrity check failed probably because incorrect source file."
+            )
