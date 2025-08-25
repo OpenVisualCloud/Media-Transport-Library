@@ -14,4 +14,5 @@ hosts:
         connection_options:
           port: SSH_PORT_PLACEHOLDER
           username: USERNAME_PLACEHOLDER
-          password: PASSWORD_PLACEHOLDER
+          password: None
+          key_path: KEY_PATH_PLACEHOLDER
