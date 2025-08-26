@@ -262,6 +262,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   uint8_t payload_type = rtp->payload_type;
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr);
 
+  if (s->st30_pkt_idx == 0) {
+    s->first_pkt_rtp_ts = tmstamp;
+  }
+
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
@@ -359,11 +363,11 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     }
 
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = tmstamp;
+    meta->timestamp = s->first_pkt_rtp_ts;
     meta->fmt = ops->fmt;
     meta->sampling = ops->sampling;
     meta->channel = ops->channel;
-    meta->rtp_timestamp = tmstamp;
+    meta->rtp_timestamp = s->first_pkt_rtp_ts;
     meta->frame_recv_size = s->frame_recv_size;
 
     MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr, tmstamp,

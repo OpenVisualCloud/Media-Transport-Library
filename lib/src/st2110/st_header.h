@@ -1019,6 +1019,8 @@ struct st_rx_audio_session_impl {
   int st30_pkt_idx;       /* pkt index in current frame */
   int latest_seq_id;      /* latest seq id */
 
+  uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
+
   uint32_t tmstamp;
   size_t frame_recv_size;
 
