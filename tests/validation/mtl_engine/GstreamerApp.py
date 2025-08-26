@@ -6,11 +6,28 @@ import os
 import re
 import time
 
+from mfd_connect.exceptions import RemoteProcessInvalidState
 from mtl_engine.RxTxApp import prepare_tcpdump
 
 from .execute import log_fail, run
 
 logger = logging.getLogger(__name__)
+
+
+def capture_stdout(process, process_name):
+    """
+    Safely capture stdout from a process with proper error handling.
+    """
+    if not process:
+        return None
+    try:
+        return process.stdout_text  # Fixed: removed () - stdout_text is a property, not a method
+    except RemoteProcessInvalidState:
+        logger.info(f"Could not retrieve {process_name} output")
+        return None
+    except Exception as e:
+        logger.info(f"Error retrieving {process_name} output: {e}")
+        return None
 
 
 def create_connection_params(
@@ -434,40 +451,29 @@ def execute_test(
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        logger.info(f"Running test for {test_time} seconds...")
-        time.sleep(test_time)
-
-        logger.info("Terminating processes...")
+        logger.info(f"Waiting for RX process to complete (test_time: {test_time} seconds)...")
+        try:
+            rx_process.wait(timeout=test_time + 30)  # Allow extra time for cleanup
+            logger.info("RX process completed naturally")
+        except Exception:
+            logger.info("RX process did not complete in time, will clean up")
+            
         if tx_process:
             try:
-                tx_process.terminate()
+                tx_process.wait(timeout=10)  # Give TX time to finish
+                logger.info("TX process completed naturally")
             except Exception:
-                pass
-        if rx_process:
-            try:
-                rx_process.terminate()
-            except Exception:
-                pass
+                logger.info("TX process cleanup needed")
+                tx_process.kill()
 
-        # Wait a bit for termination
-        time.sleep(2)
+        # Get output after processes have completed
+        output_rx = capture_stdout(rx_process, "RX")
+        if output_rx:
+            logger.info(f"RX Output: {output_rx}")
 
-        # Get output after processes have been terminated
-        try:
-            if rx_process and hasattr(rx_process, "stdout_text"):
-                output_rx = rx_process.stdout_text.splitlines()
-                for line in output_rx:
-                    logger.info(f"RX Output: {line}")
-        except Exception:
-            logger.info("Could not retrieve RX output")
-
-        try:
-            if tx_process and hasattr(tx_process, "stdout_text"):
-                output_tx = tx_process.stdout_text.splitlines()
-                for line in output_tx:
-                    logger.info(f"TX Output: {line}")
-        except Exception:
-            logger.info("Could not retrieve TX output")
+        output_tx = capture_stdout(tx_process, "TX")
+        if output_tx:
+            logger.info(f"TX Output: {output_tx}")
 
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
@@ -476,13 +482,13 @@ def execute_test(
         # Ensure processes are terminated
         if tx_process:
             try:
-                tx_process.terminate()
+                tx_process.kill()
                 tx_process.wait(timeout=10)
             except Exception:
                 pass
         if rx_process:
             try:
-                rx_process.terminate()
+                rx_process.kill()
                 rx_process.wait(timeout=10)
             except Exception:
                 pass
@@ -520,8 +526,13 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         input_file_exists = input_stat_proc.return_code == 0
 
         if input_file_exists:
-            input_file_size = int(input_stat_proc.stdout_text.strip())
-            logger.info(f"Input file size: {input_file_size}")
+            input_output = capture_stdout(input_stat_proc, "input_stat")
+            if input_output:
+                input_file_size = int(input_output.strip())
+                logger.info(f"Input file size: {input_file_size}")
+            else:
+                log_fail("Could not get input file size")
+                return False
         else:
             logger.info(
                 f"Input file {input_file} does not exist - skipping input validation"
@@ -532,8 +543,13 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         if output_stat_proc.return_code != 0:
             log_fail(f"Could not access output file {output_file}")
             return False
-        output_file_size = int(output_stat_proc.stdout_text.strip())
-        logger.info(f"Output file size: {output_file_size}")
+        output_output = capture_stdout(output_stat_proc, "output_stat")
+        if output_output:
+            output_file_size = int(output_output.strip())
+            logger.info(f"Output file size: {output_file_size}")
+        else:
+            log_fail("Could not get output file size")
+            return False
 
         # If input file doesn't exist, just validate output file has content
         if not input_file_exists:
@@ -553,9 +569,10 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         if input_hash_proc.return_code != 0:
             log_fail(f"Could not calculate hash for input file {input_file}")
             return False
+        input_hash_output = capture_stdout(input_hash_proc, "input_hash")
         i_hash = (
-            input_hash_proc.stdout_text.split()[0]
-            if input_hash_proc.stdout_text.strip()
+            input_hash_output.split()[0]
+            if input_hash_output and input_hash_output.strip()
             else ""
         )
 
@@ -563,9 +580,10 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         if output_hash_proc.return_code != 0:
             log_fail(f"Could not calculate hash for output file {output_file}")
             return False
+        output_hash_output = capture_stdout(output_hash_proc, "output_hash")
         o_hash = (
-            output_hash_proc.stdout_text.split()[0]
-            if output_hash_proc.stdout_text.strip()
+            output_hash_output.split()[0]
+            if output_hash_output and output_hash_output.strip()
             else ""
         )
 

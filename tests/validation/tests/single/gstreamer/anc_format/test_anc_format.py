@@ -66,7 +66,7 @@ def test_st40p_fps_size(
             test_time=test_time,
             host=host,
             tx_first=False,
-            sleep_interval=3,
+            sleep_interval=1,
             capture_cfg=capture_cfg,
         )
     finally:
@@ -131,7 +131,7 @@ def test_st40p_framebuff(
             test_time=test_time,
             host=host,
             tx_first=False,
-            sleep_interval=3,
+            sleep_interval=1,
             capture_cfg=capture_cfg,
         )
     finally:

@@ -40,7 +40,7 @@ def create_video_file(
     media_path: str,
     output_path: str = "test_video.yuv",
     pattern: str = "ball",
-    duration: int = 10,
+    duration: int = 5,
     host=None,
 ):
     file_path = os.path.join(media_path, output_path)
