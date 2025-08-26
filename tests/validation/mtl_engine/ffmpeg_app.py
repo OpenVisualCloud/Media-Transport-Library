@@ -37,17 +37,13 @@ _log_timestamp = None
 
 def capture_stdout(proc, proc_name: str):
     """Capture and log stdout from a process"""
-    try:
-        if proc and hasattr(proc, "stdout_text"):
-            output = proc.stdout_text
-            if output and output.strip():
-                logger.info(f"{proc_name} Output:\n{output}")
-            return output
-        else:
-            logger.debug(f"No stdout available for {proc_name}")
-            return ""
-    except Exception as e:
-        logger.warning(f"Failed to capture stdout for {proc_name}: {e}")
+    if hasattr(proc, "stdout_text"):
+        output = proc.stdout_text
+        if output and output.strip():
+            logger.info(f"{proc_name} Output:\n{output}")
+        return output
+    else:
+        logger.debug(f"No stdout available for {proc_name}")
         return ""
 
 
