@@ -6,6 +6,7 @@ import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.integrity.integrity_runner import FileAudioIntegrityRunner
 from mtl_engine.execute import log_fail
+from mtl_engine.integrity import get_sample_size
 from mtl_engine.media_files import audio_files
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ def test_rss_mode_audio(
             test_repo_path=build,
             src_url=media_file_path,
             out_name=out_file_url.name,
+            sample_size=get_sample_size(media_file_info["format"]),
             out_path=str(out_file_url.parent),
         )
         result = integrity.run()

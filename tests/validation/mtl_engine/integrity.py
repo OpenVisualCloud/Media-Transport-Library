@@ -76,61 +76,76 @@ def check_st30p_integrity(src_url: str, out_url: str, size: int):
     return True
 
 
-def calculate_st30p_framebuff_size(
-    format: str, ptime: str, sampling: str, channel: str
-):
+def get_sample_size(format: str) -> int:
     match format:
         case "PCM8":
-            sample_size = 1
+            return 1
         case "PCM16":
-            sample_size = 2
+            return 2
         case "PCM24":
-            sample_size = 3
+            return 3
+        case _:
+            log_fail(f"Unknown audio format: {format}")
+            return 0
 
+
+def get_sample_number(sampling: str, ptime: str) -> int:
     match sampling:
         case "48kHz":
             match ptime:
                 case "1":
-                    sample_num = 48
+                    return 48
                 case "0.12":
-                    sample_num = 6
+                    return 6
                 case "0.25":
-                    sample_num = 12
+                    return 12
                 case "0.33":
-                    sample_num = 16
+                    return 16
                 case "4":
-                    sample_num = 192
+                    return 192
         case "96kHz":
             match ptime:
                 case "1":
-                    sample_num = 96
+                    return 96
                 case "0.12":
-                    sample_num = 12
+                    return 12
                 case "0.25":
-                    sample_num = 24
+                    return 24
                 case "0.33":
-                    sample_num = 32
+                    return 32
                 case "4":
-                    sample_num = 384
+                    return 384
+    return 0
 
+
+def get_channel_number(channel: str) -> int:
     match channel:
         case "M":
-            channel_num = 1
+            return 1
         case "DM" | "ST" | "LtRt" | "AES3":
-            channel_num = 2
+            return 2
         case "51":
-            channel_num = 6
+            return 6
         case "71":
-            channel_num = 8
+            return 8
         case "222":
-            channel_num = 24
+            return 24
         case "SGRP":
-            channel_num = 4
+            return 4
         case _:
             match = re.match(r"^U(\d{2})$", channel)
 
             if match:
-                channel_num = int(match.group(1))
+                return int(match.group(1))
+    return 0
+
+
+def calculate_st30p_framebuff_size(
+    format: str, ptime: str, sampling: str, channel: str
+):
+    sample_size = get_sample_size(format)
+    sample_num = get_sample_number(sampling, ptime)
+    channel_num = get_channel_number(channel)
 
     packet_size = sample_size * sample_num * channel_num
 

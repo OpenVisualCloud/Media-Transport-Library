@@ -5,8 +5,8 @@ import logging
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.integrity.integrity_runner import FileAudioIntegrityRunner
-from future.backports.test.pystone import TRUE
 from mtl_engine.execute import log_fail
+from mtl_engine.integrity import get_channel_number, get_sample_size
 from mtl_engine.media_files import audio_files
 from tests.xfail import SDBQ1001_audio_channel_check
 
@@ -56,7 +56,7 @@ def test_st30p_channel(
         f"test_st30p_channel_{media_file_info['format']}_{audio_channel}"  # e.g., test_st30p_channel_PCM8_M
     )
 
-    out_file_url = host.connection.path(media_file_path).parent / "out.wav"
+    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
@@ -78,18 +78,19 @@ def test_st30p_channel(
         host=host,
         capture_cfg=capture_cfg,
     )
-    if test_config.get("integrity_check", TRUE):
+
+    if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
         integrity = FileAudioIntegrityRunner(
             host=host,
             test_repo_path=build,
             src_url=media_file_path,
             out_name=out_file_url.name,
+            channel_num=get_channel_number(audio_channel),
+            sample_size=get_sample_size(media_file_info["format"]),
             out_path=str(out_file_url.parent),
+            delete_file=True,
         )
         result = integrity.run()
         if not result:
-            # log_fail("Audio integrity check failed")
-            logger.warning(
-                "Integrity check failed probably because incorrect source file."
-            )
+            log_fail("Audio integrity check failed")
