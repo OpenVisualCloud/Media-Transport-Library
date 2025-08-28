@@ -108,7 +108,7 @@ static void app_ptp_sync_notify(void* priv, struct mtl_ptp_sync_notify_meta* met
   uint64_t to_ns = mtl_ptp_read_time_raw(ctx->st);
   int ret;
   struct timespec from_ts, to_ts;
-  st_get_real_time(&from_ts);
+  st_get_tai_time(&from_ts);
   from_ts.tv_sec += meta->master_utc_offset; /* utc offset */
   uint64_t from_ns = st_timespec_to_ns(&from_ts);
 
@@ -123,7 +123,7 @@ static void app_ptp_sync_notify(void* priv, struct mtl_ptp_sync_notify_meta* met
    * adjust the time frequency also  */
   st_ns_to_timespec(to_ns, &to_ts);
   to_ts.tv_sec -= meta->master_utc_offset; /* utc offset */
-  ret = st_set_real_time(&to_ts);
+  ret = st_set_tai_time(&to_ts);
   if (ret < 0) {
     err("%s, set real time to %" PRIu64 " fail, delta %" PRId64 "\n", __func__, to_ns,
         delta);
@@ -148,7 +148,7 @@ enum mtl_log_level app_get_log_level(void) {
 static uint64_t app_ptp_from_tai_time(void* priv) {
   struct st_app_context* ctx = priv;
   struct timespec spec;
-  st_get_real_time(&spec);
+  st_get_tai_time(&spec);
   spec.tv_sec -= ctx->utc_offset;
   return ((uint64_t)spec.tv_sec * NS_PER_S) + spec.tv_nsec;
 }
@@ -206,7 +206,7 @@ static void st_app_ctx_init(struct st_app_context* ctx) {
   /* st22 */
   ctx->st22_bpp = 3; /* 3bit per pixel */
 
-  ctx->utc_offset = UTC_OFFSET;
+  ctx->utc_offset = 0;
 
   ctx->ptp_sync_delta_min = INT64_MAX;
   ctx->ptp_sync_delta_max = INT64_MIN;
@@ -475,6 +475,10 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (ctx->json_ctx->user_pacing_offset) {
+    ctx->user_pacing.user_pacing_offset = ctx->json_ctx->user_pacing_offset;
+  }
+
   ret = st_app_tx_video_sessions_init(ctx);
   if (ret < 0) {
     err("%s, st_app_tx_video_sessions_init fail %d\n", __func__, ret);
@@ -614,7 +618,6 @@ int main(int argc, char** argv) {
       st_app_pcap(ctx);
     }
   }
-  info("%s, start to ending\n", __func__);
 
   if (!ctx->runtime_session) {
     /* stop st first */
@@ -627,6 +630,38 @@ int main(int argc, char** argv) {
   st_app_ctx_free(ctx);
 
   return ret;
+}
+
+/**
+ * Returns the pacing time based on the user_pacing structure.
+ * If user_pacing is NULL, disabled, or an error occurs, returns 0.
+ * Otherwise, returns the calculated time.
+ */
+uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing* user_pacing,
+                                 uint64_t frame_time, bool restart_base_time) {
+  uint64_t tai_time, offset;
+
+  if (!user_pacing) return 0;
+
+  if (restart_base_time) {
+    pthread_mutex_lock(&user_pacing->base_tai_time_mutex);
+
+    user_pacing->base_tai_time = app_ptp_from_tai_time(ctx);
+    info("%s, restart base tai time %lu\n", __func__, user_pacing->base_tai_time);
+
+    if (user_pacing->base_tai_time == 0) {
+      err("%s, get tai time fail\n", __func__);
+      pthread_mutex_unlock(&user_pacing->base_tai_time_mutex);
+      return 0;
+    }
+
+    pthread_mutex_unlock(&user_pacing->base_tai_time_mutex);
+  }
+
+  offset = user_pacing->user_pacing_offset;
+  tai_time = user_pacing->base_tai_time + offset + frame_time;
+
+  return tai_time;
 }
 
 int st_set_mtl_log_file(struct st_app_context* ctx, const char* file) {

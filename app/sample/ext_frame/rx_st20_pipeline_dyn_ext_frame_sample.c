@@ -42,12 +42,22 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   struct rx_st20p_sample_ctx* s = priv;
   int i = s->ext_idx;
   MTL_MAY_UNUSED(meta);
-
   /* you can check the timestamp from lib by meta->timestamp */
 
   ext_frame->addr[0] = s->ext_frames[i].buf_addr;
   ext_frame->iova[0] = s->ext_frames[i].buf_iova;
   ext_frame->size = s->ext_frames[i].buf_len;
+
+  uint8_t* addr = ext_frame->addr[0];
+  uint8_t planes = st_frame_fmt_planes(meta->fmt);
+  for (int plane = 0; plane < planes; plane++) {
+    if (plane > 0)
+      ext_frame->iova[plane] =
+          ext_frame->iova[plane - 1] + ext_frame->linesize[plane - 1] * meta->height;
+    ext_frame->linesize[plane] = st_frame_least_linesize(meta->fmt, meta->width, plane);
+    ext_frame->addr[plane] = addr;
+    addr += ext_frame->linesize[plane] * meta->height;
+  }
 
   /* save your private data here get it from st_frame.opaque */
   /* ext_frame->opaque = ?; */
@@ -150,6 +160,15 @@ int main(int argc, char** argv) {
   ret = rx_sample_parse_args(&ctx, argc, argv);
   if (ret < 0) return ret;
 
+  bool is_output_yuv420 = ctx.output_fmt == ST_FRAME_FMT_YUV420CUSTOM8 ||
+                          ctx.output_fmt == ST_FRAME_FMT_YUV420PLANAR8;
+  if (ctx.ext_frame && is_output_yuv420) {
+    warn(
+        "%s: external frame mode does not support yuv420 output format, use other format "
+        "e.g. yuv422\n",
+        __func__);
+  }
+
   /* enable auto start/stop */
   ctx.param.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
   ctx.st = mtl_init(&ctx.param);
@@ -199,12 +218,13 @@ int main(int argc, char** argv) {
     ops_rx.framebuff_cnt = app[i]->fb_cnt;
     ops_rx.notify_frame_available = rx_st20p_frame_available;
 
-    if (equal) {
-      /* no convert, use ext frame for example */
+    if (equal || ctx.ext_frame) {
+      /* pre-allocate ext frames */
       app[i]->ext_frames =
           (struct st20_ext_frame*)malloc(sizeof(*app[i]->ext_frames) * app[i]->fb_cnt);
-      size_t framebuff_size =
-          st20_frame_size(ops_rx.transport_fmt, ops_rx.width, ops_rx.height);
+      size_t framebuff_size = st_frame_size(ops_rx.output_fmt, ops_rx.width,
+                                            ops_rx.height, ops_rx.interlaced);
+
       size_t fb_size = framebuff_size * app[i]->fb_cnt;
       /* alloc enough memory to hold framebuffers and map to iova */
       mtl_dma_mem_handle dma_mem = mtl_dma_mem_alloc(ctx.st, fb_size);
@@ -225,6 +245,7 @@ int main(int argc, char** argv) {
       /* use dynamic external frames */
       ops_rx.query_ext_frame = rx_st20p_query_ext_frame;
       ops_rx.flags |= ST20P_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
+      ops_rx.flags |= ST20P_RX_FLAG_EXT_FRAME;
     }
 
     st20p_rx_handle rx_handle = st20p_rx_create(ctx.st, &ops_rx);

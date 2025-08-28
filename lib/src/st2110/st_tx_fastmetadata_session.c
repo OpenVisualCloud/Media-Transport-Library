@@ -273,7 +273,9 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
     epochs = required_tai / frame_time;
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
-    if (epochs < ptp_epochs) s->stat_error_user_timestamp++;
+    if (epochs < ptp_epochs) {
+      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    }
   } else {
     epochs = ptp_time / frame_time;
   }
@@ -291,22 +293,25 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   if (interlaced) {
     if (second_field) { /* align to odd epoch */
       if (!(epochs & 0x1)) epochs++;
-      s->stat_interlace_second_field++;
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
     } else { /* align to even epoch */
       if (epochs & 0x1) epochs++;
-      s->stat_interlace_first_field++;
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
     }
   }
 
   to_epoch = tx_fastmetadata_pacing_time(pacing, epochs) - ptp_time;
   if (to_epoch < 0) {
     /* time bigger than the assigned epoch time */
-    s->stat_epoch_mismatch++;
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
     to_epoch = 0; /* send asap */
   }
 
   if (epochs > next_epochs) s->stat_epoch_drop += (epochs - next_epochs);
-  if (epochs < next_epochs) s->stat_epoch_onward += (next_epochs - epochs);
+  if (epochs < next_epochs) {
+    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
+                        (next_epochs - epochs));
+  }
 
   pacing->cur_epochs = epochs;
 
@@ -543,7 +548,9 @@ static int tx_fastmetadata_session_rtp_update_packet(
   if (rtp->tmstamp != s->st41_rtp_time) {
     /* start of a new frame */
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->st41_stat_frame_cnt);
+    rte_atomic32_inc(&s->stat_frame_cnt);
+    s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st41_rtp_time = rtp->tmstamp;
     bool second_field = false;
 
@@ -593,7 +600,8 @@ static int tx_fastmetadata_session_build_packet_chain(
       if (rtp->base.tmstamp != s->st41_rtp_time) {
         /* start of a new frame */
         s->st41_pkt_idx = 0;
-        rte_atomic32_inc(&s->st41_stat_frame_cnt);
+        rte_atomic32_inc(&s->stat_frame_cnt);
+        s->port_user_stats.common.port[s_port].frames++;
         s->st41_rtp_time = rtp->base.tmstamp;
         bool second_field = false;
         tx_fastmetadata_session_sync_pacing(impl, s, false, 0, second_field);
@@ -702,7 +710,7 @@ static int tx_fastmetadata_session_tasklet_frame(
     if (s->check_frame_done_time) {
       uint64_t frame_end_time = mt_get_tsc(impl);
       if (frame_end_time > pacing->tsc_time_cursor) {
-        s->stat_exceed_frame_time++;
+        ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
         dbg("%s(%d), frame %" PRIu16 " build time out %f us\n", __func__, idx,
             s->st41_frame_idx, (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
       }
@@ -844,11 +852,11 @@ static int tx_fastmetadata_session_tasklet_frame(
 
   st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->st41_stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
   if (send_r) {
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->st41_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
   }
 
   s->st41_pkt_idx++;
@@ -890,7 +898,9 @@ static int tx_fastmetadata_session_tasklet_frame(
     rte_atomic32_dec(&frame->refcnt);
     s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
     s->st41_pkt_idx = 0;
-    rte_atomic32_inc(&s->st41_stat_frame_cnt);
+    rte_atomic32_inc(&s->stat_frame_cnt);
+    s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
+    if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     pacing->tsc_time_cursor = 0;
 
     MT_USDT_ST41_TX_FRAME_DONE(s->mgr->idx, s->idx, s->st41_frame_idx,
@@ -1001,7 +1011,7 @@ static int tx_fastmetadata_session_tasklet_rtp(
   }
   st_tx_mbuf_set_idx(pkt, s->st41_pkt_idx);
   st_tx_mbuf_set_tsc(pkt, pacing->tsc_time_cursor);
-  s->st41_stat_pkt_cnt[MTL_SESSION_PORT_P]++;
+  s->stat_pkt_cnt[MTL_SESSION_PORT_P]++;
 
   if (send_r) {
     if (s->tx_no_chain) {
@@ -1019,7 +1029,7 @@ static int tx_fastmetadata_session_tasklet_rtp(
     }
     st_tx_mbuf_set_idx(pkt_r, s->st41_pkt_idx);
     st_tx_mbuf_set_tsc(pkt_r, pacing->tsc_time_cursor);
-    s->st41_stat_pkt_cnt[MTL_SESSION_PORT_R]++;
+    s->stat_pkt_cnt[MTL_SESSION_PORT_R]++;
   }
 
   bool done = true;
@@ -1480,7 +1490,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
   s->st41_frame_stat = ST41_TX_STAT_WAIT_FRAME;
   s->st41_frame_idx = 0;
-  rte_atomic32_set(&s->st41_stat_frame_cnt, 0);
+  rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -1534,19 +1544,19 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
 
 static void tx_fastmetadata_session_stat(struct st_tx_fastmetadata_session_impl* s) {
   int idx = s->idx;
-  int frame_cnt = rte_atomic32_read(&s->st41_stat_frame_cnt);
+  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
   double framerate = frame_cnt / time_sec;
 
-  rte_atomic32_set(&s->st41_stat_frame_cnt, 0);
+  rte_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = cur_time_ns;
 
   notice("TX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d:%d\n", idx, s->ops_name,
-         framerate, frame_cnt, s->st41_stat_pkt_cnt[MTL_SESSION_PORT_P],
-         s->st41_stat_pkt_cnt[MTL_SESSION_PORT_R]);
-  s->st41_stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
-  s->st41_stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
+         framerate, frame_cnt, s->stat_pkt_cnt[MTL_SESSION_PORT_P],
+         s->stat_pkt_cnt[MTL_SESSION_PORT_R]);
+  s->stat_pkt_cnt[MTL_SESSION_PORT_P] = 0;
+  s->stat_pkt_cnt[MTL_SESSION_PORT_R] = 0;
 
   if (s->stat_epoch_mismatch) {
     notice("TX_FMD_SESSION(%d): st41 epoch mismatch %d\n", idx, s->stat_epoch_mismatch);
@@ -1665,9 +1675,9 @@ static int st_tx_fastmetadata_sessions_stat(void* priv) {
     tx_fastmetadata_session_stat(s);
     tx_fastmetadata_session_put(mgr, j);
   }
-  if (mgr->st41_stat_pkts_burst > 0) {
-    notice("TX_FMD_MGR, pkts burst %d\n", mgr->st41_stat_pkts_burst);
-    mgr->st41_stat_pkts_burst = 0;
+  if (mgr->stat_pkts_burst > 0) {
+    notice("TX_FMD_MGR, pkts burst %d\n", mgr->stat_pkts_burst);
+    mgr->stat_pkts_burst = 0;
   } else {
     int32_t clients = rte_atomic32_read(&mgr->transmitter_clients);
     if ((clients > 0) && (mgr->max_idx > 0)) {
@@ -2147,4 +2157,40 @@ void* st41_tx_get_framebuffer(st41_tx_handle handle, uint16_t idx) {
   struct st_frame_trans* frame_info = &s->st41_frames[idx];
 
   return frame_info->addr;
+}
+
+int st41_tx_get_session_stats(st41_tx_handle handle, struct st41_tx_user_stats* stats) {
+  struct st_tx_fastmetadata_session_handle_impl* s_impl = handle;
+
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
+  if (s_impl->type != MT_HANDLE_TX_FMD) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_tx_fastmetadata_session_impl* s = s_impl->impl;
+
+  memcpy(stats, &s->port_user_stats, sizeof(*stats));
+  return 0;
+}
+
+int st41_tx_reset_session_stats(st41_tx_handle handle) {
+  struct st_tx_fastmetadata_session_handle_impl* s_impl = handle;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
+
+  if (s_impl->type != MT_HANDLE_TX_FMD) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+  struct st_tx_fastmetadata_session_impl* s = s_impl->impl;
+
+  memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
+  return 0;
 }

@@ -78,6 +78,18 @@
 
 #define ST_SESSION_STAT_TIMEOUT_US (10)
 
+#define ST_SESSION_STAT_INC(s, struct, stat) \
+  do {                                       \
+    (s)->stat++;                             \
+    (s)->struct.stat++;                      \
+  } while (0)
+
+#define ST_SESSION_STAT_ADD(s, struct, stat, val) \
+  do {                                            \
+    (s)->stat += (val);                           \
+    (s)->struct.stat += (val);                    \
+  } while (0)
+
 enum st21_tx_frame_status {
   ST21_TX_STAT_UNKNOWN = 0,
   ST21_TX_STAT_WAIT_FRAME,
@@ -369,9 +381,6 @@ struct st_tx_video_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rtcp_q[MTL_SESSION_PORT_MAX];
 
-  /* use atomic safe? */
-  struct st20_tx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
-
   /* stat */
   rte_atomic32_t stat_frame_cnt;
   int stat_pkts_build[MTL_SESSION_PORT_MAX];
@@ -407,6 +416,7 @@ struct st_tx_video_session_impl {
   double stat_cpu_busy_score;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
+  struct st20_tx_user_stats port_user_stats;
 };
 
 struct st_tx_video_sessions_mgr {
@@ -584,6 +594,7 @@ struct st_rx_video_session_impl {
 
   enum mtl_port port_maps[MTL_SESSION_PORT_MAX];
   struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX];
+
   uint16_t st20_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
 
@@ -665,9 +676,6 @@ struct st_rx_video_session_impl {
   float sim_loss_rate;
   uint16_t burst_loss_cnt;
 
-  /* use atomic safe? */
-  struct st20_rx_port_status port_user_stats[MTL_SESSION_PORT_MAX];
-
   int (*pkt_handler)(struct st_rx_video_session_impl* s, struct rte_mbuf* mbuf,
                      enum mtl_session_port s_port, bool ctrl_thread);
 
@@ -727,6 +735,7 @@ struct st_rx_video_session_impl {
   int stat_burst_succ_cnt;
   uint16_t stat_burst_pkts_max;
   uint64_t stat_burst_pkts_sum;
+  struct st20_rx_user_stats port_user_stats;
 };
 
 struct st_rx_video_sessions_mgr {
@@ -747,8 +756,6 @@ struct st_tx_audio_session_pacing {
   uint64_t cur_epochs;      /* epoch of current pkt */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
   uint64_t cur_epoch_time;
   /* in ns, tsc time cursor for packet pacing */
   uint64_t tsc_time_cursor;
@@ -827,6 +834,8 @@ struct st_tx_audio_session_impl {
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
 
+  struct st30_tx_user_stats port_user_stats;
+
   enum st30_tx_pacing_way tx_pacing_way;
   /* for rl based pacing */
   struct st_tx_audio_session_rl_info rl;
@@ -867,8 +876,8 @@ struct st_tx_audio_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t st30_stat_frame_cnt;
-  int st30_stat_pkt_cnt[MTL_SESSION_PORT_MAX];
+  rte_atomic32_t stat_frame_cnt;
+  int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
   uint32_t stat_epoch_drop;
@@ -908,7 +917,7 @@ struct st_tx_audio_sessions_mgr {
   rte_atomic32_t transmitter_clients;
 
   /* status */
-  int st30_stat_pkts_burst;
+  int stat_pkts_burst;
   int stat_trs_ret_code[MTL_PORT_MAX];
   uint32_t stat_unrecoverable_error;
   uint32_t stat_recoverable_error;
@@ -1021,18 +1030,18 @@ struct st_rx_audio_session_impl {
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
   /* status */
-  int st30_stat_pkts_dropped;
-  int st30_stat_pkts_redundant;
-  int st30_stat_pkts_out_of_order;
+  int stat_pkts_dropped;
+  int stat_pkts_redundant;
+  int stat_pkts_out_of_order;
   int stat_slot_get_frame_fail;
-  int st30_stat_pkts_wrong_pt_dropped;
-  int st30_stat_pkts_wrong_ssrc_dropped;
-  int st30_stat_pkts_len_mismatch_dropped;
-  int st30_stat_pkts_received;
-  rte_atomic32_t st30_stat_frames_received;
-  int st30_stat_pkts_rtp_ring_full;
-  uint64_t st30_stat_last_time;
+  int stat_pkts_wrong_pt_dropped;
+  int stat_pkts_wrong_ssrc_dropped;
+  int stat_pkts_len_mismatch_dropped;
+  int stat_pkts_received;
+  rte_atomic32_t stat_frames_received;
+  uint64_t stat_last_time;
   uint32_t stat_max_notify_frame_us;
+  struct st30_rx_user_stats port_user_stats;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
 };
@@ -1112,8 +1121,8 @@ struct st_tx_ancillary_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t st40_stat_frame_cnt;
-  int st40_stat_pkt_cnt[MTL_SESSION_PORT_MAX];
+  rte_atomic32_t stat_frame_cnt;
+  int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
   uint32_t stat_epoch_drop;
@@ -1128,6 +1137,7 @@ struct st_tx_ancillary_session_impl {
   /* interlace */
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
+  struct st40_tx_user_stats port_user_stats;
 };
 
 struct st_tx_ancillary_sessions_mgr {
@@ -1149,7 +1159,7 @@ struct st_tx_ancillary_sessions_mgr {
   rte_atomic32_t transmitter_clients;
 
   /* status */
-  int st40_stat_pkts_burst;
+  int stat_pkts_burst;
 
   int stat_trs_ret_code[MTL_PORT_MAX];
 };
@@ -1177,15 +1187,15 @@ struct st_rx_ancillary_session_impl {
 
   uint32_t tmstamp;
   /* status */
-  rte_atomic32_t st40_stat_frames_received;
-  int st40_stat_pkts_dropped;
-  int st40_stat_pkts_redundant;
-  int st40_stat_pkts_out_of_order;
-  int st40_stat_pkts_enqueue_fail;
-  int st40_stat_pkts_wrong_pt_dropped;
-  int st40_stat_pkts_wrong_ssrc_dropped;
-  int st40_stat_pkts_received;
-  uint64_t st40_stat_last_time;
+  rte_atomic32_t stat_frames_received;
+  int stat_pkts_dropped;
+  int stat_pkts_redundant;
+  int stat_pkts_out_of_order;
+  int stat_pkts_enqueue_fail;
+  int stat_pkts_wrong_pt_dropped;
+  int stat_pkts_wrong_ssrc_dropped;
+  int stat_pkts_received;
+  uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
@@ -1193,6 +1203,7 @@ struct st_rx_ancillary_session_impl {
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
   int stat_pkts_wrong_interlace_dropped;
+  struct st40_rx_user_stats port_user_stats;
 };
 
 struct st_rx_ancillary_sessions_mgr {
@@ -1249,6 +1260,8 @@ struct st_tx_fastmetadata_session_impl {
   struct rte_ring* packet_ring;
   bool second_field;
 
+  struct st41_tx_user_stats port_user_stats;
+
   /* dedicated queue tx mode */
   struct mt_txq_entry* queue[MTL_SESSION_PORT_MAX];
   bool shared_queue;
@@ -1279,8 +1292,8 @@ struct st_tx_fastmetadata_session_impl {
   struct mt_rtcp_tx* rtcp_tx[MTL_SESSION_PORT_MAX];
 
   /* stat */
-  rte_atomic32_t st41_stat_frame_cnt;
-  int st41_stat_pkt_cnt[MTL_SESSION_PORT_MAX];
+  rte_atomic32_t stat_frame_cnt;
+  int stat_pkt_cnt[MTL_SESSION_PORT_MAX];
   /* count of frame not match the epoch */
   uint32_t stat_epoch_mismatch;
   uint32_t stat_epoch_drop;
@@ -1316,7 +1329,7 @@ struct st_tx_fastmetadata_sessions_mgr {
   rte_atomic32_t transmitter_clients;
 
   /* status */
-  int st41_stat_pkts_burst;
+  int stat_pkts_burst;
 
   int stat_trs_ret_code[MTL_PORT_MAX];
 };
@@ -1344,15 +1357,14 @@ struct st_rx_fastmetadata_session_impl {
 
   uint32_t tmstamp;
   /* status */
-  rte_atomic32_t st41_stat_frames_received;
-  int st41_stat_pkts_dropped;
-  int st41_stat_pkts_redundant;
-  int st41_stat_pkts_out_of_order;
-  int st41_stat_pkts_enqueue_fail;
-  int st41_stat_pkts_wrong_pt_dropped;
-  int st41_stat_pkts_wrong_ssrc_dropped;
-  int st41_stat_pkts_received;
-  uint64_t st41_stat_last_time;
+  rte_atomic32_t stat_frames_received;
+  int stat_pkts_redundant;
+  int stat_pkts_out_of_order;
+  int stat_pkts_enqueue_fail;
+  int stat_pkts_wrong_pt_dropped;
+  int stat_pkts_wrong_ssrc_dropped;
+  int stat_pkts_received;
+  uint64_t stat_last_time;
   uint32_t stat_max_notify_rtp_us;
   /* for tasklet session time measure */
   struct mt_stat_u64 stat_time;
@@ -1360,6 +1372,7 @@ struct st_rx_fastmetadata_session_impl {
   uint32_t stat_interlace_first_field;
   uint32_t stat_interlace_second_field;
   int stat_pkts_wrong_interlace_dropped;
+  struct st41_rx_user_stats port_user_stats;
 };
 
 struct st_rx_fastmetadata_sessions_mgr {

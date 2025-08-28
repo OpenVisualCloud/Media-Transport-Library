@@ -9,9 +9,10 @@ hosts:
       - pci_device: 8086:1592
         interface_index: 0 # all
     connections:
-      - ip_address: ip_address
+      - ip_address: IP_ADDRESS_PLACEHOLDER
         connection_type: SSHConnection
         connection_options:
-          port: 22
-          username: username
-          password: passowrd
+          port: SSH_PORT_PLACEHOLDER
+          username: USERNAME_PLACEHOLDER
+          password: None
+          key_path: KEY_PATH_PLACEHOLDER
