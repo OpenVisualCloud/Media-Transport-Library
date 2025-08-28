@@ -519,15 +519,15 @@ yuv_files_422rfc10 = dict(
 
 audio_files = dict(
     PCM24={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM24",
     },
     PCM16={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM16",
     },
     PCM8={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM8",
     },
 )
