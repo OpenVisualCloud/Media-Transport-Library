@@ -10,6 +10,8 @@ import threading
 import time
 
 from .execute import log_fail, run
+import base64
+
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +189,49 @@ def create_text_file(size_kb: int, output_path: str = "test_anc.txt", host=None)
     logger.info(f"Text file created at {output_path} with size {size_kb} KB")
     return output_path
 
+# Pseudo rfc8331 file does iterate over 
+def create_ancillary_rfc8331_pseudo_file(size_frames: int, output_path: str = "test_anc.txt", host=None):
+    # Define a table of 3 ancillary hex inputs (as lists of hex strings)
+    # Example ancillary data table (each entry is a bytes object)
+    ancillary_hex_table = [
+        "\\x00\\x09\\x00\\x00\\x00\\x60\\x60\\x10\\x70\\x50\\x50\\x00\\x20\\x80\\x00\\x00\\x40\\x50\\x50\\x20\\x10\\x00\\xe0\\x00\\x00\\x0a\\x00\\x00\\x00\\x61\\x01\\x10\\x96\\x69\\x10\\x7f\\x43\\x3c\\x6a\\x72\\xe1\\xfd\\x80\\x80\\x74\\x3c\\x6a\\x1f\\x00\\x0e\\x00\\x00\\x00\\x41\\x07\\x3c\\x08\\xff\\xff\\x00\\x3c\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x03\\x01\\x04\\x00\\x02\\x12\\xf8\\x01\\x09\\x00\\x06\\x14\\x04\\x23\\x2a\\x30\\x32\\x01\\x0b\\x00\\x1b\\x00\\x00\\x03\\xe9\\x00\\xa4\\x5b\\x01\\x09\\x31\\x31\\x38\\x31\\x32\\x38\\x33\\x31\\x32\\x22\\x01\\x01\\x00\\x01\\x00\\x00\\x00\\x00",
+        "\\x00\\x09\\x00\\x00\\x00\\x60\\x60\\x08\\x44\\x00\\x00\\x00\\x00\\x00\\x00\\x00",
+        "\\x00\\x09\\x00\\x00\\x00\\x61\\x01\\x10\\x96\\x69\\x10\\x7f\\x43\\x5d\\xbc\\x72\\xe1\\xfd\\x01\\x85\\x74\\x5d\\xbc\\xb3\\x00\\x0a\\x00\\x00\\x00\\x60\\x60\\x10\\x70\\x20\\x60\\x10\\x20\\x80\\x50\\x00\\x50\\x50\\x20\\x20\\x00\\x00\\xe0\\x00\\x00\\x0c\\x00\\x00\\x00\\x41\\x07\\x3c\\x08\\xff\\xff\\x00\\x3c\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x03\\x01\\x04\\x00\\x02\\x12\\xf8\\x01\\x09\\x00\\x06\\x14\\x04\\x23\\x2a\\x30\\x32\\x01\\x0b\\x00\\x1b\\x00\\x00\\x03\\xe9\\x00\\x01\\x0e\\x01\\x09\\x31\\x31\\x38\\x31\\x33\\x38\\x37\\x38\\x31\\x22\\x01\\x01\\x00\\x01\\x00\\x00\\x00\\x00"
+    ]
+
+    # Encode content as base64 to safely transfer via shell
+    # Generate content by repeating ancillary_hex_table entries for each frame
+    content = ""
+    for i in range(size_frames):
+        entry = ancillary_hex_table[i % len(ancillary_hex_table)]
+        content += entry
+
+    chunk_size = 8192  # 8KB chunks
+    command_parts = []
+    for i in range(0, len(content), chunk_size):
+        chunk = content[i : i + chunk_size]
+        escaped_chunk = chunk.replace("\\", "\\\\").replace("'", "'\"'\"'")
+        if i == 0:
+            command_parts.append(f"printf {escaped_chunk} > {output_path}")
+        else:
+            command_parts.append(f"printf {escaped_chunk} >> {output_path}")
+
+    try:
+        for cmd in command_parts:
+            result = run(cmd, host=host, enable_sudo=True)
+            logging.info("f{cmd}")
+            return_code = getattr(result, "returncode", getattr(result, "exit_code", 0))
+            if return_code != 0:
+                raise subprocess.SubprocessError(
+                    f"Command failed with return code {return_code}"
+                )
+    except Exception as e:
+        log_fail(f"Failed to create text file: {e}")
+        raise
+
+    size_kb = len(content) / 1024
+    logger.info(f"Text file created at {output_path} with size {size_kb} KB")
+    return output_path
 
 def remove_file(file_path: str, host=None):
     # Always attempt to remove the file
