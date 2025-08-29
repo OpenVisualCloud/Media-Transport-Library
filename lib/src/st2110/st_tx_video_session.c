@@ -649,25 +649,32 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
         ", ptp_time %" PRIu64 "ms\n",
         __func__, idx, to_epoch, epochs, pacing->cur_epochs, ptp_time / 1000 / 1000);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_troffset_mismatch);
-    epochs++; /* assign to next */
-    start_time_ptp = pacing_start_time(pacing, epochs);
-    to_epoch = start_time_ptp - ptp_time;
-  }
 
-  if (to_epoch < 0) {
-    /* should never happen */
-    err("%s(%d), error to_epoch %f, ptp_time %" PRIu64 ", epochs %" PRIu64 " %" PRIu64
-        "\n",
-        __func__, idx, to_epoch, ptp_time, epochs, pacing->cur_epochs);
-    to_epoch = 0;
+    /* in case of user controlled pacing we need to send this even if late
+    as close to the user defiend time as possible*/
+    if (required_tai) {
+      to_epoch = 0;
+    } else {
+      to_epoch = start_time_ptp - ptp_time;
+      epochs++; /* assign to next */
+      start_time_ptp = pacing_start_time(pacing, epochs);
+
+      if (to_epoch < 0) {
+        /* should never happen */
+        err("%s(%d), error to_epoch %f, ptp_time %" PRIu64 ", epochs %" PRIu64 " %" PRIu64
+            "\n",
+            __func__, idx, to_epoch, ptp_time, epochs, pacing->cur_epochs);
+        to_epoch = 0;
+      }
+    }
   }
 
   if (epochs > next_epochs) {
     dbg("%s(%d), epochs %" PRIu64 " next_epochs %" PRIu64 "\n", __func__, idx, epochs,
         next_epochs);
-    s->stat_epoch_drop += (epochs - next_epochs);
-  }
-  if (epochs < next_epochs) {
+    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                        (epochs - next_epochs));
+  } else if (epochs < next_epochs) {
     ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
                         (next_epochs - epochs));
   }
@@ -677,10 +684,12 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   pacing->rtp_time_stamp = pacing_time_stamp(s, pacing, epochs);
   dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
       pacing->tsc_time_cursor / 1000 / 1000);
+
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
   dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %fms to_epoch %fms\n",
       __func__, idx, pacing->cur_epochs, pacing->rtp_time_stamp,
       pacing->tsc_time_cursor / 1000 / 1000, to_epoch / 1000 / 1000);
+
   pacing->ptp_time_cursor = start_time_ptp;
   pacing->tsc_time_frame_start = pacing->tsc_time_cursor;
 

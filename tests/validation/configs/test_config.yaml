@@ -1,5 +1,5 @@
-build: .
-mtl_path: .
+build: MTL_PATH_PLACEHOLDER
+mtl_path: MTL_PATH_PLACEHOLDER
 media_path: /mnt/media
 capture_cfg:
   enable: false

@@ -1,7 +1,7 @@
 name: nightly-tests-bare-metal
 on:
   schedule:
-    - cron: '0 0 * * *' # Every day at midnight UTC
+  - cron: '0 0 * * *' # Every day at midnight UTC
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
@@ -124,6 +124,13 @@ jobs:
     env:
       PYTEST_RETRIES: '3'
     steps:
+      - name: Replace secrets in example config files
+        run: |
+          sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
+          sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
+          sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
+          sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
+          sed -i "s+KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config.yaml
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
@@ -153,6 +160,7 @@ jobs:
         run: |
           sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
       - name: "upload report"
+        if: always()
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
