@@ -241,7 +241,6 @@ def run(
     )
     if not background:
         process.wait(timeout=timeout)
-        logger.debug(process.stdout_text)
         logger.debug(f"RC: {process.return_code}")
     else:
         logger.debug("Process started in background mode.")
