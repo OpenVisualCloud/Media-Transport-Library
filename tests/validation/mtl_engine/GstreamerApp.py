@@ -7,6 +7,7 @@ import os
 import time
 
 from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
+from compliance.pcap_compliance import PcapComplianceClient
 
 from .execute import log_fail, run
 
@@ -446,14 +447,31 @@ def execute_test(
                 rx_process.wait(timeout=10)
             except Exception:
                 pass
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            # FIXME: Get rid of hardcoded path
+            ebu_config_path = "configs/ebu_list.yaml"
+            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client.authenticate()
+            compliance_client.upload_pcap()
+            report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
+            is_compliant = compliance_client.check_compliance(report_path=report_path)
 
     # Compare files for validation
     file_compare = compare_files(input_file, output_file)
     logger.info(f"File comparison: {file_compare}")
+
+    if not is_compliant:
+        logger.info("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
 
     return file_compare
 

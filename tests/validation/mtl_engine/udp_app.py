@@ -3,11 +3,14 @@
 
 import copy
 import json
+import logging
 import os
 import re
 
 from mtl_engine import udp_app_config
 from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
+from compliance.upload_pcap import upload_pcap
+from tests.validation.compliance.pcap_compliance import PcapComplianceClient
 
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait
@@ -21,6 +24,7 @@ librist_ip_dict = {
     "send": "192.168.106.10",
     "receive": "192.168.106.11",
 }
+logger = logging.getLogger(__name__)
 
 
 def execute_test_sample(
@@ -78,15 +82,31 @@ def execute_test_sample(
         wait(client_proc)
         wait(server_proc)
     finally:
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            # FIXME: Get rid of hardcoded path
+            ebu_config_path = "configs/ebu_list.yaml"
+            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client.authenticate()
+            compliance_client.upload_pcap()
+            report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
+            is_compliant = compliance_client.check_compliance(report_path=report_path)
 
     if not check_received_packets(client_proc.output) or not check_received_packets(
         server_proc.output
     ):
         log_fail("Received less than 99% sent packets")
+    if not is_compliant:
+        log_fail("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
 
 
 def execute_test_librist(
@@ -137,6 +157,7 @@ def execute_test_librist(
     )
 
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
     receive_proc = call(receive_command, build, test_time, sigint=True, env=receive_env)
@@ -145,17 +166,37 @@ def execute_test_librist(
         # Start packet capture when traffic is flowing
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            netsniff.start()
         # Wait for both processes to finish
         wait(send_proc)
         wait(receive_proc)
     finally:
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
+        if netsniff:
+            netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            # FIXME: Get rid of hardcoded path
+            ebu_config_path = "configs/ebu_list.yaml"
+            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client.authenticate()
+            compliance_client.upload_pcap()
+            report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
+            is_compliant = compliance_client.check_compliance(report_path=report_path)
 
     if not check_connected_receivers(
         send_proc.output, sessions_cnt
     ) or not check_connected_receivers(receive_proc.output, sessions_cnt):
         log_fail("Wrong number of connected receivers")
+    if not is_compliant:
+        log_fail("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
 
 
 def create_config(config: dict, port: str, ip: str, netmask: str = None) -> None:

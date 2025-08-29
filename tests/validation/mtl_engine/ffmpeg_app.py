@@ -10,6 +10,8 @@ import time
 
 from mfd_connect import SSHConnection
 
+from compliance.load_ebu_config import load_ebu_config
+from compliance.upload_pcap import upload_pcap
 from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 
 from . import rxtxapp_config
@@ -278,10 +280,23 @@ def execute_test(
                     rx_proc.wait(timeout=5)
                 except Exception:
                     pass
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            from compliance.load_ebu_config import load_ebu_config
+            ebu_config = load_ebu_config("configs/ebu_list.yaml")
+            is_compliant = upload_pcap(
+                file_path=pcap_file,
+                ip=ebu_config.get("ip"),
+                login=ebu_config.get("login"),
+                password=ebu_config.get("password"),
+            )
     passed = False
     match output_format:
         case "yuv":
@@ -298,7 +313,11 @@ def execute_test(
     except Exception as e:
         logger.info(f"Could not remove output files: {e}")
     if not passed:
-        log_fail("test failed")
+        log_fail("Test failed")
+    if not is_compliant:
+        log_fail("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
     return passed
 
 
@@ -463,14 +482,29 @@ def execute_test_rgb24(
                     rx_proc.wait(timeout=3)
                 except Exception:
                     pass
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            ebu_config = load_ebu_config("configs/ebu_list.yaml")
+            is_compliant = upload_pcap(
+                file_path=pcap_file,
+                ip=ebu_config.get("ip"),
+                login=ebu_config.get("login"),
+                password=ebu_config.get("password"),
+            )
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
-    time.sleep(5)
+    if not is_compliant:
+        log_fail("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
     return True
 
 
@@ -648,14 +682,30 @@ def execute_test_rgb24_multiple(
                         proc.wait(timeout=3)
                     except Exception:
                         pass
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            from compliance.load_ebu_config import load_ebu_config
+            ebu_config = load_ebu_config("configs/ebu_list.yaml")
+            is_compliant = upload_pcap(
+                file_path=pcap_file,
+                ip=ebu_config.get("ip"),
+                login=ebu_config.get("login"),
+                password=ebu_config.get("password"),
+            )
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
-    time.sleep(5)
+    if not is_compliant:
+        log_fail("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
     return True
 
 
@@ -1037,6 +1087,7 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
 
 
 def execute_dual_test(
+    mtl_path: str,
     test_time: int,
     build: str,
     tx_host,
@@ -1074,6 +1125,7 @@ def execute_dual_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
+                f"LD_PRELOAD=/usr/lib/gcc/x86_64-linux-gnu/11/libasan.so "
                 f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
@@ -1229,10 +1281,37 @@ def execute_dual_test(
                     rx_proc.wait(timeout=5)
                 except Exception:
                     pass
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        logger.debug(f"PCAP file: {pcap_file}")
+        if pcap_file and mtl_path:
+            # FIXME: Get rid of hardcoded path
+            ebu_config_path = "configs/ebu_list.yaml"
+            from compliance.load_ebu_config import load_ebu_config
+            ebu_config = load_ebu_config(ebu_config_path)
+            # FIXME: This prints credentials into the logs
+            ebu_process = rx_host.connection.execute_command(
+                f"""http_proxy= python3 upload_pcap.py """
+                f"""--pcap_file_path {pcap_file} """
+                f"""--ip {ebu_config.get('ebu_ip')} """
+                f"""--login {ebu_config.get('username')} """
+                f"""--password {ebu_config.get('password')}""",
+                cwd=f"{mtl_path}/tests/validation/compliance/",
+            )
+            ebu_process_output = ebu_process.stdout.strip()
+            ebu_uuid = ebu_process_output.split(">>>UUID>>>")[-1].split("<<<UUID<<<")[0]
+            from compliance.pcap_compliance import PcapComplianceClient
+            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client.authenticate()
+            compliance_client.pcap_id = ebu_uuid
+            report_path = compliance_client.download_report(test_name=ebu_uuid)
+            is_compliant = compliance_client.check_compliance(report_path=report_path)
     passed = False
     match output_format:
         case "yuv":
@@ -1250,6 +1329,10 @@ def execute_dual_test(
         logger.info(f"Could not remove output files: {e}")
     if not passed:
         log_fail("test failed")
+    if not is_compliant:
+        log_fail("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
     return passed
 
 
