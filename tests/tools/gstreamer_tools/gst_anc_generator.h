@@ -1,8 +1,8 @@
 #ifndef __GST_ANC_GENERATOR_H__
 #define __GST_ANC_GENERATOR_H__
 
-#include <gst/gst.h>
 #include <gst/base/gstbasesrc.h>
+#include <gst/gst.h>
 
 G_BEGIN_DECLS
 

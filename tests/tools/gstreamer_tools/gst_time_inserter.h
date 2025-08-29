@@ -18,7 +18,6 @@ G_BEGIN_DECLS
 #define NS_PER_S (1000000000)
 #endif
 
-
 typedef struct _GstTimeInserter GstTimeInserter;
 typedef struct _GstTimeInserterClass GstTimeInserterClass;
 
