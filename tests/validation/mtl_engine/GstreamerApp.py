@@ -6,7 +6,8 @@ import logging
 import os
 import time
 
-from mtl_engine.RxTxApp import prepare_tcpdump
+from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
+from compliance.pcap_compliance import PcapComplianceClient
 
 from .execute import log_fail, run
 
@@ -331,6 +332,7 @@ def execute_test(
     tx_process = None
     rx_process = None
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     try:
         if tx_first:
@@ -383,10 +385,13 @@ def execute_test(
                 background=True,
                 enable_sudo=True,
             )
-        # --- Start tcpdump after pipelines are running ---
+        # --- Start packet capture after pipelines are running ---
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.start()
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -442,12 +447,31 @@ def execute_test(
                 rx_process.wait(timeout=10)
             except Exception:
                 pass
+        pcap_file = None
+        is_compliant = False
         if tcpdump:
             tcpdump.stop()
+            pcap_file = tcpdump.pcap_file
+        if netsniff:
+            netsniff.stop()
+            pcap_file = netsniff.pcap_file
+        if pcap_file:
+            # FIXME: Get rid of hardcoded path
+            ebu_config_path = "configs/ebu_list.yaml"
+            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client.authenticate()
+            compliance_client.upload_pcap()
+            report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
+            is_compliant = compliance_client.check_compliance(report_path=report_path)
 
     # Compare files for validation
     file_compare = compare_files(input_file, output_file)
     logger.info(f"File comparison: {file_compare}")
+
+    if not is_compliant:
+        logger.info("PCAP compliance check failed")
+    else:
+        logger.info("PCAP compliance check passed")
 
     return file_compare
 
