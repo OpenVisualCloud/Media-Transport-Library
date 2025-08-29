@@ -1,7 +1,7 @@
 #include "gst_anc_generator.h"
 
-#include <gst/gst.h>
 #include <gst/base/gstbasesrc.h>
+#include <gst/gst.h>
 #include <stdio.h>
 
 static unsigned char ancillary_example[] = {
@@ -41,35 +41,29 @@ GST_DEBUG_CATEGORY_STATIC(gst_anc_generator_debug);
 #define DEFAULT_FRAMERATE_NUM 25
 #define DEFAULT_FRAMERATE_DEN 1
 
-enum {
-  PROP_0,
-  PROP_NUM_FRAMES,
-  PROP_FRAMERATE
-};
+enum { PROP_0, PROP_NUM_FRAMES, PROP_FRAMERATE };
 
-static GstStaticPadTemplate src_factory =
-    GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS, 
-                           GST_STATIC_CAPS("application/x-ancillary-data"));
+static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE(
+    "src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS("application/x-ancillary-data"));
 
-G_DEFINE_TYPE_WITH_CODE(
-    GstAncGenerator, gst_anc_generator, GST_TYPE_BASE_SRC,
-    GST_DEBUG_CATEGORY_INIT(gst_anc_generator_debug, "anc_generator", 0,
-                            "Ancillary data payload generator"));
+G_DEFINE_TYPE_WITH_CODE(GstAncGenerator, gst_anc_generator, GST_TYPE_BASE_SRC,
+                        GST_DEBUG_CATEGORY_INIT(gst_anc_generator_debug, "anc_generator",
+                                                0, "Ancillary data payload generator"));
 
 GST_ELEMENT_REGISTER_DEFINE(GstAncGenerator, "anc_generator", GST_RANK_NONE,
                             GST_TYPE_ANC_GENERATOR);
 
 static void gst_anc_generator_set_property(GObject* object, guint prop_id,
-                                          const GValue* value, GParamSpec* pspec);
+                                           const GValue* value, GParamSpec* pspec);
 static void gst_anc_generator_get_property(GObject* object, guint prop_id, GValue* value,
-                                          GParamSpec* pspec);
+                                           GParamSpec* pspec);
 static void gst_anc_generator_dispose(GObject* object);
 static void gst_anc_generator_finalize(GObject* object);
 
 static gboolean gst_anc_generator_start(GstBaseSrc* basesrc);
 static gboolean gst_anc_generator_stop(GstBaseSrc* basesrc);
 static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offset,
-                                             guint size, GstBuffer** buf);
+                                              guint size, GstBuffer** buf);
 static gboolean gst_anc_generator_query(GstBaseSrc* basesrc, GstQuery* query);
 
 static void gst_anc_generator_class_init(GstAncGeneratorClass* klass) {
@@ -103,8 +97,8 @@ static void gst_anc_generator_class_init(GstAncGeneratorClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_FRAMERATE,
-      gst_param_spec_fraction("fps", "framerate", "Framerate", 1, 1,
-                              G_MAXINT, 1, DEFAULT_FRAMERATE_NUM, DEFAULT_FRAMERATE_DEN,
+      gst_param_spec_fraction("fps", "framerate", "Framerate", 1, 1, G_MAXINT, 1,
+                              DEFAULT_FRAMERATE_NUM, DEFAULT_FRAMERATE_DEN,
                               G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
@@ -134,7 +128,7 @@ static void gst_anc_generator_finalize(GObject* object) {
 }
 
 static void gst_anc_generator_set_property(GObject* object, guint prop_id,
-                                          const GValue* value, GParamSpec* pspec) {
+                                           const GValue* value, GParamSpec* pspec) {
   GstAncGenerator* src = GST_ANC_GENERATOR(object);
   g_return_if_fail(GST_IS_ANC_GENERATOR(src));
 
@@ -153,7 +147,7 @@ static void gst_anc_generator_set_property(GObject* object, guint prop_id,
 }
 
 static void gst_anc_generator_get_property(GObject* object, guint prop_id, GValue* value,
-                                          GParamSpec* pspec) {
+                                           GParamSpec* pspec) {
   GstAncGenerator* src = GST_ANC_GENERATOR(object);
   g_return_if_fail(GST_IS_ANC_GENERATOR(src));
 
@@ -184,7 +178,7 @@ static gboolean gst_anc_generator_stop(GstBaseSrc* basesrc) {
   GstAncGenerator* src = GST_ANC_GENERATOR(basesrc);
 
   GST_DEBUG_OBJECT(src, "Stopping ancillary data generator");
-  
+
   return TRUE;
 }
 
@@ -193,15 +187,13 @@ static gboolean gst_anc_generator_query(GstBaseSrc* basesrc, GstQuery* query) {
   gboolean ret = FALSE;
 
   switch (GST_QUERY_TYPE(query)) {
-    case GST_QUERY_DURATION:
-    {
+    case GST_QUERY_DURATION: {
       GstFormat format;
       gst_query_parse_duration(query, &format, NULL);
-      
+
       if (format == GST_FORMAT_TIME && src->num_frames > 0) {
-        GstClockTime duration = gst_util_uint64_scale_int(GST_SECOND * src->num_frames, 
-                                                          src->framerate_den, 
-                                                          src->framerate_num);
+        GstClockTime duration = gst_util_uint64_scale_int(
+            GST_SECOND * src->num_frames, src->framerate_den, src->framerate_num);
         gst_query_set_duration(query, GST_FORMAT_TIME, duration);
         ret = TRUE;
       } else if (format == GST_FORMAT_TIME && src->num_frames == 0) {
@@ -210,11 +202,10 @@ static gboolean gst_anc_generator_query(GstBaseSrc* basesrc, GstQuery* query) {
       }
       break;
     }
-    case GST_QUERY_SEEKING:
-    {
+    case GST_QUERY_SEEKING: {
       GstFormat format;
       gst_query_parse_seeking(query, &format, NULL, NULL, NULL);
-      
+
       if (format == GST_FORMAT_TIME) {
         gst_query_set_seeking(query, GST_FORMAT_TIME, FALSE, 0, -1);
         ret = TRUE;
@@ -230,18 +221,18 @@ static gboolean gst_anc_generator_query(GstBaseSrc* basesrc, GstQuery* query) {
 }
 
 static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offset,
-                                             guint size, GstBuffer** buf) {
+                                              guint size, GstBuffer** buf) {
   GstAncGenerator* src = GST_ANC_GENERATOR(basesrc);
 
   if (src->num_frames > 0 && src->frames_generated >= src->num_frames) {
-    GST_DEBUG_OBJECT(src, "Reached maximum number of frames (%u), sending EOS", 
+    GST_DEBUG_OBJECT(src, "Reached maximum number of frames (%u), sending EOS",
                      src->num_frames);
     return GST_FLOW_EOS;
   }
 
   const unsigned char* package;
   size_t package_size;
-  
+
   guint pattern_index = src->frames_generated % 3;
   switch (pattern_index) {
     case 0:
@@ -265,9 +256,8 @@ static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offse
   }
 
   gst_buffer_fill(*buf, 0, package, package_size);
-  GstClockTime frame_duration = gst_util_uint64_scale_int(GST_SECOND, 
-                                                          src->framerate_den, 
-                                                          src->framerate_num);
+  GstClockTime frame_duration =
+      gst_util_uint64_scale_int(GST_SECOND, src->framerate_den, src->framerate_num);
 
   GST_BUFFER_PTS(*buf) = src->running_time;
   GST_BUFFER_DTS(*buf) = src->running_time;
@@ -276,9 +266,10 @@ static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offse
   src->running_time += frame_duration;
   src->frames_generated++;
 
-  GST_DEBUG_OBJECT(src, "Generated frame %u with pattern %u, size %zu bytes, PTS %" 
-                   GST_TIME_FORMAT, src->frames_generated, pattern_index, package_size,
-                   GST_TIME_ARGS(GST_BUFFER_PTS(*buf)));
+  GST_DEBUG_OBJECT(
+      src, "Generated frame %u with pattern %u, size %zu bytes, PTS %" GST_TIME_FORMAT,
+      src->frames_generated, pattern_index, package_size,
+      GST_TIME_ARGS(GST_BUFFER_PTS(*buf)));
 
   return GST_FLOW_OK;
 }
@@ -312,7 +303,8 @@ static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offse
 static gboolean plugin_init(GstPlugin* plugin) {
   GST_DEBUG_CATEGORY_INIT(gst_anc_generator_debug, "ancgenerator", 0, PLUGIN_DBG_DESC);
 
-  if (!gst_element_register(plugin, "ancgenerator", GST_RANK_NONE, GST_TYPE_ANC_GENERATOR))
+  if (!gst_element_register(plugin, "ancgenerator", GST_RANK_NONE,
+                            GST_TYPE_ANC_GENERATOR))
     return FALSE;
 
   return TRUE;

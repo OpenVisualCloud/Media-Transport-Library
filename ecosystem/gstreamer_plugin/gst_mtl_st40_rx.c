@@ -131,7 +131,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
                                                   SessionPortArgs* portArgs);
 static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
-  struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size);
+    struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size);
 
 static gint gst_mtl_st40_rx_mbuff_available(void* priv) {
   Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
@@ -182,10 +182,10 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
-  gobject_class, PROP_ST40_RX_INCLUDE_METADATA_IN_BUFFER,
-  g_param_spec_boolean("include-metadata-in-buffer", "Include Metadata in Buffer",
-           "Whether to include metadata in the output buffer", FALSE,
-           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      gobject_class, PROP_ST40_RX_INCLUDE_METADATA_IN_BUFFER,
+      g_param_spec_boolean("include-metadata-in-buffer", "Include Metadata in Buffer",
+                           "Whether to include metadata in the output buffer", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
@@ -386,7 +386,7 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
 }
 
 static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
-  struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size) {
+    struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size) {
   int package_size;
   int payload_len;
 
@@ -400,7 +400,7 @@ static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buffer,
                                                  void* usrptr) {
   struct st40_rfc8331_rtp_hdr* hdr;
-  struct st40_rfc8331_payload_hdr *payload_hdr;
+  struct st40_rfc8331_payload_hdr* payload_hdr;
   GstMapInfo dest_info;
   guint16 data;
   gint udw_size, anc_count;
@@ -409,9 +409,9 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   anc_count = hdr->anc_count;
 
-
   if (anc_count == 0 || anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
-    GST_ERROR("Ancillary data count: %d (must be between 1 and %d)", anc_count, ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
+    GST_ERROR("Ancillary data count: %d (must be between 1 and %d)", anc_count,
+              ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
     return GST_FLOW_ERROR;
   }
 
@@ -459,8 +459,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
     if (!anc_data[i]) {
       GST_ERROR("Failed to allocate memory for ancillary data");
-      for (int j = 0; j < i; j++)
-        free(anc_data[j]);
+      for (int j = 0; j < i; j++) free(anc_data[j]);
       return GST_FLOW_ERROR;
     }
 
@@ -468,8 +467,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
       data = st40_get_udw(d + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
       if (!st40_check_parity_bits(data)) {
         GST_ERROR("Ancillary data parity bits check failed, data=0x%03x", data & 0x3FF);
-        for (int j = 0; j < i; j++)
-          free(anc_data[j]);
+        for (int j = 0; j < i; j++) free(anc_data[j]);
         return GST_FLOW_ERROR;
       }
       anc_data[i][d + meta_offset] = data & 0xff;
@@ -491,19 +489,17 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   guint fill_size = 0;
   for (int i = 0; i < anc_count; i++) {
-    fill_size += gst_buffer_fill(*buffer, fill_size, anc_data[i], anc_data_count[i] + meta_offset);
+    fill_size +=
+        gst_buffer_fill(*buffer, fill_size, anc_data[i], anc_data_count[i] + meta_offset);
     free(anc_data[i]);
   }
-  /* Print the whole buffer for debugging */
-  for (guint i = 0; i < buffer_size; i++) {
-    printf("%02x ", dest_info.data[i]);
-  }
-  printf("\n");
 
   gst_buffer_unmap(*buffer, &dest_info);
 
   if (fill_size != buffer_size) {
-    GST_ERROR("Failed to fill buffer (buffer size = %d, fill size = %d)", buffer_size, fill_size);;
+    GST_ERROR("Failed to fill buffer (buffer size = %d, fill size = %d)", buffer_size,
+              fill_size);
+    ;
   }
 
   return GST_FLOW_OK;

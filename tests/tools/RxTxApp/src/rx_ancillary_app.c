@@ -23,17 +23,13 @@ static void app_rx_anc_handle_rtp(struct st_app_rx_anc_session* s, void* usrptr)
     }
     int udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
 
-
-    printf("ANC[%d]: c=%u line=%u h_off=%u s=%u stream=%u did=0x%02x sdid=0x%02x dc=%u | ",
-          idx,
-          payload_hdr->first_hdr_chunk.c,
-          payload_hdr->first_hdr_chunk.line_number, 
-          payload_hdr->first_hdr_chunk.horizontal_offset,
-          payload_hdr->first_hdr_chunk.s,
-          payload_hdr->first_hdr_chunk.stream_num,
-          payload_hdr->second_hdr_chunk.did & 0xff,
-          payload_hdr->second_hdr_chunk.sdid & 0xff,
-          payload_hdr->second_hdr_chunk.data_count & 0xff);
+    printf(
+        "ANC[%d]: c=%u line=%u h_off=%u s=%u stream=%u did=0x%02x sdid=0x%02x dc=%u | ",
+        idx, payload_hdr->first_hdr_chunk.c, payload_hdr->first_hdr_chunk.line_number,
+        payload_hdr->first_hdr_chunk.horizontal_offset, payload_hdr->first_hdr_chunk.s,
+        payload_hdr->first_hdr_chunk.stream_num, payload_hdr->second_hdr_chunk.did & 0xff,
+        payload_hdr->second_hdr_chunk.sdid & 0xff,
+        payload_hdr->second_hdr_chunk.data_count & 0xff);
 
     // verify checksum
     uint16_t checksum = 0;

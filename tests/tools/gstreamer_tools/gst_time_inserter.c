@@ -205,7 +205,7 @@ static GstFlowReturn gst_time_inserter_chain(GstPad* pad, GstObject* parent,
 
     filter->firstFrameTaiTime = (((guint64)ts.tv_sec) * NS_PER_S + ts.tv_nsec) - pts_time;
     GST_INFO("Captured first frame TAI time: %lu, PTS: %ld\n", filter->firstFrameTaiTime,
-           pts_time);
+             pts_time);
   }
 
   tai_time = filter->firstFrameTaiTime + pts_time;
