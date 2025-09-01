@@ -21,8 +21,9 @@ def capture_stdout(process, process_name):
     if not process:
         return None
     try:
-        return process.stdout_text  # Fixed: removed () - stdout_text is a property, not a method
-    except RemoteProcessInvalidState:
+        return (
+            process.stdout_text
+        )  # Fixed: removed () - stdout_text is a property, not a method    except RemoteProcessInvalidState:
         logger.info(f"Could not retrieve {process_name} output")
         return None
     except Exception as e:
@@ -451,13 +452,14 @@ def execute_test(
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        logger.info(f"Waiting for RX process to complete (test_time: {test_time} seconds)...")
+        logger.info(
+            f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
+        )
         try:
             rx_process.wait(timeout=test_time + 30)  # Allow extra time for cleanup
             logger.info("RX process completed naturally")
         except Exception:
             logger.info("RX process did not complete in time, will clean up")
-            
         if tx_process:
             try:
                 tx_process.wait(timeout=10)  # Give TX time to finish
