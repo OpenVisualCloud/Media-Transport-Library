@@ -455,6 +455,7 @@ def execute_test(
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
         )
+
         try:
             rx_process.wait(timeout=test_time + 30)  # Allow extra time for cleanup
             logger.info("RX process completed naturally")
