@@ -14,7 +14,7 @@ jobs:
             wait_time: 30
     runs-on: ${{ matrix.host }}
     steps:
-        run: |
+      - run: |
           echo "Started at $(date +%X) on ${{ matrix.host }}"
           echo "Waiting ${{ matrix.wait_time }} seconds..."
           sleep ${{ matrix.wait_time }}
