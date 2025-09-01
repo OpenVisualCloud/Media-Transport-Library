@@ -496,16 +496,9 @@ def execute_test(
             tcpdump.stop()
 
     # Compare files for validation
-    if is_dual:
-        # For dual host tests, files are on different hosts
-        file_compare = compare_files(
-            input_file, output_file, tx_remote_host, rx_remote_host
-        )
-    else:
-        # For single host tests, both files are on the same host
-        file_compare = compare_files(
-            input_file, output_file, tx_remote_host, rx_remote_host
-        )
+    file_compare = compare_files(
+        input_file, output_file, tx_remote_host, rx_remote_host
+    )
 
     logger.info(f"File comparison: {file_compare}")
 
