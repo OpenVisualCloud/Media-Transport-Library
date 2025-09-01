@@ -10,27 +10,23 @@ import time
 from typing import Dict
 
 import pytest
-from common.nicctl import Nicctl
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
-from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
-from mtl_engine.csv_report import (
-    csv_add_test,
-    csv_write_report,
-    update_compliance_result,
-)
-from mtl_engine.ramdisk import Ramdisk
-from mtl_engine.stash import (
-    clear_issue,
-    clear_result_log,
-    clear_result_media,
-    clear_result_note,
-    get_issue,
-    get_result_note,
-    remove_result_media,
-)
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
+
+from common.nicctl import Nicctl
+from create_pcap_file.netsniff import NetsniffRecorder
+from create_pcap_file.tcpdump import TcpDumpRecorder
+from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
+from mtl_engine.csv_report import (csv_add_test, csv_write_report,
+                                   update_compliance_result)
+# FIXME: Perhaps, it could be set less statically
+from mtl_engine.ffmpeg_app import ip_dict
+from mtl_engine.ramdisk import Ramdisk
+from mtl_engine.stash import (clear_issue, clear_result_log,
+                              clear_result_media, clear_result_note, get_issue,
+                              get_result_note, remove_result_media)
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
@@ -248,6 +244,66 @@ def log_session():
     else:
         logging.warning("pytest.log not found, skipping copy")
     csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
+
+
+@pytest.fixture(scope="function", autouse=False)
+def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format):
+    capture_cfg = test_config.get("capture_cfg", {})
+
+    host = hosts['client']
+    src_ip = ip_dict['rx_interfaces']
+    dst_ip = ip_dict['rx_sessions']
+
+    # TODO: Remove the unnecessary logging
+    # logging.debug("pcap_capture fixture setup started with following parameters:")
+    # logging.debug(f"capture_cfg={capture_cfg}")
+    # logging.debug(f"host={host}")
+    # logging.debug(f"src_ip={src_ip}")
+    # logging.debug(f"dst_ip={dst_ip}")
+    dumper = None
+    if (
+        capture_cfg
+        and capture_cfg.get("enable")
+    ):
+        if capture_cfg.get("tool") == "tcpdump":
+            dumper = TcpDumpRecorder(
+                host=hosts,
+                test_name=capture_cfg.get("test_name", "capture"),
+                pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
+                interface=capture_cfg.get("interface"),
+            )
+        elif capture_cfg.get("tool") in ["netsniff", "netsniff-ng"]:
+            # Filtering
+            capture_filter = ""
+            if src_ip:
+                capture_filter += f"src {src_ip}"
+            if dst_ip and not capture_filter == "":
+                capture_filter += f" and dst {dst_ip}"
+            elif dst_ip:
+                capture_filter += f"dst {dst_ip}"
+            # Class prep
+            dumper = NetsniffRecorder(
+                host=host,
+                test_name=capture_cfg.get("test_name", "capture"),
+                pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
+                interface=capture_cfg.get("interface"),
+                capture_filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
+            )
+        else:
+            logging.error(f"Unknown capture tool {capture_cfg.get('tool')}")
+        if dumper:
+            if isinstance(dumper, TcpDumpRecorder):
+                dumper.capture(capture_time=capture_cfg.get("time", test_time))
+            elif isinstance(dumper, NetsniffRecorder):
+                dumper.start()
+            else:
+                logging.error(f"Unknown dumper class {dumper.__class__.__name__}")
+    yield dumper
+    if dumper:
+        dumper.stop()
+    if capture_cfg and capture_cfg.get("compliance", False):
+        logging.debug("I am supposed to do something with compliance, but not yet implemented")  # TODO: Implement compliance logic
+        pass
 
 
 @pytest.fixture(scope="session", autouse=True)
