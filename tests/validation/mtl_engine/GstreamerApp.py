@@ -6,7 +6,6 @@ import os
 import re
 import time
 
-from mfd_connect.exceptions import RemoteProcessInvalidState
 from mtl_engine.RxTxApp import prepare_tcpdump
 
 from .execute import log_fail, run
@@ -21,11 +20,7 @@ def capture_stdout(process, process_name):
     if not process:
         return None
     try:
-        return (
-            process.stdout_text
-        )  # Fixed: removed () - stdout_text is a property, not a method    except RemoteProcessInvalidState:
-        logger.info(f"Could not retrieve {process_name} output")
-        return None
+        return process.stdout_text
     except Exception as e:
         logger.info(f"Error retrieving {process_name} output: {e}")
         return None
@@ -455,6 +450,7 @@ def execute_test(
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
         )
+
         try:
             rx_process.wait(timeout=test_time + 30)  # Allow extra time for cleanup
             logger.info("RX process completed naturally")
