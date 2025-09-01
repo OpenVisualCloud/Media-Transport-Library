@@ -1,0 +1,28 @@
+name: Dual Host Tests - Proof of Concept
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  setup:
+    strategy:
+      matrix:
+        include:
+          - host: runner-1
+            wait_time: 15
+          - host: runner-4
+            wait_time: 30
+    runs-on: ${{ matrix.host }}
+    steps:
+        run: |
+          echo "Started at $(date +%X) on ${{ matrix.host }}"
+          echo "Waiting ${{ matrix.wait_time }} seconds..."
+          sleep ${{ matrix.wait_time }}
+          echo "Finished at $(date +%X)"
+  run-tests:
+    needs: setup
+    runs-on: runner-1
+    steps:
+      - run: |
+          echo "Started at $(date +%X) on runner-1"
+          echo "Finished at $(date +%X)"
