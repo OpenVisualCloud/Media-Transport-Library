@@ -3,25 +3,11 @@
 # Media Communications Mesh
 
 import argparse
-import hashlib
 import logging
 import sys
 from pathlib import Path
 
-
-def calculate_chunk_hashes(file_url: str, chunk_size: int) -> list:
-    chunk_sums = []
-    with open(file_url, "rb") as f:
-        chunk_index = 0
-        while chunk := f.read(chunk_size):
-            if len(chunk) != chunk_size:
-                logging.debug(
-                    f"CHUNK SIZE MISMATCH at index {chunk_index}: {len(chunk)} != {chunk_size}"
-                )
-            chunk_sum = hashlib.md5(chunk).hexdigest()
-            chunk_sums.append(chunk_sum)
-            chunk_index += 1
-    return chunk_sums
+from video_integrity import calculate_chunk_hashes
 
 
 def get_pcm_frame_size(sample_size: int, sample_num: int, channel_num: int) -> int:

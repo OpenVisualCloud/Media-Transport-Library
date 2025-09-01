@@ -49,7 +49,7 @@ def test_st30p_ptime(
         f"test_st30p_ptime_{media_file_info['format']}"  # Set a unique pcap file name
     )
 
-    out_file_url = host.connection.path(media_file_path).parent / "out.wav"
+    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(

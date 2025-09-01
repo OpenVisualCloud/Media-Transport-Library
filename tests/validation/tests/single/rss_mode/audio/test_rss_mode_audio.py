@@ -48,7 +48,7 @@ def test_rss_mode_audio(
         f"test_rss_mode_audio_{media_file_info['format']}_{rss_mode}"
     )
 
-    out_file_url = host.connection.path(media_file_path).parent / "out.wav"
+    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
