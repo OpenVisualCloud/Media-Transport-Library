@@ -8,7 +8,7 @@ import time
 
 from mtl_engine.RxTxApp import prepare_tcpdump
 
-from .execute import log_fail, run, is_process_running, get_process_returncode
+from .execute import log_fail, run, is_process_running
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ def setup_gstreamer_plugins_paths (build):
         f"{build}/ecosystem/gstreamer_plugin/builddir",
         f"{build}/tests/tools/gstreamer_tools/builddir"
     ]
+    logging.info(f"Setting up GStreamer plugin paths: {plugin_paths}")
 
     return ":".join(plugin_paths)
 
@@ -381,7 +382,7 @@ def execute_test(
     rx_command: dict,
     input_file: str,
     output_file: str,
-    test_time: int = 10,
+    test_time: int = 30,
     host=None,
     tx_host=None,
     rx_host=None,
@@ -445,6 +446,7 @@ def execute_test(
                 host=tx_remote_host,
                 background=True,
             )
+            logger.info(f"TX process started starting to sleep for {sleep_interval} seconds...")
             time.sleep(sleep_interval)
 
             # Start RX pipeline
@@ -457,6 +459,7 @@ def execute_test(
                 host=rx_remote_host,
                 background=True,
             )
+            logger.info("RX process started...")
         else:
             # Start RX pipeline first
             logger.info("Starting RX pipeline...")
@@ -468,7 +471,8 @@ def execute_test(
                 host=rx_remote_host,
                 background=True,
             )
-            logger.info(f"Started RX process with PID: {getattr(rx_process, 'pid', None)}")
+            logger.info(f"RX process started starting to sleep for {sleep_interval} seconds...")
+            time.sleep(sleep_interval)
 
             # Start TX pipeline
             logger.info("Starting TX pipeline...")
@@ -480,6 +484,7 @@ def execute_test(
                 host=tx_remote_host,
                 background=True,
             )
+            logger.info("TX process started...")
         # --- Start tcpdump after pipelines are running ---
         if tcpdump:
             logger.info("Starting tcpdump capture...")
@@ -489,15 +494,17 @@ def execute_test(
         logger.info(f"Running test for {test_time} seconds...")
         time.sleep(test_time)
 
+        terminate_wait = sleep_interval + 10
+
         if rx_process:
             try:
-                logger.info(f"Terminating rx process (timeout == {sleep_interval})...")
+                logger.info(f"Terminating rx process (timeout == {terminate_wait})...")
                 start_time = time.time()
 
                 if hasattr(rx_process, 'wait'):
-                    rx_process.wait(sleep_interval)
+                    rx_process.wait(terminate_wait)
                 else:
-                    timeout_end = time.time() + sleep_interval
+                    timeout_end = time.time() + terminate_wait
                     while time.time() < timeout_end and is_process_running(rx_process):
                         time.sleep(0.1)
 

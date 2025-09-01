@@ -4,6 +4,43 @@
 #include <gst/gst.h>
 #include <stdio.h>
 
+/*
+  Example ancillary payload data
+  Ancillary packet count: 3
+    Ancillary packet 1:
+      F bit: 0b00
+      C bit: 0b0
+      DID: 0x60
+      SDID: 0x60: Ancillary Time Code (S12M-2)
+      Line number: 9
+      Horizontal offset: 0
+      S bit: 0b0 (Stream Number not used)
+      Stream num: 0
+      Data count: 16
+      Checksum word: 0x270
+    Anc 2:
+      F bit: 0b00
+      C bit: 0b0
+      DID:  0x61
+      SDID: 0x01: EIA 708B Data mapping into VANC space (S334-1)
+      Line number: 10
+      Horizontal offset: 0
+      S bit: 0b0 (Stream number not used)
+      Stream num: 0
+      Data count: 16
+      Checksum word: 0x172
+    Anc 3:
+      F bit: 0b00
+      C bit: 0b0
+      DID:  0x41
+      SDID: 0x07: ANSI/SCTE 104 messages (S2010)
+      Line number: 11
+      Horizontal offset: 0
+      S bit: 0b0 (Stream number not used)
+      Stream num: 0
+      Data count: 60
+      Checksum word: 0x2bd
+ **/
 static unsigned char ancillary_example[] = {
     0x03, 0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x98, 0x26, 0x04, 0x41, 0x70, 0x94,
     0x25, 0x08, 0x01, 0x20, 0x60, 0x20, 0x08, 0x01, 0x40, 0x94, 0x25, 0x04, 0x81, 0x10,
@@ -17,10 +54,62 @@ static unsigned char ancillary_example[] = {
     0x01, 0x82, 0x53, 0x14, 0xC5, 0x38, 0x4C, 0x53, 0x24, 0xE2, 0x33, 0x4C, 0x53, 0x28,
     0x89, 0x01, 0x40, 0x60, 0x04, 0x06, 0x00, 0x80, 0x20, 0x08, 0x02, 0xBD};
 
+/*
+  Example ancillary payload data
+  Ancillary packet count: 1
+    Ancillary packet 1:
+      F bit: 0b00
+      C bit: 0b0
+      DID: 0x60
+      SDID: 0x60: Ancillary Time Code (S12M-2)
+      Line number: 9
+      Horizontal offset: 0
+      S bit: 0b0 (Stream Number not used)
+      Stream num: 0
+      Data count: 8
+      Checksum word: 0x20c
+ **/
 static unsigned char ancillary_example2[] = {
     0x01, 0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x98, 0x26, 0x04, 0x22,
     0x44, 0x80, 0x20, 0x08, 0x02, 0x00, 0x80, 0x20, 0x08, 0x02, 0x0c, 0x00};
 
+/*
+  Example ancillary payload data
+  Ancillary packet count: 3
+    Ancillary packet 1:
+      F bit: 0b00
+      C bit: 0b0
+      DID: 0x60
+      SDID: 0x01: EIA 708B Data mapping into VANC space (S334-1)
+      Line number: 9
+      Horizontal offset: 0
+      S bit: 0b0 (Stream Number not used)
+      Stream num: 0
+      Data count: 16
+      Checksum word: 0x272
+    Anc 2:
+      F bit: 0b00
+      C bit: 0b0
+      DID: 0x60
+      SDID: 0x60: Ancillary Time Code (S12M-2)
+      Line number: 10
+      Horizontal offset: 0
+      S bit: 0b0 (Stream number not used)
+      Stream num: 0
+      Data count: 16
+      Checksum word: 0x180
+    Anc 3:
+      F bit: 0b00
+      C bit: 0b0
+      DID:  0x41
+      SDID: 0x07: ANSI/SCTE 104 messages (S2010)
+      Line number: 11
+      Horizontal offset: 0
+      S bit: 0b0 (Stream number not used)
+      Stream num: 0
+      Data count: 60
+      Checksum word: 0x2bd
+ **/
 static unsigned char ancillary_example3[] = {
     0x03, 0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x58, 0x50, 0x14, 0x42, 0x96, 0x9A,
     0x51, 0x05, 0xFD, 0x43, 0x57, 0x5B, 0xC9, 0xCA, 0xE1, 0x7F, 0x50, 0x16, 0x16, 0x74,

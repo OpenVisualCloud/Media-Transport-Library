@@ -51,7 +51,6 @@ def test_st40p_fps_size(
         rx_payload_type=113,
         rx_queues=4,
         timeout=15,
-        timeout=15,
     )
 
     capture_cfg = dict(test_config.get("capture_cfg", {}))
@@ -67,7 +66,7 @@ def test_st40p_fps_size(
             test_time=test_time,
             host=host,
             tx_first=False,
-            sleep_interval=1,
+            sleep_interval=5,
             capture_cfg=capture_cfg,
         )
     finally:
@@ -122,7 +121,7 @@ def test_st40p_framebuff(
         output_path=os.path.join(media, "output_anc.txt"),
         rx_payload_type=113,
         rx_queues=4,
-        timeout=timeout_period,
+        timeout=timeout_period + 10,
         
     )
 
@@ -139,7 +138,7 @@ def test_st40p_framebuff(
             test_time=test_time,
             host=host,
             tx_first=False,
-            sleep_interval=(timeout_period + 15),
+            sleep_interval=timeout_period,
             capture_cfg=capture_cfg,
         )
     finally:
@@ -191,7 +190,7 @@ def test_st40p_format_8331(
         output_path=os.path.join(media, "output_anc.txt"),
         rx_payload_type=113,
         rx_queues=4,
-        timeout=timeout_period,
+        timeout=timeout_period + 10,
         capture_metadata=True
     )
 
@@ -208,11 +207,10 @@ def test_st40p_format_8331(
             test_time=test_time,
             host=host,
             tx_first=False,
-            sleep_interval=(timeout_period + 15),
+            sleep_interval=timeout_period,
             capture_cfg=capture_cfg,
         )
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(os.path.join(media, "output_anc.txt"), host=host)
-

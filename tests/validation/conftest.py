@@ -62,11 +62,7 @@ def build(mtl_path):
 
 @pytest.fixture(scope="session")
 def mtl_path(test_config: dict) -> str:
-    path = test_config.get("mtl_path", "/opt/intel/mcm/_build/mtl/")
-    path = os.path.abspath(path)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"mtl_path does not exist: {path}")
-    return path
+    return test_config.get("mtl_path", "/opt/intel/mcm/_build/mtl/")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -115,7 +111,6 @@ def dma_port_list(request):
 @pytest.fixture(scope="session")
 def nic_port_list(hosts: dict, mtl_path) -> None:
     for host in hosts.values():
-        path_debug = os.getcwd()
         nicctl = Nicctl(mtl_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)

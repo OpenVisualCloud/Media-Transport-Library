@@ -49,6 +49,11 @@
 
 #define IS_POWER_OF_2(x) (((x) & ((x)-1)) == 0)
 #define ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT 20
+#define USER_DATA_WORD_BIT_SIZE 10
+#define BYTE_SIZE 8
+#define OFFSET_BIT 32
+#define OFFSET_COUNT_IN_10_BIT ((OFFSET_BIT / USER_DATA_WORD_BIT_SIZE) + 1)
+
 /**
  * ST40_SIZE_OF_PAYLOAD_METADATA:
  * Defines the size (in bytes) of the payload metadata for ST40 streams.

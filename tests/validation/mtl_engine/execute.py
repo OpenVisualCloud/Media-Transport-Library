@@ -192,46 +192,14 @@ def waitall(aps=List[AsyncProcess]):
 
 def is_process_running(process):
     logger.debug(f"Checking if process is running: {process}")
-    if hasattr(process, 'poll'):
-        result = process.poll() is None
-        logger.debug(f"process.poll() is None: {result}")
-        return result
-    elif hasattr(process, 'is_alive'):
-        result = process.is_alive()
-        logger.debug(f"process.is_alive(): {result}")
-        return result
-    elif hasattr(process, 'returncode'):
-        result = process.returncode is None
-        logger.debug(f"process.returncode is None: {result}")
-        return result
-    elif hasattr(process, 'pid'):
+    if hasattr(process, 'running') and callable(getattr(process, 'running')):
         try:
-            # Signal 0 only checks if the process exists.
-            # This verifies whether the process ID or process group ID is valid.
-            os.kill(process.pid, 0)
-            logger.debug(f"os.kill signal check for pid {process.pid} succeeded, process exists")
-            return True
-        except (OSError, ProcessLookupError) as e:
-            logger.debug(f"os.kill signal check for pid {process.pid} failed: {e} process doesn't exist")
+            result = process.running()
+            logger.debug(f"process.running(): {result}")
+            return result
+        except Exception as e:
+            logger.debug(f"Exception calling process.running(): {e}")
             return False
-    logger.debug("Could not determine process status")
-    return None
-
-def get_process_returncode(process):
-    logger.debug(f"Getting process return code: {process}")
-    if hasattr(process, 'poll'):
-        rc = process.poll()
-        logger.debug(f"process.poll(): {rc}")
-        return rc
-    elif hasattr(process, 'returncode'):
-        rc = process.returncode
-        logger.debug(f"process.returncode: {rc}")
-        return rc
-    elif hasattr(process, 'exitcode'):
-        rc = process.exitcode
-        logger.debug(f"process.exitcode: {rc}")
-        return rc
-    logger.debug("Could not determine process return code")
     return None
 
 def run(
