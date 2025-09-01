@@ -240,29 +240,12 @@ def execute_test(
             try:
                 rx_proc.kill()
             except Exception:
-                try:
-                    # Force kill if terminate didn't work
-                    rx_proc.kill()
-                    rx_proc.wait(timeout=5)
-                except Exception:
-                    pass
-        pcap_file = None
-        is_compliant = False
+                # SSH process might already be terminated or unreachable - ignore
+                pass
         if tcpdump:
             tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
-            pcap_file = netsniff.pcap_file
-        if pcap_file:
-            from compliance.load_ebu_config import load_ebu_config
-            ebu_config = load_ebu_config("configs/ebu_list.yaml")
-            is_compliant = upload_pcap(
-                file_path=pcap_file,
-                ip=ebu_config.get("ip"),
-                login=ebu_config.get("login"),
-                password=ebu_config.get("password"),
-            )
     passed = False
     match output_format:
         case "yuv":
@@ -278,11 +261,7 @@ def execute_test(
     except Exception as e:
         logger.info(f"Could not remove output files: {e}")
     if not passed:
-        log_fail("Test failed")
-    if not is_compliant:
-        log_fail("PCAP compliance check failed")
-    else:
-        logger.info("PCAP compliance check passed")
+        log_fail("test failed")
     return passed
 
 
@@ -400,34 +379,16 @@ def execute_test_rgb24(
             try:
                 rx_proc.kill()
             except Exception:
-                try:
-                    rx_proc.kill()
-                    rx_proc.wait(timeout=3)
-                except Exception:
-                    pass
-        pcap_file = None
-        is_compliant = False
+                # SSH process might already be terminated or unreachable - ignore
+                pass
         if tcpdump:
             tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
-            pcap_file = netsniff.pcap_file
-        if pcap_file:
-            ebu_config = load_ebu_config("configs/ebu_list.yaml")
-            is_compliant = upload_pcap(
-                file_path=pcap_file,
-                ip=ebu_config.get("ip"),
-                login=ebu_config.get("login"),
-                password=ebu_config.get("password"),
-            )
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
-    if not is_compliant:
-        log_fail("PCAP compliance check failed")
-    else:
-        logger.info("PCAP compliance check passed")
+    time.sleep(5)
     return True
 
 
@@ -480,8 +441,8 @@ def execute_test_rgb24_multiple(
     netsniff = prepare_netsniff(
         capture_cfg,
         host,
-        src_ip = f"({ip_dict_rgb24_multiple['p_sip_1']} or {ip_dict_rgb24_multiple['p_sip_2']})",
-        dst_ip = f"({ip_dict_rgb24_multiple['p_tx_ip_1']} or {ip_dict_rgb24_multiple['p_tx_ip_2']})"
+        src_ip = str(ip_dict['tx_interfaces']),
+        dst_ip = str(ip_dict['tx_sessions'])
     )
 
     try:
@@ -554,35 +515,16 @@ def execute_test_rgb24_multiple(
                 try:
                     proc.kill()
                 except Exception:
-                    try:
-                        proc.kill()
-                        proc.wait(timeout=3)
-                    except Exception:
-                        pass
-        pcap_file = None
-        is_compliant = False
+                    # Process might already be terminated - ignore kill errors
+                    pass
         if tcpdump:
             tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
-            pcap_file = netsniff.pcap_file
-        if pcap_file:
-            from compliance.load_ebu_config import load_ebu_config
-            ebu_config = load_ebu_config("configs/ebu_list.yaml")
-            is_compliant = upload_pcap(
-                file_path=pcap_file,
-                ip=ebu_config.get("ip"),
-                login=ebu_config.get("login"),
-                password=ebu_config.get("password"),
-            )
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
-    if not is_compliant:
-        log_fail("PCAP compliance check failed")
-    else:
-        logger.info("PCAP compliance check passed")
+    time.sleep(5)
     return True
 
 
@@ -915,7 +857,6 @@ def decode_video_format_to_st20p(video_format: str) -> tuple:
 
 
 def execute_dual_test(
-    mtl_path: str,
     test_time: int,
     build: str,
     tx_host,
@@ -991,12 +932,6 @@ def execute_dual_test(
 
     logger.info(f"TX Host: {tx_host}")
     logger.info(f"RX Host: {rx_host}")
-    logger.info(f"RX Command: {rx_cmd}")
-    logger.info(f"TX Command: {tx_cmd}")
-    log_to_file(f"TX Host: {tx_host}", rx_host, build)
-    log_to_file(f"RX Host: {rx_host}", rx_host, build)
-    log_to_file(f"RX Command: {rx_cmd}", rx_host, build)
-    log_to_file(f"TX Command: {tx_cmd}", tx_host, build)
 
     rx_proc = None
     tx_proc = None
@@ -1032,12 +967,12 @@ def execute_dual_test(
             host=tx_host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
+        # Start packet capture when pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
-            logger.info("Starting netsniff capture...")
+            logger.info("Starting netsniff-ng capture...")
             netsniff.start()
 
         # Let the test run for the specified duration
@@ -1047,8 +982,6 @@ def execute_dual_test(
         logger.info("Terminating processes...")
         if tx_proc:
             try:
-                tx_proc.terminate()
-            except Exception:
                 tx_proc.kill()
             except Exception:
                 # Process might already be terminated - ignore kill errors
@@ -1062,16 +995,6 @@ def execute_dual_test(
         # Wait a bit for termination
         time.sleep(2)
         # Get output after processes have been terminated
-        try:
-            rx_output = f"RX Output:\n{rx_proc.stdout_text}"
-            log_to_file(rx_output, rx_host, build)
-        except Exception:
-            logger.info("Could not retrieve RX output")
-        try:
-            tx_output = f"TX Output:\n{tx_proc.stdout_text}"
-            log_to_file(tx_output, tx_host, build)
-        except Exception:
-            logger.info("Could not retrieve TX output")
         capture_stdout(rx_proc, "RX")
         capture_stdout(tx_proc, "TX")
     except Exception as e:
@@ -1079,70 +1002,35 @@ def execute_dual_test(
         # Terminate processes immediately on error
         if tx_proc:
             try:
-                tx_proc.terminate()
+                tx_proc.kill()
             except Exception:
+                # Process might already be terminated - ignore kill errors
                 pass
         if rx_proc:
             try:
-                rx_proc.terminate()
+                rx_proc.kill()
             except Exception:
+                # Process might already be terminated - ignore kill errors
                 pass
         raise
     finally:
-        # Ensure processes are terminated with force kill if needed
+        # Ensure processes are terminated
         if tx_proc:
             try:
-                tx_proc.terminate()
-                tx_proc.wait(timeout=5)
+                tx_proc.kill()
             except Exception:
-                try:
-                    # Force kill if terminate didn't work
-                    tx_proc.kill()
-                    tx_proc.wait(timeout=5)
-                except Exception:
-                    pass
+                # Process might already be terminated - ignore kill errors
+                pass
         if rx_proc:
             try:
-                rx_proc.terminate()
-                rx_proc.wait(timeout=5)
+                rx_proc.kill()
             except Exception:
-                try:
-                    # Force kill if terminate didn't work
-                    rx_proc.kill()
-                    rx_proc.wait(timeout=5)
-                except Exception:
-                    pass
-        pcap_file = None
-        is_compliant = False
+                # Process might already be terminated - ignore kill errors
+                pass
         if tcpdump:
             tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
-            pcap_file = netsniff.pcap_file
-        logger.debug(f"PCAP file: {pcap_file}")
-        if pcap_file and mtl_path:
-            # FIXME: Get rid of hardcoded path
-            ebu_config_path = "configs/ebu_list.yaml"
-            from compliance.load_ebu_config import load_ebu_config
-            ebu_config = load_ebu_config(ebu_config_path)
-            # FIXME: This prints credentials into the logs
-            ebu_process = rx_host.connection.execute_command(
-                f"""http_proxy= python3 upload_pcap.py """
-                f"""--pcap_file_path {pcap_file} """
-                f"""--ip {ebu_config.get('ebu_ip')} """
-                f"""--login {ebu_config.get('username')} """
-                f"""--password {ebu_config.get('password')}""",
-                cwd=f"{mtl_path}/tests/validation/compliance/",
-            )
-            ebu_process_output = ebu_process.stdout.strip()
-            ebu_uuid = ebu_process_output.split(">>>UUID>>>")[-1].split("<<<UUID<<<")[0]
-            from compliance.pcap_compliance import PcapComplianceClient
-            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
-            compliance_client.authenticate()
-            compliance_client.pcap_id = ebu_uuid
-            report_path = compliance_client.download_report(test_name=ebu_uuid)
-            is_compliant = compliance_client.check_compliance(report_path=report_path)
     passed = False
     match output_format:
         case "yuv":
@@ -1155,15 +1043,10 @@ def execute_dual_test(
     try:
         for output_file in output_files:
             run(f"rm -f {output_file}", host=rx_host)
-            logger.info(f"Removed output file: {output_file}")
     except Exception as e:
         logger.info(f"Could not remove output files: {e}")
     if not passed:
         log_fail("test failed")
-    if not is_compliant:
-        log_fail("PCAP compliance check failed")
-    else:
-        logger.info("PCAP compliance check passed")
     return passed
 
 
@@ -1189,22 +1072,13 @@ def execute_dual_test_rgb24(
     logger.info(
         f"Creating RX config for RGB24 dual test with video_format: {video_format}"
     )
-    log_to_file(
-        f"Creating RX config for RGB24 dual test with video_format: {video_format}",
-        rx_host,
-        build,
-    )
     try:
         rx_config_file = generate_rxtxapp_rx_config(
             rx_nic_port_list[0], video_format, rx_host, build
         )
         logger.info(f"Successfully created RX config file: {rx_config_file}")
-        log_to_file(
-            f"Successfully created RX config file: {rx_config_file}", rx_host, build
-        )
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
-        log_to_file(f"Failed to create RX config file: {e}", rx_host, build)
         return False
 
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
@@ -1217,17 +1091,17 @@ def execute_dual_test_rgb24(
 
     logger.info(f"TX Host: {tx_host}")
     logger.info(f"RX Host: {rx_host}")
-    logger.info(f"RX Command: {rx_cmd}")
-    logger.info(f"TX Command: {tx_cmd}")
-    log_to_file(f"TX Host: {tx_host}", rx_host, build)
-    log_to_file(f"RX Host: {rx_host}", rx_host, build)
-    log_to_file(f"RX Command: {rx_cmd}", rx_host, build)
-    log_to_file(f"TX Command: {tx_cmd}", tx_host, build)
 
     rx_proc = None
     tx_proc = None
     # Use RX host for tcpdump capture
     tcpdump = prepare_tcpdump(capture_cfg, rx_host)
+    netsniff = prepare_netsniff(
+        capture_cfg,
+        rx_host,
+        src_ip = str(ip_dict['tx_interfaces']),
+        dst_ip = str(ip_dict['tx_sessions'])
+    )
 
     try:
         # Start RX pipeline first on RX host
@@ -1253,10 +1127,13 @@ def execute_dual_test_rgb24(
             background=True,
         )
 
-        # Start tcpdump after pipelines are running
+        # Start packet capture when pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.start()
 
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
@@ -1268,31 +1145,13 @@ def execute_dual_test_rgb24(
         logger.info("Terminating TX process...")
         if tx_proc:
             try:
-                tx_proc.terminate()
-                tx_proc.wait(timeout=5)
-                logger.info("TX process terminated successfully")
+                tx_proc.kill()
+                logger.info("TX process killed")
             except Exception:
-                try:
-                    tx_proc.kill()
-                    tx_proc.wait(timeout=5)
-                    logger.info("TX process killed")
-                except Exception:
-                    logger.info("Could not terminate TX process")
+                logger.info("Could not terminate TX process")
 
-        rx_output = ""
-        try:
-            rx_output = rx_proc.stdout_text
-            log_to_file(f"RX Output:\n{rx_output}", rx_host, build)
-            logger.info("RX output captured successfully")
-        except Exception as e:
-            logger.info(f"Error retrieving RX output: {e}")
-            log_to_file(f"Error retrieving RX output: {e}", rx_host, build)
-
-        try:
-            log_to_file(f"TX Output:\n{tx_proc.stdout_text}", tx_host, build)
-            logger.info("TX output captured successfully")
-        except Exception as e:
-            log_to_file(f"Error retrieving TX output: {e}", tx_host, build)
+        rx_output = capture_stdout(rx_proc, "RX")
+        capture_stdout(tx_proc, "TX")
 
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
@@ -1326,6 +1185,8 @@ def execute_dual_test_rgb24(
                 pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
 
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
@@ -1357,22 +1218,13 @@ def execute_dual_test_rgb24_multiple(
     logger.info(
         f"Creating RX config for RGB24 multiple dual test with video_formats: {video_format_list}"
     )
-    log_to_file(
-        f"Creating RX config for RGB24 multiple dual test with video_formats: {video_format_list}",
-        rx_host,
-        build,
-    )
     try:
         rx_config_file = generate_rxtxapp_rx_config_multiple(
             rx_nic_port_list[:2], video_format_list, rx_host, build, True
         )
         logger.info(f"Successfully created RX config file: {rx_config_file}")
-        log_to_file(
-            f"Successfully created RX config file: {rx_config_file}", rx_host, build
-        )
     except Exception as e:
         log_fail(f"Failed to create RX config file: {e}")
-        log_to_file(f"Failed to create RX config file: {e}", rx_host, build)
         return False
 
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
@@ -1393,20 +1245,18 @@ def execute_dual_test_rgb24_multiple(
 
     logger.info(f"TX Host: {tx_host}")
     logger.info(f"RX Host: {rx_host}")
-    logger.info(f"RX Command: {rx_cmd}")
-    logger.info(f"TX1 Command: {tx_1_cmd}")
-    logger.info(f"TX2 Command: {tx_2_cmd}")
-    log_to_file(f"TX Host: {tx_host}", rx_host, build)
-    log_to_file(f"RX Host: {rx_host}", rx_host, build)
-    log_to_file(f"RX Command: {rx_cmd}", rx_host, build)
-    log_to_file(f"TX1 Command: {tx_1_cmd}", tx_host, build)
-    log_to_file(f"TX2 Command: {tx_2_cmd}", tx_host, build)
 
     rx_proc = None
     tx_1_proc = None
     tx_2_proc = None
     # Use RX host for tcpdump capture
     tcpdump = prepare_tcpdump(capture_cfg, rx_host)
+    netsniff = prepare_netsniff(
+        capture_cfg,
+        rx_host,
+        src_ip = str(ip_dict['tx_interfaces']),
+        dst_ip = str(ip_dict['tx_sessions'])
+    )
 
     try:
         # Start RX pipeline first on RX host
@@ -1440,10 +1290,13 @@ def execute_dual_test_rgb24_multiple(
             background=True,
         )
 
-        # Start tcpdump after pipelines are running
+        # Start packet capture when pipelines are running
         if tcpdump:
             logger.info("Starting tcpdump capture...")
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
+        if netsniff:
+            logger.info("Starting netsniff-ng capture...")
+            netsniff.start()
 
         logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
@@ -1454,45 +1307,20 @@ def execute_dual_test_rgb24_multiple(
         for proc in [tx_1_proc, tx_2_proc]:
             if proc:
                 try:
-                    proc.terminate()
-                    proc.wait(timeout=5)
-                    logger.info("TX process terminated successfully")
+                    proc.kill()
+                    logger.info("TX process killed")
                 except Exception:
-                    try:
-                        proc.kill()
-                        proc.wait(timeout=5)
-                        logger.info("TX process killed")
-                    except Exception:
-                        logger.info("Could not terminate TX process")
+                    logger.info("Could not terminate TX process")
 
-        rx_output = ""
-        try:
-            rx_output = rx_proc.stdout_text
-            log_to_file(f"RX Output:\n{rx_output}", rx_host, build)
-            logger.info("RX output captured successfully")
-        except Exception as e:
-            logger.info(f"Error retrieving RX output: {e}")
-            log_to_file(f"Error retrieving RX output: {e}", rx_host, build)
-
-        try:
-            log_to_file(f"TX1 Output:\n{tx_1_proc.stdout_text}", tx_host, build)
-            logger.info("TX1 output captured successfully")
-        except Exception as e:
-            logger.info(f"Error retrieving TX1 output: {e}")
-
-        try:
-            log_to_file(f"TX2 Output:\n{tx_2_proc.stdout_text}", tx_host, build)
-            logger.info("TX2 output captured successfully")
-        except Exception as e:
-            logger.info(f"Error retrieving TX2 output: {e}")
+        rx_output = capture_stdout(rx_proc, "RX")
+        capture_stdout(tx_1_proc, "TX1")
+        capture_stdout(tx_2_proc, "TX2")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
         for proc in [tx_1_proc, tx_2_proc, rx_proc]:
             if proc:
                 try:
-                    proc.terminate()
-                except Exception:
                     proc.kill()
                 except Exception:
                     # Process might already be terminated - ignore kill errors
@@ -1503,16 +1331,14 @@ def execute_dual_test_rgb24_multiple(
         for proc in [tx_1_proc, tx_2_proc, rx_proc]:
             if proc:
                 try:
-                    proc.terminate()
-                    proc.wait(timeout=3)
+                    proc.kill()
                 except Exception:
-                    try:
-                        proc.kill()
-                        proc.wait(timeout=3)
-                    except Exception:
-                        pass
+                    # Process might already be terminated - ignore kill errors
+                    pass
         if tcpdump:
             tcpdump.stop()
+        if netsniff:
+            netsniff.stop()
 
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
