@@ -10,7 +10,7 @@ from mtl_engine.media_files import gstreamer_formats
 
 
 @pytest.mark.parametrize("file", gstreamer_formats.keys())
-def test_video_format(
+def test_video_format_dual(
     hosts,
     build,
     media,
@@ -22,22 +22,32 @@ def test_video_format(
 ):
     video_file = gstreamer_formats[file]
 
-    # Get the first host for remote execution
-    host = list(hosts.values())[0]
+    # Get TX and RX hosts
+    host_list = list(hosts.values())
+    if len(host_list) < 2:
+        pytest.skip("Dual tests require at least 2 hosts")
 
+    tx_host = host_list[0]
+    rx_host = host_list[1]
+
+    # Create input file on TX host
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
         format=GstreamerApp.video_format_change(video_file["format"]),
-        media_path=media,
         duration=3,
-        host=host,
+        media_path=media,
+        host=tx_host,
     )
 
+    # Create output file path for RX host
+    output_file_path = os.path.join(media, f"output_video_dual_{file}.yuv")
+
+    # Setup TX pipeline using existing function
     tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=tx_host.vfs[0],
         input_path=input_file_path,
         width=video_file["width"],
         height=video_file["height"],
@@ -47,10 +57,11 @@ def test_video_format(
         tx_queues=4,
     )
 
+    # Setup RX pipeline using existing function
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
-        output_path=os.path.join(media, "output_video.yuv"),
+        nic_port_list=rx_host.vfs[0],
+        output_path=output_file_path,
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
@@ -59,23 +70,27 @@ def test_video_format(
         rx_queues=4,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_video_format_{file}"
+    capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
+    capture_cfg["test_name"] = f"test_video_format_dual_{file}"
 
     try:
-        GstreamerApp.execute_test(
+        # Use the unified execute_test function for dual host execution
+        result = GstreamerApp.execute_test(
             build=build,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_video.yuv"),
+            output_file=output_file_path,
             test_time=test_time,
-            host=host,
+            tx_host=tx_host,
+            rx_host=rx_host,
             tx_first=False,
-            sleep_interval=4,
             capture_cfg=capture_cfg,
         )
+
+        assert result, f"GStreamer dual video format test failed for format {file}"
+
     finally:
-        # Remove the video file after the test
-        media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_video.yuv"), host=host)
+        # Remove the input file on TX host and output file on RX host
+        media_create.remove_file(input_file_path, host=tx_host)
+        media_create.remove_file(output_file_path, host=rx_host)
