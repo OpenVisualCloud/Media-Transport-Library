@@ -410,7 +410,6 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   guint buffer_size = 0, meta_offset;
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
-  // hdr->swapped_first_hdr_chunk = ntohl(hdr->swapped_first_hdr_chunk);
   anc_count = hdr->first_hdr_chunk.anc_count;
 
   if (anc_count == 0 || anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {

@@ -21,7 +21,7 @@ def test_audio_format(
     audio_rate,
     test_time,
     test_config,
-    prepare_ramdisk
+    prepare_ramdisk,
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]

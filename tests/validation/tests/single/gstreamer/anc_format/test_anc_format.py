@@ -112,7 +112,7 @@ def test_st40p_framebuff(
         tx_fps=fps,
         tx_did=67,
         tx_sdid=2,
-        tx_rfc8331=True
+        tx_rfc8331=True,
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
@@ -122,7 +122,6 @@ def test_st40p_framebuff(
         rx_payload_type=113,
         rx_queues=4,
         timeout=timeout_period + 10,
-        
     )
 
     capture_cfg = dict(test_config.get("capture_cfg", {}))
@@ -158,11 +157,11 @@ def test_st40p_format_8331(
     framebuff,
     test_time,
     test_config,
-    prepare_ramdisk
+    prepare_ramdisk,
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
-    # Based on this parameters 
+    # Based on this parameters
     timeout_period = 15
 
     input_file_path = media_create.create_ancillary_rfc8331_pseudo_file(
@@ -181,7 +180,7 @@ def test_st40p_format_8331(
         tx_fps=fps,
         tx_did=67,
         tx_sdid=2,
-        tx_rfc8331=True
+        tx_rfc8331=True,
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
@@ -191,7 +190,7 @@ def test_st40p_format_8331(
         rx_payload_type=113,
         rx_queues=4,
         timeout=timeout_period + 10,
-        capture_metadata=True
+        capture_metadata=True,
     )
 
     capture_cfg = dict(test_config.get("capture_cfg", {}))
