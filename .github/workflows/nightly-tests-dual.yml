@@ -9,8 +9,15 @@ env:
 permissions:
   contents: read
 jobs:
-  run-single-tests:
-    runs-on: [Linux, self-hosted, DPDK]
+  setup:
+    strategy:
+      matrix:
+        include:
+          - host: runner-1
+            wait_time: 15
+          - host: runner-4
+            wait_time: 30
+    runs-on: ${{ matrix.host }}
     timeout-minutes: 780
     outputs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
@@ -117,13 +124,16 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
+  run-dual-tests:
+    runs-on: [Linux, self-hosted, DPDK]
+    steps:
       - name: Replace secrets in example config files
         run: |
           sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
-          sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s+KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config.yaml
+          sed -i "s/HOST_1_IP_ADDRESS_PLACEHOLDER/${{ secrets.RUNNER_1_IP_ADDRESS }}/" tests/validation/configs/topology_config_dual.yaml
+          sed -i "s+HOST_1_KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config_dual.yaml
+          sed -i "s/HOST_2_IP_ADDRESS_PLACEHOLDER/${{ secrets.RUNNER_4_IP_ADDRESS }}/" tests/validation/configs/topology_config_dual.yaml
+          sed -i "s+HOST_2_KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config_dual.yaml
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
@@ -151,7 +161,7 @@ jobs:
           sudo MtlManager &
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         run: |
-          sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m "nightly and not dual" --template=html/index.html --report=report.html
+          sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config_dual.yaml --test_config=tests/validation/configs/test_config.yaml -m "nightly and dual" --template=html/index.html --report=report.html
       - name: "upload report"
         if: always()
         id: upload-report
