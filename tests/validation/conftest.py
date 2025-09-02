@@ -22,7 +22,7 @@ from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
 from mtl_engine.csv_report import (csv_add_test, csv_write_report,
                                    update_compliance_result)
 # FIXME: Perhaps, it could be set less statically
-from mtl_engine.ffmpeg_app import ip_dict
+from mtl_engine.ffmpeg_app import ip_dict, ip_dict_rgb24_multiple
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.stash import (clear_issue, clear_result_log,
                               clear_result_media, clear_result_note, get_issue,
@@ -249,24 +249,22 @@ def log_session():
 @pytest.fixture(scope="function", autouse=False)
 def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format):
     capture_cfg = test_config.get("capture_cfg", {})
+    capture_cfg["test_name"] = (
+        f"test_rx_ffmpeg_tx_ffmpeg_dual_{video_format}_{output_format}"
+    )
 
-    host = hosts['client']
-    src_ip = ip_dict['rx_interfaces']
-    dst_ip = ip_dict['rx_sessions']
+    host = hosts['client'] if 'client' in hosts else list(hosts.values())[0]
+    # FIXME: If possible, change this not to be hardcoded
+    src_ip = ip_dict['tx_interfaces']
+    dst_ip = ip_dict_rgb24_multiple['p_tx_ip_2']
 
-    # TODO: Remove the unnecessary logging
-    # logging.debug("pcap_capture fixture setup started with following parameters:")
-    # logging.debug(f"capture_cfg={capture_cfg}")
-    # logging.debug(f"host={host}")
-    # logging.debug(f"src_ip={src_ip}")
-    # logging.debug(f"dst_ip={dst_ip}")
-    dumper = None
+    capturer = None
     if (
         capture_cfg
         and capture_cfg.get("enable")
     ):
         if capture_cfg.get("tool") == "tcpdump":
-            dumper = TcpDumpRecorder(
+            capturer = TcpDumpRecorder(
                 host=hosts,
                 test_name=capture_cfg.get("test_name", "capture"),
                 pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
@@ -275,6 +273,7 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format)
         elif capture_cfg.get("tool") in ["netsniff", "netsniff-ng"]:
             # Filtering
             capture_filter = ""
+            # TODO: Enable filtering back when checked
             if src_ip:
                 capture_filter += f"src {src_ip}"
             if dst_ip and not capture_filter == "":
@@ -282,7 +281,7 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format)
             elif dst_ip:
                 capture_filter += f"dst {dst_ip}"
             # Class prep
-            dumper = NetsniffRecorder(
+            capturer = NetsniffRecorder(
                 host=host,
                 test_name=capture_cfg.get("test_name", "capture"),
                 pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
@@ -291,17 +290,18 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format)
             )
         else:
             logging.error(f"Unknown capture tool {capture_cfg.get('tool')}")
-        if dumper:
-            if isinstance(dumper, TcpDumpRecorder):
-                dumper.capture(capture_time=capture_cfg.get("time", test_time))
-            elif isinstance(dumper, NetsniffRecorder):
-                dumper.start()
+        if capturer:
+            if isinstance(capturer, TcpDumpRecorder):
+                capturer.capture(capture_time=capture_cfg.get("time", test_time))
+            elif isinstance(capturer, NetsniffRecorder):
+                capturer.start()
             else:
-                logging.error(f"Unknown dumper class {dumper.__class__.__name__}")
-    yield dumper
-    if dumper:
-        dumper.stop()
+                logging.error(f"Unknown capturer class {capturer.__class__.__name__}")
+    yield capturer
+    if capturer:
+        capturer.stop()
     if capture_cfg and capture_cfg.get("compliance", False):
+        # TODO: Implement compliance logic
         logging.debug("I am supposed to do something with compliance, but not yet implemented")  # TODO: Implement compliance logic
         pass
 
