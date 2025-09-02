@@ -246,8 +246,23 @@ def log_session():
     csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
 
 
+def read_ebu_creds(config_path):
+    # Load EBU IP and credentials from YAML config
+    import yaml
+    if config_path:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+            instance = config["instances"]
+            ebu_ip = instance.get("name", None)
+            user = instance.get("username", None)
+            password = instance.get("password", None)
+            proxy = instance.get("proxy", None)
+            return ebu_ip, user, password, proxy
+    return None, None, None, None
+
+
 @pytest.fixture(scope="function", autouse=False)
-def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format):
+def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format, mtl_path):
     capture_cfg = test_config.get("capture_cfg", {})
     capture_cfg["test_name"] = (
         f"test_rx_ffmpeg_tx_ffmpeg_dual_{video_format}_{output_format}"
@@ -265,7 +280,7 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format)
     ):
         if capture_cfg.get("tool") == "tcpdump":
             capturer = TcpDumpRecorder(
-                host=hosts,
+                host=host,
                 test_name=capture_cfg.get("test_name", "capture"),
                 pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
                 interface=capture_cfg.get("interface"),
@@ -285,13 +300,14 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format)
                 host=host,
                 test_name=capture_cfg.get("test_name", "capture"),
                 pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-                interface=capture_cfg.get("interface"),
+                interface=capture_cfg.get("interface", "eth0"),
                 capture_filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
             )
         else:
             logging.error(f"Unknown capture tool {capture_cfg.get('tool')}")
         if capturer:
             if isinstance(capturer, TcpDumpRecorder):
+                # TODO: Perhaps it would need to be changed to use .start() instead of .capture()
                 capturer.capture(capture_time=capture_cfg.get("time", test_time))
             elif isinstance(capturer, NetsniffRecorder):
                 capturer.start()
@@ -300,10 +316,22 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format)
     yield capturer
     if capturer:
         capturer.stop()
-    if capture_cfg and capture_cfg.get("compliance", False):
-        # TODO: Implement compliance logic
-        logging.debug("I am supposed to do something with compliance, but not yet implemented")  # TODO: Implement compliance logic
-        pass
+        if capture_cfg and capture_cfg.get("compliance", False):
+            # FIXME: This is generally a bad practice to call it like that, but for now it is the easiest way
+            ebu_ip, ebu_login, ebu_passwd, ebu_proxy = read_ebu_creds(config_path=capture_cfg.get("ebu_yaml_path", "configs/ebu_list.yaml")) # Reads from executor
+            proxy_cmd = (f' --proxy {ebu_proxy}' if ebu_proxy else '')
+            compliance_upl = host.connection.execute_command(
+                'python3 ./tests/validation/compliance/upload_pcap.py'
+                f' --ip {ebu_ip}'
+                f' --login {ebu_login}'
+                f' --password {ebu_passwd}'
+                f' --pcap_file_path {capturer.pcap_file}{proxy_cmd}',
+                cwd=f"{str(mtl_path)}")
+            if compliance_upl.return_code != 0:
+                logging.error(f"PCAP upload failed: {compliance_upl.stderr}")
+            else:
+                uuid = compliance_upl.stdout.split(">>>UUID>>>")[1].split("<<<UUID<<<")[0].strip()
+                logging.debug(f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}")
 
 
 @pytest.fixture(scope="session", autouse=True)
