@@ -1,7 +1,8 @@
-import sys
-from pcap_compliance import PcapComplianceClient
-from csv_report import TestCSVReport
 import os
+import sys
+
+from csv_report import TestCSVReport
+from pcap_compliance import PcapComplianceClient
 
 # Usage:
 # python3 check_compliance.py <uuid> <test_name> [csv_path]

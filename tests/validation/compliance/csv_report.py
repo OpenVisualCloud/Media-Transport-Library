@@ -1,6 +1,7 @@
 import csv
 import os
 
+
 class TestCSVReport:
     def __init__(self, csv_path):
         """

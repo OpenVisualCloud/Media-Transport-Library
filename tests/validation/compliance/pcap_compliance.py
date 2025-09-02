@@ -1,8 +1,10 @@
-import requests
-import os
-import yaml
-import json
 import datetime
+import json
+import os
+
+import requests
+import yaml
+
 
 class PcapComplianceClient:
     def __init__(self, pcap_file=None, config_path="ebu_list.yaml", proxies={'http': "", "https": "", "ftp": ""}):
@@ -103,7 +105,7 @@ class PcapComplianceClient:
                     f_result.write(f"{error_id}\n")
         print(f"Json file saved: file://{os.path.abspath(report_path)}")
         return is_compliant
-    
+
     def delete_pcap(self, pcap_id=None):
         """
         Delete the PCAP file and its report from the EBU server.

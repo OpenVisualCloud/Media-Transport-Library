@@ -9,10 +9,9 @@ import subprocess
 import sys
 import time
 
-from mfd_connect import SSHConnection
-
 from create_pcap_file.netsniff import NetsniffRecorder
 from create_pcap_file.tcpdump import TcpDumpRecorder
+from mfd_connect import SSHConnection
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -148,9 +147,9 @@ def prepare_tcpdump(capture_cfg, host=None):
 def prepare_netsniff(
         capture_cfg,
         host=None,
-        src_ip: str|None = None,
-        dst_ip: str|None = None
-    ):
+        src_ip: str | None = None,
+        dst_ip: str | None = None
+):
     """
     Prepare NetsniffRecorder if capture_cfg is enabled.
 
@@ -175,7 +174,7 @@ def prepare_netsniff(
             test_name=capture_cfg.get("test_name", "capture"),
             pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
             interface=capture_cfg.get("interface"),
-            capture_filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
+            capture_filter=capture_filter if capture_filter != "" else None,  # Avoid forcing an empty filter
         )
         return netsniff
     else:
@@ -660,12 +659,10 @@ def execute_test(
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
             logger.info(f"Started tcpdump capture on host {host.name}")
-            log_to_file("Started tcpdump capture", host, build)
         # Start netsniff-ng capture (blocking, so it captures during traffic)
         if netsniff:
             netsniff.start()
             logger.info(f"Started netsniff-ng capture on host {host.name}")
-            log_to_file("Started netsniff-ng capture", host, build)
     finally:
         cp.wait()
 
@@ -866,10 +863,10 @@ def execute_perf_test(
         # Start tcpdump capture (blocking, so it captures during traffic)
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            log_to_file("Started performance test tcpdump capture", host, build)
+            logger.info("Started performance test tcpdump capture")
         if netsniff:
             netsniff.start()
-            log_to_file("Started performance test netsniff-ng capture", host, build)
+            logger.info("Started performance test netsniff-ng capture")
     finally:
         cp.wait()
 
@@ -1529,10 +1526,8 @@ def execute_dual_test(
 
     # Log test start
     logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
-    log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", tx_host, build)
-    log_to_file(f"Starting dual RxTxApp test: {get_case_id()}", rx_host, build)
-    log_to_file(f"TX config: {tx_config_json}", tx_host, build)
-    log_to_file(f"RX config: {rx_config_json}", rx_host, build)
+    logger.info(f"TX config: {tx_config_json}", tx_host, build)
+    logger.info(f"RX config: {rx_config_json}", rx_host, build)
 
     # Prepare TX config
     tx_config_file = f"{build}/tests/tx_config.json"

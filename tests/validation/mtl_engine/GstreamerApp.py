@@ -6,8 +6,8 @@ import logging
 import os
 import time
 
-from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 from compliance.pcap_compliance import PcapComplianceClient
+from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 
 from .execute import log_fail, run
 
@@ -458,7 +458,7 @@ def execute_test(
         if pcap_file:
             # FIXME: Get rid of hardcoded path
             ebu_config_path = "configs/ebu_list.yaml"
-            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client = PcapComplianceClient(config_path=ebu_config_path)
             compliance_client.authenticate()
             compliance_client.upload_pcap()
             report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)

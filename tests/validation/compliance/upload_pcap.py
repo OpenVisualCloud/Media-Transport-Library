@@ -1,5 +1,4 @@
 import argparse
-import sys
 import os
 
 if __name__ == "__main__":
@@ -21,7 +20,7 @@ def parse_args():
 def upload_pcap(file_path, ip, login, password, proxies):
     # Check for login and password
     if not ip or not login or not password:
-        raise Exception(f"IP address, login and password are required.")
+        raise Exception("IP address, login and password are required.")
 
     # Check if the file exists before proceeding
     if not os.path.isfile(file_path):

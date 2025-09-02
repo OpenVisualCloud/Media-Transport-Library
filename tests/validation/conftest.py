@@ -10,14 +10,12 @@ import time
 from typing import Dict
 
 import pytest
-from mfd_common_libs.custom_logger import add_logging_level
-from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
-from mfd_connect.exceptions import ConnectionCalledProcessError
-from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
-
 from common.nicctl import Nicctl
 from create_pcap_file.netsniff import NetsniffRecorder
 from create_pcap_file.tcpdump import TcpDumpRecorder
+from mfd_common_libs.custom_logger import add_logging_level
+from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
+from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
 from mtl_engine.csv_report import (csv_add_test, csv_write_report,
                                    update_compliance_result)
@@ -27,6 +25,7 @@ from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.stash import (clear_issue, clear_result_log,
                               clear_result_media, clear_result_note, get_issue,
                               get_result_note, remove_result_media)
+from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
@@ -301,7 +300,7 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format,
                 test_name=capture_cfg.get("test_name", "capture"),
                 pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
                 interface=capture_cfg.get("interface", "eth0"),
-                capture_filter = capture_filter if capture_filter != "" else None, # Avoid forcing an empty filter
+                capture_filter=capture_filter if capture_filter != "" else None,  # Avoid forcing an empty filter
             )
         else:
             logging.error(f"Unknown capture tool {capture_cfg.get('tool')}")
@@ -318,7 +317,9 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format,
         capturer.stop()
         if capture_cfg and capture_cfg.get("compliance", False):
             # FIXME: This is generally a bad practice to call it like that, but for now it is the easiest way
-            ebu_ip, ebu_login, ebu_passwd, ebu_proxy = read_ebu_creds(config_path=capture_cfg.get("ebu_yaml_path", "configs/ebu_list.yaml")) # Reads from executor
+            ebu_ip, ebu_login, ebu_passwd, ebu_proxy = read_ebu_creds(
+                config_path=capture_cfg.get("ebu_yaml_path", "configs/ebu_list.yaml")
+            )  # Reads from executor
             proxy_cmd = (f' --proxy {ebu_proxy}' if ebu_proxy else '')
             compliance_upl = host.connection.execute_command(
                 'python3 ./tests/validation/compliance/upload_pcap.py'

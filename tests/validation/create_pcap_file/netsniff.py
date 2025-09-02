@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 STARTUP_WAIT = 2  # Default wait time after starting the process
 
+
 class NetsniffRecorder:
     """
     Class to handle the recording of network traffic using netsniff-ng.
@@ -34,7 +35,7 @@ class NetsniffRecorder:
             interface_index: int = 0,
             silent: bool = True,
             capture_filter: str | None = None,
-        ):
+    ):
         self.host = host
         self.test_name = test_name
         self.pcap_dir = pcap_dir
@@ -81,9 +82,8 @@ class NetsniffRecorder:
                 logger.info(f"netsniff-ng started with PID {self.netsniff_process.pid}.")
                 return True
             except ConnectionCalledProcessError as e:
-                    logger.error(f"Failed to start netsniff-ng: {e}")
-                    return False
-
+                logger.error(f"Failed to start netsniff-ng: {e}")
+                return False
 
     def capture(self, capture_time=20, startup_wait=2):
         """
@@ -99,7 +99,6 @@ class NetsniffRecorder:
             logger.info("Capture complete.")
         else:
             logger.error("netsniff-ng did not start; skipping capture.")
-
 
     def stop(self):
         """

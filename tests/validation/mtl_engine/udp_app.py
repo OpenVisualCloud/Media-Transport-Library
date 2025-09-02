@@ -9,7 +9,6 @@ import re
 
 from mtl_engine import udp_app_config
 from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
-from compliance.upload_pcap import upload_pcap
 from tests.validation.compliance.pcap_compliance import PcapComplianceClient
 
 from .const import LOG_FOLDER
@@ -93,7 +92,7 @@ def execute_test_sample(
         if pcap_file:
             # FIXME: Get rid of hardcoded path
             ebu_config_path = "configs/ebu_list.yaml"
-            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client = PcapComplianceClient(config_path=ebu_config_path)
             compliance_client.authenticate()
             compliance_client.upload_pcap()
             report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
@@ -183,7 +182,7 @@ def execute_test_librist(
         if pcap_file:
             # FIXME: Get rid of hardcoded path
             ebu_config_path = "configs/ebu_list.yaml"
-            compliance_client = PcapComplianceClient(config_path = ebu_config_path)
+            compliance_client = PcapComplianceClient(config_path=ebu_config_path)
             compliance_client.authenticate()
             compliance_client.upload_pcap()
             report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
