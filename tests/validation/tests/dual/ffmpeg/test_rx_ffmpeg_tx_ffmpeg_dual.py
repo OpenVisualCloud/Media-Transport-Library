@@ -19,6 +19,8 @@ from mtl_engine.media_files import yuv_files
 )
 @pytest.mark.parametrize("output_format", ["yuv", "h264"])
 def test_rx_ffmpeg_tx_ffmpeg_dual(
+    mtl_path,
+    pcap_capture,
     hosts,
     test_time,
     build,

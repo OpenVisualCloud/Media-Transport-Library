@@ -1,0 +1,8 @@
+metadata:
+    version: '1.0'
+instances:
+    name: {{ ebu_ip }}
+    username: {{ ebu_login }}
+    password: {{ ebu_password }}
+    verify: true
+    token: json_token

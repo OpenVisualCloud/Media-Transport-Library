@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 
+from create_pcap_file.netsniff import NetsniffRecorder
 from create_pcap_file.tcpdump import TcpDumpRecorder
 from mfd_connect import SSHConnection
 
@@ -119,10 +120,15 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
 
 def prepare_tcpdump(capture_cfg, host=None):
     """
-    Prepare and (optionally) start TcpDumpRecorder if capture_cfg is enabled.
-    Returns the TcpDumpRecorder instance or None.
+    Prepare TcpDumpRecorder if capture_cfg is enabled and tool is tcpdump.
+
+    returns: TcpDumpRecorder instance or None.
     """
-    if capture_cfg and capture_cfg.get("enable"):
+    if (
+        capture_cfg
+        and capture_cfg.get("enable")
+        and capture_cfg.get("tool") == "tcpdump"
+    ):
         tcpdump = TcpDumpRecorder(
             host=host,
             test_name=capture_cfg.get("test_name", "capture"),
@@ -130,6 +136,51 @@ def prepare_tcpdump(capture_cfg, host=None):
             interface=capture_cfg.get("interface"),
         )
         return tcpdump
+    else:
+        logger.info(
+            "Not preparing tcpdump for capture as capturing not enabled "
+            "or tool is not tcpdump."
+        )
+    return None
+
+
+def prepare_netsniff(
+    capture_cfg, host=None, src_ip: str | None = None, dst_ip: str | None = None
+):
+    """
+    Prepare NetsniffRecorder if capture_cfg is enabled.
+
+    returns: NetsniffRecorder instance or None.
+    """
+    if (
+        capture_cfg
+        and capture_cfg.get("enable")
+        and capture_cfg.get("tool") in ["netsniff", "netsniff-ng"]
+    ):
+        # Filtering
+        capture_filter = ""
+        if src_ip:
+            capture_filter += f"src {src_ip}"
+        if dst_ip and not capture_filter == "":
+            capture_filter += f" and dst {dst_ip}"
+        elif dst_ip:
+            capture_filter += f"dst {dst_ip}"
+        # Class prep
+        netsniff = NetsniffRecorder(
+            host=host,
+            test_name=capture_cfg.get("test_name", "capture"),
+            pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
+            interface=capture_cfg.get("interface"),
+            capture_filter=(
+                capture_filter if capture_filter != "" else None
+            ),  # Avoid forcing an empty filter
+        )
+        return netsniff
+    else:
+        logger.info(
+            "Not preparing netsniff-ng for capture as capturing not enabled "
+            "or tool is not in [netsniff, netsniff-ng]."
+        )
     return None
 
 
@@ -580,8 +631,9 @@ def execute_test(
 
     logger.info(f"RxTxApp Command: {command}")
 
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
+    # Prepare capturing programs if capture is enabled in the test configuration.
     tcpdump = prepare_tcpdump(capture_cfg, host)
+    netsniff = prepare_netsniff(capture_cfg, host)
 
     # For 4TX and 8k streams more timeout is needed
     timeout = test_time + 90
@@ -601,11 +653,15 @@ def execute_test(
         host=remote_host,
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
     try:
+        # Start tcpdump capture (blocking, so it captures during traffic)
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
             logger.info(f"Started tcpdump capture on host {host.name}")
+        # Start netsniff-ng capture (blocking, so it captures during traffic)
+        if netsniff:
+            netsniff.start()
+            logger.info(f"Started netsniff-ng capture on host {host.name}")
     finally:
         cp.wait()
 
@@ -759,7 +815,8 @@ def execute_perf_test(
 
     # Prepare tcpdump recorder if capture is enabled in the test configuration.
     tcpdump = prepare_tcpdump(capture_cfg, host)
-    background = tcpdump is not None
+    netsniff = prepare_netsniff(capture_cfg, host)
+    background = (tcpdump is not None) or (netsniff is not None)
 
     # For 4TX and 8k streams more timeout is needed
     # Also scale timeout with replica count for performance tests
@@ -801,11 +858,14 @@ def execute_perf_test(
         background=background,
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
     try:
+        # Start tcpdump capture (blocking, so it captures during traffic)
         if tcpdump:
             tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
             logger.info("Started performance test tcpdump capture")
+        if netsniff:
+            netsniff.start()
+            logger.info("Started performance test netsniff-ng capture")
     finally:
         cp.wait()
 
@@ -1465,6 +1525,8 @@ def execute_dual_test(
 
     # Log test start
     logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
+    logger.info(f"TX config: {tx_config_json}", tx_host, build)
+    logger.info(f"RX config: {rx_config_json}", rx_host, build)
 
     # Prepare TX config
     tx_config_file = f"{build}/tests/tx_config.json"
