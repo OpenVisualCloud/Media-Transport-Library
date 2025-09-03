@@ -7,7 +7,12 @@ import yaml
 
 
 class PcapComplianceClient:
-    def __init__(self, pcap_file=None, config_path="ebu_list.yaml", proxies={'http': "", "https": "", "ftp": ""}):
+    def __init__(
+        self,
+        pcap_file=None,
+        config_path="ebu_list.yaml",
+        proxies={"http": "", "https": "", "ftp": ""}
+    ):
         """
         Initialize the client with optional PCAP file and config path.
         Loads EBU server IP and credentials from the YAML config.
@@ -37,11 +42,13 @@ class PcapComplianceClient:
         Authenticate with the EBU server and store the access token.
         """
         url = f"http://{self.ebu_ip}/auth/login"
-        headers = {'Content-Type': 'application/json'}
+        headers = {"Content-Type": "application/json"}
         data = {"username": self.user, "password": self.password}
-        response = self.session.post(url, headers=headers, json=data, verify=False, proxies=self.proxies)
+        response = self.session.post(
+            url, headers=headers, json=data, verify=False, proxies=self.proxies
+        )
         response.raise_for_status()
-        self.token = response.json().get('content', {}).get('token')
+        self.token = response.json().get("content", {}).get("token")
         if not self.token:
             raise Exception("Authentication failed: No token received.")
 
@@ -51,13 +58,25 @@ class PcapComplianceClient:
         Returns the UUID of the uploaded PCAP.
         """
         url = f"http://{self.ebu_ip}/api/pcap"
-        headers = {'Authorization': f'Bearer {self.token}'}
+        headers = {"Authorization": f"Bearer {self.token}"}
         if self.pcap_file:
-            with open(self.pcap_file, 'rb') as f:
-                files = {'pcap': (os.path.basename(self.pcap_file), f, 'application/vnd.tcpdump.pcap')}
-                response = self.session.put(url, headers=headers, files=files, verify=False, proxies=self.proxies)
+            with open(self.pcap_file, "rb") as f:
+                files = {
+                    "pcap": (
+                        os.path.basename(self.pcap_file),
+                        f,
+                        "application/vnd.tcpdump.pcap"
+                    )
+                }
+                response = self.session.put(
+                    url,
+                    headers=headers,
+                    files=files,
+                    verify=False,
+                    proxies=self.proxies
+                )
             response.raise_for_status()
-            self.pcap_id = response.json().get('uuid')
+            self.pcap_id = response.json().get("uuid")
         if not self.pcap_id:
             raise Exception("Upload failed: No UUID received.")
         print(f"Extracted UUID: >>>{self.pcap_id}<<<")
@@ -73,7 +92,7 @@ class PcapComplianceClient:
         self.report_dir = os.path.join("reports", test_name, timestamp)
         os.makedirs(self.report_dir, exist_ok=True)
         url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}/report?type=json"
-        headers = {'Authorization': f'Bearer {self.token}'}
+        headers = {"Authorization": f"Bearer {self.token}"}
         response = self.session.get(url, headers=headers, verify=False, proxies=self.proxies)
         response.raise_for_status()
         report_path = os.path.join(self.report_dir, f"{self.pcap_id}.json")
@@ -116,10 +135,14 @@ class PcapComplianceClient:
         if not pcap_id:
             raise ValueError("No PCAP ID provided for deletion.")
         url = f"http://{self.ebu_ip}/api/pcap/{pcap_id}"
-        headers = {'Authorization': f'Bearer {self.token}'}
-        response = self.session.delete(url, headers=headers, verify=False, proxies=self.proxies)
+        headers = {"Authorization": f"Bearer {self.token}"}
+        response = self.session.delete(
+            url, headers=headers, verify=False, proxies=self.proxies
+        )
         if response.status_code == 200:
             print(f"PCAP {pcap_id} deleted successfully from EBU server.")
         else:
-            print(f"Failed to delete PCAP {pcap_id}: {response.status_code} {response.text}")
+            print(
+                f"Failed to delete PCAP {pcap_id}: {response.status_code} {response.text}"
+            )
             response.raise_for_status()
