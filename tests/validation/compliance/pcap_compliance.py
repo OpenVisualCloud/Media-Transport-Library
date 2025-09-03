@@ -89,7 +89,7 @@ class PcapComplianceClient:
         """
         with open(report_path, "r") as f:
             report = json.load(f)
-        is_compliant = report.get('not_compliant_streams', 1) == 0
+        is_compliant = report.get("not_compliant_streams", 1) == 0
         result_file = "PASSED" if is_compliant else "FAILED"
         print(f"Result: {result_file}")
         with open(os.path.join(self.report_dir, result_file), "w") as f_result:
@@ -97,8 +97,8 @@ class PcapComplianceClient:
                 f_result.write("")
             else:
                 error_ids = []
-                for err in report.get('summary', {}).get('error_list', []):
-                    error_id = err.get('value', {}).get('id')
+                for err in report.get("summary", {}).get("error_list", []):
+                    error_id = err.get("value", {}).get("id")
                     print(error_id)
                     error_ids.append(str(error_id))
                 for error_id in error_ids:

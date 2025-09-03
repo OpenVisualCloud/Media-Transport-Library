@@ -461,7 +461,9 @@ def execute_test(
             compliance_client = PcapComplianceClient(config_path=ebu_config_path)
             compliance_client.authenticate()
             compliance_client.upload_pcap()
-            report_path = compliance_client.download_report(test_name=compliance_client.pcap_id)
+            report_path = compliance_client.download_report(
+                test_name=compliance_client.pcap_id
+            )
             is_compliant = compliance_client.check_compliance(report_path=report_path)
 
     # Compare files for validation

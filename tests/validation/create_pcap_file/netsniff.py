@@ -27,19 +27,21 @@ class NetsniffRecorder:
     """
 
     def __init__(
-            self,
-            host,
-            test_name: str,
-            pcap_dir: str,
-            interface = None,
-            interface_index: int = 0,
-            silent: bool = True,
-            capture_filter: str | None = None,
+        self,
+        host,
+        test_name: str,
+        pcap_dir: str,
+        interface=None,
+        interface_index: int = 0,
+        silent: bool = True,
+        capture_filter: str | None = None,
     ):
         self.host = host
         self.test_name = test_name
         self.pcap_dir = pcap_dir
-        self.pcap_file = os.path.join(pcap_dir, f"{test_name}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.pcap")
+        self.pcap_file = os.path.join(
+            pcap_dir, f"{test_name}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.pcap"
+        )
         if interface is not None:
             self.interface = interface
         else:
@@ -62,11 +64,11 @@ class NetsniffRecorder:
                     str(self.interface),
                     "--out",
                     self.pcap_file,
-                    f"-f \"{self.capture_filter}\"" if self.capture_filter else "",
+                    f'-f "{self.capture_filter}"' if self.capture_filter else "",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
                 self.netsniff_process = connection.start_process(
-                        " ".join(cmd), stderr_to_stdout=True
+                    " ".join(cmd), stderr_to_stdout=True
                 )
                 logger.info(
                     f"PCAP file will be saved at: {os.path.abspath(self.pcap_file)}"
@@ -79,7 +81,9 @@ class NetsniffRecorder:
                     err = self.netsniff_process.stderr_text
                     logger.error(f"netsniff-ng failed to start. Error output:\n{err}")
                     return False
-                logger.info(f"netsniff-ng started with PID {self.netsniff_process.pid}.")
+                logger.info(
+                    f"netsniff-ng started with PID {self.netsniff_process.pid}."
+                )
                 return True
             except ConnectionCalledProcessError as e:
                 logger.error(f"Failed to start netsniff-ng: {e}")

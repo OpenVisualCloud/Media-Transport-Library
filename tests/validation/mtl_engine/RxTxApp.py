@@ -145,10 +145,7 @@ def prepare_tcpdump(capture_cfg, host=None):
 
 
 def prepare_netsniff(
-        capture_cfg,
-        host=None,
-        src_ip: str | None = None,
-        dst_ip: str | None = None
+    capture_cfg, host=None, src_ip: str | None = None, dst_ip: str | None = None
 ):
     """
     Prepare NetsniffRecorder if capture_cfg is enabled.
@@ -174,7 +171,9 @@ def prepare_netsniff(
             test_name=capture_cfg.get("test_name", "capture"),
             pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
             interface=capture_cfg.get("interface"),
-            capture_filter=capture_filter if capture_filter != "" else None,  # Avoid forcing an empty filter
+            capture_filter=(
+                capture_filter if capture_filter != "" else None
+            ),  # Avoid forcing an empty filter
         )
         return netsniff
     else:

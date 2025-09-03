@@ -17,14 +17,24 @@ from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
-from mtl_engine.csv_report import (csv_add_test, csv_write_report,
-                                   update_compliance_result)
+from mtl_engine.csv_report import (
+    csv_add_test,
+    csv_write_report,
+    update_compliance_result,
+)
+
 # FIXME: Perhaps, it could be set less statically
 from mtl_engine.ffmpeg_app import ip_dict, ip_dict_rgb24_multiple
 from mtl_engine.ramdisk import Ramdisk
-from mtl_engine.stash import (clear_issue, clear_result_log,
-                              clear_result_media, clear_result_note, get_issue,
-                              get_result_note, remove_result_media)
+from mtl_engine.stash import (
+    clear_issue,
+    clear_result_log,
+    clear_result_media,
+    clear_result_note,
+    get_issue,
+    get_result_note,
+    remove_result_media,
+)
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
@@ -149,10 +159,14 @@ def prepare_ramdisk(hosts, test_config):
     ramdisks = []
     ramdisks_configs = test_config.get("ramdisk", {})
     for ramdisk_name, ramdisk_config in ramdisks_configs.items():
-        ramdisk_mountpoint = ramdisk_config.get("mountpoint", f"/mnt/ramdisk_{ramdisk_name}")
+        ramdisk_mountpoint = ramdisk_config.get(
+            "mountpoint", f"/mnt/ramdisk_{ramdisk_name}"
+        )
         ramdisk_size_gib = ramdisk_config.get("size_gib", 32)
         ramdisks += [
-            Ramdisk(host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib)
+            Ramdisk(
+                host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib
+            )
             for host in hosts.values()
         ]
     for ramdisk in ramdisks:
@@ -248,6 +262,7 @@ def log_session():
 def read_ebu_creds(config_path):
     # Load EBU IP and credentials from YAML config
     import yaml
+
     if config_path:
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
@@ -261,22 +276,21 @@ def read_ebu_creds(config_path):
 
 
 @pytest.fixture(scope="function", autouse=False)
-def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format, mtl_path):
+def pcap_capture(
+    test_config, hosts, nic_port_list, video_format, output_format, mtl_path
+):
     capture_cfg = test_config.get("capture_cfg", {})
     capture_cfg["test_name"] = (
         f"test_rx_ffmpeg_tx_ffmpeg_dual_{video_format}_{output_format}"
     )
 
-    host = hosts['client'] if 'client' in hosts else list(hosts.values())[0]
+    host = hosts["client"] if "client" in hosts else list(hosts.values())[0]
     # FIXME: If possible, change this not to be hardcoded
-    src_ip = ip_dict['tx_interfaces']
-    dst_ip = ip_dict_rgb24_multiple['p_tx_ip_2']
+    src_ip = ip_dict["tx_interfaces"]
+    dst_ip = ip_dict_rgb24_multiple["p_tx_ip_2"]
 
     capturer = None
-    if (
-        capture_cfg
-        and capture_cfg.get("enable")
-    ):
+    if capture_cfg and capture_cfg.get("enable"):
         if capture_cfg.get("tool") == "tcpdump":
             capturer = TcpDumpRecorder(
                 host=host,
@@ -300,7 +314,9 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format,
                 test_name=capture_cfg.get("test_name", "capture"),
                 pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
                 interface=capture_cfg.get("interface", "eth0"),
-                capture_filter=capture_filter if capture_filter != "" else None,  # Avoid forcing an empty filter
+                capture_filter=(
+                    capture_filter if capture_filter != "" else None
+                ),  # Avoid forcing an empty filter
             )
         else:
             logging.error(f"Unknown capture tool {capture_cfg.get('tool')}")
@@ -320,19 +336,26 @@ def pcap_capture(test_config, hosts, nic_port_list, video_format, output_format,
             ebu_ip, ebu_login, ebu_passwd, ebu_proxy = read_ebu_creds(
                 config_path=capture_cfg.get("ebu_yaml_path", "configs/ebu_list.yaml")
             )  # Reads from executor
-            proxy_cmd = (f' --proxy {ebu_proxy}' if ebu_proxy else '')
+            proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
             compliance_upl = host.connection.execute_command(
-                'python3 ./tests/validation/compliance/upload_pcap.py'
-                f' --ip {ebu_ip}'
-                f' --login {ebu_login}'
-                f' --password {ebu_passwd}'
-                f' --pcap_file_path {capturer.pcap_file}{proxy_cmd}',
-                cwd=f"{str(mtl_path)}")
+                "python3 ./tests/validation/compliance/upload_pcap.py"
+                f" --ip {ebu_ip}"
+                f" --login {ebu_login}"
+                f" --password {ebu_passwd}"
+                f" --pcap_file_path {capturer.pcap_file}{proxy_cmd}",
+                cwd=f"{str(mtl_path)}",
+            )
             if compliance_upl.return_code != 0:
                 logging.error(f"PCAP upload failed: {compliance_upl.stderr}")
             else:
-                uuid = compliance_upl.stdout.split(">>>UUID>>>")[1].split("<<<UUID<<<")[0].strip()
-                logging.debug(f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}")
+                uuid = (
+                    compliance_upl.stdout.split(">>>UUID>>>")[1]
+                    .split("<<<UUID<<<")[0]
+                    .strip()
+                )
+                logging.debug(
+                    f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}"
+                )
 
 
 @pytest.fixture(scope="session", autouse=True)

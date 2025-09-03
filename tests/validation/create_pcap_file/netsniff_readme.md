@@ -4,7 +4,7 @@
 
 > **Note:** At the moment, there is no automation present for netsniff-ng tool installation on the capturing machine. It must be installed on the system manually before running the test. If the capture fails, the test continues without the packet capture.
 
-There is an official instruction on how to download the tool present on the [tool's website](http://netsniff-ng.org/). It can also be useful for finding mirrors of the repositories. Below, only the Github repository is considered as a source.
+There is an official instruction on how to download the tool present on the [tool's site](http://netsniff-ng.org/). It can also be useful for finding mirrors of the repositories. Below, only the GitHub repository is considered as a source.
 
 ```shell
 NETSNIFF_REPO="https://github.com/netsniff-ng/netsniff-ng"
@@ -44,7 +44,9 @@ tar xvz "${NETSNIFF_VERSION}" # 2.
 
 After the tool is installed on the capturing machine, it can be used within the test code.
 
-In order to create and receive a `NetsniffRecorder` class instance, that can be used to start and stop the packet capture, use the `prepare_netsniff()` function. It takes the capture config (`capture_cfg`), host (`host`) and optional filters for source and destination IP addresses (`src_ip` and `dst_ip` respectively). The filtering IPs should be used to avoid capturing unrelated traffic during the test.
+In order to create and receive a `NetsniffRecorder` class instance, that can be used to start and stop the packet capture,
+use the `prepare_netsniff()` function. It takes the capture config (`capture_cfg`), host (`host`) and optional filters for source
+and destination IP addresses (`src_ip` and `dst_ip` respectively). The filtering IPs should be used to avoid capturing unrelated traffic during the test.
 
 To start the capture, call `start()` function within the `NetsniffRecorder` class object, with optional `startup_wait` parameter specifying the number of seconds that should be waited before the capture starts (initialization delay).
 

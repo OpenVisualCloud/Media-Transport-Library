@@ -8,6 +8,6 @@ def load_ebu_config(config_path: str):
     config_response = {
         "ebu_ip": instance.get("name", ""),
         "username": instance.get("username", ""),
-        "password": instance.get("password", "")
+        "password": instance.get("password", ""),
     }
     return config_response

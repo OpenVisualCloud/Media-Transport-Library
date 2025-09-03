@@ -11,22 +11,20 @@ class TestCSVReport:
         self.csv_path = csv_path
         # Write header if file does not exist
         if not os.path.isfile(self.csv_path):
-            with open(self.csv_path, mode='w', newline='') as csvfile:
+            with open(self.csv_path, mode="w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow([
-                    "test_name",           # Name of the test
-                    "compliance_result",   # Compliance check result (e.g., PASSED/FAILED)
-                    "logs_path"            # Final result (e.g., PASSED/FAILED)
-                ])
+                writer.writerow(
+                    [
+                        "test_name",  # Name of the test
+                        "compliance_result",  # Compliance check result (e.g., PASSED/FAILED)
+                        "logs_path",  # Final result (e.g., PASSED/FAILED)
+                    ]
+                )
 
     def add_result(self, test_name, compliance_result, logs_path):
         """
         Append a new row with the test results to the CSV file.
         """
-        with open(self.csv_path, mode='a', newline='') as csvfile:
+        with open(self.csv_path, mode="a", newline="") as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow([
-                test_name,
-                compliance_result,
-                logs_path
-            ])
+            writer.writerow([test_name, compliance_result, logs_path])
