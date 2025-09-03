@@ -7,7 +7,6 @@ import re
 import time
 
 from compliance.pcap_compliance import PcapComplianceClient
-from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
 
 from .execute import log_fail, run
 
@@ -312,7 +311,7 @@ def setup_gstreamer_st40p_rx_pipeline(
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
-        payload_type=rx_payload_type,
+        payload_type=str(rx_payload_type),
         udp_port=40000,
         is_tx=False,
     )
@@ -350,7 +349,6 @@ def execute_test(
     rx_host=None,
     sleep_interval: int = 4,
     tx_first: bool = True,
-    capture_cfg=None,
 ):
     """
     Execute GStreamer test with remote host support following RxTxApp pattern.
@@ -367,7 +365,6 @@ def execute_test(
     :param rx_host: RX host object (for dual host tests)
     :param sleep_interval: Sleep interval between starting TX and RX
     :param tx_first: Whether to start TX first
-    :param capture_cfg: Capture configuration
     :return: True if test passed, False otherwise
     """
     is_dual = tx_host is not None and rx_host is not None
@@ -388,13 +385,6 @@ def execute_test(
 
     tx_process = None
     rx_process = None
-
-    if is_dual:
-        tx_tcpdump = prepare_tcpdump(capture_cfg, tx_host) if capture_cfg else None
-        # rx_tcpdump = prepare_tcpdump(capture_cfg, rx_host) if capture_cfg else None  # Unused
-        tcpdump = tx_tcpdump
-    else:
-        tcpdump = prepare_tcpdump(capture_cfg, host)
 
     try:
         if tx_first:
@@ -443,13 +433,6 @@ def execute_test(
                 host=tx_remote_host,
                 background=True,
             )
-        # --- Start packet capture after pipelines are running ---
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
-        if netsniff:
-            logger.info("Starting netsniff-ng capture...")
-            netsniff.start()
 
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
@@ -494,24 +477,6 @@ def execute_test(
                 rx_process.wait(timeout=10)
             except Exception:
                 pass
-        pcap_file = None
-        is_compliant = False
-        if tcpdump:
-            tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
-        if netsniff:
-            netsniff.stop()
-            pcap_file = netsniff.pcap_file
-        if pcap_file:
-            # FIXME: Get rid of hardcoded path
-            ebu_config_path = "configs/ebu_list.yaml"
-            compliance_client = PcapComplianceClient(config_path=ebu_config_path)
-            compliance_client.authenticate()
-            compliance_client.upload_pcap()
-            report_path = compliance_client.download_report(
-                test_name=compliance_client.pcap_id
-            )
-            is_compliant = compliance_client.check_compliance(report_path=report_path)
 
     # Compare files for validation
     file_compare = compare_files(
@@ -519,11 +484,6 @@ def execute_test(
     )
 
     logger.info(f"File comparison: {file_compare}")
-
-    if not is_compliant:
-        logger.info("PCAP compliance check failed")
-    else:
-        logger.info("PCAP compliance check passed")
 
     return file_compare
 
