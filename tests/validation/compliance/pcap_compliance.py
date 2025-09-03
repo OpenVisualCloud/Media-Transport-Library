@@ -11,7 +11,7 @@ class PcapComplianceClient:
         self,
         pcap_file=None,
         config_path="ebu_list.yaml",
-        proxies={"http": "", "https": "", "ftp": ""}
+        proxies={"http": "", "https": "", "ftp": ""},
     ):
         """
         Initialize the client with optional PCAP file and config path.
@@ -65,7 +65,7 @@ class PcapComplianceClient:
                     "pcap": (
                         os.path.basename(self.pcap_file),
                         f,
-                        "application/vnd.tcpdump.pcap"
+                        "application/vnd.tcpdump.pcap",
                     )
                 }
                 response = self.session.put(
@@ -73,7 +73,7 @@ class PcapComplianceClient:
                     headers=headers,
                     files=files,
                     verify=False,
-                    proxies=self.proxies
+                    proxies=self.proxies,
                 )
             response.raise_for_status()
             self.pcap_id = response.json().get("uuid")
@@ -93,7 +93,9 @@ class PcapComplianceClient:
         os.makedirs(self.report_dir, exist_ok=True)
         url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}/report?type=json"
         headers = {"Authorization": f"Bearer {self.token}"}
-        response = self.session.get(url, headers=headers, verify=False, proxies=self.proxies)
+        response = self.session.get(
+            url, headers=headers, verify=False, proxies=self.proxies
+        )
         response.raise_for_status()
         report_path = os.path.join(self.report_dir, f"{self.pcap_id}.json")
         with open(report_path, "w") as f:
