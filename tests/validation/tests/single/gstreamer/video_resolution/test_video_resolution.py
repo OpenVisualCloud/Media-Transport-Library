@@ -10,13 +10,7 @@ from mtl_engine.media_files import yuv_files
 from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
-@pytest.mark.parametrize(
-    "file",
-    [
-        pytest.param(f, marks=pytest.mark.smoke) if f == "i1080p59" else ()
-        for f in yuv_files.keys()
-    ],
-)
+@pytest.mark.parametrize("file", yuv_files.keys())
 def test_video_resolutions(
     hosts,
     build,
@@ -46,6 +40,7 @@ def test_video_resolutions(
         framerate=video_file["fps"],
         format=GstreamerApp.video_format_change(video_file["format"]),
         media_path=media,
+        duration=3,
         host=host,
     )
 
@@ -63,7 +58,7 @@ def test_video_resolutions(
 
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[1],
+        nic_port_list=host.vfs[0],
         output_path=os.path.join(media, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
@@ -84,8 +79,8 @@ def test_video_resolutions(
             output_file=os.path.join(media, "output_video.yuv"),
             test_time=test_time,
             host=host,
-            tx_first=True,
-            sleep_interval=0,
+            tx_first=False,
+            sleep_interval=2,
             capture_cfg=capture_cfg,
         )
     finally:

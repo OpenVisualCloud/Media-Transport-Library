@@ -136,7 +136,7 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
     /* wake up the thread */
     info("%s(%d), wait app thread stop\n", __func__, idx);
     if (s->handle) st20p_rx_wake_block(s->handle);
-    pthread_join(s->st20p_app_thread, NULL);
+    if (s->st20p_app_thread) pthread_join(s->st20p_app_thread, NULL);
   }
 
   if (s->handle) {
@@ -159,19 +159,20 @@ static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
   double time_sec = (double)(cur_time - s->last_stat_time_ns) / NS_PER_S;
   double tx_rate_m, fps;
   int ret;
-  struct st20_rx_port_status stats;
+  struct st20_rx_user_stats stats;
 
   if (!s->handle) return 0;
 
   for (uint8_t port = 0; port < s->num_port; port++) {
-    ret = st20p_rx_get_port_stats(s->handle, port, &stats);
+    ret = st20p_rx_get_session_stats(s->handle, &stats);
+
     if (ret < 0) return ret;
-    tx_rate_m = (double)stats.bytes * 8 / time_sec / MTL_STAT_M_UNIT;
-    fps = (double)stats.frames / time_sec;
+    tx_rate_m = (double)stats.common.port[port].bytes * 8 / time_sec / MTL_STAT_M_UNIT;
+    fps = (double)stats.common.port[port].frames / time_sec;
 
     info("%s(%d,%u), rx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
-    st20p_rx_reset_port_stats(s->handle, port);
   }
+  st20p_rx_reset_session_stats(s->handle);
 
   s->last_stat_time_ns = cur_time;
   return 0;

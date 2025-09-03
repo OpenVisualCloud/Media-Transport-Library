@@ -31,6 +31,7 @@ def test_video_format(
         framerate=video_file["fps"],
         format=GstreamerApp.video_format_change(video_file["format"]),
         media_path=media,
+        duration=3,
         host=host,
     )
 
@@ -48,7 +49,7 @@ def test_video_format(
 
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[1],
+        nic_port_list=host.vfs[0],
         output_path=os.path.join(media, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
@@ -70,8 +71,8 @@ def test_video_format(
             output_file=os.path.join(media, "output_video.yuv"),
             test_time=test_time,
             host=host,
-            tx_first=True,
-            sleep_interval=0,
+            tx_first=False,
+            sleep_interval=4,
             capture_cfg=capture_cfg,
         )
     finally:
