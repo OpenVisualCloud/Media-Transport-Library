@@ -163,10 +163,10 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   gstelement_class = GST_ELEMENT_CLASS(klass);
   gstvideosinkelement_class = GST_VIDEO_SINK_CLASS(klass);
 
-  gst_element_class_set_metadata(
-      gstelement_class, "MtlTxSt20Sink", "Sink/Video",
-      "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
-      "Dawid Wesierski <dawid.wesierski@intel.com>");
+  gst_element_class_set_metadata(gstelement_class, "MtlTxSt20Sink", "Sink/Video",
+                                 "MTL transmission plugin for SMPTE ST 2110-20 "
+                                 "standard (uncompressed video)",
+                                 "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
                                             &gst_mtl_st20p_tx_sink_pad_template);
@@ -199,12 +199,13 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_USE_PTS_FOR_PACING,
-      g_param_spec_boolean(
-          "use-pts-for-pacing", "Use PTS for packet pacing",
-          "This property modifies the default behavior where MTL handles packet pacing. "
-          "Instead, it uses the buffer's PTS (Presentation Timestamp) to determine the "
-          "precise time for sending packets.",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean("use-pts-for-pacing", "Use PTS for packet pacing",
+                           "This property modifies the default behavior where "
+                           "MTL handles packet pacing. "
+                           "Instead, it uses the buffer's PTS (Presentation "
+                           "Timestamp) to determine the "
+                           "precise time for sending packets.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_PTS_PACING_OFFSET,

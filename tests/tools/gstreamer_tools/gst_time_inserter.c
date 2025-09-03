@@ -66,7 +66,8 @@ static void gst_time_inserter_class_init(GstTimeInserterClass* klass) {
 
   gst_element_class_set_static_metadata(
       gstelement_class, "tai time inserter", "Filter/Converter/Video",
-      "Enables automatic user time control by inserting TAI time into video frames",
+      "Enables automatic user time control by inserting TAI time into video "
+      "frames",
       "Dawid Wesierski <dawid.wesierski@intel.com>");
 }
 

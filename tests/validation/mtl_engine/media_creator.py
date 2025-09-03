@@ -204,6 +204,7 @@ def create_ancillary_rfc8331_pseudo_file(
     #   1: C=0b0, Line=9, HOffset=0, S=0b0, DID=0x60, SDID=0x01 (EIA 708B S334-1), Stream=0, DataCount=16
     #   2: C=0b0, Line=10, HOffset=0, S=0b0, DID=0x60, SDID=0x60 (Time Code S12M-2), Stream=0, DataCount=16
     #   3: C=0b0, Line=11, HOffset=0, S=0b0, DID=0x41, SDID=0x07 (SCTE 104 S2010), Stream=0, DataCount=60
+    # 4rd block: 0 packets:
     ancillary_hex_table = [
         "\\x00\\x09\\x00\\x00\\x00\\x60\\x60\\x10\\x70\\x50\\x50\\x00\\x20\\x80\\x00\\x00"
         "\\x40\\x50\\x50\\x20\\x10\\x00\\xe0\\x00\\x00\\x0a\\x00\\x00\\x00\\x61\\x01\\x10"
@@ -222,6 +223,7 @@ def create_ancillary_rfc8331_pseudo_file(
         "\\x04\\x23\\x2a\\x30\\x32\\x01\\x0b\\x00\\x1b\\x00\\x00\\x03\\xe9\\x00\\x01\\x0e"
         "\\x01\\x09\\x31\\x31\\x38\\x31\\x33\\x38\\x37\\x38\\x31\\x22\\x01\\x01\\x00\\x01"
         "\\x00\\x00\\x00\\x00",
+        "",
     ]
 
     # Generate content by repeating ancillary_hex_table entries for each frame

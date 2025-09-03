@@ -123,6 +123,18 @@ static unsigned char ancillary_example3[] = {
     0x01, 0x82, 0x53, 0x14, 0xC5, 0x38, 0x4C, 0x63, 0x34, 0xE1, 0x37, 0x4E, 0x13, 0x18,
     0x89, 0x01, 0x40, 0x60, 0x04, 0x06, 0x00, 0x80, 0x20, 0x08, 0x01, 0xD8};
 
+/*
+  Example ancillary payload data
+  Ancillary packet count: 0
+ **/
+static unsigned char ancillary_example4[] = {0x00, 0x00, 0x00, 0x00};
+
+static unsigned char* ancillary_packets[] = {ancillary_example, ancillary_example2,
+                                             ancillary_example3, ancillary_example4};
+static const size_t ancillary_packet_sizes[] = {
+    sizeof(ancillary_example), sizeof(ancillary_example2), sizeof(ancillary_example3),
+    sizeof(ancillary_example4)};
+
 GST_DEBUG_CATEGORY_STATIC(gst_anc_generator_debug);
 #define GST_CAT_DEFAULT gst_anc_generator_debug
 
@@ -322,21 +334,10 @@ static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offse
   const unsigned char* package;
   size_t package_size;
 
-  guint pattern_index = src->frames_generated % 3;
-  switch (pattern_index) {
-    case 0:
-      package = ancillary_example;
-      package_size = sizeof(ancillary_example);
-      break;
-    case 1:
-      package = ancillary_example2;
-      package_size = sizeof(ancillary_example2);
-      break;
-    default:
-      package = ancillary_example3;
-      package_size = sizeof(ancillary_example3);
-      break;
-  }
+  guint pattern_index =
+      src->frames_generated % (sizeof(ancillary_packets) / sizeof(ancillary_packets[0]));
+  package = ancillary_packets[pattern_index];
+  package_size = ancillary_packet_sizes[pattern_index];
 
   *buf = gst_buffer_new_allocate(NULL, package_size, NULL);
   if (!*buf) {
@@ -355,10 +356,11 @@ static GstFlowReturn gst_anc_generator_create(GstBaseSrc* basesrc, guint64 offse
   src->running_time += frame_duration;
   src->frames_generated++;
 
-  GST_DEBUG_OBJECT(
-      src, "Generated frame %u with pattern %u, size %zu bytes, PTS %" GST_TIME_FORMAT,
-      src->frames_generated, pattern_index, package_size,
-      GST_TIME_ARGS(GST_BUFFER_PTS(*buf)));
+  GST_DEBUG_OBJECT(src,
+                   "Generated frame %u with pattern %u, size %zu bytes, PTS "
+                   "%" GST_TIME_FORMAT,
+                   src->frames_generated, pattern_index, package_size,
+                   GST_TIME_ARGS(GST_BUFFER_PTS(*buf)));
 
   return GST_FLOW_OK;
 }

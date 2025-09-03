@@ -387,17 +387,31 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
 
 static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
     struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size) {
-  int package_size;
-  int payload_len;
+  gint package_size;
+  gint payload_len;
 
-  package_size =
-      ((OFFSET_COUNT_IN_10_BIT + udw_size) * USER_DATA_WORD_BIT_SIZE) / BYTE_SIZE;
-  package_size =
-      (OFFSET_COUNT_IN_10_BIT - package_size % OFFSET_COUNT_IN_10_BIT) + package_size;
-  payload_len =
-      sizeof(struct st40_rfc8331_payload_hdr) - OFFSET_COUNT_IN_10_BIT + package_size;
+  package_size = ((WORD_10_BIT_ALIGN + udw_size) * USER_DATA_WORD_BIT_SIZE) / BYTE_SIZE;
+  payload_len = sizeof(struct st40_rfc8331_payload_hdr) -
+                (package_size % WORD_10_BIT_ALIGN) + package_size;
 
   return (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
+}
+
+static GstFlowReturn gst_mtl_st40_rx_check_parity(
+    const struct st40_rfc8331_payload_hdr* payload_hdr) {
+  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did)) {
+    GST_ERROR("Parity check failed for DID");
+    return GST_FLOW_ERROR;
+  }
+  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid)) {
+    GST_ERROR("Parity check failed for SDID");
+    return GST_FLOW_ERROR;
+  }
+  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
+    GST_ERROR("Parity check failed for Data Count");
+    return GST_FLOW_ERROR;
+  }
+  return GST_FLOW_OK;
 }
 
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buffer,
@@ -412,10 +426,19 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   anc_count = hdr->first_hdr_chunk.anc_count;
 
-  if (anc_count == 0 || anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
+  if (anc_count < 0 || anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
     GST_ERROR("Ancillary data count: %d (must be between 1 and %d)", anc_count,
               ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
     return GST_FLOW_ERROR;
+  }
+
+  if (anc_count == 0) {
+    *buffer = gst_buffer_new_allocate(NULL, 0, NULL);
+    if (!*buffer) {
+      GST_ERROR("Failed to allocate empty buffer");
+      return GST_FLOW_ERROR;
+    }
+    return GST_FLOW_OK;
   }
 
   /* local is fine anc_count will not be bigger than 20*/
@@ -426,18 +449,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   for (int i = 0; i < anc_count; i++) {
     payload_hdr->swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
     payload_hdr->swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
-    if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did)) {
-      GST_ERROR("Parity check failed for DID");
-      for (int j = 0; j < i; j++) free(anc_data[j]);
-      return GST_FLOW_ERROR;
-    }
-    if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid)) {
-      GST_ERROR("Parity check failed for SDID");
-      for (int j = 0; j < i; j++) free(anc_data[j]);
-      return GST_FLOW_ERROR;
-    }
-    if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
-      GST_ERROR("Parity check failed for Data Count");
+    if (gst_mtl_st40_rx_check_parity(payload_hdr) != GST_FLOW_OK) {
       for (int j = 0; j < i; j++) free(anc_data[j]);
       return GST_FLOW_ERROR;
     }
@@ -494,6 +506,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   if (!gst_buffer_map(*buffer, &dest_info, GST_MAP_WRITE)) {
     GST_ERROR("Failed to map the buffer");
+    for (int i = 0; i < anc_count; i++) free(anc_data[i]);
     return GST_FLOW_ERROR;
   }
 

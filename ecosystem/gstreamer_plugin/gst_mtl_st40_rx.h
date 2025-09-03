@@ -52,13 +52,14 @@
 #define USER_DATA_WORD_BIT_SIZE 10
 #define BYTE_SIZE 8
 #define OFFSET_BIT 32
-#define OFFSET_COUNT_IN_10_BIT ((OFFSET_BIT / USER_DATA_WORD_BIT_SIZE) + 1)
+#define WORD_10_BIT_ALIGN ((OFFSET_BIT / USER_DATA_WORD_BIT_SIZE) + 1)
 
 /**
  * ST40_SIZE_OF_PAYLOAD_METADATA:
  * Defines the size (in bytes) of the payload metadata for ST40 streams.
  * This value is set to 8 to accommodate the following fields:
- * c | line_number | horizontal_offset | s | stream_num | did | sdid | data_count
+ * c | line_number | horizontal_offset | s | stream_num | did | sdid |
+ * data_count
  */
 #define ST40_BYTE_SIZE_OF_PAYLOAD_METADATA 8
 

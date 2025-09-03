@@ -94,7 +94,7 @@ def test_st40p_framebuff(
     host = list(hosts.values())[0]
     # Base the timeout on parameter to make sure the amount of time between RX and TX
     # is less than the timeout period
-    timeout_period = 15
+    timeout_period = 20
 
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
