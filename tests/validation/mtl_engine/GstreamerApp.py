@@ -6,8 +6,6 @@ import os
 import re
 import time
 
-from compliance.pcap_compliance import PcapComplianceClient
-
 from .execute import log_fail, run
 
 logger = logging.getLogger(__name__)
