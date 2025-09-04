@@ -30,9 +30,12 @@ jobs:
       - name: 'preparation: Get Runner ID'
         id: get-runner-id
         run: |
-          # Get the runner name from the GitHub environment variable
-          echo "runner_id=$RUNNER_NAME" >> "$GITHUB_OUTPUT"
-          echo "Using runner: $RUNNER_NAME (machine: $HOSTNAME)"
+          # Extract runner number from RUNNER_NAME (e.g., "cicd-1" -> "1")
+          RUNNER_NUMBER=$(echo "$RUNNER_NAME" | grep -o '[0-9]\+$' || echo "1")
+          # Format as runner-X
+          RUNNER_ID="runner-${RUNNER_NUMBER}"
+          echo "runner_id=$RUNNER_ID" >> "$GITHUB_OUTPUT"
+          echo "Using runner ID: $RUNNER_ID (from runner name: $RUNNER_NAME)"
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
@@ -133,7 +136,7 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
   validation-run-tests:
     needs: [validation-build-mtl]
-    runs-on: ${{ needs.validation-build-mtl.outputs.runner-id }}
+    runs-on: [self-hosted, "${{ needs.validation-build-mtl.outputs.runner-id }}"]
     timeout-minutes: 720
     env:
       PYTEST_RETRIES: '3'
