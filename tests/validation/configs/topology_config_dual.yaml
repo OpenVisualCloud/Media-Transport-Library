@@ -1,0 +1,32 @@
+---
+metadata:
+  version: '2.4'
+hosts:
+  - name: host-1
+    instantiate: true
+    role: sut
+    network_interfaces:
+      - pci_device: 8086:1592
+        interface_index: 0 # all
+    connections:
+      - ip_address: HOST_1_IP_ADDRESS_PLACEHOLDER
+        connection_type: SSHConnection
+        connection_options:
+          port: 22
+          username: root
+          password: None
+          key_path: HOST_1_KEY_PATH_PLACEHOLDER
+  - name: host-2
+    instantiate: true
+    role: sut
+    network_interfaces:
+      - pci_device: 8086:1592
+        interface_index: 0 # all
+    connections:
+      - ip_address: HOST_2_IP_ADDRESS_PLACEHOLDER
+        connection_type: SSHConnection
+        connection_options:
+          port: 22
+          username: root
+          password: None
+          key_path: HOST_2_KEY_PATH_PLACEHOLDER

@@ -16,9 +16,9 @@ env:
 permissions:
   contents: read
 jobs:
-  validation-build-mtl:
+  run-tests:
     runs-on: [Linux, self-hosted, DPDK]
-    timeout-minutes: 60
+    timeout-minutes: 780
     outputs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
     steps:
@@ -124,13 +124,6 @@ jobs:
           source venv/bin/activate
           pip install -r requirements.txt
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
-  validation-run-tests:
-    needs: [validation-build-mtl]
-    runs-on: [Linux, self-hosted, DPDK]
-    timeout-minutes: 720
-    env:
-      PYTEST_RETRIES: '3'
-    steps:
       - name: Replace secrets in example config files
         run: |
           sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
