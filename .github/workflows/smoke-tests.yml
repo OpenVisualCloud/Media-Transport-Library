@@ -133,7 +133,7 @@ jobs:
     steps:
       - name: Replace secrets in example config files
         run: |
-          sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
+          sed -i "s+MTL_PATH_PLACEHOLDER+${{ github.workspace }}+" tests/validation/configs/test_config.yaml
           sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
           sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
           sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
