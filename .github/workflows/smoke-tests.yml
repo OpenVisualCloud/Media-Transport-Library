@@ -30,7 +30,9 @@ jobs:
       - name: 'preparation: Get Runner ID'
         id: get-runner-id
         run: |
-          echo "runner_id=$HOSTNAME" >> "$GITHUB_OUTPUT"
+          # Get the runner name from the GitHub environment variable
+          echo "runner_id=$RUNNER_NAME" >> "$GITHUB_OUTPUT"
+          echo "Using runner: $RUNNER_NAME (machine: $HOSTNAME)"
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
