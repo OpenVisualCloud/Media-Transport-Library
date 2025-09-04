@@ -131,7 +131,7 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
   validation-run-tests:
     needs: [validation-build-mtl]
-    runs-on: ${{ format('[Linux, self-hosted, DPDK, {0}]', needs.validation-build-mtl.outputs.runner-id) }}
+    runs-on: ${{ needs.validation-build-mtl.outputs.runner-id }}
     timeout-minutes: 720
     env:
       PYTEST_RETRIES: '3'
