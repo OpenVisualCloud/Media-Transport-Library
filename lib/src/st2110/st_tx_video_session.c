@@ -655,9 +655,9 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     if (required_tai) {
       to_epoch = 0;
     } else {
-      to_epoch = start_time_ptp - ptp_time;
       epochs++; /* assign to next */
       start_time_ptp = pacing_start_time(pacing, epochs);
+      to_epoch = start_time_ptp - ptp_time;
 
       if (to_epoch < 0) {
         /* should never happen */
