@@ -21,11 +21,16 @@ jobs:
     timeout-minutes: 60
     outputs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
+      runner-id: ${{ steps.get-runner-id.outputs.runner_id }}
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
+      - name: 'preparation: Get Runner ID'
+        id: get-runner-id
+        run: |
+          echo "runner_id=$HOSTNAME" >> "$GITHUB_OUTPUT"
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
@@ -126,7 +131,7 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
   validation-run-tests:
     needs: [validation-build-mtl]
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: ${{ format('[Linux, self-hosted, DPDK, {0}]', needs.validation-build-mtl.outputs.runner-id) }}
     timeout-minutes: 720
     env:
       PYTEST_RETRIES: '3'
@@ -167,6 +172,7 @@ jobs:
         run: |
           sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
       - name: "upload report"
+        if: always()
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
