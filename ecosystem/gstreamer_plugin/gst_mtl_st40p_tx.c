@@ -568,18 +568,29 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
         ntohl(rfc8331_meta.headers[i]->swapped_second_hdr_chunk);
 
     payload_cursor = (uint8_t*)&rfc8331_meta.headers[i]->swapped_second_hdr_chunk;
+    /*
+     * In RFC 8331, the header struct occupies only 30 bits, not 32.
+     * The layout is:
+     *   |C|   Line_Number=9     |   Horizontal_Offset   |S| StreamNum=0 |
+     *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     *   |         DID       |        SDID       |  Data_Count=0x84  |
+     * We are currently skipping 2 more bits than needed here.
+     * This will be accommodated a little bit later in the parsing logic with
+     * RFC_8331_PAYLOAD_HEADER_LOST_BITS define.
+     */
     bytes_left_to_process -= sizeof(struct st40_rfc8331_payload_hdr);
     data_count = payload_header.second_hdr_chunk.data_count & 0xff;
 
-    /* data count * 10 bits + 10 bit checksum - 2 bit word align */
-    udw_byte_size = (data_count * UDW_WORD_BIT_SIZE) + UDW_WORD_BIT_SIZE - 2;
+    /* data count * 10 bits + 10 bit checksum - 2 lost bit from the
+     * st40_rfc8331_payload_hdr */
+    udw_byte_size = (data_count * UDW_WORD_BIT_SIZE) + UDW_WORD_BIT_SIZE -
+                    RFC_8331_PAYLOAD_HEADER_LOST_BITS;
     /* round up to the nearest byte */
     udw_byte_size = (udw_byte_size + 7) / 8;
 
     if (bytes_left_to_process < udw_byte_size) {
       GST_ERROR("Buffer size (%u) is too small for data count (%d)",
                 bytes_left_to_process, udw_byte_size);
-      return GST_FLOW_ERROR;
     }
 
     /* Use data_size as the offset for the next UDW block.
@@ -614,9 +625,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     }
 
     bytes_left_to_process -= udw_byte_size;
-
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
+    printf("Checksum UDW: 0x%04x\n", udw);
 
     if (sink->use_pts_for_pacing) {
       frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;

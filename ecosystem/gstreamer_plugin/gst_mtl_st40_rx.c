@@ -420,13 +420,13 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   struct st40_rfc8331_payload_hdr* payload_hdr;
   GstMapInfo dest_info;
   guint16 data;
-  gint udw_size, anc_count;
-  guint buffer_size = 0, meta_offset;
+  gint udw_size;
+  guint buffer_size = 0, meta_offset, anc_count;
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   anc_count = hdr->first_hdr_chunk.anc_count;
 
-  if (anc_count < 0 || anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
+  if (anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
     GST_ERROR("Ancillary data count: %d (must be between 1 and %d)", anc_count,
               ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
     return GST_FLOW_ERROR;
@@ -441,7 +441,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
     return GST_FLOW_OK;
   }
 
-  /* local is fine anc_count will not be bigger than 20*/
+  /* local is fine anc_count will not be bigger than 20 and less than 0 */
   guint8* anc_data[anc_count];
   guint8 anc_data_count[anc_count];
 
