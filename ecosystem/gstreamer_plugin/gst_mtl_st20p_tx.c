@@ -163,10 +163,10 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
   gstelement_class = GST_ELEMENT_CLASS(klass);
   gstvideosinkelement_class = GST_VIDEO_SINK_CLASS(klass);
 
-  gst_element_class_set_metadata(
-      gstelement_class, "MtlTxSt20Sink", "Sink/Video",
-      "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
-      "Dawid Wesierski <dawid.wesierski@intel.com>");
+  gst_element_class_set_metadata(gstelement_class, "MtlTxSt20Sink", "Sink/Video",
+                                 "MTL transmission plugin for SMPTE ST 2110-20 "
+                                 "standard (uncompressed video)",
+                                 "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
                                             &gst_mtl_st20p_tx_sink_pad_template);
@@ -199,12 +199,13 @@ static void gst_mtl_st20p_tx_class_init(Gst_Mtl_St20p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_USE_PTS_FOR_PACING,
-      g_param_spec_boolean(
-          "use-pts-for-pacing", "Use PTS for packet pacing",
-          "This property modifies the default behavior where MTL handles packet pacing. "
-          "Instead, it uses the buffer's PTS (Presentation Timestamp) to determine the "
-          "precise time for sending packets.",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean("use-pts-for-pacing", "Use PTS for packet pacing",
+                           "This property modifies the default behavior where "
+                           "MTL handles packet pacing. "
+                           "Instead, it uses the buffer's PTS (Presentation "
+                           "Timestamp) to determine the "
+                           "precise time for sending packets.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_TX_PTS_PACING_OFFSET,
@@ -446,6 +447,11 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
 
   switch (GST_EVENT_TYPE(event)) {
     case GST_EVENT_CAPS:
+      if (sink->session_capabilites_set) {
+        GST_WARNING("Capabilities already set, ignoring");
+        return gst_pad_event_default(pad, parent, event);
+      }
+
       gst_event_parse_caps(event, &caps);
       if (sink->async_session_create) {
         thread_data = malloc(sizeof(GstMtlSt20pTxThreadData));
@@ -460,6 +466,7 @@ static gboolean gst_mtl_st20p_tx_sink_event(GstPad* pad, GstObject* parent,
           return FALSE;
         }
       }
+      sink->session_capabilites_set = TRUE;
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:
@@ -562,12 +569,8 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
   GstSt20pTxExternalDataParent* parent;
   struct st_frame* frame;
   struct st_ext_frame ext_frame;
-  GstVideoMeta* video_meta = gst_buffer_get_video_meta(buf);
+  GstVideoMeta* video_meta = NULL;
   gint buffer_n = gst_buffer_n_memory(buf);
-  if (!video_meta) {
-    g_print("Failed to get video meta from buffer\n");
-    return GST_FLOW_ERROR;
-  }
 
   parent = malloc(sizeof(GstSt20pTxExternalDataParent));
   if (!parent) {
@@ -615,11 +618,30 @@ static GstFlowReturn gst_mtl_st20p_tx_zero_copy(Gst_Mtl_St20p_Tx* sink, GstBuffe
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
     }
 
-    for (int i = 0; i < video_meta->n_planes; i++) {
-      ext_frame.addr[i] = child->map_info.data + video_meta->offset[i];
-      ext_frame.linesize[i] = video_meta->stride[i];
-      ext_frame.iova[i] = 0;
+    video_meta = gst_buffer_get_video_meta(buf);
+    if (video_meta) {
+      for (int i = 0; i < video_meta->n_planes; i++) {
+        ext_frame.addr[i] = child->map_info.data + video_meta->offset[i];
+        ext_frame.linesize[i] = video_meta->stride[i];
+        ext_frame.iova[i] = 0;
+      }
+
+    } else {
+      ext_frame.addr[0] = child->map_info.data;
+      ext_frame.iova[0] = 0;
+      ext_frame.linesize[0] = st_frame_least_linesize(frame->fmt, frame->width, 0);
+      guint8 planes = st_frame_fmt_planes(frame->fmt);
+
+      /* Assume video planes are stored contiguously in memory */
+      for (gint plane = 1; plane < planes; plane++) {
+        ext_frame.linesize[plane] =
+            st_frame_least_linesize(frame->fmt, frame->width, plane);
+        ext_frame.addr[plane] = (guint8*)ext_frame.addr[plane - 1] +
+                                ext_frame.linesize[plane - 1] * frame->height;
+        ext_frame.iova[plane] = 0;
+      }
     }
+
     ext_frame.size = child->map_info.size;
     ext_frame.opaque = child;
     frame->opaque = NULL;

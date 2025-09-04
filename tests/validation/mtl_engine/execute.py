@@ -191,6 +191,19 @@ def waitall(aps=List[AsyncProcess]):
     return
 
 
+def is_process_running(process):
+    logger.debug(f"Checking if process is running: {process}")
+    if hasattr(process, "running") and callable(getattr(process, "running")):
+        try:
+            result = process.running()
+            logger.debug(f"process.running(): {result}")
+            return result
+        except Exception as e:
+            logger.debug(f"Exception calling process.running(): {e}")
+            return False
+    return None
+
+
 def run(
     command: str,
     cwd: str = None,

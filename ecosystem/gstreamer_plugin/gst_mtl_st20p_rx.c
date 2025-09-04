@@ -149,10 +149,10 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
   gstelement_class = GST_ELEMENT_CLASS(klass);
   gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
 
-  gst_element_class_set_metadata(
-      gstelement_class, "MtlRxSt20Src", "Src/Video",
-      "MTL transmission plugin for SMPTE ST 2110-20 standard (uncompressed video)",
-      "Dawid Wesierski <dawid.wesierski@intel.com>");
+  gst_element_class_set_metadata(gstelement_class, "MtlRxSt20Src", "Src/Video",
+                                 "MTL transmission plugin for SMPTE ST 2110-20 "
+                                 "standard (uncompressed video)",
+                                 "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
                                             &gst_mtl_st20p_rx_src_pad_template);

@@ -407,15 +407,16 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
 }
 
 /**
- * Copies general initialization port values to session-specific port arguments if not
- * specified. If the primary port is not specified, the redundant port argument will be
- * copied from the general initialization ports regardless of its specification. If the
- * UDP port for the redundant port is not specified, it will be incremented by one over
- * the primary port.
+ * Copies general initialization port values to session-specific port arguments
+ * if not specified. If the primary port is not specified, the redundant port
+ * argument will be copied from the general initialization ports regardless of
+ * its specification. If the UDP port for the redundant port is not specified,
+ * it will be incremented by one over the primary port.
  *
- * @param general_args Pointer to the structure containing general initialization
- * parameters.
- * @param port_args Pointer to the structure containing session-specific port arguments.
+ * @param general_args Pointer to the structure containing general
+ * initialization parameters.
+ * @param port_args Pointer to the structure containing session-specific port
+ * arguments.
  */
 void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args,
                                                  SessionPortArgs* port_args) {
@@ -437,8 +438,9 @@ void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args,
 }
 
 /**
- * Parses the transmission port arguments and initializes the tranmission port structure.
- * Validates and sets the destination IP address, port number, UDP port, and payload type.
+ * Parses the transmission port arguments and initializes the tranmission port
+ * structure. Validates and sets the destination IP address, port number, UDP
+ * port, and payload type.
  *
  * @param port Pointer to the transmission port structure to be initialized.
  * @param port_args Pointer to the structure containing the port arguments.
@@ -485,8 +487,9 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port,
 }
 
 /**
- * Parses the transmission port arguments and initializes the receive port structure.
- * Validates and sets the destination IP address, port number, UDP port, and payload type.
+ * Parses the transmission port arguments and initializes the receive port
+ * structure. Validates and sets the destination IP address, port number, UDP
+ * port, and payload type.
  *
  * @param port Pointer to the transmission port structure to be initialized.
  * @param port_args Pointer to the structure containing the port arguments.

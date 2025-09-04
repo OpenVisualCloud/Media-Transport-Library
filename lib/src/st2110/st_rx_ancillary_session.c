@@ -123,7 +123,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   /* 0b10: first field (bit 1 set, bit 0 clear)
      0b11: second field (bit 1 set, bit 0 set) */
   if (rfc8331->first_hdr_chunk.f & 0x2) {
-    if (rfc8331->first_hdr_chunk.f & 0x1) {
+ if (rfc8331->first_hdr_chunk.f & 0x1) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
     } else {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
