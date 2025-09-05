@@ -8,41 +8,15 @@ The validation framework uses pytest to organize and execute tests across variou
 
 ## Test Framework Structure
 
-```plaintext
-tests/validation/
-├── common/              # Shared utilities for tests
-│   ├── ffmpeg_handler/  # FFmpeg integration utilities
-│   ├── integrity/       # Data integrity verification tools
-│   └── nicctl.py        # Network interface control
-├── configs/             # Test configuration files
-│   ├── test_config.yaml      # Test environment settings
-│   └── topology_config.yaml  # Network topology configuration
-├── create_pcap_file/    # Tools for packet capture file creation
-├── mtl_engine/          # Core test framework components
-│   ├── execute.py       # Test execution management
-│   ├── RxTxApp.py       # RX/TX application interface
-│   ├── GstreamerApp.py  # GStreamer integration
-│   ├── ffmpeg_app.py    # FFmpeg integration
-│   ├── csv_report.py    # Test result reporting
-│   └── ramdisk.py       # RAM disk management
-├── tests/               # Test modules
-│   ├── single/          # Single-flow test scenarios
-│   │   ├── dma/         # DMA tests
-│   │   ├── ffmpeg/      # FFmpeg integration tests
-│   │   ├── gstreamer/   # GStreamer integration tests
-│   │   ├── kernel_socket/ # Kernel socket tests
-│   │   ├── performance/ # Performance benchmarking
-│   │   ├── ptp/         # Precision Time Protocol tests
-│   │   ├── st20p/       # ST2110-20 video tests
-│   │   ├── st22p/       # ST2110-22 compressed video tests
-│   │   ├── st30p/       # ST2110-30 audio tests
-│   │   └── st41/        # ST2110-40 ancillary data tests
-│   ├── dual/            # Dual-flow test scenarios
-│   └── invalid/         # Error handling and negative test cases
-├── conftest.py          # pytest configuration and fixtures
-├── pytest.ini           # pytest settings
-└── requirements.txt     # Python dependencies
-```
+The validation framework is organized into the following main components:
+
+- **common/**: Shared utilities for test functionality, including FFmpeg handlers, integrity verification tools, and network interface control
+- **configs/**: Configuration files for test environment and network topology
+- **mtl_engine/**: Core test framework components that manage test execution, application interfaces, and result reporting
+- **tests/**: Test modules organized by scenario type:
+  - **single/**: Single-flow test scenarios for various protocols (ST2110-20/22/30/40), backends, and integrations
+  - **dual/**: Tests for multiple simultaneous flows
+  - **invalid/**: Error handling and negative test cases
 
 ## Setup and Installation
 
@@ -50,8 +24,10 @@ tests/validation/
 
 - Python 3.9 or higher
 - Media Transport Library built and installed
-- Network interfaces configured for testing
-- Sufficient permissions for network management
+- Test media files (currently maintained on NFS)
+- Network interfaces as specified in MTL's run.md document (VFs will be created automatically)
+- Root privileges or equivalent (sudo) for network operations done by script/nicctl.sh
+- FFmpeg and GStreamer plugins installed (required for integration tests)
 
 ### Environment Setup
 
@@ -110,6 +86,12 @@ Run specific test modules:
 python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml tests/single/st20p/test_st20p_rx.py
 ```
 
+Run specific test cases with parameters:
+
+```bash
+python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
+```
+
 ### Test Categories
 
 The tests are categorized with markers that can be used to run specific test groups:
@@ -126,11 +108,18 @@ The tests are categorized with markers that can be used to run specific test gro
 
 ### Generating HTML Reports
 
-You can generate HTML reports for test results:
+You can generate comprehensive HTML reports for test results that include test status, execution time, and detailed logs:
 
 ```bash
 python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke --template=html/index.html --report=report.html
 ```
+
+The generated report (report.html) provides:
+- Test execution summary and statistics
+- Detailed pass/fail status for each test
+- Execution time and performance metrics
+- Error logs and tracebacks for failed tests
+- System information for better debugging context
 
 ### Test Output and Reports
 
