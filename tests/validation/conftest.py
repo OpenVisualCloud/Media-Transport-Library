@@ -203,7 +203,8 @@ def mtl_manager(hosts):
     managers = {}
     for host in hosts.values():
         mgr = MtlManager(host)
-        mgr.start()
+        if not mgr.start():
+            raise RuntimeError(f"Failed to start MtlManager on host {host.name}")
         managers[host.name] = mgr
     yield managers
     for mgr in managers.values():

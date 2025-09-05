@@ -53,13 +53,37 @@ class MtlManager:
 
     def stop(self):
         """
-        Stops all MtlManager processes on the remote host using sudo pkill.
+        Stops the MtlManager process on the remote host.
+        First attempts to gracefully stop the process if it's tracked,
+        then falls back to pkill if needed.
         """
+        if self.mtl_manager_process and self.mtl_manager_process.running:
+            try:
+                logger.info(f"Stopping MtlManager using process object methods...")
+                # Try graceful termination first
+                self.mtl_manager_process.stop()
+                
+                # Check if the process stopped gracefully
+                if self.mtl_manager_process.running:
+                    logger.info("MtlManager still running, trying kill...")
+                    self.mtl_manager_process.kill()
+                
+                # Check logs for errors
+                log_output = self.mtl_manager_process.stdout_text
+                if log_output:
+                    if "error" in log_output.lower() or "fail" in log_output.lower():
+                        logger.error(f"Errors found in MtlManager logs: {log_output}")
+                    
+                logger.info("MtlManager stopped successfully.")
+                return
+            except Exception as e:
+                logger.error(f"Error while stopping MtlManager process: {e}")
+        
+        # Fallback to pkill if the process object is not available or the above failed
         connection = self.host.connection
         try:
-            logger.info("Stopping MtlManager using sudo pkill MtlManager...")
+            logger.info("Stopping MtlManager using sudo pkill MtlManager (fallback)...")
             connection.execute_command("sudo pkill MtlManager")
             logger.info("MtlManager stopped (via pkill).")
         except ConnectionCalledProcessError as e:
-            logger.error(f"Failed to stop MtlManager: {e}")
-        pass
+            logger.error(f"Failed to stop MtlManager via pkill: {e}")
