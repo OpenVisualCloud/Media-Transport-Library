@@ -12,8 +12,12 @@ import sys
 import time
 from pathlib import Path
 
-import cv2
-import pytesseract
+try:
+    import cv2
+    import pytesseract
+except ImportError:
+    pass
+
 
 STARTING_FRAME = 1  # The frame number from which processing starts.
 TEXT_POSITION_X = 0  # X-coordinate for text overlay on video frames.
@@ -80,6 +84,8 @@ class VideoIntegritor:
         self.delete_file = delete_file
 
     def shift_src_chunk_by_first_frame_no(self, out_file):
+        if "cv2" not in sys.modules or "pytesseract" not in sys.modules:
+            raise ImportError("Required modules cv2 and pytesseract are not available.")
         font_size = self.height // TEXT_FONT_SCALE
         custom_config = r"--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789"
         cmd = [
