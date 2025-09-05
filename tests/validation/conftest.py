@@ -10,6 +10,7 @@ import time
 from typing import Dict
 
 import pytest
+from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import Nicctl
 from create_pcap_file.netsniff import NetsniffRecorder
 from create_pcap_file.tcpdump import TcpDumpRecorder
@@ -219,6 +220,23 @@ def media_file(media_ramdisk, request, hosts, test_config):
             logging.log(
                 level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
             )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mtl_manager(hosts):
+    """
+    Automatically start MtlManager on all hosts at the beginning of the test session,
+    and stop it at the end.
+    """
+    managers = {}
+    for host in hosts.values():
+        mgr = MtlManager(host)
+        if not mgr.start():
+            raise RuntimeError(f"Failed to start MtlManager on host {host.name}")
+        managers[host.name] = mgr
+    yield managers
+    for mgr in managers.values():
+        mgr.stop()
 
 
 def pytest_addoption(parser):

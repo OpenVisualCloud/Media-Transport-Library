@@ -1250,44 +1250,6 @@ def check_and_set_ip(interface_name: str, ip_adress="192.168.17.102/24"):
         print(f"An error occured while trying to bind ip address to {interface_name}")
 
 
-def check_and_bind_interface(interface_address: list, interface_mode="vf"):
-    try:
-        ifconfig_output = subprocess.check_output(["ifconfig"], universal_newlines=True)
-
-        if "ens6f1" not in ifconfig_output and interface_mode == "pmd":
-            subprocess.run(
-                [
-                    "sudo",
-                    "/home/labrat/mtl/Media-Transport-Library/script/nicctl.sh",
-                    "bind_pmd",
-                    interface_address[0],
-                ]
-            )
-            subprocess.run(
-                [
-                    "sudo",
-                    "/home/labrat/mtl/Media-Transport-Library/script/nicctl.sh",
-                    "disable_vf",
-                    interface_address[1],
-                ]
-            )
-
-        if "ens6f0" in ifconfig_output and interface_mode == "vf":
-            subprocess.run(
-                [
-                    "sudo",
-                    "/home/labrat/mtl/Media-Transport-Library/script/nicctl.sh",
-                    "create_vf",
-                    interface_address[0],
-                ]
-            )
-
-    except subprocess.CalledProcessError as e:
-        print(f"An error occured while running ifconfig: {e}")
-    except Exception as e:
-        print(f"An unexpected error occured while setting interface: {e}")
-
-
 def get_case_id() -> str:
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "rxtxapp_test")
     # Extract the test function name and parameters
