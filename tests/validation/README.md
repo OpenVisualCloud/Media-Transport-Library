@@ -8,7 +8,7 @@ The validation framework uses pytest to organize and execute tests across variou
 
 ## Test Framework Structure
 
-```
+```plaintext
 tests/validation/
 ├── common/              # Shared utilities for tests
 │   ├── ffmpeg_handler/  # FFmpeg integration utilities
@@ -76,7 +76,7 @@ Edit `configs/test_config.yaml` with the appropriate paths:
 - Adjust RAM disk settings if needed
 
 Edit `configs/topology_config.yaml` to match your network configuration:
-- Set the correct `ip_address`, `SSH_PORT`, `USERNAME`, and either use `KEY_PATH` 
+- Set the correct `ip_address`, `SSH_PORT`, `USERNAME`, and `KEY_PATH`
 - Configure the appropriate `pci_device` for your network interfaces
 
 4. Start the MtlManager service:

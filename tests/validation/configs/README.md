@@ -69,7 +69,7 @@ hosts:
           key_path: /path/to/ssh/key
 ```
 
-#### Key Parameters
+#### Topology Parameters
 
 - **metadata.version**: Configuration format version
 - **hosts**: List of hosts in the test topology
