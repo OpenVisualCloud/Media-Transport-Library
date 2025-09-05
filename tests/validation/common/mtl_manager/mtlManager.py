@@ -62,23 +62,23 @@ class MtlManager:
                 logger.info(f"Stopping MtlManager using process object methods...")
                 # Try graceful termination first
                 self.mtl_manager_process.stop()
-                
+
                 # Check if the process stopped gracefully
                 if self.mtl_manager_process.running:
                     logger.info("MtlManager still running, trying kill...")
                     self.mtl_manager_process.kill()
-                
+
                 # Check logs for errors
                 log_output = self.mtl_manager_process.stdout_text
                 if log_output:
                     if "error" in log_output.lower() or "fail" in log_output.lower():
                         logger.error(f"Errors found in MtlManager logs: {log_output}")
-                    
+
                 logger.info("MtlManager stopped successfully.")
                 return
             except Exception as e:
                 logger.error(f"Error while stopping MtlManager process: {e}")
-        
+
         # Fallback to pkill if the process object is not available or the above failed
         connection = self.host.connection
         try:
