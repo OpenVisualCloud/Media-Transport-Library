@@ -59,7 +59,7 @@ class MtlManager:
         """
         if self.mtl_manager_process and self.mtl_manager_process.running:
             try:
-                logger.info(f"Stopping MtlManager using process object methods...")
+                logger.info("Stopping MtlManager using process object methods...")
                 # Try graceful termination first
                 self.mtl_manager_process.stop()
 
