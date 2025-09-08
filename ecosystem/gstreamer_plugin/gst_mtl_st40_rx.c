@@ -427,7 +427,7 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
   anc_count = hdr->first_hdr_chunk.anc_count;
 
   if (anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
-    GST_ERROR("Ancillary data count: %d (must be between 1 and %d)", anc_count,
+    GST_ERROR("Ancillary data count: %d must not be bigger then %d", anc_count,
               ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
     return GST_FLOW_ERROR;
   }
