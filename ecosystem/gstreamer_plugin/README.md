@@ -437,6 +437,11 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 |---------------------|--------|-------------------------------------------------------|-----------------------------|---------------|
 | buffer-size         | uint   | Size of the buffer used for receiving data            | 0 to G_MAXUINT (power of 2) | 1024          |
 | timeout             | uint   | Timeout in seconds for getting mbuf                   | 0 to G_MAXUINT              | 10            |
+| include-metadata-in-buffer | gboolean | Inserts the ancillary data into buffer       | TRUE/FALSE                  | FALSE         |
+
+When `include-metadata-in-buffer` is enabled, each ancillary packet includes 8 additional bytes for metadata:
+`c | line_number | horizontal_offset | s | stream_num | did | sdid | data_count`
+This metadata provides detailed information about each packet for downstream processing.
 
 #### 5.2.2. Example GStreamer Pipeline for Reception
 
