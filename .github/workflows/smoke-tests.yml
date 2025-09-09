@@ -5,10 +5,16 @@ on:
     branches:
       - main
       - 'maint-**'
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
   pull_request:
     branches:
       - main
       - 'maint-**'
+    paths-ignore:
+      - '**.md'
+      - 'doc/**'
 env:
   BUILD_TYPE: 'Release'
   DPDK_VERSION: '25.03'
