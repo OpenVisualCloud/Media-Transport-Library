@@ -23,6 +23,7 @@ permissions:
   contents: read
 jobs:
   validation-build-mtl:
+    if: github.repository == 'Media-Transport-Library/Media-Transport-Library'
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
     outputs:
@@ -142,6 +143,7 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
   validation-run-tests:
     needs: [validation-build-mtl]
+    if: github.repository == 'Media-Transport-Library/Media-Transport-Library'
     runs-on: [self-hosted, "${{ needs.validation-build-mtl.outputs.runner-id }}"]
     timeout-minutes: 720
     env:

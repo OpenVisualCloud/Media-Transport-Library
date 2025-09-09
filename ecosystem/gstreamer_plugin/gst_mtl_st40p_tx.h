@@ -56,6 +56,7 @@
 /* rfc8331 header consist of rows 3 * 10 bits + 2 bits  */
 #define RFC_8331_WORD_BYTE_SIZE (4)
 #define RFC_8331_PAYLOAD_HEADER_SIZE 8
+#define RFC_8331_PAYLOAD_HEADER_LOST_BITS 2
 
 #include <experimental/st40_pipeline_api.h>
 #include <st40_api.h>

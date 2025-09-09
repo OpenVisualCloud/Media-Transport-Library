@@ -135,10 +135,10 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   gstelement_class = GST_ELEMENT_CLASS(klass);
   gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
 
-  gst_element_class_set_metadata(
-      gstelement_class, "MtlRxSt30Src", "Src/Audio",
-      "MTL transmission plugin for SMPTE ST 2110-30 standard (uncompressed audio)",
-      "Dawid Wesierski <dawid.wesierski@intel.com>");
+  gst_element_class_set_metadata(gstelement_class, "MtlRxSt30Src", "Src/Audio",
+                                 "MTL transmission plugin for SMPTE ST 2110-30 "
+                                 "standard (uncompressed audio)",
+                                 "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
                                             &gst_mtl_st30p_rx_src_pad_template);

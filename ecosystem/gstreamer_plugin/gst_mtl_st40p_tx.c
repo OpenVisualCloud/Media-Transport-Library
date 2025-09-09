@@ -200,12 +200,13 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_USE_PTS_FOR_PACING,
-      g_param_spec_boolean(
-          "use-pts-for-pacing", "Use PTS for packet pacing",
-          "This property modifies the default behavior where MTL handles packet pacing. "
-          "Instead, it uses the buffer's PTS (Presentation Timestamp) to determine the "
-          "precise time for sending packets.",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean("use-pts-for-pacing", "Use PTS for packet pacing",
+                           "This property modifies the default behavior where "
+                           "MTL handles packet pacing. "
+                           "Instead, it uses the buffer's PTS (Presentation "
+                           "Timestamp) to determine the "
+                           "precise time for sending packets.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PTS_PACING_OFFSET,
@@ -409,8 +410,8 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   }
 
   ops_tx.interlaced = false;
-  /* Only single ANC data packet is possible when metadata is not being parsed from
-   * parse_rfc8331_input mode per frame. anc_count = 1 TODO: allow more */
+  /* Only single ANC data packet is possible when metadata is not being parsed
+   * from parse_rfc8331_input mode per frame. anc_count = 1 TODO: allow more */
   sink->frame_size = MAX_UDW_SIZE;
 
   if (sink->max_combined_udw_size)
@@ -469,13 +470,14 @@ static gboolean gst_mtl_st40p_tx_sink_event(GstPad* pad, GstObject* parent,
 /**
  * @brief Fills the metadata for a st40 frame.
  *
- * This function initializes the metadata fields of a given st40 frame with the provided
- * data and metadata values. It sets the first metadata entry with the specified DID,
- * SDID, and data size, and assigns the data pointer to the frame.
- * Note: Most of the fields are hardcoded, and only first metadata block is filled as
- * only one ANC Data packet per frame is allowed.
+ * This function initializes the metadata fields of a given st40 frame with the
+ * provided data and metadata values. It sets the first metadata entry with the
+ * specified DID, SDID, and data size, and assigns the data pointer to the
+ * frame. Note: Most of the fields are hardcoded, and only first metadata block
+ * is filled as only one ANC Data packet per frame is allowed.
  *
- * @param frame Pointer to the st40_frame structure to be filled. Cannot be NULL.
+ * @param frame Pointer to the st40_frame structure to be filled. Cannot be
+ * NULL.
  * @param data Pointer to the data to be associated with the frame.
  * @param data_size Size of the data in bytes.
  * @param did Data Identifier (DID) to be set in the metadata.
@@ -496,7 +498,8 @@ static void gst_mtl_st40p_tx_fill_meta(struct st40_frame_info* frame_info, void*
   frame_info->meta_num = 1;
 }
 
-/* we dont' really check the data here we let the st40 ancillary data to do so */
+/* we dont' really check the data here we let the st40 ancillary data to do so
+ */
 static GstFlowReturn gst_mtl_st40p_tx_parse_8331_meta(
     struct st40_frame_info* frame_info, struct st40_rfc8331_payload_hdr payload_header,
     guint anc_idx, guint udw_offset) {
@@ -546,6 +549,8 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     return GST_FLOW_ERROR;
   }
 
+  frame_info->meta_num = 0;
+
   for (int i = 0; i < anc_count; i++) {
     /* Processing of the input 8331 header */
     if (bytes_left_to_process < sizeof(struct st40_rfc8331_payload_hdr)) {
@@ -563,18 +568,29 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
         ntohl(rfc8331_meta.headers[i]->swapped_second_hdr_chunk);
 
     payload_cursor = (uint8_t*)&rfc8331_meta.headers[i]->swapped_second_hdr_chunk;
+    /*
+     * In RFC 8331, the header struct occupies only 30 bits, not 32.
+     * The layout is:
+     *   |C|   Line_Number=9     |   Horizontal_Offset   |S| StreamNum=0 |
+     *   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+     *   |         DID       |        SDID       |  Data_Count=0x84  |
+     * We are currently skipping 2 more bits than needed here.
+     * This will be accommodated a little bit later in the parsing logic with
+     * RFC_8331_PAYLOAD_HEADER_LOST_BITS define.
+     */
     bytes_left_to_process -= sizeof(struct st40_rfc8331_payload_hdr);
     data_count = payload_header.second_hdr_chunk.data_count & 0xff;
 
-    /* data count * 10 bits + 10 bit checksum*/
-    udw_byte_size = (data_count * UDW_WORD_BIT_SIZE) + UDW_WORD_BIT_SIZE;
+    /* data count * 10 bits + 10 bit checksum - 2 lost bit from the
+     * st40_rfc8331_payload_hdr */
+    udw_byte_size = (data_count * UDW_WORD_BIT_SIZE) + UDW_WORD_BIT_SIZE -
+                    RFC_8331_PAYLOAD_HEADER_LOST_BITS;
     /* round up to the nearest byte */
     udw_byte_size = (udw_byte_size + 7) / 8;
 
     if (bytes_left_to_process < udw_byte_size) {
       GST_ERROR("Buffer size (%u) is too small for data count (%d)",
                 bytes_left_to_process, udw_byte_size);
-      return GST_FLOW_ERROR;
     }
 
     /* Use data_size as the offset for the next UDW block.
@@ -609,9 +625,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     }
 
     bytes_left_to_process -= udw_byte_size;
-
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
+    printf("Checksum UDW: 0x%04x\n", udw);
 
     if (sink->use_pts_for_pacing) {
       frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
@@ -679,12 +695,11 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
 /**
  * @brief Parses a GstBuffer and prepares a frame for transmission.
  *
- * This function retrieves a frame from the ST40p transmitter handle, copies the relevant
- * data from the provided GstBuffer into the frame buffer, fills in ancillary metadata,
- * and submits the frame for transmission. It also handles timestamping if pacing is
- * enabled.
- * No memory management is done here, the caller is responsible for managing the
- * GstBuffer and its associated memory.
+ * This function retrieves a frame from the ST40p transmitter handle, copies the
+ * relevant data from the provided GstBuffer into the frame buffer, fills in
+ * ancillary metadata, and submits the frame for transmission. It also handles
+ * timestamping if pacing is enabled. No memory management is done here, the
+ * caller is responsible for managing the GstBuffer and its associated memory.
  *
  * @param sink Pointer to the Gst_Mtl_St40p_Tx sink element.
  * @param gst_buffer_memory GstMemory associated with the GstBuffer.
