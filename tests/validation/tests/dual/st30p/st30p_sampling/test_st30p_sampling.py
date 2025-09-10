@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import audio_files
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("audio_sampling", ["48kHz", "96kHz"])
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM16", "PCM24"])
 def test_st30p_sampling_dual(
