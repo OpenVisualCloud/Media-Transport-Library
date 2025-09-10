@@ -64,9 +64,6 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Make sure valid ownership is applied on runner directory tree
-        run: sudo chown -R iaac:iaac /home/actions-runner/_work
-        
       - name: Checkout MTL
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
