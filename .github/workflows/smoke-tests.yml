@@ -21,21 +21,11 @@ jobs:
     timeout-minutes: 60
     outputs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
-      runner-id: ${{ steps.get-runner-id.outputs.runner_id }}
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
-      - name: 'preparation: Get Runner ID'
-        id: get-runner-id
-        run: |
-          # Extract runner number from RUNNER_NAME (e.g., "cicd-1" -> "1")
-          RUNNER_NUMBER=$(echo "$RUNNER_NAME" | grep -o '[0-9]\+$' || echo "1")
-          # Format as runner-X
-          RUNNER_ID="runner-${RUNNER_NUMBER}"
-          echo "runner_id=$RUNNER_ID" >> "$GITHUB_OUTPUT"
-          echo "Using runner ID: $RUNNER_ID (from runner name: $RUNNER_NAME)"
       - name: 'preparation: Restore valid repository owner and print env'
         if: always()
         run: |
@@ -136,14 +126,14 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
   validation-run-tests:
     needs: [validation-build-mtl]
-    runs-on: [self-hosted, "${{ needs.validation-build-mtl.outputs.runner-id }}"]
+    runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 720
     env:
       PYTEST_RETRIES: '3'
     steps:
       - name: Replace secrets in example config files
         run: |
-          sed -i "s+MTL_PATH_PLACEHOLDER+${{ github.workspace }}+" tests/validation/configs/test_config.yaml
+          sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
           sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
           sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
           sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
@@ -177,7 +167,6 @@ jobs:
         run: |
           sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
       - name: "upload report"
-        if: always()
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
