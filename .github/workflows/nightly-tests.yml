@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   run-nightly-tests:
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [self-hosted, linux, x64, dpdk]
     timeout-minutes: 720
     steps:
       - uses: ./.github/actions/build.yml
