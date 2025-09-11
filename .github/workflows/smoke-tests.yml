@@ -16,7 +16,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, dpdk]
     timeout-minutes: 720
     steps:
-      - uses: ./.github/actions/build.yml
+      - uses: ./.github/actions/build
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
         id: pipenv-install
