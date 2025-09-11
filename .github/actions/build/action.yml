@@ -11,6 +11,7 @@ runs:
       run: |
         sudo chown -R "${USER}" "$(pwd)" || true
         env | grep TEST_ || true
+      shell: bash
     - name: 'preparation: Checkout openh264'
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -50,16 +51,19 @@ runs:
             gstreamer1.0-libav \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev
+      shell: bash
     - name: 'installation: Build mtl'
       run: |
         ./build.sh
         sudo ldconfig
+      shell: bash
     - name: 'installation: Build openh264'
       working-directory: openh264
       run: |
         make -j "$(nproc)"
         sudo make install
         sudo ldconfig
+      shell: bash
     - name: 'installation: Build FFmpeg'
       working-directory: ffmpeg
       run: |
@@ -70,7 +74,9 @@ runs:
         make -j "$(nproc)"
         sudo make install
         sudo ldconfig
+      shell: bash
     - name: 'installation: Build GStreamer'
       working-directory: ecosystem/gstreamer_plugin
       run: |
         ./build.sh
+      shell: bash
