@@ -8,8 +8,6 @@ jobs:
   validation-build-mtl:
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
-    outputs:
-      pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
     steps:
       - uses: ./.github/actions/build.yml
       - name: 'installation: Install pipenv environment'
@@ -19,7 +17,6 @@ jobs:
           python3 -m venv venv
           source venv/bin/activate
           pip install -r requirements.txt
-          echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
   validation-run-tests:
     needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
