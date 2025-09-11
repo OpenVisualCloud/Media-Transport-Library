@@ -16,6 +16,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, dpdk]
     timeout-minutes: 720
     steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
       - name: 'preparation: Checkout MTL'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -35,10 +39,6 @@ jobs:
           sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
           sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
           sed -i "s+KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config.yaml
-      - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
           eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
