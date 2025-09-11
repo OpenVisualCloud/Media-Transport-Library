@@ -2,10 +2,6 @@ name: nightly-tests-bare-metal
 on:
   schedule:
   - cron: '0 0 * * *' # Every day at midnight UTC
-env:
-  BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.03'
-  DPDK_REBUILD: 'false'
 permissions:
   contents: read
 jobs:
@@ -28,8 +24,6 @@ jobs:
     needs: [validation-build-mtl]
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 720
-    env:
-      PYTEST_RETRIES: '3'
     steps:
       - name: Replace secrets in example config files
         run: |
