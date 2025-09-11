@@ -45,14 +45,15 @@ extern "C" {
 #define ST20_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * User control the frame pacing by pass a timestamp in st20_tx_frame_meta,
- * lib will wait until timestamp is reached for each frame.
+ * User control the frame transmission time by passing a timestamp in st20_tx_frame_meta,
+ * lib will wait until timestamp is reached for each frame. The time of sending is aligned with
+ * virtual receiver read schedule.
  */
 #define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * st20_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ * If enabled, lib will assign the rtp timestamp to the value of timestamp in st20_tx_frame_meta
+ * (if needed the value will be converted to ST10_TIMESTAMP_FMT_MEDIA_CLK)
  */
 #define ST20_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
@@ -74,13 +75,17 @@ extern "C" {
 #define ST20_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * Set this flag to set rtp timestamp at the time of the first packet egresses from the
- * sender.
+ * It changes how ST20_TX_FLAG_USER_PACING works. if enabled, it does not align the transmission
+ * time to the virtual receiver read schedule.
+ * The first packet of the frame will be sent exactly at the time specified by the user.
+ * Additionally, it forces the same behavior as ST20_TX_FLAG_USER_TIMESTAMP does.
  */
-#define ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
+#define ST20_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(8))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * Set this flag to set rtp timestamp at the time of the epoch.
+ * If enabled the transmission time and RTP timestamp will be set exactly to epoch + N * frame_time,
+ * omitting TR_offset.
+ * Note: This will make the stream not narrow compliant because of VRX.
  */
 #define ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH (MTL_BIT32(9))
 /**
