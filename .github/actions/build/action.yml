@@ -11,10 +11,6 @@ runs:
       run: |
         sudo chown -R "${USER}" "$(pwd)" || true
         env | grep TEST_ || true
-    - name: 'preparation: Checkout MTL'
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        ref: '${{ github.ref }}'
     - name: 'preparation: Checkout openh264'
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:

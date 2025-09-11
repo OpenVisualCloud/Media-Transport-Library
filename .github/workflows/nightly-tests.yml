@@ -9,6 +9,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, dpdk]
     timeout-minutes: 720
     steps:
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: '${{ github.ref }}'
       - uses: ./.github/actions/build
       - name: 'installation: Install pipenv environment'
         working-directory: tests/validation
