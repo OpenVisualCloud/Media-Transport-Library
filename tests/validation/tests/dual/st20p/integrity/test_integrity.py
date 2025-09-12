@@ -15,6 +15,7 @@ from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize(
     "st20p_file, fps",
     [

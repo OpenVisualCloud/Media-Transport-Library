@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import anc_files
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("anc_format", ["closed_caption"])
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize("type_mode", ["frame", "line"])

@@ -8,6 +8,7 @@ import pytest
 from mtl_engine import GstreamerApp
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3])

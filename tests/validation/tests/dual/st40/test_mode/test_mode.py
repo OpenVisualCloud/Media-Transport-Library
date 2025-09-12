@@ -8,6 +8,7 @@ import pytest
 from mtl_engine.media_files import anc_files
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize("anc_keys", anc_files.keys())
 def test_mode_dual(
