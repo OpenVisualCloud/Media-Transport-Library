@@ -17,7 +17,7 @@ permissions:
   contents: read
 jobs:
   validation-build-mtl:
-    if: github.repository == 'Media-Transport-Library/Media-Transport-Library'
+    if: github.repository == 'OpenVisualCloud/Media-Transport-Library'
     runs-on: [Linux, self-hosted, DPDK]
     timeout-minutes: 60
     outputs:
