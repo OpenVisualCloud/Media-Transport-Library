@@ -118,32 +118,6 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
     return config
 
 
-def prepare_tcpdump(capture_cfg, host=None):
-    """
-    Prepare TcpDumpRecorder if capture_cfg is enabled and tool is tcpdump.
-
-    returns: TcpDumpRecorder instance or None.
-    """
-    if (
-        capture_cfg
-        and capture_cfg.get("enable")
-        and capture_cfg.get("tool") == "tcpdump"
-    ):
-        tcpdump = TcpDumpRecorder(
-            host=host,
-            test_name=capture_cfg.get("test_name", "capture"),
-            pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-            interface=capture_cfg.get("interface"),
-        )
-        return tcpdump
-    else:
-        logger.info(
-            "Not preparing tcpdump for capture as capturing not enabled "
-            "or tool is not tcpdump."
-        )
-    return None
-
-
 def prepare_netsniff(
     capture_cfg, host=None, src_ip: str | None = None, dst_ip: str | None = None
 ):
@@ -571,12 +545,8 @@ def execute_test(
     rx_timing_parser: bool = False,
     ptp: bool = False,
     host=None,
-    capture_cfg=None,
+    netsniff=None,
 ) -> bool:
-    # Only initialize logging if it hasn't been initialized already
-    global _log_timestamp
-    if _log_timestamp is None:
-        init_test_logging()
 
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -631,10 +601,6 @@ def execute_test(
 
     logger.info(f"RxTxApp Command: {command}")
 
-    # Prepare capturing programs if capture is enabled in the test configuration.
-    tcpdump = prepare_tcpdump(capture_cfg, host)
-    netsniff = prepare_netsniff(capture_cfg, host)
-
     # For 4TX and 8k streams more timeout is needed
     timeout = test_time + 90
     if len(config["tx_sessions"]) >= 4 or any(
@@ -651,20 +617,15 @@ def execute_test(
         timeout=timeout,
         testcmd=True,
         host=remote_host,
+        background=True
     )
-
-    try:
-        # Start tcpdump capture (blocking, so it captures during traffic)
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            logger.info(f"Started tcpdump capture on host {host.name}")
-        # Start netsniff-ng capture (blocking, so it captures during traffic)
-        if netsniff:
-            netsniff.start()
-            logger.info(f"Started netsniff-ng capture on host {host.name}")
-    finally:
-        cp.wait()
-
+    
+    if netsniff:
+        netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
+        netsniff.capture()
+        logger.info(f"Finished netsniff-ng capture on host {host.name}")
+    
+    cp.wait(timeout=timeout)
     # Capture stdout output for logging
     capture_stdout(cp, "RxTxApp")
 

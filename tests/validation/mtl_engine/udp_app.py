@@ -8,8 +8,8 @@ import os
 import re
 
 from mtl_engine import udp_app_config
-from mtl_engine.RxTxApp import prepare_netsniff, prepare_tcpdump
-from tests.validation.compliance.pcap_compliance import PcapComplianceClient
+from mtl_engine.RxTxApp import prepare_netsniff
+from compliance.pcap_compliance import PcapComplianceClient
 
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait
@@ -65,16 +65,12 @@ def execute_test_sample(
     client_command = f"./build/app/UfdClientSample --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
     server_command = f"./build/app/UfdServerSample --sessions_cnt {sessions_cnt}"
 
-    tcpdump = prepare_tcpdump(capture_cfg, host)
     netsniff = prepare_netsniff(capture_cfg, host)
 
     client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
     server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
 
     try:
-        # Start packet capture when traffic is flowing
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             netsniff.start()
         # Wait for both processes to finish
@@ -83,9 +79,6 @@ def execute_test_sample(
     finally:
         pcap_file = None
         is_compliant = False
-        if tcpdump:
-            tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
             pcap_file = netsniff.pcap_file
@@ -157,16 +150,12 @@ def execute_test_librist(
         + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 
-    tcpdump = prepare_tcpdump(capture_cfg, host)
     netsniff = prepare_netsniff(capture_cfg, host)
 
     send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
     receive_proc = call(receive_command, build, test_time, sigint=True, env=receive_env)
 
     try:
-        # Start packet capture when traffic is flowing
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
         if netsniff:
             netsniff.start()
         # Wait for both processes to finish
@@ -175,9 +164,6 @@ def execute_test_librist(
     finally:
         pcap_file = None
         is_compliant = False
-        if tcpdump:
-            tcpdump.stop()
-            pcap_file = tcpdump.pcap_file
         if netsniff:
             netsniff.stop()
             pcap_file = netsniff.pcap_file

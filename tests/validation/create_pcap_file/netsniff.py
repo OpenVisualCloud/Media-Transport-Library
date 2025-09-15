@@ -4,12 +4,23 @@ import logging
 import os
 from datetime import datetime
 from time import sleep
+from wsgiref import headers
 
-from mfd_connect.exceptions import ConnectionCalledProcessError
+from mfd_connect.exceptions import ConnectionCalledProcessError, RemoteProcessInvalidState, RemoteProcessTimeoutExpired, SSHRemoteProcessEndException
 
 logger = logging.getLogger(__name__)
 
 STARTUP_WAIT = 2  # Default wait time after starting the process
+
+
+def calculate_packets_per_frame(width: int, height: int, mtu: int = 1500) -> int:
+    # Simplified calculation for the number of packets per frame
+    # Supported only 4:2:2 format
+    pgroupsize = 5
+    pgroupcoverage = 2
+    headersize = 74  # Ethernet + IP + UDP + RTP headers
+    packets = 1 + int((width * height) / (int((mtu - headersize) / pgroupsize) * pgroupcoverage))
+    return packets
 
 
 class NetsniffRecorder:
@@ -35,13 +46,13 @@ class NetsniffRecorder:
         interface_index: int = 0,
         silent: bool = True,
         capture_filter: str | None = None,
+        packets_capture: int | None = None,
+        capture_time: int = 5,
     ):
         self.host = host
         self.test_name = test_name
         self.pcap_dir = pcap_dir
-        self.pcap_file = os.path.join(
-            pcap_dir, f"{test_name}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.pcap"
-        )
+        self.pcap_file = os.path.join(pcap_dir, f"{test_name}.pcap")
         if interface is not None:
             self.interface = interface
         else:
@@ -49,8 +60,10 @@ class NetsniffRecorder:
         self.netsniff_process = None
         self.silent = silent
         self.capture_filter = capture_filter
+        self.packets_capture = packets_capture
+        self.capture_time = capture_time
 
-    def start(self, startup_wait=STARTUP_WAIT):
+    def start(self):
         """
         Starts the netsniff-ng
         """
@@ -64,6 +77,7 @@ class NetsniffRecorder:
                     str(self.interface),
                     "--out",
                     self.pcap_file,
+                    f"--num {self.packets_capture}" if self.packets_capture is not None else "",
                     f'-f "{self.capture_filter}"' if self.capture_filter else "",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
@@ -74,11 +88,8 @@ class NetsniffRecorder:
                     f"PCAP file will be saved at: {os.path.abspath(self.pcap_file)}"
                 )
 
-                # Give netsniff-ng a moment to start and possibly error out
-                sleep(startup_wait)
-
                 if not self.netsniff_process.running:
-                    err = self.netsniff_process.stderr_text
+                    err = self.netsniff_process.stdout_text
                     logger.error(f"netsniff-ng failed to start. Error output:\n{err}")
                     return False
                 logger.info(
@@ -89,18 +100,27 @@ class NetsniffRecorder:
                 logger.error(f"Failed to start netsniff-ng: {e}")
                 return False
 
-    def capture(self, capture_time=20, startup_wait=2):
+    def capture(self, startup_wait=2):
         """
         Starts netsniff-ng, captures for capture_time seconds, then stops.
-        :param capture_time: Duration in seconds to capture packets.
         :param startup_wait: Time in seconds to wait after starting netsniff-ng (default: 2)
         """
-        started = self.start(startup_wait=startup_wait)
+        started = self.start()
         if started:
-            logger.info(f"Capturing traffic for {capture_time} seconds...")
-            sleep(capture_time)
-            self.stop()
-            logger.info("Capture complete.")
+            if self.packets_capture is None:
+                logger.info(f"Capturing traffic for {self.capture_time} seconds...")
+                sleep(self.capture_time + startup_wait)
+                self.stop()
+                logger.info("Capture complete.")
+            else:
+                try:
+                    logger.info(f"Capturing traffic for {self.packets_capture} packets...")
+                    self.netsniff_process.wait(timeout=startup_wait+10)
+                    logger.info("Capture complete.")
+                    logger.debug(self.netsniff_process.stdout_text)
+                except RemoteProcessTimeoutExpired:
+                    logger.error("Capture timed out.")
+                    self.stop()
         else:
             logger.error("netsniff-ng did not start; skipping capture.")
 
@@ -108,10 +128,31 @@ class NetsniffRecorder:
         """
         Stops all netsniff-ng processes on the host using pkill.
         """
-        connection = self.host.connection
+        
         try:
             logger.info("Stopping netsniff-ng using pkill netsniff-ng...")
-            connection.execute_command("pkill netsniff-ng")
-            logger.info("netsniff-ng stopped (via pkill).")
-        except ConnectionCalledProcessError as e:
-            logger.error(f"Failed to stop netsniff-ng: {e}")
+            self.netsniff_process.stop(wait=5)
+        except SSHRemoteProcessEndException:
+            try:
+                self.netsniff_process.kill()
+            except RemoteProcessInvalidState:
+                logger.debug("Process killed.")
+        logger.error("netsniff-ng process did not stopped by itself.")
+        logger.error(self.netsniff_process.stdout_text)
+
+    def update_filter(self, src_ip=None, dst_ip=None):
+        """
+        Updates the capture filter with new source and/or destination IP addresses.
+        :param src_ip: New source IP address to filter (optional).
+        :param dst_ip: New destination IP address to filter (optional).
+        """
+        filters = []
+        if src_ip:
+            filters.append(f"src {src_ip}")
+        if dst_ip:
+            filters.append(f"dst {dst_ip}")
+        if len(filters) > 1:
+            self.capture_filter = " and ".join(filters)
+        elif len(filters) == 1:
+            self.capture_filter = filters[0]
+        logger.info(f"Updated capture filter to: {self.capture_filter}")

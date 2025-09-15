@@ -82,25 +82,27 @@ class PcapComplianceClient:
         print(f"Extracted UUID: >>>{self.pcap_id}<<<")
         return self.pcap_id
 
-    def download_report(self, test_name):
+    def download_report(self, test_name=None):
         """
         Download the compliance report for the uploaded PCAP file.
         Saves the report as a JSON file in a timestamped directory.
         Returns the path to the saved report.
         """
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.report_dir = os.path.join("reports", test_name, timestamp)
-        os.makedirs(self.report_dir, exist_ok=True)
         url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}/report?type=json"
         headers = {"Authorization": f"Bearer {self.token}"}
         response = self.session.get(
             url, headers=headers, verify=False, proxies=self.proxies
         )
         response.raise_for_status()
-        report_path = os.path.join(self.report_dir, f"{self.pcap_id}.json")
-        with open(report_path, "w") as f:
-            json.dump(response.json(), f, indent=2)
-        return report_path
+        if test_name is not None:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.report_dir = os.path.join("reports", test_name, timestamp)
+            os.makedirs(self.report_dir, exist_ok=True)
+            report_path = os.path.join(self.report_dir, f"{self.pcap_id}.json")
+            with open(report_path, "w") as f:
+                json.dump(response.json(), f, indent=2)
+            return report_path
+        return response.json()
 
     def check_compliance(self, report_path):
         """

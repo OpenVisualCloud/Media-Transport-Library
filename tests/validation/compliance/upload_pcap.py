@@ -4,7 +4,7 @@ import os
 if __name__ == "__main__":
     from pcap_compliance import PcapComplianceClient
 else:
-    from .pcap_compliance import PcapComplianceClient
+    from compliance.pcap_compliance import PcapComplianceClient
 
 
 def parse_args():

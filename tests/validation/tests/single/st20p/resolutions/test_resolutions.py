@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+from venv import logger
+from conftest import pcap_capture
+from create_pcap_file.netsniff import calculate_packets_per_frame
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from mtl_engine.const import FRAMES_CAPTURE
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
@@ -13,6 +17,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
     ids=list(yuv_files_422rfc10.keys()),
 )
 def test_resolutions(
+    request,
     hosts,
     build,
     media,
@@ -21,17 +26,11 @@ def test_resolutions(
     test_config,
     prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     media_file_info, media_file_path = media_file
 
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_resolutions_{media_file_info['filename']}"  # Set a unique pcap file name
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -52,5 +51,7 @@ def test_resolutions(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=False,
     )
+
