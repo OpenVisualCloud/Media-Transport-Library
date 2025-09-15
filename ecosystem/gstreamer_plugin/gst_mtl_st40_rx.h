@@ -47,6 +47,22 @@
 #ifndef __GST_MTL_ST40_RX_H__
 #define __GST_MTL_ST40_RX_H__
 
+#define IS_POWER_OF_2(x) (((x) & ((x)-1)) == 0)
+#define ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT 20
+#define USER_DATA_WORD_BIT_SIZE 10
+#define BYTE_SIZE 8
+#define OFFSET_BIT 32
+#define WORD_10_BIT_ALIGN ((OFFSET_BIT / USER_DATA_WORD_BIT_SIZE) + 1)
+
+/**
+ * ST40_SIZE_OF_PAYLOAD_METADATA:
+ * Defines the size (in bytes) of the payload metadata for ST40 streams.
+ * This value is set to 8 to accommodate the following fields:
+ * c | line_number | horizontal_offset | s | stream_num | did | sdid |
+ * data_count
+ */
+#define ST40_BYTE_SIZE_OF_PAYLOAD_METADATA 8
+
 #include <gst/base/gstbasesrc.h>
 
 #include "gst_mtl_common.h"
@@ -70,8 +86,7 @@ struct _Gst_Mtl_St40_Rx {
   SessionPortArgs portArgs; /* imtl session device */
   guint timeout_mbuf_get_seconds;
   guint16 mbuff_size;
-  guint16 udw_size;
-  char* anc_data;
+  gboolean include_metadata_in_buffer;
 };
 
 G_END_DECLS

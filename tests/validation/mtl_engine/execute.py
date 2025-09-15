@@ -191,6 +191,19 @@ def waitall(aps=List[AsyncProcess]):
     return
 
 
+def is_process_running(process):
+    logger.debug(f"Checking if process is running: {process}")
+    if hasattr(process, "running") and callable(getattr(process, "running")):
+        try:
+            result = process.running()
+            logger.debug(f"process.running(): {result}")
+            return result
+        except Exception as e:
+            logger.debug(f"Exception calling process.running(): {e}")
+            return False
+    return None
+
+
 def run(
     command: str,
     cwd: str = None,
@@ -241,7 +254,6 @@ def run(
     )
     if not background:
         process.wait(timeout=timeout)
-        logger.debug(process.stdout_text)
         logger.debug(f"RC: {process.return_code}")
     else:
         logger.debug("Process started in background mode.")

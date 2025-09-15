@@ -366,6 +366,7 @@ yuv_files_interlace = dict(
         "format": "YUV_422_10bit",
         "width": 720,
         "height": 480,
+        "fps": "60",
     },
     ParkJoy_576p={
         "filename": "ParkJoy_720x576_interlace_10bit_50Hz_P422.yuv",
@@ -373,6 +374,7 @@ yuv_files_interlace = dict(
         "format": "YUV_422_10bit",
         "width": 720,
         "height": 576,
+        "fps": "50",
     },
     Crosswalk_1080p={
         "filename": "Netflix_Crosswalk_1920x1080_interlace_10bit_60Hz_P422.yuv",
@@ -380,6 +382,7 @@ yuv_files_interlace = dict(
         "format": "YUV_422_10bit",
         "width": 1920,
         "height": 1080,
+        "fps": "60",
     },
     ParkJoy_1080p={
         "filename": "ParkJoy_1920x1080_interlace_10bit_50Hz_P422.yuv",
@@ -387,6 +390,7 @@ yuv_files_interlace = dict(
         "format": "YUV_422_10bit",
         "width": 1920,
         "height": 1080,
+        "fps": "50",
     },
 )
 
@@ -515,15 +519,15 @@ yuv_files_422rfc10 = dict(
 
 audio_files = dict(
     PCM24={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM24",
     },
     PCM16={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM16",
     },
     PCM8={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM8",
     },
 )

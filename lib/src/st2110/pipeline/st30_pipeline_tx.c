@@ -634,3 +634,39 @@ void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
 
   return ctx->framebuffs[idx].frame.addr;
 }
+
+int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats) {
+  struct st30p_tx_ctx* ctx = handle;
+  int cidx;
+
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
+  cidx = ctx->idx;
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st30_tx_get_session_stats(ctx->transport, stats);
+}
+
+int st30p_tx_reset_session_stats(st30p_tx_handle handle) {
+  struct st30p_tx_ctx* ctx = handle;
+  int cidx;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
+
+  cidx = ctx->idx;
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  return st30_tx_reset_session_stats(ctx->transport);
+}

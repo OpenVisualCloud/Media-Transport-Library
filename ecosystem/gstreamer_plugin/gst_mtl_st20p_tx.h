@@ -62,6 +62,7 @@ struct _Gst_Mtl_St20p_Tx {
   gboolean zero_copy;
 
   gboolean session_ready;
+  gboolean session_capabilites_set;
   pthread_mutex_t session_mutex;
   pthread_t session_thread;
 
