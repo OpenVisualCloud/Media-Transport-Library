@@ -100,8 +100,7 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
   int64_t delta_pkts;
   unsigned int tx;
 
-  if (!target_tsc)
-  {
+  if (!target_tsc) {
     err("%s(%d), target_tsc is zero\n", __func__, s->idx);
     return -EINVAL;
   }
@@ -115,7 +114,6 @@ static int video_trs_rl_warm_up(struct mtl_main_impl* impl,
     s->stat_trans_troffset_mismatch++;
     return -EINVAL;
   }
-
 
   pads[0] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   for (int i = 0; i < warm_pkts; i++) {
