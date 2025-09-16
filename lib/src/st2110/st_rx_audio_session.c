@@ -262,10 +262,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   uint8_t payload_type = rtp->payload_type;
   uint32_t pkt_len = mbuf->data_len - sizeof(struct st_rfc3550_audio_hdr);
 
-  if (s->st30_pkt_idx == 0) {
-    s->first_pkt_rtp_ts = tmstamp;
-  }
-
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
@@ -273,6 +269,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
     return -EINVAL;
   }
+
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
@@ -289,6 +286,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
         s_port, pkt_len, s->pkt_len);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_len_mismatch_dropped);
     return -EINVAL;
+  }
+
+  if (s->st30_pkt_idx == 0) {
+    s->first_pkt_rtp_ts = tmstamp;
   }
 
   /* set first seq_id - 1 */
@@ -370,8 +371,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     meta->rtp_timestamp = s->first_pkt_rtp_ts;
     meta->frame_recv_size = s->frame_recv_size;
 
-    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr, tmstamp,
-                                    meta->frame_recv_size);
+    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
+                                    s->first_pkt_rtp_ts, meta->frame_recv_size);
     /* check if dump USDT enabled */
     if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
       rx_audio_session_usdt_dump_frame(s, frame);
