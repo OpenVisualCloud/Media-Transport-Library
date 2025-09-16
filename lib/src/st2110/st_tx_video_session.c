@@ -3781,6 +3781,12 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
     return -EINVAL;
   }
 
+  if (ops->flags & ST20_TX_FLAG_EXACT_USER_PACING && !(ops->flags & ST20_TX_FLAG_USER_PACING)) {
+    err("%s, invalid flags 0x%x, need set USER_PACING with EXACT_USER_PACING\n", __func__,
+        ops->flags);
+    return -EINVAL;
+  }
+
   return 0;
 }
 
