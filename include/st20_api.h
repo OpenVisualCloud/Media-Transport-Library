@@ -45,15 +45,15 @@ extern "C" {
 #define ST20_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * User control the frame transmission time by passing a timestamp in st20_tx_frame_meta,
- * lib will wait until timestamp is reached for each frame. The time of sending is aligned
- * with virtual receiver read schedule.
+ * User control the frame transmission time by passing a timestamp in
+ * st20_tx_frame_meta.timestamp, lib will wait until timestamp is reached for each frame.
+ * The time of sending is aligned with virtual receiver read schedule.
  */
 #define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value of timestamp in
- * st20_tx_frame_meta (if needed the value will be converted to
+ * If enabled, lib will assign the rtp timestamp to the value of
+ * t20_tx_frame_meta.timestamp (if needed the value will be converted to
  * ST10_TIMESTAMP_FMT_MEDIA_CLK)
  */
 #define ST20_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
@@ -77,16 +77,14 @@ extern "C" {
 /**
  * Flag bit in flags of struct st20_tx_ops.
  * It changes how ST20_TX_FLAG_USER_PACING works. if enabled, it does not align the
- * transmission time to the virtual receiver read schedule. The first packet of the frame
- * will be sent exactly at the time specified by the user. Additionally, it forces the
- * same behavior as ST20_TX_FLAG_USER_TIMESTAMP does.
+ * transmission time to the virtual receiver read schedule. The first
+ * packet of the frame will be sent exactly at the time specified by the user.
  */
 #define ST20_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(8))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * If enabled the transmission time and RTP timestamp will be set exactly to epoch + N *
- * frame_time, omitting TR_offset. Note: This will make the stream not narrow compliant
- * because of VRX.
+ * If enabled the RTP timestamp will be set exactly to epoch + N *
+ * frame_time, omitting TR_offset.
  */
 #define ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH (MTL_BIT32(9))
 /**
