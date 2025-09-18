@@ -260,7 +260,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
                                                bool sync, uint64_t required_tai,
                                                bool second_field) {
   struct st_tx_fastmetadata_session_pacing* pacing = &s->pacing;
-  long double frame_time = pacing->frame_time;
+  double frame_time = pacing->frame_time;
   /* always use MTL_PORT_P for ptp now */
   uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t next_epochs = pacing->cur_epochs + 1;
@@ -314,20 +314,12 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   pacing->cur_epochs = epochs;
-
-  if (required_tai) {
-    pacing->cur_epoch_time = required_tai + frame_time;
-    pacing->rtp_time_stamp =
-        ((uint64_t)((required_tai / frame_time) * pacing->frame_time_sampling) &
-         0xffffffff);
-  } else {
-    pacing->cur_epoch_time = tx_fastmetadata_pacing_time(pacing, epochs);
-    pacing->rtp_time_stamp = tx_fastmetadata_pacing_time_stamp(pacing, epochs);
-  }
-
+  pacing->cur_epoch_time = tx_fastmetadata_pacing_time(pacing, epochs);
+  pacing->pacing_time_stamp = tx_fastmetadata_pacing_time_stamp(pacing, epochs);
+  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
   dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %f to_epoch %f\n", __func__,
-      s->idx, pacing->cur_epochs, pacing->rtp_time_stamp, pacing->tsc_time_cursor,
+      s->idx, pacing->cur_epochs, pacing->pacing_time_stamp, pacing->tsc_time_cursor,
       to_epoch);
 
   if (sync) {
