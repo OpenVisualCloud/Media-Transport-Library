@@ -5,7 +5,7 @@
 #include <thread>
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 #define ST20_TRAIN_TIME_S (0) /* 0 for runtime rl */
 
@@ -878,8 +878,10 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -1310,8 +1312,10 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
   ASSERT_TRUE(tx_sessions >= 1);
@@ -1864,8 +1868,10 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -2781,8 +2787,10 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -2957,8 +2965,10 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -3179,8 +3189,10 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -3462,8 +3474,10 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -3773,8 +3787,10 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -3993,8 +4009,10 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
   }
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -4333,8 +4351,10 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -4553,8 +4573,10 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
   }
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 

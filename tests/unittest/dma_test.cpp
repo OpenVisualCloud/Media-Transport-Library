@@ -3,7 +3,7 @@
  */
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 static int test_dma_cnt(struct st_tests_context* ctx) {
   mtl_handle handle = ctx->handle;

@@ -2,7 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include "tests.h"
+#include "tests.hpp"
 
 #include <getopt.h>
 #ifndef WINDOWSENV
@@ -378,7 +378,7 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->rx_queues_cnt[MTL_PORT_P] = 16;
   p->rx_queues_cnt[MTL_PORT_R] = 16;
   /* by deafult don't limit cores */
-  memset(ctx->lcores_list, 0,  TEST_LCORE_LIST_MAX_LEN);
+  memset(ctx->lcores_list, 0, TEST_LCORE_LIST_MAX_LEN);
   p->lcores = NULL;
 }
 
@@ -572,23 +572,9 @@ TEST(Misc, st10_timestamp) {
   st10_timestamp_test(96 * 1000);
 }
 
-GTEST_API_ int main(int argc, char** argv) {
-  struct st_tests_context* ctx;
-  int ret_ctx = 1, ret_no_ctx = 1;
+static int run_all_context_test(int argc, char** argv, struct st_tests_context* ctx) {
   bool link_flap_wa = false;
-
-  testing::InitGoogleTest(&argc, argv);
-
-  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
-  if (!ctx) {
-    err("%s, ctx alloc fail\n", __func__);
-    return -ENOMEM;
-  }
-
-  test_ctx_init(ctx);
-  test_parse_args(ctx, &ctx->para, argc, argv);
-  test_random_ip(ctx);
-  g_test_ctx = ctx;
+  int ret;
 
   /* parse af xdp pmd info */
   for (int i = 0; i < ctx->para.num_ports; i++) {
@@ -631,25 +617,22 @@ GTEST_API_ int main(int argc, char** argv) {
   st_test_convert_plugin_register(ctx);
 
   uint64_t start_time_ns = st_test_get_monotonic_time();
-  std::string original_filter;
-  // Set test filter based on command line arguments
-  if (!ctx->no_ctx_tests_only) {
-    // Save the original filter value
-    original_filter = ::testing::GTEST_FLAG(filter);
-    std::string new_filter;
-    if (original_filter == "*" || original_filter.empty()) {
-      new_filter = "*-*_noctx*:-*NoCtx*:-*NOCTX*";
-    } else {
-      new_filter = original_filter + "-*_noctx*:-*NoCtx*:-*NOCTX*";
-    }
-    ::testing::GTEST_FLAG(filter) = new_filter;
-    info("%s, running context-dependent tests only with filter: %s\n", __func__, new_filter.c_str());
-    ret_ctx = RUN_ALL_TESTS();
+
+  std::string original_filter = ::testing::GTEST_FLAG(filter);
+  std::string new_filter;
+  if (original_filter == "*" || original_filter.empty()) {
+    new_filter = "-NoCtxTest*";
+  } else {
+    new_filter = original_filter + ":-NoCtxTest*";
   }
+
+  ret = RUN_ALL_TESTS();
+  ::testing::GTEST_FLAG(filter) = original_filter;
 
   uint64_t end_time_ns = st_test_get_monotonic_time();
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
   int time_least = 10;
+
   if (link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
     info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
@@ -660,10 +643,63 @@ GTEST_API_ int main(int argc, char** argv) {
   st_test_convert_plugin_unregister(ctx);
   test_ctx_uinit(ctx);
 
+  return ret;
+}
+
+int run_all_no_context_tests(int argc, char** argv) {
+  std::string original_filter = ::testing::GTEST_FLAG(filter);
+  int ret;
+
+  std::string new_filter;
+  if (original_filter == "*" || original_filter.empty()) {
+    new_filter = "NoCtxTest*";
+  } else if (original_filter.rfind("NoCtxTest") != 0) {
+    new_filter = "NoCtxTest*" + original_filter;
+  } else {
+    new_filter = original_filter;
+  }
+
+  ::testing::GTEST_FLAG(filter) = new_filter;
+
+  auto dot_pos = new_filter.find('.');
+  if (dot_pos != std::string::npos) {
+    new_filter = "NoCtxTest" + new_filter.substr(dot_pos);
+  }
+
+  ret = RUN_ALL_TESTS();
+
+  ::testing::GTEST_FLAG(filter) = original_filter;
+  return ret;
+}
+
+bool filter_includes_no_ctx_tests(const std::string& filter) {
+  if (filter == "*" || filter.empty()) return true;
+  if (filter.rfind("NOCTX") != std::string::npos) return true;
+  return false;
+}
+
+GTEST_API_ int main(int argc, char** argv) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  int ret_ctx = 1, ret_no_ctx = 1;
+
+  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
+  if (!ctx) {
+    err("%s, ctx alloc fail\n", __func__);
+    return -ENOMEM;
+  }
+
+  testing::InitGoogleTest(&argc, argv);
+  test_ctx_init(ctx);
+  test_parse_args(ctx, &ctx->para, argc, argv);
+  test_random_ip(ctx);
+  g_test_ctx = ctx;
+
+  if (!ctx->no_ctx_tests_only) {
+    ret_ctx = run_all_context_test(argc, argv, ctx);
+  }
+
   if (!ctx->ctx_tests_only) {
-    ::testing::GTEST_FLAG(filter) = original_filter + "*_noctx*:*NoCtx*:*NOCTX*";
-    info("%s, running non-context tests only\n", __func__);
-    ret_no_ctx = RUN_ALL_TESTS();
+    ret_no_ctx = run_all_no_context_tests(argc, argv);
   }
 
   return ret_ctx || ret_no_ctx;
