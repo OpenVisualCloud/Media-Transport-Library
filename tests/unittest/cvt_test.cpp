@@ -3,7 +3,7 @@
  */
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 TEST(Cvt, simd_level) {
   enum mtl_simd_level cpu_level = mtl_get_simd_level();

@@ -5,7 +5,7 @@
 #include <mtl/mtl_sch_api.h>
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 static void sch_create_test(mtl_handle mt) {
   struct mtl_sch_ops sch_ops;

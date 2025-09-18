@@ -5,7 +5,7 @@
 #include <thread>
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 #define ST22_TEST_PAYLOAD_TYPE (114)
 
@@ -380,8 +380,10 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -590,8 +592,10 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -830,8 +834,10 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -972,7 +978,8 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
       info("%s, session %d fb_rec %d framerate %f\n", __func__, i, test_ctx_rx[i]->fb_rec,
            framerate[i]);
       EXPECT_NEAR(framerate[i], expect_framerate[i], expect_framerate[i] * 0.1);
-      EXPECT_LT(test_ctx_rx[i]->sha_fail_cnt, 2);  // the first frame may be incomplete
+      EXPECT_LT(test_ctx_rx[i]->sha_fail_cnt,
+                2);  // the first frame may be incomplete
       ret = st22_rx_free(rx_handle[i]);
       EXPECT_GE(ret, 0);
     }
@@ -1006,8 +1013,10 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -1244,8 +1253,10 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -1467,8 +1478,10 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 

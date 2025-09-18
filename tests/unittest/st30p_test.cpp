@@ -5,7 +5,8 @@
 #include <thread>
 
 #include "log.h"
-#include "tests.h"
+#include "noctx.hpp"
+#include "tests.hpp"
 
 #define ST30P_TEST_PAYLOAD_TYPE (111)
 #define ST30P_TEST_UDP_PORT (50000)
@@ -272,15 +273,15 @@ static void test_st30p_init_rx_digest_para(struct st30p_rx_digest_test_para* par
 
 static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
                                  enum st30_sampling sampling[], enum st30_ptime ptime[],
-                                 struct st30p_rx_digest_test_para* para) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+                                 struct st30p_rx_digest_test_para* para,
+                                 st_tests_context* ctx) {
   auto st = ctx->handle;
   int ret;
   struct st30p_tx_ops ops_tx;
   struct st30p_rx_ops ops_rx;
   int sessions = para->sessions;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
     return;
   }
@@ -512,7 +513,7 @@ TEST(St30p, digest_s3) {
   para.dedicated_tx_queue = true;
   para.zero_payload_type = true;
 
-  st30p_rx_digest_test(f, c, s, pt, &para);
+  st30p_rx_digest_test(f, c, s, pt, &para, st_test_ctx());
 }
 
 TEST(St30p, digest_s3_block) {
@@ -528,5 +529,5 @@ TEST(St30p, digest_s3_block) {
   para.block_get = true;
   para.sessions = 3;
 
-  st30p_rx_digest_test(f, c, s, pt, &para);
+  st30p_rx_digest_test(f, c, s, pt, &para, st_test_ctx());
 }
