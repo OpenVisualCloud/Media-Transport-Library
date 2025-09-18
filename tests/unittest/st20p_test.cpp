@@ -5,7 +5,7 @@
 #include <thread>
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 #define ST20P_TEST_PAYLOAD_TYPE (112)
 #define ST20P_TEST_UDP_PORT (20000)
@@ -1109,8 +1109,8 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
         test_ctx_rx[i]->vsync_cnt, vsyncrate_rx[i]);
     EXPECT_GT(test_ctx_rx[i]->vsync_cnt, 0);
 
-    /* with kernel:lo interfaces we don't have enough single core performance to perform
-     * this test */
+    /* with kernel:lo interfaces we don't have enough single core performance to
+     * perform this test */
     if ((strcmp(ctx->para.port[MTL_PORT_P], "kernel:lo") != 0) &&
         (strcmp(ctx->para.port[MTL_PORT_R], "kernel:lo") != 0))
       EXPECT_NEAR(vsyncrate_rx[i], st_frame_rate(fps[i]), st_frame_rate(fps[i]) * 0.1);
