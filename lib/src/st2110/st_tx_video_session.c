@@ -592,7 +592,7 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
   uint64_t frame_count;
 
   if (required_tai) {
-    frame_count = required_tai / s->pacing.frame_time;
+    frame_count = (required_tai + s->pacing.frame_time / 2) / s->pacing.frame_time;
   } else {
     if (frame_count_tai <= next_free_frame_slot) {
       /* There is time buffer until the next available frame time window */

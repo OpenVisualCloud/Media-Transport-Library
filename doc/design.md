@@ -431,7 +431,8 @@ Consequently, the application will receive notifications through `notify_event` 
 
 By default, applications simply push frames into MTL TX sessions, where the MTL TX session automatically assigns timestamps and epochs based on timing.
 
-The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP timestamp for each frame. MTL retrieves the timestamp from st**_tx_frame_meta and delays the frame transmission until the PTP reaches this timestamp. As a result, applications must calculate the timestamp with precision.
+The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP timestamp for each frame. MTL retrieves the timestamp from st**_tx_frame_meta and calculates RTP timestamp straight from this value.
+Transmission time in unchanged.
 
 The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use their own timestamp values for each frame. Consequently, the RTP timestamp for all packets that belong to that frame will be assigned the customized value.
 
