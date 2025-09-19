@@ -277,7 +277,8 @@ typedef struct st_json_st20p_session {
   bool enable_rtcp;
   bool user_pacing;
   bool exact_user_pacing;
-  uint64_t user_pacing_offset;
+  bool user_timestamp;
+  uint64_t user_time_offset;
 } st_json_st20p_session_t;
 
 typedef struct st_json_context {
@@ -292,7 +293,7 @@ typedef struct st_json_context {
   bool shared_rx_queues;
   bool tx_no_chain;
   char* log_file;
-  uint64_t user_pacing_offset;
+  uint64_t user_time_offset;
 
   st_json_video_session_t* tx_video_sessions;
   int tx_video_session_cnt;
