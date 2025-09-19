@@ -16,7 +16,7 @@
 /* To compensate for inaccurate throughput during warmup, several packets are added.
  * This adds a superficial difference between the RTP timestamp and the transmission
  * time, which makes it look as if the packets have a slight latency immediately after
- * entering the wire. This prevents negative delay values. */
+ * entering the wire. This prevents negative latency values. */
 #define LATENCY_COMPENSATION 1
 
 static int video_trs_tasklet_start(void* priv) {

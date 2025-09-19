@@ -1276,6 +1276,16 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     tv_sync_pacing(impl, s, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    } else {
+      uint64_t tai_for_rtp_ts;
+      if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+        tai_for_rtp_ts = tai_from_frame_count(&s->pacing, s->pacing.cur_epochs);
+      } else {
+        tai_for_rtp_ts = s->pacing.ptp_time_cursor;
+      }
+      tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      s->pacing.rtp_time_stamp =
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -1332,6 +1342,16 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
     tv_sync_pacing(impl, s, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    } else {
+      uint64_t tai_for_rtp_ts;
+      if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+        tai_for_rtp_ts = tai_from_frame_count(&s->pacing, s->pacing.cur_epochs);
+      } else {
+        tai_for_rtp_ts = s->pacing.ptp_time_cursor;
+      }
+      tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      s->pacing.rtp_time_stamp =
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
