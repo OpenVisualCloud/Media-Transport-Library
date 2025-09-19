@@ -33,14 +33,15 @@ static void* app_tx_st30p_frame_thread(void* arg) {
     }
     app_tx_st30p_build_frame(s, frame, s->st30p_frame_size);
 
-    if (s->user_pacing) {
+    if (s->user_time) {
       bool restart_base_time = !s->local_tai_base_time;
+      double frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
 
-      frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time,
-                                                 restart_base_time);
+      frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
+                                          restart_base_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-      s->frame_time += s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
-      s->local_tai_base_time = s->user_pacing->base_tai_time;
+      s->frame_num++;
+      s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
     st30p_tx_put_frame(handle, frame);
@@ -223,9 +224,9 @@ static int app_tx_st30p_init(struct st_app_context* ctx, st_json_st30p_session_t
   if (st30p && st30p->user_pacing) {
     ops.flags |= ST30P_TX_FLAG_USER_PACING;
 
-    /* use global user pacing */
-    s->user_pacing = &ctx->user_pacing;
-    s->frame_time = 0;
+    /* use global user time */
+    s->user_time = &ctx->user_time;
+    s->frame_num = 0;
     s->local_tai_base_time = 0;
   }
 
