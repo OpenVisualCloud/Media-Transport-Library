@@ -309,7 +309,12 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
     s->local_tai_base_time = 0;
   }
 
-  if (ctx->tx_ts_first_pkt) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
+  if (st20p && st20p->exact_user_pacing) {
+    /* should be active only with user_pacing */
+    ops.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
+  }
+
+  if (ctx->tx_exact_user_pacing) ops.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
   if (ctx->tx_ts_epoch) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20P_TX_FLAG_DISABLE_BULK;
   if (ctx->force_tx_video_numa >= 0) {
