@@ -10,7 +10,6 @@ import sys
 import time
 
 from create_pcap_file.netsniff import NetsniffRecorder
-from create_pcap_file.tcpdump import TcpDumpRecorder
 from mfd_connect import SSHConnection
 
 from . import rxtxapp_config

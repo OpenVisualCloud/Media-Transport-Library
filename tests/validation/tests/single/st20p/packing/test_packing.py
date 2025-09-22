@@ -48,7 +48,7 @@ def test_packing(
         st20p_url=media_file_path,
         packing=packing,
     )
-    logger.info(f"Compliance check disabled as test_mode is unicast!")
+    logger.info("Compliance check disabled as test_mode is unicast!")
     rxtxapp.execute_test(
         config=config,
         build=build,

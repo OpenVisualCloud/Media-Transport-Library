@@ -29,10 +29,7 @@ from mtl_engine.csv_report import (
     get_compliance_result,
     update_compliance_result,
 )
-
-# FIXME: Perhaps, it could be set less statically
 from mtl_engine.execute import log_fail
-from mtl_engine.ffmpeg_app import ip_dict, ip_dict_rgb24_multiple
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.stash import (
     clear_issue,

@@ -907,14 +907,14 @@ bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
 }
 
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
-  double ts = (double)tai_ns * sampling_rate / NS_PER_S;
+  long double ts = (long double)tai_ns * sampling_rate / NS_PER_S;
   uint64_t tmstamp64 = ts;
   uint32_t tmstamp32 = tmstamp64;
   return tmstamp32;
 }
 
 uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
-  double ts = (double)media_ts * NS_PER_S / sampling_rate;
+  long double ts = (long double)media_ts * NS_PER_S / sampling_rate;
   return ts;
 }
 

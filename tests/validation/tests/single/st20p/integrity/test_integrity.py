@@ -2,12 +2,10 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mfd_common_libs.log_levels import TEST_PASS
-from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
@@ -42,7 +40,7 @@ def test_integrity(
 
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    out_file_url = host.connection.path(media_file_path).parent / "out.yuv"
+    out_file_url = str(host.connection.path(media_file_path).parent / "out.yuv")
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(

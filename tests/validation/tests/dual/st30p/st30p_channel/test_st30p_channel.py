@@ -8,6 +8,7 @@ from mtl_engine.media_files import audio_files
 from tests.xfail import SDBQ1001_audio_channel_check
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize(
     "audio_channel", ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
 )

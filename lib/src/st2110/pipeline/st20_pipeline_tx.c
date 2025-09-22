@@ -305,8 +305,8 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
     ops_tx.flags |= ST20_TX_FLAG_ENABLE_RTCP;
     ops_tx.rtcp = ops->rtcp;
   }
-  if (ops->flags & ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT)
-    ops_tx.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
+  if (ops->flags & ST20P_TX_FLAG_EXACT_USER_PACING)
+    ops_tx.flags |= ST20_TX_FLAG_EXACT_USER_PACING;
   if (ops->flags & ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH)
     ops_tx.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ops->flags & ST20P_TX_FLAG_DISABLE_BULK) ops_tx.flags |= ST20_TX_FLAG_DISABLE_BULK;

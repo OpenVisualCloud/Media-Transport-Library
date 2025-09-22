@@ -4,7 +4,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.media_files import anc_files, audio_files, yuv_files
+from mtl_engine.media_files import anc_files, audio_files
 
 
 @pytest.mark.parametrize("test_mode", ["kernel"])
@@ -20,7 +20,6 @@ def test_kernello_mixed_format(
     replicas,
     media_file,
 ):
-    video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]

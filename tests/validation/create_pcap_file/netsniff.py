@@ -59,7 +59,7 @@ class NetsniffRecorder:
         self.host = host
         self.test_name = test_name
         self.pcap_dir = pcap_dir
-        self.pcap_file = os.path.join(pcap_dir, f"{test_name}.pcap")
+        self.pcap_file = os.path.join(pcap_dir, f"'{test_name}.pcap'")
         if interface is not None:
             self.interface = interface
         else:

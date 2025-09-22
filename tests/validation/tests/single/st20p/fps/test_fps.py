@@ -58,7 +58,7 @@ def test_fps(
         output_format=media_file_info["file_format"],
         st20p_url=media_file_path,
     )
-    logger.info(f"Compliance check disabled as test_mode is unicast!")
+    logger.info("Compliance check disabled as test_mode is unicast!")
     rxtxapp.execute_test(
         config=config,
         build=build,
