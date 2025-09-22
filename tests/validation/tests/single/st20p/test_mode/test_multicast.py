@@ -23,18 +23,11 @@ def test_multicast(
     nic_port_list,
     test_time,
     test_config,
-    prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_multicast_{media_file_info['filename']}"  # Set a unique pcap file name
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -55,5 +48,6 @@ def test_multicast(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
     )

@@ -21,7 +21,7 @@ def test_st40p_fps_size(
     framebuff,
     test_time,
     test_config,
-    prepare_ramdisk,
+    pcap_capture,
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
@@ -53,9 +53,6 @@ def test_st40p_fps_size(
         timeout=15,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_st40p_fps_size_{fps}_{file_size_kb}_{framebuff}"
-
     try:
         GstreamerApp.execute_test(
             build=build,
@@ -67,7 +64,7 @@ def test_st40p_fps_size(
             host=host,
             tx_first=False,
             sleep_interval=1,
-            capture_cfg=capture_cfg,
+            netsniff=pcap_capture,
         )
     finally:
         # Remove the files after the test

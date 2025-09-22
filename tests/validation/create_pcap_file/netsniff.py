@@ -2,24 +2,31 @@
 # Copyright 2025 Intel Corporation
 import logging
 import os
-from datetime import datetime
 from time import sleep
-from wsgiref import headers
 
-from mfd_connect.exceptions import ConnectionCalledProcessError, RemoteProcessInvalidState, RemoteProcessTimeoutExpired, SSHRemoteProcessEndException
+from mfd_connect.exceptions import (
+    ConnectionCalledProcessError,
+    RemoteProcessInvalidState,
+    RemoteProcessTimeoutExpired,
+    SSHRemoteProcessEndException,
+)
 
 logger = logging.getLogger(__name__)
-
 STARTUP_WAIT = 2  # Default wait time after starting the process
 
 
-def calculate_packets_per_frame(width: int, height: int, mtu: int = 1500) -> int:
+def calculate_packets_per_frame(media_file_info, mtu: int = 1500) -> int:
     # Simplified calculation for the number of packets per frame
-    # Supported only 4:2:2 format
-    pgroupsize = 5
-    pgroupcoverage = 2
-    headersize = 74  # Ethernet + IP + UDP + RTP headers
-    packets = 1 + int((width * height) / (int((mtu - headersize) / pgroupsize) * pgroupcoverage))
+    # Supported only 4:2:2 format or audio formats assuming 1 packet per 1ms
+    packets = 1000
+    if "width" in media_file_info and "height" in media_file_info:
+        pgroupsize = 5
+        pgroupcoverage = 2
+        headersize = 74  # Ethernet + IP + UDP + RTP headers
+        packets = 1 + int(
+            (media_file_info["width"] * media_file_info["height"])
+            / (int((mtu - headersize) / pgroupsize) * pgroupcoverage)
+        )
     return packets
 
 
@@ -77,7 +84,11 @@ class NetsniffRecorder:
                     str(self.interface),
                     "--out",
                     self.pcap_file,
-                    f"--num {self.packets_capture}" if self.packets_capture is not None else "",
+                    (
+                        f"--num {self.packets_capture}"
+                        if self.packets_capture is not None
+                        else ""
+                    ),
                     f'-f "{self.capture_filter}"' if self.capture_filter else "",
                 ]
                 logger.info(f"Running command: {' '.join(cmd)}")
@@ -114,12 +125,17 @@ class NetsniffRecorder:
                 logger.info("Capture complete.")
             else:
                 try:
-                    logger.info(f"Capturing traffic for {self.packets_capture} packets...")
-                    self.netsniff_process.wait(timeout=startup_wait+10)
+                    logger.info(
+                        f"Capturing traffic for {self.packets_capture} packets..."
+                    )
+                    self.netsniff_process.wait(timeout=startup_wait + 10)
                     logger.info("Capture complete.")
                     logger.debug(self.netsniff_process.stdout_text)
                 except RemoteProcessTimeoutExpired:
-                    logger.error("Capture timed out.")
+                    logger.warning(
+                        "Capture timed out. Probably not enough packets were sent. "
+                        "Please adjust packets_capture or capture_time to the test case."
+                    )
                     self.stop()
         else:
             logger.error("netsniff-ng did not start; skipping capture.")
@@ -128,7 +144,7 @@ class NetsniffRecorder:
         """
         Stops all netsniff-ng processes on the host using pkill.
         """
-        
+
         try:
             logger.info("Stopping netsniff-ng using pkill netsniff-ng...")
             self.netsniff_process.stop(wait=5)

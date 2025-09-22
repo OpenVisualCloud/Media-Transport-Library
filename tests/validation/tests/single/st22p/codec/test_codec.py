@@ -23,16 +23,11 @@ def test_codec(
     test_time,
     codec,
     test_config,
-    prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_codec_{codec}_Penguin_1080p"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st22p_sessions(
@@ -55,5 +50,6 @@ def test_codec(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
     )

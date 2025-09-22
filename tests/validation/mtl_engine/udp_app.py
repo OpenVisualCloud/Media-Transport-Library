@@ -7,9 +7,9 @@ import logging
 import os
 import re
 
+from compliance.pcap_compliance import PcapComplianceClient
 from mtl_engine import udp_app_config
 from mtl_engine.RxTxApp import prepare_netsniff
-from compliance.pcap_compliance import PcapComplianceClient
 
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait

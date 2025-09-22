@@ -37,23 +37,12 @@ def test_integrity(
     media,
     nic_port_list,
     test_time,
-    test_config,
-    prepare_ramdisk,
     media_file,
 ):
+
     media_file_info, media_file_path = media_file
-
-    # Ensure the output directory exists for the integrity test output file.
-    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
-    os.makedirs(log_dir, exist_ok=True)
-    out_file_url = os.path.join(log_dir, "out.yuv")
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    # Set a unique pcap file name
-    capture_cfg["test_name"] = f"test_integrity_{media_file_info['filename']}"
+    out_file_url = host.connection.path(media_file_path).parent / "out.yuv"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -75,7 +64,6 @@ def test_integrity(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )
 
     frame_size = calculate_yuv_frame_size(

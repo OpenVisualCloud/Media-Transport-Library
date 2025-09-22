@@ -2,12 +2,10 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
-import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mfd_common_libs.log_levels import TEST_PASS
-from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_st30p_framebuff_size, check_st30p_integrity
 from mtl_engine.media_files import audio_files
@@ -34,24 +32,13 @@ def test_integrity(
     media,
     nic_port_list,
     test_time,
-    test_config,
-    prepare_ramdisk,
     media_file,
 ):
     media_file_info, media_file_path = media_file
 
     # Ensure the output directory exists.
-    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
-    os.makedirs(log_dir, exist_ok=True)
-    out_file_url = os.path.join(log_dir, "out.wav")
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_integrity_{media_file_info['format']}"  # Set a unique pcap file name
-    )
+    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
@@ -71,7 +58,7 @@ def test_integrity(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=None,
     )
 
     size = calculate_st30p_framebuff_size(

@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
+import logging
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mtl_engine.media_files import yuv_files_interlace
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.parametrize(
@@ -19,19 +22,10 @@ def test_interlace(
     nic_port_list,
     test_time,
     test_config,
-    prepare_ramdisk,
     media_file,
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    # capture_time: 15
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_interlace_{media_file_info['filename']}"  # Set a unique pcap file name
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -47,11 +41,12 @@ def test_interlace(
         st20p_url=media_file_path,
         interlaced=True,
     )
-
+    logger.info(f"Compliance check disabled as test_mode is unicast!")
     rxtxapp.execute_test(
         config=config,
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=None,
+        ptp=test_config.get("ptp", False),
     )

@@ -126,6 +126,7 @@ def prepare_netsniff(
 
     returns: NetsniffRecorder instance or None.
     """
+    # TODO: remove me as this is now in udp_app.py but it's not needed anymore
     if (
         capture_cfg
         and capture_cfg.get("enable")
@@ -617,14 +618,14 @@ def execute_test(
         timeout=timeout,
         testcmd=True,
         host=remote_host,
-        background=True
+        background=True,
     )
-    
+
     if netsniff:
         netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
         netsniff.capture()
         logger.info(f"Finished netsniff-ng capture on host {host.name}")
-    
+
     cp.wait(timeout=timeout)
     # Capture stdout output for logging
     capture_stdout(cp, "RxTxApp")
@@ -746,7 +747,7 @@ def execute_perf_test(
     build: str,
     test_time: int,
     fail_on_error: bool = True,
-    capture_cfg=None,
+    netsniff=None,
     host=None,
 ) -> bool:
     # Only initialize logging if it hasn't been initialized already
@@ -773,11 +774,6 @@ def execute_perf_test(
     command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
 
     logger.info(f"Performance RxTxApp Command: {command}")
-
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
-    tcpdump = prepare_tcpdump(capture_cfg, host)
-    netsniff = prepare_netsniff(capture_cfg, host)
-    background = (tcpdump is not None) or (netsniff is not None)
 
     # For 4TX and 8k streams more timeout is needed
     # Also scale timeout with replica count for performance tests
@@ -816,19 +812,15 @@ def execute_perf_test(
         timeout=timeout,
         testcmd=True,
         host=host,
-        background=background,
+        background=True,
     )
 
-    try:
-        # Start tcpdump capture (blocking, so it captures during traffic)
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            logger.info("Started performance test tcpdump capture")
-        if netsniff:
-            netsniff.start()
-            logger.info("Started performance test netsniff-ng capture")
-    finally:
-        cp.wait()
+    if netsniff:
+        netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
+        netsniff.capture()
+        logger.info(f"Finished netsniff-ng capture on host {host.name}")
+
+    cp.wait()
 
     # Capture stdout output for logging
     capture_stdout(cp, "RxTxApp Performance")
@@ -1435,7 +1427,7 @@ def execute_dual_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
-    capture_cfg=None,
+    netsniff=None,
 ) -> bool:
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -1510,11 +1502,10 @@ def execute_dual_test(
         host=tx_host,
     )
 
-    # Start tcpdump capture if enabled
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
-    if tcpdump:
-        tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-        logger.info("Started dual test tcpdump capture")
+    if netsniff:
+        netsniff.update_filter(dst_ip=tx_config["tx_sessions"][0]["dip"][0])
+        netsniff.capture()
+        logger.info(f"Finished netsniff-ng capture on host {netsniff.host.name}")
 
     # Wait for both processes
     tx_cp.wait()
@@ -1523,10 +1514,6 @@ def execute_dual_test(
     # Capture stdout output for logging
     capture_stdout(tx_cp, "TX RxTxApp")
     capture_stdout(rx_cp, "RX RxTxApp")
-
-    # Stop tcpdump if it was started
-    if tcpdump:
-        tcpdump.stop()
 
     # Get output from both hosts
     tx_output = tx_cp.stdout_text.splitlines()

@@ -20,21 +20,14 @@ def test_422p10le(
     nic_port_list,
     test_time,
     test_config,
-    prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     """
     Send files in YUV422PLANAR10LE format converting to transport format YUV_422_10bit
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_format_{media_file_info['filename']}"  # Set a unique pcap file name
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -55,7 +48,8 @@ def test_422p10le(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
     )
 
 
@@ -91,7 +85,15 @@ convert1_formats = dict(
 )
 @pytest.mark.parametrize("format", convert1_formats.keys())
 def test_convert_on_rx(
-    hosts, build, media, nic_port_list, test_time, format, media_file
+    hosts,
+    build,
+    media,
+    nic_port_list,
+    test_time,
+    format,
+    media_file,
+    pcap_capture,
+    test_config,
 ):
     """
     Send file in YUV_422_10bit pixel formats with supported convertion on RX side
@@ -114,7 +116,14 @@ def test_convert_on_rx(
         st20p_url=media_file_path,
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
+    )
 
 
 # List of supported two-way convertions based on st_frame_get_converter()
@@ -156,12 +165,14 @@ def test_tx_rx_conversion(
     test_time,
     format,
     media_file,
+    pcap_capture,
+    test_config,
 ):
     """
     Send random file in different pixel formats with supported two-way convertion on TX and RX
     """
     media_file_info, media_file_path = media_file
-    text_format, transport_format, _ = convert2_formats[format]
+    _, transport_format, _ = convert2_formats[format]
     host = list(hosts.values())[0]
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -178,7 +189,14 @@ def test_tx_rx_conversion(
         st20p_url=media_file_path,
     )
 
-    rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host)
+    rxtxapp.execute_test(
+        config=config,
+        build=build,
+        test_time=test_time,
+        host=host,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
+    )
 
 
 @pytest.mark.parametrize(
@@ -196,14 +214,14 @@ def test_formats(
     test_time,
     format,
     test_config,
-    prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     """
     Send random file in different supported pixel formats without convertion during transport
     """
     media_file_info, media_file_path = media_file
-    text_format, file_format = pixel_formats[format]
+    _, file_format = pixel_formats[format]
     host = list(hosts.values())[0]
 
     # Get capture configuration from test_config.yaml
@@ -233,5 +251,6 @@ def test_formats(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
     )

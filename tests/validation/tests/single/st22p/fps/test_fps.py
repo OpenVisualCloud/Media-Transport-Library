@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
-
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mtl_engine.media_files import yuv_files_422p10le
@@ -39,16 +38,11 @@ def test_fps(
     fps,
     codec,
     test_config,
-    prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # Collect packet capture configuration and assign test_name
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_fps_{codec}_{media_file_info['filename']}_{fps}"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st22p_sessions(
@@ -71,5 +65,6 @@ def test_fps(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
     )
