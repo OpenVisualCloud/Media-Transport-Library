@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422rfc10
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize(
     "fps",
     ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
