@@ -243,7 +243,7 @@ Address Resolution Protocol is a communication protocol used for discovering the
 
 ### 5.2. IGMP
 
-The Internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of Internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found in [mt_mcast.c](../lib/src/mt_mcast.c)
+The internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found in [mt_mcast.c](../lib/src/mt_mcast.c)
 
 ### 5.3. DHCP
 
