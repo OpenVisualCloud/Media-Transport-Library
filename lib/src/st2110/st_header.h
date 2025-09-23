@@ -188,9 +188,8 @@ struct st_tx_video_pacing {
   uint64_t cur_epochs; /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  uint64_t cur_epoch_time;
-  double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
-  double ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
+  uint64_t tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
+  uint64_t ptp_time_cursor; /* in ns, ptp time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
   uint64_t tsc_time_frame_start; /* start tsc time for frame start */
@@ -1019,6 +1018,7 @@ struct st_rx_audio_session_impl {
   int st30_pkt_idx;       /* pkt index in current frame */
   int latest_seq_id;      /* latest seq id */
 
+  uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
   uint32_t tmstamp;
   size_t frame_recv_size;
 

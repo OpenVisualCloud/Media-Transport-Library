@@ -182,6 +182,7 @@ function setup_ubuntu_install_dependencies() {
 		echo "Installing GStreamer dependencies"
 		apt install -y \
 			gstreamer1.0-plugins-base \
+			libgstreamer-plugins-base1.0-dev \
 			gstreamer1.0-plugins-good \
 			gstreamer1.0-tools \
 			gstreamer1.0-libav \

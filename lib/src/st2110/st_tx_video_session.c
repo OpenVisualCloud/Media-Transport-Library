@@ -14,47 +14,20 @@
 #include "st_err.h"
 #include "st_video_transmitter.h"
 
-static inline double pacing_time(struct st_tx_video_pacing* pacing, uint64_t epochs) {
-  return epochs * pacing->frame_time;
+static inline uint64_t tai_from_frame_count(struct st_tx_video_pacing* pacing,
+                                            uint64_t frame_count) {
+  /* Doubles lose integer precision beyond 2^53 (~9e15), so a plain cast to uint64_t
+   * may truncate to a smaller value. Using nextafter(val, INFINITY) ensures we round
+   * up to the next representable double before casting, avoiding jumping between tai in
+   * neighboring frames. This caused problems when tai was again changed to frame count */
+  return nextafter(frame_count * pacing->frame_time, INFINITY);
 }
 
-static inline double pacing_first_pkt_time(struct st_tx_video_pacing* pacing,
-                                           uint64_t epochs) {
-  return pacing_time(pacing, epochs) + pacing->tr_offset - (pacing->vrx * pacing->trs);
-}
-
-/* pacing start time(warmup pkt if has warmup stage) of the frame */
-static inline double pacing_start_time(struct st_tx_video_pacing* pacing,
-                                       uint64_t epochs) {
-  return pacing_time(pacing, epochs) + pacing->tr_offset -
-         ((pacing->vrx + pacing->warm_pkts) * pacing->trs);
-}
-
-/* time stamp on the first pkt video pkt(not the warmup) */
-static inline uint32_t pacing_time_stamp(struct st_tx_video_session_impl* s,
-                                         struct st_tx_video_pacing* pacing,
-                                         uint64_t epochs) {
-  uint64_t tmstamp64;
-  double time;
-  if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-    /* the start of epoch */
-    time = pacing_first_pkt_time(pacing, epochs);
-  } else if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT) {
-    /* the start of first pkt */
-    time = pacing_first_pkt_time(pacing, epochs);
-    if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
-  } else if (s->ops.rtp_timestamp_delta_us) {
-    int32_t rtp_timestamp_delta_us = s->ops.rtp_timestamp_delta_us;
-    time = pacing_time(pacing, epochs) + (rtp_timestamp_delta_us * NS_PER_US);
-  } else {
-    /* default to the start of first pkt */
-    time = pacing_first_pkt_time(pacing, epochs);
-    if (pacing->warm_pkts) time -= 3 * pacing->trs; /* deviation for VRX */
-  }
-  tmstamp64 = (time / pacing->frame_time) * pacing->frame_time_sampling;
-  uint32_t tmstamp32 = tmstamp64;
-
-  return tmstamp32;
+/* transmission start time of the frame */
+static inline uint64_t transmission_start_time(struct st_tx_video_pacing* pacing,
+                                               uint64_t frame_count) {
+  return tai_from_frame_count(pacing, frame_count) + pacing->tr_offset -
+         (pacing->vrx * pacing->trs);
 }
 
 static inline void pacing_set_mbuf_time_stamp(struct rte_mbuf* mbuf,
@@ -597,120 +570,127 @@ static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
-                          bool sync, uint64_t required_tai, bool second_field) {
-  int idx = s->idx;
-  struct st_tx_video_pacing* pacing = &s->pacing;
-  double frame_time = pacing->frame_time;
-  /* always use MTL_PORT_P for ptp now */
-  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  uint64_t next_epochs = pacing->cur_epochs + 1;
-  uint64_t epochs;
+static inline uint64_t align_for_interlaced(struct st_tx_video_session_impl* s,
+                                            uint64_t frame_count, bool second_field) {
+  if (second_field) { /* align to odd epoch */
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+    if (!(frame_count & 0x1)) frame_count++;
+  } else { /* align to even epoch */
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+    if (frame_count & 0x1) frame_count++;
+  }
+  return frame_count;
+}
+
+static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_impl* s,
+                                                    uint64_t cur_tai,
+                                                    uint64_t required_tai,
+                                                    bool second_field) {
+  uint64_t frame_count_tai = cur_tai / s->pacing.frame_time;
+  uint64_t next_free_frame_slot = s->pacing.cur_epochs + 1;
   bool interlaced = s->ops.interlaced;
+  uint64_t frame_count;
 
   if (required_tai) {
-    uint64_t ptp_epochs = ptp_time / frame_time;
-    epochs = required_tai / frame_time;
-    dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
-        __func__, idx, required_tai, ptp_epochs, epochs);
-    if (epochs < ptp_epochs) {
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
-    }
+    frame_count = required_tai / s->pacing.frame_time;
   } else {
-    epochs = ptp_time / frame_time;
-  }
+    if (frame_count_tai <= next_free_frame_slot) {
+      /* There is time buffer until the next available frame time window */
+      if (next_free_frame_slot - frame_count_tai > s->pacing.max_onward_epochs) {
+        /* current time is out of onward range, just note this and still move to next free
+         * slot */
+        dbg("%s(%d), onward range exceeded, next_free_frame_slot %" PRIu64
+            ", frame_count_tai %" PRIu64 "\n",
+            __func__, s->idx, next_free_frame_slot, frame_count_tai);
+        ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
+                            (next_free_frame_slot - frame_count_tai));
+      }
 
-  dbg("%s(%d), ptp epochs %" PRIu64 " cur_epochs %" PRIu64 ", ptp_time %" PRIu64 "ms\n",
-      __func__, idx, epochs, pacing->cur_epochs, ptp_time / 1000 / 1000);
-  if (epochs <= pacing->cur_epochs) {
-    uint64_t diff = pacing->cur_epochs - epochs;
-    if (diff < pacing->max_onward_epochs) {
-      /* point to next epoch since it is in the range of onward */
-      epochs = next_epochs;
+      frame_count = next_free_frame_slot;
+
+    } else {
+      dbg("%s(%d), frame is late, frame_count_tai %" PRIu64
+          " next_free_frame_slot %" PRIu64 "\n",
+          __func__, s->idx, frame_count_tai, next_free_frame_slot);
+      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                          (frame_count_tai - next_free_frame_slot));
+
+      frame_count = frame_count_tai;
     }
   }
 
   if (interlaced) {
-    if (second_field) { /* align to odd epoch */
-      if (!(epochs & 0x1)) epochs++;
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
-    } else { /* align to even epoch */
-      if (epochs & 0x1) epochs++;
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
-    }
+    frame_count = align_for_interlaced(s, frame_count, second_field);
   }
 
-  /* epoch resolved */
-  double start_time_ptp = pacing_start_time(pacing, epochs);
-  double to_epoch = start_time_ptp - ptp_time;
-  if (to_epoch < 0) {
-    /* time larger than the next assigned epoch time */
-    dbg("%s(%d), to_epoch %f, ptp epochs %" PRIu64 " cur_epochs %" PRIu64
-        ", ptp_time %" PRIu64 "ms\n",
-        __func__, idx, to_epoch, epochs, pacing->cur_epochs, ptp_time / 1000 / 1000);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_troffset_mismatch);
+  return frame_count;
+}
 
-    /* in case of user controlled pacing we need to send this even if late
-    as close to the user defiend time as possible*/
-    if (required_tai) {
-      to_epoch = 0;
-    } else {
-      epochs++; /* assign to next */
-      start_time_ptp = pacing_start_time(pacing, epochs);
-      to_epoch = start_time_ptp - ptp_time;
+static inline uint64_t validate_and_adjust_user_timestamp(
+    struct st_tx_video_session_impl* s, uint64_t required_tai, uint64_t cur_tai) {
+  if (required_tai < cur_tai) {
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    dbg("%s(%d), user requested transmission time in the past, required_tai %" PRIu64
+        ", cur_tai %" PRIu64 "\n",
+        __func__, s->idx, required_tai, cur_tai);
+    required_tai = cur_tai; /* send asap */
 
-      if (to_epoch < 0) {
-        /* should never happen */
-        err("%s(%d), error to_epoch %f, ptp_time %" PRIu64 ", epochs %" PRIu64 " %" PRIu64
-            "\n",
-            __func__, idx, to_epoch, ptp_time, epochs, pacing->cur_epochs);
-        to_epoch = 0;
-      }
-    }
+  } else if (required_tai > cur_tai + NS_PER_S) {
+    dbg("%s(%d), required tai %" PRIu64 " too far in the future, cur_tai %" PRIu64 "\n",
+        __func__, s->idx, required_tai, cur_tai);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    required_tai = cur_tai + NS_PER_S;  // do our best to slow down
+  }
+  return required_tai;
+}
+
+static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
+                          uint64_t required_tai, bool second_field) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t cur_tsc = mt_get_tsc(impl);
+  uint64_t start_time_tai;
+  uint64_t time_to_tx_ns;
+
+  if (required_tai) {
+    required_tai = validate_and_adjust_user_timestamp(s, required_tai, cur_tai);
   }
 
-  if (epochs > next_epochs) {
-    dbg("%s(%d), epochs %" PRIu64 " next_epochs %" PRIu64 "\n", __func__, idx, epochs,
-        next_epochs);
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
-                        (epochs - next_epochs));
-  } else if (epochs < next_epochs) {
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                        (next_epochs - epochs));
+  pacing->cur_epochs =
+      calc_frame_count_since_epoch(s, cur_tai, required_tai, second_field);
+  if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+    start_time_tai = required_tai;
+  } else {
+    start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
+  }
+  time_to_tx_ns = start_time_tai - cur_tai;
+
+  if (time_to_tx_ns < 0) {
+    /* should never happen */
+    err("%s(%d), negative time_to_tx_ns detected: %ld ns. Current PTP time: %" PRIu64
+        "\n",
+        __func__, s->idx, time_to_tx_ns, cur_tai);
+    time_to_tx_ns = 0;
   }
 
-  pacing->cur_epochs = epochs;
-  pacing->cur_epoch_time = pacing_time(pacing, epochs);
-  pacing->rtp_time_stamp = pacing_time_stamp(s, pacing, epochs);
-  dbg("%s(%d), old time_cursor %fms\n", __func__, idx,
-      pacing->tsc_time_cursor / 1000 / 1000);
+  /* tsc_time_cursor is important as it determines when first packet of the frame will be
+   * send */
+  pacing->tsc_time_cursor = cur_tsc + time_to_tx_ns;
 
-  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
-  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %fms to_epoch %fms\n",
-      __func__, idx, pacing->cur_epochs, pacing->rtp_time_stamp,
-      pacing->tsc_time_cursor / 1000 / 1000, to_epoch / 1000 / 1000);
-
-  pacing->ptp_time_cursor = start_time_ptp;
   pacing->tsc_time_frame_start = pacing->tsc_time_cursor;
-
-  if (sync) {
-    dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, idx,
-        pacing->tsc_time_cursor, mt_get_tsc(impl));
-    mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
-  }
+  pacing->ptp_time_cursor = start_time_tai;
 
   return 0;
 }
 
 static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
-                               struct st_tx_video_session_impl* s, bool sync,
-                               uint64_t required_tai, bool second_field,
-                               int pkts_in_frame) {
+                               struct st_tx_video_session_impl* s, uint64_t required_tai,
+                               bool second_field, int pkts_in_frame) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   /* reset trs */
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
   dbg("%s(%d), trs %f\n", __func__, s->idx, pacing->trs);
-  return tv_sync_pacing(impl, s, sync, required_tai, second_field);
+  return tv_sync_pacing(impl, s, required_tai, second_field);
 }
 
 static int tv_init_next_meta(struct st_tx_video_session_impl* s,
@@ -729,7 +709,7 @@ static int tv_init_next_meta(struct st_tx_video_session_impl* s,
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = pacing_time(pacing, meta->epoch);
+  meta->timestamp = tai_from_frame_count(pacing, meta->epoch);
   return 0;
 }
 
@@ -749,7 +729,7 @@ static int tv_init_st22_next_meta(struct st_tx_video_session_impl* s,
   /* point to next epoch */
   meta->epoch = pacing->cur_epochs + 1;
   meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  meta->timestamp = pacing_time(pacing, meta->epoch);
+  meta->timestamp = tai_from_frame_count(pacing, meta->epoch);
   return 0;
 }
 
@@ -1293,9 +1273,19 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
       uint16_t line1_number = ntohs(rfc4175->row_number);
       second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
     }
-    tv_sync_pacing(impl, s, false, 0, second_field);
+    tv_sync_pacing(impl, s, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    } else {
+      uint64_t tai_for_rtp_ts;
+      if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+        tai_for_rtp_ts = tai_from_frame_count(&s->pacing, s->pacing.cur_epochs);
+      } else {
+        tai_for_rtp_ts = s->pacing.ptp_time_cursor;
+      }
+      tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      s->pacing.rtp_time_stamp =
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -1349,9 +1339,19 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
       uint16_t line1_number = ntohs(rfc4175->row_number);
       second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
     }
-    tv_sync_pacing(impl, s, false, 0, second_field);
+    tv_sync_pacing(impl, s, 0, second_field);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    } else {
+      uint64_t tai_for_rtp_ts;
+      if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+        tai_for_rtp_ts = tai_from_frame_count(&s->pacing, s->pacing.cur_epochs);
+      } else {
+        tai_for_rtp_ts = s->pacing.ptp_time_cursor;
+      }
+      tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      s->pacing.rtp_time_stamp =
+          st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
     dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, s->pacing.rtp_time_stamp);
   }
@@ -1621,10 +1621,9 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
   if (!timestamp) return 0;
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
-    if (timestamp > 0xFFFFFFFF) {
-      err("%s(%d), invalid timestamp %" PRIu64 "\n", __func__, s->idx, timestamp);
-    }
-    required_tai = st10_media_clk_to_ns((uint32_t)timestamp, 90 * 1000);
+    err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
+        s->idx);
+    return 0;  // Return 0 to indicate an invalid timestamp and fallback to default pacing
   } else {
     required_tai = timestamp;
   }
@@ -1795,14 +1794,24 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
       bool second_field = frame->tv_meta.second_field;
-      tv_sync_pacing(impl, s, false, required_tai, second_field);
-      if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP &&
-          (frame->tv_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
-        pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
+      tv_sync_pacing(impl, s, required_tai, second_field);
+      if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+        pacing->rtp_time_stamp =
+            st10_get_media_clk(meta.tfmt, meta.timestamp, s->fps_tm.sampling_clock_rate);
+      } else {
+        uint64_t tai_for_rtp_ts;
+        if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+          tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
+        } else {
+          tai_for_rtp_ts = pacing->ptp_time_cursor;
+        }
+        tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+        pacing->rtp_time_stamp =
+            st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
       }
       dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-      frame->tv_meta.timestamp = pacing->cur_epoch_time;
+      frame->tv_meta.timestamp = pacing->ptp_time_cursor;
       frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
       frame->tv_meta.epoch = pacing->cur_epochs;
       /* init to next field */
@@ -1961,11 +1970,9 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     if (frame_end_time > pacing->tsc_time_cursor) {
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
       rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
+      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
-    /* point to tsc time of next epoch */
-    pacing->tsc_time_cursor += pacing->frame_idle_time + pacing->tr_offset;
   }
 
   return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
@@ -2299,14 +2306,25 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
       bool second_field = frame->tx_st22_meta.second_field;
-      tv_sync_pacing_st22(impl, s, false, required_tai, second_field,
+      tv_sync_pacing_st22(impl, s, required_tai, second_field,
                           st22_info->st22_total_pkts);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
-        pacing->rtp_time_stamp = st10_get_media_clk(meta.tfmt, meta.timestamp, 90 * 1000);
+        pacing->rtp_time_stamp =
+            st10_get_media_clk(meta.tfmt, meta.timestamp, s->fps_tm.sampling_clock_rate);
+      } else {
+        uint64_t tai_for_rtp_ts;
+        if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+          tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
+        } else {
+          tai_for_rtp_ts = pacing->ptp_time_cursor;
+        }
+        tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+        pacing->rtp_time_stamp =
+            st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
       }
       dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-      frame->tx_st22_meta.timestamp = pacing->cur_epoch_time;
+      frame->tx_st22_meta.timestamp = pacing->ptp_time_cursor;
       frame->tx_st22_meta.epoch = pacing->cur_epochs;
       frame->tx_st22_meta.rtp_timestamp = pacing->rtp_time_stamp;
       /* init to next field */
@@ -2472,7 +2490,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     if (frame_end_time > pacing->tsc_time_cursor) {
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
       rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %fus\n", __func__, idx, s->st20_frame_idx,
+      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
   }
@@ -3791,6 +3809,13 @@ static int tv_ops_check(struct st20_tx_ops* ops) {
 
   if (!st_is_valid_payload_type(ops->payload_type)) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
+    return -EINVAL;
+  }
+
+  if (ops->flags & ST20_TX_FLAG_EXACT_USER_PACING &&
+      !(ops->flags & ST20_TX_FLAG_USER_PACING)) {
+    err("%s, invalid flags 0x%x, need set USER_PACING with EXACT_USER_PACING\n", __func__,
+        ops->flags);
     return -EINVAL;
   }
 

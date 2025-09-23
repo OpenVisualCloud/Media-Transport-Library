@@ -15,6 +15,7 @@ from mtl_engine.media_files import audio_files
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM24"])
 def test_integrity_dual(
     hosts,
