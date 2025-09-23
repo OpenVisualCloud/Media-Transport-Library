@@ -40,7 +40,7 @@ if [ "$sourced" -eq 0 ]; then
 	fi
 
 	if [ -d "ice-${ICE_VER}" ]; then
-		echo "ice-${ICE_VER} folder already exists, please remove it first"
+		echo "ice-${ICE_VER} directory already exists, please remove it first"
 		exit 1
 	fi
 
