@@ -8,7 +8,9 @@ This directory contains configuration files for the Media Transport Library vali
 
 ## Configuration Files
 
-### test_config.yaml
+### [`test_config.yaml`](test_config.yaml)
+
+**File Location**: `tests/validation/configs/test_config.yaml`
 
 This file contains general test environment settings:
 
@@ -67,7 +69,9 @@ ramdisk:
   - **pcap.mountpoint**: Mount point for packet capture RAM disk
   - **pcap.size_gib**: Size of packet capture RAM disk in GiB
 
-### topology_config.yaml
+### [`topology_config.yaml`](topology_config.yaml)
+
+**File Location**: `tests/validation/configs/topology_config.yaml`
 
 This file defines the network topology for testing:
 
