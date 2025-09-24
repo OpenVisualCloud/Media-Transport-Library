@@ -40,7 +40,7 @@ if [ "$sourced" -eq 0 ]; then
 	fi
 
 	if [ -d "ice-${ICE_VER}" ]; then
-		echo "ice-${ICE_VER} already exists, please remove it first"
+		echo "ice-${ICE_VER} directory already exists, please remove it first"
 		exit 1
 	fi
 
@@ -61,6 +61,7 @@ if [ "$sourced" -eq 0 ]; then
 	cd src
 	make -j
 	sudo make install
+	sudo rmmod irdma || echo "irdma not loaded"
 	sudo rmmod ice
 	sudo modprobe ice
 	cd -

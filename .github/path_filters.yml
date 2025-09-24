@@ -54,7 +54,7 @@ ubuntu_build: &ubuntu_build
   - *ecosystem
 
 linux_gtest: &linux_gtest
-  - .github/workflows/ubuntu_build_with_gtest.yml
+  - .github/workflows/gtest-bare-metal.yml
   - '.github/workflows/upl*'
   - *ice_build
   - *ubuntu_build
