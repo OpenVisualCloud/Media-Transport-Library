@@ -91,7 +91,7 @@ hosts:
         connection_type: SSHConnection
         connection_options:
           port: SSH_PORT_PLACEHOLDER       # ⚠️ UPDATE: SSH port (usually 22)
-          username: USERNAME_PLACEHOLDER   # ⚠️ UPDATE: Your username
+          username: USERNAME_PLACEHOLDER   # ⚠️ UPDATE: root
           password: None
           key_path: KEY_PATH_PLACEHOLDER   # ⚠️ UPDATE: Path to your SSH key
 ```
