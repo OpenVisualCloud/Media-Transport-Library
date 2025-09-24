@@ -25,7 +25,7 @@ capture_cfg:
   capture_time: 5
   interface: null
 ramdisk:
-  media: 
+  media:
     mountpoint: /mnt/ramdisk/media
     size_gib: 32
   pcap:
@@ -33,13 +33,13 @@ ramdisk:
     size_gib: 768
 ```
 
-#### Key Parameters
+### Key Parameters
 
 - **build**: Path to the Media Transport Library build directory
-- **mtl_path**: Path to the Media Transport Library installation  
+- **mtl_path**: Path to the Media Transport Library installation
 - **media_path**: Path to the directory containing test media files
 
-#### ⚠️ Setup Instructions
+### ⚠️ Setup Instructions
 
 1. **Replace `MTL_PATH_PLACEHOLDER`** with your actual MTL installation path:
    ```bash
@@ -56,7 +56,7 @@ ramdisk:
    ls /path/to/your/media/files/
    ```
 
-#### Other Parameters
+### Other Parameters
 - **capture_cfg**: Network packet capture configuration
   - **enable**: Enable/disable packet capture
   - **test_name**: Name prefix for capture files
@@ -96,7 +96,7 @@ hosts:
           key_path: KEY_PATH_PLACEHOLDER   # ⚠️ UPDATE: Path to your SSH key
 ```
 
-#### ⚠️ Setup Instructions
+### Topology Setup Instructions
 
 1. **Find your PCI device ID**:
    ```bash
@@ -120,7 +120,7 @@ hosts:
    # If missing, generate one: ssh-keygen -t rsa -b 4096
    ```
 
-#### Topology Parameters
+### Topology Parameters
 
 - **metadata.version**: Configuration format version
 - **hosts**: List of hosts in the test topology
@@ -166,7 +166,7 @@ def test_with_custom_config(config):
     # Override configuration for this test
     config.capture_cfg.enable = True
     config.capture_cfg.interface = "enp1s0f0"
-    
+
     # Run test with modified configuration
     # ...
 ```

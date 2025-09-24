@@ -12,10 +12,6 @@ The validation framework uses pytest to organize and execute tests across variou
 
 The validation framework is organized into the following main components:
 
-## Test Framework Structure
-
-The validation framework is organized into the following main components:
-
 - **common/**: Shared utilities for test functionality, including FFmpeg handlers, integrity verification tools, and network interface control
 - **configs/**: Configuration files for test environment and network topology
 - **mtl_engine/**: Core test framework components that manage test execution, application interfaces, and result reporting
@@ -70,13 +66,13 @@ Location: `tests/validation/configs/test_config.yaml`
 Defines the test execution environment:
 
 **Key Parameters**:
-  - **build**: Path to MTL build directory 
-  - **mtl_path**: Path to MTL installation directory
-  - **media_path**: Path to test media files directory
-  - **ramdisk.media.mountpoint**: Mount point for media RAM disk
-  - **ramdisk.media.size_gib**: Size of media RAM disk in GiB
-  - **ramdisk.pcap.mountpoint**: Mount point for packet capture RAM disk
-  - **ramdisk.pcap.size_gib**: Size of packet capture RAM disk in GiB
+- **build**: Path to MTL build directory
+- **mtl_path**: Path to MTL installation directory
+- **media_path**: Path to test media files directory
+- **ramdisk.media.mountpoint**: Mount point for media RAM disk
+- **ramdisk.media.size_gib**: Size of media RAM disk in GiB
+- **ramdisk.pcap.mountpoint**: Mount point for packet capture RAM disk
+- **ramdisk.pcap.size_gib**: Size of packet capture RAM disk in GiB
 
 #### [`topology_config.yaml`](../tests/validation/configs/topology_config.yaml)
 
@@ -242,7 +238,7 @@ ramdisk:
     size_gib: 768
 ```
 
-**Important**: 
+**Important**:
 - Set `build` and `mtl_path` to your actual MTL installation directory
 - Set `media_path` to where your test media files are located
 - Ensure the paths exist and are accessible
@@ -267,13 +263,11 @@ sudo ./script/nicctl.sh create_vf "0000:18:00.1"  # Replace with your secondary 
 
 ## Running Tests
 
-> **⚠️ CRITICAL**: Tests must be run as **root user**, not regular user. MTL validation framework requires root privileges for network operations.
-
-### Basic Test Execution
+> **⚠️ CRITICAL**: Tests must be run as **root user**, not regular user. MTL validation framework requires root privileges for network operations.### Basic Test Execution
 
 **⚠️ CRITICAL**: All tests must be run as **root user**. Regular users will fail.
 
-#### Run specific test with parameters:
+### Run specific test with parameters
 
 **Examples of running tests with specific parameters**:
 ```bash
@@ -411,7 +405,7 @@ To add new functionality to the framework:
 
 #### Virtual Environment Issues
 **Problem**: Package installation conflicts or wrong Python interpreter
-**Solution**: 
+**Solution**:
 ```bash
 # Remove existing venv and recreate
 rm -rf venv
@@ -422,7 +416,7 @@ pip install -r requirements.txt
 
 #### Configuration File Issues
 **Problem**: Tests fail with connection or path errors
-**Solution**: 
+**Solution**:
 - Verify `configs/test_config.yaml` has correct paths (especially `build` and `mtl_path`)
 - Update `configs/topology_config.yaml` with actual network interface details
 - Use `lspci | grep Ethernet` to find your PCI device IDs
