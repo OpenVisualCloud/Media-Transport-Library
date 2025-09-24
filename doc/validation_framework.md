@@ -66,8 +66,39 @@ The `tests/` directory contains test implementations organized by scenario type:
 
 ### Prerequisites
 
+#### 1. Build Media Transport Library First (CRITICAL)
+
+**⚠️ IMPORTANT**: The MTL library must be built before running validation tests!
+
+The tests require the RxTxApp binary and other MTL components. Follow these steps:
+
+```bash
+# 1. Install build dependencies (see doc/build.md for your OS)
+sudo apt-get update
+sudo apt-get install git gcc meson python3 python3-pip pkg-config libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libssl-dev
+sudo pip install pyelftools ninja
+
+# 2. Build DPDK (required dependency)
+git clone https://github.com/DPDK/dpdk.git
+cd dpdk
+git checkout v25.03
+git switch -c v25.03
+git am /path/to/Media-Transport-Library/patches/dpdk/25.03/*.patch
+meson setup build
+ninja -C build
+sudo ninja install -C build
+cd ..
+
+# 3. Build MTL
+cd Media-Transport-Library
+./build.sh
+```
+
+For complete build instructions, see [doc/build.md](build.md).
+
+#### 2. Other Prerequisites
+
 - Python 3.9 or higher
-- Media Transport Library built and installed
 - Test media files (currently maintained on NFS)
 - Network interfaces as specified in MTL's run.md document (VFs will be created automatically)
 - Root privileges or equivalent (sudo) for network operations done by script/nicctl.sh
@@ -75,7 +106,7 @@ The `tests/` directory contains test implementations organized by scenario type:
 
 ### Environment Setup
 
-1. Create a virtual environment:
+1. Create and activate a virtual environment:
 
 ```bash
 cd tests/validation
@@ -83,41 +114,73 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
+**Note**: If you're using VS Code or other development tools that auto-configure Python environments, ensure you're using the correct Python interpreter. The tests require the packages from `tests/validation/requirements.txt`.
+
 2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
+Verify installation:
+```bash
+python -m pytest --version
+```
+
 ### Configuration
 
-1. Update `configs/topology_config.yaml` with your network interface details:
+#### Critical Configuration Steps
+
+1. **Update `configs/topology_config.yaml`** with your actual network interface details:
 
 ```yaml
-system:
-  hostname: testserver
-  interfaces:
-    - name: ens801f0
-      pci: "86:00.0"
-      ip: "192.168.108.15"
-    - name: ens801f1
-      pci: "86:00.1"
-      ip: "192.168.208.15"
+---
+metadata:
+  version: '2.4'
+hosts:
+  - name: host
+    instantiate: true
+    role: sut
+    network_interfaces:
+      - pci_device: 8086:1592  # Update with your NIC's PCI device ID
+        interface_index: 0
+    connections:
+      - ip_address: 127.0.0.1  # Use actual IP for remote hosts
+        connection_type: SSHConnection
+        connection_options:
+          port: 22
+          username: root         # Update with your username
+          password: None         # Use key-based auth when possible
+          key_path: /home/user/.ssh/id_rsa  # Update path to your SSH key
 ```
 
-2. Update `configs/test_config.yaml` with your test environment settings:
+**To find your PCI device ID**: `lspci | grep Ethernet`
+
+2. **Update `configs/test_config.yaml`** with your environment paths:
 
 ```yaml
-environment:
-  media_dir: "/path/to/test/media"
-  log_level: "INFO"
-  temp_dir: "/tmp/mtl_test"
-
-test_params:
-  timeout: 30
-  retry_count: 3
-  integrity_check: true
+build: /path/to/Media-Transport-Library/     # Update to your MTL root directory
+mtl_path: /path/to/Media-Transport-Library/  # Update to your MTL root directory
+media_path: /mnt/media                       # Update to your test media location
+capture_cfg:
+  enable: false    # Set to true if you want packet capture
+  test_name: test_name
+  pcap_dir: /mnt/ramdisk/pcap
+  capture_time: 5
+  interface: null  # Set to interface name if capture enabled
+ramdisk:
+  media: 
+    mountpoint: /mnt/ramdisk/media
+    size_gib: 32
+  pcap:
+    mountpoint: /mnt/ramdisk/pcap
+    size_gib: 768
 ```
+
+**Important**: 
+- Set `build` and `mtl_path` to your actual MTL installation directory
+- Set `media_path` to where your test media files are located
+- Ensure the paths exist and are accessible
 
 ## Running Tests
 
@@ -225,10 +288,43 @@ To add new functionality to the framework:
 
 ### Common Issues
 
-- **Network Interface Problems**: Ensure interfaces are properly configured and have the correct IP addresses
-- **Permission Issues**: Many tests require root privileges for network operations
-- **Media File Access**: Verify that test media files are available and accessible
-- **Test Timeouts**: Increase timeout values in test_config.yaml for slower systems
+#### RxTxApp Command Not Found
+**Error**: `sudo: ./tests/tools/RxTxApp/build/RxTxApp: command not found`
+**Solution**: The MTL library hasn't been built yet. Follow the build instructions in the Prerequisites section above or see [doc/build.md](build.md).
+
+#### Virtual Environment Issues
+**Problem**: Package installation conflicts or wrong Python interpreter
+**Solution**: 
+```bash
+# Remove existing venv and recreate
+rm -rf venv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+#### Configuration File Issues
+**Problem**: Tests fail with connection or path errors
+**Solution**: 
+- Verify `configs/test_config.yaml` has correct paths (especially `build` and `mtl_path`)
+- Update `configs/topology_config.yaml` with actual network interface details
+- Use `lspci | grep Ethernet` to find your PCI device IDs
+
+#### Network Interface Problems
+**Problem**: Interface configuration errors
+**Solution**: Ensure interfaces are properly configured and have the correct IP addresses
+
+#### Permission Issues
+**Problem**: Network operation failures
+**Solution**: Many tests require root privileges for network operations. Run with appropriate sudo permissions.
+
+#### Media File Access
+**Problem**: Media files not found
+**Solution**: Verify that test media files are available and accessible at the path specified in `media_path`
+
+#### Test Timeouts
+**Problem**: Tests timing out on slower systems
+**Solution**: Increase timeout values in test_config.yaml for slower systems
 
 ### Debugging Tests
 
