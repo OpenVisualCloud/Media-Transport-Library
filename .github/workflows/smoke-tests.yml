@@ -63,9 +63,6 @@ jobs:
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         run: |
           tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
-      - name: Restore repository owner
-        run: |
-          sudo chown -R "${USER}" .
       - name: "upload report"
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
