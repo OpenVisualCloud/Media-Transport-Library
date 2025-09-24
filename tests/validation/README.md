@@ -2,9 +2,13 @@
 
 The Media Transport Library (MTL) Validation Framework provides comprehensive testing capabilities for various aspects of the MTL, including protocol compliance, performance, and integration testing.
 
-> **📖 For detailed documentation, please refer to [the main validation framework documentation](../../doc/validation_framework.md)**
->
-> **🚀 Quick Start**: See [Validation Quick Start Guide](../../doc/validation_quickstart.md)
+## Documentation Navigation
+
+📖 **Complete Documentation**: [Main validation framework documentation](../../doc/validation_framework.md) - Detailed configuration, troubleshooting, and advanced features  
+🚀 **Quick Start**: [Validation Quick Start Guide](../../doc/validation_quickstart.md) - Get running in 3 steps  
+🔧 **Build Issues**: [Build Guide](../../doc/build.md) - MTL build instructions  
+
+---
 
 ## Quick Setup
 
@@ -19,41 +23,16 @@ The Media Transport Library (MTL) Validation Framework provides comprehensive te
 
 ### Setup in 3 Simple Steps
 
-1. **Ensure MTL is built first** (if not done already):
-   ```bash
-   cd /path/to/Media-Transport-Library
-   ./build.sh
-   ```
-   See [detailed build instructions](../../doc/build.md) if needed.
+1. **🏗️ MTL Build**: Ensure MTL and test tools are built  
+   👉 **[Complete build instructions](../../doc/validation_framework.md#setup-and-installation)**
 
-2. **Create virtual environment and install dependencies** (run in `tests/validation/`):
-   ```bash
-   cd tests/validation  # Must be in this directory!
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt  # Main framework requirements
-   pip install -r common/integrity/requirements.txt  # Integrity test components
-   ```
+2. **⚡ Quick Setup**: Follow 3-step setup process  
+   👉 **[Quick Start Guide](../../doc/validation_quickstart.md)**
 
-3. **Configure your environment**:
-   - Update network interfaces in [`configs/topology_config.yaml`](configs/topology_config.yaml)
-   - Set correct paths in [`configs/test_config.yaml`](configs/test_config.yaml) (especially `build` and `mtl_path`)
-   - Ensure media files are accessible at `media_path`
-   - **Use root user** in topology_config.yaml (not regular user)
-
-4. **Run tests**:
+3. **🏃 Run Tests**: Execute validation tests
    ```bash
-   # Run smoke tests (quick validation) - MUST be run as root
-   python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke
-   
-   # Run specific test module
-   python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml tests/single/st20p/test_st20p_rx.py
-   
-   # Run specific test with parameters
-   pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
-   
-   # Generate HTML report
-   python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke --template=html/index.html --report=report.html
+   # Quick smoke test
+   sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke
    ```
 
 ## Available Tests

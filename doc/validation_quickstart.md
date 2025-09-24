@@ -2,19 +2,17 @@
 
 This quick start guide helps you get the MTL validation framework running with minimal setup. For detailed information, see the [complete validation framework documentation](validation_framework.md).
 
-## Prerequisites (Must Complete First!)
+## Prerequisites
 
-1. **🏗️ Build MTL** (CRITICAL - tests will fail without this):
-   ```bash
-   cd /path/to/Media-Transport-Library
-   ./build.sh
-   ```
-   > If this fails, see [detailed build instructions](build.md)
+1. **🏗️ MTL Build Complete**: MTL must be built and test tools available  
+   👉 **[Follow complete build instructions](validation_framework.md#setup-and-installation)**
 
 2. **📋 Basic Requirements**:
    - Python 3.9+
    - Root user access (MTL validation requires root privileges)
    - Network interfaces configured for testing
+   - FFmpeg with text filters (for media generation)
+   - Compatible SSH keys (RSA recommended, not DSA)
 
 ## Quick Setup (3 steps)
 
@@ -35,8 +33,18 @@ Update two key files:
 ```yaml
 # Key settings to update:
 username: root  # Must be root for MTL operations
-key_path: /root/.ssh/id_rsa  # Your SSH key path
+key_path: /home/your-username/.ssh/id_rsa  # YOUR user's SSH key path (not /root/)
+ip_address: 127.0.0.1  # For localhost testing
+port: 22  # Standard SSH port
 ```
+
+> **⚠️ SSH Key Setup**:
+> - Use your regular user's SSH keys (e.g., `/home/gta/.ssh/id_rsa`), not root's keys
+> - If you get DSA key errors, generate new RSA keys:
+> ```bash
+> ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa
+> ssh-copy-id -i ~/.ssh/id_rsa.pub root@localhost
+> ```
 
 **[tests/validation/configs/test_config.yaml](../tests/validation/configs/test_config.yaml)**:
 ```yaml
@@ -46,12 +54,14 @@ mtl_path: /home/gta/Media-Transport-Library/
 ```
 
 ### 3. Run Tests
-**Basic smoke test**:
+**Basic smoke test** (must run as root):
 ```bash
 cd tests/validation
-source venv/bin/activate
-python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke -v
+# Use full path to venv python with sudo:
+sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke -v
 ```
+
+> **💡 Root Execution**: Don't use `sudo python3` (uses system python). Use `sudo ./venv/bin/python3` to use the virtual environment.
 
 **Run specific test with parameters**:
 ```bash
@@ -72,29 +82,27 @@ sudo ./script/nicctl.sh create_vf ${TEST_PF_PORT_R}
 
 ## Quick Troubleshooting
 
-| Error | Solution |
-|-------|----------|
-| `RxTxApp: command not found` | Build MTL first with `./build.sh` |
-| `Permission denied` | Use root user (not regular user) |
+| Common Error | Quick Solution |
+|--------------|----------------|
+| `RxTxApp: command not found` | [Follow build instructions](validation_framework.md#rxtxapp-test-tool) |
+| `Permission denied` | Use root: `sudo ./venv/bin/python3 -m pytest` |
+| `No module named pytest` | Don't use `sudo python3`, use `sudo ./venv/bin/python3` |
 | `Config path errors` | Update placeholder paths in config files |
+| SSH/FFmpeg issues | See [detailed troubleshooting](validation_framework.md#troubleshooting) |
 
 ## Generate Test Media (Optional)
 
-For video testing, generate test frames (must run from specific directory):
-```bash
-cd tests/validation/common  # Must be in this directory
-./gen_frames.sh             # Generates test media files
-```
-
-The script supports:
-- Multiple resolutions (3840x2160, 1920x1080, 1280x720, 640x360)
-- Different pixel formats (yuv422p, yuv422p10le)
-- Configurable color patterns and test signals with timestamps
-- Various frame rates and durations
-- Generates files like `ParkJoy_1080p.yuv` used in test examples
+For video testing, you may need test media files:  
+👉 **[See media generation instructions](validation_framework.md#gen_framessh)**
 
 ---
 
-**Need more details?** → [Complete Documentation](validation_framework.md)  
-**Build issues?** → [Build Guide](build.md)  
-**Configuration help?** → [Configuration Guide](configuration_guide.md)
+## Documentation Navigation
+
+📖 **Complete Documentation**: [Validation Framework](validation_framework.md) - Detailed information, configuration, and advanced features  
+🔧 **Build Issues**: [Build Guide](build.md) - MTL build instructions  
+⚙️ **Configuration Help**: [Configuration Guide](configuration_guide.md) - Network and environment setup  
+
+## Summary
+
+This quick start guide gets you running tests in minutes. For production use, detailed configuration, or troubleshooting complex issues, refer to the complete documentation above.

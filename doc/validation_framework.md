@@ -2,7 +2,13 @@
 
 The Media Transport Library (MTL) Validation Framework provides comprehensive testing capabilities for various aspects of the MTL, including protocol compliance, performance, and integration testing.
 
-> **🚀 Quick Start**: For rapid setup, see [Validation Quick Start Guide](validation_quickstart.md)
+## Documentation Navigation
+
+🚀 **Quick Setup**: [Validation Quick Start Guide](validation_quickstart.md) - Get running in 3 steps  
+📁 **Local README**: [tests/validation/README.md](../tests/validation/README.md) - Quick reference and test categories  
+🔧 **Build Guide**: [build.md](build.md) - MTL build instructions  
+
+---
 
 ## Overview
 
@@ -39,12 +45,30 @@ A shell script for generating test frames for video testing:
 - Configurable color patterns and test signals
 - Generates files like `ParkJoy_1080p.yuv`, test patterns, and various resolution formats
 
+**Prerequisites**: Requires FFmpeg with text filters enabled.
+
 **Usage**:
 ```bash
 cd tests/validation/common  # Must be in this directory
 ./gen_frames.sh  # Generates test media files for validation
 # Generated files will be available for test configuration
 ```
+
+**Troubleshooting**: If you get "No such filter: 'drawtext'" errors, install a complete FFmpeg build or skip media generation.
+
+#### RxTxApp Test Tool
+
+**CRITICAL**: Tests require the RxTxApp tool which is not built by the main MTL build process.
+
+**Build Instructions** (required before running tests):
+```bash
+cd tests/tools/RxTxApp
+meson setup build
+meson compile -C build
+cd ../../..
+```
+
+**Location**: After building, RxTxApp is available at `tests/tools/RxTxApp/build/RxTxApp`
 
 **Supported Formats**:
 - Resolutions: 3840x2160, 1920x1080, 1280x720, 640x360
@@ -133,7 +157,22 @@ cd ..
 # 3. Build MTL
 cd Media-Transport-Library
 ./build.sh
+
+# 4. Install MTL system-wide (REQUIRED for RxTxApp)
+sudo ninja install -C build
+sudo ldconfig
+
+# 5. Build required test tools (CRITICAL for validation)
+cd tests/tools/RxTxApp
+meson setup build
+meson compile -C build
+cd ../../..
 ```
+
+> **⚠️ CRITICAL**:
+> - The RxTxApp tool is required for validation tests but not built by the main build process
+> - RxTxApp requires MTL to be installed system-wide to build successfully
+> - You must build it separately after installing MTL
 
 For complete build instructions, see [doc/build.md](build.md).
 
@@ -147,31 +186,18 @@ For complete build instructions, see [doc/build.md](build.md).
 
 ### Environment Setup
 
-> **⚠️ IMPORTANT**: Run all commands in the `tests/validation/` directory
+> **🚀 Quick Setup**: See [Validation Quick Start Guide](validation_quickstart.md) for streamlined setup steps.
 
-1. Create and activate a Python virtual environment:
+For detailed setup:
+
+1. Create Python virtual environment in `tests/validation/`:
 
 ```bash
-cd tests/validation  # Must be in this directory!
+cd tests/validation
 python3 -m venv venv
 source venv/bin/activate
-```
-
-**Note**: If you're using VS Code or other development tools that auto-configure Python environments, ensure you're using the correct Python interpreter. The tests require the packages from `tests/validation/requirements.txt`.
-
-2. Install required dependencies:
-
-```bash
-# Main framework requirements (run in tests/validation/)
 pip install -r requirements.txt
-
-# Additional integrity test components (optional but recommended)
 pip install -r common/integrity/requirements.txt
-```
-
-Verify installation:
-```bash
-python -m pytest --version
 ```
 
 ### Configuration
@@ -265,8 +291,6 @@ sudo ./script/nicctl.sh create_vf "0000:18:00.1"  # Replace with your secondary 
 
 > **⚠️ CRITICAL**: Tests must be run as **root user**, not regular user. MTL validation framework requires root privileges for network operations.### Basic Test Execution
 
-**⚠️ CRITICAL**: All tests must be run as **root user**. Regular users will fail.
-
 ### Run specific test with parameters
 
 **Examples of running tests with specific parameters**:
@@ -284,19 +308,9 @@ pytest --topology_config=configs/topology_config.yaml --test_config=configs/test
 pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/dual/st30p/st30p_format/test_st30p_format.py::test_st30p_format[pcm24]"
 ```
 
-Run all tests:
+> **🚀 Quick Test Execution**: See [Quick Start Guide](validation_quickstart.md#3-run-tests) for basic test commands.
 
-```bash
-cd tests/validation
-source venv/bin/activate  # Activate virtual environment
-python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml
-```
-
-Run smoke tests:
-
-```bash
-python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke
-```
+For comprehensive test execution:
 
 ### Running Specific Tests with Parameters
 
@@ -313,13 +327,13 @@ python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=c
 Run specific test modules:
 
 ```bash
-python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml tests/single/st20p/test_st20p_rx.py
+sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml tests/single/st20p/test_st20p_rx.py
 ```
 
 Run specific test cases with parameters:
 
 ```bash
-python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
+sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
 ```
 
 ### Test Categories
@@ -429,6 +443,58 @@ pip install -r requirements.txt
 **Problem**: Network operation failures
 **Solution**: Many tests require root privileges for network operations. Run with appropriate sudo permissions.
 
+#### Build and Setup Issues
+
+**Problem**: `RxTxApp: command not found`
+**Solution**: Build the RxTxApp test tool separately:
+```bash
+cd tests/tools/RxTxApp
+meson setup build
+meson compile -C build
+cd ../../..
+```
+
+**Problem**: RxTxApp build fails with "ST20P_TX_FLAG_EXACT_USER_PACING undeclared" or other header errors
+**Solution**: Install MTL system-wide before building RxTxApp:
+```bash
+cd /path/to/Media-Transport-Library
+sudo ninja install -C build
+sudo ldconfig
+# Then build RxTxApp
+cd tests/tools/RxTxApp
+rm -rf build  # Clean previous failed build
+meson setup build
+meson compile -C build
+```
+
+**Problem**: `No module named pytest` when using sudo
+**Solution**: Use the virtual environment python with sudo:
+```bash
+# Wrong: sudo python3 -m pytest
+# Correct: 
+sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml
+```
+
+**Problem**: DSA SSH key errors: `ValueError: q must be exactly 160, 224, or 256 bits long`
+**Solution**: Generate new RSA SSH keys and configure SSH access:
+```bash
+# Generate RSA keys (as your regular user, not root)
+ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa
+
+# Set up SSH access for root@localhost
+ssh-copy-id -i ~/.ssh/id_rsa.pub root@localhost
+
+# Update topology_config.yaml to use your user's key path:
+# key_path: /home/your-username/.ssh/id_rsa  (not /root/.ssh/id_rsa)
+```
+
+**Problem**: FFmpeg `No such filter: 'drawtext'` when running gen_frames.sh
+**Solution**: Install complete FFmpeg build or skip media generation:
+```bash
+sudo apt install ffmpeg  # Full installation
+# Or skip: some tests may work without generated media
+```
+
 #### Media File Access
 **Problem**: Media files not found
 **Solution**: Verify that test media files are available and accessible at the path specified in `media_path`
@@ -436,6 +502,26 @@ pip install -r requirements.txt
 #### Test Timeouts
 **Problem**: Tests timing out on slower systems
 **Solution**: Increase timeout values in test_config.yaml for slower systems
+
+### Quick Reference Tables
+
+#### Build Issues
+
+| Problem | Solution |
+|---------|----------|
+| `RxTxApp: command not found` | Build RxTxApp: `cd tests/tools/RxTxApp && meson setup build && meson compile -C build` |
+| `MTL library not found` | Install MTL system-wide: `sudo ninja install -C build && sudo ldconfig` |
+| `DSA key error: q must be exactly 160, 224, or 256 bits` | Generate RSA keys: `ssh-keygen -t rsa -b 2048 -f ~/.ssh/id_rsa` |
+
+#### Runtime Issues
+
+| Problem | Solution |
+|---------|----------|
+| `Permission denied` | Use root user: `sudo ./venv/bin/python3 -m pytest` |
+| `No module named pytest` | Don't use `sudo python3`, use `sudo ./venv/bin/python3` |
+| `Config path errors` | Update placeholder paths in config files |
+| `SSH connection failed` | Ensure SSH keys are set up for root@localhost access |
+| `No such filter: 'drawtext'` | Install FFmpeg with text filters or skip media generation |
 
 ### Debugging Tests
 
