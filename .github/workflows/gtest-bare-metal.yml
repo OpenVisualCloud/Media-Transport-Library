@@ -111,6 +111,8 @@ jobs:
 
           echo "TEST_PORT_P=$TEST_PORT_P" >> "$GITHUB_ENV"
           echo "TEST_PORT_R=$TEST_PORT_R" >> "$GITHUB_ENV"
+          sed -i "s+REPLACE_BY_CICD_TEST_PORT_P+${TEST_PORT_P}+" .github/workflows/upl_gtest.json
+          sed -i "s+REPLACE_BY_CICD_TEST_PORT_R+${TEST_PORT_R}+" .github/workflows/upl_gtest.json
           echo "Selected ports: P=$TEST_PORT_P, R=$TEST_PORT_R"
 
       - name: Start MtlManager at background
