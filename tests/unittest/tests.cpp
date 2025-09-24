@@ -48,8 +48,7 @@ enum test_args_cmd {
   TEST_ARG_MCAST_ONLY,
   TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
   TEST_ARG_AUDIO_TX_PACING,
-  TEST_ARG_CTX_TESTS_ONLY,
-  TEST_ARG_NO_CTX_TESTS_ONLY,
+  TEST_ARG_NOCTX_TESTS
 };
 
 static struct option test_args_options[] = {
@@ -87,8 +86,7 @@ static struct option test_args_options[] = {
     {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
     {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
-    {"ctx_tests_only", no_argument, 0, TEST_ARG_CTX_TESTS_ONLY},
-    {"no_ctx_tests_only", no_argument, 0, TEST_ARG_NO_CTX_TESTS_ONLY},
+    {"no_ctx_tests", no_argument, 0, TEST_ARG_NOCTX_TESTS},
 
     {0, 0, 0, 0}};
 
@@ -288,13 +286,8 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         else
           err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
-      case TEST_ARG_CTX_TESTS_ONLY:
-        ctx->ctx_tests_only = true;
-        ctx->no_ctx_tests_only = false;
-        break;
-      case TEST_ARG_NO_CTX_TESTS_ONLY:
-        ctx->no_ctx_tests_only = true;
-        ctx->ctx_tests_only = false;
+      case TEST_ARG_NOCTX_TESTS:
+        ctx->noctx_tests = true;
         break;
       default:
         break;
@@ -589,10 +582,12 @@ static int run_all_context_test(int argc, char** argv, struct st_tests_context* 
     ctx->para.nb_rx_hdr_split_queues = 1;
   }
 
-  ctx->handle = mtl_init(&ctx->para);
-  if (!ctx->handle) {
-    err("%s, mtl_init fail\n", __func__);
-    return -EIO;
+  if (!ctx->noctx_tests) {
+    ctx->handle = mtl_init(&ctx->para);
+    if (!ctx->handle) {
+      err("%s, mtl_init fail\n", __func__);
+      return -EIO;
+    }
   }
 
   for (int i = 0; i < ctx->para.num_ports; i++) {
@@ -646,32 +641,6 @@ static int run_all_context_test(int argc, char** argv, struct st_tests_context* 
   return ret;
 }
 
-int run_all_no_context_tests(int argc, char** argv) {
-  std::string original_filter = ::testing::GTEST_FLAG(filter);
-  int ret;
-
-  std::string new_filter;
-  if (original_filter == "*" || original_filter.empty()) {
-    new_filter = "NoCtxTest*";
-  } else if (original_filter.rfind("NoCtxTest") != 0) {
-    new_filter = "NoCtxTest*" + original_filter;
-  } else {
-    new_filter = original_filter;
-  }
-
-  ::testing::GTEST_FLAG(filter) = new_filter;
-
-  auto dot_pos = new_filter.find('.');
-  if (dot_pos != std::string::npos) {
-    new_filter = "NoCtxTest" + new_filter.substr(dot_pos);
-  }
-
-  ret = RUN_ALL_TESTS();
-
-  ::testing::GTEST_FLAG(filter) = original_filter;
-  return ret;
-}
-
 bool filter_includes_no_ctx_tests(const std::string& filter) {
   if (filter == "*" || filter.empty()) return true;
   if (filter.rfind("NOCTX") != std::string::npos) return true;
@@ -679,7 +648,7 @@ bool filter_includes_no_ctx_tests(const std::string& filter) {
 }
 
 GTEST_API_ int main(int argc, char** argv) {
-  auto ctx = (struct st_tests_context*)st_test_ctx();
+         auto ctx = (struct st_tests_context*)st_test_ctx();
   int ret_ctx = 1, ret_no_ctx = 1;
 
   ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
@@ -693,14 +662,8 @@ GTEST_API_ int main(int argc, char** argv) {
   test_parse_args(ctx, &ctx->para, argc, argv);
   test_random_ip(ctx);
   g_test_ctx = ctx;
+  ret_ctx = run_all_context_test(argc, argv, ctx);
 
-  if (!ctx->no_ctx_tests_only) {
-    ret_ctx = run_all_context_test(argc, argv, ctx);
-  }
-
-  if (!ctx->ctx_tests_only) {
-    ret_no_ctx = run_all_no_context_tests(argc, argv);
-  }
 
   return ret_ctx || ret_no_ctx;
 }
