@@ -41,11 +41,13 @@ A shell script for generating test frames for video testing:
 - Creates test patterns in various formats
 - Supports different resolutions and frame rates  
 - Configurable color patterns and test signals
+- Generates files like `ParkJoy_1080p.yuv`, test patterns, and various resolution formats
 
 **Usage**:
 ```bash
-cd tests/validation/common
-./gen_frames.sh
+cd tests/validation/common  # Must be in this directory
+./gen_frames.sh  # Generates test media files for validation
+# Generated files will be available for test configuration
 ```
 
 **Supported Formats**:
@@ -61,9 +63,26 @@ The `configs/` directory contains YAML files that specify:
 - **Test Environment Settings**: Hardware specifications, media paths, and test parameters
 - **Network Topology**: Interface configuration, IP addressing, and routing information
 
-#### [test_config.yaml](../tests/validation/configs/test_config.yaml)
+#### [`test_config.yaml`](../tests/validation/configs/test_config.yaml)
+
+Location: `tests/validation/configs/test_config.yaml`
 
 Defines the test execution environment:
+
+**Key Parameters**:
+  - **build**: Path to MTL build directory 
+  - **mtl_path**: Path to MTL installation directory
+  - **media_path**: Path to test media files directory
+  - **ramdisk.media.mountpoint**: Mount point for media RAM disk
+  - **ramdisk.media.size_gib**: Size of media RAM disk in GiB
+  - **ramdisk.pcap.mountpoint**: Mount point for packet capture RAM disk
+  - **ramdisk.pcap.size_gib**: Size of packet capture RAM disk in GiB
+
+#### [`topology_config.yaml`](../tests/validation/configs/topology_config.yaml)
+
+Location: `tests/validation/configs/topology_config.yaml`
+
+Defines the network topology and host configuration.
 
 ### MTL Engine
 
@@ -187,10 +206,13 @@ hosts:
 ```
 
 **Device Specification Options**:
-- **PCI device ID** (recommended): Find with `lspci | grep Ethernet` → use format like "0000:18:00.0"
-- **System interface name**: Find with `ip link show` → use format like "enp24s0f0"
+You can specify network devices in multiple ways:
+- **PCI device ID** (recommended): `"0000:18:00.0"` (find with `lspci | grep Ethernet`)
+- **Interface name**: `"enp175s0f0np0"` (find with `ip link show`)
+- **System name**: Use your actual system hostname in the `name` field for the host
+- **Environment variables**: `"${TEST_PF_PORT_P}"` (if you set them)
 
-**To find your options**:
+**To find your device options**:
 ```bash
 # Find PCI device IDs
 lspci | grep Ethernet
@@ -248,6 +270,25 @@ sudo ./script/nicctl.sh create_vf "0000:18:00.1"  # Replace with your secondary 
 > **⚠️ CRITICAL**: Tests must be run as **root user**, not regular user. MTL validation framework requires root privileges for network operations.
 
 ### Basic Test Execution
+
+**⚠️ CRITICAL**: All tests must be run as **root user**. Regular users will fail.
+
+#### Run specific test with parameters:
+
+**Examples of running tests with specific parameters**:
+```bash
+# Run fps test with specific parameters
+pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
+
+# Run specific integrity test with resolution parameters
+pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/dual/st20p/integrity/test_integrity.py::test_integrity[yuv422p10le-1920x1080]"
+
+# Run specific packing test
+pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/dual/st20p/packing/test_packing.py::test_packing[bpm-10]"
+
+# Run audio format test with specific format
+pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/dual/st30p/st30p_format/test_st30p_format.py::test_st30p_format[pcm24]"
+```
 
 Run all tests:
 

@@ -80,17 +80,18 @@ sudo ./script/nicctl.sh create_vf ${TEST_PF_PORT_R}
 
 ## Generate Test Media (Optional)
 
-For video testing, generate test frames:
+For video testing, generate test frames (must run from specific directory):
 ```bash
-cd tests/validation/common
-./gen_frames.sh
+cd tests/validation/common  # Must be in this directory
+./gen_frames.sh             # Generates test media files
 ```
 
 The script supports:
 - Multiple resolutions (3840x2160, 1920x1080, 1280x720, 640x360)
 - Different pixel formats (yuv422p, yuv422p10le)
-- Configurable color patterns and test signals
-- Various frame rates
+- Configurable color patterns and test signals with timestamps
+- Various frame rates and durations
+- Generates files like `ParkJoy_1080p.yuv` used in test examples
 
 ---
 
