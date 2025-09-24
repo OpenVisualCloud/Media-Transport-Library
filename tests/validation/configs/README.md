@@ -2,6 +2,10 @@
 
 This directory contains configuration files for the Media Transport Library validation test suite. These files define the test environment, network topology, and test parameters.
 
+## ⚠️ Critical Setup Required
+
+**BEFORE RUNNING TESTS**: You must update the placeholder values in these configuration files with your actual system details. Tests will fail with default placeholder values.
+
 ## Configuration Files
 
 ### test_config.yaml
@@ -9,9 +13,9 @@ This directory contains configuration files for the Media Transport Library vali
 This file contains general test environment settings:
 
 ```yaml
-build: /path/to/mtl/build
-mtl_path: /path/to/mtl
-media_path: /mnt/media
+build: MTL_PATH_PLACEHOLDER                    # ⚠️ UPDATE: Path to your MTL installation
+mtl_path: MTL_PATH_PLACEHOLDER                 # ⚠️ UPDATE: Same as build path
+media_path: /mnt/media                         # ⚠️ UPDATE: Path to your test media files
 capture_cfg:
   enable: false
   test_name: test_name
@@ -30,8 +34,27 @@ ramdisk:
 #### Key Parameters
 
 - **build**: Path to the Media Transport Library build directory
-- **mtl_path**: Path to the Media Transport Library installation
+- **mtl_path**: Path to the Media Transport Library installation  
 - **media_path**: Path to the directory containing test media files
+
+#### ⚠️ Setup Instructions
+
+1. **Replace `MTL_PATH_PLACEHOLDER`** with your actual MTL installation path:
+   ```bash
+   # Example: if MTL is in /home/user/Media-Transport-Library/
+   build: /home/user/Media-Transport-Library/
+   mtl_path: /home/user/Media-Transport-Library/
+   ```
+
+2. **Update `media_path`** to point to your test media files location
+
+3. **Verify the paths exist**:
+   ```bash
+   ls /path/to/your/Media-Transport-Library/build
+   ls /path/to/your/media/files/
+   ```
+
+#### Other Parameters
 - **capture_cfg**: Network packet capture configuration
   - **enable**: Enable/disable packet capture
   - **test_name**: Name prefix for capture files
@@ -57,17 +80,41 @@ hosts:
     instantiate: true
     role: sut
     network_interfaces:
-      - pci_device: 8086:1592
+      - pci_device: 8086:1592              # ⚠️ UPDATE: Your NIC's PCI device ID
         interface_index: 0 # all
     connections:
-      - ip_address: 192.168.1.100
+      - ip_address: IP_ADDRESS_PLACEHOLDER # ⚠️ UPDATE: Your system IP
         connection_type: SSHConnection
         connection_options:
-          port: 22
-          username: user
+          port: SSH_PORT_PLACEHOLDER       # ⚠️ UPDATE: SSH port (usually 22)
+          username: USERNAME_PLACEHOLDER   # ⚠️ UPDATE: Your username
           password: None
-          key_path: /path/to/ssh/key
+          key_path: KEY_PATH_PLACEHOLDER   # ⚠️ UPDATE: Path to your SSH key
 ```
+
+#### ⚠️ Setup Instructions
+
+1. **Find your PCI device ID**:
+   ```bash
+   lspci | grep Ethernet
+   # Look for output like: 86:00.0 Ethernet controller: Intel Corporation...
+   # Use format: 8086:XXXX (8086 = Intel vendor ID)
+   ```
+
+2. **Update placeholder values**:
+   ```yaml
+   # Replace placeholders with actual values:
+   ip_address: 127.0.0.1        # For localhost, or your actual IP
+   port: 22                     # SSH port
+   username: your_actual_user   # Your username
+   key_path: /home/your_user/.ssh/id_rsa  # Path to your SSH key
+   ```
+
+3. **Verify SSH key exists**:
+   ```bash
+   ls -la ~/.ssh/id_rsa
+   # If missing, generate one: ssh-keygen -t rsa -b 4096
+   ```
 
 #### Topology Parameters
 
