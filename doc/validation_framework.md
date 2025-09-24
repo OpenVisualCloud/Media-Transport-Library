@@ -2,6 +2,8 @@
 
 The Media Transport Library (MTL) Validation Framework provides comprehensive testing capabilities for various aspects of the MTL, including protocol compliance, performance, and integration testing.
 
+> **🚀 Quick Start**: For rapid setup, see [Validation Quick Start Guide](validation_quickstart.md)
+
 ## Overview
 
 The validation framework uses pytest to organize and execute tests across various scenarios, protocols, and backend implementations. It supports both automated testing in CI/CD environments and manual testing for development and troubleshooting.
@@ -32,12 +34,36 @@ The `common/` directory contains shared utilities that provide fundamental funct
 - **Integrity Tools**: Provides functions for data integrity verification between source and received media
 - **Network Interface Control**: Manages network interfaces required for testing
 
+#### gen_frames.sh
+
+A shell script for generating test frames for video testing:
+
+- Creates test patterns in various formats
+- Supports different resolutions and frame rates  
+- Configurable color patterns and test signals
+
+**Usage**:
+```bash
+cd tests/validation/common
+./gen_frames.sh
+```
+
+**Supported Formats**:
+- Resolutions: 3840x2160, 1920x1080, 1280x720, 640x360
+- Pixel formats: yuv422p, yuv422p10le
+- Custom color patterns and test signals with timestamps
+- Configurable frame rates and durations
+
 ### Configuration Files
 
 The `configs/` directory contains YAML files that specify:
 
 - **Test Environment Settings**: Hardware specifications, media paths, and test parameters
 - **Network Topology**: Interface configuration, IP addressing, and routing information
+
+#### [test_config.yaml](../tests/validation/configs/test_config.yaml)
+
+Defines the test execution environment:
 
 ### MTL Engine
 
@@ -106,20 +132,26 @@ For complete build instructions, see [doc/build.md](build.md).
 
 ### Environment Setup
 
-1. Create and activate a virtual environment:
+> **⚠️ IMPORTANT**: Run all commands in the `tests/validation/` directory
+
+1. Create and activate a Python virtual environment:
 
 ```bash
-cd tests/validation
+cd tests/validation  # Must be in this directory!
 python3 -m venv venv
 source venv/bin/activate
 ```
 
 **Note**: If you're using VS Code or other development tools that auto-configure Python environments, ensure you're using the correct Python interpreter. The tests require the packages from `tests/validation/requirements.txt`.
 
-2. Install dependencies:
+2. Install required dependencies:
 
 ```bash
+# Main framework requirements (run in tests/validation/)
 pip install -r requirements.txt
+
+# Additional integrity test components (optional but recommended)
+pip install -r common/integrity/requirements.txt
 ```
 
 Verify installation:
@@ -131,7 +163,7 @@ python -m pytest --version
 
 #### Critical Configuration Steps
 
-1. **Update `configs/topology_config.yaml`** with your actual network interface details:
+1. **Update [`configs/topology_config.yaml`](../tests/validation/configs/topology_config.yaml)** with your actual network interface details:
 
 ```yaml
 ---
@@ -149,14 +181,25 @@ hosts:
         connection_type: SSHConnection
         connection_options:
           port: 22
-          username: root         # Update with your username
+          username: root         # ⚠️ MUST be root for MTL validation
           password: None         # Use key-based auth when possible
-          key_path: /home/user/.ssh/id_rsa  # Update path to your SSH key
+          key_path: /root/.ssh/id_rsa  # Update path to your SSH key
 ```
 
-**To find your PCI device ID**: `lspci | grep Ethernet`
+**Device Specification Options**:
+- **PCI device ID** (recommended): Find with `lspci | grep Ethernet` → use format like "0000:18:00.0"
+- **System interface name**: Find with `ip link show` → use format like "enp24s0f0"
 
-2. **Update `configs/test_config.yaml`** with your environment paths:
+**To find your options**:
+```bash
+# Find PCI device IDs
+lspci | grep Ethernet
+
+# Find system interface names  
+ip link show
+```
+
+2. **Update [`configs/test_config.yaml`](../tests/validation/configs/test_config.yaml)** with your environment paths:
 
 ```yaml
 build: /path/to/Media-Transport-Library/     # Update to your MTL root directory
@@ -182,18 +225,51 @@ ramdisk:
 - Set `media_path` to where your test media files are located
 - Ensure the paths exist and are accessible
 
+#### Optional: Create VFs for Advanced Testing
+
+For NIC testing with Virtual Functions:
+
+```bash
+# First, identify your network devices
+lspci | grep Ethernet
+
+# Create VFs (replace with your actual PCI device IDs or interface names)
+sudo ./script/nicctl.sh create_vf "0000:18:00.0"  # Replace with your primary port
+sudo ./script/nicctl.sh create_vf "0000:18:00.1"  # Replace with your secondary port
+```
+
+**Examples of valid identifiers**:
+- PCI device ID: `"0000:18:00.0"`
+- Interface name: `"enp24s0f0"`
+- Environment variables: `"${TEST_PF_PORT_P}"` (if you set them)
+
 ## Running Tests
 
-### Basic Usage
+> **⚠️ CRITICAL**: Tests must be run as **root user**, not regular user. MTL validation framework requires root privileges for network operations.
+
+### Basic Test Execution
 
 Run all tests:
 
 ```bash
 cd tests/validation
+source venv/bin/activate  # Activate virtual environment
 python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml
 ```
 
 Run smoke tests:
+
+```bash
+python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke
+```
+
+### Running Specific Tests with Parameters
+
+Run a specific test case with custom parameters:
+
+```bash
+pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
+```
 
 ```bash
 python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml -m smoke

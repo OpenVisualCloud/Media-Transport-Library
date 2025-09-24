@@ -108,3 +108,5 @@ tools/readpcap/readpcap_*
 swig
 openh264
 level-zero-*
+
+venv*
