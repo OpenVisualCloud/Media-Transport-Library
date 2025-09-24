@@ -120,8 +120,7 @@ struct st_tests_context {
   int plugin_timeout_interval;
   int plugin_timeout_ms;
   int plugin_rand_ratio;
-  bool ctx_tests_only;
-  bool no_ctx_tests_only;
+  bool noctx_tests;
 };
 
 struct st_tests_context* st_test_ctx(void);

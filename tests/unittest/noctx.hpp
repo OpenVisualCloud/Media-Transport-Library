@@ -6,13 +6,16 @@
 
 #include <thread>
 #include <vector>
+#include <map>
+#include <memory>
 
 #include "tests.hpp"
 
+class Session;
 class SessionManager;
 class NoCtxTest;
 class St30pHandler;
-class TransmissionThread;
+
 
 /* Common structure accessible by rx and tx session thread responsibility of the handlers is to make it thread safe */
 struct sessionInfo {
@@ -22,37 +25,40 @@ struct sessionInfo {
   double expect_fps;
 };
 
-/* Session class represents a single media session */
-class TransmissionThread {
+/* Session class represents a media session that can run multiple threads */
+class Session {
   public:
-  int id;
-  std::thread thread;
-  std::atomic<bool> stop_flag{false};
-  std::function<void(std::atomic<bool>&)> func;
-  void* user_data;
+  /* can be more than one thread */
+  std::vector<std::thread> threads;
+  /* shoudnt be more than one */
+  std::atomic<bool> stopFlag{false};
 
-  TransmissionThread(int session_id, std::function<void(std::atomic<bool>&)> f,
-          void* data = nullptr)
-      : id(session_id), func(f), user_data(data) {
+  void addThread(std::function<void(std::atomic<bool>&)> func) {
+    threads.emplace_back(func, std::ref(stopFlag));
   }
-};
 
-/* Creates a map of TransmissionThread vectors keyed by session id
-   basically you can create as many connected TransmissionThreads as needed */
-class SessionManager {
-  std::unordered_map<int, std::vector<std::unique_ptr<TransmissionThread>>> sessionGroups;
+  bool isRunning() const {
+    for (const auto& thread : threads) {
+      if (!thread.joinable()) {
+        return false;
+      }
+    }
 
- public:
-  int startAsPartOfSession(int id, std::function<void(std::atomic<bool>&)> func,
-                   void* user_data = nullptr);
-  int stopSession(int id);
-  void stopAll();
-  void* getUserData(int id);
-  bool isRunning(int id);
-  size_t getSessionCount() const;
+    return !threads.empty();
+  }
 
-  ~SessionManager() {
-    stopAll();
+  void stop() {
+    stopFlag = true;
+    for (auto& thread : threads) {
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+    threads.clear();
+  }
+
+  ~Session() {
+    stop();
   }
 };
 
@@ -63,76 +69,99 @@ class NoCtxTest : public ::testing::Test {
   void SetUp() override;
   void TearDown() override;
 
-  SessionManager session_manager;
-
  public:
   uint defaultTestDuration;
   static uint64_t TestPtpSourceSinceEpoch(void* priv);
   std::vector<std::unique_ptr<St30pHandler>> st30pHandlers;
 
-  void txDefaultCheck(int session_idx, void* frame, size_t frame_size);
-  void rxDefaultCheck(int session_idx, void* frame, size_t frame_size);
+  void sleepUntilFailure(int sleepDuration=0);
+};
 
-  void addSessions(int index, std::function<void(std::atomic<bool>&)> func);
 
-  int startManagedSession(int index, std::function<void(std::atomic<bool>&)> func,
-                          void* user_data = nullptr);
 
-  int startManagedSession(int index, std::function<void(std::atomic<bool>&)> func_tx,
-                          std::function<void(std::atomic<bool>&)> func_rx,
-                          void* user_data = nullptr);
+class Handlers {
+ private:
+  Session session;
 
-  int stopManagedSession(int index) {
-    return session_manager.stopSession(index);
+ public:
+  st_tests_context* ctx = nullptr;
+  sessionInfo sessionsUserData;
+  std::function<void(void* frame, size_t frame_size)>
+      txTestFrameModifier;
+  std::function<void(void* frame, size_t frame_size)>
+      rxTestFrameModifier;
+  uint clockHrtz;
+
+  Handlers(st_tests_context* ctx, std::function<void(void* frame, size_t frame_size)> txTestFrameModifier, std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier, uint clockHrz) : ctx(ctx), sessionsUserData({}), txTestFrameModifier(txTestFrameModifier), rxTestFrameModifier(rxTestFrameModifier), clockHrtz(clockHrz) {}
+  Handlers(st_tests_context* ctx, uint clockHrz) : ctx(ctx), sessionsUserData({}), txTestFrameModifier(nullptr), rxTestFrameModifier(nullptr), clockHrtz(clockHrz) {}
+  void setModifiers(std::function<void(void* frame, size_t frame_size)> txTestFrameModifier, std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier) {
+    this->txTestFrameModifier = txTestFrameModifier;
+    this->rxTestFrameModifier = rxTestFrameModifier;
   }
 
-  void stopAllManagedSessions() {
-    session_manager.stopAll();
+  void startSession(std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions = {}) {
+      for (auto& func : threadFunctions) {
+        session.addThread(func);
+      }
+  }
+
+  void stopSession() {
+    session.stop();
+  }
+
+  ~Handlers() {
+    session.stop();
   }
 };
 
-class St30pHandler {
+class St30pHandler : public Handlers {
  private:
-  uint sessionIdx;
-  st_tests_context* ctx = nullptr;
   uint msPerFramebuffer;
 
  public:
   uint nsPacketTime;
-  sessionInfo sessionsUserData;
-  std::function<void(int session_idx, void* frame, size_t frame_size)>
-      txTestFrameModifier;
-  std::function<void(int session_idx, void* frame, size_t frame_size)>
-      rxTestFrameModifier;
-  St30pHandler(uint session_idx, st_tests_context* ctx);
+  St30pHandler(st_tests_context* ctx,
+               std::function<void(void* frame, size_t frame_size)> txTestFrameModifier,
+               std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier,
+               st30p_tx_ops ops_tx = {},
+               st30p_rx_ops ops_rx = {},
+               uint msPerFramebuffer = 10);
+
+  St30pHandler(st_tests_context* ctx,
+               st30p_tx_ops ops_tx = {},
+               st30p_rx_ops ops_rx = {},
+               uint msPerFramebuffer = 10);
   ~St30pHandler();
-  uint transmissionPortDefault;
-  uint payloadTypeDefault;
-  uint framebufferSizeDefault;
-  std::vector<enum st30_sampling> samplingModesDefault;
-  std::vector<enum st30_ptime> ptimeModesDefault;
-  std::vector<uint16_t> channelCountsDefault;
-  std::vector<enum st30_fmt> fmtModesDefault;
 
   struct st30p_tx_ops sessionsOpsTx;
   struct st30p_rx_ops sessionsOpsRx;
   st30p_tx_handle sessionsHandleTx;
   st30p_rx_handle sessionsHandleRx;
 
-  st30p_tx_ops* fillDefaultSt30pTxOps(int defaultValuesIdx = 0);
-  st30p_rx_ops* fillDefaultSt30pRxOps(int defaultValuesIdx = 0);
+  void fillSt30pOps(
+        uint transmissionPort = 30000,
+        uint framebufferQueueSize = 3,
+        uint payloadType = 111,
+        st30_fmt format = ST30_FMT_PCM16,
+        st30_sampling sampling = ST30_SAMPLING_48K,
+        uint8_t channelCount = 2,
+        st30_ptime ptime = ST30_PTIME_1MS
+  );
 
-  void createSession(st30p_tx_ops ops_tx = {}, st30p_rx_ops ops_rx = {});
-  void startDefaultSession();
+  void createSession(st30p_tx_ops ops_tx, st30p_rx_ops ops_rx, bool start = true);
+  void createSession(bool start = true);
   void createTxSession();
   void createRxSession();
 
-  void st30pTxDefaultFunction(int session_idx, std::atomic<bool>& stop_flag);
-  void st30pRxDefaultFunction(int session_idx, std::atomic<bool>& stop_flag);
+  void startSession(std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions);
+  void startSession();
+
+  void st30pTxDefaultFunction(std::atomic<bool>& stopFlag);
+  void st30pRxDefaultFunction(std::atomic<bool>& stopFlag);
 
   /* test modifier functions */
-  void rxSt30DefaultTimestampsCheck(int session_idx, void* frame, size_t frame_size);
+  void rxSt30DefaultTimestampsCheck(void* frame, size_t frame_size);
 
-  void txSt30DefaultUserPacing(int session_idx, void* frame, size_t frame_size);
-  void rxSt30DefaultUserPacingCheck(int session_idx, void* frame, size_t frame_size);
+  void txSt30DefaultUserPacing(void* frame, size_t frame_size);
+  void rxSt30DefaultUserPacingCheck(void* frame, size_t frame_size);
 };
