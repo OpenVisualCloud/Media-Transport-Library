@@ -64,6 +64,9 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   int idx = s->idx;
   struct st_frame* frame;
   uint8_t shas[SHA256_DIGEST_LENGTH];
+  double frame_time;
+
+  frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
@@ -81,8 +84,6 @@ static void* app_tx_st20p_frame_thread(void* arg) {
 
     if (s->user_time) {
       bool restart_base_time = !s->local_tai_base_time;
-      double frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
-
       frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
                                           restart_base_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;

@@ -23,6 +23,9 @@ static void* app_tx_st30p_frame_thread(void* arg) {
   st30p_tx_handle handle = s->handle;
   int idx = s->idx;
   struct st30_frame* frame;
+  double frame_time;
+
+  frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st30p_app_thread_stop) {
@@ -35,7 +38,6 @@ static void* app_tx_st30p_frame_thread(void* arg) {
 
     if (s->user_time) {
       bool restart_base_time = !s->local_tai_base_time;
-      double frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
 
       frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
                                           restart_base_time);
