@@ -55,10 +55,7 @@ jobs:
           sudo MtlManager &
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         run: |
-          sudo tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
-      - name: Restore repository owner
-        run: |
-          sudo chown -R "${USER}" .
+          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
       - name: "upload report"
         if: always()
         id: upload-report
