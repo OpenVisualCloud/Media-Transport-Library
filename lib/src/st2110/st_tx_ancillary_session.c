@@ -270,7 +270,7 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
 
   if (required_tai) {
     uint64_t ptp_epochs = ptp_time / frame_time;
-    epochs = required_tai / frame_time;
+    epochs = (required_tai + frame_time / 2) / frame_time;
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) {
@@ -291,11 +291,9 @@ static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   if (interlaced) {
-    if (second_field) { /* align to odd epoch */
-      if (!(epochs & 0x1)) epochs++;
+    if (second_field) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
-    } else { /* align to even epoch */
-      if (epochs & 0x1) epochs++;
+    } else {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
     }
   }
