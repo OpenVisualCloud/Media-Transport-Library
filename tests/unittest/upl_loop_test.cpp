@@ -417,7 +417,8 @@ static int loop_sanity_test(struct uplt_ctx* ctx, struct loop_para* para) {
   }
   if (para->reuse_port) {
     info("%s, total_rx_pkts %d for reuse test\n", __func__, total_rx_pkts);
-    /* leave some space for miss since we disable the rx timeout for reuse test */
+    /* leave some space for miss since we disable the rx timeout for reuse test
+     */
     EXPECT_GT(total_rx_pkts, (para->tx_pkts - 1) * tx_sessions);
   }
 

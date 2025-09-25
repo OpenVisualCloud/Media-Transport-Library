@@ -368,7 +368,8 @@ GTEST_API_ int main(int argc, char** argv) {
   utest_random_ip(ctx);
 
   if (ctx->init_params.mt_params.num_ports != 2) {
-    err("%s, error, pls pass 2 ports, ex: ./build/tests/KahawaiUfdTest --p_port "
+    err("%s, error, pls pass 2 ports, ex: ./build/tests/KahawaiUfdTest "
+        "--p_port "
         "0000:af:01.0 --r_port 0000:af:01.1\n",
         __func__);
     utest_ctx_uinit(ctx);

@@ -2,7 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include "tests.h"
+#include "tests.hpp"
 
 #include <getopt.h>
 #ifndef WINDOWSENV
@@ -48,6 +48,8 @@ enum test_args_cmd {
   TEST_ARG_MCAST_ONLY,
   TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
   TEST_ARG_AUDIO_TX_PACING,
+  TEST_ARG_CTX_TESTS_ONLY,
+  TEST_ARG_NO_CTX_TESTS_ONLY,
 };
 
 static struct option test_args_options[] = {
@@ -85,6 +87,8 @@ static struct option test_args_options[] = {
     {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
     {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
+    {"ctx_tests_only", no_argument, 0, TEST_ARG_CTX_TESTS_ONLY},
+    {"no_ctx_tests_only", no_argument, 0, TEST_ARG_NO_CTX_TESTS_ONLY},
 
     {0, 0, 0, 0}};
 
@@ -284,6 +288,14 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         else
           err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
+      case TEST_ARG_CTX_TESTS_ONLY:
+        ctx->ctx_tests_only = true;
+        ctx->no_ctx_tests_only = false;
+        break;
+      case TEST_ARG_NO_CTX_TESTS_ONLY:
+        ctx->no_ctx_tests_only = true;
+        ctx->ctx_tests_only = false;
+        break;
       default:
         break;
     }
@@ -352,21 +364,8 @@ static uint64_t test_ptp_from_real_time(void* priv) {
 
 static void test_ctx_init(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
-  int cpus_per_soc = 4;
-  char* lcores_list = ctx->lcores_list;
-  int pos = 0;
-#ifndef WINDOWSENV
-  int numa_nodes = 0;
-  int max_cpus = 0;
-#endif
 
   ctx->level = ST_TEST_LEVEL_MANDATORY;
-#ifndef WINDOWSENV
-  if (numa_available() >= 0) {
-    numa_nodes = numa_max_node() + 1;
-    max_cpus = numa_num_task_cpus();
-  }
-#endif
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
@@ -378,27 +377,9 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->tx_queues_cnt[MTL_PORT_R] = 16;
   p->rx_queues_cnt[MTL_PORT_P] = 16;
   p->rx_queues_cnt[MTL_PORT_R] = 16;
-
-  /* build default lcore list */
-  pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, "0-%d",
-                  cpus_per_soc - 1);
-#ifndef WINDOWSENV
-  /* build lcore list for other numa, e.g 0-2,28,29,30 for a two socket system */
-  for (int numa = 1; numa < numa_nodes; numa++) {
-    int cpus_add = 0;
-    for (int cpu = 0; cpu < max_cpus; cpu++) {
-      if (numa_node_of_cpu(cpu) == numa) {
-        int n = snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
-        if (n < 0 || n >= (TEST_LCORE_LIST_MAX_LEN - pos)) break;
-        pos += n;
-        cpus_add++;
-        if (cpus_add >= cpus_per_soc) break;
-      }
-    }
-  }
-  info("lcores_list: %s, max_cpus %d\n", ctx->lcores_list, max_cpus);
-#endif
-  p->lcores = ctx->lcores_list;
+  /* by deafult don't limit cores */
+  memset(ctx->lcores_list, 0, TEST_LCORE_LIST_MAX_LEN);
+  p->lcores = NULL;
 }
 
 static void test_ctx_uinit(struct st_tests_context* ctx) {
@@ -591,23 +572,9 @@ TEST(Misc, st10_timestamp) {
   st10_timestamp_test(96 * 1000);
 }
 
-GTEST_API_ int main(int argc, char** argv) {
-  struct st_tests_context* ctx;
-  int ret;
+static int run_all_context_test(int argc, char** argv, struct st_tests_context* ctx) {
   bool link_flap_wa = false;
-
-  testing::InitGoogleTest(&argc, argv);
-
-  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
-  if (!ctx) {
-    err("%s, ctx alloc fail\n", __func__);
-    return -ENOMEM;
-  }
-
-  test_ctx_init(ctx);
-  test_parse_args(ctx, &ctx->para, argc, argv);
-  test_random_ip(ctx);
-  g_test_ctx = ctx;
+  int ret;
 
   /* parse af xdp pmd info */
   for (int i = 0; i < ctx->para.num_ports; i++) {
@@ -651,11 +618,21 @@ GTEST_API_ int main(int argc, char** argv) {
 
   uint64_t start_time_ns = st_test_get_monotonic_time();
 
+  std::string original_filter = ::testing::GTEST_FLAG(filter);
+  std::string new_filter;
+  if (original_filter == "*" || original_filter.empty()) {
+    new_filter = "-NoCtxTest*";
+  } else {
+    new_filter = original_filter + ":-NoCtxTest*";
+  }
+
   ret = RUN_ALL_TESTS();
+  ::testing::GTEST_FLAG(filter) = original_filter;
 
   uint64_t end_time_ns = st_test_get_monotonic_time();
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
   int time_least = 10;
+
   if (link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
     info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
@@ -664,9 +641,68 @@ GTEST_API_ int main(int argc, char** argv) {
 
   st_test_st22_plugin_unregister(ctx);
   st_test_convert_plugin_unregister(ctx);
-
   test_ctx_uinit(ctx);
+
   return ret;
+}
+
+int run_all_no_context_tests(int argc, char** argv) {
+  std::string original_filter = ::testing::GTEST_FLAG(filter);
+  int ret;
+
+  std::string new_filter;
+  if (original_filter == "*" || original_filter.empty()) {
+    new_filter = "NoCtxTest*";
+  } else if (original_filter.rfind("NoCtxTest") != 0) {
+    new_filter = "NoCtxTest*" + original_filter;
+  } else {
+    new_filter = original_filter;
+  }
+
+  ::testing::GTEST_FLAG(filter) = new_filter;
+
+  auto dot_pos = new_filter.find('.');
+  if (dot_pos != std::string::npos) {
+    new_filter = "NoCtxTest" + new_filter.substr(dot_pos);
+  }
+
+  ret = RUN_ALL_TESTS();
+
+  ::testing::GTEST_FLAG(filter) = original_filter;
+  return ret;
+}
+
+bool filter_includes_no_ctx_tests(const std::string& filter) {
+  if (filter == "*" || filter.empty()) return true;
+  if (filter.rfind("NOCTX") != std::string::npos) return true;
+  return false;
+}
+
+GTEST_API_ int main(int argc, char** argv) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  int ret_ctx = 1, ret_no_ctx = 1;
+
+  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
+  if (!ctx) {
+    err("%s, ctx alloc fail\n", __func__);
+    return -ENOMEM;
+  }
+
+  testing::InitGoogleTest(&argc, argv);
+  test_ctx_init(ctx);
+  test_parse_args(ctx, &ctx->para, argc, argv);
+  test_random_ip(ctx);
+  g_test_ctx = ctx;
+
+  if (!ctx->no_ctx_tests_only) {
+    ret_ctx = run_all_context_test(argc, argv, ctx);
+  }
+
+  if (!ctx->ctx_tests_only) {
+    ret_no_ctx = run_all_no_context_tests(argc, argv);
+  }
+
+  return ret_ctx || ret_no_ctx;
 }
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx) {

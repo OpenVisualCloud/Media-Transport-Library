@@ -5,7 +5,7 @@
 #include <thread>
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 #define ST22P_TEST_PAYLOAD_TYPE (114)
 #define ST22P_TEST_UDP_PORT (16000)
