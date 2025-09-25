@@ -660,7 +660,7 @@ uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t fr
     pthread_mutex_unlock(&user_time->base_tai_time_mutex);
   }
   offset = user_time->user_time_offset;
-  tai_time = user_time->base_tai_time + offset + frame_time * frame_num;
+  tai_time = user_time->base_tai_time + offset + (uint64_t)(frame_time * frame_num);
 
   return tai_time;
 }
