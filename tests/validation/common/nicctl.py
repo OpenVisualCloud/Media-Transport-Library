@@ -24,10 +24,10 @@ class Nicctl:
             return str(self.connection.path(self.mtl_path, "script", self.tool_name))
         return str(self.connection.path(nicctl_path, self.tool_name))
 
-    def _parse_vf_list(self, output: str, all: bool = True) -> list:
+    def _parse_vf_list(self, output: str) -> list:
         if "No VFs found" in output:
             return []
-        vf_info_regex = r"\d{1,3}\s+(.+)\s+vfio" if all else r"(\d{4}:\S+)"
+        vf_info_regex = r"(\d{4}[0-9a-fA-F:.]+)\(?\S*\)?\s+\S*\s*vfio"
         return re.findall(vf_info_regex, output)
 
     def vfio_list(self, pci_addr: str = "all") -> list:
@@ -35,7 +35,7 @@ class Nicctl:
         resp = self.connection.execute_command(
             f"{self.nicctl} list {pci_addr}", shell=True
         )
-        return self._parse_vf_list(resp.stdout, "all" in pci_addr)
+        return self._parse_vf_list(resp.stdout)
 
     def create_vfs(self, pci_id: str, num_of_vfs: int = 6) -> list:
         """Create VFs on NIC.
@@ -68,3 +68,124 @@ class Nicctl:
                 self.create_vfs(nic_pci)
                 self.host.vfs = self.vfio_list(nic_pci)
         return self.host.vfs
+
+    def bind_pmd(self, pci_id: str) -> None:
+        """Bind VF to DPDK PMD driver."""
+        self.connection.execute_command(self.nicctl + " bind_pmd " + pci_id, shell=True)
+
+    def bind_kernel(self, pci_id: str) -> None:
+        """Bind VF to kernel driver."""
+        self.connection.execute_command(
+            self.nicctl + " bind_kernel " + pci_id, shell=True
+        )
+
+
+class InterfaceSetup:
+    def __init__(self, hosts, mtl_path):
+        self.hosts = hosts
+        self.mtl_path = mtl_path
+        self.nicctl_objs = {
+            host.name: Nicctl(mtl_path, host) for host in hosts.values()
+        }
+        self.customs = []
+        self.cleanups = []
+
+    def get_test_interfaces(self, interface_type="VF", count=2, host=None) -> dict:
+        """
+        Creates VFs and binds them into dpdk or bind PF into dpdk.
+
+        :param interface_type: VF - create X VFs on first available test adapter,
+                               PF - prepare list of PFs PCI addresses for test,
+                               xxVFxPF - create xx number VFs per each PF. E.G if you need 3 VFs
+                                    on every PF and you have 2 PF then pass 3VFxPF param with count=6
+                                    if you type just VFxPF then one VF will be created on each PF.
+        :param count: total number of VFs or PFs needed for test.
+        :param host: You can specify host if you need to test only on this host
+        :return: Returns dictionary with list of PCI addresses of VFs or PFs per host name.
+        """
+        if host:
+            hosts = [host]
+        else:
+            hosts = list(self.hosts.values())
+        selected_interfaces = {k.name: [] for k in hosts}
+        for host in hosts:
+            if getattr(host.topology.extra_info, "custom_interface", None):
+                selected_interfaces[host.name] = [
+                    host.topology.extra_info["custom_interface"]
+                ]
+                self.customs.append(host.name)
+                if len(selected_interfaces[host.name]) < count:
+                    raise Exception(
+                        f"Not enough interfaces for test on host {host.name} in extra_info.custom_interface"
+                    )
+            else:
+                if interface_type.lower() == "vf":
+                    vfs = self.nicctl_objs[host.name].create_vfs(
+                        host.network_interfaces[0].pci_address.lspci, count
+                    )
+                    selected_interfaces[host.name] = vfs
+                    self.register_cleanup(
+                        self.nicctl_objs[host.name],
+                        host.network_interfaces[0].pci_address.lspci,
+                        interface_type,
+                    )
+                elif interface_type.lower() == "pf":
+                    try:
+                        selected_interfaces[host.name] = []
+                        for i in range(count):
+                            self.nicctl_objs[host.name].bind_pmd(
+                                host.network_interfaces[i].pci_address.lspci
+                            )
+                            selected_interfaces[host.name].append(
+                                str(host.network_interfaces[i])
+                            )
+                            self.register_cleanup(
+                                self.nicctl_objs[host.name],
+                                host.network_interfaces[i].pci_address.lspci,
+                                interface_type,
+                            )
+                    except IndexError:
+                        raise Exception(
+                            f"Not enough interfaces for test on host {host.name} in topology config."
+                        )
+                elif "vfxpf" in interface_type.lower():
+                    vfs_count = interface_type.lower().split("vfxpf")[0]
+                    vfs_count = int(vfs_count) if vfs_count else 1
+                    for i in range(count // vfs_count):
+                        try:
+                            vfs = self.nicctl_objs[host.name].create_vfs(
+                                host.network_interfaces[i].pci_address.lspci, vfs_count
+                            )
+                            selected_interfaces[host.name].extend(vfs)
+                            self.register_cleanup(
+                                self.nicctl_objs[host.name],
+                                host.network_interfaces[i].pci_address.lspci,
+                                "VF",
+                            )
+                        except IndexError:
+                            raise Exception(
+                                f"Not enough interfaces for test on host {host.name} in topology config. "
+                                f"Expected {count // vfs_count} adapters "
+                                f"to be able to create total {count} VFs - {vfs_count} per adapter"
+                            )
+                else:
+                    raise Exception(f"Unknown interface type {interface_type}")
+        return selected_interfaces
+
+    def get_interfaces_list_single(self, interface_type="VF", count=2) -> list:
+        """
+        Wrapper for get_test_interfaces method if you use only single node tests and need only list of interfaces
+        """
+        host = list(self.hosts.values())[0]
+        selected_interfaces = self.get_test_interfaces(interface_type, count, host=host)
+        return selected_interfaces[host.name]
+
+    def register_cleanup(self, nicctl, interface, if_type):
+        self.cleanups.append((nicctl, interface, if_type))
+
+    def cleanup(self):
+        for nicctl, interface, if_type in self.cleanups:
+            if if_type.lower() == "vf":
+                nicctl.disable_vf(interface)
+            elif if_type.lower() == "pf":
+                nicctl.bind_kernel(interface)

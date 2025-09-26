@@ -18,7 +18,6 @@ def test_kernello_st22p_video_format(
     test_mode,
     file,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
     st22p_file = yuv_files_422rfc10[file]
@@ -27,7 +26,10 @@ def test_kernello_st22p_video_format(
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st22p_sessions(
         config=config,
-        nic_port_list=["kernel:lo", "kernel:lo"],
+        nic_port_list=[
+            "kernel:lo",
+            "kernel:lo",
+        ],  # Note: keeping hardcoded for kernel loopback test
         test_mode=test_mode,
         width=st22p_file["width"],
         height=st22p_file["height"],

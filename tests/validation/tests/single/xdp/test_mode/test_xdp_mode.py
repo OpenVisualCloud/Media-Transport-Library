@@ -18,7 +18,6 @@ def test_xdp_mode(
     test_mode,
     video_format,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]

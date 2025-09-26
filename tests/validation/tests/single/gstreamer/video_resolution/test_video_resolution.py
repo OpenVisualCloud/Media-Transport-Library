@@ -5,6 +5,7 @@ import os
 
 import mtl_engine.media_creator as media_create
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 from mtl_engine.media_files import yuv_files
 from tests.xfail import SDBQ1971_conversion_v210_720p_error
@@ -15,7 +16,7 @@ def test_video_resolutions(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     file,
     request,
     test_time,
@@ -27,6 +28,9 @@ def test_video_resolutions(
 
     # Get the first host for remote execution
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     SDBQ1971_conversion_v210_720p_error(
         video_format=video_file["format"],
@@ -46,7 +50,7 @@ def test_video_resolutions(
 
     tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         width=video_file["width"],
         height=video_file["height"],
@@ -58,7 +62,7 @@ def test_video_resolutions(
 
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=interfaces_list[1],
         output_path=os.path.join(media, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
