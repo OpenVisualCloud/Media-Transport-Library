@@ -5,10 +5,13 @@
 
 set -e
 
+: "${INSTALL_DIR:=''}"
+
 # Default values
 ffmpeg_ver="7.0"
 enable_gpu=false
 script_path="$(dirname "$(readlink -f "$0")")"
+extra_config_flags=""
 
 # Help message function
 usage() {
@@ -65,12 +68,15 @@ build_ffmpeg() {
 
 	if [ "$enable_gpu" = true ]; then
 		echo "Building with MTL_GPU_DIRECT_ENABLED"
-		extra_config_flags="--extra-cflags=-DMTL_GPU_DIRECT_ENABLED"
-	else
-		extra_config_flags=""
+		extra_config_flags+="--extra-cflags=-DMTL_GPU_DIRECT_ENABLED "
 	fi
 
-	./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl $extra_config_flags
+	if [ -n "$INSTALL_DIR" ]; then
+		echo "Installing in $INSTALL_DIR"
+		extra_config_flags+="--prefix=${INSTALL_DIR}/ffmpeg/"
+	fi
+
+	./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl "${extra_config_flags}"
 	make -j "$(nproc)"
 	sudo make install
 	sudo ldconfig

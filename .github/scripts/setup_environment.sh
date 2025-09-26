@@ -40,6 +40,7 @@ set -xe
 # CICD ONLY ARGUMENTS
 : "${CICD_BUILD:=0}"
 : "${CICD_BUILD_BUILD_ICE_DRIVER:=0}"
+: "${INSTALL_DIR:=''}"
 
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
