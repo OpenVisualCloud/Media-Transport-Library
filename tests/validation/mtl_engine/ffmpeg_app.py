@@ -57,6 +57,7 @@ def execute_test(
     test_time: int,
     build: str,
     host,
+    nic_port_list,
     type_: str,
     video_format: str,
     pg_format: str,
@@ -65,13 +66,9 @@ def execute_test(
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
 ):
-    # Initialize logging for this test
-    init_test_logging()
-
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "ffmpeg_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
 
-    nic_port_list = host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
     match output_format:
         case "yuv":
@@ -234,6 +231,7 @@ def execute_test_rgb24(
     test_time: int,
     build: str,
     host,
+    nic_port_list,
     type_: str,
     video_format: str,
     pg_format: str,
@@ -241,7 +239,6 @@ def execute_test_rgb24(
 ):
     # Initialize logging for this test
     init_test_logging()
-    nic_port_list = host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
     logger.info(f"Creating RX config for RGB24 test with video_format: {video_format}")
     try:
@@ -348,8 +345,6 @@ def execute_test_rgb24_multiple(
     video_url_list: list,
     host,
 ):
-    # Initialize logging for this test
-    init_test_logging()
     video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
     video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
     logger.info(

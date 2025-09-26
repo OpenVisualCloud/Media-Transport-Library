@@ -4,6 +4,7 @@
 import os
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import ffmpeg_app
 from mtl_engine.media_files import yuv_files
 
@@ -23,13 +24,16 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24(
     test_time,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     video_format,
     test_time_mutlipler,
     test_config,
     prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     video_file = yuv_files[video_format]
 
@@ -41,4 +45,5 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24(
         video_format=video_format,
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
+        nic_port_list=interfaces_list,
     )

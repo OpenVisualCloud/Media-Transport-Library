@@ -6,6 +6,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_result_note
 from mtl_engine.media_files import yuv_files
 
@@ -30,7 +31,7 @@ def test_perf_4tx_4nics_4ports(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     video_format,
     test_config,
@@ -41,11 +42,14 @@ def test_perf_4tx_4nics_4ports(
 
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VFxPF"), count=4
+    )
 
     config = rxtxapp.create_empty_performance_config()
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[0],
+        nic_port=interfaces_list[0],
         ip="192.168.17.101",
         dip="239.168.48.9",
         video_format=video_format,
@@ -54,7 +58,7 @@ def test_perf_4tx_4nics_4ports(
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[1],
+        nic_port=interfaces_list[1],
         ip="192.168.17.102",
         dip="239.168.48.9",
         video_format=video_format,
@@ -63,7 +67,7 @@ def test_perf_4tx_4nics_4ports(
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[2],
+        nic_port=interfaces_list[2],
         ip="192.168.17.103",
         dip="239.168.48.9",
         video_format=video_format,
@@ -72,7 +76,7 @@ def test_perf_4tx_4nics_4ports(
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[3],
+        nic_port=interfaces_list[3],
         ip="192.168.17.104",
         dip="239.168.48.9",
         video_format=video_format,
