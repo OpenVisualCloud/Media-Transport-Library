@@ -47,23 +47,9 @@ runs:
         ./build.sh
         sudo ldconfig
       shell: bash
-    - name: 'installation: Build openh264'
-      working-directory: openh264
-      run: |
-        make -j "$(nproc)"
-        sudo make install
-        sudo ldconfig
-      shell: bash
     - name: 'installation: Build FFmpeg'
-      working-directory: ffmpeg
-      run: |
-        git am ../ecosystem/ffmpeg_plugin/7.0/*.patch
-        cp ../ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
-        cp ../ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
-        ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
-        make -j "$(nproc)"
-        sudo make install
-        sudo ldconfig
+      working-directory: ecosystem/ffmpeg_plugin
+      run: ./build.sh
       shell: bash
     - name: 'installation: Build GStreamer'
       working-directory: ecosystem/gstreamer_plugin
