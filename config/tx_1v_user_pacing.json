@@ -25,10 +25,11 @@
                     "input_format": "YUV422PLANAR10LE",
                     "transport_format": "YUV_422_10bit",
                     "st20p_url": "./yuv422p10le_1080p.yuv",
+                    "user_timestamp": true,
                     "user_pacing": true
                 }
             ],
-            "user_pacing_offset" : 20000000
+            "user_time_offset" : 20000000
         }
     ]
 }

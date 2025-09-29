@@ -22,18 +22,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
-env:
-  # Customize the env if
-  BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.03'
-  # Bellow ENV variables are required to be defined on runner side:
-  TEST_PF_PORT_P: '0000:49:00.0'
-  TEST_PF_PORT_R: '0000:49:00.1'
-  TEST_PORT_P: '0000:49:01.1'
-  TEST_PORT_R: '0000:49:11.1'
-  # TEST_DMA_PORT_P: '0000:6a:01.0'
-  # TEST_DMA_PORT_R: '0000:6f:01.0'
-
 permissions:
   contents: read
 
@@ -84,7 +72,7 @@ jobs:
 
       - name: Build
         run: |
-          sudo ./build.sh
+          ./build.sh
           sudo ldconfig
 
       - name: Check if Kahawai driver version is loaded
@@ -108,10 +96,24 @@ jobs:
           sudo killall -SIGINT KahawaiUplTest || true
           sudo killall -SIGINT MtlManager || true
 
-      - name: Binding network adapter
+      - name: 'preparation: Evaluate and set test ports'
         run: |
-          sudo nicctl create_tvf "${TEST_PF_PORT_P}" && \
-          sudo nicctl create_tvf "${TEST_PF_PORT_R}"
+          TEST_PORT_P=$(./script/nicctl.sh  list all | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+          TEST_PORT_R=$(./script/nicctl.sh  list all | grep -v "${TEST_PORT_P}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+
+          if [ -z "$TEST_PORT_P" ] || [ -z "$TEST_PORT_R" ]; then
+              pf=$(./script/nicctl.sh  list all | awk '$3 == "ice" {print $2}' | shuf -n 1)
+              sudo ./script/nicctl.sh create_tvf "$pf"
+
+              TEST_PORT_P=$(./script/nicctl.sh  list all | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+              TEST_PORT_R=$(./script/nicctl.sh  list all | grep -v "${TEST_PORT_P}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
+          fi
+
+          echo "TEST_PORT_P=$TEST_PORT_P" >> "$GITHUB_ENV"
+          echo "TEST_PORT_R=$TEST_PORT_R" >> "$GITHUB_ENV"
+          sed -i "s+REPLACE_BY_CICD_TEST_PORT_P+${TEST_PORT_P}+" .github/workflows/upl_gtest.json
+          sed -i "s+REPLACE_BY_CICD_TEST_PORT_R+${TEST_PORT_R}+" .github/workflows/upl_gtest.json
+          echo "Selected ports: P=$TEST_PORT_P, R=$TEST_PORT_R"
 
       - name: Start MtlManager at background
         run: |
