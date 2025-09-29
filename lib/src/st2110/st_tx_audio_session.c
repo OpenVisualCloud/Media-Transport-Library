@@ -275,7 +275,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
 
   if (required_tai) {
     ptp_epochs = ptp_time / pkt_time;
-    epochs = required_tai / pkt_time;
+    epochs = (required_tai + pkt_time / 2) / pkt_time;
     if (epochs < ptp_epochs) {
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
       dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
