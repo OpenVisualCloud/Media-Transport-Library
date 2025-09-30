@@ -570,29 +570,15 @@ static int tv_init_pacing_epoch(struct mtl_main_impl* impl,
   return 0;
 }
 
-static inline uint64_t align_for_interlaced(struct st_tx_video_session_impl* s,
-                                            uint64_t frame_count, bool second_field) {
-  if (second_field) { /* align to odd epoch */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
-    if (!(frame_count & 0x1)) frame_count++;
-  } else { /* align to even epoch */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
-    if (frame_count & 0x1) frame_count++;
-  }
-  return frame_count;
-}
-
 static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_impl* s,
                                                     uint64_t cur_tai,
-                                                    uint64_t required_tai,
-                                                    bool second_field) {
+                                                    uint64_t required_tai) {
   uint64_t frame_count_tai = cur_tai / s->pacing.frame_time;
   uint64_t next_free_frame_slot = s->pacing.cur_epochs + 1;
-  bool interlaced = s->ops.interlaced;
   uint64_t frame_count;
 
   if (required_tai) {
-    frame_count = required_tai / s->pacing.frame_time;
+    frame_count = (required_tai + s->pacing.frame_time / 2) / s->pacing.frame_time;
   } else {
     if (frame_count_tai <= next_free_frame_slot) {
       /* There is time buffer until the next available frame time window */
@@ -618,11 +604,6 @@ static inline uint64_t calc_frame_count_since_epoch(struct st_tx_video_session_i
       frame_count = frame_count_tai;
     }
   }
-
-  if (interlaced) {
-    frame_count = align_for_interlaced(s, frame_count, second_field);
-  }
-
   return frame_count;
 }
 
@@ -645,7 +626,7 @@ static inline uint64_t validate_and_adjust_user_timestamp(
 }
 
 static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session_impl* s,
-                          uint64_t required_tai, bool second_field) {
+                          uint64_t required_tai) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
@@ -656,8 +637,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
     required_tai = validate_and_adjust_user_timestamp(s, required_tai, cur_tai);
   }
 
-  pacing->cur_epochs =
-      calc_frame_count_since_epoch(s, cur_tai, required_tai, second_field);
+  pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
   if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
     start_time_tai = required_tai;
   } else {
@@ -685,12 +665,12 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
 static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
                                struct st_tx_video_session_impl* s, uint64_t required_tai,
-                               bool second_field, int pkts_in_frame) {
+                               int pkts_in_frame) {
   struct st_tx_video_pacing* pacing = &s->pacing;
   /* reset trs */
   pacing->trs = pacing->frame_time * pacing->reactive / pkts_in_frame;
   dbg("%s(%d), trs %f\n", __func__, s->idx, pacing->trs);
-  return tv_sync_pacing(impl, s, required_tai, second_field);
+  return tv_sync_pacing(impl, s, required_tai);
 }
 
 static int tv_init_next_meta(struct st_tx_video_session_impl* s,
@@ -1266,14 +1246,17 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st20_rtp_time = rtp->tmstamp;
-    bool second_field = false;
     if (s->ops.interlaced) {
       struct st20_rfc4175_rtp_hdr* rfc4175 = rte_pktmbuf_mtod_offset(
           pkt, struct st20_rfc4175_rtp_hdr*, sizeof(struct mt_udp_hdr));
       uint16_t line1_number = ntohs(rfc4175->row_number);
-      second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
+      if (line1_number & ST20_SECOND_FIELD) {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      } else {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      }
     }
-    tv_sync_pacing(impl, s, 0, second_field);
+    tv_sync_pacing(impl, s, 0);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -1332,14 +1315,17 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st20_rtp_time = rtp->tmstamp;
-    bool second_field = false;
     if (s->ops.interlaced) {
       struct st20_rfc4175_rtp_hdr* rfc4175 =
           rte_pktmbuf_mtod(pkt_chain, struct st20_rfc4175_rtp_hdr*);
       uint16_t line1_number = ntohs(rfc4175->row_number);
-      second_field = (line1_number & ST20_SECOND_FIELD) ? true : false;
+      if (line1_number & ST20_SECOND_FIELD) {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      } else {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      }
     }
-    tv_sync_pacing(impl, s, 0, second_field);
+    tv_sync_pacing(impl, s, 0);
     if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
       s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
     } else {
@@ -1793,8 +1779,16 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
-      bool second_field = frame->tv_meta.second_field;
-      tv_sync_pacing(impl, s, required_tai, second_field);
+      if (s->ops.interlaced) {
+        if (frame->tv_meta.second_field) {
+          ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+        } else {
+          ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+        }
+        /* s->second_field is used to init the next frame */
+        s->second_field = !frame->tv_meta.second_field;
+      }
+      tv_sync_pacing(impl, s, required_tai);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
         pacing->rtp_time_stamp =
             st10_get_media_clk(meta.tfmt, meta.timestamp, s->fps_tm.sampling_clock_rate);
@@ -1815,9 +1809,6 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
       frame->tv_meta.epoch = pacing->cur_epochs;
       /* init to next field */
-      if (ops->interlaced) {
-        s->second_field = second_field ? false : true;
-      }
       MT_USDT_ST20_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                  pacing->rtp_time_stamp);
       /* check if dump USDT enabled */
@@ -2305,9 +2296,16 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
 
       /* user timestamp control if any */
       uint64_t required_tai = tv_pacing_required_tai(s, meta.tfmt, meta.timestamp);
-      bool second_field = frame->tx_st22_meta.second_field;
-      tv_sync_pacing_st22(impl, s, required_tai, second_field,
-                          st22_info->st22_total_pkts);
+      if (s->ops.interlaced) {
+        if (frame->tx_st22_meta.second_field) {
+          ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+        } else {
+          ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+        }
+        /* s->second_field is used to init the next frame */
+        s->second_field = !frame->tx_st22_meta.second_field;
+      }
+      tv_sync_pacing_st22(impl, s, required_tai, st22_info->st22_total_pkts);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
         pacing->rtp_time_stamp =
             st10_get_media_clk(meta.tfmt, meta.timestamp, s->fps_tm.sampling_clock_rate);
@@ -2327,10 +2325,6 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       frame->tx_st22_meta.timestamp = pacing->ptp_time_cursor;
       frame->tx_st22_meta.epoch = pacing->cur_epochs;
       frame->tx_st22_meta.rtp_timestamp = pacing->rtp_time_stamp;
-      /* init to next field */
-      if (ops->interlaced) {
-        s->second_field = second_field ? false : true;
-      }
       MT_USDT_ST22_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                  pacing->rtp_time_stamp, codestream_size);
       /* check if dump USDT enabled */

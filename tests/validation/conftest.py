@@ -208,7 +208,7 @@ def media_file(media_ramdisk, request, hosts, test_config):
         ramdisk_mountpoint, media_file_info["filename"]
     )
     for host in hosts.values():
-        cmd = f"cp {src_media_file_path} {ramdisk_media_file_path}"
+        cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
         except ConnectionCalledProcessError as e:
@@ -217,7 +217,7 @@ def media_file(media_ramdisk, request, hosts, test_config):
             )
     yield media_file_info, ramdisk_media_file_path
     for host in hosts.values():
-        cmd = f"rm {ramdisk_media_file_path}"
+        cmd = f"sudo rm {ramdisk_media_file_path}"
         try:
             host.connection.execute_command(cmd)
         except ConnectionCalledProcessError as e:

@@ -44,7 +44,7 @@ class Nicctl:
         :return: returns list of created vfs
         """
         resp = self.connection.execute_command(
-            f"{self.nicctl} create_vf {pci_id} {num_of_vfs}", shell=True
+            f"sudo {self.nicctl} create_vf {pci_id} {num_of_vfs}", shell=True
         )
         return self._parse_vf_list(resp.stdout)
 

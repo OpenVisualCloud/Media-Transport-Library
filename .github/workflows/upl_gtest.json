@@ -11,12 +11,12 @@
     "wake_timeout_us" : "1000",
     "interfaces": [
         {
-            "port": "0000:49:01.0",
+            "port": "REPLACE_BY_CICD_TEST_PORT_P",
             "ip": "192.168.2.80",
             "netmask": "255.255.255.0"
         },
         {
-            "port": "0000:49:01.1",
+            "port": "REPLACE_BY_CICD_TEST_PORT_R",
             "ip": "192.168.2.81",
             "netmask": "255.255.255.0"
         }
