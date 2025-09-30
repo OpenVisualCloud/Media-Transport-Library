@@ -28,7 +28,21 @@ void NoCtxTest::SetUp() {
 
 void NoCtxTest::TearDown() {
   mtl_stop(ctx->handle);
+  for (auto handler : st30pHandlers) {
+    if (handler) {
+      delete handler;
+      handler = nullptr;
+    }
+  }
   st30pHandlers.clear();
+
+  for (auto data : sessionUserDatas) {
+    if (data) {
+      delete data;
+      data = nullptr;
+    }
+  }
+  sessionUserDatas.clear();
 
   if (ctx) {
     if (ctx->handle) {
