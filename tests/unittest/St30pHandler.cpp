@@ -6,12 +6,11 @@
 
 St30pHandler::St30pHandler(
     st_tests_context* ctx,
-    std::function<void(void* frame, size_t frame_size)> txTestFrameModifier,
-    std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier,
+    SessionUserData* sessionUserData,
     st30p_tx_ops ops_tx,
     st30p_rx_ops ops_rx,
     uint msPerFramebuffer)
-    : Handlers(ctx, txTestFrameModifier, rxTestFrameModifier, 48000),
+    : Handlers(ctx, sessionUserData, AUDIO_CLOCK_HRTZ),
       msPerFramebuffer(msPerFramebuffer) {
 
   if (ops_tx.name == nullptr || ops_rx.name == nullptr) {
@@ -20,6 +19,11 @@ St30pHandler::St30pHandler(
     sessionsOpsTx = ops_tx;
     sessionsOpsRx = ops_rx;
   }
+
+  this->sessionUserData = sessionUserData;
+  sessionUserData->parent = this;
+
+  createSession();
 
   startSession({
     [this](std::atomic<bool>& stopFlag) { this->st30pTxDefaultFunction(stopFlag); },
@@ -32,7 +36,7 @@ St30pHandler::St30pHandler(
     st30p_tx_ops ops_tx,
     st30p_rx_ops ops_rx,
     uint msPerFramebuffer)
-    : Handlers(ctx, 48000),
+    : Handlers(ctx, AUDIO_CLOCK_HRTZ),
       msPerFramebuffer(msPerFramebuffer) {
 
   if (ops_tx.name == nullptr || ops_rx.name == nullptr) {
@@ -44,7 +48,7 @@ St30pHandler::St30pHandler(
 }
 
 St30pHandler::~St30pHandler() {
-  stopSession();
+  session.stop();
   if (sessionsHandleTx) {
     st30p_tx_free(sessionsHandleTx);
   }
@@ -173,8 +177,8 @@ void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsTx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsTx.sampling);
 
-    if (txTestFrameModifier) {
-      txTestFrameModifier(frame, frame->data_size);
+    if (sessionUserData->enable_tx_modifier) {
+      sessionUserData->txTestFrameModifier(frame, frame->data_size);
     }
 
     st30p_tx_put_frame((st30p_tx_handle)handle, frame);
@@ -199,58 +203,12 @@ void St30pHandler::st30pRxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsRx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsRx.sampling);
 
-    if (rxTestFrameModifier) {
-      rxTestFrameModifier(frame, frame->data_size);
+    if (sessionUserData->enable_rx_modifier) {
+      sessionUserData->rxTestFrameModifier(frame, frame->data_size);
     }
 
     st30p_rx_put_frame((st30p_rx_handle)handle, frame);
   }
-}
-
-void St30pHandler::rxSt30DefaultTimestampsCheck(void* frame,
-                                                size_t frame_size) {
-  st30_frame* f = (st30_frame*)frame;
-  static uint64_t lastTimestamp = 0;
-  static uint64_t framebuffTime = st10_tai_to_media_clk(nsPacketTime, clockHrtz);
-  EXPECT_NEAR(f->timestamp, st10_tai_to_media_clk((sessionsUserData.idx_rx) * nsPacketTime, clockHrtz), framebuffTime) << " idx_rx: " << sessionsUserData.idx_rx;
-
-  if (lastTimestamp != 0) {
-    uint64_t diff = f->timestamp - lastTimestamp;
-    EXPECT_TRUE(diff == framebuffTime) << " idx_rx: " << sessionsUserData.idx_rx;
-  }
-
-  lastTimestamp = f->timestamp;
-  sessionsUserData.idx_rx++;
-}
-
-void St30pHandler::rxSt30DefaultUserPacingCheck(void* frame,
-                                                size_t frame_size) {
-  st30_frame* f = (st30_frame*)frame;
-  static uint64_t startingTime = 10 * NS_PER_MS;
-  static uint64_t lastTimestamp = 0;
-  sessionsUserData.idx_rx++;
-
-  uint64_t expectedTimestamp = startingTime + (nsPacketTime * (sessionsUserData.idx_rx - 1));
-  uint64_t expected_media_clk = st10_tai_to_media_clk(expectedTimestamp, 48000);
-
-  EXPECT_EQ(f->timestamp, expected_media_clk) << " idx_rx: " << sessionsUserData.idx_rx;
-
-  if (lastTimestamp != 0) {
-    uint64_t diff = f->timestamp - lastTimestamp;
-    EXPECT_TRUE(diff == st10_tai_to_media_clk(nsPacketTime, 48000)) << " idx_rx: " << sessionsUserData.idx_rx;
-  }
-
-  lastTimestamp = f->timestamp;
-}
-
-void St30pHandler::txSt30DefaultUserPacing(void* frame,
-                                           size_t frame_size) {
-  st30_frame* f = (st30_frame*)frame;
-  static uint64_t startingTime = 10 * NS_PER_MS;
-
-  f->tfmt = ST10_TIMESTAMP_FMT_TAI;
-  f->timestamp = startingTime + (nsPacketTime * (sessionsUserData.idx_tx));
-  sessionsUserData.idx_tx++;
 }
 
 void St30pHandler::startSession() {

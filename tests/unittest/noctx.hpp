@@ -11,19 +11,14 @@
 
 #include "tests.hpp"
 
+#define AUDIO_CLOCK_HRTZ 48000
+#define VIDEO_CLOCK_HRTZ 90000
+
 class Session;
-class SessionManager;
+class SessionUserData;
 class NoCtxTest;
 class St30pHandler;
-
-
-/* Common structure accessible by rx and tx session thread responsibility of the handlers is to make it thread safe */
-struct sessionInfo {
-  uint32_t idx_tx;
-
-  uint32_t idx_rx;
-  double expect_fps;
-};
+class Handlers;
 
 /* Session class represents a media session that can run multiple threads */
 class Session {
@@ -72,7 +67,9 @@ class NoCtxTest : public ::testing::Test {
  public:
   uint defaultTestDuration;
   static uint64_t TestPtpSourceSinceEpoch(void* priv);
-  std::vector<std::unique_ptr<St30pHandler>> st30pHandlers;
+  /* Structures that will be cleaned automaticly every test */
+  std::vector<St30pHandler*> st30pHandlers;
+  std::vector<SessionUserData*> sessionUserDatas;
 
   void sleepUntilFailure(int sleepDuration=0);
 };
@@ -80,23 +77,20 @@ class NoCtxTest : public ::testing::Test {
 
 
 class Handlers {
- private:
-  Session session;
-
  public:
+  Session session;
   st_tests_context* ctx = nullptr;
-  sessionInfo sessionsUserData;
-  std::function<void(void* frame, size_t frame_size)>
-      txTestFrameModifier;
-  std::function<void(void* frame, size_t frame_size)>
-      rxTestFrameModifier;
   uint clockHrtz;
+  SessionUserData* sessionUserData;
 
-  Handlers(st_tests_context* ctx, std::function<void(void* frame, size_t frame_size)> txTestFrameModifier, std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier, uint clockHrz) : ctx(ctx), sessionsUserData({}), txTestFrameModifier(txTestFrameModifier), rxTestFrameModifier(rxTestFrameModifier), clockHrtz(clockHrz) {}
-  Handlers(st_tests_context* ctx, uint clockHrz) : ctx(ctx), sessionsUserData({}), txTestFrameModifier(nullptr), rxTestFrameModifier(nullptr), clockHrtz(clockHrz) {}
-  void setModifiers(std::function<void(void* frame, size_t frame_size)> txTestFrameModifier, std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier) {
-    this->txTestFrameModifier = txTestFrameModifier;
-    this->rxTestFrameModifier = rxTestFrameModifier;
+  Handlers(st_tests_context* ctx, SessionUserData* sessionUserData, uint clockHrz)
+    : ctx(ctx), clockHrtz(clockHrz), sessionUserData(sessionUserData) {}
+  
+  Handlers(st_tests_context* ctx, uint clockHrz)
+    : ctx(ctx), clockHrtz(clockHrz), sessionUserData(nullptr) {}
+
+  void setModifiers(SessionUserData* sessionUserData) {
+    this->sessionUserData = sessionUserData;
   }
 
   void startSession(std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions = {}) {
@@ -114,6 +108,23 @@ class Handlers {
   }
 };
 
+class SessionUserData {
+  public:
+    Handlers* parent;
+    uint32_t idx_tx;
+    uint32_t idx_rx;
+    double expect_fps;
+    bool enable_tx_modifier = false;
+    bool enable_rx_modifier = false;
+
+  virtual void txTestFrameModifier(void* frame, size_t frame_size) {};
+  virtual void rxTestFrameModifier(void* frame, size_t frame_size) {};
+
+  virtual ~SessionUserData() {
+    parent = nullptr;
+  }
+};
+
 class St30pHandler : public Handlers {
  private:
   uint msPerFramebuffer;
@@ -121,8 +132,7 @@ class St30pHandler : public Handlers {
  public:
   uint nsPacketTime;
   St30pHandler(st_tests_context* ctx,
-               std::function<void(void* frame, size_t frame_size)> txTestFrameModifier,
-               std::function<void(void* frame, size_t frame_size)> rxTestFrameModifier,
+               SessionUserData* sessionUserData,
                st30p_tx_ops ops_tx = {},
                st30p_rx_ops ops_rx = {},
                uint msPerFramebuffer = 10);
@@ -158,10 +168,4 @@ class St30pHandler : public Handlers {
 
   void st30pTxDefaultFunction(std::atomic<bool>& stopFlag);
   void st30pRxDefaultFunction(std::atomic<bool>& stopFlag);
-
-  /* test modifier functions */
-  void rxSt30DefaultTimestampsCheck(void* frame, size_t frame_size);
-
-  void txSt30DefaultUserPacing(void* frame, size_t frame_size);
-  void rxSt30DefaultUserPacingCheck(void* frame, size_t frame_size);
 };
