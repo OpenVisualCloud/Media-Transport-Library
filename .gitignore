@@ -100,11 +100,11 @@ _temp*
 gpu_offline_install
 
 # Ecosystem
-script/FFmpeg
+FFmpeg-release-*
 script/dpdk_*
 ecosystem/librist/librsit
 ecosystem/msdk/MediaSDK
 tools/readpcap/readpcap_*
 swig
-openh264
+openh264*
 level-zero-*
