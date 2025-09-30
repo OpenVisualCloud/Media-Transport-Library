@@ -6,7 +6,25 @@ FFmpeg is an open source project licensed under LGPL and GPL. See <https://www.f
 
 ## 1. Build
 
+You can use the ./build.sh that will build the script for you automatically,
+
+``` bash
+apt-get install wget patch unzip
+# in the  ecosystem/ffmpeg_plugin/ folder
+./build.sh
+```
+
+The manual way of building is described below
+
 ### 1.1. Build openh264
+
+Before building, check if openh264 is already installed:
+
+```bash
+ldconfig -p | grep libopenh264
+```
+
+If the command outputs a path to `libopenh264.so`, openh264 is present and you can skip the build step below.
 
 ```bash
 git clone https://github.com/cisco/openh264.git
@@ -18,27 +36,30 @@ sudo ldconfig
 cd ../
 ```
 
+
 ### 1.2. Build FFmpeg with MTL patches
 
 > Note: `$mtl_source_code` should be pointed to top source code tree of Media Transport Library.
 
 ```bash
+. $mtl_source_code/versions.env
+
 git clone https://github.com/FFmpeg/FFmpeg.git
 cd FFmpeg
-git checkout release/7.0
+git checkout release/${FFMPEG_VERSION}
 # apply the build patch
-git am $mtl_source_code/ecosystem/ffmpeg_plugin/7.0/*.patch
+git am $mtl_source_code/ecosystem/ffmpeg_plugin/${FFMPEG_VERSION}/*.patch
 # copy the mtl in/out implementation code
 cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
 cp $mtl_source_code/ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
 # build with --enable-mtl, customize the option as your setup
 ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
-make -j "$(nproc)"
+make -j
 sudo make install
 sudo ldconfig
 ```
 
-> Note: For FFmpeg version 4.4 or 6.1, replace 7.0 with 4.4 or 6.1 respectively in above commands.
+> Note: For FFmpeg version 4.4 or 6.1, export `FFMPEG_VERSION=4.4` or 6.1.
 
 In order to build the FFmpeg in a non-default path, use `--prefix="<path>"` within the `./configure` command to point to an empty installation folder.
 
