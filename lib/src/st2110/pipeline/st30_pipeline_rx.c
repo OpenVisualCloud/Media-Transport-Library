@@ -355,7 +355,14 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
 
 int st30p_rx_free(st30p_rx_handle handle) {
   struct st30p_rx_ctx* ctx = handle;
-  struct mtl_main_impl* impl = ctx->impl;
+  struct mtl_main_impl* impl;
+
+  if (!handle) {
+    err("%s, NULL handle\n", __func__);
+    return -EINVAL;
+  }
+
+  impl = ctx->impl;
 
   if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
