@@ -14,6 +14,7 @@ enum test_args_cmd {
   TEST_ARG_UNKNOWN = 0,
   TEST_ARG_P_PORT = 0x100, /* start from end of ascii */
   TEST_ARG_R_PORT,
+  TEST_ARG_PORT_LIST,
   TEST_ARG_LCORES,
   TEST_ARG_LOG_LEVEL,
   TEST_ARG_SCH_SESSION_QUOTA,
@@ -54,6 +55,7 @@ enum test_args_cmd {
 static struct option test_args_options[] = {
     {"p_port", required_argument, 0, TEST_ARG_P_PORT},
     {"r_port", required_argument, 0, TEST_ARG_R_PORT},
+    {"port_list", required_argument, 0, TEST_ARG_PORT_LIST},
 
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
     {"log_level", required_argument, 0, TEST_ARG_LOG_LEVEL},
@@ -112,6 +114,21 @@ static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   return 0;
 }
 
+void test_parse_port_list(struct mtl_init_params* p, const char* in_list) {
+  if (!in_list) return;
+  char list[MTL_PORT_MAX * MTL_PORT_MAX_LEN] = {0};
+  snprintf(list, sizeof(list) - 1, "%s", in_list);
+
+  err("%s, port list %s\n", __func__, list);
+  char* next_port = strtok(list, ",");
+  while (next_port && (p->num_ports < MTL_PORT_MAX)) {
+    err("next_port: %s\n", next_port);
+    snprintf(p->port[p->num_ports], MTL_PORT_MAX_LEN - 1, "%s", next_port);
+    p->num_ports++;
+    next_port = strtok(NULL, ",");
+  }
+}
+
 static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params* p,
                            int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
@@ -130,6 +147,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_R_PORT:
         snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
         p->num_ports++;
+        break;
+      case TEST_ARG_PORT_LIST:
+        test_parse_port_list(p, optarg);
         break;
       case TEST_ARG_LCORES:
         p->lcores = optarg;
@@ -300,37 +320,39 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
 static void test_random_ip(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
   uint8_t* p_ip = mtl_p_sip_addr(p);
-  uint8_t* r_ip = mtl_r_sip_addr(p);
-
-  srand(st_test_get_monotonic_time());
-
   p_ip[0] = 197;
   p_ip[1] = rand() % 0xFF;
   p_ip[2] = rand() % 0xFF;
-  p_ip[3] = rand() % 0xFF;
-  r_ip[0] = p_ip[0];
-  r_ip[1] = p_ip[1];
-  r_ip[2] = p_ip[2];
-  r_ip[3] = p_ip[3] + 1;
+  p_ip[3] = 1;
 
-  p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
-  r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
+  /* add interfaces ip addresses */
+  for (int i = MTL_PORT_R; p->port[i][0] != '\0'; i++) {
+    p->sip_addr[i][0] = p_ip[0];
+    p->sip_addr[i][1] = p_ip[1];
+    p->sip_addr[i][2] = p_ip[2];
+    p->sip_addr[i][3] = p_ip[0] + i;
+  }
 
-  p_ip[0] = 239;
-  p_ip[1] = rand() % 0xFF;
-  p_ip[2] = rand() % 0xFF;
-  p_ip[3] = rand() % 0xFF;
-  r_ip[0] = p_ip[0];
-  r_ip[1] = p_ip[1];
-  r_ip[2] = p_ip[2];
-  r_ip[3] = p_ip[3] + 1;
+  srand(st_test_get_monotonic_time());
+
+  uint8_t* p_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_P];
+  uint8_t* r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_R];
+
+  p_ip_multicast[0] = 239;
+  p_ip_multicast[1] = rand() % 0xFF;
+  p_ip_multicast[2] = rand() % 0xFF;
+  p_ip_multicast[3] = rand() % 0xFF;
+  r_ip_multicast[0] = p_ip_multicast[0];
+  r_ip_multicast[1] = p_ip_multicast[1];
+  r_ip_multicast[2] = p_ip_multicast[2];
+  r_ip_multicast[3] = p_ip_multicast[3] + 1;
 
   if (ctx->mcast_only) {
-    r_ip = ctx->mcast_ip_addr[MTL_PORT_2];
-    r_ip[0] = p_ip[0];
-    r_ip[1] = p_ip[1];
-    r_ip[2] = p_ip[2];
-    r_ip[3] = p_ip[3] + 2;
+    r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_2];
+    r_ip_multicast[0] = p_ip_multicast[0];
+    r_ip_multicast[1] = p_ip_multicast[1];
+    r_ip_multicast[2] = p_ip_multicast[2];
+    r_ip_multicast[3] = p_ip_multicast[3] + 2;
   }
 }
 
@@ -366,10 +388,11 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->log_level = MTL_LOG_LEVEL_ERR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
-  p->tx_queues_cnt[MTL_PORT_P] = 16;
-  p->tx_queues_cnt[MTL_PORT_R] = 16;
-  p->rx_queues_cnt[MTL_PORT_P] = 16;
-  p->rx_queues_cnt[MTL_PORT_R] = 16;
+  for (int i = 0; i < MTL_PORT_MAX; i++) {
+    p->tx_queues_cnt[i] = 8;
+    p->rx_queues_cnt[i] = 8;
+  }
+
   /* by deafult don't limit cores */
   memset(ctx->lcores_list, 0, TEST_LCORE_LIST_MAX_LEN);
   p->lcores = NULL;
@@ -613,16 +636,7 @@ static int run_all_context_test(int argc, char** argv, struct st_tests_context* 
 
   uint64_t start_time_ns = st_test_get_monotonic_time();
 
-  std::string original_filter = ::testing::GTEST_FLAG(filter);
-  std::string new_filter;
-  if (original_filter == "*" || original_filter.empty()) {
-    new_filter = "-NoCtxTest*";
-  } else {
-    new_filter = original_filter + ":-NoCtxTest*";
-  }
-
   ret = RUN_ALL_TESTS();
-  ::testing::GTEST_FLAG(filter) = original_filter;
 
   uint64_t end_time_ns = st_test_get_monotonic_time();
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
@@ -648,7 +662,7 @@ bool filter_includes_no_ctx_tests(const std::string& filter) {
 }
 
 GTEST_API_ int main(int argc, char** argv) {
-         auto ctx = (struct st_tests_context*)st_test_ctx();
+  auto ctx = (struct st_tests_context*)st_test_ctx();
   int ret_ctx = 1, ret_no_ctx = 1;
 
   ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
@@ -663,7 +677,6 @@ GTEST_API_ int main(int argc, char** argv) {
   test_random_ip(ctx);
   g_test_ctx = ctx;
   ret_ctx = run_all_context_test(argc, argv, ctx);
-
 
   return ret_ctx || ret_no_ctx;
 }
