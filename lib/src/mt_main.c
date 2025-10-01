@@ -638,7 +638,6 @@ int mtl_uninit(mtl_handle mt) {
 
   p = mt_get_user_params(impl);
 
-
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;

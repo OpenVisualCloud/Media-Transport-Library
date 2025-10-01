@@ -650,7 +650,7 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl* convert_dev;
 
-  if(!impl) {
+  if (!impl) {
     err("%s, null handle\n", __func__);
     return NULL;
   }

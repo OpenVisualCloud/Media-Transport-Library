@@ -13,7 +13,8 @@ void NoCtxTest::SetUp() {
   ASSERT_TRUE(ctx != nullptr);
   memcpy(ctx, st_test_ctx(), sizeof(*ctx));
 
-  ASSERT_TRUE(ctx->handle == nullptr) << "NOCTX tests should be run wiht --no_ctx_tests flag!";
+  ASSERT_TRUE(ctx->handle == nullptr)
+      << "NOCTX tests should be run wiht --no_ctx_tests flag!";
 
   ctx->level = ST_TEST_LEVEL_MANDATORY;
   ctx->para.flags |= MTL_FLAG_RANDOM_SRC_PORT;
@@ -73,6 +74,7 @@ uint64_t NoCtxTest::TestPtpSourceSinceEpoch(void* priv) {
   clock_gettime(CLOCK_MONOTONIC, &spec);
   uint64_t result =
       ((uint64_t)spec.tv_sec * NS_PER_S + spec.tv_nsec) - adjustment_ns.load();
+
   return result;
 }
 
@@ -84,5 +86,64 @@ void NoCtxTest::sleepUntilFailure(int sleep_duration) {
   for (int i = 0; i < sleep_duration; ++i) {
     if (HasFailure()) break;
     sleep(1);
+  }
+}
+
+/**
+ * @brief Set the TX session port names, including redundant port if specified.
+ *
+ * @param port Pointer to the st_tx_port struct to update.
+ * @param txPortIdx Index for the primary TX port in ctx->para.port, or SESSION_SKIP_PORT
+ * to skip.
+ * @param txPortRedundantIdx Index for the redundant TX port in ctx->para.port, or
+ * SESSION_SKIP_PORT to skip.
+ */
+void Handlers::setSessionPortsTx(struct st_tx_port* port, int txPortIdx,
+                                 int txPortRedundantIdx) {
+  ASSERT_TRUE(ctx != nullptr);
+  ASSERT_TRUE(txPortIdx < (int)ctx->para.num_ports);
+  ASSERT_TRUE(txPortRedundantIdx < (int)ctx->para.num_ports);
+
+  if (txPortIdx >= 0) {
+    snprintf(port->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[txPortIdx]);
+    int num_ports = 1;
+
+    if (txPortRedundantIdx >= 0) {
+      snprintf(port->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+               ctx->para.port[txPortRedundantIdx]);
+      num_ports = 2;
+    }
+
+    port->num_port = num_ports;
+  }
+}
+
+/**
+ * @brief Set the RX session port names, including redundant port if specified.
+ *
+ * @param port Pointer to the st_rx_port struct to update.
+ * @param rxPortIdx Index for the primary RX port in ctx->para.port, or SESSION_SKIP_PORT
+ * to skip.
+ * @param rxPortRedundantIdx Index for the redundant RX port in ctx->para.port, or
+ * SESSION_SKIP_PORT to skip.
+ */
+void Handlers::setSessionPortsRx(struct st_rx_port* port, int rxPortIdx,
+                                 int rxPortRedundantIdx) {
+  ASSERT_TRUE(ctx != nullptr);
+  ASSERT_TRUE(rxPortIdx < (int)ctx->para.num_ports);
+  ASSERT_TRUE(rxPortRedundantIdx < (int)ctx->para.num_ports);
+
+  if (rxPortIdx >= 0) {
+    snprintf(port->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+             ctx->para.port[rxPortIdx]);
+    int num_ports = 1;
+
+    if (rxPortRedundantIdx >= 0) {
+      snprintf(port->port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+               ctx->para.port[rxPortRedundantIdx]);
+      num_ports = 2;
+    }
+    port->num_port = num_ports;
   }
 }
