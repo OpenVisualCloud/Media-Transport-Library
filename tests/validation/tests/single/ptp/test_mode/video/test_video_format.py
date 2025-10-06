@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files
 
 
+@pytest.mark.xfail(reason="the test environment is not yet ready to run PTP tests")
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize(
     "video_format",
