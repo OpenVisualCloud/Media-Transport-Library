@@ -40,12 +40,10 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  gtest-build-mtl:
+  run-tests:
     needs: gtest-check-for-changes
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library' && (needs.gtest-check-for-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: [self-hosted, linux, x64, dpdk]
-    timeout-minutes: 60
-
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
@@ -78,16 +76,6 @@ jobs:
       - name: Check if Kahawai driver version is loaded
         run: |
           sudo dmesg | grep "Intel(R) Ethernet Connection .* version Kahawai.*"
-
-  gtest-perform-tests:
-    needs: [gtest-check-for-changes, gtest-build-mtl]
-    if: github.repository == 'OpenVisualCloud/Media-Transport-Library' && (needs.gtest-check-for-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: [self-hosted, linux, x64, dpdk]
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
 
       - name: Kill previous gtest routine
         run: |
