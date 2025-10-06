@@ -679,7 +679,7 @@ int mtl_start(mtl_handle mt) {
 int mtl_stop(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (impl == NULL) {
+  if (!impl) {
     err("%s, null handle\n", __func__);
     return -EINVAL;
   }
