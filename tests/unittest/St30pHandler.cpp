@@ -4,12 +4,11 @@
 
 #include "noctx.hpp"
 
-St30pHandler::St30pHandler(st_tests_context* ctx, SessionUserData* sessionUserData,
+St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
                            st30p_tx_ops ops_tx, st30p_rx_ops ops_rx,
                            uint msPerFramebuffer, bool create, bool start)
-    : Handlers(ctx, sessionUserData, AUDIO_CLOCK_HRTZ),
-      msPerFramebuffer(msPerFramebuffer) {
-  if (ops_tx.name == nullptr || ops_rx.name == nullptr) {
+    : Handlers(ctx, sessionUserData), msPerFramebuffer(msPerFramebuffer) {
+  if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
     ops_tx = sessionsOpsTx;
     ops_rx = sessionsOpsRx;
@@ -31,8 +30,8 @@ St30pHandler::St30pHandler(st_tests_context* ctx, SessionUserData* sessionUserDa
 
 St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
                            st30p_rx_ops ops_rx, uint msPerFramebuffer)
-    : Handlers(ctx, AUDIO_CLOCK_HRTZ), msPerFramebuffer(msPerFramebuffer) {
-  if (ops_tx.name == nullptr || ops_rx.name == nullptr) {
+    : Handlers(ctx), msPerFramebuffer(msPerFramebuffer) {
+  if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
   } else {
     sessionsOpsTx = ops_tx;

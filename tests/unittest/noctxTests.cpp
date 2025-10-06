@@ -4,7 +4,7 @@
 
 #include "noctx.hpp"
 
-class st30pDefaultTimestamp : public SessionUserData {
+class st30pDefaultTimestamp : public FrameTestStrategy {
  public:
   uint64_t lastTimestamp;
 
@@ -18,13 +18,13 @@ class st30pDefaultTimestamp : public SessionUserData {
   void rxTestFrameModifier(void* frame, size_t frame_size) {
     st30_frame* f = (st30_frame*)frame;
     St30pHandler* st30pParent = static_cast<St30pHandler*>(parent);
-    static uint64_t framebuffTime =
-        st10_tai_to_media_clk(st30pParent->nsPacketTime, st30pParent->clockHrtz);
+    uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
+    uint64_t framebuffTime = st10_tai_to_media_clk(
+        st30pParent->nsPacketTime, sampling);
 
-    EXPECT_NEAR(
-        f->timestamp,
-        st10_tai_to_media_clk((idx_rx)*st30pParent->nsPacketTime, st30pParent->clockHrtz),
-        framebuffTime)
+    EXPECT_NEAR(f->timestamp,
+                st10_tai_to_media_clk((idx_rx)*st30pParent->nsPacketTime, sampling),
+                framebuffTime)
         << " idx_rx: " << idx_rx;
     if (lastTimestamp != 0) {
       uint64_t diff = f->timestamp - lastTimestamp;
@@ -60,22 +60,20 @@ class st30pUserTimestamp : public st30pDefaultTimestamp {
   void rxTestFrameModifier(void* frame, size_t frame_size) {
     st30_frame* f = (st30_frame*)frame;
     St30pHandler* st30pParent = static_cast<St30pHandler*>(parent);
+    uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
     idx_rx++;
 
     uint64_t expectedTimestamp =
         startingTime + (st30pParent->nsPacketTime * (idx_rx - 1));
-    uint64_t expected_media_clk =
-        st10_tai_to_media_clk(expectedTimestamp, AUDIO_CLOCK_HRTZ);
+    uint64_t expected_media_clk = st10_tai_to_media_clk(expectedTimestamp, sampling);
 
     EXPECT_EQ(f->timestamp, expected_media_clk)
         << " idx_rx: " << idx_rx << " tai difference: "
-        << (int64_t)(st10_media_clk_to_ns(f->timestamp, AUDIO_CLOCK_HRTZ) -
-                     expectedTimestamp);
+        << (int64_t)(st10_media_clk_to_ns(f->timestamp, sampling) - expectedTimestamp);
 
     if (lastTimestamp != 0) {
       uint64_t diff = f->timestamp - lastTimestamp;
-      EXPECT_TRUE(diff ==
-                  st10_tai_to_media_clk(st30pParent->nsPacketTime, AUDIO_CLOCK_HRTZ))
+      EXPECT_TRUE(diff == st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling))
           << " idx_rx " << idx_rx << " diff: " << diff;
     }
 

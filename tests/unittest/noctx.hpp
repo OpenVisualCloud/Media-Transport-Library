@@ -11,12 +11,10 @@
 
 #include "tests.hpp"
 
-#define AUDIO_CLOCK_HRTZ 48000
-#define VIDEO_CLOCK_HRTZ 90000
 #define SESSION_SKIP_PORT -1
 
 class Session;
-class SessionUserData;
+class FrameTestStrategy;
 class NoCtxTest;
 class St30pHandler;
 class Handlers;
@@ -70,7 +68,7 @@ class NoCtxTest : public ::testing::Test {
   static uint64_t TestPtpSourceSinceEpoch(void* priv);
   /* Structures that will be cleaned automaticly every test */
   std::vector<St30pHandler*> st30pHandlers;
-  std::vector<SessionUserData*> sessionUserDatas;
+  std::vector<FrameTestStrategy*> sessionUserDatas;
 
   void sleepUntilFailure(int sleepDuration = 0);
 };
@@ -79,15 +77,13 @@ class Handlers {
  public:
   Session session;
   st_tests_context* ctx = nullptr;
-  uint clockHrtz;
-  SessionUserData* sessionUserData;
+  FrameTestStrategy* sessionUserData;
 
-  Handlers(st_tests_context* ctx, SessionUserData* sessionUserData, uint clockHrz)
-      : ctx(ctx), clockHrtz(clockHrz), sessionUserData(sessionUserData) {
+  Handlers(st_tests_context* ctx, FrameTestStrategy* sessionUserData)
+      : ctx(ctx), sessionUserData(sessionUserData) {
   }
 
-  Handlers(st_tests_context* ctx, uint clockHrz)
-      : ctx(ctx), clockHrtz(clockHrz), sessionUserData(nullptr) {
+  Handlers(st_tests_context* ctx) : ctx(ctx), sessionUserData(nullptr) {
   }
 
   void startSession(
@@ -109,7 +105,7 @@ class Handlers {
   }
 };
 
-class SessionUserData {
+class FrameTestStrategy {
  public:
   Handlers* parent;
   uint32_t idx_tx;
@@ -121,7 +117,7 @@ class SessionUserData {
   virtual void txTestFrameModifier(void* frame, size_t frame_size){};
   virtual void rxTestFrameModifier(void* frame, size_t frame_size){};
 
-  virtual ~SessionUserData() {
+  virtual ~FrameTestStrategy() {
     parent = nullptr;
   }
 };
@@ -132,7 +128,7 @@ class St30pHandler : public Handlers {
 
  public:
   uint64_t nsPacketTime;
-  St30pHandler(st_tests_context* ctx, SessionUserData* sessionUserData,
+  St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
                st30p_tx_ops ops_tx = {}, st30p_rx_ops ops_rx = {},
                uint msPerFramebuffer = 10, bool create = true, bool start = true);
 
@@ -150,7 +146,7 @@ class St30pHandler : public Handlers {
                     st30_sampling sampling = ST30_SAMPLING_48K, uint8_t channelCount = 2,
                     st30_ptime ptime = ST30_PTIME_1MS);
 
-  void setModifiers(SessionUserData* sessionUserData) {
+  void setModifiers(FrameTestStrategy* sessionUserData) {
     this->sessionUserData = sessionUserData;
     sessionUserData->parent = this;
   }
@@ -181,7 +177,7 @@ class St20Handler : public Handlers {
 
  public:
   uint64_t nsFrameTime;
-  St20Handler(st_tests_context* ctx, SessionUserData* sessionUserData,
+  St20Handler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
               st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {}, uint width = 1920,
               uint height = 1080, enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT,
               bool create = true, bool start = true);
@@ -200,7 +196,7 @@ class St20Handler : public Handlers {
                    uint payloadType = 112, enum st_fps fps = ST_FPS_P25,
                    bool interlaced = false, enum st20_packing packing = ST20_PACKING_BPM);
 
-  void setModifiers(SessionUserData* sessionUserData) {
+  void setModifiers(FrameTestStrategy* sessionUserData) {
     this->sessionUserData = sessionUserData;
     sessionUserData->parent = this;
   }
