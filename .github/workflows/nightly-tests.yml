@@ -50,6 +50,12 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
+      - name: Setup hugepages
+        run: |
+          sudo mkdir -p /tmp/hugepages
+          sudo mkdir -p /hugepages
+          sudo mount -t hugetlbfs hugetlbfs /tmp/hugepages -o pagesize=2M
+          sudo mount -t hugetlbfs hugetlbfs /hugepages -o pagesize=1G
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
