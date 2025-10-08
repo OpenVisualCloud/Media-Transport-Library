@@ -4,11 +4,11 @@
 
 #include "noctx.hpp"
 
-class st30pDefaultTimestamp : public FrameTestStrategy {
+class St30pDefaultTimestamp : public FrameTestStrategy {
  public:
   uint64_t lastTimestamp;
 
-  st30pDefaultTimestamp(St30pHandler* parentHandler = nullptr) : lastTimestamp(0) {
+  St30pDefaultTimestamp(St30pHandler* parentHandler = nullptr) : lastTimestamp(0) {
     idx_tx = 0;
     idx_rx = 0;
     parent = parentHandler;
@@ -35,14 +35,14 @@ class st30pDefaultTimestamp : public FrameTestStrategy {
   }
 };
 
-class st30pUserTimestamp : public st30pDefaultTimestamp {
+class St30pUserTimestamp : public St30pDefaultTimestamp {
  protected:
   uint64_t startingTime = 10 * NS_PER_MS;
   uint64_t lastTimestamp = 0;
 
  public:
-  st30pUserTimestamp(St30pHandler* parentHandler = nullptr)
-      : st30pDefaultTimestamp(parentHandler) {
+  St30pUserTimestamp(St30pHandler* parentHandler = nullptr)
+      : St30pDefaultTimestamp(parentHandler) {
     enable_tx_modifier = true;
     enable_rx_modifier = true;
   }
@@ -86,7 +86,7 @@ TEST_F(NoCtxTest, st30p_default_timestamps) {
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  st30pDefaultTimestamp* userData = new st30pDefaultTimestamp();
+  St30pDefaultTimestamp* userData = new St30pDefaultTimestamp();
   St30pHandler* handler = new St30pHandler(ctx, userData);
   st30pHandlers.emplace_back(handler);
   sessionUserDatas.emplace_back(userData);
@@ -100,7 +100,7 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  st30pUserTimestamp* userData = new st30pUserTimestamp();
+  St30pUserTimestamp* userData = new St30pUserTimestamp();
   St30pHandler* handler = new St30pHandler(ctx);
   handler->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
   handler->setModifiers(userData);
@@ -111,12 +111,12 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
   sleepUntilFailure();
 }
 
-class st30pRedundantLatency : public st30pUserTimestamp {
+class St30pRedundantLatency : public St30pUserTimestamp {
   uint latencyInMs;
 
  public:
-  st30pRedundantLatency(uint latency = 30, St30pHandler* parentHandler = nullptr)
-      : st30pUserTimestamp(parentHandler), latencyInMs(latency) {
+  St30pRedundantLatency(uint latency = 30, St30pHandler* parentHandler = nullptr)
+      : St30pUserTimestamp(parentHandler), latencyInMs(latency) {
     enable_tx_modifier = true;
     enable_rx_modifier = true;
 
@@ -143,7 +143,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   uint testedLatencyMs = 10;
 
   uint sessionRxSideId = 0;
-  auto sessionUserData = new st30pRedundantLatency(0);
+  auto sessionUserData = new St30pRedundantLatency(0);
   sessionUserDatas.emplace_back(sessionUserData);
   st30pHandlers.emplace_back(
       new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
@@ -153,7 +153,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   st30pHandlers[sessionRxSideId]->createSessionRx();
 
   uint sessionTxPrimarySideId = 1;
-  sessionUserData = new st30pRedundantLatency(0);
+  sessionUserData = new St30pRedundantLatency(0);
   sessionUserDatas.emplace_back(sessionUserData);
   st30pHandlers.emplace_back(
       new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
@@ -163,7 +163,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   st30pHandlers[sessionTxPrimarySideId]->createSessionTx();
 
   uint sessionTxRedundantLatencySideId = 2;
-  sessionUserData = new st30pRedundantLatency(testedLatencyMs);
+  sessionUserData = new St30pRedundantLatency(testedLatencyMs);
   sessionUserDatas.emplace_back(sessionUserData);
   st30pHandlers.emplace_back(
       new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
