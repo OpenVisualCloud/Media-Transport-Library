@@ -158,7 +158,7 @@ class Application:
         # Create interface configuration
         nic_port = self.universal_params.get("nic_port", "0000:31:01.0")  # Default to first VF
         nic_port_list = self.universal_params.get("nic_port_list", [nic_port])  # Support both single port and list
-        source_ip = self.universal_params.get("source_ip", "192.168.1.10")  # Default IP
+        source_ip = self.universal_params.get("source_ip", "192.168.17.101")  # Default TX IP
         test_mode = self.universal_params.get("test_mode", "unicast")
         
         # Use nic_port_list if provided, otherwise use single nic_port
@@ -167,8 +167,25 @@ class Application:
         else:
             vf_list = [nic_port]
             
+        # For unicast mode with loopback, we need separate TX and RX interfaces
+        if test_mode == "unicast":
+            # TX interface
+            tx_interface = {
+                "name": vf_list[0],  # First VF for TX
+                "ip": source_ip,  # TX interface IP
+            }
+            config["interfaces"].append(tx_interface)
+            
+            # RX interface (for loopback testing)
+            if len(vf_list) > 1:
+                rx_ip = self.universal_params.get("destination_ip", "192.168.17.102")
+                rx_interface = {
+                    "name": vf_list[1],  # Second VF for RX
+                    "ip": rx_ip,  # RX interface IP (destination)
+                }
+                config["interfaces"].append(rx_interface)
         # For multicast mode, we need separate TX and RX interfaces with different VFs
-        if test_mode == "multicast":
+        elif test_mode == "multicast":
             # Calculate if we need extra queues for high bandwidth (1080p+)
             width = int(self.universal_params.get("width", 1920))
             height = int(self.universal_params.get("height", 1080))
@@ -212,7 +229,7 @@ class Application:
         else:
             # Single interface for unicast/other modes
             interface = {
-                "name": nic_port,
+                "name": vf_list[0],  # Use first VF from the list
                 "ip": source_ip
             }
             
@@ -254,15 +271,21 @@ class Application:
             config["tx_sessions"].append(tx_session)
         
         if direction is None or direction == "rx":  # Create RX session
-            # Always use the destination_ip from universal parameters
-            rx_ip = self.universal_params.get("destination_ip", "239.168.48.9")
+            # For unicast loopback, RX should filter for packets FROM the TX interface (source IP)
+            # For multicast, use the multicast IP
+            if test_mode == "unicast":
+                # For unicast loopback, RX filters for packets FROM source_ip (TX interface)
+                rx_ip = self.universal_params.get("source_ip", "192.168.17.101")
+            else:
+                # For multicast, use the destination IP (multicast address)
+                rx_ip = self.universal_params.get("destination_ip", "239.168.48.9")
             
             # Determine RX interface index
             # If only one interface defined, use index 0 for both TX and RX
             rx_interface_index = 1 if len(config["interfaces"]) > 1 else 0
             
             rx_session = {
-                "ip": [rx_ip],  # Same IP as TX destination
+                "ip": [rx_ip],  # For unicast: source IP to filter, for multicast: multicast IP
                 "interface": [rx_interface_index],  # RX interface
                 "video": [],
                 "st20p": [],
@@ -336,8 +359,8 @@ class Application:
             # Use pixel_format_rx if specified, otherwise use pixel_format
             rx_format = self.universal_params.get("pixel_format_rx") or self.universal_params.get("pixel_format", "YUV422PLANAR10LE")
             session["output_format"] = rx_format
-            # For RX, always use empty string for st20p_url (not null)
-            session["st20p_url"] = ""
+            # For RX, use output_file parameter
+            session["st20p_url"] = self.universal_params.get("output_file", "")
             session["measure_latency"] = self.universal_params.get("measure_latency", False)
         
         return session
