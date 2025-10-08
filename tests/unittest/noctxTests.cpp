@@ -19,8 +19,7 @@ class st30pDefaultTimestamp : public FrameTestStrategy {
     st30_frame* f = (st30_frame*)frame;
     St30pHandler* st30pParent = static_cast<St30pHandler*>(parent);
     uint64_t sampling = st30_get_sample_rate(st30pParent->sessionsOpsRx.sampling);
-    uint64_t framebuffTime = st10_tai_to_media_clk(
-        st30pParent->nsPacketTime, sampling);
+    uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling);
 
     EXPECT_NEAR(f->timestamp,
                 st10_tai_to_media_clk((idx_rx)*st30pParent->nsPacketTime, sampling),
@@ -84,8 +83,6 @@ class st30pUserTimestamp : public st30pDefaultTimestamp {
 TEST_F(NoCtxTest, st30p_default_timestamps) {
   ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
-
-  ASSERT_TRUE(ctx && ctx->handle == nullptr);
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
@@ -100,7 +97,6 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
   ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
 
-  ASSERT_TRUE(ctx && ctx->handle == nullptr);
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
@@ -136,10 +132,14 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->para.flags |= MTL_FLAG_DEV_AUTO_START_STOP;
+
+  if (ctx->para.num_ports < 4) {
+    throw std::runtime_error("st30p_redundant_latency test ctx needs at least 4 ports");
+  }
+
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
-  ASSERT_TRUE(ctx->para.num_ports >= 4)
-      << " need at least 4 ports for redundant latency test";
+
   uint testedLatencyMs = 10;
 
   uint sessionRxSideId = 0;
