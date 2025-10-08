@@ -1,5 +1,7 @@
 name: nightly-tests-bare-metal
 on:
+  # allow manually trigger
+  workflow_dispatch:
   schedule:
   - cron: '0 0 * * *' # Every day at midnight UTC
 permissions:
