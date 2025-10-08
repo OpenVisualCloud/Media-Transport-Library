@@ -293,10 +293,14 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   }
 
   /* set first seq_id - 1 */
-  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
+  if (unlikely(s->latest_seq_id == -1)) {
+    s->latest_seq_id = seq_id - 1;
+  }
+
   /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
-    dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
+  if (seq_id <= s->latest_seq_id) {
+    dbg("%s(%d,%d), drop as pkt seq %d is old last %d\n", __func__, s->idx, s_port,
+        seq_id, s->latest_seq_id);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     if (s->enable_timing_parser) {
       enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
@@ -304,11 +308,13 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     }
     return -EIO;
   }
+
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
-    dbg("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
-        s->latest_seq_id);
+    info("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
+         s->latest_seq_id);
   }
+
   /* update seq id */
   s->latest_seq_id = seq_id;
 
@@ -434,9 +440,12 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   }
 
   /* set first seq_id - 1 */
-  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
+  if (unlikely(s->latest_seq_id == -1)) {
+    s->latest_seq_id = seq_id - 1;
+  }
+
   /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
+  if (seq_id <= s->latest_seq_id) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     return -EIO;
