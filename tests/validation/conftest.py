@@ -12,15 +12,24 @@ from typing import Dict
 import pytest
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import Nicctl
+from compliance.pcap_compliance import PcapComplianceClient
+from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
-from mtl_engine.const import LOG_FOLDER, TESTCMD_LVL
+from mtl_engine.const import (
+    DOWNLOAD_REPORT_TRIES,
+    FRAMES_CAPTURE,
+    LOG_FOLDER,
+    TESTCMD_LVL,
+)
 from mtl_engine.csv_report import (
     csv_add_test,
     csv_write_report,
+    get_compliance_result,
     update_compliance_result,
 )
+from mtl_engine.execute import log_fail
 from mtl_engine.ramdisk import Ramdisk
 from mtl_engine.stash import (
     clear_issue,
@@ -133,8 +142,9 @@ def delay_between_tests(test_config: dict):
     yield
 
 
+# TODO: Legacy, remove in the future
 @pytest.fixture
-def prepare_ramdisk(hosts, test_config):
+def legacy_prepare_ramdisk(hosts, test_config):
     ramdisk_cfg = test_config.get("ramdisk", {})
     capture_cfg = test_config.get("capture_cfg", {})
     pcap_dir = ramdisk_cfg.get("pcap_dir", "/home/pcap_files")
@@ -147,6 +157,28 @@ def prepare_ramdisk(hosts, test_config):
         ]
         for ramdisk in ramdisks:
             ramdisk.mount()
+
+
+@pytest.fixture(scope="session")
+def prepare_ramdisk(hosts, test_config):
+    ramdisks = []
+    ramdisks_configs = test_config.get("ramdisk", {})
+    for ramdisk_name, ramdisk_config in ramdisks_configs.items():
+        ramdisk_mountpoint = ramdisk_config.get(
+            "mountpoint", f"/mnt/ramdisk_{ramdisk_name}"
+        )
+        ramdisk_size_gib = ramdisk_config.get("size_gib", 32)
+        ramdisks += [
+            Ramdisk(
+                host=host, mount_point=ramdisk_mountpoint, size_gib=ramdisk_size_gib
+            )
+            for host in hosts.values()
+        ]
+    for ramdisk in ramdisks:
+        ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
 
 
 @pytest.fixture(scope="session")
@@ -245,27 +277,91 @@ def log_session():
     if os.path.exists("pytest.log"):
         shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
     else:
-        logging.warning("pytest.log not found, skipping copy")
+        logger.warning("pytest.log not found, skipping copy")
     csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def compliance_report(request, log_session, test_config):
-    """
-    This function is used for compliance check and report.
-    """
-    # TODO: Implement compliance check logic. When tcpdump pcap is enabled, at the end of the test session all pcaps
-    # shall be send into EBU list.
-    # Pcaps shall be stored in the ramdisk, and then moved to the compliance
-    # folder or send into EBU list after each test finished and remove it from the ramdisk.
-    # Compliance report generation logic goes here after yield. Or in another class / function but triggered here.
-    # AFAIK names of pcaps contains test name so it can be matched with result of each test like in code below.
-    yield
-    if test_config.get("compliance", False):
-        logging.info("Compliance mode enabled, updating compliance results")
-        for item in request.session.items:
-            test_case = item.nodeid
-            update_compliance_result(test_case, "Fail")
+@pytest.fixture(scope="function")
+def pcap_capture(request, media_file, test_config, hosts, mtl_path):
+    capture_cfg = test_config.get("capture_cfg", {})
+    capturer = None
+    if capture_cfg and capture_cfg.get("enable"):
+        host = hosts["client"] if "client" in hosts else list(hosts.values())[0]
+        media_file_info, _ = media_file
+        test_name = request.node.name
+        if "frames_number" not in capture_cfg and "capture_time" not in capture_cfg:
+            capture_cfg["packets_number"] = (
+                FRAMES_CAPTURE * calculate_packets_per_frame(media_file_info)
+            )
+            logger.info(
+                f"Capture {capture_cfg['packets_number']} packets for {FRAMES_CAPTURE} frames"
+            )
+        elif "frames_number" in capture_cfg:
+            capture_cfg["packets_number"] = capture_cfg[
+                "frames_number"
+            ] * calculate_packets_per_frame(media_file_info)
+            logger.info(
+                f"Capture {capture_cfg['packets_number']} packets for {capture_cfg['frames_number']} frames"
+            )
+        capturer = NetsniffRecorder(
+            host=host,
+            test_name=test_name,
+            pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
+            interface=host.network_interfaces[0].name,
+            silent=capture_cfg.get("silent", True),
+            packets_capture=capture_cfg.get("packets_number", None),
+            capture_time=capture_cfg.get("capture_time", None),
+        )
+    yield capturer
+    if capturer and capturer.netsniff_process:
+        ebu_server = test_config.get("ebu_server", {})
+        if not ebu_server:
+            logger.error("EBU server configuration not found in test_config.yaml")
+            return
+        ebu_ip = ebu_server.get("name", None)
+        ebu_login = ebu_server.get("username", None)
+        ebu_passwd = ebu_server.get("password", None)
+        ebu_proxy = ebu_server.get("proxy", None)
+        proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
+        compliance_upl = capturer.host.connection.execute_command(
+            "python3 ./tests/validation/compliance/upload_pcap.py"
+            f" --ip {ebu_ip}"
+            f" --login {ebu_login}"
+            f" --password {ebu_passwd}"
+            f" --pcap_file_path {capturer.pcap_file}{proxy_cmd}",
+            cwd=f"{str(mtl_path)}",
+        )
+        if compliance_upl.return_code != 0:
+            logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
+            return
+        uuid = (
+            compliance_upl.stdout.split(">>>UUID>>>")[1].split("<<<UUID<<<")[0].strip()
+        )
+        logger.debug(f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}")
+        uploader = PcapComplianceClient(config_path="")
+        uploader.ebu_ip = ebu_ip
+        uploader.user = ebu_login
+        uploader.password = ebu_passwd
+        uploader.pcap_id = uuid
+        uploader.proxies = {"http": ebu_proxy, "https": ebu_proxy}
+        uploader.authenticate()  # Authenticate with the EBU server
+        report = {"analyzed": False}
+        tries = DOWNLOAD_REPORT_TRIES
+        while (not report.get("analyzed", False)) and tries > 0:
+            time.sleep(1)
+            tries -= 1
+            report = uploader.download_report()
+        if not report.get("analyzed", False):
+            logger.error(
+                f"Report is not ready after {DOWNLOAD_REPORT_TRIES} seconds, skipping compliance check"
+            )
+            return
+        result = report.get("not_compliant_streams", 1)
+        update_compliance_result(request.node.nodeid, "Pass" if result == 0 else "Fail")
+        if result == 0:
+            logger.info("PCAP compliance check passed")
+        else:
+            log_fail("PCAP compliance check failed")
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -287,20 +383,26 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     clear_issue()
     yield
     report = request.node.stash[phase_report_key]
+
+    def fail_test(stage):
+        logger.log(level=TEST_FAIL, msg=f"{stage} failed for {case_id}")
+        os.chmod(logfile, 0o4755)
+        return "Fail"
+
     if report["setup"].failed:
-        logging.log(level=TEST_FAIL, msg=f"Setup failed for {case_id}")
-        os.chmod(logfile, 0o4755)
-        result = "Fail"
+        result = fail_test("Setup")
     elif ("call" not in report) or report["call"].failed:
-        logging.log(level=TEST_FAIL, msg=f"Test failed for {case_id}")
-        os.chmod(logfile, 0o4755)
-        result = "Fail"
+        result = fail_test("Test")
     elif report["call"].passed:
-        logging.log(level=TEST_PASS, msg=f"Test passed for {case_id}")
-        os.chmod(logfile, 0o755)
-        result = "Pass"
+        compliance = get_compliance_result(case_id)
+        if compliance is not None and compliance == "Fail":
+            result = fail_test("Compliance")
+        else:
+            logger.log(level=TEST_PASS, msg=f"Test passed for {case_id}")
+            os.chmod(logfile, 0o755)
+            result = "Pass"
     else:
-        logging.log(level=TEST_INFO, msg=f"Test skipped for {case_id}")
+        logger.log(level=TEST_INFO, msg=f"Test skipped for {case_id}")
         result = "Skip"
 
     logger.removeHandler(fh)
