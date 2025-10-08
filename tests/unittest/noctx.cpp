@@ -61,7 +61,12 @@ void NoCtxTest::TearDown() {
   }
 }
 
-/* create ptp time that will set the time to 0 */
+/*
+ * PTP time source that provides timestamps starting from 0.
+ * Reset behavior: Pass nullptr as priv to reset the epoch to current time.
+ * This allows tests to synchronize timing by calling TestPtpSourceSinceEpoch(nullptr)
+ * before starting timed operations, ensuring all subsequent timestamps start from 0.
+ */
 uint64_t NoCtxTest::TestPtpSourceSinceEpoch(void* priv) {
   struct timespec spec;
   static std::atomic<uint64_t> adjustment_ns{0};
