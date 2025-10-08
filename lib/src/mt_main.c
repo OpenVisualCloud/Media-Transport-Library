@@ -1258,10 +1258,14 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
   if (!impl) {
     err("%s, null handle\n", __func__);
     return -EINVAL;
-  } else if (impl->type != MT_HANDLE_MAIN) {
+  }
+
+  if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EINVAL;
-  } else if (port >= mt_num_ports(impl)) {
+  }
+
+  if (port >= mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EINVAL;
   }

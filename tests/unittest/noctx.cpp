@@ -10,11 +10,15 @@ void NoCtxTest::SetUp() {
   /* NOCTX test: always operate on a copy of the global ctx.
      Do not use the global ctx directly for anything except copying its values.
    */
-  ASSERT_TRUE(ctx != nullptr);
+  if (!ctx) {
+    throw std::runtime_error("NoCtxTest::SetUp no ctx");
+  }
+
   memcpy(ctx, st_test_ctx(), sizeof(*ctx));
 
-  ASSERT_TRUE(ctx->handle == nullptr)
-      << "NOCTX tests should be run wiht --no_ctx_tests flag!";
+  if (ctx->handle) {
+    throw std::runtime_error("NoCtxTest::SetUp ctx already initialized!");
+  }
 
   ctx->level = ST_TEST_LEVEL_MANDATORY;
   ctx->para.flags |= MTL_FLAG_RANDOM_SRC_PORT;
@@ -48,8 +52,8 @@ void NoCtxTest::TearDown() {
   if (ctx) {
     if (ctx->handle) {
       mtl_uninit(ctx->handle);
-      /* WA for reinitialization issues */
-      sleep(10);
+      /* make sure the tests cannot be reinitialized */
+      ctx->handle = (mtl_handle)0x1;
     }
 
     delete ctx;
@@ -100,9 +104,13 @@ void NoCtxTest::sleepUntilFailure(int sleep_duration) {
  */
 void Handlers::setSessionPortsTx(struct st_tx_port* port, int txPortIdx,
                                  int txPortRedundantIdx) {
-  ASSERT_TRUE(ctx != nullptr);
-  ASSERT_TRUE(txPortIdx < (int)ctx->para.num_ports);
-  ASSERT_TRUE(txPortRedundantIdx < (int)ctx->para.num_ports);
+  if (!ctx) {
+    throw std::runtime_error("setSessionPortsTx no ctx (ctx is null)");
+  } else if (txPortIdx >= (int)ctx->para.num_ports) {
+    throw std::runtime_error("setSessionPortsTx txPortIdx out of range");
+  } else if (txPortRedundantIdx >= (int)ctx->para.num_ports) {
+    throw std::runtime_error("setSessionPortsTx txPortRedundantIdx out of range");
+  }
 
   if (txPortIdx >= 0) {
     snprintf(port->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
@@ -130,9 +138,13 @@ void Handlers::setSessionPortsTx(struct st_tx_port* port, int txPortIdx,
  */
 void Handlers::setSessionPortsRx(struct st_rx_port* port, int rxPortIdx,
                                  int rxPortRedundantIdx) {
-  ASSERT_TRUE(ctx != nullptr);
-  ASSERT_TRUE(rxPortIdx < (int)ctx->para.num_ports);
-  ASSERT_TRUE(rxPortRedundantIdx < (int)ctx->para.num_ports);
+  if (!ctx) {
+    throw std::runtime_error("setSessionPortsRx no ctx (ctx is null)");
+  } else if (rxPortIdx > (int)ctx->para.num_ports) {
+    throw std::runtime_error("setSessionPortsRx rxPortIdx out of range");
+  } else if (rxPortRedundantIdx > (int)ctx->para.num_ports) {
+    throw std::runtime_error("setSessionPortsRx rxPortRedundantIdx out of range");
+  }
 
   if (rxPortIdx >= 0) {
     snprintf(port->port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",

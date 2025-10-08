@@ -17,8 +17,7 @@ St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUser
     sessionsOpsRx = ops_rx;
   }
 
-  EXPECT_TRUE(sessionUserData != nullptr);
-  if (!sessionUserData) return;
+  if (!sessionUserData) throw std::runtime_error("St30pHandler no sessionUserData");
 
   this->sessionUserData = sessionUserData;
   sessionUserData->parent = this;
@@ -139,7 +138,9 @@ void St30pHandler::createSession(bool start) {
 }
 
 void St30pHandler::createSessionTx() {
-  ASSERT_TRUE(ctx && ctx->handle != nullptr);
+  if (!ctx || !ctx->handle) {
+    throw std::runtime_error("St30pHandler::createSessionTx no ctx or ctx->handle");
+  }
   auto ops = sessionsOpsTx;
 
   st30p_tx_handle tx_handle = st30p_tx_create(ctx->handle, &ops);
@@ -148,7 +149,9 @@ void St30pHandler::createSessionTx() {
 }
 
 void St30pHandler::createSessionRx() {
-  ASSERT_TRUE(ctx && ctx->handle != nullptr);
+  if (!ctx || !ctx->handle) {
+    throw std::runtime_error("St30pHandler::createSessionRx no ctx or ctx->handle");
+  }
   auto ops = sessionsOpsRx;
 
   st30p_rx_handle rx_handle = st30p_rx_create(ctx->handle, &ops);
