@@ -9,7 +9,6 @@ import subprocess
 import sys
 import time
 
-from create_pcap_file.tcpdump import TcpDumpRecorder
 from mfd_connect import SSHConnection
 
 from . import rxtxapp_config
@@ -115,22 +114,6 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
         log_fail(f"wrong test_mode {test_mode}")
 
     return config
-
-
-def prepare_tcpdump(capture_cfg, host=None):
-    """
-    Prepare and (optionally) start TcpDumpRecorder if capture_cfg is enabled.
-    Returns the TcpDumpRecorder instance or None.
-    """
-    if capture_cfg and capture_cfg.get("enable"):
-        tcpdump = TcpDumpRecorder(
-            host=host,
-            test_name=capture_cfg.get("test_name", "capture"),
-            pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-            interface=capture_cfg.get("interface"),
-        )
-        return tcpdump
-    return None
 
 
 def add_perf_video_session_tx(
@@ -520,12 +503,8 @@ def execute_test(
     rx_timing_parser: bool = False,
     ptp: bool = False,
     host=None,
-    capture_cfg=None,
+    netsniff=None,
 ) -> bool:
-    # Only initialize logging if it hasn't been initialized already
-    global _log_timestamp
-    if _log_timestamp is None:
-        init_test_logging()
 
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -534,8 +513,7 @@ def execute_test(
 
     logger.info(f"Starting RxTxApp test: {get_case_id()}")
 
-    remote_host = host
-    remote_conn = remote_host.connection
+    remote_conn = host.connection
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
     if isinstance(remote_conn, SSHConnection):
@@ -580,8 +558,6 @@ def execute_test(
 
     logger.info(f"RxTxApp Command: {command}")
 
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
-    tcpdump = prepare_tcpdump(capture_cfg, host)
 
     # For 4TX and 8k streams more timeout is needed
     timeout = test_time + 90
@@ -598,19 +574,18 @@ def execute_test(
         cwd=build,
         timeout=timeout,
         testcmd=True,
-        host=remote_host,
+        host=host,
+        background=True
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
-    try:
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            logger.info(f"Started tcpdump capture on host {host.name}")
-    finally:
-        cp.wait()
+    if netsniff:
+        netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
+        netsniff.capture()
+        logger.info(f"Finished netsniff-ng capture on host {host.name}")
+    cp.wait(timeout=timeout)
 
     # Capture stdout output for logging
-    capture_stdout(cp, "RxTxApp")
+    logger.info(cp.stdout_text)
 
     # Check if process was killed or terminated unexpectedly
     bad_rc = {124: "timeout", 137: "SIGKILL", 143: "SIGTERM"}
@@ -720,7 +695,6 @@ def execute_test(
         logger.info(f"RxTxApp test completed with result: {passed}")
     else:
         log_fail(f"RxTxApp test failed with result: {passed}")
-    logger.info(f"RxTxApp test completed with result: {passed}")
     return passed
 
 
@@ -729,13 +703,9 @@ def execute_perf_test(
     build: str,
     test_time: int,
     fail_on_error: bool = True,
-    capture_cfg=None,
+    netsniff=None,
     host=None,
 ) -> bool:
-    # Only initialize logging if it hasn't been initialized already
-    global _log_timestamp
-    if _log_timestamp is None:
-        init_test_logging()
 
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "rxtxapp_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
@@ -756,10 +726,6 @@ def execute_perf_test(
     command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
 
     logger.info(f"Performance RxTxApp Command: {command}")
-
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
-    tcpdump = prepare_tcpdump(capture_cfg, host)
-    background = tcpdump is not None
 
     # For 4TX and 8k streams more timeout is needed
     # Also scale timeout with replica count for performance tests
@@ -798,26 +764,25 @@ def execute_perf_test(
         timeout=timeout,
         testcmd=True,
         host=host,
-        background=background,
+        background=True
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
-    try:
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            logger.info("Started performance test tcpdump capture")
-    finally:
-        cp.wait()
+    if netsniff:
+        netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
+        netsniff.capture()
+        logger.info(f"Finished netsniff-ng capture on host {netsniff.host.name}")
+
+    cp.wait(timeout=timeout)
 
     # Capture stdout output for logging
-    capture_stdout(cp, "RxTxApp Performance")
+    logger.info(cp.stdout_text)
 
     # Enhanced logging for process completion
-    logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
+    logger.info(f"Performance RxTxApp was killed with signal {cp.return_code}")
 
     # Check if process was killed or terminated unexpectedly
     if cp.return_code < 0:
-        logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
+        logger.info(f"Performance RxTxApp was killed with signal {cp.return_code}")
         return False
     elif cp.return_code == 124:  # timeout return code
         logger.info("Performance RxTxApp timed out")
