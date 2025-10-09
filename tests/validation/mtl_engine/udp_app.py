@@ -27,7 +27,6 @@ def execute_test_sample(
     test_time: int,
     nic_port_list: list,
     sessions_cnt: int,
-    capture_cfg=None,
     host=None,
 ) -> None:
     clinet_config = create_config(
@@ -82,7 +81,6 @@ def execute_test_librist(
     sleep_us: int,
     sleep_step: int,
     sessions_cnt: int,
-    capture_cfg=None,
     host=None,
 ) -> None:
     send_config = create_config(

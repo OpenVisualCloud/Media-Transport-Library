@@ -372,7 +372,6 @@ def execute_test(
     rx_host=None,
     sleep_interval: int = 4,
     tx_first: bool = True,
-    capture_cfg=None,
 ):
     """
     Execute GStreamer test with remote host support following RxTxApp pattern.
@@ -389,7 +388,6 @@ def execute_test(
     :param rx_host: RX host object (for dual host tests)
     :param sleep_interval: Sleep interval between starting TX and RX
     :param tx_first: Whether to start TX first
-    :param capture_cfg: Capture configuration
     :return: True if test passed, False otherwise
     """
     is_dual = tx_host is not None and rx_host is not None

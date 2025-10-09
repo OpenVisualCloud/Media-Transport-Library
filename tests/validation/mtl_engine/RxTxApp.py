@@ -1379,7 +1379,6 @@ def execute_dual_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
-    capture_cfg=None,
 ) -> bool:
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -1452,12 +1451,6 @@ def execute_dual_test(
         host=tx_host,
     )
 
-    # Start tcpdump capture if enabled
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
-    if tcpdump:
-        tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-        logger.info("Started dual test tcpdump capture")
-
     # Wait for both processes
     tx_cp.wait()
     rx_cp.wait()
@@ -1465,10 +1458,6 @@ def execute_dual_test(
     # Capture stdout output for logging
     capture_stdout(tx_cp, "TX RxTxApp")
     capture_stdout(rx_cp, "RX RxTxApp")
-
-    # Stop tcpdump if it was started
-    if tcpdump:
-        tcpdump.stop()
 
     # Get output from both hosts
     tx_output = tx_cp.stdout_text.splitlines()

@@ -36,13 +36,6 @@ def test_multicast(
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_multicast_{media_file_info['format']}"  # Set a unique pcap file name
-    )
-
     # Ensure the output directory exists.
     log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
     os.makedirs(log_dir, exist_ok=True)
@@ -66,5 +59,4 @@ def test_multicast(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )

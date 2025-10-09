@@ -77,7 +77,6 @@ def execute_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -252,7 +251,6 @@ def execute_test_rgb24(
     video_format: str,
     pg_format: str,
     video_url: str,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -362,7 +360,6 @@ def execute_test_rgb24_multiple(
     pg_format: str,
     video_url_list: list,
     host,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -811,7 +808,6 @@ def execute_dual_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -983,7 +979,6 @@ def execute_dual_test_rgb24(
     video_format: str,
     pg_format: str,
     video_url: str,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -1107,7 +1102,6 @@ def execute_dual_test_rgb24_multiple(
     video_format_list: list,
     pg_format: str,
     video_url_list: list,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
