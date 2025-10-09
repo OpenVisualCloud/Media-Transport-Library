@@ -41,13 +41,6 @@ def test_rss_mode_audio(
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_rss_mode_audio_{media_file_info['format']}_{rss_mode}"
-    )
-
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
@@ -69,7 +62,6 @@ def test_rss_mode_audio(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )
 
     if test_config.get("integrity_check", True):

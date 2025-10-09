@@ -26,13 +26,6 @@ def test_kernello_mixed_format(
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_kernel_lo_{test_mode}_{video_format}_replicas{replicas}"
-    )
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
@@ -80,5 +73,4 @@ def test_kernello_mixed_format(
         build=build,
         test_time=test_time * replicas * 3,
         host=host,
-        capture_cfg=capture_cfg,
     )

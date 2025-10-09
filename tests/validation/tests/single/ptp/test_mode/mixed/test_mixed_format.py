@@ -36,11 +36,6 @@ def test_ptp_mixed_format(
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_ptp_mixed_format_{test_mode}_{video_format}"
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
@@ -81,5 +76,4 @@ def test_ptp_mixed_format(
         test_time=test_time,
         ptp=True,
         host=host,
-        capture_cfg=capture_cfg,
     )

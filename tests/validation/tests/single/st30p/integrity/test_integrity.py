@@ -46,13 +46,6 @@ def test_integrity(
     out_file_url = os.path.join(log_dir, "out.wav")
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_integrity_{media_file_info['format']}"  # Set a unique pcap file name
-    )
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
         config=config,
@@ -71,7 +64,6 @@ def test_integrity(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )
 
     size = calculate_st30p_framebuff_size(

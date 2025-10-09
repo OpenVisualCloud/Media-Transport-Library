@@ -48,11 +48,6 @@ def test_k_bit(
     type_mode = "rtp"
     dit = dit_mapping["dit0"]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_k_bit_{k_bit}"
-
     host = list(hosts.values())[0]
 
     config = rxtxapp.create_empty_config()
@@ -74,5 +69,4 @@ def test_k_bit(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )
