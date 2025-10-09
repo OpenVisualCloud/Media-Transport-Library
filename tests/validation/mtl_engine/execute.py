@@ -67,11 +67,13 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
     else:
         proc.terminate()
 
+    time.sleep(5)
+
     for _ in range(5):
         result = proc.poll()
         if result is not None:
             return result
-        time.sleep(1)  # wait a little longer for proc to terminate
+        time.sleep(5)  # wait a little longer for proc to terminate
 
     # failed to terminate proc, so kill it
     proc.kill()
@@ -79,7 +81,7 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
         result = proc.poll()
         if result is not None:
             return result
-        time.sleep(1)  # give system more time to kill proc
+        time.sleep(5)  # give system more time to kill proc
 
     # failed to kill proc
     if result is None:

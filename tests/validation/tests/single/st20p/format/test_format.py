@@ -83,6 +83,7 @@ convert1_formats = dict(
 )
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422rfc10["Penguin_1080p"]],
