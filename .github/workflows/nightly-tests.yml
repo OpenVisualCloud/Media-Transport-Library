@@ -54,10 +54,7 @@ jobs:
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
       - name: Setup hugepages
         run: |
-          sudo mkdir -p /tmp/hugepages
-          sudo mkdir -p /hugepages
-          sudo mount -t hugetlbfs hugetlbfs /tmp/hugepages -o pagesize=2M
-          sudo mount -t hugetlbfs hugetlbfs /hugepages -o pagesize=1G
+          sudo sysctl -w vm.nr_hugepages=32768
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
