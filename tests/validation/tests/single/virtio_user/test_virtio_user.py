@@ -39,13 +39,6 @@ def test_virtio_user(
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_virtio_user_multicast_{media_file_info['filename']}_replicas{replicas}"
-    )
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
@@ -69,5 +62,4 @@ def test_virtio_user(
         test_time=test_time,
         virtio_user=True,
         host=host,
-        capture_cfg=capture_cfg,
     )

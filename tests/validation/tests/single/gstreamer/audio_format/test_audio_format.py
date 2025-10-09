@@ -60,11 +60,6 @@ def test_audio_format(
         rx_sampling=audio_rate,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
-    capture_cfg["test_name"] = (
-        f"test_audio_format_{audio_format}_{audio_channel}_{audio_rate}"
-    )
-
     try:
         GstreamerApp.execute_test(
             build=build,
@@ -76,7 +71,6 @@ def test_audio_format(
             host=host,
             tx_first=False,
             sleep_interval=1,
-            capture_cfg=capture_cfg,
         )
     finally:
         pass

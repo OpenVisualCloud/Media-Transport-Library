@@ -59,9 +59,6 @@ def test_video_format(
         rx_queues=4,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_video_format_{file}"
-
     try:
         GstreamerApp.execute_test(
             build=build,
@@ -73,7 +70,6 @@ def test_video_format(
             host=host,
             tx_first=False,
             sleep_interval=4,
-            capture_cfg=capture_cfg,
         )
     finally:
         # Remove the video file after the test

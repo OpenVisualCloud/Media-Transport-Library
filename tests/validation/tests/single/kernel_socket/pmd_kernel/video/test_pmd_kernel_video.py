@@ -27,13 +27,6 @@ def test_pmd_kernel_video_format(
     # rxtxapp.check_and_bind_interface(["0000:38:00.0","0000:38:00.1"], "pmd")
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_pmd_kernel_video_{test_mode}_{video_format}_replicas{replicas}"
-    )
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
@@ -56,5 +49,4 @@ def test_pmd_kernel_video_format(
         build=build,
         test_time=test_time * 2,
         host=host,
-        capture_cfg=capture_cfg,
     )

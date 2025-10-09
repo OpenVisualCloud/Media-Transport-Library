@@ -67,9 +67,6 @@ def test_video_resolutions(
         rx_payload_type=112,
         rx_queues=4,
     )
-
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_video_resolution_{file}"
     try:
         GstreamerApp.execute_test(
             build=build,
@@ -81,7 +78,6 @@ def test_video_resolutions(
             host=host,
             tx_first=False,
             sleep_interval=2,
-            capture_cfg=capture_cfg,
         )
     finally:
         # Remove the video file after the test
