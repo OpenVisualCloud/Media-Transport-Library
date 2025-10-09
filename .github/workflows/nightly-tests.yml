@@ -1,5 +1,7 @@
 name: nightly-tests-bare-metal
 on:
+  # allow manually trigger
+  workflow_dispatch:
   schedule:
   - cron: '0 0 * * *' # Every day at midnight UTC
 permissions:
@@ -50,6 +52,9 @@ jobs:
           sudo rmmod irdma || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
           sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
+      - name: Setup hugepages
+        run: |
+          sudo sysctl -w vm.nr_hugepages=32768
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
