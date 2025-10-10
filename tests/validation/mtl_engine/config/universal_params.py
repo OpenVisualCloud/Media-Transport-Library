@@ -14,12 +14,10 @@ UNIVERSAL_PARAMS = {
     "width": 1920,                 # Video width in pixels
     "height": 1080,                # Video height in pixels
     "framerate": "p60",            # Frame rate (p25, p30, p50, p60, etc.)
-    "fps_numeric": 60,             # Numeric FPS value for calculations
     "interlaced": False,           # Progressive (False) or Interlaced (True)
-    "pixel_format": "YUV422PLANAR10LE",  # Input pixel format (TX)
-    "pixel_format_rx": None,       # Output pixel format (RX) - if None, uses pixel_format
+    "pixel_format": "YUV422PLANAR10LE",  # Pixel format for both TX (input) and RX (output)
     "transport_format": "YUV_422_10bit",  # Transport format for streaming
-    "video_size": "1920x1080",     # Video size string (width x height)
+    "default_video_format": "i1080p60",  # Default video format for framerate conversion
     
     # Audio parameters
     "audio_format": "PCM24",       # Audio format
@@ -33,7 +31,7 @@ UNIVERSAL_PARAMS = {
     "direction": None,             # Direction: tx (transmit), rx (receive), or None (both for RxTxApp)
     "replicas": 1,                 # Number of session replicas
     "queues": 1,                   # Number of TX/RX queues
-    "framebuffer_count": None,     # Frame buffer count
+    "framebuffer_count": None,     # Frame buffer count (for RX video: rx_video_fb_cnt)
     
     # Quality and encoding parameters
     "pacing": "gap",               # Pacing mode (gap, auto, etc.)
@@ -72,7 +70,6 @@ UNIVERSAL_PARAMS = {
     "rx_timing_parser": False,     # Enable timing check for video RX streams
     "pcapng_dump": None,           # Dump n packets to pcapng files
     "rx_video_file_frames": None,  # Dump received video frames to yuv file
-    "rx_video_fb_cnt": None,       # Frame buffer count
     "promiscuous": False,          # Enable RX promiscuous mode
     "cni_thread": False,           # Use dedicated thread for CNI messages
     "sch_session_quota": None,     # Max sessions count per lcore
@@ -104,7 +101,6 @@ UNIVERSAL_PARAMS = {
     "log_time_ms": False,          # Enable ms accuracy log printer
     "rx_audio_dump_time_s": None,  # Dump audio frames for n seconds
     "dedicated_sys_lcore": False,  # Run MTL system tasks on dedicated lcore
-    "bind_numa": False,            # Bind all MTL threads to NIC NUMA
-    "not_bind_numa": False,        # Run threads without NIC NUMA awareness
+    "bind_numa": False,            # Bind all MTL threads to NIC NUMA (when False, threads run without NUMA awareness)
     "force_numa": None,            # Force NIC port NUMA ID
 }

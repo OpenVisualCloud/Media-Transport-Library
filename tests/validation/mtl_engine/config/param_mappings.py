@@ -1,4 +1,5 @@
-# Parameter translation mappings for different applications
+# Parameter trans    "pixel_format": "input_format",     # for TX sessions
+    # pixel_format_rx removed - now uses pixel_format for both TX and RXtion mappings for different applications
 # Maps universal parameter names to application-specific names
 
 # RxTxApp parameter mapping
@@ -16,7 +17,7 @@ RXTXAPP_PARAM_MAP = {
     "framerate": "fps",
     "interlaced": "interlaced",
     "pixel_format": "input_format",      # for TX sessions
-    "pixel_format_rx": "output_format",  # for RX sessions
+    "pixel_format": "output_format",  # for RX sessions
     "transport_format": "transport_format",
     
     # Audio parameters
@@ -62,7 +63,7 @@ RXTXAPP_PARAM_MAP = {
     "rx_timing_parser": "--rx_timing_parser",
     "pcapng_dump": "--pcapng_dump",
     "rx_video_file_frames": "--rx_video_file_frames",
-    "rx_video_fb_cnt": "--rx_video_fb_cnt",
+    "framebuffer_count": "--rx_video_fb_cnt",
     "promiscuous": "--promiscuous",
     "cni_thread": "--cni_thread",
     "sch_session_quota": "--sch_session_quota",
@@ -95,10 +96,9 @@ RXTXAPP_PARAM_MAP = {
     "log_time_ms": "--log_time_ms",
     "rx_audio_dump_time_s": "--rx_audio_dump_time_s",
     "dedicated_sys_lcore": "--dedicated_sys_lcore",
-    "bind_numa": "--bind_numa",
-    "not_bind_numa": "--not_bind_numa",
-    "force_numa": "--force_numa",
-}
+    "bind_numa": "--bind_numa",  # unified NUMA parameter (when False, equivalent to --not_bind_numa)
+    "force_numa": "--force_numa"
+    }
 
 # FFmpeg parameter mapping
 FFMPEG_PARAM_MAP = {
@@ -112,11 +112,9 @@ FFMPEG_PARAM_MAP = {
     # Video parameters
     "width": "-video_size",             # combined with height as "1920x1080"
     "height": "-video_size",            # combined with width as "1920x1080"
-    "framerate": "-fps",
-    "fps_numeric": "-filter:v",         # fps filter parameter
-    "pixel_format": "-pix_fmt",
-    "video_size": "-video_size",
-    
+    "framerate": "-fps",                # fps_numeric removed - extracted from framerate
+    "pixel_format": "-pix_fmt",         # pixel_format_rx removed - uses same format for TX/RX
+
     # Streaming parameters
     "payload_type": "-payload_type",
     "session_type": "-f",               # format specifier (automatically converted: st20p->mtl_st20p, etc.)
