@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import logging
 
+from common.nicctl import InterfaceSetup
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.integrity.integrity_runner import FileAudioIntegrityRunner
@@ -35,12 +36,12 @@ def test_st30p_channel(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     audio_channel,
     request,
     test_config,
-    prepare_ramdisk,
+    pcap_capture,
     media_file,
 ):
     media_file_info, media_file_path = media_file
@@ -48,20 +49,13 @@ def test_st30p_channel(
     SDBQ1001_audio_channel_check(audio_channel, media_file_info["format"], request)
 
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_st30p_channel_{media_file_info['format']}_{audio_channel}"  # e.g., test_st30p_channel_PCM8_M
-    )
-
+    interfaces_list = setup_interfaces.get_test_interfaces_list(hosts, test_config.get("interface_type", "VF"))
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         audio_format=media_file_info["format"],
         audio_channel=[audio_channel],
@@ -76,7 +70,8 @@ def test_st30p_channel(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
+        ptp=test_config.get("ptp", False),
     )
 
     if test_config.get("integrity_check", True):

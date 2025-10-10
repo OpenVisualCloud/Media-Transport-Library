@@ -4,7 +4,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.media_files import anc_files, audio_files, yuv_files
+from mtl_engine.media_files import anc_files, audio_files
 
 
 @pytest.mark.parametrize("test_mode", ["kernel"])
@@ -18,33 +18,24 @@ def test_kernello_mixed_format(
     test_mode,
     video_format,
     replicas,
-    test_config,
-    prepare_ramdisk,
+    media_file,
 ):
-    video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_kernel_lo_{test_mode}_{video_format}_replicas{replicas}"
-    )
-
+    media_file_info, media_file_path = media_file
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
         nic_port_list=["kernel:lo", "kernel:lo"],
         test_mode=test_mode,
-        width=video_file["width"],
-        height=video_file["height"],
-        fps=f"p{video_file['fps']}",
-        input_format=video_file["file_format"],
-        transport_format=video_file["format"],
-        output_format=video_file["file_format"],
-        st20p_url=os.path.join(media, video_file["filename"]),
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=f"p{media_file_info['fps']}",
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=os.path.join(media, media_file_info["filename"]),
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st20p", replicas=replicas
@@ -80,5 +71,5 @@ def test_kernello_mixed_format(
         build=build,
         test_time=test_time * replicas * 3,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=None,
     )
