@@ -1,0 +1,139 @@
+From bd34636ca6eb5d649ccc892c49fdf21eaadf0dd3 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Mon, 31 Mar 2025 12:48:41 +0000
+Subject: [PATCH 6/6] pcapng: add user timestamp support
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ lib/pcapng/rte_pcapng.c | 11 +++++++----
+ lib/pcapng/rte_pcapng.h | 43 ++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 47 insertions(+), 7 deletions(-)
+
+diff --git a/lib/pcapng/rte_pcapng.c b/lib/pcapng/rte_pcapng.c
+index 2a07b4c1f5..48758e1962 100644
+--- a/lib/pcapng/rte_pcapng.c
++++ b/lib/pcapng/rte_pcapng.c
+@@ -470,14 +470,15 @@ pcapng_vlan_insert(struct rte_mbuf *m, uint16_t ether_type, uint16_t tci)
+  */
+ 
+ /* Make a copy of original mbuf with pcapng header and options */
++RTE_EXPORT_SYMBOL(rte_pcapng_copy_ts)
+ RTE_EXPORT_SYMBOL(rte_pcapng_copy)
+ struct rte_mbuf *
+-rte_pcapng_copy(uint16_t port_id, uint32_t queue,
++rte_pcapng_copy_ts(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *md,
+ 		struct rte_mempool *mp,
+ 		uint32_t length,
+ 		enum rte_pcapng_direction direction,
+-		const char *comment)
++		const char *comment, uint64_t ts)
+ {
+ 	struct pcapng_enhance_packet_block *epb;
+ 	uint32_t orig_len, pkt_len, padding, flags;
+@@ -595,7 +596,7 @@ rte_pcapng_copy(uint16_t port_id, uint32_t queue,
+ 	mc->port = port_id;
+ 
+ 	/* Put timestamp in cycles here - adjust in packet write */
+-	timestamp = rte_get_tsc_cycles();
++	timestamp = ts ? ts : rte_get_tsc_cycles();
+ 	epb->timestamp_hi = timestamp >> 32;
+ 	epb->timestamp_lo = (uint32_t)timestamp;
+ 	epb->capture_length = pkt_len;
+@@ -624,7 +625,7 @@ rte_pcapng_write_packets(rte_pcapng_t *self,
+ 	for (i = 0; i < nb_pkts; i++) {
+ 		struct rte_mbuf *m = pkts[i];
+ 		struct pcapng_enhance_packet_block *epb;
+-		uint64_t cycles, timestamp;
++		//uint64_t cycles, timestamp;
+ 
+ 		/* sanity check that is really a pcapng mbuf */
+ 		epb = rte_pktmbuf_mtod(m, struct pcapng_enhance_packet_block *);
+@@ -641,12 +642,14 @@ rte_pcapng_write_packets(rte_pcapng_t *self,
+ 			return -1;
+ 		}
+ 
++#if 0
+ 		/* adjust timestamp recorded in packet */
+ 		cycles = (uint64_t)epb->timestamp_hi << 32;
+ 		cycles += epb->timestamp_lo;
+ 		timestamp = pcapng_timestamp(self, cycles);
+ 		epb->timestamp_hi = timestamp >> 32;
+ 		epb->timestamp_lo = (uint32_t)timestamp;
++#endif
+ 
+ 		/*
+ 		 * Handle case of highly fragmented and large burst size
+diff --git a/lib/pcapng/rte_pcapng.h b/lib/pcapng/rte_pcapng.h
+index 48f2b57564..52a066b8fc 100644
+--- a/lib/pcapng/rte_pcapng.h
++++ b/lib/pcapng/rte_pcapng.h
+@@ -99,7 +99,7 @@ enum rte_pcapng_direction {
+ };
+ 
+ /**
+- * Format an mbuf for writing to file.
++ * Format an mbuf with time stamp for writing to file.
+  *
+  * @param port_id
+  *   The Ethernet port on which packet was received
+@@ -118,17 +118,54 @@ enum rte_pcapng_direction {
+  *   The direction of the packer: receive, transmit or unknown.
+  * @param comment
+  *   Packet comment.
++ * @param ts
++ *   time stamp.
+  *
+  * @return
+  *   - The pointer to the new mbuf formatted for pcapng_write
+  *   - NULL if allocation fails.
+  */
+ struct rte_mbuf *
+-rte_pcapng_copy(uint16_t port_id, uint32_t queue,
++rte_pcapng_copy_ts(uint16_t port_id, uint32_t queue,
+ 		const struct rte_mbuf *m, struct rte_mempool *mp,
+ 		uint32_t length,
+-		enum rte_pcapng_direction direction, const char *comment);
++		enum rte_pcapng_direction direction, const char *comment, uint64_t ts);
+ 
++/* enable the define for MTL */
++#define MTL_DPDK_HAS_PCAPNG_TS
++
++/**
++ * Format an mbuf for writing to file.
++ *
++ * @param port_id
++ *   The Ethernet port on which packet was received
++ *   or is going to be transmitted.
++ * @param queue
++ *   The queue on the Ethernet port where packet was received
++ *   or is going to be transmitted.
++ * @param mp
++ *   The mempool from which the "clone" mbufs are allocated.
++ * @param m
++ *   The mbuf to copy
++ * @param length
++ *   The upper limit on bytes to copy.  Passing UINT32_MAX
++ *   means all data (after offset).
++ * @param direction
++ *   The direction of the packer: receive, transmit or unknown.
++ * @param comment
++ *   Packet comment.
++ *
++ * @return
++ *   - The pointer to the new mbuf formatted for pcapng_write
++ *   - NULL if allocation fails.
++ */
++static inline struct rte_mbuf *
++rte_pcapng_copy(uint16_t port_id, uint32_t queue,
++		const struct rte_mbuf *m, struct rte_mempool *mp,
++		uint32_t length,
++		enum rte_pcapng_direction direction, const char *comment) {
++  return rte_pcapng_copy_ts(port_id, queue, m, mp, length, direction, comment, 0);
++}
+ 
+ /**
+  * Determine optimum mbuf data size.
+-- 
+2.34.1
+

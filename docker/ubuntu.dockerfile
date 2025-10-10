@@ -10,7 +10,7 @@ FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:149d67e29f765f4db62aa5
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 ARG NPROC=20
-ARG DPDK_VER=25.03
+ARG DPDK_VER=25.07
 ARG PREFIX_PATH=/opt/intel
 ARG MTL_REPO=${PREFIX_PATH}/mtl
 ENV XDP_REPO=${PREFIX_PATH}/xdp
