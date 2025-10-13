@@ -21,6 +21,7 @@ def test_resolutions(
     test_time,
     test_config,
     prepare_ramdisk,
+    pcap_capture,
     media_file,
 ):
     media_file_info, media_file_path = media_file
@@ -46,4 +47,5 @@ def test_resolutions(
         build=build,
         test_time=test_time,
         host=host,
+        netsniff=pcap_capture,
     )

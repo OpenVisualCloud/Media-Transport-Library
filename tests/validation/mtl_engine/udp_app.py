@@ -63,7 +63,6 @@ def execute_test_sample(
     client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
     server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
 
-
     # Wait for both processes to finish
     wait(client_proc)
     wait(server_proc)
@@ -122,7 +121,6 @@ def execute_test_librist(
 
     send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
     receive_proc = call(receive_command, build, test_time, sigint=True, env=receive_env)
-
 
     wait(send_proc)
     wait(receive_proc)

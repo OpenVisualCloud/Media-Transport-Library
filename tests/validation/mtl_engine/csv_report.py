@@ -52,6 +52,7 @@ def update_compliance_result(test_case: str, result: str):
     else:
         report[test_case] = {"Compliance": result}
 
+
 def get_compliance_result(test_case: str) -> str:
     if test_case in report and "Compliance" in report[test_case]:
         return report[test_case]["Compliance"]

@@ -80,7 +80,6 @@ def test_perf_2tx_2nics_2ports(
                 test_time=test_time,
                 host=host,
                 fail_on_error=False,
-
             )
         except Exception as e:
             logger.info(
@@ -126,7 +125,6 @@ def test_perf_2tx_2nics_2ports(
                 test_time=test_time,
                 host=host,
                 fail_on_error=False,
-
             )
         except Exception as e:
             logger.info(

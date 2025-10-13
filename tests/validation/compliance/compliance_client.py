@@ -1,8 +1,8 @@
 import logging
 import os
-import requests
 import time
 
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ class PcapComplianceClient:
         while retries > 0:
             response = self.session.get(
                 url, headers=headers, verify=False, proxies=self.proxies
-        )
+            )
             response.raise_for_status()
             report = response.json()
             if report.get("analyzed", False):
@@ -97,7 +97,6 @@ class PcapComplianceClient:
         )
         return False
 
-
     def check_compliance(self, report=None):
         """
         Check the compliance result from the downloaded report.
@@ -106,6 +105,13 @@ class PcapComplianceClient:
         if report is None:
             report = self.download_report()
         is_compliant = report.get("not_compliant_streams", 1) == 0
+        if is_compliant:
+            is_compliant = not any(
+                [
+                    1 if stream.get("media_type") == "unknown" else 0
+                    for stream in report.get("streams", [])
+                ]
+            )
         return is_compliant, report
 
     def delete_pcap(self, pcap_id=None):
@@ -126,5 +132,7 @@ class PcapComplianceClient:
             logger.info(f"PCAP {pcap_id} deleted successfully from EBU server.")
             return True
         else:
-            logger.error(f"Failed to delete PCAP {pcap_id}: {response.status_code} {response.text}")
+            logger.error(
+                f"Failed to delete PCAP {pcap_id}: {response.status_code} {response.text}"
+            )
             return False

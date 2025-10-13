@@ -21,6 +21,7 @@ def test_422p10le(
     test_time,
     test_config,
     prepare_ramdisk,
+    pcap_capture,
     media_file,
 ):
     """
@@ -48,6 +49,7 @@ def test_422p10le(
         build=build,
         test_time=test_time,
         host=host,
+        netsniff=pcap_capture,
     )
 
 

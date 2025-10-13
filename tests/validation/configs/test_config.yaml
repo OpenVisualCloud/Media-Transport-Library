@@ -14,6 +14,6 @@ capture_cfg:
   pcap_dir: /mnt/ramdisk/pcap
 ebu_server:
   ebu_ip: EBU_IP_PLACEHOLDER
-  username: EBU_LOGIN_PLACEHOLDER
+  user: EBU_LOGIN_PLACEHOLDER
   password: EBU_PASS_PLACEHOLDER
   proxy: false

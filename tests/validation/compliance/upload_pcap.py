@@ -52,11 +52,7 @@ def upload_pcap(file_path, ip, login, password, proxies):
 
     # Create the uploader object and upload the PCAP file
     uploader = PcapComplianceClient(
-        ebu_ip=ip,
-        user=login,
-        password=password,
-        pcap_file=file_path,
-        proxies=proxies
+        ebu_ip=ip, user=login, password=password, pcap_file=file_path, proxies=proxies
     )
     uuid = uploader.upload_pcap()  # Upload the PCAP file and get the UUID
     return uuid
@@ -68,6 +64,6 @@ if __name__ == "__main__":
     proxies = None
     if args.proxy is not None:
         proxies = {"http": args.proxy, "https": args.proxy, "ftp": args.proxy}
-    uuid = upload_pcap(args.pcap_file_path, args.ip, args.login, args.password, proxies)
+    uuid = upload_pcap(args.pcap, args.ip, args.user, args.password, proxies)
     # Print extractable UUID
     print(f">>>UUID: {uuid}")

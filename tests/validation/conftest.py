@@ -291,14 +291,14 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             logger.error("EBU server configuration not found in test_config.yaml")
             return
         ebu_ip = ebu_server.get("ebu_ip", None)
-        ebu_login = ebu_server.get("username", None)
+        ebu_login = ebu_server.get("user", None)
         ebu_passwd = ebu_server.get("password", None)
         ebu_proxy = ebu_server.get("proxy", None)
         proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
         compliance_upl = capturer.host.connection.execute_command(
             "python3 ./tests/validation/compliance/upload_pcap.py"
             f" --ip {ebu_ip}"
-            f" --login {ebu_login}"
+            f" --user {ebu_login}"
             f" --password {ebu_passwd}"
             f" --pcap {capturer.pcap_file}{proxy_cmd}",
             cwd=f"{str(mtl_path)}",
@@ -313,11 +313,11 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             user=ebu_login,
             password=ebu_passwd,
             pcap_id=uuid,
-            proxies={"http": ebu_proxy, "https": ebu_proxy}
+            proxies={"http": ebu_proxy, "https": ebu_proxy},
         )
         result, report = uploader.check_compliance()
-        update_compliance_result(request.node.nodeid, "Pass" if result == 0 else "Fail")
-        if result == 0:
+        update_compliance_result(request.node.nodeid, "Pass" if result else "Fail")
+        if result:
             logger.info("PCAP compliance check passed")
         else:
             log_fail("PCAP compliance check failed")

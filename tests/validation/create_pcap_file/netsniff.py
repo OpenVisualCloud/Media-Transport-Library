@@ -59,7 +59,7 @@ class NetsniffRecorder:
         self.host = host
         self.test_name = test_name
         self.pcap_dir = pcap_dir
-        self.pcap_file = os.path.join(pcap_dir, f"'{test_name}.pcap'")
+        self.pcap_file = f"'{os.path.join(pcap_dir, test_name)}.pcap'"
         if interface is not None:
             self.interface = interface
         else:
@@ -113,7 +113,7 @@ class NetsniffRecorder:
 
     def capture(self, startup_wait=2):
         """
-        Starts netsniff-ng, captures for capture_time seconds, then stops.
+        Starts netsniff-ng, captures packets count set in packets_capture or capture_time in seconds, then stops.
         :param startup_wait: Time in seconds to wait after starting netsniff-ng (default: 2)
         """
         started = self.start()
