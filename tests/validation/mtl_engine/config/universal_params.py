@@ -17,7 +17,7 @@ UNIVERSAL_PARAMS = {
     "interlaced": False,           # Progressive (False) or Interlaced (True)
     "pixel_format": "YUV422PLANAR10LE",  # Pixel format for both TX (input) and RX (output)
     "transport_format": "YUV_422_10bit",  # Transport format for streaming
-    "default_video_format": "i1080p60",  # Default video format for framerate conversion
+    # Removed: default_video_format – legacy video format mapping now handled directly where needed.
     
     # Audio parameters
     "audio_format": "PCM24",       # Audio format
@@ -30,7 +30,7 @@ UNIVERSAL_PARAMS = {
     "session_type": "st20p",       # Session type (st20p, st22p, st30p, video, audio, etc.)
     "direction": None,             # Direction: tx (transmit), rx (receive), or None (both for RxTxApp)
     "replicas": 1,                 # Number of session replicas
-    "queues": 1,                   # Number of TX/RX queues
+    # Removed: queues – queue count not plumbed through new builders; retaining calculation left to legacy code paths.
     "framebuffer_count": None,     # Frame buffer count (for RX video: rx_video_fb_cnt)
     
     # Quality and encoding parameters
@@ -44,7 +44,7 @@ UNIVERSAL_PARAMS = {
     # File I/O parameters
     "input_file": None,            # Input file path
     "output_file": None,           # Output file path
-    "url": None,                   # Generic URL parameter
+    # Removed: url – generic video_url not used in refactored path; specific st20p_url/audio_url populated directly.
     
     # Test configuration
     "test_mode": "multicast",      # Test mode (unicast, multicast, kernel)
@@ -103,4 +103,13 @@ UNIVERSAL_PARAMS = {
     "dedicated_sys_lcore": False,  # Run MTL system tasks on dedicated lcore
     "bind_numa": False,            # Bind all MTL threads to NIC NUMA (when False, threads run without NUMA awareness)
     "force_numa": None,            # Force NIC port NUMA ID
+    
+    # Execution control defaults (moved from hardcoded literals in engine code)
+    "sleep_interval": 4,           # Delay between starting TX and RX in dual-host tests
+    "tx_first": True,              # Whether to start TX side before RX
+    # Removed: output_format – validation infers format from pixel_format; explicit label no longer required.
+    "timeout_grace": 10,           # Extra seconds appended to process timeout wrapper
+    "process_timeout_buffer": 90,  # Buffer added to test_time for run() timeout
+    "pattern_duration": 30,        # Duration for generated test patterns (FFmpeg/GStreamer)
+    "default_framerate_numeric": 60, # Fallback numeric framerate when parsing fails
 }

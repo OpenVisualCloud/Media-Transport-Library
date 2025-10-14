@@ -15,9 +15,8 @@ RXTXAPP_PARAM_MAP = {
     "width": "width",
     "height": "height",
     "framerate": "fps",
-    "interlaced": "interlaced",
-    "pixel_format": "input_format",      # for TX sessions
-    "pixel_format": "output_format",  # for RX sessions
+    "interlaced": "interlaced", 
+    # "pixel_format": "format",           # unified for both TX and RX sessions
     "transport_format": "transport_format",
     
     # Audio parameters
@@ -100,60 +99,69 @@ RXTXAPP_PARAM_MAP = {
     "force_numa": "--force_numa"
     }
 
-# FFmpeg parameter mapping
+###############################
+# FFmpeg parameter mapping    #
+###############################
+# These flags correspond to the MTL FFmpeg plugin arguments observed in existing
+# test command constructions (see ffmpeg_app.py) and the refactored ffmpeg builder:
+#   -p_sip (source IP), -p_tx_ip (destination unicast), -p_rx_ip (multicast),
+#   -udp_port, -p_port (PCI / NIC identifier), -payload_type, -fps, -pix_fmt,
+#   -video_size, -f (format/session type)
+# Width & height both map to -video_size; command builders should coalesce them
+# into a single WxH token. framerate maps to -fps (distinct from the input side's
+# rawvideo "-framerate" which is handled explicitly in builder code).
 FFMPEG_PARAM_MAP = {
     # Network parameters
     "source_ip": "-p_sip",
-    "destination_ip": "-p_tx_ip",      # for TX
-    "multicast_ip": "-p_rx_ip",        # for RX
+    "destination_ip": "-p_tx_ip",   # TX unicast destination
+    "multicast_ip": "-p_rx_ip",     # RX multicast group
     "port": "-udp_port",
     "nic_port": "-p_port",
-    
-    # Video parameters
-    "width": "-video_size",             # combined with height as "1920x1080"
-    "height": "-video_size",            # combined with width as "1920x1080"
-    "framerate": "-fps",                # fps_numeric removed - extracted from framerate
-    "pixel_format": "-pix_fmt",         # pixel_format_rx removed - uses same format for TX/RX
+
+    # Video parameters (width/height combined externally)
+    "width": "-video_size",
+    "height": "-video_size",
+    "framerate": "-fps",
+    "pixel_format": "-pix_fmt",
 
     # Streaming parameters
     "payload_type": "-payload_type",
-    "session_type": "-f",               # format specifier (automatically converted: st20p->mtl_st20p, etc.)
-    
+    "session_type": "-f",           # Converted via SESSION_TYPE_MAP
+
     # File I/O
     "input_file": "-i",
-    "output_file": "",                  # output file is typically last argument
+    "output_file": "",              # Output appears last (no explicit flag)
 }
 
-# GStreamer parameter mapping
+#################################
+# GStreamer parameter mapping   #
+#################################
+# Maps universal params to MTL GStreamer element properties or filesrc/filesink
+# attributes. These are set as name=value pairs in the pipeline.
 GSTREAMER_PARAM_MAP = {
-    # Network parameters  
-    "source_ip": "dev-ip",
-    "destination_ip": "ip",
-    "port": "udp-port",
-    "nic_port": "dev-port",
-    
-    # Video parameters
-    "width": "rx-width",                # for RX pipeline
-    "width_tx": "width",                # for caps in TX pipeline  
-    "height": "rx-height",              # for RX pipeline
-    "height_tx": "height",              # for caps in TX pipeline
-    "framerate": "rx-fps",              # for RX pipeline
-    "framerate_tx": "framerate",        # for caps in TX pipeline
-    "pixel_format": "rx-pixel-format",
-    "pixel_format_tx": "format",        # for caps in TX pipeline
-    
+    # Network parameters
+    "source_ip": "dev-ip",          # Interface IP
+    "destination_ip": "ip",         # Destination (unicast) IP
+    "port": "udp-port",             # UDP port
+    "nic_port": "dev-port",         # NIC device/PCI identifier
+
+    # Video parameters / caps
+    "width": "width",
+    "height": "height",
+    "framerate": "framerate",
+    "pixel_format": "format",
+
     # Audio parameters
-    "audio_format": "rx-audio-format",
-    "audio_channels": "rx-channel", 
-    "audio_sampling": "rx-sampling",
-    
+    "audio_format": "audio-format",
+    "audio_channels": "channel",
+    "audio_sampling": "sampling",
+
     # Streaming parameters
     "payload_type": "payload-type",
-    "queues": "tx-queues",              # for TX
-    "queues_rx": "rx-queues",           # for RX
-    "framebuffer_count": "tx-framebuff-cnt",
-    
-    # File I/O
-    "input_file": "location",           # for filesrc
-    "output_file": "location",          # for filesink
+    "queues": "queues",             # Currently legacy / advanced usage
+    "framebuffer_count": "framebuff-cnt",
+
+    # File I/O (filesrc/filesink)
+    "input_file": "location",
+    "output_file": "location",
 }
