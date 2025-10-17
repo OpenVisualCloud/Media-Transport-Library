@@ -49,7 +49,7 @@ jobs:
           echo "Git status before add:"
           git status
           
-          git add stats/*.json
+          git add -f stats/*.json
           
           echo "Git status after add:"
           git status
