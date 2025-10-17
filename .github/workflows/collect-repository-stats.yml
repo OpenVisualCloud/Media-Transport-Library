@@ -1,0 +1,19 @@
+name: Collect Repository Stats
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  collect-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Collect Traffic Data
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          curl -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/clones \
+            > stats/clones_$(date +%Y%m%d).json
