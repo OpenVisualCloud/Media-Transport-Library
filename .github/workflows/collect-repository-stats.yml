@@ -1,0 +1,52 @@
+name: Collect Repository Stats
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  collect-stats:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      
+      - name: Collect Traffic Data
+        env:
+          GH_TOKEN: ${{ secrets.REPO_STATS_TOKEN}}
+        run: |
+          echo "Collecting stats at $(date)"
+          
+          # Collect clones
+          curl -v -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/clones \
+            > stats/clones_$(date +%Y%m%d).json
+          
+          # Collect views  
+          curl -v -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/traffic/views \
+            > stats/views_$(date +%Y%m%d).json
+      
+      - name: Commit Stats
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          echo "Git status before add:"
+          git status
+          
+          git add -f stats/*.json
+          
+          echo "Git status after add:"
+          git status
+          
+          if git diff --staged --quiet; then
+            echo "No staged changes detected"
+          else
+            echo "Changes detected, committing..."
+            git commit -m "Update repository stats $(date +%Y-%m-%d)"
+            git push
+          fi
