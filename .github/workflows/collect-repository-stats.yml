@@ -1,9 +1,7 @@
 name: Collect Repository Stats
-
 on:
   schedule:
-    - cron: "0 0 * * *"
-  pull_request:
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 jobs:
@@ -16,7 +14,7 @@ jobs:
       
       - name: Collect Traffic Data
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_STATS_TOKEN }}
         run: |
           mkdir -p stats
           curl -H "Authorization: token $GH_TOKEN" \
@@ -26,11 +24,17 @@ jobs:
           curl -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/traffic/views \
             > stats/views_$(date +%Y%m%d).json
+          
+          echo "Clones data:"
+          cat stats/clones_$(date +%Y%m%d).json
+          echo ""
+          echo "Views data:"
+          cat stats/views_$(date +%Y%m%d).json
       
       - name: Commit Stats
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add stats/
-          git commit -m "Update repository stats $(date +%Y-%m-%d)" || echo "No changes to commit"
+          git diff --staged --quiet || git commit -m "Update repository stats $(date +%Y-%m-%d)"
           git push
