@@ -1,4 +1,5 @@
 name: Collect Repository Stats
+
 on:
   schedule:
     - cron: '0 0 * * *'
@@ -11,13 +12,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Collect Traffic Data
         env:
-          GH_TOKEN: ${{ secrets.REPO_STATS_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_STATS_TOKEN}}
         run: |
           echo "Collecting stats at $(date)"
           
