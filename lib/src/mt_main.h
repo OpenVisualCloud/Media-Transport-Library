@@ -7,6 +7,7 @@
 #include <math.h>
 #include <rte_alarm.h>
 #include <rte_arp.h>
+#include <rte_cpuflags.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_thash.h>
@@ -961,7 +962,7 @@ struct mt_rsq_impl {
 /* if launch time enabled */
 #define MT_TXQ_FLOW_F_LAUNCH_TIME (MTL_BIT32(1))
 /* force to use socket, only for MT_DRV_F_KERNEL_BASED */
-#define MT_TXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(1))
+#define MT_TXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(2))
 
 /* request of tx queue flow */
 struct mt_txq_flow {

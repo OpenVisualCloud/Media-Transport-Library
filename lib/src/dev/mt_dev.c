@@ -802,7 +802,7 @@ static int dev_detect_link(struct mt_interface* inf) {
 
   memset(&eth_link, 0, sizeof(eth_link));
 
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 300; i++) {
     err = rte_eth_link_get_nowait(port_id, &eth_link);
     if (err < 0) {
       err("%s, failed to get link status for port %d, ret %d\n", __func__, port_id, err);
@@ -814,7 +814,7 @@ static int dev_detect_link(struct mt_interface* inf) {
       mt_eth_link_dump(port_id);
       return 0;
     }
-    mt_sleep_ms(100); /* only happen on CVL PF */
+    mt_sleep_ms(100); /* only happen on CVL PF and CNV PF */
   }
 
   mt_eth_link_dump(port_id);

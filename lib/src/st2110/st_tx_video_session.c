@@ -639,7 +639,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
   uint64_t cur_tsc = mt_get_tsc(impl);
   uint64_t start_time_tai;
-  uint64_t time_to_tx_ns;
+  int64_t time_to_tx_ns;
 
   pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
 
@@ -651,8 +651,8 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
   time_to_tx_ns = start_time_tai - cur_tai;
 
   if (time_to_tx_ns < 0) {
-    /* should never happen */
-    err("%s(%d), negative time_to_tx_ns detected: %ld ns. Current PTP time: %" PRIu64
+    /* should never happen, but it does. TODO: check why */
+    dbg("%s(%d), negative time_to_tx_ns detected: %ld ns. Current PTP time: %" PRIu64
         "\n",
         __func__, s->idx, time_to_tx_ns, cur_tai);
     time_to_tx_ns = 0;
