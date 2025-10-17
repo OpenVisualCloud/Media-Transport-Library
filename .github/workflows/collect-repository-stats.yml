@@ -24,12 +24,12 @@ jobs:
           # Collect clones
           curl -v -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/traffic/clones \
-            > stats/clones_$(date +%Y%m%d).json 2>&1
+            > stats/clones_$(date +%Y%m%d).json
           
           # Collect views  
           curl -v -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/traffic/views \
-            > stats/views_$(date +%Y%m%d).json 2>&1
+            > stats/views_$(date +%Y%m%d).json
       
       - name: Commit Stats
         run: |
