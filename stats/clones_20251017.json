@@ -1,5 +1,81 @@
 {
-  "message": "Bad credentials",
-  "documentation_url": "https://docs.github.com/rest",
-  "status": "401"
+  "count": 1092,
+  "uniques": 206,
+  "clones": [
+    {
+      "timestamp": "2025-10-03T00:00:00Z",
+      "count": 4,
+      "uniques": 1
+    },
+    {
+      "timestamp": "2025-10-04T00:00:00Z",
+      "count": 12,
+      "uniques": 4
+    },
+    {
+      "timestamp": "2025-10-05T00:00:00Z",
+      "count": 23,
+      "uniques": 6
+    },
+    {
+      "timestamp": "2025-10-06T00:00:00Z",
+      "count": 179,
+      "uniques": 25
+    },
+    {
+      "timestamp": "2025-10-07T00:00:00Z",
+      "count": 16,
+      "uniques": 6
+    },
+    {
+      "timestamp": "2025-10-08T00:00:00Z",
+      "count": 189,
+      "uniques": 18
+    },
+    {
+      "timestamp": "2025-10-09T00:00:00Z",
+      "count": 192,
+      "uniques": 55
+    },
+    {
+      "timestamp": "2025-10-10T00:00:00Z",
+      "count": 111,
+      "uniques": 32
+    },
+    {
+      "timestamp": "2025-10-11T00:00:00Z",
+      "count": 21,
+      "uniques": 12
+    },
+    {
+      "timestamp": "2025-10-12T00:00:00Z",
+      "count": 18,
+      "uniques": 12
+    },
+    {
+      "timestamp": "2025-10-13T00:00:00Z",
+      "count": 78,
+      "uniques": 32
+    },
+    {
+      "timestamp": "2025-10-14T00:00:00Z",
+      "count": 70,
+      "uniques": 21
+    },
+    {
+      "timestamp": "2025-10-15T00:00:00Z",
+      "count": 75,
+      "uniques": 29
+    },
+    {
+      "timestamp": "2025-10-16T00:00:00Z",
+      "count": 50,
+      "uniques": 26
+    },
+    {
+      "timestamp": "2025-10-17T00:00:00Z",
+      "count": 54,
+      "uniques": 19
+    }
+  ]
 }
