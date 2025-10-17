@@ -1,0 +1,5 @@
+# VTune Analysis Configuration
+# Line 1: Command to test
+/root/awilczyn/Media-Transport-Library/tests/tools/RxTxApp/build/RxTxApp --config /root/awilczyn/Media-Transport-Library/config/rx_1v.json
+# Line 2: Working directory for VTune
+/root/awilczyn/Media-Transport-Library/tests/tools/RxTxApp/build
