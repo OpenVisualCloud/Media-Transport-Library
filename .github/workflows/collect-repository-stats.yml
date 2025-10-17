@@ -19,7 +19,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.REPO_STATS_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p stats
           echo "Collecting stats at $(date)"
           
           # Collect clones
@@ -31,15 +30,6 @@ jobs:
           curl -v -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/traffic/views \
             > stats/views_$(date +%Y%m%d).json 2>&1
-          
-          echo "======= Clones data ======="
-          cat stats/clones_$(date +%Y%m%d).json
-          echo ""
-          echo "======= Views data ======="
-          cat stats/views_$(date +%Y%m%d).json
-          echo ""
-          echo "======= Files created ======="
-          ls -lah stats/
       
       - name: Commit Stats
         run: |
