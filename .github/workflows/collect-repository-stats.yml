@@ -1,5 +1,4 @@
 name: Collect Repository Stats
-
 on:
   schedule:
     - cron: '0 0 * * *'
@@ -12,6 +11,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       
       - name: Collect Traffic Data
         env:
