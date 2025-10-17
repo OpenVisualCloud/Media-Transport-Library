@@ -2,9 +2,9 @@
                                  Dload  Upload   Total   Spent    Left  Speed
   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Host api.github.com:443 was resolved.
 * IPv6: (none)
-* IPv4: 140.82.113.6
-*   Trying 140.82.113.6:443...
-* Connected to api.github.com (140.82.113.6) port 443
+* IPv4: 140.82.116.6
+*   Trying 140.82.116.6:443...
+* Connected to api.github.com (140.82.116.6) port 443
 * ALPN: curl offers h2,http/1.1
 } [5 bytes data]
 * TLSv1.3 (OUT), TLS handshake, Client hello (1):
@@ -62,23 +62,9 @@
 { [57 bytes data]
 * old SSL session ID is stale, removing
 { [5 bytes data]
-< HTTP/2 200 
-< date: Fri, 17 Oct 2025 11:59:01 GMT
+< HTTP/2 401 
 < content-type: application/json; charset=utf-8
-< content-length: 1486
-< cache-control: private, max-age=60, s-maxage=60
-< vary: Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With
-< etag: "140fa92a8c33183eceb9bfdc8d183ee14420b5cafe10f0d5411422d5f771d8e3"
-< x-oauth-scopes: repo
-< x-accepted-oauth-scopes: 
-< github-authentication-token-expiration: 2026-01-15 12:34:04 UTC
 < x-github-media-type: github.v3; format=json
-< x-github-api-version-selected: 2022-11-28
-< x-ratelimit-limit: 5000
-< x-ratelimit-remaining: 4954
-< x-ratelimit-reset: 1760704775
-< x-ratelimit-used: 46
-< x-ratelimit-resource: core
 < access-control-expose-headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset
 < access-control-allow-origin: *
 < strict-transport-security: max-age=31536000; includeSubdomains; preload
@@ -87,90 +73,16 @@
 < x-xss-protection: 0
 < referrer-policy: origin-when-cross-origin, strict-origin-when-cross-origin
 < content-security-policy: default-src 'none'
-< x-github-request-id: F411:129982:DB0FAF:3B59C07:68F22F85
+< vary: Accept-Encoding, Accept, X-Requested-With
 < server: github.com
+< date: Fri, 17 Oct 2025 12:03:18 GMT
+< x-github-request-id: 1801:EA301:3414738:356A8CE:68F23086
 < 
-{ [1486 bytes data]
-100  1486  100  1486    0     0   8952      0 --:--:-- --:--:-- --:--:--  9006
+{ [112 bytes data]
+100   112    0   112    0     0    833      0 --:--:-- --:--:-- --:--:--   835
 * Connection #0 to host api.github.com left intact
 {
-  "count": 2089,
-  "uniques": 194,
-  "views": [
-    {
-      "timestamp": "2025-10-03T00:00:00Z",
-      "count": 42,
-      "uniques": 7
-    },
-    {
-      "timestamp": "2025-10-04T00:00:00Z",
-      "count": 23,
-      "uniques": 10
-    },
-    {
-      "timestamp": "2025-10-05T00:00:00Z",
-      "count": 23,
-      "uniques": 8
-    },
-    {
-      "timestamp": "2025-10-06T00:00:00Z",
-      "count": 315,
-      "uniques": 27
-    },
-    {
-      "timestamp": "2025-10-07T00:00:00Z",
-      "count": 77,
-      "uniques": 19
-    },
-    {
-      "timestamp": "2025-10-08T00:00:00Z",
-      "count": 234,
-      "uniques": 22
-    },
-    {
-      "timestamp": "2025-10-09T00:00:00Z",
-      "count": 332,
-      "uniques": 33
-    },
-    {
-      "timestamp": "2025-10-10T00:00:00Z",
-      "count": 176,
-      "uniques": 16
-    },
-    {
-      "timestamp": "2025-10-11T00:00:00Z",
-      "count": 48,
-      "uniques": 12
-    },
-    {
-      "timestamp": "2025-10-12T00:00:00Z",
-      "count": 18,
-      "uniques": 6
-    },
-    {
-      "timestamp": "2025-10-13T00:00:00Z",
-      "count": 140,
-      "uniques": 18
-    },
-    {
-      "timestamp": "2025-10-14T00:00:00Z",
-      "count": 149,
-      "uniques": 35
-    },
-    {
-      "timestamp": "2025-10-15T00:00:00Z",
-      "count": 157,
-      "uniques": 38
-    },
-    {
-      "timestamp": "2025-10-16T00:00:00Z",
-      "count": 177,
-      "uniques": 24
-    },
-    {
-      "timestamp": "2025-10-17T00:00:00Z",
-      "count": 178,
-      "uniques": 23
-    }
-  ]
+  "message": "Bad credentials",
+  "documentation_url": "https://docs.github.com/rest",
+  "status": "401"
 }
