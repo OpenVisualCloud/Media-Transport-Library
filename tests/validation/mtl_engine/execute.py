@@ -214,38 +214,11 @@ def run(
     host=None,
     env: dict = None,
     background: bool = False,
-    enable_sudo: bool = False,
 ) -> any:
     if testcmd:
         logger.log(level=TESTCMD_LVL, msg=f"Test command: {command}")
     else:
         logger.debug(f"Run command: {command}")
-
-    # if host is None:
-    #     # Local execution
-    #     try:
-    #         cp = subprocess.run(
-    #             "exec " + command,
-    #             stdout=subprocess.PIPE,
-    #             stderr=subprocess.STDOUT,
-    #             timeout=timeout,
-    #             shell=True,
-    #             text=True,
-    #             cwd=cwd,
-    #             env=env,
-    #         )
-    #     except subprocess.TimeoutExpired:
-    #         logger.debug("Timeout expired")
-    #         raise
-
-    #     for line in cp.stdout.splitlines():
-    #         logger.debug(line.rstrip())
-    #     logger.debug(f"RC: {cp.returncode}")
-    #     return cp
-    # else:
-    # Remote execution
-    # if enable_sudo:
-    #     host.connection.enable_sudo()
 
     process = host.connection.start_process(
         command,

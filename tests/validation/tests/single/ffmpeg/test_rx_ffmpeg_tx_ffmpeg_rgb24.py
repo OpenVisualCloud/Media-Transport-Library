@@ -30,8 +30,6 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24(
     prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_rx_ffmpeg_tx_ffmpeg_rgb24_{video_format}"
 
     video_file = yuv_files[video_format]
 
@@ -43,5 +41,4 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24(
         video_format=video_format,
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
-        capture_cfg=capture_cfg,
     )

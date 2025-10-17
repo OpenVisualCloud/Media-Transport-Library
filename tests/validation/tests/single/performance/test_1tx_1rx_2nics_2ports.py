@@ -70,30 +70,13 @@ def test_perf_1tx_1rx_2nics_2ports(
         transport_format=video_file["format"],
     )
 
-    # Initialize logging for the test
-    rxtxapp.init_test_logging()
-    rxtxapp.log_to_file(
-        f"Starting TX+RX performance test for {video_format}", host, build
-    )
-
     # upper bound
     replicas_b = 1
 
-    # find upper bound
-    rxtxapp.log_to_file("Finding upper bound - starting replica testing", host, build)
     while True:
         config = rxtxapp.change_replicas(
             config=config, session_type="st20p", replicas=replicas_b, rx=False
         )
-        rxtxapp.log_to_file(
-            f"Testing {video_format} with {replicas_b} replicas", host, build
-        )
-
-        capture_cfg = dict(test_config.get("capture_cfg", {}))
-        capture_cfg["test_name"] = (
-            f"test_perf_1tx_1rx_2nics_2ports_upper_{video_format}_{replicas_b}"
-        )
-        logger.info(f"capture_cfg for upper bound: {capture_cfg}")
 
         passed = rxtxapp.execute_perf_test(
             config=config,
@@ -101,22 +84,15 @@ def test_perf_1tx_1rx_2nics_2ports(
             test_time=test_time,
             host=host,
             fail_on_error=False,
-            capture_cfg=capture_cfg,
         )
 
         if passed:
             logger.info(f"{__name__} {video_format} passed with {replicas_b} replicas")
-            rxtxapp.log_to_file(
-                f"{video_format} passed with {replicas_b} replicas", host, build
-            )
+
             replicas_b *= 2
         else:
             logger.info(f"{__name__} {video_format} failed with {replicas_b} replicas")
-            rxtxapp.log_to_file(
-                f"{video_format} failed with {replicas_b} replicas - found upper bound",
-                host,
-                build,
-            )
+
             break
 
     # lower bound
@@ -126,16 +102,7 @@ def test_perf_1tx_1rx_2nics_2ports(
             f"{__name__} {video_format} finished with 0 replicas (no successful runs)"
         )
         log_result_note("0 replicas")
-        rxtxapp.log_to_file(
-            f"Performance test completed: {video_format} finished with 0 replicas",
-            host,
-            build,
-        )
         return
-
-    rxtxapp.log_to_file(
-        f"Starting binary search between {replicas_a} and {replicas_b}", host, build
-    )
 
     # find maximum number of replicas
     while True:
@@ -146,27 +113,11 @@ def test_perf_1tx_1rx_2nics_2ports(
                 f"{__name__} {video_format} finished with {replicas_a} replicas"
             )
             log_result_note(f"{replicas_a} replicas")
-            rxtxapp.log_to_file(
-                f"Performance test completed: {video_format} finished with {replicas_a} replicas",
-                host,
-                build,
-            )
             break
 
         config = rxtxapp.change_replicas(
             config=config, session_type="st20p", replicas=replicas_midpoint, rx=False
         )
-        rxtxapp.log_to_file(
-            f"Binary search: testing {video_format} with {replicas_midpoint} replicas",
-            host,
-            build,
-        )
-
-        capture_cfg = dict(test_config.get("capture_cfg", {}))
-        capture_cfg["test_name"] = (
-            f"test_perf_1tx_1rx_2nics_2ports_search_{video_format}_{replicas_midpoint}"
-        )
-        logger.info(f"capture_cfg for binary search: {capture_cfg}")
 
         passed = rxtxapp.execute_perf_test(
             config=config,
@@ -174,22 +125,15 @@ def test_perf_1tx_1rx_2nics_2ports(
             test_time=test_time,
             host=host,
             fail_on_error=False,
-            capture_cfg=capture_cfg,
         )
 
         if passed:
             logger.info(
                 f"{__name__} {video_format} passed with {replicas_midpoint} replicas"
             )
-            rxtxapp.log_to_file(
-                f"{video_format} passed with {replicas_midpoint} replicas", host, build
-            )
             replicas_a = replicas_midpoint
         else:
             logger.info(
                 f"{__name__} {video_format} failed with {replicas_midpoint} replicas"
-            )
-            rxtxapp.log_to_file(
-                f"{video_format} failed with {replicas_midpoint} replicas", host, build
             )
             replicas_b = replicas_midpoint

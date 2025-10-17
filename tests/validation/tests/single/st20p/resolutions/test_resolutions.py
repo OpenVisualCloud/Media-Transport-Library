@@ -21,18 +21,12 @@ def test_resolutions(
     test_time,
     test_config,
     prepare_ramdisk,
+    pcap_capture,
     media_file,
 ):
     media_file_info, media_file_path = media_file
 
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_resolutions_{media_file_info['filename']}"  # Set a unique pcap file name
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -53,5 +47,5 @@ def test_resolutions(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
     )

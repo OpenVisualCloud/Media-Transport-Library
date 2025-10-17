@@ -71,9 +71,6 @@ def test_video_format_dual(
         rx_queues=4,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
-    capture_cfg["test_name"] = f"test_video_format_dual_{file}"
-
     try:
         # Use the unified execute_test function for dual host execution
         result = GstreamerApp.execute_test(
@@ -86,7 +83,6 @@ def test_video_format_dual(
             tx_host=tx_host,
             rx_host=rx_host,
             tx_first=False,
-            capture_cfg=capture_cfg,
         )
 
         assert result, f"GStreamer dual video format test failed for format {file}"

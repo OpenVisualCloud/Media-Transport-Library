@@ -9,7 +9,6 @@ import re
 import time
 
 from mfd_connect import SSHConnection
-from mtl_engine.RxTxApp import prepare_tcpdump
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -78,7 +77,6 @@ def execute_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -149,7 +147,6 @@ def execute_test(
 
     rx_proc = None
     tx_proc = None
-    tcpdump = prepare_tcpdump(capture_cfg, host)
 
     try:
         # Start RX pipeline first
@@ -174,10 +171,6 @@ def execute_test(
             host=host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -231,8 +224,6 @@ def execute_test(
             except Exception:
                 # SSH process might already be terminated or unreachable - ignore
                 pass
-        if tcpdump:
-            tcpdump.stop()
     passed = False
     match output_format:
         case "yuv":
@@ -260,7 +251,6 @@ def execute_test_rgb24(
     video_format: str,
     pg_format: str,
     video_url: str,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -284,7 +274,6 @@ def execute_test_rgb24(
 
     rx_proc = None
     tx_proc = None
-    tcpdump = prepare_tcpdump(capture_cfg, host)
 
     try:
         # Start RX pipeline first
@@ -308,10 +297,6 @@ def execute_test_rgb24(
             host=host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
@@ -359,8 +344,6 @@ def execute_test_rgb24(
             except Exception:
                 # SSH process might already be terminated or unreachable - ignore
                 pass
-        if tcpdump:
-            tcpdump.stop()
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -377,7 +360,6 @@ def execute_test_rgb24_multiple(
     pg_format: str,
     video_url_list: list,
     host,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -413,7 +395,6 @@ def execute_test_rgb24_multiple(
     rx_proc = None
     tx_1_proc = None
     tx_2_proc = None
-    tcpdump = prepare_tcpdump(capture_cfg, host)
 
     try:
         rx_proc = run(
@@ -443,10 +424,6 @@ def execute_test_rgb24_multiple(
             host=host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
@@ -484,8 +461,6 @@ def execute_test_rgb24_multiple(
                 except Exception:
                     # Process might already be terminated - ignore kill errors
                     pass
-        if tcpdump:
-            tcpdump.stop()
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
@@ -833,7 +808,6 @@ def execute_dual_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -900,8 +874,6 @@ def execute_dual_test(
 
     rx_proc = None
     tx_proc = None
-    # Use RX host for tcpdump capture
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -926,10 +898,6 @@ def execute_dual_test(
             host=tx_host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -983,8 +951,6 @@ def execute_dual_test(
             except Exception:
                 # Process might already be terminated - ignore kill errors
                 pass
-        if tcpdump:
-            tcpdump.stop()
     passed = False
     match output_format:
         case "yuv":
@@ -1013,7 +979,6 @@ def execute_dual_test_rgb24(
     video_format: str,
     pg_format: str,
     video_url: str,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -1048,8 +1013,6 @@ def execute_dual_test_rgb24(
 
     rx_proc = None
     tx_proc = None
-    # Use RX host for tcpdump capture
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -1074,12 +1037,6 @@ def execute_dual_test_rgb24(
             host=tx_host,
             background=True,
         )
-
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
-
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
         )
@@ -1128,8 +1085,6 @@ def execute_dual_test_rgb24(
             except Exception:
                 # Process might already be terminated - ignore kill errors
                 pass
-        if tcpdump:
-            tcpdump.stop()
 
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
@@ -1147,7 +1102,6 @@ def execute_dual_test_rgb24_multiple(
     video_format_list: list,
     pg_format: str,
     video_url_list: list,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -1192,8 +1146,6 @@ def execute_dual_test_rgb24_multiple(
     rx_proc = None
     tx_1_proc = None
     tx_2_proc = None
-    # Use RX host for tcpdump capture
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -1226,11 +1178,6 @@ def execute_dual_test_rgb24_multiple(
             host=tx_host,
             background=True,
         )
-
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
@@ -1269,9 +1216,6 @@ def execute_dual_test_rgb24_multiple(
                 except Exception:
                     # Process might already be terminated - ignore kill errors
                     pass
-        if tcpdump:
-            tcpdump.stop()
-
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
