@@ -1,7 +1,9 @@
 name: Collect Repository Stats
+
 on:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: "0 0 * * *"
+  pull_request:
   workflow_dispatch:
 
 jobs:
