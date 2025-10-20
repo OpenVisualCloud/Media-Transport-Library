@@ -7,6 +7,8 @@ script_folder=${script_path/$script_name/}
 mtl_folder="${script_folder}/../../"
 declare -A test_cases
 
+watchdog_pid=""
+
 : "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
 : "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUfdTest"}"
 : "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUplTest"}"
@@ -17,6 +19,7 @@ declare -A test_cases
 : "${MTL_LD_PRELOAD:=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so}"
 : "${MUFD_CFG:="${mtl_folder}/.github/workflows/upl_gtest.json"}"
 : "${NIGHTLY:=1}" # Set to 1 to run full test suite, 0 for quick tests
+: "${ALLOW_DOWN_PORTS:=0}" # Set to 1 to allow using down ports for testing
 echo "Log file: $LOG_FILE"
 
 start_time=$(date +%s)
@@ -87,6 +90,16 @@ bind_driver_to_dpdk() {
 			pf=$("${mtl_folder}/script/nicctl.sh" list up | awk '$3 == "ice" {print $2}' | shuf -n 1)
 		fi
 
+		if [ ${ALLOW_DOWN_PORTS} -eq 1 ] && [ -z "${pf}" ]; then
+			pf=$("${mtl_folder}/script/nicctl.sh" list up | awk '$3 == "ice" {print $2}' | shuf -n 1)
+		fi
+
+		if [ -z "$pf" ]; then
+			echo "Error: No ICE active interface found for vfio VF creation"
+			time_taken_by_script
+			exit 1
+		fi
+
 		echo "Binding PF $pf to DPDK driver"
 		sudo -E "${mtl_folder}/script/nicctl.sh" create_tvf "$pf"
 
@@ -144,20 +157,42 @@ reset_ice_driver() {
 }
 
 kill_test_processes() {
-	sudo killall -SIGINT KahawaiTest >/dev/null 2>&1 || true
-	sudo killall -SIGINT KahawaiUfdTest >/dev/null 2>&1 || true
-	sudo killall -SIGINT KahawaiUplTest >/dev/null 2>&1 || true
-	sudo killall -SIGINT MtlManager >/dev/null 2>&1 || true
-	sleep 2
+	sudo pkill -SIGINT -f "KahawaiTest|KahawaiUfdTest|KahawaiUplTest|MtlManager" 2>/dev/null || true
+	if [ -n "$watchdog_pid" ]; then
+		kill -SIGINT "$watchdog_pid" 2>/dev/null || true
+		watchdog_pid=""
+	fi
+
+	sleep 3
+	sudo pkill -9 -f "KahawaiTest|KahawaiUfdTest|KahawaiUplTest|MtlManager" 2>/dev/null || true
 }
 
 start_mtl_manager() {
 	if ! pgrep -f MtlManager >/dev/null; then
 		echo "Starting MtlManager..."
-		sudo MtlManager &
+		sudo MtlManager | tee "${LOG_FILE}" 2>&1 &
 		sleep 3
 	fi
 }
+
+start_watchdog_for_configuration_errors() {
+	while true; do
+		sleep 15
+		if ! check_configuration_errors; then
+			echo "✗ Configuration error detected by watchdog. Exiting..."
+			kill_test_processes
+			time_taken_by_script
+			exit 1
+		fi
+	done
+}
+
+start_background_processes() {
+	start_watchdog_for_configuration_errors &
+	watchdog_pid=$!
+	start_mtl_manager
+}
+
 
 # These messages suggest configuration errors that require manual intervention
 # If those are found in log just give up immediately
@@ -182,19 +217,7 @@ check_configuration_errors() {
 	return 0
 }
 
-watchdog_for_configuration_errors() {
-	while true; do
-		sleep 15
-		if ! check_configuration_errors; then
-			echo "✗ Configuration error detected by watchdog. Exiting..."
-			kill_test_processes
-			time_taken_by_script
-			exit 1
-		fi
-	done
-}
 
-watchdog_for_configuration_errors &
 
 run_test_with_retry() {
 	local test_name="$1"
@@ -217,7 +240,7 @@ run_test_with_retry() {
 			echo "✗ Test failed due to configuration errors: $test_name (attempt $attempt/$MAX_RETRIES)" | tee -a "$LOG_FILE"
 			return 2
 		else
-			echo "✗ Test failed: $test_name (attempt $attempt/$MAX_RETRIES) | tee -a $LOG_FILE"
+			echo "✗ Test failed: $test_name (attempt $attempt/$MAX_RETRIES)" | tee -a "$LOG_FILE"
 
 			kill_test_processes
 
@@ -229,12 +252,12 @@ run_test_with_retry() {
 				bind_driver_to_dpdk
 			fi
 
-			start_mtl_manager
+			start_background_processes
 			((attempt++))
 		fi
 	done
 
-	echo "✗ Test failed after $MAX_RETRIES attempts: $test_name | tee -a $LOG_FILE"
+	echo "✗ Test failed after $MAX_RETRIES attempts: $test_name" | tee -a "$LOG_FILE"
 
 	if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
 		echo "Exiting due to test failure."
@@ -252,8 +275,7 @@ echo "MTL_LD_PRELOAD path: $MTL_LD_PRELOAD"
 echo "MUFD_CFG path: $MUFD_CFG"
 echo ""
 
-kill_test_processes
-start_mtl_manager
+start_background_processes
 
 failed_tests=()
 passed_tests=()
