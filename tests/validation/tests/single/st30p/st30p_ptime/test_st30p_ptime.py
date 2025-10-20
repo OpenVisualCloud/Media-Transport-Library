@@ -74,6 +74,8 @@ def test_st30p_ptime(
 
     if test_config.get("integrity_check", True):
         logger.info("Running audio integrity check...")
+        # Get repository root by removing \'/build\' from build path
+        repo_root = str(Path(build).parent)
         integrity = FileAudioIntegrityRunner(
             host=host,
             test_repo_path=build,

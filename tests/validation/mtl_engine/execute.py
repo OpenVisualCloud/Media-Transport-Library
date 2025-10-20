@@ -57,35 +57,65 @@ class AsyncProcess:
 
 
 def killproc(proc: subprocess.Popen, sigint: bool = False):
+    """Kill a process gracefully, then forcefully if needed.
+    
+    This function ensures proper cleanup of DPDK processes which may
+    hold VFIO resources. It tries SIGINT/SIGTERM first, then SIGKILL.
+    
+    Args:
+        proc: Process to kill
+        sigint: If True, use SIGINT; otherwise use SIGTERM
+        
+    Returns:
+        Process return code
+    """
     result = proc.poll()
     if result is not None:
+        logger.debug(f"Process {proc.pid} already terminated with RC {result}")
         return result
 
+    logger.debug(f"Terminating process {proc.pid} (sigint={sigint})")
+    
     # try to 'gently' terminate proc
     if sigint:
         proc.send_signal(2)  # SIGINT
     else:
-        proc.terminate()
+        proc.terminate()  # SIGTERM
 
+    # Wait up to 5 seconds for graceful termination
     time.sleep(5)
 
-    for _ in range(5):
+    # Check multiple times with delays
+    for attempt in range(5):
         result = proc.poll()
         if result is not None:
+            logger.debug(f"Process {proc.pid} terminated gracefully with RC {result}")
             return result
         time.sleep(5)  # wait a little longer for proc to terminate
 
     # failed to terminate proc, so kill it
-    proc.kill()
-    for _ in range(10):
+    logger.warning(f"Process {proc.pid} did not terminate gracefully, forcing kill")
+    proc.kill()  # SIGKILL
+    
+    for attempt in range(10):
         result = proc.poll()
         if result is not None:
+            logger.debug(f"Process {proc.pid} killed with RC {result}")
             return result
         time.sleep(5)  # give system more time to kill proc
 
     # failed to kill proc
     if result is None:
         logger.error(f"Failed to kill process with pid {proc.pid}")
+        # Last resort: try system kill command
+        try:
+            subprocess.run(f"kill -9 {proc.pid}", shell=True, timeout=5)
+            time.sleep(2)
+            result = proc.poll()
+        except Exception as e:
+            logger.error(f"System kill also failed: {e}")
+    
+    return result
 
 
 def readproc(process: subprocess.Popen):
@@ -171,19 +201,45 @@ def calls(
 
 
 def wait(ap: AsyncProcess) -> str:
+    """Wait for async process to complete and ensure proper cleanup.
+    
+    Args:
+        ap: AsyncProcess to wait for
+        
+    Returns:
+        Process output as string
+    """
     try:  # in case of user interrupt
         ap.process.wait()
-        ap.timer.cancel()
-    except:  # noqa E722
+        if ap.timer:
+            ap.timer.cancel()
+    except KeyboardInterrupt:
+        logger.warning("User interrupt detected, cleaning up process")
+        killproc(ap.process)
+        raise
+    except Exception as e:
+        logger.error(f"Exception while waiting for process: {e}")
         killproc(ap.process)
         raise
     finally:
-        ap.timer.cancel()
-        ap.timer.join(30)
-        ap.output = ap.reader.join(30)
+        if ap.timer:
+            ap.timer.cancel()
+            ap.timer.join(30)
+        if ap.reader:
+            ap.output = ap.reader.join(30)
+        
+        # Ensure process is really terminated
+        if ap.process.poll() is None:
+            logger.warning(f"Process {ap.process.pid} still running after wait, forcing termination")
+            killproc(ap.process, sigint=True)
+        
         logger.debug(
             f"Process {ap.process.pid} finished with RC: {ap.process.returncode}"
         )
+        
+        # Give kernel a moment to release VFIO resources
+        time.sleep(0.5)
+    
     return ap.output
 
 

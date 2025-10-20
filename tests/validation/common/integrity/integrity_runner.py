@@ -34,12 +34,21 @@ class VideoIntegrityRunner:
         """
         Returns the path to the integrity module.
         If integrity_path is provided, it uses that; otherwise, it constructs the path based on the test_repo_path.
+        
+        Auto-detects if test_repo_path ends with /build and adjusts to repository root.
         """
         if integrity_path:
             return str(self.host.connection.path(integrity_path, self.module_name))
+        
+        # Auto-detect if test_repo_path ends with /build and adjust
+        repo_path = self.test_repo_path
+        if repo_path.endswith('/build') or repo_path.endswith('\\build'):
+            from pathlib import Path
+            repo_path = str(Path(repo_path).parent)
+        
         return str(
             self.host.connection.path(
-                self.test_repo_path, "tests", "common", "integrity", self.module_name
+                repo_path, "tests", "validation", "common", "integrity", self.module_name
             )
         )
 
@@ -237,9 +246,16 @@ class AudioIntegrityRunner:
     def get_path(self, integrity_path):
         if integrity_path:
             return str(self.host.connection.path(integrity_path, self.module_name))
+        
+        # Auto-detect if test_repo_path ends with /build and adjust
+        repo_path = self.test_repo_path
+        if repo_path.endswith('/build') or repo_path.endswith('\\build'):
+            from pathlib import Path
+            repo_path = str(Path(repo_path).parent)
+        
         return str(
             self.host.connection.path(
-                self.test_repo_path,
+                repo_path,
                 "tests",
                 "validation",
                 "common",

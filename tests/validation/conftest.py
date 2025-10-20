@@ -9,7 +9,187 @@ import shutil
 import time
 from typing import Dict
 
+import subprocess
+
 import pytest
+
+
+def force_release_vfio_devices(vfio_groups=None, max_attempts=5):
+    """
+    Forcefully release VFIO devices by killing processes holding them.
+    
+    Args:
+        vfio_groups: List of VFIO group numbers (e.g., [323, 324]). If None, releases all.
+        max_attempts: Maximum number of kill attempts
+        
+    Returns:
+        True if devices are free, False otherwise
+    """
+    for attempt in range(max_attempts):
+        try:
+            # Find PIDs of processes holding VFIO devices
+            if vfio_groups:
+                pattern = "|".join(str(g) for g in vfio_groups)
+                cmd = f"sudo lsof -t 2>/dev/null /dev/vfio/{vfio_groups[0]} /dev/vfio/{vfio_groups[1]} 2>/dev/null | sort -u"
+            else:
+                cmd = "sudo lsof -t 2>/dev/null /dev/vfio/* 2>/dev/null | sort -u"
+            
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=2)
+            pids = result.stdout.strip().split('\n')
+            pids = [p.strip() for p in pids if p.strip()]
+            
+            if not pids:
+                # No processes holding VFIO - success!
+                return True
+            
+            # Kill all processes holding VFIO devices
+            logger.warning(f"Attempt {attempt + 1}: Killing {len(pids)} processes holding VFIO devices: {pids}")
+            for pid in pids:
+                try:
+                    subprocess.run(f"sudo kill -9 {pid}", shell=True, timeout=2)
+                except Exception:
+                    pass
+            
+            # Wait a bit for kernel to release resources
+            time.sleep(1)
+            
+        except Exception as e:
+            logger.debug(f"Error checking VFIO devices: {e}")
+    
+    # Final check
+    try:
+        if vfio_groups:
+            cmd = f"sudo lsof 2>/dev/null /dev/vfio/{vfio_groups[0]} /dev/vfio/{vfio_groups[1]} 2>/dev/null | wc -l"
+        else:
+            cmd = "sudo lsof 2>/dev/null /dev/vfio/* 2>/dev/null | wc -l"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=2)
+        count = int(result.stdout.strip() or 0)
+        return count == 0
+    except Exception:
+        return False
+
+
+def wait_for_vfio_release(vfio_groups=None, timeout=30, check_interval=0.2):
+    """
+    Wait until VFIO devices are no longer busy by checking if any process has them open.
+    Will block until devices are free or timeout is reached.
+    
+    Args:
+        vfio_groups: List of VFIO group numbers (e.g., [323, 324]). If None, checks all.
+        timeout: Maximum time to wait in seconds (increased to 30s for reliability)
+        check_interval: How often to check in seconds
+        
+    Returns:
+        True if devices are free, False if timeout reached
+    """
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        try:
+            # Check if any process has VFIO devices open
+            if vfio_groups:
+                # Check specific groups using lsof on the device files directly
+                cmd = f"sudo lsof 2>/dev/null /dev/vfio/{vfio_groups[0]} /dev/vfio/{vfio_groups[1]} 2>/dev/null | wc -l"
+            else:
+                # Check all VFIO devices
+                cmd = "sudo lsof 2>/dev/null /dev/vfio/* 2>/dev/null | wc -l"
+            
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=2)
+            count = int(result.stdout.strip() or 0)
+            
+            if count == 0:
+                # No processes holding VFIO devices - we're good!
+                logger.debug("VFIO devices are free")
+                return True
+            
+            # Log every 2 seconds
+            elapsed = time.time() - start_time
+            if int(elapsed) % 2 == 0 and elapsed > 0:
+                logger.debug(f"Waiting for VFIO release... ({int(elapsed)}s elapsed, {count} handles open)")
+                
+        except Exception as e:
+            logger.debug(f"Error checking VFIO: {e}")
+            
+        time.sleep(check_interval)
+    
+    # Timeout reached
+    logger.error(f"VFIO devices still busy after {timeout}s timeout!")
+    return False
+
+
+@pytest.fixture(autouse=True, scope="function")
+def cleanup_rxtxapp_vfio(request):
+    """
+    Forcefully release VFIO devices before and after each test.
+    Prevents DPDK/VFIO 'device or resource busy' errors.
+    
+    This fixture will BLOCK until devices are free or force-kill processes.
+    """
+    logger.debug("=== Pre-test VFIO cleanup ===")
+    
+    # Try to get PCI devices from the test if nic_port_list fixture is available
+    pci_devices = ["0000:31:01.0", "0000:31:01.1"]  # Default fallback
+    try:
+        if "nic_port_list" in request.fixturenames:
+            nic_list = request.getfixturevalue("nic_port_list")
+            if nic_list:
+                pci_devices = nic_list[:2]  # Use first 2 devices
+                logger.debug(f"Using PCI devices from test: {pci_devices}")
+    except Exception:
+        pass  # Use defaults if we can't get the fixture
+    
+    # Step 1: Kill any RxTxApp processes
+    try:
+        result = subprocess.run("pkill -9 RxTxApp", shell=True, timeout=5, capture_output=True)
+        if result.returncode == 0:
+            logger.debug("Killed RxTxApp processes")
+    except Exception:
+        pass
+    
+    # Step 2: Force release VFIO devices by killing any processes holding them
+    force_release_vfio_devices(vfio_groups=[323, 324], max_attempts=5)
+    
+    # Step 3: Wait until devices are absolutely free (BLOCKS until free or timeout)
+    released = wait_for_vfio_release(vfio_groups=[323, 324], timeout=30)
+    
+    if not released:
+        # Last resort: unbind and rebind the devices
+        logger.error("VFIO devices still busy! Attempting unbind/rebind...")
+        try:
+            subprocess.run("sudo dpdk-devbind.py --unbind 0000:31:01.0 0000:31:01.1", shell=True, timeout=5)
+            time.sleep(2)
+            subprocess.run("sudo dpdk-devbind.py --bind=vfio-pci 0000:31:01.0 0000:31:01.1", shell=True, timeout=5)
+            time.sleep(1)
+        except Exception as e:
+            logger.error(f"Unbind/rebind failed: {e}")
+    else:
+        logger.debug("VFIO devices successfully released")
+    
+    yield  # Run the test
+    
+    logger.debug("=== Post-test VFIO cleanup ===")
+    
+    # After test completes, force release again
+    try:
+        subprocess.run("pkill -9 RxTxApp", shell=True, timeout=5)
+    except Exception:
+        pass
+    
+    force_release_vfio_devices(vfio_groups=[323, 324], max_attempts=5)
+    wait_for_vfio_release(vfio_groups=[323, 324], timeout=30)
+    
+    # Reset PCI devices to ensure they're not busy for next test
+    for device in pci_devices:
+        try:
+            reset_cmd = f"sudo bash -c 'echo 1 > /sys/bus/pci/devices/{device}/reset'"
+            result = subprocess.run(reset_cmd, shell=True, timeout=5, capture_output=True)
+            if result.returncode == 0:
+                logger.debug(f"Successfully reset PCI device {device}")
+            else:
+                logger.warning(f"Failed to reset PCI device {device}: {result.stderr.decode()}")
+        except Exception as e:
+            logger.warning(f"Exception while resetting PCI device {device}: {e}")
+        time.sleep(0.5)  # Small delay between resets
 from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import Nicctl
 from mfd_common_libs.custom_logger import add_logging_level
@@ -31,6 +211,7 @@ from mtl_engine.stash import (
     get_result_note,
     remove_result_media,
 )
+from mtl_engine.vfio_manager import get_vfio_manager
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
@@ -57,8 +238,13 @@ def media(test_config: dict) -> str:
 
 
 @pytest.fixture(scope="session")
-def build(mtl_path):
-    return mtl_path
+def build(test_config: dict, mtl_path: str) -> str:
+    """Get build directory path.
+    
+    Returns the build directory from test_config if available,
+    otherwise defaults to mtl_path/build.
+    """
+    return test_config.get("build", f"{mtl_path}/build")
 
 
 @pytest.fixture(scope="session")
@@ -110,7 +296,13 @@ def dma_port_list(request):
 
 
 @pytest.fixture(scope="session")
-def nic_port_list(hosts: dict, mtl_path) -> None:
+def nic_port_list(hosts: dict, mtl_path) -> list:
+    """Get list of VF PCI addresses for testing.
+    
+    Returns:
+        List of VF PCI addresses (e.g., ['0000:31:01.0', '0000:31:01.1', ...])
+    """
+    vfs_list = []
     for host in hosts.values():
         nicctl = Nicctl(mtl_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
@@ -118,6 +310,8 @@ def nic_port_list(hosts: dict, mtl_path) -> None:
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
+        vfs_list.extend(vfs)
+    return vfs_list
 
 
 @pytest.fixture(scope="session")
@@ -127,10 +321,18 @@ def test_time(test_config: dict) -> int:
 
 
 @pytest.fixture(autouse=True)
-def delay_between_tests(test_config: dict):
-    time_sleep = test_config.get("delay_between_tests", 3)
+def delay_between_tests(request):
+    """Wait between tests to allow resources to be released."""
+    yield  # Test runs here
+    
+    # After test completes, add delay
+    try:
+        test_config = request.getfixturevalue("test_config")
+        time_sleep = test_config.get("delay_between_tests", 5)
+    except Exception:
+        time_sleep = 10
+    
     time.sleep(time_sleep)
-    yield
 
 
 @pytest.fixture
