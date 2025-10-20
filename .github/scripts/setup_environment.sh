@@ -303,7 +303,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 	if [ "${SETUP_BUILD_AND_INSTALL_DPDK}" == "1" ]; then
 		echo "$STEP DPDK build and install"
-		bash "${root_folder}/script/build_dpdk.sh"
+		bash "${root_folder}/script/build_dpdk.sh" -f
 		STEP=$((STEP + 1))
 	fi
 
