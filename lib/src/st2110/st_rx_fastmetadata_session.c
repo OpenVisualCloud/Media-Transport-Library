@@ -115,17 +115,13 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   }
 
   /* set if it is first pkt */
-  if (unlikely(s->latest_seq_id == -1)) {
-    s->latest_seq_id = seq_id - 1;
-  }
-
+  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
   /* drop old packet */
-  if (seq_id <= s->latest_seq_id) {
+  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
     dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     return 0;
   }
-
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
