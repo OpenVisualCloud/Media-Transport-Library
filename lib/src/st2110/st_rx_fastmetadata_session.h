@@ -9,7 +9,7 @@
 
 #define ST_RX_FASTMETADATA_BURST_SIZE (128)
 
-#define ST_RX_FASTMETADATA_PREFIX "RC_"
+#define ST_RX_FASTMETADATA_PREFIX "RF_"
 
 int st_rx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl* sch);
 
