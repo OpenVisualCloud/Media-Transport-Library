@@ -401,45 +401,46 @@ static int tv_train_pacing(struct mtl_main_impl* impl, struct st_tx_video_sessio
   }
   pkts_per_frame = pkts_per_frame * reactive;
   measured_bps = s->st20_pkt_size * pkts_per_sec * reactive;
+  pad_interval = (float)s->st20_total_pkts / (pkts_per_frame - s->st20_total_pkts);
 
-  /* If the measured speed is lower than expected. Set higher bps and retrain to add
-   * padding */
+  /* Padding is effective only when the actual throughput slightly exceeds the expected
+   * value. The pad interval decreases as the measured throughput surpasses the expected
+   * rate. If the difference is too significant, it indicates an issue. A minimum padding
+   * value of 32 is chosen as a reasonable threshold. */
+  if (measured_bps > rl_bps && pad_interval > 32) {
+    s->pacing.pad_interval = pad_interval;
+    mt_pacing_train_pad_result_add(impl, port, rl_bps, pad_interval);
+    train_end_time = mt_get_tsc(impl);
+    info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
+         idx, s_port, pad_interval, pkts_per_frame,
+         (double)(train_end_time - train_start_time) / NS_PER_S);
+    return 0;
+  }
   if (measured_bps < rl_bps) {
-    info("%s(%d), measured bps %" PRIu64 " is lower then set bps %" PRIu64 "\n", __func__,
+    info("%s(%d), measured bps %" PRIu64 " is lower than set bps %" PRIu64 "\n", __func__,
          idx, (uint64_t)measured_bps, rl_bps);
+  } else {
+    info("%s(%d), too small pad_interval %f pkts_per_frame %f, st20_total_pkts %d\n",
+         __func__, idx, pad_interval, pkts_per_frame, s->st20_total_pkts);
+  }
 
-    if (!mt_pacing_train_bps_result_search(impl, port, rl_bps, &bps_to_set)) {
-      err("%s(%d), measured speed is too low on already trained bps\n", __func__, idx);
-      return -EINVAL;
-    }
+  if (!mt_pacing_train_bps_result_search(impl, port, rl_bps, &bps_to_set)) {
+    err("%s(%d), measured speed is out of range on already trained bps\n", __func__, idx);
+    return -EINVAL;
+  }
 
 /* Slightly increase the target bitrate to compensate for measurement inaccuracies,
  * rounding errors, and system overhead. This helps ensure the actual transmission bitrate
  * meets or exceeds the required rate
  */
 #define INCREASE_BPS_FACTOR 1.005
-    bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
-    info("%s(%d), increase bps to %" PRIu64 "\n", __func__, idx, bps_to_set);
-    mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
-    mt_txq_set_tx_bps(queue, bps_to_set);
-    ret = tv_train_pacing(impl, s, s_port);
-    return ret;
-  }
-
-  pad_interval = (float)s->st20_total_pkts / (pkts_per_frame - s->st20_total_pkts);
-  if (pad_interval < 32) {
-    err("%s(%d), too small pad_interval %f pkts_per_frame %f, st20_total_pkts %d\n",
-        __func__, idx, pad_interval, pkts_per_frame, s->st20_total_pkts);
-    return -EINVAL;
-  }
-
-  s->pacing.pad_interval = pad_interval;
-  mt_pacing_train_pad_result_add(impl, port, rl_bps, pad_interval);
-  train_end_time = mt_get_tsc(impl);
-  info("%s(%d,%d), trained pad_interval %f pkts_per_frame %f with time %fs\n", __func__,
-       idx, s_port, pad_interval, pkts_per_frame,
-       (double)(train_end_time - train_start_time) / NS_PER_S);
-  return 0;
+  bps_to_set = INCREASE_BPS_FACTOR * (rl_bps * rl_bps) / measured_bps;
+  info("%s(%d), Retrain pacing with bps changed to %" PRIu64 "\n", __func__, idx,
+       bps_to_set);
+  mt_pacing_train_bps_result_add(impl, port, rl_bps, bps_to_set);
+  mt_txq_set_tx_bps(queue, bps_to_set);
+  ret = tv_train_pacing(impl, s, s_port);
+  return ret;
 }
 
 static int tv_init_pacing(struct mtl_main_impl* impl,
