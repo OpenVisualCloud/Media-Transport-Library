@@ -5,7 +5,6 @@
 #include <thread>
 
 #include "log.h"
-#include "noctx.hpp"
 #include "tests.hpp"
 
 #define ST30P_TEST_PAYLOAD_TYPE (111)
