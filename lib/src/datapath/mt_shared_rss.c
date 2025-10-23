@@ -455,8 +455,8 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       return -ENOMEM;
     }
 
-    if (!srss->nb_rx_q) {  /* making sure nb_rx_q is not zero to prevent divide-by-zero */
-      err("%s(%d), nb_rx_q is zero\n", __func__, port);
+    if (!srss->schs_cnt) {  /* making sure schs_cnt is not zero to prevent divide-by-zero */
+      err("%s(%d), schs_cnt is zero\n", __func__, port);
       mt_srss_uinit(impl);
       return -EINVAL;
     }
