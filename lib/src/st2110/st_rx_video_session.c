@@ -619,7 +619,7 @@ void rv_slot_dump(struct st_rx_video_session_impl* s) {
 
   for (int i = 0; i < ST_VIDEO_RX_REC_NUM_OFO; i++) {
     slot = &s->slots[i];
-    info("%s(%d), tmstamp %u recv_size %" PRIu64 " pkts_received %u\n", __func__, i,
+    info("%s(%d), tmstamp %ld recv_size %" PRIu64 " pkts_received %u\n", __func__, i,
          slot->tmstamp, rv_slot_get_frame_size(slot), slot->pkts_received);
   }
 }
@@ -671,7 +671,7 @@ static int rv_init_slot(struct st_rx_video_session_impl* s) {
     slot->frame = NULL;
     rv_slot_init_frame_size(slot);
     slot->pkts_received = 0;
-    slot->tmstamp = 0;
+    slot->tmstamp = -1;
     slot->seq_id_got = false;
     frame_bitmap = mt_rte_zmalloc_socket(bitmap_size, soc_id);
     if (!frame_bitmap) {
@@ -889,7 +889,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     }
 
     /* notify frame */
-    dbg("%s(%d): tmstamp %u\n", __func__, s->idx, slot->tmstamp);
+    dbg("%s(%d): tmstamp %ld\n", __func__, s->idx, slot->tmstamp);
     int ret = rv_notify_frame_ready(s, frame->addr, meta);
     if (ret < 0) {
       err("%s(%d), notify_frame_ready fail %d\n", __func__, s->idx, ret);
@@ -901,7 +901,7 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     double reactive = 1080.0 / 1125.0;
     s->trs = s->frame_time * reactive / meta->pkts_total;
   } else {
-    dbg("%s(%d): frame_recv_size %" PRIu64 ", frame_total_size %" PRIu64 ", tmstamp %u\n",
+    dbg("%s(%d): frame_recv_size %" PRIu64 ", frame_total_size %" PRIu64 ", tmstamp %ld\n",
         __func__, s->idx, meta->frame_recv_size, meta->frame_total_size, slot->tmstamp);
     MT_USDT_ST20_RX_FRAME_INCOMPLETE(s->parent->idx, s->idx, frame->idx, slot->tmstamp,
                                      meta->frame_recv_size, s->st20_frame_size);
@@ -1109,7 +1109,26 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     }
   }
 
+
+  /* if the slot timestamp is in the past just drop it */
+  bool timestamp_is_in_the_past = true;
+  for (i = 0; i < s->slot_max; i++) {
+    slot = &s->slots[i];
+
+    if (slot->tmstamp == -1 || mt_seq32_greater(tmstamp, slot->tmstamp)) {
+      timestamp_is_in_the_past = false;
+      break;
+    }
+  }
+
+  if (timestamp_is_in_the_past) {
+    dbg("%s(%d): tmstamp %u is in the past, drop it\n", __func__, s->idx, tmstamp);
+    return NULL;
+  }
+
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
+
+
   if (s->dma_dev && !mt_dma_empty(s->dma_dev)) {
     /* still in progress of previous frame, drop current pkt */
     rte_atomic32_inc(&s->dma_previous_busy_cnt);
@@ -1735,7 +1754,7 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   if (end_frame) {
     dbg("%s(%d,%d): full frame on %p(%" PRIu64 ")\n", __func__, s->idx, s_port,
         slot->frame->addr, frame_recv_size);
-    dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
+    dbg("%s(%d,%d): tmstamp %ld slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
     /* end of frame */
     rv_slot_full_frame(s, slot);
@@ -2254,7 +2273,7 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   if (frame_recv_size >= s->st20_frame_size) {
     dbg("%s(%d,%d): full frame on %p(%zu)\n", __func__, s->idx, s_port, slot->frame->addr,
         frame_recv_size);
-    dbg("%s(%d,%d): tmstamp %u slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
+    dbg("%s(%d,%d): tmstamp %ld slot %d\n", __func__, s->idx, s_port, slot->tmstamp,
         slot->idx);
     rv_slot_full_frame(s, slot);
   }

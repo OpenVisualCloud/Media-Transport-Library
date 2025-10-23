@@ -449,7 +449,7 @@ struct st_rx_video_slot_slice_info {
 
 struct st_rx_video_slot_impl {
   int idx;
-  uint32_t tmstamp;
+  int64_t tmstamp;
   uint16_t seq_id_base;     /* seq id for the first packet */
   uint32_t seq_id_base_u32; /* seq id for the first packet with u32 */
   bool seq_id_got;
