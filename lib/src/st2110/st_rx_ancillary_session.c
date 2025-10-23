@@ -131,19 +131,34 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   }
   /* 0b00: progressive or not specified, do nothing */
 
-  /* set if it is first pkt */
-  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
-  /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
-    dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    return 0;
-  }
-  if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
+  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1)) s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1)) s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
+  if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
+
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+    dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
+        seq_id, s->latest_seq_id[s_port]);
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
+
+  /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to get 
+  multiple packets with the same timestamp)) */
+  if ((mt_seq32_greater(s->tmstamp, tmstamp)) || st_rx_seq_redundant_drop(seq_id, s->latest_seq_id, s_port, s->ops.num_port)) {
+
+    if (mt_seq32_greater(s->tmstamp, tmstamp)){
+      dbg ("%s(%d,%d), drop as pkt tmstamp %u is old\n", __func__, s->idx, s_port, tmstamp);
+    } else {
+      dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
+    }
+
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->latest_seq_id[s_port] = seq_id;
+    return -EIO;
+  }
+
   /* update seq id */
-  s->latest_seq_id = seq_id;
+  s->latest_seq_id[s_port] = seq_id;
+  s->tmstamp = tmstamp;
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
@@ -399,7 +414,9 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
 
-  s->latest_seq_id = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
+  s->tmstamp = -1;
   s->stat_pkts_received = 0;
   s->stat_pkts_dropped = 0;
   s->stat_last_time = mt_get_monotonic_time();
@@ -526,7 +543,9 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
   /* reset seq id */
-  s->latest_seq_id = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
+  s->tmstamp = -1;
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
