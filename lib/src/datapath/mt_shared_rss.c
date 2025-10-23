@@ -418,12 +418,7 @@ int mt_srss_init(struct mtl_main_impl* impl) {
     srss->queue_mode =
         mt_pmd_is_native_af_xdp(impl, port) ? MT_QUEUE_MODE_XDP : MT_QUEUE_MODE_DPDK;
     srss->nb_rx_q = mt_if(impl, port)->nb_rx_q;
-    if (!srss->nb_rx_q) {
-      err("%s(%d), nb_rx_q is zero\n", __func__, port);
-      mt_srss_uinit(impl);
-      return -EINVAL;
-    }
-
+    
     srss->lists_sz = 64 - 1; /* use odd count for better distribution */
     srss->lists = mt_rte_zmalloc_socket(sizeof(*srss->lists) * srss->lists_sz,
                                         mt_socket_id(impl, port));
@@ -458,6 +453,12 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       err("%s(%d), schs malloc fail\n", __func__, port);
       mt_srss_uinit(impl);
       return -ENOMEM;
+    }
+
+    if (!srss->nb_rx_q) {  /* making sure nb_rx_q is not zero to prevent divide-by-zero */
+      err("%s(%d), nb_rx_q is zero\n", __func__, port);
+      mt_srss_uinit(impl);
+      return -EINVAL;
     }
     mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
     uint16_t q_idx = 0;
