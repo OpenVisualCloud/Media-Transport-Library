@@ -296,7 +296,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* all packets need to have increasing tmstamp */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
-    dbg ("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%u) is old\n", __func__, s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
+    dbg ("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__, s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     s->latest_seq_id[s_port] = seq_id;
     return -EIO;
