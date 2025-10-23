@@ -642,7 +642,7 @@ static int run_all_context_test(int argc, char** argv, struct st_tests_context* 
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
   int time_least = 10;
 
-  if (link_flap_wa && (time_s < time_least)) {
+  if (!ctx->noctx_tests && link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
     info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
     sleep(time_least - time_s);

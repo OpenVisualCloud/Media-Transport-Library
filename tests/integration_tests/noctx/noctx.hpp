@@ -9,14 +9,16 @@
 #include <thread>
 #include <vector>
 
-#include "tests.hpp"
+#include "../tests.hpp"
 
 #define SESSION_SKIP_PORT -1
+#define VIDEO_CLOCK_HZ 90000
 
 class Session;
 class FrameTestStrategy;
 class NoCtxTest;
 class St30pHandler;
+class St20pHandler;
 class Handlers;
 
 /* Session class represents a media session that can run multiple threads */
@@ -68,6 +70,7 @@ class NoCtxTest : public ::testing::Test {
   static uint64_t TestPtpSourceSinceEpoch(void* priv);
   /* Structures that will be cleaned automaticly every test */
   std::vector<St30pHandler*> st30pHandlers;
+  std::vector<St20pHandler*> st20pHandlers;
   std::vector<FrameTestStrategy*> sessionUserDatas;
 
   void sleepUntilFailure(int sleepDuration = 0);
@@ -169,23 +172,15 @@ class St30pHandler : public Handlers {
                        int rxPortRedundantIdx = SESSION_SKIP_PORT);
 };
 
-class St20Handler : public Handlers {
- private:
-  uint width;
-  uint height;
-  enum st20_fmt fmt;
-
+class St20pHandler : public Handlers {
  public:
   uint64_t nsFrameTime;
-  St20Handler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
-              st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {}, uint width = 1920,
-              uint height = 1080, enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT,
+  St20pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
+              st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {},
               bool create = true, bool start = true);
 
-  St20Handler(st_tests_context* ctx, st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {},
-              uint width = 1920, uint height = 1080,
-              enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT);
-  ~St20Handler();
+  St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {});
+  ~St20pHandler();
 
   struct st20p_tx_ops sessionsOpsTx;
   struct st20p_rx_ops sessionsOpsRx;
@@ -193,7 +188,8 @@ class St20Handler : public Handlers {
   st20p_rx_handle sessionsHandleRx = nullptr;
 
   void fillSt20Ops(uint transmissionPort = 20000, uint framebufferQueueSize = 3,
-                   uint payloadType = 112, enum st_fps fps = ST_FPS_P25,
+                    enum st20_fmt fmt = ST20_FMT_YUV_422_10BIT, uint width = 1920,
+                    uint height = 1080, uint payloadType = 112, enum st_fps fps = ST_FPS_P25,
                    bool interlaced = false, enum st20_packing packing = ST20_PACKING_BPM);
 
   void setModifiers(FrameTestStrategy* sessionUserData) {
