@@ -2309,7 +2309,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       tv_sync_pacing_st22(impl, s, required_tai, st22_info->st22_total_pkts);
       if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
         pacing->rtp_time_stamp =
-            st10_get_media_clk(meta.tfmt, meta.timestamp, s->fps_tm.sampling_clock_rate);
+            st10_get_media_clk(meta.tfmt + (s->ops.rtp_timestamp_delta_us * NS_PER_US), meta.timestamp, s->fps_tm.sampling_clock_rate);
       } else {
         uint64_t tai_for_rtp_ts;
         if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
