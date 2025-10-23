@@ -292,27 +292,30 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->first_pkt_rtp_ts = tmstamp;
   }
 
-  /* set first seq_id - 1 */
-  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
-  /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
-    dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
+  if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
+
+  /* all packets need to have increasing tmstamp */
+  if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
+    dbg ("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%u) is old\n", __func__, s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    if (s->enable_timing_parser) {
-      enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
-      ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
-    }
+    s->latest_seq_id[s_port] = seq_id;
     return -EIO;
   }
-  if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
-    dbg("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
-        s->latest_seq_id);
-  }
-  /* update seq id */
-  s->latest_seq_id = seq_id;
+  s->tmstamp = tmstamp;
 
-  // copy frame
+  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1)) s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1)) s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
+
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+    dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
+        seq_id, s->latest_seq_id[s_port]);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+  }
+
+  /* The package is accepted and goes into the frame */
+  /* update seq id */
+  s->latest_seq_id[s_port] = seq_id;
+
   if (!s->st30_cur_frame) {
     s->st30_cur_frame = rx_audio_session_get_frame(s);
     if (!s->st30_cur_frame) {
@@ -322,6 +325,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
       return -EIO;
     }
   }
+
   uint32_t offset = s->st30_pkt_idx * s->pkt_len;
   if ((offset + s->pkt_len) > s->st30_frame_size) {
     dbg("%s(%d,%d): invalid offset %u frame size %" PRIu64 "\n", __func__, s->idx, s_port,
@@ -410,7 +414,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   size_t hdr_offset =
       sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
-      rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
+     rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(s_port);
 
@@ -433,19 +437,24 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  /* set first seq_id - 1 */
-  if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
-  /* drop old packet */
-  if (st_rx_seq_drop(seq_id, s->latest_seq_id, 5)) {
-    dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    return -EIO;
-  }
-  if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
+  if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+    dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
+        seq_id, s->latest_seq_id[s_port]);
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
+
+  /* Only works for redundant streams basicly drop packets that are old */
+  if (st_rx_seq_redundant_drop(seq_id, s->latest_seq_id, s_port, s->ops.num_port)) {
+    dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
+
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    s->latest_seq_id[s_port] = seq_id;
+    return -EIO;
+  }
+
   /* update seq id */
-  s->latest_seq_id = seq_id;
+  s->latest_seq_id[s_port] = seq_id;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
@@ -483,7 +492,7 @@ static int rv_stop_pcap_dump(struct st_rx_audio_session_impl* s) {
   for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
     ra_stop_pcap(s, s_port);
   }
-  return 0;
+    return 0;
 }
 
 static int ra_start_pcap(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
@@ -508,7 +517,7 @@ static int ra_start_pcap(struct st_rx_audio_session_impl* s, enum mtl_session_po
   pcap->pcap = mt_pcap_open(s->mgr->parent, port, fd);
   if (!pcap->pcap) {
     err("%s(%d,%d), failed to open pcap file %s\n", __func__, idx, s_port,
-        pcap->file_name);
+          pcap->file_name);
     close(fd);
     return -EIO;
   }
@@ -592,6 +601,10 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
 
     rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
     if (!rv) continue;
+
+    if (s_port == 1) {
+      dbg("DEBUG");
+    }
 
     rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
     rte_pktmbuf_free_bulk(&mbuf[0], rv);
@@ -805,7 +818,9 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_pkt_idx = 0;
   s->st30_frame_size = ops->framebuff_size;
 
-  s->latest_seq_id = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
+  s->tmstamp = -1;
   s->stat_pkts_received = 0;
   s->stat_pkts_dropped = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
@@ -971,7 +986,9 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
     s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
   }
   /* reset seq id */
-  s->latest_seq_id = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
+  s->tmstamp = -1;
 
   ret = rx_audio_session_init_hw(impl, s);
   if (ret < 0) {
