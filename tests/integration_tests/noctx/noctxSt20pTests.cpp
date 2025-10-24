@@ -18,12 +18,11 @@ class St20pDefaultTimestamp : public FrameTestStrategy {
   void rxTestFrameModifier(void* frame, size_t frame_size) {
     st_frame* f = (st_frame*)frame;  // Changed from st30_frame to st_frame
     St20pHandler* st20pParent = static_cast<St20pHandler*>(parent);
-    uint64_t framebuffTime = st10_tai_to_media_clk(st20pParent->nsFrameTime, VIDEO_CLOCK_HZ);
+    uint64_t framebuffTime =
+        st10_tai_to_media_clk(st20pParent->nsFrameTime, VIDEO_CLOCK_HZ);
     uint64_t diff;
 
-    EXPECT_NEAR(f->timestamp,
-                framebuffTime * (idx_rx + 1),
-                framebuffTime / 20)
+    EXPECT_NEAR(f->timestamp, framebuffTime * (idx_rx + 1), framebuffTime / 20)
         << " idx_rx: " << idx_rx;
 
     if (lastTimestamp != 0) {
@@ -79,13 +78,14 @@ class St20pUserTimestamp : public St20pDefaultTimestamp {
     St20pHandler* st20pParent = static_cast<St20pHandler*>(parent);
     idx_rx++;
 
-    uint64_t expectedTimestamp =
-        startingTime + (st20pParent->nsFrameTime * (idx_rx - 1));
-    uint64_t expected_media_clk = st10_tai_to_media_clk(expectedTimestamp, VIDEO_CLOCK_HZ);
+    uint64_t expectedTimestamp = startingTime + (st20pParent->nsFrameTime * (idx_rx - 1));
+    uint64_t expected_media_clk =
+        st10_tai_to_media_clk(expectedTimestamp, VIDEO_CLOCK_HZ);
 
     EXPECT_EQ(f->timestamp, expected_media_clk)
         << " idx_rx: " << idx_rx << " tai difference: "
-        << (int64_t)(st10_media_clk_to_ns(f->timestamp, VIDEO_CLOCK_HZ) - expectedTimestamp);
+        << (int64_t)(st10_media_clk_to_ns(f->timestamp, VIDEO_CLOCK_HZ) -
+                     expectedTimestamp);
 
     if (lastTimestamp != 0) {
       uint64_t diff = f->timestamp - lastTimestamp;
@@ -107,7 +107,8 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
 
   St20pUserTimestamp* userData = new St20pUserTimestamp();
   St20pHandler* handler = new St20pHandler(ctx);
-  handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;  // Changed from ST30P to ST20P
+  handler->sessionsOpsTx.flags |=
+      ST20P_TX_FLAG_USER_PACING;  // Changed from ST30P to ST20P
   handler->setModifiers(userData);
   handler->createSession(true);
 
@@ -166,7 +167,8 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
       new St20pHandler(ctx, sessionUserData, {}, {}, false, false));
 
   st20pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-  st20pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+  st20pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |=
+      ST20P_TX_FLAG_USER_TIMESTAMP;
   st20pHandlers[sessionTxPrimarySideId]->setSessionPorts(
       2, SESSION_SKIP_PORT, SESSION_SKIP_PORT, SESSION_SKIP_PORT);
   st20pHandlers[sessionTxPrimarySideId]->createSessionTx();

@@ -5,7 +5,8 @@
 #include "noctx.hpp"
 
 St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
-                         st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool create, bool start)
+                           st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool create,
+                           bool start)
     : Handlers(ctx, sessionUserData) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
@@ -27,7 +28,8 @@ St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUser
   }
 }
 
-St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx, st20p_rx_ops ops_rx)
+St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
+                           st20p_rx_ops ops_rx)
     : Handlers(ctx) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
@@ -49,9 +51,9 @@ St20pHandler::~St20pHandler() {
 }
 
 void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
-                              enum st20_fmt fmt, uint width, uint height,
-                              uint payloadType, enum st_fps fps, bool interlaced,
-                              enum st20_packing packing) {
+                               enum st20_fmt fmt, uint width, uint height,
+                               uint payloadType, enum st_fps fps, bool interlaced,
+                               enum st20_packing packing) {
   memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
   sessionsOpsTx.name = "st20p_noctx_test_tx";
   sessionsOpsTx.priv = ctx;
@@ -98,9 +100,9 @@ void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
   sessionsOpsRx.interlaced = interlaced;
   sessionsOpsRx.framebuff_cnt = framebufferQueueSize;
 
-
   nsFrameTime = st_frame_rate(fps);
-  if (nsFrameTime == 0) nsFrameTime = NS_PER_S / 25;
+  if (nsFrameTime == 0)
+    nsFrameTime = NS_PER_S / 25;
   else
     nsFrameTime = NS_PER_S / nsFrameTime;
 }
@@ -246,7 +248,7 @@ void St20pHandler::startSession(
  * SESSION_SKIP_PORT to skip.
  */
 void St20pHandler::setSessionPorts(int txPortIdx, int rxPortIdx, int txPortRedundantIdx,
-                                  int rxPortRedundantIdx) {
+                                   int rxPortRedundantIdx) {
   setSessionPortsTx(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
   setSessionPortsRx(&(this->sessionsOpsRx.port), rxPortIdx, rxPortRedundantIdx);
 }

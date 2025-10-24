@@ -13,38 +13,38 @@ cd "${script_folder}" || exit 1
 BUILD_PATH="${script_folder}/../../../build/tests/KahawaiTest"
 
 if [ ! -f "$BUILD_PATH" ]; then
-    echo "Error: KahawaiTest binary not found at $BUILD_PATH"
-    echo "Please build the project first"
-    exit 1
+	echo "Error: KahawaiTest binary not found at $BUILD_PATH"
+	echo "Please build the project first"
+	exit 1
 fi
 
 if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ] || [ -z "$TEST_PORT_3" ] || [ -z "$TEST_PORT_4" ]; then
-    echo "Error: One or more TEST_PORT_X environment variables are not set"
-    echo "TEST_PORT_1=$TEST_PORT_1"
-    echo "TEST_PORT_2=$TEST_PORT_2"
-    echo "TEST_PORT_3=$TEST_PORT_3"
-    echo "TEST_PORT_4=$TEST_PORT_4"
-    exit 1
+	echo "Error: One or more TEST_PORT_X environment variables are not set"
+	echo "TEST_PORT_1=$TEST_PORT_1"
+	echo "TEST_PORT_2=$TEST_PORT_2"
+	echo "TEST_PORT_3=$TEST_PORT_3"
+	echo "TEST_PORT_4=$TEST_PORT_4"
+	exit 1
 fi
 
-test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.*" 2>/dev/null | \
-    awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
+test_names=$("$BUILD_PATH" --gtest_list_tests --no_ctx --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" --gtest_filter="NoCtxTest.*" 2>/dev/null |
+	awk '/^  [a-zA-Z]/ {gsub(/^  /, ""); print}')
 
 set -e
 while IFS= read -r test_name || [ -n "$test_name" ]; do
-    if [[ -z "$test_name" || "$test_name" == \#* ]]; then
-        continue
-    fi
-    echo "Checking test: NoCtxTest.$test_name"
+	if [[ -z "$test_name" || "$test_name" == \#* ]]; then
+		continue
+	fi
+	echo "Checking test: NoCtxTest.$test_name"
 
-    if ! "$BUILD_PATH" \
-        --auto_start_stop \
-        --port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" \
-        --gtest_filter="NoCtxTest.$test_name" \
-        --no_ctx_tests; then
-        echo "Test NoCtxTest.$test_name passed"
-    else
-        echo "Test NoCtxTestTest.$test_name failed with exit code $?"
-        exit 1
-    fi
+	if ! "$BUILD_PATH" \
+		--auto_start_stop \
+		--port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" \
+		--gtest_filter="NoCtxTest.$test_name" \
+		--no_ctx_tests; then
+		echo "Test NoCtxTest.$test_name passed"
+	else
+		echo "Test NoCtxTestTest.$test_name failed with exit code $?"
+		exit 1
+	fi
 done < <(echo "$test_names")

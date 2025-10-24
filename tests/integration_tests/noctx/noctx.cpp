@@ -18,9 +18,10 @@ void NoCtxTest::SetUp() {
 
   if (ctx->handle) {
     throw std::runtime_error(
-      "NoCtxTest::SetUp: ctx->handle is already initialized!\n"
-      "This likely means the global context was not properly reset between tests.\n"
-      "To run NOCTX tests, please use the '--no_ctx_tests' option to ensure a clean context.");
+        "NoCtxTest::SetUp: ctx->handle is already initialized!\n"
+        "This likely means the global context was not properly reset between tests.\n"
+        "To run NOCTX tests, please use the '--no_ctx_tests' option to ensure a clean "
+        "context.");
   }
 
   ctx->level = ST_TEST_LEVEL_MANDATORY;
@@ -88,7 +89,7 @@ uint64_t NoCtxTest::TestPtpSourceSinceEpoch(void* priv) {
     uint64_t temp_adjustment = (uint64_t)spec_adjustment_to_epoch.tv_sec * NS_PER_S +
                                spec_adjustment_to_epoch.tv_nsec;
 
-      adjustment_ns.store(temp_adjustment);
+    adjustment_ns.store(temp_adjustment);
   }
 
   clock_gettime(CLOCK_MONOTONIC, &spec);
