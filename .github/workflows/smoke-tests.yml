@@ -32,13 +32,15 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           pip install -r requirements.txt
-      - name: Replace secrets in example config files
+      - name: Generate test framework config files
+        working-directory: tests/validation/configs
         run: |
-          sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
-          sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s+KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config.yaml
+          python3 gen_config.py \
+            --build ${{ secrets.RUNNER_BUILD }} \
+            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
+            --ip_address 127.0.0.1 \
+            --username ${{ secrets.RUNNER_USERNAME }} \
+            --key_path ${{ secrets.RUNNER_KEY_PATH }}
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
           eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
