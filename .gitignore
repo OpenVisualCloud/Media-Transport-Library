@@ -85,7 +85,8 @@ mtl_system_status_*
 *.pcm
 *.wav
 script/ice-*
-script/dpdk
+script/dpdk-*
+script/*.zip*
 script/xdp-tools
 
 #Generated documentation
