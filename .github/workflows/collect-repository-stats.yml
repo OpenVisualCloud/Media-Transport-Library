@@ -14,21 +14,125 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
       
+      - name: Decrypt Existing Stats
+        env:
+          STATS_ENCRYPTION_KEY: ${{ secrets.STATS_ENCRYPTION_KEY }}
+        run: |
+          # Decrypt existing files if they exist
+          if [ -f "stats/clones.json.enc" ]; then
+            echo "Decrypting clones.json..."
+            openssl enc -aes-256-cbc -d -pbkdf2 -in stats/clones.json.enc -out stats/clones.json -k "$STATS_ENCRYPTION_KEY"
+          else
+            echo "No encrypted clones.json found, starting fresh"
+            echo '{"count": 0, "uniques": 0, "clones": []}' > stats/clones.json
+          fi
+          
+          if [ -f "stats/views.json.enc" ]; then
+            echo "Decrypting views.json..."
+            openssl enc -aes-256-cbc -d -pbkdf2 -in stats/views.json.enc -out stats/views.json -k "$STATS_ENCRYPTION_KEY"
+          else
+            echo "No encrypted views.json found, starting fresh"
+            echo '{"count": 0, "uniques": 0, "views": []}' > stats/views.json
+          fi
+      
       - name: Collect Traffic Data
         env:
           GH_TOKEN: ${{ secrets.REPO_STATS_TOKEN}}
         run: |
           echo "Collecting stats at $(date)"
           
-          # Collect clones
-          curl -v -H "Authorization: token $GH_TOKEN" \
+          # Collect new clones data
+          curl -s -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/traffic/clones \
-            > stats/clones_$(date +%Y%m%d).json
+            > /tmp/new_clones.json
           
-          # Collect views  
-          curl -v -H "Authorization: token $GH_TOKEN" \
+          # Collect new views data
+          curl -s -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/${{ github.repository }}/traffic/views \
-            > stats/views_$(date +%Y%m%d).json
+            > /tmp/new_views.json
+          
+          # Merge clones data
+          python3 << 'PYTHON'
+          import json
+          from collections import defaultdict
+          
+          # Read existing consolidated data
+          try:
+              with open('stats/clones.json', 'r') as f:
+                  existing = json.load(f)
+                  existing_clones = {entry['timestamp']: entry for entry in existing['clones']}
+          except FileNotFoundError:
+              existing_clones = {}
+          
+          # Read new data
+          with open('/tmp/new_clones.json', 'r') as f:
+              new_data = json.load(f)
+          
+          # Merge - new data overwrites existing for same timestamps
+          for entry in new_data['clones']:
+              existing_clones[entry['timestamp']] = entry
+          
+          # Create consolidated output
+          clones_array = [existing_clones[ts] for ts in sorted(existing_clones.keys())]
+          output = {
+              'count': sum(e['count'] for e in clones_array),
+              'uniques': max(e['uniques'] for e in clones_array) if clones_array else 0,
+              'clones': clones_array
+          }
+          
+          with open('stats/clones.json', 'w') as f:
+              json.dump(output, f, indent=2)
+          
+          print(f"Updated clones.json with {len(clones_array)} daily entries")
+          PYTHON
+          
+          # Merge views data
+          python3 << 'PYTHON'
+          import json
+          from collections import defaultdict
+          
+          # Read existing consolidated data
+          try:
+              with open('stats/views.json', 'r') as f:
+                  existing = json.load(f)
+                  existing_views = {entry['timestamp']: entry for entry in existing['views']}
+          except FileNotFoundError:
+              existing_views = {}
+          
+          # Read new data
+          with open('/tmp/new_views.json', 'r') as f:
+              new_data = json.load(f)
+          
+          # Merge - new data overwrites existing for same timestamps
+          for entry in new_data['views']:
+              existing_views[entry['timestamp']] = entry
+          
+          # Create consolidated output
+          views_array = [existing_views[ts] for ts in sorted(existing_views.keys())]
+          output = {
+              'count': sum(e['count'] for e in views_array),
+              'uniques': max(e['uniques'] for e in views_array) if views_array else 0,
+              'views': views_array
+          }
+          
+          with open('stats/views.json', 'w') as f:
+              json.dump(output, f, indent=2)
+          
+          print(f"Updated views.json with {len(views_array)} daily entries")
+          PYTHON
+      
+      - name: Encrypt Stats Files
+        env:
+          STATS_ENCRYPTION_KEY: ${{ secrets.STATS_ENCRYPTION_KEY }}
+        run: |
+          echo "Encrypting stats files..."
+          openssl enc -aes-256-cbc -pbkdf2 -in stats/clones.json -out stats/clones.json.enc -k "$STATS_ENCRYPTION_KEY"
+          openssl enc -aes-256-cbc -pbkdf2 -in stats/views.json -out stats/views.json.enc -k "$STATS_ENCRYPTION_KEY"
+          
+          # Remove unencrypted files
+          rm stats/clones.json stats/views.json
+          
+          echo "Encryption complete"
       
       - name: Commit Stats
         run: |
@@ -38,7 +142,7 @@ jobs:
           echo "Git status before add:"
           git status
           
-          git add -f stats/*.json
+          git add -f stats/*.json.enc
           
           echo "Git status after add:"
           git status

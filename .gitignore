@@ -109,5 +109,5 @@ swig
 openh264*
 level-zero-*
 
-# Allow JSON files in stats directory for repository statistics
-!stats/*.json
+# Allow encrypted JSON files in stats directory for repository statistics
+!stats/*.json.enc
