@@ -116,8 +116,11 @@ class St30pRedundantLatency : public St30pUserTimestamp {
   uint startingTimeInMs;
 
  public:
-  St30pRedundantLatency(uint latency = 30, St30pHandler* parentHandler = nullptr, int startingTime = 100)
-      : St30pUserTimestamp(parentHandler), latencyInMs(latency), startingTimeInMs(startingTime) {
+  St30pRedundantLatency(uint latency = 30, St30pHandler* parentHandler = nullptr,
+                        int startingTime = 100)
+      : St30pUserTimestamp(parentHandler),
+        latencyInMs(latency),
+        startingTimeInMs(startingTime) {
     enable_tx_modifier = true;
     enable_rx_modifier = true;
 
@@ -312,8 +315,9 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   st30_rx_user_stats stats;
   st30p_rx_get_session_stats(st30pHandlers[sessionRxSideId]->sessionsHandleRx, &stats);
   st30_tx_user_stats statsTxRedundant;
-  st30p_tx_get_session_stats(st30pHandlers[sessionTxRedundantLatencySideId]->sessionsHandleTx,
-                             &statsTxRedundant);
+  st30p_tx_get_session_stats(
+      st30pHandlers[sessionTxRedundantLatencySideId]->sessionsHandleTx,
+      &statsTxRedundant);
 
   uint64_t packetsSend = statsTxRedundant.common.port[0].packets;
   uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;

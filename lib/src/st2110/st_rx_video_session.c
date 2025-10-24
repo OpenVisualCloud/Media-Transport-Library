@@ -901,7 +901,8 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
     double reactive = 1080.0 / 1125.0;
     s->trs = s->frame_time * reactive / meta->pkts_total;
   } else {
-    dbg("%s(%d): frame_recv_size %" PRIu64 ", frame_total_size %" PRIu64 ", tmstamp %ld\n",
+    dbg("%s(%d): frame_recv_size %" PRIu64 ", frame_total_size %" PRIu64
+        ", tmstamp %ld\n",
         __func__, s->idx, meta->frame_recv_size, meta->frame_total_size, slot->tmstamp);
     MT_USDT_ST20_RX_FRAME_INCOMPLETE(s->parent->idx, s->idx, frame->idx, slot->tmstamp,
                                      meta->frame_recv_size, s->st20_frame_size);
@@ -1109,7 +1110,6 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
     }
   }
 
-
   /* if the slot timestamp is in the past just drop it */
   bool timestamp_is_in_the_past = true;
   for (i = 0; i < s->slot_max; i++) {
@@ -1127,7 +1127,6 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
 
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
-
 
   if (s->dma_dev && !mt_dma_empty(s->dma_dev)) {
     /* still in progress of previous frame, drop current pkt */

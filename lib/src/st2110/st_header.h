@@ -1016,7 +1016,7 @@ struct st_rx_audio_session_impl {
   uint32_t st30_pkt_size; /* size for each pkt which include the header */
   int st30_total_pkts;    /* total pkts in one frame */
   int st30_pkt_idx;       /* pkt index in current frame */
-  int latest_seq_id[MTL_SESSION_PORT_MAX];      /* latest seq id */
+  int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
   uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
   int64_t tmstamp;

@@ -131,8 +131,10 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   }
   /* 0b00: progressive or not specified, do nothing */
 
-  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1)) s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
-  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1)) s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1))
+    s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1))
+    s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
 
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
@@ -141,12 +143,13 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
 
-  /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to get 
-  multiple packets with the same timestamp)) */
-  if ((mt_seq32_greater(s->tmstamp, tmstamp)) || st_rx_seq_redundant_drop(seq_id, s->latest_seq_id, s_port, s->ops.num_port)) {
-
-    if (mt_seq32_greater(s->tmstamp, tmstamp)){
-      dbg ("%s(%d,%d), drop as pkt tmstamp %u is old\n", __func__, s->idx, s_port, tmstamp);
+  /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
+  get multiple packets with the same timestamp)) */
+  if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
+      st_rx_seq_redundant_drop(seq_id, s->latest_seq_id, s_port, s->ops.num_port)) {
+    if (mt_seq32_greater(s->tmstamp, tmstamp)) {
+      dbg("%s(%d,%d), drop as pkt tmstamp %u is old\n", __func__, s->idx, s_port,
+          tmstamp);
     } else {
       dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
     }

@@ -296,15 +296,18 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
   /* all packets need to have increasing tmstamp */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
-    dbg ("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__, s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
+    dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
+        s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
     s->latest_seq_id[s_port] = seq_id;
     return -EIO;
   }
   s->tmstamp = tmstamp;
 
-  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1)) s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
-  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1)) s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1))
+    s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1))
+    s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
 
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
@@ -414,7 +417,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   size_t hdr_offset =
       sizeof(struct st_rfc3550_audio_hdr) - sizeof(struct st_rfc3550_rtp_hdr);
   struct st_rfc3550_rtp_hdr* rtp =
-     rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
+      rte_pktmbuf_mtod_offset(mbuf, struct st_rfc3550_rtp_hdr*, hdr_offset);
   MTL_MAY_UNUSED(impl);
   MTL_MAY_UNUSED(s_port);
 
@@ -492,7 +495,7 @@ static int rv_stop_pcap_dump(struct st_rx_audio_session_impl* s) {
   for (int s_port = 0; s_port < s->ops.num_port; s_port++) {
     ra_stop_pcap(s, s_port);
   }
-    return 0;
+  return 0;
 }
 
 static int ra_start_pcap(struct st_rx_audio_session_impl* s, enum mtl_session_port s_port,
@@ -517,7 +520,7 @@ static int ra_start_pcap(struct st_rx_audio_session_impl* s, enum mtl_session_po
   pcap->pcap = mt_pcap_open(s->mgr->parent, port, fd);
   if (!pcap->pcap) {
     err("%s(%d,%d), failed to open pcap file %s\n", __func__, idx, s_port,
-          pcap->file_name);
+        pcap->file_name);
     close(fd);
     return -EIO;
   }
