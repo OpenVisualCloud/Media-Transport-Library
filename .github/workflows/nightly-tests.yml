@@ -60,6 +60,13 @@ jobs:
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         run: |
           tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
+      - name: run gtest bare metal
+        env:
+          NIGHTLY: 0
+          EXIT_ON_FAILURE: 0
+          LOG_FILE: "${{ github.workspace }}/gtest.log"
+        run: |
+          sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
       - name: "upload report"
         if: always()
         id: upload-report
@@ -68,3 +75,4 @@ jobs:
           name: nightly-tests-report
           path: |
             report.html
+            "${{ github.workspace }}/gtest.log"

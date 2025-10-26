@@ -685,9 +685,9 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   st_test_jxs_timeout_interval(ctx, para->timeout_interval);
   st_test_jxs_timeout_ms(ctx, para->timeout_ms);
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   /* return if level lower than global */

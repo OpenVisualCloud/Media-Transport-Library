@@ -1,0 +1,24 @@
+{
+    "nb_udp_sockets" : "32",
+    "nb_nic_queues" : "32",
+    "nic_shared_queues": false,
+    "udp_lcore": false,
+    "nic_queue_rate_limit_g": "2",
+    "log_level" : "error",
+    "rx_ring_count" : "1024",
+    "rx_poll_sleep_us" : "10",
+    "wake_thresh_count" : "32",
+    "wake_timeout_us" : "1000",
+    "interfaces": [
+        {
+            "port": "REPLACE_BY_CICD_TEST_PORT_1",
+            "ip": "192.168.2.80",
+            "netmask": "255.255.255.0"
+        },
+        {
+            "port": "REPLACE_BY_CICD_TEST_PORT_2",
+            "ip": "192.168.2.81",
+            "netmask": "255.255.255.0"
+        }
+    ]
+}

@@ -582,13 +582,13 @@ static void st10_timestamp_test(uint32_t sampling_rate) {
   EXPECT_NEAR(ns_delta, expect_delta, expect_delta * 0.5);
 }
 
-TEST(Misc, st10_timestamp) {
+TEST(Misc, St10_timestamp) {
   st10_timestamp_test(90 * 1000);
   st10_timestamp_test(48 * 1000);
   st10_timestamp_test(96 * 1000);
 }
 
-static int run_all_context_test(int argc, char** argv, struct st_tests_context* ctx) {
+static int run_all_test(int argc, char** argv, struct st_tests_context* ctx) {
   bool link_flap_wa = false;
   int ret;
 
@@ -663,7 +663,7 @@ bool filter_includes_no_ctx_tests(const std::string& filter) {
 
 GTEST_API_ int main(int argc, char** argv) {
   auto ctx = (struct st_tests_context*)st_test_ctx();
-  int ret_ctx = 1, ret_no_ctx = 1;
+  int ret = 1;
 
   ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
   if (!ctx) {
@@ -676,9 +676,9 @@ GTEST_API_ int main(int argc, char** argv) {
   test_parse_args(ctx, &ctx->para, argc, argv);
   test_random_ip(ctx);
   g_test_ctx = ctx;
-  ret_ctx = run_all_context_test(argc, argv, ctx);
+  ret = run_all_test(argc, argv, ctx);
 
-  return ret_ctx || ret_no_ctx;
+  return ret;
 }
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx) {

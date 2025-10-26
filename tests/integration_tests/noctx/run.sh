@@ -37,7 +37,7 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 	fi
 	echo "Checking test: NoCtxTest.$test_name"
 
-	if ! "$BUILD_PATH" \
+	if "$BUILD_PATH" \
 		--auto_start_stop \
 		--port_list="${TEST_PORT_1},${TEST_PORT_2},${TEST_PORT_3},${TEST_PORT_4}" \
 		--gtest_filter="NoCtxTest.$test_name" \
