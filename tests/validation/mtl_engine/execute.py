@@ -67,11 +67,13 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
     else:
         proc.terminate()
 
+    time.sleep(5)
+
     for _ in range(5):
         result = proc.poll()
         if result is not None:
             return result
-        time.sleep(1)  # wait a little longer for proc to terminate
+        time.sleep(5)  # wait a little longer for proc to terminate
 
     # failed to terminate proc, so kill it
     proc.kill()
@@ -79,7 +81,7 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
         result = proc.poll()
         if result is not None:
             return result
-        time.sleep(1)  # give system more time to kill proc
+        time.sleep(5)  # give system more time to kill proc
 
     # failed to kill proc
     if result is None:
@@ -191,6 +193,19 @@ def waitall(aps=List[AsyncProcess]):
     return
 
 
+def is_process_running(process):
+    logger.debug(f"Checking if process is running: {process}")
+    if hasattr(process, "running") and callable(getattr(process, "running")):
+        try:
+            result = process.running()
+            logger.debug(f"process.running(): {result}")
+            return result
+        except Exception as e:
+            logger.debug(f"Exception calling process.running(): {e}")
+            return False
+    return None
+
+
 def run(
     command: str,
     cwd: str = None,
@@ -199,38 +214,11 @@ def run(
     host=None,
     env: dict = None,
     background: bool = False,
-    enable_sudo: bool = False,
 ) -> any:
     if testcmd:
         logger.log(level=TESTCMD_LVL, msg=f"Test command: {command}")
     else:
         logger.debug(f"Run command: {command}")
-
-    # if host is None:
-    #     # Local execution
-    #     try:
-    #         cp = subprocess.run(
-    #             "exec " + command,
-    #             stdout=subprocess.PIPE,
-    #             stderr=subprocess.STDOUT,
-    #             timeout=timeout,
-    #             shell=True,
-    #             text=True,
-    #             cwd=cwd,
-    #             env=env,
-    #         )
-    #     except subprocess.TimeoutExpired:
-    #         logger.debug("Timeout expired")
-    #         raise
-
-    #     for line in cp.stdout.splitlines():
-    #         logger.debug(line.rstrip())
-    #     logger.debug(f"RC: {cp.returncode}")
-    #     return cp
-    # else:
-    # Remote execution
-    # if enable_sudo:
-    #     host.connection.enable_sudo()
 
     process = host.connection.start_process(
         command,

@@ -1,0 +1,35 @@
+{
+    "interfaces": [
+        {
+            "name": "0000:af:01.0",
+            "ip": "192.168.30.10"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "dip": [
+                "239.1.1.1"
+            ],
+            "interface": [
+                0
+            ],
+            "st20p": [
+                {
+                    "replicas": 1,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "./yuv422p10le_1080p.yuv",
+                    "user_timestamp": true,
+                    "user_pacing": true
+                }
+            ],
+            "user_time_offset" : 20000000
+        }
+    ]
+}

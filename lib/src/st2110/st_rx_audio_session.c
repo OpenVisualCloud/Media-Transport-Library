@@ -269,6 +269,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
     return -EINVAL;
   }
+
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
@@ -287,6 +288,10 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     return -EINVAL;
   }
 
+  if (s->st30_pkt_idx == 0) {
+    s->first_pkt_rtp_ts = tmstamp;
+  }
+
   /* set first seq_id - 1 */
   if (unlikely(s->latest_seq_id == -1)) s->latest_seq_id = seq_id - 1;
   /* drop old packet */
@@ -301,8 +306,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
-    info("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
-         s->latest_seq_id);
+    dbg("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
+        s->latest_seq_id);
   }
   /* update seq id */
   s->latest_seq_id = seq_id;
@@ -359,15 +364,15 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     }
 
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    meta->timestamp = tmstamp;
+    meta->timestamp = s->first_pkt_rtp_ts;
     meta->fmt = ops->fmt;
     meta->sampling = ops->sampling;
     meta->channel = ops->channel;
-    meta->rtp_timestamp = tmstamp;
+    meta->rtp_timestamp = s->first_pkt_rtp_ts;
     meta->frame_recv_size = s->frame_recv_size;
 
-    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr, tmstamp,
-                                    meta->frame_recv_size);
+    MT_USDT_ST30_RX_FRAME_AVAILABLE(s->mgr->idx, s->idx, frame->idx, frame->addr,
+                                    s->first_pkt_rtp_ts, meta->frame_recv_size);
     /* check if dump USDT enabled */
     if (MT_USDT_ST30_RX_FRAME_DUMP_ENABLED()) {
       rx_audio_session_usdt_dump_frame(s, frame);

@@ -8,6 +8,7 @@ import pytest
 from mtl_engine import GstreamerApp
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
 @pytest.mark.parametrize("audio_channel", [1, 2])
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
@@ -74,11 +75,6 @@ def test_audio_format_dual(
         rx_sampling=audio_rate,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
-    capture_cfg["test_name"] = (
-        f"test_audio_format_dual_{audio_format}_{audio_channel}_{audio_rate}"
-    )
-
     try:
         result = GstreamerApp.execute_test(
             build=build,
@@ -91,7 +87,6 @@ def test_audio_format_dual(
             rx_host=rx_host,
             tx_first=False,
             sleep_interval=1,
-            capture_cfg=capture_cfg,
         )
 
         assert (

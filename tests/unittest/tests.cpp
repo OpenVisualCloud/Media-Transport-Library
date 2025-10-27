@@ -2,7 +2,7 @@
  * Copyright(c) 2022 Intel Corporation
  */
 
-#include "tests.h"
+#include "tests.hpp"
 
 #include <getopt.h>
 #ifndef WINDOWSENV
@@ -14,6 +14,7 @@ enum test_args_cmd {
   TEST_ARG_UNKNOWN = 0,
   TEST_ARG_P_PORT = 0x100, /* start from end of ascii */
   TEST_ARG_R_PORT,
+  TEST_ARG_PORT_LIST,
   TEST_ARG_LCORES,
   TEST_ARG_LOG_LEVEL,
   TEST_ARG_SCH_SESSION_QUOTA,
@@ -48,11 +49,13 @@ enum test_args_cmd {
   TEST_ARG_MCAST_ONLY,
   TEST_ARG_ALLOW_ACROSS_NUMA_CORE,
   TEST_ARG_AUDIO_TX_PACING,
+  TEST_ARG_NOCTX_TESTS
 };
 
 static struct option test_args_options[] = {
     {"p_port", required_argument, 0, TEST_ARG_P_PORT},
     {"r_port", required_argument, 0, TEST_ARG_R_PORT},
+    {"port_list", required_argument, 0, TEST_ARG_PORT_LIST},
 
     {"lcores", required_argument, 0, TEST_ARG_LCORES},
     {"log_level", required_argument, 0, TEST_ARG_LOG_LEVEL},
@@ -85,6 +88,7 @@ static struct option test_args_options[] = {
     {"mcast_only", no_argument, 0, TEST_ARG_MCAST_ONLY},
     {"allow_across_numa_core", no_argument, 0, TEST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"audio_tx_pacing", required_argument, 0, TEST_ARG_AUDIO_TX_PACING},
+    {"no_ctx_tests", no_argument, 0, TEST_ARG_NOCTX_TESTS},
 
     {0, 0, 0, 0}};
 
@@ -110,6 +114,21 @@ static int test_args_dma_dev(struct mtl_init_params* p, const char* in_dev) {
   return 0;
 }
 
+void test_parse_port_list(struct mtl_init_params* p, const char* in_list) {
+  if (!in_list) return;
+  char list[MTL_PORT_MAX * MTL_PORT_MAX_LEN] = {0};
+  snprintf(list, sizeof(list) - 1, "%s", in_list);
+
+  err("%s, port list %s\n", __func__, list);
+  char* next_port = strtok(list, ",");
+  while (next_port && (p->num_ports < MTL_PORT_MAX)) {
+    err("next_port: %s\n", next_port);
+    snprintf(p->port[p->num_ports], MTL_PORT_MAX_LEN - 1, "%s", next_port);
+    p->num_ports++;
+    next_port = strtok(NULL, ",");
+  }
+}
+
 static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params* p,
                            int argc, char** argv) {
   int cmd = -1, opt_idx = 0;
@@ -128,6 +147,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
       case TEST_ARG_R_PORT:
         snprintf(p->port[MTL_PORT_R], sizeof(p->port[MTL_PORT_R]), "%s", optarg);
         p->num_ports++;
+        break;
+      case TEST_ARG_PORT_LIST:
+        test_parse_port_list(p, optarg);
         break;
       case TEST_ARG_LCORES:
         p->lcores = optarg;
@@ -284,6 +306,9 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
         else
           err("%s, unknow audio tx pacing %s\n", __func__, optarg);
         break;
+      case TEST_ARG_NOCTX_TESTS:
+        ctx->noctx_tests = true;
+        break;
       default:
         break;
     }
@@ -295,37 +320,39 @@ static int test_parse_args(struct st_tests_context* ctx, struct mtl_init_params*
 static void test_random_ip(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
   uint8_t* p_ip = mtl_p_sip_addr(p);
-  uint8_t* r_ip = mtl_r_sip_addr(p);
-
-  srand(st_test_get_monotonic_time());
-
   p_ip[0] = 197;
   p_ip[1] = rand() % 0xFF;
   p_ip[2] = rand() % 0xFF;
-  p_ip[3] = rand() % 0xFF;
-  r_ip[0] = p_ip[0];
-  r_ip[1] = p_ip[1];
-  r_ip[2] = p_ip[2];
-  r_ip[3] = p_ip[3] + 1;
+  p_ip[3] = 1;
 
-  p_ip = ctx->mcast_ip_addr[MTL_PORT_P];
-  r_ip = ctx->mcast_ip_addr[MTL_PORT_R];
+  /* add interfaces ip addresses */
+  for (int i = MTL_PORT_R; p->port[i][0] != '\0'; i++) {
+    p->sip_addr[i][0] = p_ip[0];
+    p->sip_addr[i][1] = p_ip[1];
+    p->sip_addr[i][2] = p_ip[2];
+    p->sip_addr[i][3] = p_ip[0] + i;
+  }
 
-  p_ip[0] = 239;
-  p_ip[1] = rand() % 0xFF;
-  p_ip[2] = rand() % 0xFF;
-  p_ip[3] = rand() % 0xFF;
-  r_ip[0] = p_ip[0];
-  r_ip[1] = p_ip[1];
-  r_ip[2] = p_ip[2];
-  r_ip[3] = p_ip[3] + 1;
+  srand(st_test_get_monotonic_time());
+
+  uint8_t* p_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_P];
+  uint8_t* r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_R];
+
+  p_ip_multicast[0] = 239;
+  p_ip_multicast[1] = rand() % 0xFF;
+  p_ip_multicast[2] = rand() % 0xFF;
+  p_ip_multicast[3] = rand() % 0xFF;
+  r_ip_multicast[0] = p_ip_multicast[0];
+  r_ip_multicast[1] = p_ip_multicast[1];
+  r_ip_multicast[2] = p_ip_multicast[2];
+  r_ip_multicast[3] = p_ip_multicast[3] + 1;
 
   if (ctx->mcast_only) {
-    r_ip = ctx->mcast_ip_addr[MTL_PORT_2];
-    r_ip[0] = p_ip[0];
-    r_ip[1] = p_ip[1];
-    r_ip[2] = p_ip[2];
-    r_ip[3] = p_ip[3] + 2;
+    r_ip_multicast = ctx->mcast_ip_addr[MTL_PORT_2];
+    r_ip_multicast[0] = p_ip_multicast[0];
+    r_ip_multicast[1] = p_ip_multicast[1];
+    r_ip_multicast[2] = p_ip_multicast[2];
+    r_ip_multicast[3] = p_ip_multicast[3] + 2;
   }
 }
 
@@ -352,21 +379,8 @@ static uint64_t test_ptp_from_real_time(void* priv) {
 
 static void test_ctx_init(struct st_tests_context* ctx) {
   struct mtl_init_params* p = &ctx->para;
-  int cpus_per_soc = 4;
-  char* lcores_list = ctx->lcores_list;
-  int pos = 0;
-#ifndef WINDOWSENV
-  int numa_nodes = 0;
-  int max_cpus = 0;
-#endif
 
   ctx->level = ST_TEST_LEVEL_MANDATORY;
-#ifndef WINDOWSENV
-  if (numa_available() >= 0) {
-    numa_nodes = numa_max_node() + 1;
-    max_cpus = numa_num_task_cpus();
-  }
-#endif
   memset(p, 0x0, sizeof(*p));
   p->flags = MTL_FLAG_BIND_NUMA; /* default bind to numa */
   p->flags |= MTL_FLAG_RANDOM_SRC_PORT;
@@ -374,31 +388,14 @@ static void test_ctx_init(struct st_tests_context* ctx) {
   p->log_level = MTL_LOG_LEVEL_ERR;
   p->priv = ctx;
   p->ptp_get_time_fn = test_ptp_from_real_time;
-  p->tx_queues_cnt[MTL_PORT_P] = 16;
-  p->tx_queues_cnt[MTL_PORT_R] = 16;
-  p->rx_queues_cnt[MTL_PORT_P] = 16;
-  p->rx_queues_cnt[MTL_PORT_R] = 16;
-
-  /* build default lcore list */
-  pos += snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, "0-%d",
-                  cpus_per_soc - 1);
-#ifndef WINDOWSENV
-  /* build lcore list for other numa, e.g 0-2,28,29,30 for a two socket system */
-  for (int numa = 1; numa < numa_nodes; numa++) {
-    int cpus_add = 0;
-    for (int cpu = 0; cpu < max_cpus; cpu++) {
-      if (numa_node_of_cpu(cpu) == numa) {
-        int n = snprintf(lcores_list + pos, TEST_LCORE_LIST_MAX_LEN - pos, ",%d", cpu);
-        if (n < 0 || n >= (TEST_LCORE_LIST_MAX_LEN - pos)) break;
-        pos += n;
-        cpus_add++;
-        if (cpus_add >= cpus_per_soc) break;
-      }
-    }
+  for (int i = 0; i < MTL_PORT_MAX; i++) {
+    p->tx_queues_cnt[i] = 8;
+    p->rx_queues_cnt[i] = 8;
   }
-  info("lcores_list: %s, max_cpus %d\n", ctx->lcores_list, max_cpus);
-#endif
-  p->lcores = ctx->lcores_list;
+
+  /* by deafult don't limit cores */
+  memset(ctx->lcores_list, 0, TEST_LCORE_LIST_MAX_LEN);
+  p->lcores = NULL;
 }
 
 static void test_ctx_uinit(struct st_tests_context* ctx) {
@@ -591,23 +588,9 @@ TEST(Misc, st10_timestamp) {
   st10_timestamp_test(96 * 1000);
 }
 
-GTEST_API_ int main(int argc, char** argv) {
-  struct st_tests_context* ctx;
-  int ret;
+static int run_all_context_test(int argc, char** argv, struct st_tests_context* ctx) {
   bool link_flap_wa = false;
-
-  testing::InitGoogleTest(&argc, argv);
-
-  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
-  if (!ctx) {
-    err("%s, ctx alloc fail\n", __func__);
-    return -ENOMEM;
-  }
-
-  test_ctx_init(ctx);
-  test_parse_args(ctx, &ctx->para, argc, argv);
-  test_random_ip(ctx);
-  g_test_ctx = ctx;
+  int ret;
 
   /* parse af xdp pmd info */
   for (int i = 0; i < ctx->para.num_ports; i++) {
@@ -622,10 +605,12 @@ GTEST_API_ int main(int argc, char** argv) {
     ctx->para.nb_rx_hdr_split_queues = 1;
   }
 
-  ctx->handle = mtl_init(&ctx->para);
-  if (!ctx->handle) {
-    err("%s, mtl_init fail\n", __func__);
-    return -EIO;
+  if (!ctx->noctx_tests) {
+    ctx->handle = mtl_init(&ctx->para);
+    if (!ctx->handle) {
+      err("%s, mtl_init fail\n", __func__);
+      return -EIO;
+    }
   }
 
   for (int i = 0; i < ctx->para.num_ports; i++) {
@@ -656,6 +641,7 @@ GTEST_API_ int main(int argc, char** argv) {
   uint64_t end_time_ns = st_test_get_monotonic_time();
   int time_s = (end_time_ns - start_time_ns) / NS_PER_S;
   int time_least = 10;
+
   if (link_flap_wa && (time_s < time_least)) {
     /* wa for linkFlapErrDisabled in the hub */
     info("%s, sleep %ds before disable the port\n", __func__, time_least - time_s);
@@ -664,9 +650,35 @@ GTEST_API_ int main(int argc, char** argv) {
 
   st_test_st22_plugin_unregister(ctx);
   st_test_convert_plugin_unregister(ctx);
-
   test_ctx_uinit(ctx);
+
   return ret;
+}
+
+bool filter_includes_no_ctx_tests(const std::string& filter) {
+  if (filter == "*" || filter.empty()) return true;
+  if (filter.rfind("NOCTX") != std::string::npos) return true;
+  return false;
+}
+
+GTEST_API_ int main(int argc, char** argv) {
+  auto ctx = (struct st_tests_context*)st_test_ctx();
+  int ret_ctx = 1, ret_no_ctx = 1;
+
+  ctx = (struct st_tests_context*)st_test_zmalloc(sizeof(*ctx));
+  if (!ctx) {
+    err("%s, ctx alloc fail\n", __func__);
+    return -ENOMEM;
+  }
+
+  testing::InitGoogleTest(&argc, argv);
+  test_ctx_init(ctx);
+  test_parse_args(ctx, &ctx->para, argc, argv);
+  test_random_ip(ctx);
+  g_test_ctx = ctx;
+  ret_ctx = run_all_context_test(argc, argv, ctx);
+
+  return ret_ctx || ret_no_ctx;
 }
 
 int tx_next_frame(void* priv, uint16_t* next_frame_idx) {

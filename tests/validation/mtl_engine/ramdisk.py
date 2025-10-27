@@ -11,16 +11,16 @@ class Ramdisk:
 
     def mount(self):
         try:
-            self._host.connection.execute_command(f"mkdir -p {self._mount_point}")
+            self._host.connection.execute_command(f"sudo mkdir -p {self._mount_point}")
             self._host.connection.execute_command(
-                f"mount -t ramfs -o size={self._size_gib}G ramfs {self._mount_point}"
+                f"sudo mount -t ramfs -o size={self._size_gib}G ramfs {self._mount_point}"
             )
         except ConnectionCalledProcessError as e:
             logging.log(level=logging.ERROR, msg=f"Failed to execute command: {e}")
 
     def unmount(self):
         try:
-            self._host.connection.execute_command(f"umount {self._mount_point}")
-            self._host.connection.execute_command(f"rmdir {self._mount_point}")
+            self._host.connection.execute_command(f"sudo umount {self._mount_point}")
+            self._host.connection.execute_command(f"sudo rmdir {self._mount_point}")
         except ConnectionCalledProcessError as e:
             logging.log(level=logging.ERROR, msg=f"Failed to execute command: {e}")

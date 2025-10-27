@@ -32,11 +32,6 @@ def test_rx_timing_video_video_format(
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_rx_timing_video_video_format_{video_format}"
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
@@ -57,5 +52,4 @@ def test_rx_timing_video_video_format(
         test_time=test_time,
         rx_timing_parser=True,
         host=host,
-        capture_cfg=capture_cfg,
     )

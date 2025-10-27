@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files
 
 
+@pytest.mark.xfail(reason="the test environment is not yet ready to run PTP tests")
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize(
     "video_format",
@@ -29,13 +30,6 @@ def test_ptp_video_format(
         pytest.skip("Skipping 4k tests with more than 3 replicas")
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_ptp_video_format_{test_mode}_{video_format}_replicas{replicas}"
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -60,5 +54,4 @@ def test_ptp_video_format(
         test_time=test_time,
         ptp=True,
         host=host,
-        capture_cfg=capture_cfg,
     )

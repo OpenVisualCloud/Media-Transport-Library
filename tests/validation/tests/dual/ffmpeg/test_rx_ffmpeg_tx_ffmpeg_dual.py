@@ -8,6 +8,7 @@ from mtl_engine import ffmpeg_app
 from mtl_engine.media_files import yuv_files
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize(
     "video_format, test_time_multipler,",
     [
@@ -38,11 +39,6 @@ def test_rx_ffmpeg_tx_ffmpeg_dual(
     tx_host = host_list[0]
     rx_host = host_list[1]
 
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_rx_ffmpeg_tx_ffmpeg_dual_{video_format}_{output_format}"
-    )
-
     video_file = yuv_files[video_format]
 
     ffmpeg_app.execute_dual_test(
@@ -55,5 +51,4 @@ def test_rx_ffmpeg_tx_ffmpeg_dual(
         pg_format=video_file["format"],
         video_url=os.path.join(media, video_file["filename"]),
         output_format=output_format,
-        capture_cfg=capture_cfg,
     )

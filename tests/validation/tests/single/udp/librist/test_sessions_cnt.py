@@ -32,8 +32,6 @@ def test_udp_sessions_cnt(
     prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_librist_udp_sessions_cnt_{sessions_cnt}"
 
     udp_app.execute_test_librist(
         build=build,
@@ -42,6 +40,5 @@ def test_udp_sessions_cnt(
         sleep_us=sleep_us,
         sleep_step=sleep_step,
         sessions_cnt=sessions_cnt,
-        capture_cfg=capture_cfg,
         host=host,
     )

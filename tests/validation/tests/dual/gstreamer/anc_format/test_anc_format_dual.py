@@ -8,6 +8,7 @@ import pytest
 from mtl_engine import GstreamerApp
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3])
@@ -65,11 +66,6 @@ def test_st40p_fps_size_dual(
         timeout=15,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
-    capture_cfg["test_name"] = (
-        f"test_st40p_fps_size_dual_{fps}_{file_size_kb}kb_{framebuff}"
-    )
-
     try:
         result = GstreamerApp.execute_test(
             build=build,
@@ -82,7 +78,6 @@ def test_st40p_fps_size_dual(
             rx_host=rx_host,
             sleep_interval=3,
             tx_first=False,
-            capture_cfg=capture_cfg,
         )
 
         assert (
