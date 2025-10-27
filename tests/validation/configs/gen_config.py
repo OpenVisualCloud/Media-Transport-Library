@@ -59,13 +59,45 @@ def gen_topology_config(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--build", type=str, required=True)
-    parser.add_argument("--mtl_path", type=str, required=True)
-    parser.add_argument("--ip_address", type=str, required=True)
-    parser.add_argument("--username", type=str, required=True)
-    parser.add_argument("--password", type=str, default="None")
-    parser.add_argument("--key_path", type=str, default="None")
+    parser = argparse.ArgumentParser(
+        description="Generate example test and topology configs for the test framework."
+    )
+    parser.add_argument(
+        "--build",
+        type=str,
+        required=True,
+        help="specify path to MTL directory",
+    )
+    parser.add_argument(
+        "--mtl_path",
+        type=str,
+        required=True,
+        help="specify path to MTL directory",
+    )
+    parser.add_argument(
+        "--ip_address",
+        type=str,
+        required=True,
+        help="specify IP address of the test host",
+    )
+    parser.add_argument(
+        "--username",
+        type=str,
+        required=True,
+        help="specify username for the test host",
+    )
+    parser.add_argument(
+        "--password",
+        type=str,
+        default="None",
+        help="specify password for the test host",
+    )
+    parser.add_argument(
+        "--key_path",
+        type=str,
+        default="None",
+        help="specify path to SSH private key for the test host",
+    )
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
