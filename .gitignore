@@ -108,3 +108,6 @@ tools/readpcap/readpcap_*
 swig
 openh264*
 level-zero-*
+
+# Allow encrypted JSON files in stats directory for repository statistics
+!stats/*.json.enc
