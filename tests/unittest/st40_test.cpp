@@ -5,7 +5,7 @@
 #include <thread>
 
 #include "log.h"
-#include "tests.h"
+#include "tests.hpp"
 
 #define ST40_TEST_PAYLOAD_TYPE (113)
 
@@ -479,8 +479,10 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
   if (level < ctx->level) return;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 
@@ -761,8 +763,10 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   struct st40_rx_ops ops_rx;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
   /* return if level lower than global */
@@ -1017,8 +1021,10 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
   struct st40_rx_ops ops_rx;
 
   if (ctx->para.num_ports != 2) {
-    info("%s, dual port should be enabled for tx test, one for tx and one for rx\n",
-         __func__);
+    info(
+        "%s, dual port should be enabled for tx test, one for tx and one for "
+        "rx\n",
+        __func__);
     return;
   }
 

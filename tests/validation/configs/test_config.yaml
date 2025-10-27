@@ -1,12 +1,6 @@
 build: MTL_PATH_PLACEHOLDER
 mtl_path: MTL_PATH_PLACEHOLDER
 media_path: /mnt/media
-capture_cfg:
-  enable: false
-  test_name: test_name
-  pcap_dir: /mnt/ramdisk/pcap
-  capture_time: 5
-  interface: null
 ramdisk:
   media: 
     mountpoint: /mnt/ramdisk/media
@@ -14,3 +8,12 @@ ramdisk:
   pcap:
     mountpoint: /mnt/ramdisk/pcap
     size_gib: 768
+compliance: false
+capture_cfg:
+  enable: false
+  pcap_dir: /mnt/ramdisk/pcap
+ebu_server:
+  ebu_ip: EBU_IP_PLACEHOLDER
+  user: EBU_LOGIN_PLACEHOLDER
+  password: EBU_PASS_PLACEHOLDER
+  proxy: false

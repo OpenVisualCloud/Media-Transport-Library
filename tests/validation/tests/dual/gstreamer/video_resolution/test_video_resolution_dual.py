@@ -81,9 +81,6 @@ def test_video_resolutions_dual(
         rx_queues=4,
     )
 
-    capture_cfg = dict(test_config.get("capture_cfg", {})) if test_config else {}
-    capture_cfg["test_name"] = f"test_video_resolutions_dual_{file}"
-
     try:
         result = GstreamerApp.execute_test(
             build=build,
@@ -95,7 +92,6 @@ def test_video_resolutions_dual(
             tx_host=tx_host,
             rx_host=rx_host,
             tx_first=False,
-            capture_cfg=capture_cfg,
         )
 
         assert (

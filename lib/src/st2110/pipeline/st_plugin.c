@@ -592,6 +592,11 @@ st22_decoder_dev_handle st22_decoder_register(mtl_handle mt,
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st22_decode_dev_impl* decode_dev;
 
+  if (!impl) {
+    err("%s, invalid impl\n", __func__);
+    return NULL;
+  }
+
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return NULL;
@@ -644,6 +649,11 @@ st20_converter_dev_handle st20_converter_register(mtl_handle mt,
   struct mtl_main_impl* impl = mt;
   struct st_plugin_mgr* mgr = st_get_plugins_mgr(impl);
   struct st20_convert_dev_impl* convert_dev;
+
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return NULL;
+  }
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);

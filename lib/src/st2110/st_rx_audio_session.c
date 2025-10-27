@@ -306,8 +306,8 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   }
   if (seq_id != (uint16_t)(s->latest_seq_id + 1)) {
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
-    info("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
-         s->latest_seq_id);
+    dbg("%s(%d,%d), ooo, seq now %u last %d\n", __func__, s->idx, s_port, seq_id,
+        s->latest_seq_id);
   }
   /* update seq id */
   s->latest_seq_id = seq_id;

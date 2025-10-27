@@ -175,12 +175,15 @@ function setup_ubuntu_install_dependencies() {
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN}" == "1" ]; then
 		echo "Installing FFMPEG dependencies"
 		apt install -y \
-			nasm
+			nasm \
+			unzip \
+			patch
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN}" == "1" ]; then
 		echo "Installing GStreamer dependencies"
 		apt install -y \
+			libunwind-dev \
 			gstreamer1.0-plugins-base \
 			libgstreamer-plugins-base1.0-dev \
 			gstreamer1.0-plugins-good \
