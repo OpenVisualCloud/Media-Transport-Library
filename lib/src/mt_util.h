@@ -115,20 +115,6 @@ static inline bool mt_seq32_greater(uint32_t a, uint32_t b) {
   return (diff & 0x80000000u) == 0 && diff != 0;
 }
 
-static inline bool st_rx_seq_redundant_drop(uint16_t new_id, int* sessions_redundant,
-                                            enum mtl_session_port s_port, int num_port) {
-  for (int i = MTL_SESSION_PORT_P; i < num_port; i++) {
-    if (i == s_port) continue;
-
-    uint16_t old_id = sessions_redundant[i];
-    if (mt_seq16_greater(old_id, new_id)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
                               enum mtl_port port, uint16_t ether_type, uint16_t len);
 

@@ -3394,14 +3394,22 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  if (s->stat_slices_received) {
-    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d slices %d\n", m_idx, idx,
-           s->ops_name, framerate, frames_received, s->stat_pkts_received,
-           s->stat_slices_received);
-  } else {
-    notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
-           s->ops_name, framerate, frames_received, s->stat_pkts_received);
+  char extra_info[128] = "";
+  if (s->stat_slices_received || s->stat_pkts_redundant_dropped) {
+    int offset = 0;
+    if (s->stat_slices_received) {
+      offset += snprintf(extra_info + offset, sizeof(extra_info) - offset, " slices %d",
+                         s->stat_slices_received);
+    }
+    if (s->stat_pkts_redundant_dropped) {
+      offset +=
+          snprintf(extra_info + offset, sizeof(extra_info) - offset, "%sredundant %d",
+                   s->stat_slices_received ? " + " : " ", s->stat_pkts_redundant_dropped);
+    }
   }
+  notice("RX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d%s\n", m_idx, idx,
+         s->ops_name, framerate, frames_received, s->stat_pkts_received, extra_info);
+
   notice("RX_VIDEO_SESSION(%d,%d): throughput %f Mb/s, cpu busy %f\n", m_idx, idx,
          (double)s->stat_bytes_received * 8 / dump_period_s / MTL_STAT_M_UNIT,
          s->stat_cpu_busy_score);
@@ -3432,6 +3440,7 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_pkts_no_slot);
     s->stat_pkts_no_slot = 0;
   }
+  /* TODO tracing out of order per port */
   if (s->stat_pkts_out_of_order) {
     notice("RX_VIDEO_SESSION(%d,%d): out of order pkts %d\n", m_idx, idx,
            s->stat_pkts_out_of_order);

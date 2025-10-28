@@ -114,37 +114,46 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1))
-    s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
-  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1))
-    s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
+  if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
+  if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
 
+  /* not a big deal as long as stream is continous */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
-    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+    s->port_user_stats.common.port[s_port].out_of_order_packets++;
+    s->stat_pkts_out_of_order_per_port[s_port]++;
   }
+  s->latest_seq_id[s_port] = seq_id;
 
-  /* in fastmetadata we assume packet is redundant when the seq_id is old (it's possible
-  to get multiple packets with the same timestamp)) */
+  /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
+  get multiple packets with the same timestamp)) */
   if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
-      st_rx_seq_redundant_drop(seq_id, s->latest_seq_id, s_port, s->ops.num_port)) {
-    if (mt_seq32_greater(s->tmstamp, tmstamp)) {
-      dbg("%s(%d,%d), drop as pkt tmstamp %u is old\n", __func__, s->idx, s_port,
-          tmstamp);
+      !mt_seq16_greater(seq_id, s->session_seq_id)) {
+    if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
+      dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
+          seq_id, s->session_seq_id);
     } else {
-      dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
+      dbg("%s(%d,%d), redundant tmstamp now %u session last %u\n", __func__, s->idx,
+          s_port, tmstamp, s->tmstamp);
     }
 
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    s->latest_seq_id[s_port] = seq_id;
     return -EIO;
   }
 
+  /* hole in seq id packets going into the session check if the seq_id of the session is
+   * consistent */
+  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+    dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
+        seq_id, s->session_seq_id);
+    s->stat_pkts_out_of_order++;
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
+  }
+
   /* update seq id */
-  s->latest_seq_id[s_port] = seq_id;
-  s->tmstamp = tmstamp;
+  s->session_seq_id = seq_id;
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
@@ -162,6 +171,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
+
   ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
   s->port_user_stats.common.port[s_port].packets++;
 
@@ -400,6 +410,7 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
     s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
 
+  s->session_seq_id = -1;
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
@@ -444,19 +455,28 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name, framerate,
-         frames_received, s->stat_pkts_received);
+  if (s->stat_pkts_redundant) {
+    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
+           s->ops_name, framerate, frames_received, s->stat_pkts_received,
+           s->stat_pkts_redundant);
+    s->stat_pkts_redundant = 0;
+  } else {
+    notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d\n", idx, s->ops_name,
+           framerate, frames_received, s->stat_pkts_received);
+  }
   s->stat_pkts_received = 0;
   s->stat_last_time = cur_time_ns;
 
-  if (s->stat_pkts_redundant) {
-    notice("RX_FMD_SESSION(%d): redundant pkts %d\n", idx, s->stat_pkts_redundant);
-    s->stat_pkts_redundant = 0;
-  }
   if (s->stat_pkts_out_of_order) {
-    warn("RX_FMD_SESSION(%d): out of order pkts %d\n", idx, s->stat_pkts_out_of_order);
+    warn("RX_FMD_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
+         s->stat_pkts_out_of_order,
+         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
+         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
     s->stat_pkts_out_of_order = 0;
+    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
+    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
   }
+
   if (s->stat_pkts_wrong_pt_dropped) {
     notice("RX_FMD_SESSION(%d): wrong hdr payload_type dropped pkts %d\n", idx,
            s->stat_pkts_wrong_pt_dropped);
@@ -524,6 +544,8 @@ static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
     s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
   /* reset seq id */
+
+  s->session_seq_id = -1;
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
