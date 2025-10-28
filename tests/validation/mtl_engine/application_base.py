@@ -8,15 +8,7 @@ from abc import ABC, abstractmethod
 
 from .config.app_mappings import DEFAULT_PAYLOAD_TYPE_CONFIG, DEFAULT_PORT_CONFIG
 from .config.universal_params import UNIVERSAL_PARAMS
-
-# Import execution utilities with fallback
-try:
-    from .execute import run
-    from .RxTxApp import prepare_tcpdump
-except ImportError:
-    # Fallback for direct execution
-    from execute import run
-    from RxTxApp import prepare_tcpdump
+from .execute import run
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +208,9 @@ class Application(ABC):
                 and "prepare_tcpdump" in globals()
             ):
                 try:
-                    prepare_tcpdump(capture_cfg, host)
+                    # prepare_tcpdump not yet implemented; left to change in the future
+                    # prepare_tcpdump(capture_cfg, host)
+                    pass
                 except Exception as e:
                     logger.warning(f"capture setup failed: {e}")
             proc = self.start_process(cmd, build, test_time, host)
