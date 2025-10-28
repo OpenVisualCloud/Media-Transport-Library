@@ -292,32 +292,41 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     s->first_pkt_rtp_ts = tmstamp;
   }
 
+  if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
+  if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
   if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
 
-  /* all packets need to have increasing tmstamp */
+  /* redundant stream seq_id out of order is not a big deal as long as stream is continous
+   */
+  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+    dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
+        seq_id, s->latest_seq_id[s_port]);
+    s->port_user_stats.common.port[s_port].out_of_order_packets++;
+    s->stat_pkts_out_of_order_per_port[s_port]++;
+  }
+  s->latest_seq_id[s_port] = seq_id;
+
+  /* all packets need to have increasing timestamp */
   if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    s->latest_seq_id[s_port] = seq_id;
     return -EIO;
   }
   s->tmstamp = tmstamp;
 
-  if (unlikely(s->latest_seq_id[MTL_PORT_P] == -1))
-    s->latest_seq_id[MTL_PORT_P] = seq_id - 1;
-  if (unlikely(s->latest_seq_id[MTL_PORT_R] == -1))
-    s->latest_seq_id[MTL_PORT_R] = seq_id - 1;
-
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
-    dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
-        seq_id, s->latest_seq_id[s_port]);
+  /* hole in seq id packets going into the session check if the seq_id of the session is
+   * consistent */
+  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+    dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
+        seq_id, s->session_seq_id);
+    s->stat_pkts_out_of_order++;
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
 
   /* The package is accepted and goes into the frame */
-  /* update seq id */
-  s->latest_seq_id[s_port] = seq_id;
+
+  s->session_seq_id = seq_id;
 
   if (!s->st30_cur_frame) {
     s->st30_cur_frame = rx_audio_session_get_frame(s);
@@ -423,6 +432,7 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
 
   uint16_t seq_id = ntohs(rtp->seq_number);
   uint8_t payload_type = rtp->payload_type;
+  uint32_t tmstamp = ntohl(rtp->tmstamp);
 
   if (ops->payload_type && (payload_type != ops->payload_type)) {
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
@@ -441,23 +451,40 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   }
 
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
+  if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
+  if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
+
+  /* redundant stream seq_id out of order is not a big deal as long as stream is continous
+   */
   if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
         seq_id, s->latest_seq_id[s_port]);
+    s->port_user_stats.common.port[s_port].out_of_order_packets++;
+    s->stat_pkts_out_of_order_per_port[s_port]++;
+  }
+  s->latest_seq_id[s_port] = seq_id;
+
+  /* all packets need to have increasing timestamp */
+  if (!mt_seq32_greater(tmstamp, s->tmstamp)) {
+    dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
+        s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
+    s->stat_pkts_redundant++;
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
+    return -EIO;
+  }
+  s->tmstamp = tmstamp;
+
+  /* hole in seq id packets going into the session check if the seq_id of the session is
+   * consistent */
+  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+    dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
+        seq_id, s->session_seq_id);
+    s->stat_pkts_out_of_order++;
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
 
-  /* Only works for redundant streams basicly drop packets that are old */
-  if (st_rx_seq_redundant_drop(seq_id, s->latest_seq_id, s_port, s->ops.num_port)) {
-    dbg("%s(%d,%d), drop as pkt seq %d is old\n", __func__, s->idx, s_port, seq_id);
-
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    s->latest_seq_id[s_port] = seq_id;
-    return -EIO;
-  }
-
-  /* update seq id */
-  s->latest_seq_id[s_port] = seq_id;
+  /* The package is accepted and goes into the frame */
+  s->session_seq_id = seq_id;
 
   /* enqueue the packet ring to app */
   int ret = rte_ring_sp_enqueue(s->st30_rtps_ring, (void*)mbuf);
@@ -604,10 +631,6 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
 
     rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_AUDIO_BURST_SIZE);
     if (!rv) continue;
-
-    if (s_port == 1) {
-      dbg("DEBUG");
-    }
 
     rx_audio_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
     rte_pktmbuf_free_bulk(&mbuf[0], rv);
@@ -821,6 +844,7 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
   s->st30_pkt_idx = 0;
   s->st30_frame_size = ops->framebuff_size;
 
+  s->session_seq_id = -1;
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
@@ -897,21 +921,28 @@ static void rx_audio_session_stat(struct st_rx_audio_sessions_mgr* mgr,
 
   rte_atomic32_set(&s->stat_frames_received, 0);
 
-  notice("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
-         s->ops_name, framerate, frames_received, s->stat_pkts_received);
-  s->stat_pkts_received = 0;
-  s->stat_last_time = cur_time_ns;
-
   if (s->stat_pkts_redundant) {
-    notice("RX_AUDIO_SESSION(%d,%d): redundant pkts %d\n", m_idx, idx,
+    notice("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d (redundant %d)\n", m_idx,
+           idx, s->ops_name, framerate, frames_received, s->stat_pkts_received,
            s->stat_pkts_redundant);
     s->stat_pkts_redundant = 0;
+  } else {
+    info("RX_AUDIO_SESSION(%d,%d:%s): fps %f frames %d pkts %d\n", m_idx, idx,
+         s->ops_name, framerate, frames_received, s->stat_pkts_received);
   }
+
+  s->stat_pkts_received = 0;
+  s->stat_last_time = cur_time_ns;
   if (s->stat_pkts_out_of_order) {
-    warn("RX_AUDIO_SESSION(%d,%d): out of order pkts %d\n", m_idx, idx,
-         s->stat_pkts_out_of_order);
+    warn("RX_AUDIO_SESSION(%d): out of order pkts %d (%d:%d)\n", idx,
+         s->stat_pkts_out_of_order,
+         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P],
+         s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R]);
     s->stat_pkts_out_of_order = 0;
+    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_P] = 0;
+    s->stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_R] = 0;
   }
+
   if (s->stat_pkts_dropped) {
     notice("RX_AUDIO_SESSION(%d,%d): dropped pkts %d\n", m_idx, idx,
            s->stat_pkts_dropped);
@@ -989,6 +1020,8 @@ static int rx_audio_session_update_src(struct mtl_main_impl* impl,
     s->st30_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (20000 + idx * 2);
   }
   /* reset seq id */
+
+  s->session_seq_id = -1;
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;

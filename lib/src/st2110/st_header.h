@@ -690,6 +690,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_enqueue_fallback; /* for pkt lcore */
   int stat_pkts_offset_dropped;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_pkts_redundant_dropped;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
@@ -1016,6 +1017,7 @@ struct st_rx_audio_session_impl {
   uint32_t st30_pkt_size; /* size for each pkt which include the header */
   int st30_total_pkts;    /* total pkts in one frame */
   int st30_pkt_idx;       /* pkt index in current frame */
+  int session_seq_id;     /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
   uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
@@ -1033,6 +1035,7 @@ struct st_rx_audio_session_impl {
   int stat_pkts_dropped;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_slot_get_frame_fail;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
@@ -1182,7 +1185,7 @@ struct st_rx_ancillary_session_impl {
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
-
+  int session_seq_id; /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
@@ -1193,6 +1196,7 @@ struct st_rx_ancillary_session_impl {
   int stat_pkts_dropped;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_pkts_enqueue_fail;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
@@ -1354,7 +1358,7 @@ struct st_rx_fastmetadata_session_impl {
 
   uint16_t st41_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
-
+  int session_seq_id; /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
@@ -1364,6 +1368,7 @@ struct st_rx_fastmetadata_session_impl {
   rte_atomic32_t stat_frames_received;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_pkts_enqueue_fail;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
