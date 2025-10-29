@@ -15,7 +15,6 @@ from . import rxtxapp_config
 from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
-json_filename = os.path.join(sys.path[0], "ip_addresses.json")
 logger = logging.getLogger(__name__)
 
 
@@ -55,29 +54,6 @@ def capture_stdout(proc, proc_name: str):
     except Exception as e:
         logger.warning(f"Failed to capture stdout for {proc_name}: {e}")
         return ""
-
-
-def read_ip_addresses_from_json(filename: str):
-    global unicast_ip_dict, multicast_ip_dict, kernel_ip_dict
-    try:
-        with open(filename, "r") as ips:
-            ip_addresses = json.load(ips)
-            try:
-                unicast_ip_dict = ip_addresses["unicast_ip_dict"]
-                multicast_ip_dict = ip_addresses["multicast_ip_dict"]
-                kernel_ip_dict = ip_addresses["kernel_ip_dict"]
-            except Exception:
-                logger.warning(
-                    f"File {filename} does not contain proper input, check "
-                    "ip_addresses.json.example for a schema. It might have "
-                    "been loaded partially. Where not specified, "
-                    "default was set."
-                )
-    except Exception:
-        logger.warning(
-            f"File {filename} could not be loaded properly! "
-            "Default values are set for all IPs."
-        )
 
 
 def create_empty_config() -> dict:
@@ -1162,9 +1138,6 @@ def init_test_logging():
 def sanitize_filename(name: str) -> str:
     # Replace unsafe characters with underscores
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
-
-
-read_ip_addresses_from_json(json_filename)
 
 
 def create_empty_dual_config() -> dict:
