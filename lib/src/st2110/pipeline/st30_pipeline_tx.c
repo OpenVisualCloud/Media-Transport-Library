@@ -108,6 +108,12 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   int ret;
   struct st30p_tx_frame* framebuff = &ctx->framebuffs[frame_idx];
 
+  struct st30_frame* frame = &framebuff->frame;
+  frame->tfmt = meta->tfmt;
+  frame->timestamp = meta->timestamp;
+  frame->epoch = meta->epoch;
+  frame->rtp_timestamp = meta->rtp_timestamp;
+
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
@@ -119,12 +125,6 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
         frame_idx);
   }
   mt_pthread_mutex_unlock(&ctx->lock);
-
-  struct st30_frame* frame = &framebuff->frame;
-  frame->tfmt = meta->tfmt;
-  frame->timestamp = meta->timestamp;
-  frame->epoch = meta->epoch;
-  frame->rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
     ctx->ops.notify_frame_done(ctx->ops.priv, frame);

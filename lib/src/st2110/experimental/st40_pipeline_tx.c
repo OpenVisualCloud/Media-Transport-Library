@@ -112,6 +112,12 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
 
   framebuff = &ctx->framebuffs[frame_idx];
 
+  frame_info = &framebuff->frame_info;
+  frame_info->tfmt = meta->tfmt;
+  frame_info->timestamp = meta->timestamp;
+  frame_info->epoch = meta->epoch;
+  frame_info->rtp_timestamp = meta->rtp_timestamp;
+
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST40P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
@@ -123,12 +129,6 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
         frame_idx);
   }
   mt_pthread_mutex_unlock(&ctx->lock);
-
-  frame_info = &framebuff->frame_info;
-  frame_info->tfmt = meta->tfmt;
-  frame_info->timestamp = meta->timestamp;
-  frame_info->epoch = meta->epoch;
-  frame_info->rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
     ctx->ops.notify_frame_done(ctx->ops.priv, frame_info);
