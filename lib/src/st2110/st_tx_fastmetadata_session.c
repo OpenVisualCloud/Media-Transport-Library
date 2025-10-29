@@ -1495,6 +1495,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
+  s->calculate_time_cursor = true;
   ret = tx_fastmetadata_session_init_pacing(s);
   if (ret < 0) {
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);
