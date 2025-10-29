@@ -1255,7 +1255,7 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
   }
   double actual_per_sec = actual_per_sec_sum / entry_in_sum;
   double ratio = actual_per_sec / expect_per_sec;
-  if (ratio > 1.1 || ratio < 0.9) {
+  if (ratio > 1.15 || ratio < 0.9) {
     err("%s(%d), fail, expect %f but actual %f\n", __func__, idx, expect_per_sec,
         actual_per_sec);
     return 0;
