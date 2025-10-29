@@ -152,7 +152,7 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
           seq_id, s->session_seq_id);
     } else {
-      dbg("%s(%d,%d), redundant tmstamp now %u session last %u\n", __func__, s->idx,
+      dbg("%s(%d,%d), redundant tmstamp now %u session last %ld\n", __func__, s->idx,
           s_port, tmstamp, s->tmstamp);
     }
 

@@ -1190,7 +1190,7 @@ struct st_rx_ancillary_session_impl {
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
-  uint32_t tmstamp;
+  int64_t tmstamp;
   /* status */
   rte_atomic32_t stat_frames_received;
   int stat_pkts_dropped;
@@ -1363,7 +1363,8 @@ struct st_rx_fastmetadata_session_impl {
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
-  uint32_t tmstamp;
+  /* the timestamp */
+  int64_t tmstamp;
   /* status */
   rte_atomic32_t stat_frames_received;
   int stat_pkts_redundant;
