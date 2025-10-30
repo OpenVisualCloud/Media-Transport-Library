@@ -188,6 +188,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   rtp->ssrc = htonl(ssrc);
 
   s->st30_seq_id = 0;
+  s->st30_rtp_time = -1;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u payload_type %u\n", __func__, idx, s_port,
        dip[0], dip[1], dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port],
