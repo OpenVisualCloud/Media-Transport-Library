@@ -6,38 +6,16 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import time
 
 from mfd_connect import SSHConnection
+from mtl_engine import ip_pools
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
-
-
-unicast_ip_dict = dict(
-    tx_interfaces="192.168.17.101",
-    rx_interfaces="192.168.17.102",
-    tx_sessions="192.168.17.102",
-    rx_sessions="192.168.17.101",
-)
-
-multicast_ip_dict = dict(
-    tx_interfaces="192.168.17.101",
-    rx_interfaces="192.168.17.102",
-    tx_sessions="239.168.48.9",
-    rx_sessions="239.168.48.9",
-)
-
-kernel_ip_dict = dict(
-    tx_interfaces="192.168.17.101",
-    rx_interfaces="192.168.17.102",
-    tx_sessions="127.0.0.1",
-    rx_sessions="127.0.0.1",
-)
 
 
 def capture_stdout(proc, proc_name: str):
@@ -74,18 +52,18 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
     config["interfaces"][1]["name"] = nic_port_list[1]
 
     if test_mode == "unicast":
-        config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
-        config["interfaces"][1]["ip"] = unicast_ip_dict["rx_interfaces"]
-        config["tx_sessions"][0]["dip"][0] = unicast_ip_dict["tx_sessions"]
-        config["rx_sessions"][0]["ip"][0] = unicast_ip_dict["rx_sessions"]
+        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["interfaces"][1]["ip"] = ip_pools.rx[0]
+        config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
     elif test_mode == "multicast":
-        config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
-        config["interfaces"][1]["ip"] = multicast_ip_dict["rx_interfaces"]
-        config["tx_sessions"][0]["dip"][0] = multicast_ip_dict["tx_sessions"]
-        config["rx_sessions"][0]["ip"][0] = multicast_ip_dict["rx_sessions"]
+        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["interfaces"][1]["ip"] = ip_pools.rx[0]
+        config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
     elif test_mode == "kernel":
-        config["tx_sessions"][0]["dip"][0] = kernel_ip_dict["tx_sessions"]
-        config["rx_sessions"][0]["ip"][0] = kernel_ip_dict["rx_sessions"]
+        config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+        config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
@@ -1161,22 +1139,18 @@ def add_dual_interfaces(
     rx_config["interfaces"][0]["name"] = rx_nic_port_list[0]
 
     if test_mode == "unicast":
-        tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
-        rx_config["interfaces"][0]["ip"] = unicast_ip_dict["rx_interfaces"]
-        tx_config["tx_sessions"][0]["dip"][0] = unicast_ip_dict[
-            "rx_interfaces"
-        ]  # TX sends to RX IP
-        rx_config["rx_sessions"][0]["ip"][0] = unicast_ip_dict[
-            "tx_interfaces"
-        ]  # RX listens for TX IP
+        tx_config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        rx_config["interfaces"][0]["ip"] = ip_pools.rx[0]
+        tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+        rx_config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
     elif test_mode == "multicast":
-        tx_config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
-        rx_config["interfaces"][0]["ip"] = multicast_ip_dict["rx_interfaces"]
-        tx_config["tx_sessions"][0]["dip"][0] = multicast_ip_dict["tx_sessions"]
-        rx_config["rx_sessions"][0]["ip"][0] = multicast_ip_dict["rx_sessions"]
+        tx_config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        rx_config["interfaces"][0]["ip"] = ip_pools.rx[0]
+        tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+        rx_config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
     elif test_mode == "kernel":
-        tx_config["tx_sessions"][0]["dip"][0] = kernel_ip_dict["tx_sessions"]
-        rx_config["rx_sessions"][0]["ip"][0] = kernel_ip_dict["rx_sessions"]
+        tx_config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+        rx_config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
     else:
         log_fail(f"wrong test_mode {test_mode}")
 

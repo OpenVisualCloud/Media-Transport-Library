@@ -1,3 +1,4 @@
+session_id: 0
 build: /path/to/mtl
 mtl_path: /path/to/mtl
 media_path: /mnt/media
