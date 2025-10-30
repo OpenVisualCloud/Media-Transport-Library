@@ -3,8 +3,9 @@ import argparse
 import yaml
 
 
-def gen_test_config(build: str, mtl_path: str) -> str:
+def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
     test_config = {
+        "session_id": session_id,
         "build": build,
         "mtl_path": mtl_path,
         "media_path": "/mnt/media",
@@ -63,6 +64,13 @@ def main() -> None:
         description="Generate example test and topology configs for the test framework."
     )
     parser.add_argument(
+        "--session_id",
+        type=int,
+        choices=range(0, 256),
+        required=True,
+        help="specify session ID (0 - 255)",
+    )
+    parser.add_argument(
         "--build",
         type=str,
         required=True,
@@ -102,7 +110,11 @@ def main() -> None:
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
     with open("test_config.yaml", "w") as file:
-        file.write(gen_test_config(build=args.build, mtl_path=args.mtl_path))
+        file.write(
+            gen_test_config(
+                session_id=args.session_id, build=args.build, mtl_path=args.mtl_path
+            )
+        )
     with open("topology_config.yaml", "w") as file:
         file.write(
             gen_topology_config(

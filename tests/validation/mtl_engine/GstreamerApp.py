@@ -6,6 +6,8 @@ import os
 import re
 import time
 
+from mtl_engine import ip_pools
+
 from .execute import is_process_running, log_fail, run
 
 logger = logging.getLogger(__name__)
@@ -27,8 +29,8 @@ def capture_stdout(process, process_name):
 def create_connection_params(
     dev_port: str,
     payload_type: str,
-    dev_ip: str = "192.168.96.3",
-    ip: str = "192.168.96.2",
+    dev_ip: str,
+    ip: str,
     udp_port: int = 20000,
     is_tx: bool = True,
 ) -> dict:
@@ -111,7 +113,12 @@ def setup_gstreamer_st20p_tx_pipeline(
     tx_fps: int = None,
 ):
     connection_params = create_connection_params(
-        dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=20000, is_tx=True
+        dev_port=nic_port_list,
+        payload_type=tx_payload_type,
+        dev_ip=ip_pools.tx[0],
+        ip=ip_pools.rx[0],
+        udp_port=20000,
+        is_tx=True,
     )
 
     framerate = fract_format(framerate)
@@ -168,6 +175,8 @@ def setup_gstreamer_st20p_rx_pipeline(
     connection_params = create_connection_params(
         dev_port=nic_port_list,
         payload_type=rx_payload_type,
+        dev_ip=ip_pools.tx[0],
+        ip=ip_pools.rx[0],
         udp_port=20000,
         is_tx=False,
     )
@@ -210,7 +219,12 @@ def setup_gstreamer_st30_tx_pipeline(
     sampling: int,
 ):
     connection_params = create_connection_params(
-        dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=30000, is_tx=True
+        dev_port=nic_port_list,
+        payload_type=tx_payload_type,
+        dev_ip=ip_pools.tx[0],
+        ip=ip_pools.rx[0],
+        udp_port=30000,
+        is_tx=True,
     )
 
     # st30 tx GStreamer command line
@@ -245,6 +259,8 @@ def setup_gstreamer_st30_rx_pipeline(
     connection_params = create_connection_params(
         dev_port=nic_port_list,
         payload_type=rx_payload_type,
+        dev_ip=ip_pools.tx[0],
+        ip=ip_pools.rx[0],
         udp_port=30000,
         is_tx=False,
     )
@@ -287,7 +303,12 @@ def setup_gstreamer_st40p_tx_pipeline(
     tx_user_controlled_pacing_offset: int = 0,
 ):
     connection_params = create_connection_params(
-        dev_port=nic_port_list, payload_type=tx_payload_type, udp_port=40000, is_tx=True
+        dev_port=nic_port_list,
+        payload_type=tx_payload_type,
+        dev_ip=ip_pools.tx[0],
+        ip=ip_pools.rx[0],
+        udp_port=40000,
+        is_tx=True,
     )
 
     pipeline_command = ["gst-launch-1.0"]
@@ -336,6 +357,8 @@ def setup_gstreamer_st40p_rx_pipeline(
     connection_params = create_connection_params(
         dev_port=nic_port_list,
         payload_type=rx_payload_type,
+        dev_ip=ip_pools.tx[0],
+        ip=ip_pools.rx[0],
         udp_port=40000,
         is_tx=False,
     )

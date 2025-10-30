@@ -7,7 +7,7 @@ import logging
 import os
 import shutil
 import time
-from typing import Dict
+from typing import Any, Dict
 
 import pytest
 from common.mtl_manager.mtlManager import MtlManager
@@ -17,6 +17,7 @@ from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_fr
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
+from mtl_engine import ip_pools
 from mtl_engine.const import FRAMES_CAPTURE, LOG_FOLDER, TESTCMD_LVL
 from mtl_engine.csv_report import (
     csv_add_test,
@@ -381,3 +382,9 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
     )
 
     clear_result_note()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
+    session_id = int(test_config["session_id"])
+    ip_pools.init(session_id=session_id)
