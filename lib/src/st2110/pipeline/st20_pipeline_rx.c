@@ -218,6 +218,8 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   framebuff->src.timestamp = framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
   framebuff->src.status = framebuff->dst.status = meta->status;
+  framebuff->src.receive_timestamp = framebuff->dst.receive_timestamp =
+      meta->timestamp_first_pkt;
 
   framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
   for (enum mtl_session_port s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {

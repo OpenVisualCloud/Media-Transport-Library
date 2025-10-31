@@ -984,6 +984,26 @@ int st20p_tx_get_sch_idx(st20p_tx_handle handle) {
   return st20_tx_get_sch_idx(ctx->transport);
 }
 
+int st20p_tx_get_pacing_params(st20p_tx_handle handle, double* tr_offset_ns,
+                               double* trs_ns, uint32_t* vrx_pkts) {
+  struct st20p_tx_ctx* ctx = handle;
+  int cidx;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
+  ctx = handle;
+  cidx = ctx->idx;
+
+  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return -EINVAL;
+  }
+
+  return st20_tx_get_pacing_params(ctx->transport, tr_offset_ns, trs_ns, vrx_pkts);
+}
+
 int st20p_tx_get_session_stats(st20p_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st20p_tx_ctx* ctx = handle;
   int cidx;

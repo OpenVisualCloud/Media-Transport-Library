@@ -399,8 +399,10 @@ static void test_ctx_init(struct st_tests_context* ctx) {
 }
 
 static void test_ctx_uinit(struct st_tests_context* ctx) {
-  mtl_uninit(ctx->handle);
-  ctx->handle = NULL;
+  if (ctx->handle) {
+    mtl_uninit(ctx->handle);
+    ctx->handle = NULL;
+  }
   st_test_free(ctx);
 }
 

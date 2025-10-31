@@ -4314,6 +4314,27 @@ int st20_tx_get_sch_idx(st20_tx_handle handle) {
   return s_impl->sch->idx;
 }
 
+int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, double* trs_ns,
+                              uint32_t* vrx_pkts) {
+  struct st_tx_video_session_handle_impl* s_impl = handle;
+
+  if (!handle) {
+    err("%s, invalid handle %p\n", __func__, handle);
+    return -EINVAL;
+  }
+
+  if (s_impl->type != MT_HANDLE_TX_VIDEO) {
+    err("%s, invalid type %d\n", __func__, s_impl->type);
+    return -EINVAL;
+  }
+
+  struct st_tx_video_session_impl* s = s_impl->impl;
+  if (tr_offset_ns) *tr_offset_ns = s->pacing.tr_offset;
+  if (trs_ns) *trs_ns = s->pacing.trs;
+  if (vrx_pkts) *vrx_pkts = s->pacing.vrx;
+  return 0;
+}
+
 int st20_tx_get_session_stats(st20_tx_handle handle, struct st20_tx_user_stats* stats) {
   struct st_tx_video_session_handle_impl* s_impl = handle;
 
