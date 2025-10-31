@@ -77,3 +77,10 @@ DEFAULT_FFMPEG_CONFIG = {
 
 # Default GStreamer configuration
 DEFAULT_GSTREAMER_CONFIG = {"default_session_type": "mtl_st20p"}
+
+# DSA (Data Streaming Accelerator) device configuration
+# Maps NUMA node to DSA device PCI addresses
+DSA_DEVICES = {
+    "numa0": "0000:6a:01.0",
+    "numa1": "0000:e7:01.0",
+}
