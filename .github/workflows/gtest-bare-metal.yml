@@ -43,7 +43,14 @@ jobs:
   run-tests:
     needs: gtest-check-for-changes
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library' && (needs.gtest-check-for-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: [self-hosted, linux, x64, dpdk]
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2

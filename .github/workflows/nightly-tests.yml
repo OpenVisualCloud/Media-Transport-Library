@@ -8,7 +8,14 @@ permissions:
   contents: read
 jobs:
   run-nightly-tests:
-    runs-on: [self-hosted, linux, x64, dpdk]
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
     steps:
       - name: 'preparation: Harden Runner'
@@ -31,6 +38,15 @@ jobs:
         run: |
           runner_name=${{ runner.name }}
           echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+      - name: Set PCI device env variable
+        run: |
+          if [ "${{ matrix.nic }}" = "e810" ]; then
+            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
+            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e830" ]; then
+            echo "PCI_DEVICE=8086:12d2" >> "$GITHUB_ENV"
+          fi
       - name: Generate test framework config files
         working-directory: tests/validation/configs
         run: |
@@ -38,6 +54,7 @@ jobs:
             --session_id ${{ env.SESSION_ID }} \
             --build ${{ secrets.RUNNER_BUILD }} \
             --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
+            --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
             --key_path ${{ secrets.RUNNER_KEY_PATH }}
@@ -78,7 +95,7 @@ jobs:
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: nightly-tests-report
+          name: nightly-test-report-${{ matrix.nic }}
           path: |
             report.html
       - name: "upload report gtest"
@@ -86,6 +103,6 @@ jobs:
         id: upload-report-gtest
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: nightly-tests-report-gtest
+          name: nightly-gtest-report-${{ matrix.nic }}
           path: |
             gtest.log
