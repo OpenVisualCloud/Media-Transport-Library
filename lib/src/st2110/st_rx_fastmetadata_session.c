@@ -140,8 +140,17 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     }
 
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    return -EIO;
+    for (int i = 0; i < s->ops.num_port; i++) {
+      if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
+        return -EIO;
+      }
+    }
+    warn(
+        "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
+        "%d), timestamp %u (old timestamp %ld)\n",
+        __func__, s->idx, seq_id, s->session_seq_id, tmstamp, s->tmstamp);
   }
+  s->redundant_error_cnt[s_port] = 0;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
