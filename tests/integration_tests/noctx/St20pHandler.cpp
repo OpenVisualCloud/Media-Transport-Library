@@ -4,10 +4,10 @@
 
 #include "noctx.hpp"
 
-St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
+St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                            st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool create,
                            bool start)
-    : Handlers(ctx, sessionUserData) {
+    : Handlers(ctx, frameTestStrategy) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
     ops_tx = sessionsOpsTx;
@@ -17,11 +17,11 @@ St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUser
     sessionsOpsRx = ops_rx;
   }
 
-  EXPECT_TRUE(sessionUserData != nullptr);
-  if (!sessionUserData) return;
+  EXPECT_TRUE(frameTestStrategy != nullptr);
+  if (!frameTestStrategy) return;
 
-  this->sessionUserData = sessionUserData;
-  sessionUserData->parent = this;
+  this->frameTestStrategy = frameTestStrategy;
+  frameTestStrategy->parent = this;
 
   if (create) {
     createSession(ops_tx, ops_rx, start);
@@ -111,8 +111,8 @@ void St20pHandler::createSession(st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool 
   sessionsOpsTx = ops_tx;
   sessionsOpsRx = ops_rx;
 
-  createSessionTx();
   createSessionRx();
+  createSessionTx();
 
   if (start) {
     startSession();
@@ -120,8 +120,8 @@ void St20pHandler::createSession(st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool 
 }
 
 void St20pHandler::createSession(bool start) {
-  createSessionTx();
   createSessionRx();
+  createSessionTx();
 
   if (start) {
     startSession();
@@ -168,8 +168,8 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->width, width);
     ASSERT_EQ(frame->height, height);
 
-    if (sessionUserData->enable_tx_modifier) {
-      sessionUserData->txTestFrameModifier(frame->addr, frameSize);
+    if (frameTestStrategy->enable_tx_modifier) {
+      frameTestStrategy->txTestFrameModifier(frame->addr, frameSize);
     }
 
     frame->data_size = frameSize;
@@ -201,28 +201,29 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->height, height);
     ASSERT_GE(frame->data_size, frameSize);
 
-    if (sessionUserData->enable_rx_modifier) {
-      sessionUserData->rxTestFrameModifier(frame->addr, frame->data_size);
+    if (frameTestStrategy->enable_rx_modifier) {
+      frameTestStrategy->rxTestFrameModifier(frame->addr, frame->data_size);
     }
 
     st20p_rx_put_frame(handle, frame);
   }
 }
 
-void St20pHandler::startSession() {
-  Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); },
-       [this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); }});
-}
 
 void St20pHandler::startSessionTx() {
   Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); }});
-}
-
+    {[this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); }});
+  }
+  
 void St20pHandler::startSessionRx() {
   Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); }});
+    {[this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); }});
+  }
+  
+void St20pHandler::startSession() {
+  startSessionRx();
+  sleep(1);
+  startSessionTx();
 }
 
 void St20pHandler::startSession(

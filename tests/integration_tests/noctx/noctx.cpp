@@ -53,13 +53,13 @@ void NoCtxTest::TearDown() {
   }
   st20pHandlers.clear();
 
-  for (auto data : sessionUserDatas) {
+  for (auto data : frameTestStrategys) {
     if (data) {
       delete data;
       data = nullptr;
     }
   }
-  sessionUserDatas.clear();
+  frameTestStrategys.clear();
 
   if (ctx) {
     if (ctx->handle) {
@@ -107,6 +107,46 @@ void NoCtxTest::sleepUntilFailure(int sleep_duration) {
   for (int i = 0; i < sleep_duration; ++i) {
     if (HasFailure()) break;
     sleep(1);
+  }
+}
+
+NoCtxTest::St20pHandlerBundle NoCtxTest::createSt20pHandlerBundle(
+    bool createTx, bool createRx,
+    std::function<FrameTestStrategy*(St20pHandler*)> strategyFactory,
+    std::function<void(St20pHandler*)> configure) {
+  if (!ctx) {
+    throw std::runtime_error("createSt20pHandlerBundle expects initialized ctx");
+  }
+
+  auto handler = new St20pHandler(ctx);
+  if (configure) {
+    configure(handler);
+  }
+
+  FrameTestStrategy* strategy = nullptr;
+  if (strategyFactory) {
+    strategy = strategyFactory(handler);
+    handler->setFrameTestStrategy(strategy);
+  }
+
+  if (createRx) {
+    handler->createSessionRx();
+  }
+  if (createTx) {
+    handler->createSessionTx();
+  }
+
+  registerSt20pResources(handler, strategy);
+  return {handler, strategy};
+}
+
+void NoCtxTest::registerSt20pResources(St20pHandler* handler,
+                                       FrameTestStrategy* strategy) {
+  if (handler) {
+    st20pHandlers.emplace_back(handler);
+  }
+  if (strategy) {
+    frameTestStrategys.emplace_back(strategy);
   }
 }
 

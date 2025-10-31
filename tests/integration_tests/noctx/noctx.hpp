@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <thread>
@@ -71,22 +72,34 @@ class NoCtxTest : public ::testing::Test {
   /* Structures that will be cleaned automaticly every test */
   std::vector<St30pHandler*> st30pHandlers;
   std::vector<St20pHandler*> st20pHandlers;
-  std::vector<FrameTestStrategy*> sessionUserDatas;
+  std::vector<FrameTestStrategy*> frameTestStrategys;
 
   void sleepUntilFailure(int sleepDuration = 0);
+
+  struct St20pHandlerBundle {
+    St20pHandler* handler = nullptr;
+    FrameTestStrategy* strategy = nullptr;
+  };
+
+  St20pHandlerBundle createSt20pHandlerBundle(
+      bool createTx, bool createRx,
+      std::function<FrameTestStrategy*(St20pHandler*)> strategyFactory,
+      std::function<void(St20pHandler*)> configure = nullptr);
+
+  void registerSt20pResources(St20pHandler* handler, FrameTestStrategy* strategy);
 };
 
 class Handlers {
  public:
   Session session;
   st_tests_context* ctx = nullptr;
-  FrameTestStrategy* sessionUserData;
+  FrameTestStrategy* frameTestStrategy;
 
-  Handlers(st_tests_context* ctx, FrameTestStrategy* sessionUserData)
-      : ctx(ctx), sessionUserData(sessionUserData) {
+  Handlers(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy)
+      : ctx(ctx), frameTestStrategy(frameTestStrategy) {
   }
 
-  Handlers(st_tests_context* ctx) : ctx(ctx), sessionUserData(nullptr) {
+  Handlers(st_tests_context* ctx) : ctx(ctx), frameTestStrategy(nullptr) {
   }
 
   void startSession(
@@ -120,6 +133,15 @@ class FrameTestStrategy {
   virtual void txTestFrameModifier(void* frame, size_t frame_size){};
   virtual void rxTestFrameModifier(void* frame, size_t frame_size){};
 
+  FrameTestStrategy(Handlers* parent = nullptr, bool enable_tx_modifier = false,
+                    bool enable_rx_modifier = false)
+      : parent(parent),
+        idx_tx(0),
+        idx_rx(0),
+        enable_tx_modifier(enable_tx_modifier),
+        enable_rx_modifier(enable_rx_modifier) {
+  }
+
   virtual ~FrameTestStrategy() {
     parent = nullptr;
   }
@@ -131,7 +153,7 @@ class St30pHandler : public Handlers {
 
  public:
   uint64_t nsPacketTime;
-  St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
+  St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                st30p_tx_ops ops_tx = {}, st30p_rx_ops ops_rx = {},
                uint msPerFramebuffer = 10, bool create = true, bool start = true);
 
@@ -149,9 +171,9 @@ class St30pHandler : public Handlers {
                     st30_sampling sampling = ST30_SAMPLING_48K, uint8_t channelCount = 2,
                     st30_ptime ptime = ST30_PTIME_1MS);
 
-  void setModifiers(FrameTestStrategy* sessionUserData) {
-    this->sessionUserData = sessionUserData;
-    sessionUserData->parent = this;
+  void setFrameTestStrategy(FrameTestStrategy* frameTestStrategy) {
+    this->frameTestStrategy = frameTestStrategy;
+    frameTestStrategy->parent = this;
   }
 
   void createSession(st30p_tx_ops ops_tx, st30p_rx_ops ops_rx, bool start = true);
@@ -175,7 +197,7 @@ class St30pHandler : public Handlers {
 class St20pHandler : public Handlers {
  public:
   uint64_t nsFrameTime;
-  St20pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
+  St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                st20p_tx_ops ops_tx = {}, st20p_rx_ops ops_rx = {}, bool create = true,
                bool start = true);
 
@@ -193,9 +215,9 @@ class St20pHandler : public Handlers {
                    enum st_fps fps = ST_FPS_P25, bool interlaced = false,
                    enum st20_packing packing = ST20_PACKING_BPM);
 
-  void setModifiers(FrameTestStrategy* sessionUserData) {
-    this->sessionUserData = sessionUserData;
-    sessionUserData->parent = this;
+  void setFrameTestStrategy(FrameTestStrategy* frameTestStrategy) {
+    this->frameTestStrategy = frameTestStrategy;
+    frameTestStrategy->parent = this;
   }
 
   void createSession(st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool start = true);

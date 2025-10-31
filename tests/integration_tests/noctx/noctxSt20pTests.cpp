@@ -5,14 +5,12 @@
 #include "noctx.hpp"
 
 class St20pDefaultTimestamp : public FrameTestStrategy {
- public:
-  uint64_t lastTimestamp;
+ protected:
+  uint64_t lastTimestamp = 0;
 
-  St20pDefaultTimestamp(St20pHandler* parentHandler = nullptr) : lastTimestamp(0) {
-    idx_tx = 0;
-    idx_rx = 0;
-    parent = parentHandler;
-    enable_rx_modifier = true;
+ public:
+  St20pDefaultTimestamp(St20pHandler* parentHandler = nullptr)
+      : FrameTestStrategy(parentHandler, false, true) {
   }
 
   void rxTestFrameModifier(void* frame, size_t frame_size) {
@@ -42,58 +40,181 @@ TEST_F(NoCtxTest, st20p_default_timestamps) {
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  St20pDefaultTimestamp* userData = new St20pDefaultTimestamp();
-  St20pHandler* handler = new St20pHandler(ctx, userData);
+  auto txBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [](St20pHandler* handler) { return new FrameTestStrategy(handler); });
+  auto rxBundle = createSt20pHandlerBundle(
+      /*createTx=*/false, /*createRx=*/true,
+      [](St20pHandler* handler) { return new St20pDefaultTimestamp(handler); });
+  auto* frameTestStrategy =
+      static_cast<St20pDefaultTimestamp*>(rxBundle.strategy);
+
+  rxBundle.handler->startSessionRx();
+  sleep(2);
+  txBundle.handler->startSessionTx();
 
   TestPtpSourceSinceEpoch(nullptr);
   mtl_start(ctx->handle);
-  st20pHandlers.emplace_back(handler);
-  sessionUserDatas.emplace_back(userData);
   sleepUntilFailure();
+
+  txBundle.handler->session.stop();
+  sleep(2);
+  rxBundle.handler->session.stop();
+
+  ASSERT_GT(frameTestStrategy->idx_rx, 0u)
+      << "st20p_user_pacing did not receive any frames";
 }
 
-class St20pUserTimestamp : public St20pDefaultTimestamp {
+class St20pUserTimestamp : public FrameTestStrategy {
  protected:
-  uint64_t startingTime = 20 * NS_PER_MS;
+  double frameTimeNs = 0;
+  uint64_t startingTime = 0;
   uint64_t lastTimestamp = 0;
+  std::vector<double> timestampOffsetMultipliers;
 
  public:
-  St20pUserTimestamp(St20pHandler* parentHandler = nullptr)
-      : St20pDefaultTimestamp(parentHandler) {
-    enable_tx_modifier = true;
-    enable_rx_modifier = true;
+  double pacing_tr_offset_ns = 0.0;
+  double pacing_trs_ns = 0.0;
+  uint32_t pacing_vrx_pkts = 0;
+
+  explicit St20pUserTimestamp(St20pHandler* parentHandler,
+                              std::vector<double> offsetMultipliers = {})
+      : FrameTestStrategy(parentHandler, true, true),
+        timestampOffsetMultipliers(offsetMultipliers) {
+    initializeTiming(parentHandler);
+  }
+
+  int getPacingParameters() {
+    St20pHandler* parentHandler = static_cast<St20pHandler*>(parent);
+    if (parentHandler && parentHandler->sessionsHandleTx) {
+      int ret = st20p_tx_get_pacing_params(parentHandler->sessionsHandleTx,
+                                           &pacing_tr_offset_ns, &pacing_trs_ns,
+                                           &pacing_vrx_pkts);
+      return ret;
+    }
+    return -1;
   }
 
   void txTestFrameModifier(void* frame, size_t frame_size) {
-    st_frame* f = (st_frame*)frame;
-    St20pHandler* st20pParent = static_cast<St20pHandler*>(parent);
+    st_frame* f = static_cast<st_frame*>(frame);
 
     f->tfmt = ST10_TIMESTAMP_FMT_TAI;
-    f->timestamp = startingTime + (st20pParent->nsFrameTime * (idx_tx));
+    f->timestamp = plannedTimestampNs(idx_tx);
     idx_tx++;
   }
 
-  void rxTestFrameModifier(void* frame, size_t frame_size) {
-    st_frame* f = (st_frame*)frame;
-    St20pHandler* st20pParent = static_cast<St20pHandler*>(parent);
-    idx_rx++;
+  void rxTestFrameModifier(void* frame, size_t frame_size) override {
+    st_frame* f = static_cast<st_frame*>(frame);
+    const uint64_t frame_idx = idx_rx++;
 
-    uint64_t expectedTimestamp = startingTime + (st20pParent->nsFrameTime * (idx_rx - 1));
-    uint64_t expected_media_clk =
-        st10_tai_to_media_clk(expectedTimestamp, VIDEO_CLOCK_HZ);
+    const uint64_t expected_transmit_time_ns = expectedTransmitTimeNs(frame_idx);
+    const uint64_t expected_media_clk =
+        st10_tai_to_media_clk(expected_transmit_time_ns, VIDEO_CLOCK_HZ);
 
-    EXPECT_EQ(f->timestamp, expected_media_clk)
-        << " idx_rx: " << idx_rx << " tai difference: "
-        << (int64_t)(st10_media_clk_to_ns(f->timestamp, VIDEO_CLOCK_HZ) -
-                     expectedTimestamp);
-
-    if (lastTimestamp != 0) {
-      uint64_t diff = f->timestamp - lastTimestamp;
-      EXPECT_TRUE(diff == st10_tai_to_media_clk(st20pParent->nsFrameTime, VIDEO_CLOCK_HZ))
-          << " idx_rx " << idx_rx << " diff: " << diff;
-    }
+    verifyReceiveTiming(frame_idx, f->receive_timestamp, expected_transmit_time_ns);
+    verifyMediaClock(frame_idx, f->timestamp, expected_media_clk);
+    verifyTimestampStep(frame_idx, f->timestamp);
 
     lastTimestamp = f->timestamp;
+  }
+
+ private:
+  uint64_t plannedTimestampNs(uint64_t frame_idx) const {
+    double candidate = plannedTimestampBaseNs(frame_idx);
+    if (candidate <= 0.0) {
+      return 0;
+    }
+    return candidate;
+  }
+
+  double plannedTimestampBaseNs(uint64_t frame_idx) const {
+    double base = startingTime + frame_idx * frameTimeNs;
+    double offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
+    double adjusted = base + offset;
+    return adjusted < 0.0 ? 0.0 : adjusted;
+  }
+
+  double offsetMultiplierForFrame(uint64_t frame_idx) const {
+    if (timestampOffsetMultipliers.empty()) {
+      return 0;
+    }
+
+    size_t loop_idx = frame_idx % timestampOffsetMultipliers.size();
+    return timestampOffsetMultipliers[loop_idx];
+  }
+
+  uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const {
+    double target_ns = plannedTimestampBaseNs(frame_idx);
+    double pacing_adjustment = pacing_tr_offset_ns -
+                               pacing_vrx_pkts * pacing_trs_ns;
+    double expected = target_ns + pacing_adjustment;
+    if (expected <= 0.0) {
+      return 0;
+    }
+    return expected;
+  }
+
+  void verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
+                           uint64_t expected_transmit_time_ns) const {
+    const int64_t delta_ns = (receive_time_ns) - (expected_transmit_time_ns);
+    int64_t expected_delta_ns = 10 * NS_PER_US;
+    if (frame_idx == 0) {
+      expected_delta_ns = 20 * NS_PER_US;
+    }
+
+    EXPECT_LE(delta_ns, expected_delta_ns)
+        << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
+        << " receive timestamp(ns): " << receive_time_ns
+        << " expected timestamp(ns): " << expected_transmit_time_ns;
+  }
+
+  void verifyMediaClock(uint64_t frame_idx, uint64_t timestamp_media_clk,
+                        uint64_t expected_media_clk) const {
+    EXPECT_EQ(timestamp_media_clk, expected_media_clk)
+        << " idx_rx: " << frame_idx << "expected media clk: " << expected_media_clk
+        << " received timestamp: " << timestamp_media_clk;
+  }
+
+  void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp) {
+    if (!lastTimestamp) {
+      return;
+    }
+
+    double current_target = plannedTimestampBaseNs(frame_idx);
+    double previous_target = plannedTimestampBaseNs(frame_idx ? frame_idx - 1 : 0);
+    double expected_step_ns = current_target - previous_target;
+    if (expected_step_ns < 0.0) {
+      expected_step_ns = 0.0;
+    }
+
+    uint64_t expected_step_input = expected_step_ns;
+    const uint64_t expected_step =
+        st10_tai_to_media_clk(expected_step_input, VIDEO_CLOCK_HZ);
+    const uint64_t diff = current_timestamp - lastTimestamp;
+    EXPECT_EQ(diff, expected_step) << " idx_rx: " << frame_idx << " diff: " << diff;
+  }
+
+ protected:
+  void initializeTiming(St20pHandler* handler) {
+    if (!handler) {
+      throw std::invalid_argument("St20pUserTimestamp expects a valid handler");
+    }
+
+    frameTimeNs = handler->nsFrameTime;
+
+    if (!frameTimeNs) {
+      double framerate = st_frame_rate(handler->sessionsOpsTx.fps);
+      if (framerate > 0.0) {
+        long double frame_time = (long double)NS_PER_S / framerate;
+        frameTimeNs = (uint64_t)(frame_time + 0.5L);
+      }
+    }
+
+    if (!frameTimeNs) {
+      frameTimeNs = NS_PER_S / 25;
+    }
+
+    startingTime = frameTimeNs * 20;
   }
 };
 
@@ -105,27 +226,239 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  St20pUserTimestamp* userData = new St20pUserTimestamp();
-  St20pHandler* handler = new St20pHandler(ctx);
-  handler->sessionsOpsTx.flags |=
-      ST20P_TX_FLAG_USER_PACING;  // Changed from ST30P to ST20P
-  handler->setModifiers(userData);
-  handler->createSession(true);
+  auto handlerTxBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [](St20pHandler* handler) { return new St20pUserTimestamp(handler); },
+      [](St20pHandler* handler) { handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING; });
 
-  st20pHandlers.emplace_back(handler);
-  sessionUserDatas.emplace_back(userData);
+  auto handlerRxBundle = createSt20pHandlerBundle(
+      /*createTx=*/false, /*createRx=*/true,
+      [](St20pHandler* handler) { return new St20pUserTimestamp(handler); });
+
+  auto* frameTestStrategyTx =
+      static_cast<St20pUserTimestamp*>(handlerTxBundle.strategy);
+  auto* frameTestStrategyRx =
+      static_cast<St20pUserTimestamp*>(handlerRxBundle.strategy);
+
+  handlerRxBundle.handler->startSessionRx();  // Rx must be up first
+  sleep(2);
+  handlerTxBundle.handler->startSessionTx();
+
+  TestPtpSourceSinceEpoch(nullptr);
+  mtl_start(ctx->handle);
+
+  ASSERT_EQ(frameTestStrategyTx->getPacingParameters(), 0);
+  EXPECT_GT(frameTestStrategyTx->pacing_tr_offset_ns, 0.0);
+  EXPECT_GT(frameTestStrategyTx->pacing_trs_ns, 0.0);
+  EXPECT_GT(frameTestStrategyTx->pacing_vrx_pkts, 0u);
+
+  frameTestStrategyRx->pacing_tr_offset_ns = frameTestStrategyTx->pacing_tr_offset_ns;
+  frameTestStrategyRx->pacing_trs_ns = frameTestStrategyTx->pacing_trs_ns;
+  frameTestStrategyRx->pacing_vrx_pkts = frameTestStrategyTx->pacing_vrx_pkts;
+
   sleepUntilFailure();
+
+  handlerTxBundle.handler->session.stop();
+  sleep(2);
+  handlerRxBundle.handler->session.stop();
+
+  ASSERT_GT(frameTestStrategyTx->idx_tx, 0u)
+    << "st20p_user_pacing did not transmit any frames";
+  ASSERT_GT(frameTestStrategyRx->idx_rx, 0u)
+    << "st20p_user_pacing did not receive any frames";
+  ASSERT_EQ(frameTestStrategyTx->idx_tx, frameTestStrategyRx->idx_rx)
+    << "TX/RX frame count mismatch";
+}
+
+class St20pUserTimestampCustomStart : public St20pUserTimestamp {
+ public:
+  St20pUserTimestampCustomStart(St20pHandler* parentHandler,
+                                std::vector<double> offsetsNs,
+                                uint64_t customStartingTimeNs)
+      : St20pUserTimestamp(parentHandler, offsetsNs) {
+    startingTime = customStartingTimeNs;
+  }
+};
+
+TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
+  ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
+  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
+
+  ctx->handle = mtl_init(&ctx->para);
+  ASSERT_TRUE(ctx->handle != nullptr);
+
+  std::vector<double> jitterMultipliers = {-0.00005, 0.0, 0.0000875, -0.00003,
+                                           0.00012,  -0.00001, 0.0,      0.00006};
+
+  auto txBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [jitterMultipliers](St20pHandler* handler) {
+        return new St20pUserTimestamp(handler, jitterMultipliers);
+      },
+      [](St20pHandler* handler) { handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING; });
+  auto rxBundle = createSt20pHandlerBundle(
+      /*createTx=*/false, /*createRx=*/true,
+      [jitterMultipliers](St20pHandler* handler) {
+        return new St20pUserTimestamp(handler, jitterMultipliers);
+      });
+  auto* txStrategy = static_cast<St20pUserTimestamp*>(txBundle.strategy);
+  auto* rxStrategy = static_cast<St20pUserTimestamp*>(rxBundle.strategy);
+
+  rxBundle.handler->startSessionRx();
+  sleep(2);
+  txBundle.handler->startSessionTx();
+
+  TestPtpSourceSinceEpoch(nullptr);
+  mtl_start(ctx->handle);
+
+  ASSERT_EQ(txStrategy->getPacingParameters(), 0);
+  EXPECT_GT(txStrategy->pacing_tr_offset_ns, 0.0);
+  EXPECT_GT(txStrategy->pacing_trs_ns, 0.0);
+  EXPECT_GT(txStrategy->pacing_vrx_pkts, 0u);
+
+  rxStrategy->pacing_tr_offset_ns = txStrategy->pacing_tr_offset_ns;
+  rxStrategy->pacing_trs_ns = txStrategy->pacing_trs_ns;
+  rxStrategy->pacing_vrx_pkts = txStrategy->pacing_vrx_pkts;
+
+  const int sleepDuration = defaultTestDuration > 1 ? defaultTestDuration / 2 : 1;
+  sleepUntilFailure(sleepDuration);
+
+    txBundle.handler->session.stop();
+    sleep(2);
+    rxBundle.handler->session.stop();
+
+    ASSERT_GE(txStrategy->idx_tx, jitterMultipliers.size())
+      << "TX frames below expectation";
+    ASSERT_GE(rxStrategy->idx_rx, jitterMultipliers.size())
+      << "RX frames below expectation";
+    ASSERT_EQ(txStrategy->idx_tx, rxStrategy->idx_rx)
+      << "TX/RX frame count mismatch";
+}
+
+TEST_F(NoCtxTest, st20p_user_pacing_offset_spike) {
+  ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
+  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
+
+  ctx->handle = mtl_init(&ctx->para);
+  ASSERT_TRUE(ctx->handle != nullptr);
+
+  std::vector<double> burstMultipliers = {0.0, 0.2, 0.4, 0.6, 0.8, 0.0, 0.0, 0.0};
+
+  auto txBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [burstMultipliers](St20pHandler* handler) {
+        return new St20pUserTimestamp(handler, burstMultipliers);
+      },
+      [](St20pHandler* handler) {
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+      });
+  auto rxBundle = createSt20pHandlerBundle(
+      /*createTx=*/false, /*createRx=*/true,
+      [burstMultipliers](St20pHandler* handler) {
+        return new St20pUserTimestamp(handler, burstMultipliers);
+      });
+  auto* txStrategy = static_cast<St20pUserTimestamp*>(txBundle.strategy);
+  auto* rxStrategy = static_cast<St20pUserTimestamp*>(rxBundle.strategy);
+
+  rxBundle.handler->startSessionRx();
+  sleep(2);
+  txBundle.handler->startSessionTx();
+
+  TestPtpSourceSinceEpoch(nullptr);
+  mtl_start(ctx->handle);
+
+    ASSERT_EQ(txStrategy->getPacingParameters(), 0);
+    EXPECT_GT(txStrategy->pacing_tr_offset_ns, 0.0);
+    EXPECT_GT(txStrategy->pacing_trs_ns, 0.0);
+    EXPECT_GT(txStrategy->pacing_vrx_pkts, 0u);
+
+    rxStrategy->pacing_tr_offset_ns = txStrategy->pacing_tr_offset_ns;
+    rxStrategy->pacing_trs_ns = txStrategy->pacing_trs_ns;
+    rxStrategy->pacing_vrx_pkts = txStrategy->pacing_vrx_pkts;
+
+  sleepUntilFailure(defaultTestDuration);
+
+    txBundle.handler->session.stop();
+    sleep(2);
+    rxBundle.handler->session.stop();
+
+    ASSERT_GE(txStrategy->idx_tx, burstMultipliers.size())
+      << "TX frames below expectation";
+    ASSERT_GE(rxStrategy->idx_rx, burstMultipliers.size())
+      << "RX frames below expectation";
+    ASSERT_EQ(txStrategy->idx_tx, rxStrategy->idx_rx)
+      << "TX/RX frame count mismatch";
+}
+
+TEST_F(NoCtxTest, st20p_user_pacing_offset_clamp_to_zero) {
+  ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
+  ctx->para.log_level = MTL_LOG_LEVEL_INFO;
+  ctx->para.flags &= ~MTL_FLAG_DEV_AUTO_START_STOP;
+
+  ctx->handle = mtl_init(&ctx->para);
+  ASSERT_TRUE(ctx->handle != nullptr);
+
+  std::vector<double> clampMultipliers = {-1.0, -0.5, 0.0, 0.25, 0.75, 0.0, -0.2};
+
+  auto txBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [clampMultipliers](St20pHandler* handler) {
+        return new St20pUserTimestampCustomStart(handler, clampMultipliers, 0);
+      },
+      [](St20pHandler* handler) {
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+      });
+  auto rxBundle = createSt20pHandlerBundle(
+      /*createTx=*/false, /*createRx=*/true,
+      [clampMultipliers](St20pHandler* handler) {
+        return new St20pUserTimestampCustomStart(handler, clampMultipliers, 0);
+      });
+  auto* txStrategy =
+      static_cast<St20pUserTimestampCustomStart*>(txBundle.strategy);
+  auto* rxStrategy =
+      static_cast<St20pUserTimestampCustomStart*>(rxBundle.strategy);
+
+  rxBundle.handler->startSessionRx();
+  sleep(2);
+  txBundle.handler->startSessionTx();
+
+  TestPtpSourceSinceEpoch(nullptr);
+  mtl_start(ctx->handle);
+
+  ASSERT_EQ(txStrategy->getPacingParameters(), 0);
+  EXPECT_GE(txStrategy->pacing_tr_offset_ns, 0.0);
+  EXPECT_GT(txStrategy->pacing_trs_ns, 0.0);
+  EXPECT_GT(txStrategy->pacing_vrx_pkts, 0u);
+
+  rxStrategy->pacing_tr_offset_ns = txStrategy->pacing_tr_offset_ns;
+  rxStrategy->pacing_trs_ns = txStrategy->pacing_trs_ns;
+  rxStrategy->pacing_vrx_pkts = txStrategy->pacing_vrx_pkts;
+
+  const int sleepDuration = defaultTestDuration > 1 ? defaultTestDuration / 2 : 1;
+  sleepUntilFailure(sleepDuration);
+
+    txBundle.handler->session.stop();
+    sleep(2);
+    rxBundle.handler->session.stop();
+
+    ASSERT_GT(txStrategy->idx_tx, 0u)
+      << "No frames transmitted under clamp test";
+    ASSERT_GT(rxStrategy->idx_rx, 0u)
+      << "No frames received under clamp test";
+    ASSERT_EQ(txStrategy->idx_tx, rxStrategy->idx_rx)
+      << "TX/RX frame count mismatch";
 }
 
 class St20pRedundantLatency : public St20pUserTimestamp {
   uint latencyInMs;
 
  public:
-  St20pRedundantLatency(uint latency = 30, St20pHandler* parentHandler = nullptr)
+  St20pRedundantLatency(uint latency, St20pHandler* parentHandler)
       : St20pUserTimestamp(parentHandler), latencyInMs(latency) {
-    enable_tx_modifier = true;
-    enable_rx_modifier = true;
-
     this->startingTime = (50 + latencyInMs) * NS_PER_MS;
   }
 
@@ -148,54 +481,55 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
 
   uint testedLatencyMs = 10;
 
-  uint sessionRxSideId = 0;
-  auto sessionUserData = new St20pRedundantLatency(0);
-  sessionUserDatas.emplace_back(sessionUserData);
-  st20pHandlers.emplace_back(
-      new St20pHandler(ctx, sessionUserData, {}, {}, false, false));
+  auto rxBundle = createSt20pHandlerBundle(
+      /*createTx=*/false, /*createRx=*/true,
+      [](St20pHandler* handler) { return new St20pRedundantLatency(0, handler); },
+      [this](St20pHandler* handler) {
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+        handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
+      });
+  auto* rxStrategy = static_cast<St20pRedundantLatency*>(rxBundle.strategy);
 
-  st20pHandlers[sessionRxSideId]->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-  st20pHandlers[sessionRxSideId]->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
-  st20pHandlers[sessionRxSideId]->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT,
-                                                  1);
-  st20pHandlers[sessionRxSideId]->createSessionRx();
+  auto primaryBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [](St20pHandler* handler) { return new St20pRedundantLatency(0, handler); },
+      [](St20pHandler* handler) {
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+        handler->setSessionPorts(2, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+                                 SESSION_SKIP_PORT);
+      });
+  auto* primaryStrategy = static_cast<St20pRedundantLatency*>(primaryBundle.strategy);
 
-  uint sessionTxPrimarySideId = 1;
-  sessionUserData = new St20pRedundantLatency(0);
-  sessionUserDatas.emplace_back(sessionUserData);
-  st20pHandlers.emplace_back(
-      new St20pHandler(ctx, sessionUserData, {}, {}, false, false));
+  auto latencyBundle = createSt20pHandlerBundle(
+      /*createTx=*/true, /*createRx=*/false,
+      [testedLatencyMs](St20pHandler* handler) {
+        return new St20pRedundantLatency(testedLatencyMs, handler);
+      },
+      [this, testedLatencyMs](St20pHandler* handler) {
+        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
+        handler->setSessionPorts(3, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
+                                 SESSION_SKIP_PORT);
+        memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
+               ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P]++;
+      });
 
-  st20pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-  st20pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |=
-      ST20P_TX_FLAG_USER_TIMESTAMP;
-  st20pHandlers[sessionTxPrimarySideId]->setSessionPorts(
-      2, SESSION_SKIP_PORT, SESSION_SKIP_PORT, SESSION_SKIP_PORT);
-  st20pHandlers[sessionTxPrimarySideId]->createSessionTx();
+  /* we are creating 3 handlers
+    - rxBundle receives both primary and redundant streams
+    - primaryBundle sends the primary stream (no modifications)
+    - latencyBundle sends the redundant stream delayed by testedLatencyMs
 
-  uint sessionTxRedundantLatencySideId = 2;
-  sessionUserData = new St20pRedundantLatency(testedLatencyMs);
-  sessionUserDatas.emplace_back(sessionUserData);
-  st20pHandlers.emplace_back(
-      new St20pHandler(ctx, sessionUserData, {}, {}, false, false));
-  st20pHandlers[sessionTxRedundantLatencySideId]->sessionsOpsTx.flags |=
-      ST20P_TX_FLAG_USER_PACING;
+    [primaryBundle]:          Tx ---> Rx [latencyBundle]
+    [latencyBundle]:          Tx ---> Rx [latencyBundle]
+  */
 
-  /* the later we want to send the stream the more we need to shift the timestamps */
-  st20pHandlers[sessionTxRedundantLatencySideId]->sessionsOpsTx.rtp_timestamp_delta_us =
-      -1 * (testedLatencyMs * 1000);
-
-  /* even though this session is sending Redundant stream we are setting primary port why
-  ? The session has no idea it's actually redundant we are simulating a late session */
-  st20pHandlers[sessionTxRedundantLatencySideId]->setSessionPorts(
-      3, SESSION_SKIP_PORT, SESSION_SKIP_PORT, SESSION_SKIP_PORT);
-  memcpy(st20pHandlers[sessionTxRedundantLatencySideId]
-             ->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
-         ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
-
-  st20pHandlers[sessionTxRedundantLatencySideId]
-      ->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P]++;
-  st20pHandlers[sessionTxRedundantLatencySideId]->createSessionTx();
+  rxBundle.handler->startSessionRx();
+  sleep(2);
+  primaryBundle.handler->startSessionTx();
+  latencyBundle.handler->startSessionTx();
 
   /* we are creating 3 handlers
     - sessionRx handler will receive both primary and redundant streams
@@ -207,9 +541,6 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
     [sessionTxRedundantLatencySideId]: Tx ---> Rx [sessionTxRedundantLatencySideId]
   */
 
-  st20pHandlers[sessionRxSideId]->startSessionRx();
-  st20pHandlers[sessionTxPrimarySideId]->startSessionTx();
-  st20pHandlers[sessionTxRedundantLatencySideId]->startSessionTx();
   TestPtpSourceSinceEpoch(nullptr);  // reset ptp time to 0
   mtl_start(ctx->handle);
   sleepUntilFailure(30);
@@ -217,19 +548,16 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
   mtl_stop(ctx->handle);
 
   st20_rx_user_stats stats;
-  st20p_rx_get_session_stats(st20pHandlers[sessionRxSideId]->sessionsHandleRx, &stats);
+  st20p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
   st20_tx_user_stats statsTxPrimary;
-  st20p_tx_get_session_stats(st20pHandlers[sessionTxPrimarySideId]->sessionsHandleTx,
-                             &statsTxPrimary);
+  st20p_tx_get_session_stats(primaryBundle.handler->sessionsHandleTx, &statsTxPrimary);
   st20_tx_user_stats statsTxRedundant;
-  st20p_tx_get_session_stats(
-      st20pHandlers[sessionTxRedundantLatencySideId]->sessionsHandleTx,
-      &statsTxRedundant);
+  st20p_tx_get_session_stats(latencyBundle.handler->sessionsHandleTx, &statsTxRedundant);
 
   uint64_t packetsSend = statsTxPrimary.common.port[0].packets;
   uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;
-  uint64_t framesSend = sessionUserDatas[sessionTxPrimarySideId]->idx_tx;
-  uint64_t framesRecieved = sessionUserDatas[sessionRxSideId]->idx_rx;
+  uint64_t framesSend = primaryStrategy->idx_tx;
+  uint64_t framesRecieved = rxStrategy->idx_rx;
 
   ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
       << "Comparison against primary stream";
@@ -237,4 +565,9 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
       << "Out of order packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
+
+  primaryBundle.handler->session.stop();
+  latencyBundle.handler->session.stop();
+  sleep(2);
+  rxBundle.handler->session.stop();
 }

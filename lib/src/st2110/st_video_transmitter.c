@@ -17,7 +17,7 @@
  * This adds a superficial difference between the RTP timestamp and the transmission
  * time, which makes it look as if the packets have a slight latency immediately after
  * entering the wire. This prevents negative latency values. */
-#define LATENCY_COMPENSATION 1
+#define LATENCY_COMPENSATION 2
 
 static int video_trs_tasklet_start(void* priv) {
   struct st_video_transmitter_impl* trs = priv;

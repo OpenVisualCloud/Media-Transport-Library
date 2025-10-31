@@ -4,10 +4,10 @@
 
 #include "noctx.hpp"
 
-St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
+St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                            st30p_tx_ops ops_tx, st30p_rx_ops ops_rx,
                            uint msPerFramebuffer, bool create, bool start)
-    : Handlers(ctx, sessionUserData), msPerFramebuffer(msPerFramebuffer) {
+    : Handlers(ctx, frameTestStrategy), msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
     ops_tx = sessionsOpsTx;
@@ -17,10 +17,10 @@ St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUser
     sessionsOpsRx = ops_rx;
   }
 
-  if (!sessionUserData) throw std::runtime_error("St30pHandler no sessionUserData");
+  if (!frameTestStrategy) throw std::runtime_error("St30pHandler no frameTestStrategy");
 
-  this->sessionUserData = sessionUserData;
-  sessionUserData->parent = this;
+  this->frameTestStrategy = frameTestStrategy;
+  frameTestStrategy->parent = this;
 
   if (create) {
     createSession(ops_tx, ops_rx, start);
@@ -177,8 +177,8 @@ void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsTx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsTx.sampling);
 
-    if (sessionUserData->enable_tx_modifier) {
-      sessionUserData->txTestFrameModifier(frame, frame->data_size);
+    if (frameTestStrategy->enable_tx_modifier) {
+      frameTestStrategy->txTestFrameModifier(frame, frame->data_size);
     }
 
     st30p_tx_put_frame((st30p_tx_handle)handle, frame);
@@ -203,8 +203,8 @@ void St30pHandler::st30pRxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsRx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsRx.sampling);
 
-    if (sessionUserData->enable_rx_modifier) {
-      sessionUserData->rxTestFrameModifier(frame, frame->data_size);
+    if (frameTestStrategy->enable_rx_modifier) {
+      frameTestStrategy->rxTestFrameModifier(frame, frame->data_size);
     }
 
     st30p_rx_put_frame((st30p_rx_handle)handle, frame);

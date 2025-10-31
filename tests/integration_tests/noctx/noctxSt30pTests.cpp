@@ -22,7 +22,7 @@ class St30pDefaultTimestamp : public FrameTestStrategy {
     uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling);
 
     EXPECT_NEAR(f->timestamp,
-                st10_tai_to_media_clk((idx_rx)*st30pParent->nsPacketTime, sampling),
+                st10_tai_to_media_clk(idx_rx * st30pParent->nsPacketTime, sampling),
                 framebuffTime)
         << " idx_rx: " << idx_rx;
     if (lastTimestamp != 0) {
@@ -86,10 +86,10 @@ TEST_F(NoCtxTest, st30p_default_timestamps) {
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  St30pDefaultTimestamp* userData = new St30pDefaultTimestamp();
-  St30pHandler* handler = new St30pHandler(ctx, userData);
+  St30pDefaultTimestamp* frameTestStrategy = new St30pDefaultTimestamp();
+  St30pHandler* handler = new St30pHandler(ctx, frameTestStrategy);
   st30pHandlers.emplace_back(handler);
-  sessionUserDatas.emplace_back(userData);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   sleepUntilFailure();
 }
 
@@ -100,14 +100,14 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
 
-  St30pUserTimestamp* userData = new St30pUserTimestamp();
+  St30pUserTimestamp* frameTestStrategy = new St30pUserTimestamp();
   St30pHandler* handler = new St30pHandler(ctx);
   handler->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
-  handler->setModifiers(userData);
+  handler->setFrameTestStrategy(frameTestStrategy);
   handler->createSession(true);
 
   st30pHandlers.emplace_back(handler);
-  sessionUserDatas.emplace_back(userData);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   sleepUntilFailure();
 }
 
@@ -147,30 +147,30 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
   uint testedLatencyMs = 10;
 
   uint sessionRxSideId = 0;
-  auto sessionUserData = new St30pRedundantLatency(0);
-  sessionUserDatas.emplace_back(sessionUserData);
+  auto frameTestStrategy = new St30pRedundantLatency(0);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   st30pHandlers.emplace_back(
-      new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
+      new St30pHandler(ctx, frameTestStrategy, {}, {}, 10, false, false));
   st30pHandlers[sessionRxSideId]->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
   st30pHandlers[sessionRxSideId]->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT,
                                                   1);
   st30pHandlers[sessionRxSideId]->createSessionRx();
 
   uint sessionTxPrimarySideId = 1;
-  sessionUserData = new St30pRedundantLatency(0);
-  sessionUserDatas.emplace_back(sessionUserData);
+  frameTestStrategy = new St30pRedundantLatency(0);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   st30pHandlers.emplace_back(
-      new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
+      new St30pHandler(ctx, frameTestStrategy, {}, {}, 10, false, false));
   st30pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
   st30pHandlers[sessionTxPrimarySideId]->setSessionPorts(
       2, SESSION_SKIP_PORT, SESSION_SKIP_PORT, SESSION_SKIP_PORT);
   st30pHandlers[sessionTxPrimarySideId]->createSessionTx();
 
   uint sessionTxRedundantLatencySideId = 2;
-  sessionUserData = new St30pRedundantLatency(testedLatencyMs);
-  sessionUserDatas.emplace_back(sessionUserData);
+  frameTestStrategy = new St30pRedundantLatency(testedLatencyMs);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   st30pHandlers.emplace_back(
-      new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
+      new St30pHandler(ctx, frameTestStrategy, {}, {}, 10, false, false));
   st30pHandlers[sessionTxRedundantLatencySideId]->sessionsOpsTx.flags |=
       ST30P_TX_FLAG_USER_PACING;
   /* the later we want to send the stream the more we need to shift the timestamps */
@@ -219,8 +219,8 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
 
   uint64_t packetsSend = statsTxPrimary.common.port[0].packets;
   uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;
-  uint64_t framesSend = sessionUserDatas[sessionTxPrimarySideId]->idx_tx;
-  uint64_t framesRecieved = sessionUserDatas[sessionRxSideId]->idx_rx;
+  uint64_t framesSend = frameTestStrategys[sessionTxPrimarySideId]->idx_tx;
+  uint64_t framesRecieved = frameTestStrategys[sessionRxSideId]->idx_rx;
 
   ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
       << "Comparison against primary stream";
@@ -245,10 +245,10 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   uint testedLatencyMs = 10;
 
   uint sessionRxSideId = 0;
-  auto sessionUserData = new St30pRedundantLatency(0);
-  sessionUserDatas.emplace_back(sessionUserData);
+  auto frameTestStrategy = new St30pRedundantLatency(0);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   st30pHandlers.emplace_back(
-      new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
+      new St30pHandler(ctx, frameTestStrategy, {}, {}, 10, false, false));
   st30pHandlers[sessionRxSideId]->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
   st30pHandlers[sessionRxSideId]->sessionsOpsTx.ptime = ST31_PTIME_80US;
   st30pHandlers[sessionRxSideId]->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT,
@@ -256,10 +256,10 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   st30pHandlers[sessionRxSideId]->createSessionRx();
 
   uint sessionTxPrimarySideId = 1;
-  sessionUserData = new St30pRedundantLatency(0);
-  sessionUserDatas.emplace_back(sessionUserData);
+  frameTestStrategy = new St30pRedundantLatency(0);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   st30pHandlers.emplace_back(
-      new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
+      new St30pHandler(ctx, frameTestStrategy, {}, {}, 10, false, false));
   st30pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.flags |= ST30P_TX_FLAG_USER_PACING;
   st30pHandlers[sessionTxPrimarySideId]->sessionsOpsTx.ptime = ST31_PTIME_80US;
   st30pHandlers[sessionTxPrimarySideId]->setSessionPorts(
@@ -267,10 +267,10 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
   st30pHandlers[sessionTxPrimarySideId]->createSessionTx();
 
   uint sessionTxRedundantLatencySideId = 2;
-  sessionUserData = new St30pRedundantLatency(testedLatencyMs);
-  sessionUserDatas.emplace_back(sessionUserData);
+  frameTestStrategy = new St30pRedundantLatency(testedLatencyMs);
+  frameTestStrategys.emplace_back(frameTestStrategy);
   st30pHandlers.emplace_back(
-      new St30pHandler(ctx, sessionUserData, {}, {}, 10, false, false));
+      new St30pHandler(ctx, frameTestStrategy, {}, {}, 10, false, false));
   st30pHandlers[sessionTxRedundantLatencySideId]->sessionsOpsTx.flags |=
       ST30P_TX_FLAG_USER_PACING;
   /* the later we want to send the stream the more we need to shift the timestamps */
@@ -321,8 +321,8 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
 
   uint64_t packetsSend = statsTxRedundant.common.port[0].packets;
   uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;
-  uint64_t framesSend = sessionUserDatas[sessionTxRedundantLatencySideId]->idx_tx;
-  uint64_t framesRecieved = sessionUserDatas[sessionRxSideId]->idx_rx;
+  uint64_t framesSend = frameTestStrategys[sessionTxRedundantLatencySideId]->idx_tx;
+  uint64_t framesRecieved = frameTestStrategys[sessionRxSideId]->idx_rx;
 
   ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
       << "Comparison against primary stream";
