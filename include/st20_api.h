@@ -480,6 +480,8 @@ struct st20_rx_tp_meta {
   enum st_rx_tp_compliant compliant;
   /** the failed cause if compliant is not ST_RX_TP_COMPLIANT_NARROW */
   char failed_cause[64];
+  /** TAI timestamp measured right after first packet of the frame was received */
+  uint64_t receive_timestamp;
 
   /* packets count in current report meta */
   uint32_t pkts_cnt;
@@ -1875,6 +1877,24 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
  *   - <0: Error code.
  */
 int st20_tx_get_sch_idx(st20_tx_handle handle);
+
+/**
+ * Retrieve pacing parameters for a tx st2110-20 session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param tr_offset_ns
+ *   Optional output for the tr offset value in nanoseconds.
+ * @param trs_ns
+ *   Optional output for the packet spacing (TRS) value in nanoseconds.
+ * @param vrx_pkts
+ *   Optional output for the VRX packet count.
+ *
+ * @return
+ *    0 on success, negative value otherwise.
+ */
+int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, double* trs_ns,
+                              uint32_t* vrx_pkts);
 
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.

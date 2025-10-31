@@ -70,7 +70,6 @@ tests/validation/logs
 html/
 test.*
 build/
-core*
 out*
 assets/
 *.pkg

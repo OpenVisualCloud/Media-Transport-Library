@@ -2,12 +2,19 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
-#include "noctx.hpp"
+#include "st30p_handler.hpp"
 
-St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUserData,
+#include <cstdio>
+#include <cstring>
+#include <stdexcept>
+#include <thread>
+
+St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                            st30p_tx_ops ops_tx, st30p_rx_ops ops_rx,
                            uint msPerFramebuffer, bool create, bool start)
-    : Handlers(ctx, sessionUserData), msPerFramebuffer(msPerFramebuffer) {
+    : Handlers(ctx, frameTestStrategy),
+      nsPacketTime(0),
+      msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
     ops_tx = sessionsOpsTx;
@@ -17,10 +24,10 @@ St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUser
     sessionsOpsRx = ops_rx;
   }
 
-  if (!sessionUserData) throw std::runtime_error("St30pHandler no sessionUserData");
+  if (!frameTestStrategy) throw std::runtime_error("St30pHandler no frameTestStrategy");
 
-  this->sessionUserData = sessionUserData;
-  sessionUserData->parent = this;
+  this->frameTestStrategy = frameTestStrategy;
+  frameTestStrategy->parent = this;
 
   if (create) {
     createSession(ops_tx, ops_rx, start);
@@ -29,7 +36,7 @@ St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* sessionUser
 
 St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
                            st30p_rx_ops ops_rx, uint msPerFramebuffer)
-    : Handlers(ctx), msPerFramebuffer(msPerFramebuffer) {
+    : Handlers(ctx), nsPacketTime(0), msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
   } else {
@@ -62,7 +69,6 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
          MTL_IP_ADDR_LEN);
   memcpy(sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
          MTL_IP_ADDR_LEN);
-
   /* Don't enable Redundant by default */
   sessionsOpsTx.port.num_port = 1;
   snprintf(sessionsOpsTx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
@@ -88,7 +94,6 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
   memcpy(sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
          MTL_IP_ADDR_LEN);
 
-  /* Don't enable Redundant by default */
   sessionsOpsTx.port.num_port = 1;
   snprintf(sessionsOpsRx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_R]);
@@ -114,6 +119,13 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
 
   if (framesPerSec == 0) framesPerSec = 1;
   nsPacketTime = NS_PER_S / framesPerSec;
+}
+
+void St30pHandler::setFrameTestStrategy(FrameTestStrategy* newStrategy) {
+  frameTestStrategy = newStrategy;
+  if (frameTestStrategy) {
+    frameTestStrategy->parent = this;
+  }
 }
 
 void St30pHandler::createSession(st30p_tx_ops ops_tx, st30p_rx_ops ops_rx, bool start) {
@@ -177,8 +189,8 @@ void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsTx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsTx.sampling);
 
-    if (sessionUserData->enable_tx_modifier) {
-      sessionUserData->txTestFrameModifier(frame, frame->data_size);
+    if (frameTestStrategy && frameTestStrategy->enable_tx_modifier) {
+      frameTestStrategy->txTestFrameModifier(frame, frame->data_size);
     }
 
     st30p_tx_put_frame((st30p_tx_handle)handle, frame);
@@ -203,8 +215,8 @@ void St30pHandler::st30pRxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsRx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsRx.sampling);
 
-    if (sessionUserData->enable_rx_modifier) {
-      sessionUserData->rxTestFrameModifier(frame, frame->data_size);
+    if (frameTestStrategy && frameTestStrategy->enable_rx_modifier) {
+      frameTestStrategy->rxTestFrameModifier(frame, frame->data_size);
     }
 
     st30p_rx_put_frame((st30p_rx_handle)handle, frame);
@@ -212,43 +224,27 @@ void St30pHandler::st30pRxDefaultFunction(std::atomic<bool>& stopFlag) {
 }
 
 void St30pHandler::startSession() {
-  Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st30pTxDefaultFunction(stopFlag); },
-       [this](std::atomic<bool>& stopFlag) { this->st30pRxDefaultFunction(stopFlag); }});
+  startSessionRx();
+  startSessionTx();
 }
 
 void St30pHandler::startSessionTx() {
   Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st30pTxDefaultFunction(stopFlag); }});
+      {[this](std::atomic<bool>& stopFlag) { this->st30pTxDefaultFunction(stopFlag); }},
+      /*isRx=*/false);
 }
 
 void St30pHandler::startSessionRx() {
   Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st30pRxDefaultFunction(stopFlag); }});
+      {[this](std::atomic<bool>& stopFlag) { this->st30pRxDefaultFunction(stopFlag); }},
+      /*isRx=*/true);
 }
 
 void St30pHandler::startSession(
-    std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions) {
-  Handlers::startSession(threadFunctions);
+    std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions, bool isRx) {
+  Handlers::startSession(threadFunctions, isRx);
 }
 
-/**
- * @brief Set the session port names for TX and RX, including redundant ports if
- * specified.
- *
- * This function updates the port names in sessionsOpsTx and sessionsOpsRx based on the
- * provided indices. If an index is SESSION_SKIP_PORT, that port is not set. If both
- * primary and redundant ports are set, num_port is set to 2, otherwise to 1.
- *
- * @param txPortIdx Index for the primary TX port in ctx->para.port, or SESSION_SKIP_PORT
- * to skip.
- * @param rxPortIdx Index for the primary RX port in ctx->para.port, or SESSION_SKIP_PORT
- * to skip.
- * @param txPortRedundantIdx Index for the redundant TX port in ctx->para.port, or
- * SESSION_SKIP_PORT to skip.
- * @param rxPortRedundantIdx Index for the redundant RX port in ctx->para.port, or
- * SESSION_SKIP_PORT to skip.
- */
 void St30pHandler::setSessionPorts(int txPortIdx, int rxPortIdx, int txPortRedundantIdx,
                                    int rxPortRedundantIdx) {
   setSessionPortsTx(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
