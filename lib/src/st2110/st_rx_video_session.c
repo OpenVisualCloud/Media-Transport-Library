@@ -1122,8 +1122,16 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   }
 
   if (timestamp_is_in_the_past) {
-    dbg("%s(%d): tmstamp %u is in the past, drop it\n", __func__, s->idx, tmstamp);
-    return NULL;
+    for (int i = 0; i < s->ops.num_port; i++) {
+      if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
+        dbg("%s(%d): tmstamp %u is in the past, drop it\n", __func__, s->idx, tmstamp);
+        return NULL;
+      }
+    }
+
+    /* should never happen */
+    warn("%s(%d), redundant error threshold reached, accept packet tmstamp %d\n",
+         __func__, s->idx, tmstamp);
   }
 
   dbg("%s(%d): new tmstamp %u\n", __func__, s->idx, tmstamp);
@@ -1561,8 +1569,10 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
   if (exist_ts && !slot->frame) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant_dropped);
     slot->pkts_recv_per_port[s_port]++;
+    s->redundant_error_cnt[s_port]++;
     return 0;
   }
+  s->redundant_error_cnt[s_port] = 0;
 
   if ((!slot || !slot->frame) && !exist_ts) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_no_slot);
@@ -1979,8 +1989,10 @@ static int rv_handle_st22_pkt(struct st_rx_video_session_impl* s, struct rte_mbu
   if (exist_ts && !slot->frame) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant_dropped);
     slot->pkts_recv_per_port[s_port]++;
+    s->redundant_error_cnt[s_port]++;
     return 0;
   }
+  s->redundant_error_cnt[s_port] = 0;
 
   if ((!slot || !slot->frame) && !exist_ts) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_no_slot);
@@ -2150,9 +2162,11 @@ static int rv_handle_hdr_split_pkt(struct st_rx_video_session_impl* s,
   /* Based on rv_slot_by_tmstamp - exist_ts is only true when slot is found */
   if (exist_ts && !slot->frame) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant_dropped);
+    s->redundant_error_cnt[s_port]++;
     slot->pkts_recv_per_port[s_port]++;
     return 0;
   }
+  s->redundant_error_cnt[s_port] = 0;
 
   if ((!slot || !slot->frame) && !exist_ts) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_no_slot);
