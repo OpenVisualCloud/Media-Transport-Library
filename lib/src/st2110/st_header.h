@@ -78,6 +78,8 @@
 
 #define ST_SESSION_STAT_TIMEOUT_US (10)
 
+#define ST_SESSION_REDUNDANT_ERROR_THRESHOLD (20)
+
 #define ST_SESSION_STAT_INC(s, struct, stat) \
   do {                                       \
     (s)->stat++;                             \
@@ -637,6 +639,11 @@ struct st_rx_video_session_impl {
   /* rtp info */
   struct rte_ring* rtps_ring;
 
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
+
   /* record two frames in case pkts out of order within marker */
   struct st_rx_video_slot_impl slots[ST_VIDEO_RX_REC_NUM_OFO];
   int slot_idx;
@@ -1020,6 +1027,11 @@ struct st_rx_audio_session_impl {
   int session_seq_id;     /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
+
   uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
   int64_t tmstamp;
   size_t frame_recv_size;
@@ -1187,6 +1199,12 @@ struct st_rx_ancillary_session_impl {
   bool mcast_joined[MTL_SESSION_PORT_MAX];
   int session_seq_id; /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
+
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp or seq_id jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely)
+   * and 2^15 seq_id wraparound (unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
@@ -1360,6 +1378,12 @@ struct st_rx_fastmetadata_session_impl {
   bool mcast_joined[MTL_SESSION_PORT_MAX];
   int session_seq_id; /* global session seq id to track continuity across redundant */
   int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
+
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp or seq_id jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely)
+   * and 2^15 seq_id wraparound (unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
