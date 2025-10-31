@@ -26,7 +26,7 @@ def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
 
 
 def gen_topology_config(
-    ip_address: str, username: str, password: str, key_path: str
+    pci_device: str, ip_address: str, username: str, password: str, key_path: str
 ) -> str:
     topology_config = {
         "metadata": {"version": "2.4"},
@@ -36,7 +36,10 @@ def gen_topology_config(
                 "instantiate": True,
                 "role": "sut",
                 "network_interfaces": [
-                    {"pci_device": "8086:1592", "interface_index": 0}
+                    {
+                        "pci_device": pci_device,
+                        "interface_index": 0,
+                    }
                 ],
                 "connections": [
                     {
@@ -83,6 +86,12 @@ def main() -> None:
         help="specify path to MTL directory",
     )
     parser.add_argument(
+        "--pci_device",
+        type=str,
+        required=True,
+        help="specify PCI ID of the NIC",
+    )
+    parser.add_argument(
         "--ip_address",
         type=str,
         required=True,
@@ -118,6 +127,7 @@ def main() -> None:
     with open("topology_config.yaml", "w") as file:
         file.write(
             gen_topology_config(
+                pci_device=args.pci_device,
                 ip_address=args.ip_address,
                 username=args.username,
                 password=args.password,
