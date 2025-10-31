@@ -120,6 +120,15 @@ class FrameTestStrategy {
   virtual void txTestFrameModifier(void* frame, size_t frame_size){};
   virtual void rxTestFrameModifier(void* frame, size_t frame_size){};
 
+  FrameTestStrategy(Handlers* parent = nullptr, bool enable_tx_modifier = false,
+                    bool enable_rx_modifier = false)
+      : parent(parent),
+        idx_tx(0),
+        idx_rx(0),
+        enable_tx_modifier(enable_tx_modifier),
+        enable_rx_modifier(enable_rx_modifier) {
+  }
+
   virtual ~FrameTestStrategy() {
     parent = nullptr;
   }
