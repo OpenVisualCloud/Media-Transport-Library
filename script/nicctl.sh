@@ -17,6 +17,7 @@ if [ $# -lt 2 ]; then
 	echo "   create_dcf_vf            Create DCF VFs and bind to VFIO"
 	echo "   disable_vf               Disable VF"
 	echo "   list all                 List all NIC devices and the brief"
+	echo "   list up                  List all NIC devices and the brief with UP status"
 	echo "   list <bb:dd:ff.x>        List VFs of the specified PF"
 	exit 0
 fi
@@ -145,6 +146,10 @@ list() {
 
 		interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/*)
 
+		if [[ $1 == "up" ]]; then
+			ip link show "$interface_name" 2>/dev/null | grep -q "state UP" || continue
+		fi
+
 		printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" \
 			"$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name"
 
@@ -169,6 +174,9 @@ fi
 if [ "$cmd" == "list" ]; then
 	if [ "$2" == "all" ]; then
 		list
+		exit 0
+	elif [[ "$2" == "up" ]]; then
+		list "up"
 		exit 0
 	else
 		list_vf "$2"

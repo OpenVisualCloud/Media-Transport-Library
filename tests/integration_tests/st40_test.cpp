@@ -478,12 +478,12 @@ static void st40_rx_fps_test(enum st40_type type[], enum st_fps fps[],
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -762,12 +762,12 @@ static void st40_rx_update_src_test(enum st40_type type, int tx_sessions,
   struct st40_tx_ops ops_tx;
   struct st40_rx_ops ops_rx;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
   /* return if level lower than global */
   if (level < ctx->level) return;
@@ -1020,12 +1020,12 @@ static void st40_after_start_test(enum st40_type type[], enum st_fps fps[], int 
   struct st40_tx_ops ops_tx;
   struct st40_rx_ops ops_rx;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
