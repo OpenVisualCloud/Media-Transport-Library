@@ -53,8 +53,10 @@ ubuntu_build: &ubuntu_build
   - *docker
   - *ecosystem
 
-linux_gtest: &linux_gtest
+linux_tests: &linux_tests
+  - .github/scripts/gtest.sh
   - .github/workflows/gtest-bare-metal.yml
+  - .github/workflows/smoke-tests.yml
   - '.github/workflows/upl*'
   - 'tests/unittest/*'
   - *ice_build
