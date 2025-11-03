@@ -401,7 +401,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     EXPECT_TRUE(handle == NULL);           \
                                            \
     /* test with 2 num_port */             \
-    if (ctx->para.num_ports != 2) {        \
+    if (ctx->para.num_ports < 2) {         \
       ops.num_port = 2;                    \
       handle = A##_create(m_handle, &ops); \
       EXPECT_TRUE(handle == NULL);         \
@@ -714,7 +714,7 @@ int tx_next_frame(void* priv, uint16_t* next_frame_idx);
     EXPECT_TRUE(handle == NULL);           \
                                            \
     /* test with 2 num_port */             \
-    if (ctx->para.num_ports != 2) {        \
+    if (ctx->para.num_ports < 2) {         \
       ops.port.num_port = 2;               \
       handle = A##_create(m_handle, &ops); \
       EXPECT_TRUE(handle == NULL);         \

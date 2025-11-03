@@ -877,12 +877,12 @@ static void st20_rx_fps_test(enum st20_type type[], enum st_fps fps[], int width
   int ret;
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   /* return if level small than global */
@@ -1311,12 +1311,12 @@ static void st20_rx_update_src_test(enum st20_type type, int tx_sessions,
   int ret;
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
   ASSERT_TRUE(tx_sessions >= 1);
   bool tx_update_dst = (tx_sessions == 1);
@@ -1867,12 +1867,12 @@ static void st20_rx_digest_test(enum st20_type tx_type[], enum st20_type rx_type
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   bool has_dma = st_test_dma_available(ctx);
@@ -2786,12 +2786,12 @@ static void st20_rx_meta_test(enum st_fps fps[], int width[], int height[],
   int ret;
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -2964,12 +2964,12 @@ static void st20_rx_after_start_test(enum st20_type type[], enum st_fps fps[],
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -3188,12 +3188,12 @@ static void st20_rx_uframe_test(enum st20_type rx_type[], enum st20_packing pack
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -3473,12 +3473,12 @@ static void st20_rx_detect_test(enum st20_type tx_type[], enum st20_type rx_type
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -3786,12 +3786,12 @@ static void st20_rx_dump_test(enum st20_type type[], enum st_fps fps[], int widt
   int ret;
   struct st20_tx_ops ops_tx;
   struct st20_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) {
@@ -4008,12 +4008,12 @@ static void st20_tx_ext_frame_rx_digest_test(enum st20_packing packing[],
     return;
   }
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   bool has_dma = st_test_dma_available(ctx);
@@ -4350,12 +4350,12 @@ static void st20_tx_user_pacing_test(int width[], int height[], enum st20_fmt fm
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -4572,12 +4572,12 @@ static void st20_linesize_digest_test(enum st20_packing packing[], enum st_fps f
     }
   }
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   bool has_dma = st_test_dma_available(ctx);
