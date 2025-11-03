@@ -414,6 +414,13 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
     err("%s, mt_dev_eal_init fail %d\n", __func__, ret);
     return NULL;
   }
+
+  const char* rte_ver = rte_version();
+  if (!strstr(rte_ver, "mtl")) {
+    err("%s, unpatched dpdk please use supported dpdk version: %s\n", __func__, rte_ver);
+    goto err_exit;
+  }
+
   notice("%s, MTL version: %s, dpdk version: %s\n", __func__, mtl_version(),
          rte_version());
 #ifdef MTL_HAS_USDT
