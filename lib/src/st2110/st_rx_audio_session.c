@@ -311,8 +311,15 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     dbg("%s(%d,%d), drop as pkt seq_id %u (%u) or tmstamp %u (%ld) is old\n", __func__,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    return -EIO;
+    for (int i = 0; i < s->ops.num_port; i++) {
+      if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
+        return -EIO;
+      }
+    }
+    warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %ld\n",
+         __func__, s->idx, tmstamp, s->tmstamp);
   }
+  s->redundant_error_cnt[s_port] = 0;
   s->tmstamp = tmstamp;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
@@ -470,8 +477,17 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
         s->idx, s_port, seq_id, s->latest_seq_id[s_port], tmstamp, s->tmstamp);
     s->stat_pkts_redundant++;
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    return -EIO;
+    for (int i = 0; i < s->ops.num_port; i++) {
+      if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
+        return -EIO;
+      }
+    }
+
+    /* should never happen */
+    warn("%s(%d), redundant error threshold reached, accept packet tmstamp (%d) %ld\n",
+         __func__, s->idx, tmstamp, s->tmstamp);
   }
+  s->redundant_error_cnt[s_port] = 0;
   s->tmstamp = tmstamp;
 
   /* hole in seq id packets going into the session check if the seq_id of the session is
