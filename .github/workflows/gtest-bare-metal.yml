@@ -40,7 +40,7 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  run-tests:
+  run-gtest-tests:
     needs: gtest-check-for-changes
     if: github.repository == 'OpenVisualCloud/Media-Transport-Library' && (needs.gtest-check-for-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
     strategy:
