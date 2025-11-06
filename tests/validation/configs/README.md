@@ -141,6 +141,81 @@ hosts:
 
 ## Customizing Configurations
 
+### Usage Examples
+
+Here are practical examples of how to use these configuration files:
+
+#### Example 1: Running Tests with Custom Configurations
+
+```bash
+# Navigate to validation directory
+cd tests/validation
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Run all smoke tests with your configurations
+sudo ./venv/bin/python3 -m pytest \
+  --topology_config=configs/topology_config.yaml \
+  --test_config=configs/test_config.yaml \
+  -m smoke -v
+
+# Run a specific test category
+sudo ./venv/bin/python3 -m pytest \
+  --topology_config=configs/topology_config.yaml \
+  --test_config=configs/test_config.yaml \
+  -m st20p -v
+
+# Run a specific test with parameters
+sudo ./venv/bin/python3 -m pytest \
+  --topology_config=configs/topology_config.yaml \
+  --test_config=configs/test_config.yaml \
+  "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]" -v
+```
+
+#### Example 2: Using Environment-Specific Configurations
+
+```bash
+# Create a local configuration for your environment
+cp configs/test_config.yaml configs/test_config.local.yaml
+cp configs/topology_config.yaml configs/topology_config.local.yaml
+
+# Edit local files with your settings
+vim configs/test_config.local.yaml
+vim configs/topology_config.local.yaml
+
+# Run tests with local configurations
+sudo ./venv/bin/python3 -m pytest \
+  --topology_config=configs/topology_config.local.yaml \
+  --test_config=configs/test_config.local.yaml \
+  -m smoke -v
+```
+
+#### Example 3: Complete Setup Workflow
+
+```bash
+# 1. Update test_config.yaml
+sed -i 's|MTL_PATH_PLACEHOLDER|/home/user/Media-Transport-Library|g' configs/test_config.yaml
+
+# 2. Update topology_config.yaml
+sed -i 's|IP_ADDRESS_PLACEHOLDER|127.0.0.1|g' configs/topology_config.yaml
+sed -i 's|SSH_PORT_PLACEHOLDER|22|g' configs/topology_config.yaml
+sed -i 's|USERNAME_PLACEHOLDER|root|g' configs/topology_config.yaml
+sed -i 's|KEY_PATH_PLACEHOLDER|/home/user/.ssh/id_rsa|g' configs/topology_config.yaml
+
+# 3. Verify your configuration
+cat configs/test_config.yaml
+cat configs/topology_config.yaml
+
+# 4. Run tests
+cd tests/validation
+source venv/bin/activate
+sudo ./venv/bin/python3 -m pytest \
+  --topology_config=configs/topology_config.yaml \
+  --test_config=configs/test_config.yaml \
+  -m smoke -v
+```
+
 ### Environment-Specific Configuration
 
 To customize the configuration for different environments, create copies of these files with environment-specific settings:
