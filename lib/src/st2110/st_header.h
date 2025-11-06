@@ -78,6 +78,8 @@
 
 #define ST_SESSION_STAT_TIMEOUT_US (10)
 
+#define ST_SESSION_REDUNDANT_ERROR_THRESHOLD (20)
+
 #define ST_SESSION_STAT_INC(s, struct, stat) \
   do {                                       \
     (s)->stat++;                             \
@@ -449,7 +451,7 @@ struct st_rx_video_slot_slice_info {
 
 struct st_rx_video_slot_impl {
   int idx;
-  uint32_t tmstamp;
+  int64_t tmstamp;
   uint16_t seq_id_base;     /* seq id for the first packet */
   uint32_t seq_id_base_u32; /* seq id for the first packet with u32 */
   bool seq_id_got;
@@ -637,6 +639,11 @@ struct st_rx_video_session_impl {
   /* rtp info */
   struct rte_ring* rtps_ring;
 
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
+
   /* record two frames in case pkts out of order within marker */
   struct st_rx_video_slot_impl slots[ST_VIDEO_RX_REC_NUM_OFO];
   int slot_idx;
@@ -690,6 +697,7 @@ struct st_rx_video_session_impl {
   int stat_pkts_enqueue_fallback; /* for pkt lcore */
   int stat_pkts_offset_dropped;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_pkts_redundant_dropped;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
@@ -1016,10 +1024,16 @@ struct st_rx_audio_session_impl {
   uint32_t st30_pkt_size; /* size for each pkt which include the header */
   int st30_total_pkts;    /* total pkts in one frame */
   int st30_pkt_idx;       /* pkt index in current frame */
-  int latest_seq_id;      /* latest seq id */
+  int session_seq_id;     /* global session seq id to track continuity across redundant */
+  int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
+
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
   uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
-  uint32_t tmstamp;
+  int64_t tmstamp;
   size_t frame_recv_size;
 
   /* st30 rtp info */
@@ -1033,6 +1047,7 @@ struct st_rx_audio_session_impl {
   int stat_pkts_dropped;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_slot_get_frame_fail;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
@@ -1182,17 +1197,24 @@ struct st_rx_ancillary_session_impl {
 
   uint16_t st40_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
+  int session_seq_id; /* global session seq id to track continuity across redundant */
+  int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
-  int latest_seq_id; /* latest seq id */
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp or seq_id jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely)
+   * and 2^15 seq_id wraparound (unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
-  uint32_t tmstamp;
+  int64_t tmstamp;
   /* status */
   rte_atomic32_t stat_frames_received;
   int stat_pkts_dropped;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_pkts_enqueue_fail;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;
@@ -1354,16 +1376,24 @@ struct st_rx_fastmetadata_session_impl {
 
   uint16_t st41_dst_port[MTL_SESSION_PORT_MAX]; /* udp port */
   bool mcast_joined[MTL_SESSION_PORT_MAX];
+  int session_seq_id; /* global session seq id to track continuity across redundant */
+  int latest_seq_id[MTL_SESSION_PORT_MAX]; /* latest seq id */
 
-  int latest_seq_id; /* latest seq id */
+  /* Redundant packet threshold guard: Accept packets after error threshold
+   * to prevent deadlock when streams reset or have large timestamp or seq_id jumps.
+   * Handles edge case of 2^31 timestamp wraparound (highly unlikely)
+   * and 2^15 seq_id wraparound (unlikely). */
+  int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
   struct mt_rtcp_rx* rtcp_rx[MTL_SESSION_PORT_MAX];
 
-  uint32_t tmstamp;
+  /* the timestamp */
+  int64_t tmstamp;
   /* status */
   rte_atomic32_t stat_frames_received;
   int stat_pkts_redundant;
   int stat_pkts_out_of_order;
+  int stat_pkts_out_of_order_per_port[MTL_SESSION_PORT_MAX];
   int stat_pkts_enqueue_fail;
   int stat_pkts_wrong_pt_dropped;
   int stat_pkts_wrong_ssrc_dropped;

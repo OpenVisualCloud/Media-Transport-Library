@@ -420,12 +420,12 @@ static void st30_rx_fps_test(enum st30_type type[], enum st30_sampling sample[],
   struct st30_tx_ops ops_tx;
   struct st30_rx_ops ops_rx;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   /* return if level small than global */
@@ -824,12 +824,12 @@ static void st30_rx_update_src_test(enum st30_type type, int tx_sessions,
 
   struct st30_tx_ops ops_tx;
   struct st30_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
   /* return if level lower than global */
   if (level < ctx->level) return;
@@ -1133,12 +1133,12 @@ static void st30_rx_meta_test(enum st30_fmt fmt[], enum st30_sampling sampling[]
   int ret;
   struct st30_tx_ops ops_tx;
   struct st30_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
   /* return if level lower than global */
   if (level < ctx->level) return;
@@ -1321,12 +1321,12 @@ static void st30_create_after_start_test(enum st30_type type[],
   struct st30_tx_ops ops_tx;
   struct st30_rx_ops ops_rx;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
   /* return if level lower than global */
   if (level < ctx->level) return;

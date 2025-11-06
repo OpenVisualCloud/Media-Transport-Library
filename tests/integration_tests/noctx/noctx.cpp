@@ -17,7 +17,11 @@ void NoCtxTest::SetUp() {
   memcpy(ctx, st_test_ctx(), sizeof(*ctx));
 
   if (ctx->handle) {
-    throw std::runtime_error("NoCtxTest::SetUp ctx already initialized!");
+    throw std::runtime_error(
+        "NoCtxTest::SetUp: ctx->handle is already initialized!\n"
+        "This likely means the global context was not properly reset between tests.\n"
+        "To run NOCTX tests, please use the '--no_ctx_tests' option to ensure a clean "
+        "context.");
   }
 
   ctx->level = ST_TEST_LEVEL_MANDATORY;
@@ -40,6 +44,14 @@ void NoCtxTest::TearDown() {
     }
   }
   st30pHandlers.clear();
+
+  for (auto handler : st20pHandlers) {
+    if (handler) {
+      delete handler;
+      handler = nullptr;
+    }
+  }
+  st20pHandlers.clear();
 
   for (auto data : sessionUserDatas) {
     if (data) {
@@ -76,8 +88,8 @@ uint64_t NoCtxTest::TestPtpSourceSinceEpoch(void* priv) {
     clock_gettime(CLOCK_MONOTONIC, &spec_adjustment_to_epoch);
     uint64_t temp_adjustment = (uint64_t)spec_adjustment_to_epoch.tv_sec * NS_PER_S +
                                spec_adjustment_to_epoch.tv_nsec;
-    uint64_t expected = 0;
-    adjustment_ns.compare_exchange_strong(expected, temp_adjustment);
+
+    adjustment_ns.store(temp_adjustment);
   }
 
   clock_gettime(CLOCK_MONOTONIC, &spec);

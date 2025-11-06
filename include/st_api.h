@@ -271,6 +271,8 @@ struct st_rx_port_stats {
   uint64_t incomplete_frames;
   /** Total number of received packets which are not valid. */
   uint64_t err_packets;
+  /** Total number of out-of-order packets received */
+  uint64_t out_of_order_packets;
 };
 
 /**

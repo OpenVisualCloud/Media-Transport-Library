@@ -16,7 +16,14 @@ permissions:
   contents: read
 jobs:
   run-smoke-tests:
-    runs-on: [self-hosted, linux, x64, dpdk]
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
     steps:
       - name: 'preparation: Harden Runner'
@@ -35,13 +42,30 @@ jobs:
           python3 -m venv .venv
           source .venv/bin/activate
           pip install -r requirements.txt
-      - name: Replace secrets in example config files
+      - name: Create session ID
         run: |
-          sed -i "s+MTL_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_MTL_PATH }}+" tests/validation/configs/test_config.yaml
-          sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s+KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config.yaml
+          runner_name=${{ runner.name }}
+          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+      - name: Set PCI device env variable
+        run: |
+          if [ "${{ matrix.nic }}" = "e810" ]; then
+            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
+            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e830" ]; then
+            echo "PCI_DEVICE=8086:12d2" >> "$GITHUB_ENV"
+          fi
+      - name: Generate test framework config files
+        working-directory: tests/validation/configs
+        run: |
+          python3 gen_config.py \
+            --session_id ${{ env.SESSION_ID }} \
+            --build ${{ secrets.RUNNER_BUILD }} \
+            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
+            --pci_device ${{ env.PCI_DEVICE }} \
+            --ip_address 127.0.0.1 \
+            --username ${{ secrets.RUNNER_USERNAME }} \
+            --key_path ${{ secrets.RUNNER_KEY_PATH }}
       - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
         run: |
           eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
@@ -70,7 +94,7 @@ jobs:
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: smoke-tests-report
+          name: smoke-test-report-${{ matrix.nic }}
           path: |
             report.html
       - name: "Add report to summary"

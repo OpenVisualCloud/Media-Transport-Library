@@ -379,12 +379,12 @@ static void st22_rx_fps_test(enum st22_type type[], enum st_fps fps[], int width
   int ret;
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   /* return if level lower than global */
@@ -591,12 +591,12 @@ static void st22_rx_update_src_test(int tx_sessions, enum st_test_level level) {
   int ret;
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   /* return if level lower than global */
@@ -833,12 +833,12 @@ static void st22_rx_after_start_test(enum st_fps fps[], int width[], int height[
   int ret;
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -1012,12 +1012,12 @@ static void st22_rx_dump_test(enum st_fps fps[], int width[], int height[],
   int ret;
   struct st22_tx_ops ops_tx;
   struct st22_rx_ops ops_rx;
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   if (!mtl_pmd_is_dpdk_based(m_handle, MTL_PORT_R)) {
@@ -1252,12 +1252,12 @@ static void st22_rx_digest_test(enum st_fps fps[], int width[], int height[],
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;
@@ -1477,12 +1477,12 @@ static void st22_tx_user_pacing_test(int width[], int height[], int pkt_data_len
   /* return if level small than global */
   if (level < ctx->level) return;
 
-  if (ctx->para.num_ports != 2) {
+  if (ctx->para.num_ports < 2) {
     info(
         "%s, dual port should be enabled for tx test, one for tx and one for "
         "rx\n",
         __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   std::vector<tests_context*> test_ctx_tx;

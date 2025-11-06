@@ -1,8 +1,9 @@
-build: MTL_PATH_PLACEHOLDER
-mtl_path: MTL_PATH_PLACEHOLDER
+session_id: 0
+build: /path/to/mtl
+mtl_path: /path/to/mtl
 media_path: /mnt/media
 ramdisk:
-  media: 
+  media:
     mountpoint: /mnt/ramdisk/media
     size_gib: 32
   pcap:
@@ -13,7 +14,7 @@ capture_cfg:
   enable: false
   pcap_dir: /mnt/ramdisk/pcap
 ebu_server:
-  ebu_ip: EBU_IP_PLACEHOLDER
-  user: EBU_LOGIN_PLACEHOLDER
-  password: EBU_PASS_PLACEHOLDER
+  ebu_ip: ebu_ip
+  user: user
+  password: password
   proxy: false

@@ -189,6 +189,7 @@ static int tx_ancillary_session_init_hdr(struct mtl_main_impl* impl,
   rtp->base.ssrc = htonl(ssrc);
   s->st40_seq_id = 0;
   s->st40_ext_seq_id = 0;
+  s->st40_rtp_time = -1;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st40_src_port[s_port], s->st40_dst_port[s_port]);
@@ -1574,6 +1575,7 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
+  s->calculate_time_cursor = true;
   ret = tx_ancillary_session_init_pacing(s);
   if (ret < 0) {
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);

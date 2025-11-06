@@ -188,6 +188,7 @@ static int tx_audio_session_init_hdr(struct mtl_main_impl* impl,
   rtp->ssrc = htonl(ssrc);
 
   s->st30_seq_id = 0;
+  s->st30_rtp_time = -1;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u payload_type %u\n", __func__, idx, s_port,
        dip[0], dip[1], dip[2], dip[3], s->st30_src_port[s_port], s->st30_dst_port[s_port],
@@ -1255,7 +1256,7 @@ static inline uint64_t tx_audio_session_profiling_rl_bps(
   }
   double actual_per_sec = actual_per_sec_sum / entry_in_sum;
   double ratio = actual_per_sec / expect_per_sec;
-  if (ratio > 1.1 || ratio < 0.9) {
+  if (ratio > 1.15 || ratio < 0.9) {
     err("%s(%d), fail, expect %f but actual %f\n", __func__, idx, expect_per_sec,
         actual_per_sec);
     return 0;

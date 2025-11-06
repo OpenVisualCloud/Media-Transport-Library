@@ -133,6 +133,12 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
   int ret;
   struct st22p_tx_frame* framebuff = &ctx->framebuffs[frame_idx];
 
+  framebuff->src.tfmt = meta->tfmt;
+  framebuff->dst.tfmt = meta->tfmt;
+  framebuff->src.timestamp = meta->timestamp;
+  framebuff->dst.timestamp = meta->timestamp;
+  framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
+
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
@@ -144,12 +150,6 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
         frame_idx);
   }
   mt_pthread_mutex_unlock(&ctx->lock);
-
-  framebuff->src.tfmt = meta->tfmt;
-  framebuff->dst.tfmt = meta->tfmt;
-  framebuff->src.timestamp = meta->timestamp;
-  framebuff->dst.timestamp = meta->timestamp;
-  framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
 
   if (ctx->ops.notify_frame_done) { /* notify app which frame done */
     struct st_frame* frame = tx_st22p_user_frame(ctx, framebuff);

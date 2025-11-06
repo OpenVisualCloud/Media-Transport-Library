@@ -9,26 +9,13 @@ import re
 import time
 
 from mfd_connect import SSHConnection
+from mtl_engine import ip_pools
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
-
-ip_dict = dict(
-    rx_interfaces="192.168.96.2",
-    tx_interfaces="192.168.96.3",
-    rx_sessions="239.168.85.20",
-    tx_sessions="239.168.85.20",
-)
-
-ip_dict_rgb24_multiple = dict(
-    p_sip_1="192.168.96.2",
-    p_sip_2="192.168.96.3",
-    p_tx_ip_1="239.168.108.202",
-    p_tx_ip_2="239.168.108.203",
-)
 
 # Global variable to store timestamp for consistent logging
 _log_timestamp = None
@@ -95,8 +82,8 @@ def execute_test(
         output_files = create_empty_output_files(output_format, 1, host, build)
         rx_cmd = (
             f"ffmpeg -p_port {nic_port_list[0]} "
-            f"-p_sip {ip_dict['rx_interfaces']} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 "
+            f"-p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i k "
             f"{ffmpeg_rx_f_flag} {output_files[0]} -y"
@@ -106,8 +93,8 @@ def execute_test(
                 f"ffmpeg -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
-                f"-p_sip {ip_dict['tx_interfaces']} "
-                f"-p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 "
+                f"-p_sip {ip_pools.tx[0]} "
+                f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -118,13 +105,13 @@ def execute_test(
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_dict['rx_interfaces']} "
+            f"ffmpeg -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20002 "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
@@ -135,8 +122,8 @@ def execute_test(
                 f"ffmpeg -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
-                f"-p_sip {ip_dict['tx_interfaces']} "
-                f"-p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 "
+                f"-p_sip {ip_pools.tx[0]} "
+                f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -268,7 +255,7 @@ def execute_test_rgb24(
     tx_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} "
-        f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+        f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
@@ -380,15 +367,15 @@ def execute_test_rgb24_multiple(
     tx_1_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {nic_port_list[2]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_1']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_1']} "
+        f"-p_sip {ip_pools.tx[0]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {nic_port_list[3]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_2']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_2']} "
+        f"-p_sip {ip_pools.tx[1]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[1]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
@@ -605,8 +592,8 @@ def generate_rxtxapp_rx_config(
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_rx)
         config["interfaces"][0]["name"] = nic_port
-        config["interfaces"][0]["ip"] = ip_dict["rx_interfaces"]
-        config["rx_sessions"][0]["ip"][0] = ip_dict["rx_sessions"]
+        config["interfaces"][0]["ip"] = ip_pools.rx[0]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
 
         width, height, fps = decode_video_format_to_st20p(video_format)
 
@@ -663,12 +650,12 @@ def generate_rxtxapp_rx_config_multiple(
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_rx_rgb24_multiple)
         config["interfaces"][0]["name"] = nic_port_list[0]
-        config["interfaces"][0]["ip"] = ip_dict_rgb24_multiple["p_sip_1"]
-        config["rx_sessions"][0]["ip"][0] = ip_dict_rgb24_multiple["p_tx_ip_1"]
+        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
 
         config["interfaces"][1]["name"] = nic_port_list[1]
-        config["interfaces"][1]["ip"] = ip_dict_rgb24_multiple["p_sip_2"]
-        config["rx_sessions"][1]["ip"][0] = ip_dict_rgb24_multiple["p_tx_ip_2"]
+        config["interfaces"][1]["ip"] = ip_pools.tx[1]
+        config["rx_sessions"][1]["ip"][0] = ip_pools.rx_multicast[1]
 
         width_1, height_1, fps_1 = decode_video_format_to_st20p(video_format_list[0])
         width_2, height_2, fps_2 = decode_video_format_to_st20p(video_format_list[1])
@@ -727,8 +714,8 @@ def generate_rxtxapp_tx_config(
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_tx)
         config["interfaces"][0]["name"] = nic_port
-        config["interfaces"][0]["ip"] = ip_dict["tx_interfaces"]
-        config["tx_sessions"][0]["dip"][0] = ip_dict["tx_sessions"]
+        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
 
         width, height, fps = decode_video_format_to_st20p(video_format)
 
@@ -826,8 +813,8 @@ def execute_dual_test(
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_dict['rx_interfaces']} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 -payload_type 112 "
+            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 -payload_type 112 "
             f"-fps {fps} -pix_fmt yuv422p10le -video_size {video_size} "
             f"-f mtl_st20p -i k {ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
@@ -835,7 +822,7 @@ def execute_dual_test(
             tx_cmd = (
                 f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
-                f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+                f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -846,11 +833,11 @@ def execute_dual_test(
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_dict['rx_interfaces']} "
-            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_dict['rx_sessions']} "
+            f"ffmpeg -p_sip {ip_pools.rx[0]} "
+            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port 20000 -payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
-            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_dict['rx_sessions']} "
+            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port 20002 -payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
@@ -860,7 +847,7 @@ def execute_dual_test(
             tx_cmd = (
                 f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
-                f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+                f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -1004,7 +991,7 @@ def execute_dual_test_rgb24(
     tx_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
-        f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+        f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
@@ -1128,15 +1115,15 @@ def execute_dual_test_rgb24_multiple(
     tx_1_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {tx_nic_port_list[0]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_1']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_1']} "
+        f"-p_sip {ip_pools.tx[0]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {tx_nic_port_list[1]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_2']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_2']} "
+        f"-p_sip {ip_pools.tx[1]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[1]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 

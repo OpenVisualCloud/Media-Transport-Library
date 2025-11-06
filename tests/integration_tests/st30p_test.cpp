@@ -5,7 +5,6 @@
 #include <thread>
 
 #include "log.h"
-#include "noctx.hpp"
 #include "tests.hpp"
 
 #define ST30P_TEST_PAYLOAD_TYPE (111)
@@ -283,7 +282,7 @@ static void st30p_rx_digest_test(enum st30_fmt fmt[], uint16_t channel[],
 
   if (ctx->para.num_ports < 2) {
     info("%s, dual port should be enabled, one for tx and one for rx\n", __func__);
-    return;
+    throw std::runtime_error("Dual port not enabled");
   }
 
   /* return if level lower than global */

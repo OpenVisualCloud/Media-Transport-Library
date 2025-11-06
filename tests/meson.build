@@ -24,7 +24,7 @@ endif
 libopenssl = dependency('openssl', required : true)
 
 # add source file
-subdir('unittest')
+subdir('integration_tests')
 
 test_c_args = []
 test_cpp_args = []

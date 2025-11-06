@@ -188,6 +188,7 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st41_seq_id = 0;
+  s->st41_rtp_time = -1;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st41_src_port[s_port], s->st41_dst_port[s_port]);
@@ -1495,6 +1496,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
+  s->calculate_time_cursor = true;
   ret = tx_fastmetadata_session_init_pacing(s);
   if (ret < 0) {
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);
