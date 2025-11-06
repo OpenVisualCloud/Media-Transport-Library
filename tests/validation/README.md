@@ -16,10 +16,19 @@ The Media Transport Library (MTL) Validation Framework provides comprehensive te
 
 - Python 3.9 or higher
 - **⚠️ CRITICAL**: Media Transport Library built and installed (see [build instructions](../../doc/build.md))
-- Test media files (typically on NFS)
-- Network interfaces configured for testing
-- **Root privileges required** (MTL validation must run as root user)
-- FFmpeg and GStreamer plugins (for integration tests)
+- **Test Media Files**: Input data files are necessary for video, audio, and ancillary data tests
+  - Files are currently maintained on NFS in production environments
+  - For local testing, generate frames using `common/gen_frames.sh` (see [documentation](../../doc/validation_framework.md#gen_framessh))
+  - Configure media location in `configs/test_config.yaml`
+- **Network Interfaces**: Configure according to MTL's [run.md](../../doc/run.md) documentation
+  - Basic MTL network setup required (see run.md)
+  - VFs will be created automatically by the validation framework
+- **Root Privileges Required**: MTL validation must run as root user
+  - Required for network management operations
+  - No alternative permission model available
+  - Use `sudo ./venv/bin/python3` to run tests
+- **FFmpeg and GStreamer Plugins**: Required for integration tests
+  - Install with: `sudo apt-get install ffmpeg gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad`
 
 ### Setup in 3 Simple Steps
 

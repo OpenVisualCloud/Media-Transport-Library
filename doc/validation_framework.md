@@ -178,11 +178,25 @@ For complete build instructions, see [doc/build.md](build.md).
 
 #### 2. Other Prerequisites
 
-- Python 3.9 or higher
-- Test media files (currently maintained on NFS)
-- Network interfaces as specified in MTL's run.md document (VFs will be created automatically)
-- Root privileges or equivalent (sudo) for network operations done by script/nicctl.sh
-- FFmpeg and GStreamer plugins installed (required for integration tests)
+- **Python 3.9 or higher**
+- **Test Media Files**: Input data files required for testing
+  - Test media files are necessary for running video, audio, and ancillary data tests
+  - These files are currently maintained on NFS in production environments
+  - For local testing, you can generate test frames using `tests/validation/common/gen_frames.sh` (see [gen_frames.sh section](#gen_framessh))
+  - Configure the media file location in `configs/test_config.yaml` using the `media_path` parameter
+- **Network Interfaces**: Configure interfaces according to MTL's [run.md](run.md) documentation
+  - Basic MTL network setup must be completed as described in run.md
+  - Virtual Functions (VFs) will be created automatically by the validation framework
+  - No manual VF creation is required
+- **Root User Privileges**: MTL validation framework must run as root user
+  - Required for network management operations performed by `script/nicctl.sh`
+  - Direct network interface manipulation requires root access
+  - No alternative permission model is currently supported
+  - Use `sudo` with the full path to your virtual environment Python (e.g., `sudo ./venv/bin/python3`)
+- **FFmpeg and GStreamer Plugins**: Required for integration tests
+  - Install FFmpeg: `sudo apt-get install ffmpeg`
+  - Install GStreamer and plugins: `sudo apt-get install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad`
+  - Some tests will fail if these are not installed
 
 ### Environment Setup
 

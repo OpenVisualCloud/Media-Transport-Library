@@ -9,9 +9,10 @@ This quick start guide helps you get the MTL validation framework running with m
 
 2. **📋 Basic Requirements**:
    - Python 3.9+
-   - Root user access (MTL validation requires root privileges)
-   - Network interfaces configured for testing
-   - FFmpeg with text filters (for media generation)
+   - Root user access (MTL validation requires root privileges for network operations)
+   - Network interfaces configured per MTL's [run.md](run.md) (VFs created automatically)
+   - Test media files (see [media generation](validation_framework.md#gen_framessh) or use NFS-hosted files)
+   - FFmpeg and GStreamer plugins (required for integration tests)
    - Compatible SSH keys (RSA recommended, not DSA)
 
 ## Quick Setup (3 steps)
