@@ -7,12 +7,18 @@ toolchain = cc.get_id()
 # allow experimental api
 add_global_arguments('-DALLOW_EXPERIMENTAL_API', language : 'c')
 
+# check dpdk version
+versions_file = files('../versions.env')
+versions_content = run_command('cat', versions_file, check: true).stdout()
+dpdk_version_cmd = run_command('sh', '-c', 'grep "^DPDK_VER" ../versions.env | cut -d= -f2', check: true)
+dpdk_version = dpdk_version_cmd.stdout().strip()
+
 # add dependencies
 libm_dep = cc.find_library('m', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
 libdl_dep = cc.find_library('dl', required : true)
 if not is_windows
-  dpdk_dep = dependency('libdpdk', version: '>=25.03', required: true)
+  dpdk_dep = dependency('libdpdk', version: '>=' + dpdk_version, required: true)
   libnuma_dep = cc.find_library('numa', required : true)
   ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
