@@ -22,7 +22,7 @@ class St30pDefaultTimestamp : public FrameTestStrategy {
     uint64_t framebuffTime = st10_tai_to_media_clk(st30pParent->nsPacketTime, sampling);
 
     EXPECT_NEAR(f->timestamp,
-                st10_tai_to_media_clk((idx_rx)*st30pParent->nsPacketTime, sampling),
+                st10_tai_to_media_clk(idx_rx * st30pParent->nsPacketTime, sampling),
                 framebuffTime)
         << " idx_rx: " << idx_rx;
     if (lastTimestamp != 0) {
