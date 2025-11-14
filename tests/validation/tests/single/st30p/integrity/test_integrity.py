@@ -6,6 +6,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
@@ -32,6 +33,7 @@ def test_integrity(
     hosts,
     build,
     media,
+    setup_interfaces: InterfaceSetup,
     nic_port_list,
     test_time,
     test_config,

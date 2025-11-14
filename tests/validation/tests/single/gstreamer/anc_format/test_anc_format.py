@@ -5,6 +5,7 @@ import os
 
 import mtl_engine.media_creator as media_create
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
 
@@ -15,7 +16,7 @@ def test_st40p_fps_size(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     file_size_kb,
     fps,
     framebuff,
@@ -25,6 +26,9 @@ def test_st40p_fps_size(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
@@ -34,7 +38,7 @@ def test_st40p_fps_size(
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         tx_payload_type=113,
         tx_queues=4,
@@ -46,7 +50,7 @@ def test_st40p_fps_size(
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[1],
+        nic_port_list=interfaces_list[1],
         output_path=os.path.join(media, "output_anc.txt"),
         rx_payload_type=113,
         rx_queues=4,
@@ -78,7 +82,7 @@ def test_st40p_framebuff(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     file_size_kb,
     fps,
     framebuff,
@@ -88,6 +92,9 @@ def test_st40p_framebuff(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     # Base the timeout on parameter to make sure the amount of time between RX and TX
     # is less than the timeout period
     timeout_period = 20
@@ -100,7 +107,7 @@ def test_st40p_framebuff(
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         tx_payload_type=113,
         tx_queues=4,
@@ -113,7 +120,7 @@ def test_st40p_framebuff(
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[1],
+        nic_port_list=interfaces_list[1],
         output_path=os.path.join(media, "output_anc.txt"),
         rx_payload_type=113,
         rx_queues=4,
@@ -144,7 +151,7 @@ def test_st40p_format_8331(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     fps,
     framebuff,
     test_time,
@@ -153,6 +160,9 @@ def test_st40p_format_8331(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     # Based on this parameters
     timeout_period = 15
 
@@ -164,7 +174,7 @@ def test_st40p_format_8331(
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         tx_payload_type=113,
         tx_queues=4,
@@ -177,7 +187,7 @@ def test_st40p_format_8331(
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[1],
+        nic_port_list=interfaces_list[1],
         output_path=os.path.join(media, "output_anc.txt"),
         rx_payload_type=113,
         rx_queues=4,
