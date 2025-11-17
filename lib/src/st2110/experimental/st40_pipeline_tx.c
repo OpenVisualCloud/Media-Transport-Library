@@ -428,7 +428,6 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
     return -EIO;
   }
 
-
   framebuff->anc_frame->meta_num = frame_info->meta_num;
   framebuff->anc_frame->data_size = frame_info->udw_buffer_fill;
 
