@@ -1,13 +1,19 @@
-/* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2025 Intel Corporation
- */
+/* SPDX-License-Identifier: BSD-3-Clause */
 
-#include "noctx.hpp"
+#include "st20p_handler.hpp"
+
+#include <unistd.h>
+
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <stdexcept>
+#include <thread>
 
 St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                            st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool create,
                            bool start)
-    : Handlers(ctx, frameTestStrategy) {
+    : Handlers(ctx, frameTestStrategy), nsFrameTime(0) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
     ops_tx = sessionsOpsTx;
@@ -30,7 +36,7 @@ St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestSt
 
 St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
                            st20p_rx_ops ops_rx)
-    : Handlers(ctx) {
+    : Handlers(ctx), nsFrameTime(0) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
   } else {
@@ -62,7 +68,6 @@ void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
   memcpy(sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_R], ctx->mcast_ip_addr[MTL_PORT_R],
          MTL_IP_ADDR_LEN);
 
-  /* Don't enable Redundant by default */
   sessionsOpsTx.port.num_port = 1;
   snprintf(sessionsOpsTx.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
            ctx->para.port[MTL_PORT_P]);
@@ -105,6 +110,13 @@ void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
     nsFrameTime = NS_PER_S / 25;
   else
     nsFrameTime = NS_PER_S / nsFrameTime;
+}
+
+void St20pHandler::setFrameTestStrategy(FrameTestStrategy* newStrategy) {
+  frameTestStrategy = newStrategy;
+  if (frameTestStrategy) {
+    frameTestStrategy->parent = this;
+  }
 }
 
 void St20pHandler::createSession(st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool start) {
@@ -168,7 +180,7 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->width, width);
     ASSERT_EQ(frame->height, height);
 
-    if (frameTestStrategy->enable_tx_modifier) {
+    if (frameTestStrategy && frameTestStrategy->enable_tx_modifier) {
       frameTestStrategy->txTestFrameModifier(frame->addr, frameSize);
     }
 
@@ -201,7 +213,7 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->height, height);
     ASSERT_GE(frame->data_size, frameSize);
 
-    if (frameTestStrategy->enable_rx_modifier) {
+    if (frameTestStrategy && frameTestStrategy->enable_rx_modifier) {
       frameTestStrategy->rxTestFrameModifier(frame->addr, frame->data_size);
     }
 
@@ -209,17 +221,16 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
   }
 }
 
-
 void St20pHandler::startSessionTx() {
   Handlers::startSession(
-    {[this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); }});
-  }
-  
+      {[this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); }});
+}
+
 void St20pHandler::startSessionRx() {
   Handlers::startSession(
-    {[this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); }});
-  }
-  
+      {[this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); }});
+}
+
 void St20pHandler::startSession() {
   startSessionRx();
   sleep(1);
@@ -231,23 +242,6 @@ void St20pHandler::startSession(
   Handlers::startSession(threadFunctions);
 }
 
-/**
- * @brief Set the session port names for TX and RX, including redundant ports if
- * specified.
- *
- * This function updates the port names in sessionsOpsTx and sessionsOpsRx based on the
- * provided indices. If an index is SESSION_SKIP_PORT, that port is not set. If both
- * primary and redundant ports are set, num_port is set to 2, otherwise to 1.
- *
- * @param txPortIdx Index for the primary TX port in ctx->para.port, or SESSION_SKIP_PORT
- * to skip.
- * @param rxPortIdx Index for the primary RX port in ctx->para.port, or SESSION_SKIP_PORT
- * to skip.
- * @param txPortRedundantIdx Index for the redundant TX port in ctx->para.port, or
- * SESSION_SKIP_PORT to skip.
- * @param rxPortRedundantIdx Index for the redundant RX port in ctx->para.port, or
- * SESSION_SKIP_PORT to skip.
- */
 void St20pHandler::setSessionPorts(int txPortIdx, int rxPortIdx, int txPortRedundantIdx,
                                    int rxPortRedundantIdx) {
   setSessionPortsTx(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
