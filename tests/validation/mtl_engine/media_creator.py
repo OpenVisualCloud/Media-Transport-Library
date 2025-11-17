@@ -20,13 +20,13 @@ def _terminate_gst_process_after_duration(duration: int, host):
     # Find and terminate the gst-launch process on remote host
     terminate_cmd = "pkill -SIGINT gst-launch-1.0"
     try:
-        run(terminate_cmd, host=host, enable_sudo=True)
+        run(terminate_cmd, host=host)
         logger.info("Sent SIGINT to gst-launch process")
     except Exception:
         # Fallback to SIGTERM
         terminate_cmd = "pkill -SIGTERM gst-launch-1.0"
         try:
-            run(terminate_cmd, host=host, enable_sudo=True)
+            run(terminate_cmd, host=host)
             logger.info("Sent SIGTERM to gst-launch process")
         except Exception:
             pass
@@ -76,7 +76,7 @@ def create_video_file(
 
         # Run the gstreamer command (this will block until process is terminated)
         try:
-            result = run(" ".join(command), host=host, enable_sudo=True)
+            result = run(" ".join(command), host=host)
             # Wait for termination thread to complete
             termination_thread.join(timeout=1)
 
@@ -138,7 +138,7 @@ def create_audio_file_sox(
     logger.info(f"Creating audio file with command: {' '.join(command)}")
 
     try:
-        result = run(" ".join(command), host=host, enable_sudo=True)
+        result = run(" ".join(command), host=host)
         return_code = getattr(result, "returncode", getattr(result, "exit_code", 0))
         if return_code == 0:
             logger.info(f"Audio file created at {output_path}")
@@ -174,7 +174,7 @@ def create_text_file(size_kb: int, output_path: str = "test_anc.txt", host=None)
 
     try:
         for cmd in command_parts:
-            result = run(cmd, host=host, enable_sudo=True)
+            result = run(cmd, host=host)
             return_code = getattr(result, "returncode", getattr(result, "exit_code", 0))
             if return_code != 0:
                 raise subprocess.SubprocessError(
@@ -244,8 +244,8 @@ def create_ancillary_rfc8331_pseudo_file(
 
     try:
         for cmd in command_parts:
-            result = run(cmd, host=host, enable_sudo=True)
-            logging.info("f{cmd}")
+            result = run(cmd, host=host)
+            logging.info(f"{cmd}")
             return_code = getattr(result, "returncode", getattr(result, "exit_code", 0))
             if return_code != 0:
                 raise subprocess.SubprocessError(
@@ -264,11 +264,11 @@ def remove_file(file_path: str, host=None):
     # Always attempt to remove the file
     command = f"rm -f {file_path}"
     try:
-        run(command, host=host, enable_sudo=True)
+        run(command, host=host)
 
         # Check if file still exists after removal attempt
         check_cmd = f"test -f {file_path}"
-        result = run(check_cmd, host=host, enable_sudo=True)
+        result = run(check_cmd, host=host)
         return_code = getattr(result, "returncode", getattr(result, "exit_code", 0))
 
         if return_code != 0:

@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
-import os
-
 import mtl_engine.media_creator as media_create
 import pytest
 from mtl_engine import GstreamerApp
+
+TMP_INPUT_FILE = "/tmp/test_anc.txt"
+TMP_OUTPUT_FILE = "/tmp/output_anc_dual.txt"
 
 
 @pytest.mark.dual
@@ -36,12 +37,12 @@ def test_st40p_fps_size_dual(
     # Create input file on TX host
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
-        output_path=os.path.join(media, "test_anc.txt"),
+        output_path=TMP_INPUT_FILE,
         host=tx_host,
     )
 
     # Create output file path for RX host
-    output_file_path = os.path.join(media, "output_anc_dual.txt")
+    output_file_path = TMP_OUTPUT_FILE
 
     # Setup TX pipeline using existing function
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
@@ -63,6 +64,7 @@ def test_st40p_fps_size_dual(
         output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
+        rx_framebuff_cnt=framebuff,
         timeout=15,
     )
 
