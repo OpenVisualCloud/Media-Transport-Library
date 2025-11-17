@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
-import os
-
 import mtl_engine.media_creator as media_create
 import pytest
 from mtl_engine import GstreamerApp
+
+TMP_INPUT_FILE = "/tmp/test_anc.txt"
+TMP_OUTPUT_FILE = "/tmp/output_anc.txt"
 
 
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
@@ -28,7 +29,7 @@ def test_st40p_fps_size(
 
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
-        output_path=os.path.join(media, "test_anc.txt"),
+        output_path=TMP_INPUT_FILE,
         host=host,
     )
 
@@ -47,9 +48,10 @@ def test_st40p_fps_size(
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=host.vfs[1],
-        output_path=os.path.join(media, "output_anc.txt"),
+        output_path=TMP_OUTPUT_FILE,
         rx_payload_type=113,
         rx_queues=4,
+        rx_framebuff_cnt=framebuff,
         timeout=15,
     )
 
@@ -59,7 +61,7 @@ def test_st40p_fps_size(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_anc.txt"),
+            output_file=TMP_OUTPUT_FILE,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -68,7 +70,7 @@ def test_st40p_fps_size(
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_anc.txt"), host=host)
+        media_create.remove_file(TMP_OUTPUT_FILE, host=host)
 
 
 @pytest.mark.parametrize("fps", [60])
@@ -94,7 +96,7 @@ def test_st40p_framebuff(
 
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
-        output_path=os.path.join(media, "test_anc.txt"),
+        output_path=TMP_INPUT_FILE,
         host=host,
     )
 
@@ -108,15 +110,15 @@ def test_st40p_framebuff(
         tx_fps=fps,
         tx_did=67,
         tx_sdid=2,
-        tx_rfc8331=True,
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=host.vfs[1],
-        output_path=os.path.join(media, "output_anc.txt"),
+        output_path=TMP_OUTPUT_FILE,
         rx_payload_type=113,
         rx_queues=4,
+        rx_framebuff_cnt=framebuff,
         timeout=timeout_period + 10,
     )
 
@@ -126,7 +128,7 @@ def test_st40p_framebuff(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_anc.txt"),
+            output_file=TMP_OUTPUT_FILE,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -135,7 +137,7 @@ def test_st40p_framebuff(
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_anc.txt"), host=host)
+        media_create.remove_file(TMP_OUTPUT_FILE, host=host)
 
 
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
@@ -158,7 +160,7 @@ def test_st40p_format_8331(
 
     input_file_path = media_create.create_ancillary_rfc8331_pseudo_file(
         size_frames=fps * 10,
-        output_path=os.path.join(media, "test_anc.txt"),
+        output_path=TMP_INPUT_FILE,
         host=host,
     )
 
@@ -178,9 +180,10 @@ def test_st40p_format_8331(
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=host.vfs[1],
-        output_path=os.path.join(media, "output_anc.txt"),
+        output_path=TMP_OUTPUT_FILE,
         rx_payload_type=113,
         rx_queues=4,
+        rx_framebuff_cnt=framebuff,
         timeout=timeout_period + 10,
         capture_metadata=True,
     )
@@ -191,7 +194,7 @@ def test_st40p_format_8331(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_anc.txt"),
+            output_file=TMP_OUTPUT_FILE,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -200,4 +203,4 @@ def test_st40p_format_8331(
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_anc.txt"), host=host)
+        media_create.remove_file(TMP_OUTPUT_FILE, host=host)
