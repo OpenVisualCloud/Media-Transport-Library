@@ -78,6 +78,8 @@
 #define ST30P_TX_FRAME_DUMP_ENABLED() (0)
 #define ST30P_RX_FRAME_DUMP_ENABLED() (0)
 
+#define ST40P_RX_FRAME_DUMP_ENABLED() (0)
+
 #endif
 
 #define MT_USDT_PTP_MSG(port, stage, value) \
@@ -258,5 +260,15 @@
   MT_DTRACE_PROBE5(st22p, rx_decode_get, idx, f_idx, src, dst, data_size)
 #define MT_USDT_ST22P_RX_DECODE_PUT(idx, f_idx, src, dst, result) \
   MT_DTRACE_PROBE5(st22p, rx_decode_put, idx, f_idx, src, dst, result)
+
+#define MT_USDT_ST40P_RX_FRAME_AVAILABLE(idx, f_idx, meta_num) \
+  MT_DTRACE_PROBE3(st40p, rx_frame_available, idx, f_idx, meta_num)
+#define MT_USDT_ST40P_RX_FRAME_GET(idx, f_idx, meta_num) \
+  MT_DTRACE_PROBE3(st40p, rx_frame_get, idx, f_idx, meta_num)
+#define MT_USDT_ST40P_RX_FRAME_PUT(idx, f_idx) \
+  MT_DTRACE_PROBE2(st40p, rx_frame_put, idx, f_idx)
+#define MT_USDT_ST40P_RX_FRAME_DUMP(idx, file, meta_num, frames) \
+  MT_DTRACE_PROBE4(st40p, rx_frame_dump, idx, file, meta_num, frames)
+#define MT_USDT_ST40P_RX_FRAME_DUMP_ENABLED() ST40P_RX_FRAME_DUMP_ENABLED()
 
 #endif

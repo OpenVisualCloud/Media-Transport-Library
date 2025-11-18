@@ -141,3 +141,17 @@ provider st30p {
   /* attach to enable the frame dump at runtime */
   probe rx_frame_dump(int idx, char* dump_file, int frames);
 }
+
+provider st40p {
+  /* tx */
+  probe tx_frame_get(int idx, int f_idx, void* va);
+  probe tx_frame_put(int idx, int f_idx, void* va, uint32_t meta_num);
+  probe tx_frame_next(int idx, int f_idx);
+  probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  /* rx */
+  probe rx_frame_get(int idx, int f_idx, uint32_t meta_num);
+  probe rx_frame_put(int idx, int f_idx);
+  probe rx_frame_available(int idx, int f_idx, uint32_t meta_num);
+  /* attach to enable the frame dump at runtime */
+  probe rx_frame_dump(int idx, char* dump_file, int frames);
+}
