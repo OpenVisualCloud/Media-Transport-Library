@@ -15,6 +15,9 @@ extern "C" {
 /** Handle to tx st2110-40 pipeline session of lib */
 typedef struct st40p_tx_ctx* st40p_tx_handle;
 
+/** Handle to rx st2110-40 pipeline session of lib */
+typedef struct st40p_rx_ctx* st40p_rx_handle;
+
 /** The structure info for st40 frame meta. */
 struct st40_frame_info {
   /** Pointer to the metadata array for this frame */
@@ -135,6 +138,58 @@ struct st40p_tx_ops {
   uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
 };
 
+/** Bit define for flags of struct st40p_rx_ops. */
+enum st40p_rx_flag {
+  /**
+   * Flag bit in flags of struct st40_rx_ops, for non MTL_PMD_DPDK_USER.
+   * If set, it's application duty to set the rx flow(queue) and multicast join/drop.
+   * Use st40p_rx_get_queue_meta to get the queue meta(queue number etc) info.
+   */
+  ST40P_RX_FLAG_DATA_PATH_ONLY = (MTL_BIT32(0)),
+  /**
+   * Flag bit in flags of struct st40_rx_ops.
+   * If enable the rtcp.
+   */
+  ST40P_RX_FLAG_ENABLE_RTCP = (MTL_BIT32(1)),
+  /**
+   * NOT SUPPORTED YET
+   * Force the numa of the created session, both CPU and memory
+   */
+  ST40P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
+  /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
+   available or timeout(default: 1s, use st40p_rx_set_block_timeout to customize)*/
+  ST40P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+};
+
+/**
+ * The structure describing how to create a rx st2110-40(ancillary) pipeline session.
+ * Include the PCIE port and other required info
+ */
+struct st40p_rx_ops {
+  /** Mandatory. rx port info */
+  struct st_rx_port port;
+  /** Mandatory. interlaced or not */
+  bool interlaced;
+  /** Mandatory. the frame buffer count. */
+  uint16_t framebuff_cnt;
+  /** Maximum combined size of all user data words to receive in single st40p frame */
+  uint32_t max_udw_buff_size;
+  /** Mandatory. RTP ring queue size, must be power of 2 */
+  uint32_t rtp_ring_size;
+  /** Optional. name */
+  const char* name;
+  /** Optional. private data to the callback function */
+  void* priv;
+  /** Optional. see ST40P_RX_FLAG_* for possible flags */
+  uint32_t flags;
+  /**
+   * Optional. Callback when frame available.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_available)(void* priv);
+};
+
 /**
  * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
  *
@@ -195,6 +250,73 @@ void* st40p_tx_get_udw_buff_addr(st40p_tx_handle handle, uint16_t idx);
 
 /** Get the framebuffer address for the tx st2110-40 pipeline session. */
 void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx);
+
+/** Create one rx st2110-40 pipeline session */
+st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops);
+
+/**
+ * Get one rx frame from the rx st2110-40 pipeline session.
+ * Call st40p_rx_put_frame to return the frame to session.
+ */
+struct st40_frame_info* st40p_rx_get_frame(st40p_rx_handle handle);
+
+/** Return the frame that was requested by st40p_rx_get_frame. */
+int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_info);
+
+/** Free the rx st2110-40 pipeline session. */
+int st40p_rx_free(st40p_rx_handle handle);
+
+/**
+ * Get the queue meta attached to rx st2110-40 pipeline session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40 pipeline session.
+ * @param meta
+ *   the rx queue meta info.
+ * @return
+ *   - 0: Success.
+ *   - <0: Error code.
+ */
+int st40p_rx_get_queue_meta(st40p_rx_handle handle, struct st_queue_meta* meta);
+
+/**
+ * Retrieve the general statistics(I/O) for one rx st2110-40(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(pipeline) session.
+ * @param stats
+ *   A pointer to stats structure.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40p_rx_get_session_stats(st40p_rx_handle handle, struct st40_rx_user_stats* stats);
+
+/**
+ * Reset the general statistics(I/O) for one rx st2110-40(pipeline) session.
+ *
+ * @param handle
+ *   The handle to the rx st2110-40(pipeline) session.
+ * @return
+ *   - >=0 succ.
+ *   - <0: Error code.
+ */
+int st40p_rx_reset_session_stats(st40p_rx_handle handle);
+
+/** Update the source for the rx st2110-40 pipeline session. */
+int st40p_rx_update_source(st40p_rx_handle handle, struct st_rx_source_info* src);
+
+/** Wake up the block for the rx st2110-40 pipeline session. */
+int st40p_rx_wake_block(st40p_rx_handle handle);
+
+/** Set the block timeout for the rx st2110-40 pipeline session. */
+int st40p_rx_set_block_timeout(st40p_rx_handle handle, uint64_t timedwait_ns);
+
+/** Get the maximum user data words buffer size for the rx st2110-40 pipeline session. */
+size_t st40p_rx_max_udw_buff_size(st40p_rx_handle handle);
+
+/** Get the user data words buffer address for the rx st2110-40 pipeline session. */
+void* st40p_rx_get_udw_buff_addr(st40p_rx_handle handle, uint16_t idx);
 
 #if defined(__cplusplus)
 }
