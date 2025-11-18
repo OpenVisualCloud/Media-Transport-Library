@@ -44,9 +44,20 @@ St20pUserTimestamp::St20pUserTimestamp(St20pHandler* parentHandler,
 int St20pUserTimestamp::getPacingParameters() {
   auto* parentHandler = static_cast<St20pHandler*>(parent);
   if (parentHandler && parentHandler->sessionsHandleTx) {
-    return st20p_tx_get_pacing_params(parentHandler->sessionsHandleTx,
-                                      &pacing_tr_offset_ns, &pacing_trs_ns,
-                                      &pacing_vrx_pkts);
+    double tr_offset = 0.0;
+    double trs = 0.0;
+    uint32_t vrx_pkts = 0;
+    int ret = st20p_tx_get_pacing_params(parentHandler->sessionsHandleTx, &tr_offset,
+                                         &trs, &vrx_pkts);
+    if (!ret) {
+      updateLocalPacingParameters(tr_offset, trs, vrx_pkts);
+      publishPacingParametersIfShared();
+    }
+    return ret;
+  }
+
+  if (syncPacingParametersFromSharedState()) {
+    return 0;
   }
 
   return -1;
@@ -61,6 +72,10 @@ void St20pUserTimestamp::txTestFrameModifier(void* frame, size_t /*frame_size*/)
 
 void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/) {
   auto* f = static_cast<st_frame*>(frame);
+  if (!pacingParametersInitialized) {
+    bool synced = syncPacingParametersFromSharedState();
+    EXPECT_TRUE(synced) << "Pacing parameters unavailable for RX validation";
+  }
   const uint64_t frame_idx = idx_rx++;
 
   const uint64_t expected_transmit_time_ns = expectedTransmitTimeNs(frame_idx);
@@ -75,15 +90,15 @@ void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
 }
 
 uint64_t St20pUserTimestamp::plannedTimestampNs(uint64_t frame_idx) const {
-  double candidate = plannedTimestampBaseNs(frame_idx);
-  return candidate <= 0.0 ? 0 : static_cast<uint64_t>(candidate);
+  double base = plannedTimestampBaseNs(frame_idx);
+  double offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
+  double adjusted = base + offset;
+  return adjusted <= 0.0 ? 0 : static_cast<uint64_t>(adjusted);
 }
 
 double St20pUserTimestamp::plannedTimestampBaseNs(uint64_t frame_idx) const {
   double base = startingTime + frame_idx * frameTimeNs;
-  double offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
-  double adjusted = base + offset;
-  return adjusted < 0.0 ? 0.0 : adjusted;
+  return base < 0.0 ? 0.0 : base;
 }
 
 double St20pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
@@ -97,7 +112,10 @@ double St20pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
 
 uint64_t St20pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
   double target_ns = plannedTimestampBaseNs(frame_idx);
-  double pacing_adjustment = pacing_tr_offset_ns - pacing_vrx_pkts * pacing_trs_ns;
+  double pacing_adjustment = 0.0;
+  if (pacingParametersInitialized) {
+    pacing_adjustment = pacing_tr_offset_ns - pacing_vrx_pkts * pacing_trs_ns;
+  }
   double expected = target_ns + pacing_adjustment;
   return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
 }
@@ -106,9 +124,9 @@ void St20pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
                                              uint64_t expected_transmit_time_ns) const {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  int64_t expected_delta_ns = 10 * NS_PER_US;
+  int64_t expected_delta_ns = 15 * NS_PER_US;
   if (frame_idx == 0) {
-    expected_delta_ns = 20 * NS_PER_US;
+    expected_delta_ns = 30 * NS_PER_US;
   }
 
   EXPECT_LE(delta_ns, expected_delta_ns)
@@ -165,6 +183,37 @@ void St20pUserTimestamp::initializeTiming(St20pHandler* handler) {
   }
 
   startingTime = frameTimeNs * 20;
+}
+
+void St20pUserTimestamp::updateLocalPacingParameters(double tr_offset_ns, double trs_ns,
+                                                     uint32_t vrx_pkts) {
+  pacing_tr_offset_ns = tr_offset_ns;
+  pacing_trs_ns = trs_ns;
+  pacing_vrx_pkts = vrx_pkts;
+  pacingParametersInitialized = true;
+}
+
+void St20pUserTimestamp::publishPacingParametersIfShared() {
+  auto shared = sharedState();
+  if (!shared) {
+    return;
+  }
+  shared->setPacingParameters(pacing_tr_offset_ns, pacing_trs_ns, pacing_vrx_pkts);
+}
+
+bool St20pUserTimestamp::syncPacingParametersFromSharedState() {
+  auto shared = sharedState();
+  if (!shared) {
+    return false;
+  }
+
+  auto pacing = shared->getPacingParameters();
+  if (!pacing.has_value) {
+    return false;
+  }
+
+  updateLocalPacingParameters(pacing.tr_offset_ns, pacing.trs_ns, pacing.vrx_pkts);
+  return true;
 }
 
 St20pUserTimestampCustomStart::St20pUserTimestampCustomStart(

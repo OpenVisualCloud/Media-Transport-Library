@@ -31,6 +31,9 @@ class St20pUserTimestamp : public FrameTestStrategy {
   uint32_t pacing_vrx_pkts = 0;
 
  protected:
+  void updateLocalPacingParameters(double tr_offset_ns, double trs_ns, uint32_t vrx_pkts);
+  void publishPacingParametersIfShared();
+  bool syncPacingParametersFromSharedState();
   void initializeTiming(St20pHandler* handler);
   uint64_t plannedTimestampNs(uint64_t frame_idx) const;
   double plannedTimestampBaseNs(uint64_t frame_idx) const;
@@ -46,6 +49,7 @@ class St20pUserTimestamp : public FrameTestStrategy {
   uint64_t startingTime = 0;
   uint64_t lastTimestamp = 0;
   std::vector<double> timestampOffsetMultipliers;
+  bool pacingParametersInitialized = false;
 };
 
 class St20pUserTimestampCustomStart : public St20pUserTimestamp {

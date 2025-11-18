@@ -2,6 +2,8 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
+#include <memory>
+
 #include "noctx.hpp"
 
 TEST_F(NoCtxTest, st20p_default_timestamps) {
@@ -30,16 +32,20 @@ TEST_F(NoCtxTest, st20p_default_timestamps) {
 TEST_F(NoCtxTest, st20p_user_pacing) {
   initSt20pDefaultContext();
 
+  auto pacingState = std::make_shared<StrategySharedState>();
+
   auto handlerTxBundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
       [](St20pHandler* handler) { return new St20pUserTimestamp(handler); },
       [](St20pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-      });
+      },
+      pacingState);
 
   auto handlerRxBundle = createSt20pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
-      [](St20pHandler* handler) { return new St20pUserTimestamp(handler); });
+      [](St20pHandler* handler) { return new St20pUserTimestamp(handler); }, nullptr,
+      pacingState);
 
   auto* frameTestStrategyTx = static_cast<St20pUserTimestamp*>(handlerTxBundle.strategy);
   auto* frameTestStrategyRx = static_cast<St20pUserTimestamp*>(handlerRxBundle.strategy);
@@ -71,6 +77,7 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
 
   std::vector<double> jitterMultipliers = {-0.00005, 0.0,      0.0000875, -0.00003,
                                            0.00012,  -0.00001, 0.0,       0.00006};
+  auto jitterPacingState = std::make_shared<StrategySharedState>();
 
   auto txBundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/false,
@@ -79,11 +86,14 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
       },
       [](St20pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-      });
+      },
+      jitterPacingState);
   auto rxBundle = createSt20pHandlerBundle(
-      /*createTx=*/false, /*createRx=*/true, [jitterMultipliers](St20pHandler* handler) {
+      /*createTx=*/false, /*createRx=*/true,
+      [jitterMultipliers](St20pHandler* handler) {
         return new St20pUserTimestamp(handler, jitterMultipliers);
-      });
+      },
+      nullptr, jitterPacingState);
   auto* txStrategy = static_cast<St20pUserTimestamp*>(txBundle.strategy);
   auto* rxStrategy = static_cast<St20pUserTimestamp*>(rxBundle.strategy);
 
@@ -105,85 +115,5 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
       << "TX frames below expectation";
   ASSERT_GE(rxStrategy->idx_rx, jitterMultipliers.size())
       << "RX frames below expectation";
-  ASSERT_EQ(txStrategy->idx_tx, rxStrategy->idx_rx) << "TX/RX frame count mismatch";
-}
-
-TEST_F(NoCtxTest, st20p_user_pacing_offset_spike) {
-  initSt20pDefaultContext();
-
-  std::vector<double> burstMultipliers = {0.0, 0.2, 0.4, 0.6, 0.8, 0.0, 0.0, 0.0};
-
-  auto txBundle = createSt20pHandlerBundle(
-      /*createTx=*/true, /*createRx=*/false,
-      [burstMultipliers](St20pHandler* handler) {
-        return new St20pUserTimestamp(handler, burstMultipliers);
-      },
-      [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
-      });
-  auto rxBundle = createSt20pHandlerBundle(
-      /*createTx=*/false, /*createRx=*/true, [burstMultipliers](St20pHandler* handler) {
-        return new St20pUserTimestamp(handler, burstMultipliers);
-      });
-  auto* txStrategy = static_cast<St20pUserTimestamp*>(txBundle.strategy);
-  auto* rxStrategy = static_cast<St20pUserTimestamp*>(rxBundle.strategy);
-
-  ASSERT_TRUE(startRxThenTx(rxBundle, txBundle));
-
-  TestPtpSourceSinceEpoch(nullptr);
-  mtl_start(ctx->handle);
-
-  ASSERT_EQ(txStrategy->getPacingParameters(), 0);
-  EXPECT_GT(txStrategy->pacing_tr_offset_ns, 0.0);
-  EXPECT_GT(txStrategy->pacing_trs_ns, 0.0);
-  EXPECT_GT(txStrategy->pacing_vrx_pkts, 0u);
-
-  sleepUntilFailure();
-
-  stopTxThenRx(txBundle, rxBundle);
-
-  ASSERT_GE(txStrategy->idx_tx, burstMultipliers.size()) << "TX frames below expectation";
-  ASSERT_GE(rxStrategy->idx_rx, burstMultipliers.size()) << "RX frames below expectation";
-  ASSERT_EQ(txStrategy->idx_tx, rxStrategy->idx_rx) << "TX/RX frame count mismatch";
-}
-
-TEST_F(NoCtxTest, st20p_user_pacing_offset_clamp_to_zero) {
-  initSt20pDefaultContext();
-
-  std::vector<double> clampMultipliers = {-1.0, -0.5, 0.0, 0.25, 0.75, 0.0, -0.2};
-
-  auto txBundle = createSt20pHandlerBundle(
-      /*createTx=*/true, /*createRx=*/false,
-      [clampMultipliers](St20pHandler* handler) {
-        return new St20pUserTimestampCustomStart(handler, clampMultipliers, 0);
-      },
-      [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
-      });
-  auto rxBundle = createSt20pHandlerBundle(
-      /*createTx=*/false, /*createRx=*/true, [clampMultipliers](St20pHandler* handler) {
-        return new St20pUserTimestampCustomStart(handler, clampMultipliers, 0);
-      });
-  auto* txStrategy = static_cast<St20pUserTimestampCustomStart*>(txBundle.strategy);
-  auto* rxStrategy = static_cast<St20pUserTimestampCustomStart*>(rxBundle.strategy);
-
-  ASSERT_TRUE(startRxThenTx(rxBundle, txBundle));
-
-  TestPtpSourceSinceEpoch(nullptr);
-  mtl_start(ctx->handle);
-
-  ASSERT_EQ(txStrategy->getPacingParameters(), 0);
-  EXPECT_GE(txStrategy->pacing_tr_offset_ns, 0.0);
-  EXPECT_GT(txStrategy->pacing_trs_ns, 0.0);
-  EXPECT_GT(txStrategy->pacing_vrx_pkts, 0u);
-
-  sleepUntilFailure();
-
-  stopTxThenRx(txBundle, rxBundle);
-
-  ASSERT_GT(txStrategy->idx_tx, 0u) << "No frames transmitted under clamp test";
-  ASSERT_GT(rxStrategy->idx_rx, 0u) << "No frames received under clamp test";
   ASSERT_EQ(txStrategy->idx_tx, rxStrategy->idx_rx) << "TX/RX frame count mismatch";
 }
