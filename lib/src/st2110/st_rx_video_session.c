@@ -3460,11 +3460,6 @@ static void rv_stat(struct st_rx_video_sessions_mgr* mgr,
            s->stat_pkts_out_of_order);
     s->stat_pkts_out_of_order = 0;
   }
-  if (s->stat_pkts_redundant_dropped) {
-    notice("RX_VIDEO_SESSION(%d,%d): redundant pkts %d\n", m_idx, idx,
-           s->stat_pkts_redundant_dropped);
-    s->stat_pkts_redundant_dropped = 0;
-  }
   if (s->stat_pkts_wrong_pt_dropped) {
     notice("RX_VIDEO_SESSION(%d,%d): wrong hdr payload type dropped pkts %d\n", m_idx,
            idx, s->stat_pkts_wrong_pt_dropped);
