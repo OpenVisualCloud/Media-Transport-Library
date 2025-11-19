@@ -385,6 +385,12 @@ enum st22p_tx_flag {
    */
   ST22P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
+   * Drop frames when the mtl reports late frames (transport can't keep up).
+   * When late frame is detected, next frame from pipeline is ommited.
+   * Untill we resume normal frame sending.
+   */
+  ST22P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(12)),
+  /**
    * If enabled, lib will assign the rtp timestamp to the value in
    * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
    */
@@ -413,6 +419,8 @@ enum st22p_tx_flag {
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
   ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+  /** If enabled, drop old frames when user pacing is used */
+  ST22P_TX_FLAG_USER_TIMESTAMP_DROP_OLD = (MTL_BIT32(16)),
 };
 
 /** Bit define for flags of struct st20p_tx_ops. */
@@ -437,6 +445,12 @@ enum st20p_tx_flag {
    * aligned with virtual receiver read schedule.
    */
   ST20P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
+  /**
+   * Drop frames when the mtl reports late frames (transport can't keep up).
+   * When late frame is detected, next frame from pipeline is ommited.
+   * Untill we resume normal frame sending.
+   */
+  ST20P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(12)),
   /**
    * If enabled, lib will assign the rtp timestamp to the value of timestamp in
    * st_frame.timestamp (if needed the value will be converted to
@@ -881,6 +895,13 @@ struct st20p_tx_ops {
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
 
+  /**
+   * Optional. Callback when frame done in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
+
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
 
@@ -1051,6 +1072,13 @@ struct st22p_tx_ops {
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
+
+  /**
+   * Optional. Callback when frame done in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /** Optional for ST22P_TX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_tx_rtcp_ops rtcp;

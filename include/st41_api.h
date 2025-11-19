@@ -45,6 +45,13 @@ typedef struct st_rx_fastmetadata_session_handle_impl* st41_rx_handle;
 #define ST41_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st41_tx_ops.
+ * Drop all packets that are old to recover from overflow situations and user
+ * mismanagement. This flag works in conjunction with ST41_TX_FLAG_USER_PACING to handle
+ * overflow scenarios.
+ */
+#define ST41_TX_FLAG_DROP_OLD (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st41_tx_ops.
  * If enabled, lib will assign the rtp timestamp to the value in
  * st41_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
  */

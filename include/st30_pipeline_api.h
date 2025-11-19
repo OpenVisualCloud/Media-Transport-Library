@@ -52,6 +52,13 @@ enum st30p_tx_flag {
   /** Enable the st30p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_tx_set_block_timeout to customize)*/
   ST30P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+
+  /**
+   * Drop frames when the mtl reports late frames (transport can't keep up).
+   * When late frame is detected, next frame from pipeline is ommited.
+   * Untill we resume normal frame sending.
+   */
+  ST30P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(16)),
 };
 
 /** The structure info for st30 frame meta. */
@@ -131,6 +138,12 @@ struct st30p_tx_ops {
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st30_frame* frame);
+  /**
+   * Optional. Callback when frame done in the lib.
+   * And only non-block method can be used within this callback as it run from lcore
+   * tasklet routine.
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /**
    * Optional. The rtp timestamp delta(us) to the start time of frame.
