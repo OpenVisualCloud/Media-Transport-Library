@@ -25,6 +25,8 @@ libpthread = cc.find_library('pthread', required : true)
 libjson_c = dependency('json-c', required : true)
 libpcap = dependency('pcap', required: true)
 
+app_common_includes = include_directories('..', '../include')
+
 libsdl2 = dependency('sdl2', required: false)
 if libsdl2.found()
   add_global_arguments('-DAPP_HAS_SDL2', language : 'c')
@@ -63,6 +65,9 @@ if get_option('buildtype') != 'debug'
 endif
 app_c_args += ['-Wall']
 app_c_args += ['-Wunused-parameter']
+app_c_args += ['-I' + join_paths(meson.current_source_dir(), '..', 'include')]
+app_c_args += ['-I' + join_paths(meson.current_build_dir(), '..')]
+app_c_args += ['-I' + join_paths(meson.project_build_root(), 'include')]
 
 if is_windows
   app_c_args += ['-DWINDOWSENV']
@@ -250,7 +255,20 @@ executable('TxSt30PipelineSample', pipeline_tx_st30_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
 )
+executable('TxSt40PipelineSample', pipeline_tx_st40_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  include_directories: app_common_includes,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
 executable('RxSt30PipelineSample', pipeline_rx_st30_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+executable('RxSt40PipelineSample', pipeline_rx_st40_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep

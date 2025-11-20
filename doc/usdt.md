@@ -734,6 +734,46 @@ Usage: This utility is designed to detect the application has failed to return t
 sudo bpftrace -e 'usdt::st40:rx_mbuf_enqueue_fail { printf("%s m%d,s%d: mbuf %p enqueue fail, tmstamp:%u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }' -p $(pidof RxTxApp)
 ```
 
+#### 2.5.6. st40p pipeline tracing
+
+The ST40 pipeline helpers (used by `RxSt40PipelineSample`, `TxSt40PipelineSample`, or any app built on `st40_pipeline_api.h`) expose their own provider to focus on frame-level callbacks rather than mbuf activity. Today only the RX side wires USDT probes (TX helpers reuse the regular logging path):
+
+```c
+provider st40p {
+  /* rx */
+  probe rx_frame_available(int idx, int f_idx, uint32_t meta_num);
+  probe rx_frame_get(int idx, int f_idx, uint32_t meta_num);
+  probe rx_frame_put(int idx, int f_idx, uint32_t meta_num);
+  /* attach to enable on-demand dumps */
+  probe rx_frame_dump(int idx, char* dump_file, uint32_t meta_num, uint32_t bytes);
+}
+```
+
+Typical RX-side traces (customize the process name/PID for your sample or RxTxApp process):
+
+```bash
+sudo BPFTRACE_STRLEN=256 bpftrace -e '
+usdt::st40p:rx_frame_available {
+  printf("%s rx%u: frame %u ready (meta=%u)\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg1, arg2);
+}
+usdt::st40p:rx_frame_get {
+  printf("%s rx%u: user claimed frame %u\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg1);
+}
+usdt::st40p:rx_frame_put {
+  printf("%s rx%u: frame %u returned (meta=%u)\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg1, arg2);
+}
+usdt::st40p:rx_frame_dump {
+  printf("%s rx%u: dump meta=%u bytes=%u -> %s\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg2, arg3, str(arg1));
+}
+' -p $(pidof RxSt40PipelineSample)
+```
+
+`rx_frame_dump` fires only while you are attached; `arg2` is the metadata entry count and `arg3` is the number of payload bytes flushed to the generated file (for example `imtl_usdt_st40prx_s0_447_SzG5Yv.bin`). Attach `usdt::sys:log_msg` alongside these probes if you want the scheduler/tasklet summaries without reconfiguring the sample log level. If `bpftrace` reports `couldn't get argument N`, rebuild/install `libmtl.so` with `-Denable_usdt=true` so the refreshed probe metadata (including the extra RX meta argument and the renamed dump byte field) is visible system-wide.
+
 ### 2.6. st20p tracing
 
 Available probes:
