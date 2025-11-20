@@ -5,9 +5,8 @@
 #ifndef __ST40_PIPELINE_TX_H__
 #define __ST40_PIPELINE_TX_H__
 
-#include <experimental/st40_pipeline_api.h>
-
 #include "../st_main.h"
+#include "st40_pipeline_api.h"
 
 #if defined(__cplusplus)
 extern "C" {
