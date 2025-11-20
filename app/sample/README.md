@@ -55,14 +55,14 @@ The dir include the simple sample code for how to develop application quickly ba
 2. Launch the TX sample. The example below keeps every frame below the 255-byte UDW limit returned by `st40p_tx_max_udw_buff_size()` so that each payload fits into a single RFC 8331 RTP packet.
    ```bash
    ./build/app/TxSt40PipelineSample \
-		   --p_port 0000:af:01.0 \
-		   --p_tx_ip 239.1.1.1 \
-		   --p_sip 192.168.96.2 \
-		   --udp_port 20000 \
-		   --payload_type 40 \
-		   --sessions_cnt 1 \
-		   --tx_url /tmp/anc_payload.bin \
-		   --ext_frame
+    --p_port 0000:af:01.0 \
+    --p_tx_ip 239.1.1.1 \
+    --p_sip 192.168.96.2 \
+    --udp_port 20000 \
+    --payload_type 40 \
+    --sessions_cnt 1 \
+    --tx_url /tmp/anc_payload.bin \
+    --ext_frame
    ```
 
 Helpful switches:
@@ -76,14 +76,14 @@ Match the TX parameters on the receiver. Enabling `--rx_dump` writes a human-rea
 
 ```bash
 ./build/app/RxSt40PipelineSample \
-		--p_port 0000:af:01.0 \
-		--p_rx_ip 239.1.1.1 \
-		--p_sip 192.168.96.2 \
-		--udp_port 20000 \
-		--payload_type 40 \
-		--sessions_cnt 1 \
-		--rx_url /tmp/anc_dump.txt \
-		--rx_dump
+        --p_port 0000:af:01.0 \
+        --p_rx_ip 239.1.1.1 \
+        --p_sip 192.168.96.2 \
+        --udp_port 20000 \
+        --payload_type 40 \
+        --sessions_cnt 1 \
+        --rx_url /tmp/anc_dump.txt \
+        --rx_dump
 ```
 
 The runtime log summarizes the number of metadata entries and UDW bytes received per frame, while the dump files capture DID/SDID/line information followed by the raw payload so you can diff TX/RX easily.

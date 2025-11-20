@@ -772,7 +772,13 @@ usdt::st40p:rx_frame_dump {
 ' -p $(pidof RxSt40PipelineSample)
 ```
 
-`rx_frame_dump` fires only while you are attached; `arg2` is the metadata entry count and `arg3` is the number of payload bytes flushed to the generated file (for example `imtl_usdt_st40prx_s0_447_SzG5Yv.bin`). Attach `usdt::sys:log_msg` alongside these probes if you want the scheduler/tasklet summaries without reconfiguring the sample log level. If `bpftrace` reports `couldn't get argument N`, rebuild/install `libmtl.so` with `-Denable_usdt=true` so the refreshed probe metadata (including the extra RX meta argument and the renamed dump byte field) is visible system-wide.
+`rx_frame_dump` fires only while you are attached; `arg2` is the metadata entry count and
+`arg3` is the number of payload bytes flushed to the generated file (for example
+`imtl_usdt_st40prx_s0_447_SzG5Yv.bin`). Attach `usdt::sys:log_msg` alongside these probes if
+you want the scheduler/tasklet summaries without reconfiguring the sample log level. If
+`bpftrace` reports `couldn't get argument N`, rebuild/install `libmtl.so` with
+`-Denable_usdt=true` so the refreshed probe metadata (including the extra RX meta argument and
+the renamed dump byte field) is visible system-wide.
 
 ### 2.6. st20p tracing
 
