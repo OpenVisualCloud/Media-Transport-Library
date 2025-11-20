@@ -25,8 +25,6 @@ libpthread = cc.find_library('pthread', required : true)
 libjson_c = dependency('json-c', required : true)
 libpcap = dependency('pcap', required: true)
 
-app_common_includes = include_directories('..', '../include')
-
 libsdl2 = dependency('sdl2', required: false)
 if libsdl2.found()
   add_global_arguments('-DAPP_HAS_SDL2', language : 'c')
@@ -258,7 +256,6 @@ executable('TxSt30PipelineSample', pipeline_tx_st30_sample_sources,
 executable('TxSt40PipelineSample', pipeline_tx_st40_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
-  include_directories: app_common_includes,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
 )

@@ -335,6 +335,22 @@ Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
 
+#### 6.3.1. Ancillary (ST40) pipeline
+
+The same pipeline abstraction is now available for ancillary-only flows through `st40_pipeline_api.h`. It keeps the zero-copy RFC 8331 payload path but hides scheduler registration, frame queues, and pacing details behind the familiar get/put contract so applications only need to implement:
+
+```c
+st40p_tx_get_frame
+st40p_tx_put_frame
+st40p_rx_get_frame
+st40p_rx_put_frame
+```
+
+- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
+- **RX pipeline (`st40p_rx_*`)** assembles ancillary packets into user buffers and can optionally dump metadata/UDW buffers directly to files for debugging through `st40p_rx_set_dump`. Each RX callback receives both the metadata blocks and the captured payload, mirroring the TX layout to simplify round-trip validation.
+
+Reference implementations live in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. They reuse the shared `sample_util` CLI so you can swap between ST20/22/30/40 pipelines with identical arguments while testing pacing, redundancy, and USDT probes.
+
 ### 6.4. ST22 support
 
 The support for ST 2110-22 JPEG XS can be categorized into two modes: ST 2110-22 raw codestream mode and ST 2110-22 pipeline mode. The pipeline mode leverages an MTL plugin to handle the decoding/encoding between the raw video buffer and the codestream.
@@ -497,21 +513,6 @@ In MTL, similar to st20 video, each field is treated as an individual frame, wit
 For instance, with a 1080i50 format, you should use the following session parameters when creating a session: `interlaced: true, fps: ST_FPS_P50`.
 
 For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), RTP passthrough mode is the only supported, it's application's duty to check the if it's the first or second by inspecting the F bits in rfc8331 header.
-
-### 6.18. ST40 pipeline mode
-
-For applications that prefer the simplified pipeline abstraction (similar to `st20p`/`st30p`) MTL now exposes `st40_pipeline_api.h`. Pipeline mode keeps the zero-copy ancillary payload path but bundles common plumbing – scheduler registration, frame queues, tasklet threads, and pacing – behind a single handle so that an app only needs to implement the `get_next_frame`/`notify_frame_done` (TX) or `notify_frame_ready` (RX) callbacks.
-
-- **TX pipeline (`st40p_tx_*`)** – wraps `st40_tx_create` under the hood while honoring flags such as redundant ports, user timestamps, and external frame ownership. The helper also surfaces the UDW/metadata buffers used by ancillary producers.
-- **RX pipeline (`st40p_rx_*`)** – converts incoming ancillary packets into frame callbacks and optionally dumps metadata/UDW buffers directly to user memory.
-
-Reference code lives in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. These samples demonstrate how to:
-
-1. Parse the shared sample CLI (`sample_util.c`) to configure multicast, payload-type, and redundant ports.
-2. Register pipeline callbacks that acquire frames, populate UDW/metas, and release them back to MTL.
-3. Enable optional debug paths such as on-disk metadata dumps or user pacing hooks.
-
-Use the pipeline helpers whenever you need to stand up ancillary-only senders/receivers quickly without wiring the lower-level ST40 transport APIs manually.
 
 ## 7. Misc
 

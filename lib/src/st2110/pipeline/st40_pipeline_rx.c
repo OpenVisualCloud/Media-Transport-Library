@@ -85,6 +85,13 @@ static int rx_st40p_rtp_ready(void* priv) {
   mbuf = st40_rx_get_mbuf(ctx->transport, &usrptr, &len);
   if (!mbuf) return -EBUSY;
 
+  uint32_t hdr_bytes = sizeof(struct st40_rfc8331_rtp_hdr);
+  if (len < hdr_bytes) {
+    warn("%s(%d), RTP packet too small (%u < %u)\n", __func__, ctx->idx, len, hdr_bytes);
+    st40_rx_put_mbuf(ctx->transport, mbuf);
+    return -EIO;
+  }
+
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
   anc_count = hdr->first_hdr_chunk.anc_count;
 
@@ -150,13 +157,13 @@ static int rx_st40p_rtp_ready(void* priv) {
       break;
     }
 
-    // If this is an empty ANC frame (udw_words == 0), still preserve and count it
+    /* If this is an empty ANC frame (udw_words == 0), still preserve and count it */
     bool meta_valid = true;
     if (udw_words == 0) {
-      // Accept and preserve empty ANC frame as valid
+      /* Accept and preserve empty ANC frame as valid */
       meta_valid = true;
     } else {
-      // Parse and validate UDW as before
+      /* Parse and validate UDW as before */
       uint8_t* udw_src = (uint8_t*)&payload_hdr->second_hdr_chunk;
       uint32_t original_fill = frame_info->udw_buffer_fill;
       for (uint16_t udw_idx = 0; udw_idx < udw_words; udw_idx++) {

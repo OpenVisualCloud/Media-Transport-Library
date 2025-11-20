@@ -42,6 +42,58 @@ The dir include the simple sample code for how to develop application quickly ba
 ./build/app/RxSt22PipelineSample --p_port 0000:af:01.1 --p_sip 192.168.75.22 --p_rx_ip 239.168.75.22
 ```
 
+### 2.1. ST40 ancillary pipeline samples
+
+`TxSt40PipelineSample` and `RxSt40PipelineSample` live in this directory (see `tx_st40_pipeline_sample.c` / `rx_st40_pipeline_sample.c`) and are built automatically by `./build.sh`. They leverage the same CLI foundation as the other pipeline samples, so familiar options such as `--p_port`, `--udp_port`, `--sessions_cnt`, `--multi_inc_addr`, `--ext_frame`, and destination MAC overrides behave identically.
+
+#### Tx workflow
+
+1. Prepare (or reuse) an ancillary payload. Any binary file works because frames are looped forever:
+   ```bash
+   head -c 4096 /dev/urandom > /tmp/anc_payload.bin
+   ```
+2. Launch the TX sample. The example below keeps every frame below the 255-byte UDW limit returned by `st40p_tx_max_udw_buff_size()` so that each payload fits into a single RFC 8331 RTP packet.
+   ```bash
+   ./build/app/TxSt40PipelineSample \
+		   --p_port 0000:af:01.0 \
+		   --p_tx_ip 239.1.1.1 \
+		   --p_sip 192.168.96.2 \
+		   --udp_port 20000 \
+		   --payload_type 40 \
+		   --sessions_cnt 1 \
+		   --tx_url /tmp/anc_payload.bin \
+		   --ext_frame
+   ```
+
+Helpful switches:
+
+- `--ext_frame` keeps the sample in user-supplied buffer mode, mirroring how most applications integrate the pipeline API.
+- `--multi_inc_addr` increments the destination multicast address per session instead of the UDP port so you can spin up multiple ancillary streams on one NIC queue.
+
+#### Rx workflow
+
+Match the TX parameters on the receiver. Enabling `--rx_dump` writes a human-readable metadata block per frame to `--rx_url` (`foo.txt_0`, `_1`, … if multiple sessions are active):
+
+```bash
+./build/app/RxSt40PipelineSample \
+		--p_port 0000:af:01.0 \
+		--p_rx_ip 239.1.1.1 \
+		--p_sip 192.168.96.2 \
+		--udp_port 20000 \
+		--payload_type 40 \
+		--sessions_cnt 1 \
+		--rx_url /tmp/anc_dump.txt \
+		--rx_dump
+```
+
+The runtime log summarizes the number of metadata entries and UDW bytes received per frame, while the dump files capture DID/SDID/line information followed by the raw payload so you can diff TX/RX easily.
+
+#### Troubleshooting and USDT hooks
+
+- Use `--rx_dump`/`--tx_url` first to confirm that metadata completes the round trip.
+- When `st40_total_pkts` exceeds 1, the payload overflowed the 255-byte UDW buffer; trim the input file or drop the session count on slower links.
+- For end-to-end tracing, follow the ST40P probe examples in `doc/usdt.md` §2.5.6 (they cover `usdt::st40p:*` plus `usdt::sys:log_msg` combinations) instead of keeping scripts here.
+
 ## 3. Forward pipeline samples
 
 [rx_st20p_tx_st22p_fwd.c](fwd/rx_st20p_tx_st22p_fwd.c): A demo application which receive a st20 stream and output as st22 compressed stream with logo rendering.

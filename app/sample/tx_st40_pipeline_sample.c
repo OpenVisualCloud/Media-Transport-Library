@@ -2,8 +2,6 @@
  * Copyright(c) 2025 Intel Corporation
  */
 
-#include <mtl/experimental/st40_pipeline_api.h>
-
 #include "sample_util.h"
 
 #define ST40P_SAMPLE_MAX_UDW_SIZE 255
