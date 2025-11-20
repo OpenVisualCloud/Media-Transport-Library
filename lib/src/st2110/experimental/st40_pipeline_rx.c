@@ -4,8 +4,6 @@
 
 #include "st40_pipeline_rx.h"
 
-#include <arpa/inet.h>
-
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
