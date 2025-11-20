@@ -265,10 +265,10 @@
   MT_DTRACE_PROBE3(st40p, rx_frame_available, idx, f_idx, meta_num)
 #define MT_USDT_ST40P_RX_FRAME_GET(idx, f_idx, meta_num) \
   MT_DTRACE_PROBE3(st40p, rx_frame_get, idx, f_idx, meta_num)
-#define MT_USDT_ST40P_RX_FRAME_PUT(idx, f_idx) \
-  MT_DTRACE_PROBE2(st40p, rx_frame_put, idx, f_idx)
-#define MT_USDT_ST40P_RX_FRAME_DUMP(idx, file, meta_num, frames) \
-  MT_DTRACE_PROBE4(st40p, rx_frame_dump, idx, file, meta_num, frames)
+#define MT_USDT_ST40P_RX_FRAME_PUT(idx, f_idx, meta_num) \
+  MT_DTRACE_PROBE3(st40p, rx_frame_put, idx, f_idx, meta_num)
+#define MT_USDT_ST40P_RX_FRAME_DUMP(idx, file, meta_num, bytes) \
+  MT_DTRACE_PROBE4(st40p, rx_frame_dump, idx, file, meta_num, bytes)
 #define MT_USDT_ST40P_RX_FRAME_DUMP_ENABLED() ST40P_RX_FRAME_DUMP_ENABLED()
 
 #endif

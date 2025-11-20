@@ -8,6 +8,8 @@ pipeline_tx_st22_sample_sources = files('tx_st22_pipeline_sample.c', 'sample_uti
 pipeline_rx_st22_sample_sources = files('rx_st22_pipeline_sample.c', 'sample_util.c')
 pipeline_tx_st30_sample_sources = files('tx_st30_pipeline_sample.c', 'sample_util.c')
 pipeline_rx_st30_sample_sources = files('rx_st30_pipeline_sample.c', 'sample_util.c')
+pipeline_tx_st40_sample_sources = files('tx_st40_pipeline_sample.c', 'sample_util.c')
+pipeline_rx_st40_sample_sources = files('rx_st40_pipeline_sample.c', 'sample_util.c')
 
 # fwd
 rx_st20p_tx_st20p_fwd_sources = files('fwd/rx_st20p_tx_st20p_fwd.c', 'sample_util.c')

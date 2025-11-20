@@ -498,6 +498,21 @@ For instance, with a 1080i50 format, you should use the following session parame
 
 For transmission (TX), users can specify whether the current field is the first or second by using the `second_field` flag within the `struct st40_tx_frame_meta`. For reception (RX), RTP passthrough mode is the only supported, it's application's duty to check the if it's the first or second by inspecting the F bits in rfc8331 header.
 
+### 6.18. ST40 pipeline mode
+
+For applications that prefer the simplified pipeline abstraction (similar to `st20p`/`st30p`) MTL now exposes `st40_pipeline_api.h`. Pipeline mode keeps the zero-copy ancillary payload path but bundles common plumbing – scheduler registration, frame queues, tasklet threads, and pacing – behind a single handle so that an app only needs to implement the `get_next_frame`/`notify_frame_done` (TX) or `notify_frame_ready` (RX) callbacks.
+
+- **TX pipeline (`st40p_tx_*`)** – wraps `st40_tx_create` under the hood while honoring flags such as redundant ports, user timestamps, and external frame ownership. The helper also surfaces the UDW/metadata buffers used by ancillary producers.
+- **RX pipeline (`st40p_rx_*`)** – converts incoming ancillary packets into frame callbacks and optionally dumps metadata/UDW buffers directly to user memory.
+
+Reference code lives in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. These samples demonstrate how to:
+
+1. Parse the shared sample CLI (`sample_util.c`) to configure multicast, payload-type, and redundant ports.
+2. Register pipeline callbacks that acquire frames, populate UDW/metas, and release them back to MTL.
+3. Enable optional debug paths such as on-disk metadata dumps or user pacing hooks.
+
+Use the pipeline helpers whenever you need to stand up ancillary-only senders/receivers quickly without wiring the lower-level ST40 transport APIs manually.
+
 ## 7. Misc
 
 ### 7.1. Logging

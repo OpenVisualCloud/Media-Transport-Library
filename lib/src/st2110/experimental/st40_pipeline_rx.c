@@ -443,6 +443,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   int idx = ctx->idx;
   struct st40p_rx_frame* framebuff = frame_info->priv;
   uint16_t consumer_idx = framebuff->idx;
+  uint16_t meta_num_before_reset = frame_info->meta_num;
 
   if (MT_ST40_HANDLE_PIPELINE_RX != ctx->type) {
     err("%s(%d), invalid type %d\n", __func__, idx, ctx->type);
@@ -461,7 +462,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   framebuff->stat = ST40P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
 
-  MT_USDT_ST40P_RX_FRAME_PUT(idx, consumer_idx);
+  MT_USDT_ST40P_RX_FRAME_PUT(idx, consumer_idx, meta_num_before_reset);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
   return 0;
 }
