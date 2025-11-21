@@ -11,6 +11,12 @@ script_folder=${script_path/$script_name/}
 cd "${script_folder}" || exit 1
 
 BUILD_PATH="${script_folder}/../../../build/tests/KahawaiTest"
+ENV_FILE="${script_folder}/noctx.env"
+
+if [ -f "$ENV_FILE" ]; then
+	# shellcheck disable=SC1090
+	. "$ENV_FILE"
+fi
 
 if [ ! -f "$BUILD_PATH" ]; then
 	echo "Error: KahawaiTest binary not found at $BUILD_PATH"

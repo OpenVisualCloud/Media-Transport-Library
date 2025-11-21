@@ -28,6 +28,19 @@ and need special configuration.
 
 Replace `TestName` with any test from [`noctx.env`](noctx.env) and update the port addresses to match your system.
 
+### Environment configuration
+
+You can store the PCI addresses once in `tests/integration_tests/noctx/noctx.env`; `run.sh` sources this file automatically before executing tests.
+
+```bash
+TEST_PORT_1=0000:xx:xx.x
+TEST_PORT_2=0000:yy:yy.y
+TEST_PORT_3=0000:zz:zz.z
+TEST_PORT_4=0000:aa:aa.a
+```
+
+Exporting the same variables in your shell will continue to work, but keeping them in `noctx.env` avoids repeating the configuration.
+
 
 ### Running all tests
 
