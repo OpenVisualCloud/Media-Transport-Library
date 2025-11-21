@@ -58,7 +58,7 @@
 #define RFC_8331_PAYLOAD_HEADER_SIZE 8
 #define RFC_8331_PAYLOAD_HEADER_LOST_BITS 2
 
-#include <experimental/st40_pipeline_api.h>
+#include <mtl/st40_pipeline_api.h>
 #include <st40_api.h>
 
 #include "gst_mtl_common.h"
