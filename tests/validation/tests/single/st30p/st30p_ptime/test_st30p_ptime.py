@@ -5,6 +5,7 @@ import logging
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.integrity.integrity_runner import FileAudioIntegrityRunner
+from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import get_sample_size
 from mtl_engine.media_files import audio_files
@@ -31,8 +32,7 @@ logger = logging.getLogger(__name__)
 def test_st30p_ptime(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     audio_ptime,
     test_config,
@@ -41,12 +41,15 @@ def test_st30p_ptime(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="unicast",
         audio_format=media_file_info["format"],
         audio_channel=["U02"],
