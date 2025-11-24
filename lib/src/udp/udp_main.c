@@ -929,15 +929,15 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   ssize_t payload_cap = (ssize_t)pkt_len - hdr_len;
 
   if (payload_len < 0 || payload_len > payload_cap) {
-    err("%s(%d), invalid payload len %zd (cap %zd)\n", __func__, idx,
-        payload_len, payload_cap);
+    err("%s(%d), invalid payload len %" PRId64 " (cap %" PRId64 ")\n", __func__, idx,
+        (int64_t)payload_len, (int64_t)payload_cap);
     rte_pktmbuf_free(pkt);
     errno = EBADMSG;
     return -1;
   }
 
   void* payload = rte_pktmbuf_mtod_offset(pkt, void*, hdr_len);
-  dbg("%s(%d), payload_len %zd bytes\n", __func__, idx, payload_len);
+  dbg("%s(%d), payload_len %" PRId64 " bytes\n", __func__, idx, (int64_t)payload_len);
 
   if (payload_len <= len) {
     rte_memcpy(buf, payload, payload_len);
