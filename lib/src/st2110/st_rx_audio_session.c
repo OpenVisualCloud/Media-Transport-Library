@@ -288,8 +288,11 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
     return -EINVAL;
   }
 
+  enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
+
   if (s->st30_pkt_idx == 0) {
     s->first_pkt_rtp_ts = tmstamp;
+    s->first_pkt_ptp_ts = mt_mbuf_time_stamp(impl, mbuf, port);
   }
 
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
@@ -359,7 +362,6 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
   s->st30_pkt_idx++;
 
   if (s->enable_timing_parser) {
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
     ra_tp_on_packet(s, s_port, tmstamp, mt_mbuf_time_stamp(impl, mbuf, port));
   }
 
@@ -388,6 +390,7 @@ static int rx_audio_session_handle_frame_pkt(struct mtl_main_impl* impl,
 
     meta->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
     meta->timestamp = s->first_pkt_rtp_ts;
+    meta->timestamp_first_pkt = s->first_pkt_ptp_ts;
     meta->fmt = ops->fmt;
     meta->sampling = ops->sampling;
     meta->channel = ops->channel;

@@ -45,6 +45,9 @@ struct st40_frame_info {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
+  /** TAI timestamp measured right after the RTP packet for this frame was received */
+  uint64_t receive_timestamp;
+
   /** priv pointer for lib, do not touch this */
   void* priv;
 };
