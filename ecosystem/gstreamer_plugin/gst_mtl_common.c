@@ -379,6 +379,12 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
       g_value_set_string(value, general_args->dma_dev);
       break;
+    case PROP_GENERAL_SESSION_PORT:
+      g_value_set_string(value, portArgs->port[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_SESSION_PORT_R:
+      g_value_set_string(value, portArgs->port[MTL_PORT_R]);
+      break;
     case PROP_GENERAL_PORT_IP:
       g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_P]);
       break;
@@ -399,6 +405,9 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
       break;
     case PROP_GENERAL_PORT_TX_QUEUES:
       g_value_set_uint(value, general_args->tx_queues_cnt[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_ENABLE_ONBOARD_PTP:
+      g_value_set_boolean(value, general_args->enable_onboard_ptp);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
