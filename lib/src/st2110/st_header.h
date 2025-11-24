@@ -1033,6 +1033,7 @@ struct st_rx_audio_session_impl {
   int redundant_error_cnt[MTL_SESSION_PORT_MAX];
 
   uint32_t first_pkt_rtp_ts; /* rtp time stamp for the first pkt */
+  uint64_t first_pkt_ptp_ts; /* PTP time stamp for the first pkt */
   int64_t tmstamp;
   size_t frame_recv_size;
 

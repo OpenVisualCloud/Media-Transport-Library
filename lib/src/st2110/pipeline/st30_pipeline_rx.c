@@ -89,6 +89,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->data_size = meta->frame_recv_size;
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
+  frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
   framebuff->stat = ST30P_RX_FRAME_READY;
   /* point to next */
@@ -186,6 +187,7 @@ static int rx_st30p_init_fbs(struct st30p_rx_ctx* ctx, struct st30p_rx_ops* ops)
     frame->ptime = ops->ptime;
     /* same to framebuffer size */
     frame->buffer_size = frame->data_size = ops->framebuff_size;
+    frame->receive_timestamp = 0;
     dbg("%s(%d), init fb %u\n", __func__, idx, i);
   }
 

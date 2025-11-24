@@ -86,6 +86,14 @@ static int rx_st40p_rtp_ready(void* priv) {
   mbuf = st40_rx_get_mbuf(ctx->transport, &usrptr, &len);
   if (!mbuf) return -EBUSY;
 
+  struct rte_mbuf* pkt = mbuf;
+  enum mtl_port port = mt_port_by_id(ctx->impl, pkt->port);
+  uint64_t receive_timestamp = 0;
+  if (port < MTL_PORT_MAX)
+    receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, port);
+  else
+    receive_timestamp = mtl_ptp_read_time(ctx->impl);
+
   uint32_t hdr_bytes = sizeof(struct st40_rfc8331_rtp_hdr);
   if (len < hdr_bytes) {
     warn("%s(%d), RTP packet too small (%u < %u)\n", __func__, ctx->idx, len, hdr_bytes);
@@ -109,6 +117,7 @@ static int rx_st40p_rtp_ready(void* priv) {
   }
 
   frame_info = &framebuff->frame_info;
+  frame_info->receive_timestamp = receive_timestamp;
 
   /* parse RTP packet and copy metadata */
   payload = (uint8_t*)(hdr + 1);
@@ -314,6 +323,7 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
     frame_info->udw_buffer_fill = 0;
     frame_info->meta_num = 0;
     frame_info->meta = framebuff->meta;
+    frame_info->receive_timestamp = 0;
     frame_info->priv = framebuff;
 
     dbg("%s(%d), init fb %u\n", __func__, idx, i);

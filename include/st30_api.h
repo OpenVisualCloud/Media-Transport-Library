@@ -278,6 +278,8 @@ struct st30_rx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
   uint64_t timestamp;
+  /** TAI timestamp measured right after the RTP packet for this frame was received */
+  uint64_t timestamp_first_pkt;
   /** Timestamp value in the rtp header */
   uint32_t rtp_timestamp;
   /** received data size for current frame */
