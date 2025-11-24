@@ -13,6 +13,7 @@
 #include <mtl/mtl_api.h>
 #include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
+#include <mtl/st40_pipeline_api.h>
 #include <mtl/st_pipeline_api.h>
 
 #define PAYLOAD_TYPE_AUDIO (111)
