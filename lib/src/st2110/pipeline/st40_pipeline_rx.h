@@ -41,6 +41,7 @@ struct st40p_rx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   /* usdt dump */
   uint32_t usdt_dump_frame_cnt;
