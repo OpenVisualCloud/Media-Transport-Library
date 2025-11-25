@@ -220,8 +220,6 @@ enum mtl_pmd_type {
   /** Below PMDs are only for experimental usage, not for production usage. */
   /** experimental, Run MTL directly on kernel socket APIs */
   MTL_PMD_KERNEL_SOCKET = 17,
-  /** experimental, Run MTL directly on RDMA UD with ST2110 packing method */
-  MTL_PMD_RDMA_UD = 18,
   /** experimental, DPDK PMD with address family(kernel) high performance packet
      processing */
   MTL_PMD_DPDK_AF_XDP = 19,
@@ -505,7 +503,6 @@ struct mtl_init_params {
    *
    * Below PMDs are only for experimental usage, not for production usage.
    * MTL_PMD_KERNEL_SOCKET, use kernel + ifname, ex: kernel:enp175s0f0.
-   * MTL_PMD_RDMA_UD with ST2110 packing, use rdma_ud + ifname, ex: rdma_ud:enp175s0f0.
    * MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex: dpdk_af_xdp:enp175s0f0.
    * MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
    */

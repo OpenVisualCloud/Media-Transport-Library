@@ -19,7 +19,6 @@ struct mt_rxq_entry {
   struct mt_csq_entry* csq;
   struct mt_rx_socket_entry* rx_socket_q;
   struct mt_rx_xdp_entry* rx_xdp_q;
-  struct mt_rx_rdma_entry* rx_rdma_q;
 
   uint16_t (*burst)(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                     const uint16_t nb_pkts);
@@ -41,7 +40,6 @@ struct mt_txq_entry {
   struct mt_tsq_entry* tsq;
   struct mt_tx_socket_entry* tx_socket_q;
   struct mt_tx_xdp_entry* tx_xdp_q;
-  struct mt_tx_rdma_entry* tx_rdma_q;  // TODO: remove this when rdma is ready
 
   uint16_t (*burst)(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                     uint16_t nb_pkts);

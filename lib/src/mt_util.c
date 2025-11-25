@@ -941,7 +941,6 @@ static const char* dpdk_afxdp_port_prefix = "dpdk_af_xdp:";
 static const char* dpdk_afpkt_port_prefix = "dpdk_af_packet:";
 static const char* kernel_port_prefix = "kernel:";
 static const char* native_afxdp_port_prefix = "native_af_xdp:";
-static const char* rdma_ud_port_prefix = "rdma_ud:";
 
 enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
   dbg("%s, port %s\n", __func__, port);
@@ -953,8 +952,6 @@ enum mtl_pmd_type mtl_pmd_by_port_name(const char* port) {
     return MTL_PMD_KERNEL_SOCKET;
   else if (strncmp(port, native_afxdp_port_prefix, strlen(native_afxdp_port_prefix)) == 0)
     return MTL_PMD_NATIVE_AF_XDP;
-  else if (strncmp(port, rdma_ud_port_prefix, strlen(rdma_ud_port_prefix)) == 0)
-    return MTL_PMD_RDMA_UD;
   else
     return MTL_PMD_DPDK_USER; /* default */
 }
@@ -989,14 +986,6 @@ const char* mt_native_afxdp_port2if(const char* port) {
     return NULL;
   }
   return port + strlen(native_afxdp_port_prefix);
-}
-
-const char* mt_rdma_ud_port2if(const char* port) {
-  if (mtl_pmd_by_port_name(port) != MTL_PMD_RDMA_UD) {
-    err("%s, port %s is not a rdma based\n", __func__, port);
-    return NULL;
-  }
-  return port + strlen(rdma_ud_port_prefix);
 }
 
 int mt_user_info_init(struct mt_user_info* info) {
