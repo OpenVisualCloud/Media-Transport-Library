@@ -130,7 +130,6 @@ class McmConnectionType(Enum):
 
     mpg = "multipoint-group"
     st = "st2110"
-    # rdma = "rdma" # Not implemented
 
 
 class McmTransport(Enum):

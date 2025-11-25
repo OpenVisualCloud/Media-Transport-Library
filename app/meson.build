@@ -513,46 +513,6 @@ executable('V4l2toIPApp', v4l2_to_ip_sources,
 )
 endif
 
-mtl_rdma = dependency('mtl_rdma', required: false)
-if mtl_rdma.found()
-executable('RdmaTxSample', rdma_tx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaRxSample', rdma_rx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaVideoTxSample', rdma_video_tx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaVideoRxSample', rdma_video_rx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
-)
-executable('RdmaVideoTxMultiSample', rdma_video_tx_multi_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaVideoRxMultiSample', rdma_video_rx_multi_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
-)
-endif
-
 if gpu_direct.found()
   executable('GpuDirectVideoTxMultiSample', gpu_direct_tx_sample_sources,
     c_args : app_c_args,

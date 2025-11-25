@@ -1,9 +1,0 @@
-# SPDX-License-Identifier: BSD-3-Clause
-# Copyright 2024 Intel Corporation
-
-option(
-    'enable_asan',
-    type: 'boolean',
-    value: false,
-    description: 'enable/disable address sanitizer, debug usage only',
-)

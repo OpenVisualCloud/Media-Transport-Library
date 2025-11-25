@@ -6,7 +6,6 @@
 
 #include "../dev/mt_af_xdp.h"
 #include "../dev/mt_dev.h"
-#include "../dev/mt_rdma_ud.h"
 #include "../mt_cni.h"
 #include "../mt_log.h"
 #include "mt_dp_socket.h"
@@ -21,11 +20,6 @@ static uint16_t rx_socket_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx
 static uint16_t rx_xdp_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
                              const uint16_t nb_pkts) {
   return mt_rx_xdp_burst(entry->rx_xdp_q, rx_pkts, nb_pkts);
-}
-
-static uint16_t rx_rdma_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
-                              const uint16_t nb_pkts) {
-  return mt_rx_rdma_burst(entry->rx_rdma_q, rx_pkts, nb_pkts);
 }
 
 static uint16_t rx_srss_burst(struct mt_rxq_entry* entry, struct rte_mbuf** rx_pkts,
@@ -79,11 +73,6 @@ struct mt_rxq_entry* mt_rxq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->rx_xdp_q) goto fail;
     entry->queue_id = mt_rx_xdp_queue_id(entry->rx_xdp_q);
     entry->burst = rx_xdp_burst;
-  } else if (mt_pmd_is_rdma_ud(impl, port)) {
-    entry->rx_rdma_q = mt_rx_rdma_get(impl, port, flow, NULL);
-    if (!entry->rx_rdma_q) goto fail;
-    entry->queue_id = mt_rx_rdma_queue_id(entry->rx_rdma_q);
-    entry->burst = rx_rdma_burst;
   } else if (flow->flags & MT_RXQ_FLOW_F_FORCE_CNI) {
     entry->csq = mt_csq_get(impl, port, flow);
     if (!entry->csq) goto fail;
@@ -128,10 +117,6 @@ int mt_rxq_put(struct mt_rxq_entry* entry) {
     mt_rx_xdp_put(entry->rx_xdp_q);
     entry->rx_xdp_q = NULL;
   }
-  if (entry->rx_rdma_q) {
-    mt_rx_rdma_put(entry->rx_rdma_q);
-    entry->rx_rdma_q = NULL;
-  }
   mt_rte_free(entry);
   return 0;
 }
@@ -149,11 +134,6 @@ static uint16_t tx_socket_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx
 static uint16_t tx_xdp_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
                              uint16_t nb_pkts) {
   return mt_tx_xdp_burst(entry->tx_xdp_q, tx_pkts, nb_pkts);
-}
-
-static uint16_t tx_rdma_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
-                              uint16_t nb_pkts) {
-  return mt_tx_rdma_burst(entry->tx_rdma_q, tx_pkts, nb_pkts);
 }
 
 static uint16_t tx_tsq_burst(struct mt_txq_entry* entry, struct rte_mbuf** tx_pkts,
@@ -192,11 +172,6 @@ struct mt_txq_entry* mt_txq_get(struct mtl_main_impl* impl, enum mtl_port port,
     if (!entry->tx_xdp_q) goto fail;
     entry->queue_id = mt_tx_xdp_queue_id(entry->tx_xdp_q);
     entry->burst = tx_xdp_burst;
-  } else if (mt_pmd_is_rdma_ud(impl, port)) {
-    entry->tx_rdma_q = mt_tx_rdma_get(impl, port, flow, NULL);
-    if (!entry->tx_rdma_q) goto fail;
-    entry->queue_id = mt_tx_rdma_queue_id(entry->tx_rdma_q);
-    entry->burst = tx_rdma_burst;
   } else {
     entry->txq = mt_dev_get_tx_queue(impl, port, flow);
     if (!entry->txq) goto fail;
@@ -227,10 +202,6 @@ int mt_txq_put(struct mt_txq_entry* entry) {
   if (entry->tx_xdp_q) {
     mt_tx_xdp_put(entry->tx_xdp_q);
     entry->tx_xdp_q = NULL;
-  }
-  if (entry->tx_rdma_q) {
-    mt_tx_rdma_put(entry->tx_rdma_q);
-    entry->tx_rdma_q = NULL;
   }
   mt_rte_free(entry);
   return 0;
@@ -335,8 +306,7 @@ int mt_dp_queue_init(struct mtl_main_impl* impl) {
     struct mt_txq_flow flow;
     memset(&flow, 0, sizeof(flow));
     flow.flags = MT_TXQ_FLOW_F_SYS_QUEUE;
-    if (mt_drv_kernel_based(impl, i) && !mt_pmd_is_native_af_xdp(impl, i) &&
-        !mt_pmd_is_rdma_ud(impl, i))
+    if (mt_drv_kernel_based(impl, i) && !mt_pmd_is_native_af_xdp(impl, i))
       flow.flags = MT_TXQ_FLOW_F_FORCE_SOCKET;
     dp->txq_sys_entry = mt_txq_get(impl, i, &flow);
     if (!dp->txq_sys_entry) {

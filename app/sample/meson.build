@@ -50,14 +50,6 @@ dma_sample_sources = files('dma/dma_sample.c', 'sample_util.c')
 redundant_rx_st20_combined_sample_sources = files('experimental/rx_st20_redundant_combined_sample.c',
     'sample_util.c')
 
-# rdma
-rdma_tx_sample_sources = files('rdma/rdma_tx.c')
-rdma_rx_sample_sources = files('rdma/rdma_rx.c')
-rdma_video_tx_sample_sources = files('rdma/rdma_video_tx.c')
-rdma_video_rx_sample_sources = files('rdma/rdma_video_rx.c')
-rdma_video_tx_multi_sample_sources = files('rdma/rdma_video_tx_multi.c')
-rdma_video_rx_multi_sample_sources = files('rdma/rdma_video_rx_multi.c')
-
 # gpu direct
 gpu_direct_tx_sample_sources = files('gpu_direct/tx_st20_pipeline_gpu_direct.c', 'sample_util.c')
 gpu_direct_rx_sample_sources = files('gpu_direct/rx_st20_pipeline_gpu_direct.c', 'sample_util.c')

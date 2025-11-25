@@ -68,7 +68,6 @@ TEST_BUILD_DIR=${WORKSPACE}/build/tests
 PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
-RDMA_BUILD_DIR=${WORKSPACE}/build/rdma
 RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
 
 # build lib
@@ -81,21 +80,6 @@ else
 	sudo ninja install
 fi
 popd
-
-# build rdma lib
-if [ "$OS" != "Windows_NT" ]; then
-	pushd rdma/
-	meson setup "${RDMA_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-	popd
-	pushd "${RDMA_BUILD_DIR}"
-	ninja
-	if [ "$user" == "root" ]; then
-		ninja install
-	else
-		sudo ninja install
-	fi
-	popd
-fi
 
 # build app
 pushd app/

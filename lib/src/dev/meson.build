@@ -8,7 +8,3 @@ sources += files(
 if mtl_has_xdp_backend
   sources += files('mt_af_xdp.c')
 endif
-
-if mtl_has_rdma_backend
-  sources += files('mt_rdma_ud.c')
-endif
