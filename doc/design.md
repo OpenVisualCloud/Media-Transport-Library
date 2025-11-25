@@ -484,8 +484,6 @@ FFMPEG plugin: Enhance your FFMPEG-based applications by incorporating MTL to ac
 
 OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software) using the MTL plugin for optimized performance. For details please refer to [obs_plugin_guide](../ecosystem/obs_mtl/).
 
-Intel® Media SDK: Leverage MTL's robust capabilities within Intel® Media SDK projects to unlock advanced media functionalities on Intel platforms. For details please refer to [Intel®_Media_SDK_guide](../ecosystem/msdk/).
-
 ### 6.15. Sample code
 
 In addition to the built-in RxTxApp, MTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, details can be found [here](../app/sample/fwd/).

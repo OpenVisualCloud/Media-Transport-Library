@@ -93,7 +93,6 @@ script/xdp-tools
 doc/_build
 
 # Gpu direct files
-ecosystem/msdk/_install
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap
@@ -104,7 +103,6 @@ gpu_offline_install
 FFmpeg-release-*
 script/dpdk_*
 ecosystem/librist/librsit
-ecosystem/msdk/MediaSDK
 tools/readpcap/readpcap_*
 swig
 openh264*

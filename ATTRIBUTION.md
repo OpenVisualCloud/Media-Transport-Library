@@ -28,7 +28,6 @@
 | Libgcc_s_seh-1.dll(Windows)     | [GCC Repository](https://gcc.gnu.org/git/?p=gcc.git)                         | Part of GNU glibc /LGPLv2.1                   |
 | Libgcc_s_seh-1.dll (Windows)    | [GCC Repository](https://gcc.gnu.org/git/?p=gcc.git)                         | Part of GNU glibc / LGPLv2.1                  |
 | FFMPEG                          | [FFmpeg](https://git.ffmpeg.org/ffmpeg.git)                                  | GNU Lesser General Public License version 2.1 |
-| MediaSDK                        | [Intel Media SDK](https://github.com/Intel-Media-SDK/MediaSDK)               | MIT License                                   |
 | LibRIST                         | [LibRIST](https://code.videolan.org/rist/librist)                            | BSD-2-Clause                                  |
 | Libbpf                          | [Libbpf](https://github.com/libbpf/libbpf)                                   | LGPL-2.1 OR BSD-2-Clause                      |
 | Libxdp                          | [Libxdp](https://github.com/xdp-project/xdp-tools/tree/master)               | LGPL-2.1 OR BSD-2-Clause                      |
