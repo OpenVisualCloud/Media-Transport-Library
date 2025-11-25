@@ -77,7 +77,6 @@ Ecosystem
    Ffmpeg Plugin <ecosystem/ffmpeg_plugin/README.md>
    plugins/st22_avcodec/README.md
    Librist Support <ecosystem/librist/README.md>
-   MSDK Sample Encode <ecosystem/msdk/README.md>
    OBS Studio <ecosystem/obs_mtl/README.md>
 
 Doxygen

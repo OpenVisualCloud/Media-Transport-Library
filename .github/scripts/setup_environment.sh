@@ -24,7 +24,6 @@ set -xe
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN:=0}"
-: "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN:=0}"
 : "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN:=0}"
 
 : "${PLUGIN_BUILD_AND_INSTALL_SAMPLE:=0}"
@@ -48,22 +47,6 @@ root_folder="${setup_script_folder}/../.."
 nproc=$(nproc 2>/dev/null || echo 50)
 # shellcheck disable=SC1091
 . "${root_folder}/script/common.sh"
-
-if [ "$ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN" == "1" ]; then
-	if [ "${CICD_BUILD}" != "0" ]; then
-		ret=0
-	else
-		log_warning "Error: MSDK is not activly supported"
-		ret=$(get_user_input_confirm)
-	fi
-
-	if [ "$ret" == "1" ]; then
-		log_warning "Proceeding with MSDK plugin build, but this feature is not fully supported."
-	else
-		log_warning "Installation aborted by user.."
-		exit 0
-	fi
-fi
 
 # Before MTL build install
 function setup_ubuntu_install_dependencies() {
@@ -190,13 +173,6 @@ function setup_ubuntu_install_dependencies() {
 			gstreamer1.0-tools \
 			gstreamer1.0-libav \
 			libgstreamer1.0-dev
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
-		echo "Installing MSDK dependencies"
-		apt install -y \
-			curl \
-			libva-dev
 	fi
 
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN}" == "1" ]; then
@@ -409,12 +385,6 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN}" == "1" ]; then
 		echo "$STEP Ecosystem RIST plugin build and install"
 		bash "${root_folder}/ecosystem/librist/build_librist_mtl.sh"
-		STEP=$((STEP + 1))
-	fi
-
-	if [ "${ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN}" == "1" ]; then
-		echo "$STEP Ecosystem RIST plugin build and install"
-		bash "${root_folder}/ecosystem/msdk/build_msdk_mtl.sh"
 		STEP=$((STEP + 1))
 	fi
 
