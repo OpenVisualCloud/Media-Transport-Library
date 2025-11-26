@@ -353,6 +353,8 @@ def setup_gstreamer_st40p_rx_pipeline(
     rx_queues: int,
     timeout: int,
     capture_metadata: bool = False,
+    rx_interlaced: bool = False,
+    rx_framebuff_cnt: int = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -363,18 +365,27 @@ def setup_gstreamer_st40p_rx_pipeline(
         is_tx=False,
     )
 
-    # st40 rx GStreamer command line
+    # st40p rx GStreamer command line (pipeline API)
     pipeline_command = [
         "gst-launch-1.0",
         "-v",
-        "mtl_st40_rx",
+        "mtl_st40p_rx",
         f"rx-queues={rx_queues}",
         f"timeout={timeout}",
-        f"include-metadata-in-buffer={'true' if capture_metadata else 'false'}",
+        f"rx-interlaced={'true' if rx_interlaced else 'false'}",
+        # Note: mtl_st40p_rx uses pipeline API, metadata handling is built-in
     ]
+
+    if rx_framebuff_cnt is not None:
+        pipeline_command.append(f"rx-framebuff-cnt={rx_framebuff_cnt}")
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
+
+    # Switch between raw UDW dumps and RFC8331 serialization depending on caller request.
+    pipeline_command.append(
+        "output-format=" + ("rfc8331" if capture_metadata else "raw-udw")
+    )
 
     pipeline_command.extend(["!", "filesink", f"location={output_path}"])
 

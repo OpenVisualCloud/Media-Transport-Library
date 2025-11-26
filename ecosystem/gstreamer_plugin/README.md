@@ -110,6 +110,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
+
 | Property Name | Type   | Description                                                                                       | Range                    |
 |---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
 | dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
@@ -204,6 +205,7 @@ To be fixed in the future.
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 
 **Arguments**
+
 | Property Name        | Type     | Description                                           | Range                   | Default Value |
 |----------------------|----------|-------------------------------------------------------|-------------------------|---------------|
 | retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
@@ -257,6 +259,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 `11988/100`, `120`
 
 **Arguments**
+
 | Property Name       | Type     | Description                                         | Range                      | Default Value |
 |---------------------|----------|-----------------------------------------------------|----------------------------|---------------|
 | retry               | uint     | Number of times the MTL will try to get a frame.    | 0 to G_MAXUINT             | 10            |
@@ -308,6 +311,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 - **Channels Range**: 1 to 8
 
 **Arguments**
+
 | Property Name        | Type    | Description                                           | Range                   | Default Value |
 |----------------------|---------|-------------------------------------------------------|-------------------------|---------------|
 | tx-samplerate        | uint    | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
@@ -345,6 +349,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 - **Sample Rate Range**: 44100, 48000, 96000
 
 **Arguments**
+
 | Property Name       | Type    | Description                                           | Range                    | Default Value |
 |---------------------|---------|-------------------------------------------------------|--------------------------|---------------|
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT           | 3             |
@@ -395,6 +400,7 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
+
 | Property Name         | Type     | Description                                                        | Range            | Default Value |
 |-----------------------|----------|--------------------------------------------------------------------|------------------|---------------|
 | tx-framebuff-cnt      | uint     | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT   | 3             |
@@ -433,15 +439,20 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name       | Type   | Description                                           | Range                       | Default Value |
-|---------------------|--------|-------------------------------------------------------|-----------------------------|---------------|
-| buffer-size         | uint   | Size of the buffer used for receiving data            | 0 to G_MAXUINT (power of 2) | 1024          |
-| timeout             | uint   | Timeout in seconds for getting mbuf                   | 0 to G_MAXUINT              | 10            |
-| include-metadata-in-buffer | gboolean | Inserts the ancillary data into buffer       | TRUE/FALSE                  | FALSE         |
 
-When `include-metadata-in-buffer` is enabled, each ancillary packet includes 8 additional bytes for metadata:
-`c | line_number | horizontal_offset | s | stream_num | did | sdid | data_count`
-This metadata provides detailed information about each packet for downstream processing.
+| Property Name       | Type    | Description                                                 | Range                       | Default Value |
+|---------------------|---------|-------------------------------------------------------------|-----------------------------|---------------|
+| rx-framebuff-cnt    | uint    | Number of frame buffers allocated in the pipeline           | 2 to 16                     | 3             |
+| max-udw-size        | uint    | Maximum user-data word buffer size in bytes per frame       | 1024 to 1,048,576           | 131,072       |
+| rtp-ring-size       | uint    | Size of the internal RTP ring (must be power of two)        | 64 to 16,384                | 1,024         |
+| timeout             | uint    | Timeout in seconds for blocking frame retrieval             | 0 to 300                    | 60            |
+| rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
+| output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
+
+When `output-format` is set to `rfc8331`, each ancillary packet is serialized with an 8-byte
+header (C, line number, horizontal offset, S, stream number, DID, SDID, data count) followed by
+its user data words so that downstream elements receive complete RFC8331 payloads. Selecting
+`raw-udw` delivers only the user-data words exactly as received on the wire.
 
 #### 5.2.2. Example GStreamer Pipeline for Reception
 
@@ -457,6 +468,6 @@ export VFIO_PORT_R="pci_address_of_the_device"
 export OUTPUT="path_to_the_file_we_want_to_save"
 
 # Run the receiver pipeline
-gst-launch-1.0 -v mtl_st40_rx rx-queues=4 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" timeout=61 dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+gst-launch-1.0 -v mtl_st40p_rx rx-queues=4 rx-framebuff-cnt=3 timeout=61 output-format=rfc8331 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 
