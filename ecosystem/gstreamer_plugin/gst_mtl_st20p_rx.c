@@ -183,7 +183,8 @@ static void gst_mtl_st20p_rx_class_init(Gst_Mtl_St20p_RxClass* klass) {
       gobject_class, PROP_ST20P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT, GST_MTL_DEFAULT_FRAMEBUFF_CNT,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST20P_RX_WIDTH,
@@ -251,7 +252,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   if (src->framebuffer_num) {
     ops_rx.framebuff_cnt = src->framebuffer_num;
   } else {
-    ops_rx.framebuff_cnt = 3;
+    ops_rx.framebuff_cnt = src->generalArgs.framebuff_cnt;
   }
 
   if (!gst_mtl_common_parse_pixel_format(src->pixel_format, &ops_rx.output_fmt)) {
@@ -310,6 +311,7 @@ static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx* src) {
 
   src->fps_n = DEFAULT_FRAMERATE;
   src->fps_d = 1;
+  src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
 
   srcpad = gst_element_get_static_pad(element, "src");
   if (!srcpad) {
@@ -338,6 +340,11 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
       break;
     case PROP_ST20P_RX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
+      if (self->framebuffer_num) {
+        self->generalArgs.framebuff_cnt = self->framebuffer_num;
+      } else {
+        self->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
+      }
       break;
     case PROP_ST20P_RX_WIDTH:
       self->width = g_value_get_uint(value);

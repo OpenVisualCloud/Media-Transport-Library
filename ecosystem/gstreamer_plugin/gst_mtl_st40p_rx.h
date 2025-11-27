@@ -44,61 +44,43 @@
  * Boston, MA 02111-1307, USA.
  */
 
-#ifndef __GST_MTL_ST40P_TX_H__
-#define __GST_MTL_ST40P_TX_H__
+#ifndef __GST_MTL_ST40P_RX_H__
+#define __GST_MTL_ST40P_RX_H__
 
-#define ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT 20
-/* Maximum size for single User Data Words */
-#define MAX_UDW_SIZE 255
-#define UDW_WORD_BIT_SIZE 10
-/* Maximum buffer size for User Data Words */
-#define DEFAULT_MAX_UDW_SIZE (ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT * MAX_UDW_SIZE)
-/* rfc8331 header consist of rows 3 * 10 bits + 2 bits  */
-#define RFC_8331_WORD_BYTE_SIZE (4)
-#define RFC_8331_PAYLOAD_HEADER_SIZE 8
-#define RFC_8331_PAYLOAD_HEADER_LOST_BITS 2
-
-#include <mtl/st40_pipeline_api.h>
-#include <st40_api.h>
+#include <gst/base/gstbasesrc.h>
 
 #include "gst_mtl_common.h"
 
 G_BEGIN_DECLS
 
-typedef enum {
-  GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW = 0,
-  GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED,
-  GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_SIMPLIFIED,
-} GstMtlSt40pTxInputFormat;
+#define GST_TYPE_MTL_ST40P_RX (gst_mtl_st40p_rx_get_type())
+G_DECLARE_FINAL_TYPE(Gst_Mtl_St40p_Rx, gst_mtl_st40p_rx, GST, MTL_ST40P_RX, GstBaseSrc)
 
-#define GST_TYPE_MTL_ST40P_TX (gst_mtl_st40p_tx_get_type())
-G_DECLARE_FINAL_TYPE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST, MTL_ST40P_TX, GstBaseSink)
+struct _Gst_Mtl_St40p_Rx {
+  GstBaseSrc element;
 
-struct _Gst_Mtl_St40p_Tx {
-  GstBaseSink element;
+  /*< private >*/
   mtl_handle mtl_lib_handle;
-  st40p_tx_handle tx_handle;
-  guint frame_size;
+  st40p_rx_handle rx_handle;
 
   /* arguments */
-  guint log_level;
   GeneralArgs generalArgs;  /* imtl initialization arguments */
   SessionPortArgs portArgs; /* imtl session device */
-  guint framebuff_cnt;
-  guint fps_n, fps_d;
-  guint did;
-  guint sdid;
-  gboolean use_pts_for_pacing;
-  guint pts_for_pacing_offset;
-  GstMtlSt40pTxInputFormat input_format;
-  guint max_combined_udw_size;
-};
+  guint rx_framebuff_cnt;
+  guint max_udw_size;
+  guint rtp_ring_size;
+  guint timeout_s;
+  gboolean interlaced;
+  gint output_format; /* GstMtlSt40pRxOutputFormat enum value */
 
-struct gst_st40_rfc8331_meta {
-  struct st40_rfc8331_payload_hdr_common* header_common;
-  struct st40_rfc8331_payload_hdr* headers[ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT];
+  /* statistics / debug counters */
+  uint64_t stats_total_frames;          /* Total frames pulled (including empty) */
+  uint64_t stats_frames_with_meta;      /* Frames with at least one meta header */
+  uint64_t stats_frames_with_meta2;     /* Frames with meta_num >= 3 (expect ANC[2]) */
+  uint64_t stats_total_headers_written; /* Sum of all headers written */
+  uint64_t stats_meta2_headers_written; /* Count of index 2 headers written (ANC[2]) */
 };
 
 G_END_DECLS
 
-#endif /* __GST_MTL_ST40P_TX_H__ */
+#endif /* __GST_MTL_ST40P_RX_H__ */
