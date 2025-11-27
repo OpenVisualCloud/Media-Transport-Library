@@ -29,6 +29,7 @@
 #endif
 
 #define DEFAULT_FRAMERATE 25
+#define GST_MTL_DEFAULT_FRAMEBUFF_CNT 3
 
 enum {
   PROP_GENERAL_0,
@@ -65,6 +66,7 @@ typedef struct GeneralArgs {
   gchar dma_dev[MTL_PORT_MAX_LEN];
   gint log_level;
   gboolean enable_onboard_ptp;
+  guint framebuff_cnt;
 } GeneralArgs;
 
 typedef struct SessionPortArgs {
