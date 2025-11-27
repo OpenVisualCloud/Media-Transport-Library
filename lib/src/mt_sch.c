@@ -235,6 +235,8 @@ static int sch_start(struct mtl_sch_impl* sch) {
   rte_atomic32_set(&sch->request_stop, 0);
   rte_atomic32_set(&sch->stopped, 0);
 
+  info("%s(%d), run_in_thread=%d, starting scheduler\n", __func__, idx, sch->run_in_thread);
+
   if (!sch->run_in_thread) {
     ret = mt_sch_get_lcore(
         sch->parent, &sch->lcore,
@@ -950,6 +952,10 @@ int mt_sch_mrg_init(struct mtl_main_impl* impl, int data_quota_mbs_limit) {
     sch->data_quota_mbs_total = 0;
     sch->data_quota_mbs_limit = data_quota_mbs_limit;
     sch->run_in_thread = mt_user_tasklet_thread(impl);
+    if (sch_idx == 0)  /* only log for first scheduler */
+      info("%s(%d), run_in_thread=%d tasklet_thread_flag=%d\n", __func__, sch_idx,
+           sch->run_in_thread,
+           !!(mt_get_user_params(impl)->flags & MTL_FLAG_TASKLET_THREAD));
     mt_stat_u64_init(&sch->stat_time);
 
     /* sleep info init */
@@ -1166,6 +1172,10 @@ int mt_sch_start_all(struct mtl_main_impl* impl) {
     sch = mt_sch_instance(impl, sch_idx);
     /* not start the app created sch, app should do the mtl_sch_start */
     if (sch->type == MT_SCH_TYPE_APP) continue;
+
+    if (sch_idx == 0) /* debug first scheduler only */
+      info("%s(%d), active=%d started=%d type=%d\n", __func__, sch_idx,
+           mt_sch_is_active(sch), mt_sch_started(sch), sch->type);
 
     if (mt_sch_is_active(sch) && !mt_sch_started(sch)) {
       ret = sch_start(sch);
