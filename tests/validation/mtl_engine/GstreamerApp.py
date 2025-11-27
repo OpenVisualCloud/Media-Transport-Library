@@ -323,6 +323,8 @@ def setup_gstreamer_st40p_tx_pipeline(
     if tx_user_pacing:
         pipeline_command.extend(["timeinserter", "!"])
 
+    input_format = "rfc8331-packed" if tx_rfc8331 else "raw-udw"
+
     pipeline_command.extend(
         [
             "mtl_st40p_tx",
@@ -331,7 +333,7 @@ def setup_gstreamer_st40p_tx_pipeline(
             f"tx-fps={tx_fps}",
             f"tx-did={tx_did}",
             f"tx-sdid={tx_sdid}",
-            f"parse-8331-meta={'true' if tx_rfc8331 else 'false'}",
+            f"input-format={input_format}",
             f"use-pts-for-pacing={'true' if tx_user_controlled_pacing else 'false'}",
             f"pts-pacing-offset={tx_user_controlled_pacing_offset}",
         ]

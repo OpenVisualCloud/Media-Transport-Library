@@ -70,6 +70,26 @@
 
 #include "gst_mtl_st40p_tx.h"
 
+#ifndef G_PARAM_DEPRECATED
+#define G_PARAM_DEPRECATED 0
+#endif
+
+static GType gst_mtl_st40p_tx_input_format_get_type(void) {
+  static gsize g_define_type_id__ = 0;
+  if (g_once_init_enter(&g_define_type_id__)) {
+    static const GEnumValue values[] = {
+        {GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW, "RawUDW", "raw-udw"},
+        {GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED, "RFC8331Packed", "rfc8331-packed"},
+        {GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_SIMPLIFIED, "RFC8331Simplified",
+         "rfc8331"},
+        {0, NULL, NULL}};
+    GType g_define_type_id = g_enum_register_static("GstMtlSt40pTxInputFormat", values);
+    g_once_init_leave(&g_define_type_id__, g_define_type_id);
+  }
+  return g_define_type_id__;
+}
+#define GST_TYPE_MTL_ST40P_TX_INPUT_FORMAT (gst_mtl_st40p_tx_input_format_get_type())
+
 GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
 #define GST_CAT_DEFAULT gst_mtl_st40p_tx_debug
 #ifndef GST_LICENSE
@@ -100,6 +120,7 @@ enum {
   PROP_ST40P_TX_PTS_PACING_OFFSET,
   PROP_ST40P_TX_PARSE_8331_META,
   PROP_ST40P_TX_MAX_UDW_SIZE,
+  PROP_ST40P_TX_INPUT_FORMAT,
   PROP_MAX
 };
 
@@ -137,6 +158,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
                                                          GstMapInfo map_info,
                                                          GstBuffer* buf);
 static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* sink,
+                                                              GstMapInfo map_info,
+                                                              GstBuffer* buf);
+static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* sink,
                                                               GstMapInfo map_info,
                                                               GstBuffer* buf);
 
@@ -219,9 +243,17 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_PARSE_8331_META,
-      g_param_spec_boolean("parse-8331-meta", "Parse 8331 meta",
-                           "Interpret incoming buffers as RFC 8331 payload.", FALSE,
-                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean(
+          "parse-8331-meta", "Parse 8331 meta",
+          "Interpret incoming buffers as RFC 8331 payload.", FALSE,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_DEPRECATED));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_INPUT_FORMAT,
+      g_param_spec_enum(
+          "input-format", "Input Format", "Encoding used by incoming ANC buffers.",
+          GST_TYPE_MTL_ST40P_TX_INPUT_FORMAT, GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_MAX_UDW_SIZE,
@@ -259,6 +291,7 @@ static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
 
   sink->fps_n = DEFAULT_FRAMERATE;
   sink->fps_d = 1;
+  sink->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW;
 
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
@@ -302,7 +335,14 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
       self->pts_for_pacing_offset = g_value_get_uint(value);
       break;
     case PROP_ST40P_TX_PARSE_8331_META:
-      self->parse_rfc8331_input = g_value_get_boolean(value);
+      if (g_value_get_boolean(value)) {
+        self->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED;
+      } else if (self->input_format == GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED) {
+        self->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW;
+      }
+      break;
+    case PROP_ST40P_TX_INPUT_FORMAT:
+      self->input_format = (GstMtlSt40pTxInputFormat)g_value_get_enum(value);
       break;
     case PROP_ST40P_TX_MAX_UDW_SIZE:
       self->max_combined_udw_size = g_value_get_uint(value);
@@ -343,7 +383,11 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       g_value_set_uint(value, sink->pts_for_pacing_offset);
       break;
     case PROP_ST40P_TX_PARSE_8331_META:
-      g_value_set_boolean(value, sink->parse_rfc8331_input);
+      g_value_set_boolean(
+          value, sink->input_format == GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED);
+      break;
+    case PROP_ST40P_TX_INPUT_FORMAT:
+      g_value_set_enum(value, sink->input_format);
       break;
     case PROP_ST40P_TX_MAX_UDW_SIZE:
       g_value_set_uint(value, sink->max_combined_udw_size);
@@ -388,7 +432,8 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     return FALSE;
   }
 
-  if (sink->parse_rfc8331_input && (sink->did || sink->sdid))
+  if (sink->input_format != GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW &&
+      (sink->did || sink->sdid))
     GST_WARNING("DID %d and SDID %d ignored when using 8331 meta parsing", sink->did,
                 sink->sdid);
   else {
@@ -410,8 +455,8 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
   }
 
   ops_tx.interlaced = false;
-  /* Only single ANC data packet is possible when metadata is not being parsed
-   * from parse_rfc8331_input mode per frame. anc_count = 1 TODO: allow more */
+  /* Only single ANC packet fits in "raw" mode since metadata is synthesized from
+   * element properties. TODO: lift this limitation by queueing multiple frames. */
   sink->frame_size = MAX_UDW_SIZE;
 
   if (sink->max_combined_udw_size)
@@ -692,6 +737,91 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_memory_block(Gst_Mtl_St40p_Tx* 
   return GST_FLOW_OK;
 }
 
+static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* sink,
+                                                              GstMapInfo map_info,
+                                                              GstBuffer* buf) {
+  const gsize payload_size = map_info.size;
+  gsize cursor = 0;
+  struct st40_frame_info* frame_info = NULL;
+  guint anc_idx = 0;
+
+  if (!payload_size) {
+    GST_DEBUG_OBJECT(sink, "Simplified RFC8331 buffer empty; nothing to send");
+    return GST_FLOW_OK;
+  }
+
+  frame_info = st40p_tx_get_frame(sink->tx_handle);
+  if (!frame_info) {
+    GST_ERROR("Failed to get frame for simplified RFC8331 payload");
+    return GST_FLOW_ERROR;
+  }
+
+  frame_info->meta_num = 0;
+  frame_info->udw_buffer_fill = 0;
+
+  while (cursor < payload_size) {
+    gsize remaining = payload_size - cursor;
+    if (remaining < RFC_8331_PAYLOAD_HEADER_SIZE) {
+      GST_ERROR("Truncated simplified RFC8331 header (need %u, have %zu)",
+                RFC_8331_PAYLOAD_HEADER_SIZE, remaining);
+      return GST_FLOW_ERROR;
+    }
+
+    if (anc_idx >= ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
+      GST_ERROR("Too many ANC packets in buffer (max %d)",
+                ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
+      return GST_FLOW_ERROR;
+    }
+
+    const uint8_t* header = map_info.data + cursor;
+    cursor += RFC_8331_PAYLOAD_HEADER_SIZE;
+
+    guint8 data_count = header[7];
+    if ((payload_size - cursor) < data_count) {
+      GST_ERROR("ANC payload shorter than declared (%u > %zu)", data_count,
+                payload_size - cursor);
+      return GST_FLOW_ERROR;
+    }
+
+    if (frame_info->udw_buffer_fill + data_count > frame_info->udw_buffer_size) {
+      GST_ERROR("UDW buffer overflow (fill=%u, request=%u, size=%zu)",
+                frame_info->udw_buffer_fill, data_count, frame_info->udw_buffer_size);
+      return GST_FLOW_ERROR;
+    }
+
+    struct st40_meta* meta = &frame_info->meta[anc_idx];
+    meta->line_number = ((uint16_t)header[0] << 8) | header[1];
+    meta->hori_offset = ((uint16_t)header[2] << 8) | header[3];
+    meta->c = (header[4] >> 7) & 0x1;
+    meta->s = (header[4] >> 6) & 0x1;
+    meta->stream_num = header[4] & 0x3F;
+    meta->did = header[5];
+    meta->sdid = header[6];
+    meta->udw_size = data_count;
+    meta->udw_offset = frame_info->udw_buffer_fill;
+
+    memcpy(frame_info->udw_buff_addr + frame_info->udw_buffer_fill,
+           map_info.data + cursor, data_count);
+    frame_info->udw_buffer_fill += data_count;
+    cursor += data_count;
+    anc_idx++;
+  }
+
+  frame_info->meta_num = anc_idx;
+
+  if (sink->use_pts_for_pacing) {
+    frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+    frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  }
+
+  if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
+    GST_ERROR("Failed to enqueue simplified RFC8331 frame");
+    return GST_FLOW_ERROR;
+  }
+
+  return GST_FLOW_OK;
+}
+
 /**
  * @brief Parses a GstBuffer and prepares a frame for transmission.
  *
@@ -776,10 +906,21 @@ static GstFlowReturn gst_mtl_st40p_tx_chain(GstPad* pad, GstObject* parent,
       return GST_FLOW_ERROR;
     }
 
-    if (sink->parse_rfc8331_input)
-      ret = gst_mtl_st40p_tx_parse_8331_memory_block(sink, map_info, buf);
-    else
-      ret = gst_mtl_st40p_tx_parse_memory_block(sink, map_info, buf);
+    switch (sink->input_format) {
+      case GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW:
+        ret = gst_mtl_st40p_tx_parse_memory_block(sink, map_info, buf);
+        break;
+      case GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED:
+        ret = gst_mtl_st40p_tx_parse_8331_memory_block(sink, map_info, buf);
+        break;
+      case GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_SIMPLIFIED:
+        ret = gst_mtl_st40p_tx_parse_8331_simple_block(sink, map_info, buf);
+        break;
+      default:
+        GST_ERROR("Unsupported input format %d", sink->input_format);
+        ret = GST_FLOW_ERROR;
+        break;
+    }
 
     if (ret) {
       GST_ERROR("Failed to parse gst buffer %d", ret);

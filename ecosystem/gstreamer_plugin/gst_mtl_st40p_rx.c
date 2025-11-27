@@ -67,12 +67,7 @@
 #include <config.h>
 #endif
 
-#include <arpa/inet.h> /* For htonl */
-#include <errno.h>
 #include <gst/gstinfo.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "gst_mtl_st40p_rx.h"
@@ -99,14 +94,6 @@ static GType gst_mtl_st40p_rx_output_format_get_type(void) {
 GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_rx_debug);
 #define GST_CAT_DEFAULT gst_mtl_st40p_rx_debug
 
-/* Force verbose logging for all mtl* categories at plugin load time */
-static void gst_mtl_st40p_set_debug_thresholds(void) {
-  gst_debug_category_set_threshold(gst_mtl_st40p_rx_debug, GST_LEVEL_LOG);
-  gst_debug_set_threshold_for_name("mtl_st40p_tx", GST_LEVEL_LOG);
-  gst_debug_set_threshold_for_name("mtl_common", GST_LEVEL_LOG);
-  gst_debug_set_threshold_for_name("mtl", GST_LEVEL_LOG);
-}
-
 #ifndef GST_LICENSE
 #define GST_LICENSE "LGPL"
 #endif
@@ -131,9 +118,8 @@ static void gst_mtl_st40p_set_debug_thresholds(void) {
 #define PACKAGE_VERSION "1.0"
 #endif
 
-#define DEFAULT_RX_FRAMEBUFF_CNT 3
-#define DEFAULT_MAX_UDW_SIZE (128 * 1024)  // 128KB default
-#define DEFAULT_RTP_RING_SIZE 1024         // power-of-two default
+#define DEFAULT_MAX_UDW_SIZE (128 * 1024) /* 128KB default */
+#define DEFAULT_RTP_RING_SIZE 1024        /* power-of-two default */
 
 enum {
   PROP_ST40P_RX_FRAMEBUFF_CNT = PROP_GENERAL_MAX,
@@ -288,6 +274,10 @@ static gboolean gst_mtl_st40p_rx_serialize_frame(Gst_Mtl_St40p_Rx* src,
   }
 }
 
+static gboolean gst_mtl_st40p_is_power_of_two(uint32_t value) {
+  return value && ((value & (value - 1)) == 0);
+}
+
 static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
@@ -305,13 +295,12 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
   gstbasesrc_class->create = GST_DEBUG_FUNCPTR(gst_mtl_st40p_rx_create);
 
   gst_mtl_common_init_general_arguments(gobject_class);
-  gst_mtl_st40p_set_debug_thresholds();
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_RX_FRAMEBUFF_CNT,
       g_param_spec_uint("rx-framebuff-cnt", "RX Frame Buffer Count",
-                        "Number of frame buffers for RX pipeline", 2, 16,
-                        DEFAULT_RX_FRAMEBUFF_CNT,
+                        "Number of frame buffers for RX pipeline", 0, G_MAXUINT,
+                        GST_MTL_DEFAULT_FRAMEBUFF_CNT,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
@@ -357,7 +346,8 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
 }
 
 static void gst_mtl_st40p_rx_init(Gst_Mtl_St40p_Rx* src) {
-  src->rx_framebuff_cnt = DEFAULT_RX_FRAMEBUFF_CNT;
+  src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
+  src->rx_framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   src->max_udw_size = DEFAULT_MAX_UDW_SIZE;
   src->rtp_ring_size = DEFAULT_RTP_RING_SIZE;
   src->timeout_s = 60;
@@ -385,6 +375,11 @@ static void gst_mtl_st40p_rx_set_property(GObject* object, guint prop_id,
   switch (prop_id) {
     case PROP_ST40P_RX_FRAMEBUFF_CNT:
       src->rx_framebuff_cnt = g_value_get_uint(value);
+      if (src->rx_framebuff_cnt) {
+        src->generalArgs.framebuff_cnt = src->rx_framebuff_cnt;
+      } else {
+        src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
+      }
       break;
     case PROP_ST40P_RX_MAX_UDW_SIZE:
       src->max_udw_size = g_value_get_uint(value);
@@ -457,27 +452,19 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   }
 
   ops_rx.name = "st40p_rx";
-  ops_rx.framebuff_cnt = src->rx_framebuff_cnt;
+  ops_rx.framebuff_cnt =
+      src->rx_framebuff_cnt ? src->rx_framebuff_cnt : src->generalArgs.framebuff_cnt;
   ops_rx.max_udw_buff_size = src->max_udw_size;
   ops_rx.flags = 0; /* Use non-blocking mode - blocking causes preroll timeout */
 
   GST_DEBUG_OBJECT(src, "RX START: framebuff_cnt=%d, max_udw_buff_size=%d",
                    ops_rx.framebuff_cnt, ops_rx.max_udw_buff_size);
 
-  /* set rtp ring size ensuring power-of-two */
   uint32_t ring_sz = src->rtp_ring_size ? src->rtp_ring_size : DEFAULT_RTP_RING_SIZE;
-  if ((ring_sz & (ring_sz - 1)) != 0) {
-    uint32_t v = ring_sz;
-    v--;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v++;
-    GST_WARNING_OBJECT(src, "RX START: rtp-ring-size %u not power of two, using %u",
-                       ring_sz, v);
-    ring_sz = v;
+  /* ST40 pipeline requires ring size to be 2^n; fail fast on invalid input. */
+  if (!gst_mtl_st40p_is_power_of_two(ring_sz)) {
+    GST_ERROR_OBJECT(src, "RX START: rtp-ring-size %u must be a power of two", ring_sz);
+    return FALSE;
   }
   ops_rx.rtp_ring_size = ring_sz;
 
