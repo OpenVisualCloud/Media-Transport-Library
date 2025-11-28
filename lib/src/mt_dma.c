@@ -21,7 +21,9 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
   mtl_iova_t iova_base = 0x10000; /* assume user IOVA start from 1M */
   mtl_iova_t iova_end;
 
+  info("%s, [MAP_MGR] attempting lock, thread %lu\n", __func__, pthread_self());
   mt_pthread_mutex_lock(&mgr->mutex);
+  info("%s, [MAP_MGR] lock acquired, thread %lu\n", __func__, pthread_self());
 
   /* first check if any conflict with exist mapping */
   for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
@@ -31,11 +33,13 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
     i_end = i_start + i_item->size;
     if ((start >= i_start) && (start < i_end)) {
       err("%s, invalid start %p i_start %p i_end %p\n", __func__, start, i_start, i_end);
+      info("%s, [MAP_MGR] unlocking (error path 1), thread %lu\n", __func__, pthread_self());
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
     }
     if ((end > i_start) && (end <= i_end)) {
       err("%s, invalid end %p i_start %p i_end %p\n", __func__, end, i_start, i_end);
+      info("%s, [MAP_MGR] unlocking (error path 2), thread %lu\n", __func__, pthread_self());
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
     }
@@ -52,11 +56,13 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
     i_item = mt_rte_zmalloc_socket(sizeof(*i_item), mt_socket_id(impl, MTL_PORT_P));
     if (!i_item) {
       err("%s, i_item malloc fail\n", __func__);
+      info("%s, [MAP_MGR] unlocking (error path 3), thread %lu\n", __func__, pthread_self());
       mt_pthread_mutex_unlock(&mgr->mutex);
       return -EINVAL;
     }
     *i_item = *item;
     mgr->items[i] = i_item;
+    info("%s, [MAP_MGR] unlocking (success path), thread %lu\n", __func__, pthread_self());
     mt_pthread_mutex_unlock(&mgr->mutex);
     info("%s(%d), start %p end %p iova 0x%" PRIx64 "\n", __func__, i, start, end,
          i_item->iova);
@@ -64,6 +70,7 @@ int mt_map_add(struct mtl_main_impl* impl, struct mt_map_item* item) {
   }
 
   err("%s, no space, all items are used\n", __func__);
+  info("%s, [MAP_MGR] unlocking (error path 4), thread %lu\n", __func__, pthread_self());
   mt_pthread_mutex_unlock(&mgr->mutex);
   return -EIO;
 }
@@ -76,7 +83,9 @@ int mt_map_remove(struct mtl_main_impl* impl, struct mt_map_item* item) {
   void* i_start;
   void* i_end;
 
+  info("%s, [MAP_MGR] attempting lock, thread %lu\n", __func__, pthread_self());
   mt_pthread_mutex_lock(&mgr->mutex);
+  info("%s, [MAP_MGR] lock acquired, thread %lu\n", __func__, pthread_self());
 
   /* find slot and delete */
   for (int i = 0; i < MT_MAP_MAX_ITEMS; i++) {
@@ -89,6 +98,7 @@ int mt_map_remove(struct mtl_main_impl* impl, struct mt_map_item* item) {
            i_item->iova);
       mt_rte_free(i_item);
       mgr->items[i] = NULL;
+      info("%s, [MAP_MGR] unlocking (remove success), thread %lu\n", __func__, pthread_self());
       mt_pthread_mutex_unlock(&mgr->mutex);
       return 0;
     }
@@ -96,6 +106,7 @@ int mt_map_remove(struct mtl_main_impl* impl, struct mt_map_item* item) {
 
   err("%s, unknown items start %p end %p iova %" PRIx64 "\n", __func__, start, end,
       item->iova);
+  info("%s, [MAP_MGR] unlocking (remove error), thread %lu\n", __func__, pthread_self());
   mt_pthread_mutex_unlock(&mgr->mutex);
   return -EIO;
 }
@@ -103,7 +114,14 @@ int mt_map_remove(struct mtl_main_impl* impl, struct mt_map_item* item) {
 int mt_map_init(struct mtl_main_impl* impl) {
   struct mt_map_mgr* mgr = mt_get_map_mgr(impl);
 
-  mt_pthread_mutex_init(&mgr->mutex, NULL);
+  info("%s, [MAP_MGR] initializing mutex, thread %lu\n", __func__, pthread_self());
+  /* Initialize mutex with PTHREAD_PROCESS_PRIVATE to avoid DPDK conflicts */
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_PRIVATE);
+  pthread_mutex_init(&mgr->mutex, &attr);
+  pthread_mutexattr_destroy(&attr);
+  info("%s, [MAP_MGR] mutex initialized successfully, thread %lu\n", __func__, pthread_self());
 
   return 0;
 }
@@ -121,7 +139,9 @@ int mt_map_uinit(struct mtl_main_impl* impl) {
     }
   }
 
+  info("%s, [MAP_MGR] destroying mutex, thread %lu\n", __func__, pthread_self());
   mt_pthread_mutex_destroy(&mgr->mutex);
+  info("%s, [MAP_MGR] mutex destroyed, thread %lu\n", __func__, pthread_self());
 
   return 0;
 }
@@ -375,11 +395,8 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
   uint16_t nb_desc = req->nb_desc;
   if (!nb_desc) nb_desc = 128;
 
-  info("%s, about to lock mutex, sch_idx=%d socket=%d\n", __func__, req->sch_idx,
-       req->socket_id);
   mt_pthread_mutex_lock(&mgr->mutex);
-  info("%s, mutex locked, sch_idx=%d socket=%d\n", __func__, req->sch_idx,
-       req->socket_id);
+  
   /* first try to find a shared dma */
   for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
@@ -393,6 +410,7 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
           lender_dev->priv = req->priv;
           lender_dev->cb = req->drop_mbuf_cb;
           dev->nb_session++;
+          info("%s, [DMA_MGR] unlocking (shared dma found), thread %lu\n", __func__, pthread_self());
           mt_pthread_mutex_unlock(&mgr->mutex);
           info("%s(%d), shared dma with id %u\n", __func__, idx, render);
           return lender_dev;
@@ -410,15 +428,18 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
       dev->sch_idx = req->sch_idx;
       dev->max_shared = RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
       /* release mutex before hardware operations to avoid blocking other threads */
+      info("%s, [DMA_MGR] unlocking before HW start, thread %lu\n", __func__, pthread_self());
       mt_pthread_mutex_unlock(&mgr->mutex);
-      info("%s(%d), mutex released, starting hardware init\n", __func__, idx);
       
       ret = dma_hw_start(impl, dev, nb_desc);
       if (ret < 0) {
         err("%s(%d), dma hw start fail %d\n", __func__, idx, ret);
+        info("%s, [DMA_MGR] attempting lock after HW start fail, thread %lu\n", __func__, pthread_self());
         mt_pthread_mutex_lock(&mgr->mutex);
+        info("%s, [DMA_MGR] lock acquired after HW start fail, thread %lu\n", __func__, pthread_self());
         dev->active = false;
         dev->usable = false; /* mark to un-usable */
+        info("%s, [DMA_MGR] unlocking after HW start fail, thread %lu\n", __func__, pthread_self());
         mt_pthread_mutex_unlock(&mgr->mutex);
         return NULL;
       }
@@ -427,8 +448,11 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
       if (ret < 0) {
         err("%s(%d), dma sw init fail %d\n", __func__, idx, ret);
         dma_hw_stop(dev);
+        info("%s, [DMA_MGR] attempting lock after SW init fail, thread %lu\n", __func__, pthread_self());
         mt_pthread_mutex_lock(&mgr->mutex);
+        info("%s, [DMA_MGR] lock acquired after SW init fail, thread %lu\n", __func__, pthread_self());
         dev->active = false;
+        info("%s, [DMA_MGR] unlocking after SW init fail, thread %lu\n", __func__, pthread_self());
         mt_pthread_mutex_unlock(&mgr->mutex);
         return NULL;
       }
@@ -445,6 +469,7 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
       return lender_dev;
     }
   }
+  info("%s, [DMA_MGR] unlocking (no free dev), thread %lu\n", __func__, pthread_self());
   mt_pthread_mutex_unlock(&mgr->mutex);
 
   err("%s, fail to find free dev\n", __func__);
@@ -557,6 +582,10 @@ int mt_dma_init(struct mtl_main_impl* impl) {
   RTE_DMA_FOREACH_DEV(dev_id) {
     rte_dma_info_get(dev_id, &dev_info);
     if (!mt_is_valid_socket(impl, dev_info.numa_node)) continue;
+    if (idx >= MTL_DMA_DEV_MAX) {
+      err("%s, max dma dev reached %d\n", __func__, MTL_DMA_DEV_MAX);
+      break;
+    }
     dev = &mgr->devs[idx];
     dev->dev_id = dev_id;
     dev->soc_id = dev_info.numa_node;

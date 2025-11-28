@@ -91,7 +91,7 @@ extern "C" {
 /**
  * Max allowed number of dma devs
  */
-#define MTL_DMA_DEV_MAX (8)
+#define MTL_DMA_DEV_MAX (32)
 
 /**
  * Max length of a pcap dump filename
