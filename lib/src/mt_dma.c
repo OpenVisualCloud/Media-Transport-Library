@@ -375,7 +375,11 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
   uint16_t nb_desc = req->nb_desc;
   if (!nb_desc) nb_desc = 128;
 
+  info("%s, about to lock mutex, sch_idx=%d socket=%d\n", __func__, req->sch_idx,
+       req->socket_id);
   mt_pthread_mutex_lock(&mgr->mutex);
+  info("%s, mutex locked, sch_idx=%d socket=%d\n", __func__, req->sch_idx,
+       req->socket_id);
   /* first try to find a shared dma */
   for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
@@ -400,30 +404,42 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
   for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
     if (dev->usable && !dev->active && (dev->soc_id == req->socket_id)) {
-      ret = dma_hw_start(impl, dev, nb_desc);
-      if (ret < 0) {
-        err("%s(%d), dma hw start fail %d\n", __func__, idx, ret);
-        dev->usable = false; /* mark to un-usable */
-        continue;
-      }
+      /* mark as active before releasing mutex to prevent race condition */
+      dev->active = true;
       dev->nb_desc = nb_desc;
       dev->sch_idx = req->sch_idx;
       dev->max_shared = RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
+      /* release mutex before hardware operations to avoid blocking other threads */
+      mt_pthread_mutex_unlock(&mgr->mutex);
+      info("%s(%d), mutex released, starting hardware init\n", __func__, idx);
+      
+      ret = dma_hw_start(impl, dev, nb_desc);
+      if (ret < 0) {
+        err("%s(%d), dma hw start fail %d\n", __func__, idx, ret);
+        mt_pthread_mutex_lock(&mgr->mutex);
+        dev->active = false;
+        dev->usable = false; /* mark to un-usable */
+        mt_pthread_mutex_unlock(&mgr->mutex);
+        return NULL;
+      }
+      
       ret = dma_sw_init(impl, dev);
       if (ret < 0) {
         err("%s(%d), dma sw init fail %d\n", __func__, idx, ret);
         dma_hw_stop(dev);
-        continue;
+        mt_pthread_mutex_lock(&mgr->mutex);
+        dev->active = false;
+        mt_pthread_mutex_unlock(&mgr->mutex);
+        return NULL;
       }
+      
       lender_dev = &dev->lenders[0];
       lender_dev->active = true;
       lender_dev->nb_borrowed = 0;
       lender_dev->priv = req->priv;
       lender_dev->cb = req->drop_mbuf_cb;
       dev->nb_session++;
-      dev->active = true;
       rte_atomic32_inc(&mgr->num_dma_dev_active);
-      mt_pthread_mutex_unlock(&mgr->mutex);
       info("%s(%d), dma created with max share %u nb_desc %u\n", __func__, idx,
            dev->max_shared, dev->nb_desc);
       return lender_dev;
