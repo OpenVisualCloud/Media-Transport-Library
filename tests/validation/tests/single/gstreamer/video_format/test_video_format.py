@@ -5,6 +5,7 @@ import os
 
 import mtl_engine.media_creator as media_create
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 from mtl_engine.media_files import gstreamer_formats
 
@@ -14,6 +15,7 @@ def test_video_format(
     hosts,
     build,
     media,
+    setup_interfaces: InterfaceSetup,
     nic_port_list,
     file,
     test_time,

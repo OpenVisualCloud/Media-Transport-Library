@@ -11,7 +11,7 @@ from typing import Any, Dict
 
 import pytest
 from common.mtl_manager.mtlManager import MtlManager
-from common.nicctl import Nicctl
+from common.nicctl import InterfaceSetup, Nicctl
 from compliance.compliance_client import PcapComplianceClient
 from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
 from mfd_common_libs.custom_logger import add_logging_level
@@ -123,6 +123,13 @@ def nic_port_list(hosts: dict, mtl_path) -> None:
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
+
+
+@pytest.fixture(scope="function")
+def setup_interfaces(hosts, test_config, mtl_path):
+    interface_setup = InterfaceSetup(hosts, mtl_path)
+    yield interface_setup
+    interface_setup.cleanup()
 
 
 @pytest.fixture(scope="session")
