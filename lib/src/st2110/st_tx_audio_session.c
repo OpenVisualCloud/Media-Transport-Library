@@ -324,6 +324,10 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   if (epochs > next_epochs) {
     ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
                         (epochs - next_epochs));
+
+    if (s->ops.notify_frame_late) {
+      s->ops.notify_frame_late(s->ops.priv, epochs - next_epochs);
+    }
   }
 
   if (epochs < next_epochs) {
