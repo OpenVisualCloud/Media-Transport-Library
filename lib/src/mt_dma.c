@@ -375,11 +375,7 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
   uint16_t nb_desc = req->nb_desc;
   if (!nb_desc) nb_desc = 128;
 
-  info("%s, about to lock mutex, sch_idx=%d socket=%d\n", __func__, req->sch_idx,
-       req->socket_id);
   mt_pthread_mutex_lock(&mgr->mutex);
-  info("%s, mutex locked, sch_idx=%d socket=%d\n", __func__, req->sch_idx,
-       req->socket_id);
   /* first try to find a shared dma */
   for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
     dev = &mgr->devs[idx];
@@ -411,7 +407,6 @@ struct mtl_dma_lender_dev* mt_dma_request_dev(struct mtl_main_impl* impl,
       dev->max_shared = RTE_MIN(req->max_shared, MT_DMA_MAX_SESSIONS);
       /* release mutex before hardware operations to avoid blocking other threads */
       mt_pthread_mutex_unlock(&mgr->mutex);
-      info("%s(%d), mutex released, starting hardware init\n", __func__, idx);
       
       ret = dma_hw_start(impl, dev, nb_desc);
       if (ret < 0) {
@@ -545,7 +540,12 @@ int mt_dma_init(struct mtl_main_impl* impl) {
   struct rte_dma_info dev_info;
   struct mtl_dma_lender_dev* lender_dev;
 
-  mt_pthread_mutex_init(&mgr->mutex, NULL);
+  /* Initialize mutex with PTHREAD_PROCESS_PRIVATE to avoid DPDK conflicts */
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_PRIVATE);
+  pthread_mutex_init(&mgr->mutex, &attr);
+  pthread_mutexattr_destroy(&attr);
 
   /* init idx */
   for (idx = 0; idx < MTL_DMA_DEV_MAX; idx++) {
