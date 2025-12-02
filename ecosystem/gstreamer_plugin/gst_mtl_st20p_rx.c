@@ -252,7 +252,7 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
   if (src->framebuffer_num) {
     ops_rx.framebuff_cnt = src->framebuffer_num;
   } else {
-    ops_rx.framebuff_cnt = src->generalArgs.framebuff_cnt;
+    ops_rx.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   }
 
   if (!gst_mtl_common_parse_pixel_format(src->pixel_format, &ops_rx.output_fmt)) {
@@ -279,6 +279,10 @@ static gboolean gst_mtl_st20p_rx_start(GstBaseSrc* basesrc) {
     ops_rx.priv = src;
   } else {
     GST_WARNING("Using memcpy path");
+  }
+
+  if (src->generalArgs.enable_dma_offload) {
+    ops_rx.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;
   }
 
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
@@ -311,8 +315,6 @@ static void gst_mtl_st20p_rx_init(Gst_Mtl_St20p_Rx* src) {
 
   src->fps_n = DEFAULT_FRAMERATE;
   src->fps_d = 1;
-  src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
-
   srcpad = gst_element_get_static_pad(element, "src");
   if (!srcpad) {
     GST_ERROR_OBJECT(src, "Failed to get src pad from child element");
@@ -340,11 +342,6 @@ static void gst_mtl_st20p_rx_set_property(GObject* object, guint prop_id,
       break;
     case PROP_ST20P_RX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
-      if (self->framebuffer_num) {
-        self->generalArgs.framebuff_cnt = self->framebuffer_num;
-      } else {
-        self->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
-      }
       break;
     case PROP_ST20P_RX_WIDTH:
       self->width = g_value_get_uint(value);

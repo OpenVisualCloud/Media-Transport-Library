@@ -238,7 +238,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   if (src->framebuffer_num) {
     ops_rx->framebuff_cnt = src->framebuffer_num;
   } else {
-    ops_rx->framebuff_cnt = src->generalArgs.framebuff_cnt;
+    ops_rx->framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   }
 
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));
@@ -269,8 +269,6 @@ static void gst_mtl_st30p_rx_init(Gst_Mtl_St30p_Rx* src) {
   GstElement* element = GST_ELEMENT(src);
   GstPad* srcpad;
 
-  src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
-
   srcpad = gst_element_get_static_pad(element, "src");
   if (!srcpad) {
     GST_ERROR_OBJECT(src, "Failed to get src pad from child element");
@@ -291,11 +289,6 @@ static void gst_mtl_st30p_rx_set_property(GObject* object, guint prop_id,
   switch (prop_id) {
     case PROP_ST30P_RX_FRAMEBUFF_NUM:
       self->framebuffer_num = g_value_get_uint(value);
-      if (self->framebuffer_num) {
-        self->generalArgs.framebuff_cnt = self->framebuffer_num;
-      } else {
-        self->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
-      }
       break;
     case PROP_ST30P_RX_CHANNEL:
       self->channel = g_value_get_uint(value);
