@@ -105,9 +105,15 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | udp-port-red  | uint   | Receiving MTL node UDP port for redundant transmission.                                           | 0 to G_MAXUINT           |
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
+| enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
+
+When `enable-dma-offload` is set to `true`, every plugin that supports DMA will request
+`ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
+the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
+flag.
 
 These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
 
@@ -269,6 +275,9 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 | rx-height           | uint     | Height of the video.                                | 0 to G_MAXUINT             | 1080          |
 | rx-interlaced       | boolean  | Whether the video is interlaced.                    | TRUE/FALSE                 | FALSE         |
 | rx-pixel-format     | string   | Pixel format of the video.                          | `v210`, `YUV444PLANAR10LE` | `v210`        |
+
+> **Tip:** Enable DMA offload for this plugin by passing the general property
+> `enable-dma-offload=true` alongside a configured `dma-dev`.
 
 #### 3.2.2. Preparing output path
 

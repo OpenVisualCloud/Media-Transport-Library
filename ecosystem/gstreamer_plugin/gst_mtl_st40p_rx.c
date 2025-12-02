@@ -346,7 +346,6 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
 }
 
 static void gst_mtl_st40p_rx_init(Gst_Mtl_St40p_Rx* src) {
-  src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   src->rx_framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   src->max_udw_size = DEFAULT_MAX_UDW_SIZE;
   src->rtp_ring_size = DEFAULT_RTP_RING_SIZE;
@@ -375,11 +374,6 @@ static void gst_mtl_st40p_rx_set_property(GObject* object, guint prop_id,
   switch (prop_id) {
     case PROP_ST40P_RX_FRAMEBUFF_CNT:
       src->rx_framebuff_cnt = g_value_get_uint(value);
-      if (src->rx_framebuff_cnt) {
-        src->generalArgs.framebuff_cnt = src->rx_framebuff_cnt;
-      } else {
-        src->generalArgs.framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
-      }
       break;
     case PROP_ST40P_RX_MAX_UDW_SIZE:
       src->max_udw_size = g_value_get_uint(value);
@@ -453,7 +447,7 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
 
   ops_rx.name = "st40p_rx";
   ops_rx.framebuff_cnt =
-      src->rx_framebuff_cnt ? src->rx_framebuff_cnt : src->generalArgs.framebuff_cnt;
+      src->rx_framebuff_cnt ? src->rx_framebuff_cnt : GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   ops_rx.max_udw_buff_size = src->max_udw_size;
   ops_rx.flags = 0; /* Use non-blocking mode - blocking causes preroll timeout */
 
