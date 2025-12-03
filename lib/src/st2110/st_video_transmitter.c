@@ -149,8 +149,39 @@ static int video_burst_packet(struct mtl_main_impl* impl,
                               enum mtl_session_port s_port, struct rte_mbuf** pkts,
                               int bulk, bool use_two) {
   struct st_tx_video_pacing* pacing = &s->pacing;
-  int tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+  int tx;
   int pkt_idx = st_tx_mbuf_get_idx(pkts[0]);
+
+#ifdef MTL_DEBUG
+   /* drop some of the packets generlaly magic */
+   if (mt_if_has_packet_loss_simulation(impl)) {
+
+    uint port = s->port_maps[s_port];
+
+    uint num_port = impl->user_para.port_packet_loss[port].tx_stream_loss_divider ?
+                    impl->user_para.port_packet_loss[port].tx_stream_loss_divider :
+                    s->ops.num_port;
+    uint loss_id = impl->user_para.port_packet_loss[port].tx_stream_loss_id ?
+                   impl->user_para.port_packet_loss[port].tx_stream_loss_id :
+                   s_port;
+
+    if ((pkt_idx % num_port) == loss_id) {
+      dbg("%s(%d,%d), drop pkt idx %d for packet loss simulation\n", __func__, s->idx, s_port,
+          pkt_idx);
+      rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+      tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], bulk);
+      if (tx < bulk) s->trs_pad_inflight_num[s_port]++;
+      rte_pktmbuf_free_bulk(pkts, bulk);
+    } else {
+      tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+    }
+
+  } else {
+    tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+  }
+#else
+  tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+#endif
 
   if (tx < bulk) {
     unsigned int i;
