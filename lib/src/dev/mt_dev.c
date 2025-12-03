@@ -421,8 +421,10 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
+#if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
   argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
   argc++;
+#endif
 
   if (!pci_ports) {
     argv[argc] = "--no-pci";

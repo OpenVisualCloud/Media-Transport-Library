@@ -1696,6 +1696,15 @@ static inline bool mt_if_has_hdr_split(struct mtl_main_impl* impl, enum mtl_port
     return false;
 }
 
+#ifdef MTL_SIMULATE_PAKET_DROPS
+static inline bool mt_if_has_packet_loss_simulation(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS)
+    return true;
+  else
+    return false;
+}
+#endif /* MTL_SIMULATE_PAKET_DROPS */
+
 static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
                                                        uint16_t q) {
   return inf->rx_queues[q].mbuf_payload_pool;
