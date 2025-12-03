@@ -78,3 +78,14 @@ class St20pExactUserPacing : public St20pUserTimestamp {
                            uint64_t expected_transmit_time_ns) const override;
   void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp) override;
 };
+
+class St20pRedundantOddEvenLatency : public St20pRedundantLatency {
+  uint8_t content = 0;
+
+ public:
+  St20pRedundantOddEvenLatency(unsigned int latency, St20pHandler* parentHandler);
+  void rxTestFrameModifier(void* frame, size_t frame_size) override;
+
+ private:
+  unsigned int latencyInMs;
+};
