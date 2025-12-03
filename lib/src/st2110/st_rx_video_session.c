@@ -690,10 +690,7 @@ static int rv_init_slot(struct st_rx_video_session_impl* s) {
     }
   }
   s->slot_idx = -1;
-  if (s->ops.flags & ST20_RX_FLAG_ENABLE_RTCP)
-    s->slot_max = 2; /* use 2 slots for rtcp */
-  else
-    s->slot_max = 1; /* default only one slot */
+  s->slot_max = ST_VIDEO_RX_REC_NUM_OFO;
 
   dbg("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -917,11 +914,12 @@ static void rv_frame_notify(struct st_rx_video_session_impl* s,
 
 #if 0 /* for miss pkt detail */
     int total_pkts = s->st20_frame_size / pd_sz_per_pkt;
-    dbg("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
+    info("%s(%d), total_pkts %d\n", __func__, s->idx, total_pkts);
     for (int i = 0; i < total_pkts; i++) {
       if (!mt_bitmap_test(slot->frame_bitmap, i))
-        info("%s(%d): pkt %d miss for tmstamp %u\n", __func__, s->idx, i, slot->tmstamp);
+        printf("%i ", i);
     }
+    printf("\n\n");
 #endif
 
     rte_atomic32_inc(&s->cbs_incomplete_frame_cnt);
@@ -1112,7 +1110,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
 
   /* if the slot timestamp is in the past just drop it */
   bool timestamp_is_in_the_past = true;
-  for (i = 0; i < s->slot_max; i++) {
+  for (i = 0; i < s->slot_max + 1; i++) {
     slot = &s->slots[i];
 
     if (slot->tmstamp == -1 || mt_seq32_greater(tmstamp, slot->tmstamp)) {
@@ -1124,7 +1122,7 @@ static struct st_rx_video_slot_impl* rv_slot_by_tmstamp(
   if (timestamp_is_in_the_past) {
     for (int i = 0; i < s->ops.num_port; i++) {
       if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        dbg("%s(%d): tmstamp %u is in the past, drop it\n", __func__, s->idx, tmstamp);
+        info("%s(%d): tmstamp %u is in the past, drop it\n", __func__, s->idx, tmstamp);
         return NULL;
       }
     }
@@ -1639,9 +1637,11 @@ static int rv_handle_frame_pkt(struct st_rx_video_session_impl* s, struct rte_mb
       return -EIO;
     }
 
+    
+
     bool is_set = mt_bitmap_test_and_set(bitmap, pkt_idx);
     if (is_set) {
-      dbg("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
+      info("%s(%d,%d), drop as pkt %d already received\n", __func__, s->idx, s_port,
           pkt_idx);
       ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant_dropped);
       slot->pkts_recv_per_port[s_port]++;

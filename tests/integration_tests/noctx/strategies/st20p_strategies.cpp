@@ -182,7 +182,7 @@ St20pUserTimestampCustomStart::St20pUserTimestampCustomStart(
 St20pRedundantLatency::St20pRedundantLatency(unsigned int latency,
                                              St20pHandler* parentHandler)
     : St20pUserTimestamp(parentHandler), latencyInMs(latency) {
-  startingTime = (50 + latencyInMs) * NS_PER_MS;
+  startingTime = (latencyInMs) * NS_PER_MS;
 }
 
 void St20pRedundantLatency::rxTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {

@@ -148,11 +148,43 @@ bool mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
   uint8_t bits = bitmap[pos];
 
   /* already set */
-  if (bits & (0x1 << off)) return true;
+  if (bits & (0x1 << off)) {
+    return true;
+  }
 
   /* set the bit */
   bitmap[pos] = bits | (0x1 << off);
   return false;
+}
+
+#define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
+#define BYTE_TO_BINARY(byte)  \
+  ((byte) & 0x80 ? '1' : '0'), \
+  ((byte) & 0x40 ? '1' : '0'), \
+  ((byte) & 0x20 ? '1' : '0'), \
+  ((byte) & 0x10 ? '1' : '0'), \
+  ((byte) & 0x08 ? '1' : '0'), \
+  ((byte) & 0x04 ? '1' : '0'), \
+  ((byte) & 0x02 ? '1' : '0'), \
+  ((byte) & 0x01 ? '1' : '0') 
+
+bool DEBUG_mt_bitmap_test_and_set(uint8_t* bitmap, int idx) {
+  int pos = idx / 8;
+  int off = idx % 8;
+  uint8_t bits = bitmap[pos];
+
+  /* already set */
+  if (bits & (0x1 << off)) {
+    printf("F_%4u \n", idx);
+    return true;
+  }
+
+  /* set the bit */
+  bitmap[pos] = bits | (0x1 << off);
+  printf(" byte [" BYTE_TO_BINARY_PATTERN "] \n", BYTE_TO_BINARY(bits));
+  printf("S_%4u \n", idx);
+  return false;
+
 }
 
 bool mt_bitmap_test_and_unset(uint8_t* bitmap, int idx) {
