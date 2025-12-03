@@ -66,3 +66,13 @@ class St20pRedundantLatency : public St20pUserTimestamp {
  private:
   unsigned int latencyInMs;
 };
+
+class St20pRedundantOddEvenLatency : public St20pRedundantLatency {
+ uint8_t content = 0;
+ public:
+  St20pRedundantOddEvenLatency(unsigned int latency, St20pHandler* parentHandler);
+  void rxTestFrameModifier(void* frame, size_t frame_size) override;
+
+ private:
+  unsigned int latencyInMs;
+};

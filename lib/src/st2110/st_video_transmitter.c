@@ -165,23 +165,34 @@ static int video_burst_packet(struct mtl_main_impl* impl,
                    impl->user_para.port_packet_loss[port].tx_stream_loss_id :
                    s_port;
 
-    if ((pkt_idx % num_port) == loss_id) {
-      dbg("%s(%d,%d), drop pkt idx %d for packet loss simulation\n", __func__, s->idx, s_port,
-          pkt_idx);
-      rte_mbuf_refcnt_update(s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
-      tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], bulk);
-      if (tx < bulk) s->trs_pad_inflight_num[s_port]++;
-      rte_pktmbuf_free_bulk(pkts, bulk);
-    } else {
-      tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
-    }
+    for (int i = 0; i < bulk; i++) {
+      if (((pkt_idx + i) % num_port) == loss_id) {
+        dbg("%s(%d,%d), drop pkt idx %d for packet loss simulation\n", __func__, s->idx, s_port,
+            pkt_idx);
+        struct rte_mbuf* m = pkts[i];
+        struct rte_ether_hdr* eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr*);
+        uint16_t ether_type = rte_be_to_cpu_16(eth->ether_type);
+        uint8_t* l3 = (uint8_t*)(eth + 1);
 
-  } else {
-    tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+        if (ether_type == RTE_ETHER_TYPE_VLAN) {
+          struct rte_vlan_hdr* vlan = (struct rte_vlan_hdr*)l3;
+          ether_type = rte_be_to_cpu_16(vlan->eth_proto);
+          l3 = (uint8_t*)(vlan + 1);
+        }
+
+        if (ether_type == RTE_ETHER_TYPE_IPV4) {
+          struct rte_ipv4_hdr* ipv4 = (struct rte_ipv4_hdr*)l3;
+          ipv4->src_addr = rte_cpu_to_be_32(0);
+          ipv4->hdr_checksum = 0;
+          ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
+        }
+        
+      }
+    }
   }
-#else
-  tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
 #endif
+  tx = video_trs_burst(impl, s, s_port, &pkts[0], bulk);
+
 
   if (tx < bulk) {
     unsigned int i;
