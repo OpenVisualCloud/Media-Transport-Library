@@ -106,6 +106,7 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
+| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. Required when `enable-dma-offload=true`. | N/A                      |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
@@ -114,12 +115,6 @@ When `enable-dma-offload` is set to `true`, every plugin that supports DMA will 
 `ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
 the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
 flag.
-
-These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
-
-| Property Name | Type   | Description                                                                                       | Range                    |
-|---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
-| dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
 
 
 > **Warning:**
