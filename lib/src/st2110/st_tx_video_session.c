@@ -643,7 +643,7 @@ static int tv_sync_pacing(struct mtl_main_impl* impl, struct st_tx_video_session
 
   pacing->cur_epochs = calc_frame_count_since_epoch(s, cur_tai, required_tai);
 
-  if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+  if ((s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) && required_tai) {
     start_time_tai = required_tai;
   } else {
     start_time_tai = transmission_start_time(pacing, pacing->cur_epochs);
@@ -1609,7 +1609,12 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
   uint64_t required_tai = 0;
 
   if (!(s->ops.flags & ST20_TX_FLAG_USER_PACING)) return 0;
-  if (!timestamp) return 0;
+  if (!timestamp) {
+    if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+      err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
+    }
+    return 0;
+  }
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
