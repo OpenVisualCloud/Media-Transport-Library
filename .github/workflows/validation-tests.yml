@@ -106,7 +106,7 @@ on:
 
 env:
   BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.07'
+  DPDK_VERSION: '25.11'
   DPDK_REBUILD: 'false'
 
 permissions:
