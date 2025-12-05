@@ -9,6 +9,7 @@ from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
 @pytest.mark.parametrize("audio_channel", [1, 2, 6, 8])
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])

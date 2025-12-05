@@ -10,6 +10,7 @@ from mtl_engine import GstreamerApp
 from mtl_engine.media_files import gstreamer_formats
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("file", gstreamer_formats.keys())
 def test_video_format(
     hosts,
