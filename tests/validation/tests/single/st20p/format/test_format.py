@@ -191,6 +191,7 @@ def test_tx_rx_conversion(
     rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host)
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422rfc10["test_8K"]],
