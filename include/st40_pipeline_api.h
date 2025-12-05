@@ -71,12 +71,6 @@ enum st40p_tx_flag {
    */
   ST40P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
-   */
-  ST40P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(7)),
-  /**
    * Flag bit in flags of struct st40_tx_ops.
    * If enabled, lib will assign the rtp timestamp to the value in
    * st40_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
@@ -93,10 +87,21 @@ enum st40p_tx_flag {
    */
   ST40P_TX_FLAG_DEDICATE_QUEUE = (MTL_BIT32(6)),
   /**
+   * Drop frames when the mtl reports late frames (transport can't keep up).
+   * When late frame is detected, next frame from pipeline is ommited.
+   * Untill we resume normal frame sending.
+   */
+  ST40P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(7)),
+  /**
    * NOT SUPPORTED YET
    * Force the numa of the created session, both CPU and memory
    */
   ST40P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(8)),
+  /**
+   * Works together with ST40P_TX_FLAG_USER_PACING and makes the first packet of the
+   * frame leave exactly at the user provided timestamp instead of aligning to epochs.
+   */
+  ST40P_TX_FLAG_EXACT_USER_PACING = (MTL_BIT32(9)),
   /** Enable the st40p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_tx_set_block_timeout to customize)*/
   ST40P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),

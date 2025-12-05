@@ -338,7 +338,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
   pacing->cur_epochs = epochs;
 
   if (required_tai) {
-    pacing->cur_epoch_time = required_tai + pkt_time;  // prepare next packet
+    pacing->ptp_time_cursor = required_tai + pkt_time;  // prepare next packet
     /*
      * Cast [double] to intermediate [uint64_t] to extract 32 least significant bits.
      * If calculated time stored in [double] is larger than max uint32_t,
@@ -349,7 +349,7 @@ static int tx_audio_session_sync_pacing(struct mtl_main_impl* impl,
     pacing->rtp_time_stamp =
         ((uint64_t)((required_tai / pkt_time) * pacing->pkt_time_sampling) & 0xffffffff);
   } else {
-    pacing->cur_epoch_time = tx_audio_pacing_time(pacing, epochs);
+    pacing->ptp_time_cursor = tx_audio_pacing_time(pacing, epochs);
     pacing->rtp_time_stamp = tx_audio_pacing_time_stamp(pacing, epochs);
   }
 
@@ -783,7 +783,7 @@ static int tx_audio_session_tasklet_frame(struct mtl_main_impl* impl,
       pacing->rtp_time_stamp = (uint32_t)frame->ta_meta.timestamp;
     }
     frame->ta_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->ta_meta.timestamp = pacing->cur_epoch_time;
+    frame->ta_meta.timestamp = pacing->ptp_time_cursor;
     frame->ta_meta.rtp_timestamp = pacing->rtp_time_stamp;
     s->calculate_time_cursor = false; /* clear */
   }

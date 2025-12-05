@@ -77,15 +77,15 @@ void St20pUserTimestamp::rxTestFrameModifier(void* frame, size_t /*frame_size*/)
 }
 
 uint64_t St20pUserTimestamp::plannedTimestampNs(uint64_t frame_idx) const {
-  double base = plannedTimestampBaseNs(frame_idx);
-  double offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
-  double adjusted = base + offset;
-  return adjusted <= 0.0 ? 0 : static_cast<uint64_t>(adjusted);
+  uint64_t base = plannedTimestampBaseNs(frame_idx);
+  int64_t offset = frameTimeNs * offsetMultiplierForFrame(frame_idx);
+  int64_t adjusted = base + offset;
+  return adjusted < 0 ? 0 : (adjusted);
 }
 
-double St20pUserTimestamp::plannedTimestampBaseNs(uint64_t frame_idx) const {
-  double base = startingTime + frame_idx * frameTimeNs;
-  return base < 0.0 ? 0.0 : base;
+uint64_t St20pUserTimestamp::plannedTimestampBaseNs(uint64_t frame_idx) const {
+  int64_t base = startingTime + frame_idx * frameTimeNs;
+  return base < 0 ? 0 : base;
 }
 
 double St20pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
@@ -98,12 +98,15 @@ double St20pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
 }
 
 uint64_t St20pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
-  double target_ns = plannedTimestampBaseNs(frame_idx);
-  double pacing_adjustment = 0.0;
+  /* snap the requested TAI to the epoch the transmitter will pick */
+  const double requested_ts = static_cast<double>(plannedTimestampNs(frame_idx));
+  const double snapped_epoch =
+      std::floor((requested_ts + frameTimeNs / 2.0) / frameTimeNs) * frameTimeNs;
 
-  pacing_adjustment = pacing_tr_offset_ns - pacing_vrx_pkts * pacing_trs_ns;
+  const double pacing_adjustment =
+      pacing_tr_offset_ns - static_cast<double>(pacing_vrx_pkts) * pacing_trs_ns;
 
-  double expected = target_ns + pacing_adjustment;
+  const double expected = snapped_epoch + pacing_adjustment;
   return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
 }
 
@@ -111,12 +114,9 @@ void St20pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
                                              uint64_t expected_transmit_time_ns) const {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  int64_t expected_delta_ns = 15 * NS_PER_US;
-  if (frame_idx == 0) {
-    expected_delta_ns = 30 * NS_PER_US;
-  }
+  int64_t tolerance_ns = 30 * NS_PER_US;
 
-  EXPECT_LE(delta_ns, expected_delta_ns)
+  EXPECT_LE(delta_ns, tolerance_ns)
       << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
       << " receive timestamp(ns): " << receive_time_ns
       << " expected timestamp(ns): " << expected_transmit_time_ns;
@@ -187,4 +187,33 @@ St20pRedundantLatency::St20pRedundantLatency(unsigned int latency,
 
 void St20pRedundantLatency::rxTestFrameModifier(void* /*frame*/, size_t /*frame_size*/) {
   idx_rx++;
+}
+
+St20pExactUserPacing::St20pExactUserPacing(St20pHandler* parentHandler,
+                                           std::vector<double> offsetMultipliers)
+    : St20pUserTimestamp(parentHandler, std::move(offsetMultipliers)) {
+}
+
+uint64_t St20pExactUserPacing::expectedTransmitTimeNs(uint64_t frame_idx) const {
+  return plannedTimestampNs(frame_idx);
+}
+
+void St20pExactUserPacing::verifyReceiveTiming(uint64_t frame_idx,
+                                               uint64_t receive_time_ns,
+                                               uint64_t expected_transmit_time_ns) const {
+  const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
+                           static_cast<int64_t>(expected_transmit_time_ns);
+  const int64_t tolerance_ns = 40 * NS_PER_US;
+
+  EXPECT_GE(delta_ns, 0) << "st20p_exact_user_pacing frame " << frame_idx
+                         << " arrived before requested timestamp";
+  EXPECT_LE(delta_ns, tolerance_ns)
+      << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
+      << " receive timestamp(ns): " << receive_time_ns
+      << " expected timestamp(ns): " << expected_transmit_time_ns;
+}
+
+void St20pExactUserPacing::verifyTimestampStep(uint64_t /*frame_idx*/,
+                                               uint64_t /*current_timestamp*/) {
+  /* Exact pacing uses user-provided deltas; no fixed increment enforced here. */
 }

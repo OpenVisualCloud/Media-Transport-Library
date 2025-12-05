@@ -313,7 +313,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   pacing->cur_epochs = epochs;
-  pacing->cur_epoch_time = tx_fastmetadata_pacing_time(pacing, epochs);
+  pacing->ptp_time_cursor = tx_fastmetadata_pacing_time(pacing, epochs);
   pacing->pacing_time_stamp = tx_fastmetadata_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
@@ -769,7 +769,7 @@ static int tx_fastmetadata_session_tasklet_frame(
       pacing->rtp_time_stamp = (uint32_t)frame->tf_meta.timestamp;
     }
     frame->tf_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->tf_meta.timestamp = pacing->cur_epoch_time;
+    frame->tf_meta.timestamp = pacing->ptp_time_cursor;
     frame->tf_meta.rtp_timestamp = pacing->rtp_time_stamp;
     /* init to next field */
     if (ops->interlaced) {

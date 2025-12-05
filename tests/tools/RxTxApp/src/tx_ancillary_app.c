@@ -479,6 +479,8 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
     else
       ops.rtp_ring_size = 16;
   }
+  if (anc && anc->user_pacing) ops.flags |= ST40_TX_FLAG_USER_PACING;
+  if (anc && anc->exact_user_pacing) ops.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (anc && anc->enable_rtcp) ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
   if (ctx->tx_anc_dedicate_queue) ops.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
 
