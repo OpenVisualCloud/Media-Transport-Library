@@ -12,7 +12,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
     throw std::runtime_error("st20p_redundant_latency test ctx needs at least 4 ports");
   }
 
-  initSt20pDefaultContext();
+  initDefaultContext();
 
   uint testedLatencyMs = 10;
 
@@ -68,11 +68,13 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
   latencyBundle.handler->startSessionTx();
   ASSERT_TRUE(waitForSession(latencyBundle.handler->session));
 
-  TestPtpSourceSinceEpoch(nullptr);  // reset ptp time to 0
+  StartFakePtpClock();  // reset ptp time to 0
   mtl_start(ctx->handle);
   sleepUntilFailure(30);
 
-  mtl_stop(ctx->handle);
+  latencyBundle.handler->session.stop();
+  primaryBundle.handler->session.stop();
+  rxBundle.handler->session.stop();
 
   st20_rx_user_stats stats;
   st20p_rx_get_session_stats(rxBundle.handler->sessionsHandleRx, &stats);
@@ -92,8 +94,4 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
       << "Out of order packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
-
-  primaryBundle.handler->session.stop();
-  latencyBundle.handler->session.stop();
-  rxBundle.handler->session.stop();
 }

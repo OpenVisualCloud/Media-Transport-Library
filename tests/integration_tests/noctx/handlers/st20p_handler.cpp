@@ -15,7 +15,9 @@
 St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                            st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool create,
                            bool start)
-    : Handlers(ctx, frameTestStrategy), nsFrameTime(0) {
+    : PipelineHandlerBase(ctx, frameTestStrategy, st20p_tx_create, st20p_rx_create,
+                          st20p_tx_free, st20p_rx_free),
+      nsFrameTime(0) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
     ops_tx = sessionsOpsTx;
@@ -28,8 +30,7 @@ St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestSt
   EXPECT_TRUE(frameTestStrategy != nullptr);
   if (!frameTestStrategy) return;
 
-  this->frameTestStrategy = frameTestStrategy;
-  frameTestStrategy->parent = this;
+  setFrameTestStrategy(frameTestStrategy);
 
   if (create) {
     createSession(ops_tx, ops_rx, start);
@@ -38,7 +39,9 @@ St20pHandler::St20pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestSt
 
 St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
                            st20p_rx_ops ops_rx)
-    : Handlers(ctx), nsFrameTime(0) {
+    : PipelineHandlerBase(ctx, nullptr, st20p_tx_create, st20p_rx_create, st20p_tx_free,
+                          st20p_rx_free),
+      nsFrameTime(0) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt20Ops();
   } else {
@@ -47,16 +50,7 @@ St20pHandler::St20pHandler(st_tests_context* ctx, st20p_tx_ops ops_tx,
   }
 }
 
-St20pHandler::~St20pHandler() {
-  session.stop();
-  if (sessionsHandleTx) {
-    st20p_tx_free(sessionsHandleTx);
-  }
-
-  if (sessionsHandleRx) {
-    st20p_rx_free(sessionsHandleRx);
-  }
-}
+St20pHandler::~St20pHandler() = default;
 
 void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
                                enum st20_fmt fmt, uint width, uint height,
@@ -107,57 +101,25 @@ void St20pHandler::fillSt20Ops(uint transmissionPort, uint framebufferQueueSize,
   sessionsOpsRx.interlaced = interlaced;
   sessionsOpsRx.framebuff_cnt = framebufferQueueSize;
 
-  nsFrameTime = st_frame_rate(fps);
-  if (nsFrameTime == 0)
+  normalizeSessionOps();
+}
+
+void St20pHandler::normalizeSessionOps() {
+  auto fpsToInteger = [](enum st_fps fps) {
+    return static_cast<uint64_t>(st_frame_rate(fps));
+  };
+
+  uint64_t frameRate = fpsToInteger(sessionsOpsTx.fps);
+  if (!frameRate) {
+    frameRate = fpsToInteger(sessionsOpsRx.fps);
+  }
+
+  if (!frameRate) {
     nsFrameTime = NS_PER_S / 25;
-  else
-    nsFrameTime = NS_PER_S / nsFrameTime;
-}
-
-void St20pHandler::setFrameTestStrategy(FrameTestStrategy* newStrategy) {
-  frameTestStrategy = newStrategy;
-  if (frameTestStrategy) {
-    frameTestStrategy->parent = this;
+    return;
   }
-}
 
-void St20pHandler::createSession(st20p_tx_ops ops_tx, st20p_rx_ops ops_rx, bool start) {
-  sessionsOpsTx = ops_tx;
-  sessionsOpsRx = ops_rx;
-
-  createSessionRx();
-  createSessionTx();
-
-  if (start) {
-    startSession();
-  }
-}
-
-void St20pHandler::createSession(bool start) {
-  createSessionRx();
-  createSessionTx();
-
-  if (start) {
-    startSession();
-  }
-}
-
-void St20pHandler::createSessionTx() {
-  ASSERT_TRUE(ctx && ctx->handle != nullptr);
-  auto ops = sessionsOpsTx;
-
-  st20p_tx_handle tx_handle = st20p_tx_create(ctx->handle, &ops);
-  EXPECT_TRUE(tx_handle != nullptr);
-  sessionsHandleTx = tx_handle;
-}
-
-void St20pHandler::createSessionRx() {
-  ASSERT_TRUE(ctx && ctx->handle != nullptr);
-  auto ops = sessionsOpsRx;
-
-  st20p_rx_handle rx_handle = st20p_rx_create(ctx->handle, &ops);
-  EXPECT_TRUE(rx_handle != nullptr);
-  sessionsHandleRx = rx_handle;
+  nsFrameTime = NS_PER_S / frameRate;
 }
 
 void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
@@ -182,12 +144,14 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->width, width);
     ASSERT_EQ(frame->height, height);
 
-    if (frameTestStrategy && frameTestStrategy->enable_tx_modifier) {
-      frameTestStrategy->txTestFrameModifier(frame->addr, frameSize);
-    }
+    applyTxModifier(frame->addr, frameSize);
 
     frame->data_size = frameSize;
-    st20p_tx_put_frame(handle, frame);
+    int ret = st20p_tx_put_frame(handle, frame);
+    EXPECT_GE(ret, 0);
+    if (ret >= 0) {
+      recordTxFrame();
+    }
   }
 }
 
@@ -215,38 +179,22 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->height, height);
     ASSERT_GE(frame->data_size, frameSize);
 
-    if (frameTestStrategy && frameTestStrategy->enable_rx_modifier) {
-      frameTestStrategy->rxTestFrameModifier(frame->addr, frame->data_size);
-    }
+    applyRxModifier(frame->addr, frame->data_size);
 
-    st20p_rx_put_frame(handle, frame);
+    int ret = st20p_rx_put_frame(handle, frame);
+    EXPECT_GE(ret, 0);
+    if (ret >= 0) {
+      recordRxFrame();
+    }
   }
 }
 
 void St20pHandler::startSessionTx() {
-  Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); }},
-      /*isRx=*/false);
+  startTxThread(
+      [this](std::atomic<bool>& stopFlag) { this->st20TxDefaultFunction(stopFlag); });
 }
 
 void St20pHandler::startSessionRx() {
-  Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); }},
-      /*isRx=*/true);
-}
-
-void St20pHandler::startSession() {
-  startSessionRx();
-  startSessionTx();
-}
-
-void St20pHandler::startSession(
-    std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions, bool isRx) {
-  Handlers::startSession(threadFunctions, isRx);
-}
-
-void St20pHandler::setSessionPorts(int txPortIdx, int rxPortIdx, int txPortRedundantIdx,
-                                   int rxPortRedundantIdx) {
-  setSessionPortsTx(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
-  setSessionPortsRx(&(this->sessionsOpsRx.port), rxPortIdx, rxPortRedundantIdx);
+  startRxThread(
+      [this](std::atomic<bool>& stopFlag) { this->st20RxDefaultFunction(stopFlag); });
 }

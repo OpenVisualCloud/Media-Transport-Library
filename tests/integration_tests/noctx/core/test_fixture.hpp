@@ -13,6 +13,7 @@
 
 #include "handlers/st20p_handler.hpp"
 #include "handlers/st30p_handler.hpp"
+#include "handlers/st40p_handler.hpp"
 #include "tests.hpp"
 
 class Session;
@@ -35,10 +36,13 @@ class NoCtxTest : public ::testing::Test {
 
   using St20pHandlerBundle = HandlerBundle<St20pHandler>;
   using St30pHandlerBundle = HandlerBundle<St30pHandler>;
+  using St40pHandlerBundle = HandlerBundle<St40pHandler>;
 
   uint defaultTestDuration = 0;
 
-  static uint64_t TestPtpSourceSinceEpoch(void* priv);
+  static uint64_t FakePtpClockNow(void* priv);
+  static void StartFakePtpClock();
+  static void ResetFakePtpClock();
 
   void sleepUntilFailure(int sleepDuration = 0);
   St20pHandlerBundle createSt20pHandlerBundle(
@@ -53,11 +57,18 @@ class NoCtxTest : public ::testing::Test {
       std::function<void(St30pHandler*)> configure = nullptr);
   St30pHandlerBundle registerSt30pResources(std::unique_ptr<St30pHandler> handler,
                                             std::unique_ptr<FrameTestStrategy> strategy);
-  void initSt20pDefaultContext();
+  St40pHandlerBundle createSt40pHandlerBundle(
+      bool createTx, bool createRx,
+      std::function<FrameTestStrategy*(St40pHandler*)> strategyFactory,
+      std::function<void(St40pHandler*)> configure = nullptr);
+  St40pHandlerBundle registerSt40pResources(std::unique_ptr<St40pHandler> handler,
+                                            std::unique_ptr<FrameTestStrategy> strategy);
+  void initDefaultContext();
   bool waitForSession(Session& session,
                       std::chrono::milliseconds timeout =
                           std::chrono::milliseconds(SessionStartTimeoutMs));
 
+  std::vector<std::unique_ptr<St40pHandler>> st40pHandlers;
   std::vector<std::unique_ptr<St30pHandler>> st30pHandlers;
   std::vector<std::unique_ptr<St20pHandler>> st20pHandlers;
   std::vector<std::unique_ptr<FrameTestStrategy>> frameTestStrategies;

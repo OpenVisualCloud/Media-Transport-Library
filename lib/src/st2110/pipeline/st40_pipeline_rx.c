@@ -88,11 +88,7 @@ static int rx_st40p_rtp_ready(void* priv) {
 
   struct rte_mbuf* pkt = mbuf;
   enum mtl_port port = mt_port_by_id(ctx->impl, pkt->port);
-  uint64_t receive_timestamp = 0;
-  if (port < MTL_PORT_MAX)
-    receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, port);
-  else
-    receive_timestamp = mtl_ptp_read_time(ctx->impl);
+  uint64_t receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, port);
 
   uint32_t hdr_bytes = sizeof(struct st40_rfc8331_rtp_hdr);
   if (len < hdr_bytes) {
