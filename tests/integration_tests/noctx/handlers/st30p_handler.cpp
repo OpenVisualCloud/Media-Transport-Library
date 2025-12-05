@@ -12,7 +12,8 @@
 St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestStrategy,
                            st30p_tx_ops ops_tx, st30p_rx_ops ops_rx,
                            uint msPerFramebuffer, bool create, bool start)
-    : Handlers(ctx, frameTestStrategy),
+    : PipelineHandlerBase(ctx, frameTestStrategy, st30p_tx_create, st30p_rx_create,
+                          st30p_tx_free, st30p_rx_free),
       nsPacketTime(0),
       msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
@@ -26,8 +27,7 @@ St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestSt
 
   if (!frameTestStrategy) throw std::runtime_error("St30pHandler no frameTestStrategy");
 
-  this->frameTestStrategy = frameTestStrategy;
-  frameTestStrategy->parent = this;
+  setFrameTestStrategy(frameTestStrategy);
 
   if (create) {
     createSession(ops_tx, ops_rx, start);
@@ -36,7 +36,10 @@ St30pHandler::St30pHandler(st_tests_context* ctx, FrameTestStrategy* frameTestSt
 
 St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
                            st30p_rx_ops ops_rx, uint msPerFramebuffer)
-    : Handlers(ctx), nsPacketTime(0), msPerFramebuffer(msPerFramebuffer) {
+    : PipelineHandlerBase(ctx, nullptr, st30p_tx_create, st30p_rx_create, st30p_tx_free,
+                          st30p_rx_free),
+      nsPacketTime(0),
+      msPerFramebuffer(msPerFramebuffer) {
   if (ops_tx.name == nullptr && ops_rx.name == nullptr) {
     fillSt30pOps();
   } else {
@@ -45,23 +48,11 @@ St30pHandler::St30pHandler(st_tests_context* ctx, st30p_tx_ops ops_tx,
   }
 }
 
-St30pHandler::~St30pHandler() {
-  session.stop();
-  if (sessionsHandleTx) {
-    st30p_tx_free(sessionsHandleTx);
-  }
-
-  if (sessionsHandleRx) {
-    st30p_rx_free(sessionsHandleRx);
-  }
-}
+St30pHandler::~St30pHandler() = default;
 
 void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize,
                                 uint payloadType, st30_fmt format, st30_sampling sampling,
                                 uint8_t channelCount, st30_ptime ptime) {
-  uint frameBufferSize = st30_calculate_framebuff_size(
-      format, ptime, sampling, channelCount, msPerFramebuffer * NS_PER_MS, nullptr);
-
   memset(&sessionsOpsTx, 0, sizeof(sessionsOpsTx));
   sessionsOpsTx.name = "st30_noctx_test_tx";
   sessionsOpsTx.priv = ctx;
@@ -81,7 +72,6 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
   sessionsOpsTx.channel = channelCount;
   sessionsOpsTx.sampling = sampling;
   sessionsOpsTx.ptime = ptime;
-  sessionsOpsTx.framebuff_size = frameBufferSize;
   sessionsOpsTx.framebuff_cnt = framebufferQueueSize;
   sessionsOpsTx.notify_frame_available = nullptr;
 
@@ -105,70 +95,43 @@ void St30pHandler::fillSt30pOps(uint transmissionPort, uint framebufferQueueSize
   sessionsOpsRx.channel = channelCount;
   sessionsOpsRx.sampling = sampling;
   sessionsOpsRx.ptime = ptime;
-  sessionsOpsRx.framebuff_size = frameBufferSize;
   sessionsOpsRx.framebuff_cnt = framebufferQueueSize;
   sessionsOpsRx.notify_frame_available = nullptr;
 
-  uint64_t totalPackets =
-      sessionsOpsRx.framebuff_size /
-      st30_get_packet_size(sessionsOpsRx.fmt, sessionsOpsRx.ptime, sessionsOpsRx.sampling,
-                           sessionsOpsRx.channel);
+  normalizeSessionOps();
+}
 
-  uint64_t framesPerSec =
-      (double)NS_PER_S / st30_get_packet_time(sessionsOpsRx.ptime) / totalPackets;
+void St30pHandler::normalizeSessionOps() {
+  auto recomputeFramebuff = [this](const auto& ops) {
+    return st30_calculate_framebuff_size(ops.fmt, ops.ptime, ops.sampling, ops.channel,
+                                         msPerFramebuffer * NS_PER_MS, nullptr);
+  };
 
-  if (framesPerSec == 0) framesPerSec = 1;
+  uint32_t txFrameBuff = recomputeFramebuff(sessionsOpsTx);
+  uint32_t rxFrameBuff = recomputeFramebuff(sessionsOpsRx);
+  if (!txFrameBuff || !rxFrameBuff) {
+    throw std::runtime_error("Failed to compute st30 frame buffer size");
+  }
+
+  sessionsOpsTx.framebuff_size = txFrameBuff;
+  sessionsOpsRx.framebuff_size = rxFrameBuff;
+
+  int pktSize = st30_get_packet_size(sessionsOpsRx.fmt, sessionsOpsRx.ptime,
+                                     sessionsOpsRx.sampling, sessionsOpsRx.channel);
+  if (pktSize <= 0) {
+    throw std::runtime_error("Invalid st30 packet configuration");
+  }
+
+  double pktTime = st30_get_packet_time(sessionsOpsRx.ptime);
+  if (pktTime <= 0) {
+    throw std::runtime_error("Invalid st30 packet time");
+  }
+
+  uint64_t totalPackets = sessionsOpsRx.framebuff_size / pktSize;
+  if (!totalPackets) totalPackets = 1;
+  uint64_t framesPerSec = (double)NS_PER_S / pktTime / totalPackets;
+  if (!framesPerSec) framesPerSec = 1;
   nsPacketTime = NS_PER_S / framesPerSec;
-}
-
-void St30pHandler::setFrameTestStrategy(FrameTestStrategy* newStrategy) {
-  frameTestStrategy = newStrategy;
-  if (frameTestStrategy) {
-    frameTestStrategy->parent = this;
-  }
-}
-
-void St30pHandler::createSession(st30p_tx_ops ops_tx, st30p_rx_ops ops_rx, bool start) {
-  sessionsOpsTx = ops_tx;
-  sessionsOpsRx = ops_rx;
-
-  createSessionTx();
-  createSessionRx();
-
-  if (start) {
-    startSession();
-  }
-}
-
-void St30pHandler::createSession(bool start) {
-  createSessionTx();
-  createSessionRx();
-
-  if (start) {
-    startSession();
-  }
-}
-
-void St30pHandler::createSessionTx() {
-  if (!ctx || !ctx->handle) {
-    throw std::runtime_error("St30pHandler::createSessionTx no ctx or ctx->handle");
-  }
-  auto ops = sessionsOpsTx;
-
-  st30p_tx_handle tx_handle = st30p_tx_create(ctx->handle, &ops);
-  EXPECT_TRUE(tx_handle != nullptr);
-  sessionsHandleTx = tx_handle;
-}
-
-void St30pHandler::createSessionRx() {
-  if (!ctx || !ctx->handle) {
-    throw std::runtime_error("St30pHandler::createSessionRx no ctx or ctx->handle");
-  }
-  auto ops = sessionsOpsRx;
-
-  st30p_rx_handle rx_handle = st30p_rx_create(ctx->handle, &ops);
-  EXPECT_TRUE(rx_handle != nullptr);
-  sessionsHandleRx = rx_handle;
 }
 
 void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {
@@ -189,11 +152,13 @@ void St30pHandler::st30pTxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsTx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsTx.sampling);
 
-    if (frameTestStrategy && frameTestStrategy->enable_tx_modifier) {
-      frameTestStrategy->txTestFrameModifier(frame, frame->data_size);
-    }
+    applyTxModifier(frame, frame->data_size);
 
-    st30p_tx_put_frame((st30p_tx_handle)handle, frame);
+    int ret = st30p_tx_put_frame((st30p_tx_handle)handle, frame);
+    EXPECT_GE(ret, 0);
+    if (ret >= 0) {
+      recordTxFrame();
+    }
   }
 }
 
@@ -215,38 +180,22 @@ void St30pHandler::st30pRxDefaultFunction(std::atomic<bool>& stopFlag) {
     ASSERT_EQ(frame->ptime, sessionsOpsRx.ptime);
     ASSERT_EQ(frame->sampling, sessionsOpsRx.sampling);
 
-    if (frameTestStrategy && frameTestStrategy->enable_rx_modifier) {
-      frameTestStrategy->rxTestFrameModifier(frame, frame->data_size);
-    }
+    applyRxModifier(frame, frame->data_size);
 
-    st30p_rx_put_frame((st30p_rx_handle)handle, frame);
+    int ret = st30p_rx_put_frame((st30p_rx_handle)handle, frame);
+    EXPECT_GE(ret, 0);
+    if (ret >= 0) {
+      recordRxFrame();
+    }
   }
 }
 
-void St30pHandler::startSession() {
-  startSessionRx();
-  startSessionTx();
-}
-
 void St30pHandler::startSessionTx() {
-  Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st30pTxDefaultFunction(stopFlag); }},
-      /*isRx=*/false);
+  startTxThread(
+      [this](std::atomic<bool>& stopFlag) { this->st30pTxDefaultFunction(stopFlag); });
 }
 
 void St30pHandler::startSessionRx() {
-  Handlers::startSession(
-      {[this](std::atomic<bool>& stopFlag) { this->st30pRxDefaultFunction(stopFlag); }},
-      /*isRx=*/true);
-}
-
-void St30pHandler::startSession(
-    std::vector<std::function<void(std::atomic<bool>&)>> threadFunctions, bool isRx) {
-  Handlers::startSession(threadFunctions, isRx);
-}
-
-void St30pHandler::setSessionPorts(int txPortIdx, int rxPortIdx, int txPortRedundantIdx,
-                                   int rxPortRedundantIdx) {
-  setSessionPortsTx(&(this->sessionsOpsTx.port), txPortIdx, txPortRedundantIdx);
-  setSessionPortsRx(&(this->sessionsOpsRx.port), rxPortIdx, rxPortRedundantIdx);
+  startRxThread(
+      [this](std::atomic<bool>& stopFlag) { this->st30pRxDefaultFunction(stopFlag); });
 }

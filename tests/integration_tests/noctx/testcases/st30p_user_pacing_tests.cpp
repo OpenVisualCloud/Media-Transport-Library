@@ -8,7 +8,7 @@
 #include "strategies/st30p_strategies.hpp"
 
 TEST_F(NoCtxTest, st30p_default_timestamps) {
-  ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
+  ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
   ctx->handle = mtl_init(&ctx->para);
   ASSERT_TRUE(ctx->handle != nullptr);
@@ -27,7 +27,7 @@ TEST_F(NoCtxTest, st30p_default_timestamps) {
 }
 
 TEST_F(NoCtxTest, st30p_user_pacing) {
-  ctx->para.ptp_get_time_fn = NoCtxTest::TestPtpSourceSinceEpoch;
+  ctx->para.ptp_get_time_fn = NoCtxTest::FakePtpClockNow;
   ctx->para.log_level = MTL_LOG_LEVEL_INFO;
 
   ctx->handle = mtl_init(&ctx->para);
@@ -46,10 +46,9 @@ TEST_F(NoCtxTest, st30p_user_pacing) {
 
   strategy->initializeTiming(handler);
 
-  handler->startSession();
-
-  TestPtpSourceSinceEpoch(nullptr);
+  StartFakePtpClock();
   mtl_start(ctx->handle);
+  handler->startSession();
 
   sleepUntilFailure();
 

@@ -8,15 +8,15 @@
 #include "strategies/st20p_strategies.hpp"
 
 TEST_F(NoCtxTest, st20p_default_timestamps) {
-  initSt20pDefaultContext();
+  initDefaultContext();
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
       [](St20pHandler* handler) { return new St20pDefaultTimestamp(handler); });
   auto* frameTestStrategy = static_cast<St20pDefaultTimestamp*>(bundle.strategy);
 
+  StartFakePtpClock();
   bundle.handler->startSession();
-  TestPtpSourceSinceEpoch(nullptr);
   mtl_start(ctx->handle);
 
   sleepUntilFailure();
@@ -27,7 +27,7 @@ TEST_F(NoCtxTest, st20p_default_timestamps) {
 }
 
 TEST_F(NoCtxTest, st20p_user_pacing) {
-  initSt20pDefaultContext();
+  initDefaultContext();
 
   auto bundle = createSt20pHandlerBundle(
       /*createTx=*/true, /*createRx=*/true,
@@ -38,9 +38,8 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
 
   auto* frameTestStrategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
 
+  StartFakePtpClock();
   bundle.handler->startSession();
-
-  TestPtpSourceSinceEpoch(nullptr);
   mtl_start(ctx->handle);
 
   ASSERT_EQ(frameTestStrategy->getPacingParameters(), 0);
@@ -61,7 +60,7 @@ TEST_F(NoCtxTest, st20p_user_pacing) {
 }
 
 TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
-  initSt20pDefaultContext();
+  initDefaultContext();
 
   std::vector<double> jitterMultipliers = {-0.00005, 0.0,      0.0000875, -0.00003,
                                            0.00012,  -0.00001, 0.0,       0.00006};
@@ -75,9 +74,8 @@ TEST_F(NoCtxTest, st20p_user_pacing_offset_jitter) {
       });
   auto* strategy = static_cast<St20pUserTimestamp*>(bundle.strategy);
 
+  StartFakePtpClock();
   bundle.handler->startSession();
-
-  TestPtpSourceSinceEpoch(nullptr);
   mtl_start(ctx->handle);
 
   ASSERT_EQ(strategy->getPacingParameters(), 0);
