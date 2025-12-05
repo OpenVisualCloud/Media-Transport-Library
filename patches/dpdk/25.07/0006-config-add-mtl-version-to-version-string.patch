@@ -1,0 +1,31 @@
+From bfd22ef915c550775275e52f851a1e98e99978b7 Mon Sep 17 00:00:00 2001
+From: "Wesierski, Dawid" <dawid.wesierski@intel.com>
+Date: Mon, 3 Nov 2025 10:27:50 -0500
+Subject: [PATCH 6/6] config: add mtl version to version string
+
+add verision string to tag the dpdk patched version
+and allow mtl to recognize if driver is patched.
+---
+ config/meson.build | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/config/meson.build b/config/meson.build
+index f31fef216c..4781122ce4 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -78,10 +78,10 @@ if pver.get(2).contains('-rc')
+     dpdk_conf.set('RTE_VER_RELEASE', rc_ver.get(1).to_int())
+ else
+     dpdk_conf.set('RTE_VER_MINOR', pver.get(2).to_int())
+-    dpdk_conf.set_quoted('RTE_VER_SUFFIX', '')
++    dpdk_conf.set_quoted('RTE_VER_SUFFIX', '_mtl_')
+ # for actual, non-rc releases, set the release value to 99 to ensure releases
+ # have higher version numbers than their respective release candidates
+-    dpdk_conf.set('RTE_VER_RELEASE', 99)
++    dpdk_conf.set('RTE_VER_RELEASE', 0)
+ endif
+ 
+ pmd_subdir_opt = get_option('drivers_install_subdir')
+-- 
+2.47.3
+
