@@ -244,6 +244,8 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
     ops_tx.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
 
   if (ops->flags & ST40P_TX_FLAG_USER_PACING) ops_tx.flags |= ST40_TX_FLAG_USER_PACING;
+  if (ops->flags & ST40P_TX_FLAG_EXACT_USER_PACING)
+    ops_tx.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (ops->flags & ST40P_TX_FLAG_DROP_WHEN_LATE) {
     ops_tx.notify_frame_late = st40p_tx_late_frame_drop;
   } else if (ops->notify_frame_late) {

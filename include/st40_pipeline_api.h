@@ -71,6 +71,11 @@ enum st40p_tx_flag {
    */
   ST40P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
+   * Works together with ST40P_TX_FLAG_USER_PACING and makes the first packet of the
+   * frame leave exactly at the user provided timestamp instead of aligning to epochs.
+   */
+  ST40P_TX_FLAG_EXACT_USER_PACING = (MTL_BIT32(9)),
+  /**
    * Drop frames when the mtl reports late frames (transport can't keep up).
    * When late frame is detected, next frame from pipeline is ommited.
    * Untill we resume normal frame sending.
