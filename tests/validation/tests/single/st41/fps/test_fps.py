@@ -21,6 +21,7 @@ k_bit_mapping = {
 }
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [st41_files["st41_p29_long_file"]],
