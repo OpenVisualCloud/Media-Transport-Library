@@ -6,6 +6,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_result_note
 from mtl_engine.media_files import yuv_files
 
@@ -30,6 +31,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     hosts,
     build,
     media,
+    setup_interfaces: InterfaceSetup,
     nic_port_list,
     test_time,
     video_format,
@@ -41,11 +43,16 @@ def test_perf_4tx_4rx_4nics_8ports(
 
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "2VFxPF"), count=8
+    )
+    # interface_list contains 8 addresses of vfs for 4 pfs in order:
+    # first 2 addresses - nic0, second 2 addresses nic1 etc.
 
     config = rxtxapp.create_empty_performance_config()
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[0],  # from NIC 0 to NIC 1
+        nic_port=interfaces_list[0],  # from NIC 0 to NIC 1
         ip="192.168.17.101",
         dip="192.168.17.105",
         video_format=video_format,
@@ -54,7 +61,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[1],  # from NIC 1 to NIC 2
+        nic_port=interfaces_list[2],  # from NIC 1 to NIC 2
         ip="192.168.17.102",
         dip="192.168.17.106",
         video_format=video_format,
@@ -63,7 +70,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[2],  # from NIC 2 to NIC 3
+        nic_port=interfaces_list[4],  # from NIC 2 to NIC 3
         ip="192.168.17.103",
         dip="192.168.17.107",
         video_format=video_format,
@@ -72,7 +79,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_tx(
         config=config,
-        nic_port=nic_port_list[3],  # from NIC 3 to NIC 0
+        nic_port=interfaces_list[6],  # from NIC 3 to NIC 0
         ip="192.168.17.104",
         dip="192.168.17.108",
         video_format=video_format,
@@ -81,7 +88,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_rx(
         config=config,
-        nic_port=nic_port_list[4],
+        nic_port=interfaces_list[3],  # NIC 1 Rx
         ip="192.168.17.105",
         sip="192.168.17.101",
         video_format=video_format,
@@ -89,7 +96,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_rx(
         config=config,
-        nic_port=nic_port_list[5],
+        nic_port=interfaces_list[5],  # NIC 2 Rx
         ip="192.168.17.106",
         sip="192.168.17.102",
         video_format=video_format,
@@ -97,7 +104,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_rx(
         config=config,
-        nic_port=nic_port_list[6],
+        nic_port=interfaces_list[7],  # NIC 3 Rx
         ip="192.168.17.107",
         sip="192.168.17.103",
         video_format=video_format,
@@ -105,7 +112,7 @@ def test_perf_4tx_4rx_4nics_8ports(
     )
     config = rxtxapp.add_perf_video_session_rx(
         config=config,
-        nic_port=nic_port_list[7],
+        nic_port=interfaces_list[1],  # NIC 0 Rx
         ip="192.168.17.108",
         sip="192.168.17.104",
         video_format=video_format,

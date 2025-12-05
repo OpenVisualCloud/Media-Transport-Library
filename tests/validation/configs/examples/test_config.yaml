@@ -18,3 +18,7 @@ ebu_server:
   user: user
   password: password
   proxy: false
+interface_type: VF - create X VFs on first available test adapter,
+                PF - prepare list of PFs PCI addresses for test,
+                xxVFxPF - create xx number VFs per each PF. E.G if you need 3 VFs on every PF and you have 2 PF then pass 3VFxPF param with count=6
+                          if you type just VFxPF then one VF will be created on each PF.

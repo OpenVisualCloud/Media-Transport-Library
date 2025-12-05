@@ -3,7 +3,9 @@ import argparse
 import yaml
 
 
-def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
+def gen_test_config(
+    session_id: int, build: str, mtl_path: str, interface_type: str
+) -> str:
     test_config = {
         "session_id": session_id,
         "build": build,
@@ -21,6 +23,7 @@ def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
             "password": "password",
             "proxy": False,
         },
+        "interface_type": interface_type,
     }
     return yaml.safe_dump(test_config, sort_keys=False)
 
@@ -115,13 +118,22 @@ def main() -> None:
         default="None",
         help="specify path to SSH private key for the test host",
     )
+    parser.add_argument(
+        "--interface_type",
+        type=str,
+        choices=["vf", "pf"] + [f"{i}VFxPF" for i in range(1, 7)],
+        default="vf",
+    )
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
     with open("test_config.yaml", "w") as file:
         file.write(
             gen_test_config(
-                session_id=args.session_id, build=args.build, mtl_path=args.mtl_path
+                session_id=args.session_id,
+                build=args.build,
+                mtl_path=args.mtl_path,
+                interface_type=args.interface_type,
             )
         )
     with open("topology_config.yaml", "w") as file:

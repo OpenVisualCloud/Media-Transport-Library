@@ -6,6 +6,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_result_note
 from mtl_engine.media_files import yuv_files
 
@@ -30,7 +31,7 @@ def test_perf_1tx_1nic_1port(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     video_format,
     test_config,
@@ -38,11 +39,14 @@ def test_perf_1tx_1nic_1port(
 ):
     video_file = yuv_files[video_format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF"), count=1
+    )
 
     config = rxtxapp.create_empty_performance_config()
     config = rxtxapp.add_perf_st20p_session_tx(
         config=config,
-        nic_port=host.vfs[0],
+        nic_port=interfaces_list[0],
         ip="192.168.17.101",
         dip="239.168.48.9",
         width=video_file["width"],
