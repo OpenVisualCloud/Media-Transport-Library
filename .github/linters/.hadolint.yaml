@@ -1,6 +1,0 @@
----
-##########################
-## Hadolint config file ##
-##########################
-ignored:
-  - DL3008  # Ignore pinned versions check for APT
