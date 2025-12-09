@@ -109,9 +109,7 @@ def parse_report(path: Path) -> Dict[Tuple[str, str], str]:
                 status_token, STATUS_LABELS["unknown"]
             )
 
-
     return results
-
 
 
 def build_dataframe(
