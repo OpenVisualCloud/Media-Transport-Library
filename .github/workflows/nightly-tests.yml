@@ -106,3 +106,33 @@ jobs:
           name: nightly-gtest-report-${{ matrix.nic }}
           path: |
             gtest.log
+  aggregate-python-reports:
+    needs: run-nightly-tests
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download python report artifacts
+        uses: actions/download-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          pattern: nightly-test-report-*
+          path: python-reports
+          merge-multiple: false
+          if-no-files-found: error
+      - name: Install report dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pandas beautifulsoup4 openpyxl
+      - name: Combine python reports
+        run: |
+          python3 tests/validation/tools/combine_reports.py \
+            --report E810=python-reports/nightly-test-report-e810/report.html \
+            --report "E810-Dell=python-reports/nightly-test-report-e810-dell/report.html" \
+            --report E830=python-reports/nightly-test-report-e830/report.html \
+            --output python-reports/combined_report.xlsx
+      - name: Upload combined python report
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-python-combined-report
+          path: python-reports/combined_report.xlsx
