@@ -111,6 +111,7 @@ def parse_report(path: Path) -> Dict[Tuple[str, str], str]:
 
     return results
 
+
 def build_dataframe(
     keys: Iterable[Tuple[str, str]], data: Dict[str, Dict[Tuple[str, str], str]]
 ) -> pd.DataFrame:
