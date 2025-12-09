@@ -10,6 +10,7 @@ TMP_INPUT_FILE = "/tmp/test_anc.txt"
 TMP_OUTPUT_FILE = "/tmp/output_anc.txt"
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
 @pytest.mark.parametrize("file_size_kb", [10, 100])
 @pytest.mark.parametrize("framebuff", [3])
@@ -77,6 +78,7 @@ def test_st40p_fps_size(
         media_create.remove_file(TMP_OUTPUT_FILE, host=host)
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [60])
 @pytest.mark.parametrize("file_size_kb", [100])
 @pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
@@ -147,6 +149,7 @@ def test_st40p_framebuff(
         media_create.remove_file(TMP_OUTPUT_FILE, host=host)
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])
 @pytest.mark.parametrize("framebuff", [1, 3, 6, 12])
 def test_st40p_format_8331(

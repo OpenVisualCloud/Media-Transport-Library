@@ -13,6 +13,7 @@ from mtl_engine.media_files import audio_files
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [

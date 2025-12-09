@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_422p10le
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize("file", ["Penguin_1080p"])
 @pytest.mark.parametrize("replicas", [1, 4])

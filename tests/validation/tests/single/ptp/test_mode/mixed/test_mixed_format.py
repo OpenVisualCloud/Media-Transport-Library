@@ -8,6 +8,7 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import anc_files, audio_files, yuv_files
 
 
+@pytest.mark.nightly
 @pytest.mark.xfail(reason="the test environment is not yet ready to run PTP tests")
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize(
