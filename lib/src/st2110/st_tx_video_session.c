@@ -678,6 +678,31 @@ static int tv_sync_pacing_st22(struct mtl_main_impl* impl,
   return tv_sync_pacing(impl, s, required_tai);
 }
 
+static void tv_update_rtp_time_stamp(struct st_tx_video_session_impl* s,
+                                     enum st10_timestamp_fmt tfmt, uint64_t timestamp,
+                                     bool add_delta_to_user_tfmt) {
+  struct st_tx_video_pacing* pacing = &s->pacing;
+  uint64_t delta_ns = (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
+
+  if (s->ops.flags & ST20_TX_FLAG_USER_TIMESTAMP) {
+    enum st10_timestamp_fmt tfmt_for_clk = tfmt;
+    if (add_delta_to_user_tfmt) tfmt_for_clk = tfmt + delta_ns;
+    pacing->rtp_time_stamp =
+        st10_get_media_clk(tfmt_for_clk, timestamp, s->fps_tm.sampling_clock_rate);
+  } else {
+    uint64_t tai_for_rtp_ts;
+    if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
+      tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
+    } else {
+      tai_for_rtp_ts = pacing->ptp_time_cursor;
+    }
+    tai_for_rtp_ts += delta_ns;
+    pacing->rtp_time_stamp =
+        st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
+  }
+  dbg("%s(%d), rtp time stamp %u\n", __func__, s->idx, pacing->rtp_time_stamp);
+}
+
 static int tv_init_next_meta(struct st_tx_video_session_impl* s,
                              struct st20_tx_frame_meta* meta) {
   struct st_tx_video_pacing* pacing = &s->pacing;
@@ -1609,7 +1634,12 @@ static uint64_t tv_pacing_required_tai(struct st_tx_video_session_impl* s,
   uint64_t required_tai = 0;
 
   if (!(s->ops.flags & ST20_TX_FLAG_USER_PACING)) return 0;
-  if (!timestamp) return 0;
+  if (!timestamp) {
+    if (s->ops.flags & ST20_TX_FLAG_EXACT_USER_PACING) {
+      err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
+    }
+    return 0;
+  }
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     err("%s(%d), Media clock can't be used for user-controlled pacing\n", __func__,
@@ -1794,21 +1824,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
         s->second_field = !frame->tv_meta.second_field;
       }
       tv_sync_pacing(impl, s, required_tai);
-      if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
-        pacing->rtp_time_stamp =
-            st10_get_media_clk(meta.tfmt, meta.timestamp, s->fps_tm.sampling_clock_rate);
-      } else {
-        uint64_t tai_for_rtp_ts;
-        if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-          tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
-        } else {
-          tai_for_rtp_ts = pacing->ptp_time_cursor;
-        }
-        tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
-        pacing->rtp_time_stamp =
-            st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
-      }
-      dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
+      tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp, false);
       frame->tv_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tv_meta.timestamp = pacing->ptp_time_cursor;
       frame->tv_meta.rtp_timestamp = pacing->rtp_time_stamp;
@@ -2311,22 +2327,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
         s->second_field = !frame->tx_st22_meta.second_field;
       }
       tv_sync_pacing_st22(impl, s, required_tai, st22_info->st22_total_pkts);
-      if (ops->flags & ST20_TX_FLAG_USER_TIMESTAMP) {
-        pacing->rtp_time_stamp =
-            st10_get_media_clk(meta.tfmt + (s->ops.rtp_timestamp_delta_us * NS_PER_US),
-                               meta.timestamp, s->fps_tm.sampling_clock_rate);
-      } else {
-        uint64_t tai_for_rtp_ts;
-        if (s->ops.flags & ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH) {
-          tai_for_rtp_ts = tai_from_frame_count(pacing, pacing->cur_epochs);
-        } else {
-          tai_for_rtp_ts = pacing->ptp_time_cursor;
-        }
-        tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
-        pacing->rtp_time_stamp =
-            st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
-      }
-      dbg("%s(%d), rtp time stamp %u\n", __func__, idx, pacing->rtp_time_stamp);
+      tv_update_rtp_time_stamp(s, meta.tfmt, meta.timestamp, true);
       frame->tx_st22_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
       frame->tx_st22_meta.timestamp = pacing->ptp_time_cursor;
       frame->tx_st22_meta.epoch = pacing->cur_epochs;

@@ -59,6 +59,12 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * If use dedicated queue for TX.
  */
 #define ST40_TX_FLAG_DEDICATE_QUEUE (MTL_BIT32(6))
+/**
+ * Flag bit in flags of struct st40_tx_ops.
+ * Works together with ST40_TX_FLAG_USER_PACING and makes the sender transmit at the
+ * exact timestamp provided by the user instead of aligning to the internal epoch.
+ */
+#define ST40_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(7))
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.

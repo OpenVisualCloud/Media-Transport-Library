@@ -763,7 +763,7 @@ struct st_tx_audio_session_pacing {
   uint64_t cur_epochs;      /* epoch of current pkt */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  uint64_t cur_epoch_time;
+  uint64_t ptp_time_cursor;
   /* in ns, tsc time cursor for packet pacing */
   uint64_t tsc_time_cursor;
   /* ptp time may onward */
@@ -1079,9 +1079,7 @@ struct st_tx_ancillary_session_pacing {
   uint64_t cur_epochs;        /* epoch of current frame */
   /* timestamp for rtp header */
   uint32_t rtp_time_stamp;
-  /* timestamp for pacing */
-  uint32_t pacing_time_stamp;
-  uint64_t cur_epoch_time;
+  uint64_t ptp_time_cursor;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;
@@ -1260,7 +1258,7 @@ struct st_tx_fastmetadata_session_pacing {
   uint32_t rtp_time_stamp;
   /* timestamp for pacing */
   uint32_t pacing_time_stamp;
-  uint64_t cur_epoch_time;
+  uint64_t ptp_time_cursor;
   double tsc_time_cursor; /* in ns, tsc time cursor for packet pacing */
   /* ptp time may onward */
   uint32_t max_onward_epochs;

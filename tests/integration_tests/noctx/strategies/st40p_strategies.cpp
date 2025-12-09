@@ -8,6 +8,7 @@
 
 #include <cerrno>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 
@@ -71,10 +72,10 @@ double St40pUserTimestamp::offsetMultiplierForFrame(uint64_t frame_idx) const {
 }
 
 uint64_t St40pUserTimestamp::expectedTransmitTimeNs(uint64_t frame_idx) const {
-  double target_ns = plannedTimestampBaseNs(frame_idx);
-  double pacing_adjustment = pacing_tr_offset_ns - pacing_vrx_pkts * pacing_trs_ns;
-
-  double expected = target_ns + pacing_adjustment;
+  const double target_ns = static_cast<double>(plannedTimestampNs(frame_idx));
+  /* snap to the nearest epoch boundary as transport does when exact pacing is off */
+  const double snapped_epoch = std::floor((target_ns + frameTimeNs / 2.0) / frameTimeNs);
+  const double expected = snapped_epoch * frameTimeNs;
   return expected <= 0.0 ? 0 : static_cast<uint64_t>(expected);
 }
 
@@ -82,15 +83,15 @@ void St40pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
                                              uint64_t expected_transmit_time_ns) const {
   const int64_t delta_ns = static_cast<int64_t>(receive_time_ns) -
                            static_cast<int64_t>(expected_transmit_time_ns);
-  int64_t expected_delta_ns = 55 * NS_PER_US;
-  if (frame_idx == 0) {
-    expected_delta_ns = 80 * NS_PER_US;
-  }
+  /* snap-based pacing may place TX slightly after user ts; tolerate modest slop */
+  const int64_t tolerance_ns = 40 * NS_PER_US;
 
-  EXPECT_LE(delta_ns, expected_delta_ns)
+  EXPECT_GE(delta_ns, 0) << "st40p_user_pacing frame " << frame_idx
+                         << " arrived before snapped epoch";
+  EXPECT_LE(delta_ns, tolerance_ns)
       << " idx_rx: " << frame_idx << " delta(ns): " << delta_ns
       << " receive timestamp(ns): " << receive_time_ns
-      << " expected timestamp(ns): " << expected_transmit_time_ns;
+      << " expected (snapped) timestamp(ns): " << expected_transmit_time_ns;
 }
 
 void St40pUserTimestamp::verifyMediaClock(uint64_t frame_idx,
@@ -133,4 +134,17 @@ void St40pUserTimestamp::initializeTiming(St40pHandler* handler) {
   }
 
   startingTime = frameTimeNs * 70.0;
+}
+
+St40pExactUserPacing::St40pExactUserPacing(St40pHandler* parentHandler,
+                                           std::vector<double> offsetMultipliers)
+    : St40pUserTimestamp(parentHandler, std::move(offsetMultipliers)) {
+}
+
+uint64_t St40pExactUserPacing::expectedTransmitTimeNs(uint64_t frame_idx) const {
+  return plannedTimestampNs(frame_idx);
+}
+
+void St40pExactUserPacing::verifyTimestampStep(uint64_t /*frame_idx*/, uint64_t /*ts*/) {
+  /* In exact mode the user controls the step, so we don't enforce a fixed increment. */
 }

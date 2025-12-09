@@ -36,14 +36,14 @@ class St20pUserTimestamp : public FrameTestStrategy {
  protected:
   void initializeTiming(St20pHandler* handler);
   uint64_t plannedTimestampNs(uint64_t frame_idx) const;
-  double plannedTimestampBaseNs(uint64_t frame_idx) const;
+  uint64_t plannedTimestampBaseNs(uint64_t frame_idx) const;
   double offsetMultiplierForFrame(uint64_t frame_idx) const;
-  uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const;
-  void verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
-                           uint64_t expected_transmit_time_ns) const;
+  virtual uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const;
+  virtual void verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
+                                   uint64_t expected_transmit_time_ns) const;
   void verifyMediaClock(uint64_t frame_idx, uint64_t timestamp_media_clk,
                         uint64_t expected_media_clk) const;
-  void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp);
+  virtual void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp);
 
   double frameTimeNs = 0.0;
   uint64_t startingTime = 0;
@@ -65,4 +65,16 @@ class St20pRedundantLatency : public St20pUserTimestamp {
 
  private:
   unsigned int latencyInMs;
+};
+
+class St20pExactUserPacing : public St20pUserTimestamp {
+ public:
+  explicit St20pExactUserPacing(St20pHandler* parentHandler = nullptr,
+                                std::vector<double> offsetMultipliers = {});
+
+ protected:
+  uint64_t expectedTransmitTimeNs(uint64_t frame_idx) const override;
+  void verifyReceiveTiming(uint64_t frame_idx, uint64_t receive_time_ns,
+                           uint64_t expected_transmit_time_ns) const override;
+  void verifyTimestampStep(uint64_t frame_idx, uint64_t current_timestamp) override;
 };

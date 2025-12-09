@@ -4,6 +4,8 @@
 
 #include "st_tx_ancillary_session.h"
 
+#include <math.h>
+
 #include "../datapath/mt_queue.h"
 #include "../mt_log.h"
 #include "../mt_stat.h"
@@ -223,9 +225,9 @@ static int tx_ancillary_session_init_pacing_epoch(
   return 0;
 }
 
-static inline double tx_ancillary_pacing_time(
+static inline uint64_t tx_ancillary_pacing_time(
     struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
-  return epochs * pacing->frame_time;
+  return nextafter(epochs * pacing->frame_time, INFINITY);
 }
 
 static inline uint32_t tx_ancillary_pacing_time_stamp(
@@ -242,7 +244,12 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
   uint64_t required_tai = 0;
 
   if (!(s->ops.flags & ST40_TX_FLAG_USER_PACING)) return 0;
-  if (!timestamp) return 0;
+  if (!timestamp) {
+    if (s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) {
+      err("%s(%d), EXACT_USER_PACING requires non-zero timestamp\n", __func__, s->idx);
+    }
+    return 0;
+  }
 
   if (tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
     if (timestamp > 0xFFFFFFFF) {
@@ -256,86 +263,104 @@ static uint64_t tx_ancillary_pacing_required_tai(struct st_tx_ancillary_session_
   return required_tai;
 }
 
-static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
-                                            struct st_tx_ancillary_session_impl* s,
-                                            bool sync, uint64_t required_tai,
-                                            bool second_field) {
+static void tx_ancillary_validate_user_timestamp(struct st_tx_ancillary_session_impl* s,
+                                                 uint64_t requested_epoch,
+                                                 uint64_t current_epoch) {
+  if (requested_epoch < current_epoch) {
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    dbg("%s(%d), user requested transmission time in the past, required_epoch %" PRIu64
+        ", cur_epoch %" PRIu64 "\n",
+        __func__, s->idx, requested_epoch, current_epoch);
+  } else if (requested_epoch > current_epoch + (NS_PER_S / s->pacing.frame_time)) {
+    dbg("%s(%d), requested epoch %" PRIu64
+        " too far in the future, current epoch %" PRIu64 "\n",
+        __func__, s->idx, requested_epoch, current_epoch);
+    ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+  }
+}
+
+static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_impl* s,
+                                               uint64_t cur_tai, uint64_t required_tai) {
   struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
-  double frame_time = pacing->frame_time;
-  /* always use MTL_PORT_P for ptp now */
-  uint64_t ptp_time = mt_get_ptp_time(impl, MTL_PORT_P);
-  uint64_t next_epochs = pacing->cur_epochs + 1;
-  uint64_t epochs;
-  double to_epoch;
-  bool interlaced = s->ops.interlaced;
+  uint64_t current_epoch = cur_tai / pacing->frame_time;
+  uint64_t next_free_epoch = pacing->cur_epochs + 1;
+  uint64_t epoch = next_free_epoch;
 
   if (required_tai) {
-    uint64_t ptp_epochs = ptp_time / frame_time;
-    epochs = (required_tai + frame_time / 2) / frame_time;
-    dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
-        __func__, s->idx, required_tai, ptp_epochs, epochs);
-    if (epochs < ptp_epochs) {
-      ST_SESSION_STAT_INC(s, port_user_stats.common, stat_error_user_timestamp);
+    epoch = (required_tai + pacing->frame_time / 2) / pacing->frame_time;
+    tx_ancillary_validate_user_timestamp(s, epoch, current_epoch);
+  }
+
+  if (current_epoch <= next_free_epoch) {
+    if (next_free_epoch - current_epoch > pacing->max_onward_epochs) {
+      dbg("%s(%d), onward range exceeded, next_free_epoch %" PRIu64
+          ", current_epoch %" PRIu64 "\n",
+          __func__, s->idx, next_free_epoch, current_epoch);
+      ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
+                          (next_free_epoch - current_epoch));
     }
+
+    if (!required_tai) epoch = next_free_epoch;
   } else {
-    epochs = ptp_time / frame_time;
-  }
-
-  dbg("%s(%d), epochs %" PRIu64 " %" PRIu64 "\n", __func__, s->idx, epochs,
-      pacing->cur_epochs);
-  if (epochs <= pacing->cur_epochs) {
-    uint64_t diff = pacing->cur_epochs - epochs;
-    if (diff < pacing->max_onward_epochs) {
-      /* point to next epoch since if it in the range of onward */
-      epochs = next_epochs;
-    }
-  }
-
-  if (interlaced) {
-    if (second_field) {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
-    } else {
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
-    }
-  }
-
-  to_epoch = tx_ancillary_pacing_time(pacing, epochs) - ptp_time;
-  if (to_epoch < 0) {
-    /* time bigger than the assigned epoch time */
-    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
-    to_epoch = 0; /* send asap */
-  }
-
-  if (epochs > next_epochs) {
-    uint drop = (epochs - next_epochs);
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop, drop);
+    dbg("%s(%d), frame is late, current_epoch %" PRIu64 " next_free_epoch %" PRIu64 "\n",
+        __func__, s->idx, current_epoch, next_free_epoch);
+    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
+                        (current_epoch - next_free_epoch));
 
     if (s->ops.notify_frame_late) {
-      s->ops.notify_frame_late(s->ops.priv, drop);
+      s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
     }
+
+    epoch = current_epoch;
   }
 
-  if (epochs < next_epochs) {
-    ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_onward,
-                        (next_epochs - epochs));
+  return epoch;
+}
+
+static int tx_ancillary_session_sync_pacing(struct mtl_main_impl* impl,
+                                            struct st_tx_ancillary_session_impl* s,
+                                            uint64_t required_tai) {
+  struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
+  uint64_t cur_tai = mt_get_ptp_time(impl, MTL_PORT_P);
+  uint64_t cur_tsc = mt_get_tsc(impl);
+  uint64_t start_time_tai;
+  int64_t time_to_tx_ns;
+
+  pacing->cur_epochs = tx_ancillary_calc_epoch(s, cur_tai, required_tai);
+
+  if ((s->ops.flags & ST40_TX_FLAG_EXACT_USER_PACING) && required_tai) {
+    start_time_tai = required_tai;
+  } else {
+    start_time_tai = tx_ancillary_pacing_time(pacing, pacing->cur_epochs);
+  }
+  time_to_tx_ns = (int64_t)start_time_tai - (int64_t)cur_tai;
+  if (time_to_tx_ns < 0) {
+    /* time bigger than the assigned epoch time */
+    ST_SESSION_STAT_INC(s, port_user_stats, stat_epoch_mismatch);
+    time_to_tx_ns = 0; /* send asap */
   }
 
-  pacing->cur_epochs = epochs;
-  pacing->cur_epoch_time = tx_ancillary_pacing_time(pacing, epochs);
-  pacing->pacing_time_stamp = tx_ancillary_pacing_time_stamp(pacing, epochs);
-  pacing->rtp_time_stamp = pacing->pacing_time_stamp;
-  pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
-  dbg("%s(%d), epochs %" PRIu64 " time_stamp %u time_cursor %f to_epoch %f\n", __func__,
-      s->idx, pacing->cur_epochs, pacing->pacing_time_stamp, pacing->tsc_time_cursor,
-      to_epoch);
-
-  if (sync) {
-    dbg("%s(%d), delay to epoch_time %f, cur %" PRIu64 "\n", __func__, s->idx,
-        pacing->tsc_time_cursor, mt_get_tsc(impl));
-    mt_tsc_delay_to(impl, pacing->tsc_time_cursor);
-  }
+  pacing->ptp_time_cursor = start_time_tai;
+  pacing->tsc_time_cursor = (double)cur_tsc + (double)time_to_tx_ns;
+  dbg("%s(%d), epochs %" PRIu64 " ptp_time_cursor %" PRIu64 " time_to_tx_ns %" PRId64
+      "\n",
+      __func__, s->idx, pacing->cur_epochs, pacing->ptp_time_cursor, time_to_tx_ns);
 
   return 0;
+}
+
+static void tx_ancillary_update_rtp_time_stamp(struct st_tx_ancillary_session_impl* s,
+                                               enum st10_timestamp_fmt tfmt,
+                                               uint64_t timestamp) {
+  struct st_tx_ancillary_session_pacing* pacing = &s->pacing;
+
+  if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
+    pacing->rtp_time_stamp =
+        st10_get_media_clk(tfmt, timestamp, s->fps_tm.sampling_clock_rate);
+  } else {
+    pacing->rtp_time_stamp =
+        st10_tai_to_media_clk(pacing->ptp_time_cursor, s->fps_tm.sampling_clock_rate);
+  }
 }
 
 static int tx_ancillary_session_init_next_meta(struct st_tx_ancillary_session_impl* s,
@@ -619,10 +644,16 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
       second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
       rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
     }
-    tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
-  }
-  if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
-    s->pacing.rtp_time_stamp = ntohl(rtp->tmstamp);
+    if (s->ops.interlaced) {
+      if (second_field) {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      } else {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      }
+    }
+    tx_ancillary_session_sync_pacing(impl, s, 0);
+    tx_ancillary_update_rtp_time_stamp(s, ST10_TIMESTAMP_FMT_MEDIA_CLK,
+                                       ntohl(rtp->tmstamp));
   }
   rtp->tmstamp = htonl(s->pacing.rtp_time_stamp);
 
@@ -677,10 +708,16 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
           second_field = (rfc8331->first_hdr_chunk.f == 0b11) ? true : false;
           rfc8331->swapped_first_hdr_chunk = htonl(rfc8331->swapped_first_hdr_chunk);
         }
-        tx_ancillary_session_sync_pacing(impl, s, false, 0, second_field);
-      }
-      if (s->ops.flags & ST40_TX_FLAG_USER_TIMESTAMP) {
-        s->pacing.rtp_time_stamp = ntohl(rtp->base.tmstamp);
+        if (s->ops.interlaced) {
+          if (second_field) {
+            ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+          } else {
+            ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+          }
+        }
+        tx_ancillary_session_sync_pacing(impl, s, 0);
+        tx_ancillary_update_rtp_time_stamp(s, ST10_TIMESTAMP_FMT_MEDIA_CLK,
+                                           ntohl(rtp->base.tmstamp));
       }
       rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
       rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
@@ -847,13 +884,17 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     uint64_t required_tai = tx_ancillary_pacing_required_tai(s, frame->tc_meta.tfmt,
                                                              frame->tc_meta.timestamp);
     bool second_field = frame->tc_meta.second_field;
-    tx_ancillary_session_sync_pacing(impl, s, false, required_tai, second_field);
-    if (ops->flags & ST40_TX_FLAG_USER_TIMESTAMP &&
-        (frame->ta_meta.tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK)) {
-      pacing->rtp_time_stamp = (uint32_t)frame->tc_meta.timestamp;
+    if (s->ops.interlaced) {
+      if (second_field) {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
+      } else {
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
+      }
     }
+    tx_ancillary_session_sync_pacing(impl, s, required_tai);
+    tx_ancillary_update_rtp_time_stamp(s, frame->tc_meta.tfmt, frame->tc_meta.timestamp);
     frame->tc_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->tc_meta.timestamp = pacing->cur_epoch_time;
+    frame->tc_meta.timestamp = pacing->ptp_time_cursor;
     frame->tc_meta.rtp_timestamp = pacing->rtp_time_stamp;
     /* init to next field */
     if (ops->interlaced) {
@@ -1926,6 +1967,13 @@ static int tx_ancillary_ops_check(struct st40_tx_ops* ops) {
 
   if (!st_is_valid_payload_type(ops->payload_type)) {
     err("%s, invalid payload_type %d\n", __func__, ops->payload_type);
+    return -EINVAL;
+  }
+
+  if ((ops->flags & ST40_TX_FLAG_EXACT_USER_PACING) &&
+      !(ops->flags & ST40_TX_FLAG_USER_PACING)) {
+    err("%s, invalid flags 0x%x, need set USER_PACING with EXACT_USER_PACING\n", __func__,
+        ops->flags);
     return -EINVAL;
   }
 
