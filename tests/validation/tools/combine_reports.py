@@ -115,17 +115,27 @@ def build_dataframe(
 ) -> pd.DataFrame:
     ordered_tests = sorted(set(keys), key=lambda item: (item[0], item[1]))
     rows = []
+    nic_columns = list(data.keys())
 
     for test_file, test_case in ordered_tests:
         row = {
             "Test File": test_file,
             "Test Case": test_case,
         }
-        for nic, mapping in data.items():
+        seen_statuses = set()
+        for nic in nic_columns:
+            mapping = data[nic]
             row[nic] = mapping.get((test_file, test_case), DEFAULT_STATUS)
+            seen_statuses.add(row[nic])
+
+        if len(seen_statuses) > 1:
+            row["Comments"] = "Inconsistent across NICs"
+        else:
+            row["Comments"] = ""
         rows.append(row)
 
-    return pd.DataFrame(rows)
+    columns = ["Test File", "Test Case", *nic_columns, "Comments"]
+    return pd.DataFrame(rows, columns=columns)
 
 
 def main() -> None:
