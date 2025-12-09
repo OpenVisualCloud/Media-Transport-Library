@@ -62,7 +62,9 @@ def parse_report_options(values: Iterable[str]) -> Dict[str, Path]:
     mapping: Dict[str, Path] = {}
     for value in values:
         if "=" not in value:
-            raise ValueError(f"Invalid --report option '{value}'. Expected format NIC=PATH.")
+            raise ValueError(
+                f"Invalid --report option '{value}'. Expected format NIC=PATH."
+            )
         nic, raw_path = value.split("=", 1)
         nic = nic.strip()
         if not nic:
@@ -97,14 +99,21 @@ def parse_report(path: Path) -> Dict[Tuple[str, str], str]:
                 test_name = test_name_element.get_text(separator=" ", strip=True)
             else:
                 title_element = test_details.select_one(".title")
-                test_name = title_element.get_text(separator=" ", strip=True) if title_element else "UNKNOWN"
+                test_name = (
+                    title_element.get_text(separator=" ", strip=True)
+                    if title_element
+                    else "UNKNOWN"
+                )
 
-            results[(file_path, test_name)] = STATUS_LABELS.get(status_token, STATUS_LABELS["unknown"])
+            results[(file_path, test_name)] = STATUS_LABELS.get(
+                status_token, STATUS_LABELS["unknown"]
+            )
 
     return results
 
-
-def build_dataframe(keys: Iterable[Tuple[str, str]], data: Dict[str, Dict[Tuple[str, str], str]]) -> pd.DataFrame:
+def build_dataframe(
+    keys: Iterable[Tuple[str, str]], data: Dict[str, Dict[Tuple[str, str], str]]
+) -> pd.DataFrame:
     ordered_tests = sorted(set(keys), key=lambda item: (item[0], item[1]))
     rows = []
     nic_columns = list(data.keys())
