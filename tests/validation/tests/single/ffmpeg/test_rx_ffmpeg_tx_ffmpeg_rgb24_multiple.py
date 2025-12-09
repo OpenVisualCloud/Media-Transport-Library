@@ -4,6 +4,7 @@
 import os
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import ffmpeg_app
 from mtl_engine.media_files import yuv_files
 
@@ -25,7 +26,7 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple(
     test_time,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     video_format_1,
     video_format_2,
     test_time_mutlipler,
@@ -33,6 +34,9 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple(
     prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF"), count=4
+    )
 
     video_file_1 = yuv_files[video_format_1]
     video_file_2 = yuv_files[video_format_2]
@@ -40,7 +44,7 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple(
     ffmpeg_app.execute_test_rgb24_multiple(
         test_time=test_time * test_time_mutlipler,
         build=build,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         type_="frame",
         video_format_list=[video_format_1, video_format_2],
         pg_format=video_file_1["format"],

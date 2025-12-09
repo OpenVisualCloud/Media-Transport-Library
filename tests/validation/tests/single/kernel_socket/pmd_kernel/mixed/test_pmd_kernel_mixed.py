@@ -18,19 +18,20 @@ def test_pmd_kernel_mixed_format(
     test_mode,
     video_format,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
-    # rxtxapp.check_and_bind_interface(["0000:38:00.0","0000:38:00.1"], "pmd")
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=["0000:4b:00.0", "kernel:eth2"],
+        nic_port_list=[
+            "0000:4b:00.0",
+            "kernel:eth2",
+        ],  # Note: keeping hardcoded for kernel socket test
         test_mode=test_mode,
         width=video_file["width"],
         height=video_file["height"],

@@ -18,15 +18,18 @@ def test_kernello_st20p_video_format(
     test_mode,
     file,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
     st20p_file = yuv_files_422p10le[file]
+    host = list(hosts.values())[0]
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=["kernel:lo", "kernel:lo"],
+        nic_port_list=[
+            "kernel:lo",
+            "kernel:lo",
+        ],  # Note: keeping hardcoded for kernel loopback test
         test_mode=test_mode,
         width=st20p_file["width"],
         height=st20p_file["height"],
@@ -39,7 +42,6 @@ def test_kernello_st20p_video_format(
     config = rxtxapp.change_replicas(
         config=config, session_type="st20p", replicas=replicas
     )
-    host = list(hosts.values())[0]
     rxtxapp.execute_test(
         config=config,
         build=build,
