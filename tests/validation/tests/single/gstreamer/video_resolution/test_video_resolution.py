@@ -24,8 +24,16 @@ def test_video_resolutions(
     test_config,
     prepare_ramdisk,
 ):
-    video_file = yuv_files[file]
-    video_file["format"] = "v210"
+    video_file = yuv_files[file].copy()
+
+    # The st20 plugin can only produce v210 when the width is divisible by 6
+    # (pixel groups are 6 pixels wide). Fall back to I422_10LE otherwise so
+    # 1280-wide sources succeed instead of tripping the converter.
+    gst_format = (
+        "v210"
+        if video_file["width"] % 6 == 0
+        else GstreamerApp.video_format_change(video_file["format"])
+    )
 
     # Get the first host for remote execution
     host = list(hosts.values())[0]
@@ -33,17 +41,18 @@ def test_video_resolutions(
         test_config.get("interface_type", "VF")
     )
 
-    SDBQ1971_conversion_v210_720p_error(
-        video_format=video_file["format"],
-        resolution_width=video_file["height"],
-        request=request,
-    )
+    if gst_format == "v210":
+        SDBQ1971_conversion_v210_720p_error(
+            video_format=gst_format,
+            resolution_height=video_file["height"],
+            request=request,
+        )
 
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
-        format=GstreamerApp.video_format_change(video_file["format"]),
+        format=gst_format,
         media_path=media,
         duration=3,
         host=host,
@@ -56,7 +65,7 @@ def test_video_resolutions(
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
-        format=GstreamerApp.video_format_change(video_file["format"]),
+        format=gst_format,
         tx_payload_type=112,
         tx_queues=4,
     )
@@ -68,7 +77,7 @@ def test_video_resolutions(
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
-        format=GstreamerApp.video_format_change(video_file["format"]),
+        format=gst_format,
         rx_payload_type=112,
         rx_queues=4,
     )
