@@ -126,7 +126,7 @@ jobs:
           python3 -m pip install pandas beautifulsoup4 openpyxl
       - name: Combine python reports
         run: |
-          python3 tests/validation/tools/combine_reports.py \
+          python3 .github/scripts/combine_reports.py \
             --report E810=python-reports/nightly-test-report-e810/report.html \
             --report "E810-Dell=python-reports/nightly-test-report-e810-dell/report.html" \
             --report E830=python-reports/nightly-test-report-e830/report.html \
