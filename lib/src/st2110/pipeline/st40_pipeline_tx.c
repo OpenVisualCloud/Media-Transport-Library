@@ -43,8 +43,9 @@ static void tx_st40p_notify_frame_available(struct st40p_tx_ctx* ctx) {
   }
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st40p_tx_frame* tx_st40p_newest_available(
-    struct st40p_tx_ctx* ctx, enum st40p_tx_frame_status desired) {
+  struct st40p_tx_ctx* ctx, enum st40p_tx_frame_status desired) {
   struct st40p_tx_frame* framebuff = NULL;
   struct st40p_tx_frame* framebuff_newest = NULL;
 
@@ -60,8 +61,9 @@ static struct st40p_tx_frame* tx_st40p_newest_available(
   return framebuff_newest;
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st40p_tx_frame* tx_st40p_next_available(
-    struct st40p_tx_ctx* ctx, enum st40p_tx_frame_status desired) {
+  struct st40p_tx_ctx* ctx, enum st40p_tx_frame_status desired) {
   struct st40p_tx_frame* framebuff;
 
   /* check ready frame from idx_start */
@@ -277,12 +279,14 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
 static int tx_st40p_uinit_fbs(struct st40p_tx_ctx* ctx) {
   if (!ctx->framebuffs) return 0;
 
+  mt_pthread_mutex_lock(&ctx->lock);
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     if (ST40P_TX_FRAME_FREE != ctx->framebuffs[i].stat) {
       warn("%s(%d), frame %u is still in %s\n", __func__, ctx->idx, i,
            tx_st40p_stat_name(ctx->framebuffs[i].stat));
     }
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
   mt_rte_free(ctx->framebuffs);
   ctx->framebuffs = NULL;
 
@@ -331,17 +335,18 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
 
 static int tx_st40p_stat(void* priv) {
   struct st40p_tx_ctx* ctx = priv;
-  struct st40p_tx_frame* framebuff = ctx->framebuffs;
   uint16_t status_counts[ST40P_TX_FRAME_STATUS_MAX] = {0};
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
+  mt_pthread_mutex_lock(&ctx->lock);
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st40p_tx_frame_status stat = framebuff[j].stat;
+    enum st40p_tx_frame_status stat = ctx->framebuffs[j].stat;
     if (stat < ST40P_TX_FRAME_STATUS_MAX) {
       status_counts[stat]++;
     }
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   char status_str[256];
   int offset = 0;
@@ -385,25 +390,36 @@ static void tx_st40p_framebuffs_flush(struct st40p_tx_ctx* ctx) {
   for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
     framebuff = &ctx->framebuffs[i];
     int retry = 0;
+    enum st40p_tx_frame_status stat = ST40P_TX_FRAME_FREE;
 
     while (retry < 100) {
-      if (framebuff->stat == ST40P_TX_FRAME_FREE) break;
-      if (framebuff->stat == ST40P_TX_FRAME_IN_TRANSMITTING) {
+      if (mt_pthread_mutex_try_lock(&ctx->lock) != 0) {
+        mt_sleep_ms(10);
+        continue;
+      }
+      stat = framebuff->stat;
+      mt_pthread_mutex_unlock(&ctx->lock);
+
+      if (stat == ST40P_TX_FRAME_FREE) break;
+      if (stat == ST40P_TX_FRAME_IN_TRANSMITTING) {
         /* make sure transport to finish the transmit */
         /* WA to use sleep here, todo: add a transport API to query the stat */
         mt_sleep_ms(50);
         break;
       }
       dbg("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
-          tx_st40p_stat_name(framebuff->stat), retry);
+          tx_st40p_stat_name(stat), retry);
 
       mt_sleep_ms(10);
       retry++;
     }
 
     if (retry >= 100) {
+      mt_pthread_mutex_lock(&ctx->lock);
+      stat = framebuff->stat;
+      mt_pthread_mutex_unlock(&ctx->lock);
       info("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
-           tx_st40p_stat_name(framebuff->stat), retry);
+           tx_st40p_stat_name(stat), retry);
     }
   }
 }
@@ -461,9 +477,11 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST40P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -474,12 +492,15 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
       framebuff->anc_frame->meta_num < 0) {
     err("%s(%d), frame %u meta_num %u invalid\n", __func__, idx, producer_idx,
         frame_info->meta_num);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
   framebuff->frame_info.udw_buffer_fill = 0;
   framebuff->stat = ST40P_TX_FRAME_READY;
   ctx->stat_put_frame++;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
   MT_USDT_ST40P_TX_FRAME_PUT(idx, framebuff->idx, framebuff->anc_frame->data);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, framebuff->anc_frame);
   return 0;
@@ -694,17 +715,28 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
 }
 
 int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats* stats) {
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
   struct st40p_tx_ctx* ctx = handle;
-  int cidx;
-  struct st40p_tx_frame* framebuff = ctx->framebuffs;
+  int cidx = ctx->idx;
   uint16_t status_counts[ST40P_TX_FRAME_STATUS_MAX] = {0};
 
+  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  mt_pthread_mutex_lock(&ctx->lock);
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st40p_tx_frame_status stat = framebuff[j].stat;
+    enum st40p_tx_frame_status stat = ctx->framebuffs[j].stat;
     if (stat < ST40P_TX_FRAME_STATUS_MAX) {
       status_counts[stat]++;
     }
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   char status_str[256];
   int offset = 0;
@@ -715,17 +747,6 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
     }
   }
   notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
-
-  if (!handle || !stats) {
-    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
-    return -EINVAL;
-  }
-
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
 
   return st40_tx_get_session_stats(ctx->transport, stats);
 }

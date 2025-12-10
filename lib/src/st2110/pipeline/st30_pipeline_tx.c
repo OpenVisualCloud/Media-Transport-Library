@@ -39,8 +39,9 @@ static void tx_st30p_notify_frame_available(struct st30p_tx_ctx* ctx) {
   }
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st30p_tx_frame* tx_st30p_next_available(
-    struct st30p_tx_ctx* ctx, enum st30p_tx_frame_status desired) {
+  struct st30p_tx_ctx* ctx, enum st30p_tx_frame_status desired) {
   struct st30p_tx_frame* framebuff;
 
   for (int idx = 0; idx < ctx->framebuff_cnt; idx++) {
@@ -54,8 +55,9 @@ static struct st30p_tx_frame* tx_st30p_next_available(
   return NULL;
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st30p_tx_frame* tx_st30p_newest_available(
-    struct st30p_tx_ctx* ctx, enum st30p_tx_frame_status desired) {
+  struct st30p_tx_ctx* ctx, enum st30p_tx_frame_status desired) {
   struct st30p_tx_frame* framebuff_newest = NULL;
 
   for (uint16_t idx = 0; idx < ctx->framebuff_cnt; idx++) {
@@ -249,12 +251,15 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
 
 static int tx_st30p_uinit_fbs(struct st30p_tx_ctx* ctx) {
   if (ctx->framebuffs) {
+    mt_pthread_mutex_lock(&ctx->lock);
     for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
       if (ctx->framebuffs[i].stat != ST30P_TX_FRAME_FREE) {
         warn("%s(%d), frame %u are still in %s\n", __func__, ctx->idx, i,
              tx_st30p_stat_name(ctx->framebuffs[i].stat));
       }
     }
+    mt_pthread_mutex_unlock(&ctx->lock);
+
     mt_rte_free(ctx->framebuffs);
     ctx->framebuffs = NULL;
   }
@@ -297,17 +302,18 @@ static int tx_st30p_init_fbs(struct st30p_tx_ctx* ctx, struct st30p_tx_ops* ops)
 
 static int tx_st30p_stat(void* priv) {
   struct st30p_tx_ctx* ctx = priv;
-  struct st30p_tx_frame* framebuff = ctx->framebuffs;
   uint16_t status_counts[ST30P_TX_FRAME_STATUS_MAX] = {0};
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
+  mt_pthread_mutex_lock(&ctx->lock);
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st30p_tx_frame_status stat = framebuff[j].stat;
+    enum st30p_tx_frame_status stat = ctx->framebuffs[j].stat;
     if (stat < ST30P_TX_FRAME_STATUS_MAX) {
       status_counts[stat]++;
     }
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   char status_str[256];
   int offset = 0;
@@ -395,8 +401,17 @@ static void tx_st30p_framebuffs_flush(struct st30p_tx_ctx* ctx) {
     int retry = 0;
 
     while (1) {
-      if (framebuff->stat == ST30P_TX_FRAME_FREE) break;
-      if (framebuff->stat == ST30P_TX_FRAME_IN_TRANSMITTING) {
+      enum st30p_tx_frame_status stat;
+
+      if (mt_pthread_mutex_try_lock(&ctx->lock) != 0) {
+        mt_sleep_ms(10);
+        continue;
+      }
+      stat = framebuff->stat;
+      mt_pthread_mutex_unlock(&ctx->lock);
+
+      if (stat == ST30P_TX_FRAME_FREE) break;
+      if (stat == ST30P_TX_FRAME_IN_TRANSMITTING) {
         /* make sure transport to finish the transmit */
         /* WA to use sleep here, todo: add a transport API to query the stat */
         mt_sleep_ms(50);
@@ -404,11 +419,11 @@ static void tx_st30p_framebuffs_flush(struct st30p_tx_ctx* ctx) {
       }
 
       dbg("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
-          tx_st30p_stat_name(framebuff->stat), retry);
+          tx_st30p_stat_name(stat), retry);
       retry++;
       if (retry > 100) {
         info("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
-             tx_st30p_stat_name(framebuff->stat), retry);
+             tx_st30p_stat_name(stat), retry);
         break;
       }
       mt_sleep_ms(10);
@@ -690,17 +705,28 @@ void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
 }
 
 int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats) {
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
   struct st30p_tx_ctx* ctx = handle;
-  int cidx;
-  struct st30p_tx_frame* framebuff = ctx->framebuffs;
+  int cidx = ctx->idx;
   uint16_t status_counts[ST30P_TX_FRAME_STATUS_MAX] = {0};
 
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return 0;
+  }
+
+  mt_pthread_mutex_lock(&ctx->lock);
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st30p_tx_frame_status stat = framebuff[j].stat;
+    enum st30p_tx_frame_status stat = ctx->framebuffs[j].stat;
     if (stat < ST30P_TX_FRAME_STATUS_MAX) {
       status_counts[stat]++;
     }
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   char status_str[256];
   int offset = 0;
@@ -711,17 +737,6 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
     }
   }
   notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
-
-  if (!handle || !stats) {
-    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
-    return -EINVAL;
-  }
-
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
 
   return st30_tx_get_session_stats(ctx->transport, stats);
 }

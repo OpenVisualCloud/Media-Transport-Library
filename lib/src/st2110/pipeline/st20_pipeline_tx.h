@@ -41,9 +41,9 @@ struct st20p_tx_ctx {
   struct st20p_tx_ops ops;
 
   st20_tx_handle transport;
-  uint16_t framebuff_cnt;
-  uint32_t framebuff_sequence_number;
-  struct st20p_tx_frame* framebuffs;
+  uint16_t framebuff_cnt;                 /* protected by lock */
+  uint32_t framebuff_sequence_number;     /* protected by lock */
+  struct st20p_tx_frame* framebuffs;      /* protected by lock */
   pthread_mutex_t lock;
   int usdt_frame_cnt;
 

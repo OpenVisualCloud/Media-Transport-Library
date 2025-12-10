@@ -44,8 +44,9 @@ static void rx_st20p_notify_frame_available(struct st20p_rx_ctx* ctx) {
   }
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st20p_rx_frame* rx_st20p_next_available(
-    struct st20p_rx_ctx* ctx, uint16_t idx_start, enum st20p_rx_frame_status desired) {
+  struct st20p_rx_ctx* ctx, uint16_t idx_start, enum st20p_rx_frame_status desired) {
   uint16_t idx = idx_start;
   struct st20p_rx_frame* framebuff;
 
@@ -422,9 +423,11 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_RX_FRAME_IN_CONVERTING != framebuff->stat) {
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -438,10 +441,12 @@ static int rx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     framebuff->stat = ST20P_RX_FRAME_CONVERTED;
     rx_st20p_notify_frame_available(ctx);
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   return 0;
 }
 
+/* Locking skipped—minor inconsistencies are acceptable here */
 static int rx_st20p_convert_dump(void* priv) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff = ctx->framebuffs;
@@ -926,9 +931,11 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -936,6 +943,7 @@ int st20p_rx_put_frame(st20p_rx_handle handle, struct st_frame* frame) {
   st20_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
   framebuff->stat = ST20P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   MT_USDT_ST20P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);

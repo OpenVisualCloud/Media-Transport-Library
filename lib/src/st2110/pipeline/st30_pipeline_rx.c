@@ -44,8 +44,9 @@ static void rx_st30p_notify_frame_available(struct st30p_rx_ctx* ctx) {
   }
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st30p_rx_frame* rx_st30p_next_available(
-    struct st30p_rx_ctx* ctx, uint16_t idx_start, enum st30p_rx_frame_status desired) {
+  struct st30p_rx_ctx* ctx, uint16_t idx_start, enum st30p_rx_frame_status desired) {
   uint16_t idx = idx_start;
   struct st30p_rx_frame* framebuff;
 
@@ -353,9 +354,11 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -363,6 +366,7 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
   st30_rx_put_framebuff(ctx->transport, frame->addr);
   framebuff->stat = ST30P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   MT_USDT_ST30P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, consumer_idx, frame->addr);

@@ -44,6 +44,7 @@ static void rx_st40p_notify_frame_available(struct st40p_rx_ctx* ctx) {
   }
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st40p_rx_frame* rx_st40p_next_available(
     struct st40p_rx_ctx* ctx, uint16_t idx_start, enum st40p_rx_frame_status desired) {
   uint16_t idx = idx_start;
@@ -478,9 +479,11 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST40P_RX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -489,6 +492,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->udw_buffer_fill = 0;
   framebuff->stat = ST40P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
+  mt_pthread_mutex_unlock(&ctx->lock);
 
   MT_USDT_ST40P_RX_FRAME_PUT(idx, consumer_idx, meta_num_before_reset);
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);

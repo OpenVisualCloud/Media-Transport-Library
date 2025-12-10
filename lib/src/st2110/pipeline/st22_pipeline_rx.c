@@ -63,6 +63,7 @@ static void rx_st22p_notify_frame_available(struct st22p_rx_ctx* ctx) {
   }
 }
 
+/* Caller must hold ctx->lock before invoking to keep framebuff->stat coherent. */
 static struct st22p_rx_frame* rx_st22p_next_available(
     struct st22p_rx_ctx* ctx, uint16_t idx_start, enum st22p_rx_frame_status desired) {
   uint16_t idx = idx_start;
@@ -273,14 +274,17 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
     return -EIO;
   }
 
+  bool notify_available = false;
+
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_RX_FRAME_IN_DECODING != framebuff->stat) {
     err("%s(%d), frame %u not in decoding %d\n", __func__, idx, decode_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
   ctx->stat_decode_put_frame++;
-  dbg("%s(%d), frame %u result %d\n", __func__, idx, decode_idx, result);
   if (result < 0) {
     /* free the frame */
     st22_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
@@ -288,8 +292,13 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
     rte_atomic32_inc(&ctx->stat_decode_fail);
   } else {
     framebuff->stat = ST22P_RX_FRAME_DECODED;
-    rx_st22p_notify_frame_available(ctx);
+    notify_available = true;
   }
+  mt_pthread_mutex_unlock(&ctx->lock);
+
+  dbg("%s(%d), frame %u result %d\n", __func__, idx, decode_idx, result);
+
+  if (notify_available) rx_st22p_notify_frame_available(ctx);
 
   MT_USDT_ST22P_RX_DECODE_PUT(idx, framebuff->idx, frame->src->addr[0],
                               frame->dst->addr[0], result);
@@ -299,16 +308,28 @@ static int rx_st22p_decode_put_frame(void* priv, struct st22_decode_frame_meta* 
 static int rx_st22p_decode_dump(void* priv) {
   struct st22p_rx_ctx* ctx = priv;
   struct st22p_rx_frame* framebuff = ctx->framebuffs;
+  uint16_t producer_idx;
+  uint16_t decode_idx;
+  uint16_t consumer_idx;
+  enum st22p_rx_frame_status producer_stat;
+  enum st22p_rx_frame_status decode_stat;
+  enum st22p_rx_frame_status consumer_stat;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  uint16_t producer_idx = ctx->framebuff_producer_idx;
-  uint16_t decode_idx = ctx->framebuff_decode_idx;
-  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  mt_pthread_mutex_lock(&ctx->lock);
+  producer_idx = ctx->framebuff_producer_idx;
+  decode_idx = ctx->framebuff_decode_idx;
+  consumer_idx = ctx->framebuff_consumer_idx;
+  producer_stat = framebuff[producer_idx].stat;
+  decode_stat = framebuff[decode_idx].stat;
+  consumer_stat = framebuff[consumer_idx].stat;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
   notice("RX_ST22P(%s), p(%d:%s) d(%d:%s) c(%d:%s)\n", ctx->ops_name, producer_idx,
-         rx_st22p_stat_name(framebuff[producer_idx].stat), decode_idx,
-         rx_st22p_stat_name(framebuff[decode_idx].stat), consumer_idx,
-         rx_st22p_stat_name(framebuff[consumer_idx].stat));
+         rx_st22p_stat_name(producer_stat), decode_idx,
+         rx_st22p_stat_name(decode_stat), consumer_idx,
+         rx_st22p_stat_name(consumer_stat));
 
   int decode_fail = rte_atomic32_read(&ctx->stat_decode_fail);
   rte_atomic32_set(&ctx->stat_decode_fail, 0);
@@ -630,9 +651,11 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_RX_FRAME_IN_USER != framebuff->stat) {
-    err("%s(%d), frame %u not in free %d\n", __func__, idx, consumer_idx,
+    err("%s(%d), frame %u not in user %d\n", __func__, idx, consumer_idx,
         framebuff->stat);
+    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -640,6 +663,8 @@ int st22p_rx_put_frame(st22p_rx_handle handle, struct st_frame* frame) {
   st22_rx_put_framebuff(ctx->transport, framebuff->src.addr[0]);
   framebuff->stat = ST22P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
   dbg("%s(%d), frame %u succ\n", __func__, idx, consumer_idx);
   MT_USDT_ST22P_RX_FRAME_PUT(idx, framebuff->idx, frame->addr[0]);
 
