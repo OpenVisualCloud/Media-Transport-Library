@@ -246,6 +246,7 @@ static int tv_free_frames(struct st_tx_video_session_impl* s) {
 
     mt_rte_free(s->st20_frames);
     s->st20_frames = NULL;
+    s->st20_frames_cnt = 0; /* mark frames unavailable after free */
   }
 
   dbg("%s(%d), succ\n", __func__, s->idx);
@@ -3910,16 +3911,18 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   uint16_t queue_id = mt_txq_queue_id(s->queue[s_port]);
   info("%s(%d,%d), new queue_id %u\n", __func__, s_port, idx, queue_id);
 
-  /* cleanup frame manager */
-  struct st_frame_trans* frame;
-  for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
-    frame = &s->st20_frames[i];
-    int refcnt = rte_atomic32_read(&frame->refcnt);
-    if (refcnt) {
-      info("%s(%d,%d), stop frame %u\n", __func__, s_port, idx, i);
-      tv_notify_frame_done(s, i);
-      rte_atomic32_dec(&frame->refcnt);
-      rte_mbuf_ext_refcnt_set(&frame->sh_info, 0);
+  /* cleanup frame manager (only valid for frame-type sessions) */
+  if (st20_is_frame_type(s->ops.type)) {
+    struct st_frame_trans* frame;
+    for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
+      frame = &s->st20_frames[i];
+      int refcnt = rte_atomic32_read(&frame->refcnt);
+      if (refcnt) {
+        info("%s(%d,%d), stop frame %u\n", __func__, s_port, idx, i);
+        tv_notify_frame_done(s, i);
+        rte_atomic32_dec(&frame->refcnt);
+        rte_mbuf_ext_refcnt_set(&frame->sh_info, 0);
+      }
     }
   }
 
