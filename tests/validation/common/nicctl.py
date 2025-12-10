@@ -137,7 +137,7 @@ class InterfaceSetup:
                                 host.network_interfaces[i].pci_address.lspci
                             )
                             selected_interfaces[host.name].append(
-                                str(host.network_interfaces[i])
+                                str(host.network_interfaces[i].pci_address.lspci)
                             )
                             self.register_cleanup(
                                 self.nicctl_objs[host.name],
