@@ -139,7 +139,7 @@ void St20pHandler::st20TxDefaultFunction(std::atomic<bool>& stopFlag) {
       continue;
     }
 
-    ASSERT_TRUE(frame->addr != nullptr);
+    ASSERT_NE(frame->addr[0], nullptr);
     ASSERT_EQ(frame->fmt, (enum st_frame_fmt)fmt);
     ASSERT_EQ(frame->width, width);
     ASSERT_EQ(frame->height, height);
@@ -173,7 +173,7 @@ void St20pHandler::st20RxDefaultFunction(std::atomic<bool>& stopFlag) {
       continue;
     }
 
-    ASSERT_TRUE(frame->addr != nullptr);
+    ASSERT_NE(frame->addr[0], nullptr);
     ASSERT_EQ(frame->fmt, (enum st_frame_fmt)fmt);
     ASSERT_EQ(frame->width, width);
     ASSERT_EQ(frame->height, height);
