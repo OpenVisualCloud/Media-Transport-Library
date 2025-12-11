@@ -31,11 +31,13 @@ fi
 (return 0 2>/dev/null) && sourced=1 || sourced=0
 
 if [ "$sourced" -eq 0 ]; then
+	archive_name="ice-${ICE_VER}.tar.gz"
 	echo "Building e810 driver version: $ICE_VER form mirror $ICE_DMID"
 
-	wget "https://downloadmirror.intel.com/${ICE_DMID}/ice-${ICE_VER}.tar.gz"
-	if [ ! -f "ice-${ICE_VER}.tar.gz" ]; then
-		echo "Failed to download ice-${ICE_VER}.tar.gz"
+	rm -f "$archive_name"
+	wget "https://downloadmirror.intel.com/${ICE_DMID}/${archive_name}" -O "$archive_name"
+	if [ ! -f "$archive_name" ]; then
+		echo "Failed to download $archive_name"
 		exit 1
 	fi
 
@@ -44,10 +46,12 @@ if [ "$sourced" -eq 0 ]; then
 		exit 1
 	fi
 
-	tar xvzf "ice-${ICE_VER}.tar.gz"
+	tar xvzf "$archive_name"
+
+	rm -f "$archive_name"
 
 	if [ ! -d "ice-${ICE_VER}" ]; then
-		echo "Failed to extract ice-${ICE_VER}.tar.gz"
+		echo "Failed to extract $archive_name"
 		exit 1
 	fi
 
@@ -64,5 +68,8 @@ if [ "$sourced" -eq 0 ]; then
 	sudo rmmod irdma || echo "irdma not loaded"
 	sudo rmmod ice
 	sudo modprobe ice
-	cd -
+
+	cd "$script_folder" || exit 1
+	echo "Removing downloaded ice-${ICE_VER} sources."
+	rm -rf "ice-${ICE_VER}"
 fi
