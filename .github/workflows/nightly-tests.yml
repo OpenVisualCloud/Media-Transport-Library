@@ -3,7 +3,7 @@ on:
   # allow manually trigger
   workflow_dispatch:
   schedule:
-  - cron: '0 0 * * *' # Every day at midnight UTC
+  - cron: '0 20 * * *' # Every day at 8 PM UTC
 permissions:
   contents: read
 jobs:
