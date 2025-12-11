@@ -283,6 +283,23 @@ typedef struct st_json_st20p_session {
   uint64_t user_time_offset;
 } st_json_st20p_session_t;
 
+typedef struct st_json_st40p_info {
+  enum st_fps fps;
+  bool interlaced;
+
+  char st40p_url[ST_APP_URL_MAX_LEN];
+} st_json_st40p_info_t;
+
+typedef struct st_json_st40p_session {
+  st_json_session_base_t base;
+  st_json_st40p_info_t info;
+
+  bool user_pacing;
+  bool exact_user_pacing;
+  bool user_timestamp;
+  bool enable_rtcp;
+} st_json_st40p_session_t;
+
 typedef struct st_json_context {
   st_json_interface_t* interfaces;
   int num_interfaces;
@@ -309,6 +326,8 @@ typedef struct st_json_context {
   int tx_st22p_session_cnt;
   st_json_st20p_session_t* tx_st20p_sessions;
   int tx_st20p_session_cnt;
+  st_json_st40p_session_t* tx_st40p_sessions;
+  int tx_st40p_session_cnt;
   st_json_st30p_session_t* tx_st30p_sessions;
   int tx_st30p_session_cnt;
 
@@ -324,6 +343,8 @@ typedef struct st_json_context {
   int rx_st22p_session_cnt;
   st_json_st20p_session_t* rx_st20p_sessions;
   int rx_st20p_session_cnt;
+  st_json_st40p_session_t* rx_st40p_sessions;
+  int rx_st40p_session_cnt;
   st_json_video_session_t* rx_st20r_sessions;
   int rx_st20r_session_cnt;
   st_json_st30p_session_t* rx_st30p_sessions;
