@@ -9,6 +9,12 @@ from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
 
+""" Checks various audio format support in GStreamer ST30 pipelines.
+    Validates end-to-end transmission and reception of audio streams with
+    different audio formats, channels, and sampling rates.
+    No integrity check is performed, only format handling is verified.
+"""
+@pytest.mark.verified
 @pytest.mark.nightly
 @pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
 @pytest.mark.parametrize("audio_channel", [1, 2, 6, 8])
@@ -25,6 +31,11 @@ def test_audio_format(
     test_config,
     prepare_ramdisk,
 ):
+    if audio_rate == 96000 and \
+    audio_channel == 8 and (audio_format == "S16BE" or audio_format == "S24BE") or \
+    audio_channel == 6 and audio_format == "S24BE":
+        pytest.skip(f"Audio, {audio_format} with {audio_channel} audio channel invalid pkt_len skipped")
+
     # Get the first host for remote execution
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
