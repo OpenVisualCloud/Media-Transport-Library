@@ -924,6 +924,11 @@ int tests_context_unit(tests_context* ctx) {
     st_test_free(ctx->ext_frames);
     ctx->ext_frames = NULL;
   }
+  if (ctx->dma_mem) {
+    /* dma_mem is owned by the tests_context when set */
+    mtl_dma_mem_free(ctx->ctx->handle, ctx->dma_mem);
+    ctx->dma_mem = NULL;
+  }
 
   return 0;
 }

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2022 Intel Corporation
+ * Copyright(c) 2025 Intel Corporation
  */
 
 #include <thread>
@@ -734,6 +734,43 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
   tx_thread.resize(sessions);
   rx_thread.resize(sessions);
 
+  struct st20p_thread_guard {
+    std::vector<tests_context*>& tx_ctx;
+    std::vector<tests_context*>& rx_ctx;
+    std::vector<std::thread>& tx_thread;
+    std::vector<std::thread>& rx_thread;
+    std::vector<st20p_tx_handle>& tx_handle;
+    std::vector<st20p_rx_handle>& rx_handle;
+    st20p_rx_digest_test_para* para;
+
+    ~st20p_thread_guard() {
+      for (size_t i = 0; i < tx_ctx.size(); i++) {
+        auto* ctx = tx_ctx[i];
+        if (!ctx) continue;
+        ctx->stop = true;
+        if (para && para->block_get && i < tx_handle.size() && tx_handle[i])
+          st20p_tx_wake_block(tx_handle[i]);
+        ctx->cv.notify_all();
+      }
+
+      for (size_t i = 0; i < rx_ctx.size(); i++) {
+        auto* ctx = rx_ctx[i];
+        if (!ctx) continue;
+        ctx->stop = true;
+        if (para && para->block_get && i < rx_handle.size() && rx_handle[i])
+          st20p_rx_wake_block(rx_handle[i]);
+        ctx->cv.notify_all();
+      }
+
+      for (auto& t : tx_thread) {
+        if (t.joinable()) t.join();
+      }
+      for (auto& t : rx_thread) {
+        if (t.joinable()) t.join();
+      }
+    }
+  } guard{test_ctx_tx, test_ctx_rx, tx_thread, rx_thread, tx_handle, rx_handle, para};
+
   for (int i = 0; i < sessions; i++) {
     expect_framerate_tx[i] = st_frame_rate(fps[i]);
     if (para->timeout_interval) {
@@ -1137,6 +1174,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
     }
     test_ctx_rx[i]->fb_send = test_ctx_tx[i]->fb_send;
     delete test_ctx_tx[i];
+    test_ctx_tx[i] = NULL;
   }
   for (int i = 0; i < sessions; i++) {
     ret = st20p_rx_free(rx_handle[i]);
@@ -1167,6 +1205,7 @@ static void st20p_rx_digest_test(enum st_fps fps[], int width[], int height[],
            (double)test_ctx_rx[i]->fb_rec / test_ctx_rx[i]->fb_send);
     }
     delete test_ctx_rx[i];
+    test_ctx_rx[i] = NULL;
   }
 }
 
