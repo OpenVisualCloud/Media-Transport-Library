@@ -79,12 +79,12 @@ jobs:
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
-            --build ${{ secrets.RUNNER_BUILD }} \
-            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
+            --build ${{ github.workspace }} \
+            --mtl_path ${{ github.workspace }} \
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
-            --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }}
+            --username "${USER}" \
+            --key_path "/home/${USER}/.ssh/id_rsa"
       - name: 'preparation: Kill MtlManager and pytest routines'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
