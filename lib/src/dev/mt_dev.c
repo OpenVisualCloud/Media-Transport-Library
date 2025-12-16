@@ -1704,17 +1704,22 @@ int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   tx_queue = &inf->tx_queues[queue_id];
   if (!tx_queue->active) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
   if (queue != tx_queue) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d ctx mismatch\n", __func__, port, queue_id);
     return -EIO;
   }
 
   tx_queue->active = false;
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+
   info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
@@ -1730,17 +1735,22 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   tx_queue = &inf->tx_queues[queue_id];
   if (!tx_queue->active) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
   if (queue != tx_queue) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d ctx mismatch\n", __func__, port, queue_id);
     return -EIO;
   }
 
   tx_queue->fatal_error = true;
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+
   err("%s(%d), q %d masked as fatal error\n", __func__, port, queue_id);
   return 0;
 }

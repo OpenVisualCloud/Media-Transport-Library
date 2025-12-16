@@ -20,7 +20,7 @@
 #include "../log.h"
 #include "../tests.hpp"
 
-#define ST20_TRAIN_TIME_S (0) /* 0 for runtime rl */
+#define ST20_TRAIN_TIME_S (1)
 #define ST20_TEST_PAYLOAD_TYPE (112)
 #define DUMP_INCOMPLITE_SLICE (0)
 
