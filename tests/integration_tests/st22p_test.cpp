@@ -659,7 +659,7 @@ static void test_st22p_tx_frame_thread(void* args) {
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
     if (s->user_timestamp) {
       frame->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-      frame->timestamp = s->fb_send;
+      frame->timestamp = s->fb_send + 1; /* add one to avoid zero timestamp */
       dbg("%s(%d), timestamp %d\n", __func__, s->idx, s->fb_send);
     }
     if (s->p_ext_frames) {
@@ -690,7 +690,6 @@ static void test_st22p_rx_frame_thread(void* args) {
   auto handle = s->handle;
   struct st_frame* frame;
   std::unique_lock<std::mutex> lck(s->mtx, std::defer_lock);
-  uint64_t timestamp = 0;
 
   dbg("%s(%d), start\n", __func__, s->idx);
   while (!s->stop) {
@@ -710,8 +709,7 @@ static void test_st22p_rx_frame_thread(void* args) {
     if (frame->height != s->height) s->incomplete_frame_cnt++;
     if (frame->fmt != s->fmt) s->incomplete_frame_cnt++;
     dbg("%s(%d), timestamp %" PRIu64 "\n", __func__, s->idx, frame->timestamp);
-    if (frame->timestamp == timestamp) s->incomplete_frame_cnt++;
-    timestamp = frame->timestamp;
+    if (frame->timestamp == 0) s->incomplete_frame_cnt++;
 
     if (frame->opaque) {
       /* free dynamic ext frame */
