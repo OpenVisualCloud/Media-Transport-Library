@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
@@ -160,7 +161,11 @@ def main() -> None:
 
     for nic_name, report_path in reports.items():
         if not report_path.exists():
-            print(f"Warning: Report not found for {nic_name} at {report_path}.")
+            print(
+                f"Warning: Report not found for {nic_name} at {report_path}.",
+                file=sys.stderr,
+                flush=True,
+            )
             parsed_data[nic_name] = {}
             continue
         parsed = parse_report(report_path)
@@ -170,7 +175,9 @@ def main() -> None:
 
     if not all_keys:
         print(
-            "Warning: No tests discovered across provided reports. Writing placeholder entry."
+            "Warning: No tests discovered across provided reports. Writing placeholder entry.",
+            file=sys.stderr,
+            flush=True,
         )
         df = pd.DataFrame(
             [
