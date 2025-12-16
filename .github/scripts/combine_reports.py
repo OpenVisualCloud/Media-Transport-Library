@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Destination Excel file path (default: MTL_test_report_<current_date>.xlsx "
-            "with current date formatted as YYYY-MM-DD_HH:MM)."
+            "with current date formatted as YYYY-MM-DD_HH-MM)."
         ),
     )
     parser.add_argument(
@@ -194,7 +194,7 @@ def main() -> None:
     if args.output:
         output_path = args.output
     else:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         output_path = Path(f"MTL_test_report_{timestamp}.xlsx")
     output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
