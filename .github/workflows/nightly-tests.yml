@@ -129,10 +129,11 @@ jobs:
           python3 .github/scripts/combine_reports.py \
             --report E810=python-reports/nightly-test-report-e810/report.html \
             --report "E810-Dell=python-reports/nightly-test-report-e810-dell/report.html" \
-            --report E830=python-reports/nightly-test-report-e830/report.html \
-            --output python-reports/combined_report.xlsx
+            --report E830=python-reports/nightly-test-report-e830/report.html
+          latest_report=$(ls -t python-reports/MTL_test_report_*.xlsx | head -n 1)
+          echo "COMBINED_REPORT=${latest_report}" >> "$GITHUB_ENV"
       - name: Upload combined python report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: nightly-python-combined-report
-          path: python-reports/combined_report.xlsx
+          path: ${{ env.COMBINED_REPORT }}
