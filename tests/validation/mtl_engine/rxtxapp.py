@@ -7,8 +7,29 @@ import os
 
 from .application_base import Application
 from .config.app_mappings import APP_NAME_MAP, DEFAULT_NETWORK_CONFIG
-from .config.param_mappings import RXTXAPP_PARAM_MAP
+from .config.param_mappings import (
+    RXTXAPP_CMDLINE_PARAM_MAP,
+    RXTXAPP_CONFIG_PARAM_MAP,
+)
 from .config.universal_params import UNIVERSAL_PARAMS
+
+# Create IP dictionaries for backward compatibility using DEFAULT_NETWORK_CONFIG
+unicast_ip_dict = {
+    "tx_interfaces": DEFAULT_NETWORK_CONFIG["unicast_tx_ip"],
+    "rx_interfaces": DEFAULT_NETWORK_CONFIG["unicast_rx_ip"],
+    "tx_sessions": DEFAULT_NETWORK_CONFIG["unicast_rx_ip"],
+    "rx_sessions": DEFAULT_NETWORK_CONFIG["unicast_tx_ip"],
+}
+multicast_ip_dict = {
+    "tx_interfaces": DEFAULT_NETWORK_CONFIG["multicast_tx_ip"],
+    "rx_interfaces": DEFAULT_NETWORK_CONFIG["multicast_rx_ip"],
+    "tx_sessions": DEFAULT_NETWORK_CONFIG["multicast_destination_ip"],
+    "rx_sessions": DEFAULT_NETWORK_CONFIG["multicast_destination_ip"],
+}
+kernel_ip_dict = {
+    "tx_sessions": "127.0.0.1",
+    "rx_sessions": "127.0.0.1",
+}
 
 # Import execution utilities with fallback
 try:
@@ -23,9 +44,6 @@ try:
         check_rx_output,
         check_tx_output,
         create_empty_config,
-        kernel_ip_dict,
-        multicast_ip_dict,
-        unicast_ip_dict,
     )
 except ImportError:
     # Fallback for direct execution (when running this module standalone)
@@ -38,9 +56,6 @@ except ImportError:
         check_rx_output,
         check_tx_output,
         create_empty_config,
-        kernel_ip_dict,
-        multicast_ip_dict,
-        unicast_ip_dict,
     )
 
 logger = logging.getLogger(__name__)
@@ -94,30 +109,20 @@ class RxTxApp(Application):
         cmd_parts = ["sudo", executable_path]
         cmd_parts.extend(["--config_file", config_file_path])
 
-        # Add command-line parameters from RXTXAPP_PARAM_MAP
-        session_type = self.universal_params.get(
-            "session_type", UNIVERSAL_PARAMS["session_type"]
-        )
-        for universal_param, rxtx_param in RXTXAPP_PARAM_MAP.items():
-            # Skip file I/O generic mapping for st22p; we set st22p_url explicitly in JSON
-            if session_type == "st22p" and universal_param in (
-                "input_file",
-                "output_file",
-            ):
-                continue
+        # Add command-line parameters from RXTXAPP_CMDLINE_PARAM_MAP
+        for universal_param, rxtx_param in RXTXAPP_CMDLINE_PARAM_MAP.items():
             # Skip test_time unless explicitly provided (for VTune tests, duration is controlled by VTune)
             if universal_param == "test_time" and not self.was_user_provided(
                 "test_time"
             ):
                 continue
-            if rxtx_param.startswith("--"):  # Command-line parameter only
-                if universal_param in self.universal_params:
-                    value = self.universal_params[universal_param]
-                    if value is not None and value is not False:
-                        if isinstance(value, bool) and value:
-                            cmd_parts.append(rxtx_param)
-                        elif not isinstance(value, bool):
-                            cmd_parts.extend([rxtx_param, str(value)])
+            if universal_param in self.universal_params:
+                value = self.universal_params[universal_param]
+                if value is not None and value is not False:
+                    if isinstance(value, bool) and value:
+                        cmd_parts.append(rxtx_param)
+                    elif not isinstance(value, bool):
+                        cmd_parts.extend([rxtx_param, str(value)])
 
         # Create JSON configuration
         config_dict = self._create_rxtxapp_config_dict()
@@ -653,3 +658,29 @@ class RxTxApp(Application):
                 if possible in tx_entry and tx_entry[possible]:
                     return possible
         return "st20p"
+
+    def _start_netsniff_capture(self, netsniff):
+        """Start netsniff capture for packet capturing during test execution.
+
+        This method is called by execute_test() when a netsniff object is provided.
+        It extracts the destination IP from the config and starts the capture.
+        """
+        if not self.config:
+            logger.warning("No config available for netsniff capture")
+            return
+
+        try:
+            # Extract destination IP from TX sessions
+            if (
+                self.config.get("tx_sessions")
+                and len(self.config["tx_sessions"]) > 0
+                and self.config["tx_sessions"][0].get("dip")
+            ):
+                dst_ip = self.config["tx_sessions"][0]["dip"][0]
+                netsniff.update_filter(dst_ip=dst_ip)
+                netsniff.capture()
+                logger.info(f"Started netsniff-ng capture for destination IP {dst_ip}")
+            else:
+                logger.warning("Could not extract destination IP for netsniff capture")
+        except Exception as e:
+            logger.error(f"Failed to start netsniff capture: {e}")

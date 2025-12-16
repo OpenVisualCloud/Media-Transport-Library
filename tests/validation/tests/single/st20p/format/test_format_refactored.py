@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -17,25 +18,25 @@ from mtl_engine.rxtxapp import RxTxApp
 def test_422p10le_refactored(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
     prepare_ramdisk,
+    pcap_capture,
     media_file,
 ):
     """Send files in YUV422PLANAR10LE format converting to transport format YUV_422_10bit"""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_format_refactored_{media_file_info['filename']}"
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     app.create_command(
         session_type="st20p",
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         width=media_file_info["width"],
         height=media_file_info["height"],
@@ -50,7 +51,7 @@ def test_422p10le_refactored(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
     )
 
 
@@ -87,17 +88,27 @@ convert1_formats = dict(
 )
 @pytest.mark.parametrize("format", convert1_formats.keys())
 def test_convert_on_rx_refactored(
-    hosts, build, media, nic_port_list, test_time, format, media_file
+    hosts,
+    build,
+    setup_interfaces: InterfaceSetup,
+    pcap_capture,
+    test_time,
+    test_config,
+    format,
+    media_file,
 ):
     """Send file in YUV_422_10bit pixel formats with supported conversion on RX side"""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     app.create_command(
         session_type="st20p",
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         packing="GPM",
         width=media_file_info["width"],
@@ -113,6 +124,7 @@ def test_convert_on_rx_refactored(
         build=build,
         test_time=test_time,
         host=host,
+        netsniff=pcap_capture,
     )
 
 
@@ -150,22 +162,26 @@ convert2_formats = dict(
 def test_tx_rx_conversion_refactored(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
+    pcap_capture,
     test_time,
+    test_config,
     format,
     media_file,
 ):
     """Send file in different pixel formats with supported two-way conversion on TX and RX"""
     media_file_info, media_file_path = media_file
-    text_format, transport_format, _ = convert2_formats[format]
+    _, transport_format, _ = convert2_formats[format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     app.create_command(
         session_type="st20p",
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         packing="GPM",
         width=media_file_info["width"],
@@ -181,6 +197,7 @@ def test_tx_rx_conversion_refactored(
         build=build,
         test_time=test_time,
         host=host,
+        netsniff=pcap_capture,
     )
 
 
@@ -194,27 +211,27 @@ def test_tx_rx_conversion_refactored(
 def test_formats_refactored(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     format,
     test_config,
     prepare_ramdisk,
+    pcap_capture,
     media_file,
 ):
     """Send file in different supported pixel formats without conversion during transport"""
     media_file_info, media_file_path = media_file
-    text_format, file_format = pixel_formats[format]
+    _, file_format = pixel_formats[format]
     host = list(hosts.values())[0]
-
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_format_refactored_formats_{format}"
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     app.create_command(
         session_type="st20p",
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         packing="GPM",
         width=media_file_info["width"],
@@ -230,5 +247,5 @@ def test_formats_refactored(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
+        netsniff=pcap_capture,
     )

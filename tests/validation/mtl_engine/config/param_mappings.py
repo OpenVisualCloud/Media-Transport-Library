@@ -1,11 +1,12 @@
 # Parameter mappings for different applications
 # Maps universal parameter names to application-specific names
 
-# RxTxApp parameter mapping
-RXTXAPP_PARAM_MAP = {
+# RxTxApp config file parameter mapping
+# These parameters go into the JSON configuration file
+RXTXAPP_CONFIG_PARAM_MAP = {
     # Network parameters
     "source_ip": "ip",
-    "destination_ip": "dip",
+    "destination_ip": "ip",
     "multicast_ip": "ip",
     "port": "start_port",
     "nic_port": "name",
@@ -37,7 +38,11 @@ RXTXAPP_PARAM_MAP = {
     "enable_rtcp": "enable_rtcp",
     "measure_latency": "measure_latency",
     "display": "display",
-    # RxTxApp specific command-line parameters
+}
+
+# RxTxApp command-line parameter mapping
+# These parameters are passed as command-line arguments
+RXTXAPP_CMDLINE_PARAM_MAP = {
     "config_file": "--config_file",
     "enable_ptp": "--ptp",
     "lcores": "--lcores",

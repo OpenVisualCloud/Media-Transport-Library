@@ -2,15 +2,16 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
-import os
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 from mtl_engine.rxtxapp import RxTxApp
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -35,26 +36,29 @@ logger = logging.getLogger(__name__)
 def test_integrity_refactored(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
+    test_config,
     test_time,
     prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     """Test video integrity by comparing input and output files"""
     media_file_info, media_file_path = media_file
 
-    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
-    os.makedirs(log_dir, exist_ok=True)
-    out_file_url = os.path.join(log_dir, "out.yuv")
+    log_dir = Path.cwd() / LOG_FOLDER / "latest"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    out_file_url = str(log_dir / "out.yuv")
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     app.create_command(
         session_type="st20p",
-        nic_port=host.vfs[0] if host.vfs else "0000:31:01.0",
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         source_ip="192.168.17.101",
         destination_ip="192.168.17.102",
         port=20000,
@@ -71,7 +75,7 @@ def test_integrity_refactored(
     )
 
     actual_test_time = max(test_time, 8)
-    app.execute_test(build=build, test_time=actual_test_time, host=host)
+    app.execute_test(build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture)
 
     frame_size = calculate_yuv_frame_size(
         media_file_info["width"],
