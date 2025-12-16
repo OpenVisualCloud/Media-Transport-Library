@@ -149,7 +149,9 @@ def main() -> None:
 
     for nic_name, report_path in reports.items():
         if not report_path.exists():
-            raise FileNotFoundError(f"Report not found for {nic_name}: {report_path}")
+            print(f"Warning: Report not found for {nic_name} at {report_path}.")
+            parsed_data[nic_name] = {}
+            continue
         parsed = parse_report(report_path)
         parsed_data[nic_name] = parsed
         all_keys.update(parsed.keys())
