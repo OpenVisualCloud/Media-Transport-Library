@@ -59,6 +59,13 @@ def parse_args() -> argparse.Namespace:
             "with current date formatted as YYYY-MM-DD_HH:MM)."
         ),
     )
+    parser.add_argument(
+        "--print-path",
+        action="store_true",
+        help=(
+            "If set, print only the absolute path of the generated report to stdout."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -182,9 +189,13 @@ def main() -> None:
     else:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M")
         output_path = Path(f"MTL_test_report_{timestamp}.xlsx")
+    output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_excel(output_path, index=False)
-    print(f"Combined report written to {output_path}")
+    if args.print_path:
+        print(output_path)
+    else:
+        print(f"Combined report written to {output_path}")
 
 
 if __name__ == "__main__":

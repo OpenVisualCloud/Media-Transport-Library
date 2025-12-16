@@ -120,23 +120,26 @@ jobs:
           pattern: nightly-test-report-*
           path: python-reports
           merge-multiple: false
+      - name: Ensure python reports directory exists
+        run: mkdir -p python-reports
       - name: Install report dependencies
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install pandas beautifulsoup4 openpyxl
       - name: Combine python reports
         working-directory: python-reports
+        id: combine-python
         run: |
-          python3 ../.github/scripts/combine_reports.py \
+          report_path=$(python3 ../.github/scripts/combine_reports.py \
             --report E810=nightly-test-report-e810/report.html \
             --report "E810-Dell=nightly-test-report-e810-dell/report.html" \
-            --report E830=nightly-test-report-e830/report.html
-          latest_report=$(ls -t MTL_test_report_*.xlsx | head -n 1)
-          if [ -z "$latest_report" ]; then
-            echo "Combined report not found" >&2
+            --report E830=nightly-test-report-e830/report.html \
+            --print-path)
+          if [ -z "$report_path" ]; then
+            echo "Combined report path not returned" >&2
             exit 1
           fi
-          echo "COMBINED_REPORT=python-reports/${latest_report}" >> "$GITHUB_ENV"
+          echo "COMBINED_REPORT=${report_path}" >> "$GITHUB_ENV"
       - name: Upload combined python report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
