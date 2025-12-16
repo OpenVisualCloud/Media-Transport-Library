@@ -278,6 +278,8 @@ struct st30_rx_frame_meta {
   enum st10_timestamp_fmt tfmt;
   /** Frame timestamp value */
   uint64_t timestamp;
+  /** TAI timestamp measured right after the RTP packet for this frame was received */
+  uint64_t timestamp_first_pkt;
   /** Timestamp value in the rtp header */
   uint32_t rtp_timestamp;
   /** received data size for current frame */
@@ -382,6 +384,14 @@ struct st30_tx_ops {
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st30_tx_frame_meta* meta);
+
+  /**
+   * Optional. Callback triggered when a frame epoch is omitted/skipped in the lib.
+   * This occurs when the transmission timing falls behind schedule and an epoch
+   * must be skipped to maintain synchronization. (or in the user pacing mode
+   * when the user time is behind the lib sending time).
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /*
    * Optional. The size of fifo ring which used between the packet builder and pacing.

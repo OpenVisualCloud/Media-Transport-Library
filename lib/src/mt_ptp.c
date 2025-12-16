@@ -871,10 +871,6 @@ static void ptp_delay_req_task(struct mt_ptp_impl* ptp) {
   m->pkt_len = hdr_offset + sizeof(struct mt_ptp_sync_msg);
   m->data_len = m->pkt_len;
 
-#if MT_PTP_USE_TX_TIME_STAMP
-  ptp_timesync_read_tx_time(ptp, &tx_ns); /* read out tx time */
-#endif
-
   // mt_mbuf_dump(port, 0, "PTP_DELAY_REQ", m);
   uint16_t tx = mt_sys_queue_tx_burst(ptp->impl, port, &m, 1);
   if (tx < 1) {

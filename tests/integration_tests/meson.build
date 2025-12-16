@@ -8,6 +8,7 @@ sources = files('tests.cpp', 'st_test.cpp', 'st20_test.cpp', 'st22_test.cpp',
 
 subdir('noctx')
 sources += noctx_sources
+test_inc = include_directories('.', 'noctx')
 
 ufd_sources = files('ufd_test.cpp', 'ufd_loop_test.cpp', 'test_util.cpp')
 

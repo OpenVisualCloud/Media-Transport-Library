@@ -734,6 +734,71 @@ Usage: This utility is designed to detect the application has failed to return t
 sudo bpftrace -e 'usdt::st40:rx_mbuf_enqueue_fail { printf("%s m%d,s%d: mbuf %p enqueue fail, tmstamp:%u\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }' -p $(pidof RxTxApp)
 ```
 
+#### 2.5.6. st40p pipeline tracing
+
+The ST40 pipeline helpers (used by `RxSt40PipelineSample`, `TxSt40PipelineSample`, or any app built on `st40_pipeline_api.h`) expose their own provider to focus on frame-level callbacks across both TX and RX paths:
+
+```c
+provider st40p {
+  /* tx */
+  probe tx_frame_get(int idx, int f_idx, void* va);
+  probe tx_frame_put(int idx, int f_idx, void* va);
+  probe tx_frame_next(int idx, int f_idx);
+  probe tx_frame_done(int idx, int f_idx, uint32_t tmstamp);
+  probe tx_frame_drop(int idx, int f_idx, uint32_t tmstamp);
+  /* rx */
+  probe rx_frame_available(int idx, int f_idx, uint32_t meta_num);
+  probe rx_frame_get(int idx, int f_idx, uint32_t meta_num);
+  probe rx_frame_put(int idx, int f_idx, uint32_t meta_num);
+  /* attach to enable on-demand dumps */
+  probe rx_frame_dump(int idx, char* dump_file, uint32_t meta_num, uint32_t bytes);
+}
+```
+
+To watch for ancillary frames that arrive too late to flush, hook the TX drop probe (customize the process name for your setup):
+
+```bash
+sudo bpftrace -e 'usdt::st40p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof TxSt40PipelineSample)
+```
+
+Example output like below:
+
+```text
+09:33:12 s0: drop frame 0(timestamp:241037184)
+09:33:12 s0: drop frame 1(timestamp:241037728)
+```
+
+Typical RX-side traces (customize the process name/PID for your sample or RxTxApp process):
+
+```bash
+sudo BPFTRACE_STRLEN=256 bpftrace -e '
+usdt::st40p:rx_frame_available {
+  printf("%s rx%u: frame %u ready (meta=%u)\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg1, arg2);
+}
+usdt::st40p:rx_frame_get {
+  printf("%s rx%u: user claimed frame %u\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg1);
+}
+usdt::st40p:rx_frame_put {
+  printf("%s rx%u: frame %u returned (meta=%u)\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg1, arg2);
+}
+usdt::st40p:rx_frame_dump {
+  printf("%s rx%u: dump meta=%u bytes=%u -> %s\n",
+         strftime("%H:%M:%S", nsecs), arg0, arg2, arg3, str(arg1));
+}
+' -p $(pidof RxSt40PipelineSample)
+```
+
+`rx_frame_dump` fires only while you are attached; `arg2` is the metadata entry count and
+`arg3` is the number of payload bytes flushed to the generated file (for example
+`imtl_usdt_st40prx_s0_447_SzG5Yv.bin`). Attach `usdt::sys:log_msg` alongside these probes if
+you want the scheduler/tasklet summaries without reconfiguring the sample log level. If
+`bpftrace` reports `couldn't get argument N`, rebuild/install `libmtl.so` with
+`-Denable_usdt=true` so the refreshed probe metadata (including the extra RX meta argument and
+the renamed dump byte field) is visible system-wide.
+
 ### 2.6. st20p tracing
 
 Available probes:
@@ -822,6 +887,21 @@ Example output like below:
 09:22:58 s0: done frame 1(timestamp:3639352297)
 ```
 
+#### 2.6.5. tx_frame_drop USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st20p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```text
+09:25:04 s0: drop frame 0(timestamp:3639471120)
+09:25:04 s0: drop frame 1(timestamp:3639472621)
+```
+
 And if you want to trace all st20p tx events, use below bpftrace script.
 
 ```bash
@@ -829,11 +909,12 @@ sudo bpftrace -e '
 usdt::st20p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st20p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p,stat:%d)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2, arg3); }
 usdt::st20p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st20p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st20p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.6.5. rx_frame_get USDT
+#### 2.6.6. rx_frame_get USDT
 
 usage: customize the application process name as your setup
 
@@ -849,7 +930,7 @@ Example output like below:
 10:37:16 s0: get frame 2(addr:0x3209a17000)
 ```
 
-#### 2.6.6. rx_frame_put USDT
+#### 2.6.7. rx_frame_put USDT
 
 usage: customize the application process name as your setup
 
@@ -865,7 +946,7 @@ Example output like below:
 10:37:33 s0: put frame 2(addr:0x3209a17000)
 ```
 
-#### 2.6.7. rx_frame_available USDT
+#### 2.6.8. rx_frame_available USDT
 
 usage: customize the application process name as your setup
 
@@ -891,7 +972,7 @@ usdt::st20p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tms
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.6.8. tx_frame_dump USDT
+#### 2.6.9. tx_frame_dump USDT
 
 Usage: Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs.
 
@@ -906,7 +987,7 @@ Example output like below:
 13:26:46 s0: dump frame 0x3206217000 size 8294400 to imtl_usdt_st20ptx_s0_1920_1080_CzYDQe.yuv
 ```
 
-#### 2.6.9. rx_frame_dump USDT
+#### 2.6.10. rx_frame_dump USDT
 
 Usage: Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs.
 
@@ -1161,18 +1242,34 @@ Example output like below:
 15:05:38 s0: done frame 1(timestamp:380834179)
 ```
 
+#### 2.8.5. tx_frame_drop USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st22p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```text
+15:06:42 s0: drop frame 0(timestamp:380846682)
+15:06:42 s0: drop frame 1(timestamp:380848184)
+```
+
 And if you want to trace all st22p tx events, use below bpftrace script.
 
 ```bash
 sudo bpftrace -e '
 usdt::st22p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st22p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st22p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st22p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st22p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.8.5. rx_frame_get USDT
+#### 2.8.6. rx_frame_get USDT
 
 usage: customize the application process name as your setup
 
@@ -1188,7 +1285,7 @@ Example output like below:
 15:10:54 s0: get frame 2(addr:0x320830e600)
 ```
 
-#### 2.8.6. rx_frame_put USDT
+#### 2.8.7. rx_frame_put USDT
 
 usage: customize the application process name as your setup
 
@@ -1204,7 +1301,7 @@ Example output like below:
 15:11:08 s0: put frame 2(addr:0x320830e600)
 ```
 
-#### 2.8.7. rx_frame_available USDT
+#### 2.8.8. rx_frame_available USDT
 
 usage: customize the application process name as your setup
 
@@ -1230,7 +1327,7 @@ usdt::st22p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tms
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.8.8. tx_frame_dump USDT
+#### 2.8.9. tx_frame_dump USDT
 
 Usage: Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs.
 
@@ -1245,7 +1342,7 @@ Example output like below:
 15:22:04 s0: dump frame 0x3205b0e600 size 5184000 to imtl_usdt_st22ptx_s0_1920_1080_oOJwjO.yuv
 ```
 
-#### 2.8.9. rx_frame_dump USDT
+#### 2.8.10. rx_frame_dump USDT
 
 Usage: Attaching to this hook initiates the process, which continues to dump frames to a local file every 5 seconds until detachment occurs.
 
@@ -1260,7 +1357,7 @@ Example output like below:
 15:23:04 s0: dump frame 0x3207d0e600 size 5184000 to imtl_usdt_st22prx_s0_1920_1080_N72BCd.yuv
 ```
 
-#### 2.8.10. tx_encode_get USDT
+#### 2.8.11. tx_encode_get USDT
 
 usage: customize the application process name as your setup
 
@@ -1275,7 +1372,7 @@ Example output like below:
 16:20:25 s0: get encode 1(src:0x320610e600,dst:0x32032400fc)
 ```
 
-#### 2.8.11. tx_encode_put USDT
+#### 2.8.12. tx_encode_put USDT
 
 usage: customize the application process name as your setup
 
@@ -1299,7 +1396,7 @@ usdt::st22p:tx_encode_put { printf("%s s%d: put encode %d(src:%p,dst:%p), result
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.8.12. rx_decode_get USDT
+#### 2.8.13. rx_decode_get USDT
 
 usage: customize the application process name as your setup
 
@@ -1315,7 +1412,7 @@ Example output like below:
 16:18:43 s0: get decode 2(src:0x3208f0e600,dst:0x320830e600), codestream size: 777600
 ```
 
-#### 2.8.13. rx_decode_put USDT
+#### 2.8.14. rx_decode_put USDT
 
 usage: customize the application process name as your setup
 
@@ -1425,18 +1522,34 @@ Example output like below:
 15:51:58 s0: done frame 2(timestamp:447476096)
 ```
 
+#### 2.9.5. tx_frame_drop USDT
+
+usage: customize the application process name as your setup
+
+```bash
+sudo bpftrace -e 'usdt::st30p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }' -p $(pidof RxTxApp)
+```
+
+Example output like below:
+
+```text
+15:52:11 s0: drop frame 0(timestamp:447476608)
+15:52:11 s0: drop frame 1(timestamp:447477088)
+```
+
 And if you want to trace all st30p tx events, use below bpftrace script.
 
 ```bash
 sudo bpftrace -e '
 usdt::st30p:tx_frame_get { printf("%s s%d: get frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st30p:tx_frame_put { printf("%s s%d: put frame %d(addr:%p)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
+usdt::st30p:tx_frame_drop { printf("%s s%d: drop frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st30p:tx_frame_done { printf("%s s%d: done frame %d(timestamp:%u)\n", strftime("%H:%M:%S", nsecs), arg0, arg1, arg2); }
 usdt::st30p:tx_frame_next { printf("%s s%d: next frame %d\n", strftime("%H:%M:%S", nsecs), arg0, arg1); }
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.9.5. rx_frame_get USDT
+#### 2.9.6. rx_frame_get USDT
 
 usage: customize the application process name as your setup
 
@@ -1452,7 +1565,7 @@ Example output like below:
 15:57:50 s0: get frame 2(addr:0x32034009c0)
 ```
 
-#### 2.9.6. rx_frame_put USDT
+#### 2.9.7. rx_frame_put USDT
 
 usage: customize the application process name as your setup
 
@@ -1468,7 +1581,7 @@ Example output like below:
 15:58:14 s0: put frame 2(addr:0x32034009c0)
 ```
 
-#### 2.9.7. rx_frame_available USDT
+#### 2.9.8. rx_frame_available USDT
 
 usage: customize the application process name as your setup
 
@@ -1494,7 +1607,7 @@ usdt::st30p:rx_frame_available { printf("%s s%d: available frame %d(addr:%p, tms
 ' -p $(pidof RxTxApp)
 ```
 
-#### 2.9.8. tx_frame_dump USDT
+#### 2.9.9. tx_frame_dump USDT
 
 Usage: This utility is designed to capture and store audio frames transmitted over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file until detachment occurs.
 
@@ -1522,7 +1635,7 @@ Then use ffmpeg tools to convert ram PCM file to a wav, customize the format as 
 ffmpeg -f s24be -ar 48000 -ac 2 -i imtl_usdt_st30ptx_s0_48000_24_c2_LgAKKR.pcm dump.wav
 ```
 
-#### 2.9.9. rx_frame_dump USDT
+#### 2.9.10. rx_frame_dump USDT
 
 Usage: Similar to tx_frame_dump hook, this utility is designed to capture and store audio frames received over the network. Attaching to this hook initiates the process, which continues to dump frames to a local file until detachment occurs.
 

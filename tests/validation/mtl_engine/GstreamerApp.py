@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from typing import Optional
 
 from mtl_engine import ip_pools
 
@@ -66,6 +67,16 @@ def setup_gstreamer_plugins_paths(build):
     logging.info(f"Setting up GStreamer plugin paths: {plugin_paths}")
 
     return ":".join(plugin_paths)
+
+
+def calculate_frame_size(pixel_format: str, width: int, height: int) -> Optional[int]:
+    """Return the byte size of a single frame for formats that lack parser support."""
+
+    format_frame_size = {
+        "I422_10LE": width * height * 4,
+    }
+
+    return format_frame_size.get(pixel_format)
 
 
 def fract_format(framerate: str) -> str:
@@ -139,8 +150,22 @@ def setup_gstreamer_st20p_tx_pipeline(
             ]
         )
     elif format == "I422_10LE":
+        # Apply explicit caps instead of rawvideoparse, which lacks this format
+        caps = (
+            f"video/x-raw,format={format},height={height},"
+            f"width={width},framerate={framerate}"
+        )
+        frame_size = calculate_frame_size(format, width, height)
+        filesrc_args = ["filesrc", f"location={input_path}"]
+        if frame_size:
+            filesrc_args.append(f"blocksize={frame_size}")
         pipeline_command.extend(
-            ["filesrc", f"location={input_path}", f"blocksize={width * height * 10}"]
+            filesrc_args
+            + [
+                "!",
+                caps,
+                "!",
+            ]
         )
 
     pipeline_command.extend(["mtl_st20p_tx", f"tx-queues={tx_queues}"])
@@ -182,6 +207,7 @@ def setup_gstreamer_st20p_rx_pipeline(
     )
 
     framerate = fract_format(framerate)
+    mtl_pixel_format = map_gstreamer_to_mtl_pixel_format(format)
 
     # st20 rx GStreamer command line
     pipeline_command = [
@@ -189,7 +215,7 @@ def setup_gstreamer_st20p_rx_pipeline(
         "-v",
         "mtl_st20p_rx",
         f"rx-queues={rx_queues}",
-        f"rx-pixel-format={format}",
+        f"rx-pixel-format={mtl_pixel_format}",
         f"rx-height={height}",
         f"rx-width={width}",
         f"rx-fps={framerate}",
@@ -323,6 +349,8 @@ def setup_gstreamer_st40p_tx_pipeline(
     if tx_user_pacing:
         pipeline_command.extend(["timeinserter", "!"])
 
+    input_format = "rfc8331-packed" if tx_rfc8331 else "raw-udw"
+
     pipeline_command.extend(
         [
             "mtl_st40p_tx",
@@ -331,7 +359,7 @@ def setup_gstreamer_st40p_tx_pipeline(
             f"tx-fps={tx_fps}",
             f"tx-did={tx_did}",
             f"tx-sdid={tx_sdid}",
-            f"parse-8331-meta={'true' if tx_rfc8331 else 'false'}",
+            f"input-format={input_format}",
             f"use-pts-for-pacing={'true' if tx_user_controlled_pacing else 'false'}",
             f"pts-pacing-offset={tx_user_controlled_pacing_offset}",
         ]
@@ -353,6 +381,8 @@ def setup_gstreamer_st40p_rx_pipeline(
     rx_queues: int,
     timeout: int,
     capture_metadata: bool = False,
+    rx_interlaced: bool = False,
+    rx_framebuff_cnt: int = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -363,18 +393,27 @@ def setup_gstreamer_st40p_rx_pipeline(
         is_tx=False,
     )
 
-    # st40 rx GStreamer command line
+    # st40p rx GStreamer command line (pipeline API)
     pipeline_command = [
         "gst-launch-1.0",
         "-v",
-        "mtl_st40_rx",
+        "mtl_st40p_rx",
         f"rx-queues={rx_queues}",
         f"timeout={timeout}",
-        f"include-metadata-in-buffer={'true' if capture_metadata else 'false'}",
+        f"rx-interlaced={'true' if rx_interlaced else 'false'}",
+        # Note: mtl_st40p_rx uses pipeline API, metadata handling is built-in
     ]
+
+    if rx_framebuff_cnt is not None:
+        pipeline_command.append(f"rx-framebuff-cnt={rx_framebuff_cnt}")
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
+
+    # Switch between raw UDW dumps and RFC8331 serialization depending on caller request.
+    pipeline_command.append(
+        "output-format=" + ("rfc8331" if capture_metadata else "raw-udw")
+    )
 
     pipeline_command.extend(["!", "filesink", f"location={output_path}"])
 
@@ -707,21 +746,41 @@ def video_format_change(file_format):
         return file_format
 
 
+def map_gstreamer_to_mtl_pixel_format(file_format: str) -> str:
+    """Translate GStreamer caps names into the strings expected by the MTL plugin."""
+
+    format_map = {
+        "I422_10LE": "YUV422PLANAR10LE",
+    }
+
+    return format_map.get(file_format, file_format)
+
+
 def audio_format_change(file_format, rx_side: bool = False):
+    """Translate GST caps strings to the plugin naming conventions."""
+
+    fmt = (file_format or "").lower()
+
     if rx_side:
-        if file_format == "s8":
-            return "PCM8"
-        elif file_format == "s16le":
-            return "PCM16"
-        else:
-            return "PCM24"
-    else:
-        if file_format == "s8":
-            return 8
-        elif file_format == "s16le":
-            return 16
-        else:
-            return 24
+        rx_map = {
+            "s8": "PCM8",
+            "u8": "PCM8",
+            "s16le": "PCM16",
+            "s16be": "PCM16",
+            "s24le": "PCM24",
+            "s24be": "PCM24",
+        }
+        return rx_map.get(fmt, "PCM24")
+
+    tx_map = {
+        "s8": 8,
+        "u8": 8,
+        "s16le": 16,
+        "s16be": 16,
+        "s24le": 24,
+        "s24be": 24,
+    }
+    return tx_map.get(fmt, 24)
 
 
 def get_case_id() -> str:

@@ -422,8 +422,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];
-    if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP ||
-        pmd == MTL_PMD_RDMA_UD) {
+    if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP) {
       socket[i] = mt_socket_get_numa(kport_info.kernel_if[i]);
     } else if (pmd != MTL_PMD_DPDK_USER) {
       socket[i] = mt_dev_get_socket_id(kport_info.dpdk_port[i]);
@@ -667,6 +666,11 @@ int mtl_uninit(mtl_handle mt) {
 
 int mtl_start(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
+
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return -EINVAL;
+  }
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);

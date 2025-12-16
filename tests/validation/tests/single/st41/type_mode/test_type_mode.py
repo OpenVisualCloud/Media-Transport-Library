@@ -3,6 +3,7 @@
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
@@ -21,6 +22,7 @@ k_bit_mapping = {
 }
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [st41_files["st41_p29_long_file"]],
@@ -32,8 +34,7 @@ k_bit_mapping = {
 def test_type_mode(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     test_mode,
     type_mode,
@@ -51,12 +52,15 @@ def test_type_mode(
     dit = dit_mapping["dit0"]
 
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode=test_mode,
         payload_type=payload_type,
         type_=type_mode,

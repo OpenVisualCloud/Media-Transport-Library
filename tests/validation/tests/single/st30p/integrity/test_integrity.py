@@ -6,6 +6,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
@@ -32,7 +33,7 @@ def test_integrity(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
     prepare_ramdisk,
@@ -40,6 +41,9 @@ def test_integrity(
 ):
     media_file_info, media_file_path = media_file
 
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     # Ensure the output directory exists.
     log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
     os.makedirs(log_dir, exist_ok=True)
@@ -49,7 +53,7 @@ def test_integrity(
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="unicast",
         audio_format=media_file_info["format"],
         audio_channel=["U02"],

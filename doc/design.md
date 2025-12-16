@@ -335,6 +335,22 @@ Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
 
+#### 6.3.1. Ancillary (ST40) pipeline
+
+The same pipeline abstraction is now available for ancillary-only flows through `st40_pipeline_api.h`. It keeps the zero-copy RFC 8331 payload path but hides scheduler registration, frame queues, and pacing details behind the familiar get/put contract so applications only need to implement:
+
+```c
+st40p_tx_get_frame
+st40p_tx_put_frame
+st40p_rx_get_frame
+st40p_rx_put_frame
+```
+
+- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
+- **RX pipeline (`st40p_rx_*`)** assembles ancillary packets into user buffers and can optionally dump metadata/UDW buffers directly to files for debugging through `st40p_rx_set_dump`. Each RX callback receives both the metadata blocks and the captured payload, mirroring the TX layout to simplify round-trip validation.
+
+Reference implementations live in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. They reuse the shared `sample_util` CLI so you can swap between ST20/22/30/40 pipelines with identical arguments while testing pacing, redundancy, and USDT probes.
+
 ### 6.4. ST22 support
 
 The support for ST 2110-22 JPEG XS can be categorized into two modes: ST 2110-22 raw codestream mode and ST 2110-22 pipeline mode. The pipeline mode leverages an MTL plugin to handle the decoding/encoding between the raw video buffer and the codestream.
@@ -467,8 +483,6 @@ The MTL provides comprehensive documentation that includes reference code, demon
 FFMPEG plugin: Enhance your FFMPEG-based applications by incorporating MTL to accelerate media processing. For details please refer to [ffmpeg_plugin_guide](../ecosystem/ffmpeg_plugin/).
 
 OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software) using the MTL plugin for optimized performance. For details please refer to [obs_plugin_guide](../ecosystem/obs_mtl/).
-
-Intel® Media SDK: Leverage MTL's robust capabilities within Intel® Media SDK projects to unlock advanced media functionalities on Intel platforms. For details please refer to [Intel®_Media_SDK_guide](../ecosystem/msdk/).
 
 ### 6.15. Sample code
 

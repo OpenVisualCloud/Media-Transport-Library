@@ -9,4 +9,6 @@ sources += files(
 	'st20_pipeline_rx.c',
 	'st30_pipeline_tx.c',
 	'st30_pipeline_rx.c',
+	'st40_pipeline_tx.c',
+	'st40_pipeline_rx.c',
 )

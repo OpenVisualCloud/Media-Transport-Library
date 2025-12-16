@@ -18,7 +18,6 @@ def test_pmd_kernel_video_format(
     test_mode,
     video_format,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
 
@@ -30,7 +29,10 @@ def test_pmd_kernel_video_format(
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=["0000:4b:00.0", "kernel:eth2"],
+        nic_port_list=[
+            "0000:4b:00.0",
+            "kernel:eth2",
+        ],  # Note: keeping hardcoded for kernel socket test
         test_mode=test_mode,
         width=video_file["width"],
         height=video_file["height"],

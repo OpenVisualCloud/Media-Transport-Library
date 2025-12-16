@@ -58,12 +58,18 @@
 #define RFC_8331_PAYLOAD_HEADER_SIZE 8
 #define RFC_8331_PAYLOAD_HEADER_LOST_BITS 2
 
-#include <experimental/st40_pipeline_api.h>
+#include <mtl/st40_pipeline_api.h>
 #include <st40_api.h>
 
 #include "gst_mtl_common.h"
 
 G_BEGIN_DECLS
+
+typedef enum {
+  GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW = 0,
+  GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_PACKED,
+  GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_SIMPLIFIED,
+} GstMtlSt40pTxInputFormat;
 
 #define GST_TYPE_MTL_ST40P_TX (gst_mtl_st40p_tx_get_type())
 G_DECLARE_FINAL_TYPE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST, MTL_ST40P_TX, GstBaseSink)
@@ -84,7 +90,7 @@ struct _Gst_Mtl_St40p_Tx {
   guint sdid;
   gboolean use_pts_for_pacing;
   guint pts_for_pacing_offset;
-  gboolean parse_rfc8331_input;
+  GstMtlSt40pTxInputFormat input_format;
   guint max_combined_udw_size;
 };
 

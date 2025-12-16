@@ -3,9 +3,11 @@
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422p10le["Penguin_1080p"]],
@@ -15,8 +17,7 @@ from mtl_engine.media_files import yuv_files_422p10le
 def test_unicast(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
     prepare_ramdisk,
@@ -24,11 +25,14 @@ def test_unicast(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st22p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="unicast",
         width=media_file_info["width"],
         height=media_file_info["height"],

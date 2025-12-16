@@ -52,6 +52,13 @@ enum st30p_tx_flag {
   /** Enable the st30p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st30p_tx_set_block_timeout to customize)*/
   ST30P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+
+  /**
+   * Drop frames when the mtl reports late frames (transport can't keep up).
+   * When late frame is detected, next frame from pipeline is ommited.
+   * Untill we resume normal frame sending.
+   */
+  ST30P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(16)),
 };
 
 /** The structure info for st30 frame meta. */
@@ -84,6 +91,9 @@ struct st30_frame {
    * of received packets can be assessed by comparing 'pkts_recv[s_port]' with
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
+
+  /** TAI timestamp measured right after the first packet of the frame was received */
+  uint64_t receive_timestamp;
 
   /** priv pointer for lib, do not touch this */
   void* priv;
@@ -127,10 +137,18 @@ struct st30p_tx_ops {
   int (*notify_frame_available)(void* priv);
   /**
    * Optional. Callback when frame done.
-   * And only non-block method can be used within this callback as it run from lcore
-   * tasklet routine.
+   * If TX_FLAG_DROP_WHEN_LATE is enabled AND notify_frame_late is set,
+   * then this will be called only when notify_frame_late is NOT called.
    */
   int (*notify_frame_done)(void* priv, struct st30_frame* frame);
+  /**
+   * Optional. Callback when frame timing issues occur.
+   * If ST30P_TX_FLAG_DROP_WHEN_LATE is enabled: triggered when a frame is dropped
+   * from the pipeline due to late transmission.
+   * If ST30P_TX_FLAG_DROP_WHEN_LATE is disabled: triggered when the transport
+   * layer reports late frame delivery.
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /**
    * Optional. The rtp timestamp delta(us) to the start time of frame.

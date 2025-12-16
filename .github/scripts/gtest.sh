@@ -116,7 +116,7 @@ bind_driver_to_dpdk() {
 	sed -i "s+REPLACE_BY_CICD_TEST_PORT_2+${TEST_PORT_2}+" "$MUFD_CFG"
 	echo "Selected ports: P=$TEST_PORT_1, R=$TEST_PORT_2"
 
-	for dma_mechanism in "CBDMA" "idxd"; do
+	for dma_mechanism in "CBDMA" "idxd" "ioatdma"; do
 		TEST_DMA_PORT_P=$(dpdk-devbind.py -s | grep "$dma_mechanism" | awk '{print $1}' | shuf -n 1)
 		TEST_DMA_PORT_R=$(dpdk-devbind.py -s | grep "$dma_mechanism" | grep -v "${TEST_DMA_PORT_P}" | awk '{print $1}' | shuf -n 1)
 		if [ -n "$TEST_DMA_PORT_P" ] && [ -n "$TEST_DMA_PORT_R" ]; then
@@ -170,6 +170,8 @@ declare -a error_messages=(
 	"Error: ufd_parse_json, open json file ufd.json fail"
 	"libmtl.so: cannot open shared object file:"
 	"EAL: Cannot set up DMA remapping, error 12 (Cannot allocate memory)"
+	"Error: mt_user_params_check, same name  for port 1 and 0"
+	"Error: mt_user_params_check(1), invalid ip 0.0.0.0"
 )
 
 check_configuration_errors() {
@@ -217,7 +219,7 @@ run_test_with_retry() {
 			echo "✗ Test failed due to configuration errors: $test_name (attempt $attempt/$MAX_RETRIES)" | tee -a "$LOG_FILE"
 			return 2
 		else
-			echo "✗ Test failed: $test_name (attempt $attempt/$MAX_RETRIES) | tee -a $LOG_FILE"
+			echo "✗ Attempt failed for $test_name (attempt $attempt/$MAX_RETRIES)" | tee -a "$LOG_FILE"
 
 			kill_test_processes
 
@@ -234,7 +236,7 @@ run_test_with_retry() {
 		fi
 	done
 
-	echo "✗ Test failed after $MAX_RETRIES attempts: $test_name | tee -a $LOG_FILE"
+	echo "✗ Test failed after $MAX_RETRIES attempts: $test_name" | tee -a "$LOG_FILE"
 
 	if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
 		echo "Exiting due to test failure."
@@ -242,6 +244,7 @@ run_test_with_retry() {
 		time_taken_by_script
 		exit 1
 	fi
+	return 1
 }
 
 echo "Starting MTL test suite..."
@@ -284,7 +287,6 @@ for test_name in "${!test_cases[@]}"; do
 	echo "$test_name" "${test_cases[$test_name]}"
 	if run_test_with_retry "$test_name"; then
 		passed_tests+=("$test_name")
-		echo "✓ Test passed: $test_name"
 	elif [ $? -eq 2 ]; then
 		echo "✗ Test aborted due to configuration errors: $test_name"
 		kill_test_processes
@@ -292,7 +294,6 @@ for test_name in "${!test_cases[@]}"; do
 		exit 1
 	else
 		failed_tests+=("$test_name")
-		break
 	fi
 done
 

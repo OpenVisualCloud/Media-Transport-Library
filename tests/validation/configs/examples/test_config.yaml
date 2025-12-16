@@ -18,3 +18,4 @@ ebu_server:
   user: user
   password: password
   proxy: false
+interface_type: VF

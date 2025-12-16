@@ -49,7 +49,16 @@ struct mt_pcap* mt_pcap_open(struct mtl_main_impl* impl, enum mtl_port port, int
     mt_pcap_close(pcap);
     return NULL;
   }
-#if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
+
+#if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
+  for (int i = 0; i < mt_num_ports(impl); i++) {
+    ret = rte_pcapng_add_interface(pcap->pcapng, mt_port_id(impl, i), DLT_EN10MB, NULL,
+                                   NULL, NULL);
+    if (ret < 0) {
+      warn("%s(%d), add interface fail %d on port %d\n", __func__, fd, ret, i);
+    }
+  }
+#elif RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
   /* add all port interfaces */
   for (int i = 0; i < mt_num_ports(impl); i++) {
     ret = rte_pcapng_add_interface(pcap->pcapng, mt_port_id(impl, i), NULL, NULL, NULL);

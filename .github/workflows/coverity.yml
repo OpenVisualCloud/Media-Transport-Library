@@ -38,7 +38,7 @@ jobs:
             libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev \
             libsdl2-ttf-dev libssl-dev ca-certificates m4 clang llvm zlib1g-dev \
             libelf-dev libcap-ng-dev libcap2-bin gcc-multilib systemtap-sdt-dev ninja-build \
-            nasm librdmacm-dev wget unzip && \
+            nasm wget unzip && \
         sudo apt-get clean && \
         sudo rm -rf /var/lib/apt/lists/*
 

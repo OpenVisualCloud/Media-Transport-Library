@@ -2,9 +2,11 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file, replicas",
     [
@@ -28,8 +30,7 @@ from mtl_engine.media_files import yuv_files
 def test_virtio_user(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     replicas,
     test_config,
@@ -38,11 +39,14 @@ def test_virtio_user(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         width=media_file_info["width"],
         height=media_file_info["height"],

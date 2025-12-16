@@ -18,7 +18,6 @@ def test_kernello_mixed_format(
     test_mode,
     video_format,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
@@ -29,7 +28,10 @@ def test_kernello_mixed_format(
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=["kernel:lo", "kernel:lo"],
+        nic_port_list=[
+            "kernel:lo",
+            "kernel:lo",
+        ],  # Note: keeping hardcoded for kernel loopback test
         test_mode=test_mode,
         width=video_file["width"],
         height=video_file["height"],

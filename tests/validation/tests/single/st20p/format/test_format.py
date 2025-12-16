@@ -3,6 +3,7 @@
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 
 
@@ -16,8 +17,7 @@ from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 def test_422p10le(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
     prepare_ramdisk,
@@ -29,11 +29,14 @@ def test_422p10le(
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         width=media_file_info["width"],
         height=media_file_info["height"],
@@ -86,7 +89,13 @@ convert1_formats = dict(
 )
 @pytest.mark.parametrize("format", convert1_formats.keys())
 def test_convert_on_rx(
-    hosts, build, media, nic_port_list, test_time, format, media_file
+    hosts,
+    build,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    format,
+    media_file,
+    test_config,
 ):
     """
     Send file in YUV_422_10bit pixel formats with supported convertion on RX side
@@ -94,10 +103,13 @@ def test_convert_on_rx(
     media_file_info, media_file_path = media_file
     output_format = convert1_formats[format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         packing="GPM",
         width=media_file_info["width"],
@@ -146,8 +158,8 @@ convert2_formats = dict(
 def test_tx_rx_conversion(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
+    test_config,
     test_time,
     format,
     media_file,
@@ -158,10 +170,13 @@ def test_tx_rx_conversion(
     media_file_info, media_file_path = media_file
     text_format, transport_format, _ = convert2_formats[format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         packing="GPM",
         width=media_file_info["width"],
@@ -176,6 +191,7 @@ def test_tx_rx_conversion(
     rxtxapp.execute_test(config=config, build=build, test_time=test_time, host=host)
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422rfc10["test_8K"]],
@@ -186,8 +202,7 @@ def test_tx_rx_conversion(
 def test_formats(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     format,
     test_config,
@@ -200,11 +215,14 @@ def test_formats(
     media_file_info, media_file_path = media_file
     text_format, file_format = pixel_formats[format]
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="multicast",
         packing="GPM",
         width=media_file_info["width"],

@@ -5,9 +5,11 @@ import os
 
 import mtl_engine.media_creator as media_create
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("audio_format", ["S8", "S16BE", "S24BE"])
 @pytest.mark.parametrize("audio_channel", [1, 2, 6, 8])
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
@@ -15,7 +17,7 @@ def test_audio_format(
     hosts,
     build,
     media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     audio_format,
     audio_channel,
     audio_rate,
@@ -25,6 +27,9 @@ def test_audio_format(
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     input_file_path = os.path.join(media, "test_audio.pcm")
 
@@ -40,7 +45,7 @@ def test_audio_format(
 
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
         build=build,
-        nic_port_list=host.vfs[0],
+        nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         tx_payload_type=111,
         tx_queues=4,
@@ -51,7 +56,7 @@ def test_audio_format(
 
     rx_config = GstreamerApp.setup_gstreamer_st30_rx_pipeline(
         build=build,
-        nic_port_list=host.vfs[1],
+        nic_port_list=interfaces_list[1],
         output_path=os.path.join(media, "output_audio.pcm"),
         rx_payload_type=111,
         rx_queues=4,

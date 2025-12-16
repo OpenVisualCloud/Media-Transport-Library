@@ -913,10 +913,31 @@ static ssize_t udp_rx_dequeue(struct mudp_impl* s, void* buf, size_t len, int fl
   s->stat_pkt_dequeue++;
 
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  const size_t hdr_len = sizeof(*hdr);
+  uint32_t pkt_len = rte_pktmbuf_pkt_len(pkt);
+
+  if (pkt_len < hdr_len) {
+    err("%s(%d), invalid packet len %u < header len %zu\n", __func__, idx, pkt_len,
+        hdr_len);
+    rte_pktmbuf_free(pkt);
+    errno = EBADMSG;
+    return -1;
+  }
+
   struct rte_udp_hdr* udp = &hdr->udp;
-  void* payload = &udp[1];
-  ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
-  dbg("%s(%d), payload_len %" PRIu64 " bytes\n", __func__, idx, payload_len);
+  ssize_t payload_len = (ssize_t)ntohs(udp->dgram_len) - sizeof(*udp);
+  ssize_t payload_cap = (ssize_t)pkt_len - hdr_len;
+
+  if (payload_len < 0 || payload_len > payload_cap) {
+    err("%s(%d), invalid payload len %" PRId64 " (cap %" PRId64 ")\n", __func__, idx,
+        (int64_t)payload_len, (int64_t)payload_cap);
+    rte_pktmbuf_free(pkt);
+    errno = EBADMSG;
+    return -1;
+  }
+
+  void* payload = rte_pktmbuf_mtod_offset(pkt, void*, hdr_len);
+  dbg("%s(%d), payload_len %" PRId64 " bytes\n", __func__, idx, (int64_t)payload_len);
 
   if (payload_len <= len) {
     rte_memcpy(buf, payload, payload_len);
@@ -1002,11 +1023,32 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   s->stat_pkt_dequeue++;
 
   struct mt_udp_hdr* hdr = rte_pktmbuf_mtod(pkt, struct mt_udp_hdr*);
+  const size_t hdr_len = sizeof(*hdr);
+  uint32_t pkt_len = rte_pktmbuf_pkt_len(pkt);
+
+  if (pkt_len < hdr_len) {
+    err("%s(%d), invalid packet len %u < header len %zu\n", __func__, idx, pkt_len,
+        hdr_len);
+    rte_pktmbuf_free(pkt);
+    errno = EBADMSG;
+    return -1;
+  }
+
   struct rte_udp_hdr* udp = &hdr->udp;
-  void* payload = &udp[1];
   struct rte_ipv4_hdr* ipv4 = &hdr->ipv4;
-  ssize_t payload_len = ntohs(udp->dgram_len) - sizeof(*udp);
-  dbg("%s(%d), payload_len %" PRId64 " bytes\n", __func__, idx, payload_len);
+  ssize_t payload_len = (ssize_t)ntohs(udp->dgram_len) - sizeof(*udp);
+  ssize_t payload_cap = (ssize_t)pkt_len - hdr_len;
+
+  if (payload_len < 0 || payload_len > payload_cap) {
+    err("%s(%d), invalid payload len %" PRId64 " (cap %" PRId64 ")\n", __func__, idx,
+        (int64_t)payload_len, (int64_t)payload_cap);
+    rte_pktmbuf_free(pkt);
+    errno = EBADMSG;
+    return -1;
+  }
+
+  uint8_t* payload = rte_pktmbuf_mtod_offset(pkt, uint8_t*, hdr_len);
+  dbg("%s(%d), payload_len %" PRId64 " bytes\n", __func__, idx, (int64_t)payload_len);
 
   msg->msg_flags = 0;
 
@@ -1030,19 +1072,21 @@ static ssize_t udp_rx_msg_dequeue(struct mudp_impl* s, struct msghdr* msg, int f
   }
 
   if (msg->msg_iov) { /* Vector of data */
+    ssize_t remaining = payload_len;
     for (int i = 0; i < msg->msg_iovlen; i++) {
-      size_t clen = RTE_MIN(msg->msg_iov[i].iov_len, payload_len);
+      size_t clen = RTE_MIN(msg->msg_iov[i].iov_len, (size_t)remaining);
       rte_memcpy(msg->msg_iov[i].iov_base, payload, clen);
-      payload_len -= clen;
+      remaining -= (ssize_t)clen;
       payload += clen;
       copied += clen;
-      if (payload_len <= 0) break;
+      if (remaining <= 0) break;
     }
+    payload_len = remaining;
     s->stat_pkt_deliver++;
   }
 
   if (payload_len)
-    warn("%s(%d), %" PRIu64 " bytes not copied \n", __func__, idx, payload_len);
+    warn("%s(%d), %" PRId64 " bytes not copied \n", __func__, idx, (int64_t)payload_len);
 
   rte_pktmbuf_free(pkt);
   dbg("%s(%d), copied %" PRId64 " bytes, flags %d\n", __func__, idx, copied, flags);
