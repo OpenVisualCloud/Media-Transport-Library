@@ -194,7 +194,7 @@ def main() -> None:
     if args.output:
         output_path = args.output
     else:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H.%M")
         output_path = Path(f"MTL_test_report_{timestamp}.xlsx")
     output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
