@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
@@ -52,8 +53,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("combined_report.xlsx"),
-        help="Destination Excel file path (default: combined_report.xlsx).",
+        default=None,
+        help=(
+            "Destination Excel file path (default: MTL_test_report_<current_date>.xlsx "
+            "with current date formatted as YYYY-MM-DD_HH:MM)."
+        ),
     )
     return parser.parse_args()
 
@@ -173,7 +177,11 @@ def main() -> None:
         )
     else:
         df = build_dataframe(all_keys, parsed_data)
-    output_path = args.output
+    if args.output:
+        output_path = args.output
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H:%M")
+        output_path = Path(f"MTL_test_report_{timestamp}.xlsx")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_excel(output_path, index=False)
     print(f"Combined report written to {output_path}")
