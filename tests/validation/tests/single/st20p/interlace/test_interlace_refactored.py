@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_interlace
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -16,22 +17,25 @@ from mtl_engine.rxtxapp import RxTxApp
 def test_interlace_refactored(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
+    test_config,
     test_time,
     prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     """Test interlaced video transmission"""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     config_params = {
         "session_type": "st20p",
-        "nic_port": host.vfs[0] if host.vfs else "0000:31:01.0",
-        "nic_port_list": host.vfs,
+        "nic_port_list": interfaces_list,
         "source_ip": "192.168.17.101",
         "destination_ip": "192.168.17.102",
         "port": 20000,
@@ -50,4 +54,4 @@ def test_interlace_refactored(
 
     app.create_command(**config_params)
     actual_test_time = max(test_time, 10)
-    app.execute_test(build=build, test_time=actual_test_time, host=host)
+    app.execute_test(build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture)

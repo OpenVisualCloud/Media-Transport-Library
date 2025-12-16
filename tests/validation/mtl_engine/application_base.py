@@ -174,6 +174,7 @@ class Application(ABC):
         sleep_interval: int = 4,
         tx_first: bool = True,
         capture_cfg=None,
+        netsniff=None,
     ) -> bool:
         """Execute a prepared command (or two for dual host).
 
@@ -214,6 +215,12 @@ class Application(ABC):
                 except Exception as e:
                     logger.warning(f"capture setup failed: {e}")
             proc = self.start_process(cmd, build, test_time, host)
+            # Start netsniff capture if provided (RxTxApp-specific)
+            if netsniff and hasattr(self, "_start_netsniff_capture"):
+                try:
+                    self._start_netsniff_capture(netsniff)
+                except Exception as e:
+                    logger.warning(f"netsniff capture setup failed: {e}")
             try:
                 proc.wait(
                     timeout=(test_time or 0)
