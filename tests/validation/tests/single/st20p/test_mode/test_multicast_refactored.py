@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -20,21 +21,25 @@ from mtl_engine.rxtxapp import RxTxApp
 def test_multicast_refactored(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
+    test_config,
     test_time,
     prepare_ramdisk,
     media_file,
+    pcap_capture,
 ):
     """Test multicast transmission mode"""
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
 
     config_params = {
         "session_type": "st20p",
-        "nic_port_list": host.vfs,
+        "nic_port_list": interfaces_list,
         "destination_ip": "239.168.48.9",
         "port": 20000,
         "width": media_file_info["width"],
@@ -63,4 +68,4 @@ def test_multicast_refactored(
         actual_test_time = max(test_time, 8)
 
     app.create_command(**config_params)
-    app.execute_test(build=build, test_time=actual_test_time, host=host)
+    app.execute_test(build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture)

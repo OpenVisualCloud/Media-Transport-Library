@@ -19,32 +19,17 @@ SESSION_TYPE_MAP = {
         "st20p": "mtl_st20p",
         "st22p": "mtl_st22p",
         "st30p": "mtl_st30p",
-        "video": "rawvideo",
-        "audio": "pcm_s24le",
     },
     "gstreamer": {
         "st20p": "mtl_st20p",
         "st22p": "mtl_st22p",
         "st30p": "mtl_st30p",
-        "video": "mtl_video",
-        "audio": "mtl_audio",
     },
-}
-
-FRAMERATE_TO_VIDEO_FORMAT_MAP = {
-    "p60": "i1080p60",
-    "p59": "i1080p59",
-    "p50": "i1080p50",
-    "p30": "i1080p30",
-    "p29": "i1080p29",
-    "p25": "i1080p25",
-    "p24": "i1080p24",
-    "p23": "i1080p23",
 }
 
 # Default network configuration values
 DEFAULT_NETWORK_CONFIG = {
-    "nic_port": "0000:31:01.0",
+    "nic_port": None,
     "unicast_tx_ip": "192.168.17.101",
     "unicast_rx_ip": "192.168.17.102",
     "multicast_tx_ip": "192.168.17.101",
@@ -56,12 +41,12 @@ DEFAULT_NETWORK_CONFIG = {
 # Default port configuration by session type
 DEFAULT_PORT_CONFIG = {
     "st20p_port": 20000,
-    "st22p_port": 20000,
+    "st22p_port": 20100,
     "st30p_port": 30000,
-    "video_port": 20000,
-    "audio_port": 30000,
+    "video_port": 20200,
+    "audio_port": 30100,
     "ancillary_port": 40000,
-    "fastmetadata_port": 40000,
+    "fastmetadata_port": 40100,
 }
 
 # Default payload type configuration by session type
