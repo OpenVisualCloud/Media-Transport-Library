@@ -14,6 +14,17 @@ jobs:
           - e810
           - e810-dell
           - e830
+        dir:
+          - gstreamer
+          - kernel_socket
+          - ptp
+          - rss_mode
+          - st20p
+          - st22p
+          - st30p
+          - st41
+          - virtio_user
+          - xdp
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -81,7 +92,12 @@ jobs:
           sudo MtlManager &
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         run: |
-          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
+          tests/validation/.venv/bin/python3 -m pytest \
+            --topology_config=tests/validation/configs/topology_config.yaml \
+            --test_config=tests/validation/configs/test_config.yaml -m nightly \
+            --template=html/index.html \
+            --report=report.html \
+            tests/single/${{ matrix.dir }}
       - name: run gtest bare metal
         if: always()
         env:
