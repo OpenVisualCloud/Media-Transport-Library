@@ -119,7 +119,6 @@ jobs:
           pattern: nightly-test-report-*
           path: python-reports
           merge-multiple: false
-          if-no-files-found: error
       - name: Install report dependencies
         run: |
           python3 -m pip install --upgrade pip
