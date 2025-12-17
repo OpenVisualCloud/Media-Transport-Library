@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import logging
+from pathlib import Path
 
 import pytest
 from common.nicctl import InterfaceSetup
@@ -11,7 +12,6 @@ from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 from mtl_engine.rxtxapp import RxTxApp
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,9 @@ def test_integrity_refactored(
     )
 
     actual_test_time = max(test_time, 8)
-    app.execute_test(build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture)
+    app.execute_test(
+        build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture
+    )
 
     frame_size = calculate_yuv_frame_size(
         media_file_info["width"],
