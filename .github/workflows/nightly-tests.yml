@@ -15,16 +15,16 @@ jobs:
           - e810-dell
           - e830
         test_group:
-          - single/gstreamer/
-          - single/kernel_socket/
-          - single/ptp/
-          - single/rss_mode/
-          - single/st20p/
-          - single/st22p/
-          - single/st30p/
-          - single/st41/
-          - single/virtio_user/
-          - single/xdp/
+          - "single/gstreamer/"
+          - "single/kernel_socket/"
+          - "single/ptp/"
+          - "single/rss_mode/"
+          - "single/st20p/"
+          - "single/st22p/"
+          - "single/st30p/"
+          - "single/st41/"
+          - "single/virtio_user/"
+          - "single/xdp/"
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -111,7 +111,7 @@ jobs:
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: nightly-test-report-${{ matrix.nic }}
+          name: nightly-test-report-${{ matrix.nic }}-${{ replace(matrix.test_group, '/', '-')}}
           path: |
             report.html
       - name: "upload report gtest"
