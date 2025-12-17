@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, Tuple
 
@@ -52,8 +54,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("combined_report.xlsx"),
-        help="Destination Excel file path (default: combined_report.xlsx).",
+        default=None,
+        help=(
+            "Destination Excel file path (default: MTL_test_report_<current_date>.xlsx "
+            "with current date formatted as YYYY-MM-DD_HH-MM)."
+        ),
+    )
+    parser.add_argument(
+        "--print-path",
+        action="store_true",
+        help=(
+            "If set, print only the absolute path of the generated report to stdout."
+        ),
     )
     return parser.parse_args()
 
@@ -149,7 +161,13 @@ def main() -> None:
 
     for nic_name, report_path in reports.items():
         if not report_path.exists():
-            raise FileNotFoundError(f"Report not found for {nic_name}: {report_path}")
+            print(
+                f"Warning: Report not found for {nic_name} at {report_path}.",
+                file=sys.stderr,
+                flush=True,
+            )
+            parsed_data[nic_name] = {}
+            continue
         parsed = parse_report(report_path)
         parsed_data[nic_name] = parsed
         all_keys.update(parsed.keys())
@@ -157,7 +175,9 @@ def main() -> None:
 
     if not all_keys:
         print(
-            "Warning: No tests discovered across provided reports. Writing placeholder entry."
+            "Warning: No tests discovered across provided reports. Writing placeholder entry.",
+            file=sys.stderr,
+            flush=True,
         )
         df = pd.DataFrame(
             [
@@ -171,10 +191,18 @@ def main() -> None:
         )
     else:
         df = build_dataframe(all_keys, parsed_data)
-    output_path = args.output
+    if args.output:
+        output_path = args.output
+    else:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H.%M")
+        output_path = Path(f"MTL_test_report_{timestamp}.xlsx")
+    output_path = output_path.resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_excel(output_path, index=False)
-    print(f"Combined report written to {output_path}")
+    if args.print_path:
+        print(output_path)
+    else:
+        print(f"Combined report written to {output_path}")
 
 
 if __name__ == "__main__":
