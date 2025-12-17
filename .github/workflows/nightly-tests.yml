@@ -99,6 +99,7 @@ jobs:
             --report=report.html \
             tests/${{ matrix.dir }}
       - name: 'preparation: Compute sanitized test directory name'
+        id: sanitize-dir
         run: |
           sanitized=$(echo "${{ matrix.dir }}" | tr '/' '-')
           echo "TEST_DIR_SLUG=$sanitized" >> "$GITHUB_ENV"
@@ -115,7 +116,7 @@ jobs:
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: nightly-test-report-${{ matrix.nic }}-${{ env.TEST_DIR_SLUG }}
+          name: nightly-test-report-${{ matrix.nic }}-${{ steps.sanitize-dir.outputs.slug }}
           path: |
             report.html
       - name: "upload report gtest"
