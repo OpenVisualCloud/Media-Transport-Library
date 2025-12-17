@@ -3,6 +3,8 @@
 
 option('enable_asan', type: 'boolean', value: false, description: 'enable/disable address sanitizer, debug usage only')
 option('enable_usdt', type: 'boolean', value: true, description: 'enable/disable USDT(User Statically-Defined Tracing) support')
+option('enable_fuzzing', type: 'boolean', value: false,
+	description: 'enable libFuzzer harnesses for RX paths')
 
 option('enable_tap', type: 'boolean', value: false, description: 'enable/disable Windows TAP')
 option('dpdk_root_dir', type: 'string', value: '..\dpdk', description: 'dpdk source code root dir, for Windows')
