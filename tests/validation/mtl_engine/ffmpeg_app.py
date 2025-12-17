@@ -162,17 +162,9 @@ def execute_test(
 
         logger.info("Terminating processes...")
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
         # Wait a bit for termination
         time.sleep(2)
         # Get output after processes have been terminated
@@ -182,32 +174,16 @@ def execute_test(
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
         raise
     finally:
         # Ensure processes are terminated
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+            rx_proc.kill()
     passed = False
     match output_format:
         case "yuv":
@@ -290,11 +266,7 @@ def execute_test_rgb24(
 
         # Terminate TX process after RX completes
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
             logger.info("TX process killed")
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_proc, "TX")
@@ -302,32 +274,16 @@ def execute_test_rgb24(
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
         raise
     finally:
         # Final cleanup - ensure processes are terminated
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+            rx_proc.kill()
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -428,21 +384,13 @@ def execute_test_rgb24_multiple(
         # Terminate processes immediately on error
         for proc in [tx_1_proc, tx_2_proc, rx_proc]:
             if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
+                proc.kill()
         raise
     finally:
         # Final cleanup - ensure processes are terminated
         for proc in [tx_1_proc, tx_2_proc, rx_proc]:
             if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
+                proc.kill()
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
@@ -887,17 +835,9 @@ def execute_dual_test(
 
         logger.info("Terminating processes...")
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
         # Wait a bit for termination
         time.sleep(2)
         # Get output after processes have been terminated
@@ -907,32 +847,16 @@ def execute_dual_test(
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
         raise
     finally:
         # Ensure processes are terminated
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
     passed = False
     match output_format:
         case "yuv":
@@ -1028,11 +952,7 @@ def execute_dual_test_rgb24(
         # Terminate TX process after RX completes
         logger.info("Terminating TX process...")
         if tx_proc:
-            try:
-                tx_proc.kill()
-                logger.info("TX process killed")
-            except Exception:
-                logger.info("Could not terminate TX process")
+            tx_proc.kill()
 
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_proc, "TX")
@@ -1041,32 +961,16 @@ def execute_dual_test_rgb24(
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
         raise
     finally:
         # Final cleanup - ensure processes are terminated
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            tx_proc.kill()
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+            rx_proc.kill()
 
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
@@ -1169,11 +1073,7 @@ def execute_dual_test_rgb24_multiple(
         logger.info("Terminating TX processes...")
         for proc in [tx_1_proc, tx_2_proc]:
             if proc:
-                try:
-                    proc.kill()
-                    logger.info("TX process killed")
-                except Exception:
-                    logger.info("Could not terminate TX process")
+                proc.kill()
 
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_1_proc, "TX1")
@@ -1183,21 +1083,13 @@ def execute_dual_test_rgb24_multiple(
         # Terminate processes immediately on error
         for proc in [tx_1_proc, tx_2_proc, rx_proc]:
             if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
+                proc.kill()
         raise
     finally:
         # Final cleanup - ensure processes are terminated
         for proc in [tx_1_proc, tx_2_proc, rx_proc]:
             if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
+                proc.kill()
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
