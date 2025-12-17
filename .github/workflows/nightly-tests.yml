@@ -102,7 +102,7 @@ jobs:
         id: sanitize-dir
         run: |
           sanitized=$(echo "${{ matrix.dir }}" | tr '/' '-')
-          echo "TEST_DIR_SLUG=$sanitized" >> "$GITHUB_ENV"
+          echo "slug=$sanitized" >> "$GITHUB_OUTPUT"
       - name: run gtest bare metal
         if: false
         env:
