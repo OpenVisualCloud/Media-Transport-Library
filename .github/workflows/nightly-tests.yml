@@ -15,7 +15,16 @@ jobs:
           - e810-dell
           - e830
         test_group:
-          - gstreamer
+          - single/gstreamer/
+          - single/kernel_socket/
+          - single/ptp/
+          - single/rss_mode/
+          - single/st20p/
+          - single/st22p/
+          - single/st30p/
+          - single/st41/
+          - single/virtio_user/
+          - single/xdp/
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -90,7 +99,7 @@ jobs:
             --report=report.html \
             tests/${{ matrix.test_group }}
       - name: run gtest bare metal
-        if: false  # Disabled temporarily
+        if: false
         env:
           NIGHTLY: 1
           EXIT_ON_FAILURE: 0
