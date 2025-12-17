@@ -23,6 +23,7 @@ export PIP_BREAK_SYSTEM_PACKAGES=1
 : "${MTL_BUILD_AND_INSTALL:=0}"
 : "${MTL_BUILD_AND_INSTALL_DOCKER:=0}"
 : "${MTL_BUILD_AND_INSTALL_DOCKER_MANAGER:=0}"
+: "${MTL_BUILD_AND_INSTALL_FUZZ:=0}"
 
 # After MTL build
 : "${ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN:=0}"
@@ -346,6 +347,13 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		pushd "${root_folder}" >/dev/null || exit 1
 		./build.sh
 		popd >/dev/null
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]; then
+		echo "$STEP MTL fuzzing build and install"
+		cd "${root_folder}" || exit 1
+		MTL_BUILD_ENABLE_FUZZING=true ./build.sh release enable_fuzzing
 		STEP=$((STEP + 1))
 	fi
 
