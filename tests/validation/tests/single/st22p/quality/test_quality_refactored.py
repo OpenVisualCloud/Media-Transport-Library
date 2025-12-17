@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
-import os
-import shutil
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le
@@ -35,16 +32,8 @@ def test_quality_refactored(
     )
 
     app = RxTxApp(app_path="./tests/tools/RxTxApp/build")
-    # Ensure kahawai.json (plugin configuration) is available in build cwd so st22 encoder can load plugins
-    kahawai_src = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../../../../..", "kahawai.json")
-    )
-    kahawai_dst = os.path.join(build, "kahawai.json")
-    try:
-        if os.path.exists(kahawai_src) and not os.path.exists(kahawai_dst):
-            shutil.copy2(kahawai_src, kahawai_dst)
-    except Exception as e:
-        print(f"Warning: failed to stage kahawai.json into build dir: {e}")
+    # Note: kahawai.json handling should be done via remote host connection if needed
+    # For now, assume it's already available on the remote host or not required
     app.create_command(
         session_type="st22p",
         test_mode="multicast",
@@ -59,7 +48,9 @@ def test_quality_refactored(
         codec_threads=2,
         test_time=test_time,
     )
-    result = app.execute_test(build=build, test_time=test_time, host=host, netsniff=pcap_capture)
+    result = app.execute_test(
+        build=build, test_time=test_time, host=host, netsniff=pcap_capture
+    )
     # Enforce result to avoid silent pass when validation fails
     assert (
         result

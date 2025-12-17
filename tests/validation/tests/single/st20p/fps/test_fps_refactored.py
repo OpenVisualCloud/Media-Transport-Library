@@ -78,4 +78,6 @@ def test_fps_refactored(
     elif fps in ["p100", "p119", "p120"]:
         actual_test_time = max(test_time, 10)
 
-    app.execute_test(build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture)
+    app.execute_test(
+        build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture
+    )

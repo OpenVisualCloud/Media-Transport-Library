@@ -163,6 +163,19 @@ class Application(ABC):
             ),
         }
 
+    def prepare_execution(self, build: str, host=None, **kwargs):
+        """Hook method called before execution to perform framework-specific setup.
+
+        Subclasses can override this to write config files, set up environment, etc.
+        Default implementation does nothing.
+
+        Args:
+            build: Build directory path
+            host: Host connection object
+            **kwargs: Additional arguments passed from execute_test
+        """
+        pass
+
     def execute_test(
         self,
         build: str,
@@ -197,6 +210,14 @@ class Application(ABC):
         if not self.command:
             raise RuntimeError("create_command() must be called before execute_test()")
         framework_name = self.get_framework_name()
+
+        # Call framework-specific preparation hook
+        if not is_dual:
+            self.prepare_execution(build=build, host=host)
+        else:
+            self.prepare_execution(build=build, host=tx_host)
+            if rx_app:
+                rx_app.prepare_execution(build=build, host=rx_host)
 
         # Single-host execution
         if not is_dual:

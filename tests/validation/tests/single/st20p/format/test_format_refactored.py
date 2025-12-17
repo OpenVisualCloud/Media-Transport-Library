@@ -201,6 +201,7 @@ def test_tx_rx_conversion_refactored(
     )
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422rfc10["test_8K"]],

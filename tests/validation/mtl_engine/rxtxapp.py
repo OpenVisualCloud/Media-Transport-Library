@@ -3,14 +3,10 @@
 
 import json
 import logging
-import os
 
 from .application_base import Application
 from .config.app_mappings import APP_NAME_MAP, DEFAULT_NETWORK_CONFIG
-from .config.param_mappings import (
-    RXTXAPP_CMDLINE_PARAM_MAP,
-    RXTXAPP_CONFIG_PARAM_MAP,
-)
+from .config.param_mappings import RXTXAPP_CMDLINE_PARAM_MAP
 from .config.universal_params import UNIVERSAL_PARAMS
 
 # Create IP dictionaries for backward compatibility using DEFAULT_NETWORK_CONFIG
@@ -75,17 +71,7 @@ class RxTxApp(Application):
         cmd, cfg = self._create_rxtxapp_command_and_config()
         self.command = cmd
         self.config = cfg
-        # Write config immediately if path known
-        config_path = (
-            self.config_file_path
-            or self.universal_params.get("config_file")
-            or "config.json"
-        )
-        try:
-            with open(config_path, "w") as f:
-                json.dump(cfg, f, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to write RxTxApp config file {config_path}: {e}")
+        # Config will be written to remote host during execute_test
         return self.command, self.config
 
     def _create_rxtxapp_command_and_config(self) -> tuple:
@@ -96,13 +82,12 @@ class RxTxApp(Application):
         Returns:
             Tuple of (command_string, config_dict)
         """
-        # Use config file path from constructor or default (absolute path)
+        # Use config file path from constructor or default (relative to build dir on remote host)
         if self.config_file_path:
             config_file_path = self.config_file_path
         else:
-            config_file_path = os.path.abspath(
-                DEFAULT_NETWORK_CONFIG["default_config_file"]
-            )
+            # Use tests/config.json relative to build directory on remote host
+            config_file_path = "tests/config.json"
 
         # Build command line with all command-line parameters
         executable_path = self.get_executable_path()
@@ -490,6 +475,62 @@ class RxTxApp(Application):
             config["tx_sessions"] = []
 
         return config
+
+    def prepare_execution(self, build: str, host=None, **kwargs):
+        """Write RxTxApp JSON config file to remote host before execution."""
+        if not host:
+            raise ValueError("host required for RxTxApp config writing")
+
+        if not self.config:
+            raise RuntimeError(
+                "create_command() must be called before prepare_execution()"
+            )
+
+        # Write config file to remote host
+        remote_conn = host.connection
+        # Extract config file path from command (it's relative)
+        import re
+
+        match = re.search(r"--config_file\s+(\S+)", self.command)
+        if match:
+            config_file_relative = match.group(1)
+            # Make it absolute on remote host by joining with build directory
+            config_file_path = f"{build}/{config_file_relative}"
+        else:
+            config_file_path = f"{build}/tests/config.json"
+
+        # Write config to remote host
+        config_json = json.dumps(self.config, indent=4)
+
+        # Use heredoc to write file properly on remote host (avoids quote escaping issues)
+        try:
+            from mfd_connect import SSHConnection
+
+            if isinstance(remote_conn, SSHConnection):
+                # Write using heredoc to avoid quote escaping issues with echo
+                cmd = f"""cat > {config_file_path} << 'EOFCONFIG'
+{config_json}
+EOFCONFIG"""
+                remote_conn.execute_command(cmd)
+                logger.info(f"Wrote RxTxApp config to remote host: {config_file_path}")
+            else:
+                # For local or other connection types, use write_text
+                f = remote_conn.path(config_file_path)
+                f.write_text(config_json, encoding="utf-8")
+                logger.info(f"Wrote RxTxApp config to host: {config_file_path}")
+        except (ImportError, Exception) as e:
+            logger.warning(
+                f"Could not use SSH heredoc method ({e}), falling back to write_text"
+            )
+            # Fallback to write_text if SSH not available
+            f = remote_conn.path(config_file_path)
+            f.write_text(config_json, encoding="utf-8")
+            logger.info(f"Wrote RxTxApp config to host: {config_file_path}")
+
+        # Update command to use absolute path on remote host
+        self.command = self.command.replace(
+            f"--config_file {config_file_relative}", f"--config_file {config_file_path}"
+        )
 
     def validate_results(self) -> bool:  # type: ignore[override]
         """
