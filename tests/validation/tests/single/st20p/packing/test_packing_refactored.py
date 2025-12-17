@@ -68,4 +68,6 @@ def test_packing_refactored(
         actual_test_time = max(test_time, 8)
 
     app.create_command(**config_params)
-    app.execute_test(build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture)
+    app.execute_test(
+        build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture
+    )
