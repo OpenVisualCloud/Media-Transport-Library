@@ -1,12 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
-import os
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le
 from mtl_engine.rxtxapp import RxTxApp
-from pathlib import Path
 
 
 @pytest.mark.nightly

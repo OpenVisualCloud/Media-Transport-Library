@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
-import os
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_interlace
 from mtl_engine.rxtxapp import RxTxApp
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     list(yuv_files_interlace.values()),
