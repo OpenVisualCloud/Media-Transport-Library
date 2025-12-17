@@ -15,16 +15,7 @@ jobs:
           - e810-dell
           - e830
         test_group:
-          - "single/gstreamer/"
-          - "single/kernel_socket/"
-          - "single/ptp/"
-          - "single/rss_mode/"
-          - "single/st20p/"
-          - "single/st22p/"
-          - "single/st30p/"
-          - "single/st41/"
-          - "single/virtio_user/"
-          - "single/xdp/"
+          - gstreamer
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
