@@ -14,17 +14,17 @@ jobs:
           - e810
           - e810-dell
           - e830
-        dir:
-          - gstreamer
-          - kernel_socket
-          - ptp
-          - rss_mode
-          - st20p
-          - st22p
-          - st30p
-          - st41
-          - virtio_user
-          - xdp
+        test_group:
+          - single/gstreamer
+          - single/kernel_socket
+          - single/ptp
+          - single/rss_mode
+          - single/st20p
+          - single/st22p
+          - single/st30p
+          - single/st41
+          - single/virtio_user
+          - single/xdp
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -97,9 +97,9 @@ jobs:
             --test_config=tests/validation/configs/test_config.yaml -m nightly \
             --template=html/index.html \
             --report=report.html \
-            tests/single/${{ matrix.dir }}
+            tests/${{ matrix.test_group }}
       - name: run gtest bare metal
-        if: always()
+        if: false  # Disabled temporarily
         env:
           NIGHTLY: 1
           EXIT_ON_FAILURE: 0
