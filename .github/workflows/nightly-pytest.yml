@@ -14,6 +14,22 @@ jobs:
           - e810
           - e810-dell
           - e830
+        dir:
+          - dma
+          - ffmpeg
+          - gstreamer
+          - kernel_socket
+          - performance
+          - ptp
+          - rss_mode
+          - rx_timing
+          - st20p
+          - st22p
+          - st30p
+          - st41
+          - udp
+          - virtio_user
+          - xdp
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720
@@ -67,43 +83,20 @@ jobs:
         run: |
           sudo MtlManager &
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
+        working-directory: ./tests/validation
         run: |
-          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
+          .venv/bin/python3 -m pytest \
+            --test_config=./configs/test_config.yaml \
+            --topology_config=./configs/topology_config.yaml \
+            -m nightly \
+            --template=html/index.html \
+            --report=report.html
+            "./tests/single/${{ matrix.dir }}"
       - name: "upload report python"
         if: always()
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: nightly-test-report-${{ matrix.nic }}
+          name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: |
             report.html
-  aggregate-python-reports:
-    needs: run-pytest
-    if: ${{ always() }}
-    runs-on: ubuntu-22.04
-    steps:
-      - name: 'preparation: Checkout MTL'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Download python report artifacts
-        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
-        with:
-          pattern: nightly-test-report-*
-          path: python-reports
-          merge-multiple: false
-          if-no-files-found: error
-      - name: Install report dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install pandas beautifulsoup4 openpyxl
-      - name: Combine python reports
-        run: |
-          python3 .github/scripts/combine_reports.py \
-            --report E810=python-reports/nightly-test-report-e810/report.html \
-            --report "E810-Dell=python-reports/nightly-test-report-e810-dell/report.html" \
-            --report E830=python-reports/nightly-test-report-e830/report.html \
-            --output python-reports/combined_report.xlsx
-      - name: Upload combined python report
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: nightly-python-combined-report
-          path: python-reports/combined_report.xlsx
