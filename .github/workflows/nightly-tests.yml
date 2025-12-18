@@ -58,24 +58,11 @@ jobs:
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
             --key_path ${{ secrets.RUNNER_KEY_PATH }}
-      - name: 'preparation: Evaluate chosen validation-test-port-p and validation-test-port-r'
-        run: |
-          eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
-          eval "export TEST_PORT_R=TEST_VF_PORT_P_1"
-          echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_P=${TEST_PORT_P}"
-          echo "TEST_PORT_R=${TEST_PORT_R}"
       - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
-      - name: 'preparation: Create VFs'
-        run: |
-          sudo rmmod irdma || true
-          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
