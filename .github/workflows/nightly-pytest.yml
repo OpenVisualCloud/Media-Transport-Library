@@ -1,4 +1,4 @@
-name: nightly-tests-bare-metal
+name: nightly-pytest
 on:
   # allow manually trigger
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 jobs:
-  run-nightly-tests:
+  run-pytest:
     strategy:
       matrix:
         nic:
@@ -69,14 +69,6 @@ jobs:
       - name: 'execution: Run nightly-bare-metal tests in virtual environment'
         run: |
           tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m nightly  --template=html/index.html --report=report.html
-      - name: run gtest bare metal
-        if: always()
-        env:
-          NIGHTLY: 1
-          EXIT_ON_FAILURE: 0
-          LOG_FILE: "${{ github.workspace }}/gtest.log"
-        run: |
-          sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
       - name: "upload report python"
         if: always()
         id: upload-report
@@ -85,16 +77,8 @@ jobs:
           name: nightly-test-report-${{ matrix.nic }}
           path: |
             report.html
-      - name: "upload report gtest"
-        if: always()
-        id: upload-report-gtest
-        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
-        with:
-          name: nightly-gtest-report-${{ matrix.nic }}
-          path: |
-            gtest.log
   aggregate-python-reports:
-    needs: run-nightly-tests
+    needs: run-pytest
     if: ${{ always() }}
     runs-on: ubuntu-22.04
     steps:
