@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
     indirect=["media_file"],
     ids=[
         "PCM8",
-        "PCM16",
+        pytest.param("PCM16", marks=pytest.mark.smoke),
         "PCM24",
     ],
 )
