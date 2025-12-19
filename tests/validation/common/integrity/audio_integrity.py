@@ -46,17 +46,34 @@ class AudioFileIntegritor(AudioIntegritor):
         )
         src_chunk_sums = self.src_chunk_sums
         out_chunk_sums = calculate_chunk_hashes(out_url, self.frame_size)
+
+        src_frames = len(src_chunk_sums)
+        out_frames = len(out_chunk_sums)
+
+        # In some pipelines the input is looped and transmitted multiple times.
+        # In that case the output may contain multiple repetitions of the source.
+        # We only validate the first `src_frames` frames and ignore any trailing frames.
+        if out_frames > src_frames:
+            self.logger.info(
+                f"Output contains {out_frames} frames; source contains {src_frames} frames. "
+                f"Ignoring {out_frames - src_frames} trailing frames (looped output)."
+            )
+
+        frames_to_check = min(src_frames, out_frames)
         bad_frames = 0
-        for idx, chunk_sum in enumerate(out_chunk_sums):
-            if idx >= len(src_chunk_sums) or chunk_sum != src_chunk_sums[idx]:
+        for idx in range(frames_to_check):
+            if out_chunk_sums[idx] != src_chunk_sums[idx]:
                 self.logger.error(f"Bad audio frame at index {idx} in {out_url}")
                 bad_frames += 1
         if bad_frames:
             self.logger.error(
-                f"Received {bad_frames} bad frames out of {len(out_chunk_sums)} checked."
+                f"Received {bad_frames} bad frames out of {frames_to_check} checked."
             )
             return False
-        self.logger.info(f"All {len(out_chunk_sums)} frames in {out_url} are correct.")
+
+        self.logger.info(
+            f"All {frames_to_check} checked frames in {out_url} are correct."
+        )
         return True
 
 

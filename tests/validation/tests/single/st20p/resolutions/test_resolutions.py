@@ -12,9 +12,19 @@ pytestmark = pytest.mark.verified
 @pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
-    list(yuv_files_422rfc10.values()),
+    [
+        pytest.param(yuv_files_422rfc10["Penguin_1080p"], marks=pytest.mark.smoke),
+        *[
+            yuv_files_422rfc10[k]
+            for k in yuv_files_422rfc10.keys()
+            if k != "Penguin_1080p"
+        ],
+    ],
     indirect=["media_file"],
-    ids=list(yuv_files_422rfc10.keys()),
+    ids=[
+        "Penguin_1080p",
+        *[k for k in yuv_files_422rfc10.keys() if k != "Penguin_1080p"],
+    ],
 )
 def test_resolutions(
     hosts,

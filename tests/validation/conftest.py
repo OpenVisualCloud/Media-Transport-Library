@@ -42,6 +42,59 @@ logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
 
+def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
+    def _pci_device_id(nic) -> str:
+        """Return lowercased PCI vendor:device identifier (e.g., '8086:1592')."""
+        pci_device = getattr(nic, "pci_device", None)
+        if pci_device is None:
+            return ""
+
+        vendor_id = getattr(pci_device, "vendor_id", None)
+        device_id = getattr(pci_device, "device_id", None)
+        if vendor_id is None or device_id is None:
+            return ""
+
+        return f"{vendor_id}:{device_id}".lower()
+
+    sniff_interface = capture_cfg.get("sniff_interface")
+    if sniff_interface:
+        return str(sniff_interface)
+
+    sniff_interface_index = capture_cfg.get("sniff_interface_index")
+    if sniff_interface_index is not None:
+        return host.network_interfaces[int(sniff_interface_index)].name
+
+    sniff_pci_device = capture_cfg.get("sniff_pci_device")
+    if sniff_pci_device:
+        target = str(sniff_pci_device).lower()
+
+        direct_matches = [
+            nic for nic in host.network_interfaces if target == _pci_device_id(nic)
+        ]
+        if direct_matches:
+            return (
+                direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]
+            ).name
+
+        available = []
+        for nic in host.network_interfaces:
+            pci_addr = getattr(getattr(nic, "pci_address", None), "lspci", None)
+            available.append(f"{nic.name} ({pci_addr})")
+        raise RuntimeError(
+            f"capture_cfg.sniff_pci_device={sniff_pci_device} not found on host {host.name}. "
+            f"Available interfaces: {', '.join(available)}"
+        )
+
+    # Default behavior: capture on 2nd PF.
+    if len(host.network_interfaces) < 2:
+        raise RuntimeError(
+            f"Host {host.name} has less than 2 network interfaces; "
+            f"Cannot select 2nd PF for capture. Add more interfaces to config or turn off capture."
+        )
+
+    return host.network_interfaces[1].name
+
+
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_makereport(item, call):
     # execute all other hooks to obtain the report object
@@ -318,7 +371,7 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             host=host,
             test_name=test_name,
             pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-            interface=host.network_interfaces[0].name,
+            interface=_select_sniff_interface_name(host, capture_cfg),
             silent=capture_cfg.get("silent", True),
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
@@ -339,7 +392,7 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             f" --ip {ebu_ip}"
             f" --user {ebu_login}"
             f" --password {ebu_passwd}"
-            f" --pcap {capturer.pcap_file}{proxy_cmd}",
+            f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
             cwd=f"{str(mtl_path)}",
         )
         if compliance_upl.return_code != 0:

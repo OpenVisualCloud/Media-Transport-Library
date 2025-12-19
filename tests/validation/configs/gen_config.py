@@ -3,7 +3,24 @@ import argparse
 import yaml
 
 
-def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
+def gen_test_config(
+    session_id: int,
+    build: str,
+    mtl_path: str,
+    pci_device: str,
+    ebu_ip: str,
+    ebu_user: str,
+    ebu_password: str,
+) -> str:
+    # Support comma-separated PCI devices for multiple interfaces.
+    # The capture sniff interface must be explicitly provided as the second device.
+    pci_devices = [dev.strip() for dev in pci_device.split(",") if dev.strip()]
+    if len(pci_devices) < 2:
+        raise ValueError(
+            "At least two PCI devices are required (e.g., '0000:4b:00.0,0000:4b:00.1'); "
+            "the second device is used as sniff_pci_device"
+        )
+
     test_config = {
         "session_id": session_id,
         "build": build,
@@ -11,14 +28,19 @@ def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
         "media_path": "/mnt/media",
         "ramdisk": {
             "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 32},
-            "pcap": {"mountpoint": "/mnt/ramdisk/pcap", "size_gib": 768},
+            "tmpfs_size_gib": 12,
+            "pcap_dir": "/mnt/ramdisk/pcap",
         },
-        "compliance": False,
-        "capture_cfg": {"enable": False, "pcap_dir": "/mnt/ramdisk/pcap"},
+        "compliance": True,
+        "capture_cfg": {
+            "enable": True,
+            "pcap_dir": "/mnt/ramdisk/pcap",
+            "sniff_pci_device": pci_devices[1],
+        },
         "ebu_server": {
-            "ebu_ip": "ebu_ip",
-            "user": "user",
-            "password": "password",
+            "ebu_ip": ebu_ip,
+            "user": ebu_user,
+            "password": ebu_password,
             "proxy": False,
         },
     }
@@ -95,8 +117,26 @@ def main() -> None:
         "--pci_device",
         type=str,
         required=True,
-        help="specify PCI ID of the NIC (comma-separated for multiple interfaces, e.g., \
-            '8086:1592')",
+        help="specify PCI BDF(s) of the NIC (comma-separated for multiple interfaces, e.g., \
+            '0000:4b:00.0,0000:4b:00.1'); the second device is used for capture sniffing",
+    )
+    parser.add_argument(
+        "--ebu_ip",
+        type=str,
+        required=True,
+        help="EBU LIST server IP/hostname (RUNNER_EBU_LIST_IP)",
+    )
+    parser.add_argument(
+        "--ebu_user",
+        type=str,
+        required=True,
+        help="EBU LIST username (RUNNER_EBU_LIST_USER)",
+    )
+    parser.add_argument(
+        "--ebu_password",
+        type=str,
+        required=True,
+        help="EBU LIST password (RUNNER_EBU_LIST_PASSWORD)",
     )
     parser.add_argument(
         "--ip_address",
@@ -125,12 +165,22 @@ def main() -> None:
     args = parser.parse_args()
     if args.password == "None" and args.key_path == "None":
         parser.error("one of the arguments --password --key_path is required")
-    with open("test_config.yaml", "w") as file:
-        file.write(
-            gen_test_config(
-                session_id=args.session_id, build=args.build, mtl_path=args.mtl_path
-            )
+
+    try:
+        test_config_yaml = gen_test_config(
+            session_id=args.session_id,
+            build=args.build,
+            mtl_path=args.mtl_path,
+            pci_device=args.pci_device,
+            ebu_ip=args.ebu_ip,
+            ebu_user=args.ebu_user,
+            ebu_password=args.ebu_password,
         )
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    with open("test_config.yaml", "w") as file:
+        file.write(test_config_yaml)
     with open("topology_config.yaml", "w") as file:
         file.write(
             gen_topology_config(

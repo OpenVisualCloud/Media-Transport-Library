@@ -73,12 +73,21 @@ jobs:
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }}
+            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
       - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
+          sudo killall -SIGINT phc2sys || true
+      - name: Setup capture PTP device and phc2sys
+        uses: ./.github/actions/setup-capture-phc2sys
+        with:
+          pci_device: ${{ env.PCI_DEVICE }}
+          mtl_github_workflow: ${{ github.workflow }}:${{ matrix.nic }}
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &

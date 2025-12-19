@@ -67,11 +67,11 @@ jobs:
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           if [ "${{ matrix.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
-            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
@@ -84,13 +84,23 @@ jobs:
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }}
+            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
       - name: 'preparation: Kill MtlManager and pytest routines'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
+          sudo killall -SIGINT phc2sys || true
+      - name: Setup capture PTP device and phc2sys
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        uses: ./.github/actions/setup-capture-phc2sys
+        with:
+          pci_device: ${{ env.PCI_DEVICE }}
+          mtl_github_workflow: ${{ github.workflow }}:${{ matrix.nic }}
       - name: 'preparation: Start MtlManager at background'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
