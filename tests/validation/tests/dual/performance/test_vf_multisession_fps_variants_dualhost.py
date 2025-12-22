@@ -17,8 +17,8 @@ Single-Core Tests: All sessions pinned to single core using sch_session_quota
 Multi-Core Tests: Sessions distributed across multiple cores (no sch_session_quota)
 
 Network Configuration:
-- Host 1 (measured): 192.168.30.101 (TX) or 192.168.31.101 (RX)
-- Host 2 (companion): 192.168.30.102 (TX) or 192.168.31.102 (RX)
+- remote_183 (measured): 192.168.30.101  
+- localhost (companion): 192.168.30.102
 """
 
 import logging
@@ -80,22 +80,82 @@ MEDIA_CONFIGS = {
 }
 
 
-def get_dsa_device_for_nic(nic_pci_address: str) -> str:
+def get_dsa_device_for_nic(nic_pci_address: str, host=None, test_config: dict = None) -> str:
     """
     Get the appropriate DSA device for a given NIC based on NUMA node.
 
+    Reads DSA device from test_config's host_dsa_devices (if available), otherwise falls back
+    to default DSA_DEVICES from app_mappings.py.
+    
+    For hosts with single NUMA node in config, uses that device regardless of NIC bus.
+    For hosts with multiple NUMA nodes, calculates based on PCI bus number.
+
     Args:
         nic_pci_address: PCI address of the NIC (e.g., "0000:18:01.0" or "0000:af:01.0")
+        host: Optional Host object
+        test_config: Optional test configuration dict containing host_dsa_devices
 
     Returns:
         DSA device PCI address for the appropriate NUMA node
     """
     try:
+        # Try to get DSA from test_config's host_dsa_devices first
+        if test_config and host and "host_dsa_devices" in test_config:
+            host_dsa = test_config["host_dsa_devices"].get(host.name, {})
+            if host_dsa:
+                # If only one NUMA node configured, use it regardless of NIC bus
+                if len(host_dsa) == 1:
+                    numa_node = list(host_dsa.keys())[0]
+                    dsa_device = host_dsa[numa_node]
+                    logger.info(f"Using single DSA device from test_config for {host.name}: {dsa_device} ({numa_node})")
+                    return dsa_device
+                
+                # Multiple NUMA nodes: calculate based on PCI bus
+                bus = int(nic_pci_address.split(":")[1], 16)
+                numa_node = "numa0" if bus < 0x80 else "numa1"
+                if numa_node in host_dsa:
+                    logger.info(f"Using DSA device from test_config for {host.name}: {host_dsa[numa_node]} for {numa_node}")
+                    return host_dsa[numa_node]
+        
+        # Fall back to default DSA_DEVICES from app_mappings.py
         bus = int(nic_pci_address.split(":")[1], 16)
-        return DSA_DEVICES["numa0"] if bus < 0x80 else DSA_DEVICES["numa1"]
+        numa_node = "numa0" if bus < 0x80 else "numa1"
+        logger.info(f"Using default DSA device from app_mappings: {DSA_DEVICES[numa_node]} for {numa_node}")
+        return DSA_DEVICES[numa_node]
     except (ValueError, IndexError):
         logger.warning(f"Could not determine NUMA node for {nic_pci_address}, defaulting to NUMA 0")
-        return DSA_DEVICES["numa0"]
+        # Get from test_config if available, otherwise use fallback
+        if test_config and host and "host_dsa_devices" in test_config:
+            host_dsa = test_config["host_dsa_devices"].get(host.name, {})
+            # Return first available NUMA node or numa0 fallback
+            if host_dsa:
+                return list(host_dsa.values())[0]
+            return host_dsa.get("numa0", "0000:6a:01.0")
+        return DSA_DEVICES.get("numa0", "0000:6a:01.0")
+
+
+def get_host_build_path(host, default_build: str, test_config: dict = None) -> str:
+    """
+    Get the MTL build path for a host from test_config.
+    
+    Args:
+        host: Host object
+        default_build: Default build path to use as fallback
+        test_config: Optional test configuration dict containing host_mtl_paths
+        
+    Returns:
+        MTL build path for the host
+    """
+    # Try to get from test_config's host_mtl_paths
+    if test_config and host and "host_mtl_paths" in test_config:
+        host_path = test_config["host_mtl_paths"].get(host.name)
+        if host_path:
+            logger.debug(f"Using MTL path from test_config for {host.name}: {host_path}")
+            return host_path
+    
+    # Fall back to default build path
+    logger.debug(f"Using default build path for {host.name}: {default_build}")
+    return default_build
 
 
 def display_session_results(direction: str, dsa_label: str, num_sessions: int, fps: float,
@@ -170,7 +230,7 @@ def display_session_results(direction: str, dsa_label: str, num_sessions: int, f
 @pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize("num_sessions", [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32], ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"])
-def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa) -> None:
+def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config) -> None:
     """
     Test TX multi-session performance with different FPS values across two hosts (single-core pinning).
 
@@ -190,34 +250,39 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
     if len(hosts) < 2:
         pytest.skip("Test requires at least 2 hosts for dual-host testing")
 
-    host1 = list(hosts.values())[0]  # Measured TX host
-    host2 = list(hosts.values())[1]  # Companion RX host
+    # Host order matches topology_config: [0]=localhost (companion), [1]=remote_183 (measured)
+    remote_183 = list(hosts.values())[1]  # Measured TX host
+    localhost = list(hosts.values())[0]  # Companion RX host
 
-    if not hasattr(host1, "vfs") or len(host1.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host1 (measured)")
+    if not hasattr(remote_183, "vfs") or len(remote_183.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on remote_183")
     
-    if not hasattr(host2, "vfs") or len(host2.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host2 (companion)")
+    if not hasattr(localhost, "vfs") or len(localhost.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on localhost")
 
     media_config = MEDIA_CONFIGS[fps]
     media_file_path = f"{media}/{media_config['filename']}"
 
-    tx_vf = host1.vfs[0]  # TX VF on measured host
-    rx_vf = host2.vfs[0]  # RX VF on companion host
+    tx_vf = remote_183.vfs[0]  # TX VF on measured host
+    rx_vf = localhost.vfs[0]  # RX VF on companion host
 
     # Configure DSA if enabled (only for measured host)
-    dsa_device = get_dsa_device_for_nic(tx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(tx_vf, host=remote_183, test_config=test_config) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
     logger.info("=" * 80)
     logger.info(f"Dual-Host VF TX FPS Variant{dsa_label}: {num_sessions} sessions @ {fps} fps")
-    logger.info(f"Host1 (measured) TX={tx_vf}, Host2 (companion) RX={rx_vf}")
+    logger.info(f"remote_183 (measured) TX={tx_vf}, localhost (companion) RX={rx_vf}")
     logger.info(f"Media: {media_config['filename']}")
     logger.info("=" * 80)
 
-    # Start companion RX on host2
-    rx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+    # Get build paths from topology config for each host
+    build_remote_183 = get_host_build_path(remote_183, build, test_config)
+    build_localhost = get_host_build_path(localhost, build, test_config)
+
+    # Start companion RX on localhost
+    rx_app = RxTxApp(app_path=f"{build_localhost}/tests/tools/RxTxApp/build")
 
     rx_app.create_command(
         session_type="st20p",
@@ -237,21 +302,21 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
         test_time=test_time + 10,
     )
 
-    companion_log = f"{build}/tests/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_rx_companion.log"
-    logger.info(f"Starting companion RX on host2, logs: {companion_log}")
+    companion_log = f"{build_localhost}/tests/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_rx_companion.log"
+    logger.info(f"Starting companion RX on localhost, logs: {companion_log}")
     logger.info(f"Companion RX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
-    
-    # Write RX config to host2 before starting
-    rx_app.prepare_execution(build=build, host=host2)
-    
-    rx_process = host2.connection.start_process(
-        f"{rx_app.command} > {companion_log} 2>&1", cwd=build, shell=True
+
+    # Write RX config to localhost before starting
+    rx_app.prepare_execution(build=build_localhost, host=localhost)
+
+    rx_process = localhost.connection.start_process(
+        f"{rx_app.command} > {companion_log} 2>&1", cwd=build_localhost, shell=True
     )
     time.sleep(10)
 
     try:
-        # Configure TX with optional DSA on host1
-        tx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+        # Configure TX with optional DSA on remote_183
+        tx_app = RxTxApp(app_path=f"{build_remote_183}/tests/tools/RxTxApp/build")
 
         tx_kwargs = {
             "session_type": "st20p",
@@ -275,16 +340,14 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
             tx_kwargs["dma_dev"] = dsa_device
 
         tx_app.create_command(**tx_kwargs)
-        
-        # Write TX config to host1 before running
-        tx_app.prepare_execution(build=build, host=host1)
-        
-        # Add static MAC address for destination RX (bypass ARP) - remote VF0 MAC
-        tx_app.command += " --p_tx_dst_mac 76:5c:c6:55:54:71"
 
-        logger.info(f"Running TX on host1{dsa_label}")
+        # Write TX config to remote_183 before running
+        tx_app.prepare_execution(build=build_remote_183, host=remote_183)
 
-        result = run(tx_app.command, cwd=build, timeout=test_time + 60, testcmd=True, host=host1)
+
+        logger.info(f"Running TX on remote_183{dsa_label}")
+
+        result = run(tx_app.command, cwd=build_remote_183, timeout=test_time + 60, testcmd=True, host=remote_183)
 
         # Log TX output to the main test log
         logger.info("=" * 80)
@@ -298,16 +361,16 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
             logger.warning("No TX output captured!")
         logger.info("=" * 80)
 
-        # Retrieve companion RX logs from host2 before validation
+        # Retrieve companion RX logs from localhost before validation
         logger.info("=" * 80)
         logger.info(f"Companion RX Process Logs (Host2)")
         logger.info("=" * 80)
-        get_companion_log_summary(host2, companion_log, max_lines=50)
+        get_companion_log_summary(localhost, companion_log, max_lines=50)
         logger.info("=" * 80)
 
         if result.return_code != 0:
-            log_fail(f"TX process{dsa_label} on host1 failed with exit code {result.return_code}")
-            pytest.fail(f"TX process{dsa_label} on host1 failed with exit code {result.return_code}")
+            log_fail(f"TX process{dsa_label} on remote_183 failed with exit code {result.return_code}")
+            pytest.fail(f"TX process{dsa_label} on remote_183 failed with exit code {result.return_code}")
 
         # Validate TX FPS achievement from TX logs (skip first warmup period)
         success, successful_count, fps_details = monitor_tx_fps(
@@ -322,15 +385,15 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
         # Wait for companion to finish writing (it runs test_time+10, so should be done)
         time.sleep(5)
 
-        # Get RX frame counts from companion RX log on host2 (measure from beginning)
+        # Get RX frame counts from companion RX log on localhost (measure from beginning)
         try:
-            companion_result = host2.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_result = localhost.connection.execute_command(f"cat {companion_log}", shell=True)
             rx_frame_counts = monitor_rx_frames_simple(
                 companion_result.stdout.splitlines() if companion_result.stdout else [],
                 num_sessions
             )
         except Exception as e:
-            logger.warning(f"Could not read companion log from host2 for frame counts: {e}")
+            logger.warning(f"Could not read companion log from localhost for frame counts: {e}")
             rx_frame_counts = {}
 
         # Display session results
@@ -351,7 +414,7 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
                 time.sleep(2)
                 rx_process.kill()
         except Exception as e:
-            logger.warning(f"Error stopping companion RX on host2: {e}")
+            logger.warning(f"Error stopping companion RX on localhost: {e}")
 
 
 @pytest.mark.nightly
@@ -359,7 +422,7 @@ def test_dualhost_vf_tx_fps_variants_single_core(hosts, build, media, test_time,
 @pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize("num_sessions", [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32], ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"])
-def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa) -> None:
+def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config) -> None:
     """
     Test RX multi-session performance with different FPS values across two hosts (single-core pinning).
 
@@ -379,34 +442,39 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
     if len(hosts) < 2:
         pytest.skip("Test requires at least 2 hosts for dual-host testing")
 
-    host1 = list(hosts.values())[0]  # Measured RX host
-    host2 = list(hosts.values())[1]  # Companion TX host
+    # Host order matches topology_config: [0]=localhost (companion), [1]=remote_183 (measured)
+    remote_183 = list(hosts.values())[1]  # Measured RX host
+    localhost = list(hosts.values())[0]  # Companion TX host
 
-    if not hasattr(host1, "vfs") or len(host1.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host1 (measured)")
+    if not hasattr(remote_183, "vfs") or len(remote_183.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on remote_183")
     
-    if not hasattr(host2, "vfs") or len(host2.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host2 (companion)")
+    if not hasattr(localhost, "vfs") or len(localhost.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on localhost")
 
     media_config = MEDIA_CONFIGS[fps]
     media_file_path = f"{media}/{media_config['filename']}"
 
-    rx_vf = host1.vfs[0]  # RX VF on measured host
-    tx_vf = host2.vfs[0]  # TX VF on companion host
+    rx_vf = remote_183.vfs[0]  # RX VF on measured host
+    tx_vf = localhost.vfs[0]  # TX VF on companion host
 
     # Configure DSA if enabled (only for measured host)
-    dsa_device = get_dsa_device_for_nic(rx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(rx_vf, host=remote_183, test_config=test_config) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
     logger.info("=" * 80)
     logger.info(f"Dual-Host VF RX FPS Variant{dsa_label}: {num_sessions} sessions @ {fps} fps")
-    logger.info(f"Host1 (measured) RX={rx_vf}, Host2 (companion) TX={tx_vf}")
+    logger.info(f"remote_183 (measured) RX={rx_vf}, localhost (companion) TX={tx_vf}")
     logger.info(f"Media: {media_config['filename']}")
     logger.info("=" * 80)
 
-    # Start companion TX on host2
-    tx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+    # Get build paths from topology config for each host
+    build_remote_183 = get_host_build_path(remote_183, build, test_config)
+    build_localhost = get_host_build_path(localhost, build, test_config)
+
+    # Start companion TX on localhost
+    tx_app = RxTxApp(app_path=f"{build_localhost}/tests/tools/RxTxApp/build")
 
     tx_app.create_command(
         session_type="st20p",
@@ -418,32 +486,43 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
         framerate=f"p{fps}",
         input_file=media_file_path,
         nic_port=tx_vf,
-        source_ip="192.168.31.101",
-        destination_ip="192.168.31.102",
+        source_ip="192.168.30.101",
+        destination_ip="192.168.30.102",
         port=20000,
         replicas=num_sessions,
         sch_session_quota=60,
         test_time=test_time + 10,
     )
 
-    companion_log = f"{build}/tests/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_tx_companion.log"
-    logger.info(f"Starting companion TX on host2, logs: {companion_log}")
+    companion_log = f"{build_localhost}/tests/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_tx_companion.log"
+    logger.info(f"Starting companion TX on localhost, logs: {companion_log}")
     logger.info(f"Companion TX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
     
-    # Write TX config to host2 before starting
-    tx_app.prepare_execution(build=build, host=host2)
+    # Write TX config to localhost before starting
+    tx_app.prepare_execution(build=build_localhost, host=localhost)
     
-    # Add static MAC address for destination RX (bypass ARP) - localhost VF0 MAC
-    tx_app.command += " --p_tx_dst_mac ea:38:9d:86:3a:c6"
+    # Get RX VF MAC address dynamically from remote_183
+    rx_vf_mac = rx_vf.replace("0000:", "").replace(":", "/").replace("/", ":")  # PCI to interface name
+    try:
+        mac_result = remote_183.connection.execute_command(
+            f"cat /sys/bus/pci/devices/{rx_vf}/net/*/address 2>/dev/null || echo ''",
+            shell=True
+        )
+        rx_mac = mac_result.stdout.strip() if mac_result.stdout else None
+        if rx_mac:
+            tx_app.command += f" --p_tx_dst_mac {rx_mac}"
+            logger.info(f"Using RX VF MAC: {rx_mac} for TX destination")
+    except Exception as e:
+        logger.warning(f"Could not get RX VF MAC, relying on ARP: {e}")
     
-    tx_process = host2.connection.start_process(
-        f"{tx_app.command} > {companion_log} 2>&1", cwd=build, shell=True
+    tx_process = localhost.connection.start_process(
+        f"{tx_app.command} > {companion_log} 2>&1", cwd=build_localhost, shell=True
     )
     time.sleep(10)
 
     try:
-        # Configure RX with optional DSA on host1
-        rx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+        # Configure RX with optional DSA on remote_183
+        rx_app = RxTxApp(app_path=f"{build_remote_183}/tests/tools/RxTxApp/build")
 
         rx_kwargs = {
             "session_type": "st20p",
@@ -455,8 +534,8 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
             "framerate": f"p{fps}",
             "output_file": "/dev/null",
             "nic_port": rx_vf,
-            "source_ip": "192.168.31.101",
-            "destination_ip": "192.168.31.102",
+            "source_ip": "192.168.30.101",
+            "destination_ip": "192.168.30.102",
             "port": 20000,
             "replicas": num_sessions,
             "sch_session_quota": 60,
@@ -468,12 +547,12 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
 
         rx_app.create_command(**rx_kwargs)
         
-        # Write RX config to host1 before running
-        rx_app.prepare_execution(build=build, host=host1)
+        # Write RX config to remote_183 before running
+        rx_app.prepare_execution(build=build_remote_183, host=remote_183)
 
-        logger.info(f"Running RX on host1{dsa_label}")
+        logger.info(f"Running RX on remote_183{dsa_label}")
 
-        result = run(rx_app.command, cwd=build, timeout=test_time + 60, testcmd=True, host=host1)
+        result = run(rx_app.command, cwd=build_remote_183, timeout=test_time + 60, testcmd=True, host=remote_183)
 
         # Log RX output to the main test log
         logger.info("=" * 80)
@@ -487,16 +566,16 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
             logger.warning("No RX output captured!")
         logger.info("=" * 80)
 
-        # Retrieve companion TX logs from host2 before validation
+        # Retrieve companion TX logs from localhost before validation
         logger.info("=" * 80)
         logger.info(f"Companion TX Process Logs (Host2)")
         logger.info("=" * 80)
-        get_companion_log_summary(host2, companion_log, max_lines=50)
+        get_companion_log_summary(localhost, companion_log, max_lines=50)
         logger.info("=" * 80)
 
         if result.return_code != 0:
-            log_fail(f"RX process{dsa_label} on host1 failed with exit code {result.return_code}")
-            pytest.fail(f"RX process{dsa_label} on host1 failed with exit code {result.return_code}")
+            log_fail(f"RX process{dsa_label} on remote_183 failed with exit code {result.return_code}")
+            pytest.fail(f"RX process{dsa_label} on remote_183 failed with exit code {result.return_code}")
 
         # Validate RX FPS achievement from RX logs (skip first warmup period)
         rx_fps_success, rx_fps_successful_count, rx_fps_details = monitor_rx_fps(
@@ -511,10 +590,10 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
         # Wait for companion to finish writing (it runs test_time+10, so should be done)
         time.sleep(5)
 
-        # Get TX frame counts from companion TX log on host2 (measure from beginning)
+        # Get TX frame counts from companion TX log on localhost (measure from beginning)
         tx_frame_counts = {}
         try:
-            companion_result = host2.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_result = localhost.connection.execute_command(f"cat {companion_log}", shell=True)
             companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
 
             # Get TX frame counts (from beginning)
@@ -522,7 +601,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
                 companion_lines, num_sessions
             )
         except Exception as e:
-            logger.warning(f"Could not read companion log from host2 for frame counts: {e}")
+            logger.warning(f"Could not read companion log from localhost for frame counts: {e}")
 
         # Display session results
         display_session_results("RX", dsa_label, num_sessions, fps, rx_fps_details,
@@ -543,7 +622,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
                 time.sleep(2)
                 tx_process.kill()
         except Exception as e:
-            logger.warning(f"Error stopping companion TX on host2: {e}")
+            logger.warning(f"Error stopping companion TX on localhost: {e}")
 
 
 @pytest.mark.nightly
@@ -551,7 +630,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(hosts, build, media, test_time,
 @pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize("num_sessions", [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32], ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"])
-def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa) -> None:
+def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config) -> None:
     """
     Test TX multi-session performance with different FPS values across two hosts (multi-core distribution).
 
@@ -572,34 +651,39 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
     if len(hosts) < 2:
         pytest.skip("Test requires at least 2 hosts for dual-host testing")
 
-    host1 = list(hosts.values())[0]  # Measured TX host
-    host2 = list(hosts.values())[1]  # Companion RX host
+    # Host order matches topology_config: [0]=localhost (companion), [1]=remote_183 (measured)
+    remote_183 = list(hosts.values())[1]  # Measured TX host
+    localhost = list(hosts.values())[0]  # Companion RX host
 
-    if not hasattr(host1, "vfs") or len(host1.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host1 (measured)")
+    if not hasattr(remote_183, "vfs") or len(remote_183.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on remote_183")
     
-    if not hasattr(host2, "vfs") or len(host2.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host2 (companion)")
+    if not hasattr(localhost, "vfs") or len(localhost.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on localhost")
 
     media_config = MEDIA_CONFIGS[fps]
     media_file_path = f"{media}/{media_config['filename']}"
 
-    tx_vf = host1.vfs[0]  # TX VF on measured host
-    rx_vf = host2.vfs[0]  # RX VF on companion host
+    tx_vf = remote_183.vfs[0]  # TX VF on measured host
+    rx_vf = localhost.vfs[0]  # RX VF on companion host
 
     # Configure DSA if enabled (only for measured host)
-    dsa_device = get_dsa_device_for_nic(tx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(tx_vf, host=remote_183, test_config=test_config) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
     logger.info("=" * 80)
     logger.info(f"Dual-Host VF TX FPS Variant (Multi-Core){dsa_label}: {num_sessions} sessions @ {fps} fps")
-    logger.info(f"Host1 (measured) TX={tx_vf}, Host2 (companion) RX={rx_vf}")
+    logger.info(f"remote_183 (measured) TX={tx_vf}, localhost (companion) RX={rx_vf}")
     logger.info(f"Media: {media_config['filename']}")
     logger.info("=" * 80)
 
-    # Start companion RX on host2
-    rx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+    # Get build paths from topology config for each host
+    build_remote_183 = get_host_build_path(remote_183, build, test_config)
+    build_localhost = get_host_build_path(localhost, build, test_config)
+
+    # Start companion RX on localhost
+    rx_app = RxTxApp(app_path=f"{build_localhost}/tests/tools/RxTxApp/build")
 
     rx_app.create_command(
         session_type="st20p",
@@ -618,21 +702,21 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
         test_time=test_time + 10,
     )
 
-    companion_log = f"{build}/tests/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_rx_companion.log"
-    logger.info(f"Starting companion RX on host2, logs: {companion_log}")
+    companion_log = f"{build_localhost}/tests/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_rx_companion.log"
+    logger.info(f"Starting companion RX on localhost, logs: {companion_log}")
     logger.info(f"Companion RX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
     
-    # Write RX config to host2 before starting
-    rx_app.prepare_execution(build=build, host=host2)
+    # Write RX config to localhost before starting
+    rx_app.prepare_execution(build=build_localhost, host=localhost)
     
-    rx_process = host2.connection.start_process(
-        f"{rx_app.command} > {companion_log} 2>&1", cwd=build, shell=True
+    rx_process = localhost.connection.start_process(
+        f"{rx_app.command} > {companion_log} 2>&1", cwd=build_localhost, shell=True
     )
     time.sleep(10)
 
     try:
-        # Configure TX with optional DSA on host1 (no sch_session_quota for multi-core)
-        tx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+        # Configure TX with optional DSA on remote_183 (no sch_session_quota for multi-core)
+        tx_app = RxTxApp(app_path=f"{build_remote_183}/tests/tools/RxTxApp/build")
 
         tx_kwargs = {
             "session_type": "st20p",
@@ -656,12 +740,12 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
 
         tx_app.create_command(**tx_kwargs)
         
-        # Write TX config to host1 before running
-        tx_app.prepare_execution(build=build, host=host1)
+        # Write TX config to remote_183 before running
+        tx_app.prepare_execution(build=build_remote_183, host=remote_183)
 
-        logger.info(f"Running TX on host1 (Multi-Core){dsa_label}")
+        logger.info(f"Running TX on remote_183 (Multi-Core){dsa_label}")
 
-        result = run(tx_app.command, cwd=build, timeout=test_time + 60, testcmd=True, host=host1)
+        result = run(tx_app.command, cwd=build_remote_183, timeout=test_time + 60, testcmd=True, host=remote_183)
 
         # Log TX output to the main test log
         logger.info("=" * 80)
@@ -675,16 +759,16 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
             logger.warning("No TX output captured!")
         logger.info("=" * 80)
 
-        # Retrieve companion RX logs from host2 before validation
+        # Retrieve companion RX logs from localhost before validation
         logger.info("=" * 80)
         logger.info(f"Companion RX Process Logs (Host2)")
         logger.info("=" * 80)
-        get_companion_log_summary(host2, companion_log, max_lines=50)
+        get_companion_log_summary(localhost, companion_log, max_lines=50)
         logger.info("=" * 80)
 
         if result.return_code != 0:
-            log_fail(f"TX process (Multi-Core){dsa_label} on host1 failed with exit code {result.return_code}")
-            pytest.fail(f"TX process (Multi-Core){dsa_label} on host1 failed with exit code {result.return_code}")
+            log_fail(f"TX process (Multi-Core){dsa_label} on remote_183 failed with exit code {result.return_code}")
+            pytest.fail(f"TX process (Multi-Core){dsa_label} on remote_183 failed with exit code {result.return_code}")
 
         # Validate TX FPS achievement from TX logs (skip first warmup period)
         success, successful_count, fps_details = monitor_tx_fps(
@@ -699,15 +783,15 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
         # Wait for companion to finish writing (it runs test_time+10, so should be done)
         time.sleep(5)
 
-        # Get RX frame counts from companion RX log on host2 (measure from beginning)
+        # Get RX frame counts from companion RX log on localhost (measure from beginning)
         try:
-            companion_result = host2.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_result = localhost.connection.execute_command(f"cat {companion_log}", shell=True)
             rx_frame_counts = monitor_rx_frames_simple(
                 companion_result.stdout.splitlines() if companion_result.stdout else [],
                 num_sessions
             )
         except Exception as e:
-            logger.warning(f"Could not read companion log from host2 for frame counts: {e}")
+            logger.warning(f"Could not read companion log from localhost for frame counts: {e}")
             rx_frame_counts = {}
 
         # Display session results
@@ -728,7 +812,7 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
                 time.sleep(2)
                 rx_process.kill()
         except Exception as e:
-            logger.warning(f"Error stopping companion RX on host2: {e}")
+            logger.warning(f"Error stopping companion RX on localhost: {e}")
 
 
 @pytest.mark.nightly
@@ -736,7 +820,7 @@ def test_dualhost_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, 
 @pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize("num_sessions", [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32], ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"])
-def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa) -> None:
+def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config) -> None:
     """
     Test RX multi-session performance with different FPS values across two hosts (multi-core distribution).
 
@@ -757,34 +841,39 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
     if len(hosts) < 2:
         pytest.skip("Test requires at least 2 hosts for dual-host testing")
 
-    host1 = list(hosts.values())[0]  # Measured RX host
-    host2 = list(hosts.values())[1]  # Companion TX host
+    # Host order matches topology_config: [0]=localhost (companion), [1]=remote_183 (measured)
+    remote_183 = list(hosts.values())[1]  # Measured RX host
+    localhost = list(hosts.values())[0]  # Companion TX host
 
-    if not hasattr(host1, "vfs") or len(host1.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host1 (measured)")
+    if not hasattr(remote_183, "vfs") or len(remote_183.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on remote_183")
     
-    if not hasattr(host2, "vfs") or len(host2.vfs) < 1:
-        pytest.skip("Test requires at least 1 VF on host2 (companion)")
+    if not hasattr(localhost, "vfs") or len(localhost.vfs) < 1:
+        pytest.skip("Test requires at least 1 VF on localhost")
 
     media_config = MEDIA_CONFIGS[fps]
     media_file_path = f"{media}/{media_config['filename']}"
 
-    rx_vf = host1.vfs[0]  # RX VF on measured host
-    tx_vf = host2.vfs[0]  # TX VF on companion host
+    rx_vf = remote_183.vfs[0]  # RX VF on measured host
+    tx_vf = localhost.vfs[0]  # TX VF on companion host
 
     # Configure DSA if enabled (only for measured host)
-    dsa_device = get_dsa_device_for_nic(rx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(rx_vf, host=remote_183, test_config=test_config) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
     logger.info("=" * 80)
     logger.info(f"Dual-Host VF RX FPS Variant (Multi-Core){dsa_label}: {num_sessions} sessions @ {fps} fps")
-    logger.info(f"Host1 (measured) RX={rx_vf}, Host2 (companion) TX={tx_vf}")
+    logger.info(f"remote_183 (measured) RX={rx_vf}, localhost (companion) TX={tx_vf}")
     logger.info(f"Media: {media_config['filename']}")
     logger.info("=" * 80)
 
-    # Start companion TX on host2
-    tx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+    # Get build paths from topology config for each host
+    build_remote_183 = get_host_build_path(remote_183, build, test_config)
+    build_localhost = get_host_build_path(localhost, build, test_config)
+
+    # Start companion TX on localhost
+    tx_app = RxTxApp(app_path=f"{build_localhost}/tests/tools/RxTxApp/build")
 
     tx_app.create_command(
         session_type="st20p",
@@ -796,28 +885,28 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
         framerate=f"p{fps}",
         input_file=media_file_path,
         nic_port=tx_vf,
-        source_ip="192.168.31.101",
-        destination_ip="192.168.31.102",
+        source_ip="192.168.30.101",
+        destination_ip="192.168.30.102",
         port=20000,
         replicas=num_sessions,
         test_time=test_time + 10,
     )
 
-    companion_log = f"{build}/tests/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_tx_companion.log"
-    logger.info(f"Starting companion TX on host2, logs: {companion_log}")
+    companion_log = f"{build_localhost}/tests/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_tx_companion.log"
+    logger.info(f"Starting companion TX on localhost, logs: {companion_log}")
     logger.info(f"Companion TX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
     
-    # Write TX config to host2 before starting
-    tx_app.prepare_execution(build=build, host=host2)
+    # Write TX config to localhost before starting
+    tx_app.prepare_execution(build=build_localhost, host=localhost)
     
-    tx_process = host2.connection.start_process(
-        f"{tx_app.command} > {companion_log} 2>&1", cwd=build, shell=True
+    tx_process = localhost.connection.start_process(
+        f"{tx_app.command} > {companion_log} 2>&1", cwd=build_localhost, shell=True
     )
     time.sleep(10)
 
     try:
-        # Configure RX with optional DSA on host1 (no sch_session_quota for multi-core)
-        rx_app = RxTxApp(app_path=f"{build}/tests/tools/RxTxApp/build")
+        # Configure RX with optional DSA on remote_183 (no sch_session_quota for multi-core)
+        rx_app = RxTxApp(app_path=f"{build_remote_183}/tests/tools/RxTxApp/build")
 
         rx_kwargs = {
             "session_type": "st20p",
@@ -829,8 +918,8 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
             "framerate": f"p{fps}",
             "output_file": "/dev/null",
             "nic_port": rx_vf,
-            "source_ip": "192.168.31.101",
-            "destination_ip": "192.168.31.102",
+            "source_ip": "192.168.30.101",
+            "destination_ip": "192.168.30.102",
             "port": 20000,
             "replicas": num_sessions,
             "test_time": test_time,
@@ -841,12 +930,12 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
 
         rx_app.create_command(**rx_kwargs)
         
-        # Write RX config to host1 before running
-        rx_app.prepare_execution(build=build, host=host1)
+        # Write RX config to remote_183 before running
+        rx_app.prepare_execution(build=build_remote_183, host=remote_183)
 
-        logger.info(f"Running RX on host1 (Multi-Core){dsa_label}")
+        logger.info(f"Running RX on remote_183 (Multi-Core){dsa_label}")
 
-        result = run(rx_app.command, cwd=build, timeout=test_time + 60, testcmd=True, host=host1)
+        result = run(rx_app.command, cwd=build_remote_183, timeout=test_time + 60, testcmd=True, host=remote_183)
 
         # Log RX output to the main test log
         logger.info("=" * 80)
@@ -860,16 +949,16 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
             logger.warning("No RX output captured!")
         logger.info("=" * 80)
 
-        # Retrieve companion TX logs from host2 before validation
+        # Retrieve companion TX logs from localhost before validation
         logger.info("=" * 80)
         logger.info(f"Companion TX Process Logs (Host2)")
         logger.info("=" * 80)
-        get_companion_log_summary(host2, companion_log, max_lines=50)
+        get_companion_log_summary(localhost, companion_log, max_lines=50)
         logger.info("=" * 80)
 
         if result.return_code != 0:
-            log_fail(f"RX process (Multi-Core){dsa_label} on host1 failed with exit code {result.return_code}")
-            pytest.fail(f"RX process (Multi-Core){dsa_label} on host1 failed with exit code {result.return_code}")
+            log_fail(f"RX process (Multi-Core){dsa_label} on remote_183 failed with exit code {result.return_code}")
+            pytest.fail(f"RX process (Multi-Core){dsa_label} on remote_183 failed with exit code {result.return_code}")
 
         # Validate RX FPS achievement from RX logs (skip first warmup period)
         rx_fps_success, rx_fps_successful_count, rx_fps_details = monitor_rx_fps(
@@ -884,10 +973,10 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
         # Wait for companion to finish writing (it runs test_time+10, so should be done)
         time.sleep(5)
 
-        # Get TX frame counts from companion TX log on host2 (measure from beginning)
+        # Get TX frame counts from companion TX log on localhost (measure from beginning)
         tx_frame_counts = {}
         try:
-            companion_result = host2.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_result = localhost.connection.execute_command(f"cat {companion_log}", shell=True)
             companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
 
             # Get TX frame counts (from beginning)
@@ -895,7 +984,7 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
                 companion_lines, num_sessions
             )
         except Exception as e:
-            logger.warning(f"Could not read companion log from host2 for frame counts: {e}")
+            logger.warning(f"Could not read companion log from localhost for frame counts: {e}")
 
         # Display session results
         display_session_results("RX", dsa_label, num_sessions, fps, rx_fps_details,
@@ -916,4 +1005,4 @@ def test_dualhost_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, 
                 time.sleep(2)
                 tx_process.kill()
         except Exception as e:
-            logger.warning(f"Error stopping companion TX on host2: {e}")
+            logger.warning(f"Error stopping companion TX on localhost: {e}")

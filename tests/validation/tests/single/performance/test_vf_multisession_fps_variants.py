@@ -75,22 +75,37 @@ MEDIA_CONFIGS = {
 }
 
 
-def get_dsa_device_for_nic(nic_pci_address: str) -> str:
+def get_dsa_device_for_nic(nic_pci_address: str, host=None) -> str:
     """
     Get the appropriate DSA device for a given NIC based on NUMA node.
 
+    Reads DSA device from host's topology config (if available), otherwise falls back
+    to default DSA_DEVICES from app_mappings.py.
+
     Args:
         nic_pci_address: PCI address of the NIC (e.g., "0000:18:01.0" or "0000:af:01.0")
+        host: Optional Host object with topology config containing dsa_devices
 
     Returns:
         DSA device PCI address for the appropriate NUMA node
     """
     try:
         bus = int(nic_pci_address.split(":")[1], 16)
-        return DSA_DEVICES["numa0"] if bus < 0x80 else DSA_DEVICES["numa1"]
+        numa_node = "numa0" if bus < 0x80 else "numa1"
+        
+        # Try to get DSA from host's topology config first
+        if host and hasattr(host, 'topology') and hasattr(host.topology, 'dsa_devices'):
+            dsa_devices = host.topology.dsa_devices
+            if dsa_devices and numa_node in dsa_devices:
+                logger.info(f"Using DSA device from topology config: {dsa_devices[numa_node]} for {numa_node}")
+                return dsa_devices[numa_node]
+        
+        # Fall back to default DSA_DEVICES from app_mappings.py
+        logger.info(f"Using default DSA device from app_mappings: {DSA_DEVICES[numa_node]} for {numa_node}")
+        return DSA_DEVICES[numa_node]
     except (ValueError, IndexError):
         logger.warning(f"Could not determine NUMA node for {nic_pci_address}, defaulting to NUMA 0")
-        return DSA_DEVICES["numa0"]
+        return DSA_DEVICES.get("numa0", "0000:6a:01.0")
 
 
 @pytest.mark.nightly
@@ -124,7 +139,7 @@ def test_vf_tx_fps_variants_single_core(hosts, build, media, test_time, nic_port
     rx_vf = host.vfs[1]
 
     # Configure DSA if enabled
-    dsa_device = get_dsa_device_for_nic(tx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(tx_vf, host=host) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
@@ -292,7 +307,7 @@ def test_vf_rx_fps_variants_single_core(hosts, build, media, test_time, nic_port
     tx_vf = host.vfs[1]
 
     # Configure DSA if enabled
-    dsa_device = get_dsa_device_for_nic(rx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(rx_vf, host=host) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
@@ -465,7 +480,7 @@ def test_vf_tx_fps_variants_multi_core(hosts, build, media, test_time, nic_port_
     rx_vf = host.vfs[1]
 
     # Configure DSA if enabled
-    dsa_device = get_dsa_device_for_nic(tx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(tx_vf, host=host) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
@@ -633,7 +648,7 @@ def test_vf_rx_fps_variants_multi_core(hosts, build, media, test_time, nic_port_
     tx_vf = host.vfs[1]
 
     # Configure DSA if enabled
-    dsa_device = get_dsa_device_for_nic(rx_vf) if use_dsa else None
+    dsa_device = get_dsa_device_for_nic(rx_vf, host=host) if use_dsa else None
     dsa_suffix = "_dsa" if use_dsa else ""
     dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
 
