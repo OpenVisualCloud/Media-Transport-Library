@@ -2,59 +2,14 @@ name: Build
 runs:
   using: composite
   steps:
-    - name: 'preparation: Checkout openh264'
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        repository: 'cisco/openh264'
-        ref: 'openh264v2.4.0'
-        path: 'openh264'
-    - name: 'preparation: Checkout FFmpeg'
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        repository: 'FFmpeg/FFmpeg'
-        ref: 'release/7.0'
-        path: 'ffmpeg'
-    - name: 'configuration: Install the build dependency'
-      run: |
-        sudo apt update
-        sudo apt-get remove -y pipenv || true
-        sudo apt-get install -y \
-            git gcc meson tar zip \
-            pkg-config \
-            python3 \
-            python3-pyelftools \
-            python3-virtualenv \
-            python3-pip \
-            libnuma-dev \
-            libjson-c-dev \
-            libpcap-dev \
-            libgtest-dev \
-            libsdl2-dev \
-            libsdl2-ttf-dev \
-            libssl-dev \
-            systemtap-sdt-dev \
-            libbpf-dev \
-            libelf1 \
-            gstreamer1.0-plugins-base \
-            gstreamer1.0-plugins-good \
-            gstreamer1.0-tools \
-            gstreamer1.0-libav \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            patch \
-            unzip
+    - name: Setup environment and build
       shell: bash
-    - name: 'installation: Build mtl'
-      run: |
-        ./build.sh
-        sudo ldconfig
-      shell: bash
-    - name: 'installation: Build FFmpeg'
-      working-directory: ecosystem/ffmpeg_plugin
-      run: ./build.sh
-      shell: bash
-    - name: 'installation: Build GStreamer'
-      working-directory: ecosystem/gstreamer_plugin
-      run: |
-        ./build.sh
-      shell: bash
+      env:
+        SETUP_BUILD_AND_INSTALL_DPDK: '0'
+        SETUP_BUILD_AND_INSTALL_ICE_DRIVER: '0'
+        SETUP_BUILD_AND_INSTALL_EBPF_XDP: '0'
+        SETUP_BUILD_AND_INSTALL_GPU_DIRECT: '0'
+        MTL_BUILD_AND_INSTALL: '1'
+        ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: '1'
+        ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: '1'
+      run: bash .github/scripts/setup_environment.sh
