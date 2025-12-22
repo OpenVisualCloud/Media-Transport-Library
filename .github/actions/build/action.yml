@@ -1,4 +1,5 @@
 name: Build
+description: Build MTL and ecosystem plugins
 runs:
   using: composite
   steps:
@@ -16,6 +17,32 @@ runs:
         path: 'ffmpeg'
     - name: 'configuration: Install the build dependency'
       run: |
+        set -euo pipefail
+
+        # Self-hosted runners can keep dpkg state between jobs. If `ntp` is half-configured,
+        # any subsequent apt operation can fail with: "dpkg returned an error code (1)".
+        # Also, avoid starting services during package install (and especially avoid time-sync
+        # daemons fighting over UDP/123).
+        sudo tee /usr/sbin/policy-rc.d >/dev/null <<'EOF'
+        #!/bin/sh
+        exit 101
+        EOF
+        sudo chmod +x /usr/sbin/policy-rc.d
+
+        sudo systemctl stop ntp 2>/dev/null || true
+        sudo systemctl disable ntp 2>/dev/null || true
+        sudo systemctl stop systemd-timesyncd 2>/dev/null || true
+        sudo systemctl stop chrony 2>/dev/null || true
+        sudo systemctl stop chronyd 2>/dev/null || true
+
+        if dpkg-query -W -f='${Status}' ntp 2>/dev/null | grep -q '^install'; then
+          sudo dpkg --remove --force-remove-reinstreq ntp 2>/dev/null || true
+          sudo apt-get remove --purge -y ntp || true
+        fi
+
+        sudo dpkg --configure -a || true
+        sudo apt-get -f install -y || true
+
         sudo apt update
         sudo apt-get remove -y pipenv || true
         sudo apt-get install -y \
@@ -43,6 +70,8 @@ runs:
             libgstreamer-plugins-base1.0-dev \
             patch \
             unzip
+
+          sudo rm -f /usr/sbin/policy-rc.d
       shell: bash
     - name: 'installation: Build mtl'
       run: |

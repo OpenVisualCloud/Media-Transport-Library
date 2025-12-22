@@ -3,7 +3,15 @@ import argparse
 import yaml
 
 
-def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
+def gen_test_config(
+    session_id: int,
+    build: str,
+    mtl_path: str,
+    pci_device: str,
+    ebu_ip: str,
+    ebu_user: str,
+    ebu_password: str,
+) -> str:
     test_config = {
         "session_id": session_id,
         "build": build,
@@ -11,14 +19,19 @@ def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
         "media_path": "/mnt/media",
         "ramdisk": {
             "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 32},
-            "pcap": {"mountpoint": "/mnt/ramdisk/pcap", "size_gib": 768},
+            "tmpfs_size_gib": 12,
+            "pcap_dir": "/mnt/ramdisk/pcap",
         },
-        "compliance": False,
-        "capture_cfg": {"enable": False, "pcap_dir": "/mnt/ramdisk/pcap"},
+        "compliance": True,
+        "capture_cfg": {
+            "enable": True,
+            "pcap_dir": "/mnt/ramdisk/pcap",
+            "sniff_pci_device": pci_device,
+        },
         "ebu_server": {
-            "ebu_ip": "ebu_ip",
-            "user": "user",
-            "password": "password",
+            "ebu_ip": ebu_ip,
+            "user": ebu_user,
+            "password": ebu_password,
             "proxy": False,
         },
     }
@@ -39,6 +52,10 @@ def gen_topology_config(
                     {
                         "pci_device": pci_device,
                         "interface_index": 0,
+                    },
+                    {
+                        "pci_device": pci_device,
+                        "interface_index": 1,
                     }
                 ],
                 "connections": [
@@ -92,6 +109,24 @@ def main() -> None:
         help="specify PCI ID of the NIC",
     )
     parser.add_argument(
+        "--ebu_ip",
+        type=str,
+        required=True,
+        help="EBU LIST server IP/hostname (RUNNER_EBU_LIST_IP)",
+    )
+    parser.add_argument(
+        "--ebu_user",
+        type=str,
+        required=True,
+        help="EBU LIST username (RUNNER_EBU_LIST_USER)",
+    )
+    parser.add_argument(
+        "--ebu_password",
+        type=str,
+        required=True,
+        help="EBU LIST password (RUNNER_EBU_LIST_PASSWORD)",
+    )
+    parser.add_argument(
         "--ip_address",
         type=str,
         required=True,
@@ -121,7 +156,13 @@ def main() -> None:
     with open("test_config.yaml", "w") as file:
         file.write(
             gen_test_config(
-                session_id=args.session_id, build=args.build, mtl_path=args.mtl_path
+                session_id=args.session_id,
+                build=args.build,
+                mtl_path=args.mtl_path,
+                pci_device=args.pci_device,
+                ebu_ip=args.ebu_ip,
+                ebu_user=args.ebu_user,
+                ebu_password=args.ebu_password,
             )
         )
     with open("topology_config.yaml", "w") as file:

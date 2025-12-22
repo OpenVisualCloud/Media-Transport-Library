@@ -374,7 +374,7 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             f" --ip {ebu_ip}"
             f" --user {ebu_login}"
             f" --password {ebu_passwd}"
-            f" --pcap {capturer.pcap_file}{proxy_cmd}",
+            f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
             cwd=f"{str(mtl_path)}",
         )
         if compliance_upl.return_code != 0:
