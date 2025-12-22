@@ -5,6 +5,7 @@
 import datetime
 import logging
 import os
+import re
 import shutil
 import time
 from typing import Any, Dict
@@ -40,6 +41,71 @@ from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
+
+
+def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
+    sniff_interface = capture_cfg.get("sniff_interface")
+    if sniff_interface:
+        return str(sniff_interface)
+
+    sniff_interface_index = capture_cfg.get("sniff_interface_index")
+    if sniff_interface_index is not None:
+        return host.network_interfaces[int(sniff_interface_index)].name
+
+    sniff_pci_device = capture_cfg.get("sniff_pci_device")
+    if sniff_pci_device:
+        target = str(sniff_pci_device).lower()
+
+        direct_matches = [
+            nic
+            for nic in host.network_interfaces
+            if str(getattr(nic, "pci_device", "")).lower() == target
+        ]
+        if direct_matches:
+            return (direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]).name
+
+        lspci_matches = []
+
+        for nic in host.network_interfaces:
+            pci_addr = getattr(getattr(nic, "pci_address", None), "lspci", None)
+            if not pci_addr:
+                continue
+            try:
+                res = host.connection.execute_command(f"lspci -n -s {pci_addr}")
+            except ConnectionCalledProcessError:
+                continue
+            match = re.search(r"\b([0-9a-fA-F]{4}:[0-9a-fA-F]{4})\b", res.stdout)
+            if match and match.group(1).lower() == target:
+                lspci_matches.append(nic)
+
+        if lspci_matches:
+            return (lspci_matches[1] if len(lspci_matches) > 1 else lspci_matches[0]).name
+
+        available = []
+        for nic in host.network_interfaces:
+            pci_addr = getattr(getattr(nic, "pci_address", None), "lspci", None)
+            available.append(f"{nic.name} ({pci_addr})")
+        raise RuntimeError(
+            f"capture_cfg.sniff_pci_device={sniff_pci_device} not found on host {host.name}. "
+            f"Available interfaces: {', '.join(available)}"
+        )
+
+    # Default behavior: capture on 2nd PF of the same NIC (if present), else on the first interface.
+    if len(host.network_interfaces) < 2:
+        return host.network_interfaces[0].name
+
+    primary = host.network_interfaces[0]
+    primary_pci_device = str(getattr(primary, "pci_device", "")).lower()
+    if primary_pci_device:
+        same_device = [
+            nic
+            for nic in host.network_interfaces
+            if str(getattr(nic, "pci_device", "")).lower() == primary_pci_device
+        ]
+        if len(same_device) > 1:
+            return same_device[1].name
+
+    return host.network_interfaces[1].name
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -287,7 +353,7 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             host=host,
             test_name=test_name,
             pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-            interface=host.network_interfaces[0].name,
+            interface=_select_sniff_interface_name(host, capture_cfg),
             silent=capture_cfg.get("silent", True),
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
@@ -308,7 +374,7 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             f" --ip {ebu_ip}"
             f" --user {ebu_login}"
             f" --password {ebu_passwd}"
-            f" --pcap {capturer.pcap_file}{proxy_cmd}",
+            f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
             cwd=f"{str(mtl_path)}",
         )
         if compliance_upl.return_code != 0:
