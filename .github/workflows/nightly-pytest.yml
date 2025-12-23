@@ -88,7 +88,7 @@ jobs:
           .venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
             --topology_config=./configs/topology_config.yaml \
-            -m nightly \
+            -m disable_nightly \
             --template=html/index.html \
             --report=report.html \
             "./tests/single/${{ matrix.dir }}"
@@ -99,3 +99,46 @@ jobs:
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./tests/validation/report.html
+  
+  aggregate-python-reports:
+    needs: run-pytest
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download python report artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-test-report-*
+          path: python-reports  # Downloads all artifacts into this directory
+          merge-multiple: false  # Each artifact in separate subdirectory
+      - name: Flatten report directory structure
+        run: |
+          cd python-reports
+          for dir in nightly-test-report-*; do
+            if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
+              mv "$dir/report.html" "${dir}.html"
+              rm -rf "$dir"
+            fi
+          done
+          ls -lh *.html
+      - name: Install report dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pandas beautifulsoup4 openpyxl
+      - name: Combine python reports
+        id: combine
+        run: |
+          OUTPUT_PATH=$(python3 .github/scripts/combine_reports.py \
+            --directory python-reports \
+            --timestamp \
+            --quiet \
+            --print-path)
+          echo "report_path=$OUTPUT_PATH" >> $GITHUB_OUTPUT
+      - name: Upload combined python report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-pytest-combined-report
+          path: ${{ steps.combine.outputs.report_path }}
