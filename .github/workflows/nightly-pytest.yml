@@ -99,7 +99,7 @@ jobs:
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./tests/validation/report.html
-  
+
   aggregate-python-reports:
     needs: run-pytest
     if: ${{ always() }}
@@ -116,13 +116,13 @@ jobs:
       - name: Flatten report directory structure
         run: |
           cd python-reports
-          for dir in nightly-test-report-*; do
+          for dir in ./nightly-test-report-*; do
             if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
               mv "$dir/report.html" "${dir}.html"
               rm -rf "$dir"
             fi
           done
-          ls -lh *.html
+          ls -lh ./*.html
       - name: Install report dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -135,7 +135,7 @@ jobs:
             --timestamp \
             --quiet \
             --print-path)
-          echo "report_path=$OUTPUT_PATH" >> $GITHUB_OUTPUT
+          echo "report_path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
       - name: Upload combined python report
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
