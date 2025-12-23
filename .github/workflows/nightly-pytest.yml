@@ -130,12 +130,24 @@ jobs:
       - name: Combine python reports
         id: combine
         run: |
+          set -euo pipefail
           OUTPUT_PATH=$(python3 .github/scripts/combine_reports.py \
             --directory python-reports \
             --timestamp \
             --quiet \
             --print-path)
-          echo "report_path=$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+          if [ -z "${OUTPUT_PATH}" ]; then
+            echo "combine_reports.py did not emit an output path" >&2
+            exit 1
+          fi
+          if [ ! -f "${OUTPUT_PATH}" ]; then
+            echo "Combined report not found at ${OUTPUT_PATH}" >&2
+            echo "Available files:"
+            ls -la python-reports
+            exit 1
+          fi
+          echo "Combined report path: ${OUTPUT_PATH}"
+          printf 'report_path=%s\n' "$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
       - name: Upload combined python report
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
