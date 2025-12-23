@@ -52,13 +52,13 @@ def parse_args() -> argparse.Namespace:
 Examples:
   # Auto-discover reports in current directory
   %(prog)s
-  
+
   # Specify directory with reports
   %(prog)s --directory ./reports
-  
+
   # Generate timestamped output
   %(prog)s --directory ./reports --timestamp
-  
+
   # GitHub Actions usage (auto-detects artifacts)
   %(prog)s --directory downloaded-artifacts --output results/combined.xlsx
         """,
@@ -67,7 +67,10 @@ Examples:
         "--directory",
         type=Path,
         default=None,
-        help="Directory containing HTML reports with pattern nightly-test-report-{nic}-{category}.html (default: current directory)",
+        help=(
+            "Directory containing HTML reports with pattern "
+            "nightly-test-report-{nic}-{category}.html (default: current directory)"
+        ),
     )
     parser.add_argument(
         "--output",
