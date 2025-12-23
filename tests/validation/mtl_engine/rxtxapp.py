@@ -1,58 +1,23 @@
 # RxTxApp Implementation for Media Transport Library
 # Handles RxTxApp-specific command generation and configuration
 
+import copy
 import json
 import logging
 
+from . import ip_pools
+from . import rxtxapp_config as legacy_cfg
 from .application_base import Application
-from .config.app_mappings import APP_NAME_MAP, DEFAULT_NETWORK_CONFIG
+from .config.app_mappings import APP_NAME_MAP
 from .config.param_mappings import RXTXAPP_CMDLINE_PARAM_MAP
 from .config.universal_params import UNIVERSAL_PARAMS
-
-# Create IP dictionaries for backward compatibility using DEFAULT_NETWORK_CONFIG
-unicast_ip_dict = {
-    "tx_interfaces": DEFAULT_NETWORK_CONFIG["unicast_tx_ip"],
-    "rx_interfaces": DEFAULT_NETWORK_CONFIG["unicast_rx_ip"],
-    "tx_sessions": DEFAULT_NETWORK_CONFIG["unicast_rx_ip"],
-    "rx_sessions": DEFAULT_NETWORK_CONFIG["unicast_tx_ip"],
-}
-multicast_ip_dict = {
-    "tx_interfaces": DEFAULT_NETWORK_CONFIG["multicast_tx_ip"],
-    "rx_interfaces": DEFAULT_NETWORK_CONFIG["multicast_rx_ip"],
-    "tx_sessions": DEFAULT_NETWORK_CONFIG["multicast_destination_ip"],
-    "rx_sessions": DEFAULT_NETWORK_CONFIG["multicast_destination_ip"],
-}
-kernel_ip_dict = {
-    "tx_sessions": "127.0.0.1",
-    "rx_sessions": "127.0.0.1",
-}
-
-# Import execution utilities with fallback
-try:
-    import copy
-
-    from . import rxtxapp_config as legacy_cfg
-    from .execute import log_fail
-
-    # Import legacy helpers so we can emit a backward-compatible JSON config
-    from .RxTxApp import (
-        add_interfaces,
-        check_rx_output,
-        check_tx_output,
-        create_empty_config,
-    )
-except ImportError:
-    # Fallback for direct execution (when running this module standalone)
-    import copy
-
-    import rxtxapp_config as legacy_cfg
-    from execute import log_fail
-    from RxTxApp import (
-        add_interfaces,
-        check_rx_output,
-        check_tx_output,
-        create_empty_config,
-    )
+from .execute import log_fail
+from .RxTxApp import (
+    add_interfaces,
+    check_rx_output,
+    check_tx_output,
+    create_empty_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,44 +40,37 @@ class RxTxApp(Application):
         return self.command, self.config
 
     def _create_rxtxapp_command_and_config(self) -> tuple:
-        """
-        Generate RxTxApp command line and JSON configuration from universal parameters.
-        Uses config file path from constructor if provided, otherwise defaults to value from DEFAULT_NETWORK_CONFIG.
+        """Generate RxTxApp command line and JSON configuration from universal parameters.
 
         Returns:
             Tuple of (command_string, config_dict)
         """
-        # Use config file path from constructor or default (relative to build dir on remote host)
-        if self.config_file_path:
-            config_file_path = self.config_file_path
-        else:
-            # Use tests/config.json relative to build directory on remote host
-            config_file_path = "tests/config.json"
+        # Use config file path from constructor or default
+        config_file_path = self.config_file_path or "tests/config.json"
 
-        # Build command line with all command-line parameters
-        executable_path = self.get_executable_path()
-        cmd_parts = ["sudo", executable_path]
-        cmd_parts.extend(["--config_file", config_file_path])
+        # Build command line
+        cmd_parts = [
+            "sudo",
+            self.get_executable_path(),
+            "--config_file",
+            config_file_path,
+        ]
 
         # Add command-line parameters from RXTXAPP_CMDLINE_PARAM_MAP
         for universal_param, rxtx_param in RXTXAPP_CMDLINE_PARAM_MAP.items():
-            # Skip test_time unless explicitly provided (for VTune tests, duration is controlled by VTune)
+            # Skip test_time unless explicitly provided
             if universal_param == "test_time" and not self.was_user_provided(
                 "test_time"
             ):
                 continue
-            if universal_param in self.universal_params:
-                value = self.universal_params[universal_param]
-                if value is not None and value is not False:
-                    if isinstance(value, bool) and value:
-                        cmd_parts.append(rxtx_param)
-                    elif not isinstance(value, bool):
-                        cmd_parts.extend([rxtx_param, str(value)])
+            value = self.universal_params.get(universal_param)
+            if value is not None and value is not False:
+                if isinstance(value, bool):
+                    cmd_parts.append(rxtx_param)
+                else:
+                    cmd_parts.extend([rxtx_param, str(value)])
 
-        # Create JSON configuration
-        config_dict = self._create_rxtxapp_config_dict()
-
-        return " ".join(cmd_parts), config_dict
+        return " ".join(cmd_parts), self._create_rxtxapp_config_dict()
 
     def _create_rxtxapp_config_dict(self) -> dict:
         """
@@ -138,27 +96,15 @@ class RxTxApp(Application):
             "test_mode", UNIVERSAL_PARAMS["test_mode"]
         )
 
-        # Determine NIC ports list (need at least 2 entries for legacy loopback template)
-        nic_port = self.universal_params.get(
-            "nic_port", DEFAULT_NETWORK_CONFIG["nic_port"]
+        # Determine NIC ports list
+        nic_port = self.universal_params.get("nic_port")
+        nic_port_list = self.universal_params.get("nic_port_list") or (
+            [nic_port] if nic_port else []
         )
-        nic_port_list = self.universal_params.get("nic_port_list")
-        replicas = self.universal_params.get("replicas", 1)
 
-        if not nic_port_list:
-            # For single-direction (tx-only or rx-only) with replicas on same port,
-            # only use one interface to avoid MTL duplicate port error
-            # For loopback (direction=None), need two interfaces
-            if direction in ("tx", "rx") and replicas >= 1:
-                nic_port_list = [nic_port]  # Single interface for single-direction
-            else:
-                nic_port_list = [nic_port, nic_port]  # Duplicate for loopback
-        elif len(nic_port_list) == 1:
-            # Same logic: single interface for single-direction, duplicate for loopback
-            if direction in ("tx", "rx") and replicas >= 1:
-                pass  # Keep single element
-            else:
-                nic_port_list = nic_port_list * 2
+        # For loopback mode, need two interfaces; for single direction, one is enough
+        if len(nic_port_list) == 1 and direction not in ("tx", "rx"):
+            nic_port_list = nic_port_list * 2
 
         # Base legacy structure
         config = create_empty_config()
@@ -173,25 +119,37 @@ class RxTxApp(Application):
             )
             # Minimal fallback assignment - handle single or dual interface configs
             config["interfaces"][0]["name"] = nic_port_list[0]
-            # Set IP addresses based on test mode
+            # Set IP addresses based on test mode using ip_pools directly
             if test_mode == "unicast":
-                config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
-                config["tx_sessions"][0]["dip"][0] = unicast_ip_dict["tx_sessions"]
-                config["rx_sessions"][0]["ip"][0] = unicast_ip_dict["rx_sessions"]
+                config["interfaces"][0]["ip"] = ip_pools.tx[0] if ip_pools.tx else None
+                config["tx_sessions"][0]["dip"][0] = (
+                    ip_pools.rx[0] if ip_pools.rx else None
+                )
+                config["rx_sessions"][0]["ip"][0] = (
+                    ip_pools.tx[0] if ip_pools.tx else None
+                )
             elif test_mode == "multicast":
-                config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
-                config["tx_sessions"][0]["dip"][0] = multicast_ip_dict["tx_sessions"]
-                config["rx_sessions"][0]["ip"][0] = multicast_ip_dict["rx_sessions"]
+                config["interfaces"][0]["ip"] = ip_pools.tx[0] if ip_pools.tx else None
+                config["tx_sessions"][0]["dip"][0] = (
+                    ip_pools.rx_multicast[0] if ip_pools.rx_multicast else None
+                )
+                config["rx_sessions"][0]["ip"][0] = (
+                    ip_pools.rx_multicast[0] if ip_pools.rx_multicast else None
+                )
             elif test_mode == "kernel":
-                config["tx_sessions"][0]["dip"][0] = kernel_ip_dict["tx_sessions"]
-                config["rx_sessions"][0]["ip"][0] = kernel_ip_dict["rx_sessions"]
+                config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+                config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
 
             if len(nic_port_list) > 1:
                 config["interfaces"][1]["name"] = nic_port_list[1]
                 if test_mode == "unicast":
-                    config["interfaces"][1]["ip"] = unicast_ip_dict["rx_interfaces"]
+                    config["interfaces"][1]["ip"] = (
+                        ip_pools.rx[0] if ip_pools.rx else None
+                    )
                 elif test_mode == "multicast":
-                    config["interfaces"][1]["ip"] = multicast_ip_dict["rx_interfaces"]
+                    config["interfaces"][1]["ip"] = (
+                        ip_pools.rx[0] if ip_pools.rx else None
+                    )
             elif direction in ("tx", "rx"):
                 # For single-direction single-interface, remove second interface
                 if len(config["interfaces"]) > 1:
@@ -206,7 +164,7 @@ class RxTxApp(Application):
                 config["rx_sessions"][0]["interface"] = [0]
 
         # Override interface IPs and session IPs with user-provided source_ip/destination_ip if specified
-        # This allows tests to use custom IP addressing instead of hardcoded unicast_ip_dict values
+        # This allows tests to use custom IP addressing instead of ip_pools values
         if test_mode == "unicast":
             user_source_ip = self.universal_params.get("source_ip")
             user_dest_ip = self.universal_params.get("destination_ip")
@@ -502,30 +460,34 @@ class RxTxApp(Application):
         # Write config to remote host
         config_json = json.dumps(self.config, indent=4)
 
-        # Use heredoc to write file properly on remote host (avoids quote escaping issues)
-        try:
-            from mfd_connect import SSHConnection
+        # Detect connection type and use appropriate file writing method
+        connection_type = type(remote_conn).__name__
 
-            if isinstance(remote_conn, SSHConnection):
-                # Write using heredoc to avoid quote escaping issues with echo
-                cmd = f"""cat > {config_file_path} << 'EOFCONFIG'
-{config_json}
-EOFCONFIG"""
-                remote_conn.execute_command(cmd)
-                logger.info(f"Wrote RxTxApp config to remote host: {config_file_path}")
-            else:
-                # For local or other connection types, use write_text
-                f = remote_conn.path(config_file_path)
-                f.write_text(config_json, encoding="utf-8")
-                logger.info(f"Wrote RxTxApp config to host: {config_file_path}")
-        except (ImportError, Exception) as e:
-            logger.warning(
-                f"Could not use SSH heredoc method ({e}), falling back to write_text"
+        if connection_type == "LocalConnection":
+            # For local connections, write directly using pathlib
+            import pathlib
+
+            config_path = pathlib.Path(config_file_path)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(config_json)
+            logger.info(f"Wrote RxTxApp config to {config_file_path} (local)")
+        else:
+            # For remote connections (SSH, etc.), write via remote command
+            import os
+
+            # Ensure parent directory exists on remote host
+            parent_dir = os.path.dirname(config_file_path)
+            remote_conn.execute_command(f"mkdir -p {parent_dir}")
+
+            # Write file using Python on remote host to handle special characters properly
+            # Escape single quotes in the JSON content
+            escaped_json = config_json.replace("'", "'\"'\"'")
+            python_write_cmd = (
+                f"python3 -c \"import sys; open('{config_file_path}', 'w')"
+                f".write(sys.stdin.read())\" <<< '{escaped_json}'"
             )
-            # Fallback to write_text if SSH not available
-            f = remote_conn.path(config_file_path)
-            f.write_text(config_json, encoding="utf-8")
-            logger.info(f"Wrote RxTxApp config to host: {config_file_path}")
+            remote_conn.execute_command(python_write_cmd)
+            logger.info(f"Wrote RxTxApp config to {config_file_path} (remote)")
 
         # Update command to use absolute path on remote host
         self.command = self.command.replace(
@@ -545,10 +507,7 @@ EOFCONFIG"""
         """
 
         def _fail(msg: str):
-            try:
-                log_fail(msg)
-            except Exception:
-                logger.error(msg)
+            log_fail(msg)
             raise AssertionError(msg)
 
         try:
@@ -557,7 +516,7 @@ EOFCONFIG"""
 
             session_type = self._get_session_type_from_config(self.config)
             output_lines = self.last_output.split("\n") if self.last_output else []
-            rc = getattr(self, "last_return_code", None)
+            rc = self.last_return_code
 
             # 1. Check return code (must be 0 or None for dual-host secondary)
             if rc not in (0, None):

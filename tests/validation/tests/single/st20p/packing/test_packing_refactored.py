@@ -3,6 +3,7 @@
 
 import pytest
 from common.nicctl import InterfaceSetup
+from mtl_engine import ip_pools
 from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -42,8 +43,8 @@ def test_packing_refactored(
     config_params = {
         "session_type": "st20p",
         "nic_port_list": interfaces_list,
-        "source_ip": "192.168.17.101",
-        "destination_ip": "192.168.17.102",
+        "source_ip": ip_pools.tx[0],
+        "destination_ip": ip_pools.rx[0],
         "port": 20000,
         "width": media_file_info["width"],
         "height": media_file_info["height"],
