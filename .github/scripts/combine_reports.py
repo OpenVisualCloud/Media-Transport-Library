@@ -15,14 +15,27 @@ from bs4 import BeautifulSoup
 
 # Constants
 STATUS_CLASSES = {
-    "passed", "failed", "skipped", "xfailed", "xpassed",
-    "error", "warning", "notrun", "rerun",
+    "passed",
+    "failed",
+    "skipped",
+    "xfailed",
+    "xpassed",
+    "error",
+    "warning",
+    "notrun",
+    "rerun",
 }
 
 STATUS_LABELS = {
-    "passed": "PASSED", "failed": "FAILED", "skipped": "SKIPPED",
-    "xfailed": "XFAILED", "xpassed": "XPASSED", "error": "ERROR",
-    "warning": "WARNING", "notrun": "NOT RUN", "rerun": "RERUN",
+    "passed": "PASSED",
+    "failed": "FAILED",
+    "skipped": "SKIPPED",
+    "xfailed": "XFAILED",
+    "xpassed": "XPASSED",
+    "error": "ERROR",
+    "warning": "WARNING",
+    "notrun": "NOT RUN",
+    "rerun": "RERUN",
     "unknown": "UNKNOWN",
 }
 
@@ -48,7 +61,7 @@ Examples:
   
   # GitHub Actions usage (auto-detects artifacts)
   %(prog)s --directory downloaded-artifacts --output results/combined.xlsx
-        """
+        """,
     )
     parser.add_argument(
         "--directory",
@@ -92,18 +105,18 @@ def get_output_path(args: argparse.Namespace) -> Path:
     """Determine the output file path based on arguments."""
     if args.output:
         return args.output.expanduser().resolve()
-    
+
     if args.timestamp:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         filename = f"MTL_test_report_{timestamp}.xlsx"
     else:
         filename = "combined_report.xlsx"
-    
+
     # If directory mode, place output in the same directory
     if args.directory:
         directory = args.directory.expanduser().resolve()
         return directory / filename
-    
+
     # Otherwise use current directory
     return Path.cwd() / filename
 
@@ -113,29 +126,31 @@ def discover_reports(directory: Path) -> Dict[str, Dict[str, Path]]:
     Auto-discover reports in directory with pattern: nightly-test-report-{nic}-{category}.html
     Returns: Dict[category, Dict[nic_type, Path]]
     """
-    pattern = re.compile(r"nightly-test-report-(e810-dell|e810|e830)-(.+)\.html", re.IGNORECASE)
+    pattern = re.compile(
+        r"nightly-test-report-(e810-dell|e810|e830)-(.+)\.html", re.IGNORECASE
+    )
     reports_by_category: Dict[str, Dict[str, Path]] = {}
-    
+
     nic_mapping = {
         "e810": "E810",
         "e810-dell": "E810-Dell",
         "e830": "E830",
     }
-    
+
     for html_file in directory.glob("nightly-test-report-*.html"):
         match = pattern.match(html_file.name)
         if match:
             nic_raw = match.group(1).lower()
             category = match.group(2)
-            
+
             nic_label = nic_mapping.get(nic_raw)
             if not nic_label:
                 continue
-                
+
             if category not in reports_by_category:
                 reports_by_category[category] = {}
             reports_by_category[category][nic_label] = html_file
-    
+
     return reports_by_category
 
 
@@ -149,9 +164,13 @@ def get_test_name(test_details) -> str:
     test_name_element = test_details.select_one(".test-name")
     if test_name_element:
         return test_name_element.get_text(separator=" ", strip=True)
-    
+
     title_element = test_details.select_one(".title")
-    return title_element.get_text(separator=" ", strip=True) if title_element else "UNKNOWN"
+    return (
+        title_element.get_text(separator=" ", strip=True)
+        if title_element
+        else "UNKNOWN"
+    )
 
 
 def parse_report(path: Path) -> Dict[Tuple[str, str], str]:
@@ -171,20 +190,22 @@ def parse_report(path: Path) -> Dict[Tuple[str, str], str]:
                 "unknown",
             )
             test_name = get_test_name(test_details)
-            results[(file_path, test_name)] = STATUS_LABELS.get(status_token, STATUS_LABELS["unknown"])
+            results[(file_path, test_name)] = STATUS_LABELS.get(
+                status_token, STATUS_LABELS["unknown"]
+            )
 
     return results
 
 
 def build_dataframe(
-    keys: Iterable[Tuple[str, str]], 
-    data: Dict[str, Dict[Tuple[str, str], str]], 
-    category: str = None
+    keys: Iterable[Tuple[str, str]],
+    data: Dict[str, Dict[Tuple[str, str], str]],
+    category: str = None,
 ) -> pd.DataFrame:
     """Build a DataFrame from test results."""
     ordered_tests = sorted(set(keys), key=lambda item: (item[0], item[1]))
     nic_columns = list(data.keys())
-    
+
     rows = []
     for test_file, test_case in ordered_tests:
         row = {}
@@ -192,7 +213,7 @@ def build_dataframe(
             row["Category"] = category
         row["Test File"] = test_file
         row["Test Case"] = test_case
-        
+
         seen_statuses = set()
         for nic in nic_columns:
             row[nic] = data[nic].get((test_file, test_case), DEFAULT_STATUS)
@@ -201,8 +222,11 @@ def build_dataframe(
         row["Comments"] = "Inconsistent across NICs" if len(seen_statuses) > 1 else ""
         rows.append(row)
 
-    columns = ["Category", "Test File", "Test Case", *nic_columns, "Comments"] if category else \
-               ["Test File", "Test Case", *nic_columns, "Comments"]
+    columns = (
+        ["Category", "Test File", "Test Case", *nic_columns, "Comments"]
+        if category
+        else ["Test File", "Test Case", *nic_columns, "Comments"]
+    )
     return pd.DataFrame(rows, columns=columns)
 
 
@@ -228,22 +252,22 @@ def calculate_status_counts(df: pd.DataFrame, nic: str) -> Dict[str, int]:
 def build_summary(all_dataframes: List[pd.DataFrame]) -> pd.DataFrame:
     """Build a summary table with statistics per category and NIC."""
     summary_rows = []
-    
+
     for df in all_dataframes:
         if df.empty:
             continue
-        
+
         category = df["Category"].iloc[0] if "Category" in df.columns else "Unknown"
         nic_columns = get_nic_columns(df)
-        
+
         row = {"Category": category}
         for nic in nic_columns:
             counts = calculate_status_counts(df, nic)
             for metric, value in counts.items():
                 row[f"{nic}_{metric}"] = value
-        
+
         summary_rows.append(row)
-    
+
     # Add totals row
     if summary_rows:
         total_row = {"Category": "TOTAL"}
@@ -252,7 +276,7 @@ def build_summary(all_dataframes: List[pd.DataFrame]) -> pd.DataFrame:
                 col_name = f"{nic}_{metric}"
                 total_row[col_name] = sum(row.get(col_name, 0) for row in summary_rows)
         summary_rows.append(total_row)
-    
+
     return pd.DataFrame(summary_rows)
 
 
@@ -263,9 +287,11 @@ def write_summary_headers(worksheet, nic_types: List[str], metrics: List[str]) -
     col = 2
     for nic in nic_types:
         worksheet.cell(row=1, column=col, value=nic)
-        worksheet.merge_cells(start_row=1, start_column=col, end_row=1, end_column=col + len(metrics) - 1)
+        worksheet.merge_cells(
+            start_row=1, start_column=col, end_row=1, end_column=col + len(metrics) - 1
+        )
         col += len(metrics)
-    
+
     # Row 1: Metric headers
     worksheet.cell(row=2, column=1, value="Category")
     col = 2
@@ -275,27 +301,35 @@ def write_summary_headers(worksheet, nic_types: List[str], metrics: List[str]) -
             col += 1
 
 
-def write_combined_report(output_path: Path, summary_df: pd.DataFrame, combined_df: pd.DataFrame) -> None:
+def write_combined_report(
+    output_path: Path, summary_df: pd.DataFrame, combined_df: pd.DataFrame
+) -> None:
     """Write summary and detailed results to Excel with proper formatting."""
-    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         # Write summary without header (we'll add custom headers)
-        summary_df.to_excel(writer, sheet_name='Sheet1', index=False, startrow=1, header=False)
-        
-        worksheet = writer.sheets['Sheet1']
+        summary_df.to_excel(
+            writer, sheet_name="Sheet1", index=False, startrow=1, header=False
+        )
+
+        worksheet = writer.sheets["Sheet1"]
         write_summary_headers(worksheet, NIC_TYPES, METRICS)
-        
+
         # Calculate where detailed results start (2 header rows + summary rows + 1 blank row)
         separator_row = len(summary_df) + 3
-        combined_df.to_excel(writer, sheet_name='Sheet1', index=False, startrow=separator_row)
+        combined_df.to_excel(
+            writer, sheet_name="Sheet1", index=False, startrow=separator_row
+        )
 
 
-def process_category(category: str, nic_reports: Dict[str, Path], quiet: bool = False) -> pd.DataFrame:
+def process_category(
+    category: str, nic_reports: Dict[str, Path], quiet: bool = False
+) -> pd.DataFrame:
     """Process reports for a single category and return combined DataFrame."""
     log_message(f"\nProcessing category: {category}", quiet)
-    
+
     parsed_data: Dict[str, Dict[Tuple[str, str], str]] = {}
     all_keys = set()
-    
+
     for nic_name in NIC_TYPES:
         if nic_name in nic_reports:
             report_path = nic_reports[nic_name]
@@ -303,11 +337,11 @@ def process_category(category: str, nic_reports: Dict[str, Path], quiet: bool = 
             parsed_data[nic_name] = parsed
             all_keys.update(parsed.keys())
             log_message(f"  Parsed {len(parsed)} tests for {nic_name}", quiet)
-    
+
     if not all_keys:
         log_message(f"  Warning: No tests found for {category}", quiet, is_error=True)
         return pd.DataFrame()
-    
+
     return build_dataframe(all_keys, parsed_data, category=category)
 
 
@@ -316,52 +350,58 @@ def process_directory_mode(directory: Path, output: Path, quiet: bool = False) -
     directory = directory.expanduser().resolve()
     if not directory.exists():
         raise FileNotFoundError(f"Directory not found: {directory}")
-    
+
     reports_by_category = discover_reports(directory)
     if not reports_by_category:
         log_message(f"Warning: No reports found in {directory}", quiet, is_error=True)
         return
-    
+
     log_message(f"Discovered {len(reports_by_category)} test categories", quiet)
-    
+
     # Process all categories
     all_dataframes = []
     for category in sorted(reports_by_category.keys()):
         df = process_category(category, reports_by_category[category], quiet)
         if not df.empty:
             all_dataframes.append(df)
-    
+
     if not all_dataframes:
         log_message("No data to write", quiet, is_error=True)
         return
-    
+
     # Build summary and write report
     summary_df = build_summary(all_dataframes)
     combined_df = pd.concat(all_dataframes, ignore_index=True)
     write_combined_report(output, summary_df, combined_df)
-    
-    log_message(f"\nCombined report written to {output} with {len(combined_df)} total tests", quiet)
+
+    log_message(
+        f"\nCombined report written to {output} with {len(combined_df)} total tests",
+        quiet,
+    )
 
 
 def main() -> None:
     """Main entry point."""
     args = parse_args()
-    
+
     # Determine output path
     output_path = get_output_path(args)
-    
+
     # Default to current directory if not specified
     if not args.directory:
         args.directory = Path.cwd()
-        log_message(f"No directory specified, using current directory: {args.directory}", args.quiet)
-    
+        log_message(
+            f"No directory specified, using current directory: {args.directory}",
+            args.quiet,
+        )
+
     try:
         process_directory_mode(args.directory, output_path, args.quiet)
-        
+
         # Print absolute path if requested (useful for CI/CD)
         if args.print_path and output_path.exists():
             print(output_path.resolve())
-    
+
     except Exception as e:
         log_message(f"Error: {e}", args.quiet, is_error=True)
         sys.exit(1)
@@ -369,4 +409,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
