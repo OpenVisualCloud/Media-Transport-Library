@@ -10,6 +10,7 @@ from mtl_engine.rxtxapp import RxTxApp
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422p10le["Penguin_1080p"]],
+    indirect=["media_file"],
     ids=["Penguin_1080p"],
 )
 @pytest.mark.parametrize(

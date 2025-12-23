@@ -27,16 +27,6 @@ SESSION_TYPE_MAP = {
     },
 }
 
-# Default network configuration values
-DEFAULT_NETWORK_CONFIG = {
-    "nic_port": None,
-    "unicast_tx_ip": "192.168.17.101",
-    "unicast_rx_ip": "192.168.17.102",
-    "multicast_tx_ip": "192.168.17.101",
-    "multicast_rx_ip": "192.168.17.102",
-    "multicast_destination_ip": "239.168.48.9",
-    "default_config_file": "config.json",
-}
 
 # Default port configuration by session type
 DEFAULT_PORT_CONFIG = {

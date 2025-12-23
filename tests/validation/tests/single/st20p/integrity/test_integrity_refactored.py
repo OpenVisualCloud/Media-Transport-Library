@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from common.nicctl import InterfaceSetup
 from mfd_common_libs.log_levels import TEST_PASS
+from mtl_engine import ip_pools
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
@@ -59,8 +60,8 @@ def test_integrity_refactored(
     app.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
-        source_ip="192.168.17.101",
-        destination_ip="192.168.17.102",
+        source_ip=ip_pools.tx[0],
+        destination_ip=ip_pools.rx[0],
         port=20000,
         width=media_file_info["width"],
         height=media_file_info["height"],
