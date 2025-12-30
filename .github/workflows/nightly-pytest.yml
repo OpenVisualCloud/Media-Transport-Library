@@ -88,7 +88,7 @@ jobs:
           .venv/bin/python3 -m pytest \
             --test_config=./configs/test_config.yaml \
             --topology_config=./configs/topology_config.yaml \
-            -m disable_nightly \
+            -m nightly \
             --template=html/index.html \
             --report=report.html \
             "./tests/single/${{ matrix.dir }}"
