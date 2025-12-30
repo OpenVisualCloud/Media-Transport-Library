@@ -42,6 +42,7 @@ STATUS_LABELS = {
 DEFAULT_STATUS = "NOT FOUND"
 NIC_TYPES = ["E810", "E810-Dell", "E830"]
 METRICS = ["Passed", "Failed", "Skipped", "Error", "Other", "Total"]
+NO_DATA_MESSAGE = "No test data discovered across provided reports"
 
 
 def parse_args() -> argparse.Namespace:
@@ -324,6 +325,21 @@ def write_combined_report(
         )
 
 
+def build_placeholder_dataframe(message: str) -> pd.DataFrame:
+    """Return a DataFrame containing a single placeholder row."""
+    placeholder_row = {
+        "Category": "-",
+        "Test File": "-",
+        "Test Case": "-",
+        "Comments": message,
+    }
+    for nic in NIC_TYPES:
+        placeholder_row[nic] = DEFAULT_STATUS
+
+    columns = ["Category", "Test File", "Test Case", *NIC_TYPES, "Comments"]
+    return pd.DataFrame([placeholder_row], columns=columns)
+
+
 def process_category(
     category: str, nic_reports: Dict[str, Path], quiet: bool = False
 ) -> pd.DataFrame:
@@ -357,9 +373,12 @@ def process_directory_mode(directory: Path, output: Path, quiet: bool = False) -
     reports_by_category = discover_reports(directory)
     if not reports_by_category:
         log_message(f"Warning: No reports found in {directory}", quiet, is_error=True)
-        return
+        reports_by_category = {}
 
-    log_message(f"Discovered {len(reports_by_category)} test categories", quiet)
+    if reports_by_category:
+        log_message(f"Discovered {len(reports_by_category)} test categories", quiet)
+    else:
+        log_message("No categories detected; creating placeholder report", quiet)
 
     # Process all categories
     all_dataframes = []
@@ -370,7 +389,7 @@ def process_directory_mode(directory: Path, output: Path, quiet: bool = False) -
 
     if not all_dataframes:
         log_message("No data to write", quiet, is_error=True)
-        return
+        all_dataframes = [build_placeholder_dataframe(NO_DATA_MESSAGE)]
 
     # Build summary and write report
     summary_df = build_summary(all_dataframes)
