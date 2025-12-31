@@ -18,8 +18,8 @@ STATUS_CLASSES = {
     "passed",
     "failed",
     "skipped",
-    "xfailed",
     "xpassed",
+    "xfailed",
     "error",
     "warning",
     "notrun",
@@ -30,8 +30,8 @@ STATUS_LABELS = {
     "passed": "PASSED",
     "failed": "FAILED",
     "skipped": "SKIPPED",
-    "xfailed": "XFAILED",
     "xpassed": "XPASSED",
+    "xfailed": "XFAILED",
     "error": "ERROR",
     "warning": "WARNING",
     "notrun": "NOT RUN",
@@ -41,8 +41,15 @@ STATUS_LABELS = {
 
 DEFAULT_STATUS = "NOT FOUND"
 NIC_TYPES = ["E810", "E810-Dell", "E830"]
-METRICS = ["Passed", "Failed", "Skipped", "Error", "Other", "Total"]
+METRICS = ["Passed", "Failed", "Skipped", "Error", "XPassed", "XFailed", "Other", "Total"]
 NO_DATA_MESSAGE = "No test data discovered across provided reports"
+OTHER_STATUS_LABELS = {
+    "UNKNOWN",
+    "NOT RUN",
+    "WARNING",
+    "RERUN",
+    "NOT FOUND",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -243,14 +250,18 @@ def get_nic_columns(df: pd.DataFrame) -> List[str]:
 def calculate_status_counts(df: pd.DataFrame, nic: str) -> Dict[str, int]:
     """Calculate status counts for a specific NIC column."""
     status_counts = df[nic].value_counts()
-    return {
+    counts = {
         "Passed": status_counts.get("PASSED", 0),
         "Failed": status_counts.get("FAILED", 0),
         "Skipped": status_counts.get("SKIPPED", 0),
         "Error": status_counts.get("ERROR", 0),
-        "Other": status_counts.get("NOT FOUND", 0) + status_counts.get("UNKNOWN", 0),
-        "Total": len(df),
+        "XPassed": status_counts.get("XPASSED", 0),
+        "XFailed": status_counts.get("XFAILED", 0),
     }
+
+    counts["Other"] = sum(status_counts.get(label, 0) for label in OTHER_STATUS_LABELS)
+    counts["Total"] = sum(counts.values())
+    return counts
 
 
 def build_summary(all_dataframes: List[pd.DataFrame]) -> pd.DataFrame:
@@ -311,8 +322,9 @@ def write_combined_report(
     """Write summary and detailed results to Excel with proper formatting."""
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         # Write summary without header (we'll add custom headers)
+        # Leave two rows for the custom multi-level headers before data
         summary_df.to_excel(
-            writer, sheet_name="Sheet1", index=False, startrow=1, header=False
+            writer, sheet_name="Sheet1", index=False, startrow=2, header=False
         )
 
         worksheet = writer.sheets["Sheet1"]
