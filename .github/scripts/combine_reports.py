@@ -41,7 +41,16 @@ STATUS_LABELS = {
 
 DEFAULT_STATUS = "NOT FOUND"
 NIC_TYPES = ["E810", "E810-Dell", "E830"]
-METRICS = ["Passed", "Failed", "Skipped", "Error", "XPassed", "XFailed", "Other", "Total"]
+METRICS = [
+    "Passed",
+    "Failed",
+    "Skipped",
+    "Error",
+    "XPassed",
+    "XFailed",
+    "Other",
+    "Total",
+]
 NO_DATA_MESSAGE = "No test data discovered across provided reports"
 OTHER_STATUS_LABELS = {
     "UNKNOWN",
