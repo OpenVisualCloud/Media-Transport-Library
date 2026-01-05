@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Tuple
 
 import pandas as pd
 from bs4 import BeautifulSoup
+from openpyxl.styles import Font
 
 # Constants
 STATUS_CLASSES = {
@@ -304,6 +305,56 @@ def build_summary(all_dataframes: List[pd.DataFrame]) -> pd.DataFrame:
     return pd.DataFrame(summary_rows)
 
 
+def build_nic_totals_summary(summary_df: pd.DataFrame) -> pd.DataFrame:
+    """Derive per-NIC totals plus aggregate rows from the summary table."""
+    if summary_df.empty or "Category" not in summary_df.columns:
+        return pd.DataFrame()
+
+    total_row = summary_df[summary_df["Category"] == "TOTAL"]
+    if total_row.empty:
+        return pd.DataFrame()
+    total_row = total_row.iloc[0]
+
+    nic_rows = []
+    for nic in NIC_TYPES:
+        nic_entry = {"NIC": nic}
+        for metric in METRICS:
+            nic_entry[metric] = int(total_row.get(f"{nic}_{metric}", 0))
+        nic_rows.append(nic_entry)
+
+    aggregate_row = {"NIC": "TOTAL"}
+    for metric in METRICS:
+        aggregate_row[metric] = sum(row[metric] for row in nic_rows)
+    nic_rows.append(aggregate_row)
+
+    executed_total = (
+        aggregate_row["Passed"]
+        + aggregate_row["Failed"]
+        + aggregate_row["Error"]
+        + aggregate_row["XPassed"]
+        + aggregate_row["XFailed"]
+        + aggregate_row["Other"]
+    )
+    
+    percent_row = {"NIC": "%"}
+    pass_fraction = (
+        aggregate_row["Passed"] / executed_total if executed_total else None
+    )
+    fail_fraction = (
+        aggregate_row["Failed"] / executed_total if executed_total else None
+    )
+    percent_row["Passed"] = f"{pass_fraction * 100:.2f}%"
+    percent_row["Failed"] = f"{fail_fraction * 100:.2f}%"
+    for metric in METRICS:
+        if metric not in {"Passed", "Failed"}:
+            percent_row[metric] = "-"
+    percent_row["Total"] = "-"
+    nic_rows.append(percent_row)
+
+    nic_df = pd.DataFrame(nic_rows, columns=["NIC", *METRICS])
+    return nic_df.rename(columns={"NIC": ""})
+
+
 def write_summary_headers(worksheet, nic_types: List[str], metrics: List[str]) -> None:
     """Write multi-level headers for the summary section."""
     # Row 0: NIC grouping
@@ -325,6 +376,28 @@ def write_summary_headers(worksheet, nic_types: List[str], metrics: List[str]) -
             col += 1
 
 
+def apply_nic_summary_formatting(worksheet, start_row: int, nic_summary_df: pd.DataFrame) -> None:
+    """Apply bold styling to NIC summary header and emphasis rows."""
+    if nic_summary_df.empty:
+        return
+
+    bold_font = Font(bold=True)
+    header_row = start_row + 1  # openpyxl rows are 1-indexed
+    total_columns = len(nic_summary_df.columns)
+
+    # Bold header row
+    for col in range(1, total_columns + 1):
+        worksheet.cell(row=header_row, column=col).font = bold_font
+
+    first_col = nic_summary_df.columns[0]
+    for idx, value in enumerate(nic_summary_df[first_col]):
+        if value not in {"TOTAL", "%"}:
+            continue
+        excel_row = header_row + 1 + idx
+        for col in range(1, total_columns + 1):
+            worksheet.cell(row=excel_row, column=col).font = bold_font
+
+
 def write_combined_report(
     output_path: Path, summary_df: pd.DataFrame, combined_df: pd.DataFrame
 ) -> None:
@@ -339,8 +412,22 @@ def write_combined_report(
         worksheet = writer.sheets["Sheet1"]
         write_summary_headers(worksheet, NIC_TYPES, METRICS)
 
-        # Calculate where detailed results start (2 header rows + summary rows + 1 blank row)
-        separator_row = len(summary_df) + 3
+        nic_summary_df = build_nic_totals_summary(summary_df)
+        if not nic_summary_df.empty:
+            nic_summary_start = len(summary_df) + 3
+            nic_summary_df.to_excel(
+                writer,
+                sheet_name="Sheet1",
+                index=False,
+                startrow=nic_summary_start,
+            )
+            apply_nic_summary_formatting(
+                worksheet, nic_summary_start, nic_summary_df
+            )
+            separator_row = nic_summary_start + len(nic_summary_df) + 2
+        else:
+            separator_row = len(summary_df) + 3
+
         combined_df.to_excel(
             writer, sheet_name="Sheet1", index=False, startrow=separator_row
         )
