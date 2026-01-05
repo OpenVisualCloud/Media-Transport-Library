@@ -335,16 +335,12 @@ def build_nic_totals_summary(summary_df: pd.DataFrame) -> pd.DataFrame:
         + aggregate_row["XFailed"]
         + aggregate_row["Other"]
     )
-    
+
     percent_row = {"NIC": "%"}
-    pass_fraction = (
-        aggregate_row["Passed"] / executed_total if executed_total else None
-    )
-    fail_fraction = (
-        aggregate_row["Failed"] / executed_total if executed_total else None
-    )
-    percent_row["Passed"] = f"{pass_fraction * 100:.2f}%"
-    percent_row["Failed"] = f"{fail_fraction * 100:.2f}%"
+    pass_fraction = aggregate_row["Passed"] / executed_total if executed_total else None
+    fail_fraction = aggregate_row["Failed"] / executed_total if executed_total else None
+    percent_row["Passed"] = f"{pass_fraction * 100:.2f}%" if pass_fraction is not None else "-"
+    percent_row["Failed"] = f"{fail_fraction * 100:.2f}%" if fail_fraction is not None else "-"
     for metric in METRICS:
         if metric not in {"Passed", "Failed"}:
             percent_row[metric] = "-"
@@ -376,7 +372,9 @@ def write_summary_headers(worksheet, nic_types: List[str], metrics: List[str]) -
             col += 1
 
 
-def apply_nic_summary_formatting(worksheet, start_row: int, nic_summary_df: pd.DataFrame) -> None:
+def apply_nic_summary_formatting(
+    worksheet, start_row: int, nic_summary_df: pd.DataFrame
+) -> None:
     """Apply bold styling to NIC summary header and emphasis rows."""
     if nic_summary_df.empty:
         return
@@ -421,9 +419,7 @@ def write_combined_report(
                 index=False,
                 startrow=nic_summary_start,
             )
-            apply_nic_summary_formatting(
-                worksheet, nic_summary_start, nic_summary_df
-            )
+            apply_nic_summary_formatting(worksheet, nic_summary_start, nic_summary_df)
             separator_row = nic_summary_start + len(nic_summary_df) + 2
         else:
             separator_row = len(summary_df) + 3
