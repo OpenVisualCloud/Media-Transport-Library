@@ -339,8 +339,12 @@ def build_nic_totals_summary(summary_df: pd.DataFrame) -> pd.DataFrame:
     percent_row = {"NIC": "%"}
     pass_fraction = aggregate_row["Passed"] / executed_total if executed_total else None
     fail_fraction = aggregate_row["Failed"] / executed_total if executed_total else None
-    percent_row["Passed"] = f"{pass_fraction * 100:.2f}%" if pass_fraction is not None else "-"
-    percent_row["Failed"] = f"{fail_fraction * 100:.2f}%" if fail_fraction is not None else "-"
+    percent_row["Passed"] = (
+        f"{pass_fraction * 100:.2f}%" if pass_fraction is not None else "-"
+    )
+    percent_row["Failed"] = (
+        f"{fail_fraction * 100:.2f}%" if fail_fraction is not None else "-"
+    )
     for metric in METRICS:
         if metric not in {"Passed", "Failed"}:
             percent_row[metric] = "-"
