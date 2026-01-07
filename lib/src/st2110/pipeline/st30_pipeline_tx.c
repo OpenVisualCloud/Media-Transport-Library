@@ -14,11 +14,16 @@ static const char* st30p_tx_frame_stat_name[ST30P_TX_FRAME_STATUS_MAX] = {
     "in_transmitting",
 };
 
-static const char* st30p_tx_frame_stat_name_short[ST30P_TX_FRAME_STATUS_MAX] = {"F", "U",
-                                                                                "R", "T"};
-
 static const char* tx_st30p_stat_name(enum st30p_tx_frame_status stat) {
   return st30p_tx_frame_stat_name[stat];
+}
+
+static uint16_t tx_st30p_next_idx(struct st30p_tx_ctx* ctx, uint16_t idx) {
+  /* point to next */
+  uint16_t next_idx = idx;
+  next_idx++;
+  if (next_idx >= ctx->framebuff_cnt) next_idx = 0;
+  return next_idx;
 }
 
 static void tx_st30p_block_wake(struct st30p_tx_ctx* ctx) {
@@ -40,34 +45,26 @@ static void tx_st30p_notify_frame_available(struct st30p_tx_ctx* ctx) {
 }
 
 static struct st30p_tx_frame* tx_st30p_next_available(
-    struct st30p_tx_ctx* ctx, enum st30p_tx_frame_status desired) {
+    struct st30p_tx_ctx* ctx, uint16_t idx_start, enum st30p_tx_frame_status desired) {
+  uint16_t idx = idx_start;
   struct st30p_tx_frame* framebuff;
 
-  for (int idx = 0; idx < ctx->framebuff_cnt; idx++) {
+  /* check ready frame from idx_start */
+  while (1) {
     framebuff = &ctx->framebuffs[idx];
     if (desired == framebuff->stat) {
+      /* find one desired */
       return framebuff;
+    }
+    idx = tx_st30p_next_idx(ctx, idx);
+    if (idx == idx_start) {
+      /* loop all frames end */
+      break;
     }
   }
 
   /* no any desired frame */
   return NULL;
-}
-
-static struct st30p_tx_frame* tx_st30p_newest_available(
-    struct st30p_tx_ctx* ctx, enum st30p_tx_frame_status desired) {
-  struct st30p_tx_frame* framebuff_newest = NULL;
-
-  for (uint16_t idx = 0; idx < ctx->framebuff_cnt; idx++) {
-    struct st30p_tx_frame* framebuff = &ctx->framebuffs[idx];
-    if ((desired == framebuff->stat) &&
-        (!framebuff_newest ||
-         !mt_seq32_greater(framebuff->seq_number, framebuff_newest->seq_number))) {
-      framebuff_newest = framebuff;
-    }
-  }
-
-  return framebuff_newest;
 }
 
 static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
@@ -80,7 +77,8 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
+  framebuff =
+      tx_st30p_next_available(ctx, ctx->framebuff_consumer_idx, ST30P_TX_FRAME_READY);
   /* not any converted frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
@@ -96,44 +94,11 @@ static int tx_st30p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->timestamp = frame->timestamp;
   }
 
+  /* point to next */
+  ctx->framebuff_consumer_idx = tx_st30p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
   dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST30P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
-
-static int st30p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st30p_tx_ctx* ctx = handle;
-  struct st30p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY;
-
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st30p_newest_available(ctx, ST30P_TX_FRAME_READY);
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST30P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, ctx->idx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done) {
-    ctx->ops.notify_frame_done(ctx->ops.priv, &framebuff->frame);
-  }
-
-  tx_st30p_notify_frame_available(ctx);
-  MT_USDT_ST30P_TX_FRAME_DONE(ctx->idx, framebuff->idx, framebuff->frame.rtp_timestamp);
-
   return 0;
 }
 
@@ -168,7 +133,7 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   /* notify app can get frame */
   tx_st30p_notify_frame_available(ctx);
 
-  MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, frame_idx, frame->rtp_timestamp);
+  MT_USDT_ST30P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
   return ret;
 }
 
@@ -207,11 +172,6 @@ static int tx_st30p_create_transport(struct mtl_main_impl* impl, struct st30p_tx
     ops_tx.flags |= ST30_TX_FLAG_FORCE_NUMA;
   }
   if (ops->flags & ST30P_TX_FLAG_USER_PACING) ops_tx.flags |= ST30_TX_FLAG_USER_PACING;
-  if (ops->flags & ST30P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st30p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
   ops_tx.pacing_way = ops->pacing_way;
   ops_tx.rtp_timestamp_delta_us = ops->rtp_timestamp_delta_us;
 
@@ -298,34 +258,20 @@ static int tx_st30p_init_fbs(struct st30p_tx_ctx* ctx, struct st30p_tx_ops* ops)
 static int tx_st30p_stat(void* priv) {
   struct st30p_tx_ctx* ctx = priv;
   struct st30p_tx_frame* framebuff = ctx->framebuffs;
-  uint16_t status_counts[ST30P_TX_FRAME_STATUS_MAX] = {0};
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st30p_tx_frame_status stat = framebuff[j].stat;
-    if (stat < ST30P_TX_FRAME_STATUS_MAX) {
-      status_counts[stat]++;
-    }
-  }
+  uint16_t producer_idx = ctx->framebuff_producer_idx;
+  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  notice("TX_st30p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
+         tx_st30p_stat_name(framebuff[producer_idx].stat), consumer_idx,
+         tx_st30p_stat_name(framebuff[consumer_idx].stat));
 
-  char status_str[256];
-  int offset = 0;
-  for (uint16_t i = 0; i < ST30P_TX_FRAME_STATUS_MAX; i++) {
-    if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st30p_tx_frame_stat_name_short[i], status_counts[i]);
-    }
-  }
-  notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
-
-  notice("TX_st30p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
-         ctx->stat_drop_frame);
+  notice("TX_st30p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
   ctx->stat_put_frame = 0;
-  ctx->stat_drop_frame = 0;
 
   return 0;
 }
@@ -438,13 +384,15 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   ctx->stat_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);
+  framebuff =
+      tx_st30p_next_available(ctx, ctx->framebuff_producer_idx, ST30P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
     tx_st30p_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = tx_st30p_next_available(ctx, ST30P_TX_FRAME_FREE);
+    framebuff =
+        tx_st30p_next_available(ctx, ctx->framebuff_producer_idx, ST30P_TX_FRAME_FREE);
   }
   /* not any free frame */
   if (!framebuff) {
@@ -453,7 +401,8 @@ struct st30_frame* st30p_tx_get_frame(st30p_tx_handle handle) {
   }
 
   framebuff->stat = ST30P_TX_FRAME_IN_USER;
-  framebuff->seq_number = ctx->framebuff_seq_number++;
+  /* point to next */
+  ctx->framebuff_producer_idx = tx_st30p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
 
   struct st30_frame* frame = &framebuff->frame;
@@ -480,11 +429,9 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if (ST30P_TX_FRAME_IN_USER != framebuff->stat) {
     err("%s(%d), frame %u not in user %d\n", __func__, idx, producer_idx,
         framebuff->stat);
-    mt_pthread_mutex_unlock(&ctx->lock);
     return -EIO;
   }
 
@@ -492,7 +439,6 @@ int st30p_tx_put_frame(st30p_tx_handle handle, struct st30_frame* frame) {
   ctx->stat_put_frame++;
   MT_USDT_ST30P_TX_FRAME_PUT(idx, framebuff->idx, frame->addr);
   dbg("%s(%d), frame %u(%p) succ\n", __func__, idx, producer_idx, frame->addr);
-  mt_pthread_mutex_unlock(&ctx->lock);
   return 0;
 }
 
@@ -692,25 +638,6 @@ void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
 int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats) {
   struct st30p_tx_ctx* ctx = handle;
   int cidx;
-  struct st30p_tx_frame* framebuff = ctx->framebuffs;
-  uint16_t status_counts[ST30P_TX_FRAME_STATUS_MAX] = {0};
-
-  for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st30p_tx_frame_status stat = framebuff[j].stat;
-    if (stat < ST30P_TX_FRAME_STATUS_MAX) {
-      status_counts[stat]++;
-    }
-  }
-
-  char status_str[256];
-  int offset = 0;
-  for (uint16_t i = 0; i < ST30P_TX_FRAME_STATUS_MAX; i++) {
-    if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st30p_tx_frame_stat_name_short[i], status_counts[i]);
-    }
-  }
-  notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   if (!handle || !stats) {
     err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);

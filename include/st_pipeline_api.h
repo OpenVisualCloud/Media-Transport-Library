@@ -387,12 +387,6 @@ enum st22p_tx_flag {
    */
   ST22P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
   /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
-   */
-  ST22P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(12)),
-  /**
    * If enabled, lib will assign the rtp timestamp to the value in
    * tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
    */
@@ -420,7 +414,7 @@ enum st22p_tx_flag {
   ST22P_TX_FLAG_FORCE_NUMA = (MTL_BIT32(9)),
   /** Enable the st22p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st22p_tx_set_block_timeout to customize) */
-  ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15))
+  ST22P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
 };
 
 /** Bit define for flags of struct st20p_tx_ops. */
@@ -445,12 +439,6 @@ enum st20p_tx_flag {
    * aligned with virtual receiver read schedule.
    */
   ST20P_TX_FLAG_USER_PACING = (MTL_BIT32(3)),
-  /**
-   * Drop frames when the mtl reports late frames (transport can't keep up).
-   * When late frame is detected, next frame from pipeline is ommited.
-   * Untill we resume normal frame sending.
-   */
-  ST20P_TX_FLAG_DROP_WHEN_LATE = (MTL_BIT32(12)),
   /**
    * If enabled, lib will assign the rtp timestamp to the value of timestamp in
    * st_frame.timestamp (if needed the value will be converted to
@@ -889,21 +877,11 @@ struct st20p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done in the lib. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
-
-  /**
-   * Optional. Callback when frame timing issues occur.
-   * If ST20P_TX_FLAG_DROP_WHEN_LATE is enabled: triggered when a frame is dropped
-   * from the pipeline due to late transmission.
-   * If ST20P_TX_FLAG_DROP_WHEN_LATE is disabled: triggered when the transport
-   * layer reports late frame delivery.
-   */
-  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /** Optional. Linesize for transport frame, only for non-convert mode */
   size_t transport_linesize;
@@ -1070,21 +1048,11 @@ struct st22p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done in the lib. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done in the lib.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st_frame* frame);
-
-  /**
-   * Optional. Callback when frame timing issues occur.
-   * If ST22P_TX_FLAG_DROP_WHEN_LATE is enabled: triggered when a frame is dropped
-   * from the pipeline due to late transmission.
-   * If ST22P_TX_FLAG_DROP_WHEN_LATE is disabled: triggered when the transport
-   * layer reports late frame delivery.
-   */
-  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /** Optional for ST22P_TX_FLAG_ENABLE_RTCP. RTCP info */
   struct st_tx_rtcp_ops rtcp;

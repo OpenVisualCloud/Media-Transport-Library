@@ -343,8 +343,6 @@ struct st40_tx_ops {
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st40_tx_frame_meta* meta);
 
-  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
-
   /** Optional. UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];
   /**

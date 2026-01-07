@@ -24,7 +24,6 @@ struct st20p_tx_frame {
   struct st_frame dst; /* converted */
   struct st20_convert_frame_meta convert_frame;
   uint16_t idx;
-  uint32_t seq_number;
   void* user_meta; /* the meta data from user */
   size_t user_meta_buffer_size;
   size_t user_meta_data_size;
@@ -42,7 +41,9 @@ struct st20p_tx_ctx {
 
   st20_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_sequence_number;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_convert_idx;
+  uint16_t framebuff_consumer_idx;
   struct st20p_tx_frame* framebuffs;
   pthread_mutex_t lock;
   int usdt_frame_cnt;
@@ -65,10 +66,9 @@ struct st20p_tx_ctx {
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;
   /* get frame stat */
-  uint32_t stat_get_frame_try;
-  uint32_t stat_get_frame_succ;
-  uint32_t stat_put_frame;
-  uint32_t stat_drop_frame;
+  int stat_get_frame_try;
+  int stat_get_frame_succ;
+  int stat_put_frame;
 };
 
 #endif

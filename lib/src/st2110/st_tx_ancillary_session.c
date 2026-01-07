@@ -307,10 +307,6 @@ static inline uint64_t tx_ancillary_calc_epoch(struct st_tx_ancillary_session_im
     ST_SESSION_STAT_ADD(s, port_user_stats.common, stat_epoch_drop,
                         (current_epoch - next_free_epoch));
 
-    if (s->ops.notify_frame_late) {
-      s->ops.notify_frame_late(s->ops.priv, current_epoch - next_free_epoch);
-    }
-
     epoch = current_epoch;
   }
 

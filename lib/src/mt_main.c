@@ -667,11 +667,6 @@ int mtl_uninit(mtl_handle mt) {
 int mtl_start(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
-  if (!impl) {
-    err("%s, null handle\n", __func__);
-    return -EINVAL;
-  }
-
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;

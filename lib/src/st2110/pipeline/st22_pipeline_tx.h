@@ -24,7 +24,6 @@ struct st22p_tx_frame {
   struct st_frame dst; /* encoded */
   struct st22_encode_frame_meta encode_frame;
   uint16_t idx;
-  uint32_t seq_number;
 };
 
 struct st22p_tx_ctx {
@@ -39,7 +38,9 @@ struct st22p_tx_ctx {
 
   st22_tx_handle transport;
   uint16_t framebuff_cnt;
-  uint32_t framebuff_sequence_number;
+  uint16_t framebuff_producer_idx;
+  uint16_t framebuff_encode_idx;
+  uint16_t framebuff_consumer_idx;
   struct st22p_tx_frame* framebuffs;
   pthread_mutex_t lock; /* protect framebuffs */
 
@@ -66,14 +67,13 @@ struct st22p_tx_ctx {
 
   rte_atomic32_t stat_encode_fail;
   /* get frame stat */
-  uint32_t stat_get_frame_try;
-  uint32_t stat_get_frame_succ;
-  uint32_t stat_put_frame;
-  uint32_t stat_drop_frame;
+  int stat_get_frame_try;
+  int stat_get_frame_succ;
+  int stat_put_frame;
   /* get frame stat */
-  uint32_t stat_encode_get_frame_try;
-  uint32_t stat_encode_get_frame_succ;
-  uint32_t stat_encode_put_frame;
+  int stat_encode_get_frame_try;
+  int stat_encode_get_frame_succ;
+  int stat_encode_put_frame;
 };
 
 #endif

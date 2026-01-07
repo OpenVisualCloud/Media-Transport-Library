@@ -105,6 +105,10 @@ enum st40p_tx_flag {
   /** Enable the st40p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_tx_set_block_timeout to customize)*/
   ST40P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
+  /**
+   ** Enable verbose reporting of framebuffer statuses in statistics output
+   */
+  ST40P_TX_FLAG_ACCURATE_FRAMEBUFF_STATISTICS = (MTL_BIT32(25)),
 };
 
 /**
@@ -135,21 +139,11 @@ struct st40p_tx_ops {
    */
   int (*notify_frame_available)(void* priv);
   /**
-   * Optional. Callback when frame done. If TX_FLAG_DROP_WHEN_LATE is enabled
-   * this will be called only when the notify_frame_late is not triggered.
+   * Optional. Callback when frame done.
    * And only non-block method can be used within this callback as it run from lcore
    * tasklet routine.
    */
   int (*notify_frame_done)(void* priv, struct st40_frame_info* frame_info);
-
-  /**
-   * Optional. Callback when frame timing issues occur.
-   * If ST40P_TX_FLAG_DROP_WHEN_LATE is enabled: triggered when a frame is dropped
-   * from the pipeline due to late transmission.
-   * If ST40P_TX_FLAG_DROP_WHEN_LATE is disabled: triggered when the transport
-   * layer reports late frame delivery.
-   */
-  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /**
    * Optional. tx destination mac address.

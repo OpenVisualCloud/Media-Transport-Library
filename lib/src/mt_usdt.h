@@ -106,8 +106,6 @@
   MT_DTRACE_PROBE4(st20p, tx_frame_put, idx, f_idx, va, stat)
 #define MT_USDT_ST20P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
   MT_DTRACE_PROBE3(st20p, tx_frame_done, idx, f_idx, tmstamp)
-#define MT_USDT_ST20P_TX_FRAME_DROP(idx, f_idx, tmstamp) \
-  MT_DTRACE_PROBE3(st20p, tx_frame_drop, idx, f_idx, tmstamp)
 #define MT_USDT_ST20P_TX_FRAME_NEXT(idx, f_idx) \
   MT_DTRACE_PROBE2(st20p, tx_frame_next, idx, f_idx)
 #define MT_USDT_ST20P_TX_FRAME_DUMP(idx, file, va, sz) \
@@ -130,8 +128,6 @@
   MT_DTRACE_PROBE3(st30p, tx_frame_put, idx, f_idx, va)
 #define MT_USDT_ST30P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
   MT_DTRACE_PROBE3(st30p, tx_frame_done, idx, f_idx, tmstamp)
-#define MT_USDT_ST30P_TX_FRAME_DROP(idx, f_idx, tmstamp) \
-  MT_DTRACE_PROBE3(st30p, tx_frame_drop, idx, f_idx, tmstamp)
 #define MT_USDT_ST30P_TX_FRAME_NEXT(idx, f_idx) \
   MT_DTRACE_PROBE2(st30p, tx_frame_next, idx, f_idx)
 #define MT_USDT_ST30P_TX_FRAME_DUMP(idx, file, frames) \
@@ -147,17 +143,6 @@
 #define MT_USDT_ST30P_RX_FRAME_DUMP(idx, file, frames) \
   MT_DTRACE_PROBE3(st30p, rx_frame_dump, idx, file, frames)
 #define MT_USDT_ST30P_RX_FRAME_DUMP_ENABLED() ST30P_RX_FRAME_DUMP_ENABLED()
-
-#define MT_USDT_ST40P_TX_FRAME_GET(idx, f_idx, va) \
-  MT_DTRACE_PROBE3(st40p, tx_frame_get, idx, f_idx, va)
-#define MT_USDT_ST40P_TX_FRAME_PUT(idx, f_idx, va) \
-  MT_DTRACE_PROBE3(st40p, tx_frame_put, idx, f_idx, va)
-#define MT_USDT_ST40P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
-  MT_DTRACE_PROBE3(st40p, tx_frame_done, idx, f_idx, tmstamp)
-#define MT_USDT_ST40P_TX_FRAME_DROP(idx, f_idx, tmstamp) \
-  MT_DTRACE_PROBE3(st40p, tx_frame_drop, idx, f_idx, tmstamp)
-#define MT_USDT_ST40P_TX_FRAME_NEXT(idx, f_idx) \
-  MT_DTRACE_PROBE2(st40p, tx_frame_next, idx, f_idx)
 
 #define MT_USDT_ST20_TX_FRAME_NEXT(m_idx, s_idx, f_idx, va, tmstamp) \
   MT_DTRACE_PROBE5(st20, tx_frame_next, m_idx, s_idx, f_idx, va, tmstamp)
@@ -251,8 +236,6 @@
   MT_DTRACE_PROBE5(st22p, tx_frame_put, idx, f_idx, va, stat, size)
 #define MT_USDT_ST22P_TX_FRAME_DONE(idx, f_idx, tmstamp) \
   MT_DTRACE_PROBE3(st22p, tx_frame_done, idx, f_idx, tmstamp)
-#define MT_USDT_ST22P_TX_FRAME_DROP(idx, f_idx, tmstamp) \
-  MT_DTRACE_PROBE3(st22p, tx_frame_drop, idx, f_idx, tmstamp)
 #define MT_USDT_ST22P_TX_FRAME_NEXT(idx, f_idx) \
   MT_DTRACE_PROBE2(st22p, tx_frame_next, idx, f_idx)
 #define MT_USDT_ST22P_TX_FRAME_DUMP(idx, file, va, sz) \

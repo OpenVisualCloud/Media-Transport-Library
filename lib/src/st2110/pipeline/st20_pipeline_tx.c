@@ -11,12 +11,16 @@ static const char* st20p_tx_frame_stat_name[ST20P_TX_FRAME_STATUS_MAX] = {
     "free", "ready", "in_converting", "converted", "in_user", "in_transmitting",
 };
 
-static const char* st20p_tx_frame_stat_name_short[ST20P_TX_FRAME_STATUS_MAX] = {
-    "F", "R", "IC", "C", "U", "T",
-};
-
 static const char* tx_st20p_stat_name(enum st20p_tx_frame_status stat) {
   return st20p_tx_frame_stat_name[stat];
+}
+
+static uint16_t tx_st20p_next_idx(struct st20p_tx_ctx* ctx, uint16_t idx) {
+  /* point to next */
+  uint16_t next_idx = idx;
+  next_idx++;
+  if (next_idx >= ctx->framebuff_cnt) next_idx = 0;
+  return next_idx;
 }
 
 static inline struct st_frame* tx_st20p_user_frame(struct st20p_tx_ctx* ctx,
@@ -43,35 +47,26 @@ static void tx_st20p_notify_frame_available(struct st20p_tx_ctx* ctx) {
 }
 
 static struct st20p_tx_frame* tx_st20p_next_available(
-    struct st20p_tx_ctx* ctx, enum st20p_tx_frame_status desired) {
+    struct st20p_tx_ctx* ctx, uint16_t idx_start, enum st20p_tx_frame_status desired) {
+  uint16_t idx = idx_start;
   struct st20p_tx_frame* framebuff;
 
-  /* check ready frame from start */
-  for (int idx = 0; idx < ctx->framebuff_cnt; idx++) {
+  /* check ready frame from idx_start */
+  while (1) {
     framebuff = &ctx->framebuffs[idx];
     if (desired == framebuff->stat) {
+      /* find one desired */
       return framebuff;
     }
-  }
-
-  return NULL;
-}
-
-static struct st20p_tx_frame* tx_st20p_newest_available(
-    struct st20p_tx_ctx* ctx, enum st20p_tx_frame_status desired) {
-  struct st20p_tx_frame* framebuff = NULL;
-  struct st20p_tx_frame* framebuff_newest = NULL;
-
-  for (uint16_t idx = 0; idx < ctx->framebuff_cnt; idx++) {
-    framebuff = &ctx->framebuffs[idx];
-    if ((desired == framebuff->stat &&
-         (!framebuff_newest ||
-          !mt_seq32_greater(framebuff->seq_number, framebuff_newest->seq_number)))) {
-      framebuff_newest = framebuff;
+    idx = tx_st20p_next_idx(ctx, idx);
+    if (idx == idx_start) {
+      /* loop all frames end */
+      break;
     }
   }
 
-  return framebuff_newest;
+  /* no any desired frame */
+  return NULL;
 }
 
 static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
@@ -82,7 +77,8 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
+  framebuff =
+      tx_st20p_next_available(ctx, ctx->framebuff_consumer_idx, ST20P_TX_FRAME_CONVERTED);
   /* not any converted frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
@@ -102,50 +98,11 @@ static int tx_st20p_next_frame(void* priv, uint16_t* next_frame_idx,
     meta->user_meta = framebuff->user_meta;
     meta->user_meta_size = framebuff->user_meta_data_size;
   }
-
   /* point to next */
+  ctx->framebuff_consumer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
-  dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, ctx->idx, framebuff->idx,
-      framebuff->idx);
+  dbg("%s(%d), frame %u succ\n", __func__, ctx->idx, framebuff->idx);
   MT_USDT_ST20P_TX_FRAME_NEXT(ctx->idx, framebuff->idx);
-  return 0;
-}
-
-int st20p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
-  struct st20p_tx_ctx* ctx = handle;
-  int cidx = ctx->idx;
-  struct st20p_tx_frame* framebuff;
-
-  if (ctx->type != MT_ST20_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
-
-  if (!ctx->ready) return -EBUSY; /* not ready */
-  mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_CONVERTED);
-  /* not any converted frame */
-  if (!framebuff) {
-    mt_pthread_mutex_unlock(&ctx->lock);
-    return -EBUSY;
-  }
-
-  framebuff->stat = ST20P_TX_FRAME_FREE;
-  ctx->stat_drop_frame++;
-  dbg("%s(%d), drop frame %u succ\n", __func__, cidx, framebuff->idx);
-  mt_pthread_mutex_unlock(&ctx->lock);
-
-  if (ctx->ops.notify_frame_late) {
-    ctx->ops.notify_frame_late(ctx->ops.priv, epoch_skipped);
-  } else if (ctx->ops.notify_frame_done &&
-             !framebuff->frame_done_cb_called) { /* notify app which frame done */
-    ctx->ops.notify_frame_done(ctx->ops.priv, tx_st20p_user_frame(ctx, framebuff));
-    framebuff->frame_done_cb_called = true;
-  }
-
-  /* notify app can get frame */
-  tx_st20p_notify_frame_available(ctx);
-  MT_USDT_ST20P_TX_FRAME_DROP(cidx, framebuff->idx, framebuff->dst.rtp_timestamp);
   return 0;
 }
 
@@ -160,11 +117,12 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
   frame->timestamp = meta->timestamp;
   frame->epoch = meta->epoch;
   frame->rtp_timestamp = meta->rtp_timestamp;
+
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
     ret = 0;
     framebuff->stat = ST20P_TX_FRAME_FREE;
-    dbg("%s(%d), frame_idx: %u\n", __func__, ctx->idx, frame_idx);
+    dbg("%s(%d), done_idx %u\n", __func__, ctx->idx, frame_idx);
   } else {
     ret = -EIO;
     err("%s(%d), err status %d for frame %u\n", __func__, ctx->idx, framebuff->stat,
@@ -209,7 +167,8 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
   if (!ctx->ready) return NULL; /* not ready */
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_newest_available(ctx, ST20P_TX_FRAME_READY);
+  framebuff =
+      tx_st20p_next_available(ctx, ctx->framebuff_convert_idx, ST20P_TX_FRAME_READY);
   /* not any free frame */
   if (!framebuff) {
     mt_pthread_mutex_unlock(&ctx->lock);
@@ -217,10 +176,11 @@ static struct st20_convert_frame_meta* tx_st20p_convert_get_frame(void* priv) {
   }
 
   framebuff->stat = ST20P_TX_FRAME_IN_CONVERTING;
+  /* point to next */
+  ctx->framebuff_convert_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  dbg("%s(%d), frame %u succ, frame_idx: %u\n", __func__, idx, framebuff->idx,
-      framebuff->idx);
+  dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);
   return &framebuff->convert_frame;
 }
 
@@ -243,20 +203,15 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if ((result < 0) || (data_size <= 0)) {
-    dbg("%s(%d), frame %u result %d data_size %" PRIu64 ", frame_idx: %u\n", __func__,
-        idx, convert_idx, result, data_size, convert_idx);
-
+    dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, convert_idx,
+        result, data_size);
     framebuff->stat = ST20P_TX_FRAME_FREE;
-    mt_pthread_mutex_unlock(&ctx->lock);
-
     /* notify app can get frame */
     tx_st20p_notify_frame_available(ctx);
     rte_atomic32_inc(&ctx->stat_convert_fail);
   } else {
     framebuff->stat = ST20P_TX_FRAME_CONVERTED;
-    mt_pthread_mutex_unlock(&ctx->lock);
   }
 
   if (ctx->ops.notify_frame_done && !framebuff->frame_done_cb_called) {
@@ -269,8 +224,13 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
 
 static int tx_st20p_convert_dump(void* priv) {
   struct st20p_tx_ctx* ctx = priv;
+  struct st20p_tx_frame* framebuff = ctx->framebuffs;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
+
+  uint16_t convert_idx = ctx->framebuff_convert_idx;
+  notice("TX_st20p(%s), cv(%d:%s)\n", ctx->ops_name, convert_idx,
+         tx_st20p_stat_name(framebuff[convert_idx].stat));
 
   int convert_fail = rte_atomic32_read(&ctx->stat_convert_fail);
   rte_atomic32_set(&ctx->stat_convert_fail, 0);
@@ -336,11 +296,6 @@ static int tx_st20p_create_transport(struct mtl_main_impl* impl, struct st20p_tx
   if (ctx->derive && ops->flags & ST20P_TX_FLAG_EXT_FRAME)
     ops_tx.flags |= ST20_TX_FLAG_EXT_FRAME;
   if (ops->flags & ST20P_TX_FLAG_USER_PACING) ops_tx.flags |= ST20_TX_FLAG_USER_PACING;
-  if (ops->flags & ST20P_TX_FLAG_DROP_WHEN_LATE) {
-    ops_tx.notify_frame_late = st20p_tx_late_frame_drop;
-  } else if (ops->notify_frame_late) {
-    ops_tx.notify_frame_late = ops->notify_frame_late;
-  }
   if (ops->flags & ST20P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST20_TX_FLAG_USER_TIMESTAMP;
   if (ops->flags & ST20P_TX_FLAG_ENABLE_VSYNC) ops_tx.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
@@ -534,34 +489,20 @@ static int tx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_tx_ct
 static int tx_st20p_stat(void* priv) {
   struct st20p_tx_ctx* ctx = priv;
   struct st20p_tx_frame* framebuff = ctx->framebuffs;
-  uint16_t status_counts[ST20P_TX_FRAME_STATUS_MAX] = {0};
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
-    enum st20p_tx_frame_status stat = framebuff[j].stat;
-    if (stat < ST20P_TX_FRAME_STATUS_MAX) {
-      status_counts[stat]++;
-    }
-  }
+  uint16_t producer_idx = ctx->framebuff_producer_idx;
+  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  notice("TX_st20p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
+         tx_st20p_stat_name(framebuff[producer_idx].stat), consumer_idx,
+         tx_st20p_stat_name(framebuff[consumer_idx].stat));
 
-  char status_str[256];
-  int offset = 0;
-  for (uint16_t i = 0; i < ST20P_TX_FRAME_STATUS_MAX; i++) {
-    if (status_counts[i] > 0) {
-      offset += snprintf(status_str + offset, sizeof(status_str) - offset, "%s:%u ",
-                         st20p_tx_frame_stat_name_short[i], status_counts[i]);
-    }
-  }
-  notice("TX_st20p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
-
-  notice("TX_st20p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
-         ctx->stat_drop_frame);
+  notice("TX_st20p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
+         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
   ctx->stat_put_frame = 0;
-  ctx->stat_drop_frame = 0;
 
   return 0;
 }
@@ -612,8 +553,8 @@ static void tx_st20p_framebuffs_flush(struct st20p_tx_ctx* ctx) {
         break;
       }
 
-      dbg("%s(%d), frame %u are still in %s, retry %d, frame_idx: %u\n", __func__,
-          ctx->idx, i, tx_st20p_stat_name(framebuff->stat), retry, i);
+      dbg("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
+          tx_st20p_stat_name(framebuff->stat), retry);
       retry++;
       if (retry > 100) {
         info("%s(%d), frame %u are still in %s, retry %d\n", __func__, ctx->idx, i,
@@ -651,13 +592,15 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
   ctx->stat_get_frame_try++;
 
   mt_pthread_mutex_lock(&ctx->lock);
-  framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);
+  framebuff =
+      tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
   if (!framebuff && ctx->block_get) { /* wait here */
     mt_pthread_mutex_unlock(&ctx->lock);
     st20p_tx_get_block_wait(ctx);
     /* get again */
     mt_pthread_mutex_lock(&ctx->lock);
-    framebuff = tx_st20p_next_available(ctx, ST20P_TX_FRAME_FREE);
+    framebuff =
+        tx_st20p_next_available(ctx, ctx->framebuff_producer_idx, ST20P_TX_FRAME_FREE);
   }
   /* not any free frame */
   if (!framebuff) {
@@ -667,7 +610,8 @@ struct st_frame* st20p_tx_get_frame(st20p_tx_handle handle) {
 
   framebuff->stat = ST20P_TX_FRAME_IN_USER;
   framebuff->frame_done_cb_called = false;
-  framebuff->seq_number = ctx->framebuff_sequence_number++;
+  /* point to next */
+  ctx->framebuff_producer_idx = tx_st20p_next_idx(ctx, framebuff->idx);
   mt_pthread_mutex_unlock(&ctx->lock);
 
   dbg("%s(%d), frame %u succ\n", __func__, idx, framebuff->idx);

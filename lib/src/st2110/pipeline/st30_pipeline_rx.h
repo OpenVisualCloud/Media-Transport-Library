@@ -52,10 +52,10 @@ struct st30p_rx_ctx {
   bool block_wake_pending;
 
   /* get frame stat */
-  uint32_t stat_get_frame_try;
-  uint32_t stat_get_frame_succ;
-  uint32_t stat_put_frame;
-  uint32_t stat_busy;
+  int stat_get_frame_try;
+  int stat_get_frame_succ;
+  int stat_put_frame;
+  int stat_busy;
 };
 
 #endif
