@@ -4,9 +4,10 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.media_files import yuv_files_422rfc10
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
 @pytest.mark.parametrize("file", ["Penguin_1080p"])
 @pytest.mark.parametrize("replicas", [1, 4])
@@ -33,10 +34,9 @@ def test_kernello_st22p_video_format(
         test_mode=test_mode,
         width=st22p_file["width"],
         height=st22p_file["height"],
-        fps=f"p{st22p_file['fps']}",
+        fps=parse_fps_to_pformat(st22p_file["fps"]),
         codec="JPEG-XS",
         quality="speed",
-        pack_type="codestream",
         input_format=st22p_file["file_format"],
         output_format=st22p_file["file_format"],
         codec_thread_count=2,

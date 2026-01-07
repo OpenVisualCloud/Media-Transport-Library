@@ -4,9 +4,15 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.media_files import anc_files, audio_files, yuv_files
+from mtl_engine.media_files import (
+    anc_files,
+    audio_files,
+    parse_fps_to_pformat,
+    yuv_files,
+)
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
 @pytest.mark.parametrize("video_format", ["i1080p59"])
 @pytest.mark.parametrize("replicas", [1, 3])
@@ -35,7 +41,7 @@ def test_kernello_mixed_format(
         test_mode=test_mode,
         width=video_file["width"],
         height=video_file["height"],
-        fps=f"p{video_file['fps']}",
+        fps=parse_fps_to_pformat(video_file["fps"]),
         input_format=video_file["file_format"],
         transport_format=video_file["format"],
         output_format=video_file["file_format"],

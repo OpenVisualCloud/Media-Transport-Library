@@ -4,7 +4,8 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.media_files import yuv_files
+from common.nicctl import InterfaceSetup
+from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 
 @pytest.mark.parametrize("test_mode", ["multicast"])
@@ -14,10 +15,12 @@ def test_pmd_kernel_video_format(
     hosts,
     build,
     media,
+    setup_interfaces: InterfaceSetup,
     test_time,
     test_mode,
     video_format,
     replicas,
+    test_config,
     prepare_ramdisk,
 ):
 
@@ -26,17 +29,19 @@ def test_pmd_kernel_video_format(
     # rxtxapp.check_and_bind_interface(["0000:38:00.0","0000:38:00.1"], "pmd")
     host = list(hosts.values())[0]
 
+    # Get hybrid interface list: one DPDK (VF/PF) and one kernel socket
+    interfaces_list = setup_interfaces.get_pmd_kernel_interfaces(
+        test_config.get("interface_type", "VF")
+    )
+
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=[
-            "0000:4b:00.0",
-            "kernel:eth2",
-        ],  # Note: keeping hardcoded for kernel socket test
+        nic_port_list=interfaces_list,
         test_mode=test_mode,
         width=video_file["width"],
         height=video_file["height"],
-        fps=f"p{video_file['fps']}",
+        fps=parse_fps_to_pformat(video_file["fps"]),
         input_format=video_file["file_format"],
         transport_format=video_file["format"],
         output_format=video_file["file_format"],
