@@ -92,4 +92,11 @@ int st_rx_video_session_migrate(struct mtl_main_impl* impl,
                                 struct st_rx_video_sessions_mgr* mgr,
                                 struct st_rx_video_session_impl* s, int idx);
 
+#if defined(MTL_ENABLE_FUZZING_ST20) || defined(MTL_ENABLE_FUZZING_ST22)
+int st_rx_video_session_fuzz_handle_pkt(struct st_rx_video_session_impl* s,
+                                        struct rte_mbuf* mbuf,
+                                        enum mtl_session_port s_port);
+void st_rx_video_session_fuzz_reset(struct st_rx_video_session_impl* s);
+#endif
+
 #endif

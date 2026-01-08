@@ -3896,8 +3896,7 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   struct mt_txq_flow flow;
   memset(&flow, 0, sizeof(flow));
   flow.bytes_per_sec = tv_rl_bps(s);
-  mt_pacing_train_bps_result_search(impl, s_port, flow.bytes_per_sec,
-                                    &flow.bytes_per_sec);
+  mt_pacing_train_bps_result_search(impl, port, flow.bytes_per_sec, &flow.bytes_per_sec);
   mtl_memcpy(&flow.dip_addr, &s->ops.dip_addr[s_port], MTL_IP_ADDR_LEN);
   flow.dst_port = s->ops.udp_port[s_port];
   s->queue[s_port] = mt_txq_get(impl, port, &flow);

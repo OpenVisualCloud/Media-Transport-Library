@@ -78,7 +78,7 @@ An important point to note is that narrow pacing of TX is only supported for the
 
 ## 2. Build
 
-Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
+Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [doc/fuzzing.md](doc/fuzzing.md).
 
 For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
 
