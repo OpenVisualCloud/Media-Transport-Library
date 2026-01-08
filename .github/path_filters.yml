@@ -59,6 +59,6 @@ linux_tests: &linux_tests
   - .github/workflows/smoke-tests.yml
   - '.github/workflows/upl*'
   - 'tests/unittest/*'
+  - 'tests/validation/*'
   - *ice_build
   - *ubuntu_build
-
