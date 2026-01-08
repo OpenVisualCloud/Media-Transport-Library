@@ -68,7 +68,7 @@ jobs:
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         shell: bash
         run: |
-          echo "MTL_GITHUB_JOB=${{ github.workflow }}:${{ github.job }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
 
       - name: Install requirements
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends linuxptp ethtool netsniff-ng jq
+          sudo apt-get install -y linuxptp ethtool netsniff-ng
       - name: Set PCI device env variable
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |

@@ -15,7 +15,7 @@ capture_cfg:
   pcap_dir: /mnt/ramdisk/pcap
   # Optional: pick a different NIC for netsniff-ng capture than the one used by the test.
   # Priority: sniff_interface > sniff_interface_index > sniff_pci_device.
-  sniff_pci_device: 8086:12d2
+  # sniff_pci_device: 8086:12d2
 ebu_server:
   ebu_ip: ebu_ip
   user: user

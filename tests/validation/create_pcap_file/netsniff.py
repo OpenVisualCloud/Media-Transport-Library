@@ -93,7 +93,7 @@ class NetsniffRecorder:
     def _build_pcap_path(self) -> str:
         hostname = self._sanitize_filename_component(self._get_remote_hostname())
         timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        job = os.environ.get("MTL_GITHUB_JOB") or os.environ.get("GITHUB_JOB") or ""
+        job = os.environ.get("MTL_GITHUB_WORKFLOW") or os.environ.get("GITHUB_JOB") or ""
         job = self._sanitize_filename_component(job, max_len=96) if job else ""
 
         test = self._sanitize_filename_component(self.test_name, max_len=128)
