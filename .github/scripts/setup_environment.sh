@@ -360,7 +360,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	mtl_build_options=""
 
 	if [[ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]]; then
-		echo "$STEP enable MTL"
+		echo "$STEP enable MTL_fuzzing=true"
 		mtl_build_options="${mtl_build_options} enable_fuzzing"
 		STEP=$((STEP + 1))
 	fi
