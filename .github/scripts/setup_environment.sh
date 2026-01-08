@@ -356,6 +356,31 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 		MTL_BUILD_ENABLE_FUZZING=true ./build.sh release enable_fuzzing
 		STEP=$((STEP + 1))
 	fi
+	# MTL build and install
+	mtl_build_options=""
+
+	if [[ "${MTL_BUILD_AND_INSTALL_FUZZ}" == "1" ]]; then
+		echo "$STEP enable MTL"
+		mtl_build_options="${mtl_build_options} enable_fuzzing"
+		STEP=$((STEP + 1))
+	fi
+
+	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
+		echo "$STEP MTL debug build and install"
+		pushd "${root_folder}" >/dev/null || exit 1
+		./build.sh debug ${mtl_build_options}
+		popd >/dev/null
+		STEP=$((STEP + 1))
+	fi
+
+	# If both are enabled we build debug but overwrite with release
+	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
+		echo "$STEP MTL build and install"
+		pushd "${root_folder}" >/dev/null || exit 1
+		./build.sh ${mtl_build_options}
+		popd >/dev/null
+		STEP=$((STEP + 1))
+	fi
 
 	if [ "${MTL_BUILD_AND_INSTALL_DOCKER}" == "1" ]; then
 		echo "$STEP MTL docker build and install"
