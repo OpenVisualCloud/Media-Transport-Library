@@ -1,5 +1,54 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
+"""PMD+Kernel Mixed Media Tests.
+
+This module tests hybrid network backend configurations with multiple ST2110 stream
+types (video, audio, and ancillary data) using different networking backends on the
+same system: DPDK PMD for transmit and kernel socket for receive.
+
+Test Purpose
+------------
+Validate that MTL can successfully transmit and receive multiple ST2110 stream types
+simultaneously when using different networking backends:
+
+- **ST2110-20 Video**: Uncompressed video streams
+- **ST2110-30 Audio**: PCM audio streams (24-bit)
+- **ST2110-40 Ancillary**: Ancillary data streams
+
+All streams use:
+
+- **TX (Transmit)**: DPDK PMD backend via VF for high-performance transmission
+- **RX (Receive)**: Kernel socket backend via native interface for reception
+
+This tests MTL's ability to handle complex mixed-media workflows with hybrid
+networking configurations, simulating real-world broadcast scenarios where multiple
+signal types must be synchronized.
+
+Test Methodology
+----------------
+1. Create VF on first interface and bind to DPDK (vfio-pci driver) for TX
+2. Use second interface with kernel driver for RX (kernel socket mode)
+3. Configure multiple ST2110 sessions:
+
+   - ST2110-20: Video sessions with specified format and frame rate
+   - ST2110-30: Audio sessions with PCM24 format
+   - ST2110-40: Ancillary data sessions
+
+4. Transmit all streams simultaneously via DPDK PMD interface
+5. Receive and validate all streams via kernel socket interface
+6. Verify frame rates, packet counts, and data integrity for each stream type
+7. Check synchronization between video, audio, and ancillary streams
+
+Topology Requirements
+---------------------
+Requires at least 2 network interfaces configured in topology_config.yaml:
+
+- First interface: Used for DPDK VF creation (TX path)
+- Second interface: Used for kernel socket (RX path)
+
+Both interfaces should be on the same NIC (same PCI bus) for proper connectivity.
+If only one interface is configured, tests will be skipped.
+"""
 import os
 
 import mtl_engine.RxTxApp as rxtxapp
@@ -28,6 +77,31 @@ def test_pmd_kernel_mixed_format(
     test_config,
     prepare_ramdisk,
 ):
+    """Test mixed ST2110 streams (video, audio, ancillary) using DPDK PMD (TX) and kernel socket (RX).
+
+    :param hosts: Dictionary of host objects from topology configuration
+    :type hosts: dict
+    :param build: Path to MTL build directory
+    :type build: str
+    :param media: Path to media files directory containing video, audio, and ancillary files
+    :type media: str
+    :param setup_interfaces: Interface setup helper for network configuration
+    :type setup_interfaces: InterfaceSetup
+    :param test_time: Duration to run the test in seconds
+    :type test_time: int
+    :param test_mode: Network mode for testing (multicast/unicast)
+    :type test_mode: str
+    :param video_format: Video format identifier (e.g., 'i1080p59')
+    :type video_format: str
+    :param replicas: Number of concurrent mixed-media session sets to create
+    :type replicas: int
+    :param test_config: Test configuration dictionary from test_config.yaml
+    :type test_config: dict
+    :param prepare_ramdisk: Ramdisk preparation fixture (if enabled)
+    :type prepare_ramdisk: object or None
+
+    :raises pytest.skip: If less than 2 network interfaces configured in topology
+    """
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
