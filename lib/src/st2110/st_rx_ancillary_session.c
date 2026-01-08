@@ -108,10 +108,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   uint32_t tmstamp = ntohl(rtp->tmstamp);
 
   if (ops->payload_type && (payload_type != ops->payload_type)) {
-#ifdef MTL_ENABLE_FUZZING_ST40
     ST40_FUZZ_LOG("%s(%d,%d), drop payload_type %u expected %u\n", __func__, s->idx,
                   s_port, payload_type, ops->payload_type);
-#endif
     dbg("%s(%d,%d), get payload_type %u but expect %u\n", __func__, s->idx, s_port,
         payload_type, ops->payload_type);
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_pt_dropped);
@@ -120,10 +118,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if (ops->ssrc) {
     uint32_t ssrc = ntohl(rtp->ssrc);
     if (ssrc != ops->ssrc) {
-#ifdef MTL_ENABLE_FUZZING_ST40
       ST40_FUZZ_LOG("%s(%d,%d), drop ssrc %u expected %u\n", __func__, s->idx, s_port,
                     ssrc, ops->ssrc);
-#endif
       dbg("%s(%d,%d), get ssrc %u but expect %u\n", __func__, s->idx, s_port, ssrc,
           ops->ssrc);
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_wrong_ssrc_dropped);
@@ -133,10 +129,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
 
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
   if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
-#ifdef MTL_ENABLE_FUZZING_ST40
     ST40_FUZZ_LOG("%s(%d,%d), drop invalid field bits 0x%x\n", __func__, s->idx, s_port,
                   rfc8331->first_hdr_chunk.f);
-#endif
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
     return -EINVAL;
   }
@@ -169,17 +163,13 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
       !mt_seq16_greater(seq_id, s->session_seq_id)) {
     if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
-#ifdef MTL_ENABLE_FUZZING_ST40
       ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u last %d\n", __func__, s->idx, s_port,
                     seq_id, s->session_seq_id);
-#endif
       dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
           seq_id, s->session_seq_id);
     } else {
-#ifdef MTL_ENABLE_FUZZING_ST40
       ST40_FUZZ_LOG("%s(%d,%d), redundant ts %u last %ld\n", __func__, s->idx, s_port,
                     tmstamp, s->tmstamp);
-#endif
       dbg("%s(%d,%d), redundant tmstamp now %u session last %ld\n", __func__, s->idx,
           s_port, tmstamp, s->tmstamp);
     }
@@ -216,10 +206,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   if (ret < 0) {
     err("%s(%d), can not enqueue to the rte ring, packet drop, pkt seq %d\n", __func__,
         s->idx, seq_id);
-#ifdef MTL_ENABLE_FUZZING_ST40
     ST40_FUZZ_LOG("%s(%d,%d), enqueue failure for seq %u len %u\n", __func__, s->idx,
                   s_port, seq_id, pkt_len);
-#endif
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_enqueue_fail);
     MT_USDT_ST40_RX_MBUF_ENQUEUE_FAIL(s->mgr->idx, s->idx, mbuf, tmstamp);
     return 0;
@@ -245,10 +233,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   }
 
   MT_USDT_ST40_RX_MBUF_AVAILABLE(s->mgr->idx, s->idx, mbuf, tmstamp, pkt_len);
-#ifdef MTL_ENABLE_FUZZING_ST40
-  info("%s(%d,%d), fuzz enqueued seq %u len %u\n", __func__, s->idx, s_port, seq_id,
-       pkt_len);
-#endif
+  ST40_FUZZ_LOG("%s(%d,%d), fuzz enqueued seq %u len %u\n", __func__, s->idx, s_port,
+                seq_id, pkt_len);
   return 0;
 }
 
