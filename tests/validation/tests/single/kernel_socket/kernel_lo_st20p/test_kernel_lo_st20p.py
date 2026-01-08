@@ -1,5 +1,25 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
+"""Kernel loopback tests for ST2110-20 pipeline mode.
+
+Tests ST20P (pipeline mode) video streams over kernel socket loopback interface.
+
+Test Purpose
+------------
+Validate ST2110-20 pipeline mode with kernel socket backend using loopback
+interface for local testing without physical NICs.
+
+Methodology
+-----------
+Tests use kernel:lo for both TX and RX with 4:2:2 10-bit video formats.
+Multiple replica configurations validate concurrent session handling.
+
+Topology Requirements
+---------------------
+* Single host with loopback interface
+* No physical network interfaces required
+* Ramdisk for media files (optional but recommended)
+"""
 import os
 
 import mtl_engine.RxTxApp as rxtxapp
@@ -21,6 +41,20 @@ def test_kernello_st20p_video_format(
     replicas,
     prepare_ramdisk,
 ):
+    """Test ST2110-20 pipeline video over kernel loopback.
+
+    Validates ST20P (pipeline mode) video transmission and reception using
+    kernel socket backend over loopback interface.
+
+    :param hosts: Host objects from topology configuration
+    :param build: Path to MTL build directory
+    :param media: Path to media files directory
+    :param test_time: Test duration in seconds
+    :param test_mode: Transport mode (multicast)
+    :param file: Video file identifier (Penguin_1080p)
+    :param replicas: Number of session replicas (1 or 4)
+    :param prepare_ramdisk: Ramdisk setup fixture
+    """
     st20p_file = yuv_files_422p10le[file]
     host = list(hosts.values())[0]
 
