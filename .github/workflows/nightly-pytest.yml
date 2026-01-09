@@ -57,11 +57,11 @@ jobs:
       - name: Set PCI device env variable
         run: |
           if [ "${{ matrix.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
-            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ matrix.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
           fi
       - name: Generate test framework config files
         working-directory: tests/validation/configs
