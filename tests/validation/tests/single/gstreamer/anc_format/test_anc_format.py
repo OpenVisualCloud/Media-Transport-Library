@@ -148,6 +148,14 @@ def test_st40p_framebuff(
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(TMP_OUTPUT_FILE, host=host)
 
+    """ Validate ST40p integrity using GStreamer RFC8331 pipelines.
+        A pseudo RFC8331 input file, generated via ancgenerator, carries fixed
+        ancillary frames, output is compared against simplified Python output to
+        verify metadata consistency.
+        This verifies Ancillary integrity in complex scenarios for MTL library.
+        GStreamer ancillary pipelines with rfc8331 format and simplified rf8331 format.
+    """
+
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("fps", [24, 25, 30, 50, 60, 100, 120])

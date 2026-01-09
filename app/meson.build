@@ -517,11 +517,11 @@ if gpu_direct.found()
   executable('GpuDirectVideoTxMultiSample', gpu_direct_tx_sample_sources,
     c_args : app_c_args,
     link_args: app_ld_args,
-    dependencies: [libpthread, mtl, gpu_direct]
+    dependencies: [asan_dep, libpthread, mtl, gpu_direct]
   )
   executable('GpuDirectVideoRxMultiSample', gpu_direct_rx_sample_sources,
     c_args : app_c_args,
     link_args: app_ld_args,
-    dependencies: [libpthread, mtl, gpu_direct, libsdl2]
+    dependencies: [asan_dep, libpthread, mtl, gpu_direct, libsdl2]
   )
 endif

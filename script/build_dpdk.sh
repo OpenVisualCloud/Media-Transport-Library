@@ -65,8 +65,11 @@ if [ "$sourced" -eq 0 ]; then
 
 	if [ ! -d "$dpdk_folder" ]; then
 		echo "Clone DPDK source code"
-		wget https://github.com/DPDK/dpdk/archive/refs/tags/v"${DPDK_VER}".zip
-		unzip v"${DPDK_VER}".zip
+		archive_name="v${DPDK_VER}.zip"
+		rm -f "$archive_name"
+		wget "https://github.com/DPDK/dpdk/archive/refs/tags/${archive_name}" -O "$archive_name"
+		unzip "$archive_name"
+		rm -f "$archive_name"
 
 		cd "$dpdk_folder" || exit 1
 		for patch_file in ../../patches/dpdk/"$DPDK_VER"/*.patch; do
@@ -81,6 +84,12 @@ if [ "$sourced" -eq 0 ]; then
 	echo "Build and install DPDK now"
 	meson build
 	ninja -C build
-	cd build
-	sudo ninja install
+	(
+		cd build || exit 1
+		sudo ninja install
+	)
+
+	cd "$script_folder" || exit 1
+	echo "Removing downloaded DPDK source directory '$dpdk_folder'."
+	rm -rf "$dpdk_folder"
 fi
