@@ -12,19 +12,23 @@ from tests.xfail import SDBQ1971_conversion_v210_720p_error
 
 
 @pytest.mark.nightly
-@pytest.mark.parametrize("file", yuv_files.keys())
+@pytest.mark.parametrize(
+    "media_file",
+    list(yuv_files.values()),
+    indirect=["media_file"],
+    ids=list(yuv_files.keys()),
+)
 def test_video_resolutions(
     hosts,
     build,
-    media,
     setup_interfaces: InterfaceSetup,
-    file,
     request,
     test_time,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
-    video_file = yuv_files[file].copy()
+    video_file, media_file_path = media_file
 
     # The st20 plugin can only produce v210 when the width is divisible by 6
     # (pixel groups are 6 pixels wide). Fall back to I422_10LE otherwise so
@@ -48,12 +52,13 @@ def test_video_resolutions(
             request=request,
         )
 
+    media_dir = os.path.dirname(media_file_path)
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
         format=gst_format,
-        media_path=media,
+        media_path=media_dir,
         duration=3,
         host=host,
     )
@@ -73,7 +78,7 @@ def test_video_resolutions(
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=os.path.join(media, "output_video.yuv"),
+        output_path=os.path.join(media_file_path, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
@@ -87,7 +92,7 @@ def test_video_resolutions(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_video.yuv"),
+            output_file=os.path.join(media_dir, "output_video.yuv"),
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -96,4 +101,4 @@ def test_video_resolutions(
     finally:
         # Remove the video file after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_video.yuv"), host=host)
+        media_create.remove_file(os.path.join(media_dir, "output_video.yuv"), host=host)

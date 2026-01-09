@@ -177,16 +177,46 @@ def media_ramdisk(hosts, test_config):
         ramdisk.unmount()
 
 
+"""Fixture that copies requested media files into the media ramdisk for each test host.
+
+When `request.param` is provided, the referenced media file is copied from the
+configured media library into the RAM disk (creating the RAM disk entry, if
+needed) for every host before the test runs, and automatically removed
+afterward. If no `request.param` is supplied, the fixture simply yields the
+RAM disk mount path without staging any file.
+
+Args:
+    media_ramdisk: Pytest fixture ensuring the media RAM disk is available.
+    request: Pytest request object; `request.param` describes the media file to copy.
+    hosts: Mapping of host identifiers to connection objects used to run shell commands.
+    test_config: Dictionary containing test configuration (media paths, RAM disk mount point).
+
+Yields:
+    Tuple[dict | None, str]: `(media_file_info, ramdisk_path)` where `media_file_info`
+    is the metadata for the staged file, or `None` if no media file was requested,
+    and `ramdisk_path` is either the staged file path or the mount path alone when
+    no file is staged.
+"""
+
+
 @pytest.fixture(scope="function")
 def media_file(media_ramdisk, request, hosts, test_config):
-    media_file_info = request.param
+    media_file_info = getattr(request, "param", None)
+
     ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
     ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
     media_path = test_config.get("media_path", "/mnt/media")
+
+    # simple path where no media file is needed (e.g., generated files)
+    if media_file_info is None:
+        yield media_file_info, ramdisk_mountpoint
+        return
+
     src_media_file_path = os.path.join(media_path, media_file_info["filename"])
     ramdisk_media_file_path = os.path.join(
         ramdisk_mountpoint, media_file_info["filename"]
     )
+
     for host in hosts.values():
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
@@ -195,6 +225,7 @@ def media_file(media_ramdisk, request, hosts, test_config):
             logging.log(
                 level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
             )
+
     yield media_file_info, ramdisk_media_file_path
     for host in hosts.values():
         cmd = f"sudo rm {ramdisk_media_file_path}"
