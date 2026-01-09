@@ -10,7 +10,7 @@ from mtl_engine import GstreamerApp
 
 
 # helper function to setup input and output file paths for ancillary files
-def setup_paths(media_file):
+def setup_paths(media_file, host):
     media_file_info, media_file_path = media_file
     if not media_file_path:
         raise ValueError("ramdisk was not setup correctly for media_file fixture")

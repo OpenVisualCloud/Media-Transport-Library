@@ -11,18 +11,24 @@ from mtl_engine.media_files import gstreamer_formats
 
 
 @pytest.mark.nightly
+@pytest.mark.parametrize(
+    "media_file",
+    list(gstreamer_formats.values()),
+    indirect=["media_file"],
+    ids=list(gstreamer_formats.keys()),
+)
 @pytest.mark.parametrize("file", gstreamer_formats.keys())
 def test_video_format(
     hosts,
     build,
-    media,
     setup_interfaces: InterfaceSetup,
     file,
     test_time,
     test_config,
+    media_file,
     prepare_ramdisk,
 ):
-    video_file = gstreamer_formats[file]
+    video_file, media_file_path = media_file
 
     # Get the first host for remote execution
     host = list(hosts.values())[0]
@@ -30,12 +36,14 @@ def test_video_format(
         test_config.get("interface_type", "VF")
     )
 
+    media_dir = host.path.dirname(media_file_path)
+    output_file_path = os.path.join(media_file_path, "output_video.yuv")
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
         format=GstreamerApp.video_format_change(video_file["format"]),
-        media_path=media,
+        media_path=media_dir,
         duration=3,
         host=host,
     )
@@ -55,7 +63,7 @@ def test_video_format(
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=os.path.join(media, "output_video.yuv"),
+        output_path=output_file_path,
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
@@ -70,7 +78,7 @@ def test_video_format(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_video.yuv"),
+            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -79,4 +87,4 @@ def test_video_format(
     finally:
         # Remove the video file after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_video.yuv"), host=host)
+        media_create.remove_file(output_file_path, host=host)

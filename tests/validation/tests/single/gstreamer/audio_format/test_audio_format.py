@@ -46,11 +46,11 @@ def test_audio_format(
     if not media_file_path:
         raise ValueError("ramdisk was not setup correctly for media_file fixture")
 
+    # Get the first host for remote execution
+    host = list(hosts.values())[0]
     input_file_path = os.path.join(media_file_path, "input_test_audio.pcm")
     output_file_path = os.path.join(media_file_path, "output_test_audio.pcm")
 
-    # Get the first host for remote execution
-    host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
