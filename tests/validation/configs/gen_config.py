@@ -28,6 +28,17 @@ def gen_test_config(session_id: int, build: str, mtl_path: str) -> str:
 def gen_topology_config(
     pci_device: str, ip_address: str, username: str, password: str, key_path: str
 ) -> str:
+    # Support comma-separated PCI devices for multiple interfaces
+    pci_devices = [dev.strip() for dev in pci_device.split(",")]
+
+    network_interfaces = [
+        {
+            "pci_device": pci_dev,
+            "interface_index": idx,
+        }
+        for idx, pci_dev in enumerate(pci_devices)
+    ]
+    
     topology_config = {
         "metadata": {"version": "2.4"},
         "hosts": [
@@ -35,12 +46,7 @@ def gen_topology_config(
                 "name": "host",
                 "instantiate": True,
                 "role": "sut",
-                "network_interfaces": [
-                    {
-                        "pci_device": pci_device,
-                        "interface_index": 0,
-                    }
-                ],
+                "network_interfaces": network_interfaces,
                 "connections": [
                     {
                         "ip_address": ip_address,
@@ -89,7 +95,7 @@ def main() -> None:
         "--pci_device",
         type=str,
         required=True,
-        help="specify PCI ID of the NIC",
+        help="specify PCI ID of the NIC (comma-separated for multiple interfaces, e.g., '8086:1592' or '0000:31:00.0,0000:31:00.1')",
     )
     parser.add_argument(
         "--ip_address",
