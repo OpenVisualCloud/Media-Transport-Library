@@ -47,6 +47,7 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize("video_format", ["i1080p59", "i2160p59"])
 @pytest.mark.parametrize("replicas", [1, 2])
