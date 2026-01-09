@@ -30,10 +30,10 @@ def test_audio_format(
     test_time,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
-    if (
-        audio_rate == 96000
-        and audio_channel == 8
+    if audio_rate == 96000 and (
+        audio_channel == 8
         and (audio_format == "S16BE" or audio_format == "S24BE")
         or audio_channel == 6
         and audio_format == "S24BE"
@@ -42,13 +42,18 @@ def test_audio_format(
             f"Audio, {audio_format} with {audio_channel} audio channel invalid pkt_len skipped"
         )
 
+    media_file_info, media_file_path = media_file
+    if not media_file_path:
+        raise ValueError("ramdisk was not setup correctly for media_file fixture")
+
+    input_file_path = os.path.join(media_file_path, "input_test_audio.pcm")
+    output_file_path = os.path.join(media_file_path, "output_test_audio.pcm")
+
     # Get the first host for remote execution
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-
-    input_file_path = os.path.join(media, "test_audio.pcm")
 
     # media_create.create_audio_file_sox(
     #     sample_rate=audio_rate,
@@ -60,6 +65,7 @@ def test_audio_format(
     #     host=host,
     # )
 
+    # input path doesn't matter we are generating audio inside gstreamer pipeline
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
         build=build,
         nic_port_list=interfaces_list[0],
@@ -74,7 +80,7 @@ def test_audio_format(
     rx_config = GstreamerApp.setup_gstreamer_st30_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=os.path.join(media, "output_audio.pcm"),
+        output_path=output_file_path,
         rx_payload_type=111,
         rx_queues=4,
         rx_audio_format=GstreamerApp.audio_format_change(audio_format, rx_side=True),
@@ -88,7 +94,7 @@ def test_audio_format(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=os.path.join(media, "output_audio.pcm"),
+            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -97,4 +103,4 @@ def test_audio_format(
     finally:
         pass
         # media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media, "output_audio.pcm"), host=host)
+        media_create.remove_file(output_file_path, host=host)
