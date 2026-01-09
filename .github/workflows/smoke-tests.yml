@@ -63,6 +63,20 @@ jobs:
         run: |
           runner_name=${{ runner.name }}
           echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+
+      - name: Export GitHub job id for PCAP naming
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
+
+      - name: Install requirements
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y linuxptp ethtool netsniff-ng
       - name: Set PCI device env variable
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
@@ -82,19 +96,71 @@ jobs:
             --build ${{ secrets.RUNNER_BUILD }} \
             --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
             --pci_device ${{ env.PCI_DEVICE }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
             --key_path ${{ secrets.RUNNER_KEY_PATH }}
+
+      - name: Detect capture PTP device (2nd PF)
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "PCI_DEVICE=${PCI_DEVICE}"
+
+          mapfile -t bdfs < <(lspci -Dn | awk -v id="$PCI_DEVICE" '$3 == id { print $1 }' | sort)
+          if [ "${#bdfs[@]}" -lt 1 ]; then
+            echo "ERROR: no PCI functions found matching ${PCI_DEVICE}"
+            exit 1
+          fi
+
+          # Prefer the 2nd PF when present.
+          capture_bdf="${bdfs[1]:-${bdfs[0]}}"
+          if [ ! -d "/sys/bus/pci/devices/${capture_bdf}/net" ]; then
+            echo "ERROR: no netdevs under /sys/bus/pci/devices/${capture_bdf}/net"
+            ls -la "/sys/bus/pci/devices/${capture_bdf}" || true
+            exit 1
+          fi
+
+          capture_iface="$(ls "/sys/bus/pci/devices/${capture_bdf}/net" | head -n 1)"
+          if [ -z "${capture_iface}" ]; then
+            echo "ERROR: failed to detect interface name for ${capture_bdf}"
+            exit 1
+          fi
+
+          ptp_idx="$(sudo ethtool -T "${capture_iface}" 2>/dev/null | awk -F': ' '/PTP Hardware Clock:/ {print $2; exit}')"
+          if ! [[ "${ptp_idx}" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: failed to parse PTP Hardware Clock index for ${capture_iface}"
+            sudo ethtool -T "${capture_iface}" || true
+            exit 1
+          fi
+
+          echo "CAPTURE_BDF=${capture_bdf}" >> "$GITHUB_ENV"
+          echo "CAPTURE_IFACE=${capture_iface}" >> "$GITHUB_ENV"
+          echo "CAPTURE_PTP=/dev/ptp${ptp_idx}" >> "$GITHUB_ENV"
+          echo "Capture interface: ${capture_iface} (${capture_bdf}), PTP: /dev/ptp${ptp_idx}"
       - name: 'preparation: Kill MtlManager and pytest routines'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
+          sudo killall -SIGINT phc2sys || true
       - name: 'preparation: Start MtlManager at background'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           sudo MtlManager &
+
+      - name: 'preparation: Start phc2sys for capture interface'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Starting phc2sys: ${CAPTURE_PTP} -> CLOCK_REALTIME (iface=${CAPTURE_IFACE})"
+          sudo phc2sys -s "${CAPTURE_PTP}" -c CLOCK_REALTIME -O 0 -m &
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
