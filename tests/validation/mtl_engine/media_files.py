@@ -1,6 +1,36 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+from typing import Union
+
+
+def parse_fps_to_pformat(fps_field: Union[str, int]) -> str:
+    """Convert FPS value to MTL pXX format.
+
+    Args:
+        fps_field: FPS as string ('60', '5994/100') or integer (60)
+
+    Returns:
+        FPS in pXX format ('p60', 'p59')
+
+    Raises:
+        ValueError: If fps_field cannot be parsed
+        ZeroDivisionError: If fractional FPS has zero denominator
+    """
+    if isinstance(fps_field, int):
+        return f"p{fps_field}"
+
+    if "/" in fps_field:
+        # Handle fractional fps (e.g. '5994/100' -> 'p59')
+        numerator, denominator = fps_field.split("/", 1)
+        fps_val = round(int(numerator) / int(denominator))
+    else:
+        # Handle integer fps string (e.g. '60' -> 'p60')
+        fps_val = int(fps_field)
+
+    return f"p{fps_val}"
+
+
 yuv_files = dict(
     i720p23={
         "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
