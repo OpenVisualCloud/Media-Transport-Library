@@ -1,13 +1,23 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+import os
+
 import mtl_engine.media_creator as media_create
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
-TMP_INPUT_FILE = "/tmp/test_anc.txt"
-TMP_OUTPUT_FILE = "/tmp/output_anc.txt"
+
+# helper function to setup input and output file paths for ancillary files
+def setup_paths(media_file):
+    media_file_info, media_file_path = media_file
+    if not media_file_path:
+        raise ValueError("ramdisk was not setup correctly for media_file fixture")
+
+    input_file_path = os.path.join(media_file_path, "input_anc.txt")
+    output_file_path = os.path.join(media_file_path, "output_anc.txt")
+    return input_file_path, output_file_path
 
 
 @pytest.mark.nightly
@@ -25,6 +35,7 @@ def test_st40p_fps_size(
     test_time,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
@@ -32,9 +43,11 @@ def test_st40p_fps_size(
         test_config.get("interface_type", "VF")
     )
 
+    input_file_path, output_file_path = setup_paths(media_file)
+
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
-        output_path=TMP_INPUT_FILE,
+        output_path=input_file_path,
         host=host,
     )
 
@@ -53,7 +66,7 @@ def test_st40p_fps_size(
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=TMP_OUTPUT_FILE,
+        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
@@ -66,7 +79,7 @@ def test_st40p_fps_size(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=TMP_OUTPUT_FILE,
+            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -75,7 +88,7 @@ def test_st40p_fps_size(
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(TMP_OUTPUT_FILE, host=host)
+        media_create.remove_file(output_file_path, host=host)
 
 
 @pytest.mark.nightly
@@ -93,19 +106,23 @@ def test_st40p_framebuff(
     test_time,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
+
+    input_file_path, output_file_path = setup_paths(media_file)
+
     # Base the timeout on parameter to make sure the amount of time between RX and TX
     # is less than the timeout period
     timeout_period = 20
 
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
-        output_path=TMP_INPUT_FILE,
+        output_path=input_file_path,
         host=host,
     )
 
@@ -124,7 +141,7 @@ def test_st40p_framebuff(
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=TMP_OUTPUT_FILE,
+        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
@@ -137,7 +154,7 @@ def test_st40p_framebuff(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=TMP_OUTPUT_FILE,
+            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -146,7 +163,7 @@ def test_st40p_framebuff(
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(TMP_OUTPUT_FILE, host=host)
+        media_create.remove_file(output_file_path, host=host)
 
     """ Validate ST40p integrity using GStreamer RFC8331 pipelines.
         A pseudo RFC8331 input file, generated via ancgenerator, carries fixed
@@ -170,6 +187,7 @@ def test_st40p_format_8331(
     test_time,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     # Get the first host for remote execution
     host = list(hosts.values())[0]
@@ -179,11 +197,7 @@ def test_st40p_format_8331(
     # Based on this parameters
     timeout_period = 15
 
-    input_file_path = media_create.create_ancillary_rfc8331_pseudo_file(
-        size_frames=fps * 10,
-        output_path=TMP_INPUT_FILE,
-        host=host,
-    )
+    input_file_path, output_file_path = setup_paths(media_file)
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
         build=build,
@@ -201,7 +215,7 @@ def test_st40p_format_8331(
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=TMP_OUTPUT_FILE,
+        output_path=output_file_path,
         rx_payload_type=113,
         rx_queues=4,
         rx_framebuff_cnt=framebuff,
@@ -215,7 +229,7 @@ def test_st40p_format_8331(
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
-            output_file=TMP_OUTPUT_FILE,
+            output_file=output_file_path,
             test_time=test_time,
             host=host,
             tx_first=False,
@@ -224,4 +238,4 @@ def test_st40p_format_8331(
     finally:
         # Remove the files after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(TMP_OUTPUT_FILE, host=host)
+        media_create.remove_file(output_file_path, host=host)
