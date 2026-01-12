@@ -230,8 +230,8 @@ static inline uint64_t tx_ancillary_pacing_time(
   return nextafter(epochs * pacing->frame_time, INFINITY);
 }
 
-static inline uint32_t tx_ancillary_pacing_time_stamp(
-    struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
+static inline __attribute__((unused)) uint32_t tx_ancillary_pacing_time_stamp(
+  struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
   uint64_t tmstamp64 = epochs * pacing->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
 

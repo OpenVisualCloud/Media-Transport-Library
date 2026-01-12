@@ -24,7 +24,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency) {
         strategy->initializeTiming(handler);
         return strategy;
       },
-      [this](St30pHandler* handler) {
+      [](St30pHandler* handler) {
         // handler->sessionsOpsRx.ptime = ST31_PTIME_80US;
         handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
       });
@@ -119,7 +119,7 @@ TEST_F(NoCtxTest, st30p_redundant_latency2) {
         strategy->initializeTiming(handler);
         return strategy;
       },
-      [this](St30pHandler* handler) {
+      [](St30pHandler* handler) {
         // handler->sessionsOpsRx.ptime = ST31_PTIME_80US;
         handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
       });

@@ -118,7 +118,9 @@ static void st22_fuzz_init_eal(void) {
     static char arg2[] = "--no-shconf";
     static char arg3[] = "-c1";
     static char arg4[] = "-n1";
-    char* eal_args[] = {arg0, arg1, arg2, arg3, arg4};
+    static char arg5[] = "--no-pci";
+    static char arg6[] = "--vdev=net_null0";
+    char* eal_args[] = {arg0, arg1, arg2, arg3, arg4, arg5, arg6};
     const int eal_argc = (int)(sizeof(eal_args) / sizeof(eal_args[0]));
     if (rte_eal_init(eal_argc, eal_args) < 0) abort();
     g_eal_ready = true;

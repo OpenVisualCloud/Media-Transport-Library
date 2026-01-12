@@ -84,7 +84,10 @@ static void st40_fuzz_init_impl(void) {
     static char st40_arg2[] = "--no-shconf";
     static char st40_arg3[] = "-c1";
     static char st40_arg4[] = "-n1";
-    static char* eal_args[] = {st40_arg0, st40_arg1, st40_arg2, st40_arg3, st40_arg4};
+    static char st40_arg5[] = "--no-pci";
+    static char st40_arg6[] = "--vdev=net_null0";
+    static char* eal_args[] = {st40_arg0, st40_arg1, st40_arg2, st40_arg3,
+                   st40_arg4, st40_arg5, st40_arg6};
     static const int eal_argc = (int)(sizeof(eal_args) / sizeof(eal_args[0]));
 
     if (rte_eal_init(eal_argc, eal_args) < 0) {

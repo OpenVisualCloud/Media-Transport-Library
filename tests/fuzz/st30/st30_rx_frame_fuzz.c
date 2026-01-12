@@ -63,6 +63,14 @@ static void st30_fuzz_enable_logging(void) {
   logging_ready = true;
 }
 
+static uint64_t st30_fuzz_ptp_time(struct mtl_main_impl* impl, enum mtl_port port) {
+  MTL_MAY_UNUSED(port);
+  /* Advance monotonically so timestamp consumers always make progress. */
+  impl->ptp_usync += NS_PER_US;
+  impl->ptp_usync_tsc = mt_get_tsc(impl);
+  return impl->ptp_usync;
+}
+
 static int st30_fuzz_notify_frame_ready(void* priv, void* frame,
                                         struct st30_rx_frame_meta* meta) {
   MTL_MAY_UNUSED(meta);
@@ -100,7 +108,10 @@ static void st30_fuzz_init_impl(void) {
     static char st30_arg2[] = "--no-shconf";
     static char st30_arg3[] = "-c1";
     static char st30_arg4[] = "-n1";
-    static char* eal_args[] = {st30_arg0, st30_arg1, st30_arg2, st30_arg3, st30_arg4};
+    static char st30_arg5[] = "--no-pci";
+    static char st30_arg6[] = "--vdev=net_null0";
+    static char* eal_args[] = {
+      st30_arg0, st30_arg1, st30_arg2, st30_arg3, st30_arg4, st30_arg5, st30_arg6};
     static const int eal_argc = (int)(sizeof(eal_args) / sizeof(eal_args[0]));
 
     if (rte_eal_init(eal_argc, eal_args) < 0) {
@@ -123,6 +134,9 @@ static void st30_fuzz_reset_context(size_t payload_len) {
 
   g_impl.type = MT_HANDLE_MAIN;
   g_impl.tsc_hz = rte_get_tsc_hz();
+  g_impl.inf[MTL_PORT_P].parent = &g_impl;
+  g_impl.inf[MTL_PORT_P].port = MTL_PORT_P;
+  g_impl.inf[MTL_PORT_P].ptp_get_time_fn = st30_fuzz_ptp_time;
 
   g_mgr.parent = &g_impl;
   g_mgr.idx = 0;

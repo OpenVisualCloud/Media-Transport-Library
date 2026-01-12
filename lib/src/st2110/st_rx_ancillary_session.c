@@ -238,15 +238,8 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
-#ifdef MTL_ENABLE_FUZZING_ST40
-int st_rx_ancillary_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
-                                            struct st_rx_ancillary_session_impl* s,
-                                            struct rte_mbuf* mbuf,
-                                            enum mtl_session_port s_port) {
-  return rx_ancillary_session_handle_pkt(impl, s, mbuf, s_port);
-}
-
-void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) {
+static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
+                                       bool init_stat_time_now) {
   if (!s) return;
 
   s->session_seq_id = -1;
@@ -258,7 +251,7 @@ void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) 
   s->stat_pkts_wrong_pt_dropped = 0;
   s->stat_pkts_wrong_ssrc_dropped = 0;
   s->stat_pkts_received = 0;
-  s->stat_last_time = 0;
+  s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_rtp_us = 0;
   s->stat_interlace_first_field = 0;
   s->stat_interlace_second_field = 0;
@@ -273,6 +266,18 @@ void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) 
     s->latest_seq_id[i] = -1;
     s->redundant_error_cnt[i] = 0;
   }
+}
+
+#ifdef MTL_ENABLE_FUZZING_ST40
+int st_rx_ancillary_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
+                                            struct st_rx_ancillary_session_impl* s,
+                                            struct rte_mbuf* mbuf,
+                                            enum mtl_session_port s_port) {
+  return rx_ancillary_session_handle_pkt(impl, s, mbuf, s_port);
+}
+
+void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) {
+  rx_ancillary_session_reset(s, false);
 }
 #endif
 
@@ -497,15 +502,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
 
-  s->session_seq_id = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
-  s->tmstamp = -1;
-  s->stat_pkts_received = 0;
-  s->stat_pkts_dropped = 0;
-  s->stat_last_time = mt_get_monotonic_time();
-  rte_atomic32_set(&s->stat_frames_received, 0);
-  mt_stat_u64_init(&s->stat_time);
+  rx_ancillary_session_reset(s, true);
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {

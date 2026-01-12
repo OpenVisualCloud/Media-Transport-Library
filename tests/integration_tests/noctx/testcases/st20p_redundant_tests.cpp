@@ -19,7 +19,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
   auto rxBundle = createSt20pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
       [](St20pHandler* handler) { return new St20pRedundantLatency(0, handler); },
-      [this](St20pHandler* handler) {
+      [](St20pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
         handler->setSessionPorts(SESSION_SKIP_PORT, 0, SESSION_SKIP_PORT, 1);
