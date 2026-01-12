@@ -84,9 +84,9 @@ jobs:
           sudo su && ./build.sh
           sudo ldconfig
 
-      - name: Check if Kahawai driver version is loaded
+      - name: Check and build ice driver if needed
         run: |
-          sudo dmesg | grep "Intel(R) Ethernet Connection .* version Kahawai.*"
+          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
 
       - name: run gtest bare metal
         if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
