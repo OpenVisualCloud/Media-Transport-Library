@@ -113,6 +113,16 @@ def test_pmd_kernel_mixed_format(
         test_config.get("interface_type", "VF")
     )
 
+    # Get ramdisk mountpoint for output files (read-only media path can't be used for output)
+    ramdisk_mountpoint = (
+        test_config.get("ramdisk", {})
+        .get("media", {})
+        .get("mountpoint", "/mnt/ramdisk/media")
+    )
+    audio_out_path = str(
+        host.connection.path(ramdisk_mountpoint) / ("out_" + audio_file["filename"])
+    )
+
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
@@ -138,7 +148,7 @@ def test_pmd_kernel_mixed_format(
         audio_sampling="48kHz",
         audio_ptime="1",
         filename=os.path.join(media, audio_file["filename"]),
-        out_url=os.path.join(media, audio_file["filename"]),
+        out_url=audio_out_path,
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st30p", replicas=replicas

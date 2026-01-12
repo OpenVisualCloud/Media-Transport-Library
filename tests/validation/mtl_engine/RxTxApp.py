@@ -52,7 +52,7 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
 
     is_kernel = [
         nic_port_list[0].startswith("kernel:"),
-        nic_port_list[1].startswith("kernel:")
+        nic_port_list[1].startswith("kernel:"),
     ]
 
     if test_mode in ("unicast", "multicast"):
@@ -485,11 +485,11 @@ def execute_test(
     logger.info(f"Starting RxTxApp test: {get_case_id()}")
 
     remote_conn = host.connection
-    
+
     # Configure kernel socket interfaces before creating config file
     # This must happen before MTL initialization
     configure_kernel_interfaces(config, remote_conn)
-    
+
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
     if isinstance(remote_conn, SSHConnection):
@@ -1118,9 +1118,7 @@ def check_and_set_ip(interface_name: str, ip_address: str, connection):
     :raises ValueError: If IP address is already configured
     :raises Exception: If IP configuration fails
     """
-    result = connection.execute_command(
-        f"ip addr show {interface_name}", shell=True
-    )
+    result = connection.execute_command(f"ip addr show {interface_name}", shell=True)
 
     ip_without_mask = ip_address.split("/")[0]
     if ip_without_mask in result.stdout:
@@ -1130,9 +1128,7 @@ def check_and_set_ip(interface_name: str, ip_address: str, connection):
     connection.execute_command(
         f"sudo ip addr add {ip_address} dev {interface_name}", shell=True
     )
-    connection.execute_command(
-        f"sudo ip link set {interface_name} up", shell=True
-    )
+    connection.execute_command(f"sudo ip link set {interface_name} up", shell=True)
     logger.info(f"Configured IP {ip_address} on {interface_name}")
 
 

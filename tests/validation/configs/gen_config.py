@@ -38,7 +38,7 @@ def gen_topology_config(
         }
         for idx, pci_dev in enumerate(pci_devices)
     ]
-    
+
     topology_config = {
         "metadata": {"version": "2.4"},
         "hosts": [
@@ -95,7 +95,8 @@ def main() -> None:
         "--pci_device",
         type=str,
         required=True,
-        help="specify PCI ID of the NIC (comma-separated for multiple interfaces, e.g., '8086:1592' or '0000:31:00.0,0000:31:00.1')",
+        help="specify PCI ID of the NIC (comma-separated for multiple interfaces, e.g., \
+            '8086:1592' or '0000:31:00.0,0000:31:00.1')",
     )
     parser.add_argument(
         "--ip_address",
