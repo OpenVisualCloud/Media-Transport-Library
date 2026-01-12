@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import time
+from typing import List, Optional, Tuple
 
 from mfd_connect import SSHConnection
 from mtl_engine import ip_pools
@@ -675,6 +676,21 @@ def execute_test(
             host=host,
             build=build,
         )
+    # Emit consolidated summary at end of log
+    summary_lines, mismatch_found = _build_summary_block(
+        config=config,
+        output=output,
+        command=command,
+        test_time=test_time,
+        timeout=timeout,
+        passed=passed,
+    )
+    for line in summary_lines:
+        logger.info(line)
+
+    if mismatch_found:
+        log_fail("Config/runtime mismatch detected; see summary for details")
+
     if passed:
         logger.info(f"RxTxApp test completed with result: {passed}")
     else:
@@ -810,6 +826,21 @@ def execute_perf_test(
         build=build,
     )
 
+    # Emit consolidated summary for performance runs as well
+    summary_lines, mismatch_found = _build_summary_block(
+        config=config,
+        output=output,
+        command=command,
+        test_time=test_time,
+        timeout=timeout,
+        passed=result,
+    )
+    for line in summary_lines:
+        logger.info(line)
+
+    if mismatch_found:
+        log_fail("Config/runtime mismatch detected; see summary for details")
+
     logger.info(f"Performance RxTxApp test completed with result: {result}")
 
     return result
@@ -857,6 +888,265 @@ def change_replicas(
                 config["rx_sessions"][i][session_type][j]["replicas"] = replicas
 
     return config
+
+
+def _count_ok_markers(output: List[str], pattern: re.Pattern[str]) -> int:
+    """Count lines that match a pattern and contain the OK tag."""
+    return sum(1 for line in output if pattern.search(line) and "OK" in line)
+
+
+def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
+    """Build summary lines for st20p sessions and flag mismatches vs runtime logs."""
+    lines: List[str] = []
+
+    tx = config["tx_sessions"][0]["st20p"][0]
+    rx = config["rx_sessions"][0]["st20p"][0]
+
+    replicas_tx = tx.get("replicas", 1)
+    replicas_rx = rx.get("replicas", 1)
+
+    rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st20p_result"))
+    tx_conv_ok = 0
+    rx_conv_ok = 0
+
+    tx_conv_pattern = f"transport fmt ST20_FMT_{tx['transport_format'].upper()}, input fmt: {tx['input_format']}"
+    rx_conv_pattern = f"transport fmt ST20_FMT_{rx['transport_format'].upper()}, output fmt {rx['output_format']}"
+
+    # Capture actual formats seen in create logs (if present)
+    tx_fmt_pattern = re.compile(
+        r"st20p_tx_create\(\d+\), transport fmt ST20_FMT_([^,]+), input fmt: ([^, ]+)"
+    )
+    rx_fmt_pattern = re.compile(
+        r"st20p_rx_create\(\d+\), transport fmt ST20_FMT_([^,]+), output fmt ([^, ]+)"
+    )
+
+    # Optional extraction for dimensions / interlaced / packing / pacing if present in logs
+    tx_meta_pattern = re.compile(
+        r"st20p_tx_create\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
+    )
+    rx_meta_pattern = re.compile(
+        r"st20p_rx_create\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
+    )
+    tx_pack_pattern = re.compile(r"st20p_tx_create\(\d+\).*packing ([A-Z]+)")
+    rx_pack_pattern = re.compile(r"st20p_rx_create\(\d+\).*packing ([A-Z]+)")
+    tx_pace_pattern = re.compile(r"st20p_tx_create\(\d+\).*pacing ([A-Za-z]+)")
+    rx_pace_pattern = re.compile(r"st20p_rx_create\(\d+\).*pacing ([A-Za-z]+)")
+
+    actual_tx_transport = None
+    actual_tx_input = None
+    actual_rx_transport = None
+    actual_rx_output = None
+    actual_tx_width = None
+    actual_tx_height = None
+    actual_tx_interlaced = None
+    actual_rx_width = None
+    actual_rx_height = None
+    actual_rx_interlaced = None
+    actual_tx_packing = None
+    actual_rx_packing = None
+    actual_tx_pacing = None
+    actual_rx_pacing = None
+
+    for line in output:
+        if tx_conv_pattern in line:
+            tx_conv_ok += 1
+        if rx_conv_pattern in line:
+            rx_conv_ok += 1
+
+        if actual_tx_transport is None:
+            m = tx_fmt_pattern.search(line)
+            if m:
+                actual_tx_transport = m.group(1)
+                actual_tx_input = m.group(2)
+
+        if actual_rx_transport is None:
+            m = rx_fmt_pattern.search(line)
+            if m:
+                actual_rx_transport = m.group(1)
+                actual_rx_output = m.group(2)
+
+        if actual_tx_width is None:
+            m = tx_meta_pattern.search(line)
+            if m:
+                actual_tx_width = int(m.group(1))
+                actual_tx_height = int(m.group(2))
+                actual_tx_interlaced = m.group(3) == "1"
+
+        if actual_rx_width is None:
+            m = rx_meta_pattern.search(line)
+            if m:
+                actual_rx_width = int(m.group(1))
+                actual_rx_height = int(m.group(2))
+                actual_rx_interlaced = m.group(3) == "1"
+
+        if actual_tx_packing is None:
+            m = tx_pack_pattern.search(line)
+            if m:
+                actual_tx_packing = m.group(1)
+
+        if actual_rx_packing is None:
+            m = rx_pack_pattern.search(line)
+            if m:
+                actual_rx_packing = m.group(1)
+
+        if actual_tx_pacing is None:
+            m = tx_pace_pattern.search(line)
+            if m:
+                actual_tx_pacing = m.group(1)
+
+        if actual_rx_pacing is None:
+            m = rx_pace_pattern.search(line)
+            if m:
+                actual_rx_pacing = m.group(1)
+
+    # FPS details per session
+    fps_lines: List[str] = []
+    expected_fps = _parse_expected_fps(rx.get("fps", ""))
+    fps_results = _extract_rx_st20p_results(output)
+    tolerance = expected_fps * 0.05 if expected_fps else None
+    mismatches: List[str] = []
+    for idx, status, measured_fps in fps_results:
+        if expected_fps and tolerance is not None:
+            delta = abs(measured_fps - expected_fps)
+            fps_lines.append(
+                f"idx={idx}:{status} fps={measured_fps:.2f} (expected~{expected_fps}, delta={delta:.2f}, tol={tolerance:.2f})"
+            )
+            if delta > tolerance:
+                mismatches.append(
+                    f"fps session {idx} delta {delta:.2f} > tol {tolerance:.2f} (expected {expected_fps}, got {measured_fps:.2f})"
+                )
+        else:
+            fps_lines.append(f"idx={idx}:{status} fps={measured_fps:.2f}")
+
+    lines.append(
+        "st20p config: "
+        f"w={tx['width']} h={tx['height']} fps={tx['fps']} interlaced={tx['interlaced']} "
+        f"input={tx['input_format']} transport={tx['transport_format']} output={rx['output_format']} "
+        f"packing={tx.get('packing','')} pacing={tx.get('pacing','')} replicas_tx={replicas_tx} replicas_rx={replicas_rx} "
+        f"rtcp={tx.get('enable_rtcp', False)} latency={rx.get('measure_latency', False)}"
+    )
+
+    lines.append(
+        f"st20p results: rx_ok={rx_ok}/{replicas_rx}; tx_conv_ok={tx_conv_ok}/{replicas_tx}; rx_conv_ok={rx_conv_ok}/{replicas_rx}"
+    )
+
+    if fps_lines:
+        lines.append("st20p fps: " + "; ".join(fps_lines))
+
+    # Compare actual vs expected formats when present
+    if actual_tx_transport and actual_tx_transport != tx["transport_format"].upper():
+        mismatches.append(
+            f"tx transport mismatch: expected {tx['transport_format'].upper()}, got {actual_tx_transport}"
+        )
+    if actual_tx_input and actual_tx_input != tx["input_format"]:
+        mismatches.append(
+            f"tx input fmt mismatch: expected {tx['input_format']}, got {actual_tx_input}"
+        )
+    if actual_rx_transport and actual_rx_transport != rx["transport_format"].upper():
+        mismatches.append(
+            f"rx transport mismatch: expected {rx['transport_format'].upper()}, got {actual_rx_transport}"
+        )
+    if actual_rx_output and actual_rx_output != rx["output_format"]:
+        mismatches.append(
+            f"rx output fmt mismatch: expected {rx['output_format']}, got {actual_rx_output}"
+        )
+
+    # Dimensions / interlaced / packing / pacing comparisons (only if observed in logs)
+    if actual_tx_width is not None and actual_tx_width != tx["width"]:
+        mismatches.append(
+            f"tx width mismatch: expected {tx['width']}, got {actual_tx_width}"
+        )
+    if actual_tx_height is not None and actual_tx_height != tx["height"]:
+        mismatches.append(
+            f"tx height mismatch: expected {tx['height']}, got {actual_tx_height}"
+        )
+    if actual_tx_interlaced is not None and actual_tx_interlaced != tx["interlaced"]:
+        mismatches.append(
+            f"tx interlaced mismatch: expected {tx['interlaced']}, got {actual_tx_interlaced}"
+        )
+    if actual_tx_packing and actual_tx_packing != tx.get("packing", ""):
+        mismatches.append(
+            f"tx packing mismatch: expected {tx.get('packing','')}, got {actual_tx_packing}"
+        )
+    if actual_tx_pacing and actual_tx_pacing != tx.get("pacing", ""):
+        mismatches.append(
+            f"tx pacing mismatch: expected {tx.get('pacing','')}, got {actual_tx_pacing}"
+        )
+
+    if actual_rx_width is not None and actual_rx_width != rx["width"]:
+        mismatches.append(
+            f"rx width mismatch: expected {rx['width']}, got {actual_rx_width}"
+        )
+    if actual_rx_height is not None and actual_rx_height != rx["height"]:
+        mismatches.append(
+            f"rx height mismatch: expected {rx['height']}, got {actual_rx_height}"
+        )
+    if actual_rx_interlaced is not None and actual_rx_interlaced != rx["interlaced"]:
+        mismatches.append(
+            f"rx interlaced mismatch: expected {rx['interlaced']}, got {actual_rx_interlaced}"
+        )
+    if actual_rx_packing and actual_rx_packing != rx.get("packing", ""):
+        mismatches.append(
+            f"rx packing mismatch: expected {rx.get('packing','')}, got {actual_rx_packing}"
+        )
+    if actual_rx_pacing and actual_rx_pacing != rx.get("pacing", ""):
+        mismatches.append(
+            f"rx pacing mismatch: expected {rx.get('pacing','')}, got {actual_rx_pacing}"
+        )
+
+    missing_rx = replicas_rx - rx_ok
+    missing_fps = replicas_rx - len(fps_results)
+    if missing_rx > 0:
+        mismatches.append(f"missing {missing_rx} RX OK marker(s)")
+    if missing_fps > 0:
+        mismatches.append(f"missing {missing_fps} fps result line(s)")
+    if tx_conv_ok < replicas_tx:
+        mismatches.append(
+            f"missing TX converter lines: {tx_conv_ok}/{replicas_tx} found"
+        )
+    if rx_conv_ok < replicas_rx:
+        mismatches.append(
+            f"missing RX converter lines: {rx_conv_ok}/{replicas_rx} found"
+        )
+
+    lines.append(
+        "st20p mismatches: " + ("; ".join(mismatches) if mismatches else "none")
+    )
+
+    return lines, bool(mismatches)
+
+
+def _parse_expected_fps(fps: str) -> Optional[float]:
+    """Extract numeric FPS from strings like ``p59`` or ``i50``."""
+    match = re.match(r"[pi](\d+(?:\.\d+)?)", fps)
+    if not match:
+        logger.info(f"Unable to parse fps value from '{fps}'")
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        logger.info(f"FPS value is not numeric: '{fps}'")
+        return None
+
+
+def _extract_rx_st20p_results(output: List[str]) -> List[Tuple[int, str, float]]:
+    """Parse st20p RX result lines for session index, status, and measured fps."""
+    pattern = re.compile(
+        r"app_rx_st20p_result\((\d+)\),\s+(OK|FAILED),\s+fps\s+([\d.]+)"
+    )
+    results: list[tuple[int, str, float]] = []
+    for line in output:
+        match = pattern.search(line)
+        if not match:
+            continue
+        try:
+            idx = int(match.group(1))
+            status = match.group(2)
+            fps = float(match.group(3))
+            results.append((idx, status, fps))
+        except (ValueError, IndexError):
+            logger.debug(f"Failed to parse st20p result line: {line}")
+    return results
 
 
 def check_tx_output(
@@ -908,10 +1198,11 @@ def check_tx_output(
         logger.info(f"TX {session_type} check PASSED: all {replicas} sessions OK")
         return True
 
+    reason = f"tx {session_type} session failed: {ok_cnt}/{replicas} OK markers found"
     if fail_on_error:
-        log_fail(f"tx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"tx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
@@ -1026,14 +1317,59 @@ def check_rx_output(
 
     logger.info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
 
-    if ok_cnt == replicas:
+    failure_reasons: List[str] = []
+
+    if session_type == "st20p":
+        # Parse detailed st20p result lines to capture per-session status and fps
+        results = _extract_rx_st20p_results(output)
+        if not results:
+            failure_reasons.append("no app_rx_st20p_result lines captured in log")
+        else:
+            expected_fps = _parse_expected_fps(
+                config["rx_sessions"][0][session_type][0]["fps"]
+            )
+            for idx, status, measured_fps in results:
+                if status != "OK":
+                    failure_reasons.append(
+                        f"session {idx} reported {status} at {measured_fps:.2f} fps"
+                    )
+                if expected_fps:
+                    delta = abs(measured_fps - expected_fps)
+                    tolerance = expected_fps * 0.05
+                    if delta > tolerance:
+                        failure_reasons.append(
+                            f"session {idx} fps mismatch: expected ~{expected_fps}, got {measured_fps:.2f}"
+                        )
+
+            missing = replicas - len(results)
+            if missing > 0:
+                failure_reasons.append(
+                    f"missing {missing} st20p result line(s) (replicas={replicas})"
+                )
+
+    if ok_cnt == replicas and not failure_reasons:
         logger.info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
         return True
 
+    if not failure_reasons:
+        # Try to surface failure lines to aid debugging
+        failure_lines = [
+            line
+            for line in output
+            if pattern.search(line) and any(tag in line for tag in ("FAIL", "ERR"))
+        ]
+        if failure_lines:
+            failure_reasons.append(f"failure lines: {'; '.join(failure_lines[:3])}")
+
+    reason = (
+        f"rx {session_type} session failed: {ok_cnt}/{replicas} OK. "
+        + ("; ".join(failure_reasons) if failure_reasons else "")
+    )
+
     if fail_on_error:
-        log_fail(f"rx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"rx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
@@ -1072,10 +1408,15 @@ def check_tx_converter_output(
         logger.info(f"TX {session_type} converter check PASSED")
         return True
 
+    reason = (
+        f"tx {session_type} converter missing expected line: "
+        f"transport={transport_format}, input={input_format}; "
+        f"found {ok_cnt}/{replicas}"
+    )
     if fail_on_error:
-        log_fail(f"tx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"tx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
@@ -1115,23 +1456,21 @@ def check_rx_converter_output(
         logger.info(f"RX {session_type} converter check PASSED")
         return True
 
+    reason = (
+        f"rx {session_type} converter missing expected line: "
+        f"transport={transport_format}, output={output_format}; "
+        f"found {ok_cnt}/{replicas}"
+    )
     if fail_on_error:
-        log_fail(f"rx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"rx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
 
 def check_and_set_ip(interface_name: str, ip_address: str, connection):
-    """Configure IP address on a kernel network interface.
-
-    :param interface_name: Network interface name (without 'kernel:' prefix)
-    :param ip_address: IP address with CIDR notation (e.g., '192.168.2.0/24')
-    :param connection: Connection object for command execution
-    :raises ValueError: If IP address is already configured
-    :raises Exception: If IP configuration fails
-    """
+    """Configure IP address on a kernel network interface."""
     result = connection.execute_command(f"ip addr show {interface_name}", shell=True)
 
     ip_without_mask = ip_address.split("/")[0]
@@ -1147,15 +1486,7 @@ def check_and_set_ip(interface_name: str, ip_address: str, connection):
 
 
 def configure_kernel_interfaces(config: dict, connection, interface_setup=None):
-    """Configure OS-level IP addresses for kernel socket interfaces.
-
-    Must be called before execute_test() when using kernel socket interfaces
-    in multicast or unicast modes.
-
-    :param config: Test configuration dictionary with '_os_ip' markers
-    :param connection: Connection object for command execution
-    :param interface_setup: Optional InterfaceSetup object to register IPs for cleanup
-    """
+    """Configure OS-level IP addresses for kernel socket interfaces."""
     for interface in config.get("interfaces", []):
         if "_os_ip" not in interface:
             continue
@@ -1175,6 +1506,94 @@ def configure_kernel_interfaces(config: dict, connection, interface_setup=None):
         # Register for cleanup if interface_setup provided
         if interface_setup is not None:
             interface_setup.register_ip_cleanup(connection, if_name, ip_addr)
+
+
+def _build_summary_block(
+    *,
+    config: dict,
+    output: List[str],
+    command: str,
+    test_time: int,
+    timeout: int,
+    passed: bool,
+) -> Tuple[List[str], bool]:
+    """Create a human-friendly test summary to append at the end of logs."""
+    lines: List[str] = []
+    mismatch_found = False
+
+    # Heading
+    outcome = "PASS" if passed else "FAIL"
+    lines.append(
+        f"Summary: result={outcome}; test_time={test_time}s; timeout={timeout}s; command={command}"
+    )
+
+    # Core config snapshot (interfaces and IPs)
+    try:
+        tx_intf = config["interfaces"][0]["name"]
+        rx_intf = config["interfaces"][1]["name"] if len(config["interfaces"]) > 1 else ""
+        tx_ip = config["interfaces"][0].get("ip", "")
+        rx_ip = config["interfaces"][1].get("ip", "") if len(config["interfaces"]) > 1 else ""
+        lines.append(
+            f"Interfaces: tx={tx_intf}({tx_ip}) rx={rx_intf}({rx_ip})"
+        )
+    except Exception:
+        lines.append("Interfaces: unavailable")
+
+    # Session summaries
+    if config["tx_sessions"][0].get("st20p"):
+        st20p_lines, st20p_mismatch = _summarize_st20p(config, output)
+        lines.extend(st20p_lines)
+        mismatch_found = mismatch_found or st20p_mismatch
+
+    if config["tx_sessions"][0].get("ancillary"):
+        anc = config["tx_sessions"][0]["ancillary"][0]
+        replicas = anc.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_anc_result"))
+        lines.append(
+            f"ancillary: format={anc.get('ancillary_format','')} fps={anc.get('ancillary_fps','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("audio"):
+        audio = config["tx_sessions"][0]["audio"][0]
+        replicas = audio.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_audio_result"))
+        lines.append(
+            f"audio: fmt={audio.get('audio_format','')} ch={audio.get('audio_channel','')} fs={audio.get('audio_sampling','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("st30p"):
+        st30p = config["tx_sessions"][0]["st30p"][0]
+        replicas = st30p.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st30p_result"))
+        lines.append(
+            f"st30p: fmt={st30p.get('audio_format','')} ch={st30p.get('audio_channel','')} fs={st30p.get('audio_sampling','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("fastmetadata"):
+        fmd = config["tx_sessions"][0]["fastmetadata"][0]
+        replicas = fmd.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_fastmetadata_result"))
+        lines.append(
+            f"fastmetadata: type={fmd.get('type','')} fps={fmd.get('fastmetadata_fps','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("st22p"):
+        st22p = config["tx_sessions"][0]["st22p"][0]
+        replicas = st22p.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st22p_result"))
+        lines.append(
+            f"st22p: w={st22p.get('width')} h={st22p.get('height')} fps={st22p.get('fps')} codec={st22p.get('codec','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("video"):
+        video = config["tx_sessions"][0]["video"][0]
+        replicas = video.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_video_result"))
+        lines.append(
+            f"video: fmt={video.get('video_format','')} pg={video.get('pg_format','')} pacing={video.get('pacing','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    return lines, mismatch_found
 
 
 def get_case_id() -> str:

@@ -3,6 +3,8 @@
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+
+pytestmark = pytest.mark.verified
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422rfc10
 
@@ -29,6 +31,21 @@ def test_pacing(
     prepare_ramdisk,
     media_file,
 ):
+    """
+    Validate unicast ST20P transmissions under different pacing strategies
+    (``narrow``, ``wide``, ``linear``) across representative resolutions. This
+    checks that pacing selection is honored and that the pipeline remains stable
+    without underruns/overruns when switching pacing profiles.
+
+    :param hosts: Mapping of hosts available for the test run.
+    :param build: Compiled Rx/Tx application artifact used for execution.
+    :param setup_interfaces: Fixture configuring NIC interfaces per test settings.
+    :param test_time: Duration to run the streaming pipeline.
+    :param pacing: Pacing strategy string passed to the ST20P session.
+    :param test_config: Test configuration dictionary (e.g., interface type).
+    :param prepare_ramdisk: Fixture preparing RAM disk storage for media files.
+    :param media_file: Tuple fixture containing media metadata and file path.
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(

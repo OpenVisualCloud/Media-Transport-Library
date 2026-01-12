@@ -6,6 +6,8 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+
+pytestmark = pytest.mark.verified
 from common.nicctl import InterfaceSetup
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine.const import LOG_FOLDER
@@ -42,6 +44,22 @@ def test_integrity(
     prepare_ramdisk,
     media_file,
 ):
+    """
+    Run unicast ST20P streams and perform byte-level integrity comparison between
+    the transmitted YUV frames and the received output written to ``out.yuv``. The
+    test creates a deterministic output file, computes per-frame size, and invokes
+    ``check_st20p_integrity`` to guard against silent corruption while exercising
+    both RFC4175-packed and planar 10-bit sources.
+
+    :param hosts: Mapping of hosts available for the test run.
+    :param build: Compiled Rx/Tx application artifact used for execution.
+    :param setup_interfaces: Fixture configuring NIC interfaces per test settings.
+    :param test_time: Duration to run the streaming pipeline.
+    :param test_config: Test configuration dictionary (e.g., interface type).
+    :param prepare_ramdisk: Fixture preparing RAM disk storage for media files.
+    :param media_file: Tuple fixture containing media metadata and file path.
+    :raises AssertionError: If integrity verification fails.
+    """
     media_file_info, media_file_path = media_file
 
     # Ensure the output directory exists for the integrity test output file.
