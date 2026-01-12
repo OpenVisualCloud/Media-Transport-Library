@@ -37,6 +37,24 @@ def test_st40p_fps_size(
     prepare_ramdisk,
     media_file,
 ):
+    """
+    Validate ST40P ancillary (ANC) transport over GStreamer across a matrix of
+    frame rates and payload sizes to ensure scheduling, pacing, and ancillary
+    metadata delivery remain stable. Small and medium text payloads are generated
+    on the fly, transmitted over two NIC ports, and captured at the receiver for
+    byte-for-byte comparison via the harness.
+
+    :param hosts: Mapping of available hosts for running the pipelines remotely.
+    :param build: Compiled GStreamer-based binaries or scripts used to run TX/RX.
+    :param media: Fixture for ancillary media handling; unused directly here.
+    :param setup_interfaces: Fixture configuring NIC ports for paired TX/RX use.
+    :param file_size_kb: Size of the generated text payload (KB) to transmit.
+    :param fps: Frame rate used for packet pacing in the TX pipeline.
+    :param framebuff: Number of frame buffers allocated in the pipeline.
+    :param test_time: Duration to run the end-to-end TX/RX pipelines.
+    :param test_config: Test configuration dictionary (e.g., interface type).
+    :param prepare_ramdisk: Fixture preparing RAM disk storage for temporary files.
+    """
     # Get the first host for remote execution
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -108,6 +126,23 @@ def test_st40p_framebuff(
     prepare_ramdisk,
     media_file,
 ):
+    """
+    Stress the ST40P ANC path with varying frame buffer counts to surface latency
+    or starvation issues in buffer management. Uses a fixed 60 fps rate and 100 KB
+    payload while sweeping framebuff counts to verify TX/RX stability and timeout
+    behavior under different buffering strategies.
+
+    :param hosts: Mapping of available hosts for running the pipelines remotely.
+    :param build: Compiled GStreamer-based binaries or scripts used to run TX/RX.
+    :param media: Fixture for ancillary media handling; unused directly here.
+    :param setup_interfaces: Fixture configuring NIC ports for paired TX/RX use.
+    :param file_size_kb: Size of the generated text payload (KB) to transmit.
+    :param fps: Frame rate used for packet pacing in the TX pipeline.
+    :param framebuff: Number of frame buffers allocated in the pipeline.
+    :param test_time: Duration to run the end-to-end TX/RX pipelines.
+    :param test_config: Test configuration dictionary (e.g., interface type).
+    :param prepare_ramdisk: Fixture preparing RAM disk storage for temporary files.
+    """
     # Get the first host for remote execution
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
@@ -189,6 +224,22 @@ def test_st40p_format_8331(
     prepare_ramdisk,
     media_file,
 ):
+    """
+    Exercise ST40P ANC transport using RFC8331 pseudo payloads to validate DID/SDID
+    handling, metadata capture, and pacing across multiple frame rates and buffer
+    counts. A synthetic RFC8331 stream is generated per test, transmitted, and the
+    receiver captures both payload and metadata for verification by the harness.
+
+    :param hosts: Mapping of available hosts for running the pipelines remotely.
+    :param build: Compiled GStreamer-based binaries or scripts used to run TX/RX.
+    :param media: Fixture for ancillary media handling; unused directly here.
+    :param setup_interfaces: Fixture configuring NIC ports for paired TX/RX use.
+    :param fps: Frame rate used for packet pacing in the TX pipeline.
+    :param framebuff: Number of frame buffers allocated in the pipeline.
+    :param test_time: Duration to run the end-to-end TX/RX pipelines.
+    :param test_config: Test configuration dictionary (e.g., interface type).
+    :param prepare_ramdisk: Fixture preparing RAM disk storage for temporary files.
+    """
     # Get the first host for remote execution
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(
