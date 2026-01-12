@@ -55,10 +55,16 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
         nic_port_list[1].startswith("kernel:"),
     ]
 
+    # Check if using loopback interface (kernel:lo)
+    is_loopback = [
+        nic_port_list[0] == "kernel:lo",
+        nic_port_list[1] == "kernel:lo",
+    ]
+
     if test_mode in ("unicast", "multicast"):
-        # Assign IPs to both interfaces
-        config["interfaces"][0]["ip"] = ip_pools.tx[0]
-        config["interfaces"][1]["ip"] = ip_pools.rx[0]
+        # Assign IPs to interfaces - use _os_ip for kernel interfaces, ip for others
+        config["interfaces"][0]["_os_ip" if is_kernel[0] else "ip"] = ip_pools.tx[0]
+        config["interfaces"][1]["_os_ip" if is_kernel[1] else "ip"] = ip_pools.rx[0]
 
         # Set session IPs based on mode
         if test_mode == "unicast":
@@ -68,19 +74,26 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
             config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
             config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
 
-        # Handle kernel interfaces - move IP to _os_ip marker for OS configuration
-        for idx in (0, 1):
-            if is_kernel[idx]:
-                config["interfaces"][idx]["_os_ip"] = config["interfaces"][idx]["ip"]
-                del config["interfaces"][idx]["ip"]
-
     elif test_mode == "kernel":
-        config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
-        config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
-        # Remove any existing IP fields for kernel interfaces
-        for idx in (0, 1):
-            if is_kernel[idx] and "ip" in config["interfaces"][idx]:
-                del config["interfaces"][idx]["ip"]
+        # For loopback interface (kernel:lo), use 127.0.0.x addresses
+        # For other kernel interfaces, use IP pools
+        if is_loopback[0] and is_loopback[1]:
+            # Both interfaces are loopback - use same IP for socket binding
+            # TX sends from 127.0.0.1 to 127.0.0.1, RX binds to 127.0.0.1
+            config["interfaces"][0]["_os_ip"] = "127.0.0.1"
+            config["interfaces"][1]["_os_ip"] = "127.0.0.1"
+            config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+            config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
+        else:
+            # Regular kernel interfaces - use IP pools
+            for idx in (0, 1):
+                if is_kernel[idx]:
+                    config["interfaces"][idx]["_os_ip"] = (
+                        ip_pools.tx[0] if idx == 0 else ip_pools.rx[0]
+                    )
+
+            config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
@@ -475,6 +488,7 @@ def execute_test(
     ptp: bool = False,
     host=None,
     netsniff=None,
+    interface_setup=None,
 ) -> bool:
 
     case_id = os.environ["PYTEST_CURRENT_TEST"]
@@ -488,7 +502,7 @@ def execute_test(
 
     # Configure kernel socket interfaces before creating config file
     # This must happen before MTL initialization
-    configure_kernel_interfaces(config, remote_conn)
+    configure_kernel_interfaces(config, remote_conn, interface_setup)
 
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
@@ -1132,7 +1146,7 @@ def check_and_set_ip(interface_name: str, ip_address: str, connection):
     logger.info(f"Configured IP {ip_address} on {interface_name}")
 
 
-def configure_kernel_interfaces(config: dict, connection):
+def configure_kernel_interfaces(config: dict, connection, interface_setup=None):
     """Configure OS-level IP addresses for kernel socket interfaces.
 
     Must be called before execute_test() when using kernel socket interfaces
@@ -1140,6 +1154,7 @@ def configure_kernel_interfaces(config: dict, connection):
 
     :param config: Test configuration dictionary with '_os_ip' markers
     :param connection: Connection object for command execution
+    :param interface_setup: Optional InterfaceSetup object to register IPs for cleanup
     """
     for interface in config.get("interfaces", []):
         if "_os_ip" not in interface:
@@ -1156,6 +1171,10 @@ def configure_kernel_interfaces(config: dict, connection):
             ip_addr = f"{ip_addr}/24"
 
         check_and_set_ip(if_name, ip_addr, connection)
+
+        # Register for cleanup if interface_setup provided
+        if interface_setup is not None:
+            interface_setup.register_ip_cleanup(connection, if_name, ip_addr)
 
 
 def get_case_id() -> str:
@@ -1198,6 +1217,10 @@ def add_dual_interfaces(
     is_kernel_tx = tx_nic_port_list[0].startswith("kernel:")
     is_kernel_rx = rx_nic_port_list[0].startswith("kernel:")
 
+    # Check if using loopback interface (kernel:lo)
+    is_loopback_tx = tx_nic_port_list[0] == "kernel:lo"
+    is_loopback_rx = rx_nic_port_list[0] == "kernel:lo"
+
     if test_mode in ("unicast", "multicast"):
         # Assign IPs to both configs
         tx_config["interfaces"][0]["ip"] = ip_pools.tx[0]
@@ -1220,13 +1243,22 @@ def add_dual_interfaces(
             del rx_config["interfaces"][0]["ip"]
 
     elif test_mode == "kernel":
-        tx_config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
-        rx_config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
-        # Remove any existing IP fields for kernel interfaces
-        if is_kernel_tx and "ip" in tx_config["interfaces"][0]:
-            del tx_config["interfaces"][0]["ip"]
-        if is_kernel_rx and "ip" in rx_config["interfaces"][0]:
-            del rx_config["interfaces"][0]["ip"]
+        # For loopback interface (kernel:lo), use 127.0.0.x addresses
+        # For other kernel interfaces, use IP pools
+        if is_loopback_tx and is_loopback_rx:
+            # Both interfaces are loopback - use same IP for socket binding
+            # TX sends from 127.0.0.1 to 127.0.0.1, RX binds to 127.0.0.1
+            tx_config["interfaces"][0]["_os_ip"] = "127.0.0.1"
+            rx_config["interfaces"][0]["_os_ip"] = "127.0.0.1"
+            tx_config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+            rx_config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
+        else:
+            # Regular kernel interfaces - use IP pools
+            tx_config["interfaces"][0]["_os_ip"] = ip_pools.tx[0]
+            rx_config["interfaces"][0]["_os_ip"] = ip_pools.rx[0]
+
+            tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            rx_config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
@@ -1391,6 +1423,7 @@ def execute_dual_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
+    interface_setup=None,
 ) -> bool:
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -1406,8 +1439,8 @@ def execute_dual_test(
 
     # Configure kernel socket interfaces before creating config files
     # This must happen before MTL initialization
-    configure_kernel_interfaces(tx_config, tx_host.connection)
-    configure_kernel_interfaces(rx_config, rx_host.connection)
+    configure_kernel_interfaces(tx_config, tx_host.connection, interface_setup)
+    configure_kernel_interfaces(rx_config, rx_host.connection, interface_setup)
 
     # Prepare TX config
     tx_config_file = f"{build}/tests/tx_config.json"

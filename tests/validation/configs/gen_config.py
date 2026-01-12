@@ -96,7 +96,7 @@ def main() -> None:
         type=str,
         required=True,
         help="specify PCI ID of the NIC (comma-separated for multiple interfaces, e.g., \
-            '8086:1592' or '0000:31:00.0,0000:31:00.1')",
+            '8086:1592')",
     )
     parser.add_argument(
         "--ip_address",

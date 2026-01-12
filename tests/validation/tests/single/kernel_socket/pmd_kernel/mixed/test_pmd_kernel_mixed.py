@@ -64,7 +64,12 @@ from mtl_engine.media_files import (
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["multicast"])
-@pytest.mark.parametrize("video_format", ["i1080p59"])
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files["i1080p59"]],
+    indirect=["media_file"],
+    ids=["i1080p59"],
+)
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_pmd_kernel_mixed_format(
     hosts,
@@ -73,10 +78,10 @@ def test_pmd_kernel_mixed_format(
     setup_interfaces: InterfaceSetup,
     test_time,
     test_mode,
-    video_format,
     replicas,
     test_config,
     prepare_ramdisk,
+    media_file,
 ):
     """Test mixed ST2110 streams (video, audio, ancillary) using DPDK PMD (TX) and kernel socket (RX).
 
@@ -92,18 +97,18 @@ def test_pmd_kernel_mixed_format(
     :type test_time: int
     :param test_mode: Network mode for testing (multicast/unicast)
     :type test_mode: str
-    :param video_format: Video format identifier (e.g., 'i1080p59')
-    :type video_format: str
     :param replicas: Number of concurrent mixed-media session sets to create
     :type replicas: int
     :param test_config: Test configuration dictionary from test_config.yaml
     :type test_config: dict
     :param prepare_ramdisk: Ramdisk preparation fixture (if enabled)
     :type prepare_ramdisk: object or None
+    :param media_file: Media file fixture (video file info and path)
+    :type media_file: tuple
 
     :raises pytest.skip: If less than 2 network interfaces configured in topology
     """
-    video_file = yuv_files[video_format]
+    media_file_info, media_file_path = media_file
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
@@ -113,28 +118,18 @@ def test_pmd_kernel_mixed_format(
         test_config.get("interface_type", "VF")
     )
 
-    # Get ramdisk mountpoint for output files (read-only media path can't be used for output)
-    ramdisk_mountpoint = (
-        test_config.get("ramdisk", {})
-        .get("media", {})
-        .get("mountpoint", "/mnt/ramdisk/media")
-    )
-    audio_out_path = str(
-        host.connection.path(ramdisk_mountpoint) / ("out_" + audio_file["filename"])
-    )
-
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
         nic_port_list=interfaces_list,
         test_mode=test_mode,
-        width=video_file["width"],
-        height=video_file["height"],
-        fps=parse_fps_to_pformat(video_file["fps"]),
-        input_format=video_file["file_format"],
-        transport_format=video_file["format"],
-        output_format=video_file["file_format"],
-        st20p_url=os.path.join(media, video_file["filename"]),
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=parse_fps_to_pformat(media_file_info["fps"]),
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st20p", replicas=replicas
@@ -148,7 +143,10 @@ def test_pmd_kernel_mixed_format(
         audio_sampling="48kHz",
         audio_ptime="1",
         filename=os.path.join(media, audio_file["filename"]),
-        out_url=audio_out_path,
+        out_url=str(
+            host.connection.path(media_file_path).parent
+            / ("out_" + audio_file["filename"])
+        ),
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st30p", replicas=replicas
@@ -171,4 +169,5 @@ def test_pmd_kernel_mixed_format(
         build=build,
         test_time=test_time,
         host=host,
+        interface_setup=setup_interfaces,
     )

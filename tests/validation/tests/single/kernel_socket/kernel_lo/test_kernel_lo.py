@@ -35,7 +35,12 @@ from mtl_engine.media_files import (
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
-@pytest.mark.parametrize("video_format", ["i1080p59"])
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files["i1080p59"]],
+    indirect=["media_file"],
+    ids=["i1080p59"],
+)
 @pytest.mark.parametrize("replicas", [1, 3])
 def test_kernello_mixed_format(
     hosts,
@@ -43,10 +48,10 @@ def test_kernello_mixed_format(
     media,
     test_time,
     test_mode,
-    video_format,
     replicas,
-    test_config,
     prepare_ramdisk,
+    media_file,
+    setup_interfaces,
 ):
     """Test mixed media streams over kernel loopback interface.
 
@@ -58,24 +63,15 @@ def test_kernello_mixed_format(
     :param media: Path to media files directory
     :param test_time: Test duration in seconds
     :param test_mode: Backend mode (kernel)
-    :param video_format: Video format specification (i1080p59)
     :param replicas: Number of session replicas (1 or 3)
     :param prepare_ramdisk: Ramdisk setup fixture
+    :param media_file: Media file fixture (video file info and path)
+    :param setup_interfaces: Interface setup helper for cleanup
     """
-    video_file = yuv_files[video_format]
+    media_file_info, media_file_path = media_file
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
-
-    # Get ramdisk mountpoint for output files (read-only media path can't be used for output)
-    ramdisk_mountpoint = (
-        test_config.get("ramdisk", {})
-        .get("media", {})
-        .get("mountpoint", "/mnt/ramdisk/media")
-    )
-    audio_out_path = str(
-        host.connection.path(ramdisk_mountpoint) / ("out_" + audio_file["filename"])
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -85,13 +81,13 @@ def test_kernello_mixed_format(
             "kernel:lo",
         ],  # Note: keeping hardcoded for kernel loopback test
         test_mode=test_mode,
-        width=video_file["width"],
-        height=video_file["height"],
-        fps=parse_fps_to_pformat(video_file["fps"]),
-        input_format=video_file["file_format"],
-        transport_format=video_file["format"],
-        output_format=video_file["file_format"],
-        st20p_url=os.path.join(media, video_file["filename"]),
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=parse_fps_to_pformat(media_file_info["fps"]),
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st20p", replicas=replicas
@@ -105,7 +101,10 @@ def test_kernello_mixed_format(
         audio_sampling="48kHz",
         audio_ptime="1",
         filename=os.path.join(media, audio_file["filename"]),
-        out_url=audio_out_path,
+        out_url=str(
+            host.connection.path(media_file_path).parent
+            / ("out_" + audio_file["filename"])
+        ),
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st30p", replicas=replicas
@@ -125,6 +124,7 @@ def test_kernello_mixed_format(
     rxtxapp.execute_test(
         config=config,
         build=build,
-        test_time=test_time * replicas * 3,
+        test_time=test_time,
         host=host,
+        interface_setup=setup_interfaces,
     )

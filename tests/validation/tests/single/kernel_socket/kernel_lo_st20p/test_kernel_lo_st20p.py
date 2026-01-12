@@ -80,6 +80,6 @@ def test_kernello_st20p_video_format(
     rxtxapp.execute_test(
         config=config,
         build=build,
-        test_time=test_time * replicas,
+        test_time=test_time,
         host=host,
     )

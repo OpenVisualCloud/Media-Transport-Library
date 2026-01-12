@@ -49,7 +49,9 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["multicast"])
-@pytest.mark.parametrize("video_format", ["i1080p59", "i2160p59"])
+@pytest.mark.parametrize(
+    "video_format", ["i1080p59"]
+)  # Note: i2160p59 excluded - kernel socket cannot handle 4K@59fps bandwidth (10.4Gbps)
 @pytest.mark.parametrize("replicas", [1, 2])
 def test_pmd_kernel_video_format(
     hosts,
@@ -64,6 +66,10 @@ def test_pmd_kernel_video_format(
     prepare_ramdisk,
 ):
     """Test ST2110-20 video transmission using DPDK PMD (TX) and kernel socket (RX).
+
+    Note: This test uses kernel socket for RX which has bandwidth limitations.
+    4K formats (i2160p59 @ 10.4 Gbps) are excluded as kernel socket backend
+    cannot reliably process packets at that rate, causing packet loss and FPS drops.
 
     :param hosts: Dictionary of host objects from topology configuration
     :type hosts: dict
@@ -121,4 +127,5 @@ def test_pmd_kernel_video_format(
         build=build,
         test_time=test_time * 2,
         host=host,
+        interface_setup=setup_interfaces,
     )
