@@ -521,21 +521,13 @@ static int rx_audio_session_handle_rtp_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
-#ifdef MTL_ENABLE_FUZZING_ST30
-int st_rx_audio_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
-                                        struct st_rx_audio_session_impl* s,
-                                        struct rte_mbuf* mbuf,
-                                        enum mtl_session_port s_port) {
-  if (!s || !mbuf) return -EINVAL;
-  if (s->ops.type == ST30_TYPE_RTP_LEVEL)
-    return rx_audio_session_handle_rtp_pkt(impl, s, mbuf, s_port);
-  return rx_audio_session_handle_frame_pkt(impl, s, mbuf, s_port);
-}
-
-void st_rx_audio_session_fuzz_reset(struct st_rx_audio_session_impl* s) {
+static void rx_audio_session_reset(struct st_rx_audio_session_impl* s,
+                                   bool init_stat_time_now) {
   if (!s) return;
 
   s->session_seq_id = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
+  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
   s->frame_recv_size = 0;
   s->st30_pkt_idx = 0;
@@ -551,16 +543,31 @@ void st_rx_audio_session_fuzz_reset(struct st_rx_audio_session_impl* s) {
   s->stat_pkts_wrong_ssrc_dropped = 0;
   s->stat_pkts_len_mismatch_dropped = 0;
   s->stat_pkts_received = 0;
-  s->stat_last_time = 0;
+  s->stat_last_time = init_stat_time_now ? mt_get_monotonic_time() : 0;
   s->stat_max_notify_frame_us = 0;
   rte_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
-
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    s->latest_seq_id[i] = -1;
     s->redundant_error_cnt[i] = 0;
   }
+
+  if (init_stat_time_now) s->usdt_dump_fd = -1;
+}
+
+#ifdef MTL_ENABLE_FUZZING_ST30
+int st_rx_audio_session_fuzz_handle_pkt(struct mtl_main_impl* impl,
+                                        struct st_rx_audio_session_impl* s,
+                                        struct rte_mbuf* mbuf,
+                                        enum mtl_session_port s_port) {
+  if (!s || !mbuf) return -EINVAL;
+  if (s->ops.type == ST30_TYPE_RTP_LEVEL)
+    return rx_audio_session_handle_rtp_pkt(impl, s, mbuf, s_port);
+  return rx_audio_session_handle_frame_pkt(impl, s, mbuf, s_port);
+}
+
+void st_rx_audio_session_fuzz_reset(struct st_rx_audio_session_impl* s) {
+  rx_audio_session_reset(s, false);
 }
 #endif
 
@@ -903,19 +910,8 @@ static int rx_audio_session_attach(struct mtl_main_impl* impl,
         ops->framebuff_size);
     return -EIO;
   }
-  s->st30_pkt_idx = 0;
   s->st30_frame_size = ops->framebuff_size;
-
-  s->session_seq_id = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
-  s->tmstamp = -1;
-  s->stat_pkts_received = 0;
-  s->stat_pkts_dropped = 0;
-  rte_atomic32_set(&s->stat_frames_received, 0);
-  s->stat_last_time = mt_get_monotonic_time();
-  mt_stat_u64_init(&s->stat_time);
-  s->usdt_dump_fd = -1;
+  rx_audio_session_reset(s, true);
 
   if (ops->flags & ST30_RX_FLAG_TIMING_PARSER_STAT) {
     info("%s(%d), enable the timing analyze stat\n", __func__, idx);
