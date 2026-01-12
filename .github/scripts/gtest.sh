@@ -7,6 +7,8 @@ script_folder=${script_path/$script_name/}
 mtl_folder="${script_folder}/../../"
 declare -A test_cases
 
+set -x
+
 : "${KAHAWAI_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiTest"}"
 : "${KAHAWAI_UFD_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUfdTest"}"
 : "${KAHAWAI_UPL_TEST_BINARY:="${mtl_folder}/build/tests/KahawaiUplTest"}"
@@ -93,7 +95,16 @@ generate_test_cases() {
 }
 
 bind_driver_to_dpdk() {
-	sudo modprobe ice || true
+	if ! lsmod | awk '{print $1}' | grep -wx "ice"; then
+		echo "ICE driver not loaded, loading..."
+		if sudo modprobe ice; then
+			sleep 3
+		else
+			echo "Warning: Failed to load ICE driver"
+			time_taken_by_script
+			exit 1
+		fi
+	fi
 	TEST_PORT_1=$("${mtl_folder}/script/nicctl.sh" list all | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
 	TEST_PORT_2=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
 	TEST_PORT_3=$("${mtl_folder}/script/nicctl.sh" list all | grep -v "${TEST_PORT_1}" | grep -v "${TEST_PORT_2}" | awk '$3 == "vfio-pci" {print $2}' | shuf -n 1)
@@ -294,10 +305,8 @@ start_mtl_manager
 failed_tests=()
 passed_tests=()
 
-if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ]; then
-	reset_ice_driver
-	bind_driver_to_dpdk
-fi
+reset_ice_driver
+bind_driver_to_dpdk
 
 if [ -z "$TEST_PORT_1" ] || [ -z "$TEST_PORT_2" ]; then
 	echo "Error: TEST_PORT_1 or TEST_PORT_2 environment variables are not set"
