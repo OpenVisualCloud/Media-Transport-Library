@@ -3,10 +3,10 @@
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-
-pytestmark = pytest.mark.verified
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_interlace
+
+pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
@@ -26,10 +26,10 @@ def test_interlace(
     media_file,
 ):
     """
-    Validate unicast streaming of interlaced YUV media, ensuring ST20P handles
-    interlaced frame signaling, field ordering, and session setup for each sample.
-    This guards against regressions in interlace flags or pacing when handling
-    non-progressive sources.
+    Validate unicast streaming of interlaced YUV media, ensuring ST20P
+    handles interlaced frame signaling, field ordering, and session setup for
+    each sample. This guards against regressions in interlace flags or pacing
+    when handling non-progressive sources.
 
     :param hosts: Mapping of hosts available for the test run.
     :param build: Compiled Rx/Tx application artifact used for execution.
@@ -41,9 +41,7 @@ def test_interlace(
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(

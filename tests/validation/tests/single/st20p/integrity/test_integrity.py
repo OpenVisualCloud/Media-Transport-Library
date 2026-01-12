@@ -6,14 +6,14 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-
-pytestmark = pytest.mark.verified
 from common.nicctl import InterfaceSetup
 from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
+
+pytestmark = pytest.mark.verified
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,12 @@ def test_integrity(
     media_file,
 ):
     """
-    Run unicast ST20P streams and perform byte-level integrity comparison between
-    the transmitted YUV frames and the received output written to ``out.yuv``. The
-    test creates a deterministic output file, computes per-frame size, and invokes
-    ``check_st20p_integrity`` to guard against silent corruption while exercising
-    both RFC4175-packed and planar 10-bit sources.
+    Run unicast ST20P streams and perform byte-level integrity comparison
+    between the transmitted YUV frames and the received output written to
+    ``out.yuv``. The test creates a deterministic output file, computes
+    per-frame size, and invokes ``check_st20p_integrity`` to guard against
+    silent corruption while exercising both RFC4175-packed and planar 10-bit
+    sources.
 
     :param hosts: Mapping of hosts available for the test run.
     :param build: Compiled Rx/Tx application artifact used for execution.
@@ -67,9 +68,7 @@ def test_integrity(
     os.makedirs(log_dir, exist_ok=True)
     out_file_url = os.path.join(log_dir, "out.yuv")
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -98,9 +97,7 @@ def test_integrity(
         media_file_info["height"],
         media_file_info["file_format"],
     )
-    result = check_st20p_integrity(
-        src_url=media_file_path, out_url=out_file_url, frame_size=frame_size
-    )
+    result = check_st20p_integrity(src_url=media_file_path, out_url=out_file_url, frame_size=frame_size)
 
     if result:
         logger.log(TEST_PASS, "INTEGRITY PASS")

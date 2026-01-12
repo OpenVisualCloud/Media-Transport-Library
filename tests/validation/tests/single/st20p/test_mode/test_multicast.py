@@ -3,10 +3,10 @@
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-
-pytestmark = pytest.mark.verified
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422rfc10
+
+pytestmark = pytest.mark.verified
 
 
 @pytest.mark.nightly
@@ -31,10 +31,10 @@ def test_multicast(
     media_file,
 ):
     """
-    Validate multicast ST20P streaming for representative YUV422 RFC4175 sources,
-    ensuring session setup, IGMP/join behavior (via netsniff), and basic pipeline
-    stability. This is a smoke-style check that the multicast path functions across
-    a range of resolutions.
+    Validate multicast ST20P streaming for representative YUV422 RFC4175
+    sources, ensuring session setup, IGMP/join behavior (via netsniff), and
+    basic pipeline stability. This is a smoke-style check that the multicast
+    path functions across a range of resolutions.
 
     :param hosts: Mapping of hosts available for the test run.
     :param build: Compiled Rx/Tx application artifact used for execution.
@@ -47,9 +47,7 @@ def test_multicast(
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
-    )
+    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
