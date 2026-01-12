@@ -110,8 +110,8 @@ static void st30_fuzz_init_impl(void) {
     static char st30_arg4[] = "-n1";
     static char st30_arg5[] = "--no-pci";
     static char st30_arg6[] = "--vdev=net_null0";
-    static char* eal_args[] = {
-      st30_arg0, st30_arg1, st30_arg2, st30_arg3, st30_arg4, st30_arg5, st30_arg6};
+    static char* eal_args[] = {st30_arg0, st30_arg1, st30_arg2, st30_arg3,
+                               st30_arg4, st30_arg5, st30_arg6};
     static const int eal_argc = (int)(sizeof(eal_args) / sizeof(eal_args[0]));
 
     if (rte_eal_init(eal_argc, eal_args) < 0) {
