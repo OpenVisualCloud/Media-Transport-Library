@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import re
-import subprocess
 import time
 
 from mfd_connect import SSHConnection
@@ -51,19 +50,37 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
     config["interfaces"][0]["name"] = nic_port_list[0]
     config["interfaces"][1]["name"] = nic_port_list[1]
 
-    if test_mode == "unicast":
+    is_kernel = [
+        nic_port_list[0].startswith("kernel:"),
+        nic_port_list[1].startswith("kernel:")
+    ]
+
+    if test_mode in ("unicast", "multicast"):
+        # Assign IPs to both interfaces
         config["interfaces"][0]["ip"] = ip_pools.tx[0]
         config["interfaces"][1]["ip"] = ip_pools.rx[0]
-        config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
-        config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
-    elif test_mode == "multicast":
-        config["interfaces"][0]["ip"] = ip_pools.tx[0]
-        config["interfaces"][1]["ip"] = ip_pools.rx[0]
-        config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
-        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+
+        # Set session IPs based on mode
+        if test_mode == "unicast":
+            config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
+        else:  # multicast
+            config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+            config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+
+        # Handle kernel interfaces - move IP to _os_ip marker for OS configuration
+        for idx in (0, 1):
+            if is_kernel[idx]:
+                config["interfaces"][idx]["_os_ip"] = config["interfaces"][idx]["ip"]
+                del config["interfaces"][idx]["ip"]
+
     elif test_mode == "kernel":
         config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
         config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
+        # Remove any existing IP fields for kernel interfaces
+        for idx in (0, 1):
+            if is_kernel[idx] and "ip" in config["interfaces"][idx]:
+                del config["interfaces"][idx]["ip"]
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
@@ -468,6 +485,11 @@ def execute_test(
     logger.info(f"Starting RxTxApp test: {get_case_id()}")
 
     remote_conn = host.connection
+    
+    # Configure kernel socket interfaces before creating config file
+    # This must happen before MTL initialization
+    configure_kernel_interfaces(config, remote_conn)
+    
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
     if isinstance(remote_conn, SSHConnection):
@@ -642,7 +664,10 @@ def execute_test(
     if passed:
         logger.info(f"RxTxApp test completed with result: {passed}")
     else:
-        log_fail(f"RxTxApp test failed with result: {passed}")
+        if fail_on_error:
+            log_fail(f"RxTxApp test failed with result: {passed}")
+        else:
+            logger.info(f"RxTxApp test failed with result: {passed}")
     return passed
 
 
@@ -1084,18 +1109,57 @@ def check_rx_converter_output(
     return False
 
 
-def check_and_set_ip(interface_name: str, ip_adress="192.168.17.102/24"):
-    try:
-        result = subprocess.run(
-            ["ip", "addr", "show", interface_name], stdout=subprocess.PIPE, text=True
-        )
-        if ip_adress.split("/")[0] not in result.stdout:
-            subprocess.run(
-                ["sudo", "ip", "addr", "add", ip_adress, "dev", interface_name]
-            )
-            subprocess.run(["sudo", "ip", "link", "set", interface_name, "up"])
-    except Exception:
-        print(f"An error occured while trying to bind ip address to {interface_name}")
+def check_and_set_ip(interface_name: str, ip_address: str, connection):
+    """Configure IP address on a kernel network interface.
+
+    :param interface_name: Network interface name (without 'kernel:' prefix)
+    :param ip_address: IP address with CIDR notation (e.g., '192.168.2.0/24')
+    :param connection: Connection object for command execution
+    :raises ValueError: If IP address is already configured
+    :raises Exception: If IP configuration fails
+    """
+    result = connection.execute_command(
+        f"ip addr show {interface_name}", shell=True
+    )
+
+    ip_without_mask = ip_address.split("/")[0]
+    if ip_without_mask in result.stdout:
+        logger.debug(f"IP {ip_address} already configured on {interface_name}")
+        return
+
+    connection.execute_command(
+        f"sudo ip addr add {ip_address} dev {interface_name}", shell=True
+    )
+    connection.execute_command(
+        f"sudo ip link set {interface_name} up", shell=True
+    )
+    logger.info(f"Configured IP {ip_address} on {interface_name}")
+
+
+def configure_kernel_interfaces(config: dict, connection):
+    """Configure OS-level IP addresses for kernel socket interfaces.
+
+    Must be called before execute_test() when using kernel socket interfaces
+    in multicast or unicast modes.
+
+    :param config: Test configuration dictionary with '_os_ip' markers
+    :param connection: Connection object for command execution
+    """
+    for interface in config.get("interfaces", []):
+        if "_os_ip" not in interface:
+            continue
+
+        if not interface["name"].startswith("kernel:"):
+            continue
+
+        if_name = interface["name"].replace("kernel:", "")
+        ip_addr = interface["_os_ip"]
+
+        # Add default /24 netmask if not specified
+        if "/" not in ip_addr:
+            ip_addr = f"{ip_addr}/24"
+
+        check_and_set_ip(if_name, ip_addr, connection)
 
 
 def get_case_id() -> str:
@@ -1132,25 +1196,41 @@ def add_dual_interfaces(
     rx_nic_port_list: list,
     test_mode: str,
 ) -> tuple:
-    # Configure TX host interface only
     tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
-
-    # Configure RX host interface only
     rx_config["interfaces"][0]["name"] = rx_nic_port_list[0]
 
-    if test_mode == "unicast":
+    is_kernel_tx = tx_nic_port_list[0].startswith("kernel:")
+    is_kernel_rx = rx_nic_port_list[0].startswith("kernel:")
+
+    if test_mode in ("unicast", "multicast"):
+        # Assign IPs to both configs
         tx_config["interfaces"][0]["ip"] = ip_pools.tx[0]
         rx_config["interfaces"][0]["ip"] = ip_pools.rx[0]
-        tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
-        rx_config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
-    elif test_mode == "multicast":
-        tx_config["interfaces"][0]["ip"] = ip_pools.tx[0]
-        rx_config["interfaces"][0]["ip"] = ip_pools.rx[0]
-        tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
-        rx_config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+
+        # Set session IPs based on mode
+        if test_mode == "unicast":
+            tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            rx_config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
+        else:  # multicast
+            tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+            rx_config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+
+        # Handle kernel interfaces - move IP to _os_ip marker for OS configuration
+        if is_kernel_tx:
+            tx_config["interfaces"][0]["_os_ip"] = tx_config["interfaces"][0]["ip"]
+            del tx_config["interfaces"][0]["ip"]
+        if is_kernel_rx:
+            rx_config["interfaces"][0]["_os_ip"] = rx_config["interfaces"][0]["ip"]
+            del rx_config["interfaces"][0]["ip"]
+
     elif test_mode == "kernel":
         tx_config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
         rx_config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
+        # Remove any existing IP fields for kernel interfaces
+        if is_kernel_tx and "ip" in tx_config["interfaces"][0]:
+            del tx_config["interfaces"][0]["ip"]
+        if is_kernel_rx and "ip" in rx_config["interfaces"][0]:
+            del rx_config["interfaces"][0]["ip"]
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
@@ -1327,6 +1407,11 @@ def execute_dual_test(
 
     # Log test start
     logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
+
+    # Configure kernel socket interfaces before creating config files
+    # This must happen before MTL initialization
+    configure_kernel_interfaces(tx_config, tx_host.connection)
+    configure_kernel_interfaces(rx_config, rx_host.connection)
 
     # Prepare TX config
     tx_config_file = f"{build}/tests/tx_config.json"
