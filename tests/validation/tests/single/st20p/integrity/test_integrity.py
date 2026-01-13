@@ -4,11 +4,10 @@
 import logging
 import os
 
-import pytest
-from mfd_common_libs.log_levels import TEST_PASS
-
 import mtl_engine.RxTxApp as rxtxapp
+import pytest
 from common.nicctl import InterfaceSetup
+from mfd_common_libs.log_levels import TEST_PASS
 from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity

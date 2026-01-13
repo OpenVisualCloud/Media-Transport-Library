@@ -5,20 +5,20 @@
 
 Exercises ANC payload handling over GStreamer across frame rates, payload
 sizes, frame buffers, and RFC8331 pseudo streams to ensure pacing, metadata,
-and capture remain stable end to end.
+and capture remain stable end to end when using paired virtual functions on
+a single physical port.
 """
 
 import os
 
-import pytest
-
 import mtl_engine.media_creator as media_create
+import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
 
 # Helper to set up ancillary input/output file paths
-def setup_paths(media_file, host):
+def setup_paths(media_file):
     media_file_info, media_file_path = media_file
     if not media_file_path:
         raise ValueError(
@@ -51,8 +51,9 @@ def test_st40p_fps_size(
     Validate ST40P ancillary (ANC) transport over GStreamer across frame
     rate and payload-size matrices to ensure scheduling, pacing, and ANC
     metadata delivery remain stable. Small and medium text payloads are
-    generated on the fly, transmitted over two NIC ports, and captured at
-    the receiver for byte-for-byte comparison via the harness.
+    generated on the fly, transmitted over paired VFs on a single physical
+    port, and captured at the receiver for byte-for-byte comparison via the
+    harness.
 
     :param hosts: Mapping of available hosts for running the pipelines
         remotely.
@@ -76,7 +77,7 @@ def test_st40p_fps_size(
         test_config.get("interface_type", "VF"),
     )
 
-    input_file_path, output_file_path = setup_paths(media_file, host)
+    input_file_path, output_file_path = setup_paths(media_file)
 
     input_file_path = media_create.create_text_file(
         size_kb=file_size_kb,
@@ -168,7 +169,7 @@ def test_st40p_framebuff(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF"),
     )
-    input_file_path, output_file_path = setup_paths(media_file, host)
+    input_file_path, output_file_path = setup_paths(media_file)
     # Base the timeout on parameter to make sure the amount of time between
     # RX and TX is less than the timeout period
     timeout_period = 20
@@ -271,7 +272,7 @@ def test_st40p_format_8331(
     # Based on this parameters
     timeout_period = 15
 
-    input_file_path, output_file_path = setup_paths(media_file, host)
+    input_file_path, output_file_path = setup_paths(media_file)
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
         build=build,
