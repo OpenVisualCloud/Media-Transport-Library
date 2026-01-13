@@ -1009,11 +1009,17 @@ def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
         if expected_fps and tolerance is not None:
             delta = abs(measured_fps - expected_fps)
             fps_lines.append(
-                f"idx={idx}:{status} fps={measured_fps:.2f} (expected~{expected_fps}, delta={delta:.2f}, tol={tolerance:.2f})"
+                (
+                    f"idx={idx}:{status} fps={measured_fps:.2f} "
+                    f"(expected~{expected_fps}, delta={delta:.2f}, tol={tolerance:.2f})"
+                )
             )
             if delta > tolerance:
                 mismatches.append(
-                    f"fps session {idx} delta {delta:.2f} > tol {tolerance:.2f} (expected {expected_fps}, got {measured_fps:.2f})"
+                    (
+                        f"fps session {idx} delta {delta:.2f} > tol {tolerance:.2f} "
+                        f"(expected {expected_fps}, got {measured_fps:.2f})"
+                    )
                 )
         else:
             fps_lines.append(f"idx={idx}:{status} fps={measured_fps:.2f}")
@@ -1022,12 +1028,15 @@ def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
         "st20p config: "
         f"w={tx['width']} h={tx['height']} fps={tx['fps']} interlaced={tx['interlaced']} "
         f"input={tx['input_format']} transport={tx['transport_format']} output={rx['output_format']} "
-        f"packing={tx.get('packing','')} pacing={tx.get('pacing','')} replicas_tx={replicas_tx} replicas_rx={replicas_rx} "
+        f"packing={tx.get('packing', '')} pacing={tx.get('pacing', '')} "
+        f"replicas_tx={replicas_tx} replicas_rx={replicas_rx} "
         f"rtcp={tx.get('enable_rtcp', False)} latency={rx.get('measure_latency', False)}"
     )
 
     lines.append(
-        f"st20p results: rx_ok={rx_ok}/{replicas_rx}; tx_conv_ok={tx_conv_ok}/{replicas_tx}; rx_conv_ok={rx_conv_ok}/{replicas_rx}"
+        "st20p results: "
+        f"rx_ok={rx_ok}/{replicas_rx}; tx_conv_ok={tx_conv_ok}/{replicas_tx}; "
+        f"rx_conv_ok={rx_conv_ok}/{replicas_rx}"
     )
 
     if fps_lines:
@@ -1066,11 +1075,11 @@ def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
         )
     if actual_tx_packing and actual_tx_packing != tx.get("packing", ""):
         mismatches.append(
-            f"tx packing mismatch: expected {tx.get('packing','')}, got {actual_tx_packing}"
+            f"tx packing mismatch: expected {tx.get('packing', '')}, got {actual_tx_packing}"
         )
     if actual_tx_pacing and actual_tx_pacing != tx.get("pacing", ""):
         mismatches.append(
-            f"tx pacing mismatch: expected {tx.get('pacing','')}, got {actual_tx_pacing}"
+            f"tx pacing mismatch: expected {tx.get('pacing', '')}, got {actual_tx_pacing}"
         )
 
     if actual_rx_width is not None and actual_rx_width != rx["width"]:
@@ -1087,11 +1096,11 @@ def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
         )
     if actual_rx_packing and actual_rx_packing != rx.get("packing", ""):
         mismatches.append(
-            f"rx packing mismatch: expected {rx.get('packing','')}, got {actual_rx_packing}"
+            f"rx packing mismatch: expected {rx.get('packing', '')}, got {actual_rx_packing}"
         )
     if actual_rx_pacing and actual_rx_pacing != rx.get("pacing", ""):
         mismatches.append(
-            f"rx pacing mismatch: expected {rx.get('pacing','')}, got {actual_rx_pacing}"
+            f"rx pacing mismatch: expected {rx.get('pacing', '')}, got {actual_rx_pacing}"
         )
 
     missing_rx = replicas_rx - rx_ok
@@ -1361,9 +1370,8 @@ def check_rx_output(
         if failure_lines:
             failure_reasons.append(f"failure lines: {'; '.join(failure_lines[:3])}")
 
-    reason = (
-        f"rx {session_type} session failed: {ok_cnt}/{replicas} OK. "
-        + ("; ".join(failure_reasons) if failure_reasons else "")
+    reason = f"rx {session_type} session failed: {ok_cnt}/{replicas} OK. " + (
+        "; ".join(failure_reasons) if failure_reasons else ""
     )
 
     if fail_on_error:
@@ -1530,12 +1538,16 @@ def _build_summary_block(
     # Core config snapshot (interfaces and IPs)
     try:
         tx_intf = config["interfaces"][0]["name"]
-        rx_intf = config["interfaces"][1]["name"] if len(config["interfaces"]) > 1 else ""
-        tx_ip = config["interfaces"][0].get("ip", "")
-        rx_ip = config["interfaces"][1].get("ip", "") if len(config["interfaces"]) > 1 else ""
-        lines.append(
-            f"Interfaces: tx={tx_intf}({tx_ip}) rx={rx_intf}({rx_ip})"
+        rx_intf = (
+            config["interfaces"][1]["name"] if len(config["interfaces"]) > 1 else ""
         )
+        tx_ip = config["interfaces"][0].get("ip", "")
+        rx_ip = (
+            config["interfaces"][1].get("ip", "")
+            if len(config["interfaces"]) > 1
+            else ""
+        )
+        lines.append(f"Interfaces: tx={tx_intf}({tx_ip}) rx={rx_intf}({rx_ip})")
     except Exception:
         lines.append("Interfaces: unavailable")
 
@@ -1550,7 +1562,9 @@ def _build_summary_block(
         replicas = anc.get("replicas", 1)
         rx_ok = _count_ok_markers(output, re.compile(r"app_rx_anc_result"))
         lines.append(
-            f"ancillary: format={anc.get('ancillary_format','')} fps={anc.get('ancillary_fps','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+            "ancillary: "
+            f"format={anc.get('ancillary_format', '')} fps={anc.get('ancillary_fps', '')} "
+            f"replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     if config["tx_sessions"][0].get("audio"):
@@ -1558,7 +1572,9 @@ def _build_summary_block(
         replicas = audio.get("replicas", 1)
         rx_ok = _count_ok_markers(output, re.compile(r"app_rx_audio_result"))
         lines.append(
-            f"audio: fmt={audio.get('audio_format','')} ch={audio.get('audio_channel','')} fs={audio.get('audio_sampling','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+            "audio: "
+            f"fmt={audio.get('audio_format', '')} ch={audio.get('audio_channel', '')} "
+            f"fs={audio.get('audio_sampling', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     if config["tx_sessions"][0].get("st30p"):
@@ -1566,7 +1582,9 @@ def _build_summary_block(
         replicas = st30p.get("replicas", 1)
         rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st30p_result"))
         lines.append(
-            f"st30p: fmt={st30p.get('audio_format','')} ch={st30p.get('audio_channel','')} fs={st30p.get('audio_sampling','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+            "st30p: "
+            f"fmt={st30p.get('audio_format', '')} ch={st30p.get('audio_channel', '')} "
+            f"fs={st30p.get('audio_sampling', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     if config["tx_sessions"][0].get("fastmetadata"):
@@ -1574,7 +1592,9 @@ def _build_summary_block(
         replicas = fmd.get("replicas", 1)
         rx_ok = _count_ok_markers(output, re.compile(r"app_rx_fastmetadata_result"))
         lines.append(
-            f"fastmetadata: type={fmd.get('type','')} fps={fmd.get('fastmetadata_fps','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+            "fastmetadata: "
+            f"type={fmd.get('type', '')} fps={fmd.get('fastmetadata_fps', '')} "
+            f"replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     if config["tx_sessions"][0].get("st22p"):
@@ -1582,7 +1602,9 @@ def _build_summary_block(
         replicas = st22p.get("replicas", 1)
         rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st22p_result"))
         lines.append(
-            f"st22p: w={st22p.get('width')} h={st22p.get('height')} fps={st22p.get('fps')} codec={st22p.get('codec','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+            "st22p: "
+            f"w={st22p.get('width')} h={st22p.get('height')} fps={st22p.get('fps')} "
+            f"codec={st22p.get('codec', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     if config["tx_sessions"][0].get("video"):
@@ -1590,7 +1612,9 @@ def _build_summary_block(
         replicas = video.get("replicas", 1)
         rx_ok = _count_ok_markers(output, re.compile(r"app_rx_video_result"))
         lines.append(
-            f"video: fmt={video.get('video_format','')} pg={video.get('pg_format','')} pacing={video.get('pacing','')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+            "video: "
+            f"fmt={video.get('video_format', '')} pg={video.get('pg_format', '')} "
+            f"pacing={video.get('pacing', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
         )
 
     return lines, mismatch_found
