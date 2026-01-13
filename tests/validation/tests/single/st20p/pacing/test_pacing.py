@@ -34,12 +34,14 @@ def test_pacing(
     """
     Validate unicast ST20P transmissions under different pacing strategies
     (``narrow``, ``wide``, ``linear``) across representative resolutions.
-    This checks that pacing selection is honored and that the pipeline remains
-    stable without underruns/overruns when switching pacing profiles.
+    This checks that pacing selection is honored and that the pipeline
+    remains stable without underruns/overruns when switching pacing
+    profiles.
 
     :param hosts: Mapping of hosts available for the test run.
     :param build: Compiled Rx/Tx application artifact used for execution.
-    :param setup_interfaces: Fixture configuring NIC interfaces per test settings.
+    :param setup_interfaces: Fixture configuring NIC interfaces per test
+        settings.
     :param test_time: Duration to run the streaming pipeline.
     :param pacing: Pacing strategy string passed to the ST20P session.
     :param test_config: Test configuration dictionary (e.g., interface type).
@@ -48,7 +50,9 @@ def test_pacing(
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF"),
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(

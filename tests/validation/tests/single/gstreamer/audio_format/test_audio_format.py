@@ -1,18 +1,19 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+"""GStreamer ST30 audio format validation.
+
+Runs ST30 pipelines over multiple PCM formats, channel counts, and sampling
+rates to confirm end-to-end transport and caps negotiation. This focuses on
+format support; no audio integrity check is performed.
+"""
+
 import os
 
 import mtl_engine.media_creator as media_create
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
-
-""" Checks various audio format support in GStreamer ST30 pipelines.
-    Validates end-to-end transmission and reception of audio streams with
-    different audio formats, channels, and sampling rates.
-    No integrity check is performed, only format handling is verified.
-"""
 
 
 @pytest.mark.nightly
@@ -39,12 +40,17 @@ def test_audio_format(
         and audio_format == "S24BE"
     ):
         pytest.skip(
-            f"Audio, {audio_format} with {audio_channel} audio channel invalid pkt_len skipped"
+            "Audio {fmt}/{ch} invalid pkt_len; skipped".format(
+                fmt=audio_format,
+                ch=audio_channel,
+            ),
         )
 
     media_file_info, media_file_path = media_file
     if not media_file_path:
-        raise ValueError("ramdisk was not setup correctly for media_file fixture")
+        raise ValueError(
+            "ramdisk was not setup correctly for media_file fixture",
+        )
 
     # Get the first host for remote execution
     host = list(hosts.values())[0]
@@ -52,7 +58,7 @@ def test_audio_format(
     output_file_path = os.path.join(media_file_path, "output_test_audio.pcm")
 
     interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
+        test_config.get("interface_type", "VF"),
     )
 
     # media_create.create_audio_file_sox(
@@ -65,7 +71,7 @@ def test_audio_format(
     #     host=host,
     # )
 
-    # input path doesn't matter we are generating audio inside gstreamer pipeline
+    # Input path unused; pipeline generates audio internally
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
         build=build,
         nic_port_list=interfaces_list[0],
@@ -83,7 +89,10 @@ def test_audio_format(
         output_path=output_file_path,
         rx_payload_type=111,
         rx_queues=4,
-        rx_audio_format=GstreamerApp.audio_format_change(audio_format, rx_side=True),
+        rx_audio_format=GstreamerApp.audio_format_change(
+            audio_format,
+            rx_side=True,
+        ),
         rx_channels=audio_channel,
         rx_sampling=audio_rate,
     )

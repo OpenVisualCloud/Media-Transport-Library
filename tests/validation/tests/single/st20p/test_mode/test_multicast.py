@@ -33,21 +33,25 @@ def test_multicast(
     """
     Validate multicast ST20P streaming for representative YUV422 RFC4175
     sources, ensuring session setup, IGMP/join behavior (via netsniff), and
-    basic pipeline stability. This is a smoke-style check that the multicast
-    path functions across a range of resolutions.
+    basic pipeline stability. This is a smoke-style check that the
+    multicast path functions across a range of resolutions.
 
     :param hosts: Mapping of hosts available for the test run.
     :param build: Compiled Rx/Tx application artifact used for execution.
-    :param setup_interfaces: Fixture configuring NIC interfaces per test settings.
+    :param setup_interfaces: Fixture configuring NIC interfaces per test
+        settings.
     :param test_time: Duration to run the streaming pipeline.
     :param test_config: Test configuration dictionary (e.g., interface type).
     :param prepare_ramdisk: Fixture preparing RAM disk storage for media files.
-    :param pcap_capture: Fixture enabling optional packet capture for validation.
+    :param pcap_capture: Fixture enabling optional packet capture for
+        validation.
     :param media_file: Tuple fixture containing media metadata and file path.
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF"),
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
