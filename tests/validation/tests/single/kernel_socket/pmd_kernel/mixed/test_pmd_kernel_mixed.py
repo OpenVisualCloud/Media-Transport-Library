@@ -49,8 +49,6 @@ Requires at least 2 network interfaces configured in topology_config.yaml:
 Both interfaces should be on the same NIC (same PCI bus) for proper connectivity.
 If only one interface is configured, tests will be skipped.
 """
-import os
-
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.nicctl import InterfaceSetup
@@ -80,7 +78,6 @@ def test_pmd_kernel_mixed_format(
     test_mode,
     replicas,
     test_config,
-    prepare_ramdisk,
     media_file,
 ):
     """Test mixed ST2110 streams (video, audio, ancillary) using DPDK PMD (TX) and kernel socket (RX).
@@ -89,7 +86,7 @@ def test_pmd_kernel_mixed_format(
     :type hosts: dict
     :param build: Path to MTL build directory
     :type build: str
-    :param media: Path to media files directory containing video, audio, and ancillary files
+    :param media: Path to media files directory containing audio and ancillary files
     :type media: str
     :param setup_interfaces: Interface setup helper for network configuration
     :type setup_interfaces: InterfaceSetup
@@ -101,8 +98,6 @@ def test_pmd_kernel_mixed_format(
     :type replicas: int
     :param test_config: Test configuration dictionary from test_config.yaml
     :type test_config: dict
-    :param prepare_ramdisk: Ramdisk preparation fixture (if enabled)
-    :type prepare_ramdisk: object or None
     :param media_file: Media file fixture (video file info and path)
     :type media_file: tuple
 
@@ -142,7 +137,7 @@ def test_pmd_kernel_mixed_format(
         audio_channel=["U02"],
         audio_sampling="48kHz",
         audio_ptime="1",
-        filename=os.path.join(media, audio_file["filename"]),
+        filename=str(host.connection.path(media) / audio_file["filename"]),
         out_url=str(
             host.connection.path(media_file_path).parent
             / ("out_" + audio_file["filename"])
@@ -158,7 +153,7 @@ def test_pmd_kernel_mixed_format(
         type_="frame",
         ancillary_format="closed_caption",
         ancillary_fps=ancillary_file["fps"],
-        ancillary_url=os.path.join(media, ancillary_file["filename"]),
+        ancillary_url=str(host.connection.path(media) / ancillary_file["filename"]),
     )
     # rxtxapp.check_and_set_ip('eth2')
     config = rxtxapp.change_replicas(

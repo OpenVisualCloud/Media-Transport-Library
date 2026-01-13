@@ -39,8 +39,6 @@ Requires at least 2 network interfaces configured in topology_config.yaml:
 Both interfaces should be on the same NIC (same PCI bus) for proper connectivity.
 If only one interface is configured, tests will be skipped.
 """
-import os
-
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from common.nicctl import InterfaceSetup
@@ -50,20 +48,21 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["multicast"])
 @pytest.mark.parametrize(
-    "video_format", ["i1080p59"]
+    "media_file",
+    [yuv_files["i1080p59"]],
+    indirect=["media_file"],
+    ids=["i1080p59"],
 )  # Note: i2160p59 excluded - kernel socket cannot handle 4K@59fps bandwidth (10.4Gbps)
 @pytest.mark.parametrize("replicas", [1, 2])
 def test_pmd_kernel_video_format(
     hosts,
     build,
-    media,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_mode,
-    video_format,
     replicas,
     test_config,
-    prepare_ramdisk,
+    media_file,
 ):
     """Test ST2110-20 video transmission using DPDK PMD (TX) and kernel socket (RX).
 
@@ -75,29 +74,22 @@ def test_pmd_kernel_video_format(
     :type hosts: dict
     :param build: Path to MTL build directory
     :type build: str
-    :param media: Path to media files directory
-    :type media: str
     :param setup_interfaces: Interface setup helper for network configuration
     :type setup_interfaces: InterfaceSetup
     :param test_time: Duration to run the test in seconds
     :type test_time: int
     :param test_mode: Network mode for testing (multicast/unicast)
     :type test_mode: str
-    :param video_format: Video format identifier (e.g., 'i1080p59', 'i2160p59')
-    :type video_format: str
     :param replicas: Number of concurrent video sessions to create
     :type replicas: int
     :param test_config: Test configuration dictionary from test_config.yaml
     :type test_config: dict
-    :param prepare_ramdisk: Ramdisk preparation fixture (if enabled)
-    :type prepare_ramdisk: object or None
+    :param media_file: Media file fixture (video file info and path)
+    :type media_file: tuple
 
     :raises pytest.skip: If less than 2 network interfaces configured in topology
     """
-
-    video_file = yuv_files[video_format]
-
-    # rxtxapp.check_and_bind_interface(["0000:38:00.0","0000:38:00.1"], "pmd")
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
     # Get hybrid interface list: one DPDK (VF/PF) and one kernel socket
@@ -110,13 +102,13 @@ def test_pmd_kernel_video_format(
         config=config,
         nic_port_list=interfaces_list,
         test_mode=test_mode,
-        width=video_file["width"],
-        height=video_file["height"],
-        fps=parse_fps_to_pformat(video_file["fps"]),
-        input_format=video_file["file_format"],
-        transport_format=video_file["format"],
-        output_format=video_file["file_format"],
-        st20p_url=os.path.join(media, video_file["filename"]),
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=parse_fps_to_pformat(media_file_info["fps"]),
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
     )
     # rxtxapp.check_and_set_ip('eth2')
     config = rxtxapp.change_replicas(

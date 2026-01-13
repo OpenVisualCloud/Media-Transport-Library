@@ -21,8 +21,6 @@ Topology Requirements
 * No physical network interfaces required
 * Ramdisk for media files (optional but recommended)
 """
-import os
-
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mtl_engine.media_files import (
@@ -45,12 +43,11 @@ from mtl_engine.media_files import (
 def test_kernello_mixed_format(
     hosts,
     build,
-    media,
     test_time,
     test_mode,
     replicas,
-    prepare_ramdisk,
     media_file,
+    media,
     setup_interfaces,
 ):
     """Test mixed media streams over kernel loopback interface.
@@ -60,12 +57,11 @@ def test_kernello_mixed_format(
 
     :param hosts: Host objects from topology configuration
     :param build: Path to MTL build directory
-    :param media: Path to media files directory
     :param test_time: Test duration in seconds
     :param test_mode: Backend mode (kernel)
     :param replicas: Number of session replicas (1 or 3)
-    :param prepare_ramdisk: Ramdisk setup fixture
     :param media_file: Media file fixture (video file info and path)
+    :param media: Source media directory path
     :param setup_interfaces: Interface setup helper for cleanup
     """
     media_file_info, media_file_path = media_file
@@ -79,7 +75,7 @@ def test_kernello_mixed_format(
         nic_port_list=[
             "kernel:lo",
             "kernel:lo",
-        ],  # Note: keeping hardcoded for kernel loopback test
+        ],
         test_mode=test_mode,
         width=media_file_info["width"],
         height=media_file_info["height"],
@@ -100,7 +96,7 @@ def test_kernello_mixed_format(
         audio_channel=["U02"],
         audio_sampling="48kHz",
         audio_ptime="1",
-        filename=os.path.join(media, audio_file["filename"]),
+        filename=str(host.connection.path(media) / audio_file["filename"]),
         out_url=str(
             host.connection.path(media_file_path).parent
             / ("out_" + audio_file["filename"])
@@ -116,7 +112,7 @@ def test_kernello_mixed_format(
         type_="frame",
         ancillary_format="closed_caption",
         ancillary_fps=ancillary_file["fps"],
-        ancillary_url=os.path.join(media, ancillary_file["filename"]),
+        ancillary_url=str(host.connection.path(media) / ancillary_file["filename"]),
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="ancillary", replicas=replicas
