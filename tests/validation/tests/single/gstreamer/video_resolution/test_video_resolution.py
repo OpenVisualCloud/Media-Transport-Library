@@ -52,7 +52,7 @@ def test_video_resolutions(
             request=request,
         )
 
-    media_dir = host.path.dirname(media_file_path)
+    media_dir = os.path.dirname(media_file_path)
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],
