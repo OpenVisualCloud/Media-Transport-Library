@@ -46,12 +46,13 @@ def test_fps(
     Validate unicast ST20P streaming across a matrix of frame rates to
     ensure timing support and pacing align with the configured FPS values
     for 1080p YUV422 RFC4175. This catches regressions in rate configuration
-    or jitter handling across low (23/24/25) and high (100/119/120) frame
-    rates.
+    or jitter handling across low (23/24/25) and high (100/119/120)
+    frame rates.
 
     :param hosts: Mapping of hosts available for the test run.
     :param build: Compiled Rx/Tx application artifact used for execution.
-    :param setup_interfaces: Fixture configuring NIC interfaces per test settings.
+    :param setup_interfaces: Fixture configuring NIC interfaces per test
+        settings.
     :param test_time: Duration to run the streaming pipeline.
     :param fps: Frame rate string (e.g., ``p23``) selected from the
         parametrized list.
@@ -61,7 +62,9 @@ def test_fps(
     """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(test_config.get("interface_type", "VF"))
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF"),
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(

@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+"""GStreamer ST20P video format validation.
+
+Generates synthetic clips and exercises ST20P TX/RX pipelines across the
+catalog of supported GStreamer video formats to ensure negotiation, pacing,
+and capture work for each advertised format.
+"""
+
 import os
 
 import mtl_engine.media_creator as media_create

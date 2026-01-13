@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+"""GStreamer ST20P video resolution validation.
+
+Sweeps ST20P pipelines across the catalog of YUV sample resolutions, including
+format fallbacks for widths not divisible by six, to verify configuration,
+pacing, and basic receive stability at varied sizes.
+"""
+
 import os
 
 import mtl_engine.media_creator as media_create
@@ -101,4 +108,7 @@ def test_video_resolutions(
     finally:
         # Remove the video file after the test
         media_create.remove_file(input_file_path, host=host)
-        media_create.remove_file(os.path.join(media_dir, "output_video.yuv"), host=host)
+        media_create.remove_file(
+            os.path.join(media_dir, "output_video.yuv"),
+            host=host,
+        )
