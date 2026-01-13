@@ -48,11 +48,11 @@ jobs:
       - name: Set PCI device
         run: |
           if [ "${{ inputs.nic }}" = "e810" ]; then
-            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ inputs.nic }}" = "e810-dell" ]; then
-            echo "PCI_DEVICE=8086:1592" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
           elif [ "${{ inputs.nic }}" = "e830" ]; then
-            echo "PCI_DEVICE=8086:12d2" >> "$GITHUB_ENV"
+            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
           fi
       - name: Generate pytest configuration files
         working-directory: ./tests/validation/configs

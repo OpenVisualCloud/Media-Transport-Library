@@ -22,8 +22,6 @@ Topology Requirements
 * Ramdisk for media files (optional but recommended)
 * JPEG XS codec support in MTL build
 """
-import os
-
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
@@ -31,17 +29,20 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
 
 @pytest.mark.nightly
 @pytest.mark.parametrize("test_mode", ["kernel"])
-@pytest.mark.parametrize("file", ["Penguin_1080p"])
+@pytest.mark.parametrize(
+    "media_file",
+    [yuv_files_422rfc10["Penguin_1080p"]],
+    indirect=["media_file"],
+    ids=["Penguin_1080p"],
+)
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st22p_video_format(
     hosts,
     build,
-    media,
     test_time,
     test_mode,
-    file,
     replicas,
-    prepare_ramdisk,
+    media_file,
 ):
     """Test ST2110-22 JPEG XS compressed video over kernel loopback.
 
@@ -50,14 +51,12 @@ def test_kernello_st22p_video_format(
 
     :param hosts: Host objects from topology configuration
     :param build: Path to MTL build directory
-    :param media: Path to media files directory
     :param test_time: Test duration in seconds
     :param test_mode: Backend mode (kernel)
-    :param file: Video file identifier (Penguin_1080p)
     :param replicas: Number of session replicas (1 or 4)
-    :param prepare_ramdisk: Ramdisk setup fixture
+    :param media_file: Media file fixture (video file info and path)
     """
-    st22p_file = yuv_files_422rfc10[file]
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
 
     config = rxtxapp.create_empty_config()
@@ -68,15 +67,15 @@ def test_kernello_st22p_video_format(
             "kernel:lo",
         ],  # Note: keeping hardcoded for kernel loopback test
         test_mode=test_mode,
-        width=st22p_file["width"],
-        height=st22p_file["height"],
-        fps=parse_fps_to_pformat(st22p_file["fps"]),
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=parse_fps_to_pformat(media_file_info["fps"]),
         codec="JPEG-XS",
         quality="speed",
-        input_format=st22p_file["file_format"],
-        output_format=st22p_file["file_format"],
+        input_format=media_file_info["file_format"],
+        output_format=media_file_info["file_format"],
         codec_thread_count=2,
-        st22p_url=os.path.join(media, st22p_file["filename"]),
+        st22p_url=media_file_path,
     )
     config = rxtxapp.change_replicas(
         config=config, session_type="st22p", replicas=replicas
@@ -84,6 +83,6 @@ def test_kernello_st22p_video_format(
     rxtxapp.execute_test(
         config=config,
         build=build,
-        test_time=test_time * replicas,
+        test_time=test_time,
         host=host,
     )

@@ -90,6 +90,7 @@ class InterfaceSetup:
         }
         self.customs = []
         self.cleanups = []
+        self.ip_cleanups = []  # Track (connection, interface, ip) for cleanup
 
     def get_test_interfaces(self, interface_type="VF", count=2, host=None) -> dict:
         """
@@ -211,7 +212,22 @@ class InterfaceSetup:
     def register_cleanup(self, nicctl, interface, if_type):
         self.cleanups.append((nicctl, interface, if_type))
 
+    def register_ip_cleanup(self, connection, interface_name: str, ip_address: str):
+        """Register kernel interface IP for cleanup after test."""
+        self.ip_cleanups.append((connection, interface_name, ip_address))
+
+    def cleanup_kernel_ips(self):
+        """Remove all IP addresses configured on kernel interfaces during tests."""
+        for connection, interface_name, ip_address in self.ip_cleanups:
+            try:
+                connection.execute_command(
+                    f"sudo ip addr del {ip_address} dev {interface_name}", shell=True
+                )
+            except Exception:
+                pass
+
     def cleanup(self):
+        self.cleanup_kernel_ips()
         for nicctl, interface, if_type in self.cleanups:
             if if_type.lower() == "vf":
                 nicctl.disable_vf(interface)
