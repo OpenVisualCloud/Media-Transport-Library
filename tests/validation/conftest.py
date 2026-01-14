@@ -52,9 +52,9 @@ def _select_sniff_interface(host, capture_cfg: dict):
         for nic in host.network_interfaces:
             if nic.name == str(sniff_interface):
                 return nic
-        available = []
-        for nic in host.network_interfaces:
-            available.append(f"{nic.name} ({nic.pci_address.lspci})")
+        available = [
+            f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
+        ]
         raise RuntimeError(
             f"capture_cfg.sniff_interface={sniff_interface} not found on host {host.name}. "
             f"Available interfaces: {', '.join(available)}"
@@ -74,9 +74,9 @@ def _select_sniff_interface(host, capture_cfg: dict):
         if direct_matches:
             return direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]
 
-        available = []
-        for nic in host.network_interfaces:
-            available.append(f"{nic.name} ({nic.pci_address.lspci})")
+        available = [
+            f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
+        ]
         raise RuntimeError(
             f"capture_cfg.sniff_pci_device={sniff_pci_device} not found on host {host.name}. "
             f"Available interfaces: {', '.join(available)}"
