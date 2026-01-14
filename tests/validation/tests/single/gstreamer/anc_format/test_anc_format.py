@@ -17,7 +17,7 @@ from common.nicctl import InterfaceSetup
 from mtl_engine import GstreamerApp
 
 
-# Helper to set up ancillary input/output file paths
+# helper function to setup input and output file paths for ancillary files
 def setup_paths(media_file):
     media_file_info, media_file_path = media_file
     if not media_file_path:

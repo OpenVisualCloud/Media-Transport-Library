@@ -8,8 +8,6 @@ catalog of supported GStreamer video formats to ensure negotiation, pacing,
 and capture work for each advertised format.
 """
 
-import os
-
 import mtl_engine.media_creator as media_create
 import pytest
 from common.nicctl import InterfaceSetup
@@ -43,8 +41,9 @@ def test_video_format(
         test_config.get("interface_type", "VF")
     )
 
-    media_dir = host.path.dirname(media_file_path)
-    output_file_path = os.path.join(media_file_path, "output_video.yuv")
+    media_dir = host.connection.path(media_file_path).parent
+    media_dir = str(media_dir)
+    output_file_path = host.connection.path(media_dir, "output_video.yuv")
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],

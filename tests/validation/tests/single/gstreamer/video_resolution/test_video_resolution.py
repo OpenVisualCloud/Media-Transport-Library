@@ -59,7 +59,8 @@ def test_video_resolutions(
             request=request,
         )
 
-    media_dir = host.path.dirname(media_file_path)
+    media_dir = host.connection.path(media_file_path).parent
+    media_dir = str(media_dir)
     input_file_path = media_create.create_video_file(
         width=video_file["width"],
         height=video_file["height"],
@@ -85,7 +86,7 @@ def test_video_resolutions(
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
-        output_path=os.path.join(media_file_path, "output_video.yuv"),
+        output_path=host.connection.path(media_dir, "output_video.yuv"),
         width=video_file["width"],
         height=video_file["height"],
         framerate=video_file["fps"],
