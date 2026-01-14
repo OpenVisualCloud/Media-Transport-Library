@@ -1,34 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
-"""FFmpeg MTL Plugin Tests
-
-**KNOWN ISSUE**: This test is currently disabled due to DPDK initialization failures
-in the FFmpeg MTL plugin when using DPDK shared libraries.
-
-Root Cause:
------------
-The FFmpeg MTL plugin attempts to initialize DPDK EAL, but fails with
-"EAL: Cannot allocate memzone list" when:
-1. Using DPDK 25.x shared libraries (librte_eal.so.25)
-2. MTL uses --in-memory flag during EAL initialization
-3. Multiple FFmpeg processes attempt parallel MTL initialization
-
-This appears to be a regression in DPDK 25.x shared library builds when
-EAL is initialized with --in-memory multiple times, even across separate
-processes using the same file prefix.
-
-Potential Solutions:
--------------------
-1. Fix FFmpeg MTL plugin to properly handle DPDK initialization
-2. Use static DPDK linking instead of shared libraries
-3. Run RX/TX sequentially instead of in parallel
-4. Add unique file-prefix support to FFmpeg MTL plugin options
-5. Investigate DPDK 25.x memzone allocation regression
-
-For now, these tests are skipped pending resolution.
-"""
-
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ffmpeg_app
@@ -59,6 +31,37 @@ def test_rx_ffmpeg_tx_ffmpeg(
     test_config,
     media_file,
 ):
+    """Test FFmpeg-to-FFmpeg ST2110-20 video streaming.
+
+    Validates bidirectional FFmpeg MTL plugin operation with both TX and RX
+    using the ST2110-20 uncompressed video standard.
+
+    :param hosts: Dictionary of test hosts
+    :type hosts: dict
+    :param test_time: Base test duration in seconds
+    :type test_time: int
+    :param build: Build directory path
+    :type build: str
+    :param setup_interfaces: Network interface setup fixture
+    :type setup_interfaces: InterfaceSetup
+    :param video_format: Video format identifier (e.g., 'i1080p60', 'i2160p60')
+    :type video_format: str
+    :param test_time_multipler: Multiplier for test duration
+    :type test_time_multipler: int
+    :param output_format: Output file format ('yuv' or 'h264')
+    :type output_format: str
+    :param test_config: Test configuration dictionary
+    :type test_config: dict
+    :param media_file: Tuple of (media_file_info, media_file_path)
+    :type media_file: tuple
+
+    :raises AssertionError: If video transmission or reception fails
+
+    .. note::
+        - Both TX and RX use FFmpeg MTL plugin
+        - Tests ST2110-20 uncompressed video transport
+        - Validates received video quality
+    """
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(

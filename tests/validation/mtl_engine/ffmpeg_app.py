@@ -53,33 +53,30 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
-def terminate_process(proc, proc_name: str = "process"):
-    """Terminate a process gracefully with fallback to kill"""
+def stop_process(proc, proc_name: str = "process", timeout: int = 5):
+    """Stop a process gracefully with timeout, then force kill if needed.
+
+    Args:
+        proc: Process object to stop
+        proc_name: Name for logging purposes
+        timeout: Seconds to wait for graceful stop before force kill
+    """
     if not proc:
         return
+
     try:
-        if hasattr(proc, "terminate"):
-            logger.debug(f"Sending SIGTERM to {proc_name}")
-            proc.terminate()
-        else:
-            logger.debug(f"Sending SIGKILL to {proc_name}")
-            proc.kill()
-    except Exception as e:
-        logger.debug(f"Exception terminating {proc_name}: {e}")
-        pass
-
-
-def cleanup_processes(host, tx_is_ffmpeg: bool = True):
-    """Force cleanup of FFmpeg and RxTxApp processes"""
-    if not tx_is_ffmpeg:
+        logger.debug(f"Stopping {proc_name}...")
+        proc.stop(timeout=timeout)
+        logger.debug(f"{proc_name} stopped gracefully")
+    except TimeoutError:
+        logger.warning(f"{proc_name} did not stop within {timeout}s, force killing...")
         try:
-            run("sudo pkill -9 RxTxApp", host=host, timeout=5)
-        except Exception:
-            pass
-    try:
-        run("sudo pkill -9 ffmpeg", host=host, timeout=5)
-    except Exception:
-        pass
+            proc.kill()
+            logger.debug(f"{proc_name} force killed")
+        except Exception as e:
+            logger.error(f"Failed to kill {proc_name}: {e}")
+    except Exception as e:
+        logger.error(f"Error stopping {proc_name}: {e}")
 
 
 def execute_test(
@@ -162,14 +159,6 @@ def execute_test(
     rx_proc = None
     tx_proc = None
 
-    # Clean up any stale DPDK resources before starting
-    try:
-        run("sudo rm -rf /var/run/dpdk/MT_DPDK/*", host=host, timeout=5)
-        run("sudo pkill -9 ffmpeg", host=host, timeout=5)
-        time.sleep(1)
-    except Exception:
-        pass  # Ignore cleanup errors
-
     try:
         # Start RX pipeline first
         logger.info("Starting RX pipeline...")
@@ -181,7 +170,7 @@ def execute_test(
             host=host,
             background=True,
         )
-        time.sleep(5)  # Give RX more time to initialize DPDK first
+        time.sleep(5)  # Give RX time to initialize DPDK
 
         # Start TX pipeline
         logger.info("Starting TX pipeline...")
@@ -198,35 +187,18 @@ def execute_test(
         logger.info(f"Running test for {test_time} seconds...")
         time.sleep(test_time)
 
-        logger.info("Terminating processes...")
-        # Terminate TX first (especially important if it's RxTxApp)
-        terminate_process(tx_proc, "TX")
-        time.sleep(2)  # Give time for graceful shutdown
-        # Then terminate RX (FFmpeg)
-        terminate_process(rx_proc, "RX")
-        time.sleep(2)  # Give time for graceful shutdown
-
-        # Force kill if still running
-        cleanup_processes(host, tx_is_ffmpeg)
-
-        time.sleep(1)  # Wait for cleanup
-        # Get output after processes have been terminated
-        capture_stdout(rx_proc, "RX")
-        capture_stdout(tx_proc, "TX")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
-        # Terminate processes immediately on error
-        terminate_process(tx_proc, "TX")
-        terminate_process(rx_proc, "RX")
-        # Force cleanup
-        cleanup_processes(host, tx_is_ffmpeg)
         raise
     finally:
-        # Ensure processes are terminated
-        terminate_process(tx_proc, "TX")
-        terminate_process(rx_proc, "RX")
-        # Final force cleanup
-        cleanup_processes(host, tx_is_ffmpeg)
+        # Stop processes (TX first, then RX)
+        logger.info("Stopping processes...")
+        stop_process(tx_proc, "TX")
+        stop_process(rx_proc, "RX")
+
+        # Capture output after processes stopped
+        capture_stdout(rx_proc, "RX")
+        capture_stdout(tx_proc, "TX")
     passed = False
     match output_format:
         case "yuv":
@@ -290,6 +262,7 @@ def execute_test_rgb24(
             background=True,
         )
         time.sleep(5)
+
         # Start TX pipeline
         logger.info("Starting TX pipeline...")
         tx_proc = run(
@@ -304,31 +277,18 @@ def execute_test_rgb24(
         logger.info(f"Running test for {test_time} seconds...")
         time.sleep(test_time)
 
-        # Terminate processes after test time
-        logger.info("Terminating processes...")
-        terminate_process(tx_proc, "TX")
-        time.sleep(2)
-        terminate_process(rx_proc, "RX")
-        time.sleep(2)
-
-        # Force cleanup
-        cleanup_processes(host, tx_is_ffmpeg=True)
-
-        time.sleep(1)
-        rx_output = capture_stdout(rx_proc, "RX")
-        capture_stdout(tx_proc, "TX")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
-        # Terminate processes immediately on error
-        terminate_process(tx_proc, "TX")
-        terminate_process(rx_proc, "RX")
-        cleanup_processes(host, tx_is_ffmpeg=True)
         raise
     finally:
-        # Final cleanup - ensure processes are terminated
-        terminate_process(tx_proc, "TX")
-        terminate_process(rx_proc, "RX")
-        cleanup_processes(host, tx_is_ffmpeg=True)
+        # Stop processes (TX first, then RX)
+        logger.info("Stopping processes...")
+        stop_process(tx_proc, "TX")
+        stop_process(rx_proc, "RX")
+
+        # Capture output after processes stopped
+        rx_output = capture_stdout(rx_proc, "RX")
+        capture_stdout(tx_proc, "TX")
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -389,6 +349,7 @@ def execute_test_rgb24_multiple(
             background=True,
         )
         time.sleep(5)
+
         # Start TX pipelines
         logger.info("Starting TX pipelines...")
         tx_1_proc = run(
@@ -411,36 +372,20 @@ def execute_test_rgb24_multiple(
         logger.info(f"Running test for {test_time} seconds...")
         time.sleep(test_time)
 
-        # Terminate TX processes first
-        logger.info("Terminating TX processes...")
-        terminate_process(tx_1_proc, "TX1")
-        terminate_process(tx_2_proc, "TX2")
-        time.sleep(2)
-        # Then terminate RX
-        terminate_process(rx_proc, "RX")
-        time.sleep(2)
+    except Exception as e:
+        log_fail(f"Error during test execution: {e}")
+        raise
+    finally:
+        # Stop processes (TX first, then RX)
+        logger.info("Stopping processes...")
+        stop_process(tx_1_proc, "TX1")
+        stop_process(tx_2_proc, "TX2")
+        stop_process(rx_proc, "RX")
 
-        # Force cleanup
-        cleanup_processes(host, tx_is_ffmpeg=True)
-
-        time.sleep(1)
+        # Capture output after processes stopped
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_1_proc, "TX1")
         capture_stdout(tx_2_proc, "TX2")
-    except Exception as e:
-        log_fail(f"Error during test execution: {e}")
-        # Terminate processes immediately on error
-        terminate_process(tx_1_proc, "TX1")
-        terminate_process(tx_2_proc, "TX2")
-        terminate_process(rx_proc, "RX")
-        cleanup_processes(host, tx_is_ffmpeg=True)
-        raise
-    finally:
-        # Final cleanup - ensure processes are terminated
-        terminate_process(tx_1_proc, "TX1")
-        terminate_process(tx_2_proc, "TX2")
-        terminate_process(rx_proc, "RX")
-        cleanup_processes(host, tx_is_ffmpeg=True)
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
