@@ -75,7 +75,10 @@ function setup_ubuntu_install_dependencies() {
 		clang \
 		libsdl2-dev \
 		libsdl2-ttf-dev \
-		cmake
+		cmake \
+		linuxptp \
+		ethtool \
+		netsniff-ng
 
 	# CiCd only
 	if [ "${CICD_BUILD}" == "1" ]; then

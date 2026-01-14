@@ -6,8 +6,12 @@ hosts:
   instantiate: true
   role: sut
   network_interfaces:
+  # Test NIC(s)
   - pci_device: 8086:1592
     interface_index: 0
+  # Optional: separate NIC for packet capture (netsniff-ng)
+  - pci_device: 8086:1592
+    interface_index: 1
   connections:
   - ip_address: 127.0.0.1
     connection_type: SSHConnection

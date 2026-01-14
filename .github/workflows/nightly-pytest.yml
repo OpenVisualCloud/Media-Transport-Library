@@ -73,12 +73,20 @@ jobs:
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \
             --username ${{ secrets.RUNNER_USERNAME }} \
-            --key_path ${{ secrets.RUNNER_KEY_PATH }}
+            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
       - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
+          sudo killall -SIGINT phc2sys || true
+      - name: Export workflow tag for PCAP naming
+        shell: bash
+        run: |
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &

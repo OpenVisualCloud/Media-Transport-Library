@@ -13,6 +13,9 @@ compliance: false
 capture_cfg:
   enable: false
   pcap_dir: /mnt/ramdisk/pcap
+  # Optional: pick a different NIC for netsniff-ng capture than the one used by the test.
+  # Priority: sniff_interface > sniff_interface_index > sniff_pci_device.
+  # sniff_interface_index: 1
 ebu_server:
   ebu_ip: ebu_ip
   user: user

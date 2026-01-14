@@ -63,6 +63,21 @@ ramdisk:
   - **pcap_dir**: Directory to store capture files
   - **capture_time**: Duration of packet capture in seconds
   - **interface**: Network interface to capture from
+
+### Packet Capture (netsniff-ng)
+
+When `capture_cfg.enable: true`, the framework can capture traffic with `netsniff-ng`.
+
+By default it captures on the **second PF of the same NIC** (same `pci_device`) if available, otherwise it uses `host.network_interfaces[0]`.
+
+To capture on a specific NIC, set one of:
+
+- `capture_cfg.sniff_interface`: OS interface name (e.g., `enp24s0f0`)
+- `capture_cfg.sniff_interface_index`: index into `host.network_interfaces`
+- `capture_cfg.sniff_pci_device`: vendor:device ID (e.g., `8086:12d2`)
+
+Priority is `sniff_interface` > `sniff_interface_index` > `sniff_pci_device`.
+
 - **ramdisk**: RAM disk configuration for high-performance testing
   - **media.mountpoint**: Mount point for media RAM disk
   - **media.size_gib**: Size of media RAM disk in GiB
