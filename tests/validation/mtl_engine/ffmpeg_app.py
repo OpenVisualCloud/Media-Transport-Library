@@ -53,6 +53,35 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
+def terminate_process(proc, proc_name: str = "process"):
+    """Terminate a process gracefully with fallback to kill"""
+    if not proc:
+        return
+    try:
+        if hasattr(proc, "terminate"):
+            logger.debug(f"Sending SIGTERM to {proc_name}")
+            proc.terminate()
+        else:
+            logger.debug(f"Sending SIGKILL to {proc_name}")
+            proc.kill()
+    except Exception as e:
+        logger.debug(f"Exception terminating {proc_name}: {e}")
+        pass
+
+
+def cleanup_processes(host, tx_is_ffmpeg: bool = True):
+    """Force cleanup of FFmpeg and RxTxApp processes"""
+    if not tx_is_ffmpeg:
+        try:
+            run("sudo pkill -9 RxTxApp", host=host, timeout=5)
+        except Exception:
+            pass
+    try:
+        run("sudo pkill -9 ffmpeg", host=host, timeout=5)
+    except Exception:
+        pass
+
+
 def execute_test(
     test_time: int,
     build: str,
@@ -133,6 +162,14 @@ def execute_test(
     rx_proc = None
     tx_proc = None
 
+    # Clean up any stale DPDK resources before starting
+    try:
+        run("sudo rm -rf /var/run/dpdk/MT_DPDK/*", host=host, timeout=5)
+        run("sudo pkill -9 ffmpeg", host=host, timeout=5)
+        time.sleep(1)
+    except Exception:
+        pass  # Ignore cleanup errors
+
     try:
         # Start RX pipeline first
         logger.info("Starting RX pipeline...")
@@ -144,7 +181,7 @@ def execute_test(
             host=host,
             background=True,
         )
-        time.sleep(2)
+        time.sleep(5)  # Give RX more time to initialize DPDK first
 
         # Start TX pipeline
         logger.info("Starting TX pipeline...")
@@ -162,53 +199,34 @@ def execute_test(
         time.sleep(test_time)
 
         logger.info("Terminating processes...")
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        # Wait a bit for termination
-        time.sleep(2)
+        # Terminate TX first (especially important if it's RxTxApp)
+        terminate_process(tx_proc, "TX")
+        time.sleep(2)  # Give time for graceful shutdown
+        # Then terminate RX (FFmpeg)
+        terminate_process(rx_proc, "RX")
+        time.sleep(2)  # Give time for graceful shutdown
+
+        # Force kill if still running
+        cleanup_processes(host, tx_is_ffmpeg)
+
+        time.sleep(1)  # Wait for cleanup
         # Get output after processes have been terminated
         capture_stdout(rx_proc, "RX")
         capture_stdout(tx_proc, "TX")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+        terminate_process(tx_proc, "TX")
+        terminate_process(rx_proc, "RX")
+        # Force cleanup
+        cleanup_processes(host, tx_is_ffmpeg)
         raise
     finally:
         # Ensure processes are terminated
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+        terminate_process(tx_proc, "TX")
+        terminate_process(rx_proc, "RX")
+        # Final force cleanup
+        cleanup_processes(host, tx_is_ffmpeg)
     passed = False
     match output_format:
         case "yuv":
@@ -251,8 +269,8 @@ def execute_test_rgb24(
         return False
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
-        f"-i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} "
+        f"ffmpeg -stream_loop -1 -framerate {fps} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10be "
+        f"-i {video_url} -filter:v format=rgb24 -p_port {nic_port_list[1]} "
         f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
@@ -283,52 +301,34 @@ def execute_test_rgb24(
             background=True,
         )
 
-        logger.info(
-            f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
-        )
-        rx_proc.wait()
-        logger.info("RX process completed")
+        logger.info(f"Running test for {test_time} seconds...")
+        time.sleep(test_time)
 
-        # Terminate TX process after RX completes
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-            logger.info("TX process killed")
+        # Terminate processes after test time
+        logger.info("Terminating processes...")
+        terminate_process(tx_proc, "TX")
+        time.sleep(2)
+        terminate_process(rx_proc, "RX")
+        time.sleep(2)
+
+        # Force cleanup
+        cleanup_processes(host, tx_is_ffmpeg=True)
+
+        time.sleep(1)
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_proc, "TX")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+        terminate_process(tx_proc, "TX")
+        terminate_process(rx_proc, "RX")
+        cleanup_processes(host, tx_is_ffmpeg=True)
         raise
     finally:
         # Final cleanup - ensure processes are terminated
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+        terminate_process(tx_proc, "TX")
+        terminate_process(rx_proc, "RX")
+        cleanup_processes(host, tx_is_ffmpeg=True)
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -361,15 +361,15 @@ def execute_test_rgb24_multiple(
         return False
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
-        f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {nic_port_list[2]} "
+        f"ffmpeg -stream_loop -1 -framerate {fps_1} -video_size {video_size_1} -f rawvideo -pix_fmt yuv422p10be "
+        f"-i {video_url_list[0]} -filter:v format=rgb24 -p_port {nic_port_list[2]} "
         f"-p_sip {ip_pools.tx[0]} "
         f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
-        f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {nic_port_list[3]} "
+        f"ffmpeg -stream_loop -1 -framerate {fps_2} -video_size {video_size_2} -f rawvideo -pix_fmt yuv422p10be "
+        f"-i {video_url_list[1]} -filter:v format=rgb24 -p_port {nic_port_list[3]} "
         f"-p_sip {ip_pools.tx[1]} "
         f"-p_tx_ip {ip_pools.rx_multicast[1]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -408,42 +408,39 @@ def execute_test_rgb24_multiple(
             background=True,
         )
 
-        logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
-        rx_proc.wait()
-        logger.info("RX process completed")
+        logger.info(f"Running test for {test_time} seconds...")
+        time.sleep(test_time)
 
-        # Terminate TX processes after RX completes
+        # Terminate TX processes first
         logger.info("Terminating TX processes...")
-        for proc in [tx_1_proc, tx_2_proc]:
-            if proc:
-                try:
-                    proc.kill()
-                    logger.info("TX process killed")
-                except Exception:
-                    logger.info("Could not terminate TX process")
+        terminate_process(tx_1_proc, "TX1")
+        terminate_process(tx_2_proc, "TX2")
+        time.sleep(2)
+        # Then terminate RX
+        terminate_process(rx_proc, "RX")
+        time.sleep(2)
+
+        # Force cleanup
+        cleanup_processes(host, tx_is_ffmpeg=True)
+
+        time.sleep(1)
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_1_proc, "TX1")
         capture_stdout(tx_2_proc, "TX2")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         # Terminate processes immediately on error
-        for proc in [tx_1_proc, tx_2_proc, rx_proc]:
-            if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
+        terminate_process(tx_1_proc, "TX1")
+        terminate_process(tx_2_proc, "TX2")
+        terminate_process(rx_proc, "RX")
+        cleanup_processes(host, tx_is_ffmpeg=True)
         raise
     finally:
         # Final cleanup - ensure processes are terminated
-        for proc in [tx_1_proc, tx_2_proc, rx_proc]:
-            if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
+        terminate_process(tx_1_proc, "TX1")
+        terminate_process(tx_2_proc, "TX2")
+        terminate_process(rx_proc, "RX")
+        cleanup_processes(host, tx_is_ffmpeg=True)
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False

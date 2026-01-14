@@ -369,6 +369,18 @@ def media_file(media_ramdisk, request, hosts, test_config):
             )
 
 
+@pytest.fixture(scope="function")
+def media_file_1(media_file):
+    """Alias for media_file to support multi-file tests"""
+    return media_file
+
+
+@pytest.fixture(scope="function")
+def media_file_2(media_file):
+    """Alias for media_file to support multi-file tests"""
+    return media_file
+
+
 @pytest.fixture(scope="session", autouse=True)
 def mtl_manager(hosts):
     """
