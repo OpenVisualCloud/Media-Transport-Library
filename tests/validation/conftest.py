@@ -42,27 +42,27 @@ logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
 
 
-def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
+def _select_sniff_interface(host, capture_cfg: dict):
     def _pci_device_id(nic) -> str:
         """Return lowercased PCI vendor:device identifier (e.g., '8086:1592')."""
-        pci_device = getattr(nic, "pci_device", None)
-        if pci_device is None:
-            return ""
-
-        vendor_id = getattr(pci_device, "vendor_id", None)
-        device_id = getattr(pci_device, "device_id", None)
-        if vendor_id is None or device_id is None:
-            return ""
-
-        return f"{vendor_id}:{device_id}".lower()
+        return f"{nic.pci_device.vendor_id}:{nic.pci_device.device_id}".lower()
 
     sniff_interface = capture_cfg.get("sniff_interface")
     if sniff_interface:
-        return str(sniff_interface)
+        for nic in host.network_interfaces:
+            if nic.name == str(sniff_interface):
+                return nic
+        available = []
+        for nic in host.network_interfaces:
+            available.append(f"{nic.name} ({nic.pci_address.lspci})")
+        raise RuntimeError(
+            f"capture_cfg.sniff_interface={sniff_interface} not found on host {host.name}. "
+            f"Available interfaces: {', '.join(available)}"
+        )
 
     sniff_interface_index = capture_cfg.get("sniff_interface_index")
     if sniff_interface_index is not None:
-        return host.network_interfaces[int(sniff_interface_index)].name
+        return host.network_interfaces[int(sniff_interface_index)]
 
     sniff_pci_device = capture_cfg.get("sniff_pci_device")
     if sniff_pci_device:
@@ -72,14 +72,11 @@ def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
             nic for nic in host.network_interfaces if target == _pci_device_id(nic)
         ]
         if direct_matches:
-            return (
-                direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]
-            ).name
+            return direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]
 
         available = []
         for nic in host.network_interfaces:
-            pci_addr = getattr(getattr(nic, "pci_address", None), "lspci", None)
-            available.append(f"{nic.name} ({pci_addr})")
+            available.append(f"{nic.name} ({nic.pci_address.lspci})")
         raise RuntimeError(
             f"capture_cfg.sniff_pci_device={sniff_pci_device} not found on host {host.name}. "
             f"Available interfaces: {', '.join(available)}"
@@ -92,7 +89,82 @@ def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
             f"Cannot select 2nd PF for capture. Add more interfaces to config or turn off capture."
         )
 
-    return host.network_interfaces[1].name
+    return host.network_interfaces[1]
+
+
+def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
+    return _select_sniff_interface(host, capture_cfg).name
+
+
+def _select_capture_host(hosts: dict):
+    return hosts["client"] if "client" in hosts else list(hosts.values())[0]
+
+
+@pytest.fixture(scope="session")
+def phc2sys_session(test_config: dict, hosts):
+    """Start phc2sys for the capture interface before any tests.
+
+    - Uses the same interface selection logic as PCAP capture.
+    - Detects the PTP Hardware Clock via `ethtool -T`.
+    - Runs `phc2sys -s /dev/ptpX -c CLOCK_REALTIME -O 0 -m`.
+
+    The process is stopped at the end of the session.
+    """
+
+    capture_cfg = test_config.get("capture_cfg", {})
+    if not (capture_cfg and capture_cfg.get("enable")):
+        yield
+        return
+
+    host = _select_capture_host(hosts)
+    sniff_nic = _select_sniff_interface(host, capture_cfg)
+    capture_iface = sniff_nic.name
+
+    ptp_details = host.connection.execute_command(
+        f"sudo ethtool -T '{capture_iface}' 2>/dev/null || true"
+    )
+    ptp_idx = ""
+    for line in (ptp_details.stdout or "").splitlines():
+        # Keep this equivalent to: awk -F': ' '/PTP Hardware Clock:/ {print $2; exit}'
+        if "PTP Hardware Clock:" in line:
+            ptp_idx = line.split(": ", 1)[1].strip() if ": " in line else ""
+            break
+
+    if not ptp_idx.isdigit():
+        raise RuntimeError(
+            "ERROR: failed to parse PTP Hardware Clock index for "
+            f"{capture_iface}. Details: {ptp_details.stdout}{ptp_details.stderr}"
+        )
+
+    capture_ptp = f"/dev/ptp{ptp_idx}"
+
+    logger.info(
+        f"Starting phc2sys: {capture_ptp} -> CLOCK_REALTIME (iface={capture_iface})"
+    )
+
+    log_path = f"/tmp/phc2sys-{capture_iface}.log"
+    start_cmd = (
+        "sudo phc2sys "
+        f"-s '{capture_ptp}' -c CLOCK_REALTIME -O 0 -m "
+        f"> '{log_path}' 2>&1 < /dev/null & echo $!"
+    )
+    start_res = host.connection.execute_command(start_cmd)
+    pid = (
+        (start_res.stdout or "").strip().splitlines()[-1].strip()
+        if start_res.stdout
+        else ""
+    )
+
+    if not pid.isdigit():
+        raise RuntimeError(
+            f"Failed to start phc2sys (iface={capture_iface}, ptp={capture_ptp}). "
+            f"stdout={start_res.stdout!r}, stderr={start_res.stderr!r}, log={log_path}"
+        )
+
+    try:
+        yield
+    finally:
+        host.connection.execute_command(f"sudo kill -SIGINT {pid} || true")
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -346,7 +418,7 @@ def log_session():
 
 
 @pytest.fixture(scope="function")
-def pcap_capture(request, media_file, test_config, hosts, mtl_path):
+def pcap_capture(request, media_file, test_config, hosts, mtl_path, phc2sys_session):
     capture_cfg = test_config.get("capture_cfg", {})
     capturer = None
     if capture_cfg and capture_cfg.get("enable"):

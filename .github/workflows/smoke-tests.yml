@@ -95,12 +95,11 @@ jobs:
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
           sudo killall -SIGINT phc2sys || true
-      - name: Setup capture PTP device and phc2sys
+      - name: Export workflow tag for PCAP naming
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        uses: ./.github/actions/setup-capture-phc2sys
-        with:
-          pci_device: ${{ env.PCI_DEVICE }}
-          mtl_github_workflow: ${{ github.workflow }}:${{ matrix.nic }}
+        shell: bash
+        run: |
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
       - name: 'preparation: Start MtlManager at background'
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
