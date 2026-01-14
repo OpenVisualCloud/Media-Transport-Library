@@ -6,6 +6,7 @@ import datetime
 import logging
 import os
 import shutil
+import signal
 import time
 from typing import Any, Dict
 
@@ -143,28 +144,34 @@ def phc2sys_session(test_config: dict, hosts):
     )
 
     log_path = f"/tmp/phc2sys-{capture_iface}.log"
-    start_cmd = (
-        "sudo phc2sys "
-        f"-s '{capture_ptp}' -c CLOCK_REALTIME -O 0 -m "
-        f"> '{log_path}' 2>&1 < /dev/null & echo $!"
-    )
-    start_res = host.connection.execute_command(start_cmd)
-    pid = (
-        (start_res.stdout or "").strip().splitlines()[-1].strip()
-        if start_res.stdout
-        else ""
+    phc2sys_cmd = "sudo phc2sys " f"-s '{capture_ptp}' -c CLOCK_REALTIME -O 0 -m"
+    phc2sys_process = host.connection.start_process(
+        phc2sys_cmd,
+        stderr_to_stdout=True,
+        output_file=log_path,
     )
 
-    if not pid.isdigit():
+    # Give phc2sys a moment to fail fast (e.g., missing /dev/ptpX permissions).
+    time.sleep(0.3)
+    if not phc2sys_process.running:
         raise RuntimeError(
             f"Failed to start phc2sys (iface={capture_iface}, ptp={capture_ptp}). "
-            f"stdout={start_res.stdout!r}, stderr={start_res.stderr!r}, log={log_path}"
+            f"log={log_path}"
         )
 
     try:
         yield
     finally:
-        host.connection.execute_command(f"sudo kill -SIGINT {pid} || true")
+        if not phc2sys_process:
+            return
+
+        if not phc2sys_process.running:
+            raise RuntimeError(
+                f"phc2sys process (iface={capture_iface}, ptp={capture_ptp}) "
+                f"stopped unexpectedly. See log: {log_path}"
+            )
+
+        phc2sys_process.kill(wait=None, with_signal=signal.SIGINT)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)

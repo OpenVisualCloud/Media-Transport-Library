@@ -77,7 +77,7 @@ jobs:
       - name: Export workflow tag for PCAP naming
         shell: bash
         run: |
-          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ inputs.nic }}" >> "$GITHUB_ENV"
       - name: Start MtlManager
         run: |
           sudo MtlManager &
