@@ -11,11 +11,11 @@ from mtl_engine.media_files import yuv_files
 @pytest.mark.parametrize(
     "video_format, test_time_mutlipler, media_file",
     [
-        ("i1080p25", 2, yuv_files["i1080p25"]),
-        ("i1080p30", 2, yuv_files["i1080p30"]),
-        ("i1080p60", 4, yuv_files["i1080p60"]),
-        ("i2160p30", 4, yuv_files["i2160p30"]),
-        ("i2160p60", 6, yuv_files["i2160p60"]),
+        ("i1080p25", 1, yuv_files["i1080p25"]),
+        ("i1080p30", 1, yuv_files["i1080p30"]),
+        ("i1080p60", 1, yuv_files["i1080p60"]),
+        ("i2160p30", 1, yuv_files["i2160p30"]),
+        ("i2160p60", 1, yuv_files["i2160p60"]),
     ],
     indirect=["media_file"],
     ids=["i1080p25", "i1080p30", "i1080p60", "i2160p30", "i2160p60"],

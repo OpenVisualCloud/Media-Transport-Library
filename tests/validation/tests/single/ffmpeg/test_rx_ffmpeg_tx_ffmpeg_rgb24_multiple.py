@@ -92,8 +92,8 @@ def test_rx_ffmpeg_tx_ffmpeg_rgb24_multiple(
         video_format_list=[video_format_1, video_format_2],
         pg_format=media_file[0]["format"],
         video_url_list=[
-            host.connection.path(media_path, media_file[0]["filename"]),
-            host.connection.path(media_path, media_file[1]["filename"]),
+            str(host.connection.path(media_path) / media_file[0]["filename"]),
+            str(host.connection.path(media_path) / media_file[1]["filename"]),
         ],
         host=host,
     )
