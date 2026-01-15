@@ -32,5 +32,5 @@ endif
 subdir('datapath')
 subdir('dev')
 subdir('st2110')
-subdir('udp')
+subdir('deprecated/udp')
 

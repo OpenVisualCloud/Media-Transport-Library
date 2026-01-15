@@ -5,15 +5,15 @@
 #ifndef _MT_LIB_UFD_MAIN_H_
 #define _MT_LIB_UFD_MAIN_H_
 
-#include "../mt_main.h"
+#include "../../mt_main.h"
 
 /* include "struct sockaddr_in" define before include mudp_sockfd_api */
 // clang-format off
 #ifdef WINDOWSENV
-#include "mudp_win.h"
+#include "deprecated/mudp_win.h"
 #endif
-#include "mudp_sockfd_api.h"
-#include "mudp_sockfd_internal.h"
+#include "deprecated/mudp_sockfd_api.h"
+#include "deprecated/mudp_sockfd_internal.h"
 // clang-format on
 
 struct ufd_slot {

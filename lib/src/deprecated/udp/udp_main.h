@@ -5,14 +5,14 @@
 #ifndef _MT_LIB_UDP_MAIN_H_
 #define _MT_LIB_UDP_MAIN_H_
 
-#include "../mt_mcast.h"
+#include "../../mt_mcast.h"
 #include "udp_rxq.h"
 
 // clang-format off
 #ifdef WINDOWSENV
-#include "mudp_win.h"
+#include "deprecated/mudp_win.h"
 #endif
-#include "mudp_api.h"
+#include "deprecated/mudp_api.h"
 // clang-format on
 
 /* On error, -1 is returned, and errno is set appropriately. */
