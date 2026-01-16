@@ -4,8 +4,8 @@
 
 #include "udp_main.h"
 
-#include "../mt_log.h"
-#include "../mt_stat.h"
+#include "../../mt_log.h"
+#include "../../mt_stat.h"
 #include "udp_rxq.h"
 
 #ifndef UDP_SEGMENT

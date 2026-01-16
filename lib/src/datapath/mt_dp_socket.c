@@ -10,7 +10,7 @@
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #ifndef WINDOWSENV
-#include "mudp_api.h"
+#include "deprecated/mudp_api.h"
 #endif
 
 #define MT_RX_DP_SOCKET_PREFIX "SR_"

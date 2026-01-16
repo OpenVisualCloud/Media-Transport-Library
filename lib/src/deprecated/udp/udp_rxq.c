@@ -4,9 +4,9 @@
 
 #include "udp_rxq.h"
 
-#include "../dev/mt_dev.h"
-#include "../mt_log.h"
-#include "../mt_stat.h"
+#include "../../dev/mt_dev.h"
+#include "../../mt_log.h"
+#include "../../mt_stat.h"
 #include "udp_main.h"
 
 /* queue implementation */
