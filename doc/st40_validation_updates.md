@@ -96,7 +96,7 @@ Across all single-host tests, frame-info is dumped and summarized in pytest logs
   - `st40i_split_loopback` — interlaced split-mode loopback with custom fps and framebuff; ensures split/interlace coexist.
   - `st40i_split_seq_gap_reports_loss` — crafts a manual RTP sequence gap and validates `seq_discont`/`seq_lost` are reported via the C API frame_info, mirroring the GStreamer gap test at a lower level.
 
-These integration tests exercise the C pipeline APIs directly (outside the GStreamer harness) to prove split-mode, parity, marker, and sequence reporting work end to end without additional context setup.
+These integration tests exercise the C pipeline APIs directly (outside the GStreamer harness) to prove split-mode, parity, marker, and sequence reporting work end-to-end without additional context setup.
 
 ## How to exercise quickly
 
@@ -118,7 +118,7 @@ These integration tests exercise the C pipeline APIs directly (outside the GStre
 ## Known limits / notes
 
 - For split-mode validation, set RX `frame_info_path` (for logging) and a power-of-two `rx_rtp_ring_size`; the plugin rejects non power-of-two values.
-- Frame-info summaries rely on the regex in the harness; unexpected formats will fall back to raw dump only.
+- Frame-info summaries rely on the regular expression in the harness; unexpected formats will fall back to raw dump only.
 - Interlaced mismatch between TX/RX fails the test early (before file compare).
 
 ## Quick architecture view (tests + logging)
