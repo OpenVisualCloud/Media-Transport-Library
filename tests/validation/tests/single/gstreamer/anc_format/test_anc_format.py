@@ -11,14 +11,13 @@ a single physical port.
 
 import os
 import re
-import time
 import uuid
 from contextlib import contextmanager
 
 import mtl_engine.media_creator as media_create
 import pytest
 from common.nicctl import InterfaceSetup
-from mtl_engine import GstreamerApp, ip_pools
+from mtl_engine import GstreamerApp
 from mtl_engine.execute import log_info, run
 
 
@@ -929,19 +928,6 @@ def test_st40p_split_mode_invalid_rtp_ring_rejected(
         size_kb=10,
         output_path=input_file_path,
         host=host,
-    )
-
-    tx_cmd = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
-        nic_port_list=interfaces_list[0],
-        input_path=input_file_path,
-        tx_payload_type=113,
-        tx_queues=4,
-        tx_framebuff_cnt=3,
-        tx_fps=50,
-        tx_did=67,
-        tx_sdid=2,
-        tx_split_anc_by_pkt=True,
     )
 
     # Non power-of-two ring size should be rejected by plugin
