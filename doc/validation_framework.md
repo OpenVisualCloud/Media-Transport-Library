@@ -121,6 +121,9 @@ The `tests/` directory contains test implementations organized by scenario type:
   - **ST2110-22**: Compressed video tests
   - **ST2110-30**: Audio tests
   - **ST2110-40**: Ancillary data tests
+    - Progressive and interlaced GStreamer loops (RFC8331, fps/frame buffer sweeps)
+    - Split-mode packetized ANC with frame-info logging (sequence discontinuity, packet totals, RTP marker) and ring-size validation
+    - Pacing sanity via RTP sender helpers and ramdisk-backed media fixtures (configure `ramdisk.media` in `configs/test_config.yaml`)
   - Backend-specific tests (DMA, kernel socket, etc.)
   - Integration tests (FFmpeg, GStreamer)
   
@@ -282,6 +285,8 @@ ramdisk:
 - Set `build` and `mtl_path` to your actual MTL installation directory
 - Set `media_path` to where your test media files are located
 - Ensure the paths exist and are accessible
+
+GStreamer ST2110-40 ancillary tests use the `media_file` fixture, which creates inputs/outputs on `ramdisk.media.mountpoint`; mount and size this ramdisk before running the suite to avoid `/tmp` spills.
 
 #### Optional: Create VFs for Advanced Testing
 

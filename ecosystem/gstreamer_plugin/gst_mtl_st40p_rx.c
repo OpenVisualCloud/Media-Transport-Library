@@ -68,6 +68,7 @@
 #endif
 
 #include <gst/gstinfo.h>
+#include <inttypes.h>
 #include <string.h>
 
 #include "gst_mtl_st40p_rx.h"
@@ -128,6 +129,7 @@ enum {
   PROP_ST40P_RX_TIMEOUT,
   PROP_ST40P_RX_INTERLACED,
   PROP_ST40P_RX_OUTPUT_FORMAT,
+  PROP_ST40P_RX_FRAME_INFO_PATH,
   PROP_MAX
 };
 
@@ -278,6 +280,21 @@ static gboolean gst_mtl_st40p_is_power_of_two(uint32_t value) {
   return value && ((value & (value - 1)) == 0);
 }
 
+static void gst_mtl_st40p_rx_log_frame_info(Gst_Mtl_St40p_Rx* src,
+                                            struct st40_frame_info* frame_info) {
+  if (!src->frame_info_fp || !frame_info) return;
+
+  /* Log per-frame sequencing details for the validator */
+  fprintf(
+      src->frame_info_fp,
+      "ts=%" PRIu64
+      " meta=%u rtp_marker=%u seq_discont=%u seq_lost=%u pkts_total=%u pkts_recv=%u\n",
+      frame_info->timestamp, frame_info->meta_num, frame_info->rtp_marker,
+      frame_info->seq_discont, frame_info->seq_lost, frame_info->pkts_total,
+      frame_info->pkts_recv);
+  fflush(src->frame_info_fp);
+}
+
 static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
@@ -336,6 +353,12 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
                         GST_MTL_ST40P_RX_OUTPUT_FORMAT_RAW_UDW,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_RX_FRAME_INFO_PATH,
+      g_param_spec_string("frame-info-path", "Frame info log file",
+                          "Optional path to append frame info/seq stats per frame", NULL,
+                          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
   gst_element_class_set_static_metadata(
       gstelement_class, "MTL ST2110-40 Pipeline RX Source", "Source/Network",
       "Receive ST2110-40 ancillary data streams using MTL pipeline API",
@@ -352,6 +375,8 @@ static void gst_mtl_st40p_rx_init(Gst_Mtl_St40p_Rx* src) {
   src->timeout_s = 60;
   src->interlaced = FALSE;
   src->output_format = GST_MTL_ST40P_RX_OUTPUT_FORMAT_RAW_UDW;
+  src->frame_info_path = NULL;
+  src->frame_info_fp = NULL;
   /* init stats */
   src->stats_total_frames = 0;
   src->stats_frames_with_meta = 0;
@@ -390,6 +415,10 @@ static void gst_mtl_st40p_rx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_RX_OUTPUT_FORMAT:
       src->output_format = g_value_get_enum(value);
       break;
+    case PROP_ST40P_RX_FRAME_INFO_PATH:
+      g_free(src->frame_info_path);
+      src->frame_info_path = g_value_dup_string(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -425,6 +454,9 @@ static void gst_mtl_st40p_rx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_RX_OUTPUT_FORMAT:
       g_value_set_enum(value, src->output_format);
+      break;
+    case PROP_ST40P_RX_FRAME_INFO_PATH:
+      g_value_set_string(value, src->frame_info_path);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -465,6 +497,17 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "RX START: rtp_ring_size=%d", ops_rx.rtp_ring_size);
 
   ops_rx.interlaced = src->interlaced;
+
+  /* Optional frame info logging */
+  if (src->frame_info_path && !src->frame_info_fp) {
+    src->frame_info_fp = fopen(src->frame_info_path, "a");
+    if (!src->frame_info_fp) {
+      GST_WARNING_OBJECT(src, "RX START: failed to open frame info log %s",
+                         src->frame_info_path);
+    } else {
+      GST_INFO_OBJECT(src, "RX START: writing frame info to %s", src->frame_info_path);
+    }
+  }
 
   if (src->portArgs.payload_type == 0) {
     ops_rx.port.payload_type = 113;  // Default ST2110-40 payload type
@@ -561,6 +604,8 @@ static GstFlowReturn gst_mtl_st40p_rx_create(GstBaseSrc* basesrc, guint64 offset
   src->stats_total_headers_written += frame_info->meta_num;
   if (frame_info->meta_num >= 3) src->stats_meta2_headers_written++;
 
+  gst_mtl_st40p_rx_log_frame_info(src, frame_info);
+
   uint8_t* serialized_data = NULL;
   size_t serialized_size = 0;
   if (!gst_mtl_st40p_rx_serialize_frame(src, frame_info, &serialized_data,
@@ -619,6 +664,12 @@ static void gst_mtl_st40p_rx_finalize(GObject* object) {
                        ") != meta2_headers_written (%" G_GUINT64_FORMAT ")",
                        src->stats_frames_with_meta2, src->stats_meta2_headers_written);
   }
+
+  if (src->frame_info_fp) {
+    fclose(src->frame_info_fp);
+    src->frame_info_fp = NULL;
+  }
+  g_clear_pointer(&src->frame_info_path, g_free);
 
   if (src->rx_handle) {
     if (st40p_rx_free(src->rx_handle)) {
