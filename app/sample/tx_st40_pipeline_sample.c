@@ -228,10 +228,11 @@ int main(int argc, char** argv) {
 
     ops_tx.port.payload_type = ctx.payload_type;
     ops_tx.fps = ctx.fps;
-    ops_tx.interlaced = false;
+    ops_tx.interlaced = ctx.interlaced;
     ops_tx.framebuff_cnt = ctx.framebuff_cnt;
     ops_tx.max_udw_buff_size = ST40P_SAMPLE_MAX_UDW_SIZE;
     ops_tx.flags = ST40P_TX_FLAG_BLOCK_GET;
+    if (ctx.split_anc_by_pkt) ops_tx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
     ops_tx.notify_frame_done = tx_st40p_frame_done;
 
     if (ctx.has_tx_dst_mac[MTL_PORT_P]) {

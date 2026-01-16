@@ -423,6 +423,22 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 > - `rfc8331` accepts the simplified 8-bit representation produced by `mtl_st40p_rx output-format=rfc8331`, enabling metadata round-trips without re-packing parity bits.
 > - The `parse-8331-meta` flag remains available for backward compatibility but will be removed in a future release. Update existing pipelines to use `input-format=rfc8331-packed` (or `rfc8331`) to avoid breakage when the legacy boolean disappears.
 
+##### Interlaced ancillary streams
+
+The `p` suffix means pipeline API, not progressive-only. For interlaced ANC, set `tx-interlaced=true` and match the receiver with `rx-interlaced=true`. Example:
+
+```bash
+export VFIO_PORT_T="pci_address_of_the_device"
+export VFIO_PORT_R="pci_address_of_the_device"
+
+# TX: interlaced ANC paced to 29.97i video
+gst-launch-1.0 filesrc location=$INPUT ! \
+    mtl_st40p_tx tx-interlaced=true tx-fps=5994/200 tx-did=67 tx-sdid=2 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+
+# RX: interlaced ANC capture
+gst-launch-1.0 -v mtl_st40p_rx rx-interlaced=true udp-port=40000 payload-type=113 dev-ip="192.168.96.2" ip="239.168.75.30" dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+```
+
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 
 To run the `mtl_st40p_tx` plugin, use the following command:

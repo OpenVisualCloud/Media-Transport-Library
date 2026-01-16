@@ -1130,7 +1130,16 @@ struct st_tx_ancillary_session_impl {
   uint16_t st40_ext_seq_id; /* ext seq id for each pkt */
   int st40_total_pkts;      /* total pkts in one frame */
   int st40_pkt_idx;         /* pkt index in current frame */
+  int st40_anc_idx;         /* ANC packet index inside current frame */
   int st40_rtp_time;        /* record rtp time */
+
+  bool split_payload; /* force one ANC per RTP packet */
+
+  /* test-only mutation state */
+  struct st40_tx_test_config test;
+  uint16_t test_frames_left;
+  bool test_frame_active;
+  bool test_seq_gap_fired;
 
   int stat_build_ret_code;
 

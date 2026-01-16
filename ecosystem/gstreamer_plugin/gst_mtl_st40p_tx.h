@@ -71,6 +71,14 @@ typedef enum {
   GST_MTL_ST40P_TX_INPUT_FORMAT_RFC8331_SIMPLIFIED,
 } GstMtlSt40pTxInputFormat;
 
+typedef enum {
+  GST_MTL_ST40P_TX_TEST_MODE_NONE = 0,
+  GST_MTL_ST40P_TX_TEST_MODE_NO_MARKER,
+  GST_MTL_ST40P_TX_TEST_MODE_SEQ_GAP,
+  GST_MTL_ST40P_TX_TEST_MODE_BAD_PARITY,
+  GST_MTL_ST40P_TX_TEST_MODE_PACED,
+} GstMtlSt40pTxTestMode;
+
 #define GST_TYPE_MTL_ST40P_TX (gst_mtl_st40p_tx_get_type())
 G_DECLARE_FINAL_TYPE(Gst_Mtl_St40p_Tx, gst_mtl_st40p_tx, GST, MTL_ST40P_TX, GstBaseSink)
 
@@ -88,10 +96,15 @@ struct _Gst_Mtl_St40p_Tx {
   guint fps_n, fps_d;
   guint did;
   guint sdid;
+  gboolean interlaced;
   gboolean use_pts_for_pacing;
   guint pts_for_pacing_offset;
+  gboolean split_anc_by_pkt;
   GstMtlSt40pTxInputFormat input_format;
   guint max_combined_udw_size;
+  GstMtlSt40pTxTestMode test_mode;
+  guint test_pkt_count;
+  guint test_pacing_ns;
 };
 
 struct gst_st40_rfc8331_meta {
