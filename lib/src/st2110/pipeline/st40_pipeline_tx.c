@@ -235,17 +235,14 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
   if (ops->flags & ST40P_TX_FLAG_DEDICATE_QUEUE)
     ops_tx.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;
 
-  if (ops->interlaced) {
-    err("%s(%d), interlaced mode not supported\n", __func__, ctx->idx);
-    return -EINVAL;
-  }
-
   if (ops->flags & ST40P_TX_FLAG_USER_TIMESTAMP)
     ops_tx.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
 
   if (ops->flags & ST40P_TX_FLAG_USER_PACING) ops_tx.flags |= ST40_TX_FLAG_USER_PACING;
   if (ops->flags & ST40P_TX_FLAG_EXACT_USER_PACING)
     ops_tx.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
+  if (ops->flags & ST40P_TX_FLAG_SPLIT_ANC_BY_PKT)
+    ops_tx.flags |= ST40_TX_FLAG_SPLIT_ANC_BY_PKT;
   if (ops->flags & ST40P_TX_FLAG_DROP_WHEN_LATE) {
     ops_tx.notify_frame_late = st40p_tx_late_frame_drop;
   } else if (ops->notify_frame_late) {
@@ -253,7 +250,10 @@ static int tx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_tx
   }
   if (ops->flags & ST40P_TX_FLAG_ENABLE_RTCP) ops_tx.flags |= ST40_TX_FLAG_ENABLE_RTCP;
 
-  ops_tx.interlaced = false;
+  /* test-only mutation config */
+  ops_tx.test = ops->test;
+
+  ops_tx.interlaced = ops->interlaced;
   ops_tx.fps = ops->fps;
   ops_tx.framebuff_cnt = ops->framebuff_cnt;
   ops_tx.type = ST40_TYPE_FRAME_LEVEL;
@@ -320,6 +320,13 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
       return -ENOMEM;
     }
     frame_info->udw_buffer_size = ops->max_udw_buff_size;
+    frame_info->pkts_total = 0;
+    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
+    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    frame_info->seq_discont = false;
+    frame_info->seq_lost = 0;
+    frame_info->rtp_marker = false;
+    frame_info->receive_timestamp = 0;
 
     /* addr will be resolved later in tx_st40p_create_transport */
     frame_info->priv = framebuff;
