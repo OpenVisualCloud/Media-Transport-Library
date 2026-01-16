@@ -349,9 +349,22 @@ st40p_rx_put_frame
 - **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
 - **RX pipeline (`st40p_rx_*`)** assembles ancillary packets into user buffers and can optionally dump metadata/UDW buffers directly to files for debugging through `st40p_rx_set_dump`. Each RX callback receives both the metadata blocks and the captured payload, mirroring the TX layout to simplify round-trip validation.
 
-Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and `rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true` when you need to emit at most one ANC packet per RTP packet; the sender will fragment a field accordingly. The receiver records each packet under a field and emits the RTP marker on the final packet so applications can decide to consume incrementally or wait for the marker boundary. Frame-info captures the per-field packet count (`pkts_total`) and sequence integrity (`seq_discont/seq_lost`), so RX can detect discontinuities and the application can see how many packets were accumulated for that field. Use a power-of-two ring size to satisfy plugin validation and keep pacing predictable.
+Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and
+`rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true`
+when you need to emit at most one ANC packet per RTP packet; the sender fragments a
+field accordingly. The receiver records each packet under a field and emits the RTP
+marker on the final packet so applications can consume incrementally or wait for the
+marker boundary. Frame-info captures the per-field packet count (`pkts_total`) and
+sequence integrity (`seq_discont/seq_lost`) so RX can detect discontinuities and the
+application can see how many packets were accumulated. Use a power-of-two ring size
+to satisfy plugin validation and keep pacing predictable.
 
-For validation and debugging, the GStreamer harness surfaces the frame-info file directly in the test logs. Setting `log_frame_info=True` in the ST40P tests dumps each `frame-info-path` line and a parsed `FrameInfoSummary` (frames, marker hits, seq_discont/seq_lost totals, and packets-per-frame histogram) so sequence gaps or packet-count anomalies are immediately visible in CI output without opening the artifact.
+For validation and debugging, the GStreamer harness surfaces the frame-info file
+directly in the test logs. Setting `log_frame_info=True` in the ST40P tests dumps
+each `frame-info-path` line and a parsed `FrameInfoSummary` (frames, marker hits,
+seq_discont/seq_lost totals, and packets-per-frame histogram) so sequence gaps or
+packet-count anomalies are immediately visible in CI output without opening the
+artifact.
 
 The GStreamer ST40P plugin also exposes test-only RTP/ANC mutation knobs to exercise error handling:
 
@@ -365,7 +378,7 @@ All mutation modes can be combined with `split-anc-by-pkt=true` to stress the sp
 Reference implementations live in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. They reuse the shared `sample_util` CLI so you can swap between ST20/22/30/40 pipelines with identical arguments while testing pacing, redundancy, and USDT probes.
 
 The ST40 pipeline samples now expose CLI toggles for the common ANC variants:
-- `--interlaced` drives field-based cadence end to end (TX uses interlaced pacing; RX expects fields and delivers them individually).
+- `--interlaced` drives field-based cadence end-to-end (TX uses interlaced pacing; RX expects fields and delivers them individually).
 - `--split_anc_by_pkt` enables one-ANC-per-RTP emission and RX accumulation with packet-level accounting (`pkts_total`, `seq_discont/seq_lost`).
 Combine them to validate interlaced split-mode behavior without code changes; the flags propagate directly into the `st40p_tx_ops`/`st40p_rx_ops` settings used by the samples.
 

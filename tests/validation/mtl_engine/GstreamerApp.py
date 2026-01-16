@@ -757,7 +757,8 @@ def execute_test(
     if tx_interlaced is not None and rx_interlaced is not None:
         if tx_interlaced != rx_interlaced:
             logger.info(
-                "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). Failing test before file compare.",
+                "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). "
+                "Failing test before file compare.",
                 tx_interlaced,
                 rx_interlaced,
             )
