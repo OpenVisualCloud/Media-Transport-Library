@@ -48,6 +48,7 @@
 #define __GST_MTL_ST40P_RX_H__
 
 #include <gst/base/gstbasesrc.h>
+#include <stdio.h>
 
 #include "gst_mtl_common.h"
 
@@ -72,6 +73,8 @@ struct _Gst_Mtl_St40p_Rx {
   guint timeout_s;
   gboolean interlaced;
   gint output_format; /* GstMtlSt40pRxOutputFormat enum value */
+  gchar* frame_info_path;
+  FILE* frame_info_fp;
 
   /* statistics / debug counters */
   uint64_t stats_total_frames;          /* Total frames pulled (including empty) */

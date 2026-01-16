@@ -94,6 +94,7 @@ struct st_sample_context {
   uint32_t height;
   enum st_fps fps;
   bool interlaced;
+  bool split_anc_by_pkt;
   enum st20_fmt fmt;
   enum st_frame_fmt input_fmt;
   enum st_frame_fmt output_fmt;
