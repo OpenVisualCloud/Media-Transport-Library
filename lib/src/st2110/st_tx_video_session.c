@@ -1980,10 +1980,10 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     }
 
     uint64_t frame_end_time = mt_get_tsc(impl);
-    if (frame_end_time > pacing->tsc_time_cursor) {
+    if (frame_end_time > pacing->tsc_time_cursor && !s->stat_error_user_timestamp) {
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
       rte_atomic32_inc(&s->cbs_build_timeout);
-      dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
+      info("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
   }
@@ -3305,7 +3305,12 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   /* build timeout check */
   cbs_build_timeout = rte_atomic32_read(&s->cbs_build_timeout);
   rte_atomic32_set(&s->cbs_build_timeout, 0);
-  if (cbs_build_timeout > 10) {
+
+  /* initialization period the stats may be inaccurate */
+  if (!s->stat_cpu_busy_score){
+    if (s->cpu_busy_score > ST_SESSION_MIGRATE_CPU_BUSY_THRESHOLD)
+      s->cpu_busy_score = ST_SESSION_MIGRATE_CPU_BUSY_THRESHOLD;
+  } else if (cbs_build_timeout > 10) {
     s->cpu_busy_score = 100.0; /* mark as busy */
     notice("%s(%d), mask as busy as build time out %d\n", __func__, s->idx,
            cbs_build_timeout);

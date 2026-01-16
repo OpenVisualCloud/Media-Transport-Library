@@ -80,6 +80,8 @@
 
 #define ST_SESSION_REDUNDANT_ERROR_THRESHOLD (20)
 
+#define ST_SESSION_MIGRATE_CPU_BUSY_THRESHOLD (95.0)
+
 #define ST_SESSION_STAT_INC(s, struct, stat) \
   do {                                       \
     (s)->stat++;                             \

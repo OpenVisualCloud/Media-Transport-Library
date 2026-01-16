@@ -65,7 +65,7 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
 void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s);
 
 static inline bool tx_video_session_is_cpu_busy(struct st_tx_video_session_impl* s) {
-  if (s->cpu_busy_score > 95.0) return true;
+  if (s->cpu_busy_score > ST_SESSION_MIGRATE_CPU_BUSY_THRESHOLD) return true;
 
   return false;
 }

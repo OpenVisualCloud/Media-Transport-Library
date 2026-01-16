@@ -57,7 +57,27 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     enum mtl_session_port s_port,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (!tx) return video_trs_burst_fail(impl, s, s_port, nb_pkts);
+
+  if (tx <= 0) {
+    uint64_t fail_duration = mt_get_tsc(impl) - s->last_burst_succ_time_tsc[s_port];
+
+    if (fail_duration > s->tx_hang_detect_time_thresh){
+      uint16_t free_desc = rte_eth_tx_descriptor_status(s_port,
+                                                        s->queue[s_port]->queue_id,
+                                                        0);
+      warn("%s(%d,%d), hang %" PRIu64 " ms, tx_desc_avail=%" PRIu16 "\n",
+          __func__, s->idx, s_port, fail_duration / NS_PER_MS, free_desc);
+
+      tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+      if (!tx && !free_desc) {
+        warn("%s(%d,%d), ring full, waiting for NIC to free descriptors\n",
+            __func__, s->idx, s_port);
+      }
+    }
+
+
+    if (!tx) tx = video_trs_burst_fail(impl, s, s_port, nb_pkts);
+  }
   return tx;
 }
 

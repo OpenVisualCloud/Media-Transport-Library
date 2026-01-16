@@ -976,6 +976,8 @@ static int dev_config_port(struct mt_interface* inf) {
     }
   }
 
+  /* DEBUG */
+  p->nb_tx_desc = 2048;
   /* apply if user has rx_tx_desc config */
   if (p->nb_tx_desc) nb_tx_desc = p->nb_tx_desc;
   if (p->nb_rx_desc) nb_rx_desc = p->nb_rx_desc;
