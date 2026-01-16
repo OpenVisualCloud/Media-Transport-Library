@@ -217,7 +217,7 @@ yuv_files = dict(
         "fps": "25",
     },
     i2160p29={
-        "filename": "Plalaedit_Pedestrian_10bit_3840x2160_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
         "format": "YUV_422_10bit",
         "width": 3840,
@@ -225,7 +225,7 @@ yuv_files = dict(
         "fps": "2997/100",
     },
     i2160p30={
-        "filename": "Plalaedit_Pedestrian_10bit_3840x2160_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
         "format": "YUV_422_10bit",
         "width": 3840,
