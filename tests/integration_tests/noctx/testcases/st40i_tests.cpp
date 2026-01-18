@@ -310,7 +310,7 @@ TEST_F(NoCtxTest, st40i_split_seq_gap_reports_loss) {
   EXPECT_TRUE(frame_info->seq_discont);
   EXPECT_GE(frame_info->seq_lost, 1u);
   EXPECT_TRUE(frame_info->rtp_marker);
-  EXPECT_EQ(frame_info->meta_num, 1u);
+  EXPECT_EQ(frame_info->meta_num, 2u);
 
   st40p_rx_put_frame(bundle.handler->sessionsHandleRx, frame_info);
 }

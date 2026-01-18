@@ -532,7 +532,7 @@ def execute_test(
         pattern = re.compile(
             r"ts=(?P<ts>\d+)\s+meta=(?P<meta>\d+)\s+rtp_marker=(?P<rtp_marker>\d+)\s+"
             r"seq_discont=(?P<seq_discont>\d+)\s+seq_lost=(?P<seq_lost>\d+)\s+"
-            r"pkts_total=(?P<pkts_total>\d+)\s+pkts_recv=(?P<pkts_recv>\d+)"
+            r"pkts_total=(?P<pkts_total>\d+)\s+pkts_recv_p=(?P<pkts_recv_p>\d+)\s+pkts_recv_r=(?P<pkts_recv_r>\d+)"
         )
 
         for line in lines:

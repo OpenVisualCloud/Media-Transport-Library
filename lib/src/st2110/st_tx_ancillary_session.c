@@ -101,6 +101,35 @@ static inline uint16_t tx_ancillary_apply_parity(struct st_tx_ancillary_session_
   return st40_add_parity_bits(value);
 }
 
+/* Abort the current frame and allow the app to recycle its buffer */
+static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
+                                             struct st_tx_ancillary_session_impl* s) {
+  if (s->st40_frame_stat != ST40_TX_STAT_SENDING_PKTS) return;
+
+  struct st_frame_trans* frame = &s->st40_frames[s->st40_frame_idx];
+  struct st40_tx_frame_meta* tc_meta = &frame->tc_meta;
+  bool time_measure = mt_sessions_time_measure(impl);
+  uint64_t tsc_start = 0;
+  if (time_measure) tsc_start = mt_get_tsc(impl);
+
+  if (s->ops.notify_frame_done)
+    s->ops.notify_frame_done(s->ops.priv, s->st40_frame_idx, tc_meta);
+  if (time_measure) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+  }
+
+  rte_atomic32_dec(&frame->refcnt);
+  s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
+  s->st40_pkt_idx = 0;
+  s->st40_anc_idx = 0;
+  s->calculate_time_cursor = false;
+  s->test_frame_active = false;
+  s->test_seq_gap_fired = false;
+  s->check_frame_done_time = false;
+  s->pacing.tsc_time_cursor = 0;
+}
+
 static int tx_ancillary_session_free_frames(struct st_tx_ancillary_session_impl* s) {
   if (s->st40_frames) {
     struct st_frame_trans* frame;
@@ -536,14 +565,19 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    uint16_t total_size =
-        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                        // 10-bit words: DID, SDID, DATA_COUNT
-                                        // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of ANC data packet
-    uint16_t size_to_send =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+    /* Compute byte size of 10-bit words
+      (DID, SDID, DC, payload, checksum) and align to 4 */
+    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10; /* words = udw_size + 4 */
+    uint32_t total_size = (total_bits + 7) / 8;              /* ceil(bits/8) */
+    total_size = (total_size + 3) & ~0x3U;                   /* align to 4 bytes */
+    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
+                            total_size; /* Full size of one ANC */
+    if (s->split_payload && size_to_send > s->max_pkt_len) {
+      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
+          size_to_send, s->max_pkt_len);
+      s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
+      return -STI_FRAME_ANC_TOO_LARGE;
+    }
     payload = payload + size_to_send;
 
     if (s->split_payload) {
@@ -564,11 +598,12 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   } else {
     rtp->first_hdr_chunk.f = 0b00;
   }
-  if (!test_no_marker && idx == anc_count) rtp->base.marker = 1;
+  bool last_pkt = (s->st40_total_pkts > 0) ? (s->st40_pkt_idx == (s->st40_total_pkts - 1))
+                                           : (idx == anc_count);
+  if (!test_no_marker && last_pkt) rtp->base.marker = 1;
+  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
-
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -632,14 +667,19 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    uint16_t total_size =
-        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                        // 10-bit words: DID, SDID, DATA_COUNT
-                                        // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of ANC data packet
-    uint16_t size_to_send =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+    /* Compute byte size of 10-bit words (DID, SDID, DC, payload, checksum)
+       and align to 4 */
+    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
+    uint32_t total_size = (total_bits + 7) / 8;
+    total_size = (total_size + 3) & ~0x3U;
+    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
+                            total_size; /* Full size of one ANC */
+    if (s->split_payload && size_to_send > s->max_pkt_len) {
+      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
+          size_to_send, s->max_pkt_len);
+      s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
+      return -STI_FRAME_ANC_TOO_LARGE;
+    }
     payload = payload + size_to_send;
 
     if (s->split_payload) {
@@ -660,8 +700,9 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   } else {
     rtp->first_hdr_chunk.f = 0b00;
   }
-  if (!test_no_marker && idx == anc_count) rtp->base.marker = 1;
-
+  bool last_pkt = (s->st40_total_pkts > 0) ? (s->st40_pkt_idx == (s->st40_total_pkts - 1))
+                                           : (idx == anc_count);
+  if (!test_no_marker && last_pkt) rtp->base.marker = 1;
   rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
@@ -1019,6 +1060,13 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       return MTL_TASKLET_ALL_DONE;
     }
     int next_anc_idx = tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_anc_idx);
+    if (next_anc_idx < 0) {
+      rte_pktmbuf_free(pkt);
+      rte_pktmbuf_free(pkt_rtp);
+      if (!s->stat_build_ret_code) s->stat_build_ret_code = next_anc_idx;
+      tx_ancillary_session_abort_frame(impl, s);
+      return MTL_TASKLET_ALL_DONE;
+    }
     tx_ancillary_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
 
     if (send_r) {
@@ -1036,6 +1084,12 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->st40_anc_idx = next_anc_idx;
   } else {
     int next_anc_idx = tx_ancillary_session_build_packet(s, pkt);
+    if (next_anc_idx < 0) {
+      rte_pktmbuf_free(pkt);
+      if (!s->stat_build_ret_code) s->stat_build_ret_code = next_anc_idx;
+      tx_ancillary_session_abort_frame(impl, s);
+      return MTL_TASKLET_ALL_DONE;
+    }
     if (send_r) {
       pkt_r = rte_pktmbuf_copy(pkt, hdr_pool_r, 0, UINT32_MAX);
       if (!pkt_r) {

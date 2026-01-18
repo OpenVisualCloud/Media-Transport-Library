@@ -200,12 +200,6 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
 static GstFlowReturn gst_mtl_st40p_tx_prepare_test_frame(Gst_Mtl_St40p_Tx* sink,
                                                          GstMapInfo map_info,
                                                          GstBuffer* buf) {
-  struct st40_frame_info* frame_info = st40p_tx_get_frame(sink->tx_handle);
-  if (!frame_info) {
-    GST_ERROR("Failed to get frame for test mode");
-    return GST_FLOW_ERROR;
-  }
-
   guint meta_count = sink->test_pkt_count;
   if (!meta_count) {
     switch (sink->test_mode) {
@@ -223,12 +217,24 @@ static GstFlowReturn gst_mtl_st40p_tx_prepare_test_frame(Gst_Mtl_St40p_Tx* sink,
 
   meta_count = MIN(meta_count, (guint)ST40_MAX_META);
 
+  size_t max_udw = st40p_tx_max_udw_buff_size(sink->tx_handle);
+  if (!max_udw) {
+    GST_ERROR("Failed to query max UDW size for test frame");
+    return GST_FLOW_ERROR;
+  }
+
   guint per_udw = 4;
-  if (meta_count * per_udw > frame_info->udw_buffer_size) {
-    per_udw = frame_info->udw_buffer_size / meta_count;
+  if ((size_t)meta_count * per_udw > max_udw) {
+    per_udw = max_udw / meta_count;
   }
   if (per_udw == 0) {
     GST_ERROR("Insufficient buffer for test frame (meta_count=%u)", meta_count);
+    return GST_FLOW_ERROR;
+  }
+
+  struct st40_frame_info* frame_info = st40p_tx_get_frame(sink->tx_handle);
+  if (!frame_info) {
+    GST_ERROR("Failed to get frame for test mode");
     return GST_FLOW_ERROR;
   }
 

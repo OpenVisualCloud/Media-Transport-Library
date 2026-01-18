@@ -93,8 +93,22 @@ static int rx_st40p_rtp_ready(void* priv) {
   if (!mbuf) return -EBUSY;
 
   struct rte_mbuf* pkt = mbuf;
-  enum mtl_port port = mt_port_by_id(ctx->impl, pkt->port);
-  uint64_t receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, port);
+  uint16_t pkt_port_id = pkt->port;
+  int s_port = -1;
+  enum mtl_port phy_port = MTL_PORT_MAX;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    if (pkt_port_id == ctx->port_id[i]) {
+      s_port = i;
+      phy_port = ctx->port_map[i];
+      break;
+    }
+  }
+  if (s_port < 0 || phy_port >= MTL_PORT_MAX) {
+    warn("%s(%d), drop pkt: unmapped port_id %u\n", __func__, ctx->idx, pkt_port_id);
+    st40_rx_put_mbuf(ctx->transport, mbuf);
+    return -EIO;
+  }
+  uint64_t receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, phy_port);
 
   uint32_t hdr_bytes = sizeof(struct st40_rfc8331_rtp_hdr);
   if (len < hdr_bytes) {
@@ -115,11 +129,9 @@ static int rx_st40p_rtp_ready(void* priv) {
     ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
     ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
     notify_frame = true;
-    if (done_count < 2) {
-      done_frames[done_count] = ctx->inflight_frame;
-      done_infos[done_count] = &ctx->inflight_frame->frame_info;
-      done_count++;
-    }
+    done_frames[done_count] = ctx->inflight_frame;
+    done_infos[done_count] = &ctx->inflight_frame->frame_info;
+    done_count++;
     ctx->inflight_frame = NULL;
   }
 
@@ -158,19 +170,19 @@ static int rx_st40p_rtp_ready(void* priv) {
       frame_info->receive_timestamp = receive_timestamp;
   }
 
-  if (ctx->last_seq_valid[port]) {
-    uint16_t expected = (uint16_t)(ctx->last_seq[port] + 1);
+  if (ctx->last_seq_valid[s_port]) {
+    uint16_t expected = (uint16_t)(ctx->last_seq[s_port] + 1);
     if (expected != seq_number) {
       frame_info->seq_discont = true;
       if (mt_seq16_greater(seq_number, expected))
         frame_info->seq_lost += (uint16_t)(seq_number - expected);
     }
   }
-  ctx->last_seq[port] = seq_number;
-  ctx->last_seq_valid[port] = true;
+  ctx->last_seq[s_port] = seq_number;
+  ctx->last_seq_valid[s_port] = true;
 
   frame_info->pkts_total++;
-  frame_info->pkts_recv[port]++;
+  frame_info->pkts_recv[s_port]++;
 
   /* parse RTP packet and copy metadata */
   payload = (uint8_t*)(hdr + 1);
@@ -208,8 +220,9 @@ static int rx_st40p_rtp_ready(void* priv) {
     meta_entry->udw_offset = frame_info->udw_buffer_fill;
 
     uint32_t total_bits = (3 + udw_words + 1) * 10;
-    uint32_t total_size = (total_bits + 7) / 8; /* round up to whole bytes */
-    uint32_t total_size_aligned = MTL_ALIGN(total_size, 4);
+    /* Match TX padding: floor to bytes then pad to the next 4-byte multiple */
+    uint32_t total_size = total_bits / 8;
+    uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
     uint32_t anc_packet_bytes =
         sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
     if (payload_offset + anc_packet_bytes > payload_room) {
@@ -268,11 +281,9 @@ static int rx_st40p_rtp_ready(void* priv) {
     ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
     ctx->inflight_frame = NULL;
     notify_frame = true;
-    if (done_count < 2) {
-      done_frames[done_count] = framebuff;
-      done_infos[done_count] = frame_info;
-      done_count++;
-    }
+    done_frames[done_count] = framebuff;
+    done_infos[done_count] = frame_info;
+    done_count++;
   }
 
 out:
@@ -316,6 +327,10 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
     memcpy(ops_rx.mcast_sip_addr[i], ops->port.mcast_sip_addr[i], MTL_IP_ADDR_LEN);
     snprintf(ops_rx.port[i], MTL_PORT_MAX_LEN, "%s", ops->port.port[i]);
     ops_rx.udp_port[i] = ops->port.udp_port[i];
+
+    enum mtl_port phy = mt_port_by_name(impl, ops->port.port[i]);
+    ctx->port_map[i] = phy;
+    ctx->port_id[i] = mt_port_id(impl, phy);
   }
 
   ops_rx.rtp_ring_size = ops->rtp_ring_size;
@@ -652,6 +667,10 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_RX;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->last_seq_valid[i] = false;
+  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
+    ctx->port_map[i] = MTL_PORT_MAX;
+    ctx->port_id[i] = UINT16_MAX;
+  }
 
   mt_pthread_mutex_init(&ctx->lock, NULL);
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);

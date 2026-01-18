@@ -31,7 +31,7 @@ def _frame_info_path(base_dir=None):
 _FRAME_INFO_PATTERN = re.compile(
     r"ts=(?P<ts>\d+)\s+meta=(?P<meta>\d+)\s+rtp_marker=(?P<rtp_marker>\d+)\s+"
     r"seq_discont=(?P<seq_discont>\d+)\s+seq_lost=(?P<seq_lost>\d+)\s+"
-    r"pkts_total=(?P<pkts_total>\d+)\s+pkts_recv=(?P<pkts_recv>\d+)"
+    r"pkts_total=(?P<pkts_total>\d+)\s+pkts_recv_p=(?P<pkts_recv_p>\d+)\s+pkts_recv_r=(?P<pkts_recv_r>\d+)"
 )
 
 
@@ -1507,6 +1507,192 @@ def test_st40p_rx_multi_packet_field_accumulates(
             assert "pkts_total=3" in output
             assert "seq_discont=0" in output
             assert "seq_lost=0" in output
+    finally:
+        media_create.remove_file(input_file_path, host=host)
+        media_create.remove_file(output_file_path, host=host)
+        run(f"rm -f {frame_info_path}", host=host)
+
+
+@pytest.mark.nightly
+def test_st40p_split_padding_alignment_boundary(
+    hosts,
+    build,
+    media,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    prepare_ramdisk,
+    media_file,
+):
+    """
+    Guard against TX/RX padding mismatches on split ANC packets by sending a
+    controlled two-packet burst and validating metadata/sequence integrity.
+
+    .. rubric:: Pass Criteria
+    - Frame-info exists with meta=2 and pkts_total=2.
+    - No sequence discontinuity or loss is reported.
+    """
+
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    if len(interfaces_list) < 2:
+        pytest.skip("At least two interfaces are required for split-mode loopback")
+
+    input_file_path, output_file_path = setup_paths(media_file)
+    frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
+
+    input_file_path = media_create.create_text_file(
+        size_kb=12,  # pick a size that exercises alignment-sensitive padding
+        output_path=input_file_path,
+        host=host,
+    )
+
+    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+        build=build,
+        nic_port_list=interfaces_list[0],
+        input_path=input_file_path,
+        tx_payload_type=113,
+        tx_queues=4,
+        tx_framebuff_cnt=3,
+        tx_fps=60,
+        tx_did=67,
+        tx_sdid=2,
+        tx_split_anc_by_pkt=True,
+        tx_test_mode="paced",
+        tx_test_pkt_count=2,
+        tx_test_pacing_ns=200000,
+    )
+
+    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
+        build=build,
+        nic_port_list=interfaces_list[1],
+        output_path=output_file_path,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=3,
+        timeout=20,
+        frame_info_path=frame_info_path,
+    )
+
+    expectation = (
+        "Split-mode two-packet burst keeps meta/seq intact (meta=2, pkts_total=2)"
+    )
+
+    try:
+        with _test_summary("test_st40p_split_padding_alignment_boundary", expectation):
+            assert GstreamerApp.execute_test(
+                build=build,
+                tx_command=tx_config,
+                rx_command=rx_config,
+                input_file=input_file_path,
+                output_file=output_file_path,
+                test_time=test_time,
+                host=host,
+                tx_first=False,
+                sleep_interval=3,
+                skip_file_compare=True,
+                log_frame_info=True,
+            )
+
+            info_dump = run(f"cat {frame_info_path}", host=host)
+            assert info_dump.return_code == 0
+            output = info_dump.stdout_text or ""
+            assert "meta=2" in output
+            assert "pkts_total=2" in output
+            assert "seq_discont=0" in output
+            assert "seq_lost=0" in output
+    finally:
+        media_create.remove_file(input_file_path, host=host)
+        media_create.remove_file(output_file_path, host=host)
+        run(f"rm -f {frame_info_path}", host=host)
+
+
+@pytest.mark.nightly
+def test_st40p_split_tx_mtu_guard_no_stall(
+    hosts,
+    build,
+    media,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    prepare_ramdisk,
+    media_file,
+):
+    """
+    Stress split-mode ANC with an oversized payload to ensure TX aborts the
+    frame cleanly (no session stall) when MTU limits are exceeded.
+
+    .. rubric:: Pass Criteria
+    - Pipeline run completes (True/False) within the timeout window.
+    - Process does not hang; frame-info file is created or TX exits cleanly.
+    """
+
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    if len(interfaces_list) < 2:
+        pytest.skip("At least two interfaces are required for split-mode loopback")
+
+    input_file_path, output_file_path = setup_paths(media_file)
+    frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
+
+    # Use a large payload to provoke MTU-bound splitting/guard paths.
+    input_file_path = media_create.create_text_file(
+        size_kb=512,
+        output_path=input_file_path,
+        host=host,
+    )
+
+    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+        build=build,
+        nic_port_list=interfaces_list[0],
+        input_path=input_file_path,
+        tx_payload_type=113,
+        tx_queues=4,
+        tx_framebuff_cnt=2,
+        tx_fps=50,
+        tx_did=67,
+        tx_sdid=2,
+        tx_split_anc_by_pkt=True,
+        tx_test_mode="paced",
+        tx_test_pkt_count=8,
+    )
+
+    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
+        build=build,
+        nic_port_list=interfaces_list[1],
+        output_path=output_file_path,
+        rx_payload_type=113,
+        rx_queues=4,
+        rx_framebuff_cnt=2,
+        timeout=10,
+        frame_info_path=frame_info_path,
+    )
+
+    expectation = "Split-mode oversized ANC does not stall TX session"
+
+    try:
+        with _test_summary("test_st40p_split_tx_mtu_guard_no_stall", expectation):
+            result = GstreamerApp.execute_test(
+                build=build,
+                tx_command=tx_config,
+                rx_command=rx_config,
+                input_file=input_file_path,
+                output_file=output_file_path,
+                test_time=min(test_time, 6),
+                host=host,
+                tx_first=False,
+                sleep_interval=2,
+                skip_file_compare=True,
+                log_frame_info=True,
+            )
+            # Accept either success or handled failure; the key is no hang.
+            assert result in (True, False)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)

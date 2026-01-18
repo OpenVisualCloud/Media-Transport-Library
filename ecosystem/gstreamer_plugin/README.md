@@ -409,13 +409,18 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 |-----------------------|----------|--------------------------------------------------------------------|------------------|---------------|
 | tx-framebuff-cnt      | uint     | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT   | 3             |
 | tx-fps                | uint     | Framerate of the video to which the ancillary data is synchronized.| [Supported vid eo fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| tx-interlaced         | boolean  | Treat input as interlaced ANC; set `rx-interlaced=true` on RX to match. | TRUE/FALSE   | FALSE         |
 | tx-did                | uint     | Data ID for the ancillary data.                                    | 0 to 255         | 0             |
 | tx-sdid               | uint     | Secondary Data ID for the ancillary data.                          | 0 to 255         | 0             |
+| tx-split-anc-by-pkt   | boolean  | Emit at most one ANC block per RTP packet; marker on final packet of field. | TRUE/FALSE | FALSE         |
 | use-pts-for-pacing    | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | TRUE/FALSE       | FALSE         |
 | pts-pacing-offset     | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT   | 0             |
 | input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
 | parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
 | max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |
+| tx-test-mode          | enum     | Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
+| tx-test-pkt-count     | uint     | Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
+| tx-test-pacing-ns     | uint     | Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
 
 > **Note:**
 > - `raw-udw` streams carry a single ANC packet per frame without per-packet metadata; the element uses `tx-did`/`tx-sdid` for the outgoing headers, so keeping `max-combined-udw-size` small avoids oversized frames.
@@ -454,6 +459,21 @@ gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
 
+#### 5.1.3. ST40P test-mode knobs
+
+Test-only RTP/ANC mutation options for validation (not for production):
+
+| Property              | Description                                                                                       |
+|-----------------------|---------------------------------------------------------------------------------------------------|
+| `tx-test-mode=no-marker` | Clear the RTP marker bit so RX never reports a ready frame.                                      |
+| `tx-test-mode=seq-gap`   | Insert a deliberate RTP sequence hole to validate `seq_discont/seq_lost` accounting.            |
+| `tx-test-mode=bad-parity`| Corrupt ANC parity so RX drops metadata instead of surfacing payload.                           |
+| `tx-test-mode=paced`     | Emit a bounded packet burst (set `tx-test-pkt-count`) with optional inter-packet spacing (`tx-test-pacing-ns`) to check pacing and accumulation of multi-packet ANC fields. |
+
+Notes:
+- These knobs can be combined with `tx-split-anc-by-pkt=true` to stress the split-mode path.
+- Pair with RX `frame-info-path` to log packet counts, markers, and sequence discontinuities when validating.
+
 ### 5.2. Running the SMPTE ST 2110-40 Receiver Plugin `mtl_st40p_rx`
 
 #### 5.2.1. Supported Parameters and Pad Capabilities
@@ -470,6 +490,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 | max-udw-size        | uint    | Maximum user-data word buffer size in bytes per frame       | 1024 to 1,048,576           | 131,072       |
 | rtp-ring-size       | uint    | Size of the internal RTP ring (must be power of two)        | 64 to 16,384                | 1,024         |
 | timeout             | uint    | Timeout in seconds for blocking frame retrieval             | 0 to 300                    | 60            |
+| frame-info-path     | string  | Optional path to append frame info and sequence stats per frame | N/A                      | NULL          |
 | rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
 | output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
 
