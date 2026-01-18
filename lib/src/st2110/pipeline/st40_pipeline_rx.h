@@ -29,6 +29,10 @@ struct st40p_rx_ctx {
   char ops_name[ST_MAX_NAME_LEN];
   struct st40p_rx_ops ops;
 
+  /* session port mapping */
+  enum mtl_port port_map[MTL_SESSION_PORT_MAX];
+  uint16_t port_id[MTL_SESSION_PORT_MAX];
+
   st40_rx_handle transport;
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;

@@ -134,16 +134,34 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
     return -EINVAL;
   }
-  /* 0b10: first field (bit 1 set, bit 0 clear)
-     0b11: second field (bit 1 set, bit 0 set) */
-  if (rfc8331->first_hdr_chunk.f & 0x2) {
-    if (rfc8331->first_hdr_chunk.f & 0x1) {
+  /* Enforce interlace expectation vs header F bits */
+  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
+  if (ops->interlaced) {
+    /* Expect interlaced: drop progressive/unspecified (0b00) */
+    if (f_bits == 0x0) {
+      ST40_FUZZ_LOG("%s(%d,%d), drop progressive F=0 when interlaced expected\n",
+                    __func__, s->idx, s_port);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
+      return -EINVAL;
+    }
+  } else {
+    /* Expect progressive: drop interlaced flags (0b10 or 0b11) */
+    if (f_bits & 0x2) {
+      ST40_FUZZ_LOG("%s(%d,%d), drop interlaced F=0x%x when progressive expected\n",
+                    __func__, s->idx, s_port, f_bits);
+      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
+      return -EINVAL;
+    }
+  }
+
+  /* Count field polarity when interlaced frames are accepted */
+  if (f_bits & 0x2) {
+    if (f_bits & 0x1) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
     } else {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
     }
   }
-  /* 0b00: progressive or not specified, do nothing */
 
   if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
   if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;

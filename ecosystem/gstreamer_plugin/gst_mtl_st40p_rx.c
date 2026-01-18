@@ -285,13 +285,14 @@ static void gst_mtl_st40p_rx_log_frame_info(Gst_Mtl_St40p_Rx* src,
   if (!src->frame_info_fp || !frame_info) return;
 
   /* Log per-frame sequencing details for the validator */
-  fprintf(
-      src->frame_info_fp,
-      "ts=%" PRIu64
-      " meta=%u rtp_marker=%u seq_discont=%u seq_lost=%u pkts_total=%u pkts_recv=%u\n",
-      frame_info->timestamp, frame_info->meta_num, frame_info->rtp_marker,
-      frame_info->seq_discont, frame_info->seq_lost, frame_info->pkts_total,
-      frame_info->pkts_recv);
+  fprintf(src->frame_info_fp,
+          "ts=%" PRIu64
+          " meta=%u rtp_marker=%u seq_discont=%u seq_lost=%u pkts_total=%u "
+          "pkts_recv_p=%u pkts_recv_r=%u\n",
+          frame_info->timestamp, frame_info->meta_num, frame_info->rtp_marker,
+          frame_info->seq_discont, frame_info->seq_lost, frame_info->pkts_total,
+          frame_info->pkts_recv[MTL_SESSION_PORT_P],
+          frame_info->pkts_recv[MTL_SESSION_PORT_R]);
   fflush(src->frame_info_fp);
 }
 

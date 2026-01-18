@@ -352,12 +352,14 @@ st40p_rx_put_frame
 Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and
 `rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true`
 when you need to emit at most one ANC packet per RTP packet; the sender fragments a
-field accordingly. The receiver records each packet under a field and emits the RTP
-marker on the final packet so applications can consume incrementally or wait for the
-marker boundary. Frame-info captures the per-field packet count (`pkts_total`) and
-sequence integrity (`seq_discont/seq_lost`) so RX can detect discontinuities and the
-application can see how many packets were accumulated. Use a power-of-two ring size
-to satisfy plugin validation and keep pacing predictable.
+field accordingly. In this context a field is the interlaced half-frame (or a full
+progressive frame when not interlaced). The RTP marker bit (`rtp_marker`) is set on
+the final packet of that field to signal completion. The receiver records each packet
+under a field and can deliver as packets arrive or after the marker boundary. Frame-info
+captures the per-field packet count (`pkts_total`) and sequence integrity (`seq_discont/seq_lost`)
+so RX can detect discontinuities and the application can see how many packets were
+accumulated. Use a power-of-two ring size to satisfy plugin validation and keep pacing
+predictable.
 
 For validation and debugging, the GStreamer harness surfaces the frame-info file
 directly in the test logs. Setting `log_frame_info=True` in the ST40P tests dumps
@@ -366,14 +368,11 @@ seq_discont/seq_lost totals, and packets-per-frame histogram) so sequence gaps o
 packet-count anomalies are immediately visible in CI output without opening the
 artifact.
 
-The GStreamer ST40P plugin also exposes test-only RTP/ANC mutation knobs to exercise error handling:
-
-- `tx-test-mode=no-marker` — clear the RTP marker bit so RX never reports a ready frame.
-- `tx-test-mode=seq-gap` — insert a deliberate RTP sequence hole to validate `seq_discont/seq_lost` accounting.
-- `tx-test-mode=bad-parity` — corrupt ANC parity so RX drops metadata instead of surfacing payload.
-- `tx-test-mode=paced` — emit a bounded packet burst (set `tx-test-pkt-count`) with optional inter-packet spacing (`tx-test-pacing-ns`) to check pacing and accumulation of multi-packet ANC fields.
-
-All mutation modes can be combined with `split-anc-by-pkt=true` to stress the split-mode path, and the RX side can record the resulting frame-info via `frame-info-path` for inspection.
+The GStreamer ST40P plugin also exposes test-only RTP/ANC mutation knobs to exercise error handling; see
+[ecosystem/gstreamer_plugin/README.md](ecosystem/gstreamer_plugin/README.md#st40p-test-mode-knobs)
+for the full list and usage. The knobs can be combined with `split-anc-by-pkt=true` to stress the
+split-mode path, and the RX side can record the resulting frame-info via `frame-info-path` for
+inspection.
 
 Reference implementations live in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. They reuse the shared `sample_util` CLI so you can swap between ST20/22/30/40 pipelines with identical arguments while testing pacing, redundancy, and USDT probes.
 
