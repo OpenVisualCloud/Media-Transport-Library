@@ -21,6 +21,8 @@ def calculate_packets_per_frame(media_file_info, mtu: int = 1500) -> int:
     # Simplified calculation for the number of packets per frame
     # Supported only 4:2:2 format or audio formats assuming 1 packet per 1ms
     packets = 1000
+    if not media_file_info:
+        raise ValueError("Missing media file info; cannot calculate packets per frame.")
     if "width" in media_file_info and "height" in media_file_info:
         pgroupsize = 5
         pgroupcoverage = 2
