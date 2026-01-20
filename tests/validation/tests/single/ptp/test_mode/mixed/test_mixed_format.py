@@ -10,8 +10,8 @@ from common.integrity.integrity_runner import (
     FileVideoIntegrityRunner,
 )
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import yuv_files_422rfc10
 from mtl_engine.execute import log_fail
+from mtl_engine.media_files import yuv_files_422rfc10
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,9 @@ def test_ptp_mixed_format(
     prepare_ramdisk,
     pcap_capture,
     media_file,
+    output_files,
 ):
+    test_time = max(test_time, 40)  # Ensure at least 40 seconds for this test
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     if interface_profile["mode"] == "vf_only":
@@ -66,8 +68,12 @@ def test_ptp_mixed_format(
             rx_index=rx_index,
         )
 
-    media_dir = os.path.dirname(media_file_path)
-    video_out_url = os.path.join(media_dir, f"{media_file_info['filename']}.out")
+    video_out_url = output_files.register(
+        str(
+            host.connection.path(media_file_path).parent
+            / f"{media_file_info['filename']}.out"
+        )
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -104,7 +110,7 @@ def test_ptp_mixed_format(
             out_name=os.path.basename(video_out_url),
             resolution=resolution,
             file_format=media_file_info["file_format"],
-            out_path=media_dir,
+            out_path=os.path.dirname(video_out_url),
             integrity_path=os.path.join(
                 build, "tests", "validation", "common", "integrity"
             ),

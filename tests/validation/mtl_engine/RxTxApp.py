@@ -565,7 +565,7 @@ def execute_test(
 
     if netsniff:
         netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
-        netsniff.capture()
+        netsniff.capture(capture_time=test_time)
         logger.info(f"Finished netsniff-ng capture on host {host.name}")
     cp.wait(timeout=timeout)
 

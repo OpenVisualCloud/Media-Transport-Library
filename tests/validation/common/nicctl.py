@@ -223,7 +223,9 @@ class InterfaceSetup:
 
         return [tx_interface, rx_interface]
 
-    def _get_single_interface_by_type(self, host, interface_type: str, index: int) -> str:
+    def _get_single_interface_by_type(
+        self, host, interface_type: str, index: int
+    ) -> str:
         interface_type = interface_type.lower()
         nicctl = self.nicctl_objs[host.name]
         pci_addr = host.network_interfaces[index].pci_address.lspci

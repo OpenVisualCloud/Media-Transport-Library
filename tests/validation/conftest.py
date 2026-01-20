@@ -171,7 +171,7 @@ def phc2sys_session(test_config: dict, hosts):
                 f"stopped unexpectedly. See log: {log_path}"
             )
 
-        phc2sys_process.kill(wait=None, with_signal=signal.SIGINT)
+        phc2sys_process.kill(wait=None, with_signal=signal.SIGTERM)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -335,8 +335,50 @@ Yields:
 """
 
 
+class OutputFileTracker:
+    """Helper class to track and clean up output files created during tests."""
+
+    def __init__(self, hosts):
+        self._hosts = hosts
+        self._files: list[str] = []
+
+    def register(self, file_path: str) -> str:
+        """Register an output file for automatic cleanup. Returns the path for convenience."""
+        self._files.append(file_path)
+        return file_path
+
+    def cleanup(self):
+        """Remove all registered output files from all hosts."""
+        for file_path in self._files:
+            for host in self._hosts.values():
+                cmd = f"sudo rm -f {file_path}"
+                try:
+                    host.connection.execute_command(cmd)
+                except ConnectionCalledProcessError as e:
+                    logging.log(
+                        level=logging.WARNING,
+                        msg=f"Failed to remove output file {file_path}: {e}",
+                    )
+        self._files.clear()
+
+
 @pytest.fixture(scope="function")
-def media_file(media_ramdisk, request, hosts, test_config):
+def output_files(hosts):
+    """Fixture that provides automatic cleanup of output files created during tests.
+
+    Usage:
+        def test_example(output_files, ...):
+            out_path = output_files.register("/path/to/output.file")
+            # use out_path in your test
+            # file will be automatically removed after test completes
+    """
+    tracker = OutputFileTracker(hosts)
+    yield tracker
+    tracker.cleanup()
+
+
+@pytest.fixture(scope="function")
+def media_file(media_ramdisk, request, hosts, test_config, output_files):
     media_file_info = getattr(request, "param", None)
 
     ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
@@ -349,8 +391,8 @@ def media_file(media_ramdisk, request, hosts, test_config):
         return
 
     src_media_file_path = os.path.join(media_path, media_file_info["filename"])
-    ramdisk_media_file_path = os.path.join(
-        ramdisk_mountpoint, media_file_info["filename"]
+    ramdisk_media_file_path = output_files.register(
+        os.path.join(ramdisk_mountpoint, media_file_info["filename"])
     )
 
     for host in hosts.values():
@@ -363,14 +405,6 @@ def media_file(media_ramdisk, request, hosts, test_config):
             )
 
     yield media_file_info, ramdisk_media_file_path
-    for host in hosts.values():
-        cmd = f"sudo rm {ramdisk_media_file_path}"
-        try:
-            host.connection.execute_command(cmd)
-        except ConnectionCalledProcessError as e:
-            logging.log(
-                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
-            )
 
 
 @pytest.fixture(scope="session", autouse=True)

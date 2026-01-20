@@ -125,12 +125,16 @@ class PcapComplianceClient:
 
         # download_report() may return False on failure/timeout
         if not report:
-            logger.warning("Compliance report is not available; treating as non-compliant")
+            logger.warning(
+                "Compliance report is not available; treating as non-compliant"
+            )
             return False, report
 
         streams = report.get("streams") or []
         if not streams:
-            logger.warning("Compliance report contains no streams; treating as non-compliant")
+            logger.warning(
+                "Compliance report contains no streams; treating as non-compliant"
+            )
             return False, report
 
         not_compliant_streams = report.get("not_compliant_streams", 1)
