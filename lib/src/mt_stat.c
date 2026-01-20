@@ -7,7 +7,7 @@
 // #define DEBUG
 #include "mt_log.h"
 
-#define MT_STAT_INTERVAL_S_DEFAULT (10) /* 10s */
+#define MT_STAT_INTERVAL_S_DEFAULT (4) /* 10s */
 
 static inline struct mt_stat_mgr* get_stat_mgr(struct mtl_main_impl* impl) {
   return &impl->stat_mgr;

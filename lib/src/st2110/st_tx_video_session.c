@@ -3314,6 +3314,126 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   s->stat_cpu_busy_score = s->cpu_busy_score;
 }
 
+static void dump_video_session_debug_info(struct st_tx_video_session_impl* s,
+                      enum mtl_session_port s_port,
+                      const char* context) {
+  struct mtl_main_impl* impl = s->impl;
+  uint64_t current_tsc = mt_get_tsc(impl);
+
+  err("=== VIDEO SESSION DEBUG: %s (idx=%d, port=%d) ===\n", context, s->idx, s_port);
+  err("Session: active=%d socket_id=%d bulk=%u\n", s->active, s->socket_id, s->bulk);
+
+  if (s->ring[s_port]) {
+  struct rte_ring* ring = s->ring[s_port];
+  unsigned ring_count = rte_ring_count(ring);
+  unsigned ring_free = rte_ring_free_count(ring);
+  unsigned ring_cap = rte_ring_get_capacity(ring);
+  const char* ring_name = ring->name;
+  bool ring_full = rte_ring_full(ring);
+  bool ring_empty = rte_ring_empty(ring);
+
+  err("Ring[%d]: %s cap=%u used=%u free=%u full=%d empty=%d\n", s_port, ring_name,
+    ring_cap, ring_count, ring_free, ring_full, ring_empty);
+  } else {
+  err("Ring[%d]: NULL\n", s_port);
+  }
+
+  if (s->packet_ring) {
+  struct rte_ring* pkt_ring = s->packet_ring;
+  unsigned pkt_ring_count = rte_ring_count(pkt_ring);
+  unsigned pkt_ring_free = rte_ring_free_count(pkt_ring);
+  unsigned pkt_ring_cap = rte_ring_get_capacity(pkt_ring);
+  const char* pkt_ring_name = pkt_ring->name;
+
+  err("PacketRing: %s cap=%u used=%u free=%u\n", pkt_ring_name, pkt_ring_cap,
+    pkt_ring_count, pkt_ring_free);
+  } else {
+  err("PacketRing: NULL\n");
+  }
+
+  for (int p = 0; p < MTL_SESSION_PORT_MAX; p++) {
+  if (s->mbuf_mempool_hdr[p]) {
+    struct rte_mempool* mp = s->mbuf_mempool_hdr[p];
+    unsigned mp_avail = rte_mempool_avail_count(mp);
+    unsigned mp_in_use = rte_mempool_in_use_count(mp);
+    unsigned mp_size = mp->size;
+    const char* mp_name = mp->name;
+
+    err("MemPool[%d]: %s size=%u avail=%u in_use=%u reuse_rx=%d\n", p, mp_name,
+      mp_size, mp_avail, mp_in_use, s->mbuf_mempool_reuse_rx[p]);
+  }
+  }
+
+  if (s->mbuf_mempool_chain) {
+  struct rte_mempool* chain_mp = s->mbuf_mempool_chain;
+  unsigned chain_avail = rte_mempool_avail_count(chain_mp);
+  unsigned chain_in_use = rte_mempool_in_use_count(chain_mp);
+  unsigned chain_size = chain_mp->size;
+  const char* chain_name = chain_mp->name;
+
+  err("ChainPool: %s size=%u avail=%u in_use=%u\n", chain_name, chain_size,
+    chain_avail, chain_in_use);
+  }
+
+  if (s->queue[s_port]) {
+  struct mt_txq_entry* txq = s->queue[s_port];
+  uint16_t port_id = mt_port_logic2phy(s->port_maps, s_port);
+
+  err("Queue[%d]: queue_id=%u port_id=%u\n", s_port, txq->queue_id, port_id);
+
+  uint16_t desc_avail = 0;
+  uint16_t desc_done = 0;
+
+  for (int i = 0; i < 8; i++) {
+    int status = rte_eth_tx_descriptor_status(port_id, txq->queue_id, 512);
+    if (status == RTE_ETH_TX_DESC_DONE)
+    desc_done++;
+    else if (status != RTE_ETH_TX_DESC_UNAVAIL)
+    desc_avail++;
+  }
+
+  err("Descriptors: sampled_avail=%u sampled_done=%u\n", desc_avail, desc_done);
+  } else {
+  err("Queue[%d]: NULL\n", s_port);
+  }
+
+  err("TRS_Inflight[%d]: num=%u idx=%u cnt=%d pad_num=%u\n", s_port,
+    s->trs_inflight_num[s_port], s->trs_inflight_idx[s_port],
+    s->trs_inflight_cnt[s_port], s->trs_pad_inflight_num[s_port]);
+
+  err("TRS_Inflight2[%d]: num=%u idx=%u cnt=%d\n", s_port, s->trs_inflight_num2[s_port],
+    s->trs_inflight_idx2[s_port], s->trs_inflight_cnt2[s_port]);
+
+  uint64_t last_burst_delta = current_tsc - s->last_burst_succ_time_tsc[s_port];
+  double last_burst_ms = (double)last_burst_delta / (rte_get_tsc_hz() / 1000.0);
+
+  err("Timing[%d]: last_burst_succ=%.2fms_ago thresh=%lums\n", s_port, last_burst_ms,
+    s->tx_hang_detect_time_thresh / 1000);
+
+  err("TSC_Targets[%d]: tsc=%lu ptp=%lu\n", s_port, s->trs_target_tsc[s_port],
+    s->trs_target_ptp[s_port]);
+
+  err("Frame: idx=%u stat=%d lines_ready=%u size=%zu total_pkts=%d pkt_idx=%d\n",
+    s->st20_frame_idx, s->st20_frame_stat, s->st20_frame_lines_ready,
+    s->st20_frame_size, s->st20_total_pkts, s->st20_pkt_idx);
+
+  err("Stats: build_ret=%d burst_pkts=%d dummy_pkts=%d\n", s->stat_build_ret_code,
+    s->stat_pkts_burst, s->stat_pkts_dummy);
+
+  err("Errors: unrecov=%u recov=%u user_busy=%u epoch_drop=%u\n",
+    s->stat_unrecoverable_error, s->stat_recoverable_error, s->stat_user_busy,
+    s->stat_epoch_drop);
+
+  err("TRS_Stats[%d]: ret_code=%d bytes_tx=%lu\n", s_port, s->stat_trs_ret_code[s_port],
+    s->stat_bytes_tx[s_port]);
+
+  err("Pacing: way=%d tsc_cursor=%lu ptp_cursor=%lu epochs=%lu\n",
+    s->pacing_way[s_port], s->pacing.tsc_time_cursor, s->pacing.ptp_time_cursor,
+    s->pacing.cur_epochs);
+
+  err("=== END VIDEO SESSION DEBUG ===\n");
+}
+
 static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
                     struct st_tx_video_session_impl* s) {
   int m_idx = mgr->idx, idx = s->idx;
@@ -3333,6 +3453,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
          (double)s->stat_bytes_tx[MTL_SESSION_PORT_P] * 8 / time_sec / MTL_STAT_M_UNIT,
          (double)s->stat_bytes_tx[MTL_SESSION_PORT_R] * 8 / time_sec / MTL_STAT_M_UNIT,
          s->stat_cpu_busy_score);
+
   s->stat_last_time = cur_time_ns;
   s->stat_pkts_build[MTL_SESSION_PORT_P] = 0;
   s->stat_pkts_build[MTL_SESSION_PORT_R] = 0;
@@ -3341,6 +3462,9 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   s->inflight_cnt[0] = 0;
   s->stat_bytes_tx[MTL_SESSION_PORT_P] = 0;
   s->stat_bytes_tx[MTL_SESSION_PORT_R] = 0;
+
+    dump_video_session_debug_info(s, MTL_SESSION_PORT_P, "Periodic Stat");
+    return;
 
   if (s->stat_pkts_dummy) {
     dbg("TX_VIDEO_SESSION(%d,%d): dummy pkts %u, burst %u\n", m_idx, idx,
