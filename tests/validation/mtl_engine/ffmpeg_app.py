@@ -10,11 +10,7 @@ import threading
 import time
 
 from mfd_connect import SSHConnection
-from mfd_connect.exceptions import (
-    ConnectionCalledProcessError,
-    RemoteProcessInvalidState,
-    SSHRemoteProcessEndException,
-)
+from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
 
 from . import rxtxapp_config
@@ -96,116 +92,135 @@ def get_process_pid(proc, proc_name: str, host) -> int:
     return getattr(proc, "pid", None)
 
 
-def stop_process(
-    proc,
-    proc_name: str = "process",
-    timeout: int = 5,
-    host=None,
-    watchdog_mode: bool = False,
-):
-    """Stop process gracefully or run as watchdog timer.
+def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
+    """Stop process with hard timeout to prevent hanging.
+
+    Uses threading to ensure we never hang forever. Forcefully kills if needed.
 
     Args:
         proc: Process object
         proc_name: Name for logging
-        timeout: Seconds to wait before force kill
+        timeout: Maximum seconds before force kill
         host: Host connection object
-        watchdog_mode: If True, runs in background and kills after timeout (returns thread)
     """
     if not proc:
+        logger.debug(f"{proc_name}: No process to stop")
         return
 
     proc_pid = get_process_pid(proc, proc_name, host)
+    logger.debug(f"{proc_name}: Stopping (PID: {proc_pid})")
 
-    def _process_killer():
-        if watchdog_mode:
-            time.sleep(timeout)
-
+    def _do_stop():
+        # Step 1: Try graceful stop (max 2 seconds)
         try:
-            if not proc.running:
-                return
-        except (RemoteProcessInvalidState, AttributeError):
-            return
+            if hasattr(proc, "running") and proc.running:
+                logger.debug(f"{proc_name}: Attempting graceful stop")
+                proc.stop(wait=2)
+                if not proc.running:
+                    logger.debug(f"{proc_name}: Stopped gracefully")
+                    return
+        except Exception as e:
+            logger.debug(f"{proc_name}: Graceful stop failed: {e}")
 
-        # Try graceful stop first (skip in watchdog mode)
-        if not watchdog_mode:
+        # Step 2: SIGTERM by PID
+        if proc_pid and host:
             try:
-                proc.stop(wait=timeout)
-                return
-            except (SSHRemoteProcessEndException, RemoteProcessInvalidState):
-                return
-            time.sleep(0.5)
-
-        # Force kill
-        try:
-            if proc.running:
-                msg = (
-                    f"Watchdog: {proc_name} exceeded {timeout}s, killing"
-                    if watchdog_mode
-                    else f"{proc_name} force killing"
+                logger.debug(f"{proc_name}: Sending SIGTERM to PID {proc_pid}")
+                host.connection.execute_command(
+                    f"kill -15 {proc_pid} || true", shell=True
                 )
-                logger.warning(msg)
-                proc.kill()
                 time.sleep(1)
+            except Exception:
+                pass
 
-                # System-level SIGKILL if still running
-                if proc.running and proc_pid and host:
-                    host.connection.execute_command(f"kill -9 {proc_pid}")
-        except (
-            SSHRemoteProcessEndException,
-            RemoteProcessInvalidState,
-            AttributeError,
-        ):
-            pass
-
-    thread = threading.Thread(target=_process_killer, daemon=True)
-    thread.start()
-
-    if watchdog_mode:
-        return thread
-
-    thread.join(timeout=timeout + 2)
-
-    # Emergency SIGKILL if thread didn't finish
-    if thread.is_alive() and proc_pid and host:
+        # Step 3: Force SIGKILL
         try:
-            host.connection.execute_command(f"kill -9 {proc_pid}")
-        except AttributeError:
+            if hasattr(proc, "kill"):
+                proc.kill()
+        except Exception:
             pass
 
+        if proc_pid and host:
+            try:
+                logger.warning(f"{proc_name}: Force killing PID {proc_pid}")
+                host.connection.execute_command(
+                    f"kill -9 {proc_pid} || true", shell=True
+                )
+            except Exception:
+                pass
 
-def kill_orphaned_processes(host, process_pattern="ffmpeg"):
-    """Kill any orphaned processes matching the pattern.
+    # Run with hard timeout
+    stop_thread = threading.Thread(target=_do_stop, daemon=True)
+    stop_thread.start()
+    stop_thread.join(timeout=timeout)
 
-    Args:
-        host: Host connection object
-        process_pattern: Pattern to search for in process list
-    """
+    if stop_thread.is_alive():
+        logger.error(f"{proc_name}: Stop timeout after {timeout}s, forcing SIGKILL")
+        if proc_pid and host:
+            try:
+                host.connection.execute_command(
+                    f"kill -9 {proc_pid} 2>/dev/null || true"
+                )
+            except Exception:
+                pass
+
+    logger.debug(f"{proc_name}: Stop completed")
+
+
+def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=None):
+    """Kill orphaned processes matching pattern."""
     if not host:
         return
 
+    exclude_pids = exclude_pids or []
+    exclude_pids_set = {str(pid).strip() for pid in exclude_pids if pid}
+
     logger.debug(f"Checking for orphaned {process_pattern} processes...")
     try:
-        result = host.connection.execute_command(f"pgrep -f '{process_pattern}'")
+        # Find all processes matching the pattern
+        result = host.connection.execute_command(f"pgrep -x '{process_pattern}'")
         if result.return_code == 0 and result.stdout.strip():
-            pids = [
+            all_pids = [
                 pid.strip() for pid in result.stdout.strip().split("\n") if pid.strip()
             ]
-            logger.warning(
-                f"Killing {len(pids)} orphaned {process_pattern} process(es)"
-            )
-            for pid in pids:
-                try:
-                    host.connection.execute_command(f"kill -9 {pid}")
-                except (AttributeError, ConnectionCalledProcessError):
-                    pass
-    except (AttributeError, ConnectionCalledProcessError):
-        pass
+            orphaned_pids = [pid for pid in all_pids if pid not in exclude_pids_set]
+
+            if orphaned_pids:
+                logger.warning(
+                    f"Killing {len(orphaned_pids)} orphaned {process_pattern} process(es): {orphaned_pids}"
+                )
+                for pid in orphaned_pids:
+                    try:
+                        host.connection.execute_command(
+                            f"kill -9 {pid} || true", shell=True
+                        )
+                    except Exception:
+                        pass
+            else:
+                logger.debug(f"No orphaned {process_pattern} processes found")
+    except Exception as e:
+        logger.debug(f"Error in orphan cleanup: {e}")
 
 
-def watchdog_timer(proc, proc_name: str, timeout: int, host=None):
-    """Watchdog timer - kills process after timeout (backwards compatibility wrapper)."""
-    return stop_process(proc, proc_name, timeout, host, watchdog_mode=True)
+def kill_orphaned_processes(host, process_pattern="ffmpeg", exclude_pids=None):
+    """Kill orphaned processes with timeout protection (max 3 seconds)."""
+    if not host:
+        return
+
+    def _cleanup():
+        try:
+            _kill_orphaned_processes_impl(host, process_pattern, exclude_pids)
+        except Exception as e:
+            logger.debug(f"Exception during orphan cleanup: {e}")
+
+    cleanup_thread = threading.Thread(target=_cleanup, daemon=True)
+    cleanup_thread.start()
+    cleanup_thread.join(timeout=3)
+
+    if cleanup_thread.is_alive():
+        logger.warning(
+            f"Orphan cleanup for {process_pattern} timeout after 3s, continuing"
+        )
 
 
 def execute_test(
@@ -287,6 +302,7 @@ def execute_test(
 
     rx_proc = None
     tx_proc = None
+    timeout = test_time + 90
 
     try:
         # Start RX pipeline first
@@ -294,7 +310,7 @@ def execute_test(
         rx_proc = run(
             rx_cmd,
             cwd=build,
-            timeout=test_time + 60,
+            timeout=timeout,
             testcmd=True,
             host=host,
             background=True,
@@ -306,24 +322,43 @@ def execute_test(
         tx_proc = run(
             tx_cmd,
             cwd=build,
-            timeout=test_time + 60,
+            timeout=timeout,
             testcmd=True,
             host=host,
             background=True,
         )
 
-        # Let the test run for the specified duration
-        logger.info(f"Running test for {test_time} seconds...")
-        time.sleep(test_time)
+        # Wait for test duration with proper timeout handling
+        logger.info(f"Running test for {test_time} seconds with timeout {timeout}...")
+        if tx_is_ffmpeg:
+            # FFmpeg TX will complete after test_time, give it a 10s buffer
+            tx_proc.wait(timeout=test_time + 10)
+            logger.info("TX process completed")
+        else:
+            # RxTxApp runs indefinitely, just wait for test duration
+            time.sleep(test_time)
+            logger.info(f"Test duration {test_time}s completed")
 
     except Exception as e:
-        log_fail(f"Error during test execution: {e}")
+        logger.error(f"Error during test execution: {e}")
         raise
     finally:
-        # Stop processes (TX first, then RX)
         logger.info("Stopping processes...")
-        stop_process(tx_proc, "TX", timeout=5, host=host)
-        stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Stop TX first
+        if tx_proc:
+            stop_process(tx_proc, "TX", timeout=5, host=host)
+
+        # Stop RX second
+        if rx_proc:
+            stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Wait for processes to fully terminate
+        time.sleep(1)
+
+        # Clean up any remaining orphaned processes
+        kill_orphaned_processes(host, "ffmpeg")
+        kill_orphaned_processes(host, "RxTxApp")
 
         # Capture output after processes stopped
         capture_stdout(rx_proc, "RX")
@@ -378,13 +413,6 @@ def execute_test_rgb24(
 
     rx_proc = None
     tx_proc = None
-    start_time = time.time()
-    max_runtime = test_time + 120  # Maximum allowed test runtime
-
-    def check_timeout():
-        if time.time() - start_time > max_runtime:
-            logger.error(f"Test exceeded maximum runtime of {max_runtime}s")
-            raise TimeoutError(f"Test timeout after {max_runtime}s")
 
     try:
         # Start RX pipeline first
@@ -397,12 +425,7 @@ def execute_test_rgb24(
             host=host,
             background=True,
         )
-
-        # Start watchdog timer for RX
-        watchdog_timer(rx_proc, "RX", test_time + 60, host=host)
         time.sleep(5)
-
-        check_timeout()
 
         # Start TX pipeline
         logger.info("Starting TX pipeline...")
@@ -415,30 +438,30 @@ def execute_test_rgb24(
             background=True,
         )
 
-        # Start watchdog timer for TX
-        watchdog_timer(tx_proc, "TX", test_time + 60, host=host)
-
         logger.info(f"Running test for {test_time} seconds...")
-        # Sleep in intervals to check timeout periodically
-        elapsed = 0
-        while elapsed < test_time:
-            time.sleep(min(5, test_time - elapsed))
-            elapsed = time.time() - start_time
-            check_timeout()
+        time.sleep(test_time)
+        logger.info(f"Test duration {test_time}s completed")
 
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         raise
     finally:
-        # Stop processes (TX first, then RX)
         logger.info("Stopping processes...")
-        stop_process(tx_proc, "TX", timeout=7, host=host)
-        stop_process(rx_proc, "RX", timeout=7, host=host)
 
-        # Emergency cleanup: kill any orphaned processes
+        # Stop TX (ffmpeg) first - this should stop gracefully
+        if tx_proc:
+            stop_process(tx_proc, "TX", timeout=5, host=host)
+
+        # Stop RX (RxTxApp) second
+        if rx_proc:
+            stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Wait a moment for processes to fully terminate
+        time.sleep(1)
+
+        # Clean up any remaining orphaned processes
         kill_orphaned_processes(host, "ffmpeg")
         kill_orphaned_processes(host, "RxTxApp")
-        kill_orphaned_processes(host, "nicctl.sh")
 
         # Capture output after processes stopped
         rx_output = capture_stdout(rx_proc, "RX")
@@ -513,7 +536,6 @@ def execute_test_rgb24_multiple(
     rx_proc = None
     tx_1_proc = None
     tx_2_proc = None
-    watchdog_timeout = test_time + 60  # Add buffer for startup/shutdown
 
     if check_timeout():
         log_fail("Test timeout before starting processes")
@@ -528,8 +550,6 @@ def execute_test_rgb24_multiple(
             host=host,
             background=True,
         )
-        # Start watchdog timer for RX process
-        watchdog_timer(rx_proc, "RX", watchdog_timeout, host=host)
         time.sleep(5)
 
         if check_timeout():
@@ -545,8 +565,6 @@ def execute_test_rgb24_multiple(
             host=host,
             background=True,
         )
-        # Start watchdog timer for TX1 process
-        watchdog_timer(tx_1_proc, "TX1", watchdog_timeout, host=host)
 
         if check_timeout():
             raise TimeoutError("Test timeout after starting TX1")
@@ -559,46 +577,39 @@ def execute_test_rgb24_multiple(
             host=host,
             background=True,
         )
-        # Start watchdog timer for TX2 process
-        watchdog_timer(tx_2_proc, "TX2", watchdog_timeout, host=host)
 
         if check_timeout():
             raise TimeoutError("Test timeout after starting TX2")
 
         logger.info(f"Running test for {test_time} seconds...")
-
-        # Check timeout periodically during test run
-        sleep_interval = 5
-        remaining_time = test_time
-        while remaining_time > 0:
-            sleep_time = min(sleep_interval, remaining_time)
-            time.sleep(sleep_time)
-            remaining_time -= sleep_time
-
-            if check_timeout():
-                raise TimeoutError("Test timeout during execution")
+        time.sleep(test_time)
+        logger.info(f"Test duration {test_time}s completed")
 
     except TimeoutError as e:
         logger.error(f"Timeout occurred: {e}")
         log_fail(str(e))
-        # Continue to finally block to clean up processes
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
         raise
     finally:
-        # Stop processes (TX first, then RX)
         logger.info("Stopping processes...")
-        stop_process(tx_1_proc, "TX1", timeout=5, host=host)
-        stop_process(tx_2_proc, "TX2", timeout=5, host=host)
-        stop_process(rx_proc, "RX", timeout=5, host=host)
 
-        # Wait for processes to fully terminate before capturing output
-        time.sleep(2)
+        # Stop TX processes (ffmpeg) first
+        if tx_1_proc:
+            stop_process(tx_1_proc, "TX1", timeout=5, host=host)
+        if tx_2_proc:
+            stop_process(tx_2_proc, "TX2", timeout=5, host=host)
 
-        # Emergency cleanup: kill any orphaned ffmpeg/RxTxApp processes
+        # Stop RX (RxTxApp) last
+        if rx_proc:
+            stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Wait for processes to fully terminate
+        time.sleep(1)
+
+        # Clean up any remaining orphaned processes
         kill_orphaned_processes(host, "ffmpeg")
         kill_orphaned_processes(host, "RxTxApp")
-        kill_orphaned_processes(host, "nicctl.sh")
 
         # Capture output after processes stopped
         rx_output = capture_stdout(rx_proc, "RX")
