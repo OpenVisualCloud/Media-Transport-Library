@@ -12,6 +12,8 @@
 #include "st_ancillary_transmitter.h"
 #include "st_err.h"
 
+#define ST40_SEQ_GAP_SCHEDULE_LEN 8
+
 /* call tx_ancillary_session_put always if get successfully */
 static inline struct st_tx_ancillary_session_impl* tx_ancillary_session_get(
     struct st_tx_ancillary_sessions_mgr* mgr, int idx) {
@@ -82,7 +84,7 @@ static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl*
   uint16_t step = 1;
 
   if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
-      !s->test_seq_gap_fired) {
+      s->ops.num_port <= 1 && !s->test_seq_gap_fired) {
     step = 2;
     s->test_seq_gap_fired = true;
   }
@@ -99,6 +101,41 @@ static inline uint16_t tx_ancillary_apply_parity(struct st_tx_ancillary_session_
     return value & 0x3FF; /* strip parity to intentionally corrupt */
   }
   return st40_add_parity_bits(value);
+}
+
+static inline void tx_ancillary_seq_gap_plan(struct st_tx_ancillary_session_impl* s) {
+  static const struct {
+    enum mtl_session_port port;
+    uint16_t size;
+  } seq_gap_schedule[] = {{MTL_SESSION_PORT_P, 5}, {MTL_SESSION_PORT_R, 4},
+                          {MTL_SESSION_PORT_P, 4}, {MTL_SESSION_PORT_R, 5},
+                          {MTL_SESSION_PORT_P, 4}, {MTL_SESSION_PORT_R, 4},
+                          {MTL_SESSION_PORT_P, 5}, {MTL_SESSION_PORT_R, 5}};
+  const uint16_t schedule_len = RTE_DIM(seq_gap_schedule);
+
+  if (!(tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP)) {
+    s->test_seq_gap_remaining = 0;
+    s->test_seq_gap_size = 0;
+    return;
+  }
+
+  if (s->test_seq_gap_remaining) return;
+
+  if (s->ops.num_port <= 1) {
+    uint16_t total_pkts = s->st40_total_pkts > 0 ? s->st40_total_pkts : 1;
+    uint16_t gap = (total_pkts >= 5) ? 5 : (total_pkts >= 4 ? 4 : 2);
+    s->test_seq_gap_target_port = MTL_SESSION_PORT_P;
+    s->test_seq_gap_size = gap;
+    s->test_seq_gap_remaining = gap;
+    return;
+  }
+
+  uint16_t plan_idx = s->test_seq_gap_plan_idx % schedule_len;
+  s->test_seq_gap_plan_idx = (plan_idx + 1) % schedule_len;
+
+  s->test_seq_gap_target_port = seq_gap_schedule[plan_idx].port;
+  s->test_seq_gap_size = seq_gap_schedule[plan_idx].size;
+  s->test_seq_gap_remaining = s->test_seq_gap_size;
 }
 
 /* Abort the current frame and allow the app to recycle its buffer */
@@ -126,6 +163,9 @@ static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
   s->calculate_time_cursor = false;
   s->test_frame_active = false;
   s->test_seq_gap_fired = false;
+  s->test_seq_gap_remaining = 0;
+  s->test_seq_gap_size = 0;
+  s->test_seq_gap_plan_idx = 0;
   s->check_frame_done_time = false;
   s->pacing.tsc_time_cursor = 0;
 }
@@ -759,6 +799,7 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
     }
     if (s->test_frame_active && s->test.paced_pkt_count)
       s->st40_total_pkts = RTE_MAX(1, (int)s->test.paced_pkt_count);
+    tx_ancillary_seq_gap_plan(s);
     tx_ancillary_session_sync_pacing(impl, s, 0);
     tx_ancillary_update_rtp_time_stamp(s, ST10_TIMESTAMP_FMT_MEDIA_CLK,
                                        ntohl(rtp->tmstamp));
@@ -862,6 +903,19 @@ static inline int tx_ancillary_session_send_pkt(struct st_tx_ancillary_sessions_
   int ret;
   enum mtl_port port = mt_port_logic2phy(s->port_maps, s_port);
   struct rte_ring* ring = mgr->ring[port];
+
+  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
+      s->ops.num_port > 1 && s_port == s->test_seq_gap_target_port &&
+      s->test_seq_gap_remaining) {
+    uint32_t pkt_idx = st_tx_mbuf_get_idx(pkt);
+    (void)pkt_idx; /* silence unused when dbg is compiled out */
+    dbg("%s(%d), drop pkt %u on %s gap=%u/%u frame=%u\n", __func__, s->idx, pkt_idx,
+        s_port == MTL_SESSION_PORT_P ? "P" : "R", s->test_seq_gap_size,
+        s->test_seq_gap_remaining, s->st40_frame_idx);
+    s->test_seq_gap_remaining--;
+    rte_pktmbuf_free(pkt);
+    return 0;
+  }
 
   if (s->queue[s_port]) {
     uint16_t tx = mt_txq_burst(s->queue[s_port], &pkt, 1);
@@ -994,6 +1048,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     } else {
       s->test_frame_active = false;
     }
+    tx_ancillary_seq_gap_plan(s);
 
     MT_USDT_ST40_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
                                src->meta_num, total_udw);
@@ -1699,9 +1754,17 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
   s->test = ops->test;
   if (s->test.pattern != ST40_TX_TEST_NONE && !s->test.frame_count)
     s->test.frame_count = 1;
+  if (s->test.pattern == ST40_TX_TEST_SEQ_GAP && ops->num_port > 1 &&
+      s->test.frame_count < ST40_SEQ_GAP_SCHEDULE_LEN)
+    s->test.frame_count = ST40_SEQ_GAP_SCHEDULE_LEN;
   s->test_frames_left = s->test.frame_count;
   s->test_frame_active = false;
   s->test_seq_gap_fired = false;
+  s->test_seq_gap_target_port = MTL_SESSION_PORT_P;
+  s->test_seq_gap_next_port = MTL_SESSION_PORT_P;
+  s->test_seq_gap_remaining = 0;
+  s->test_seq_gap_size = 0;
+  s->test_seq_gap_plan_idx = 0;
   if (s->test.pattern != ST40_TX_TEST_NONE) s->split_payload = true;
 
   /* if disable shared queue */

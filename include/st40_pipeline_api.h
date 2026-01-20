@@ -45,6 +45,11 @@ struct st40_frame_info {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
+  /** Packet loss per session port based on per-port sequence tracking. */
+  uint32_t port_seq_lost[MTL_SESSION_PORT_MAX];
+  /** True when a per-port sequence discontinuity was detected in this frame. */
+  bool port_seq_discont[MTL_SESSION_PORT_MAX];
+
   /** Whether a marker bit was seen on any RTP packet in this frame. */
   bool rtp_marker;
   /** True if a sequence number discontinuity was observed within this frame. */
