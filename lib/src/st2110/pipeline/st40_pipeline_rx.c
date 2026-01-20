@@ -402,6 +402,10 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
     frame_info->pkts_total = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
@@ -576,6 +580,10 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->pkts_total = 0;
   frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
   frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+  frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+  frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+  frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+  frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
   frame_info->seq_discont = false;
   frame_info->seq_lost = 0;
   frame_info->rtp_marker = false;
@@ -666,6 +674,9 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->ready = false;
   ctx->impl = impl;
   ctx->type = MT_ST40_HANDLE_PIPELINE_RX;
+  ctx->session_last_seq_valid = false;
+  ctx->session_last_seq = 0;
+  ctx->session_last_ts = 0;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) ctx->last_seq_valid[i] = false;
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     ctx->port_map[i] = MTL_PORT_MAX;

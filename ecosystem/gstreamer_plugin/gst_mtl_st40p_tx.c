@@ -385,7 +385,7 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
       g_param_spec_uint("tx-test-pkt-count", "Test packet count",
                         "Number of ANC packets to emit when a test mode is active"
                         " (0 uses a mode-specific default)",
-                        0, ST40_MAX_META, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        0, G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_TEST_PACING_NS,
@@ -1042,7 +1042,11 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* 
 static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
                                                          GstMapInfo map_info,
                                                          GstBuffer* buf) {
-  if (sink->test_mode != GST_MTL_ST40P_TX_TEST_MODE_NONE) {
+  /* For seq-gap we still want to mutate RTP sequence numbers but keep the real payload
+   * to preserve frame size for validation. Other test modes keep the synthetic frame
+   * behavior. */
+  if (sink->test_mode != GST_MTL_ST40P_TX_TEST_MODE_NONE &&
+      sink->test_mode != GST_MTL_ST40P_TX_TEST_MODE_SEQ_GAP) {
     return gst_mtl_st40p_tx_prepare_test_frame(sink, map_info, buf);
   }
   struct st40_frame_info* frame_info = NULL;
