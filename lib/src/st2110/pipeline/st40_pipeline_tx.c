@@ -323,6 +323,10 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
     frame_info->pkts_total = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;

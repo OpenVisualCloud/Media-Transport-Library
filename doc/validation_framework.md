@@ -124,6 +124,7 @@ The `tests/` directory contains test implementations organized by scenario type:
     - Progressive and interlaced GStreamer loops (RFC8331, fps/frame buffer sweeps)
     - Split-mode packetized ANC with frame-info logging (sequence discontinuity, packet totals, RTP marker) and ring-size validation
     - Pacing sanity via RTP sender helpers and ramdisk-backed media fixtures (configure `ramdisk.media` in `configs/test_config.yaml`)
+    - Redundant ST40p/ST40i GStreamer ANC cases with per-port seq-gap scheduling (real payloads, lifted packet caps) and frame-info checks for seq discontinuity/loss logging
   - Backend-specific tests (DMA, kernel socket, etc.)
   - Integration tests (FFmpeg, GStreamer)
   
