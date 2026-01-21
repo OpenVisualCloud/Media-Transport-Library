@@ -1723,7 +1723,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
   struct rte_ring* ring_r = NULL;
   int num_port = ops->num_port;
 
-  if (rte_ring_full(ring_p)) {
+  if (rte_ring_free_count(ring_p) < 16) {
     s->stat_build_ret_code = -STI_FRAME_RING_FULL;
     return MTL_TASKLET_ALL_DONE;
   }
@@ -4369,7 +4369,7 @@ void* st20_tx_get_mbuf(st20_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  if (rte_ring_full(packet_ring)) {
+  if (rte_ring_free_count(packet_ring) < 16) {
     dbg("%s(%d), packet ring is full\n", __func__, idx);
     return NULL;
   }
@@ -4806,7 +4806,7 @@ void* st22_tx_get_mbuf(st22_tx_handle handle, void** usrptr) {
     return NULL;
   }
 
-  if (rte_ring_full(packet_ring)) {
+  if (rte_ring_free_count(packet_ring) < 16) {
     dbg("%s(%d), packet ring is full\n", __func__, idx);
     return NULL;
   }

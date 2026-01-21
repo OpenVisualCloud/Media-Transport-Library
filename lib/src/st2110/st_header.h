@@ -33,7 +33,7 @@
 #define ST_SCH_MAX_TX_VIDEO_SESSIONS (60) /* max video tx sessions per sch lcore */
 #define ST_SCH_MAX_RX_VIDEO_SESSIONS (60) /* max video rx sessions per sch lcore */
 #define ST_SESSION_MAX_BULK (4)
-#define ST_TX_VIDEO_SESSIONS_RING_SIZE (512)
+#define ST_TX_VIDEO_SESSIONS_RING_SIZE (2048)
 
 /* number of tmstamp it will tracked for out of order pkts */
 #define ST_VIDEO_RX_REC_NUM_OFO (2)
