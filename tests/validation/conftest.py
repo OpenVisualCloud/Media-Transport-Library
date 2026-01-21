@@ -284,6 +284,7 @@ def prepare_ramdisk(hosts, test_config):
     pcap_dir = ramdisk_cfg.get("pcap_dir", "/home/pcap_files")
     tmpfs_size_gib = ramdisk_cfg.get("tmpfs_size_gib", "768")
 
+    ramdisks = []
     if capture_cfg.get("enable", False):
         ramdisks = [
             Ramdisk(host=host, mount_point=pcap_dir, size_gib=tmpfs_size_gib)
@@ -291,6 +292,9 @@ def prepare_ramdisk(hosts, test_config):
         ]
         for ramdisk in ramdisks:
             ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
 
 
 @pytest.fixture(scope="session")
