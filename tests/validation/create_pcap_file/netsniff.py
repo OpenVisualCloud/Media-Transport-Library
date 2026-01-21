@@ -180,17 +180,30 @@ class NetsniffRecorder:
         """
         Stops all netsniff-ng processes on the host using pkill.
         """
+        if not self.netsniff_process:
+            logger.debug("No netsniff-ng process to stop.")
+            return
+
+        # Check if process is still running before trying to stop
+        if not self.netsniff_process.running:
+            logger.debug("netsniff-ng process has already finished.")
+            return
 
         try:
-            logger.info("Stopping netsniff-ng using pkill netsniff-ng...")
-            self.netsniff_process.stop(wait=5)
+            logger.info("Stopping netsniff-ng...")
+            self.netsniff_process.stop(wait=2)
         except SSHRemoteProcessEndException:
             try:
                 self.netsniff_process.kill()
             except RemoteProcessInvalidState:
-                logger.debug("Process killed.")
-        logger.error("netsniff-ng process did not stopped by itself.")
-        logger.error(self.netsniff_process.stdout_text)
+                logger.debug("Process already finished.")
+        except RemoteProcessInvalidState:
+            logger.debug("Process already finished.")
+        else:
+            logger.debug("netsniff-ng process stopped gracefully.")
+            return
+
+        logger.debug("netsniff-ng process did not stop by itself.")
 
     def update_filter(self, src_ip=None, dst_ip=None):
         """

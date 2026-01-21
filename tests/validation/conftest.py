@@ -429,7 +429,15 @@ def log_session():
 
 
 @pytest.fixture(scope="function")
-def pcap_capture(request, media_file, test_config, hosts, mtl_path, phc2sys_session):
+def pcap_capture(
+    request, media_file, test_config, hosts, mtl_path, phc2sys_session, prepare_ramdisk
+):
+    """Fixture for capturing pcap files during tests.
+
+    Note: This fixture depends on prepare_ramdisk to ensure proper cleanup order.
+    The netsniff-ng process must be stopped BEFORE the ramdisk is unmounted,
+    otherwise the unmount will fail with 'device busy'.
+    """
     capture_cfg = test_config.get("capture_cfg", {})
     capturer = None
     if capture_cfg and capture_cfg.get("enable"):
@@ -459,44 +467,66 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path, phc2sys_sess
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
         )
-    yield capturer
-    if capturer and capturer.netsniff_process:
-        ebu_server = test_config.get("ebu_server", {})
-        if not ebu_server:
-            logger.error("EBU server configuration not found in test_config.yaml")
-            return
-        ebu_ip = ebu_server.get("ebu_ip", None)
-        ebu_login = ebu_server.get("user", None)
-        ebu_passwd = ebu_server.get("password", None)
-        ebu_proxy = ebu_server.get("proxy", None)
-        proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
-        compliance_upl = capturer.host.connection.execute_command(
-            "python3 ./tests/validation/compliance/upload_pcap.py"
-            f" --ip {ebu_ip}"
-            f" --user {ebu_login}"
-            f" --password {ebu_passwd}"
-            f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
-            cwd=f"{str(mtl_path)}",
-        )
-        if compliance_upl.return_code != 0:
-            logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
-            return
-        uuid = compliance_upl.stdout.split(">>>UUID: ")[1].strip()
-        logger.debug(f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}")
-        uploader = PcapComplianceClient(
-            ebu_ip=ebu_ip,
-            user=ebu_login,
-            password=ebu_passwd,
-            pcap_id=uuid,
-            proxies={"http": ebu_proxy, "https": ebu_proxy},
-        )
-        result, report = uploader.check_compliance()
-        update_compliance_result(request.node.nodeid, "Pass" if result else "Fail")
-        if result:
-            logger.info("PCAP compliance check passed")
-        else:
-            log_fail("PCAP compliance check failed")
-            logger.info(f"Compliance report: {report}")
+    try:
+        yield capturer
+    finally:
+        # Process compliance check if we have a captured pcap file
+        if capturer and capturer.pcap_file:
+            ebu_server = test_config.get("ebu_server", {})
+            if not ebu_server:
+                logger.error("EBU server configuration not found in test_config.yaml")
+            else:
+                ebu_ip = ebu_server.get("ebu_ip", None)
+                ebu_login = ebu_server.get("user", None)
+                ebu_passwd = ebu_server.get("password", None)
+                ebu_proxy = ebu_server.get("proxy", None)
+                proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
+                compliance_upl = capturer.host.connection.execute_command(
+                    "python3 ./tests/validation/compliance/upload_pcap.py"
+                    f" --ip {ebu_ip}"
+                    f" --user {ebu_login}"
+                    f" --password {ebu_passwd}"
+                    f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
+                    cwd=f"{str(mtl_path)}",
+                )
+                if compliance_upl.return_code != 0:
+                    logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
+                else:
+                    uuid = compliance_upl.stdout.split(">>>UUID: ")[1].strip()
+                    logger.debug(
+                        f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}"
+                    )
+                    uploader = PcapComplianceClient(
+                        ebu_ip=ebu_ip,
+                        user=ebu_login,
+                        password=ebu_passwd,
+                        pcap_id=uuid,
+                        proxies={"http": ebu_proxy, "https": ebu_proxy},
+                    )
+                    result, report = uploader.check_compliance()
+                    update_compliance_result(
+                        request.node.nodeid, "Pass" if result else "Fail"
+                    )
+                    if result:
+                        logger.info("PCAP compliance check passed")
+                    else:
+                        log_fail("PCAP compliance check failed")
+                        logger.info(f"Compliance report: {report}")
+
+                # Remove pcap file after upload to free up ramdisk space
+                try:
+                    capturer.host.connection.execute_command(
+                        f"rm -f '{capturer.pcap_file}'"
+                    )
+                    logger.debug(f"Removed pcap file: {capturer.pcap_file}")
+                except ConnectionCalledProcessError as e:
+                    logger.warning(f"Failed to remove pcap file: {e}")
+
+        # Always ensure netsniff-ng is stopped before fixture cleanup completes
+        # This is critical because prepare_ramdisk unmount happens after this fixture
+        # and will fail if netsniff-ng is still holding the pcap directory
+        if capturer:
+            capturer.stop()
 
 
 @pytest.fixture(scope="function", autouse=True)
