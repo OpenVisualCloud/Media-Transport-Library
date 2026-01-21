@@ -1200,6 +1200,9 @@ struct st_rx_ancillary_session_impl {
   struct st_rx_ancillary_sessions_mgr* mgr;
   bool attached;
   struct st40_rx_ops ops;
+  bool interlace_auto;
+  bool interlace_detected;
+  bool interlace_interlaced;
   char ops_name[ST_MAX_NAME_LEN];
   struct st_rx_session_priv priv[MTL_SESSION_PORT_MAX];
   struct st_rx_ancillary_session_handle_impl* st40_handle;
