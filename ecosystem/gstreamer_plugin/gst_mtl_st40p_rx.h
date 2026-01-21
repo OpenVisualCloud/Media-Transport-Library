@@ -72,6 +72,7 @@ struct _Gst_Mtl_St40p_Rx {
   guint rtp_ring_size;
   guint timeout_s;
   gboolean interlaced;
+  gboolean auto_detect_interlaced;
   gint output_format; /* GstMtlSt40pRxOutputFormat enum value */
   gchar* frame_info_path;
   FILE* frame_info_fp;

@@ -128,6 +128,7 @@ enum {
   PROP_ST40P_RX_RTP_RING_SIZE,
   PROP_ST40P_RX_TIMEOUT,
   PROP_ST40P_RX_INTERLACED,
+  PROP_ST40P_RX_AUTO_DETECT_INTERLACED,
   PROP_ST40P_RX_OUTPUT_FORMAT,
   PROP_ST40P_RX_FRAME_INFO_PATH,
   PROP_MAX
@@ -347,6 +348,13 @@ static void gst_mtl_st40p_rx_class_init(Gst_Mtl_St40p_RxClass* klass) {
                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
+      gobject_class, PROP_ST40P_RX_AUTO_DETECT_INTERLACED,
+      g_param_spec_boolean(
+          "rx-auto-detect-interlaced", "Auto detect interlaced cadence",
+          "Enable RTP F-bit based interlace auto-detection when cadence is unknown",
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
       gobject_class, PROP_ST40P_RX_OUTPUT_FORMAT,
       g_param_spec_enum("output-format", "Output Format",
                         "Serialization format for received ANC frames",
@@ -375,6 +383,7 @@ static void gst_mtl_st40p_rx_init(Gst_Mtl_St40p_Rx* src) {
   src->rtp_ring_size = DEFAULT_RTP_RING_SIZE;
   src->timeout_s = 60;
   src->interlaced = FALSE;
+  src->auto_detect_interlaced = FALSE;
   src->output_format = GST_MTL_ST40P_RX_OUTPUT_FORMAT_RAW_UDW;
   src->frame_info_path = NULL;
   src->frame_info_fp = NULL;
@@ -412,6 +421,9 @@ static void gst_mtl_st40p_rx_set_property(GObject* object, guint prop_id,
       break;
     case PROP_ST40P_RX_INTERLACED:
       src->interlaced = g_value_get_boolean(value);
+      break;
+    case PROP_ST40P_RX_AUTO_DETECT_INTERLACED:
+      src->auto_detect_interlaced = g_value_get_boolean(value);
       break;
     case PROP_ST40P_RX_OUTPUT_FORMAT:
       src->output_format = g_value_get_enum(value);
@@ -453,6 +465,9 @@ static void gst_mtl_st40p_rx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST40P_RX_INTERLACED:
       g_value_set_boolean(value, src->interlaced);
       break;
+    case PROP_ST40P_RX_AUTO_DETECT_INTERLACED:
+      g_value_set_boolean(value, src->auto_detect_interlaced);
+      break;
     case PROP_ST40P_RX_OUTPUT_FORMAT:
       g_value_set_enum(value, src->output_format);
       break;
@@ -483,6 +498,7 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
       src->rx_framebuff_cnt ? src->rx_framebuff_cnt : GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   ops_rx.max_udw_buff_size = src->max_udw_size;
   ops_rx.flags = 0; /* Use non-blocking mode - blocking causes preroll timeout */
+  if (src->auto_detect_interlaced) ops_rx.flags |= ST40P_RX_FLAG_AUTO_DETECT_INTERLACED;
 
   GST_DEBUG_OBJECT(src, "RX START: framebuff_cnt=%d, max_udw_buff_size=%d",
                    ops_rx.framebuff_cnt, ops_rx.max_udw_buff_size);
@@ -498,6 +514,11 @@ static gboolean gst_mtl_st40p_rx_start(GstBaseSrc* basesrc) {
   GST_DEBUG_OBJECT(src, "RX START: rtp_ring_size=%d", ops_rx.rtp_ring_size);
 
   ops_rx.interlaced = src->interlaced;
+  if (!src->interlaced && !src->auto_detect_interlaced) {
+    GST_WARNING_OBJECT(src,
+                       "RX interlaced flag not set; use rx-auto-detect-interlaced=true "
+                       "if cadence is unknown");
+  }
 
   /* Optional frame info logging */
   if (src->frame_info_path && !src->frame_info_fp) {

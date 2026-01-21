@@ -160,6 +160,8 @@ static int rx_st40p_rtp_ready(void* priv) {
     frame_info->rtp_timestamp = rtp_timestamp;
     frame_info->timestamp = rtp_timestamp;
     frame_info->epoch = 0;
+    frame_info->field_num = hdr->first_hdr_chunk.f & 0x3;
+    frame_info->interlaced = (frame_info->field_num & 0x2) ? true : false;
     ctx->inflight_frame = framebuff;
     ctx->inflight_rtp_timestamp = rtp_timestamp;
   } else {
@@ -168,6 +170,13 @@ static int rx_st40p_rtp_ready(void* priv) {
     if (!frame_info->receive_timestamp ||
         (frame_info->receive_timestamp > receive_timestamp))
       frame_info->receive_timestamp = receive_timestamp;
+
+    /* Update field metadata if a later packet carries interlace info */
+    uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
+    if (!frame_info->field_num || frame_info->field_num != pkt_field) {
+      frame_info->field_num = pkt_field;
+      frame_info->interlaced = (pkt_field & 0x2) ? true : false;
+    }
   }
 
   if (ctx->last_seq_valid[s_port]) {
@@ -321,6 +330,15 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   ops_rx.payload_type = ops->port.payload_type;
   ops_rx.ssrc = ops->port.ssrc;
   ops_rx.interlaced = ops->interlaced;
+  if (ops->flags & ST40P_RX_FLAG_AUTO_DETECT_INTERLACED)
+    ops_rx.flags |= ST40_RX_FLAG_AUTO_DETECT_INTERLACED;
+
+  if (!ops->interlaced && !(ops->flags & ST40P_RX_FLAG_AUTO_DETECT_INTERLACED)) {
+    warn(
+        "%s(%d), rx-interlaced not set; enable ST40P_RX_FLAG_AUTO_DETECT_INTERLACED if "
+        "cadence is unknown\n",
+        __func__, ctx->idx);
+  }
 
   for (int i = 0; i < ops_rx.num_port; i++) {
     memcpy(ops_rx.ip_addr[i], ops->port.ip_addr[i], MTL_IP_ADDR_LEN);
@@ -410,6 +428,8 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
+    frame_info->field_num = 0;
+    frame_info->interlaced = false;
     frame_info->priv = framebuff;
 
     dbg("%s(%d), init fb %u\n", __func__, idx, i);
@@ -588,6 +608,8 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->seq_lost = 0;
   frame_info->rtp_marker = false;
   frame_info->receive_timestamp = 0;
+  frame_info->field_num = 0;
+  frame_info->interlaced = false;
   framebuff->stat = ST40P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
 

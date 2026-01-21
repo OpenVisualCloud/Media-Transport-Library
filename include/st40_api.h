@@ -106,6 +106,12 @@ struct st40_tx_test_config {
  * If enable the rtcp.
  */
 #define ST40_RX_FLAG_ENABLE_RTCP (MTL_BIT32(1))
+/**
+ * Flag bit in flags of struct st40_rx_ops.
+ * If set, lib will auto-detect progressive vs interlaced based on RTP F bits.
+ * The interlaced boolean in st40_rx_ops is ignored once detection completes.
+ */
+#define ST40_RX_FLAG_AUTO_DETECT_INTERLACED (MTL_BIT32(2))
 
 /**
  * Session type of st2110-40(ancillary) streaming
@@ -336,7 +342,7 @@ struct st40_tx_ops {
   enum st_fps fps;
   /** Mandatory. 7 bits payload type define in RFC3550 */
   uint8_t payload_type;
-  /** Mandatory. interlaced or not */
+  /** Mandatory unless ST40_RX_FLAG_AUTO_DETECT_INTERLACED is set. Interlaced or not. */
   bool interlaced;
 
   /** Optional. Synchronization source defined in RFC3550, if zero the session will assign
