@@ -13,7 +13,7 @@ class Ramdisk:
         try:
             self._host.connection.execute_command(f"sudo mkdir -p {self._mount_point}")
             self._host.connection.execute_command(
-                f"sudo mount -t ramfs -o size={self._size_gib}G ramfs {self._mount_point}"
+                f"sudo mount -t tmpfs -o size={self._size_gib}G,nosuid,nodev,noexec tmpfs {self._mount_point}"
             )
         except ConnectionCalledProcessError as e:
             logging.log(level=logging.ERROR, msg=f"Failed to execute command: {e}")
