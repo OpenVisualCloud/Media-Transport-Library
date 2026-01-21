@@ -102,7 +102,7 @@ def _select_capture_host(hosts: dict):
 
 
 @pytest.fixture(scope="function")
-def phc2sys(request, test_config: dict, hosts):
+def ptp_sync(request, test_config: dict, hosts):
     """Start phc2sys or ptp4l for the capture interface before tests.
 
     - Uses the same interface selection logic as PCAP capture.
@@ -498,7 +498,7 @@ def log_session():
 
 @pytest.fixture(scope="function")
 def pcap_capture(
-    request, media_file, test_config, hosts, mtl_path, phc2sys_session, prepare_ramdisk
+    request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
 ):
     """Fixture for capturing pcap files during tests.
 

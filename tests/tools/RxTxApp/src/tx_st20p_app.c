@@ -53,6 +53,11 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
   if (s->st20p_frame_cursor + frame_size > s->st20p_source_end) {
     s->st20p_frame_cursor = s->st20p_source_begin;
     s->st20p_frames_copied = true;
+    /* mark file as complete for auto_stop feature */
+    if (s->ctx->auto_stop && !s->tx_file_complete) {
+      info("%s(%d), tx file complete\n", __func__, s->idx);
+      s->tx_file_complete = true;
+    }
   }
 
   app_tx_st20p_display_frame(s, frame);
@@ -70,6 +75,12 @@ static void* app_tx_st20p_frame_thread(void* arg) {
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
+    /* for auto_stop: stop sending after file is complete */
+    if (s->ctx->auto_stop && s->tx_file_complete) {
+      info("%s(%d), auto_stop: file complete, stopping tx\n", __func__, idx);
+      break;
+    }
+
     frame = st20p_tx_get_frame(handle);
     if (!frame) { /* no ready frame */
       warn("%s(%d), get frame time out\n", __func__, s->idx);
@@ -433,4 +444,15 @@ int st_app_tx_st20p_io_stat(struct st_app_context* ctx) {
   }
 
   return ret;
+}
+
+bool st_app_tx_st20p_sessions_all_complete(struct st_app_context* ctx) {
+  struct st_app_tx_st20p_session* s;
+  if (!ctx->tx_st20p_sessions || ctx->tx_st20p_session_cnt == 0) return true;
+
+  for (int i = 0; i < ctx->tx_st20p_session_cnt; i++) {
+    s = &ctx->tx_st20p_sessions[i];
+    if (!s->tx_file_complete) return false;
+  }
+  return true;
 }

@@ -62,7 +62,24 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     frame = st20p_rx_get_frame(s->handle);
     if (!frame) { /* no ready frame */
       warn("%s(%d), get frame time out\n", __func__, s->idx);
+      /* track consecutive timeouts for auto_stop */
+      if (s->ctx && s->ctx->auto_stop && s->rx_started) {
+        s->rx_timeout_cnt++;
+        if (s->rx_timeout_cnt >= 3) { /* 3 consecutive timeouts */
+          info("%s(%d), auto_stop: rx timeout after receiving started\n", __func__, idx);
+          s->rx_timeout_after_start = true;
+          break;
+        }
+      }
       continue;
+    }
+
+    /* reset timeout counter on successful frame receive */
+    s->rx_timeout_cnt = 0;
+    /* mark as started for auto_stop */
+    if (!s->rx_started) {
+      s->rx_started = true;
+      info("%s(%d), rx started\n", __func__, idx);
     }
 
     s->stat_frame_received++;
@@ -187,6 +204,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   st20p_rx_handle handle;
   memset(&ops, 0, sizeof(ops));
 
+  s->ctx = ctx;
   s->last_stat_time_ns = st_app_get_monotonic_time();
   s->sha_check = ctx->video_sha_check;
 
@@ -434,4 +452,15 @@ int st_app_rx_st20p_io_stat(struct st_app_context* ctx) {
   }
 
   return ret;
+}
+
+bool st_app_rx_st20p_sessions_all_timeout(struct st_app_context* ctx) {
+  struct st_app_rx_st20p_session* s;
+  if (!ctx->rx_st20p_sessions || ctx->rx_st20p_session_cnt == 0) return true;
+
+  for (int i = 0; i < ctx->rx_st20p_session_cnt; i++) {
+    s = &ctx->rx_st20p_sessions[i];
+    if (!s->rx_timeout_after_start) return false;
+  }
+  return true;
 }

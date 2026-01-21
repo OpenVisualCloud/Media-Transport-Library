@@ -537,9 +537,11 @@ struct st_app_tx_st20p_session {
 
   pthread_t st20p_app_thread;
   bool st20p_app_thread_stop;
+  bool tx_file_complete; /* for auto_stop: true when whole file has been sent */
 };
 
 struct st_app_rx_st20p_session {
+  struct st_app_context* ctx;
   int idx;
   st20p_rx_handle handle;
   mtl_handle st;
@@ -568,6 +570,11 @@ struct st_app_rx_st20p_session {
 
   bool measure_latency;
   uint64_t stat_latency_us_sum;
+
+  /* for auto_stop feature */
+  bool rx_started;             /* true after first frame received */
+  int rx_timeout_cnt;          /* consecutive timeout count */
+  bool rx_timeout_after_start; /* true when timeout detected after rx_started */
 };
 
 struct st_app_tx_st30p_session {
@@ -634,6 +641,7 @@ struct st_app_context {
   mtl_handle st;
   int test_time_s;
   bool stop;
+  bool auto_stop; /* auto stop after tx file complete and rx timeout */
   uint8_t tx_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* tx destination IP */
   bool has_tx_dst_mac[MTL_PORT_MAX];
   uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
