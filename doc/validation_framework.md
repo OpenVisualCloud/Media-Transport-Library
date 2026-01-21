@@ -125,6 +125,7 @@ The `tests/` directory contains test implementations organized by scenario type:
     - Split-mode packetized ANC with frame-info logging (sequence discontinuity, packet totals, RTP marker) and ring-size validation
     - Pacing sanity via RTP sender helpers and ramdisk-backed media fixtures (configure `ramdisk.media` in `configs/test_config.yaml`)
     - Redundant ST40p/ST40i GStreamer ANC cases with per-port seq-gap scheduling (real payloads, lifted packet caps) and frame-info checks for seq discontinuity/loss logging
+    - Interlace auto-detect on RX (`rx-auto-detect-interlaced` / `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED`) with warnings if neither interlaced nor auto-detect is set; frame-info now includes `field_num` and `interlaced` for detected cadence
   - Backend-specific tests (DMA, kernel socket, etc.)
   - Integration tests (FFmpeg, GStreamer)
   
