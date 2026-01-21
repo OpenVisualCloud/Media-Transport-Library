@@ -10,6 +10,7 @@ from mtl_engine.media_files import yuv_files
 
 @pytest.mark.nightly
 @pytest.mark.skip
+@pytest.mark.ptp
 @pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
 @pytest.mark.parametrize(
     "video_format",

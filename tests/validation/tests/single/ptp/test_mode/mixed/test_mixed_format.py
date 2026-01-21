@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.nightly
 @pytest.mark.smoke
+@pytest.mark.ptp
 @pytest.mark.parametrize(
     "interface_profile",
     [
