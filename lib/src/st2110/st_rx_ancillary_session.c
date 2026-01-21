@@ -127,35 +127,48 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
+  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
+
   /* Drop if F is 0b01 (invalid: bit 0 set, bit 1 clear) */
-  if ((rfc8331->first_hdr_chunk.f & 0x3) == 0x1) {
+  if (f_bits == 0x1) {
     ST40_FUZZ_LOG("%s(%d,%d), drop invalid field bits 0x%x\n", __func__, s->idx, s_port,
                   rfc8331->first_hdr_chunk.f);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
     return -EINVAL;
   }
-  /* Enforce interlace expectation vs header F bits */
-  uint8_t f_bits = rfc8331->first_hdr_chunk.f & 0x3;
-  if (ops->interlaced) {
-    /* Expect interlaced: drop progressive/unspecified (0b00) */
-    if (f_bits == 0x0) {
-      ST40_FUZZ_LOG("%s(%d,%d), drop progressive F=0 when interlaced expected\n",
-                    __func__, s->idx, s_port);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-      return -EINVAL;
+  /* Auto-detect interlace if enabled */
+  bool pkt_interlaced = f_bits & 0x2;
+  if (s->interlace_auto) {
+    if (!s->interlace_detected || s->interlace_interlaced != pkt_interlaced) {
+      s->interlace_detected = true;
+      s->interlace_interlaced = pkt_interlaced;
+      s->ops.interlaced = pkt_interlaced;
+      info("%s(%d,%d), detected %s stream (F=0x%x)\n", __func__, s->idx, s_port,
+           pkt_interlaced ? "interlaced" : "progressive", f_bits);
     }
   } else {
-    /* Expect progressive: drop interlaced flags (0b10 or 0b11) */
-    if (f_bits & 0x2) {
-      ST40_FUZZ_LOG("%s(%d,%d), drop interlaced F=0x%x when progressive expected\n",
-                    __func__, s->idx, s_port, f_bits);
-      ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-      return -EINVAL;
+    /* Enforce interlace expectation vs header F bits */
+    if (ops->interlaced) {
+      /* Expect interlaced: drop progressive/unspecified (0b00) */
+      if (!pkt_interlaced) {
+        ST40_FUZZ_LOG("%s(%d,%d), drop progressive F=0 when interlaced expected\n",
+                      __func__, s->idx, s_port);
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
+        return -EINVAL;
+      }
+    } else {
+      /* Expect progressive: drop interlaced flags (0b10 or 0b11) */
+      if (pkt_interlaced) {
+        ST40_FUZZ_LOG("%s(%d,%d), drop interlaced F=0x%x when progressive expected\n",
+                      __func__, s->idx, s_port, f_bits);
+        ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
+        return -EINVAL;
+      }
     }
   }
 
   /* Count field polarity when interlaced frames are accepted */
-  if (f_bits & 0x2) {
+  if (pkt_interlaced) {
     if (f_bits & 0x1) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
     } else {
@@ -279,6 +292,10 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   memset(&s->port_user_stats, 0, sizeof(s->port_user_stats));
   memset(s->stat_pkts_out_of_order_per_port, 0,
          sizeof(s->stat_pkts_out_of_order_per_port));
+
+  /* Reset interlace detection state */
+  s->interlace_detected = !s->interlace_auto;
+  s->interlace_interlaced = s->ops.interlaced;
 
   for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
     s->latest_seq_id[i] = -1;
@@ -516,6 +533,9 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
+  s->interlace_auto = ops->flags & ST40_RX_FLAG_AUTO_DETECT_INTERLACED;
+  s->interlace_detected = !s->interlace_auto;
+  s->interlace_interlaced = ops->interlaced;
   for (int i = 0; i < num_port; i++) {
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
@@ -545,7 +565,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
 
   s->attached = true;
   info("%s(%d), flags 0x%x pt %u, %s\n", __func__, idx, ops->flags, ops->payload_type,
-       ops->interlaced ? "interlace" : "progressive");
+       s->interlace_auto ? "auto" : (ops->interlaced ? "interlace" : "progressive"));
   return 0;
 }
 
@@ -656,6 +676,10 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
   s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
   s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
   s->tmstamp = -1;
+  if (s->interlace_auto) {
+    s->interlace_detected = false;
+    s->interlace_interlaced = s->ops.interlaced;
+  }
 
   ret = rx_ancillary_session_init_hw(impl, s);
   if (ret < 0) {
