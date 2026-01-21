@@ -492,6 +492,7 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 | timeout             | uint    | Timeout in seconds for blocking frame retrieval             | 0 to 300                    | 60            |
 | frame-info-path     | string  | Optional path to append frame info and sequence stats per frame | N/A                      | NULL          |
 | rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
+| rx-auto-detect-interlaced | boolean | Enable RTP F-bit based interlace detection when cadence is unknown; leaves `rx-interlaced` optional and will warn if both are false. | TRUE/FALSE | FALSE |
 | output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
 
 When `output-format` is set to `rfc8331`, each ancillary packet is serialized with an 8-byte
@@ -502,6 +503,7 @@ its user data words so that downstream elements receive complete RFC8331 payload
 > **Note:** `rtp-ring-size` values are validated at runtime. If the supplied number is not a power of
 > two the element fails to initialize, matching the behavior enforced inside
 > `gst_mtl_st40p_rx_start()`.
+> **Interlace auto-detect:** When cadence is unknown, set `rx-auto-detect-interlaced=true` and leave `rx-interlaced=false`. The plugin warns if both are false. Frame-info includes `field_num` and `interlaced` once F bits are observed.
 
 #### 5.2.2. Example GStreamer Pipeline for Reception
 

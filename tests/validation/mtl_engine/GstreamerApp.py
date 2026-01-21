@@ -495,6 +495,7 @@ def setup_gstreamer_st40p_rx_pipeline(
     timeout: int,
     capture_metadata: bool = False,
     rx_interlaced: bool = False,
+    rx_auto_detect_interlaced: bool = False,
     rx_framebuff_cnt: int = None,
     frame_info_path: Optional[str] = None,
     rx_rtp_ring_size: Optional[int] = None,
@@ -523,6 +524,9 @@ def setup_gstreamer_st40p_rx_pipeline(
         f"rx-interlaced={'true' if rx_interlaced else 'false'}",
         # Note: mtl_st40p_rx uses pipeline API, metadata handling is built-in
     ]
+
+    if rx_auto_detect_interlaced:
+        pipeline_command.append("rx-auto-detect-interlaced=true")
 
     if rx_framebuff_cnt is not None:
         pipeline_command.append(f"rx-framebuff-cnt={rx_framebuff_cnt}")
@@ -863,7 +867,11 @@ def execute_test(
     # If both TX and RX specify interlace flags and they differ, treat as a mismatch.
     tx_interlaced = _extract_flag(tx_command, "tx-interlaced")
     rx_interlaced = _extract_flag(rx_command, "rx-interlaced")
-    if tx_interlaced is not None and rx_interlaced is not None:
+    rx_auto_detect_interlaced = _extract_flag(rx_command, "rx-auto-detect-interlaced")
+
+    if rx_auto_detect_interlaced:
+        logger.info("RX interlace auto-detect enabled; skipping mismatch check")
+    elif tx_interlaced is not None and rx_interlaced is not None:
         if tx_interlaced != rx_interlaced:
             logger.info(
                 "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). "

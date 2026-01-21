@@ -60,6 +60,12 @@ struct st40_frame_info {
   /** TAI timestamp measured right after the RTP packet for this frame was received */
   uint64_t receive_timestamp;
 
+  /** RTP F bits (field number) for this frame: 0b00 progressive, 0b10 first field,
+   * 0b11 second field. */
+  uint8_t field_num;
+  /** True if the frame was flagged as interlaced (F bits indicate field 1/2). */
+  bool interlaced;
+
   /** priv pointer for lib, do not touch this */
   void* priv;
 };
@@ -192,6 +198,12 @@ enum st40p_rx_flag {
    * Force the numa of the created session, both CPU and memory
    */
   ST40P_RX_FLAG_FORCE_NUMA = (MTL_BIT32(2)),
+  /**
+   * If set, lib will auto-detect progressive vs interlaced using RTP F bits. The
+   * st40p_rx_ops.interlaced field becomes optional and will be updated after
+   * detection.
+   */
+  ST40P_RX_FLAG_AUTO_DETECT_INTERLACED = (MTL_BIT32(3)),
   /** Enable the st40p_rx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_rx_set_block_timeout to customize)*/
   ST40P_RX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -204,7 +216,7 @@ enum st40p_rx_flag {
 struct st40p_rx_ops {
   /** Mandatory. rx port info */
   struct st_rx_port port;
-  /** Mandatory. interlaced or not */
+  /** Mandatory unless ST40P_RX_FLAG_AUTO_DETECT_INTERLACED is set. interlaced or not */
   bool interlaced;
   /** Mandatory. the frame buffer count. */
   uint16_t framebuff_cnt;

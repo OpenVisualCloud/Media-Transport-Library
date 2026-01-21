@@ -1606,6 +1606,85 @@ def test_st40i_interlace_flag_mismatch(
 
 
 @pytest.mark.nightly
+def test_st40p_interlace_auto_detect(
+    hosts,
+    build,
+    media,
+    setup_interfaces: InterfaceSetup,
+    test_time,
+    test_config,
+    prepare_ramdisk,
+    media_file,
+):
+    """
+    Validate that RX auto-detect accepts interlaced TX even when the receiver does not
+    declare interlace upfront, relying on RTP F bits to learn cadence.
+
+    .. rubric:: Pass Criteria
+    - Pipeline succeeds with TX interlaced and RX auto-detect enabled.
+    - Payload round-trips without timeout using default frame-info logging.
+    """
+
+    host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
+
+    input_file_path, output_file_path = setup_paths(media_file)
+
+    input_file_path = media_create.create_text_file(
+        size_kb=10,
+        output_path=input_file_path,
+        host=host,
+    )
+
+    tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+        build=build,
+        nic_port_list=interfaces_list[0],
+        input_path=input_file_path,
+        tx_payload_type=113,
+        tx_queues=4,
+        tx_framebuff_cnt=3,
+        tx_fps=50,
+        tx_did=67,
+        tx_sdid=2,
+        tx_interlaced=True,
+    )
+
+    rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
+        build=build,
+        nic_port_list=interfaces_list[1],
+        output_path=output_file_path,
+        rx_payload_type=113,
+        rx_queues=4,
+        timeout=15,
+        rx_framebuff_cnt=3,
+        rx_interlaced=False,
+        rx_auto_detect_interlaced=True,
+    )
+
+    expectation = "RX auto-detect resolves interlaced TX without explicit cadence hint"
+
+    try:
+        with _test_summary("test_st40p_interlace_auto_detect", expectation):
+            assert GstreamerApp.execute_test(
+                build=build,
+                tx_command=tx_config,
+                rx_command=rx_config,
+                input_file=input_file_path,
+                output_file=output_file_path,
+                test_time=test_time,
+                host=host,
+                tx_first=False,
+                sleep_interval=5,
+                log_frame_info=True,
+            )
+    finally:
+        media_create.remove_file(input_file_path, host=host)
+        media_create.remove_file(output_file_path, host=host)
+
+
+@pytest.mark.nightly
 def test_st40p_rx_timeout(
     hosts,
     build,
