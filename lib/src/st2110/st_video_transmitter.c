@@ -39,6 +39,7 @@ static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
                                      struct st_tx_video_session_impl* s,
                                      enum mtl_session_port s_port, uint16_t nb_pkts) {
   uint64_t cur_tsc = mt_get_tsc(impl);
+  MTL_MAY_UNUSED(nb_pkts);
   uint64_t fail_duration = cur_tsc - s->last_burst_succ_time_tsc[s_port];
 
   if (fail_duration > s->tx_hang_detect_time_thresh) {

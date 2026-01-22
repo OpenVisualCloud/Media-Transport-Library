@@ -3314,6 +3314,7 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   s->stat_cpu_busy_score = s->cpu_busy_score;
 }
 
+#ifdef DEBUG_DUMP_VIDEO_SESSION
 static void dump_video_session_debug_info(struct st_tx_video_session_impl* s,
                       enum mtl_session_port s_port,
                       const char* context) {
@@ -3433,6 +3434,7 @@ static void dump_video_session_debug_info(struct st_tx_video_session_impl* s,
 
   err("=== END VIDEO SESSION DEBUG ===\n");
 }
+#endif
 
 static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
                     struct st_tx_video_session_impl* s) {
@@ -3585,6 +3587,10 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   }
   s->stat_max_next_frame_us = 0;
   s->stat_max_notify_frame_us = 0;
+
+#ifdef DEBUG_DUMP_VIDEO_SESSION
+  dump_video_session_debug_info(s, MTL_SESSION_PORT_P, "Stat Dump");
+#endif
 }
 
 static int tv_detach(struct st_tx_video_sessions_mgr* mgr,
