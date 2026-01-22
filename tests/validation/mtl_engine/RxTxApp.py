@@ -488,6 +488,7 @@ def execute_test(
     rx_timing_parser: bool = False,
     ptp: bool = False,
     auto_stop: bool = False,
+    rx_max_file_size: int = 0,
     host=None,
     netsniff=None,
     interface_setup=None,
@@ -550,6 +551,9 @@ def execute_test(
 
     if auto_stop:
         command += " --auto_stop"
+
+    if rx_max_file_size > 0:
+        command += f" --rx_max_file_size {rx_max_file_size}"
 
     logger.info(f"RxTxApp Command: {command}")
 
