@@ -12,8 +12,6 @@ jobs:
       matrix:
         nic:
           - e810
-          - e810-dell
-          - e830
       fail-fast: false
     runs-on: ${{ matrix.nic }}
     timeout-minutes: 720

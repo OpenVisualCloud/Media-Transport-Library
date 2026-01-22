@@ -4,13 +4,12 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
-from pathlib import Path
 import re
 import sys
-from typing import Dict, List, Tuple
-
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 import pandas as pd
 
