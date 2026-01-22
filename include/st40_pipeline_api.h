@@ -60,9 +60,8 @@ struct st40_frame_info {
   /** TAI timestamp measured right after the RTP packet for this frame was received */
   uint64_t receive_timestamp;
 
-  /** RTP F bits (field number) for this frame: 0b00 progressive, 0b10 first field,
-   * 0b11 second field. */
-  uint8_t field_num;
+  /** True if this frame represents the second interlaced field (F=0b11). */
+  bool second_field;
   /** True if the frame was flagged as interlaced (F bits indicate field 1/2). */
   bool interlaced;
 
