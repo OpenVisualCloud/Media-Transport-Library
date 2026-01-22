@@ -20,14 +20,14 @@ class St40pAutoDetectStrategy : public FrameTestStrategy {
 
     if (info->interlaced) {
       saw_interlaced = true;
-      last_field = info->field_num;
-      EXPECT_TRUE(last_field == 0x2 || last_field == 0x3)
-          << "Unexpected field bits: " << static_cast<int>(last_field);
+      last_second_field = info->second_field;
+      second_field_sampled = true;
     }
   }
 
   bool saw_interlaced = false;
-  uint8_t last_field = 0;
+  bool last_second_field = false;
+  bool second_field_sampled = false;
 };
 
 }  // namespace
@@ -62,6 +62,6 @@ TEST_F(NoCtxTest, st40p_rx_auto_detect_interlace) {
   ASSERT_GT(handler->rxFrames(), 0u) << "No frames received";
   EXPECT_EQ(handler->txFrames(), handler->rxFrames()) << "TX/RX frame count mismatch";
   EXPECT_TRUE(strategy->saw_interlaced) << "Auto-detect did not see interlaced F bits";
-  EXPECT_TRUE(strategy->last_field == 0x2 || strategy->last_field == 0x3)
-      << "Auto-detected field bits invalid";
+  EXPECT_TRUE(strategy->second_field_sampled)
+      << "Auto-detect did not surface field cadence metadata";
 }

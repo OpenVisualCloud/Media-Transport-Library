@@ -160,8 +160,9 @@ static int rx_st40p_rtp_ready(void* priv) {
     frame_info->rtp_timestamp = rtp_timestamp;
     frame_info->timestamp = rtp_timestamp;
     frame_info->epoch = 0;
-    frame_info->field_num = hdr->first_hdr_chunk.f & 0x3;
-    frame_info->interlaced = (frame_info->field_num & 0x2) ? true : false;
+    uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
+    frame_info->interlaced = (f_bits & 0x2) ? true : false;
+    frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
     ctx->inflight_frame = framebuff;
     ctx->inflight_rtp_timestamp = rtp_timestamp;
   } else {
@@ -173,9 +174,12 @@ static int rx_st40p_rtp_ready(void* priv) {
 
     /* Update field metadata if a later packet carries interlace info */
     uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
-    if (!frame_info->field_num || frame_info->field_num != pkt_field) {
-      frame_info->field_num = pkt_field;
-      frame_info->interlaced = (pkt_field & 0x2) ? true : false;
+    bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
+    bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
+    if ((frame_info->interlaced != pkt_interlaced) ||
+        (frame_info->second_field != pkt_second_field)) {
+      frame_info->interlaced = pkt_interlaced;
+      frame_info->second_field = pkt_second_field;
     }
   }
 
@@ -428,7 +432,7 @@ static int rx_st40p_init_fbs(struct st40p_rx_ctx* ctx, struct st40p_rx_ops* ops)
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
-    frame_info->field_num = 0;
+    frame_info->second_field = false;
     frame_info->interlaced = false;
     frame_info->priv = framebuff;
 
@@ -608,7 +612,7 @@ int st40p_rx_put_frame(st40p_rx_handle handle, struct st40_frame_info* frame_inf
   frame_info->seq_lost = 0;
   frame_info->rtp_marker = false;
   frame_info->receive_timestamp = 0;
-  frame_info->field_num = 0;
+  frame_info->second_field = false;
   frame_info->interlaced = false;
   framebuff->stat = ST40P_RX_FRAME_FREE;
   ctx->stat_put_frame++;
