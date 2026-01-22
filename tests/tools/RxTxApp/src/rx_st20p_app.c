@@ -116,6 +116,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     s->stat_frame_total_received++;
     if (!s->stat_frame_first_rx_time)
       s->stat_frame_first_rx_time = st_app_get_monotonic_time();
+    s->stat_frame_last_rx_time = st_app_get_monotonic_time();
     st20p_rx_put_frame(s->handle, frame);
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -341,8 +342,13 @@ static int app_rx_st20p_stat(struct st_app_rx_st20p_session* s) {
 
 static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
   int idx = s->idx;
-  uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
+  uint64_t end_time_ns;
+  /* for auto_stop: use last frame time to avoid counting timeout period in fps */
+  if (s->rx_timeout_after_start && s->stat_frame_last_rx_time)
+    end_time_ns = s->stat_frame_last_rx_time;
+  else
+    end_time_ns = st_app_get_monotonic_time();
+  double time_sec = (double)(end_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;

@@ -558,6 +558,7 @@ struct st_app_rx_st20p_session {
   uint64_t stat_last_time;
   int stat_frame_total_received;
   uint64_t stat_frame_first_rx_time;
+  uint64_t stat_frame_last_rx_time; /* for auto_stop: time of last frame received */
   double expect_fps;
 
   pthread_t st20p_app_thread;
