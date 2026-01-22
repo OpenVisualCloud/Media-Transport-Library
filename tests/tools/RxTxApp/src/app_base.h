@@ -576,6 +576,10 @@ struct st_app_rx_st20p_session {
   bool rx_started;             /* true after first frame received */
   int rx_timeout_cnt;          /* consecutive timeout count */
   bool rx_timeout_after_start; /* true when timeout detected after rx_started */
+
+  /* for rx_max_file_size feature */
+  uint64_t rx_file_bytes_written;  /* total bytes written to file */
+  bool rx_file_size_limit_reached; /* true when file size limit reached */
 };
 
 struct st_app_tx_st30p_session {
@@ -642,7 +646,8 @@ struct st_app_context {
   mtl_handle st;
   int test_time_s;
   bool stop;
-  bool auto_stop; /* auto stop after tx file complete and rx timeout */
+  bool auto_stop;            /* auto stop after tx file complete and rx timeout */
+  uint64_t rx_max_file_size; /* max file size in bytes for rx, 0 means no limit */
   uint8_t tx_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* tx destination IP */
   bool has_tx_dst_mac[MTL_PORT_MAX];
   uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];

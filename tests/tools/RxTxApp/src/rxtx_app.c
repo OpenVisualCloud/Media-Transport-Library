@@ -626,6 +626,11 @@ int main(int argc, char** argv) {
         break;
       }
     }
+    /* check for rx_max_file_size condition */
+    if (st_app_rx_st20p_sessions_file_size_limit_reached(ctx)) {
+      info("%s, rx_max_file_size limit reached, stopping\n", __func__);
+      break;
+    }
   }
 
   if (!ctx->runtime_session) {

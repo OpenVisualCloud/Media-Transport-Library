@@ -9,10 +9,21 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
   struct st_display* d = s->display;
   int idx = s->idx;
 
-  if (s->st20p_destination_file) {
-    if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
-      err("%s(%d), failed to write frame to file %s\n", __func__, idx,
-          s->st20p_destination_url);
+  if (s->st20p_destination_file && !s->rx_file_size_limit_reached) {
+    /* check if writing this frame would exceed the file size limit */
+    uint64_t max_size = s->ctx->rx_max_file_size;
+    if (max_size > 0 && (s->rx_file_bytes_written + s->st20p_frame_size) > max_size) {
+      info("%s(%d), rx_max_file_size limit reached: %" PRIu64
+           " bytes written, limit %" PRIu64 "\n",
+           __func__, idx, s->rx_file_bytes_written, max_size);
+      s->rx_file_size_limit_reached = true;
+    } else {
+      if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
+        err("%s(%d), failed to write frame to file %s\n", __func__, idx,
+            s->st20p_destination_url);
+      } else {
+        s->rx_file_bytes_written += s->st20p_frame_size;
+      }
     }
   }
 
@@ -469,4 +480,16 @@ bool st_app_rx_st20p_sessions_all_timeout(struct st_app_context* ctx) {
     if (!s->rx_timeout_after_start) return false;
   }
   return true;
+}
+
+bool st_app_rx_st20p_sessions_file_size_limit_reached(struct st_app_context* ctx) {
+  struct st_app_rx_st20p_session* s;
+  if (!ctx->rx_st20p_sessions || ctx->rx_st20p_session_cnt == 0) return false;
+  if (ctx->rx_max_file_size == 0) return false;
+
+  for (int i = 0; i < ctx->rx_st20p_session_cnt; i++) {
+    s = &ctx->rx_st20p_sessions[i];
+    if (s->rx_file_size_limit_reached) return true;
+  }
+  return false;
 }
