@@ -503,7 +503,7 @@ its user data words so that downstream elements receive complete RFC8331 payload
 > **Note:** `rtp-ring-size` values are validated at runtime. If the supplied number is not a power of
 > two the element fails to initialize, matching the behavior enforced inside
 > `gst_mtl_st40p_rx_start()`.
-> **Interlace auto-detect:** When cadence is unknown, set `rx-auto-detect-interlaced=true` and leave `rx-interlaced=false`. The plugin warns if both are false. Frame-info includes `field_num` and `interlaced` once F bits are observed.
+> **Interlace auto-detect:** When cadence is unknown, set `rx-auto-detect-interlaced=true` and leave `rx-interlaced=false`. The plugin warns if both are false. Sequence discontinuities reset detection; frame-info shows `seq_discont` when it happens and `interlaced` re-populates after new F bits arrive.
 
 #### 5.2.2. Example GStreamer Pipeline for Reception
 
