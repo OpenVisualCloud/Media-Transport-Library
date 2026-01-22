@@ -167,14 +167,18 @@ def parse_gtest_xml(path: Path) -> Dict[Tuple[str, str], Dict[str, object]]:
 
     results: Dict[Tuple[str, str], Dict[str, object]] = {}
     for case in tree.iterfind(".//testcase"):
-        suite = case.attrib.get("classname") or case.attrib.get("name", "").split(".")[0]
+        suite = (
+            case.attrib.get("classname") or case.attrib.get("name", "").split(".")[0]
+        )
         test_name = case.attrib.get("name") or "UNKNOWN"
         key = (suite or "UNKNOWN_SUITE", test_name)
 
         failure = case.find("failure")
         error = case.find("error")
         skipped = case.find("skipped")
-        status_attr = (case.attrib.get("status") or case.attrib.get("result") or "").lower()
+        status_attr = (
+            case.attrib.get("status") or case.attrib.get("result") or ""
+        ).lower()
 
         if failure is not None:
             status = STATUS_FAILED
@@ -204,7 +208,8 @@ def determine_nic_columns(nic_results: Dict[str, Dict[str, object]]) -> List[str
 
 
 def build_detailed_dataframe(
-    nic_results: Dict[str, Dict[Tuple[str, str], Dict[str, object]]], nic_columns: List[str]
+    nic_results: Dict[str, Dict[Tuple[str, str], Dict[str, object]]],
+    nic_columns: List[str],
 ) -> pd.DataFrame:
     if not nic_columns:
         return pd.DataFrame()
@@ -214,7 +219,9 @@ def build_detailed_dataframe(
         key=lambda item: (item[0], item[1]),
     )
     if not test_keys:
-        return pd.DataFrame(columns=["Test Suite", "Test Case", *nic_columns, "Comments"])
+        return pd.DataFrame(
+            columns=["Test Suite", "Test Case", *nic_columns, "Comments"]
+        )
 
     rows = []
     for suite, test_case in test_keys:
@@ -269,7 +276,9 @@ def calculate_summary_counts(column: pd.Series) -> Dict[str, int]:
     return summary
 
 
-def build_summary_dataframe(detailed_df: pd.DataFrame, nic_columns: List[str]) -> pd.DataFrame:
+def build_summary_dataframe(
+    detailed_df: pd.DataFrame, nic_columns: List[str]
+) -> pd.DataFrame:
     rows = []
     for nic in nic_columns:
         if nic not in detailed_df.columns:
@@ -289,7 +298,9 @@ def build_summary_dataframe(detailed_df: pd.DataFrame, nic_columns: List[str]) -
     return pd.DataFrame(rows, columns=["NIC", *SUMMARY_METRICS])
 
 
-def write_excel_report(output_path: Path, summary_df: pd.DataFrame, detailed_df: pd.DataFrame) -> None:
+def write_excel_report(
+    output_path: Path, summary_df: pd.DataFrame, detailed_df: pd.DataFrame
+) -> None:
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         summary_df.to_excel(writer, sheet_name="Summary", index=False)
         detailed_df.to_excel(writer, sheet_name="Details", index=False)
