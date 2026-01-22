@@ -14,6 +14,7 @@ extern "C" {
 
 enum st40p_rx_frame_status {
   ST40P_RX_FRAME_FREE = 0,
+  ST40P_RX_FRAME_RECEIVING,
   ST40P_RX_FRAME_READY,
   ST40P_RX_FRAME_IN_USER,
   ST40P_RX_FRAME_STATUS_MAX,
@@ -28,11 +29,19 @@ struct st40p_rx_ctx {
   char ops_name[ST_MAX_NAME_LEN];
   struct st40p_rx_ops ops;
 
+  /* session port mapping */
+  enum mtl_port port_map[MTL_SESSION_PORT_MAX];
+  uint16_t port_id[MTL_SESSION_PORT_MAX];
+
   st40_rx_handle transport;
   uint16_t framebuff_cnt;
   uint16_t framebuff_producer_idx;
   uint16_t framebuff_consumer_idx;
   struct st40p_rx_frame* framebuffs;
+  struct st40p_rx_frame* inflight_frame;
+  uint32_t inflight_rtp_timestamp;
+  bool last_seq_valid[MTL_SESSION_PORT_MAX];
+  uint16_t last_seq[MTL_SESSION_PORT_MAX];
   pthread_mutex_t lock;
   bool ready;
 

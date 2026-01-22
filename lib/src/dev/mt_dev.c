@@ -421,6 +421,9 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argc++;
   }
 
+  argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
+  argc++;
+
   if (!pci_ports) {
     argv[argc] = "--no-pci";
     argc++;

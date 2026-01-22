@@ -75,25 +75,43 @@ class PcapComplianceClient:
             raise Exception("Upload failed: No UUID received.")
         return self.pcap_id
 
-    def download_report(self, retries=3):
+    def download_report(self, retries=10):
         """
         Download the compliance report for the uploaded PCAP file.
         returns the report as a JSON object.
         """
+        if not self.pcap_id:
+            raise ValueError("No PCAP ID available to download report.")
+        if retries is None or retries <= 0:
+            logger.error(
+                "Invalid retries value (%s), skipping compliance check", retries
+            )
+            return False
         url = f"http://{self.ebu_ip}/api/pcap/{self.pcap_id}/report?type=json"
         headers = {"Authorization": f"Bearer {self.token}"}
+        initial_retries = retries
         while retries > 0:
             response = self.session.get(
                 url, headers=headers, verify=False, proxies=self.proxies
             )
+
+            # EBU LIST may return 404 until the report is generated.
+            if response.status_code == 404:
+                time.sleep(1)
+                retries -= 1
+                continue
+
             response.raise_for_status()
             report = response.json()
             if report.get("analyzed", False):
                 return report
+
             time.sleep(1)
             retries -= 1
+
         logger.error(
-            f"Report is not ready after {retries} seconds, skipping compliance check"
+            "Report is not ready after %s attempts, skipping compliance check",
+            initial_retries,
         )
         return False
 

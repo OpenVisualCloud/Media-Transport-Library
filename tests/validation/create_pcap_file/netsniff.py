@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
+import datetime
 import logging
 import os
+import re
 from time import sleep
 
 from mfd_connect.exceptions import (
@@ -59,7 +61,7 @@ class NetsniffRecorder:
         self.host = host
         self.test_name = test_name
         self.pcap_dir = pcap_dir
-        self.pcap_file = f"'{os.path.join(pcap_dir, test_name)}.pcap'"
+        self.pcap_file = None
         if interface is not None:
             self.interface = interface
         else:
@@ -70,6 +72,41 @@ class NetsniffRecorder:
         self.packets_capture = packets_capture
         self.capture_time = capture_time
 
+    @staticmethod
+    def _sanitize_filename_component(value: str, *, max_len: int = 64) -> str:
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", (value or "").strip())
+        cleaned = cleaned.strip("-._")
+        if not cleaned:
+            cleaned = "unknown"
+        return cleaned[:max_len]
+
+    def _get_remote_hostname(self) -> str:
+        try:
+            res = self.host.connection.execute_command("uname -n")
+            hostname = (res.stdout or "").strip().splitlines()[0]
+            if hostname:
+                return hostname
+        except Exception:
+            pass
+        return str(getattr(self.host, "name", "unknown"))
+
+    def _build_pcap_path(self) -> str:
+        hostname = self._sanitize_filename_component(self._get_remote_hostname())
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y%m%dT%H%M%SZ"
+        )
+        job = (
+            os.environ.get("MTL_GITHUB_WORKFLOW") or os.environ.get("GITHUB_JOB") or ""
+        )
+        job = self._sanitize_filename_component(job, max_len=96) if job else ""
+
+        test = self._sanitize_filename_component(self.test_name, max_len=128)
+        parts = [test, hostname, timestamp]
+        if job:
+            parts.append(job)
+        filename = "__".join(parts) + ".pcap"
+        return os.path.join(self.pcap_dir, filename)
+
     def start(self):
         """
         Starts the netsniff-ng
@@ -77,13 +114,14 @@ class NetsniffRecorder:
         if not self.netsniff_process or not self.netsniff_process.running:
             connection = self.host.connection
             try:
+                self.pcap_file = self._build_pcap_path()
                 cmd = [
                     "netsniff-ng",
                     "--silent" if self.silent else "",
                     "--in",
                     str(self.interface),
                     "--out",
-                    self.pcap_file,
+                    f"'{self.pcap_file}'",
                     (
                         f"--num {self.packets_capture}"
                         if self.packets_capture is not None
@@ -95,9 +133,7 @@ class NetsniffRecorder:
                 self.netsniff_process = connection.start_process(
                     " ".join(cmd), stderr_to_stdout=True
                 )
-                logger.info(
-                    f"PCAP file will be saved at: {os.path.abspath(self.pcap_file)}"
-                )
+                logger.info(f"PCAP file will be saved at: {self.pcap_file}")
 
                 if not self.netsniff_process.running:
                     err = self.netsniff_process.stdout_text
@@ -144,17 +180,30 @@ class NetsniffRecorder:
         """
         Stops all netsniff-ng processes on the host using pkill.
         """
+        if not self.netsniff_process:
+            logger.debug("No netsniff-ng process to stop.")
+            return
+
+        # Check if process is still running before trying to stop
+        if not self.netsniff_process.running:
+            logger.debug("netsniff-ng process has already finished.")
+            return
 
         try:
-            logger.info("Stopping netsniff-ng using pkill netsniff-ng...")
-            self.netsniff_process.stop(wait=5)
+            logger.info("Stopping netsniff-ng...")
+            self.netsniff_process.stop(wait=2)
         except SSHRemoteProcessEndException:
             try:
                 self.netsniff_process.kill()
             except RemoteProcessInvalidState:
-                logger.debug("Process killed.")
-        logger.error("netsniff-ng process did not stopped by itself.")
-        logger.error(self.netsniff_process.stdout_text)
+                logger.debug("Process already finished.")
+        except RemoteProcessInvalidState:
+            logger.debug("Process already finished.")
+        else:
+            logger.debug("netsniff-ng process stopped gracefully.")
+            return
+
+        logger.debug("netsniff-ng process did not stop by itself.")
 
     def update_filter(self, src_ip=None, dst_ip=None):
         """

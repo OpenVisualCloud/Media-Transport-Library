@@ -2,6 +2,7 @@
 # # Copyright 2025 Intel Corporation
 import re
 
+import pytest
 from mfd_network_adapter import NetworkInterface
 
 
@@ -89,6 +90,7 @@ class InterfaceSetup:
         }
         self.customs = []
         self.cleanups = []
+        self.ip_cleanups = []  # Track (connection, interface, ip) for cleanup
 
     def get_test_interfaces(self, interface_type="VF", count=2, host=None) -> dict:
         """
@@ -180,10 +182,52 @@ class InterfaceSetup:
         selected_interfaces = self.get_test_interfaces(interface_type, count, host=host)
         return selected_interfaces[host.name]
 
+    def get_pmd_kernel_interfaces(self, interface_type="VF") -> list:
+        """
+        Get hybrid interface list with one DPDK interface (VF/PF) and one kernel socket interface.
+        Requires at least two interfaces configured in topology.
+
+        :param interface_type: Type of DPDK interface (VF or PF)
+        :return: List with [dpdk_interface, "kernel:<interface_name>"]
+        :raises pytest.skip: If less than 2 interfaces configured in topology
+        """
+
+        # Check that we have at least 2 interfaces in topology config
+        host = list(self.hosts.values())[0]
+        if len(host.network_interfaces) < 2:
+            pytest.skip(
+                "PMD+kernel tests require at least 2 network interfaces in topology config. "
+                f"Found {len(host.network_interfaces)} interface(s). "
+                "Add a second interface to topology_config.yaml to run these tests."
+            )
+
+        # Get one interface for DPDK mode (creates VF/PF on first interface)
+        dpdk_interfaces = self.get_interfaces_list_single(interface_type, count=1)
+
+        # Use second interface from topology for kernel socket mode
+        kernel_interface = host.network_interfaces[1].name
+
+        return [dpdk_interfaces[0], f"kernel:{kernel_interface}"]
+
     def register_cleanup(self, nicctl, interface, if_type):
         self.cleanups.append((nicctl, interface, if_type))
 
+    def register_ip_cleanup(self, connection, interface_name: str, ip_address: str):
+        """Register kernel interface IP for cleanup after test."""
+        self.ip_cleanups.append((connection, interface_name, ip_address))
+
+    def cleanup_kernel_ips(self):
+        """Remove all IP addresses configured on kernel interfaces during tests."""
+        for connection, interface_name, ip_address in self.ip_cleanups:
+            try:
+                connection.execute_command(
+                    f"sudo ip addr del {ip_address} dev {interface_name}", shell=True
+                )
+            except Exception:
+                pass
+
     def cleanup(self):
+        self.cleanup_kernel_ips()
         for nicctl, interface, if_type in self.cleanups:
             if if_type.lower() == "vf":
                 nicctl.disable_vf(interface)

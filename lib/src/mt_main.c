@@ -5,6 +5,7 @@
 #include "mt_main.h"
 
 #include "datapath/mt_queue.h"
+#include "deprecated/udp/udp_rxq.h"
 #include "dev/mt_dev.h"
 #include "mt_admin.h"
 #include "mt_arp.h"
@@ -22,7 +23,6 @@
 #include "mt_stat.h"
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
-#include "udp/udp_rxq.h"
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);

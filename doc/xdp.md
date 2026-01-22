@@ -71,17 +71,10 @@ sudo pacman -Syu --needed make m4 clang llvm zlib elfutils libcap-ng
 
 ### Building xdp-tools (including libxdp & libbpf)
 
-It is recommended to use the latest xdp-tools repository to build libxdp and libbpf. We added a fix to address memory leak in libxdp, you can refer to [PR 376](https://github.com/xdp-project/xdp-tools/pull/376)
+Build libxdp and libbpf from the xdp-tools repository using the versions pinned in [`Media-Transport-Library/versions.env`](../versions.env) to ensure consistency.
 
 ```bash
-git clone --recurse-submodules https://github.com/xdp-project/xdp-tools.git
-cd xdp-tools
-./configure
-make
-sudo make install
-cd lib/libbpf/src
-make
-sudo make install
+./script/build_ebpf_xdp.sh
 ```
 
 ### Building MTL
@@ -92,8 +85,8 @@ Ensure the libbpf and libxdp dependencies are found:
 
 ```text
 # output from 'meson setup build'
-Run-time dependency libxdp found: YES 1.4.1
-Run-time dependency libbpf found: YES 1.2.0
+Run-time dependency libxdp found: YES 1.6.0
+Run-time dependency libbpf found: YES 1.5.0
 ```
 
 If not, and you have installed them, you may run this command then reconfigure the project so pkg-config can find them:

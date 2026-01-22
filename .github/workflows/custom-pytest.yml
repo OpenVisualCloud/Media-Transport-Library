@@ -1,0 +1,99 @@
+name: custom-pytest
+on:
+  workflow_dispatch:
+    inputs:
+      nic:
+        description: NIC
+        required: true
+        type: choice
+        options:
+          - e810
+          - e810-dell
+          - e830
+      marker:
+        description: Marker
+        required: false
+        type: string
+      dir:
+        description: Directory (subdirectory of tests/validation)
+        required: true
+        type: string
+        default: tests
+jobs:
+  run-pytest:
+    runs-on: "${{ inputs.nic }}"
+    timeout-minutes: 720
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date '+%y%m%d-%H%M%S')" >> "$GITHUB_ENV"
+      - name: Checkout MTL
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: "${{ github.ref }}"
+      - uses: ./.github/actions/build
+      - name: Install pytest dependencies
+        working-directory: ./tests/validation
+        run: |
+          python3 -m venv ./.venv
+          source ./.venv/bin/activate
+          pip install -r ./requirements.txt
+      - name: Set session ID
+        run: |
+          runner_name="${{ runner.name }}"
+          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+      - name: Set PCI device
+        run: |
+          if [ "${{ inputs.nic }}" = "e810" ]; then
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.nic }}" = "e810-dell" ]; then
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.nic }}" = "e830" ]; then
+            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
+          fi
+      - name: Generate pytest configuration files
+        working-directory: ./tests/validation/configs
+        run: |
+          python3 gen_config.py \
+            --session_id "${{ env.SESSION_ID }}" \
+            --build "${{ secrets.RUNNER_BUILD }}" \
+            --mtl_path "${{ secrets.RUNNER_MTL_PATH }}" \
+            --pci_device "${{ env.PCI_DEVICE }}" \
+            --ip_address 127.0.0.1 \
+            --username "${{ secrets.RUNNER_USERNAME }}" \
+            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
+      - name: Kill active MtlManager and pytest processes
+        run: |
+          sudo killall -SIGINT pipenv || true
+          sudo killall -SIGINT pytest || true
+          sudo killall -SIGINT MtlManager || true
+          sudo killall -SIGINT phc2sys || true
+      - name: Export workflow tag for PCAP naming
+        shell: bash
+        run: |
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ inputs.nic }}" >> "$GITHUB_ENV"
+      - name: Start MtlManager
+        run: |
+          sudo MtlManager &
+      - name: Run tests
+        working-directory: ./tests/validation
+        run: |
+          ./.venv/bin/python3 -m pytest \
+            --test_config=./configs/test_config.yaml \
+            --topology_config=./configs/topology_config.yaml \
+            "${{ inputs.marker && format('-m {0}', inputs.marker) || '' }}" \
+            --template=html/index.html \
+            --report=./report.html \
+            "./${{ inputs.dir }}"
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: "custom-test-report-${{ env.CURRENT_DATE }}"
+          path: ./tests/validation/report.html

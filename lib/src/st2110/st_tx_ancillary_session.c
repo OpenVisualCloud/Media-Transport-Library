@@ -57,6 +57,79 @@ static inline void tx_ancillary_session_put(struct st_tx_ancillary_sessions_mgr*
   rte_spinlock_unlock(&mgr->mutex[idx]);
 }
 
+static inline bool tx_ancillary_test_frame_active(
+    struct st_tx_ancillary_session_impl* s) {
+  return s->test.pattern != ST40_TX_TEST_NONE && s->test_frame_active;
+}
+
+static inline void tx_ancillary_seq_advance(struct st_tx_ancillary_session_impl* s,
+                                            uint16_t step) {
+  uint32_t seq = s->st40_seq_id;
+  uint32_t ext = s->st40_ext_seq_id;
+
+  seq += step;
+  while (seq > UINT16_MAX) {
+    seq -= (UINT16_MAX + 1);
+    ext++;
+  }
+
+  s->st40_seq_id = seq;
+  s->st40_ext_seq_id = ext;
+}
+
+static inline void tx_ancillary_set_rtp_seq(struct st_tx_ancillary_session_impl* s,
+                                            struct st40_rfc8331_rtp_hdr* rtp) {
+  uint16_t step = 1;
+
+  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_SEQ_GAP &&
+      !s->test_seq_gap_fired) {
+    step = 2;
+    s->test_seq_gap_fired = true;
+  }
+
+  rtp->base.seq_number = htons(s->st40_seq_id);
+  rtp->seq_number_ext = htons(s->st40_ext_seq_id);
+
+  tx_ancillary_seq_advance(s, step);
+}
+
+static inline uint16_t tx_ancillary_apply_parity(struct st_tx_ancillary_session_impl* s,
+                                                 uint16_t value) {
+  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_BAD_PARITY) {
+    return value & 0x3FF; /* strip parity to intentionally corrupt */
+  }
+  return st40_add_parity_bits(value);
+}
+
+/* Abort the current frame and allow the app to recycle its buffer */
+static void tx_ancillary_session_abort_frame(struct mtl_main_impl* impl,
+                                             struct st_tx_ancillary_session_impl* s) {
+  if (s->st40_frame_stat != ST40_TX_STAT_SENDING_PKTS) return;
+
+  struct st_frame_trans* frame = &s->st40_frames[s->st40_frame_idx];
+  struct st40_tx_frame_meta* tc_meta = &frame->tc_meta;
+  bool time_measure = mt_sessions_time_measure(impl);
+  uint64_t tsc_start = 0;
+  if (time_measure) tsc_start = mt_get_tsc(impl);
+
+  if (s->ops.notify_frame_done)
+    s->ops.notify_frame_done(s->ops.priv, s->st40_frame_idx, tc_meta);
+  if (time_measure) {
+    uint32_t delta_us = (mt_get_tsc(impl) - tsc_start) / NS_PER_US;
+    s->stat_max_notify_frame_us = RTE_MAX(s->stat_max_notify_frame_us, delta_us);
+  }
+
+  rte_atomic32_dec(&frame->refcnt);
+  s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
+  s->st40_pkt_idx = 0;
+  s->st40_anc_idx = 0;
+  s->calculate_time_cursor = false;
+  s->test_frame_active = false;
+  s->test_seq_gap_fired = false;
+  s->check_frame_done_time = false;
+  s->pacing.tsc_time_cursor = 0;
+}
+
 static int tx_ancillary_session_free_frames(struct st_tx_ancillary_session_impl* s) {
   if (s->st40_frames) {
     struct st_frame_trans* frame;
@@ -230,7 +303,7 @@ static inline uint64_t tx_ancillary_pacing_time(
   return nextafter(epochs * pacing->frame_time, INFINITY);
 }
 
-static inline uint32_t tx_ancillary_pacing_time_stamp(
+static inline __attribute__((unused)) uint32_t tx_ancillary_pacing_time_stamp(
     struct st_tx_ancillary_session_pacing* pacing, uint64_t epochs) {
   uint64_t tmstamp64 = epochs * pacing->frame_time_sampling;
   uint32_t tmstamp32 = tmstamp64;
@@ -448,25 +521,27 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
   /* update rtp */
-  rtp->base.seq_number = htons(s->st40_seq_id);
-  rtp->seq_number_ext = htons(s->st40_ext_seq_id);
-  if (s->st40_seq_id == 0xFFFF) s->st40_ext_seq_id++;
-  s->st40_seq_id++;
+  tx_ancillary_set_rtp_seq(s, rtp);
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
+
+  bool test_no_marker =
+      tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_NO_MARKER;
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st40_frames[s->st40_frame_idx];
-  uint32_t offset = s->st40_pkt_idx * s->max_pkt_len;
-  void* src_addr = frame_info->addr + offset;
-  struct st40_frame* src = src_addr;
+  struct st40_frame* src = frame_info->addr;
+  int anc_idx = s->st40_anc_idx;
   int anc_count = src->meta_num;
+  if (tx_ancillary_test_frame_active(s) && s->split_payload && anc_count > 0 &&
+      anc_idx >= anc_count)
+    anc_idx = anc_count - 1; /* repeat last ANC when test demands extra packets */
   int total_udw = 0;
   int idx = 0;
-  for (idx = s->st40_pkt_idx; idx < anc_count; idx++) {
+  for (idx = anc_idx; idx < anc_count; idx++) {
     uint16_t udw_size = src->meta[idx].udw_size;
     total_udw += udw_size;
-    if ((total_udw * 10 / 8) > s->max_pkt_len) break;
+    if (!s->split_payload && (total_udw * 10 / 8) > s->max_pkt_len) break;
     struct st40_rfc8331_payload_hdr* pktBuff =
         (struct st40_rfc8331_payload_hdr*)(payload);
     pktBuff->first_hdr_chunk.c = src->meta[idx].c;
@@ -474,37 +549,47 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
     pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
     pktBuff->first_hdr_chunk.s = src->meta[idx].s;
     pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
-    pktBuff->second_hdr_chunk.did = st40_add_parity_bits(src->meta[idx].did);
-    pktBuff->second_hdr_chunk.sdid = st40_add_parity_bits(src->meta[idx].sdid);
-    pktBuff->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+    pktBuff->second_hdr_chunk.did = tx_ancillary_apply_parity(s, src->meta[idx].did);
+    pktBuff->second_hdr_chunk.sdid = tx_ancillary_apply_parity(s, src->meta[idx].sdid);
+    pktBuff->second_hdr_chunk.data_count = tx_ancillary_apply_parity(s, udw_size);
 
     pktBuff->swapped_first_hdr_chunk = htonl(pktBuff->swapped_first_hdr_chunk);
     pktBuff->swapped_second_hdr_chunk = htonl(pktBuff->swapped_second_hdr_chunk);
     int i = 0;
     int offset = src->meta[idx].udw_offset;
     for (; i < udw_size; i++) {
-      st40_set_udw(i + 3, st40_add_parity_bits(src->data[offset++]),
+      st40_set_udw(i + 3, tx_ancillary_apply_parity(s, src->data[offset++]),
                    (uint8_t*)&pktBuff->second_hdr_chunk);
     }
     uint16_t checksum = 0;
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    uint16_t total_size =
-        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                        // 10-bit words: DID, SDID, DATA_COUNT
-                                        // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of ANC data packet
-    uint16_t size_to_send =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+    /* Compute byte size of 10-bit words
+      (DID, SDID, DC, payload, checksum) and align to 4 */
+    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10; /* words = udw_size + 4 */
+    uint32_t total_size = (total_bits + 7) / 8;              /* ceil(bits/8) */
+    total_size = (total_size + 3) & ~0x3U;                   /* align to 4 bytes */
+    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
+                            total_size; /* Full size of one ANC */
+    if (s->split_payload && size_to_send > s->max_pkt_len) {
+      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
+          size_to_send, s->max_pkt_len);
+      s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
+      return -STI_FRAME_ANC_TOO_LARGE;
+    }
     payload = payload + size_to_send;
+
+    if (s->split_payload) {
+      idx++;
+      break;
+    }
   }
   int payload_size = payload - (uint8_t*)&rtp[1];
   pkt->data_len += payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
   pkt->pkt_len = pkt->data_len;
   rtp->length = htons(payload_size);
-  rtp->first_hdr_chunk.anc_count = idx - s->st40_pkt_idx;
+  rtp->first_hdr_chunk.anc_count = idx - anc_idx;
   if (s->ops.interlaced) {
     if (frame_info->tc_meta.second_field)
       rtp->first_hdr_chunk.f = 0b11;
@@ -513,11 +598,12 @@ static int tx_ancillary_session_build_packet(struct st_tx_ancillary_session_impl
   } else {
     rtp->first_hdr_chunk.f = 0b00;
   }
-  if (idx == anc_count) rtp->base.marker = 1;
+  bool last_pkt = (s->st40_total_pkts > 0) ? (s->st40_pkt_idx == (s->st40_total_pkts - 1))
+                                           : (idx == anc_count);
+  if (!test_no_marker && last_pkt) rtp->base.marker = 1;
+  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
       payload_size);
-
-  rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   udp->dgram_len = htons(pkt->pkt_len - pkt->l2_len - pkt->l3_len);
   ipv4->total_length = htons(pkt->pkt_len - pkt->l2_len);
@@ -538,25 +624,26 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   rte_memcpy(rtp, &s->hdr[MTL_SESSION_PORT_P].rtp, sizeof(*rtp));
 
   /* update rtp */
-  rtp->base.seq_number = htons(s->st40_seq_id);
-  rtp->seq_number_ext = htons(s->st40_ext_seq_id);
-  if (s->st40_seq_id == 0xFFFF) s->st40_ext_seq_id++;
-  s->st40_seq_id++;
+  tx_ancillary_set_rtp_seq(s, rtp);
   rtp->base.tmstamp = htonl(s->pacing.rtp_time_stamp);
+
+  bool test_no_marker =
+      tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_NO_MARKER;
 
   /* Set place for payload just behind rtp header */
   uint8_t* payload = (uint8_t*)&rtp[1];
   struct st_frame_trans* frame_info = &s->st40_frames[s->st40_frame_idx];
-  uint32_t offset = s->st40_pkt_idx * s->max_pkt_len;
-  void* src_addr = frame_info->addr + offset;
-  struct st40_frame* src = src_addr;
+  struct st40_frame* src = frame_info->addr;
   int anc_count = src->meta_num;
+  if (tx_ancillary_test_frame_active(s) && s->split_payload && anc_count > 0 &&
+      anc_idx >= anc_count)
+    anc_idx = anc_count - 1;
   int total_udw = 0;
   int idx = 0;
   for (idx = anc_idx; idx < anc_count; idx++) {
     uint16_t udw_size = src->meta[idx].udw_size;
     total_udw += udw_size;
-    if ((total_udw * 10 / 8) > s->max_pkt_len) break;
+    if (!s->split_payload && (total_udw * 10 / 8) > s->max_pkt_len) break;
     struct st40_rfc8331_payload_hdr* pktBuff =
         (struct st40_rfc8331_payload_hdr*)(payload);
     pktBuff->first_hdr_chunk.c = src->meta[idx].c;
@@ -564,31 +651,41 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
     pktBuff->first_hdr_chunk.horizontal_offset = src->meta[idx].hori_offset;
     pktBuff->first_hdr_chunk.s = src->meta[idx].s;
     pktBuff->first_hdr_chunk.stream_num = src->meta[idx].stream_num;
-    pktBuff->second_hdr_chunk.did = st40_add_parity_bits(src->meta[idx].did);
-    pktBuff->second_hdr_chunk.sdid = st40_add_parity_bits(src->meta[idx].sdid);
-    pktBuff->second_hdr_chunk.data_count = st40_add_parity_bits(udw_size);
+    pktBuff->second_hdr_chunk.did = tx_ancillary_apply_parity(s, src->meta[idx].did);
+    pktBuff->second_hdr_chunk.sdid = tx_ancillary_apply_parity(s, src->meta[idx].sdid);
+    pktBuff->second_hdr_chunk.data_count = tx_ancillary_apply_parity(s, udw_size);
 
     pktBuff->swapped_first_hdr_chunk = htonl(pktBuff->swapped_first_hdr_chunk);
     pktBuff->swapped_second_hdr_chunk = htonl(pktBuff->swapped_second_hdr_chunk);
     int i = 0;
     int offset = src->meta[idx].udw_offset;
     for (; i < udw_size; i++) {
-      st40_set_udw(i + 3, st40_add_parity_bits(src->data[offset++]),
+      st40_set_udw(i + 3, tx_ancillary_apply_parity(s, src->data[offset++]),
                    (uint8_t*)&pktBuff->second_hdr_chunk);
     }
     uint16_t checksum = 0;
     checksum = st40_calc_checksum(3 + udw_size, (uint8_t*)&pktBuff->second_hdr_chunk);
     st40_set_udw(i + 3, checksum, (uint8_t*)&pktBuff->second_hdr_chunk);
 
-    uint16_t total_size =
-        ((3 + udw_size + 1) * 10) / 8;  // Calculate size of the
-                                        // 10-bit words: DID, SDID, DATA_COUNT
-                                        // + size of buffer with data + checksum
-    total_size = (4 - total_size % 4) + total_size;  // Calculate word align to the 32-bit
-                                                     // word of ANC data packet
-    uint16_t size_to_send =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size;  // Full size of one ANC
+    /* Compute byte size of 10-bit words (DID, SDID, DC, payload, checksum)
+       and align to 4 */
+    uint32_t total_bits = (uint32_t)(3 + udw_size + 1) * 10;
+    uint32_t total_size = (total_bits + 7) / 8;
+    total_size = (total_size + 3) & ~0x3U;
+    uint32_t size_to_send = (sizeof(struct st40_rfc8331_payload_hdr) - 4) +
+                            total_size; /* Full size of one ANC */
+    if (s->split_payload && size_to_send > s->max_pkt_len) {
+      err("%s(%d), ANC packet too large for MTU (size=%u max=%u)\n", __func__, s->idx,
+          size_to_send, s->max_pkt_len);
+      s->stat_build_ret_code = -STI_FRAME_ANC_TOO_LARGE;
+      return -STI_FRAME_ANC_TOO_LARGE;
+    }
     payload = payload + size_to_send;
+
+    if (s->split_payload) {
+      idx++;
+      break;
+    }
   }
   int payload_size = payload - (uint8_t*)&rtp[1];
   pkt->data_len = payload_size + sizeof(struct st40_rfc8331_rtp_hdr);
@@ -603,8 +700,9 @@ static int tx_ancillary_session_build_rtp_packet(struct st_tx_ancillary_session_
   } else {
     rtp->first_hdr_chunk.f = 0b00;
   }
-  if (idx == anc_count) rtp->base.marker = 1;
-
+  bool last_pkt = (s->st40_total_pkts > 0) ? (s->st40_pkt_idx == (s->st40_total_pkts - 1))
+                                           : (idx == anc_count);
+  if (!test_no_marker && last_pkt) rtp->base.marker = 1;
   rtp->swapped_first_hdr_chunk = htonl(rtp->swapped_first_hdr_chunk);
 
   dbg("%s(%d), anc_count %d, payload_size %d\n", __func__, s->idx, anc_count,
@@ -634,6 +732,7 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
   if (rtp->tmstamp != s->st40_rtp_time) {
     /* start of a new frame */
     s->st40_pkt_idx = 0;
+    s->st40_anc_idx = 0;
     rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
@@ -651,6 +750,15 @@ static int tx_ancillary_session_rtp_update_packet(struct mtl_main_impl* impl,
         ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
       }
     }
+    if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
+      s->test_frame_active = true;
+      s->test_frames_left--;
+      s->test_seq_gap_fired = false;
+    } else {
+      s->test_frame_active = false;
+    }
+    if (s->test_frame_active && s->test.paced_pkt_count)
+      s->st40_total_pkts = RTE_MAX(1, (int)s->test.paced_pkt_count);
     tx_ancillary_session_sync_pacing(impl, s, 0);
     tx_ancillary_update_rtp_time_stamp(s, ST10_TIMESTAMP_FMT_MEDIA_CLK,
                                        ntohl(rtp->tmstamp));
@@ -699,6 +807,7 @@ static int tx_ancillary_session_build_packet_chain(struct mtl_main_impl* impl,
       if (rtp->base.tmstamp != s->st40_rtp_time) {
         /* start of a new frame */
         s->st40_pkt_idx = 0;
+        s->st40_anc_idx = 0;
         rte_atomic32_inc(&s->stat_frame_cnt);
         s->port_user_stats.common.port[s_port].frames++;
         s->st40_rtp_time = rtp->base.tmstamp;
@@ -861,16 +970,29 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     for (int i = 0; i < src->meta_num; i++) total_udw += src->meta[i].udw_size;
     int total_size = total_udw * 10 / 8;
     s->st40_pkt_idx = 0;
-    s->st40_total_pkts = total_size / s->max_pkt_len;
-    if (total_size % s->max_pkt_len) s->st40_total_pkts++;
-    /* how do we split if it need two or more pkts? */
-    dbg("%s(%d), st40_total_pkts %d total_udw %d meta_num %u src %p\n", __func__, idx,
-        s->st40_total_pkts, total_udw, src->meta_num, src);
-    if (s->st40_total_pkts > 1) {
-      err("%s(%d), frame %u invalid st40_total_pkts %d\n", __func__, idx, next_frame_idx,
-          s->st40_total_pkts);
-      s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
-      return MTL_TASKLET_ALL_DONE;
+    s->st40_anc_idx = 0;
+    if (s->split_payload) {
+      s->st40_total_pkts = src->meta_num ? src->meta_num : 1;
+    } else {
+      s->st40_total_pkts = total_size / s->max_pkt_len;
+      if (total_size % s->max_pkt_len) s->st40_total_pkts++;
+      if (!s->st40_total_pkts) s->st40_total_pkts = 1;
+      dbg("%s(%d), st40_total_pkts %d total_udw %d meta_num %u src %p\n", __func__, idx,
+          s->st40_total_pkts, total_udw, src->meta_num, src);
+      if (s->st40_total_pkts > 1) {
+        err("%s(%d), frame %u invalid st40_total_pkts %d\n", __func__, idx,
+            next_frame_idx, s->st40_total_pkts);
+        s->stat_build_ret_code = -STI_FRAME_APP_ERR_TX_FRAME;
+        return MTL_TASKLET_ALL_DONE;
+      }
+    }
+
+    if (s->test.pattern != ST40_TX_TEST_NONE && s->test_frames_left) {
+      s->test_frame_active = true;
+      s->test_frames_left--;
+      s->test_seq_gap_fired = false;
+    } else {
+      s->test_frame_active = false;
     }
 
     MT_USDT_ST40_TX_FRAME_NEXT(s->mgr->idx, s->idx, next_frame_idx, frame->addr,
@@ -937,7 +1059,14 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       s->stat_build_ret_code = -STI_FRAME_PKT_ALLOC_FAIL;
       return MTL_TASKLET_ALL_DONE;
     }
-    tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_pkt_idx);
+    int next_anc_idx = tx_ancillary_session_build_rtp_packet(s, pkt_rtp, s->st40_anc_idx);
+    if (next_anc_idx < 0) {
+      rte_pktmbuf_free(pkt);
+      rte_pktmbuf_free(pkt_rtp);
+      if (!s->stat_build_ret_code) s->stat_build_ret_code = next_anc_idx;
+      tx_ancillary_session_abort_frame(impl, s);
+      return MTL_TASKLET_ALL_DONE;
+    }
     tx_ancillary_session_build_packet_chain(impl, s, pkt, pkt_rtp, MTL_SESSION_PORT_P);
 
     if (send_r) {
@@ -952,8 +1081,15 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       tx_ancillary_session_build_packet_chain(impl, s, pkt_r, pkt_rtp,
                                               MTL_SESSION_PORT_R);
     }
+    s->st40_anc_idx = next_anc_idx;
   } else {
-    tx_ancillary_session_build_packet(s, pkt);
+    int next_anc_idx = tx_ancillary_session_build_packet(s, pkt);
+    if (next_anc_idx < 0) {
+      rte_pktmbuf_free(pkt);
+      if (!s->stat_build_ret_code) s->stat_build_ret_code = next_anc_idx;
+      tx_ancillary_session_abort_frame(impl, s);
+      return MTL_TASKLET_ALL_DONE;
+    }
     if (send_r) {
       pkt_r = rte_pktmbuf_copy(pkt, hdr_pool_r, 0, UINT32_MAX);
       if (!pkt_r) {
@@ -964,6 +1100,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
       }
       tx_ancillary_session_update_redundant(s, pkt_r);
     }
+    s->st40_anc_idx = next_anc_idx;
   }
 
   st_tx_mbuf_set_idx(pkt, s->st40_pkt_idx);
@@ -976,8 +1113,13 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
   }
 
   s->st40_pkt_idx++;
-  pacing->tsc_time_cursor += pacing->frame_time;
-  s->calculate_time_cursor = true;
+  double pkt_time = pacing->frame_time / RTE_MAX(1, s->st40_total_pkts);
+  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_PACED &&
+      s->test.paced_gap_ns)
+    pkt_time = s->test.paced_gap_ns;
+  pacing->tsc_time_cursor += pkt_time;
+  /* keep one RTP timestamp across a multi-packet frame; re-sync after the last pkt */
+  s->calculate_time_cursor = s->st40_pkt_idx >= s->st40_total_pkts;
 
   bool done = false;
   ret = tx_ancillary_session_send_pkt(mgr, s, MTL_SESSION_PORT_P, pkt);
@@ -1014,6 +1156,9 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     rte_atomic32_dec(&frame->refcnt);
     s->st40_frame_stat = ST40_TX_STAT_WAIT_FRAME;
     s->st40_pkt_idx = 0;
+    s->st40_anc_idx = 0;
+    s->test_frame_active = false;
+    s->test_seq_gap_fired = false;
     rte_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
@@ -1548,6 +1693,16 @@ static int tx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "TX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
+  s->split_payload = (ops->flags & ST40_TX_FLAG_SPLIT_ANC_BY_PKT) ? true : false;
+
+  /* test-only mutation config */
+  s->test = ops->test;
+  if (s->test.pattern != ST40_TX_TEST_NONE && !s->test.frame_count)
+    s->test.frame_count = 1;
+  s->test_frames_left = s->test.frame_count;
+  s->test_frame_active = false;
+  s->test_seq_gap_fired = false;
+  if (s->test.pattern != ST40_TX_TEST_NONE) s->split_payload = true;
 
   /* if disable shared queue */
   s->shared_queue = true;

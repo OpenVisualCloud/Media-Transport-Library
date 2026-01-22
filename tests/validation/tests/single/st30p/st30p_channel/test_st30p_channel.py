@@ -9,28 +9,29 @@ from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import get_channel_number, get_sample_size
 from mtl_engine.media_files import audio_files
-from tests.xfail import SDBQ1001_audio_channel_check
 
 logger = logging.getLogger(__name__)
 
 
+_AUDIO_FORMATS = ["PCM8", "PCM16", "PCM24"]
+_AUDIO_CHANNELS = ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
+_SMOKE_CASE = ("PCM16", "M")
+
+
 @pytest.mark.nightly
 @pytest.mark.parametrize(
-    "media_file",
+    ("media_file", "audio_channel"),
     [
-        audio_files["PCM8"],
-        audio_files["PCM16"],
-        audio_files["PCM24"],
+        pytest.param(
+            audio_files[fmt],
+            ch,
+            marks=[pytest.mark.smoke] if (fmt, ch) == _SMOKE_CASE else [],
+            id=f"{fmt}-{ch}",
+        )
+        for fmt in _AUDIO_FORMATS
+        for ch in _AUDIO_CHANNELS
     ],
     indirect=["media_file"],
-    ids=[
-        "PCM8",
-        "PCM16",
-        "PCM24",
-    ],
-)
-@pytest.mark.parametrize(
-    "audio_channel", ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
 )
 def test_st30p_channel(
     hosts,
@@ -46,7 +47,8 @@ def test_st30p_channel(
 ):
     media_file_info, media_file_path = media_file
 
-    SDBQ1001_audio_channel_check(audio_channel, media_file_info["format"], request)
+    if media_file_info["format"] in ["PCM16", "PCM24"] and audio_channel == "222":
+        pytest.skip("Unsupported parameter combination")
 
     host = list(hosts.values())[0]
     interfaces_list = setup_interfaces.get_interfaces_list_single(

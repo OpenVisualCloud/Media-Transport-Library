@@ -121,6 +121,9 @@ The `tests/` directory contains test implementations organized by scenario type:
   - **ST2110-22**: Compressed video tests
   - **ST2110-30**: Audio tests
   - **ST2110-40**: Ancillary data tests
+    - Progressive and interlaced GStreamer loops (RFC8331, fps/frame buffer sweeps)
+    - Split-mode packetized ANC with frame-info logging (sequence discontinuity, packet totals, RTP marker) and ring-size validation
+    - Pacing sanity via RTP sender helpers and ramdisk-backed media fixtures (configure `ramdisk.media` in `configs/test_config.yaml`)
   - Backend-specific tests (DMA, kernel socket, etc.)
   - Integration tests (FFmpeg, GStreamer)
   
@@ -283,6 +286,8 @@ ramdisk:
 - Set `media_path` to where your test media files are located
 - Ensure the paths exist and are accessible
 
+GStreamer ST2110-40 ancillary tests use the `media_file` fixture, which creates inputs/outputs on `ramdisk.media.mountpoint`; mount and size this ramdisk before running the suite to avoid `/tmp` spills.
+
 #### Optional: Create VFs for Advanced Testing
 
 For NIC testing with Virtual Functions:
@@ -362,6 +367,7 @@ The tests are categorized with markers that can be used to run specific test gro
 - `@pytest.mark.kernel_socket`: Tests for kernel socket backend
 - `@pytest.mark.xdp`: Tests for XDP backend
 - `@pytest.mark.gpu`: Tests involving GPU processing
+- `@pytest.mark.verified`: Tests passing the [Verified criteria](#verified-test-criteria)
 
 ### Generating HTML Reports
 
@@ -550,3 +556,20 @@ Increase log verbosity:
 ```bash
 python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml --log-cli-level=DEBUG tests/single/st20p/test_st20p_rx.py
 ```
+
+### Verified Test Criteria
+
+This section defines when a test is eligible to receive the Verified flag and how to validate PASSED reporting, starting with Smoke tests.
+
+Verified flag application (all required):
+1. Telemetry matches inputs
+   - Example: Input is 60 fps; logs and collected metrics report 60 fps (with a documented tolerance).
+   - Example: Configuration flags (e.g., rss_enabled) in logs align with test inputs.
+
+2. Test goal is explicitly validated
+   - Each test contains a Doxygen-style preamble describing it (f.e objective, steps, expected outcomes, and metrics)
+   - Checks enabled whenever feasible
+
+3. CI gating
+   - Test result is PASSED in CI using framework-provisioned environment only (no manual setup).
+   - CI artifacts include logs/metrics proving telemetry alignment with inputs.

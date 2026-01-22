@@ -17,12 +17,22 @@
 # .github/workflows/tools_build.yml
 # .github/workflows/ubuntu_build.yml
 
-set -e
+set -euo pipefail
 
-CLANG_FORMAT_TOOL="clang-format-14" # for super-linter v6 action
-echo "clang-format check"
-find . -path ./build -prune -o -regex '.*\.\(cpp\|hpp\|cc\|c\|h\)' ! -name 'pymtl_wrap.c' \
-	! -name 'vmlinux.h' -exec ${CLANG_FORMAT_TOOL} --verbose -i {} +
+CLANG_FORMAT_TOOL=${CLANG_FORMAT_TOOL:-clang-format-14} # for super-linter v6 action
+echo "clang-format check (git-tracked and non-ignored files only)"
 
-black python/
-isort python/
+mapfile -t CLANG_FORMAT_FILES < <(
+	git ls-files --cached --others --exclude-standard \
+		-- '*.cpp' -- '*.hpp' -- '*.cc' -- '*.c' -- '*.h' \
+		':!:pymtl_wrap.c' ':!:vmlinux.h'
+)
+
+if ((${#CLANG_FORMAT_FILES[@]})); then
+	# Run clang-format in parallel batches, avoiding git-ignored files.
+	printf '%s\0' "${CLANG_FORMAT_FILES[@]}" |
+		xargs -0 -n32 -P"$(nproc)" "${CLANG_FORMAT_TOOL}" -i
+fi
+
+isort python/ tests/
+black python/ tests/

@@ -53,6 +53,8 @@ dkms.conf
 
 # Ours
 .*
+!.github/
+!.github/**
 *.log
 *.log_*
 logs_*

@@ -82,6 +82,10 @@ endif
 mtl_c_args = []
 mtl_link_c_args = []
 
+if not is_windows
+  mtl_link_c_args += ['-Wl,-z,now', '-Wl,-z,relro']
+endif
+
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'
   mtl_c_args += ['-Werror']

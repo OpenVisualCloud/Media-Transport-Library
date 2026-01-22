@@ -6,6 +6,7 @@ import datetime
 import logging
 import os
 import shutil
+import signal
 import time
 from typing import Any, Dict
 
@@ -40,6 +41,137 @@ from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
+
+
+def _select_sniff_interface(host, capture_cfg: dict):
+    def _pci_device_id(nic) -> str:
+        """Return lowercased PCI vendor:device identifier (e.g., '8086:1592')."""
+        return f"{nic.pci_device.vendor_id}:{nic.pci_device.device_id}".lower()
+
+    sniff_interface = capture_cfg.get("sniff_interface")
+    if sniff_interface:
+        for nic in host.network_interfaces:
+            if nic.name == str(sniff_interface):
+                return nic
+        available = [
+            f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
+        ]
+        raise RuntimeError(
+            f"capture_cfg.sniff_interface={sniff_interface} not found on host {host.name}. "
+            f"Available interfaces: {', '.join(available)}"
+        )
+
+    sniff_interface_index = capture_cfg.get("sniff_interface_index")
+    if sniff_interface_index is not None:
+        return host.network_interfaces[int(sniff_interface_index)]
+
+    sniff_pci_device = capture_cfg.get("sniff_pci_device")
+    if sniff_pci_device:
+        target = str(sniff_pci_device).lower()
+
+        direct_matches = [
+            nic for nic in host.network_interfaces if target == _pci_device_id(nic)
+        ]
+        if direct_matches:
+            return direct_matches[1] if len(direct_matches) > 1 else direct_matches[0]
+
+        available = [
+            f"{nic.name} ({nic.pci_address.lspci})" for nic in host.network_interfaces
+        ]
+        raise RuntimeError(
+            f"capture_cfg.sniff_pci_device={sniff_pci_device} not found on host {host.name}. "
+            f"Available interfaces: {', '.join(available)}"
+        )
+
+    # Default behavior: capture on 2nd PF.
+    if len(host.network_interfaces) < 2:
+        raise RuntimeError(
+            f"Host {host.name} has less than 2 network interfaces; "
+            f"Cannot select 2nd PF for capture. Add more interfaces to config or turn off capture."
+        )
+
+    return host.network_interfaces[1]
+
+
+def _select_sniff_interface_name(host, capture_cfg: dict) -> str:
+    return _select_sniff_interface(host, capture_cfg).name
+
+
+def _select_capture_host(hosts: dict):
+    return hosts["client"] if "client" in hosts else list(hosts.values())[0]
+
+
+@pytest.fixture(scope="session")
+def phc2sys_session(test_config: dict, hosts):
+    """Start phc2sys for the capture interface before any tests.
+
+    - Uses the same interface selection logic as PCAP capture.
+    - Detects the PTP Hardware Clock via `ethtool -T`.
+    - Runs `phc2sys -s /dev/ptpX -c CLOCK_REALTIME -O 0 -m`.
+
+    The process is stopped at the end of the session.
+    """
+
+    capture_cfg = test_config.get("capture_cfg", {})
+    if not (capture_cfg and capture_cfg.get("enable")):
+        yield
+        return
+
+    host = _select_capture_host(hosts)
+    sniff_nic = _select_sniff_interface(host, capture_cfg)
+    capture_iface = sniff_nic.name
+
+    ptp_details = host.connection.execute_command(
+        f"sudo ethtool -T '{capture_iface}' 2>/dev/null || true"
+    )
+    ptp_idx = ""
+    for line in (ptp_details.stdout or "").splitlines():
+        # Keep this equivalent to: awk -F': ' '/PTP Hardware Clock:/ {print $2; exit}'
+        if "PTP Hardware Clock:" in line:
+            ptp_idx = line.split(": ", 1)[1].strip() if ": " in line else ""
+            break
+
+    if not ptp_idx.isdigit():
+        raise RuntimeError(
+            "ERROR: failed to parse PTP Hardware Clock index for "
+            f"{capture_iface}. Details: {ptp_details.stdout}{ptp_details.stderr}"
+        )
+
+    capture_ptp = f"/dev/ptp{ptp_idx}"
+
+    logger.info(
+        f"Starting phc2sys: {capture_ptp} -> CLOCK_REALTIME (iface={capture_iface})"
+    )
+
+    log_path = f"/tmp/phc2sys-{capture_iface}.log"
+    phc2sys_cmd = "sudo phc2sys " f"-s '{capture_ptp}' -c CLOCK_REALTIME -O 0 -m"
+    phc2sys_process = host.connection.start_process(
+        phc2sys_cmd,
+        stderr_to_stdout=True,
+        output_file=log_path,
+    )
+
+    # Give phc2sys a moment to fail fast (e.g., missing /dev/ptpX permissions).
+    time.sleep(0.3)
+    if not phc2sys_process.running:
+        raise RuntimeError(
+            f"Failed to start phc2sys (iface={capture_iface}, ptp={capture_ptp}). "
+            f"log={log_path}"
+        )
+
+    try:
+        yield
+    finally:
+        if not phc2sys_process:
+            return
+
+        if not phc2sys_process.running:
+            raise RuntimeError(
+                f"phc2sys process (iface={capture_iface}, ptp={capture_ptp}) "
+                f"stopped unexpectedly. See log: {log_path}"
+            )
+
+        phc2sys_process.kill(wait=None, with_signal=signal.SIGINT)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -152,6 +284,7 @@ def prepare_ramdisk(hosts, test_config):
     pcap_dir = ramdisk_cfg.get("pcap_dir", "/home/pcap_files")
     tmpfs_size_gib = ramdisk_cfg.get("tmpfs_size_gib", "768")
 
+    ramdisks = []
     if capture_cfg.get("enable", False):
         ramdisks = [
             Ramdisk(host=host, mount_point=pcap_dir, size_gib=tmpfs_size_gib)
@@ -159,6 +292,9 @@ def prepare_ramdisk(hosts, test_config):
         ]
         for ramdisk in ramdisks:
             ramdisk.mount()
+    yield
+    for ramdisk in ramdisks:
+        ramdisk.unmount()
 
 
 @pytest.fixture(scope="session")
@@ -177,16 +313,46 @@ def media_ramdisk(hosts, test_config):
         ramdisk.unmount()
 
 
+"""Fixture that copies requested media files into the media ramdisk for each test host.
+
+When `request.param` is provided, the referenced media file is copied from the
+configured media library into the RAM disk (creating the RAM disk entry, if
+needed) for every host before the test runs, and automatically removed
+afterward. If no `request.param` is supplied, the fixture simply yields the
+RAM disk mount path without staging any file.
+
+Args:
+    media_ramdisk: Pytest fixture ensuring the media RAM disk is available.
+    request: Pytest request object; `request.param` describes the media file to copy.
+    hosts: Mapping of host identifiers to connection objects used to run shell commands.
+    test_config: Dictionary containing test configuration (media paths, RAM disk mount point).
+
+Yields:
+    Tuple[dict | None, str]: `(media_file_info, ramdisk_path)` where `media_file_info`
+    is the metadata for the staged file, or `None` if no media file was requested,
+    and `ramdisk_path` is either the staged file path or the mount path alone when
+    no file is staged.
+"""
+
+
 @pytest.fixture(scope="function")
 def media_file(media_ramdisk, request, hosts, test_config):
-    media_file_info = request.param
+    media_file_info = getattr(request, "param", None)
+
     ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
     ramdisk_mountpoint = ramdisk_config.get("mountpoint", "/mnt/ramdisk/media")
     media_path = test_config.get("media_path", "/mnt/media")
+
+    # simple path where no media file is needed (e.g., generated files)
+    if media_file_info is None:
+        yield media_file_info, ramdisk_mountpoint
+        return
+
     src_media_file_path = os.path.join(media_path, media_file_info["filename"])
     ramdisk_media_file_path = os.path.join(
         ramdisk_mountpoint, media_file_info["filename"]
     )
+
     for host in hosts.values():
         cmd = f"sudo cp {src_media_file_path} {ramdisk_media_file_path}"
         try:
@@ -195,6 +361,7 @@ def media_file(media_ramdisk, request, hosts, test_config):
             logging.log(
                 level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
             )
+
     yield media_file_info, ramdisk_media_file_path
     for host in hosts.values():
         cmd = f"sudo rm {ramdisk_media_file_path}"
@@ -262,7 +429,15 @@ def log_session():
 
 
 @pytest.fixture(scope="function")
-def pcap_capture(request, media_file, test_config, hosts, mtl_path):
+def pcap_capture(
+    request, media_file, test_config, hosts, mtl_path, phc2sys_session, prepare_ramdisk
+):
+    """Fixture for capturing pcap files during tests.
+
+    Note: This fixture depends on prepare_ramdisk to ensure proper cleanup order.
+    The netsniff-ng process must be stopped BEFORE the ramdisk is unmounted,
+    otherwise the unmount will fail with 'device busy'.
+    """
     capture_cfg = test_config.get("capture_cfg", {})
     capturer = None
     if capture_cfg and capture_cfg.get("enable"):
@@ -287,49 +462,71 @@ def pcap_capture(request, media_file, test_config, hosts, mtl_path):
             host=host,
             test_name=test_name,
             pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-            interface=host.network_interfaces[0].name,
+            interface=_select_sniff_interface_name(host, capture_cfg),
             silent=capture_cfg.get("silent", True),
             packets_capture=capture_cfg.get("packets_number", None),
             capture_time=capture_cfg.get("capture_time", None),
         )
-    yield capturer
-    if capturer and capturer.netsniff_process:
-        ebu_server = test_config.get("ebu_server", {})
-        if not ebu_server:
-            logger.error("EBU server configuration not found in test_config.yaml")
-            return
-        ebu_ip = ebu_server.get("ebu_ip", None)
-        ebu_login = ebu_server.get("user", None)
-        ebu_passwd = ebu_server.get("password", None)
-        ebu_proxy = ebu_server.get("proxy", None)
-        proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
-        compliance_upl = capturer.host.connection.execute_command(
-            "python3 ./tests/validation/compliance/upload_pcap.py"
-            f" --ip {ebu_ip}"
-            f" --user {ebu_login}"
-            f" --password {ebu_passwd}"
-            f" --pcap {capturer.pcap_file}{proxy_cmd}",
-            cwd=f"{str(mtl_path)}",
-        )
-        if compliance_upl.return_code != 0:
-            logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
-            return
-        uuid = compliance_upl.stdout.split(">>>UUID: ")[1].strip()
-        logger.debug(f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}")
-        uploader = PcapComplianceClient(
-            ebu_ip=ebu_ip,
-            user=ebu_login,
-            password=ebu_passwd,
-            pcap_id=uuid,
-            proxies={"http": ebu_proxy, "https": ebu_proxy},
-        )
-        result, report = uploader.check_compliance()
-        update_compliance_result(request.node.nodeid, "Pass" if result else "Fail")
-        if result:
-            logger.info("PCAP compliance check passed")
-        else:
-            log_fail("PCAP compliance check failed")
-            logger.info(f"Compliance report: {report}")
+    try:
+        yield capturer
+    finally:
+        # Process compliance check if we have a captured pcap file
+        if capturer and capturer.pcap_file:
+            ebu_server = test_config.get("ebu_server", {})
+            if not ebu_server:
+                logger.error("EBU server configuration not found in test_config.yaml")
+            else:
+                ebu_ip = ebu_server.get("ebu_ip", None)
+                ebu_login = ebu_server.get("user", None)
+                ebu_passwd = ebu_server.get("password", None)
+                ebu_proxy = ebu_server.get("proxy", None)
+                proxy_cmd = f" --proxy {ebu_proxy}" if ebu_proxy else ""
+                compliance_upl = capturer.host.connection.execute_command(
+                    "python3 ./tests/validation/compliance/upload_pcap.py"
+                    f" --ip {ebu_ip}"
+                    f" --user {ebu_login}"
+                    f" --password {ebu_passwd}"
+                    f" --pcap '{capturer.pcap_file}'{proxy_cmd}",
+                    cwd=f"{str(mtl_path)}",
+                )
+                if compliance_upl.return_code != 0:
+                    logger.error(f"PCAP upload failed: {compliance_upl.stderr}")
+                else:
+                    uuid = compliance_upl.stdout.split(">>>UUID: ")[1].strip()
+                    logger.debug(
+                        f"PCAP successfully uploaded to EBU LIST with UUID: {uuid}"
+                    )
+                    uploader = PcapComplianceClient(
+                        ebu_ip=ebu_ip,
+                        user=ebu_login,
+                        password=ebu_passwd,
+                        pcap_id=uuid,
+                        proxies={"http": ebu_proxy, "https": ebu_proxy},
+                    )
+                    result, report = uploader.check_compliance()
+                    update_compliance_result(
+                        request.node.nodeid, "Pass" if result else "Fail"
+                    )
+                    if result:
+                        logger.info("PCAP compliance check passed")
+                    else:
+                        log_fail("PCAP compliance check failed")
+                        logger.info(f"Compliance report: {report}")
+
+                # Remove pcap file after upload to free up ramdisk space
+                try:
+                    capturer.host.connection.execute_command(
+                        f"rm -f '{capturer.pcap_file}'"
+                    )
+                    logger.debug(f"Removed pcap file: {capturer.pcap_file}")
+                except ConnectionCalledProcessError as e:
+                    logger.warning(f"Failed to remove pcap file: {e}")
+
+        # Always ensure netsniff-ng is stopped before fixture cleanup completes
+        # This is critical because prepare_ramdisk unmount happens after this fixture
+        # and will fail if netsniff-ng is still holding the pcap directory
+        if capturer:
+            capturer.stop()
 
 
 @pytest.fixture(scope="function", autouse=True)

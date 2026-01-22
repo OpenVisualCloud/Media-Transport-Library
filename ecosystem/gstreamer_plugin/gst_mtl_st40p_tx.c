@@ -90,6 +90,23 @@ static GType gst_mtl_st40p_tx_input_format_get_type(void) {
 }
 #define GST_TYPE_MTL_ST40P_TX_INPUT_FORMAT (gst_mtl_st40p_tx_input_format_get_type())
 
+static GType gst_mtl_st40p_tx_test_mode_get_type(void) {
+  static gsize g_define_type_id__ = 0;
+  if (g_once_init_enter(&g_define_type_id__)) {
+    static const GEnumValue values[] = {
+        {GST_MTL_ST40P_TX_TEST_MODE_NONE, "None", "none"},
+        {GST_MTL_ST40P_TX_TEST_MODE_NO_MARKER, "NoMarker", "no-marker"},
+        {GST_MTL_ST40P_TX_TEST_MODE_SEQ_GAP, "SeqGap", "seq-gap"},
+        {GST_MTL_ST40P_TX_TEST_MODE_BAD_PARITY, "BadParity", "bad-parity"},
+        {GST_MTL_ST40P_TX_TEST_MODE_PACED, "Paced", "paced"},
+        {0, NULL, NULL}};
+    GType g_define_type_id = g_enum_register_static("GstMtlSt40pTxTestMode", values);
+    g_once_init_leave(&g_define_type_id__, g_define_type_id);
+  }
+  return g_define_type_id__;
+}
+#define GST_TYPE_MTL_ST40P_TX_TEST_MODE (gst_mtl_st40p_tx_test_mode_get_type())
+
 GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40p_tx_debug);
 #define GST_CAT_DEFAULT gst_mtl_st40p_tx_debug
 #ifndef GST_LICENSE
@@ -116,11 +133,16 @@ enum {
   PROP_ST40P_TX_FRAMERATE,
   PROP_ST40P_TX_DID,
   PROP_ST40P_TX_SDID,
+  PROP_ST40P_TX_INTERLACED,
   PROP_ST40P_TX_USE_PTS_FOR_PACING,
   PROP_ST40P_TX_PTS_PACING_OFFSET,
   PROP_ST40P_TX_PARSE_8331_META,
   PROP_ST40P_TX_MAX_UDW_SIZE,
   PROP_ST40P_TX_INPUT_FORMAT,
+  PROP_ST40P_TX_SPLIT_ANC_BY_PKT,
+  PROP_ST40P_TX_TEST_MODE,
+  PROP_ST40P_TX_TEST_PKT_COUNT,
+  PROP_ST40P_TX_TEST_PACING_NS,
   PROP_MAX
 };
 
@@ -175,6 +197,82 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     Gst_Mtl_St40p_Tx* sink, GstMapInfo map_info, gint bytes_left_to_process,
     struct gst_st40_rfc8331_meta rfc8331_meta, guint anc_count, GstBuffer* buf);
 
+static GstFlowReturn gst_mtl_st40p_tx_prepare_test_frame(Gst_Mtl_St40p_Tx* sink,
+                                                         GstMapInfo map_info,
+                                                         GstBuffer* buf) {
+  guint meta_count = sink->test_pkt_count;
+  if (!meta_count) {
+    switch (sink->test_mode) {
+      case GST_MTL_ST40P_TX_TEST_MODE_SEQ_GAP:
+        meta_count = 2;
+        break;
+      case GST_MTL_ST40P_TX_TEST_MODE_PACED:
+        meta_count = 8;
+        break;
+      default:
+        meta_count = 1;
+        break;
+    }
+  }
+
+  meta_count = MIN(meta_count, (guint)ST40_MAX_META);
+
+  size_t max_udw = st40p_tx_max_udw_buff_size(sink->tx_handle);
+  if (!max_udw) {
+    GST_ERROR("Failed to query max UDW size for test frame");
+    return GST_FLOW_ERROR;
+  }
+
+  guint per_udw = 4;
+  if ((size_t)meta_count * per_udw > max_udw) {
+    per_udw = max_udw / meta_count;
+  }
+  if (per_udw == 0) {
+    GST_ERROR("Insufficient buffer for test frame (meta_count=%u)", meta_count);
+    return GST_FLOW_ERROR;
+  }
+
+  struct st40_frame_info* frame_info = st40p_tx_get_frame(sink->tx_handle);
+  if (!frame_info) {
+    GST_ERROR("Failed to get frame for test mode");
+    return GST_FLOW_ERROR;
+  }
+
+  guint total_bytes = per_udw * meta_count;
+  memset(frame_info->udw_buff_addr, 0, total_bytes);
+  guint copy_bytes = MIN(total_bytes, (guint)map_info.size);
+  if (copy_bytes > 0) memcpy(frame_info->udw_buff_addr, map_info.data, copy_bytes);
+
+  for (guint i = 0; i < meta_count; i++) {
+    frame_info->meta[i].c = 0;
+    frame_info->meta[i].line_number = 0;
+    frame_info->meta[i].hori_offset = 0;
+    frame_info->meta[i].s = 0;
+    frame_info->meta[i].stream_num = 0;
+    frame_info->meta[i].did = sink->did;
+    frame_info->meta[i].sdid = sink->sdid;
+    frame_info->meta[i].udw_size = per_udw;
+    frame_info->meta[i].udw_offset = i * per_udw;
+  }
+
+  frame_info->meta_num = meta_count;
+  frame_info->udw_buffer_fill = total_bytes;
+
+  if (sink->use_pts_for_pacing) {
+    frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
+    frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  } else {
+    frame_info->timestamp = 0;
+  }
+
+  if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
+    GST_ERROR("Failed to put frame in test mode");
+    return GST_FLOW_ERROR;
+  }
+
+  return GST_FLOW_OK;
+}
+
 static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
   GObjectClass* gobject_class;
   GstElementClass* gstelement_class;
@@ -223,6 +321,18 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_INTERLACED,
+      g_param_spec_boolean("tx-interlaced", "Interlaced stream",
+                           "Set to true if ancillary stream is interlaced", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_SPLIT_ANC_BY_PKT,
+      g_param_spec_boolean("split-anc-by-pkt", "One ANC per RTP",
+                           "Force one ANC packet per RTP with split mode enabled", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
       gobject_class, PROP_ST40P_TX_USE_PTS_FOR_PACING,
       g_param_spec_boolean("use-pts-for-pacing", "Use PTS for packet pacing",
                            "This property modifies the default behavior where "
@@ -262,6 +372,26 @@ static void gst_mtl_st40p_tx_class_init(Gst_Mtl_St40p_TxClass* klass) {
                         "single st40p frame",
                         0, G_MAXUINT, DEFAULT_MAX_UDW_SIZE,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_TEST_MODE,
+      g_param_spec_enum("tx-test-mode", "Test mutation mode",
+                        "Apply test-only RTP/ANC mutations (for validation only)",
+                        GST_TYPE_MTL_ST40P_TX_TEST_MODE, GST_MTL_ST40P_TX_TEST_MODE_NONE,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_TEST_PKT_COUNT,
+      g_param_spec_uint("tx-test-pkt-count", "Test packet count",
+                        "Number of ANC packets to emit when a test mode is active"
+                        " (0 uses a mode-specific default)",
+                        0, ST40_MAX_META, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40P_TX_TEST_PACING_NS,
+      g_param_spec_uint("tx-test-pacing-ns", "Test pacing interval (ns)",
+                        "Inter-packet spacing to use when tx-test-mode=paced (ns)", 0,
+                        G_MAXUINT, 0, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static gboolean gst_mtl_st40p_tx_start(GstBaseSink* bsink) {
@@ -292,6 +422,11 @@ static void gst_mtl_st40p_tx_init(Gst_Mtl_St40p_Tx* sink) {
   sink->fps_n = DEFAULT_FRAMERATE;
   sink->fps_d = 1;
   sink->input_format = GST_MTL_ST40P_TX_INPUT_FORMAT_RAW_UDW;
+  sink->interlaced = FALSE;
+  sink->split_anc_by_pkt = FALSE;
+  sink->test_mode = GST_MTL_ST40P_TX_TEST_MODE_NONE;
+  sink->test_pkt_count = 0;
+  sink->test_pacing_ns = 0;
 
   sinkpad = gst_element_get_static_pad(element, "sink");
   if (!sinkpad) {
@@ -328,6 +463,12 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
     case PROP_ST40P_TX_SDID:
       self->sdid = g_value_get_uint(value);
       break;
+    case PROP_ST40P_TX_INTERLACED:
+      self->interlaced = g_value_get_boolean(value);
+      break;
+    case PROP_ST40P_TX_SPLIT_ANC_BY_PKT:
+      self->split_anc_by_pkt = g_value_get_boolean(value);
+      break;
     case PROP_ST40P_TX_USE_PTS_FOR_PACING:
       self->use_pts_for_pacing = g_value_get_boolean(value);
       break;
@@ -346,6 +487,15 @@ static void gst_mtl_st40p_tx_set_property(GObject* object, guint prop_id,
       break;
     case PROP_ST40P_TX_MAX_UDW_SIZE:
       self->max_combined_udw_size = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_TEST_MODE:
+      self->test_mode = (GstMtlSt40pTxTestMode)g_value_get_enum(value);
+      break;
+    case PROP_ST40P_TX_TEST_PKT_COUNT:
+      self->test_pkt_count = g_value_get_uint(value);
+      break;
+    case PROP_ST40P_TX_TEST_PACING_NS:
+      self->test_pacing_ns = g_value_get_uint(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -376,6 +526,12 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
     case PROP_ST40P_TX_SDID:
       g_value_set_uint(value, sink->sdid);
       break;
+    case PROP_ST40P_TX_INTERLACED:
+      g_value_set_boolean(value, sink->interlaced);
+      break;
+    case PROP_ST40P_TX_SPLIT_ANC_BY_PKT:
+      g_value_set_boolean(value, sink->split_anc_by_pkt);
+      break;
     case PROP_ST40P_TX_USE_PTS_FOR_PACING:
       g_value_set_boolean(value, sink->use_pts_for_pacing);
       break;
@@ -391,6 +547,15 @@ static void gst_mtl_st40p_tx_get_property(GObject* object, guint prop_id, GValue
       break;
     case PROP_ST40P_TX_MAX_UDW_SIZE:
       g_value_set_uint(value, sink->max_combined_udw_size);
+      break;
+    case PROP_ST40P_TX_TEST_MODE:
+      g_value_set_enum(value, sink->test_mode);
+      break;
+    case PROP_ST40P_TX_TEST_PKT_COUNT:
+      g_value_set_uint(value, sink->test_pkt_count);
+      break;
+    case PROP_ST40P_TX_TEST_PACING_NS:
+      g_value_set_uint(value, sink->test_pacing_ns);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -454,7 +619,7 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     return FALSE;
   }
 
-  ops_tx.interlaced = false;
+  ops_tx.interlaced = sink->interlaced;
   /* Only single ANC packet fits in "raw" mode since metadata is synthesized from
    * element properties. TODO: lift this limitation by queueing multiple frames. */
   sink->frame_size = MAX_UDW_SIZE;
@@ -469,6 +634,39 @@ static gboolean gst_mtl_st40p_tx_session_create(Gst_Mtl_St40p_Tx* sink) {
     ops_tx.flags |= ST40P_TX_FLAG_USER_PACING;
   } else if (sink->pts_for_pacing_offset) {
     GST_WARNING("PTS offset specified but PTS-based pacing is not enabled");
+  }
+
+  if (sink->split_anc_by_pkt) {
+    ops_tx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+    GST_DEBUG_OBJECT(sink, "TX START: enabling split ANC per RTP packet");
+  }
+
+  switch (sink->test_mode) {
+    case GST_MTL_ST40P_TX_TEST_MODE_NO_MARKER:
+      ops_tx.test.pattern = ST40_TX_TEST_NO_MARKER;
+      break;
+    case GST_MTL_ST40P_TX_TEST_MODE_SEQ_GAP:
+      ops_tx.test.pattern = ST40_TX_TEST_SEQ_GAP;
+      break;
+    case GST_MTL_ST40P_TX_TEST_MODE_BAD_PARITY:
+      ops_tx.test.pattern = ST40_TX_TEST_BAD_PARITY;
+      break;
+    case GST_MTL_ST40P_TX_TEST_MODE_PACED:
+      ops_tx.test.pattern = ST40_TX_TEST_PACED;
+      break;
+    case GST_MTL_ST40P_TX_TEST_MODE_NONE:
+    default:
+      ops_tx.test.pattern = ST40_TX_TEST_NONE;
+      break;
+  }
+  if (ops_tx.test.pattern != ST40_TX_TEST_NONE) {
+    ops_tx.test.frame_count = 1; /* default to one mutated frame */
+    ops_tx.test.paced_pkt_count = sink->test_pkt_count;
+    ops_tx.test.paced_gap_ns = sink->test_pacing_ns;
+    if (!sink->split_anc_by_pkt) {
+      ops_tx.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;
+      sink->split_anc_by_pkt = TRUE;
+    }
   }
 
   sink->tx_handle = st40p_tx_create(sink->mtl_lib_handle, &ops_tx);
@@ -675,8 +873,10 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     printf("Checksum UDW: 0x%04x\n", udw);
 
     if (sink->use_pts_for_pacing) {
-      frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+      frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
       frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+    } else {
+      frame_info->timestamp = 0;
     }
 
     /* word align */
@@ -810,8 +1010,10 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* 
   frame_info->meta_num = anc_idx;
 
   if (sink->use_pts_for_pacing) {
-    frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+    frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
     frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+  } else {
+    frame_info->timestamp = 0;
   }
 
   if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {
@@ -841,6 +1043,9 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_simple_block(Gst_Mtl_St40p_Tx* 
 static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
                                                          GstMapInfo map_info,
                                                          GstBuffer* buf) {
+  if (sink->test_mode != GST_MTL_ST40P_TX_TEST_MODE_NONE) {
+    return gst_mtl_st40p_tx_prepare_test_frame(sink, map_info, buf);
+  }
   struct st40_frame_info* frame_info = NULL;
   uint8_t* cur_addr_buf;
   gint bytes_left_to_process, bytes_left_to_process_cur;
@@ -865,8 +1070,10 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_memory_block(Gst_Mtl_St40p_Tx* sink,
                                bytes_left_to_process_cur, sink->did, sink->sdid);
 
     if (sink->use_pts_for_pacing) {
-      frame_info->timestamp = GST_BUFFER_PTS(buf) += sink->pts_for_pacing_offset;
+      frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
       frame_info->tfmt = ST10_TIMESTAMP_FMT_TAI;
+    } else {
+      frame_info->timestamp = 0;
     }
 
     if (st40p_tx_put_frame(sink->tx_handle, frame_info)) {

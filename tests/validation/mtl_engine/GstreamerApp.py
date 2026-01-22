@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from collections import Counter
 from typing import Optional
 
 from mtl_engine import ip_pools
@@ -126,7 +127,7 @@ def setup_gstreamer_st20p_tx_pipeline(
     connection_params = create_connection_params(
         dev_port=nic_port_list,
         payload_type=tx_payload_type,
-        dev_ip=ip_pools.tx[0],
+        dev_ip=ip_pools.tx[0],  # local TX VF IP
         ip=ip_pools.rx[0],
         udp_port=20000,
         is_tx=True,
@@ -327,6 +328,11 @@ def setup_gstreamer_st40p_tx_pipeline(
     tx_user_pacing: bool = False,
     tx_user_controlled_pacing: bool = False,
     tx_user_controlled_pacing_offset: int = 0,
+    tx_interlaced: bool = False,
+    tx_split_anc_by_pkt: bool = False,
+    tx_test_mode: str | None = None,
+    tx_test_pkt_count: int = 0,
+    tx_test_pacing_ns: int = 0,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -362,8 +368,21 @@ def setup_gstreamer_st40p_tx_pipeline(
             f"input-format={input_format}",
             f"use-pts-for-pacing={'true' if tx_user_controlled_pacing else 'false'}",
             f"pts-pacing-offset={tx_user_controlled_pacing_offset}",
+            f"tx-interlaced={'true' if tx_interlaced else 'false'}",
         ]
     )
+
+    if tx_split_anc_by_pkt:
+        pipeline_command.append("split-anc-by-pkt=true")
+
+    if tx_test_mode:
+        pipeline_command.append(f"tx-test-mode={tx_test_mode}")
+        if tx_test_pkt_count:
+            pipeline_command.append(f"tx-test-pkt-count={tx_test_pkt_count}")
+        if tx_test_pacing_ns:
+            pipeline_command.append(f"tx-test-pacing-ns={tx_test_pacing_ns}")
+        if not tx_split_anc_by_pkt:
+            pipeline_command.append("split-anc-by-pkt=true")
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
@@ -383,6 +402,8 @@ def setup_gstreamer_st40p_rx_pipeline(
     capture_metadata: bool = False,
     rx_interlaced: bool = False,
     rx_framebuff_cnt: int = None,
+    frame_info_path: Optional[str] = None,
+    rx_rtp_ring_size: Optional[int] = None,
 ):
     connection_params = create_connection_params(
         dev_port=nic_port_list,
@@ -406,6 +427,12 @@ def setup_gstreamer_st40p_rx_pipeline(
 
     if rx_framebuff_cnt is not None:
         pipeline_command.append(f"rx-framebuff-cnt={rx_framebuff_cnt}")
+
+    if frame_info_path:
+        pipeline_command.append(f"frame-info-path={frame_info_path}")
+
+    if rx_rtp_ring_size is not None:
+        pipeline_command.append(f"rtp-ring-size={rx_rtp_ring_size}")
 
     for key, value in connection_params.items():
         pipeline_command.append(f"{key}={value}")
@@ -434,6 +461,9 @@ def execute_test(
     rx_host=None,
     sleep_interval: int = 4,
     tx_first: bool = True,
+    suppress_fail_logs: bool = False,
+    skip_file_compare: bool = False,
+    log_frame_info: bool = True,
 ):
     """
     Execute GStreamer test with remote host support following RxTxApp pattern.
@@ -450,6 +480,10 @@ def execute_test(
     :param rx_host: RX host object (for dual host tests)
     :param sleep_interval: Sleep interval between starting TX and RX
     :param tx_first: Whether to start TX first
+    :param skip_file_compare: If True, skip the output/input file comparison and rely on
+        external assertions (e.g., frame-info checks) for validation.
+    :param log_frame_info: If True, dump the frame-info file (when provided) into the
+        test log after RX/TX shutdown.
     :return: True if test passed, False otherwise
     """
     is_dual = tx_host is not None and rx_host is not None
@@ -470,6 +504,63 @@ def execute_test(
 
     tx_process = None
     rx_process = None
+
+    def _extract_flag(cmd: list[str], key: str) -> Optional[bool]:
+        """Return bool flag from a command list like 'tx-interlaced=true'."""
+        for part in cmd:
+            if part.startswith(f"{key}="):
+                value = part.split("=", 1)[1].lower()
+                if value in ("true", "1", "yes", "on"):
+                    return True
+                if value in ("false", "0", "no", "off"):
+                    return False
+        return None
+
+    def _extract_value(cmd: list[str], key: str) -> Optional[str]:
+        """Return raw value from a command list like 'frame-info-path=/tmp/foo'"""
+        for part in cmd:
+            if part.startswith(f"{key}="):
+                return part.split("=", 1)[1]
+        return None
+
+    def _summarize_frame_info(lines: list[str]) -> Optional[str]:
+        """Create a quick human-readable summary from frame-info lines."""
+        if not lines:
+            return None
+
+        parsed = []
+        pattern = re.compile(
+            r"ts=(?P<ts>\d+)\s+meta=(?P<meta>\d+)\s+rtp_marker=(?P<rtp_marker>\d+)\s+"
+            r"seq_discont=(?P<seq_discont>\d+)\s+seq_lost=(?P<seq_lost>\d+)\s+"
+            r"pkts_total=(?P<pkts_total>\d+)\s+pkts_recv_p=(?P<pkts_recv_p>\d+)\s+pkts_recv_r=(?P<pkts_recv_r>\d+)"
+        )
+
+        for line in lines:
+            match = pattern.search(line)
+            if not match:
+                continue
+            parsed.append({k: int(v) for k, v in match.groupdict().items()})
+
+        if not parsed:
+            return None
+
+        frames = len(parsed)
+        markers = sum(1 for p in parsed if p.get("rtp_marker"))
+        discont = sum(p.get("seq_discont", 0) for p in parsed)
+        lost = sum(p.get("seq_lost", 0) for p in parsed)
+        pkts_counter = Counter(p.get("pkts_total", 0) for p in parsed)
+        ts_values = [p.get("ts", 0) for p in parsed]
+        ts_min = min(ts_values)
+        ts_max = max(ts_values)
+
+        pkts_desc = ", ".join(
+            f"{pkts}pkt:{count}" for pkts, count in sorted(pkts_counter.items())
+        )
+
+        return (
+            f"frames={frames} markers={markers} seq_discont={discont} seq_lost={lost} "
+            f"pkts_totals=[{pkts_desc}] ts_range={ts_min}->{ts_max}"
+        )
 
     try:
         if tx_first:
@@ -640,9 +731,49 @@ def execute_test(
                 rx_process.wait(timeout=10)
             except Exception:
                 pass
+
+    frame_info_path = _extract_value(rx_command, "frame-info-path")
+    if log_frame_info and frame_info_path:
+        try:
+            logger.info(f"Frame-info path detected: {frame_info_path}")
+            info_dump = run(f"cat {frame_info_path}", host=rx_remote_host)
+            if hasattr(info_dump, "stdout_text") and info_dump.stdout_text:
+                lines = info_dump.stdout_text.splitlines()
+                for line in lines:
+                    logger.info(f"FrameInfo: {line}")
+                summary = _summarize_frame_info(lines)
+                if summary:
+                    logger.info(f"FrameInfoSummary: {summary}")
+                else:
+                    logger.info("FrameInfoSummary: <unparsed or empty>")
+            else:
+                logger.info("FrameInfo: <empty or unavailable>")
+        except Exception as e:
+            logger.warning(f"Failed to read frame-info file {frame_info_path}: {e}")
+
+    # If both TX and RX specify interlace flags and they differ, treat as a mismatch.
+    tx_interlaced = _extract_flag(tx_command, "tx-interlaced")
+    rx_interlaced = _extract_flag(rx_command, "rx-interlaced")
+    if tx_interlaced is not None and rx_interlaced is not None:
+        if tx_interlaced != rx_interlaced:
+            logger.info(
+                "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). "
+                "Failing test before file compare.",
+                tx_interlaced,
+                rx_interlaced,
+            )
+            return False
+    if skip_file_compare:
+        logger.info("Skipping file comparison per caller request")
+        return True
+
     # Compare files for validation
     file_compare = compare_files(
-        input_file, output_file, tx_remote_host, rx_remote_host
+        input_file,
+        output_file,
+        tx_remote_host,
+        rx_remote_host,
+        suppress_fail_logs=suppress_fail_logs,
     )
 
     logger.info(f"File comparison: {file_compare}")
@@ -650,7 +781,13 @@ def execute_test(
     return file_compare
 
 
-def compare_files(input_file, output_file, input_host=None, output_host=None):
+def compare_files(
+    input_file,
+    output_file,
+    input_host=None,
+    output_host=None,
+    suppress_fail_logs: bool = False,
+):
     """
     Compare files on remote hosts.
     For single host: input_host and output_host should be the same
@@ -669,7 +806,8 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
                 input_file_size = int(input_output.strip())
                 logger.info(f"Input file size: {input_file_size}")
             else:
-                log_fail("Could not get input file size")
+                if not suppress_fail_logs:
+                    log_fail("Could not get input file size")
                 return False
         else:
             logger.info(
@@ -679,14 +817,16 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
         # Check output file size (always remote)
         output_stat_proc = run(f"stat -c '%s' {output_file}", host=output_host)
         if output_stat_proc.return_code != 0:
-            log_fail(f"Could not access output file {output_file}")
+            if not suppress_fail_logs:
+                log_fail(f"Could not access output file {output_file}")
             return False
         output_output = capture_stdout(output_stat_proc, "output_stat")
         if output_output:
             output_file_size = int(output_output.strip())
             logger.info(f"Output file size: {output_file_size}")
         else:
-            log_fail("Could not get output file size")
+            if not suppress_fail_logs:
+                log_fail("Could not get output file size")
             return False
 
         # If input file doesn't exist, just validate output file has content
@@ -695,17 +835,20 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
                 logger.info("Output file validation passed (input file not created)")
                 return True
             else:
-                log_fail("Output file is empty")
+                if not suppress_fail_logs:
+                    log_fail("Output file is empty")
                 return False
 
         # If input file exists, do full comparison
         if input_file_size != output_file_size:
-            log_fail("File size is different")
+            if not suppress_fail_logs:
+                log_fail("File size is different")
             return False
 
         input_hash_proc = run(f"md5sum {input_file}", host=input_host)
         if input_hash_proc.return_code != 0:
-            log_fail(f"Could not calculate hash for input file {input_file}")
+            if not suppress_fail_logs:
+                log_fail(f"Could not calculate hash for input file {input_file}")
             return False
         input_hash_output = capture_stdout(input_hash_proc, "input_hash")
         i_hash = (
@@ -716,7 +859,8 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
 
         output_hash_proc = run(f"md5sum {output_file}", host=output_host)
         if output_hash_proc.return_code != 0:
-            log_fail(f"Could not calculate hash for output file {output_file}")
+            if not suppress_fail_logs:
+                log_fail(f"Could not calculate hash for output file {output_file}")
             return False
         output_hash_output = capture_stdout(output_hash_proc, "output_hash")
         o_hash = (
@@ -732,10 +876,12 @@ def compare_files(input_file, output_file, input_host=None, output_host=None):
             return True
 
     except Exception as e:
-        log_fail(f"Error during file comparison: {e}")
+        if not suppress_fail_logs:
+            log_fail(f"Error during file comparison: {e}")
         return False
 
-    log_fail("Comparison of files failed")
+    if not suppress_fail_logs:
+        log_fail("Comparison of files failed")
     return False
 
 
@@ -790,6 +936,9 @@ def get_case_id() -> str:
     full_case = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
     # Get the test name after the last ::
     test_name = full_case.split("::")[-1]
+    # Remove parameters if present
+    if "[" in test_name:
+        test_name = test_name[: test_name.find("[")]
     return test_name
 
 

@@ -27,6 +27,7 @@ enum sample_args_cmd {
   SAMPLE_ARG_PAYLOAD_TYPE,
   SAMPLE_ARG_FPS,
   SAMPLE_ARG_INTERLACED,
+  SAMPLE_ARG_SPLIT_ANC_BY_PKT,
   SAMPLE_ARG_P_FWD_IP,
   SAMPLE_ARG_LOG_LEVEL,
   SAMPLE_ARG_DEV_AUTO_START,
@@ -96,6 +97,7 @@ static struct option sample_args_options[] = {
     {"payload_type", required_argument, 0, SAMPLE_ARG_PAYLOAD_TYPE},
     {"fps", required_argument, 0, SAMPLE_ARG_FPS},
     {"interlaced", no_argument, 0, SAMPLE_ARG_INTERLACED},
+    {"split_anc_by_pkt", no_argument, 0, SAMPLE_ARG_SPLIT_ANC_BY_PKT},
     {"p_fwd_ip", required_argument, 0, SAMPLE_ARG_P_FWD_IP},
     {"sessions_cnt", required_argument, 0, SAMPLE_ARG_SESSIONS_CNT},
     {"log_level", required_argument, 0, SAMPLE_ARG_LOG_LEVEL},
@@ -215,6 +217,9 @@ static int _sample_parse_args(struct st_sample_context* ctx, int argc, char** ar
       }
       case SAMPLE_ARG_INTERLACED:
         ctx->interlaced = true;
+        break;
+      case SAMPLE_ARG_SPLIT_ANC_BY_PKT:
+        ctx->split_anc_by_pkt = true;
         break;
       case SAMPLE_ARG_P_TX_IP:
         inet_pton(AF_INET, optarg, ctx->tx_dip_addr[MTL_PORT_P]);

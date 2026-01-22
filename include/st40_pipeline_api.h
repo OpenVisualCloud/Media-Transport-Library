@@ -45,6 +45,13 @@ struct st40_frame_info {
    * 'pkts_total,' which serves as an indicator of signal quality.  */
   uint32_t pkts_recv[MTL_SESSION_PORT_MAX];
 
+  /** Whether a marker bit was seen on any RTP packet in this frame. */
+  bool rtp_marker;
+  /** True if a sequence number discontinuity was observed within this frame. */
+  bool seq_discont;
+  /** Number of missing RTP sequence numbers observed while assembling this frame. */
+  uint32_t seq_lost;
+
   /** TAI timestamp measured right after the RTP packet for this frame was received */
   uint64_t receive_timestamp;
 
@@ -102,6 +109,8 @@ enum st40p_tx_flag {
    * frame leave exactly at the user provided timestamp instead of aligning to epochs.
    */
   ST40P_TX_FLAG_EXACT_USER_PACING = (MTL_BIT32(9)),
+  /** Force one ANC packet per RTP and allow splitting multi-ANC frames. */
+  ST40P_TX_FLAG_SPLIT_ANC_BY_PKT = (MTL_BIT32(10)),
   /** Enable the st40p_tx_get_frame block behavior to wait until a frame becomes
    available or timeout(default: 1s, use st40p_tx_set_block_timeout to customize)*/
   ST40P_TX_FLAG_BLOCK_GET = (MTL_BIT32(15)),
@@ -128,6 +137,8 @@ struct st40p_tx_ops {
   void* priv;
   /** Optional. see ST40P_TX_FLAG_* for possible flags */
   uint32_t flags;
+  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  struct st40_tx_test_config test;
   /**
    * Optional. Callback when frame available.
    * And only non-block method can be used within this callback as it run from lcore

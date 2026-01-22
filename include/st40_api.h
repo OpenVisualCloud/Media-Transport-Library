@@ -65,6 +65,35 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * exact timestamp provided by the user instead of aligning to the internal epoch.
  */
 #define ST40_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st40_tx_ops.
+ * Force each RTP packet to carry exactly one ANC packet and allow splitting large
+ * ancillary payloads across multiple RTP packets in a frame.
+ */
+#define ST40_TX_FLAG_SPLIT_ANC_BY_PKT (MTL_BIT32(8))
+
+/**
+ * Test-only mutation pattern for st40 TX. These modes intentionally craft malformed or
+ * edge-case RTP/ANC packets for validation. Defaults to NONE for production use.
+ */
+enum st40_tx_test_pattern {
+  ST40_TX_TEST_NONE = 0,
+  ST40_TX_TEST_NO_MARKER,
+  ST40_TX_TEST_SEQ_GAP,
+  ST40_TX_TEST_BAD_PARITY,
+  ST40_TX_TEST_PACED,
+};
+
+/**
+ * Optional test-only mutation controls for st40 TX. All fields default to zero/none and
+ * are ignored in normal operation.
+ */
+struct st40_tx_test_config {
+  enum st40_tx_test_pattern pattern; /**< Mutation pattern to apply. */
+  uint16_t frame_count;              /**< How many frames to mutate (0 -> apply once). */
+  uint16_t paced_pkt_count;          /**< Desired packet count when pattern=PACED. */
+  uint32_t paced_gap_ns;             /**< Desired inter-packet spacing when PACED. */
+};
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -319,6 +348,9 @@ struct st40_tx_ops {
   void* priv;
   /** Optional. see ST40_TX_FLAG_* for possible flags */
   uint32_t flags;
+
+  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  struct st40_tx_test_config test;
 
   /**
    * Mandatory for ST40_TYPE_FRAME_LEVEL.
