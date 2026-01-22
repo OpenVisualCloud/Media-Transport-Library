@@ -223,6 +223,11 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   /* hole in seq id packets going into the session check if the seq_id of the session is
    * consistent */
   if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+    if (s->interlace_auto && s->interlace_detected) {
+      s->interlace_detected = false;
+      dbg("%s(%d,%d), reset interlace detect after seq discont %u->%u\n", __func__,
+          s->idx, s_port, s->session_seq_id, seq_id);
+    }
     dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
         seq_id, s->session_seq_id);
     s->stat_pkts_out_of_order++;

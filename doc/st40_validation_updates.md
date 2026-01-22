@@ -9,7 +9,8 @@ This note captures all recent ST40/ST40p feature changes and the accompanying va
 - **Frame-info log surfacing:** When tests pass `log_frame_info=True`, the harness dumps the frame-info file and a summary directly into the test log (no artifact download needed).
 - **ST40P test mutation knobs:** The GStreamer TX plugin accepts `tx-test-mode` with helpers for `no-marker`, `seq-gap`, `bad-parity`, and `paced` (optionally with `tx-test-pkt-count` and `tx-test-pacing-ns`). These drive targeted negative/edge-path tests.
 - **Interlaced & split-mode coverage:** RX/TX can be flagged interlaced independently; mismatch fails fast. Split-mode plus marker handling is now covered in tests.
-- **Interlace auto-detect option:** RX can infer progressive vs interlaced cadence from RTP F bits (`rx-auto-detect-interlaced=true` in GStreamer, `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED` in C API). Use when cadence is unknown; RX updates `interlaced` after first field detection while still logging field_num/interlaced in frame-info.
+- **Interlace auto-detect option:** RX can infer progressive vs interlaced cadence from RTP F bits (`rx-auto-detect-interlaced=true` in GStreamer, `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED` in C API). Use when cadence is unknown; RX updates `interlaced` after first field detection while still logging `second_field`/`interlaced` in frame-info.
+- **Auto-detect reset on discontinuity:** A sequence gap (`seq_discont>0`) clears the interlace detection state; RX re-learns cadence from subsequent F bits and continues logging `second_field`/`interlaced` per field.
 - **Warnings when cadence is unknown:** Pipeline RX and the GStreamer RX plugin emit a warning if neither `rx-interlaced` nor auto-detect is set, to avoid silent progressive defaults.
 - **Integration safety nets:** New noctx integration tests for ST40 interlaced flows, and expanded GStreamer validation tests across single-host and dual-host (VF/VF) paths.
 
@@ -51,8 +52,10 @@ flowchart LR
 - Enable on RX when cadence is unknown: `rx-auto-detect-interlaced=true` in the GStreamer RX pipeline or set `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED` in `st40p_rx_ops.flags` (C API). Keep `rx-interlaced=false` when auto-detecting.
 - TX still needs to emit F bits (set `tx_interlaced=true` in GStreamer or `interlaced=true` in TX ops) so RX can learn cadence.
 - Warnings: RX logs a warning if both `rx-interlaced=false` and auto-detect are disabled. Expect a GST_WARNING from `mtl_st40p_rx` and a pipeline warning from `st40p` if cadence is unknown.
-- Frame-info fields: `field_num` and `interlaced` are populated once F bits are observed (`0x2/0x3` for interlaced fields, `0x0` for progressive). These are visible in both C API frame_info and GStreamer frame-info dumps.
+- Frame-info fields: `second_field` (bool) and `interlaced` are populated once F bits are observed (bit1 set for interlaced; `second_field=true` when F==0x3). These are visible in both C API frame_info and GStreamer frame-info dumps.
 - Expect detection log line when auto-detect flips interlaced on RX (`detected interlaced stream (F=0x2/0x3)`); downstream tests assert on these fields rather than relying on caps only.
+- Discontinuity handling: a session-level sequence hole (e.g., `tx-test-mode=seq-gap` or real loss) clears detection state; expect `seq_discont>0` in frame-info and a subsequent “detected interlaced stream” log once new F bits arrive. This proves re-learn after reset.
+- Build verification: RX attach logs should show `rx_ancillary_session_attach(... flags 0x4 ... auto)` when `rx-auto-detect-interlaced=true` propagates; if flags stay `0x0`, rebuild the GStreamer plugin and ensure the test uses the fresh `--gst-plugin-path`.
 
 ## API and plugin changes (developer-facing)
 
@@ -106,7 +109,7 @@ Across all single-host tests, frame-info is dumped and summarized in pytest logs
   - `st40i_split_loopback` — interlaced split-mode loopback with custom fps and framebuff; ensures split/interlace coexist.
   - `st40i_split_seq_gap_reports_loss` — crafts a manual RTP sequence gap and validates `seq_discont`/`seq_lost` are reported via the C API frame_info, mirroring the GStreamer gap test at a lower level.
 - [tests/integration_tests/noctx/testcases/st40p_auto_detect_tests.cpp](tests/integration_tests/noctx/testcases/st40p_auto_detect_tests.cpp)
-  - `st40p_rx_auto_detect_interlace` — TX flags interlaced, RX starts progressive with `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED`; asserts `interlaced`/`field_num` populate on RX frame_info.
+  - `st40p_rx_auto_detect_interlace` — TX flags interlaced, RX starts progressive with `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED`; asserts `interlaced`/`second_field` populate on RX frame_info.
 
 These integration tests exercise the C pipeline APIs directly (outside the GStreamer harness) to prove split-mode, parity, marker, and sequence reporting work end-to-end without additional context setup.
 
