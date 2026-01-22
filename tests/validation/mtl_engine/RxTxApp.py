@@ -487,6 +487,7 @@ def execute_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
+    auto_stop: bool = False,
     host=None,
     netsniff=None,
     interface_setup=None,
@@ -546,6 +547,9 @@ def execute_test(
 
     if ptp:
         command += " --ptp"
+
+    if auto_stop:
+        command += " --auto_stop"
 
     logger.info(f"RxTxApp Command: {command}")
 

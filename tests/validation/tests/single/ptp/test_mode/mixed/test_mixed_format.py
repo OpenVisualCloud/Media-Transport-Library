@@ -96,6 +96,7 @@ def test_ptp_mixed_format(
         build=build,
         test_time=test_time,
         ptp=True,
+        auto_stop=True,
         host=host,
         netsniff=pcap_capture,
     )
