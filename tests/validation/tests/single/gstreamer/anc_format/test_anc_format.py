@@ -1606,7 +1606,7 @@ def test_st40i_interlace_flag_mismatch(
 
 
 @pytest.mark.nightly
-def test_st40p_interlace_auto_detect(
+def test_st40p_interlace_auto_detect_reset(
     hosts,
     build,
     media,
@@ -1617,8 +1617,8 @@ def test_st40p_interlace_auto_detect(
     media_file,
 ):
     """
-    Validate that RX auto-detect accepts interlaced TX even when the receiver does not
-    declare interlace upfront, relying on RTP F bits to learn cadence.
+    Validate that RX auto-detect accepts interlaced TX and, after a forced sequence gap
+    reset, re-learns cadence via RTP F bits without explicit interlace hints.
 
     .. rubric:: Pass Criteria
     - Pipeline succeeds with TX interlaced and RX auto-detect enabled.
@@ -1651,6 +1651,8 @@ def test_st40p_interlace_auto_detect(
         tx_interlaced=True,
     )
 
+    frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
+
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
         build=build,
         nic_port_list=interfaces_list[1],
@@ -1661,12 +1663,13 @@ def test_st40p_interlace_auto_detect(
         rx_framebuff_cnt=3,
         rx_interlaced=False,
         rx_auto_detect_interlaced=True,
+        frame_info_path=frame_info_path,
     )
 
     expectation = "RX auto-detect resolves interlaced TX without explicit cadence hint"
 
     try:
-        with _test_summary("test_st40p_interlace_auto_detect", expectation):
+        with _test_summary("test_st40p_interlace_auto_detect_reset", expectation):
             assert GstreamerApp.execute_test(
                 build=build,
                 tx_command=tx_config,
@@ -1679,9 +1682,72 @@ def test_st40p_interlace_auto_detect(
                 sleep_interval=5,
                 log_frame_info=True,
             )
+
+        # Force a sequence gap to reset auto-detect state and prove cadence re-learns
+        gap_frame_info_path = _frame_info_path(os.path.dirname(output_file_path))
+        tx_config_gap = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
+            build=build,
+            nic_port_list=interfaces_list[0],
+            input_path=input_file_path,
+            tx_payload_type=113,
+            tx_queues=4,
+            tx_framebuff_cnt=3,
+            tx_fps=50,
+            tx_did=67,
+            tx_sdid=2,
+            tx_interlaced=True,
+            tx_split_anc_by_pkt=True,
+            tx_test_mode="seq-gap",
+            tx_test_pkt_count=200,
+        )
+
+        rx_config_gap = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
+            build=build,
+            nic_port_list=interfaces_list[1],
+            output_path=output_file_path,
+            rx_payload_type=113,
+            rx_queues=4,
+            timeout=15,
+            rx_framebuff_cnt=3,
+            rx_interlaced=False,
+            rx_auto_detect_interlaced=True,
+            frame_info_path=gap_frame_info_path,
+        )
+
+        media_create.remove_file(output_file_path, host=host)
+
+        reset_expectation = "RX auto-detect re-learns cadence after seq gap reset with frame-info logged"
+
+        with _test_summary(
+            "test_st40p_interlace_auto_detect_reset_gap", reset_expectation
+        ):
+            assert GstreamerApp.execute_test(
+                build=build,
+                tx_command=tx_config_gap,
+                rx_command=rx_config_gap,
+                input_file=input_file_path,
+                output_file=output_file_path,
+                test_time=test_time,
+                host=host,
+                tx_first=False,
+                sleep_interval=5,
+                log_frame_info=True,
+            )
+
+            gap_log = run(f"cat {gap_frame_info_path}", host=host)
+            gap_entries = _parse_frame_info_entries(gap_log.stdout_text or "")
+            assert (
+                gap_entries
+            ), "Seq-gap auto-detect reset produced no frame-info entries"
+            assert any(
+                entry.get("seq_discont", 0) > 0 for entry in gap_entries
+            ), "Seq-gap auto-detect reset did not log any discontinuity after gap"
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
+        media_create.remove_file(frame_info_path, host=host)
+        if "gap_frame_info_path" in locals():
+            media_create.remove_file(gap_frame_info_path, host=host)
 
 
 @pytest.mark.nightly
