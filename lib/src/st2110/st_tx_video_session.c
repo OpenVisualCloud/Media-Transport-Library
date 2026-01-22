@@ -3463,8 +3463,8 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   s->stat_bytes_tx[MTL_SESSION_PORT_P] = 0;
   s->stat_bytes_tx[MTL_SESSION_PORT_R] = 0;
 
-    dump_video_session_debug_info(s, MTL_SESSION_PORT_P, "Periodic Stat");
-    return;
+    // dump_video_session_debug_info(s, MTL_SESSION_PORT_P, "Periodic Stat");
+    // return;
 
   if (s->stat_pkts_dummy) {
     dbg("TX_VIDEO_SESSION(%d,%d): dummy pkts %u, burst %u\n", m_idx, idx,

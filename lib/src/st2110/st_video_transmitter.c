@@ -44,9 +44,11 @@ static uint16_t video_trs_burst_fail(struct mtl_main_impl* impl,
   if (fail_duration > s->tx_hang_detect_time_thresh) {
     err("%s(%d,%d), hang duration %" PRIu64 " ms\n", __func__, s->idx, s_port,
         fail_duration / NS_PER_MS);
-    st20_tx_queue_fatal_error(impl, s, s_port);
-    s->last_burst_succ_time_tsc[s_port] = cur_tsc;
-    return nb_pkts; /* skip current pkts */
+    s->tx_hang_detect_time_thresh = cur_tsc;
+    // st20_tx_queue_fatal_error(impl, s, s_port);
+    // s->last_burst_succ_time_tsc[s_port] = cur_tsc;
+    // return nb_pkts; /* skip current pkts */
+    return 0;
   }
 
   return 0;
@@ -57,7 +59,14 @@ static uint16_t video_trs_burst_pad(struct mtl_main_impl* impl,
                                     enum mtl_session_port s_port,
                                     struct rte_mbuf** tx_pkts, uint16_t nb_pkts) {
   uint16_t tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
-  if (!tx) return video_trs_burst_fail(impl, s, s_port, nb_pkts);
+  if (!tx) {
+    if (mt_get_tsc(impl) - s->last_burst_succ_time_tsc[s_port] > s->tx_hang_detect_time_thresh)
+      tx = mt_txq_burst(s->queue[s_port], tx_pkts, nb_pkts);
+
+    return video_trs_burst_fail(impl, s, s_port, nb_pkts);
+  } else {
+    s->last_burst_succ_time_tsc[s_port] = mt_get_tsc(impl);
+  }
   return tx;
 }
 
