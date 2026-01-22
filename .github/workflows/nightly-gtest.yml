@@ -41,6 +41,7 @@ jobs:
           NIGHTLY: 1
           EXIT_ON_FAILURE: 0
           LOG_FILE: "${{ github.workspace }}/gtest.log"
+          GTEST_XML_DIR: "${{ github.workspace }}/gtest-xml"
         run: |
           sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
       - name: "upload report gtest"
@@ -51,3 +52,70 @@ jobs:
           name: nightly-gtest-report-${{ matrix.nic }}
           path: |
             gtest.log
+            gtest-xml
+
+  aggregate-gtest-reports:
+    needs: run-gtest
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download gtest artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-gtest-report-*
+          path: gtest-reports
+          merge-multiple: false
+      - name: Flatten gtest report directory structure
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          cd gtest-reports
+          for entry in nightly-gtest-report-*; do
+            if [ -d "$entry" ]; then
+              if [ -f "$entry/gtest.log" ]; then
+                mv "$entry/gtest.log" "${entry}.log"
+              fi
+              if [ -d "$entry/gtest-xml" ]; then
+                for xml in "$entry"/gtest-xml/*.xml; do
+                  base=$(basename "$xml")
+                  mv "$xml" "${entry}-${base}"
+                done
+              fi
+              rm -rf "$entry"
+            fi
+          done
+          ls -lh nightly-gtest-report-*.log 2>/dev/null || true
+          ls -lh nightly-gtest-report-*.xml 2>/dev/null || true
+      - name: Install gtest report dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pandas openpyxl
+      - name: Combine gtest reports
+        id: combine-gtest
+        run: |
+          set -euo pipefail
+          OUTPUT_PATH=$(python3 .github/scripts/combine_gtest_reports.py \
+            --directory gtest-reports \
+            --timestamp \
+            --quiet \
+            --print-path)
+          if [ -z "${OUTPUT_PATH}" ]; then
+            echo "combine_gtest_reports.py did not emit an output path" >&2
+            exit 1
+          fi
+          if [ ! -f "${OUTPUT_PATH}" ]; then
+            echo "Combined gtest report not found at ${OUTPUT_PATH}" >&2
+            echo "Available files:"
+            ls -la gtest-reports
+            exit 1
+          fi
+          echo "Combined gtest report path: ${OUTPUT_PATH}"
+          printf 'report_path=%s\n' "$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+      - name: Upload combined gtest report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-gtest-combined-report
+          path: ${{ steps.combine-gtest.outputs.report_path }}
