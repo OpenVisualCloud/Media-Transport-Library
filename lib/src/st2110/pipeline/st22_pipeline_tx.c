@@ -301,13 +301,14 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_ENCODING != framebuff->stat) {
+    mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in encoding %d\n", __func__, idx, encode_idx,
         framebuff->stat);
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   ctx->stat_encode_put_frame++;
   dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, encode_idx,
       result, data_size);
