@@ -1449,7 +1449,7 @@ static uint16_t tx_audio_session_rl_warmup_pkt(struct st_tx_audio_session_impl* 
       mt_txq_burst(queue, &pad, 1);
     }
   }
-  uint64_t warmup_pkts_burst = (pkts * rl->pads_per_st30_pkt);
+  uint64_t warmup_pkts_burst = ((uint64_t)pkts * rl->pads_per_st30_pkt);
   rl_port->stat_warmup_pkts_burst += warmup_pkts_burst;
   s->port_user_stats.stat_pkts_burst += warmup_pkts_burst;
   s->port_user_stats.common.port[s_port].packets += warmup_pkts_burst;
