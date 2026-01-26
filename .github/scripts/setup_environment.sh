@@ -368,7 +368,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "${MTL_BUILD_AND_INSTALL_DEBUG}" == "1" ]; then
 		echo "$STEP MTL debug build and install"
 		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh debug ${mtl_build_options}
+		./build.sh debug "${mtl_build_options}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
@@ -377,7 +377,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 	if [ "${MTL_BUILD_AND_INSTALL}" == "1" ]; then
 		echo "$STEP MTL build and install"
 		pushd "${root_folder}" >/dev/null || exit 1
-		./build.sh ${mtl_build_options}
+		./build.sh "${mtl_build_options}"
 		popd >/dev/null
 		STEP=$((STEP + 1))
 	fi
