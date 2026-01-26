@@ -102,10 +102,20 @@ TEST_F(NoCtxTest, st20p_redundant_latency) {
  * The packet skip feature affects the critical path performance,
 */
 #ifdef MTL_DEBUG
-#define RX_SESSION_PORT_0 2
-#define RX_SESSION_PORT_1 3
 #define TX_SESSION_PORT_0 0
 #define TX_SESSION_PORT_1 1
+#define RX_SESSION_PORT_0 2
+#define RX_SESSION_PORT_1 3
+
+#define DEBUG_IP_ADDRESS_0 {192,168,0,3}
+#define DEBUG_IP_ADDRESS_1 {192,168,0,4}
+#define DEBUG_IP_ADDRESS_2 {192,168,0,5}
+#define DEBUG_IP_ADDRESS_3 {192,168,0,6}
+
+static constexpr uint8_t kDebugIpAddress0[MTL_IP_ADDR_LEN] = DEBUG_IP_ADDRESS_0;
+static constexpr uint8_t kDebugIpAddress1[MTL_IP_ADDR_LEN] = DEBUG_IP_ADDRESS_1;
+static constexpr uint8_t kDebugIpAddress2[MTL_IP_ADDR_LEN] = DEBUG_IP_ADDRESS_2;
+static constexpr uint8_t kDebugIpAddress3[MTL_IP_ADDR_LEN] = DEBUG_IP_ADDRESS_3;
 
 // TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
 //   if (ctx->para.num_ports < 4) {
@@ -230,6 +240,10 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   ctx->para.port_packet_loss[TX_SESSION_PORT_0].tx_stream_loss_divider = 2; /* out of every 2 packets */
   ctx->para.port_packet_loss[TX_SESSION_PORT_1].tx_stream_loss_id = 1;      /* drop odd packets */
   ctx->para.port_packet_loss[TX_SESSION_PORT_1].tx_stream_loss_divider = 2; /* out of every 2 packets */
+  memcpy(ctx->para.sip_addr[TX_SESSION_PORT_0], kDebugIpAddress0, MTL_IP_ADDR_LEN);
+  memcpy(ctx->para.sip_addr[TX_SESSION_PORT_1], kDebugIpAddress1, MTL_IP_ADDR_LEN);
+  memcpy(ctx->para.sip_addr[RX_SESSION_PORT_0], kDebugIpAddress2, MTL_IP_ADDR_LEN);
+  memcpy(ctx->para.sip_addr[RX_SESSION_PORT_1], kDebugIpAddress3, MTL_IP_ADDR_LEN);
   initDefaultContext();
 
   uint testedLatencyMs = 10;
@@ -241,6 +255,10 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
         handler->setSessionPorts(SESSION_SKIP_PORT, RX_SESSION_PORT_0, SESSION_SKIP_PORT, RX_SESSION_PORT_1);
+        memcpy(handler->sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_P],
+               kDebugIpAddress0, MTL_IP_ADDR_LEN);
+        memcpy(handler->sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_R],
+               kDebugIpAddress1, MTL_IP_ADDR_LEN);
       });
   auto* rxStrategy = static_cast<St20pRedundantLatency*>(rxBundle.strategy);
 
@@ -252,6 +270,8 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
         handler->setSessionPorts(TX_SESSION_PORT_0, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
+        memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
+               kDebugIpAddress2, MTL_IP_ADDR_LEN);
       });
   auto* primaryStrategy = static_cast<St20pRedundantLatency*>(primaryBundle.strategy);
 
@@ -266,7 +286,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
         handler->setSessionPorts(TX_SESSION_PORT_1, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
-               ctx->mcast_ip_addr[MTL_PORT_R], MTL_IP_ADDR_LEN);
+               kDebugIpAddress3, MTL_IP_ADDR_LEN);
         handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P]++;
       });
 
