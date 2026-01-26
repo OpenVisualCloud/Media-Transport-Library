@@ -91,6 +91,10 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
+    // if (s->frame_num == 623) {
+    //   sleep(1);
+    // }
+
     st20p_tx_put_frame(handle, frame);
   }
   info("%s(%d), stop\n", __func__, idx);
