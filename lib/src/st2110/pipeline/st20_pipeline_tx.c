@@ -237,13 +237,14 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_CONVERTING != framebuff->stat) {
+    mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
         framebuff->stat);
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if ((result < 0) || (data_size <= 0)) {
     dbg("%s(%d), frame %u result %d data_size %" PRIu64 ", frame_idx: %u\n", __func__,
         idx, convert_idx, result, data_size, convert_idx);

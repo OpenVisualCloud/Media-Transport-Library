@@ -690,10 +690,24 @@ void* st30p_tx_get_fb_addr(st30p_tx_handle handle, uint16_t idx) {
 }
 
 int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats* stats) {
-  struct st30p_tx_ctx* ctx = handle;
+  struct st30p_tx_ctx* ctx;
   int cidx;
-  struct st30p_tx_frame* framebuff = ctx->framebuffs;
+  struct st30p_tx_frame* framebuff;
   uint16_t status_counts[ST30P_TX_FRAME_STATUS_MAX] = {0};
+
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
+  ctx = handle;
+  cidx = ctx->idx;
+  framebuff = ctx->framebuffs;
+
+  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return -EINVAL;
+  }
 
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
     enum st30p_tx_frame_status stat = framebuff[j].stat;
@@ -711,17 +725,6 @@ int st30p_tx_get_session_stats(st30p_tx_handle handle, struct st30_tx_user_stats
     }
   }
   notice("TX_st30p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
-
-  if (!handle || !stats) {
-    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
-    return -EINVAL;
-  }
-
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST30_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
 
   return st30_tx_get_session_stats(ctx->transport, stats);
 }

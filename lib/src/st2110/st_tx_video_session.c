@@ -210,7 +210,15 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
         return -ENOMEM;
       }
       if (st22_info && s->st22_box_hdr_length) { /* copy boxes */
-        mtl_memcpy(frame, &st22_info->st22_boxes, s->st22_box_hdr_length);
+        /* Validate bounds to prevent buffer overrun */
+        size_t max_copy_len =
+            RTE_MIN(s->st22_box_hdr_length, sizeof(st22_info->st22_boxes));
+        max_copy_len = RTE_MIN(max_copy_len, s->st20_fb_size);
+        if (max_copy_len != s->st22_box_hdr_length) {
+          warn("%s(%d), st22_box_hdr_length %u exceeds bounds, clamping to %zu\n",
+               __func__, idx, s->st22_box_hdr_length, max_copy_len);
+        }
+        mtl_memcpy(frame, &st22_info->st22_boxes, max_copy_len);
       }
       frame_info->iova = rte_mem_virt2iova(frame);
       frame_info->addr = frame;
@@ -1297,7 +1305,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
       } else {
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
-      tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
       s->pacing.rtp_time_stamp =
           st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }
@@ -1366,7 +1374,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
       } else {
         tai_for_rtp_ts = s->pacing.ptp_time_cursor;
       }
-      tai_for_rtp_ts += s->ops.rtp_timestamp_delta_us * NS_PER_US;
+      tai_for_rtp_ts += (uint64_t)s->ops.rtp_timestamp_delta_us * NS_PER_US;
       s->pacing.rtp_time_stamp =
           st10_tai_to_media_clk(tai_for_rtp_ts, s->fps_tm.sampling_clock_rate);
     }

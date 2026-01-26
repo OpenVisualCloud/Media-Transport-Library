@@ -1331,12 +1331,14 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 
   if (!inf->tx_queues) return 0;
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active) {
       warn("%s(%d), tx_queue %d still active\n", __func__, port, q);
     }
   }
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
   mt_rte_free(inf->tx_queues);
   inf->tx_queues = NULL;

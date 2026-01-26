@@ -477,8 +477,7 @@ int st40p_tx_put_frame(st40p_tx_handle handle, struct st40_frame_info* frame_inf
   framebuff->anc_frame->meta_num = frame_info->meta_num;
   framebuff->anc_frame->data_size = frame_info->udw_buffer_fill;
 
-  if (framebuff->anc_frame->meta_num > ST40_MAX_META ||
-      framebuff->anc_frame->meta_num < 0) {
+  if (framebuff->anc_frame->meta_num > ST40_MAX_META) {
     err("%s(%d), frame %u meta_num %u invalid\n", __func__, idx, producer_idx,
         frame_info->meta_num);
     return -EIO;
@@ -701,10 +700,24 @@ void* st40p_tx_get_fb_addr(st40p_tx_handle handle, uint16_t idx) {
 }
 
 int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats* stats) {
-  struct st40p_tx_ctx* ctx = handle;
+  struct st40p_tx_ctx* ctx;
   int cidx;
-  struct st40p_tx_frame* framebuff = ctx->framebuffs;
+  struct st40p_tx_frame* framebuff;
   uint16_t status_counts[ST40P_TX_FRAME_STATUS_MAX] = {0};
+
+  if (!handle || !stats) {
+    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
+    return -EINVAL;
+  }
+
+  ctx = handle;
+  cidx = ctx->idx;
+  framebuff = ctx->framebuffs;
+
+  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
+    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
+    return -EINVAL;
+  }
 
   for (uint16_t j = 0; j < ctx->framebuff_cnt; j++) {
     enum st40p_tx_frame_status stat = framebuff[j].stat;
@@ -722,17 +735,6 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
     }
   }
   notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
-
-  if (!handle || !stats) {
-    err("%s, invalid handle %p or stats %p\n", __func__, handle, stats);
-    return -EINVAL;
-  }
-
-  cidx = ctx->idx;
-  if (ctx->type != MT_ST40_HANDLE_PIPELINE_TX) {
-    err("%s(%d), invalid type %d\n", __func__, cidx, ctx->type);
-    return 0;
-  }
 
   return st40_tx_get_session_stats(ctx->transport, stats);
 }
