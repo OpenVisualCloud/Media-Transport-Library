@@ -12,7 +12,7 @@ libm_dep = cc.find_library('m', required : true)
 libpthread_dep = cc.find_library('pthread', required : true)
 libdl_dep = cc.find_library('dl', required : true)
 if not is_windows
-  dpdk_dep = dependency('libdpdk', version: '>=25.03', required: true)
+  dpdk_dep = dependency('libdpdk', version: '>=25.11', required: true)
   libnuma_dep = cc.find_library('numa', required : true)
   ws2_32_dep = [] # add this when the code uses hton/ntoh
 endif
