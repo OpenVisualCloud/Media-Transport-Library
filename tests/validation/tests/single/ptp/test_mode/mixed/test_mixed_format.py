@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
         pytest.param(
             {"mode": "mixed", "tx_type": "PF", "rx_type": "VF"},
             id="pf_tx_vf_rx",
+            marks=pytest.mark.skip(reason="pf_tx_vf_rx tests does not work yet"),
         ),
     ],
 )

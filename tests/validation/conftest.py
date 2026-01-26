@@ -125,7 +125,7 @@ def ptp_sync(request, test_config: dict, hosts):
         logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
 
         log_path = f"/tmp/ptp4l-{capture_iface}.log"
-        ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m"
+        ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
         ptp4l_process = host.connection.start_process(
             ptp4l_cmd,
             stderr_to_stdout=True,
