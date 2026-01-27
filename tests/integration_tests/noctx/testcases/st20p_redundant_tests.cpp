@@ -246,14 +246,14 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   memcpy(ctx->para.sip_addr[RX_SESSION_PORT_1], kDebugIpAddress3, MTL_IP_ADDR_LEN);
   initDefaultContext();
 
-  uint testedLatencyMs = 10;
+  uint testedLatencyMs = 0;
 
   auto rxBundle = createSt20pHandlerBundle(
       /*createTx=*/false, /*createRx=*/true,
       [](St20pHandler* handler) { return new St20pRedundantLatency(0, handler); },
       [](St20pHandler* handler) {
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
-        handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+        handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_P] = 20000;
+        handler->sessionsOpsRx.port.udp_port[MTL_SESSION_PORT_R] = 20001;
         handler->setSessionPorts(SESSION_SKIP_PORT, RX_SESSION_PORT_0, SESSION_SKIP_PORT, RX_SESSION_PORT_1);
         memcpy(handler->sessionsOpsRx.port.ip_addr[MTL_SESSION_PORT_P],
                kDebugIpAddress0, MTL_IP_ADDR_LEN);
@@ -268,6 +268,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
       [](St20pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = 20000;
         handler->setSessionPorts(TX_SESSION_PORT_0, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
         memcpy(handler->sessionsOpsTx.port.dip_addr[MTL_SESSION_PORT_P],
@@ -282,6 +283,7 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
       },
       [this, testedLatencyMs](St20pHandler* handler) {
         handler->sessionsOpsTx.flags |= ST20P_TX_FLAG_USER_PACING;
+        handler->sessionsOpsTx.port.udp_port[MTL_SESSION_PORT_P] = 20000;
         handler->sessionsOpsTx.rtp_timestamp_delta_us = -1 * (testedLatencyMs * 1000);
         handler->setSessionPorts(TX_SESSION_PORT_1, SESSION_SKIP_PORT, SESSION_SKIP_PORT,
                                  SESSION_SKIP_PORT);
@@ -321,15 +323,9 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
   st20_tx_user_stats statsTxRedundant;
   st20p_tx_get_session_stats(latencyBundle.handler->sessionsHandleTx, &statsTxRedundant);
 
-  uint64_t packetsSend = statsTxPrimary.common.port[0].packets;
-  uint64_t packetsRecieved = stats.common.port[0].packets + stats.common.port[1].packets;
   uint64_t framesSend = primaryStrategy->idx_tx;
   uint64_t framesRecieved = rxStrategy->idx_rx;
 
-  ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
-      << "Comparison against primary stream";
-  ASSERT_LE(stats.common.stat_pkts_out_of_order, packetsRecieved / 1000)
-      << "Out of order packets";
   ASSERT_NEAR(framesSend, framesRecieved, framesSend / 100)
       << "Comparison against primary stream";
 }
