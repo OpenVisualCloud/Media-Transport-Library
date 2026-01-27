@@ -57,41 +57,4 @@ int shmctl(int shmid, int cmd, struct shmid_ds* buf) {
  */
 #define DELTA_EPOCH_IN_100NS INT64_C(116444736000000000)
 
-int clock_gettime(int clk_id, struct timespec* tp) {
-  unsigned __int64 t;
-  LARGE_INTEGER pf, pc;
-  union {
-    unsigned __int64 u64;
-    FILETIME ft;
-  } ct;
-
-  switch (clk_id) {
-    case CLOCK_REALTIME: {
-      GetSystemTimePreciseAsFileTime(&ct.ft);
-      t = ct.u64 - DELTA_EPOCH_IN_100NS;
-      tp->tv_sec = t / POW10_7;
-      tp->tv_nsec = ((int)(t % POW10_7)) * 100;
-      return 0;
-    }
-
-    case CLOCK_MONOTONIC: {
-      if (QueryPerformanceFrequency(&pf) == 0) return -1;
-      if (QueryPerformanceCounter(&pc) == 0) return -1;
-      tp->tv_sec = pc.QuadPart / pf.QuadPart;
-      tp->tv_nsec = (int)(((pc.QuadPart % pf.QuadPart) * POW10_9 + (pf.QuadPart >> 1)) /
-                          pf.QuadPart);
-      if (tp->tv_nsec >= POW10_9) {
-        tp->tv_sec++;
-        tp->tv_nsec -= POW10_9;
-      }
-      return 0;
-    }
-
-    default:
-      break;
-  }
-
-  return -1;
-}
-
 #endif
