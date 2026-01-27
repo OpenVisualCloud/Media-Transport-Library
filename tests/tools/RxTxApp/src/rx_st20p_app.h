@@ -20,5 +20,6 @@ int st_app_rx_st20p_sessions_stat(struct st_app_context* ctx);
 int st_app_rx_st20p_sessions_result(struct st_app_context* ctx);
 int st_app_rx_st20p_sessions_pcap(struct st_app_context* ctx);
 int st_app_rx_st20p_io_stat(struct st_app_context* ctx);
+bool st_app_rx_st20p_sessions_all_timeout(struct st_app_context* ctx);
 
 #endif

@@ -153,6 +153,8 @@ enum st_args_cmd {
   ST_ARG_ALLOW_ACROSS_NUMA_CORE,
   ST_ARG_NO_MULTICAST,
   ST_ARG_TX_USER_CLOCK_OFFSET,
+  ST_ARG_AUTO_STOP,
+  ST_ARG_RX_MAX_FILE_SIZE,
   ST_ARG_MAX,
 };
 
@@ -303,6 +305,8 @@ static struct option st_app_args_options[] = {
     {"no_multicast", no_argument, 0, ST_ARG_NO_MULTICAST},
     {"tx_user_time_offset", required_argument, 0, ST_ARG_TX_USER_CLOCK_OFFSET},
     {"timestamp_epoch", no_argument, 0, ST_ARG_TIMESTAMP_EPOCH},
+    {"auto_stop", no_argument, 0, ST_ARG_AUTO_STOP},
+    {"rx_max_file_size", required_argument, 0, ST_ARG_RX_MAX_FILE_SIZE},
 
     {0, 0, 0, 0}};
 
@@ -932,6 +936,12 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
         break;
       case ST_ARG_TX_USER_CLOCK_OFFSET:
         ctx->user_time.user_time_offset = atoi(optarg);
+        break;
+      case ST_ARG_AUTO_STOP:
+        ctx->auto_stop = true;
+        break;
+      case ST_ARG_RX_MAX_FILE_SIZE:
+        ctx->rx_max_file_size = strtoul(optarg, NULL, 0);
         break;
       case '?':
         break;

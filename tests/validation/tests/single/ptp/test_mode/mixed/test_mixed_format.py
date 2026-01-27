@@ -1,78 +1,91 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
+import logging
 import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.integrity.integrity_runner import FileVideoIntegrityRunner
 from common.nicctl import InterfaceSetup
-from mtl_engine.media_files import anc_files, audio_files, yuv_files
+from mtl_engine.execute import log_fail
+from mtl_engine.media_files import yuv_files_422rfc10
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.nightly
-@pytest.mark.skip
-@pytest.mark.parametrize("test_mode", ["unicast", "multicast"])
+@pytest.mark.smoke
+@pytest.mark.ptp
 @pytest.mark.parametrize(
-    "video_format",
+    "interface_profile",
     [
-        pytest.param("i1080p30", marks=pytest.mark.nightly),
-        pytest.param("i1080p50", marks=pytest.mark.nightly),
-        "i1080p59",
-        pytest.param("i2160p30", marks=pytest.mark.nightly),
-        pytest.param("i2160p50", marks=pytest.mark.nightly),
-        "i2160p59",
+        pytest.param(
+            {"mode": "vf_only"},
+            id="vf_only",
+        ),
+        pytest.param(
+            {"mode": "mixed", "tx_type": "PF", "rx_type": "VF"},
+            id="pf_tx_vf_rx",
+            marks=pytest.mark.skip(reason="pf_tx_vf_rx tests does not work yet"),
+        ),
     ],
+)
+@pytest.mark.parametrize(
+    "media_file",
+    [
+        yuv_files_422rfc10["Crosswalk_720p"],
+        yuv_files_422rfc10["ParkJoy_1080p"],
+        yuv_files_422rfc10["Pedestrian_4K"],
+    ],
+    indirect=["media_file"],
+    ids=["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"],
 )
 def test_ptp_mixed_format(
     hosts,
     build,
-    media,
     setup_interfaces: InterfaceSetup,
     test_time,
-    test_mode,
-    video_format,
+    interface_profile,
     test_config,
     prepare_ramdisk,
+    pcap_capture,
+    media_file,
+    output_files,
 ):
-    video_file = yuv_files[video_format]
-    audio_file = audio_files["PCM24"]
-    ancillary_file = anc_files["text_p50"]
+    media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-    interfaces_list = setup_interfaces.get_interfaces_list_single(
-        test_config.get("interface_type", "VF")
+    if interface_profile["mode"] == "vf_only":
+        interfaces_list = setup_interfaces.get_interfaces_list_single("VF")
+    else:
+        tx_index = test_config.get("tx_interface_index", 0)
+        rx_index = test_config.get("rx_interface_index", 1)
+        interfaces_list = setup_interfaces.get_mixed_interfaces_list_single(
+            tx_interface_type=interface_profile["tx_type"],
+            rx_interface_type=interface_profile["rx_type"],
+            tx_index=tx_index,
+            rx_index=rx_index,
+        )
+
+    video_out_url = output_files.register(
+        str(
+            host.connection.path(media_file_path).parent
+            / f"{media_file_info['filename']}.out"
+        )
     )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
         nic_port_list=interfaces_list,
-        test_mode=test_mode,
-        width=video_file["width"],
-        height=video_file["height"],
-        fps=f"p{video_file['fps']}",
-        transport_format=video_file["format"],
-        output_format=video_file["file_format"],
-        st20p_url=os.path.join(media, video_file["filename"]),
-        input_format=video_file["file_format"],
-    )
-    config = rxtxapp.add_st30p_sessions(
-        config=config,
-        nic_port_list=interfaces_list,
-        test_mode=test_mode,
-        audio_format="PCM24",
-        audio_channel=["U02"],
-        audio_sampling="48kHz",
-        audio_ptime="1",
-        filename=os.path.join(media, audio_file["filename"]),
-        out_url=os.path.join(media, audio_file["filename"]),
-    )
-    config = rxtxapp.add_ancillary_sessions(
-        config=config,
-        nic_port_list=interfaces_list,
-        test_mode=test_mode,
-        type_="frame",
-        ancillary_format="closed_caption",
-        ancillary_fps=f"{ancillary_file['fps']}",
-        ancillary_url=os.path.join(media, ancillary_file["filename"]),
+        test_mode="multicast",
+        width=media_file_info["width"],
+        height=media_file_info["height"],
+        fps=f"p{media_file_info['fps']}",
+        input_format=media_file_info["file_format"],
+        transport_format=media_file_info["format"],
+        output_format=media_file_info["file_format"],
+        st20p_url=media_file_path,
+        out_url=video_out_url,
     )
 
     rxtxapp.execute_test(
@@ -80,5 +93,26 @@ def test_ptp_mixed_format(
         build=build,
         test_time=test_time,
         ptp=True,
+        rx_max_file_size=5 * 1024 * 1024 * 1024,  # 5 GB limit for rx file size
         host=host,
+        netsniff=pcap_capture,
     )
+
+    if test_config.get("integrity_check", True):
+
+        logger.info("Running video integrity check...")
+        resolution = f"{media_file_info['width']}x{media_file_info['height']}"
+        video_integrity = FileVideoIntegrityRunner(
+            host=host,
+            test_repo_path=build,
+            src_url=media_file_path,
+            out_name=os.path.basename(video_out_url),
+            resolution=resolution,
+            file_format=media_file_info["file_format"],
+            out_path=os.path.dirname(video_out_url),
+            integrity_path=os.path.join(
+                build, "tests", "validation", "common", "integrity"
+            ),
+        )
+        if not video_integrity.run():
+            log_fail("Video integrity check failed")

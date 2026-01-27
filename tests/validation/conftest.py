@@ -101,17 +101,16 @@ def _select_capture_host(hosts: dict):
     return hosts["client"] if "client" in hosts else list(hosts.values())[0]
 
 
-@pytest.fixture(scope="session")
-def phc2sys_session(test_config: dict, hosts):
-    """Start phc2sys for the capture interface before any tests.
+@pytest.fixture(scope="function")
+def ptp_sync(request, test_config: dict, hosts):
+    """Start phc2sys or ptp4l for the capture interface before tests.
 
     - Uses the same interface selection logic as PCAP capture.
-    - Detects the PTP Hardware Clock via `ethtool -T`.
-    - Runs `phc2sys -s /dev/ptpX -c CLOCK_REALTIME -O 0 -m`.
+    - For tests marked with @pytest.mark.ptp: starts ptp4l for PTP synchronization.
+    - For other tests: detects PTP Hardware Clock via `ethtool -T` and runs phc2sys.
 
-    The process is stopped at the end of the session.
+    The process is stopped at the end of the test.
     """
-
     capture_cfg = test_config.get("capture_cfg", {})
     if not (capture_cfg and capture_cfg.get("enable")):
         yield
@@ -121,6 +120,41 @@ def phc2sys_session(test_config: dict, hosts):
     sniff_nic = _select_sniff_interface(host, capture_cfg)
     capture_iface = sniff_nic.name
 
+    # For tests marked with @pytest.mark.ptp, start ptp4l instead of phc2sys
+    if request.node.get_closest_marker("ptp"):
+        logger.info(f"Starting ptp4l for PTP synchronization (iface={capture_iface})")
+
+        log_path = f"/tmp/ptp4l-{capture_iface}.log"
+        ptp4l_cmd = f"sudo ptp4l -i '{capture_iface}' -s -m -2"
+        ptp4l_process = host.connection.start_process(
+            ptp4l_cmd,
+            stderr_to_stdout=True,
+            output_file=log_path,
+        )
+
+        # Give ptp4l a moment to fail fast (e.g., missing interface).
+        time.sleep(0.2)
+        if not ptp4l_process.running:
+            raise RuntimeError(
+                f"Failed to start ptp4l (iface={capture_iface}). log={log_path}"
+            )
+
+        try:
+            yield
+        finally:
+            if not ptp4l_process:
+                return
+
+            if not ptp4l_process.running:
+                raise RuntimeError(
+                    f"ptp4l process (iface={capture_iface}) "
+                    f"stopped unexpectedly. See log: {log_path}"
+                )
+
+            ptp4l_process.kill(wait=None, with_signal=signal.SIGTERM)
+        return
+
+    # For non-PTP tests, start phc2sys
     ptp_details = host.connection.execute_command(
         f"sudo ethtool -T '{capture_iface}' 2>/dev/null || true"
     )
@@ -152,7 +186,7 @@ def phc2sys_session(test_config: dict, hosts):
     )
 
     # Give phc2sys a moment to fail fast (e.g., missing /dev/ptpX permissions).
-    time.sleep(0.3)
+    time.sleep(0.2)
     if not phc2sys_process.running:
         raise RuntimeError(
             f"Failed to start phc2sys (iface={capture_iface}, ptp={capture_ptp}). "
@@ -171,7 +205,7 @@ def phc2sys_session(test_config: dict, hosts):
                 f"stopped unexpectedly. See log: {log_path}"
             )
 
-        phc2sys_process.kill(wait=None, with_signal=signal.SIGINT)
+        phc2sys_process.kill(wait=None, with_signal=signal.SIGTERM)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -335,8 +369,50 @@ Yields:
 """
 
 
+class OutputFileTracker:
+    """Helper class to track and clean up output files created during tests."""
+
+    def __init__(self, hosts):
+        self._hosts = hosts
+        self._files: list[str] = []
+
+    def register(self, file_path: str) -> str:
+        """Register an output file for automatic cleanup. Returns the path for convenience."""
+        self._files.append(file_path)
+        return file_path
+
+    def cleanup(self):
+        """Remove all registered output files from all hosts."""
+        for file_path in self._files:
+            for host in self._hosts.values():
+                cmd = f"sudo rm -f {file_path}"
+                try:
+                    host.connection.execute_command(cmd)
+                except ConnectionCalledProcessError as e:
+                    logging.log(
+                        level=logging.WARNING,
+                        msg=f"Failed to remove output file {file_path}: {e}",
+                    )
+        self._files.clear()
+
+
 @pytest.fixture(scope="function")
-def media_file(media_ramdisk, request, hosts, test_config):
+def output_files(hosts):
+    """Fixture that provides automatic cleanup of output files created during tests.
+
+    Usage:
+        def test_example(output_files, ...):
+            out_path = output_files.register("/path/to/output.file")
+            # use out_path in your test
+            # file will be automatically removed after test completes
+    """
+    tracker = OutputFileTracker(hosts)
+    yield tracker
+    tracker.cleanup()
+
+
+@pytest.fixture(scope="function")
+def media_file(media_ramdisk, request, hosts, test_config, output_files):
     media_file_info = getattr(request, "param", None)
 
     ramdisk_config = test_config.get("ramdisk", {}).get("media", {})
@@ -349,8 +425,8 @@ def media_file(media_ramdisk, request, hosts, test_config):
         return
 
     src_media_file_path = os.path.join(media_path, media_file_info["filename"])
-    ramdisk_media_file_path = os.path.join(
-        ramdisk_mountpoint, media_file_info["filename"]
+    ramdisk_media_file_path = output_files.register(
+        os.path.join(ramdisk_mountpoint, media_file_info["filename"])
     )
 
     for host in hosts.values():
@@ -363,14 +439,6 @@ def media_file(media_ramdisk, request, hosts, test_config):
             )
 
     yield media_file_info, ramdisk_media_file_path
-    for host in hosts.values():
-        cmd = f"sudo rm {ramdisk_media_file_path}"
-        try:
-            host.connection.execute_command(cmd)
-        except ConnectionCalledProcessError as e:
-            logging.log(
-                level=logging.ERROR, msg=f"Failed to execute command {cmd}: {e}"
-            )
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -430,7 +498,7 @@ def log_session():
 
 @pytest.fixture(scope="function")
 def pcap_capture(
-    request, media_file, test_config, hosts, mtl_path, phc2sys_session, prepare_ramdisk
+    request, media_file, test_config, hosts, mtl_path, ptp_sync, prepare_ramdisk
 ):
     """Fixture for capturing pcap files during tests.
 
