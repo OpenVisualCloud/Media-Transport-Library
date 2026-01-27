@@ -13,7 +13,7 @@ mtl_header_files = files('mtl_api.h', 'st_api.h', 'st_convert_api.h', 'st_conver
   'mtl_sch_api.h', 'st30_pipeline_api.h', 'st40_pipeline_api.h') + mtl_deprecated_header_files
 
 if is_windows
-  mtl_header_files += files('mudp_win.h')
+  mtl_header_files += files('deprecated/mudp_win.h')
 endif
 
 install_headers(mtl_header_files, subdir : meson.project_name())
