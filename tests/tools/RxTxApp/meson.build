@@ -62,7 +62,7 @@ app_c_args += ['-Wunused-parameter']
 
 if is_windows
   app_c_args += ['-DWINDOWSENV']
-  windows_include_dir = '..\..\lib\windows'
+  windows_include_dir = '..\..\..\..\lib\windows'
   app_c_args += ['-I' + windows_include_dir]
 endif
 
