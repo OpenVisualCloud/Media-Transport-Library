@@ -1,0 +1,197 @@
+{
+    "tx_no_chain": false,
+    "interfaces": [
+        {
+            "name": "0000:4b:01.0",
+            "ip": "192.168.17.153"
+        }
+    ],
+    "tx_sessions": [
+        {
+            "user_pacing_offset" : 50000000,
+            "dip": [
+                "239.168.75.20"
+            ],
+            "interface": [
+                0
+            ],
+            "video": [],
+            "st20p": [
+                {
+                    "framebuffer_cnt" : 18,
+                    "replicas": 10,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p59",
+                    "device": "AUTO",
+                    "input_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit",
+                    "st20p_url": "/mnt/ramdisk/input.v210",
+                    "user_timestamp": false,
+                    "user_pacing": false
+                }
+            ],
+            "st22p": [],
+            "st30p_d": [
+                {
+                    "replicas": 12,
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.08",
+                    "audio_url": "/mnt/ramdisk/input.v210"
+                }
+            ],
+            "audio_d": [
+                {
+                    "replicas": 1,
+                    "start_port": 31000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "type": "rtp",
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.08",
+                    "audio_url": "/mnt/ramdisk/input.v210"
+                },
+                {
+                    "replicas": 1,
+                    "start_port": 32000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "type": "frame",
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.08",
+                    "audio_url": "/mnt/ramdisk/input.v210"
+                }
+            ],
+            "fastmetadata_d": [
+                {
+                    "replicas": 1,
+                    "start_port": 41000,
+                    "payload_type": 115,
+                    "type": "frame",
+                    "fastmetadata_data_item_type": 123456,
+                    "fastmetadata_k_bit": 1,
+                    "fastmetadata_url": "/mnt/ramdisk/input.v210",
+                    "fastmetadata_fps": "p59"
+                },
+                {
+                    "replicas": 1,
+                    "start_port": 42000,
+                    "payload_type": 115,
+                    "type": "rtp",
+                    "fastmetadata_data_item_type": 123456,
+                    "fastmetadata_k_bit": 1,
+                    "fastmetadata_url": "/mnt/ramdisk/input.v210",
+                    "fastmetadata_fps": "p59"
+                }
+            ]
+        }
+    ],
+    "rx_sessions_d": [
+        {
+            "ip": [
+                "239.168.75.20"
+            ],
+            "interface": [
+                1
+            ],
+            "video": [],
+            "st20p": [
+                {
+                    "replicas": 12,
+                    "start_port": 20000,
+                    "payload_type": 112,
+                    "width": 1920,
+                    "height": 1080,
+                    "fps": "p60",
+                    "device": "AUTO",
+                    "output_format": "YUV422PLANAR10LE",
+                    "transport_format": "YUV_422_10bit"
+                }
+            ],
+            "st22p": [],
+            "st30p_d": [
+                {
+                    "replicas": 1,
+                    "start_port": 30000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.08"
+                }
+            ],
+            "audio_d": [
+                {
+                    "replicas": 1,
+                    "start_port": 31000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "type": "rtp",
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.08"
+                },
+                {
+                    "replicas": 1,
+                    "start_port": 32000,
+                    "payload_type": 111,
+                    "audio_format": "PCM16",
+                    "audio_channel": [
+                        "U02"
+                    ],
+                    "type": "frame",
+                    "audio_sampling": "48kHz",
+                    "audio_ptime": "0.08"
+                }
+            ],
+            "ancillary_d": [
+                {
+                    "replicas": 1,
+                    "start_port": 40000,
+                    "payload_type": 113,
+                    "type": "frame",
+                    "ancillary_format": "closed_caption",
+                    "ancillary_fps": "p60"
+                }
+            ],
+            "fastmetadata_d": [
+                {
+                    "replicas": 1,
+                    "start_port": 41000,
+                    "payload_type": 115,
+                    "type": "frame",
+                    "fastmetadata_data_item_type": 123456,
+                    "fastmetadata_k_bit": 1,
+                    "fastmetadata_fps": "p59"
+                },
+                {
+                    "replicas": 1,
+                    "start_port": 42000,
+                    "payload_type": 115,
+                    "type": "rtp",
+                    "fastmetadata_data_item_type": 123456,
+                    "fastmetadata_k_bit": 1,
+                    "fastmetadata_fps": "p59"
+                }
+            ]
+        }
+    ]
+}
