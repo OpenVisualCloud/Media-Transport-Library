@@ -481,15 +481,3 @@ bool st_app_rx_st20p_sessions_all_timeout(struct st_app_context* ctx) {
   }
   return true;
 }
-
-bool st_app_rx_st20p_sessions_file_size_limit_reached(struct st_app_context* ctx) {
-  struct st_app_rx_st20p_session* s;
-  if (!ctx->rx_st20p_sessions || ctx->rx_st20p_session_cnt == 0) return false;
-  if (ctx->rx_max_file_size == 0) return false;
-
-  for (int i = 0; i < ctx->rx_st20p_session_cnt; i++) {
-    s = &ctx->rx_st20p_sessions[i];
-    if (s->rx_file_size_limit_reached) return true;
-  }
-  return false;
-}

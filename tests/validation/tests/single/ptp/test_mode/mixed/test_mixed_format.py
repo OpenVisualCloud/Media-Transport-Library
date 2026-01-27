@@ -5,10 +5,7 @@ import os
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from common.integrity.integrity_runner import (
-    FileAudioIntegrityRunner,
-    FileVideoIntegrityRunner,
-)
+from common.integrity.integrity_runner import FileVideoIntegrityRunner
 from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_fail
 from mtl_engine.media_files import yuv_files_422rfc10
@@ -55,7 +52,6 @@ def test_ptp_mixed_format(
     media_file,
     output_files,
 ):
-    test_time = max(test_time, 50)  # Ensure at least 50 seconds for this test
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
     if interface_profile["mode"] == "vf_only":
@@ -97,7 +93,6 @@ def test_ptp_mixed_format(
         build=build,
         test_time=test_time,
         ptp=True,
-        # auto_stop=True,
         rx_max_file_size=5 * 1024 * 1024 * 1024,  # 5 GB limit for rx file size
         host=host,
         netsniff=pcap_capture,
