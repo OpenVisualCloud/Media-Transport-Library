@@ -8,7 +8,7 @@ if [[ "$0" != "./repro.sh" ]]; then
 fi
 
 
-export INPUT_CONFIG_FILE=./tests/tools/RxTxApp/build/input.json
+ export INPUT_CONFIG_FILE=./tests/tools/RxTxApp/build/input.json
 
 ./cleanup.sh
 ./script/build_ice_driver.sh
@@ -34,8 +34,9 @@ fi
 
 
 
-dpdk-devbind.py -u 0000:4b:00.0
-./script/nicctl.sh create_vf 0000:4b:00.0
+dpdk-devbind.py -u 0000:31:00.0
+dpdk-devbind.py --bind ice 0000:31:00.0
+./script/nicctl.sh create_vf 0000:31:00.0
 sleep 4
 
 
