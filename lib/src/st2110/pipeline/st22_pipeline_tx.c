@@ -205,6 +205,24 @@ static int tx_st22p_frame_done(void* priv, uint16_t frame_idx,
 
 static int tx_st22p_notify_event(void* priv, enum st_event event, void* args) {
   struct st22p_tx_ctx* ctx = priv;
+  int idx = ctx->idx;
+
+  /* Handle recovery: reset all pipeline frames to FREE state */
+  if (event == ST_EVENT_RECOVERY_ERROR || event == ST_EVENT_FATAL_ERROR) {
+    mt_pthread_mutex_lock(&ctx->lock);
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      struct st22p_tx_frame* framebuff = &ctx->framebuffs[i];
+      enum st22p_tx_frame_status old_stat = framebuff->stat;
+      if (old_stat != ST22P_TX_FRAME_FREE) {
+        info("%s(%d), reset frame %u from %s to FREE\n", __func__, idx, i,
+             tx_st22p_stat_name(old_stat));
+        framebuff->stat = ST22P_TX_FRAME_FREE;
+      }
+    }
+    mt_pthread_mutex_unlock(&ctx->lock);
+    /* notify app that frames are available again */
+    tx_st22p_notify_frame_available(ctx);
+  }
 
   if (ctx->ops.notify_event) {
     ctx->ops.notify_event(ctx->ops.priv, event, args);
@@ -301,13 +319,14 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST22P_TX_FRAME_IN_ENCODING != framebuff->stat) {
+    mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in encoding %d\n", __func__, idx, encode_idx,
         framebuff->stat);
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   ctx->stat_encode_put_frame++;
   dbg("%s(%d), frame %u result %d data_size %" PRIu64 "\n", __func__, idx, encode_idx,
       result, data_size);

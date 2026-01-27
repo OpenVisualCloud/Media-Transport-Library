@@ -188,6 +188,25 @@ static int tx_st20p_frame_done(void* priv, uint16_t frame_idx,
 
 static int tx_st20p_notify_event(void* priv, enum st_event event, void* args) {
   struct st20p_tx_ctx* ctx = priv;
+  int idx = ctx->idx;
+
+  /* Handle recovery: reset all pipeline frames to FREE state */
+  if (event == ST_EVENT_RECOVERY_ERROR || event == ST_EVENT_FATAL_ERROR) {
+    mt_pthread_mutex_lock(&ctx->lock);
+    for (uint16_t i = 0; i < ctx->framebuff_cnt; i++) {
+      struct st20p_tx_frame* framebuff = &ctx->framebuffs[i];
+      enum st20p_tx_frame_status old_stat = framebuff->stat;
+      if (old_stat != ST20P_TX_FRAME_FREE) {
+        info("%s(%d), reset frame %u from %s to FREE\n", __func__, idx, i,
+             tx_st20p_stat_name(old_stat));
+        framebuff->stat = ST20P_TX_FRAME_FREE;
+        framebuff->frame_done_cb_called = false;
+      }
+    }
+    mt_pthread_mutex_unlock(&ctx->lock);
+    /* notify app that frames are available again */
+    tx_st20p_notify_frame_available(ctx);
+  }
 
   if (ctx->ops.notify_event) {
     ctx->ops.notify_event(ctx->ops.priv, event, args);
@@ -237,13 +256,14 @@ static int tx_st20p_convert_put_frame(void* priv, struct st20_convert_frame_meta
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&ctx->lock);
   if (ST20P_TX_FRAME_IN_CONVERTING != framebuff->stat) {
+    mt_pthread_mutex_unlock(&ctx->lock);
     err("%s(%d), frame %u not in converting %d\n", __func__, idx, convert_idx,
         framebuff->stat);
     return -EIO;
   }
 
-  mt_pthread_mutex_lock(&ctx->lock);
   if ((result < 0) || (data_size <= 0)) {
     dbg("%s(%d), frame %u result %d data_size %" PRIu64 ", frame_idx: %u\n", __func__,
         idx, convert_idx, result, data_size, convert_idx);
