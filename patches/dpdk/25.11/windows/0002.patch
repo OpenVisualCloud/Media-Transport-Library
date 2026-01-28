@@ -1,0 +1,22 @@
+diff --git a/app/test/meson.build b/app/test/meson.build
+index efec42a6bf..001ce7ac38 100644
+--- a/app/test/meson.build
++++ b/app/test/meson.build
+@@ -135,7 +135,7 @@ source_file_deps = {
+     'test_mp_secondary.c': ['hash'],
+     'test_net_ether.c': ['net'],
+     'test_net_ip6.c': ['net'],
+-    'test_pcapng.c': ['ethdev', 'net', 'pcapng', 'bus_vdev'],
++    # 'test_pcapng.c': ['ethdev', 'net', 'pcapng', 'bus_vdev'],
+     'test_pdcp.c': ['eventdev', 'pdcp', 'net', 'timer', 'security'],
+     'test_pdump.c': ['pdump'] + sample_packet_forward_deps,
+     'test_per_lcore.c': [],
+@@ -215,7 +215,7 @@ source_file_deps = {
+ 
+ source_file_ext_deps = {
+     'test_compressdev.c': ['zlib'],
+-    'test_pcapng.c': ['pcap'],
++    # 'test_pcapng.c': ['pcap'],
+ }
+ 
+ def_lib = get_option('default_library')
