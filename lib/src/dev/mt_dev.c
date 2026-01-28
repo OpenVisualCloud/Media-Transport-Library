@@ -1551,9 +1551,49 @@ struct mt_tx_queue* mt_dev_get_tx_queue(struct mtl_main_impl* impl, enum mtl_por
     }
     return tx_queue;
   }
+
+  /* No free queue found - clear all fatal_error flags to allow retry */
+  warn("%s(%d), no free queue found, clearing all fatal_error flags for retry\n", __func__,
+       port);
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    inf->tx_queues[q].fatal_error = false;
+  }
+
+  /* Try again after clearing fatal errors */
+  for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
+    if ((ST21_TX_PACING_WAY_TSN == inf->tx_pacing_way) &&
+        (MT_DRV_IGC == inf->drv_info.drv_type)) {
+      if (flow->flags & MT_TXQ_FLOW_F_LAUNCH_TIME) {
+        if (q != 0) break;
+      } else {
+        if (q == 0) continue;
+      }
+    }
+    tx_queue = &inf->tx_queues[q];
+    if (tx_queue->active) continue;
+
+    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL && bytes_per_sec) {
+      ret = dev_tx_queue_set_rl_rate(inf, q, bytes_per_sec);
+      if (ret < 0) {
+        err("%s(%d), fallback to tsc as rl fail\n", __func__, port);
+        inf->tx_pacing_way = ST21_TX_PACING_WAY_TSC;
+      }
+    }
+    tx_queue->active = true;
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+    if (inf->tx_pacing_way == ST21_TX_PACING_WAY_RL) {
+      float bps_g = (float)tx_queue->bps * 8 / (1000 * 1000 * 1000);
+      info("%s(%d), q %d with speed %fg bps after clearing fatal errors\n", __func__,
+           port, q, bps_g);
+    } else {
+      info("%s(%d), q %d without rl after clearing fatal errors\n", __func__, port, q);
+    }
+    return tx_queue;
+  }
   mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
-  err("%s(%d), fail to find free tx queue\n", __func__, port);
+  err("%s(%d), fail to find free tx queue even after clearing fatal errors\n", __func__,
+      port);
   return NULL;
 }
 
@@ -1714,7 +1754,9 @@ int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   tx_queue->active = false;
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
   info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
@@ -1740,7 +1782,9 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   tx_queue->fatal_error = true;
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
   err("%s(%d), q %d masked as fatal error\n", __func__, port, queue_id);
   return 0;
 }

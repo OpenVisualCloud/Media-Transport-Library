@@ -3879,6 +3879,24 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     return -EIO;
   }
 
+  /* free all inflight buffers to ensure mbufs are returned to mempool */
+  for (uint8_t i = 0; i < s->ops.num_port; i++) {
+    if (s->inflight[i][0]) {
+      rte_pktmbuf_free_bulk(&s->inflight[i][0], s->bulk);
+      s->inflight[i][0] = NULL;
+    }
+    if (s->trs_inflight_num[i]) {
+      rte_pktmbuf_free_bulk(&s->trs_inflight[i][s->trs_inflight_idx[i]],
+                            s->trs_inflight_num[i]);
+      s->trs_inflight_num[i] = 0;
+    }
+    if (s->trs_inflight_num2[i]) {
+      rte_pktmbuf_free_bulk(&s->trs_inflight2[i][s->trs_inflight_idx2[i]],
+                            s->trs_inflight_num2[i]);
+      s->trs_inflight_num2[i] = 0;
+    }
+  }
+
   /* clear all tx ring buffer */
   if (s->packet_ring) mt_ring_dequeue_clean(s->packet_ring);
   for (uint8_t i = 0; i < s->ops.num_port; i++) {
