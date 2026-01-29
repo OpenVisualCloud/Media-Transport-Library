@@ -165,7 +165,6 @@ enum mtl_port {
   MTL_PORT_7,     /**< port index: 7 */
 };
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
 struct mtl_debug_port_packet_loss {
   /**
    * Debug option for test purposes only.
@@ -185,7 +184,6 @@ struct mtl_debug_port_packet_loss {
   uint16_t tx_stream_loss_id;
   uint16_t tx_stream_loss_divider;
 };
-#endif /* MTL_SIMULATE_PAKET_DROPS */
 
 #define MTL_PORT_MAX (MTL_PORT_7 + 1)
 
@@ -487,12 +485,10 @@ enum mtl_init_flag {
   /** not bind current process to NIC numa socket */
   MTL_FLAG_NOT_BIND_PROCESS_NUMA = (MTL_BIT64(47)),
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
   /** Debug option to enable dropping some percentage of packets for
    *  testing redundant video streams only works for video, needs the
    * per port mtl_debug_port_packet_loss to be populated */
   MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS = (MTL_BIT64(63))
-#endif /* MTL_SIMULATE_PAKET_DROPS */
 };
 
 /** MTL port init flag */
@@ -536,10 +532,10 @@ struct mtl_init_params {
    * MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
    */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
-#ifdef MTL_SIMULATE_PAKET_DROPS
+
   /** Debug option for test purposes only. See struct mtl_debug_port_packet_loss */
   struct mtl_debug_port_packet_loss port_packet_loss[MTL_PORT_MAX];
-#endif
+
   /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
   uint8_t num_ports;
   /**

@@ -57,6 +57,11 @@ app_ld_args = []
 if get_option('buildtype') != 'debug'
   app_c_args += ['-Werror']
 endif
+
+if get_option('buildtype') != 'release'
+  add_global_arguments('-DMTL_SIMULATE_PAKET_DROPS=1', language : 'c')
+endif
+
 app_c_args += ['-Wall']
 app_c_args += ['-Wunused-parameter']
 

@@ -41,9 +41,8 @@ endif
 if get_option('buildtype') != 'debug'
   test_c_args += ['-Werror']
   test_cpp_args += ['-Werror']
-else
-  add_project_arguments('-DMTL_SIMULATE_PAKET_DROPS=1', language : ['c', 'cpp'])
 endif
+
 test_c_args += ['-Wall']
 test_cpp_args += ['-Wall']
 
