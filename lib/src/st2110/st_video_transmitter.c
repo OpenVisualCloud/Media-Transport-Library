@@ -17,7 +17,7 @@
  * This adds a superficial difference between the RTP timestamp and the transmission
  * time, which makes it look as if the packets have a slight latency immediately after
  * entering the wire. This prevents negative latency values. */
-#define LATENCY_COMPENSATION 2
+#define LATENCY_COMPENSATION 3
 
 static int video_trs_tasklet_start(void* priv) {
   struct st_video_transmitter_impl* trs = priv;
@@ -125,12 +125,9 @@ static void video_trs_rl_warm_up(struct mtl_main_impl* impl,
   pads[0] = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
   for (int i = 0; i < warm_pkts + LATENCY_COMPENSATION; i++) {
     rte_mbuf_refcnt_update(pads[0], 1);
-    tx = video_trs_burst_pad(impl, s, s_port, &pads[0], 1);
-    if (tx < 1) {
-      dbg("%s(%d), warm_pkts fail at %d\n", __func__, s->idx, i);
-      s->trs_pad_inflight_num[s_port] += (warm_pkts - i);
-      return;
-    }
+    tx = video_trs_burst_pad(impl, s, s_port, &s->pad[s_port][ST20_PKT_TYPE_NORMAL], 1);
+    if (tx < 1) s->trs_pad_inflight_num[s_port]++;
+
     /* re-calculate the delta */
     cur_tsc = mt_get_tsc(impl);
     delta_pkts = (target_tsc - cur_tsc + pacing->trs - 1) / pacing->trs;
