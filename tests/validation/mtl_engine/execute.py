@@ -274,6 +274,11 @@ def log_info(msg: str):
     logger.info(msg)
 
 
+def log_warn(msg: str):
+    add_result_log(msg)
+    logger.warning(msg)
+
+
 def log_result_note(note: str):
     set_result_note(note)
     logger.info(f"Test result note: {note}")

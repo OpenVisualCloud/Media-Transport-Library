@@ -157,6 +157,8 @@ static int tx_st40p_frame_done(void* priv, uint16_t frame_idx,
   frame_info->timestamp = meta->timestamp;
   frame_info->epoch = meta->epoch;
   frame_info->rtp_timestamp = meta->rtp_timestamp;
+  frame_info->interlaced = ctx->ops.interlaced;
+  frame_info->second_field = ctx->ops.interlaced ? meta->second_field : false;
 
   mt_pthread_mutex_lock(&ctx->lock);
   if (ST40P_TX_FRAME_IN_TRANSMITTING == framebuff->stat) {
@@ -323,10 +325,16 @@ static int tx_st40p_init_fbs(struct st40p_tx_ctx* ctx, struct st40p_tx_ops* ops)
     frame_info->pkts_total = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
     frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_P] = 0;
+    frame_info->port_seq_lost[MTL_SESSION_PORT_R] = 0;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_P] = false;
+    frame_info->port_seq_discont[MTL_SESSION_PORT_R] = false;
     frame_info->seq_discont = false;
     frame_info->seq_lost = 0;
     frame_info->rtp_marker = false;
     frame_info->receive_timestamp = 0;
+    frame_info->second_field = false;
+    frame_info->interlaced = false;
 
     /* addr will be resolved later in tx_st40p_create_transport */
     frame_info->priv = framebuff;
