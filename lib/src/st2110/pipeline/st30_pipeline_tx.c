@@ -132,7 +132,7 @@ static int st30p_tx_late_frame_drop(void* handle, uint64_t epoch_skipped) {
   }
 
   tx_st30p_notify_frame_available(ctx);
-  MT_USDT_ST30P_TX_FRAME_DONE(ctx->idx, framebuff->idx, framebuff->frame.rtp_timestamp);
+  MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, framebuff->idx, framebuff->frame.rtp_timestamp);
 
   return 0;
 }
@@ -168,7 +168,7 @@ static int tx_st30p_frame_done(void* priv, uint16_t frame_idx,
   /* notify app can get frame */
   tx_st30p_notify_frame_available(ctx);
 
-  MT_USDT_ST30P_TX_FRAME_DROP(ctx->idx, frame_idx, frame->rtp_timestamp);
+  MT_USDT_ST30P_TX_FRAME_DONE(ctx->idx, frame_idx, frame->rtp_timestamp);
   return ret;
 }
 
