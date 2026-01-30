@@ -53,4 +53,6 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		echo "Test NoCtxTestTest.$test_name failed with exit code $?"
 		exit 1
 	fi
+
+	sleep 5;
 done < <(echo "$test_names")

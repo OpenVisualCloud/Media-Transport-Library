@@ -119,11 +119,13 @@ TEST_F(NoCtxTest, st20p_redundant_latency_drops_even_odd) {
 
   /* packets will not match exactly if we use redundant simulate packet loss */
   if (!(ctx->para.flags & MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS)) {
-    uint64_t packetsSend = statsTxPrimary.common.port[TX_SESSION_PORT_0].packets + statsTxRedundant.common.port[TX_SESSION_PORT_1].packets;
-    uint64_t packetsRecieved = stats.common.port[TX_SESSION_PORT_0].packets + stats.common.port[TX_SESSION_PORT_1].packets;
+    uint64_t packetsSend = statsTxPrimary.common.port[TX_SESSION_PORT_0].packets +
+                           statsTxRedundant.common.port[TX_SESSION_PORT_1].packets;
+    uint64_t packetsRecieved = stats.common.port[TX_SESSION_PORT_0].packets +
+                               stats.common.port[TX_SESSION_PORT_1].packets;
 
     ASSERT_NEAR(packetsSend, packetsRecieved, packetsSend / 100)
-    << "Comparison against primary stream";
+        << "Comparison against primary stream";
     ASSERT_LE(stats.common.stat_pkts_out_of_order, packetsRecieved / 1000)
         << "Out of order packets";
   }
