@@ -182,6 +182,70 @@ class InterfaceSetup:
         selected_interfaces = self.get_test_interfaces(interface_type, count, host=host)
         return selected_interfaces[host.name]
 
+    def get_mixed_interfaces_list_single(
+        self,
+        tx_interface_type: str = "PF",
+        rx_interface_type: str = "VF",
+        tx_index: int = 0,
+        rx_index: int = 1,
+    ) -> list:
+        """
+        Get a mixed interface list for single-node tests where TX and RX use different interface types.
+
+        :param tx_interface_type: Type for TX interface (PF or VF)
+        :param rx_interface_type: Type for RX interface (PF or VF)
+        :param tx_index: Index of NIC from topology for TX
+        :param rx_index: Index of NIC from topology for RX
+        :return: List with [tx_interface, rx_interface]
+        :raises pytest.skip: If not enough interfaces are configured
+        """
+        host = list(self.hosts.values())[0]
+
+        if getattr(host.topology.extra_info, "custom_interface", None):
+            pytest.skip(
+                "Mixed interface tests are not supported with extra_info.custom_interface"
+            )
+
+        required_nics = max(tx_index, rx_index) + 1
+        if len(host.network_interfaces) < required_nics:
+            pytest.skip(
+                "Mixed interface tests require at least "
+                f"{required_nics} network interfaces in topology config. "
+                f"Found {len(host.network_interfaces)} interface(s)."
+            )
+
+        tx_interface = self._get_single_interface_by_type(
+            host, tx_interface_type, tx_index
+        )
+        rx_interface = self._get_single_interface_by_type(
+            host, rx_interface_type, rx_index
+        )
+
+        return [tx_interface, rx_interface]
+
+    def _get_single_interface_by_type(
+        self, host, interface_type: str, index: int
+    ) -> str:
+        interface_type = interface_type.lower()
+        nicctl = self.nicctl_objs[host.name]
+        pci_addr = host.network_interfaces[index].pci_address.lspci
+
+        if interface_type == "pf":
+            nicctl.bind_pmd(pci_addr)
+            self.register_cleanup(nicctl, pci_addr, "PF")
+            return str(pci_addr)
+
+        if interface_type == "vf":
+            vfs = nicctl.create_vfs(pci_addr, 1)
+            if not vfs:
+                raise Exception(
+                    f"Failed to create VF on PF {pci_addr} for host {host.name}"
+                )
+            self.register_cleanup(nicctl, pci_addr, "VF")
+            return vfs[0]
+
+        raise Exception(f"Unknown interface type {interface_type}")
+
     def get_pmd_kernel_interfaces(self, interface_type="VF") -> list:
         """
         Get hybrid interface list with one DPDK interface (VF/PF) and one kernel socket interface.

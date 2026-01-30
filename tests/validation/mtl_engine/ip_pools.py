@@ -12,6 +12,7 @@ def init(session_id: int, pool_size: int = 8) -> None:
         logger.warning(f"Pool size was too big ({pool_size} > 128). Set to 128.")
         pool_size = 128
     for i in range(pool_size):
-        rx.append(f"192.168.{session_id}.{i}")
-        rx_multicast.append(f"239.0.{session_id}.{i}")
+        host_octet = i + 1
+        rx.append(f"192.168.{session_id}.{host_octet}")
+        rx_multicast.append(f"239.0.{session_id}.{host_octet}")
         tx.append(f"192.168.{session_id}.{pool_size + i}")

@@ -21,6 +21,8 @@ def calculate_packets_per_frame(media_file_info, mtu: int = 1500) -> int:
     # Simplified calculation for the number of packets per frame
     # Supported only 4:2:2 format or audio formats assuming 1 packet per 1ms
     packets = 1000
+    if not media_file_info:
+        raise ValueError("Missing media file info; cannot calculate packets per frame.")
     if "width" in media_file_info and "height" in media_file_info:
         pgroupsize = 5
         pgroupcoverage = 2
@@ -56,7 +58,7 @@ class NetsniffRecorder:
         silent: bool = True,
         capture_filter: str | None = None,
         packets_capture: int | None = None,
-        capture_time: int = 5,
+        capture_time: int = 0,
     ):
         self.host = host
         self.test_name = test_name
@@ -147,16 +149,20 @@ class NetsniffRecorder:
                 logger.error(f"Failed to start netsniff-ng: {e}")
                 return False
 
-    def capture(self, startup_wait=2):
+    def capture(self, capture_time):
         """
         Starts netsniff-ng, captures packets count set in packets_capture or capture_time in seconds, then stops.
-        :param startup_wait: Time in seconds to wait after starting netsniff-ng (default: 2)
+        :param capture_time: Fallback capture time in seconds if self.capture_time is not set (e.g. test_time)
         """
+        # Use config capture_time first, fallback to self.capture_time
+        effective_capture_time = capture_time if capture_time else self.capture_time
         started = self.start()
         if started:
             if self.packets_capture is None:
-                logger.info(f"Capturing traffic for {self.capture_time} seconds...")
-                sleep(self.capture_time + startup_wait)
+                logger.info(
+                    f"Capturing traffic for {effective_capture_time} seconds..."
+                )
+                sleep(effective_capture_time)
                 self.stop()
                 logger.info("Capture complete.")
             else:
@@ -164,7 +170,10 @@ class NetsniffRecorder:
                     logger.info(
                         f"Capturing traffic for {self.packets_capture} packets..."
                     )
-                    self.netsniff_process.wait(timeout=startup_wait + 10)
+                    # Use effective_capture_time as timeout to allow full test duration for packet capture
+                    timeout = effective_capture_time
+
+                    self.netsniff_process.wait(timeout=timeout + 10)
                     logger.info("Capture complete.")
                     logger.debug(self.netsniff_process.stdout_text)
                 except RemoteProcessTimeoutExpired:

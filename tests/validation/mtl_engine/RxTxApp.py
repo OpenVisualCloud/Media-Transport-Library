@@ -17,6 +17,8 @@ from .execute import log_fail, run
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
 
+PTP_SYNC_TIME = 50  # seconds to wait for PTP synchronization
+
 
 def capture_stdout(proc, proc_name: str):
     """Capture and log stdout from a process"""
@@ -487,6 +489,8 @@ def execute_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
+    auto_stop: bool = False,
+    rx_max_file_size: int = 0,
     host=None,
     netsniff=None,
     interface_setup=None,
@@ -536,7 +540,7 @@ def execute_test(
                 test_time = test_time * 2
             test_time = test_time * config["tx_sessions"][0]["st20p"][0]["replicas"]
 
-    command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
+    command = f"sudo {RXTXAPP_PATH} --config_file {config_path}"
 
     if virtio_user:
         command += " --virtio_user"
@@ -546,6 +550,15 @@ def execute_test(
 
     if ptp:
         command += " --ptp"
+        test_time += PTP_SYNC_TIME  # Add extra time for PTP sync
+
+    if auto_stop:
+        command += " --auto_stop"
+
+    if rx_max_file_size > 0:
+        command += f" --rx_max_file_size {rx_max_file_size}"
+
+    command += f" --test_time {test_time}"
 
     logger.info(f"RxTxApp Command: {command}")
 
@@ -564,13 +577,20 @@ def execute_test(
     )
 
     if netsniff:
+        if ptp:
+            logger.info(
+                f"Waiting {PTP_SYNC_TIME} seconds for PTP sync before netsniff-ng capture"
+            )
+            time.sleep(PTP_SYNC_TIME)
         netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
-        netsniff.capture()
+        netsniff.capture(capture_time=test_time)
         logger.info(f"Finished netsniff-ng capture on host {host.name}")
     cp.wait(timeout=timeout)
 
     # Capture stdout output for logging
     logger.info(cp.stdout_text)
+
+    output = cp.stdout_text.splitlines()
 
     # Check if process was killed or terminated unexpectedly
     bad_rc = {124: "timeout", 137: "SIGKILL", 143: "SIGTERM"}
@@ -584,8 +604,6 @@ def execute_test(
                 return False
         log_fail(f"RxTxApp returned non-zero exit code: {cp.return_code}")
         return False
-
-    output = cp.stdout_text.splitlines()
 
     passed = True
     for session, check_output in zip(

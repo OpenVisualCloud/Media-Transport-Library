@@ -122,14 +122,54 @@ class PcapComplianceClient:
         """
         if report is None:
             report = self.download_report()
-        is_compliant = report.get("not_compliant_streams", 1) == 0
-        if is_compliant:
-            is_compliant = not any(
-                [
-                    1 if stream.get("media_type") == "unknown" else 0
-                    for stream in report.get("streams", [])
-                ]
+
+        # download_report() may return False on failure/timeout
+        if not report:
+            logger.warning(
+                "Compliance report is not available; treating as non-compliant"
             )
+            return False, report
+
+        streams = report.get("streams") or []
+        if not streams:
+            logger.warning(
+                "Compliance report contains no streams; treating as non-compliant"
+            )
+            return False, report
+
+        not_compliant_streams = report.get("not_compliant_streams", 1)
+        unknown_media_streams = [
+            (idx, stream)
+            for idx, stream in enumerate(streams)
+            if stream.get("media_type") == "unknown"
+        ]
+
+        is_compliant = not_compliant_streams == 0
+        if is_compliant and unknown_media_streams:
+            is_compliant = False
+
+        if not is_compliant:
+            if not_compliant_streams and not_compliant_streams > 0:
+                logger.warning(
+                    "Compliance report indicates non-compliance: not_compliant_streams=%s",
+                    not_compliant_streams,
+                )
+            if unknown_media_streams:
+                stream_refs = []
+                for idx, stream in unknown_media_streams:
+                    stream_id = (
+                        stream.get("id")
+                        or stream.get("stream_id")
+                        or stream.get("uuid")
+                        or idx
+                    )
+                    stream_refs.append(str(stream_id))
+                logger.warning(
+                    "Compliance report indicates non-compliance: %s stream(s) with unknown media_type (ids=%s)",
+                    len(unknown_media_streams),
+                    ", ".join(stream_refs),
+                )
+
         return is_compliant, report
 
     def delete_pcap(self, pcap_id=None):

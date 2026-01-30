@@ -85,7 +85,36 @@ class VideoIntegritor:
 
     def shift_src_chunk_by_first_frame_no(self, out_file):
         if "cv2" not in sys.modules or "pytesseract" not in sys.modules:
-            raise ImportError("Required modules cv2 and pytesseract are not available.")
+            self.logger.warning(
+                "cv2/pytesseract not available; falling back to hash-based alignment."
+            )
+            try:
+                with open(out_file, "rb") as handle:
+                    first_chunk = handle.read(self.frame_size)
+                if len(first_chunk) != self.frame_size:
+                    raise ValueError(
+                        f"Output file {out_file} is smaller than one frame"
+                    )
+                first_sum = hashlib.md5(first_chunk).hexdigest()
+                if first_sum in self.src_chunk_sums:
+                    shift_index = self.src_chunk_sums.index(first_sum)
+                    self.shift = shift_index + STARTING_FRAME
+                    for _ in range(shift_index):
+                        self.src_chunk_sums.append(self.src_chunk_sums.pop(0))
+                    self.logger.info(
+                        "Aligned source chunks by hash using first frame index %s",
+                        shift_index,
+                    )
+                else:
+                    self.logger.warning(
+                        "First frame hash not found in source; proceeding without shift."
+                    )
+            except Exception as exc:
+                self.logger.warning(
+                    "Hash-based alignment failed (%s); proceeding without shift.",
+                    exc,
+                )
+            return
         font_size = self.height // TEXT_FONT_SCALE
         custom_config = r"--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789"
         cmd = [
