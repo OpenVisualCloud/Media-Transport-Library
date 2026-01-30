@@ -14,7 +14,7 @@
 #include "st_err.h"
 #include "st_video_transmitter.h"
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
 static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
                                            struct rte_ipv4_hdr* ipv4,
                                            enum mtl_session_port session_port) {
@@ -44,7 +44,7 @@ static inline void tv_simulate_packet_loss(struct st_tx_video_session_impl* s,
     ipv4->hdr_checksum = rte_ipv4_cksum(ipv4);
   }
 }
-#endif /* MTL_SIMULATE_PAKET_DROPS */
+#endif /* MTL_SIMULATE_PACKET_DROPS */
 
 static inline uint64_t tai_from_frame_count(struct st_tx_video_pacing* pacing,
                                             uint64_t frame_count) {
@@ -1003,7 +1003,7 @@ static int tv_build_st20_redundant(struct st_tx_video_session_impl* s,
   rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
   mt_mbuf_init_ipv4(pkt_r);
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
 #endif
 
@@ -1047,7 +1047,7 @@ static int tv_build_st20(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   /* copy the basic hdrs: eth, ip, udp, rtp */
   rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
 #endif
 
@@ -1153,7 +1153,7 @@ static int tv_build_st20_chain(struct st_tx_video_session_impl* s, struct rte_mb
   /* copy the hdr: eth, ip, udp, rtp */
   rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_P], sizeof(*hdr));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
 #endif
 
@@ -1269,7 +1269,7 @@ static int tv_build_st20_redundant_chain(struct st_tx_video_session_impl* s,
   /* copy the hdr: eth, ip, udp, rtp */
   rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
 #endif
 
@@ -1324,7 +1324,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
   rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
   rte_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
 #endif
 
@@ -1397,7 +1397,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
   rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_P].ipv4, sizeof(hdr->ipv4));
   rte_memcpy(udp, &s->s_hdr[MTL_SESSION_PORT_P].udp, sizeof(hdr->udp));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
 #endif
 
@@ -1470,7 +1470,7 @@ static int tv_build_rtp_redundant_chain(struct st_tx_video_session_impl* s,
   rte_memcpy(ipv4, &s->s_hdr[MTL_SESSION_PORT_R].ipv4, sizeof(hdr->ipv4));
   rte_memcpy(&hdr->udp, &s->s_hdr[MTL_SESSION_PORT_R].udp, sizeof(hdr->udp));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
 #endif
 
@@ -1515,7 +1515,7 @@ static int tv_build_st22(struct st_tx_video_session_impl* s, struct rte_mbuf* pk
   /* copy rtp */
   rte_memcpy(rtp, &st22_info->rtp_hdr[MTL_SESSION_PORT_P], sizeof(*rtp));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
 #endif
 
@@ -1593,7 +1593,7 @@ static int tv_build_st22_chain(struct st_tx_video_session_impl* s, struct rte_mb
   /* copy rtp */
   rte_memcpy(rtp, &st22_info->rtp_hdr[MTL_SESSION_PORT_P], sizeof(*rtp));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_P);
 #endif
 
@@ -1679,7 +1679,7 @@ static int tv_build_st22_redundant_chain(struct st_tx_video_session_impl* s,
   /* copy the hdr: eth, ip, udp, rtp */
   rte_memcpy(hdr, &s->s_hdr[MTL_SESSION_PORT_R], sizeof(*hdr));
 
-#ifdef MTL_SIMULATE_PAKET_DROPS
+#ifdef MTL_SIMULATE_PACKET_DROPS
   tv_simulate_packet_loss(s, ipv4, MTL_SESSION_PORT_R);
 #endif
 

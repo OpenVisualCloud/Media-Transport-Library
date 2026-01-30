@@ -690,7 +690,19 @@ static int rv_init_slot(struct st_rx_video_session_impl* s) {
     }
   }
   s->slot_idx = -1;
-  s->slot_max = ST_VIDEO_RX_REC_NUM_OFO;
+
+  if (s->ops.flags & ST20_RX_FLAG_ENABLE_RTCP)
+    s->slot_max = ST_RX_VIDEO_RTCP_SLOT_NUM;
+  else if (s->ops.num_port > 1)
+    s->slot_max = ST_RX_VIDEO_REDUNDANT_SLOT_NUM;
+  else
+    s->slot_max = 1;
+
+  if (s->slot_max > ST_VIDEO_RX_REC_NUM_OFO) {
+    err("%s(%d), slot_max %d exceed max %d\n", __func__, idx, s->slot_max,
+        ST_VIDEO_RX_REC_NUM_OFO);
+    return -EINVAL;
+  }
 
   dbg("%s(%d), succ\n", __func__, idx);
   return 0;

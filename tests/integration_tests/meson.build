@@ -5,6 +5,11 @@ sources = files('tests.cpp', 'st_test.cpp', 'st22_test.cpp', 'st30_test.cpp',
                 'st40_test.cpp', 'dma_test.cpp', 'cvt_test.cpp', 'st22p_test.cpp',
                 'st20p_test.cpp', 'test_util.cpp', 'sch_test.cpp', 'st30p_test.cpp')
 
+if get_option('buildtype') != 'release'
+  add_global_arguments('-DMTL_SIMULATE_PACKET_DROPS=1', language : 'c')
+  add_global_arguments('-DMTL_SIMULATE_PACKET_DROPS=1', language : 'cpp')
+endif
+
 subdir('st20')
 sources += st20_sources
 

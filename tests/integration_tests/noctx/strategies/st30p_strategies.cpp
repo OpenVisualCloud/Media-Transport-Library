@@ -99,7 +99,7 @@ void St30pUserTimestamp::initializeTiming(St30pHandler* handler) {
     frameTimeNs = NS_PER_MS;
   }
 
-  startingTime = static_cast<uint64_t>(frameTimeNs * 20);
+  startingTime = static_cast<uint64_t>(frameTimeNs * 60);
   timingInitialized = true;
 }
 
@@ -112,7 +112,7 @@ void St30pUserTimestamp::verifyReceiveTiming(uint64_t frame_idx, uint64_t receiv
                                              uint64_t expected_timestamp_ns) const {
   const int64_t delta_ns =
       static_cast<int64_t>(receive_time_ns) - static_cast<int64_t>(expected_timestamp_ns);
-  int64_t expected_delta_ns = 40 * NS_PER_US;
+  int64_t expected_delta_ns = 40 * NS_PER_US; 
   if (frame_idx == 0) {
     expected_delta_ns = 80 * NS_PER_US;
   }
