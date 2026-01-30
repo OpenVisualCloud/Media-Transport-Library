@@ -74,6 +74,8 @@ jobs:
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
           sudo killall -SIGINT phc2sys || true
+          sudo killall -SIGINT ptp4l || true
+          sudo killall -SIGINT netsniff-ng || true
       - name: Export workflow tag for PCAP naming
         shell: bash
         run: |
