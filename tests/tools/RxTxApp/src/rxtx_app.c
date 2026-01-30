@@ -617,6 +617,15 @@ int main(int argc, char** argv) {
     if (ctx->pcapng_max_pkts && (run_time_s == 10)) { /* trigger pcap dump if */
       st_app_pcap(ctx);
     }
+    /* check for auto_stop condition */
+    if (ctx->auto_stop) {
+      bool tx_complete = st_app_tx_st20p_sessions_all_complete(ctx);
+      bool rx_timeout = st_app_rx_st20p_sessions_all_timeout(ctx);
+      if (tx_complete && rx_timeout) {
+        info("%s, auto_stop triggered: tx complete and rx timeout\n", __func__);
+        break;
+      }
+    }
   }
 
   if (!ctx->runtime_session) {
