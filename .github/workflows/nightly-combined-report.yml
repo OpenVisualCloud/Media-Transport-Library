@@ -1,11 +1,536 @@
 name: Nightly Combined Report
 
 on:
+  # Trigger after both nightly workflows complete
+  workflow_run:
+    workflows: ["nightly-gtest", "nightly-pytest"]
+    types:
+      - completed
+  # Allow manual trigger
   workflow_dispatch:
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
-  placeholder:
-    runs-on: ubuntu-latest
+  wait-for-both-workflows:
+    runs-on: ubuntu-22.04
+    outputs:
+      gtest_run_id: ${{ steps.get-runs.outputs.gtest_run_id }}
+      pytest_run_id: ${{ steps.get-runs.outputs.pytest_run_id }}
+      both_completed: ${{ steps.check-status.outputs.both_completed }}
     steps:
-      - name: Placeholder
-        run: echo "Placeholder workflow - no operations performed"
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Wait for both workflows to complete
+        id: get-runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflows = ['nightly-gtest', 'nightly-pytest'];
+            const runIds = {};
+            const statuses = {};
+
+            // Get latest run for each workflow
+            for (const workflow of workflows) {
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: `${workflow}.yml`,
+                per_page: 1,
+                status: 'completed'
+              });
+
+              if (runs.data.workflow_runs.length > 0) {
+                const run = runs.data.workflow_runs[0];
+                runIds[workflow.replace('nightly-', '')] = run.id;
+                statuses[workflow] = run.conclusion;
+                console.log(`${workflow}: Run ID ${run.id}, Status: ${run.conclusion}`);
+              } else {
+                console.log(`No completed runs found for ${workflow}`);
+              }
+            }
+
+            core.setOutput('gtest_run_id', runIds['gtest'] || '');
+            core.setOutput('pytest_run_id', runIds['pytest'] || '');
+
+            return runIds;
+
+      - name: Check if both workflows completed
+        id: check-status
+        run: |
+          if [ -n "${{ steps.get-runs.outputs.gtest_run_id }}" ] && [ -n "${{ steps.get-runs.outputs.pytest_run_id }}" ]; then
+            echo "both_completed=true" >> "$GITHUB_OUTPUT"
+            echo "Both workflows have completed runs available"
+          else
+            echo "both_completed=false" >> "$GITHUB_OUTPUT"
+            echo "Waiting for both workflows to complete..."
+            exit 1
+          fi
+
+  generate-combined-report:
+    needs: wait-for-both-workflows
+    if: needs.wait-for-both-workflows.outputs.both_completed == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download pytest artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-test-report-*
+          path: pytest-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download gtest artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-gtest-report-*
+          path: gtest-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Flatten pytest report structure
+        run: |
+          cd pytest-reports
+          for dir in ./nightly-test-report-*; do
+            if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
+              mv "$dir/report.html" "${dir}.html"
+              rm -rf "$dir"
+            fi
+          done
+          ls -lh ./*.html || echo "No pytest HTML reports found"
+
+      - name: Flatten gtest report structure
+        run: |
+          cd gtest-reports
+          for dir in ./nightly-gtest-report-*; do
+            if [ -d "$dir" ] && [ -f "$dir/gtest.log" ]; then
+              mv "$dir/gtest.log" "${dir}.log"
+              rm -rf "$dir"
+            fi
+          done
+          ls -lh ./*.log || echo "No gtest logs found"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pandas beautifulsoup4 openpyxl lxml
+
+      - name: Create combined report script
+        run: |
+          cat > .github/scripts/combine_all_reports.py << 'EOFPYTHON'
+          #!/usr/bin/env python3
+          """Combine pytest HTML reports and gtest logs into unified Excel and HTML reports."""
+
+          import argparse
+          import re
+          import sys
+          from datetime import datetime
+          from pathlib import Path
+          import pandas as pd
+          from bs4 import BeautifulSoup
+          from openpyxl import Workbook
+          from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+          from openpyxl.utils.dataframe import dataframe_to_rows
+
+          def parse_pytest_html(html_file):
+              """Parse pytest HTML report and extract test results."""
+              with open(html_file, 'r') as f:
+                  soup = BeautifulSoup(f.read(), 'html.parser')
+
+              # Extract NIC and category from filename
+              # Format: nightly-test-report-{nic}-{category}.html
+              filename = Path(html_file).stem
+              match = re.match(r'nightly-test-report-([^-]+)-(.+)', filename)
+              if match:
+                  nic = match.group(1).upper()
+                  category = match.group(2)
+              else:
+                  nic = "UNKNOWN"
+                  category = "UNKNOWN"
+
+              # Parse summary statistics
+              stats = {'nic': nic, 'category': category}
+              for status in ['passed', 'failed', 'skipped', 'error', 'xpassed', 'xfailed']:
+                  elem = soup.find('span', class_=status)
+                  if elem:
+                      count_text = elem.get_text(strip=True)
+                      match = re.search(r'(\d+)', count_text)
+                      stats[status] = int(match.group(1)) if match else 0
+                  else:
+                      stats[status] = 0
+
+              stats['total'] = sum(stats.get(k, 0) for k in ['passed', 'failed', 'skipped', 'error', 'xpassed', 'xfailed'])
+              return stats
+
+          def parse_gtest_log(log_file):
+              """Parse gtest log and extract test results."""
+              with open(log_file, 'r') as f:
+                  content = f.read()
+
+              # Extract NIC from filename
+              # Format: nightly-gtest-report-{nic}.log
+              filename = Path(log_file).stem
+              match = re.match(r'nightly-gtest-report-(.+)', filename)
+              nic = match.group(1).upper() if match else "UNKNOWN"
+
+              # Look for the summary table in the log
+              results = []
+
+              # Pattern to match the summary table rows
+              table_pattern = r'(\S+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+([\d.]+)%'
+
+              for line in content.split('\n'):
+                  match = re.search(table_pattern, line)
+                  if match and match.group(1) not in ['Test', 'TOTAL']:
+                      test_category = match.group(1)
+                      passed = int(match.group(2))
+                      failed = int(match.group(3))
+                      skipped = int(match.group(4))
+                      total = int(match.group(5))
+                      pass_rate = float(match.group(6))
+
+                      results.append({
+                          'nic': nic,
+                          'category': test_category,
+                          'passed': passed,
+                          'failed': failed,
+                          'skipped': skipped,
+                          'error': 0,
+                          'xpassed': 0,
+                          'xfailed': 0,
+                          'total': total
+                      })
+
+              return results
+
+          def create_excel_report(pytest_data, gtest_data, output_file):
+              """Create Excel report with separate sheets for pytest and gtest."""
+              wb = Workbook()
+
+              # Remove default sheet
+              wb.remove(wb.active)
+
+              # Create pytest sheet
+              if pytest_data:
+                  ws_pytest = wb.create_sheet("Pytest Results")
+                  df_pytest = pd.DataFrame(pytest_data)
+                  df_pytest = df_pytest.sort_values(['nic', 'category'])
+
+                  # Add headers with styling
+                  headers = ['NIC', 'Category', 'Passed', 'Failed', 'Skipped', 'Error', 'XPassed', 'XFailed', 'Total']
+                  ws_pytest.append(headers)
+
+                  # Style header row
+                  header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                  header_font = Font(bold=True, color="FFFFFF")
+                  for cell in ws_pytest[1]:
+                      cell.fill = header_fill
+                      cell.font = header_font
+                      cell.alignment = Alignment(horizontal='center')
+
+                  # Add data rows
+                  for _, row in df_pytest.iterrows():
+                      ws_pytest.append([
+                          row['nic'], row['category'], row['passed'], row['failed'],
+                          row['skipped'], row['error'], row['xpassed'], row['xfailed'], row['total']
+                      ])
+
+                  # Auto-adjust column widths
+                  for column in ws_pytest.columns:
+                      max_length = max(len(str(cell.value)) for cell in column)
+                      ws_pytest.column_dimensions[column[0].column_letter].width = min(max_length + 2, 50)
+
+              # Create gtest sheet
+              if gtest_data:
+                  ws_gtest = wb.create_sheet("GTest Results")
+                  df_gtest = pd.DataFrame(gtest_data)
+                  df_gtest = df_gtest.sort_values(['nic', 'category'])
+
+                  headers = ['NIC', 'Test Category', 'Passed', 'Failed', 'Skipped', 'Total']
+                  ws_gtest.append(headers)
+
+                  # Style header row
+                  header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+                  header_font = Font(bold=True, color="FFFFFF")
+                  for cell in ws_gtest[1]:
+                      cell.fill = header_fill
+                      cell.font = header_font
+                      cell.alignment = Alignment(horizontal='center')
+
+                  # Add data rows
+                  for _, row in df_gtest.iterrows():
+                      ws_gtest.append([
+                          row['nic'], row['category'], row['passed'], row['failed'],
+                          row['skipped'], row['total']
+                      ])
+
+                  # Auto-adjust column widths
+                  for column in ws_gtest.columns:
+                      max_length = max(len(str(cell.value)) for cell in column)
+                      ws_gtest.column_dimensions[column[0].column_letter].width = min(max_length + 2, 50)
+
+              # Create summary sheet
+              ws_summary = wb.create_sheet("Summary", 0)
+
+              summary_data = []
+              summary_data.append(['MTL Nightly Test Report Summary'])
+              summary_data.append(['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')])
+              summary_data.append([])
+
+              if pytest_data:
+                  df_pytest = pd.DataFrame(pytest_data)
+                  summary_data.append(['Pytest Summary'])
+                  summary_data.append(['Total Tests:', df_pytest['total'].sum()])
+                  summary_data.append(['Total Passed:', df_pytest['passed'].sum()])
+                  summary_data.append(['Total Failed:', df_pytest['failed'].sum()])
+                  summary_data.append(['Total Skipped:', df_pytest['skipped'].sum()])
+                  summary_data.append([])
+
+              if gtest_data:
+                  df_gtest = pd.DataFrame(gtest_data)
+                  summary_data.append(['GTest Summary'])
+                  summary_data.append(['Total Tests:', df_gtest['total'].sum()])
+                  summary_data.append(['Total Passed:', df_gtest['passed'].sum()])
+                  summary_data.append(['Total Failed:', df_gtest['failed'].sum()])
+                  summary_data.append(['Total Skipped:', df_gtest['skipped'].sum()])
+
+              for row in summary_data:
+                  ws_summary.append(row)
+
+              # Style summary sheet
+              ws_summary['A1'].font = Font(bold=True, size=14)
+              ws_summary.column_dimensions['A'].width = 30
+              ws_summary.column_dimensions['B'].width = 20
+
+              wb.save(output_file)
+              print(f"Excel report saved to: {output_file}")
+
+          def create_html_report(pytest_data, gtest_data, output_file):
+              """Create HTML report combining pytest and gtest results."""
+              html_template = """
+              <!DOCTYPE html>
+              <html>
+              <head>
+                  <meta charset="utf-8"/>
+                  <title>MTL Nightly Test Report</title>
+                  <style>
+                      body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+                      h1 {{ color: #366092; border-bottom: 2px solid #366092; padding-bottom: 10px; }}
+                      h2 {{ color: #555; margin-top: 30px; }}
+                      .summary {{ background: white; padding: 20px; border-radius: 5px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                      .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }}
+                      .summary-card {{ padding: 15px; border-radius: 5px; text-align: center; }}
+                      .summary-card h3 {{ margin: 0; font-size: 14px; color: #666; }}
+                      .summary-card .value {{ font-size: 32px; font-weight: bold; margin: 10px 0; }}
+                      .passed {{ background-color: #d4edda; color: #155724; }}
+                      .failed {{ background-color: #f8d7da; color: #721c24; }}
+                      .skipped {{ background-color: #fff3cd; color: #856404; }}
+                      table {{ border-collapse: collapse; width: 100%; background: white; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+                      th {{ background-color: #366092; color: white; padding: 12px; text-align: left; }}
+                      td {{ padding: 10px; border-bottom: 1px solid #ddd; }}
+                      tr:hover {{ background-color: #f5f5f5; }}
+                      .timestamp {{ color: #666; font-size: 0.9em; margin-bottom: 20px; }}
+                  </style>
+              </head>
+              <body>
+                  <h1>MTL Nightly Test Report - Combined Results</h1>
+                  <div class="timestamp">Generated: {timestamp}</div>
+
+                  {pytest_summary}
+                  {gtest_summary}
+
+                  <h2>Pytest Results by NIC and Category</h2>
+                  {pytest_table}
+
+                  <h2>GTest Results by NIC and Test Category</h2>
+                  {gtest_table}
+              </body>
+              </html>
+              """
+
+              timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+
+              # Generate pytest summary
+              pytest_summary = ""
+              if pytest_data:
+                  df_pytest = pd.DataFrame(pytest_data)
+                  total = df_pytest['total'].sum()
+                  passed = df_pytest['passed'].sum()
+                  failed = df_pytest['failed'].sum()
+                  skipped = df_pytest['skipped'].sum()
+
+                  pytest_summary = f"""
+                  <div class="summary">
+                      <h2>Pytest Summary</h2>
+                      <div class="summary-grid">
+                          <div class="summary-card">
+                              <h3>Total Tests</h3>
+                              <div class="value">{total}</div>
+                          </div>
+                          <div class="summary-card passed">
+                              <h3>Passed</h3>
+                              <div class="value">{passed}</div>
+                          </div>
+                          <div class="summary-card failed">
+                              <h3>Failed</h3>
+                              <div class="value">{failed}</div>
+                          </div>
+                          <div class="summary-card skipped">
+                              <h3>Skipped</h3>
+                              <div class="value">{skipped}</div>
+                          </div>
+                      </div>
+                  </div>
+                  """
+
+              # Generate gtest summary
+              gtest_summary = ""
+              if gtest_data:
+                  df_gtest = pd.DataFrame(gtest_data)
+                  total = df_gtest['total'].sum()
+                  passed = df_gtest['passed'].sum()
+                  failed = df_gtest['failed'].sum()
+                  skipped = df_gtest['skipped'].sum()
+
+                  gtest_summary = f"""
+                  <div class="summary">
+                      <h2>GTest Summary</h2>
+                      <div class="summary-grid">
+                          <div class="summary-card">
+                              <h3>Total Tests</h3>
+                              <div class="value">{total}</div>
+                          </div>
+                          <div class="summary-card passed">
+                              <h3>Passed</h3>
+                              <div class="value">{passed}</div>
+                          </div>
+                          <div class="summary-card failed">
+                              <h3>Failed</h3>
+                              <div class="value">{failed}</div>
+                          </div>
+                          <div class="summary-card skipped">
+                              <h3>Skipped</h3>
+                              <div class="value">{skipped}</div>
+                          </div>
+                      </div>
+                  </div>
+                  """
+
+              # Generate pytest table
+              pytest_table = ""
+              if pytest_data:
+                  df_pytest = pd.DataFrame(pytest_data)
+                  pytest_table = df_pytest.to_html(index=False, classes='data-table')
+
+              # Generate gtest table
+              gtest_table = ""
+              if gtest_data:
+                  df_gtest = pd.DataFrame(gtest_data)
+                  gtest_table = df_gtest[['nic', 'category', 'passed', 'failed', 'skipped', 'total']].to_html(index=False, classes='data-table')
+
+              html = html_template.format(
+                  timestamp=timestamp,
+                  pytest_summary=pytest_summary,
+                  gtest_summary=gtest_summary,
+                  pytest_table=pytest_table,
+                  gtest_table=gtest_table
+              )
+
+              with open(output_file, 'w') as f:
+                  f.write(html)
+
+              print(f"HTML report saved to: {output_file}")
+
+          def main():
+              parser = argparse.ArgumentParser(description='Combine pytest and gtest nightly reports')
+              parser.add_argument('--pytest-dir', type=Path, required=True, help='Directory containing pytest HTML reports')
+              parser.add_argument('--gtest-dir', type=Path, required=True, help='Directory containing gtest log files')
+              parser.add_argument('--output-excel', type=Path, default='combined_nightly_report.xlsx', help='Output Excel file')
+              parser.add_argument('--output-html', type=Path, default='combined_nightly_report.html', help='Output HTML file')
+
+              args = parser.parse_args()
+
+              # Parse pytest reports
+              pytest_data = []
+              if args.pytest_dir.exists():
+                  for html_file in args.pytest_dir.glob('*.html'):
+                      try:
+                          stats = parse_pytest_html(html_file)
+                          pytest_data.append(stats)
+                          print(f"Parsed pytest report: {html_file.name}")
+                      except Exception as e:
+                          print(f"Error parsing {html_file}: {e}", file=sys.stderr)
+
+              # Parse gtest logs
+              gtest_data = []
+              if args.gtest_dir.exists():
+                  for log_file in args.gtest_dir.glob('*.log'):
+                      try:
+                          results = parse_gtest_log(log_file)
+                          gtest_data.extend(results)
+                          print(f"Parsed gtest log: {log_file.name}")
+                      except Exception as e:
+                          print(f"Error parsing {log_file}: {e}", file=sys.stderr)
+
+              if not pytest_data and not gtest_data:
+                  print("No test data found!", file=sys.stderr)
+                  sys.exit(1)
+
+              # Create reports
+              create_excel_report(pytest_data, gtest_data, args.output_excel)
+              create_html_report(pytest_data, gtest_data, args.output_html)
+
+              print(f"\nSummary:")
+              print(f"  Pytest reports processed: {len(pytest_data)}")
+              print(f"  GTest categories processed: {len(gtest_data)}")
+
+          if __name__ == '__main__':
+              main()
+          EOFPYTHON
+
+          chmod +x .github/scripts/combine_all_reports.py
+
+      - name: Generate combined reports
+        id: combine
+        run: |
+          python3 .github/scripts/combine_all_reports.py \
+            --pytest-dir pytest-reports \
+            --gtest-dir gtest-reports \
+            --output-excel combined_nightly_report.xlsx \
+            --output-html combined_nightly_report.html
+
+          if [ -f "combined_nightly_report.xlsx" ] && [ -f "combined_nightly_report.html" ]; then
+            echo "reports_generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reports_generated=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Upload combined Excel report
+        if: steps.combine.outputs.reports_generated == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-combined-report-excel
+          path: combined_nightly_report.xlsx
+
+      - name: Upload combined HTML report
+        if: steps.combine.outputs.reports_generated == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-combined-report-html
+          path: combined_nightly_report.html
