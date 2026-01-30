@@ -27,8 +27,8 @@ def gen_test_config(
         "mtl_path": mtl_path,
         "media_path": "/mnt/media",
         "ramdisk": {
-            "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 32},
-            "tmpfs_size_gib": 12,
+            "media": {"mountpoint": "/mnt/ramdisk/media", "size_gib": 16},
+            "tmpfs_size_gib": 8,
             "pcap_dir": "/mnt/ramdisk/pcap",
         },
         "compliance": True,
