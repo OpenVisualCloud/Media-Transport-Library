@@ -12,6 +12,9 @@ message('BUILD Environment: ' + exec_env)
 # enable debug logging
 if get_option('buildtype') == 'debug'
   add_global_arguments('-DDEBUG=DEBUG', language : 'c')
+endif
+
+if get_option('buildtype') != 'release'
   add_global_arguments('-DMTL_SIMULATE_PAKET_DROPS=1', language : 'c')
 endif
 
