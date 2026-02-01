@@ -54,5 +54,5 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		exit 1
 	fi
 
-	sleep 5;
+	sleep 30
 done < <(echo "$test_names")

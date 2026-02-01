@@ -58,7 +58,7 @@ void NoCtxTest::SetUp() {
     throw std::runtime_error(
         "NoCtxTest::SetUp: ctx->handle is already initialized!\n"
         "This likely means the global context was not properly reset between tests.\n"
-        "To run NOCTX tests, please use the '--no_ctx_tests' option to ensure a clean "
+        "To run NOCTX tests, please use the '--no_ctx' option to ensure a clean "
         "context.");
   }
 
