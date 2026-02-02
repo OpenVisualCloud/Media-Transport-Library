@@ -8,6 +8,12 @@
 #include "st_main.h"
 
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
+/* Number of slots for out of order packet recovery for RTCP retransmission
+   cannot be bigger than ST_VIDEO_RX_REC_NUM_OFO*/
+#define ST_RX_VIDEO_RTCP_SLOT_NUM 2
+
+/* Number of slots for redundant support */
+#define ST_RX_VIDEO_REDUNDANT_SLOT_NUM 2
 
 #define ST_RV_TP_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_TP_TSC_SYNC_NS (ST_RV_TP_TSC_SYNC_MS * 1000 * 1000)

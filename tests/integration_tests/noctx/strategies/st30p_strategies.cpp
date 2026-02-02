@@ -99,7 +99,7 @@ void St30pUserTimestamp::initializeTiming(St30pHandler* handler) {
     frameTimeNs = NS_PER_MS;
   }
 
-  startingTime = static_cast<uint64_t>(frameTimeNs * 20);
+  startingTime = static_cast<uint64_t>(frameTimeNs * 60);
   timingInitialized = true;
 }
 

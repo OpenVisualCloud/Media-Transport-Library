@@ -15,7 +15,8 @@ if get_option('buildtype') == 'debug'
 endif
 
 if get_option('buildtype') != 'release'
-  add_global_arguments('-DMTL_SIMULATE_PAKET_DROPS=1', language : 'c')
+  add_global_arguments('-DMTL_SIMULATE_PACKET_DROPS=1', language : 'c')
+  add_global_arguments('-DMTL_SIMULATE_PACKET_DROPS=1', language : 'cpp')
 endif
 
 # enable BSD_SOURCE
