@@ -188,21 +188,21 @@ jobs:
               match = re.match(r'nightly-gtest-report-(.+)', filename)
               nic = match.group(1).upper() if match else "UNKNOWN"
 
-              # Look for the summary table in the log
               results = []
 
-              # Pattern to match the summary table rows
+              # Pattern 1: Try to match the summary table rows (preferred format)
+              # Format: test_name | passed | failed | skipped | total | pass_rate%
               table_pattern = r'(\S+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+([\d.]+)%'
-
+              
+              found_table = False
               for line in content.split('\n'):
                   match = re.search(table_pattern, line)
-                  if match and match.group(1) not in ['Test', 'TOTAL']:
+                  if match and match.group(1) not in ['Test', 'TOTAL', '---']:
                       test_category = match.group(1)
                       passed = int(match.group(2))
                       failed = int(match.group(3))
                       skipped = int(match.group(4))
                       total = int(match.group(5))
-                      pass_rate = float(match.group(6))
 
                       results.append({
                           'nic': nic,
@@ -214,6 +214,92 @@ jobs:
                           'xpassed': 0,
                           'xfailed': 0,
                           'total': total
+                      })
+                      found_table = True
+
+              # Pattern 2: If no table found, try to extract from gtest individual test results
+              # Look for lines like: [ RUN      ] TestSuite.TestName
+              #                      [  PASSED  ] TestSuite.TestName (X ms)
+              #                      [  FAILED  ] TestSuite.TestName (X ms)
+              if not found_table:
+                  # Count test results by category
+                  test_suites = {}
+                  
+                  # Find all test runs and their results
+                  run_pattern = r'\[\s*RUN\s*\]\s+(\w+)\.(\w+)'
+                  passed_pattern = r'\[\s*PASSED\s*\]\s+(\w+)\.(\w+)'
+                  failed_pattern = r'\[\s*FAILED\s*\]\s+(\w+)\.(\w+)'
+                  skipped_pattern = r'\[\s*SKIPPED\s*\]\s+(\w+)\.(\w+)'
+                  
+                  for line in content.split('\n'):
+                      # Track passed tests
+                      match = re.search(passed_pattern, line)
+                      if match:
+                          suite = match.group(1)
+                          if suite not in test_suites:
+                              test_suites[suite] = {'passed': 0, 'failed': 0, 'skipped': 0}
+                          test_suites[suite]['passed'] += 1
+                      
+                      # Track failed tests
+                      match = re.search(failed_pattern, line)
+                      if match:
+                          suite = match.group(1)
+                          if suite not in test_suites:
+                              test_suites[suite] = {'passed': 0, 'failed': 0, 'skipped': 0}
+                          test_suites[suite]['failed'] += 1
+                      
+                      # Track skipped tests
+                      match = re.search(skipped_pattern, line)
+                      if match:
+                          suite = match.group(1)
+                          if suite not in test_suites:
+                              test_suites[suite] = {'passed': 0, 'failed': 0, 'skipped': 0}
+                          test_suites[suite]['skipped'] += 1
+                  
+                  # Convert to results format
+                  for suite, counts in test_suites.items():
+                      total = counts['passed'] + counts['failed'] + counts['skipped']
+                      if total > 0:
+                          results.append({
+                              'nic': nic,
+                              'category': suite,
+                              'passed': counts['passed'],
+                              'failed': counts['failed'],
+                              'skipped': counts['skipped'],
+                              'error': 0,
+                              'xpassed': 0,
+                              'xfailed': 0,
+                              'total': total
+                          })
+
+              # Pattern 3: If still no results, try to find summary at the end
+              # Format: [  PASSED  ] X tests.
+              #         [  FAILED  ] Y tests, listed below:
+              if not results:
+                  total_passed = 0
+                  total_failed = 0
+                  
+                  for line in content.split('\n'):
+                      if re.search(r'\[\s*PASSED\s*\]\s+(\d+)\s+test', line):
+                          match = re.search(r'(\d+)', line)
+                          if match:
+                              total_passed = int(match.group(1))
+                      elif re.search(r'\[\s*FAILED\s*\]\s+(\d+)\s+test', line):
+                          match = re.search(r'(\d+)', line)
+                          if match:
+                              total_failed = int(match.group(1))
+                  
+                  if total_passed > 0 or total_failed > 0:
+                      results.append({
+                          'nic': nic,
+                          'category': 'all_tests',
+                          'passed': total_passed,
+                          'failed': total_failed,
+                          'skipped': 0,
+                          'error': 0,
+                          'xpassed': 0,
+                          'xfailed': 0,
+                          'total': total_passed + total_failed
                       })
 
               return results
@@ -292,22 +378,56 @@ jobs:
               summary_data.append(['Generated:', datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')])
               summary_data.append([])
 
+              # Calculate totals
+              pytest_total = pytest_passed = pytest_failed = pytest_skipped = 0
+              gtest_total = gtest_passed = gtest_failed = gtest_skipped = 0
+
               if pytest_data:
                   df_pytest = pd.DataFrame(pytest_data)
+                  pytest_total = df_pytest['total'].sum()
+                  pytest_passed = df_pytest['passed'].sum()
+                  pytest_failed = df_pytest['failed'].sum()
+                  pytest_skipped = df_pytest['skipped'].sum()
+                  pytest_pass_rate = (pytest_passed / pytest_total * 100) if pytest_total > 0 else 0
+                  
                   summary_data.append(['Pytest Summary'])
-                  summary_data.append(['Total Tests:', df_pytest['total'].sum()])
-                  summary_data.append(['Total Passed:', df_pytest['passed'].sum()])
-                  summary_data.append(['Total Failed:', df_pytest['failed'].sum()])
-                  summary_data.append(['Total Skipped:', df_pytest['skipped'].sum()])
+                  summary_data.append(['Total Tests:', pytest_total])
+                  summary_data.append(['Total Passed:', pytest_passed])
+                  summary_data.append(['Total Failed:', pytest_failed])
+                  summary_data.append(['Total Skipped:', pytest_skipped])
+                  summary_data.append(['Pass Rate:', f'{pytest_pass_rate:.2f}%'])
                   summary_data.append([])
 
               if gtest_data:
                   df_gtest = pd.DataFrame(gtest_data)
+                  gtest_total = df_gtest['total'].sum()
+                  gtest_passed = df_gtest['passed'].sum()
+                  gtest_failed = df_gtest['failed'].sum()
+                  gtest_skipped = df_gtest['skipped'].sum()
+                  gtest_pass_rate = (gtest_passed / gtest_total * 100) if gtest_total > 0 else 0
+                  
                   summary_data.append(['GTest Summary'])
-                  summary_data.append(['Total Tests:', df_gtest['total'].sum()])
-                  summary_data.append(['Total Passed:', df_gtest['passed'].sum()])
-                  summary_data.append(['Total Failed:', df_gtest['failed'].sum()])
-                  summary_data.append(['Total Skipped:', df_gtest['skipped'].sum()])
+                  summary_data.append(['Total Tests:', gtest_total])
+                  summary_data.append(['Total Passed:', gtest_passed])
+                  summary_data.append(['Total Failed:', gtest_failed])
+                  summary_data.append(['Total Skipped:', gtest_skipped])
+                  summary_data.append(['Pass Rate:', f'{gtest_pass_rate:.2f}%'])
+                  summary_data.append([])
+
+              # Overall combined summary
+              if pytest_data or gtest_data:
+                  combined_total = pytest_total + gtest_total
+                  combined_passed = pytest_passed + gtest_passed
+                  combined_failed = pytest_failed + gtest_failed
+                  combined_skipped = pytest_skipped + gtest_skipped
+                  combined_pass_rate = (combined_passed / combined_total * 100) if combined_total > 0 else 0
+                  
+                  summary_data.append(['Overall Summary (Pytest + GTest)'])
+                  summary_data.append(['Total Tests:', combined_total])
+                  summary_data.append(['Total Passed:', combined_passed])
+                  summary_data.append(['Total Failed:', combined_failed])
+                  summary_data.append(['Total Skipped:', combined_skipped])
+                  summary_data.append(['Pass Rate:', f'{combined_pass_rate:.2f}%'])
 
               for row in summary_data:
                   ws_summary.append(row)
@@ -351,6 +471,7 @@ jobs:
                   <h1>MTL Nightly Test Report - Combined Results</h1>
                   <div class="timestamp">Generated: {timestamp}</div>
 
+                  {overall_summary}
                   {pytest_summary}
                   {gtest_summary}
 
@@ -365,34 +486,90 @@ jobs:
 
               timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
 
+              # Calculate overall totals
+              pytest_total = pytest_passed = pytest_failed = pytest_skipped = 0
+              gtest_total = gtest_passed = gtest_failed = gtest_skipped = 0
+              
+              if pytest_data:
+                  df_pytest = pd.DataFrame(pytest_data)
+                  pytest_total = df_pytest['total'].sum()
+                  pytest_passed = df_pytest['passed'].sum()
+                  pytest_failed = df_pytest['failed'].sum()
+                  pytest_skipped = df_pytest['skipped'].sum()
+              
+              if gtest_data:
+                  df_gtest = pd.DataFrame(gtest_data)
+                  gtest_total = df_gtest['total'].sum()
+                  gtest_passed = df_gtest['passed'].sum()
+                  gtest_failed = df_gtest['failed'].sum()
+                  gtest_skipped = df_gtest['skipped'].sum()
+              
+              # Calculate combined totals
+              combined_total = pytest_total + gtest_total
+              combined_passed = pytest_passed + gtest_passed
+              combined_failed = pytest_failed + gtest_failed
+              combined_skipped = pytest_skipped + gtest_skipped
+              
+              # Calculate pass rates
+              pytest_pass_rate = (pytest_passed / pytest_total * 100) if pytest_total > 0 else 0
+              gtest_pass_rate = (gtest_passed / gtest_total * 100) if gtest_total > 0 else 0
+              combined_pass_rate = (combined_passed / combined_total * 100) if combined_total > 0 else 0
+
+              # Generate overall summary
+              overall_summary = f"""
+              <div class="summary">
+                  <h2>Overall Summary</h2>
+                  <div class="summary-grid">
+                      <div class="summary-card">
+                          <h3>Total Tests</h3>
+                          <div class="value">{combined_total}</div>
+                      </div>
+                      <div class="summary-card passed">
+                          <h3>Passed</h3>
+                          <div class="value">{combined_passed}</div>
+                      </div>
+                      <div class="summary-card failed">
+                          <h3>Failed</h3>
+                          <div class="value">{combined_failed}</div>
+                      </div>
+                      <div class="summary-card skipped">
+                          <h3>Skipped</h3>
+                          <div class="value">{combined_skipped}</div>
+                      </div>
+                      <div class="summary-card passed">
+                          <h3>Pass Rate</h3>
+                          <div class="value">{combined_pass_rate:.2f}%</div>
+                      </div>
+                  </div>
+              </div>
+              """
+
               # Generate pytest summary
               pytest_summary = ""
               if pytest_data:
-                  df_pytest = pd.DataFrame(pytest_data)
-                  total = df_pytest['total'].sum()
-                  passed = df_pytest['passed'].sum()
-                  failed = df_pytest['failed'].sum()
-                  skipped = df_pytest['skipped'].sum()
-
                   pytest_summary = f"""
                   <div class="summary">
                       <h2>Pytest Summary</h2>
                       <div class="summary-grid">
                           <div class="summary-card">
                               <h3>Total Tests</h3>
-                              <div class="value">{total}</div>
+                              <div class="value">{pytest_total}</div>
                           </div>
                           <div class="summary-card passed">
                               <h3>Passed</h3>
-                              <div class="value">{passed}</div>
+                              <div class="value">{pytest_passed}</div>
                           </div>
                           <div class="summary-card failed">
                               <h3>Failed</h3>
-                              <div class="value">{failed}</div>
+                              <div class="value">{pytest_failed}</div>
                           </div>
                           <div class="summary-card skipped">
                               <h3>Skipped</h3>
-                              <div class="value">{skipped}</div>
+                              <div class="value">{pytest_skipped}</div>
+                          </div>
+                          <div class="summary-card passed">
+                              <h3>Pass Rate</h3>
+                              <div class="value">{pytest_pass_rate:.2f}%</div>
                           </div>
                       </div>
                   </div>
@@ -401,31 +578,29 @@ jobs:
               # Generate gtest summary
               gtest_summary = ""
               if gtest_data:
-                  df_gtest = pd.DataFrame(gtest_data)
-                  total = df_gtest['total'].sum()
-                  passed = df_gtest['passed'].sum()
-                  failed = df_gtest['failed'].sum()
-                  skipped = df_gtest['skipped'].sum()
-
                   gtest_summary = f"""
                   <div class="summary">
                       <h2>GTest Summary</h2>
                       <div class="summary-grid">
                           <div class="summary-card">
                               <h3>Total Tests</h3>
-                              <div class="value">{total}</div>
+                              <div class="value">{gtest_total}</div>
                           </div>
                           <div class="summary-card passed">
                               <h3>Passed</h3>
-                              <div class="value">{passed}</div>
+                              <div class="value">{gtest_passed}</div>
                           </div>
                           <div class="summary-card failed">
                               <h3>Failed</h3>
-                              <div class="value">{failed}</div>
+                              <div class="value">{gtest_failed}</div>
                           </div>
                           <div class="summary-card skipped">
                               <h3>Skipped</h3>
-                              <div class="value">{skipped}</div>
+                              <div class="value">{gtest_skipped}</div>
+                          </div>
+                          <div class="summary-card passed">
+                              <h3>Pass Rate</h3>
+                              <div class="value">{gtest_pass_rate:.2f}%</div>
                           </div>
                       </div>
                   </div>
@@ -445,6 +620,7 @@ jobs:
 
               html = html_template.format(
                   timestamp=timestamp,
+                  overall_summary=overall_summary,
                   pytest_summary=pytest_summary,
                   gtest_summary=gtest_summary,
                   pytest_table=pytest_table,
