@@ -8,6 +8,9 @@ permissions:
   contents: read
 jobs:
   run-gtest:
+    concurrency:
+      group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
+      cancel-in-progress: true
     strategy:
       matrix:
         nic:
@@ -16,7 +19,7 @@ jobs:
           - e830
       fail-fast: false
     runs-on: ${{ matrix.nic }}
-    timeout-minutes: 720
+    timeout-minutes: 300
     steps:
       - name: 'preparation: Harden Runner'
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
@@ -29,6 +32,8 @@ jobs:
       - uses: ./.github/actions/build
       - name: 'preparation: Kill MtlManager and pytest routines'
         run: |
+          sudo pkill -9 -f "gtest.sh" || true
+          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
@@ -37,12 +42,20 @@ jobs:
           sudo MtlManager &
       - name: run gtest bare metal
         if: always()
+        timeout-minutes: 300
         env:
           NIGHTLY: 1
           EXIT_ON_FAILURE: 0
           LOG_FILE: "${{ github.workspace }}/gtest.log"
+          TEST_CASE_TIMEOUT: 1800
         run: |
           sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        run: |
+          sudo pkill -9 -f "gtest.sh" || true
+          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
+          sudo killall -SIGINT MtlManager || true
       - name: "upload report gtest"
         if: always()
         id: upload-report-gtest
