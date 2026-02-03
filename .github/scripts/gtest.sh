@@ -19,6 +19,16 @@ declare -A test_cases
 : "${NIGHTLY:=1}" # Set to 1 to run full test suite, 0 for quick tests
 : "${PF_NUMA:=}"
 : "${PF_INDEX:=0}"
+: "${TEST_CASE_TIMEOUT:=1800}" # 30 minutes per test case
+
+# Signal trap for cleanup on termination
+cleanup() {
+	echo "Caught signal, cleaning up..."
+	kill_test_processes
+	kill -- -$$ 2>/dev/null || true
+	exit 130
+}
+trap cleanup SIGINT SIGTERM SIGHUP
 
 # Enable fail-fast only for quick tests (NIGHTLY=0)
 if [ "${NIGHTLY}" -eq 0 ]; then
@@ -184,9 +194,9 @@ reset_ice_driver() {
 }
 
 kill_test_processes() {
-	sudo killall -SIGINT KahawaiTest >/dev/null 2>&1 || true
-	sudo killall -SIGINT KahawaiUfdTest >/dev/null 2>&1 || true
-	sudo killall -SIGINT KahawaiUplTest >/dev/null 2>&1 || true
+	# Kill by process group if available
+	pkill -SIGKILL -P $$ 2>/dev/null || true
+	sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest 2>/dev/null || true
 	sleep 2
 }
 
@@ -228,7 +238,7 @@ run_test_with_retry() {
 	while [ $attempt -le "$MAX_RETRIES" ]; do
 		echo "Attempt $attempt/$MAX_RETRIES for: $test_name"
 
-		eval "${test_cases[$test_name]}" 2>&1 | tee -a "$LOG_FILE"
+		timeout --signal=SIGKILL "${TEST_CASE_TIMEOUT}" bash -c "${test_cases[$test_name]}" 2>&1 | tee -a "$LOG_FILE"
 		RETVAL=${PIPESTATUS[0]}
 		if [[ $RETVAL == 0 ]]; then
 			echo "✓ Test passed: $test_name" | tee -a "$LOG_FILE"
