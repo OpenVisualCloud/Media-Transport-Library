@@ -36,7 +36,7 @@ trap cleanup SIGINT SIGTERM SIGHUP
 
 # Enable fail-fast only for quick tests (NIGHTLY=0)
 if [ "${NIGHTLY}" -eq 0 ]; then
-	FAIL_FAST="${FAIL_FAST}"
+	: # FAIL_FAST is already set from environment
 else
 	FAIL_FAST=""
 fi

@@ -61,10 +61,12 @@ jobs:
         run: |
           ./script/status_report.sh
           # Rename to include NIC info
-          if [ -d "mtl_system_status_"* ]; then
-            STATUS_DIR=$(ls -d mtl_system_status_* | head -1)
-            mv "$STATUS_DIR" "system-info-${{ matrix.nic }}"
-          fi
+          for dir in mtl_system_status_*; do
+            if [ -d "$dir" ]; then
+              mv "$dir" "system-info-${{ matrix.nic }}"
+              break
+            fi
+          done
       - name: "upload report gtest"
         if: always()
         id: upload-report-gtest
