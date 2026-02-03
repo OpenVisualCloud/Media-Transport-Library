@@ -1,4 +1,13 @@
 name: Nightly Combined Report
+# This workflow combines pytest and gtest nightly reports into unified Excel and HTML reports.
+# 
+# Trigger modes:
+# 1. Automatic: Runs after nightly-pytest and nightly-gtest workflows complete (uses latest runs)
+# 2. Manual (workflow_dispatch): Allows custom selection of specific runs
+#    - Can specify branch for pytest/gtest (e.g., 'main', 'feature-branch')
+#    - Can specify run number for pytest/gtest (e.g., '64', '65')
+#    - Leave inputs empty to use latest completed runs
+#    - Each test suite (pytest/gtest) can be configured independently
 
 on:
   # Trigger after both nightly workflows complete
@@ -6,8 +15,25 @@ on:
     workflows: ["nightly-gtest", "nightly-pytest"]
     types:
       - completed
-  # Allow manual trigger
+  # Allow manual trigger with custom options
   workflow_dispatch:
+    inputs:
+      pytest_branch:
+        description: 'Pytest branch (leave empty for latest completed run)'
+        required: false
+        type: string
+      pytest_run_number:
+        description: 'Pytest run number (e.g., 64, leave empty for latest)'
+        required: false
+        type: string
+      gtest_branch:
+        description: 'GTest branch (leave empty for latest completed run)'
+        required: false
+        type: string
+      gtest_run_number:
+        description: 'GTest run number (e.g., 65, leave empty for latest)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -35,24 +61,78 @@ jobs:
             const runIds = {};
             const statuses = {};
 
-            // Get latest run for each workflow
-            for (const workflow of workflows) {
-              const runs = await github.rest.actions.listWorkflowRuns({
+            // Helper function to find run by criteria
+            async function findRun(workflow, branch, runNumber) {
+              const workflowKey = workflow.replace('nightly-', '');
+              console.log(`\nSearching for ${workflow}...`);
+              
+              // If run number is specified, find by run number
+              if (runNumber) {
+                console.log(`  Looking for run number: ${runNumber}`);
+                const runs = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: `${workflow}.yml`,
+                  per_page: 100,
+                  status: 'completed'
+                });
+                
+                const matchingRun = runs.data.workflow_runs.find(r => r.run_number == runNumber);
+                if (matchingRun) {
+                  console.log(`  ✓ Found run #${matchingRun.run_number} (${matchingRun.conclusion})`);
+                  return matchingRun;
+                } else {
+                  console.log(`  ✗ Run #${runNumber} not found`);
+                  return null;
+                }
+              }
+              
+              // Otherwise, find latest completed run (optionally filtered by branch)
+              const params = {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 workflow_id: `${workflow}.yml`,
                 per_page: 1,
                 status: 'completed'
-              });
-
+              };
+              
+              if (branch) {
+                console.log(`  Looking for latest run on branch: ${branch}`);
+                params.branch = branch;
+              } else {
+                console.log(`  Looking for latest completed run (any branch)`);
+              }
+              
+              const runs = await github.rest.actions.listWorkflowRuns(params);
+              
               if (runs.data.workflow_runs.length > 0) {
                 const run = runs.data.workflow_runs[0];
-                runIds[workflow.replace('nightly-', '')] = run.id;
-                statuses[workflow] = run.conclusion;
-                console.log(`${workflow}: Run ID ${run.id}, Status: ${run.conclusion}`);
-              } else {
-                console.log(`No completed runs found for ${workflow}`);
+                console.log(`  ✓ Found run #${run.run_number} on ${run.head_branch} (${run.conclusion})`);
+                return run;
               }
+              
+              console.log(`  ✗ No completed runs found`);
+              return null;
+            }
+
+            // Get pytest run
+            const pytestBranch = '${{ github.event.inputs.pytest_branch }}' || '';
+            const pytestRunNumber = '${{ github.event.inputs.pytest_run_number }}' || '';
+            const pytestRun = await findRun('nightly-pytest', pytestBranch, pytestRunNumber);
+            
+            if (pytestRun) {
+              runIds['pytest'] = pytestRun.id;
+              statuses['nightly-pytest'] = pytestRun.conclusion;
+            }
+
+            // Get gtest run
+            const gtestBranch = '${{ github.event.inputs.gtest_branch }}' || '';
+            const gtestRunNumber = '${{ github.event.inputs.gtest_run_number }}' || '';
+            const gtestRun = await findRun('nightly-gtest', gtestBranch, gtestRunNumber);
+            
+            if (gtestRun) {
+              runIds['gtest'] = gtestRun.id;
+              statuses['nightly-gtest'] = gtestRun.conclusion;
             }
 
             core.setOutput('gtest_run_id', runIds['gtest'] || '');
