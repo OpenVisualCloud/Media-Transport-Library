@@ -198,7 +198,7 @@ jobs:
       - name: Generate combined reports
         id: combine
         run: |
-          python3 .github/scripts/combine_all_reports.py \
+          python3 .github/scripts/combine_all_reports_refactored.py \
             --pytest-dir pytest-reports \
             --gtest-dir gtest-reports \
             --system-info-dir system-info-reports \
