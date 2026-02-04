@@ -1,11 +1,317 @@
 name: Nightly Combined Report
+# This workflow combines pytest and gtest nightly reports into unified Excel and HTML reports.
+# 
+# Trigger modes:
+# 1. Automatic: Runs after nightly-pytest and nightly-gtest workflows complete (uses latest runs)
+# 2. Manual (workflow_dispatch): Allows custom selection of specific runs
+#    - Can specify branch for pytest/gtest (e.g., 'main', 'feature-branch')
+#    - Can specify run number for pytest/gtest (e.g., '64', '65')
+#    - Leave inputs empty to use latest completed runs
+#    - Each test suite (pytest/gtest) can be configured independently
 
 on:
+  # Trigger after both nightly workflows complete
+  workflow_run:
+    workflows: ["nightly-gtest", "nightly-pytest"]
+    types:
+      - completed
+  # Allow manual trigger with custom options
   workflow_dispatch:
+    inputs:
+      pytest_branch:
+        description: 'Pytest branch (leave empty for latest completed run)'
+        required: false
+        type: string
+      pytest_run_number:
+        description: 'Pytest run number (e.g., 64, leave empty for latest)'
+        required: false
+        type: string
+      gtest_branch:
+        description: 'GTest branch (leave empty for latest completed run)'
+        required: false
+        type: string
+      gtest_run_number:
+        description: 'GTest run number (e.g., 65, leave empty for latest)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  placeholder:
-    runs-on: ubuntu-latest
+  wait-for-both-workflows:
+    runs-on: ubuntu-22.04
+    outputs:
+      gtest_run_id: ${{ steps.get-runs.outputs.gtest_run_id }}
+      pytest_run_id: ${{ steps.get-runs.outputs.pytest_run_id }}
+      both_completed: ${{ steps.check-status.outputs.both_completed }}
     steps:
-      - name: Placeholder
-        run: echo "Placeholder workflow - no operations performed"
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: Wait for both workflows to complete
+        id: get-runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflows = ['nightly-gtest', 'nightly-pytest'];
+            const runIds = {};
+            const statuses = {};
+
+            // Helper function to find run by criteria
+            async function findRun(workflow, branch, runNumber) {
+              const workflowKey = workflow.replace('nightly-', '');
+              console.log(`\nSearching for ${workflow}...`);
+              
+              // If run number is specified, find by run number
+              if (runNumber) {
+                console.log(`  Looking for run number: ${runNumber}`);
+                const runs = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: `${workflow}.yml`,
+                  per_page: 100,
+                  status: 'completed'
+                });
+                
+                const matchingRun = runs.data.workflow_runs.find(r => r.run_number == runNumber);
+                if (matchingRun) {
+                  console.log(`  ✓ Found run #${matchingRun.run_number} (${matchingRun.conclusion})`);
+                  return matchingRun;
+                } else {
+                  console.log(`  ✗ Run #${runNumber} not found`);
+                  return null;
+                }
+              }
+              
+              // Otherwise, find latest completed run (optionally filtered by branch)
+              const params = {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: `${workflow}.yml`,
+                per_page: 1,
+                status: 'completed'
+              };
+              
+              if (branch) {
+                console.log(`  Looking for latest run on branch: ${branch}`);
+                params.branch = branch;
+              } else {
+                console.log(`  Looking for latest completed run (any branch)`);
+              }
+              
+              const runs = await github.rest.actions.listWorkflowRuns(params);
+              
+              if (runs.data.workflow_runs.length > 0) {
+                const run = runs.data.workflow_runs[0];
+                console.log(`  ✓ Found run #${run.run_number} on ${run.head_branch} (${run.conclusion})`);
+                return run;
+              }
+              
+              console.log(`  ✗ No completed runs found`);
+              return null;
+            }
+
+            // Get pytest run
+            const pytestBranch = '${{ github.event.inputs.pytest_branch }}' || '';
+            const pytestRunNumber = '${{ github.event.inputs.pytest_run_number }}' || '';
+            const pytestRun = await findRun('nightly-pytest', pytestBranch, pytestRunNumber);
+            
+            if (pytestRun) {
+              runIds['pytest'] = pytestRun.id;
+              statuses['nightly-pytest'] = pytestRun.conclusion;
+            }
+
+            // Get gtest run
+            const gtestBranch = '${{ github.event.inputs.gtest_branch }}' || '';
+            const gtestRunNumber = '${{ github.event.inputs.gtest_run_number }}' || '';
+            const gtestRun = await findRun('nightly-gtest', gtestBranch, gtestRunNumber);
+            
+            if (gtestRun) {
+              runIds['gtest'] = gtestRun.id;
+              statuses['nightly-gtest'] = gtestRun.conclusion;
+            }
+
+            core.setOutput('gtest_run_id', runIds['gtest'] || '');
+            core.setOutput('pytest_run_id', runIds['pytest'] || '');
+
+            return runIds;
+
+      - name: Check if both workflows completed
+        id: check-status
+        run: |
+          if [ -n "${{ steps.get-runs.outputs.gtest_run_id }}" ] && [ -n "${{ steps.get-runs.outputs.pytest_run_id }}" ]; then
+            echo "both_completed=true" >> "$GITHUB_OUTPUT"
+            echo "Both workflows have completed runs available"
+          else
+            echo "both_completed=false" >> "$GITHUB_OUTPUT"
+            echo "Waiting for both workflows to complete..."
+            exit 1
+          fi
+
+  generate-combined-report:
+    needs: wait-for-both-workflows
+    if: needs.wait-for-both-workflows.outputs.both_completed == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Get pytest run metadata
+        id: pytest-metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }};
+            const run = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+            core.setOutput('run_date', run.data.created_at);
+            core.setOutput('run_id', runId);
+            core.setOutput('run_number', run.data.run_number);
+            core.setOutput('branch', run.data.head_branch);
+            core.setOutput('run_url', run.data.html_url);
+            console.log(`Pytest Run #${run.data.run_number}, Branch: ${run.data.head_branch}, Date: ${run.data.created_at}`);
+
+      - name: Get gtest run metadata
+        id: gtest-metadata
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }};
+            const run = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: runId
+            });
+            core.setOutput('run_date', run.data.created_at);
+            core.setOutput('run_id', runId);
+            core.setOutput('run_number', run.data.run_number);
+            core.setOutput('branch', run.data.head_branch);
+            core.setOutput('run_url', run.data.html_url);
+            console.log(`GTest Run #${run.data.run_number}, Branch: ${run.data.head_branch}, Date: ${run.data.created_at}`);
+
+      - name: Download pytest artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-test-report-*
+          path: pytest-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download gtest artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-gtest-report-*
+          path: gtest-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Flatten pytest report structure
+        run: |
+          cd pytest-reports
+          for dir in ./nightly-test-report-*; do
+            if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
+              mv "$dir/report.html" "${dir}.html"
+              rm -rf "$dir"
+            fi
+          done
+          ls -lh ./*.html || echo "No pytest HTML reports found"
+
+      - name: Flatten gtest report structure
+        run: |
+          cd gtest-reports
+          for dir in ./nightly-gtest-report-*; do
+            if [ -d "$dir" ] && [ -f "$dir/gtest.log" ]; then
+              mv "$dir/gtest.log" "${dir}.log"
+              rm -rf "$dir"
+            fi
+          done
+          ls -lh ./*.log || echo "No gtest logs found"
+
+      - name: Download system info artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        continue-on-error: true
+        with:
+          pattern: system-info-*
+          path: system-info-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.pytest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Also download system info from gtest run
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        continue-on-error: true
+        with:
+          pattern: system-info-*
+          path: system-info-reports
+          merge-multiple: false
+          run-id: ${{ needs.wait-for-both-workflows.outputs.gtest_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List downloaded system info
+        run: |
+          if [ -d "system-info-reports" ]; then
+            echo "System info reports found:"
+            ls -lah system-info-reports/
+          else
+            echo "No system info reports found (this is optional)"
+          fi
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pandas beautifulsoup4 openpyxl lxml
+
+      - name: Generate combined reports
+        id: combine
+        run: |
+          python3 .github/scripts/combine_all_reports.py \
+            --pytest-dir pytest-reports \
+            --gtest-dir gtest-reports \
+            --system-info-dir system-info-reports \
+            --output-excel combined_nightly_report.xlsx \
+            --output-html combined_nightly_report.html \
+            --pytest-run-id "${{ steps.pytest-metadata.outputs.run_id }}" \
+            --pytest-run-date "${{ steps.pytest-metadata.outputs.run_date }}" \
+            --pytest-run-number "${{ steps.pytest-metadata.outputs.run_number }}" \
+            --pytest-branch "${{ steps.pytest-metadata.outputs.branch }}" \
+            --pytest-run-url "${{ steps.pytest-metadata.outputs.run_url }}" \
+            --gtest-run-id "${{ steps.gtest-metadata.outputs.run_id }}" \
+            --gtest-run-date "${{ steps.gtest-metadata.outputs.run_date }}" \
+            --gtest-run-number "${{ steps.gtest-metadata.outputs.run_number }}" \
+            --gtest-branch "${{ steps.gtest-metadata.outputs.branch }}" \
+            --gtest-run-url "${{ steps.gtest-metadata.outputs.run_url }}"
+
+          if [ -f "combined_nightly_report.xlsx" ] && [ -f "combined_nightly_report.html" ]; then
+            echo "reports_generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "reports_generated=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Upload combined Excel report
+        if: steps.combine.outputs.reports_generated == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-combined-report-excel
+          path: combined_nightly_report.xlsx
+
+      - name: Upload combined HTML report
+        if: steps.combine.outputs.reports_generated == 'true'
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-combined-report-html
+          path: combined_nightly_report.html

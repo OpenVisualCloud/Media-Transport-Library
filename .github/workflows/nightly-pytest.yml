@@ -102,6 +102,17 @@ jobs:
             --template=html/index.html \
             --report=report.html \
             "./tests/single/${{ matrix.dir }}"
+      - name: 'collect: System status report'
+        if: always()
+        run: |
+          ./script/status_report.sh
+          # Rename to include NIC info
+          for dir in mtl_system_status_*; do
+            if [ -d "$dir" ]; then
+              mv "$dir" "system-info-${{ matrix.nic }}"
+              break
+            fi
+          done
       - name: "upload report python"
         if: always()
         id: upload-report
@@ -109,6 +120,13 @@ jobs:
         with:
           name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
           path: ./tests/validation/report.html
+      
+      - name: "upload system info"
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: system-info-${{ matrix.nic }}
+          path: system-info-${{ matrix.nic }}/
 
   aggregate-python-reports:
     needs: run-pytest
