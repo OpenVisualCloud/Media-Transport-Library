@@ -2,1520 +2,85 @@
 """Combine pytest HTML reports and gtest logs into unified Excel and HTML reports."""
 
 import argparse
-import re
 import sys
-from datetime import datetime
 from pathlib import Path
 
-import pandas as pd
-from bs4 import BeautifulSoup
-from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
-
-
-def parse_pytest_html(html_file):
-    """Parse pytest HTML report and extract test results and individual test cases."""
-    with open(html_file, "r") as f:
-        soup = BeautifulSoup(f.read(), "html.parser")
-
-    # Extract NIC and category from filename
-    # Format: nightly-test-report-{nic}-{category}.html
-    # NIC can include vendor suffix like e810-dell, e830-broadcom, etc.
-    filename = Path(html_file).stem
-
-    # Try to match with vendor-specific NIC pattern first
-    # Pattern: nightly-test-report-{nic}-{vendor}-{category}.html
-    match = re.match(
-        r"nightly-test-report-([^-]+)-(dell|broadcom|mellanox|intel|cisco)-(.+)",
-        filename,
-    )
-    if match:
-        nic = f"{match.group(1)}-{match.group(2)}".upper()
-        category = match.group(3)
-    else:
-        # Fallback to simple pattern: nightly-test-report-{nic}-{category}.html
-        match = re.match(r"nightly-test-report-([^-]+)-(.+)", filename)
-        if match:
-            nic = match.group(1).upper()
-            category = match.group(2)
-        else:
-            nic = "UNKNOWN"
-            category = "UNKNOWN"
-
-    # Parse summary statistics
-    stats = {"nic": nic, "category": category}
-    for status in ["passed", "failed", "skipped", "error", "xpassed", "xfailed"]:
-        elem = soup.find("span", class_=status)
-        if elem:
-            count_text = elem.get_text(strip=True)
-            match = re.search(r"(\d+)", count_text)
-            stats[status] = int(match.group(1)) if match else 0
-        else:
-            stats[status] = 0
-
-    stats["total"] = sum(
-        stats.get(k, 0)
-        for k in ["passed", "failed", "skipped", "error", "xpassed", "xfailed"]
-    )
-
-    # Parse individual test cases from pytest-reporter HTML structure
-    # pytest-reporter uses <details class="test {status}"> instead of tables
-    test_cases = []
-
-    # Find all test details elements
-    test_details = soup.find_all("details", class_="test")
-
-    print(
-        f"  DEBUG: Found {len(test_details)} test details elements for {Path(html_file).name}"
-    )
-
-    for test_idx, test_detail in enumerate(test_details):
-        # Get the test class to determine status
-        test_classes = test_detail.get("class", [])
-        if isinstance(test_classes, list):
-            test_classes = " ".join(test_classes)
-        else:
-            test_classes = str(test_classes)
-
-        # Find the summary/title section
-        summary = test_detail.find("summary")
-        if not summary:
-            continue
-
-        # Extract status from badge
-        status_badge = summary.find("span", class_="status")
-        result_text = status_badge.get_text(strip=True) if status_badge else ""
-
-        # Extract test name
-        test_name_span = summary.find("span", class_="test-name")
-        if test_name_span:
-            test_name = test_name_span.get_text(strip=True)
-        else:
-            # Fallback: get from h3 title
-            title = summary.find(["h3", "h2", "h1"])
-            if title:
-                test_name = title.get_text(strip=True)
-                # Remove status and duration from name
-                if status_badge:
-                    test_name = test_name.replace(result_text, "").strip()
-            else:
-                continue
-
-        # Extract duration
-        duration_span = summary.find("span", class_="duration")
-        duration = duration_span.get_text(strip=True) if duration_span else "N/A"
-
-        # Determine result from test class or badge text
-        result = "UNKNOWN"
-        test_classes_lower = test_classes.lower()
-        result_text_lower = result_text.lower()
-
-        if "passed" in test_classes_lower or "passed" in result_text_lower:
-            result = "PASSED"
-        elif (
-            "failed" in test_classes_lower
-            or "failed" in result_text_lower
-            or "error" in result_text_lower
-        ):
-            result = "FAILED"
-        elif "skipped" in test_classes_lower or "skipped" in result_text_lower:
-            result = "SKIPPED"
-        elif "xpassed" in test_classes_lower or "xpassed" in result_text_lower:
-            result = "XPASSED"
-        elif "xfailed" in test_classes_lower or "xfailed" in result_text_lower:
-            result = "XFAILED"
-
-        # Only add if we have a valid test name
-        if test_name and len(test_name) > 0:
-            test_cases.append(
-                {
-                    "nic": nic,
-                    "category": category,
-                    "test_name": test_name,
-                    "result": result,
-                    "duration": duration,
-                    "platform": "pytest",
-                }
-            )
-            if test_idx < 3:  # Debug first few
-                print(f"  DEBUG: Test {test_idx}: {test_name[:50]} -> {result}")
-
-    stats["test_cases"] = test_cases
-    print(f"  Found {len(test_cases)} test cases in {Path(html_file).name}")
-    return stats
-
-
-def parse_gtest_log(log_file):
-    """Parse gtest log and extract test results."""
-    with open(log_file, "r") as f:
-        content = f.read()
-
-    # Extract NIC from filename
-    # Format: nightly-gtest-report-{nic}.log
-    filename = Path(log_file).stem
-    match = re.match(r"nightly-gtest-report-(.+)", filename)
-    nic = match.group(1).upper() if match else "UNKNOWN"
-
-    results = []
-
-    # Pattern 1: Try to match the summary table rows (preferred format)
-    # Format: test_name | passed | failed | skipped | total | pass_rate%
-    table_pattern = (
-        r"(\S+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+([\d.]+)%"
-    )
-
-    found_table = False
-    for line in content.split("\n"):
-        match = re.search(table_pattern, line)
-        if match and match.group(1) not in ["Test", "TOTAL", "---"]:
-            test_category = match.group(1)
-            passed = int(match.group(2))
-            failed = int(match.group(3))
-            skipped = int(match.group(4))
-            total = int(match.group(5))
-
-            results.append(
-                {
-                    "nic": nic,
-                    "category": test_category,
-                    "passed": passed,
-                    "failed": failed,
-                    "skipped": skipped,
-                    "error": 0,
-                    "xpassed": 0,
-                    "xfailed": 0,
-                    "total": total,
-                }
-            )
-            found_table = True
-
-    # Pattern 2: Extract individual test cases from gtest output
-    # Look for lines like: [ RUN      ] TestSuite.TestName
-    #                      [  PASSED  ] TestSuite.TestName (X ms)
-    #                      [  FAILED  ] TestSuite.TestName (X ms)
-    test_suites = {}
-    all_test_cases = []
-
-    # Find all test runs and their results
-    passed_pattern = r"\[\s*PASSED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)"
-    failed_pattern = r"\[\s*FAILED\s*\]\s+(\w+)\.(\w+)\s*\((\d+)\s*ms\)"
-    skipped_pattern = r"\[\s*SKIPPED\s*\]\s+(\w+)\.(\w+)"
-
-    for line in content.split("\n"):
-        # Track passed tests
-        match = re.search(passed_pattern, line)
-        if match:
-            suite = match.group(1)
-            test_name = match.group(2)
-            duration = match.group(3)
-            if suite not in test_suites:
-                test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-            test_suites[suite]["passed"] += 1
-
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": f"{suite}.{test_name}",
-                    "result": "PASSED",
-                    "duration": f"{duration} ms",
-                    "platform": "gtest",
-                }
-            )
-
-        # Track failed tests
-        match = re.search(failed_pattern, line)
-        if match:
-            suite = match.group(1)
-            test_name = match.group(2)
-            duration = match.group(3)
-            if suite not in test_suites:
-                test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-            test_suites[suite]["failed"] += 1
-
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": f"{suite}.{test_name}",
-                    "result": "FAILED",
-                    "duration": f"{duration} ms",
-                    "platform": "gtest",
-                }
-            )
-
-        # Track skipped tests
-        match = re.search(skipped_pattern, line)
-        if match:
-            suite = match.group(1)
-            test_name = match.group(2)
-            if suite not in test_suites:
-                test_suites[suite] = {"passed": 0, "failed": 0, "skipped": 0}
-            test_suites[suite]["skipped"] += 1
-
-            all_test_cases.append(
-                {
-                    "nic": nic,
-                    "category": suite,
-                    "test_name": f"{suite}.{test_name}",
-                    "result": "SKIPPED",
-                    "duration": "N/A",
-                    "platform": "gtest",
-                }
-            )
-
-    # If no table found, create results from test suites
-    if not found_table and test_suites:
-        for suite, counts in test_suites.items():
-            total = counts["passed"] + counts["failed"] + counts["skipped"]
-            if total > 0:
-                results.append(
-                    {
-                        "nic": nic,
-                        "category": suite,
-                        "passed": counts["passed"],
-                        "failed": counts["failed"],
-                        "skipped": counts["skipped"],
-                        "error": 0,
-                        "xpassed": 0,
-                        "xfailed": 0,
-                        "total": total,
-                    }
-                )
-
-    # Pattern 3: If still no results, try to find summary at the end
-    # Format: [  PASSED  ] X tests.
-    #         [  FAILED  ] Y tests, listed below:
-    if not results:
-        total_passed = 0
-        total_failed = 0
-
-        for line in content.split("\n"):
-            if re.search(r"\[\s*PASSED\s*\]\s+(\d+)\s+test", line):
-                match = re.search(r"(\d+)", line)
-                if match:
-                    total_passed = int(match.group(1))
-            elif re.search(r"\[\s*FAILED\s*\]\s+(\d+)\s+test", line):
-                match = re.search(r"(\d+)", line)
-                if match:
-                    total_failed = int(match.group(1))
-
-        if total_passed > 0 or total_failed > 0:
-            results.append(
-                {
-                    "nic": nic,
-                    "category": "all_tests",
-                    "passed": total_passed,
-                    "failed": total_failed,
-                    "skipped": 0,
-                    "error": 0,
-                    "xpassed": 0,
-                    "xfailed": 0,
-                    "total": total_passed + total_failed,
-                }
-            )
-
-    # Add test cases to results
-    for result in results:
-        result["test_cases"] = [
-            tc for tc in all_test_cases if tc["category"] == result["category"]
-        ]
-
-    return results
-
-
-def parse_system_info(info_file):
-    """Parse system_info.txt and extract key information."""
-    try:
-        with open(info_file, "r") as f:
-            content = f.read()
-
-        info = {}
-
-        # Extract hostname from filename or uname
-        filename = Path(info_file).parent.name
-        match = re.match(r"system-info-(.+)", filename)
-        info["hostname"] = match.group(1) if match else "unknown"
-
-        # Extract OS/Kernel from uname -a
-        uname_match = re.search(r"Linux (\S+) ([\d\.-]+\S*)", content)
-        if uname_match:
-            info["hostname"] = uname_match.group(1)
-            info["kernel"] = uname_match.group(2)
-
-        # Extract OS version
-        ubuntu_match = re.search(r"#\d+[~-]Ubuntu.*?(\d{4})", content)
-        if ubuntu_match:
-            info["os"] = f"Ubuntu {ubuntu_match.group(1)}"
-        else:
-            info["os"] = "Unknown"
-
-        # Extract CPU info
-        cpu_match = re.search(r"Model name:\s+(.+)", content)
-        if cpu_match:
-            info["cpu"] = cpu_match.group(1).strip()
-        else:
-            info["cpu"] = "Unknown"
-
-        # Extract CPU cores/threads
-        cores_match = re.search(r"CPU\(s\):\s+(\d+)", content)
-        if cores_match:
-            info["cpu_cores"] = cores_match.group(1)
-
-        # Extract HugePages
-        hugepages_match = re.search(r"HugePages_Total:\s+(\d+)", content)
-        hugepagesize_match = re.search(r"Hugepagesize:\s+(\d+)\s+kB", content)
-        if hugepages_match and hugepagesize_match:
-            total_pages = int(hugepages_match.group(1))
-            page_size_kb = int(hugepagesize_match.group(1))
-            total_gb = (total_pages * page_size_kb) / (1024 * 1024)
-            info["hugepages"] = (
-                f"{total_pages} x {page_size_kb//1024//1024}GB = {total_gb:.0f}GB"
-            )
-
-        # Extract RAM
-        mem_match = re.search(r"MemTotal:\s+(\d+)\s+kB", content)
-        if mem_match:
-            mem_gb = int(mem_match.group(1)) / (1024 * 1024)
-            info["ram"] = f"{mem_gb:.0f}GB"
-
-        # Extract NIC info - look for E810, E830, etc.
-        nic_list = []
-        e810_matches = re.findall(r"'Ethernet Controller (E\d+[^']*)'", content)
-        for nic in e810_matches:
-            if nic not in nic_list:
-                nic_list.append(nic)
-
-        # Also check for Broadcom, Mellanox, etc.
-        broadcom_matches = re.findall(r"'(BCM\d+[^']*)'", content)
-        for nic in broadcom_matches:
-            if "NetXtreme" in nic and nic not in nic_list:
-                nic_list.append(nic)
-
-        info["nics"] = ", ".join(nic_list) if nic_list else "Unknown"
-
-        # Extract platform/server model from dmidecode if available
-        platform_match = re.search(r"Product Name:\s+(.+)", content)
-        if platform_match:
-            info["platform"] = platform_match.group(1).strip()
-        else:
-            info["platform"] = "Unknown"
-
-        return info
-    except Exception as e:
-        print(f"Error parsing {info_file}: {e}")
-        return {
-            "hostname": "unknown",
-            "kernel": "unknown",
-            "os": "unknown",
-            "cpu": "unknown",
-            "ram": "unknown",
-            "hugepages": "unknown",
-            "nics": "unknown",
-            "platform": "unknown",
-        }
-
-
-def create_excel_report(
-    pytest_data, gtest_data, output_file, system_info_list=None, test_metadata=None
-):
-    """Create Excel report with separate sheets for pytest and gtest."""
-    wb = Workbook()
-
-    # Remove default sheet
-    wb.remove(wb.active)
-
-    # Collect all test cases for detailed sheets
-    all_pytest_cases = []
-    all_gtest_cases = []
-
-    for data in pytest_data:
-        if "test_cases" in data:
-            all_pytest_cases.extend(data["test_cases"])
-
-    for data in gtest_data:
-        if "test_cases" in data:
-            all_gtest_cases.extend(data["test_cases"])
-
-    # Create pytest sheet with summary table at top, detailed results below
-    if pytest_data:
-        ws_pytest = wb.create_sheet("Pytest Results")
-
-        # Section 1: Summary Table
-        ws_pytest.append(["PYTEST SUMMARY - BY CATEGORY"])
-        title_cell = ws_pytest.cell(row=1, column=1)
-        title_cell.font = Font(bold=True, size=14, color="FFFFFF")
-        title_cell.fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        try:
-            ws_pytest.merge_cells("A1:I1")
-        except Exception:
-            pass  # Ignore merge errors
-
-        ws_pytest.append([])  # Blank row
-
-        # Summary table headers
-        summary_headers = [
-            "NIC",
-            "Category",
-            "Passed",
-            "Failed",
-            "Skipped",
-            "Error",
-            "XPassed",
-            "XFailed",
-            "Total",
-        ]
-        ws_pytest.append(summary_headers)
-
-        # Style summary header row
-        header_fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        header_font = Font(bold=True, color="FFFFFF")
-        header_row = ws_pytest.max_row
-        for col in range(1, 10):
-            cell = ws_pytest.cell(row=header_row, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-
-        # Add summary data rows
-        sorted_pytest = sorted(
-            pytest_data, key=lambda x: (x.get("nic", ""), x.get("category", ""))
-        )
-        for data in sorted_pytest:
-            ws_pytest.append(
-                [
-                    data.get("nic", ""),
-                    data.get("category", ""),
-                    data.get("passed", 0),
-                    data.get("failed", 0),
-                    data.get("skipped", 0),
-                    data.get("error", 0),
-                    data.get("xpassed", 0),
-                    data.get("xfailed", 0),
-                    data.get("total", 0),
-                ]
-            )
-
-        # Add blank rows before detailed section
-        ws_pytest.append([])
-        ws_pytest.append([])
-
-        total_test_cases = sum(len(data.get("test_cases", [])) for data in pytest_data)
-        print(f"Adding {total_test_cases} pytest detailed test cases to Excel")
-
-        # Section 2: Detailed Test Cases
-        ws_pytest.append(["DETAILED TEST CASES"])
-        detail_title_row = ws_pytest.max_row
-        title_cell = ws_pytest.cell(row=detail_title_row, column=1)
-        title_cell.font = Font(bold=True, size=14, color="FFFFFF")
-        title_cell.fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        try:
-            ws_pytest.merge_cells(f"A{detail_title_row}:F{detail_title_row}")
-        except Exception:
-            pass  # Ignore merge errors
-
-        ws_pytest.append([])  # Blank row
-
-        # Detailed table headers
-        detail_headers = [
-            "NIC",
-            "Category",
-            "Test Name",
-            "Result",
-            "Duration",
-            "Platform",
-        ]
-        ws_pytest.append(detail_headers)
-
-        # Style detail header row
-        detail_header_row = ws_pytest.max_row
-        for col in range(1, 7):
-            cell = ws_pytest.cell(row=detail_header_row, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-
-        # Add all detailed test cases grouped by category
-        for data in sorted_pytest:
-            if "test_cases" in data and data["test_cases"]:
-                # Add category separator
-                sep_row = ws_pytest.max_row + 1
-                ws_pytest.append(
-                    [
-                        f"Category: {data.get('nic', '')} - {data.get('category', '')}",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                    ]
-                )
-                for col in range(1, 7):
-                    cell = ws_pytest.cell(row=sep_row, column=col)
-                    cell.font = Font(bold=True, italic=True)
-                    cell.fill = PatternFill(
-                        start_color="e6f2ff", end_color="e6f2ff", fill_type="solid"
-                    )
-
-                # Add test cases for this category
-                sorted_cases = sorted(data["test_cases"], key=lambda x: x["test_name"])
-                for tc in sorted_cases:
-                    ws_pytest.append(
-                        [
-                            tc["nic"],
-                            tc["category"],
-                            tc["test_name"],
-                            tc["result"],
-                            tc["duration"],
-                            tc["platform"],
-                        ]
-                    )
-
-                    # Color code result cell
-                    last_row = ws_pytest.max_row
-                    result_cell = ws_pytest.cell(row=last_row, column=4)
-                    result_upper = tc["result"].upper()
-                    if "PASS" in result_upper and "FAIL" not in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="d4edda", end_color="d4edda", fill_type="solid"
-                        )
-                    elif "FAIL" in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="f8d7da", end_color="f8d7da", fill_type="solid"
-                        )
-                    elif "SKIP" in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="fff3cd", end_color="fff3cd", fill_type="solid"
-                        )
-                    elif "ERROR" in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="f8d7da", end_color="f8d7da", fill_type="solid"
-                        )
-
-        # Auto-adjust column widths
-        for col_idx, column in enumerate(ws_pytest.columns, start=1):
-            max_length = 0
-            column_letter = get_column_letter(col_idx)
-            for cell in column:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except Exception:
-                    pass
-            ws_pytest.column_dimensions[column_letter].width = min(
-                max(max_length + 2, 10), 80
-            )
-
-    # Create gtest sheet with summary table at top, detailed results below
-    if gtest_data:
-        ws_gtest = wb.create_sheet("GTest Results")
-
-        # Section 1: Summary Table
-        ws_gtest.append(["GTEST SUMMARY - BY CATEGORY"])
-        title_cell = ws_gtest.cell(row=1, column=1)
-        title_cell.font = Font(bold=True, size=14, color="FFFFFF")
-        title_cell.fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        try:
-            ws_gtest.merge_cells("A1:F1")
-        except Exception:
-            pass  # Ignore merge errors
-
-        ws_gtest.append([])  # Blank row
-
-        # Summary table headers
-        summary_headers = [
-            "NIC",
-            "Test Category",
-            "Passed",
-            "Failed",
-            "Skipped",
-            "Total",
-        ]
-        ws_gtest.append(summary_headers)
-
-        # Style summary header row
-        header_fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        header_font = Font(bold=True, color="FFFFFF")
-        header_row = ws_gtest.max_row
-        for col in range(1, 7):
-            cell = ws_gtest.cell(row=header_row, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-
-        # Add summary data rows
-        sorted_gtest = sorted(
-            gtest_data, key=lambda x: (x.get("nic", ""), x.get("category", ""))
-        )
-        for data in sorted_gtest:
-            ws_gtest.append(
-                [
-                    data.get("nic", ""),
-                    data.get("category", ""),
-                    data.get("passed", 0),
-                    data.get("failed", 0),
-                    data.get("skipped", 0),
-                    data.get("total", 0),
-                ]
-            )
-
-        # Add blank rows before detailed section
-        ws_gtest.append([])
-        ws_gtest.append([])
-
-        # Section 2: Detailed Test Cases
-        ws_gtest.append(["DETAILED TEST CASES"])
-        detail_title_row = ws_gtest.max_row
-        title_cell = ws_gtest.cell(row=detail_title_row, column=1)
-        title_cell.font = Font(bold=True, size=14, color="FFFFFF")
-        title_cell.fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        try:
-            ws_gtest.merge_cells(f"A{detail_title_row}:F{detail_title_row}")
-        except Exception:
-            pass  # Ignore merge errors
-
-        ws_gtest.append([])  # Blank row
-
-        # Detailed table headers
-        detail_headers = [
-            "NIC",
-            "Test Category",
-            "Test Name",
-            "Result",
-            "Duration",
-            "Platform",
-        ]
-        ws_gtest.append(detail_headers)
-
-        # Style detail header row
-        detail_header_row = ws_gtest.max_row
-        for col in range(1, 7):
-            cell = ws_gtest.cell(row=detail_header_row, column=col)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-
-        # Add all detailed test cases grouped by category
-        for data in sorted_gtest:
-            if "test_cases" in data and data["test_cases"]:
-                # Add category separator
-                sep_row = ws_gtest.max_row + 1
-                ws_gtest.append(
-                    [
-                        f"Category: {data.get('nic', '')} - {data.get('category', '')}",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                    ]
-                )
-                for col in range(1, 7):
-                    cell = ws_gtest.cell(row=sep_row, column=col)
-                    cell.font = Font(bold=True, italic=True)
-                    cell.fill = PatternFill(
-                        start_color="e6f2ff", end_color="e6f2ff", fill_type="solid"
-                    )
-
-                # Add test cases for this category
-                sorted_cases = sorted(data["test_cases"], key=lambda x: x["test_name"])
-                for tc in sorted_cases:
-                    ws_gtest.append(
-                        [
-                            tc["nic"],
-                            tc["category"],
-                            tc["test_name"],
-                            tc["result"],
-                            tc["duration"],
-                            tc["platform"],
-                        ]
-                    )
-
-                    # Color code result cell
-                    last_row = ws_gtest.max_row
-                    result_cell = ws_gtest.cell(row=last_row, column=4)
-                    result_upper = tc["result"].upper()
-                    if "PASS" in result_upper and "FAIL" not in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="d4edda", end_color="d4edda", fill_type="solid"
-                        )
-                    elif "FAIL" in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="f8d7da", end_color="f8d7da", fill_type="solid"
-                        )
-                    elif "SKIP" in result_upper:
-                        result_cell.fill = PatternFill(
-                            start_color="fff3cd", end_color="fff3cd", fill_type="solid"
-                        )
-
-        # Auto-adjust column widths
-        for col_idx, column in enumerate(ws_gtest.columns, start=1):
-            max_length = 0
-            column_letter = get_column_letter(col_idx)
-            for cell in column:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except Exception:
-                    pass
-            ws_gtest.column_dimensions[column_letter].width = min(
-                max(max_length + 2, 10), 80
-            )
-
-    # Create summary sheet
-    ws_summary = wb.create_sheet("Summary", 0)
-
-    summary_data = []
-    summary_data.append(["MTL Nightly Test Report Summary"])
-    summary_data.append(
-        ["Generated:", datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")]
-    )
-    summary_data.append([])
-
-    # Test Run Metadata section
-    if test_metadata:
-        summary_data.append(["Test Run Information"])
-        summary_data.append([])
-
-        if test_metadata.get("pytest_run_number") and test_metadata.get(
-            "pytest_branch"
-        ):
-            run_date = (
-                test_metadata["pytest_run_date"].split("T")[0]
-                if test_metadata.get("pytest_run_date")
-                else "N/A"
-            )
-            run_time = (
-                test_metadata["pytest_run_date"].split("T")[1].split("Z")[0]
-                if test_metadata.get("pytest_run_date")
-                and "T" in test_metadata["pytest_run_date"]
-                else "N/A"
-            )
-            summary_data.append(
-                [
-                    "Pytest Run:",
-                    f"#{test_metadata['pytest_run_number']} (branch: {test_metadata['pytest_branch']})",
-                ]
-            )
-            summary_data.append(["Pytest Date:", f"{run_date} {run_time}"])
-            if test_metadata.get("pytest_run_url"):
-                summary_data.append(["Pytest URL:", test_metadata["pytest_run_url"]])
-
-        if test_metadata.get("gtest_run_number") and test_metadata.get("gtest_branch"):
-            run_date = (
-                test_metadata["gtest_run_date"].split("T")[0]
-                if test_metadata.get("gtest_run_date")
-                else "N/A"
-            )
-            run_time = (
-                test_metadata["gtest_run_date"].split("T")[1].split("Z")[0]
-                if test_metadata.get("gtest_run_date")
-                and "T" in test_metadata["gtest_run_date"]
-                else "N/A"
-            )
-            summary_data.append(
-                [
-                    "GTest Run:",
-                    f"#{test_metadata['gtest_run_number']} (branch: {test_metadata['gtest_branch']})",
-                ]
-            )
-            summary_data.append(["GTest Date:", f"{run_date} {run_time}"])
-            if test_metadata.get("gtest_run_url"):
-                summary_data.append(["GTest URL:", test_metadata["gtest_run_url"]])
-
-        summary_data.append([])
-        summary_data.append([])
-
-    # Calculate totals
-    pytest_total = pytest_passed = pytest_failed = pytest_skipped = 0
-    gtest_total = gtest_passed = gtest_failed = gtest_skipped = 0
-
-    if pytest_data:
-        # Create DataFrame excluding test_cases
-        df_pytest = pd.DataFrame(
-            [{k: v for k, v in d.items() if k != "test_cases"} for d in pytest_data]
-        )
-        pytest_total = df_pytest["total"].sum()
-        pytest_passed = df_pytest["passed"].sum()
-        pytest_failed = df_pytest["failed"].sum()
-        pytest_skipped = df_pytest["skipped"].sum()
-        pytest_pass_rate = (
-            (pytest_passed / (pytest_passed + pytest_failed) * 100)
-            if (pytest_passed + pytest_failed) > 0
-            else 0
-        )
-
-        summary_data.append(["Pytest Summary"])
-        summary_data.append(["Total Tests:", pytest_total])
-        summary_data.append(["Total Passed:", pytest_passed])
-        summary_data.append(["Total Failed:", pytest_failed])
-        summary_data.append(["Total Skipped:", pytest_skipped])
-        summary_data.append(["Pass Rate:", f"{pytest_pass_rate:.2f}%"])
-        summary_data.append([])
-
-    if gtest_data:
-        # Create DataFrame excluding test_cases
-        df_gtest = pd.DataFrame(
-            [{k: v for k, v in d.items() if k != "test_cases"} for d in gtest_data]
-        )
-        gtest_total = df_gtest["total"].sum()
-        gtest_passed = df_gtest["passed"].sum()
-        gtest_failed = df_gtest["failed"].sum()
-        gtest_skipped = df_gtest["skipped"].sum()
-        gtest_pass_rate = (
-            (gtest_passed / (gtest_passed + gtest_failed) * 100)
-            if (gtest_passed + gtest_failed) > 0
-            else 0
-        )
-
-        summary_data.append(["GTest Summary"])
-        summary_data.append(["Total Tests:", gtest_total])
-        summary_data.append(["Total Passed:", gtest_passed])
-        summary_data.append(["Total Failed:", gtest_failed])
-        summary_data.append(["Total Skipped:", gtest_skipped])
-        summary_data.append(["Pass Rate:", f"{gtest_pass_rate:.2f}%"])
-        summary_data.append([])
-
-    # Overall combined summary
-    if pytest_data or gtest_data:
-        combined_total = pytest_total + gtest_total
-        combined_passed = pytest_passed + gtest_passed
-        combined_failed = pytest_failed + gtest_failed
-        combined_skipped = pytest_skipped + gtest_skipped
-        combined_pass_rate = (
-            (combined_passed / (combined_passed + combined_failed) * 100)
-            if (combined_passed + combined_failed) > 0
-            else 0
-        )
-
-        summary_data.append(["Overall Summary (Pytest + GTest)"])
-        summary_data.append(["Total Tests:", combined_total])
-        summary_data.append(["Total Passed:", combined_passed])
-        summary_data.append(["Total Failed:", combined_failed])
-        summary_data.append(["Total Skipped:", combined_skipped])
-        summary_data.append(["Pass Rate:", f"{combined_pass_rate:.2f}%"])
-
-    for row in summary_data:
-        ws_summary.append(row)
-
-    # Add system information if available
-    if system_info_list:
-        ws_summary.append([])
-        ws_summary.append([])
-        ws_summary.append(["Test Environment Information"])
-        system_info_title_row = ws_summary.max_row
-        ws_summary.cell(row=system_info_title_row, column=1).font = Font(
-            bold=True, size=12
-        )
-
-        # Headers for system info table
-        ws_summary.append([])
-        sys_headers = [
-            "Hostname",
-            "Platform",
-            "CPU",
-            "Cores",
-            "RAM",
-            "HugePages",
-            "OS",
-            "Kernel",
-            "NICs",
-        ]
-        ws_summary.append(sys_headers)
-        sys_header_row = ws_summary.max_row
-        header_fill = PatternFill(
-            start_color="366092", end_color="366092", fill_type="solid"
-        )
-        header_font = Font(bold=True, color="FFFFFF")
-        for col_idx in range(1, len(sys_headers) + 1):
-            cell = ws_summary.cell(row=sys_header_row, column=col_idx)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal="center")
-
-        # Add system info rows
-        for sys_info in system_info_list:
-            ws_summary.append(
-                [
-                    sys_info.get("hostname", "unknown"),
-                    sys_info.get("platform", "unknown"),
-                    sys_info.get("cpu", "unknown"),
-                    sys_info.get("cpu_cores", "unknown"),
-                    sys_info.get("ram", "unknown"),
-                    sys_info.get("hugepages", "unknown"),
-                    sys_info.get("os", "unknown"),
-                    sys_info.get("kernel", "unknown"),
-                    sys_info.get("nics", "unknown"),
-                ]
-            )
-
-    # Style summary sheet
-    ws_summary["A1"].font = Font(bold=True, size=14)
-    ws_summary.column_dimensions["A"].width = 30
-    ws_summary.column_dimensions["B"].width = 20
-    # Adjust column widths for system info if present
-    if system_info_list:
-        for col_idx in range(3, 10):  # Columns C-I
-            col_letter = get_column_letter(col_idx)
-            ws_summary.column_dimensions[col_letter].width = 15
-
-    wb.save(output_file)
-    print(f"Excel report saved to: {output_file}")
-
-
-def create_html_report(
-    pytest_data, gtest_data, output_file, system_info_list=None, test_metadata=None
-):
-    """Create HTML report combining pytest and gtest results."""
-    html_template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8"/>
-        <title>MTL Nightly Test Report</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
-            h1 {{ color: #366092; border-bottom: 2px solid #366092; padding-bottom: 10px; }}
-            h2 {{ color: #555; margin-top: 30px; }}
-            .summary {{
-                background: white; padding: 20px; border-radius: 5px;
-                margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }}
-            .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }}
-            .summary-card {{ padding: 15px; border-radius: 5px; text-align: center; }}
-            .summary-card h3 {{ margin: 0; font-size: 14px; color: #666; }}
-            .summary-card .value {{ font-size: 32px; font-weight: bold; margin: 10px 0; }}
-            .passed {{ background-color: #d4edda; color: #155724; }}
-            .pass-rate {{ background-color: #cfe2ff; color: #084298; }}
-            .failed {{ background-color: #f8d7da; color: #721c24; }}
-            .skipped {{ background-color: #fff3cd; color: #856404; }}
-            table {{
-                border-collapse: collapse; width: 100%; background: white;
-                margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }}
-            th {{ background-color: #366092; color: white; padding: 12px; text-align: left; }}
-            td {{ padding: 10px; border-bottom: 1px solid #ddd; }}
-            tr:hover {{ background-color: #f5f5f5; }}
-            .timestamp {{ color: #666; font-size: 0.9em; margin-bottom: 20px; }}
-            .clickable {{ cursor: pointer; color: #366092; text-decoration: underline; }}
-            .clickable:hover {{ color: #1e3a5f; font-weight: bold; }}
-            .details {{
-                display: none; margin-top: 10px; padding: 10px;
-                background-color: #f9f9f9; border-left: 3px solid #366092;
-            }}
-            .details.show {{ display: block; }}
-            .details table {{ margin: 10px 0; font-size: 0.9em; }}
-            .details th {{ background-color: #555; font-size: 0.85em; }}
-            .result-passed {{ background-color: #d4edda; }}
-            .result-failed {{ background-color: #f8d7da; }}
-            .result-skipped {{ background-color: #fff3cd; }}
-        </style>
-        <script>
-            function toggleDetails(id) {{
-                const element = document.getElementById(id);
-                if (element) {{
-                    element.classList.toggle('show');
-                }}
-            }}
-        </script>
-    </head>
-    <body>
-        <h1>MTL Nightly Test Report - Combined Results</h1>
-        <div class="timestamp">Generated: {timestamp}</div>
-
-        {test_run_info}
-        {overall_summary}
-        {pytest_summary}
-        {gtest_summary}
-        {system_info_section}
-
-        <h2>Pytest Results by NIC and Category</h2>
-        {pytest_table}
-
-        <h2>GTest Results by NIC and Test Category</h2>
-        {gtest_table}
-    </body>
-    </html>
-    """
-
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    # Calculate overall totals
-    pytest_total = pytest_passed = pytest_failed = pytest_skipped = 0
-    gtest_total = gtest_passed = gtest_failed = gtest_skipped = 0
-
-    if pytest_data:
-        # Create DataFrame excluding test_cases
-        df_pytest = pd.DataFrame(
-            [{k: v for k, v in d.items() if k != "test_cases"} for d in pytest_data]
-        )
-        pytest_total = df_pytest["total"].sum()
-        pytest_passed = df_pytest["passed"].sum()
-        pytest_failed = df_pytest["failed"].sum()
-        pytest_skipped = df_pytest["skipped"].sum()
-
-    if gtest_data:
-        # Create DataFrame excluding test_cases
-        df_gtest = pd.DataFrame(
-            [{k: v for k, v in d.items() if k != "test_cases"} for d in gtest_data]
-        )
-        gtest_total = df_gtest["total"].sum()
-        gtest_passed = df_gtest["passed"].sum()
-        gtest_failed = df_gtest["failed"].sum()
-        gtest_skipped = df_gtest["skipped"].sum()
-
-    # Calculate combined totals
-    combined_total = pytest_total + gtest_total
-    combined_passed = pytest_passed + gtest_passed
-    combined_failed = pytest_failed + gtest_failed
-    combined_skipped = pytest_skipped + gtest_skipped
-
-    # Calculate pass rates (based on passed/(passed+failed), excluding skipped)
-    pytest_pass_rate = (
-        (pytest_passed / (pytest_passed + pytest_failed) * 100)
-        if (pytest_passed + pytest_failed) > 0
-        else 0
-    )
-    gtest_pass_rate = (
-        (gtest_passed / (gtest_passed + gtest_failed) * 100)
-        if (gtest_passed + gtest_failed) > 0
-        else 0
-    )
-    combined_pass_rate = (
-        (combined_passed / (combined_passed + combined_failed) * 100)
-        if (combined_passed + combined_failed) > 0
-        else 0
-    )
-
-    # Generate test run metadata section
-    test_run_info = ""
-    if test_metadata:
-        test_run_info = '<div class="summary"><h2>Test Run Information</h2><table>'
-        test_run_info += "<tr><th>Test Suite</th><th>Run</th><th>Branch</th><th>Date & Time</th></tr>"
-
-        if test_metadata.get("pytest_run_number") and test_metadata.get(
-            "pytest_branch"
-        ):
-            run_date = (
-                test_metadata["pytest_run_date"].split("T")[0]
-                if test_metadata.get("pytest_run_date")
-                else "N/A"
-            )
-            run_time = (
-                test_metadata["pytest_run_date"].split("T")[1].split("Z")[0]
-                if test_metadata.get("pytest_run_date")
-                and "T" in test_metadata["pytest_run_date"]
-                else "N/A"
-            )
-            run_link = (
-                f'<a href="{test_metadata["pytest_run_url"]}" target="_blank">#{test_metadata["pytest_run_number"]}</a>'
-                if test_metadata.get("pytest_run_url")
-                else f'#{test_metadata["pytest_run_number"]}'
-            )
-            test_run_info += (
-                f"<tr><td>Pytest</td><td>{run_link}</td>"
-                f'<td>{test_metadata["pytest_branch"]}</td><td>{run_date} {run_time}</td></tr>'
-            )
-
-        if test_metadata.get("gtest_run_number") and test_metadata.get("gtest_branch"):
-            run_date = (
-                test_metadata["gtest_run_date"].split("T")[0]
-                if test_metadata.get("gtest_run_date")
-                else "N/A"
-            )
-            run_time = (
-                test_metadata["gtest_run_date"].split("T")[1].split("Z")[0]
-                if test_metadata.get("gtest_run_date")
-                and "T" in test_metadata["gtest_run_date"]
-                else "N/A"
-            )
-            run_link = (
-                f'<a href="{test_metadata["gtest_run_url"]}" target="_blank">#{test_metadata["gtest_run_number"]}</a>'
-                if test_metadata.get("gtest_run_url")
-                else f'#{test_metadata["gtest_run_number"]}'
-            )
-            test_run_info += (
-                f"<tr><td>GTest</td><td>{run_link}</td>"
-                f'<td>{test_metadata["gtest_branch"]}</td><td>{run_date} {run_time}</td></tr>'
-            )
-
-        test_run_info += "</table></div>"
-
-    # Generate overall summary
-    overall_summary = f"""
-    <div class="summary">
-        <h2>Overall Summary</h2>
-        <div class="summary-grid">
-            <div class="summary-card">
-                <h3>Total Tests</h3>
-                <div class="value">{combined_total}</div>
-            </div>
-            <div class="summary-card passed">
-                <h3>Passed</h3>
-                <div class="value">{combined_passed}</div>
-            </div>
-            <div class="summary-card failed">
-                <h3>Failed</h3>
-                <div class="value">{combined_failed}</div>
-            </div>
-            <div class="summary-card skipped">
-                <h3>Skipped</h3>
-                <div class="value">{combined_skipped}</div>
-            </div>
-            <div class="summary-card pass-rate">
-                <h3>Pass Rate</h3>
-                <div class="value">{combined_pass_rate:.2f}%</div>
-            </div>
-        </div>
-    </div>
-    """
-
-    # Generate pytest summary
-    pytest_summary = ""
-    if pytest_data:
-        pytest_summary = f"""
-        <div class="summary">
-            <h2>Pytest Summary</h2>
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <h3>Total Tests</h3>
-                    <div class="value">{pytest_total}</div>
-                </div>
-                <div class="summary-card passed">
-                    <h3>Passed</h3>
-                    <div class="value">{pytest_passed}</div>
-                </div>
-                <div class="summary-card failed">
-                    <h3>Failed</h3>
-                    <div class="value">{pytest_failed}</div>
-                </div>
-                <div class="summary-card skipped">
-                    <h3>Skipped</h3>
-                    <div class="value">{pytest_skipped}</div>
-                </div>
-                <div class="summary-card pass-rate">
-                    <h3>Pass Rate</h3>
-                    <div class="value">{pytest_pass_rate:.2f}%</div>
-                </div>
-            </div>
-        </div>
-        """
-
-    # Generate gtest summary
-    gtest_summary = ""
-    if gtest_data:
-        gtest_summary = f"""
-        <div class="summary">
-            <h2>GTest Summary</h2>
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <h3>Total Tests</h3>
-                    <div class="value">{gtest_total}</div>
-                </div>
-                <div class="summary-card passed">
-                    <h3>Passed</h3>
-                    <div class="value">{gtest_passed}</div>
-                </div>
-                <div class="summary-card failed">
-                    <h3>Failed</h3>
-                    <div class="value">{gtest_failed}</div>
-                </div>
-                <div class="summary-card skipped">
-                    <h3>Skipped</h3>
-                    <div class="value">{gtest_skipped}</div>
-                </div>
-                <div class="summary-card pass-rate">
-                    <h3>Pass Rate</h3>
-                    <div class="value">{gtest_pass_rate:.2f}%</div>
-                </div>
-            </div>
-        </div>
-        """
-
-    # Generate pytest table with clickable categories
-    pytest_table = ""
-    if pytest_data:
-        pytest_table = (
-            "<table><thead><tr><th>NIC</th><th>Category</th><th>Passed</th><th>Failed</th>"
-            "<th>Skipped</th><th>Error</th><th>XPassed</th><th>XFailed</th><th>Total</th>"
-            "</tr></thead><tbody>"
-        )
-
-        for idx, data in enumerate(
-            sorted(pytest_data, key=lambda x: (x["nic"], x["category"]))
-        ):
-            detail_id = f"pytest-detail-{idx}"
-            pytest_table += f"""
-            <tr>
-                <td>{data['nic']}</td>
-                <td><span class="clickable" onclick="toggleDetails('{detail_id}')">{data['category']}</span></td>
-                <td>{data['passed']}</td>
-                <td>{data['failed']}</td>
-                <td>{data['skipped']}</td>
-                <td>{data.get('error', 0)}</td>
-                <td>{data.get('xpassed', 0)}</td>
-                <td>{data.get('xfailed', 0)}</td>
-                <td>{data['total']}</td>
-            </tr>
-            """
-
-            # Add detailed test cases section
-            if "test_cases" in data and data["test_cases"]:
-                pytest_table += f"""
-                <tr>
-                    <td colspan="9">
-                        <div id="{detail_id}" class="details">
-                            <h4>Detailed Test Cases for {data['category']}</h4>
-                            <table>
-                                <thead>
-                                    <tr><th>Test Name</th><th>Result</th><th>Duration</th></tr>
-                                </thead>
-                                <tbody>
-                """
-                for tc in sorted(data["test_cases"], key=lambda x: x["test_name"]):
-                    result_class = (
-                        f"result-{tc['result'].lower()}"
-                        if tc["result"].lower() in ["passed", "failed", "skipped"]
-                        else ""
-                    )
-                    pytest_table += f"""
-                                    <tr>
-                                        <td>{tc['test_name']}</td>
-                                        <td class="{result_class}">{tc['result']}</td>
-                                        <td>{tc['duration']}</td>
-                                    </tr>
-                    """
-                pytest_table += """
-                                </tbody>
-                            </table>
-                        </div>
-                    </td>
-                </tr>
-                """
-
-        pytest_table += "</tbody></table>"
-
-    # Generate gtest table with clickable categories
-    gtest_table = ""
-    if gtest_data:
-        gtest_table = (
-            "<table><thead><tr><th>NIC</th><th>Test Category</th><th>Passed</th>"
-            "<th>Failed</th><th>Skipped</th><th>Total</th></tr></thead><tbody>"
-        )
-
-        for idx, data in enumerate(
-            sorted(gtest_data, key=lambda x: (x["nic"], x["category"]))
-        ):
-            detail_id = f"gtest-detail-{idx}"
-            gtest_table += f"""
-            <tr>
-                <td>{data['nic']}</td>
-                <td><span class="clickable" onclick="toggleDetails('{detail_id}')">{data['category']}</span></td>
-                <td>{data['passed']}</td>
-                <td>{data['failed']}</td>
-                <td>{data['skipped']}</td>
-                <td>{data['total']}</td>
-            </tr>
-            """
-
-            # Add detailed test cases section
-            if "test_cases" in data and data["test_cases"]:
-                gtest_table += f"""
-                <tr>
-                    <td colspan="6">
-                        <div id="{detail_id}" class="details">
-                            <h4>Detailed Test Cases for {data['category']}</h4>
-                            <table>
-                                <thead>
-                                    <tr><th>Test Name</th><th>Result</th><th>Duration</th></tr>
-                                </thead>
-                                <tbody>
-                """
-                for tc in sorted(data["test_cases"], key=lambda x: x["test_name"]):
-                    result_class = (
-                        f"result-{tc['result'].lower()}"
-                        if tc["result"].lower() in ["passed", "failed", "skipped"]
-                        else ""
-                    )
-                    gtest_table += f"""
-                                    <tr>
-                                        <td>{tc['test_name']}</td>
-                                        <td class="{result_class}">{tc['result']}</td>
-                                        <td>{tc['duration']}</td>
-                                    </tr>
-                    """
-                gtest_table += """
-                                </tbody>
-                            </table>
-                        </div>
-                    </td>
-                </tr>
-                """
-
-        gtest_table += "</tbody></table>"
-
-    # Generate system info section
-    system_info_section = ""
-    if system_info_list:
-        system_info_section = """
-        <div class="summary">
-            <h2>Test Environment Information</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Hostname</th>
-                        <th>Platform</th>
-                        <th>CPU</th>
-                        <th>Cores</th>
-                        <th>RAM</th>
-                        <th>HugePages</th>
-                        <th>OS</th>
-                        <th>Kernel</th>
-                        <th>NICs</th>
-                    </tr>
-                </thead>
-                <tbody>
-        """
-        for sys_info in system_info_list:
-            system_info_section += f"""
-                    <tr>
-                        <td>{sys_info.get('hostname', 'unknown')}</td>
-                        <td>{sys_info.get('platform', 'unknown')}</td>
-                        <td>{sys_info.get('cpu', 'unknown')}</td>
-                        <td>{sys_info.get('cpu_cores', 'unknown')}</td>
-                        <td>{sys_info.get('ram', 'unknown')}</td>
-                        <td>{sys_info.get('hugepages', 'unknown')}</td>
-                        <td>{sys_info.get('os', 'unknown')}</td>
-                        <td>{sys_info.get('kernel', 'unknown')}</td>
-                        <td>{sys_info.get('nics', 'unknown')}</td>
-                    </tr>
-            """
-        system_info_section += """
-                </tbody>
-            </table>
-        </div>
-        """
-
-    html = html_template.format(
-        timestamp=timestamp,
-        test_run_info=test_run_info,
-        overall_summary=overall_summary,
-        pytest_summary=pytest_summary,
-        gtest_summary=gtest_summary,
-        system_info_section=system_info_section,
-        pytest_table=pytest_table,
-        gtest_table=gtest_table,
-    )
-
-    with open(output_file, "w") as f:
-        f.write(html)
-
-    print(f"HTML report saved to: {output_file}")
-
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Combine pytest and gtest nightly reports"
-    )
-    parser.add_argument(
-        "--pytest-dir",
-        type=Path,
-        required=True,
-        help="Directory containing pytest HTML reports",
-    )
-    parser.add_argument(
-        "--gtest-dir",
-        type=Path,
-        required=True,
-        help="Directory containing gtest log files",
-    )
-    parser.add_argument(
-        "--system-info-dir", type=Path, help="Directory containing system info reports"
-    )
-    parser.add_argument(
-        "--output-excel",
-        type=Path,
-        default="combined_nightly_report.xlsx",
-        help="Output Excel file",
-    )
-    parser.add_argument(
-        "--output-html",
-        type=Path,
-        default="combined_nightly_report.html",
-        help="Output HTML file",
-    )
-    parser.add_argument("--pytest-run-id", type=str, help="Pytest workflow run ID")
-    parser.add_argument("--pytest-run-date", type=str, help="Pytest workflow run date")
-    parser.add_argument(
-        "--pytest-run-number", type=str, help="Pytest workflow run number"
-    )
-    parser.add_argument("--pytest-branch", type=str, help="Pytest workflow branch")
-    parser.add_argument("--pytest-run-url", type=str, help="Pytest workflow run URL")
-    parser.add_argument("--gtest-run-id", type=str, help="GTest workflow run ID")
-    parser.add_argument("--gtest-run-date", type=str, help="GTest workflow run date")
-    parser.add_argument(
-        "--gtest-run-number", type=str, help="GTest workflow run number"
-    )
-    parser.add_argument("--gtest-branch", type=str, help="GTest workflow branch")
-    parser.add_argument("--gtest-run-url", type=str, help="GTest workflow run URL")
-
-    args = parser.parse_args()
-
-    # Parse system info if directory provided
-    system_info_list = []
-    if args.system_info_dir and args.system_info_dir.exists():
-        for info_dir in args.system_info_dir.glob("system-info-*"):
-            if info_dir.is_dir():
-                info_file = info_dir / "system_info.txt"
-                if info_file.exists():
-                    try:
-                        sys_info = parse_system_info(info_file)
-                        system_info_list.append(sys_info)
-                        print(f"Parsed system info: {info_dir.name}")
-                    except Exception as e:
-                        print(f"Error parsing {info_file}: {e}", file=sys.stderr)
-
-    # Parse pytest reports
+from report_generators.excel_generator import generate_excel_report
+from report_generators.html_generator import generate_html_report
+
+# Import report generators and parsers
+from report_generators.parsers import (
+    parse_gtest_log,
+    parse_pytest_html,
+    parse_system_info,
+)
+
+
+def collect_pytest_reports(pytest_dir):
+    """Collect and parse all pytest HTML reports."""
     pytest_data = []
-    if args.pytest_dir.exists():
-        for html_file in args.pytest_dir.glob("*.html"):
-            try:
-                stats = parse_pytest_html(html_file)
-                pytest_data.append(stats)
-                print(f"Parsed pytest report: {html_file.name}")
-            except Exception as e:
-                print(f"Error parsing {html_file}: {e}", file=sys.stderr)
+    pytest_reports = list(Path(pytest_dir).glob("*.html"))
 
-    # Parse gtest logs
+    if not pytest_reports:
+        print(f"Warning: No pytest HTML reports found in {pytest_dir}")
+        return pytest_data
+
+    print(f"Found {len(pytest_reports)} pytest reports")
+    for html_file in pytest_reports:
+        try:
+            stats = parse_pytest_html(html_file)
+            pytest_data.append(stats)
+        except Exception as e:
+            print(f"Error parsing {html_file}: {e}")
+
+    print(f"Parsed {len(pytest_data)} pytest reports")
+    return pytest_data
+
+
+def collect_gtest_reports(gtest_dir):
+    """Collect and parse all gtest log files."""
     gtest_data = []
-    if args.gtest_dir.exists():
-        for log_file in args.gtest_dir.glob("*.log"):
-            try:
-                results = parse_gtest_log(log_file)
-                gtest_data.extend(results)
-                print(f"Parsed gtest log: {log_file.name}")
-            except Exception as e:
-                print(f"Error parsing {log_file}: {e}", file=sys.stderr)
+    gtest_logs = list(Path(gtest_dir).glob("*.log"))
 
-    if not pytest_data and not gtest_data:
-        print("No test data found!", file=sys.stderr)
-        sys.exit(1)
+    if not gtest_logs:
+        print(f"Warning: No gtest log files found in {gtest_dir}")
+        return gtest_data
 
-    # Prepare test run metadata
-    test_metadata = {
+    print(f"Found {len(gtest_logs)} gtest logs")
+    for log_file in gtest_logs:
+        try:
+            results = parse_gtest_log(log_file)
+            gtest_data.extend(results)
+        except Exception as e:
+            print(f"Error parsing {log_file}: {e}")
+
+    print(f"Parsed {len(gtest_logs)} gtest logs")
+    return gtest_data
+
+
+def collect_system_info(system_info_dir):
+    """Collect and parse system information files."""
+    system_info_list = []
+
+    if not system_info_dir or not Path(system_info_dir).exists():
+        return system_info_list
+
+    info_files = list(Path(system_info_dir).rglob("system_info.txt"))
+    print(f"Found {len(info_files)} system info files")
+
+    for info_file in info_files:
+        try:
+            info = parse_system_info(info_file)
+            system_info_list.append(info)
+        except Exception as e:
+            print(f"Error parsing {info_file}: {e}")
+
+    return system_info_list
+
+
+def build_test_metadata(args):
+    """Build test metadata dictionary from command line arguments."""
+    return {
         "pytest_run_id": args.pytest_run_id,
         "pytest_run_date": args.pytest_run_date,
         "pytest_run_number": args.pytest_run_number,
@@ -1528,17 +93,81 @@ def main():
         "gtest_run_url": args.gtest_run_url,
     }
 
-    # Create reports
-    create_excel_report(
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Combine pytest and gtest reports")
+    parser.add_argument(
+        "--pytest-dir", required=True, help="Directory containing pytest HTML reports"
+    )
+    parser.add_argument(
+        "--gtest-dir", required=True, help="Directory containing gtest log files"
+    )
+    parser.add_argument("--output-excel", required=True, help="Output Excel file path")
+    parser.add_argument("--output-html", required=True, help="Output HTML file path")
+    parser.add_argument(
+        "--system-info-dir", help="Directory containing system info files"
+    )
+
+    # Test metadata arguments
+    parser.add_argument("--pytest-run-id", help="Pytest workflow run ID")
+    parser.add_argument("--pytest-run-date", help="Pytest workflow run date")
+    parser.add_argument("--pytest-run-number", help="Pytest workflow run number")
+    parser.add_argument("--pytest-branch", help="Pytest workflow branch")
+    parser.add_argument("--pytest-run-url", help="Pytest workflow run URL")
+    parser.add_argument("--gtest-run-id", help="GTest workflow run ID")
+    parser.add_argument("--gtest-run-date", help="GTest workflow run date")
+    parser.add_argument("--gtest-run-number", help="GTest workflow run number")
+    parser.add_argument("--gtest-branch", help="GTest workflow branch")
+    parser.add_argument("--gtest-run-url", help="GTest workflow run URL")
+
+    args = parser.parse_args()
+
+    # Validate input directories
+    if not Path(args.pytest_dir).exists():
+        print(f"Error: Pytest directory not found: {args.pytest_dir}")
+        sys.exit(1)
+
+    if not Path(args.gtest_dir).exists():
+        print(f"Error: GTest directory not found: {args.gtest_dir}")
+        sys.exit(1)
+
+    # Collect all test data
+    print("Collecting pytest reports...")
+    pytest_data = collect_pytest_reports(args.pytest_dir)
+
+    print("Collecting gtest reports...")
+    gtest_data = collect_gtest_reports(args.gtest_dir)
+
+    print("Collecting system information...")
+    system_info_list = collect_system_info(args.system_info_dir)
+
+    # Build metadata
+    test_metadata = build_test_metadata(args)
+
+    # Validate we have some data
+    if not pytest_data and not gtest_data:
+        print("Error: No test data found in either pytest or gtest directories")
+        sys.exit(1)
+
+    # Generate reports
+    print("\nGenerating Excel report...")
+    generate_excel_report(
         pytest_data, gtest_data, args.output_excel, system_info_list, test_metadata
     )
-    create_html_report(
+
+    print("Generating HTML report...")
+    generate_html_report(
         pytest_data, gtest_data, args.output_html, system_info_list, test_metadata
     )
 
+    # Print summary
     print("\nSummary:")
     print(f"  Pytest reports processed: {len(pytest_data)}")
     print(f"  GTest categories processed: {len(gtest_data)}")
+    print(f"  System info entries: {len(system_info_list)}")
+    print(f"  Excel report: {args.output_excel}")
+    print(f"  HTML report: {args.output_html}")
 
 
 if __name__ == "__main__":
