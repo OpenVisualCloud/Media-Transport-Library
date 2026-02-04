@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright 2025 Intel Corporation
 
+: "${EXIT_ON_FAILURE:=1}"
+
 script_name=$(basename "${BASH_SOURCE[0]}")
 script_path=$(readlink -qe "${BASH_SOURCE[0]}")
 script_folder=${script_path/$script_name/}
@@ -60,10 +62,13 @@ while IFS= read -r test_name || [ -n "$test_name" ]; do
 		echo "Test NoCtxTest.$test_name passed"
 	else
 		echo "Test NoCtxTest.$test_name failed with exit code $?"
-		exit 1
+		if [ "$EXIT_ON_FAILURE" -eq 1 ]; then
+			echo "Exiting due to test failure."
+			exit 1
+		fi
 	fi
 
-	sleep 30
+	sleep 10
 done < <(echo "$test_names")
 
 echo "All noctx tests completed. XML files saved in $XML_OUTPUT_DIR"
