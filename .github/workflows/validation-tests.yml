@@ -215,12 +215,7 @@ jobs:
           echo "TEST_PORT_P=${TEST_PORT_P}"
           echo "TEST_PORT_R=${TEST_PORT_R}"
 
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-
+      - uses: ./.github/actions/cleanup
       - name: 'preparation: Binding network adapter pf to kernel driver'
         if: inputs.validation-iface-binding != 'bind_pmd'
         run: |
@@ -268,13 +263,7 @@ jobs:
         run: |
           echo "== TO BE IMPLEMENTED ${{ inputs.validation-pre-release-3 }} ==" || ${{ inputs.validation-no-fail-tests }}
 
-      - name: 'cleanup: Kill MtlManager and pytest routines'
-        if: always()
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-
+      - uses: ./.github/actions/cleanup
       - name: 'cleanup: Create archive with logs from execution'
         if: always()
         working-directory: tests/validation
