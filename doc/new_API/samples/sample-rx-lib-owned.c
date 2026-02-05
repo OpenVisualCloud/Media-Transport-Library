@@ -8,11 +8,14 @@
 #include <stdio.h>
 #include "mtl_session_api_improved.h"
 
+#define MAX_FRAMES 100
+
 int main(void) {
     mtl_handle mt = NULL;  /* Assume created via mtl_init() */
     mtl_session_t* session = NULL;
     mtl_buffer_t* buffer = NULL;
     int err;
+    int frame_count = 0;
 
     /* Configure video RX session with library-owned buffers */
     mtl_video_config_t config = {
@@ -46,41 +49,37 @@ int main(void) {
         goto cleanup;
     }
 
-    /* Main loop: get received buffer, process, return */
-    while (1) {
-        /* Get buffer with received frame (blocks up to 1000ms) */
+    /* Receive MAX_FRAMES frames then exit */
+    printf("Receiving %d frames...\n", MAX_FRAMES);
+    while (frame_count < MAX_FRAMES) {
         err = mtl_session_buffer_get(session, &buffer, 1000);
         if (err == -ETIMEDOUT) {
-            continue;  /* No frame received yet, keep waiting */
+            continue;
         }
         if (err < 0) {
             printf("buffer_get error: %d\n", err);
             break;
         }
 
-        /* Process received video frame */
-        printf("Received frame: %p, size=%zu, timestamp=%lu\n",
-               buffer->data, buffer->data_size, buffer->timestamp);
-        
-        /* Check for incomplete frame (packet loss) */
+        printf("Frame %d: %p, size=%zu, ts=%lu\n",
+               frame_count, buffer->data, buffer->data_size, buffer->timestamp);
+
         if (buffer->flags & MTL_BUF_FLAG_INCOMPLETE) {
-            printf("Warning: incomplete frame\n");
+            printf("  Warning: incomplete frame\n");
         }
 
-        /* Access video-specific fields */
-        printf("  Resolution: %ux%u\n", 
-               buffer->video.width, buffer->video.height);
-
-        /* Return buffer to library for reuse */
         err = mtl_session_buffer_put(session, buffer);
         if (err < 0) {
             printf("buffer_put error: %d\n", err);
             break;
         }
+        frame_count++;
     }
 
+    printf("Received %d frames.\n", frame_count);
+
 cleanup:
-    mtl_session_shutdown(session);
+    mtl_session_stop(session);
     mtl_session_destroy(session);
     return 0;
 }

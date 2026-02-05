@@ -53,7 +53,6 @@ typedef struct mtl_session_vtable {
     /* Lifecycle */
     int (*start)(struct mtl_session_impl* s);
     int (*stop)(struct mtl_session_impl* s);
-    int (*shutdown)(struct mtl_session_impl* s);
     void (*destroy)(struct mtl_session_impl* s);
     
     /* Buffer operations */
@@ -98,8 +97,7 @@ typedef struct mtl_session_vtable {
 typedef enum mtl_session_state {
     MTL_SESSION_STATE_CREATED = 0,
     MTL_SESSION_STATE_STARTED,
-    MTL_SESSION_STATE_STOPPED,
-    MTL_SESSION_STATE_DRAINING,
+    MTL_SESSION_STATE_STOPPED,          /**< stop() called - buffer_get returns -EAGAIN */
     MTL_SESSION_STATE_ERROR,
 } mtl_session_state_t;
 
@@ -153,6 +151,9 @@ struct mtl_session_impl {
     /* State */
     mtl_session_state_t state;
     rte_spinlock_t state_lock;
+    
+    /* Set by stop(), checked by buffer_get/event_poll to return -EAGAIN */
+    volatile bool stopped;
     
     /* Configuration (copied from create) */
     char name[ST_MAX_NAME_LEN];
@@ -369,6 +370,38 @@ struct st_frame_trans* mtl_session_get_frame_trans(struct mtl_session_impl* s);
  * Release st_frame_trans back to pool (decrement refcnt).
  */
 void mtl_session_put_frame_trans(struct st_frame_trans* ft);
+
+/*************************************************************************
+ * Stop/Start Helpers
+ * 
+ * stop() sets stopped=true, buffer_get/event_poll return -EAGAIN
+ * start() clears stopped, blocking calls work again
+ * stop_ex(FORCE) additionally aborts pending operations immediately
+ *************************************************************************/
+
+/**
+ * Check if session is stopped.
+ * Call this at the start of any blocking operation.
+ */
+static inline bool mtl_session_check_stopped(struct mtl_session_impl* s) {
+    return s->stopped;
+}
+
+/**
+ * Set stopped flag. Called by mtl_session_stop().
+ */
+static inline void mtl_session_set_stopped(struct mtl_session_impl* s) {
+    s->stopped = true;
+    s->state = MTL_SESSION_STATE_STOPPED;
+}
+
+/**
+ * Clear stopped flag. Called by mtl_session_start().
+ */
+static inline void mtl_session_clear_stopped(struct mtl_session_impl* s) {
+    s->stopped = false;
+    s->state = MTL_SESSION_STATE_STARTED;
+}
 
 /*************************************************************************
  * Logging Helpers

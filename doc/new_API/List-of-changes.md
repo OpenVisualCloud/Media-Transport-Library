@@ -1,5 +1,14 @@
 # Unified Polymorphic Session API - Design Document
 
+## Overview
+
+This document describes the new unified session API design. For related documentation:
+- **[mtl_session_api_improved.h](mtl_session_api_improved.h)** - Public API header
+- **[mtl_session_internal.h](mtl_session_internal.h)** - Internal implementation structures
+- **[GRACEFUL_SHUTDOWN.md](GRACEFUL_SHUTDOWN.md)** - Thread-safe shutdown patterns (CRITICAL!)
+- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - Step-by-step implementation tasks
+- **[samples/](samples/)** - Usage examples
+
 ## Problem Statement
 
 Current MTL has separate APIs for each media type, causing code duplication:
@@ -105,13 +114,12 @@ mtl_session_buffer_post(session, my_data, size, my_ctx);
 ### 5. Explicit Session Lifecycle
 
 ```
-CREATED ──start()──► RUNNING ──stop()──► STOPPED
-                         │                  │
-                         └──shutdown()──────┴──► DRAINING ──► DESTROYED
+CREATED ──start()──► RUNNING ──stop()──► STOPPED ──destroy()──► DESTROYED
 ```
 
 - No auto-start on create (predictable behavior)
-- Explicit `shutdown()` for graceful drain
+- `stop()` signals stop, blocking calls return `-EAGAIN`
+- Application controls shutdown timing (see [GRACEFUL_SHUTDOWN.md](GRACEFUL_SHUTDOWN.md))
 
 ---
 
@@ -215,12 +223,30 @@ struct mtl_session_impl {
 
 ## Files in this Directory
 
+### API Design
 | File | Description |
 |------|-------------|
-| `List-of-changes.md` | This document |
-| `mtl_session_api_improved.h` | **Public API** - Unified session interface |
-| `mtl_session_internal.h` | **Internal** - VTable, impl structs for library |
-| `samples/` | Example usage code |
+| [List-of-changes.md](List-of-changes.md) | This document - API changes summary |
+| [mtl_session_api_improved.h](mtl_session_api_improved.h) | **Public API** - Copy to `include/mtl_session_api.h` |
+| [mtl_session_internal.h](mtl_session_internal.h) | **Internal** - Copy to `lib/src/mt_session.h` |
+| [GRACEFUL_SHUTDOWN.md](GRACEFUL_SHUTDOWN.md) | Shutdown design rationale |
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Step-by-step implementation tasks |
+
+### Sample Code
+All samples run for 100 frames then exit (self-terminating, no signal handlers).
+
+| Sample | Pattern |
+|--------|----------|
+| [sample-rx-lib-owned.c](samples/sample-rx-lib-owned.c) | Basic RX with library-owned buffers |
+| [sample-tx-lib-owned.c](samples/sample-tx-lib-owned.c) | Basic TX with library-owned buffers |
+| [sample-rx-app-owned.c](samples/sample-rx-app-owned.c) | RX zero-copy with user buffers |
+| [sample-tx-app-owned.c](samples/sample-tx-app-owned.c) | TX zero-copy with user buffers |
+| [sample-rx-slice-mode.c](samples/sample-rx-slice-mode.c) | RX slice mode (ultra-low latency) |
+| [sample-tx-slice-mode.c](samples/sample-tx-slice-mode.c) | TX slice mode (ultra-low latency) |
+| [sample-tx-st22-plugin.c](samples/sample-tx-st22-plugin.c) | TX with ST22 codec plugins |
+| [sample-signal-shutdown.c](samples/sample-signal-shutdown.c) | Signal handler shutdown pattern |
+
+See [samples/README.md](samples/README.md) for detailed usage patterns.
 
 ---
 
@@ -457,11 +483,22 @@ st20p_tx_free(h);
 // NEW: Unified operations, type-specific creation only
 mtl_session_t* s;
 mtl_video_session_create(mt, &config, &s);
+mtl_session_start(s);
+
 mtl_buffer_t* b;
-mtl_session_buffer_get(s, &b, timeout);
-mtl_session_buffer_put(s, b);
+while (frame_count < MAX_FRAMES) {
+    if (mtl_session_buffer_get(s, &b, 1000) == 0) {
+        // use b->data
+        mtl_session_buffer_put(s, b);
+        frame_count++;
+    }
+}
+
+mtl_session_stop(s);
 mtl_session_destroy(s);
 ```
+
+For signal handler shutdown pattern, see [sample-signal-shutdown.c](samples/sample-signal-shutdown.c).
 
 ---
 
@@ -506,9 +543,13 @@ The new unified API can fully wrap the video session functionality:
 
 ## Next Steps
 
-1. Review `mtl_session_api_improved.h` for complete API definition
-2. Review `mtl_session_internal.h` for implementation structure
-3. Review `samples/` for usage examples
-4. Implement video session wrapper as first type
-5. Add audio and ancillary session wrappers
-6. Create migration guide for existing applications
+1. Review [mtl_session_api_improved.h](mtl_session_api_improved.h) for complete public API
+2. Review [mtl_session_internal.h](mtl_session_internal.h) for implementation structure
+3. Review [GRACEFUL_SHUTDOWN.md](GRACEFUL_SHUTDOWN.md) for shutdown patterns
+4. Study samples in order:
+   - [sample-tx-lib-owned.c](samples/sample-tx-lib-owned.c) → basic TX
+   - [sample-rx-lib-owned.c](samples/sample-rx-lib-owned.c) → basic RX
+   - [sample-signal-shutdown.c](samples/sample-signal-shutdown.c) → production shutdown
+5. Follow [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for step-by-step tasks
+6. Implement video session wrapper as first type
+7. Add audio and ancillary session wrappers

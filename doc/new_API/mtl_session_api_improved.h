@@ -442,17 +442,44 @@ int mtl_ancillary_session_create(mtl_handle mt,
 int mtl_session_start(mtl_session_t* session);
 
 /**
- * Stop session (can restart later).
+ * Stop session.
+ * 
+ * After this call:
+ * - Session enters "stopped" state
+ * - mtl_session_buffer_get() returns -EAGAIN immediately (no blocking)
+ * - mtl_session_event_poll() returns -EAGAIN immediately (no blocking)
+ * - Application threads can detect -EAGAIN, check their stop flag, exit cleanly
+ * 
+ * Can be restarted with mtl_session_start() (clears stopped state).
+ * Thread-safe: can be called from any thread (signal handler, main thread, etc.)
+ * 
+ * Typical shutdown sequence:
+ *   app->stop = true;                  // Your app flag
+ *   mtl_session_stop(session);         // Make buffer_get() return -EAGAIN
+ *   pthread_join(app->worker, NULL);   // Wait for worker to exit  
+ *   mtl_session_destroy(session);      // Now safe to destroy
+ * 
+ * @param session Session handle
+ * @return 0 on success, negative errno on error.
  */
 int mtl_session_stop(mtl_session_t* session);
 
 /**
- * Shutdown session (drain buffers, prepare for destroy).
+ * Check if session is stopped.
+ * 
+ * @param session Session handle
+ * @return true if stop() was called (and start() not called after), false otherwise
  */
-int mtl_session_shutdown(mtl_session_t* session);
+bool mtl_session_is_stopped(mtl_session_t* session);
 
 /**
- * Destroy session and free resources.
+ * Destroy session and free all resources.
+ * 
+ * PRECONDITION: All application threads must have stopped using this session.
+ * Call mtl_session_stop() and join your threads first.
+ * 
+ * @param session Session handle (invalid after return)
+ * @return 0 on success, negative errno on error
  */
 int mtl_session_destroy(mtl_session_t* session);
 
