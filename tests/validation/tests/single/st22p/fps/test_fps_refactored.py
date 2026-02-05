@@ -18,7 +18,7 @@ from mtl_engine.rxtxapp import RxTxApp
     [
         "p23",
         "p24",
-        pytest.param("p25", marks=pytest.mark.nightly),
+        "p25",
         "p29",
         "p30",
         "p50",

@@ -23,13 +23,13 @@ class Application(ABC):
          - Dual-host: create TWO application objects (tx_app, rx_app) each with its own create_command();
            then call tx_app.execute_test(tx_host=..., rx_host=..., rx_app=rx_app).
       3. validate_results() now has a uniform no-argument signature and consumes internal state
-         (self.universal_params, self.config, self.last_output, and any produced files).
+         (self.params, self.config, self.last_output, and any produced files).
     """
 
     def __init__(self, app_path, config_file_path=None):
         self.app_path = app_path
         self.config_file_path = config_file_path
-        self.universal_params = UNIVERSAL_PARAMS.copy()
+        self.params = UNIVERSAL_PARAMS.copy()
         self._user_provided_params = set()
         self.command: str | None = None
         self.config: dict | None = None
@@ -37,8 +37,8 @@ class Application(ABC):
         self.last_return_code: int | None = None
 
     @abstractmethod
-    def get_framework_name(self) -> str:
-        """Return the framework name (e.g., 'RxTxApp', 'FFmpeg', 'GStreamer')."""
+    def get_app_name(self) -> str:
+        """Return the application name (e.g., 'RxTxApp', 'FFmpeg', 'GStreamer')."""
         pass
 
     @abstractmethod
@@ -51,7 +51,7 @@ class Application(ABC):
         """Populate self.command (+ self.config for frameworks that need it).
 
         Implementations MUST:
-        - call self.set_universal_params(**kwargs)
+        - call self.set_params(**kwargs)
         - set self.command (string)
         - optionally set self.config
         - write config file immediately if applicable
@@ -63,20 +63,20 @@ class Application(ABC):
     def validate_results(self) -> bool:  # type: ignore[override]
         """Framework-specific validation implemented by subclasses.
 
-        Subclasses should read: self.universal_params, self.config, self.last_output, etc.
+        Subclasses should read: self.params, self.config, self.last_output, etc.
         Must return True/False.
         """
         raise NotImplementedError
 
-    def set_universal_params(self, **kwargs):
-        """Set universal parameters and track which were provided by user."""
+    def set_params(self, **kwargs):
+        """Set parameters from user input and track which were provided."""
         self._user_provided_params = set(kwargs.keys())
 
         for param, value in kwargs.items():
-            if param in self.universal_params:
-                self.universal_params[param] = value
+            if param in self.params:
+                self.params[param] = value
             else:
-                raise ValueError(f"Unknown universal parameter: {param}")
+                raise ValueError(f"Unknown parameter: {param}")
 
     def get_executable_path(self) -> str:
         """Get the full path to the executable based on framework type."""
@@ -142,7 +142,7 @@ class Application(ABC):
 
         if not self.command:
             raise RuntimeError("create_command() must be called before execute_test()")
-        framework_name = self.get_framework_name()
+        framework_name = self.get_app_name()
 
         # Call framework-specific preparation hook
         if not is_dual:
@@ -165,7 +165,7 @@ class Application(ABC):
             try:
                 proc.wait(
                     timeout=(test_time or 0)
-                    + self.universal_params.get("process_timeout_buffer", 90)
+                    + self.params.get("process_timeout_buffer", 90)
                 )
             except Exception:
                 logger.warning(
@@ -187,10 +187,10 @@ class Application(ABC):
         first_cmd, first_host, first_label = (
             (tx_cmd, tx_host, f"{framework_name}-TX")
             if primary_first
-            else (rx_cmd, rx_host, f"{rx_app.get_framework_name()}-RX")
+            else (rx_cmd, rx_host, f"{rx_app.get_app_name()}-RX")
         )
         second_cmd, second_host, second_label = (
-            (rx_cmd, rx_host, f"{rx_app.get_framework_name()}-RX")
+            (rx_cmd, rx_host, f"{rx_app.get_app_name()}-RX")
             if primary_first
             else (tx_cmd, tx_host, f"{framework_name}-TX")
         )
@@ -200,9 +200,7 @@ class Application(ABC):
         logger.info(f"[dual] Starting second: {second_label} -> {second_cmd}")
         second_proc = self.start_process(second_cmd, build, test_time, second_host)
         # Wait processes
-        total_timeout = (test_time or 0) + self.universal_params.get(
-            "process_timeout_buffer", 90
-        )
+        total_timeout = (test_time or 0) + self.params.get("process_timeout_buffer", 90)
         for p, label in [(first_proc, first_label), (second_proc, second_label)]:
             try:
                 p.wait(timeout=total_timeout)
@@ -229,13 +227,13 @@ class Application(ABC):
         Args:
             command: Shell command to wrap
             test_time: Test duration in seconds
-            grace: Grace period to add (default from universal_params)
+            grace: Grace period to add (default from params)
 
         Returns:
             Command wrapped with timeout
         """
         if grace is None:
-            grace = self.universal_params.get("timeout_grace", 10)
+            grace = self.params.get("timeout_grace", 10)
 
         # Extract internal --test_time to prevent premature timeout termination
         internal_test_time = None
@@ -262,7 +260,7 @@ class Application(ABC):
     def extract_framerate(self, framerate_str, default: int = None) -> int:
         """Extract numeric framerate from various string or numeric forms (e.g. 'p25', '60')."""
         if default is None:
-            default = self.universal_params.get("default_framerate_numeric", 60)
+            default = self.params.get("default_framerate_numeric", 60)
         if isinstance(framerate_str, (int, float)):
             try:
                 return int(framerate_str)
@@ -284,8 +282,8 @@ class Application(ABC):
 
     def start_process(self, command: str, build: str, test_time: int, host):
         """Start a process on the specified host using mfd_connect."""
-        logger.info(f"Starting {self.get_framework_name()} process...")
-        buffer_val = self.universal_params.get("process_timeout_buffer", 90)
+        logger.info(f"Starting {self.get_app_name()} process...")
+        buffer_val = self.params.get("process_timeout_buffer", 90)
         timeout = (test_time or 0) + buffer_val
         return run(command, host=host, cwd=build, timeout=timeout)
 

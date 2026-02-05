@@ -23,6 +23,15 @@ UNIVERSAL_PARAMS = {
     "audio_channels": ["U02"],  # Audio channel configuration
     "audio_sampling": "96kHz",  # Audio sampling rate
     "audio_ptime": "1",  # Audio packet time
+    # Legacy video/audio/ancillary session parameters
+    "video_format": "",  # Video format for legacy video sessions
+    "pg_format": "",  # Pixel group format for legacy video sessions
+    "video_url": "",  # Video URL for legacy video sessions
+    "audio_url": "",  # Audio URL for legacy audio sessions
+    "ancillary_format": "closed_caption",  # Ancillary data format
+    "ancillary_url": "",  # Ancillary data URL
+    "ancillary_fps": "p59",  # Ancillary data frame rate
+    "tr_offset": "default",  # TR offset for legacy video sessions
     # ST41 (Fast Metadata) parameters
     "fastmetadata_data_item_type": 1234567,  # Data Item Type for ST41
     "fastmetadata_k_bit": 0,  # K-bit value for ST41
