@@ -9,11 +9,14 @@
 #include <string.h>
 #include "mtl_session_api_improved.h"
 
+#define MAX_FRAMES 100
+
 int main(void) {
     mtl_handle mt = NULL;  /* Assume created via mtl_init() */
     mtl_session_t* session = NULL;
     mtl_buffer_t* buffer = NULL;
     int err;
+    int frame_count = 0;
 
     /* Configure video TX session with library-owned buffers */
     mtl_video_config_t config = {
@@ -48,36 +51,37 @@ int main(void) {
         goto cleanup;
     }
 
-    /* Main loop: get buffer, fill, put */
-    while (1) {
-        /* Get empty buffer from library (blocks up to 1000ms) */
+    /* Transmit MAX_FRAMES frames then exit */
+    printf("Transmitting %d frames...\n", MAX_FRAMES);
+    while (frame_count < MAX_FRAMES) {
         err = mtl_session_buffer_get(session, &buffer, 1000);
         if (err == -ETIMEDOUT) {
-            continue;  /* No buffer available, try again */
+            continue;
         }
         if (err < 0) {
             printf("buffer_get error: %d\n", err);
             break;
         }
 
-        /* Fill buffer with video data */
-        /* For video, can use buffer->video.planes[] for planar formats */
-        printf("Got buffer: %p, size=%zu, planes[0]=%p\n", 
-               buffer->data, buffer->size, buffer->video.planes[0]);
-        
-        /* Example: fill with test pattern */
+        /* Fill buffer with test pattern */
         memset(buffer->data, 0x80, buffer->size);
 
-        /* Submit filled buffer for transmission */
         err = mtl_session_buffer_put(session, buffer);
         if (err < 0) {
             printf("buffer_put error: %d\n", err);
             break;
         }
+        
+        frame_count++;
+        if (frame_count % 10 == 0) {
+            printf("Sent %d frames\n", frame_count);
+        }
     }
 
+    printf("Transmitted %d frames.\n", frame_count);
+
 cleanup:
-    mtl_session_shutdown(session);
+    mtl_session_stop(session);
     mtl_session_destroy(session);
     return 0;
 }

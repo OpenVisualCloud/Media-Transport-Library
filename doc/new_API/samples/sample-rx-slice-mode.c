@@ -9,11 +9,17 @@
 #include "mtl_session_api_improved.h"
 
 #define HEIGHT 1080
+#define MAX_FRAMES 100
+
+/* Placeholder functions */
+static inline size_t get_linesize(void) { return 1920 * 2; }
+static inline void process_video_line(uint8_t* line, uint16_t line_num) { (void)line; (void)line_num; }
 
 int main(void) {
     mtl_handle mt = NULL;  /* Assume created via mtl_init() */
     mtl_session_t* session = NULL;
     int err;
+    int frame_count = 0;
     
     /* Configure video RX session with SLICE mode for ultra-low latency */
     mtl_video_config_t config = {
@@ -55,21 +61,21 @@ int main(void) {
     mtl_buffer_t* current_buf = NULL;
     uint16_t last_lines_processed = 0;
     mtl_event_t event;
+    
+    printf("Receiving %d frames (slice mode)...\n", MAX_FRAMES);
 
-    while (1) {
+    while (frame_count < MAX_FRAMES) {
         err = mtl_session_event_poll(session, &event, 1000);
         if (err == -ETIMEDOUT) continue;
         if (err < 0) break;
 
         switch (event.type) {
         case MTL_EVENT_BUFFER_READY:
-            /* New frame started - SLICE_READY events follow */
             current_buf = event.buffer.buf;
             last_lines_processed = 0;
             break;
 
         case MTL_EVENT_SLICE_READY:
-            /* More lines arrived - process immediately */
             for (uint16_t line = last_lines_processed; line < event.slice.lines_ready; line++) {
                 uint8_t* line_ptr = (uint8_t*)event.slice.buffer + line * get_linesize();
                 process_video_line(line_ptr, line);
@@ -78,10 +84,10 @@ int main(void) {
             break;
 
         case MTL_EVENT_BUFFER_DONE:
-            /* Frame complete - return buffer */
             if (current_buf) {
                 mtl_session_buffer_put(session, current_buf);
                 current_buf = NULL;
+                frame_count++;
             }
             break;
 
@@ -93,6 +99,8 @@ int main(void) {
             break;
         }
     }
+
+    printf("Received %d frames.\n", frame_count);
 
 cleanup:
     mtl_session_stop(session);

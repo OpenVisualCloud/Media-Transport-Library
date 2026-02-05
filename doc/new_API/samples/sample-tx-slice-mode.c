@@ -10,14 +10,19 @@
 #include "mtl_session_api_improved.h"
 
 #define HEIGHT 1080
+#define MAX_FRAMES 100
 
 struct app_context {
     uint16_t current_line;
 };
 
+/* Placeholder function */
+static inline void fill_video_line(uint8_t* line, uint16_t line_num) { (void)line; (void)line_num; }
+
 /* Callback: library queries how many lines are ready */
 static int query_lines_ready(void* priv, uint16_t frame_idx, uint16_t* lines_ready) {
     struct app_context* ctx = priv;
+    (void)frame_idx;
     *lines_ready = ctx->current_line;
     return 0;
 }
@@ -28,6 +33,7 @@ int main(void) {
     mtl_buffer_t* buffer = NULL;
     struct app_context ctx = {0};
     int err;
+    int frame_count = 0;
     
     /* Configure video TX session with SLICE mode for ultra-low latency */
     mtl_video_config_t config = {
@@ -67,8 +73,10 @@ int main(void) {
         goto cleanup;
     }
 
-    /* Main loop: fill buffer line-by-line, signal progress */
-    while (1) {
+    printf("Transmitting %d frames (slice mode)...\n", MAX_FRAMES);
+    
+    /* Transmit MAX_FRAMES frames then exit */
+    while (frame_count < MAX_FRAMES) {
         err = mtl_session_buffer_get(session, &buffer, 1000);
         if (err == -ETIMEDOUT) continue;
         if (err < 0) break;
@@ -86,7 +94,11 @@ int main(void) {
 
         err = mtl_session_buffer_put(session, buffer);
         if (err < 0) break;
+        
+        frame_count++;
     }
+
+    printf("Transmitted %d frames.\n", frame_count);
 
 cleanup:
     mtl_session_stop(session);

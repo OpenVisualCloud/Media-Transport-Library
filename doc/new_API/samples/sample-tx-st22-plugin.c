@@ -8,11 +8,17 @@
 #include <stdio.h>
 #include "mtl_session_api_improved.h"
 
+#define MAX_FRAMES 100
+
+/* Placeholder function */
+static inline void generate_video_frame(void* data, uint32_t w, uint32_t h) { (void)data; (void)w; (void)h; }
+
 int main(void) {
     mtl_handle mt = NULL;  /* Assume created via mtl_init() */
     mtl_session_t* session = NULL;
     mtl_buffer_t* buffer = NULL;
     int err;
+    int frame_count = 0;
 
     /*
      * Note: ST22 plugins must be registered BEFORE creating sessions.
@@ -65,8 +71,9 @@ int main(void) {
         goto cleanup;
     }
 
-    /* Main loop: same as uncompressed - plugin handles encoding */
-    while (1) {
+    /* Transmit MAX_FRAMES frames then exit */
+    printf("Transmitting %d ST22 compressed frames...\n", MAX_FRAMES);
+    while (frame_count < MAX_FRAMES) {
         err = mtl_session_buffer_get(session, &buffer, 1000);
         if (err == -ETIMEDOUT) continue;
         if (err < 0) break;
@@ -76,7 +83,11 @@ int main(void) {
 
         err = mtl_session_buffer_put(session, buffer);
         if (err < 0) break;
+        
+        frame_count++;
     }
+
+    printf("Transmitted %d frames.\n", frame_count);
 
 cleanup:
     mtl_session_stop(session);

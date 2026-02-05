@@ -1,5 +1,7 @@
 # Sequence Diagrams for Unified Session API
 
+Visual representation of the session API patterns. See [README.md](README.md) for code samples.
+
 ## Library-Owned RX Flow
 
 ```mermaid
@@ -18,7 +20,7 @@ sequenceDiagram
     App->>Session: mtl_session_start(session)
     Session->>Network: Start receiving
     
-    loop Receive and process
+    loop frame_count < MAX_FRAMES
         App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
         Session->>Network: Wait for frame
         Network-->>Session: Frame received
@@ -30,7 +32,7 @@ sequenceDiagram
         Session->>Network: Return buffer to receive queue
     end
     
-    App->>Session: mtl_session_shutdown(session)
+    App->>Session: mtl_session_stop(session)
     App->>Session: mtl_session_destroy(session)
 ```
 
@@ -51,7 +53,7 @@ sequenceDiagram
     
     App->>Session: mtl_session_start(session)
     
-    loop Fill and transmit
+    loop frame_count < MAX_FRAMES
         App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
         Session-->>App: Return empty buffer
         
@@ -63,7 +65,7 @@ sequenceDiagram
         Session->>Session: Mark buffer available
     end
     
-    App->>Session: mtl_session_shutdown(session)
+    App->>Session: mtl_session_stop(session)
     App->>Session: mtl_session_destroy(session)
 ```
 
@@ -93,7 +95,7 @@ sequenceDiagram
     
     App->>Session: mtl_session_start(session)
     
-    loop Poll and repost
+    loop frame_count < MAX_FRAMES
         App->>Session: mtl_session_event_poll(session, &event, timeout)
         Network-->>Session: Frame received
         Session-->>App: MTL_EVENT_BUFFER_READY + context
@@ -105,7 +107,7 @@ sequenceDiagram
     end
     
     App->>Session: mtl_session_mem_unregister(session, handle)
-    App->>Session: mtl_session_shutdown(session)
+    App->>Session: mtl_session_stop(session)
     App->>Session: mtl_session_destroy(session)
 ```
 
@@ -122,19 +124,21 @@ sequenceDiagram
     
     Note over Session: Setup: create session, register memory, start
     
-    loop Producer Thread
+    loop frames_sent < MAX_FRAMES
         Producer->>Producer: Wait for free buffer
         Note over Producer: Fill buffer with frame data
         Producer->>Session: mtl_session_buffer_post(session, data, size, ctx)
         Session->>Network: Queue for transmission
     end
     
-    loop Event Thread  
+    loop frames_completed < MAX_FRAMES
         EventHandler->>Session: mtl_session_event_poll(session, &event, timeout)
         Network-->>Session: Transmission complete
         Session-->>EventHandler: MTL_EVENT_BUFFER_DONE + context
         EventHandler->>EventHandler: Mark buffer as free
     end
+    
+    Note over Session: Cleanup: stop, unregister, destroy
 ```
 
 ## Polymorphic Session - Same API for All Media Types
@@ -256,7 +260,7 @@ sequenceDiagram
     
     App->>Session: mtl_session_start(session)
     
-    loop Encode and Transmit
+    loop frame_count < MAX_FRAMES
         App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
         Session-->>App: Return buffer for RAW video
         
@@ -267,4 +271,64 @@ sequenceDiagram
         Plugin-->>Session: Compressed codestream
         Session->>Network: Transmit ST22 packets
     end
+    
+    App->>Session: mtl_session_stop(session)
+    App->>Session: mtl_session_destroy(session)
+```
+
+## Signal Handler Shutdown Flow
+
+```mermaid
+sequenceDiagram
+    participant Signal as Signal Handler
+    participant Main as Main Thread
+    participant Worker as Worker Thread
+    participant Session as mtl_session_t
+    
+    Note over Signal,Session: Graceful Shutdown (sample-signal-shutdown.c)
+    
+    Main->>Session: mtl_video_session_create()
+    Main->>Session: mtl_session_start()
+    Main->>Worker: pthread_create(worker_thread)
+    
+    loop Worker running
+        Worker->>Session: mtl_session_buffer_get(timeout=1000)
+        Session-->>Worker: buffer or -ETIMEDOUT
+        Note over Worker: Process frame if received
+    end
+    
+    Note over Signal: User presses Ctrl+C
+    Signal->>Signal: g_running = 0
+    Signal->>Session: mtl_session_stop(session)
+    Note over Session: Set stopping flag
+    
+    Worker->>Session: mtl_session_buffer_get()
+    Session-->>Worker: -EAGAIN (session stopped)
+    Worker->>Worker: Exit loop cleanly
+    Worker-->>Main: Thread returns
+    
+    Main->>Main: pthread_join(worker)
+    Main->>Session: mtl_session_destroy(session)
+    Note over Main: Shutdown complete
+```
+
+## Session Lifecycle States
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED: mtl_video_session_create()
+    CREATED --> RUNNING: mtl_session_start()
+    RUNNING --> STOPPED: mtl_session_stop()
+    STOPPED --> [*]: mtl_session_destroy()
+    
+    note right of RUNNING
+        buffer_get/put work normally
+        event_poll returns events
+    end note
+    
+    note right of STOPPED
+        buffer_get returns -EAGAIN
+        event_poll returns -EAGAIN
+        Safe to destroy
+    end note
 ```
