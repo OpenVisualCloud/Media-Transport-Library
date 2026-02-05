@@ -132,6 +132,7 @@ list_vf() {
 }
 
 list() {
+	trap '' PIPE
 	printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" "ID" "PCI BDF" "Driver" "NUMA" "IOMMU" "IF Name"
 
 	id_counter=0
@@ -144,14 +145,14 @@ list() {
 
 		iommu_group=$(basename "$(readlink /sys/bus/pci/devices/"${pci_bdf}"/iommu_group)" 2>/dev/null || echo "N/A")
 
-		interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/*)
+		interface_name=$(basename /sys/bus/pci/devices/"${pci_bdf}"/net/* 2>/dev/null || echo "N/A")
 
 		if [[ $1 == "up" ]]; then
 			ip link show "$interface_name" 2>/dev/null | grep -q "state UP" || continue
 		fi
 
 		printf "%-4s\t%-12s\t%-12s\t%-4s\t%-6s\t%-10s\n" \
-			"$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name"
+			"$id_counter" "$pci_bdf" "$driver" "$numa_node" "$iommu_group" "$interface_name" 2>/dev/null || break
 
 		id_counter=$((id_counter + 1))
 	done

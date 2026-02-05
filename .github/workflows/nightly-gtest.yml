@@ -30,13 +30,6 @@ jobs:
         with:
           ref: '${{ github.ref }}'
       - uses: ./.github/actions/build
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        run: |
-          sudo pkill -9 -f "gtest.sh" || true
-          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
       - name: 'preparation: Start MtlManager at background'
         run: |
           sudo MtlManager &
