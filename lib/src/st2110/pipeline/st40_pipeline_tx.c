@@ -366,11 +366,11 @@ static int tx_st40p_stat(void* priv) {
                          st40p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
-  notice("TX_st40p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
-         ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
-         ctx->stat_drop_frame);
+  dbg("TX_st40p(%d), frame get try %d succ %d, put %d, drop %d\n", ctx->idx,
+      ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame,
+      ctx->stat_drop_frame);
 
   ctx->stat_get_frame_try = 0;
   ctx->stat_get_frame_succ = 0;
@@ -742,7 +742,7 @@ int st40p_tx_get_session_stats(st40p_tx_handle handle, struct st40_tx_user_stats
                          st40p_tx_frame_stat_name_short[i], status_counts[i]);
     }
   }
-  notice("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
+  dbg("TX_st40p(%d,%s), framebuffer queue: %s\n", ctx->idx, ctx->ops_name, status_str);
 
   return st40_tx_get_session_stats(ctx->transport, stats);
 }
