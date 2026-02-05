@@ -29,6 +29,8 @@ RXTXAPP_CMDLINE_PARAM_MAP = {
     "rx_mix_lcore": "--rx_mix_lcore",
     "runtime_session": "--runtime_session",
     "rx_timing_parser": "--rx_timing_parser",
+    "auto_stop": "--auto_stop",
+    "rx_max_file_size": "--rx_max_file_size",
     "pcapng_dump": "--pcapng_dump",
     "rx_video_file_frames": "--rx_video_file_frames",
     "framebuffer_count": "--rx_video_fb_cnt",

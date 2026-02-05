@@ -74,6 +74,8 @@ UNIVERSAL_PARAMS = {
     "rx_mix_lcore": False,  # Allow TX/RX video on same core
     "runtime_session": False,  # Start instance before creating sessions
     "rx_timing_parser": False,  # Enable timing check for video RX streams
+    "auto_stop": False,  # Auto stop after input file ends
+    "rx_max_file_size": 0,  # Maximum RX file size in bytes (0 = no limit)
     "pcapng_dump": None,  # Dump n packets to pcapng files
     "rx_video_file_frames": None,  # Dump received video frames to yuv file
     "promiscuous": False,  # Enable RX promiscuous mode
@@ -116,4 +118,5 @@ UNIVERSAL_PARAMS = {
     "process_timeout_buffer": 90,  # Buffer added to test_time for run() timeout
     "pattern_duration": 30,  # Duration for generated test patterns
     "default_framerate_numeric": 60,  # Fallback numeric framerate
+    "ptp_sync_time": 50,  # Seconds to wait for PTP synchronization
 }

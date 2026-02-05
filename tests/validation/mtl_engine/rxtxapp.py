@@ -443,6 +443,80 @@ def check_rx_converter_output(
     return False
 
 
+def check_codec_loaded(
+    output: list,
+    session_type: str,
+    fail_on_error: bool = False,
+) -> bool:
+    """Check if codec/plugin was loaded successfully for ST22P sessions.
+
+    For ST22P sessions, the encoder/decoder must be registered before the session
+    can work. This function checks the log output for registration messages.
+
+    Log patterns to look for:
+    - "st22_encoder_register(...), ... registered, device ..."
+    - "st22_decoder_register(...), ... registered, device ..."
+    - "st_plugin_register(...), ... registered, version ..."
+    - "encoder use block get mode" (indicates encoder is active)
+    - "decoder use block get mode" (indicates decoder is active)
+
+    Args:
+        output: List of output lines from RxTxApp
+        session_type: Session type (should be "st22p" for codec checks)
+        fail_on_error: Whether to call log_fail on validation failure
+
+    Returns:
+        True if codec was loaded, False otherwise
+    """
+    if session_type != "st22p":
+        # Codec check only applies to st22p
+        return True
+
+    logger.info("Checking if ST22P codec/encoder/decoder was loaded")
+
+    # Patterns indicating successful codec loading
+    codec_patterns = [
+        r"st22_encoder_register\(\d+\),.*registered",
+        r"st22_decoder_register\(\d+\),.*registered",
+        r"st_plugin_register\(\d+\),.*registered",
+        r"encoder use block get mode",
+        r"decoder use block get mode",
+    ]
+
+    found_encoder = False
+    found_decoder = False
+
+    for line in output:
+        for pattern in codec_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                logger.info(f"Found codec registration: {line.strip()}")
+                if "encoder" in line.lower():
+                    found_encoder = True
+                if "decoder" in line.lower():
+                    found_decoder = True
+
+    # Both encoder and decoder should be loaded for a proper st22p session
+    if found_encoder and found_decoder:
+        logger.info("ST22P codec check PASSED: encoder and decoder loaded")
+        return True
+
+    if found_encoder or found_decoder:
+        logger.warning(
+            f"ST22P codec partially loaded: encoder={found_encoder}, decoder={found_decoder}"
+        )
+        # Partial load may still work in some configurations
+        return True
+
+    # No codec found
+    msg = "ST22P codec check FAILED: no encoder/decoder registration found in logs"
+    if fail_on_error:
+        log_fail(msg)
+    else:
+        logger.warning(msg)
+
+    return False
+
+
 class RxTxApp(Application):
     """RxTxApp framework implementation (unified model)."""
 
@@ -452,15 +526,7 @@ class RxTxApp(Application):
     def get_executable_name(self) -> str:
         return APP_NAME_MAP["rxtxapp"]
 
-    def create_command(self, **kwargs):  # type: ignore[override]
-        self.set_params(**kwargs)
-        cmd, cfg = self._create_rxtxapp_command_and_config()
-        self.command = cmd
-        self.config = cfg
-        # Config will be written to remote host during execute_test
-        return self.command, self.config
-
-    def _create_rxtxapp_command_and_config(self) -> tuple:
+    def _create_command_and_config(self) -> tuple:
         """Generate RxTxApp command line and JSON configuration from universal parameters.
 
         Returns:
@@ -470,10 +536,10 @@ class RxTxApp(Application):
         config_file_path = self.config_file_path or "tests/config.json"
 
         # Build command line
-        # Note: sudo is required for DPDK-based RxTxApp operations (hugepages, NICs access).
-        # When using MFD (Media Forwarding Daemon), permissions are already handled appropriately.
+        # Note: sudo is NOT needed because the test framework already runs as root
+        # (see README.md: "MTL validation must run as root user").
+        # Subprocesses inherit root privileges from the parent pytest process.
         cmd_parts = [
-            "sudo",
             self.get_executable_path(),
             "--config_file",
             config_file_path,
@@ -1061,6 +1127,20 @@ class RxTxApp(Application):
                     host=None,
                     build=None,
                 )
+
+                # For st22p, also check that codec/encoder/decoder was loaded
+                if session_type == "st22p":
+                    codec_ok = check_codec_loaded(
+                        output=output_lines,
+                        session_type=session_type,
+                        fail_on_error=False,
+                    )
+                    if not codec_ok:
+                        logger.warning(
+                            "ST22P codec loading check failed - encoder/decoder may not be registered"
+                        )
+                        # Don't fail the test, just warn - codec may load differently in some setups
+                        # The RX output check is the primary validation
 
                 if not passed:
                     _fail(f"{session_type} validation failed (RX output check)")

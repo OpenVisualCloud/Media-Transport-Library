@@ -46,16 +46,31 @@ class Application(ABC):
         """Return the executable name for this framework."""
         pass
 
-    @abstractmethod
     def create_command(self, **kwargs):
-        """Populate self.command (+ self.config for frameworks that need it).
+        """Populate self.command (and optionally self.config) from user parameters.
 
-        Implementations MUST:
-        - call self.set_params(**kwargs)
-        - set self.command (string)
-        - optionally set self.config
-        - write config file immediately if applicable
-        They MAY return (self.command, self.config) for backward compatibility with existing tests.
+        This method handles common setup, then delegates to the framework-specific
+        _create_command_and_config() abstract method.
+
+        Args:
+            **kwargs: Universal parameters to set before building command
+
+        Returns:
+            Tuple of (command_string, config_dict_or_None) for backward compatibility
+        """
+        self.set_params(**kwargs)
+        self.command, self.config = self._create_command_and_config()
+        return self.command, self.config
+
+    @abstractmethod
+    def _create_command_and_config(self) -> tuple:
+        """Framework-specific command and config generation.
+
+        Subclasses must implement this to build their specific command line
+        and configuration from self.params.
+
+        Returns:
+            Tuple of (command_string, config_dict_or_None)
         """
         raise NotImplementedError
 
@@ -152,19 +167,35 @@ class Application(ABC):
             if rx_app:
                 rx_app.prepare_execution(build=build, host=rx_host)
 
+        # Adjust test_time for PTP synchronization
+        effective_test_time = test_time
+        if self.params.get("enable_ptp", False):
+            ptp_sync_time = self.params.get("ptp_sync_time", 50)
+            effective_test_time += ptp_sync_time
+            logger.info(
+                f"PTP enabled: added {ptp_sync_time}s for sync (total: {effective_test_time}s)"
+            )
+
         # Single-host execution
         if not is_dual:
-            cmd = self.add_timeout(self.command, test_time)
+            cmd = self.add_timeout(self.command, effective_test_time)
             logger.info(f"[single] Running {framework_name} command: {cmd}")
-            proc = self.start_process(cmd, build, test_time, host)
+            proc = self.start_process(cmd, build, effective_test_time, host)
             if netsniff and hasattr(self, "_start_netsniff_capture"):
                 try:
+                    # Wait for PTP sync before starting capture
+                    if self.params.get("enable_ptp", False):
+                        ptp_sync_time = self.params.get("ptp_sync_time", 50)
+                        logger.info(
+                            f"Waiting {ptp_sync_time}s for PTP sync before netsniff capture"
+                        )
+                        time.sleep(ptp_sync_time)
                     self._start_netsniff_capture(netsniff)
                 except Exception as e:
                     logger.warning(f"netsniff capture setup failed: {e}")
             try:
                 proc.wait(
-                    timeout=(test_time or 0)
+                    timeout=(effective_test_time or 0)
                     + self.params.get("process_timeout_buffer", 90)
                 )
             except Exception:
@@ -181,8 +212,8 @@ class Application(ABC):
             raise RuntimeError(
                 "rx_app has no prepared command (call create_command first)"
             )
-        tx_cmd = self.add_timeout(self.command, test_time)
-        rx_cmd = rx_app.add_timeout(rx_app.command, test_time)
+        tx_cmd = self.add_timeout(self.command, effective_test_time)
+        rx_cmd = rx_app.add_timeout(rx_app.command, effective_test_time)
         primary_first = tx_first
         first_cmd, first_host, first_label = (
             (tx_cmd, tx_host, f"{framework_name}-TX")
@@ -195,12 +226,18 @@ class Application(ABC):
             else (tx_cmd, tx_host, f"{framework_name}-TX")
         )
         logger.info(f"[dual] Starting first: {first_label} -> {first_cmd}")
-        first_proc = self.start_process(first_cmd, build, test_time, first_host)
+        first_proc = self.start_process(
+            first_cmd, build, effective_test_time, first_host
+        )
         time.sleep(sleep_interval)
         logger.info(f"[dual] Starting second: {second_label} -> {second_cmd}")
-        second_proc = self.start_process(second_cmd, build, test_time, second_host)
+        second_proc = self.start_process(
+            second_cmd, build, effective_test_time, second_host
+        )
         # Wait processes
-        total_timeout = (test_time or 0) + self.params.get("process_timeout_buffer", 90)
+        total_timeout = (effective_test_time or 0) + self.params.get(
+            "process_timeout_buffer", 90
+        )
         for p, label in [(first_proc, first_label), (second_proc, second_label)]:
             try:
                 p.wait(timeout=total_timeout)

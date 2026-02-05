@@ -6,6 +6,7 @@ from mtl_engine.media_files import yuv_files_422p10le
 from mtl_engine.rxtxapp import RxTxApp
 
 
+@pytest.mark.nightly
 @pytest.mark.parametrize(
     "media_file",
     [yuv_files_422p10le["Penguin_1080p"]],
