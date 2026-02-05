@@ -1,160 +1,270 @@
+# Sequence Diagrams for Unified Session API
+
+## Library-Owned RX Flow
+
 ```mermaid
 sequenceDiagram
     participant App as Application
-    participant Session as Media Library Session
-
+    participant Session as mtl_session_t
     participant Network as Network I/O
 
-    Note over App,Network: Library-Owned Receiver Flow (sample-rx-lib-owned.c)
+    Note over App,Network: Library-Owned Receiver (sample-rx-lib-owned.c)
     
-    App->>Session: media_lib_video_session_create(instance, &rx_config, &session)
-    Session->>Session: Allocate memory (for NUM_BUFFERS)
+    App->>Session: mtl_video_session_create(mt, &config, &session)
+    Session->>Session: Allocate frame buffers
     Session->>Network: Setup receiver
-    Session->>Network: Add buffers to receive queue
     Session-->>App: Return session handle
     
-    loop Receive and process loop
-        App->>Session: media_lib_buffer_get(session, &buffer, TIMEOUT_MS)
-        Session->>Network: Wait for data
-        Network-->>Session: Data received
-
-        Session-->>App: Return buffer pointer
+    App->>Session: mtl_session_start(session)
+    Session->>Network: Start receiving
+    
+    loop Receive and process
+        App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
+        Session->>Network: Wait for frame
+        Network-->>Session: Frame received
+        Session-->>App: Return mtl_buffer_t*
         
-        Note over App: Process buffer data
+        Note over App: Process buffer->data
         
-        App->>Session: media_lib_buffer_put(session, buffer)
-
-        Session->>Network: Add buffer to receive queue
-        Session-->>App: MEDIA_LIB_SUCCESS
-
+        App->>Session: mtl_session_buffer_put(session, buffer)
+        Session->>Network: Return buffer to receive queue
     end
-    App->>Session: media_lib_session_shutdown(session)
-
-    App->>Session: media_lib_session_destroy(session)
-    Session->>Session: Deallocate memory
-
+    
+    App->>Session: mtl_session_shutdown(session)
+    App->>Session: mtl_session_destroy(session)
 ```
+
+## Library-Owned TX Flow
 
 ```mermaid
 sequenceDiagram
     participant App as Application
-    participant Session as Media Library Session
+    participant Session as mtl_session_t
     participant Network as Network I/O
     
-    Note over App,Network: Library-Owned Transmitter Flow (sample-tx-lib-owned.c)
+    Note over App,Network: Library-Owned Transmitter (sample-tx-lib-owned.c)
     
-    App->>Session: media_lib_video_session_create(instance, &tx_config, &session)
-    Session->>Session: Allocate memory (for NUM_BUFFERS)
+    App->>Session: mtl_video_session_create(mt, &config, &session)
+    Session->>Session: Allocate frame buffers
     Session->>Network: Setup transmitter
     Session-->>App: Return session handle
     
+    App->>Session: mtl_session_start(session)
     
-    loop Acquire, fill, and transmit loop
-        App->>Session: media_lib_buffer_get(session, &buffer, TIMEOUT_MS)
-        Session->>Session: Wait for available buffer
-        Session-->>App: Return available buffer
+    loop Fill and transmit
+        App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
+        Session-->>App: Return empty buffer
         
-        Note over App: Fill buffer with media data
+        Note over App: Fill buffer->data with frame
         
-        App->>Session: media_lib_buffer_put(session, buffer)
-        Session->>Network: Start transmission
-        Session-->>App: MEDIA_LIB_SUCCESS
+        App->>Session: mtl_session_buffer_put(session, buffer)
+        Session->>Network: Transmit frame
         Network-->>Session: Transmission complete
-        Session->>Session: Mark buffer as available
-
+        Session->>Session: Mark buffer available
     end
-
-    App->>Session:media_lib_buffers_flush(session)
-    App->>Session: media_lib_session_shutdown(session)
-    App->>Session: media_lib_session_destroy(session)
-    Session->>Session: Deallocate memory
-
+    
+    App->>Session: mtl_session_shutdown(session)
+    App->>Session: mtl_session_destroy(session)
 ```
+
+## User-Owned RX Flow (Zero-Copy)
 
 ```mermaid
 sequenceDiagram
     participant App as Application
-    participant Session as Media Library Session
-    participant DMA as DMA Memory Manager
-    participant Events as Event Queue
+    participant Session as mtl_session_t
+    participant DMA as DMA Manager
     participant Network as Network I/O
     
-    Note over App,Events: App-Owned Receiver Flow (sample-rx-app-owned.c)
+    Note over App,Network: User-Owned Receiver (sample-rx-app-owned.c)
     
-    App->>Session: media_lib_video_session_create(instance, &rx_config, &session)
-    Session->>Network: Setup receiver
+    App->>Session: mtl_video_session_create(mt, &config, &session)
     Session-->>App: Return session handle
     
-    App->>App: Allocate memory (for NUM_BUFFERS)
-    App->>Session: media_lib_mem_register(session, memory, size, &dma_mem)
-    Session->>DMA: Register memory for DMA
-    DMA-->>Session: DMA handle
+    App->>App: aligned_alloc() for buffers
+    App->>Session: mtl_session_mem_register(session, memory, size, &handle)
+    Session->>DMA: Register for DMA access
     Session-->>App: Return DMA handle
     
-    loop Buffer setup loop
-        App->>App: Create app_buffer_t for each buffer segment
-        App->>Session: media_lib_buffer_post(session, data, size, app_buffer)
+    loop Post all buffers
+        App->>Session: mtl_session_buffer_post(session, buf->data, size, ctx)
         Session->>Network: Add buffer to receive queue
     end
     
-    loop Poll and process loop
-        App->>Session: media_lib_event_poll(session, &event, TIMEOUT_MS)
-        Session->>Events: Check for events
+    App->>Session: mtl_session_start(session)
+    
+    loop Poll and repost
+        App->>Session: mtl_session_event_poll(session, &event, timeout)
+        Network-->>Session: Frame received
+        Session-->>App: MTL_EVENT_BUFFER_READY + context
         
-        alt Data received
-            Network->>Session: Data received in posted buffer
-            Session->>Events: Add BUFFER_RECEIVED event
-            Events-->>Session: Return event
-            Session-->>App: Return event with app_buffer context
-            
-            Note over App: Process buffer data
-            
-            App->>Session: media_lib_buffer_post(session, buf->data, buf->size, buf)
-            Session->>Network: Repost buffer for next receive
-        end
+        Note over App: Process data at ctx->data
+        
+        App->>Session: mtl_session_buffer_post(session, ctx->data, size, ctx)
+        Session->>Network: Repost buffer
     end
     
-    Note over App: Cleanup (not shown in sample)
-    App->>Session: media_lib_mem_unregister(session, dma_mem)
-    App->>Session: media_lib_session_shutdown(session)
-    App->>Session: media_lib_session_destroy(session)
-
+    App->>Session: mtl_session_mem_unregister(session, handle)
+    App->>Session: mtl_session_shutdown(session)
+    App->>Session: mtl_session_destroy(session)
 ```
+
+## User-Owned TX Flow (Zero-Copy)
 
 ```mermaid
 sequenceDiagram
-    participant ProducerThread as Producer Thread
-    participant PollerThread as Poller Thread
-    participant BufferQueue as Buffer Queue
-    participant Session as Media Library Session
-    participant DMA as DMA Memory Manager
-    participant Events as Event Queue
+    participant Producer as Producer Thread
+    participant EventHandler as Event Thread
+    participant Session as mtl_session_t
     participant Network as Network I/O
     
-    Note over ProducerThread,Events: App-Owned Transmitter Flow (sample-tx-app-owned.c)
+    Note over Producer,Network: User-Owned Transmitter (sample-tx-app-owned.c)
     
-    Note over ProducerThread,PollerThread: Main thread setup (not shown)
+    Note over Session: Setup: create session, register memory, start
     
-    Note over Session,DMA: Memory registration occurs in main thread
-    
-    loop Producer Thread Loop
-        ProducerThread->>BufferQueue: dequeue() - Get free buffer
-        BufferQueue-->>ProducerThread: Return app_buffer_t
-        Note over ProducerThread: Fill buffer with data
-        ProducerThread->>Session: media_lib_buffer_post(session, buf->data, buf->size, buf)
-        Session->>Network: Queue buffer for transmission
+    loop Producer Thread
+        Producer->>Producer: Wait for free buffer
+        Note over Producer: Fill buffer with frame data
+        Producer->>Session: mtl_session_buffer_post(session, data, size, ctx)
+        Session->>Network: Queue for transmission
     end
     
-    loop Poller Thread Loop
-        PollerThread->>Session: media_lib_event_poll(session, &event, TIMEOUT_MS)
-        Session->>Events: Check for events
-        alt Transmission complete
-            Events-->>Session: Return BUFFER_TRANSMITTED event
-            Session-->>PollerThread: Return event with app_buffer context
-            PollerThread->>BufferQueue: enqueue(buffer) - Return to free queue
-        end
+    loop Event Thread  
+        EventHandler->>Session: mtl_session_event_poll(session, &event, timeout)
+        Network-->>Session: Transmission complete
+        Session-->>EventHandler: MTL_EVENT_BUFFER_DONE + context
+        EventHandler->>EventHandler: Mark buffer as free
     end
-    
-    Note over ProducerThread,PollerThread: Cleanup (not reached in sample)
+```
 
+## Polymorphic Session - Same API for All Media Types
+
+```mermaid
+flowchart TB
+    subgraph Creation ["Type-Specific Creation"]
+        VC[mtl_video_session_create]
+        AC[mtl_audio_session_create]
+        NC[mtl_ancillary_session_create]
+    end
+    
+    subgraph Session ["Unified mtl_session_t"]
+        S[session handle]
+    end
+    
+    subgraph Operations ["Polymorphic Operations<br/>(Same for ALL media types)"]
+        START[mtl_session_start]
+        GET[mtl_session_buffer_get]
+        PUT[mtl_session_buffer_put]
+        POST[mtl_session_buffer_post]
+        POLL[mtl_session_event_poll]
+        STOP[mtl_session_stop]
+        DESTROY[mtl_session_destroy]
+    end
+    
+    VC --> S
+    AC --> S
+    NC --> S
+    
+    S --> START
+    S --> GET
+    S --> PUT
+    S --> POST
+    S --> POLL
+    S --> STOP
+    S --> DESTROY
+```
+
+## Slice-Level TX Flow (Ultra-Low Latency)
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Session as mtl_session_t
+    participant Network as Network I/O
+    
+    Note over App,Network: Slice Mode TX (sample-tx-slice-mode.c)
+    
+    App->>Session: mtl_video_session_create(config with mode=SLICE)
+    Session-->>App: Return session handle
+    
+    App->>Session: mtl_session_start(session)
+    
+    loop Frame Loop
+        App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
+        Session-->>App: Return empty buffer
+        
+        loop Line by Line
+            Note over App: Fill line N with video data
+            App->>Session: mtl_session_slice_ready(session, buffer, lines=N+1)
+            Session->>Network: Transmit line N immediately
+            Note over Network: Wire latency ~1 line time!
+        end
+        
+        App->>Session: mtl_session_buffer_put(session, buffer)
+        Note over Session: Frame complete
+    end
+```
+
+## Slice-Level RX Flow (Ultra-Low Latency)
+
+```mermaid
+sequenceDiagram
+    participant Network as Network I/O
+    participant Session as mtl_session_t
+    participant App as Application
+    
+    Note over Network,App: Slice Mode RX (sample-rx-slice-mode.c)
+    
+    App->>Session: mtl_video_session_create(config with mode=SLICE)
+    App->>Session: mtl_session_start(session)
+    
+    loop Frame Reception
+        App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
+        
+        loop As Packets Arrive
+            Network-->>Session: RTP packets (lines 0-N)
+            Session-->>App: MTL_EVENT_SLICE_READY (lines_ready=N+1)
+            Note over App: Process lines immediately
+            Note over App: Don't wait for full frame!
+        end
+        
+        Network-->>Session: Final packets
+        Session-->>App: MTL_EVENT_BUFFER_READY (frame complete)
+        App->>Session: mtl_session_buffer_put(session, buffer)
+    end
+```
+
+## ST22 Plugin Flow
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Session as mtl_session_t
+    participant Plugin as JPEGXS Plugin
+    participant Network as Network I/O
+    
+    Note over App,Network: ST22 TX (sample-tx-st22-plugin.c)
+    
+    Note over Plugin: Plugin registered at mtl_init time
+    
+    App->>Session: mtl_video_session_create(config with compressed=true)
+    Session->>Plugin: Create encoder context
+    Session-->>App: Return session handle
+    
+    App->>Session: mtl_session_get_plugin_info(&info)
+    Session-->>App: Plugin name, version, device type
+    
+    App->>Session: mtl_session_start(session)
+    
+    loop Encode and Transmit
+        App->>Session: mtl_session_buffer_get(session, &buffer, timeout)
+        Session-->>App: Return buffer for RAW video
+        
+        Note over App: Fill with uncompressed frame
+        
+        App->>Session: mtl_session_buffer_put(session, buffer)
+        Session->>Plugin: Encode frame (JPEGXS)
+        Plugin-->>Session: Compressed codestream
+        Session->>Network: Transmit ST22 packets
+    end
 ```

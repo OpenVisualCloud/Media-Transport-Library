@@ -1,51 +1,86 @@
-#include <stdio.h>
-#include "media-lib-api.h"
+/**
+ * Sample: RX with Library-Owned Buffers
+ * 
+ * Simplest RX pattern - library manages buffer allocation.
+ * Use mtl_session_buffer_get() to receive data, process it, put buffer back.
+ */
 
-#define TIMEOUT_MS 1000
+#include <stdio.h>
+#include "mtl_session_api_improved.h"
 
 int main(void) {
-    // Assume instance is created by the library initialization routine.
-    mtl_handle* instance = /* ... */ NULL;
-    media_lib_video_session_config_t rx_config = {0};
-    media_lib_session_t* session = NULL;
-    media_lib_buffer_t* buffer = NULL;
+    mtl_handle mt = NULL;  /* Assume created via mtl_init() */
+    mtl_session_t* session = NULL;
+    mtl_buffer_t* buffer = NULL;
     int err;
 
-    /* Configure a receiver session in library-owned mode */
-    rx_config.base.type = MEDIA_LIB_SESSION_RECEIVER;
-    rx_config.base.ownership = MEDIA_LIB_BUFFER_LIBRARY_OWNED;
-    rx_config.base.buffer_size = 1024;
-    rx_config.base.num_buffers = 4;
-    rx_config.base.address = "192.168.1.102";
-    rx_config.base.port = 1236;
-    rx_config.base.timeout_ms = TIMEOUT_MS;
-    rx_config.width = 640;
-    rx_config.height = 480;
-    rx_config.framerate = 30;
-    rx_config.format = /* e.g., V_FMT_YUV420P */ 0;
+    /* Configure video RX session with library-owned buffers */
+    mtl_video_config_t config = {
+        .base = {
+            .direction = MTL_SESSION_RX,
+            .ownership = MTL_BUFFER_LIBRARY_OWNED,
+            .num_buffers = 4,
+            .name = "video_rx_sample",
+        },
+        .rx_port = {
+            .ip_addr = {239, 168, 1, 100},  /* Multicast group */
+            .port = {20000},
+            .payload_type = 112,
+        },
+        .width = 1920,
+        .height = 1080,
+        .fps = ST_FPS_P59_94,
+        .frame_fmt = ST_FRAME_FMT_YUV422PLANAR10LE,
+        .transport_fmt = ST20_FMT_YUV_422_10BIT,
+    };
 
-    err = media_lib_video_session_create(instance, &rx_config, &session);
-    if (err != MEDIA_LIB_SUCCESS) {
-        printf("Failed to create receiver session\n");
-        return -1;
+    err = mtl_video_session_create(mt, &config, &session);
+    if (err < 0) {
+        printf("Failed to create session: %d\n", err);
+        return err;
     }
 
-    /* Loop to receive and process buffers */
-    while (1) {
-        err = media_lib_buffer_get(session, &buffer, TIMEOUT_MS);
-        if (err == MEDIA_LIB_SUCCESS) {
-            printf("Received lib-owned buffer (size: %zu)\n", buffer->size);
-            /* Process the received data here... */
+    err = mtl_session_start(session);
+    if (err < 0) {
+        printf("Failed to start session: %d\n", err);
+        goto cleanup;
+    }
 
-            /* Return the buffer back to the library */
-            err = media_lib_buffer_put(session, buffer);
-            if (err != MEDIA_LIB_SUCCESS) {
-                printf("Failed to release buffer\n");
-            }
+    /* Main loop: get received buffer, process, return */
+    while (1) {
+        /* Get buffer with received frame (blocks up to 1000ms) */
+        err = mtl_session_buffer_get(session, &buffer, 1000);
+        if (err == -ETIMEDOUT) {
+            continue;  /* No frame received yet, keep waiting */
+        }
+        if (err < 0) {
+            printf("buffer_get error: %d\n", err);
+            break;
+        }
+
+        /* Process received video frame */
+        printf("Received frame: %p, size=%zu, timestamp=%lu\n",
+               buffer->data, buffer->data_size, buffer->timestamp);
+        
+        /* Check for incomplete frame (packet loss) */
+        if (buffer->flags & MTL_BUF_FLAG_INCOMPLETE) {
+            printf("Warning: incomplete frame\n");
+        }
+
+        /* Access video-specific fields */
+        printf("  Resolution: %ux%u\n", 
+               buffer->video.width, buffer->video.height);
+
+        /* Return buffer to library for reuse */
+        err = mtl_session_buffer_put(session, buffer);
+        if (err < 0) {
+            printf("buffer_put error: %d\n", err);
+            break;
         }
     }
 
-    media_lib_session_shutdown(session);
-    media_lib_session_destroy(session);
+cleanup:
+    mtl_session_shutdown(session);
+    mtl_session_destroy(session);
     return 0;
 }
