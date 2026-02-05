@@ -90,17 +90,7 @@ jobs:
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - name: 'preparation: Kill MtlManager and pytest routines'
-        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
-        run: |
-          sudo pkill -9 -f "gtest.sh" || true
-          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-          sudo killall -SIGINT phc2sys || true
-          sudo killall -SIGINT ptp4l || true
-          sudo killall -SIGINT netsniff-ng || true
+      - uses: ./.github/actions/cleanup
       - name: Export workflow tag for PCAP naming
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         shell: bash
