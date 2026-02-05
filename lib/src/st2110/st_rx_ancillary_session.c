@@ -146,25 +146,6 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
       info("%s(%d,%d), detected %s stream (F=0x%x)\n", __func__, s->idx, s_port,
            pkt_interlaced ? "interlaced" : "progressive", f_bits);
     }
-  } else {
-    /* Enforce interlace expectation vs header F bits */
-    if (ops->interlaced) {
-      /* Expect interlaced: drop progressive/unspecified (0b00) */
-      if (!pkt_interlaced) {
-        ST40_FUZZ_LOG("%s(%d,%d), drop progressive F=0 when interlaced expected\n",
-                      __func__, s->idx, s_port);
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-        return -EINVAL;
-      }
-    } else {
-      /* Expect progressive: drop interlaced flags (0b10 or 0b11) */
-      if (pkt_interlaced) {
-        ST40_FUZZ_LOG("%s(%d,%d), drop interlaced F=0x%x when progressive expected\n",
-                      __func__, s->idx, s_port, f_bits);
-        ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_wrong_interlace_dropped);
-        return -EINVAL;
-      }
-    }
   }
 
   /* Count field polarity when interlaced frames are accepted */
