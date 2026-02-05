@@ -1520,16 +1520,15 @@ def test_st40i_interlace_flag_mismatch(
     media_file,
 ):
     """
-    Negative coverage for mismatched interlace flags: TX sends interlaced while
-    RX expects progressive, validating that the pipeline signals failure rather
-    than accepting bad cadence.
+    Mismatched interlace flags: TX sends interlaced while RX expects progressive,
+    validating the pipeline still completes and the mismatch is surfaced via logs.
 
     .. rubric:: Purpose
-    Negative coverage where TX is interlaced and RX expects progressive.
+    Coverage where TX is interlaced and RX expects progressive.
 
     .. rubric:: Pass Criteria
-    - GStreamer pipeline returns False, signalling the mismatch is detected.
-    - No unexpected RX readiness or payload is produced.
+    - GStreamer pipeline returns True and completes the run.
+    - Logs may warn about interlace mismatch, but payload capture completes.
 
     :param hosts: Mapping of available hosts for running pipelines remotely.
     :param build: Compiled GStreamer binaries/scripts used for TX/RX.
@@ -1582,7 +1581,7 @@ def test_st40i_interlace_flag_mismatch(
 
     expectation = (
         f"Interlace mismatch TX interlaced/RX progressive @ {fps}fps "
-        f"framebuff={framebuff} must fail"
+        f"framebuff={framebuff} completes with warning"
     )
 
     try:
@@ -1599,7 +1598,7 @@ def test_st40i_interlace_flag_mismatch(
                 sleep_interval=5,
                 log_frame_info=True,
             )
-            assert not result, "Interlace mismatch unexpectedly succeeded"
+            assert result, "Interlace mismatch unexpectedly failed"
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)

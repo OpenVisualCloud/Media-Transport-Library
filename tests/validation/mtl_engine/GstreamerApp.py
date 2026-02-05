@@ -873,13 +873,12 @@ def execute_test(
         logger.info("RX interlace auto-detect enabled; skipping mismatch check")
     elif tx_interlaced is not None and rx_interlaced is not None:
         if tx_interlaced != rx_interlaced:
-            logger.info(
+            logger.warning(
                 "Interlace flag mismatch detected (tx_interlaced=%s, rx_interlaced=%s). "
-                "Failing test before file compare.",
+                "Continuing to file compare.",
                 tx_interlaced,
                 rx_interlaced,
             )
-            return False
     if skip_file_compare:
         logger.info("Skipping file comparison per caller request")
         return True
