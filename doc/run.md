@@ -11,7 +11,7 @@ The DPDK based PMD requires VFIO (IOMMU) and huge pages to run, but it also supp
 
 ## 2. Kernel Mode NIC Driver Setup
 
-For Intel® E810 Series Ethernet Adapter, refer to [Intel® E810 Series Ethernet Adapter driver guide](e810.md). For other NICs, you may need to follow the steps on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html).
+For Intel® E810 and E830 Series Ethernet Adapter, refer to [Intel® E800 Series Ethernet Adapters driver guide](e800_series_drivers.md). For other NICs, you may need to follow the steps on the [DPDK site](http://doc.dpdk.org/guides/nics/overview.html).
 
 ## 3. DPDK PMD Setup
 
@@ -61,14 +61,14 @@ sudo udevadm trigger
 
 Note: It is important to repeat this operation again after rebooting the system. The steps mentioned should be followed again to ensure that the desired configuration is maintained after a reboot.
 
-For the Intel® E810 Series Ethernet Adapter, which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to [Create Intel E810 VFs and bind to DPDK PMD](#321-create-intel-e810-vfs-and-bind-to-dpdk-pmd) to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
+For the Intel® E800 Series Ethernet Adapters (E810 or E830), which supports Virtual Functions (VFs) based on Single Root I/O Virtualization (SR-IOV), please refer to [Create Intel® E800 series VFs and Bind to DPDK PMD](#321-create-intel-e800-series-vfs-and-bind-to-dpdk-pmd) to learn how to create VFs and bind them to the DPDK Poll Mode Driver (PMD).
 
 For other Network Interface Cards (NICs), please verify if your NIC is supported by DPDK by referring to the following link: <https://doc.dpdk.org/guides/nics/>. If it is, follow the guide provided there for further instructions.
 
 If your NIC is not supported by DPDK's native Poll Mode Driver (PMD), MTL provides an alternative in the form of kernel socket-based transport support. This enables an MTL application to send and receive UDP packets via the Kernel.
 Please refer to [kernel TX config](../tests/tools/RxTxApp/script/kernel_socket_json/tx.json) and [kernel RX config](../tests/tools/RxTxApp/script/kernel_socket_json/rx.json) for how to config the kernel transport in JSON config. However, it's important to note that this is an experimental feature intended solely for trial usage. Consequently, its performance and pacing accuracy may be limited.
 
-#### 3.2.1. Create Intel® E810 VFs and Bind to DPDK PMD
+#### 3.2.1. Create Intel® E800 series VFs and Bind to DPDK PMD
 
 Get Device to Bus info mapping:
 
@@ -123,7 +123,7 @@ sudo dmesg
 
 #### 3.2.2. Bind PF to DPDK PMD
 
-If your Network Interface Card (NIC) is not from the Intel® E810 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
+If your Network Interface Card (NIC) is not from the Intel® E800 Series, but is supported by DPDK, you have the option to directly bind the Physical Function (PF) to the DPDK Poll Mode Driver (PMD) for Bus Device Function (BDF) 0000:32:00.0 using the command provided below.
 
 ```bash
 cd $mtl_source_code
