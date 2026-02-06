@@ -2,6 +2,21 @@
 # All parameter mappings, format conversions, and app configuration for RxTxApp, FFmpeg, and GStreamer
 
 # ============================================================================
+# Hardware Device Configuration
+# ============================================================================
+
+# DSA (Data Streaming Accelerator) configuration has moved to:
+# - topology_config.yaml: per-host DSA device/address configuration
+# - mtl_engine/dsa.py: DSA detection, validation, and NUMA alignment
+#
+# DSA can be configured in topology_config.yaml per host:
+#   dsa_device: "8086:0b25"     # Auto-discover by device ID
+#   dsa_address: "0000:6a:01.0" # Explicit PCI address
+#
+# See mtl_engine/dsa.py for the API:
+#   from mtl_engine.dsa import setup_host_dsa, get_dsa_for_nic
+
+# ============================================================================
 # RxTxApp Configuration
 # ============================================================================
 

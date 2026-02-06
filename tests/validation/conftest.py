@@ -2,6 +2,7 @@
 # Copyright 2024-2025 Intel Corporation
 # Media Communications Mesh
 
+import copy
 import datetime
 import logging
 import os
@@ -39,9 +40,85 @@ from mtl_engine.stash import (
     remove_result_media,
 )
 from pytest_mfd_logging.amber_log_formatter import AmberLogFormatter
+from pytest_mfd_config.models.topology import TopologyModel
 
 logger = logging.getLogger(__name__)
 phase_report_key = pytest.StashKey[Dict[str, pytest.CollectReport]]()
+
+# Store extra host config fields that aren't in the TopologyModel schema
+# Key: host name, Value: dict of extra fields (e.g., dsa_device, dsa_address)
+_host_extra_config: Dict[str, Dict[str, Any]] = {}
+
+
+# Known extra fields that we allow in host config but TopologyModel doesn't support
+HOST_EXTRA_FIELDS = ["dsa_device", "dsa_address", "build_path"]
+
+
+def _extract_extra_fields(config: dict) -> dict:
+    """
+    Extract extra fields from topology config that aren't supported by TopologyModel.
+    
+    This allows us to add custom fields like dsa_device to host configs without
+    breaking the pydantic validation.
+    
+    Returns a cleaned config dict suitable for TopologyModel.
+    """
+    global _host_extra_config
+    _host_extra_config.clear()
+    
+    cleaned = copy.deepcopy(config)
+    
+    # List of top-level fields to strip (not validated by TopologyModel)
+    TOP_LEVEL_EXTRA_FIELDS = ["host_mtl_paths"]
+    
+    # Remove top-level extra fields that TopologyModel doesn't understand
+    for field in TOP_LEVEL_EXTRA_FIELDS:
+        if field in cleaned:
+            # Store in special key for retrieval
+            _host_extra_config[f"__toplevel__{field}"] = cleaned.pop(field)
+            logger.debug(f"Extracted top-level config: {field}")
+    
+    # Extract extra fields from hosts
+    for host_cfg in cleaned.get("hosts", []):
+        host_name = host_cfg.get("name")
+        if host_name:
+            extras = {}
+            for field in HOST_EXTRA_FIELDS:
+                if field in host_cfg:
+                    extras[field] = host_cfg.pop(field)
+            if extras:
+                _host_extra_config[host_name] = extras
+                logger.debug(f"Extracted extra config for {host_name}: {extras}")
+    
+    return cleaned
+
+
+def get_host_extra_config(host_name: str) -> Dict[str, Any]:
+    """Get extra configuration fields for a host (e.g., dsa_device)."""
+    return _host_extra_config.get(host_name, {})
+
+
+def get_toplevel_extra_config(field_name: str) -> Any:
+    """Get top-level extra config field (e.g., host_mtl_paths)."""
+    return _host_extra_config.get(f"__toplevel__{field_name}")
+
+
+def get_host_mtl_paths() -> Dict[str, str]:
+    """Get the host_mtl_paths config dictionary."""
+    return get_toplevel_extra_config("host_mtl_paths") or {}
+
+
+@pytest.fixture(scope="session")
+def topology(topology_config: dict) -> TopologyModel:
+    """
+    Create topology model from config file data.
+    
+    This overrides the default pytest_mfd_config topology fixture to allow
+    extra fields like dsa_device, dsa_address in host configurations.
+    """
+    logger.debug("Creating Topology model with extra field support.")
+    cleaned_config = _extract_extra_fields(topology_config)
+    return TopologyModel(**cleaned_config)
 
 
 def _select_sniff_interface(host, capture_cfg: dict):
@@ -280,9 +357,16 @@ def dma_port_list(request):
 
 
 @pytest.fixture(scope="session")
-def nic_port_list(hosts: dict, mtl_path) -> None:
+def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
+    # Try to get host_mtl_paths from test_config first, then from our extracted config
+    host_mtl_paths = test_config.get("host_mtl_paths", {})
+    if not host_mtl_paths:
+        host_mtl_paths = get_host_mtl_paths()
+    
     for host in hosts.values():
-        nicctl = Nicctl(mtl_path, host)
+        # Use per-host MTL path if configured, otherwise fall back to default
+        host_path = host_mtl_paths.get(host.name, mtl_path)
+        nicctl = Nicctl(host_path, host)
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
@@ -292,7 +376,10 @@ def nic_port_list(hosts: dict, mtl_path) -> None:
 
 @pytest.fixture(scope="function")
 def setup_interfaces(hosts, test_config, mtl_path):
-    interface_setup = InterfaceSetup(hosts, mtl_path)
+    host_mtl_paths = test_config.get("host_mtl_paths", {})
+    if not host_mtl_paths:
+        host_mtl_paths = get_host_mtl_paths()
+    interface_setup = InterfaceSetup(hosts, mtl_path, host_mtl_paths)
     yield interface_setup
     interface_setup.cleanup()
 

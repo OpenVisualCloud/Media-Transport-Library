@@ -546,6 +546,9 @@ class RxTxApp(Application):
         ]
 
         # Add command-line parameters from RXTXAPP_CMDLINE_PARAM_MAP
+        # Parameters with default 0 that should be skipped when not explicitly set
+        skip_if_zero = {"rx_max_file_size"}
+
         for universal_param, rxtx_param in RXTXAPP_CMDLINE_PARAM_MAP.items():
             # Skip test_time unless explicitly provided
             if universal_param == "test_time" and not self.was_user_provided(
@@ -553,6 +556,9 @@ class RxTxApp(Application):
             ):
                 continue
             value = self.params.get(universal_param)
+            # Skip parameters with value 0 that mean "no limit" or "disabled"
+            if universal_param in skip_if_zero and value == 0:
+                continue
             if value is not None and value is not False:
                 if isinstance(value, bool):
                     cmd_parts.append(rxtx_param)
@@ -597,6 +603,11 @@ class RxTxApp(Application):
 
         # Fill interface names & addressing using legacy helper
         add_interfaces(config, nic_port_list, test_mode, direction=direction)
+
+        # Remove unused interfaces (empty name/ip causes MTL to fail with "invalid ip 0.0.0.0")
+        config["interfaces"] = [
+            iface for iface in config["interfaces"] if iface.get("name")
+        ]
 
         # Fix session interface indices when using single interface
         # Template has TX on interface[0] and RX on interface[1], but with single interface both should use [0]
