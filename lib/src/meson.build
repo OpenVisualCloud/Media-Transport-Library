@@ -20,6 +20,9 @@ sources = files(
   'mt_instance.c',
   'mt_log.c',
   'mt_pcap.c',
+  'mt_session.c',
+  'mt_session_buffer.c',
+  'mt_session_event.c',
 )
 
 if is_windows

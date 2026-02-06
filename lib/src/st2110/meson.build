@@ -21,6 +21,8 @@ sources += files(
   'st_convert.c',
   'st_fmt.c',
   'st_rx_timing_parser.c',
+  'mt_session_video_tx.c',
+  'mt_session_video_rx.c',
 )
 
 subdir('pipeline')
