@@ -85,11 +85,13 @@ class Nicctl:
 
 
 class InterfaceSetup:
-    def __init__(self, hosts, mtl_path):
+    def __init__(self, hosts, mtl_path, host_mtl_paths=None):
         self.hosts = hosts
         self.mtl_path = mtl_path
+        self.host_mtl_paths = host_mtl_paths or {}
         self.nicctl_objs = {
-            host.name: Nicctl(mtl_path, host) for host in hosts.values()
+            host.name: Nicctl(self.host_mtl_paths.get(host.name, mtl_path), host) 
+            for host in hosts.values()
         }
         self.customs = []
         self.cleanups = []
