@@ -79,8 +79,8 @@ typedef enum {
 
 /** Buffer ownership model */
 typedef enum {
-  MTL_BUFFER_USER_OWNED = 0,    /**< App provides buffers (zero-copy) */
-  MTL_BUFFER_LIBRARY_OWNED = 1, /**< Library manages buffers */
+  MTL_BUFFER_LIBRARY_OWNED = 0, /**< Library manages buffers (default) */
+  MTL_BUFFER_USER_OWNED = 1,    /**< App provides buffers (zero-copy) */
 } mtl_buffer_ownership_t;
 
 /** Video processing mode */
@@ -121,6 +121,13 @@ typedef enum {
 #define MTL_SESSION_FLAG_DMA_OFFLOAD (1 << 8)      /**< DMA copy offload */
 #define MTL_SESSION_FLAG_HDR_SPLIT (1 << 9)        /**< Header split mode */
 #define MTL_SESSION_FLAG_BLOCK_GET (1 << 10)       /**< Blocking buffer get mode */
+#define MTL_SESSION_FLAG_USER_P_MAC (1 << 11)      /**< TX: User-provided primary MAC */
+#define MTL_SESSION_FLAG_USER_R_MAC (1 << 12)      /**< TX: User-provided redundant MAC */
+#define MTL_SESSION_FLAG_EXACT_USER_PACING (1 << 13) /**< TX: Exact user pacing */
+#define MTL_SESSION_FLAG_RTP_TIMESTAMP_EPOCH (1 << 14) /**< TX: RTP timestamp epoch mode */
+#define MTL_SESSION_FLAG_DISABLE_BULK (1 << 15)    /**< TX: Disable bulk enqueue */
+#define MTL_SESSION_FLAG_STATIC_PAD_P (1 << 16)    /**< TX: Static padding for primary */
+#define MTL_SESSION_FLAG_USE_MULTI_THREADS (1 << 17) /**< RX: Multi-thread processing */
 
 /*************************************************************************
  * Opaque Handles
@@ -159,6 +166,11 @@ typedef struct mtl_buffer {
   mtl_frame_status_t status; /**< Frame completeness status */
   void* priv;                /**< Library private - DO NOT TOUCH */
   void* user_data;           /**< Application context (opaque from ext_frame) */
+
+  /** User metadata (TX: set before put, RX: read after get) */
+  void* user_meta;           /**< User metadata pointer */
+  size_t user_meta_size;     /**< User metadata size in bytes */
+  enum st10_timestamp_fmt tfmt; /**< Timestamp format (TAI, MEDIA_CLK, etc.) */
 
   /* Type-specific extended fields (optional to use) */
   union {
@@ -372,6 +384,24 @@ typedef struct mtl_video_config {
   /*************************************************************************
    * Advanced Options
    *************************************************************************/
+
+  /**
+   * TX only: User-provided destination MAC addresses.
+   * Used when MTL_SESSION_FLAG_USER_P_MAC / MTL_SESSION_FLAG_USER_R_MAC is set.
+   */
+  uint8_t tx_dst_mac[MTL_SESSION_PORT_MAX][MTL_MAC_ADDR_LEN];
+
+  /** TX only: start VRX value for pacing (0 = library default) */
+  uint32_t start_vrx;
+
+  /** TX only: pad interval for pacing (0 = library default) */
+  uint32_t pad_interval;
+
+  /** TX only: RTP timestamp delta in microseconds (0 = auto) */
+  int32_t rtp_timestamp_delta_us;
+
+  /** RX only: burst size for packet receive (0 = default) */
+  uint32_t rx_burst_size;
 
   /**
    * RX only: Enable timing parser analysis.
@@ -616,6 +646,46 @@ typedef struct mtl_session_stats {
 
 int mtl_session_stats_get(mtl_session_t* session, mtl_session_stats_t* stats);
 int mtl_session_stats_reset(mtl_session_t* session);
+
+/**
+ * Get the frame (buffer) size for the session in bytes.
+ * For TX, this is the transport frame size. For RX with conversion,
+ * this is the converted output frame size.
+ *
+ * @param session Session handle
+ * @return Frame size in bytes, or 0 on error
+ */
+size_t mtl_session_get_frame_size(mtl_session_t* session);
+
+/**
+ * Get detailed per-port IO statistics for the session.
+ * Wraps the underlying st20_tx/rx_get_session_stats().
+ * The stats struct is type-specific (pass appropriate struct).
+ *
+ * @param session Session handle
+ * @param stats Output buffer (cast to st20_tx_user_stats or st20_rx_user_stats)
+ * @param stats_size Size of the stats buffer (for validation)
+ * @return 0 on success, negative errno on error
+ */
+int mtl_session_io_stats_get(mtl_session_t* session, void* stats, size_t stats_size);
+
+/**
+ * Reset per-port IO statistics.
+ * @return 0 on success, negative errno on error
+ */
+int mtl_session_io_stats_reset(mtl_session_t* session);
+
+/**
+ * Trigger pcap dump for an RX session (debug tool).
+ *
+ * @param session RX session handle
+ * @param max_dump_packets Maximum number of packets to dump
+ * @param sync If true, block until dump is complete
+ * @param meta Optional output metadata (file paths, dumped counts). NULL if not needed.
+ * @return 0 on success, negative errno on error
+ */
+int mtl_session_pcap_dump(mtl_session_t* session, uint32_t max_dump_packets,
+                          bool sync, struct st_pcap_dump_meta* meta);
 
 /*************************************************************************
  * Online Session Updates

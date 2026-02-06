@@ -432,6 +432,63 @@ int mtl_session_stats_reset(mtl_session_t* session) {
   return 0;
 }
 
+size_t mtl_session_get_frame_size(mtl_session_t* session) {
+  struct mtl_session_impl* s = MTL_SESSION_IMPL(session);
+
+  if (!s || !MTL_SESSION_VALID(s)) {
+    return 0;
+  }
+
+  if (!s->vt || !s->vt->get_frame_size) {
+    return 0;
+  }
+
+  return s->vt->get_frame_size(s);
+}
+
+int mtl_session_io_stats_get(mtl_session_t* session, void* stats, size_t stats_size) {
+  struct mtl_session_impl* s = MTL_SESSION_IMPL(session);
+
+  if (!s || !MTL_SESSION_VALID(s) || !stats || !stats_size) {
+    return -EINVAL;
+  }
+
+  if (!s->vt || !s->vt->io_stats_get) {
+    return -ENOTSUP;
+  }
+
+  return s->vt->io_stats_get(s, stats, stats_size);
+}
+
+int mtl_session_io_stats_reset(mtl_session_t* session) {
+  struct mtl_session_impl* s = MTL_SESSION_IMPL(session);
+
+  if (!s || !MTL_SESSION_VALID(s)) {
+    return -EINVAL;
+  }
+
+  if (!s->vt || !s->vt->io_stats_reset) {
+    return -ENOTSUP;
+  }
+
+  return s->vt->io_stats_reset(s);
+}
+
+int mtl_session_pcap_dump(mtl_session_t* session, uint32_t max_dump_packets,
+                          bool sync, struct st_pcap_dump_meta* meta) {
+  struct mtl_session_impl* s = MTL_SESSION_IMPL(session);
+
+  if (!s || !MTL_SESSION_VALID(s)) {
+    return -EINVAL;
+  }
+
+  if (!s->vt || !s->vt->pcap_dump) {
+    return -ENOTSUP;
+  }
+
+  return s->vt->pcap_dump(s, max_dump_packets, sync, meta);
+}
+
 /*************************************************************************
  * Online Updates
  *************************************************************************/
