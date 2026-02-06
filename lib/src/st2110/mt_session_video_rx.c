@@ -13,6 +13,8 @@
 #include "../mt_log.h"
 #include "../mt_mem.h"
 #include "../mt_session.h"
+#include "st_convert.h"
+#include "st_fmt.h"
 
 /*************************************************************************
  * Callback Context
@@ -21,9 +23,29 @@
 struct video_rx_ctx {
   struct mtl_session_impl* session;
   st20_rx_handle handle; /* low-level RX handle */
-  size_t frame_size;     /* cached frame size */
+  size_t frame_size;     /* transport framebuffer size */
   /* Ring to queue received frames for buffer_get() */
   struct rte_ring* ready_ring;
+
+  /* Format conversion */
+  bool derive;                         /* true if no conversion needed */
+  enum st_frame_fmt frame_fmt;         /* app pixel format (output) */
+  enum st20_fmt transport_fmt;         /* wire format */
+  struct st_frame_converter converter; /* cached converter */
+  size_t dst_frame_size;               /* app-format buffer size per frame */
+  uint32_t width;
+  uint32_t height;
+  bool interlaced;
+
+  /**
+   * Per-framebuffer destination buffers in app pixel format (frame_fmt).
+   * Only allocated when !derive (conversion needed).
+   * On buffer_get, we convert transport framebuffer → dst_bufs[i].
+   * The app reads from dst_bufs[i].
+   */
+  void** dst_bufs;
+  uint16_t dst_bufs_cnt;
+
   /* User ext_frame callback (if any) */
   int (*user_query_ext_frame)(void* priv, struct st_ext_frame* ext_frame,
                               struct mtl_buffer* frame_meta);
@@ -42,6 +64,23 @@ static int video_rx_notify_frame_ready(void* priv, void* frame,
                                        struct st20_rx_frame_meta* meta) {
   struct video_rx_ctx* ctx = priv;
   struct mtl_session_impl* s = ctx->session;
+
+  /*
+   * Save metadata into the frame_trans so buffer_get() can read it later.
+   * The 'meta' pointer comes from a per-slot struct that gets reused,
+   * so we must copy it now.
+   */
+  if (meta) {
+    struct st_rx_video_session_impl* rx_impl = s->inner.video_rx;
+    if (rx_impl) {
+      for (uint16_t i = 0; i < rx_impl->st20_frames_cnt; i++) {
+        if (rx_impl->st20_frames[i].addr == frame) {
+          rx_impl->st20_frames[i].rv_meta = *meta;
+          break;
+        }
+      }
+    }
+  }
 
   /* Enqueue frame pointer to ready ring */
   if (ctx->ready_ring) {
@@ -183,6 +222,17 @@ static void video_rx_destroy(struct mtl_session_impl* s) {
       rte_ring_free(ctx->ready_ring);
       ctx->ready_ring = NULL;
     }
+    /* Free conversion destination buffers */
+    if (ctx->dst_bufs) {
+      for (uint16_t i = 0; i < ctx->dst_bufs_cnt; i++) {
+        if (ctx->dst_bufs[i]) {
+          mt_rte_free(ctx->dst_bufs[i]);
+          ctx->dst_bufs[i] = NULL;
+        }
+      }
+      mt_rte_free(ctx->dst_bufs);
+      ctx->dst_bufs = NULL;
+    }
     mt_rte_free(ctx);
   }
 }
@@ -231,17 +281,16 @@ static int video_rx_buffer_get(struct mtl_session_impl* s, mtl_buffer_t** buf,
 
       mtl_buffer_t* pub = &b->pub;
       memset(pub, 0, sizeof(*pub));
-      pub->data = ft->addr;
-      pub->iova = ft->iova;
-      pub->size = ctx->frame_size;
       pub->priv = b;
 
       /* Fill from RX metadata */
       struct st20_rx_frame_meta* meta = &ft->rv_meta;
-      pub->data_size = meta->frame_recv_size > 0 ? meta->frame_recv_size : ctx->frame_size;
-      pub->timestamp = meta->tfmt == ST10_TIMESTAMP_FMT_TAI ? meta->timestamp : 0;
       pub->rtp_timestamp = meta->rtp_timestamp;
       pub->flags = 0;
+
+      /* Timestamp: pass through raw value and format */
+      pub->tfmt = meta->tfmt;
+      pub->timestamp = meta->timestamp;
 
       if (meta->status == ST_FRAME_STATUS_COMPLETE ||
           meta->status == ST_FRAME_STATUS_RECONSTRUCTED) {
@@ -251,14 +300,72 @@ static int video_rx_buffer_get(struct mtl_session_impl* s, mtl_buffer_t** buf,
         pub->flags |= MTL_BUF_FLAG_INCOMPLETE;
       }
 
+      /* Format conversion: convert transport format → app format */
+      if (!ctx->derive && ctx->dst_bufs && frame_idx < ctx->dst_bufs_cnt &&
+          ctx->dst_bufs[frame_idx]) {
+        /* Build source st_frame (transport/wire format) */
+        struct st_frame src_frame;
+        memset(&src_frame, 0, sizeof(src_frame));
+        src_frame.fmt = st_frame_fmt_from_transport(ctx->transport_fmt);
+        src_frame.width = ctx->width;
+        src_frame.height = ctx->height;
+        src_frame.interlaced = ctx->interlaced;
+        src_frame.buffer_size = ctx->frame_size;
+        src_frame.data_size = ctx->frame_size;
+        st_frame_init_plane_single_src(&src_frame, ft->addr, ft->iova);
+
+        /* Build destination st_frame (app pixel format) */
+        struct st_frame dst_frame;
+        memset(&dst_frame, 0, sizeof(dst_frame));
+        dst_frame.fmt = ctx->frame_fmt;
+        dst_frame.width = ctx->width;
+        dst_frame.height = ctx->height;
+        dst_frame.interlaced = ctx->interlaced;
+        dst_frame.buffer_size = ctx->dst_frame_size;
+        dst_frame.data_size = ctx->dst_frame_size;
+        st_frame_init_plane_single_src(&dst_frame, ctx->dst_bufs[frame_idx], 0);
+
+        /* Do the conversion */
+        int ret = ctx->converter.convert_func(&src_frame, &dst_frame);
+        if (ret < 0) {
+          err("%s, conversion failed %d, src %s -> dst %s\n", __func__, ret,
+              st_frame_fmt_name(src_frame.fmt), st_frame_fmt_name(dst_frame.fmt));
+          /* Return the transport frame on failure */
+          st20_rx_put_framebuff(ctx->handle, ft->addr);
+          b->frame_trans = NULL;
+          return ret;
+        }
+
+        /* Give app the converted buffer */
+        pub->data = ctx->dst_bufs[frame_idx];
+        pub->iova = 0;
+        pub->size = ctx->dst_frame_size;
+        pub->data_size = ctx->dst_frame_size;
+        pub->video.fmt = ctx->frame_fmt;
+      } else {
+        /* Derive mode: give app the transport framebuffer directly */
+        pub->data = ft->addr;
+        pub->iova = ft->iova;
+        pub->size = ctx->frame_size;
+        pub->data_size = meta->frame_recv_size > 0 ? meta->frame_recv_size : ctx->frame_size;
+        pub->video.fmt = st_frame_fmt_from_transport(ctx->transport_fmt);
+      }
+
       /* Video-specific fields */
       pub->video.width = meta->width;
       pub->video.height = meta->height;
-      pub->video.fmt = meta->fmt;
       pub->video.pkts_total = meta->pkts_total;
       pub->video.pkts_recv[0] = meta->pkts_recv[0];
       if (MTL_SESSION_PORT_MAX > 1)
         pub->video.pkts_recv[1] = meta->pkts_recv[1];
+      pub->video.interlaced = ctx->interlaced;
+      pub->video.second_field = meta->second_field;
+
+      /* User metadata pass-through */
+      if (ft->user_meta && ft->user_meta_data_size > 0) {
+        pub->user_meta = ft->user_meta;
+        pub->user_meta_size = ft->user_meta_data_size;
+      }
 
       /* Update stats */
       rte_spinlock_lock(&s->stats_lock);
@@ -338,6 +445,34 @@ static int video_rx_update_source(struct mtl_session_impl* s,
   return -EINVAL;
 }
 
+static size_t video_rx_get_frame_size(struct mtl_session_impl* s) {
+  struct video_rx_ctx* ctx = s->inner.video_rx->ops.priv;
+  if (!ctx) return 0;
+  /* Return the app-visible frame size (converted format if conversion, else transport) */
+  return ctx->derive ? ctx->frame_size : ctx->dst_frame_size;
+}
+
+static int video_rx_io_stats_get(struct mtl_session_impl* s, void* stats,
+                                 size_t stats_size) {
+  struct video_rx_ctx* ctx = s->inner.video_rx->ops.priv;
+  if (!ctx || !ctx->handle) return -EINVAL;
+  if (stats_size < sizeof(struct st20_rx_user_stats)) return -EINVAL;
+  return st20_rx_get_session_stats(ctx->handle, (struct st20_rx_user_stats*)stats);
+}
+
+static int video_rx_io_stats_reset(struct mtl_session_impl* s) {
+  struct video_rx_ctx* ctx = s->inner.video_rx->ops.priv;
+  if (!ctx || !ctx->handle) return -EINVAL;
+  return st20_rx_reset_session_stats(ctx->handle);
+}
+
+static int video_rx_pcap_dump(struct mtl_session_impl* s, uint32_t max_pkts,
+                              bool sync, struct st_pcap_dump_meta* meta) {
+  struct video_rx_ctx* ctx = s->inner.video_rx->ops.priv;
+  if (!ctx || !ctx->handle) return -EINVAL;
+  return st20_rx_pcapng_dump(ctx->handle, max_pkts, sync, meta);
+}
+
 static int video_rx_slice_query(struct mtl_session_impl* s, mtl_buffer_t* buf,
                                 uint16_t* lines) {
   (void)s;
@@ -415,6 +550,10 @@ const mtl_session_vtable_t mtl_video_rx_vtable = {
     .get_event_fd = NULL,
     .stats_get = video_rx_stats_get,
     .stats_reset = video_rx_stats_reset,
+    .get_frame_size = video_rx_get_frame_size,
+    .io_stats_get = video_rx_io_stats_get,
+    .io_stats_reset = video_rx_io_stats_reset,
+    .pcap_dump = video_rx_pcap_dump,
     .update_destination = NULL, /* RX only */
     .update_source = video_rx_update_source,
     .slice_ready = NULL, /* RX doesn't send slices */
@@ -441,6 +580,46 @@ int mtl_video_rx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
     return -ENOMEM;
   }
   ctx->session = s;
+  ctx->width = config->width;
+  ctx->height = config->height;
+  ctx->interlaced = config->interlaced;
+  ctx->frame_fmt = config->frame_fmt;
+  ctx->transport_fmt = config->transport_fmt;
+
+  /* Determine if format conversion is needed */
+  ctx->derive = st_frame_fmt_equal_transport(config->frame_fmt, config->transport_fmt);
+  s->video.frame_fmt = config->frame_fmt;
+  s->video.derive = ctx->derive;
+
+  /* If conversion needed, look up the converter */
+  if (!ctx->derive) {
+    enum st_frame_fmt transport_frame_fmt = st_frame_fmt_from_transport(config->transport_fmt);
+    if (transport_frame_fmt == ST_FRAME_FMT_MAX) {
+      err("%s(%s), unsupported transport_fmt %d\n", __func__, config->base.name,
+          config->transport_fmt);
+      mt_rte_free(ctx);
+      return -EINVAL;
+    }
+    /* RX converts: transport format → app format */
+    int ret = st_frame_get_converter(transport_frame_fmt, config->frame_fmt, &ctx->converter);
+    if (ret < 0) {
+      err("%s(%s), no converter from %s to %s\n", __func__, config->base.name,
+          st_frame_fmt_name(transport_frame_fmt), st_frame_fmt_name(config->frame_fmt));
+      mt_rte_free(ctx);
+      return ret;
+    }
+    ctx->dst_frame_size =
+        st_frame_size(config->frame_fmt, config->width, config->height, config->interlaced);
+    if (!ctx->dst_frame_size) {
+      err("%s(%s), failed to get dst frame size for fmt %s\n", __func__, config->base.name,
+          st_frame_fmt_name(config->frame_fmt));
+      mt_rte_free(ctx);
+      return -EINVAL;
+    }
+    info("%s(%s), conversion enabled: %s -> %s, dst_size %zu\n", __func__,
+         config->base.name, st_frame_fmt_name(transport_frame_fmt),
+         st_frame_fmt_name(config->frame_fmt), ctx->dst_frame_size);
+  }
 
   /* Create ready ring for received frames */
   snprintf(ring_name, sizeof(ring_name), "mtl_rx_%p", s);
@@ -530,9 +709,15 @@ int mtl_video_rx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
   if (config->base.flags & MTL_SESSION_FLAG_FORCE_NUMA) {
     ops.socket_id = config->base.socket_id;
   }
+  if (config->base.flags & MTL_SESSION_FLAG_USE_MULTI_THREADS) {
+    ops.flags |= ST20_RX_FLAG_USE_MULTI_THREADS;
+  }
   if (config->enable_timing_parser) {
     ops.flags |= ST20_RX_FLAG_TIMING_PARSER_STAT;
   }
+
+  /* Advanced RX options */
+  if (config->rx_burst_size) ops.rx_burst_size = config->rx_burst_size;
 
   /* Create the low-level RX session */
   handle = st20_rx_create(impl, &ops);
@@ -552,8 +737,44 @@ int mtl_video_rx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
   s->inner.video_rx = handle_impl->impl;
   s->idx = s->inner.video_rx->idx;
 
-  info("%s(%s), created RX video session, frame_size %zu, fb_cnt %u\n", __func__,
-       s->name, ctx->frame_size, ops.framebuff_cnt);
+  /* Allocate conversion destination buffers if needed */
+  if (!ctx->derive) {
+    uint16_t fb_cnt = s->inner.video_rx->st20_frames_cnt;
+    ctx->dst_bufs = mt_rte_zmalloc_socket(sizeof(void*) * fb_cnt, s->socket_id);
+    if (!ctx->dst_bufs) {
+      err("%s(%s), failed to alloc dst_bufs array\n", __func__, s->name);
+      st20_rx_free(handle);
+      ctx->handle = NULL;
+      s->inner.video_rx = NULL;
+      rte_ring_free(ctx->ready_ring);
+      mt_rte_free(ctx);
+      return -ENOMEM;
+    }
+    ctx->dst_bufs_cnt = fb_cnt;
+    for (uint16_t i = 0; i < fb_cnt; i++) {
+      ctx->dst_bufs[i] = mt_rte_zmalloc_socket(ctx->dst_frame_size, s->socket_id);
+      if (!ctx->dst_bufs[i]) {
+        err("%s(%s), failed to alloc dst_buf[%u], size %zu\n", __func__, s->name,
+            i, ctx->dst_frame_size);
+        for (uint16_t j = 0; j < i; j++) {
+          mt_rte_free(ctx->dst_bufs[j]);
+        }
+        mt_rte_free(ctx->dst_bufs);
+        ctx->dst_bufs = NULL;
+        st20_rx_free(handle);
+        ctx->handle = NULL;
+        s->inner.video_rx = NULL;
+        rte_ring_free(ctx->ready_ring);
+        mt_rte_free(ctx);
+        return -ENOMEM;
+      }
+    }
+    info("%s(%s), allocated %u conversion dst buffers, %zu bytes each\n", __func__,
+         s->name, fb_cnt, ctx->dst_frame_size);
+  }
+
+  info("%s(%s), created RX video session, frame_size %zu, fb_cnt %u, derive %d\n",
+       __func__, s->name, ctx->frame_size, ops.framebuff_cnt, ctx->derive);
 
   return 0;
 }

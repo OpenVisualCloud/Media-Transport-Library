@@ -5,7 +5,7 @@
 #include "rx_st20p_app.h"
 
 static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
-                                       struct st_frame* frame) {
+                                       mtl_buffer_t* buf) {
   struct st_display* d = s->display;
   int idx = s->idx;
 
@@ -18,7 +18,7 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
            __func__, idx, s->rx_file_bytes_written, max_size);
       s->rx_file_size_limit_reached = true;
     } else {
-      if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
+      if (!fwrite(buf->data, 1, s->st20p_frame_size, s->st20p_destination_file)) {
         err("%s(%d), failed to write frame to file %s\n", __func__, idx,
             s->st20p_destination_url);
       } else {
@@ -29,27 +29,27 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
 
   if (s->num_port > 1) {
     dbg("%s(%d): pkts_total %u, pkts per port P %u R %u\n", __func__, idx,
-        frame->pkts_total, frame->pkts_recv[MTL_SESSION_PORT_P],
-        frame->pkts_recv[MTL_SESSION_PORT_R]);
-    if (frame->pkts_recv[MTL_SESSION_PORT_P] < (frame->pkts_total / 2))
+        buf->video.pkts_total, buf->video.pkts_recv[MTL_SESSION_PORT_P],
+        buf->video.pkts_recv[MTL_SESSION_PORT_R]);
+    if (buf->video.pkts_recv[MTL_SESSION_PORT_P] < (buf->video.pkts_total / 2))
       warn("%s(%d): P port only receive %u pkts while total pkts is %u\n", __func__, idx,
-           frame->pkts_recv[MTL_SESSION_PORT_P], frame->pkts_total);
-    if (frame->pkts_recv[MTL_SESSION_PORT_R] < (frame->pkts_total / 2))
+           buf->video.pkts_recv[MTL_SESSION_PORT_P], buf->video.pkts_total);
+    if (buf->video.pkts_recv[MTL_SESSION_PORT_R] < (buf->video.pkts_total / 2))
       warn("%s(%d): R port only receive %u pkts while total pkts is %u\n", __func__, idx,
-           frame->pkts_recv[MTL_SESSION_PORT_R], frame->pkts_total);
+           buf->video.pkts_recv[MTL_SESSION_PORT_R], buf->video.pkts_total);
   }
 
-  if (frame->interlaced) {
-    dbg("%s(%d), %s field\n", __func__, s->idx, frame->second_field ? "second" : "first");
+  if (buf->video.interlaced) {
+    dbg("%s(%d), %s field\n", __func__, s->idx,
+        buf->video.second_field ? "second" : "first");
   }
 
   if (d && d->front_frame) {
     if (st_pthread_mutex_trylock(&d->display_frame_mutex) == 0) {
-      if (frame->fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
-        st20_rfc4175_422be10_to_422le8(frame->addr[0], d->front_frame, s->width,
-                                       s->height);
-      } else if (frame->fmt == ST_FRAME_FMT_UYVY) {
-        mtl_memcpy(d->front_frame, frame->addr[0], d->front_frame_size);
+      if (buf->video.fmt == ST_FRAME_FMT_YUV422RFC4175PG2BE10) {
+        st20_rfc4175_422be10_to_422le8(buf->data, d->front_frame, s->width, s->height);
+      } else if (buf->video.fmt == ST_FRAME_FMT_UYVY) {
+        mtl_memcpy(d->front_frame, buf->data, d->front_frame_size);
       } else {
         st_pthread_mutex_unlock(&d->display_frame_mutex);
         return;
@@ -64,15 +64,15 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
 
 static void* app_rx_st20p_frame_thread(void* arg) {
   struct st_app_rx_st20p_session* s = arg;
-  struct st_frame* frame;
+  mtl_buffer_t* buf;
   uint8_t shas[SHA256_DIGEST_LENGTH];
   int idx = s->idx;
 
   info("%s(%d), start\n", __func__, s->idx);
   while (!s->st20p_app_thread_stop) {
-    frame = st20p_rx_get_frame(s->handle);
-    if (!frame) { /* no ready frame */
-      warn("%s(%d), get frame time out\n", __func__, s->idx);
+    int ret = mtl_session_buffer_get(s->session, &buf, -1); /* blocking */
+    if (ret < 0) { /* no ready buffer or stopped */
+      warn("%s(%d), get buffer time out\n", __func__, s->idx);
       /* track consecutive timeouts for auto_stop */
       if (s->ctx && s->ctx->auto_stop && s->rx_started) {
         s->rx_timeout_cnt++;
@@ -99,27 +99,27 @@ static void* app_rx_st20p_frame_thread(void* arg) {
       uint64_t ptp_ns = mtl_ptp_read_time(s->st);
       uint32_t sampling_rate = 90 * 1000;
 
-      if (frame->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
+      if (buf->tfmt == ST10_TIMESTAMP_FMT_MEDIA_CLK) {
         uint32_t latency_media_clk =
-            st10_tai_to_media_clk(ptp_ns, sampling_rate) - frame->timestamp;
+            st10_tai_to_media_clk(ptp_ns, sampling_rate) - buf->timestamp;
         latency_ns = st10_media_clk_to_ns(latency_media_clk, sampling_rate);
       } else {
-        latency_ns = ptp_ns - frame->timestamp;
+        latency_ns = ptp_ns - buf->timestamp;
       }
       dbg("%s, latency_us %" PRIu64 "\n", __func__, latency_ns / 1000);
       s->stat_latency_us_sum += latency_ns / 1000;
     }
 
-    app_rx_st20p_consume_frame(s, frame);
+    app_rx_st20p_consume_frame(s, buf);
     if (s->sha_check) {
-      if (frame->user_meta_size != sizeof(shas)) {
+      if (buf->user_meta_size != sizeof(shas)) {
         err("%s(%d), invalid user meta size %" PRId64 "\n", __func__, idx,
-            frame->user_meta_size);
+            buf->user_meta_size);
       } else {
-        st_sha256((unsigned char*)frame->addr[0], st_frame_plane_size(frame, 0), shas);
-        if (memcmp(shas, frame->user_meta, sizeof(shas))) {
-          err("%s(%d), sha check fail for frame %p\n", __func__, idx, frame->addr);
-          st_sha_dump("user meta sha:", frame->user_meta);
+        st_sha256((unsigned char*)buf->data, buf->data_size, shas);
+        if (memcmp(shas, buf->user_meta, sizeof(shas))) {
+          err("%s(%d), sha check fail for frame %p\n", __func__, idx, buf->data);
+          st_sha_dump("user meta sha:", buf->user_meta);
           st_sha_dump("frame sha:", shas);
         }
       }
@@ -128,7 +128,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     if (!s->stat_frame_first_rx_time)
       s->stat_frame_first_rx_time = st_app_get_monotonic_time();
     s->stat_frame_last_rx_time = st_app_get_monotonic_time();
-    st20p_rx_put_frame(s->handle, frame);
+    mtl_session_buffer_put(s->session, buf);
   }
   info("%s(%d), stop\n", __func__, s->idx);
 
@@ -164,14 +164,14 @@ static int app_rx_st20p_uinit(struct st_app_rx_st20p_session* s) {
   if (s->st20p_app_thread_stop) {
     /* wake up the thread */
     info("%s(%d), wait app thread stop\n", __func__, idx);
-    if (s->handle) st20p_rx_wake_block(s->handle);
+    if (s->session) mtl_session_stop(s->session);
     if (s->st20p_app_thread) pthread_join(s->st20p_app_thread, NULL);
   }
 
-  if (s->handle) {
-    ret = st20p_rx_free(s->handle);
-    if (ret < 0) err("%s(%d), st20_rx_free fail %d\n", __func__, idx, ret);
-    s->handle = NULL;
+  if (s->session) {
+    ret = mtl_session_destroy(s->session);
+    if (ret < 0) err("%s(%d), mtl_session_destroy fail %d\n", __func__, idx, ret);
+    s->session = NULL;
   }
 
   if (s->st20p_destination_file) {
@@ -190,10 +190,10 @@ static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
   int ret;
   struct st20_rx_user_stats stats;
 
-  if (!s->handle) return 0;
+  if (!s->session) return 0;
 
   for (uint8_t port = 0; port < s->num_port; port++) {
-    ret = st20p_rx_get_session_stats(s->handle, &stats);
+    ret = mtl_session_io_stats_get(s->session, &stats, sizeof(stats));
 
     if (ret < 0) return ret;
     tx_rate_m = (double)stats.common.port[port].bytes * 8 / time_sec / MTL_STAT_M_UNIT;
@@ -201,7 +201,7 @@ static int app_rx_st20p_io_stat(struct st_app_rx_st20p_session* s) {
 
     info("%s(%d,%u), rx %f Mb/s fps %f\n", __func__, idx, port, tx_rate_m, fps);
   }
-  st20p_rx_reset_session_stats(s->handle);
+  mtl_session_io_stats_reset(s->session);
 
   s->last_stat_time_ns = cur_time;
   return 0;
@@ -211,44 +211,46 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
                              struct st_json_st20p_session* st20p,
                              struct st_app_rx_st20p_session* s) {
   int idx = s->idx, ret;
-  struct st20p_rx_ops ops;
+  mtl_video_config_t config;
   char name[32];
-  st20p_rx_handle handle;
-  memset(&ops, 0, sizeof(ops));
+  mtl_session_t* session = NULL;
+  memset(&config, 0, sizeof(config));
 
   s->ctx = ctx;
   s->last_stat_time_ns = st_app_get_monotonic_time();
   s->sha_check = ctx->video_sha_check;
 
   snprintf(name, 32, "app_rx_st20p_%d", idx);
-  ops.name = name;
-  ops.priv = s;
-  ops.port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
-  memcpy(ops.port.ip_addr[MTL_SESSION_PORT_P],
+  config.base.name = name;
+  config.base.priv = s;
+  config.base.direction = MTL_SESSION_RX;
+  config.rx_port.num_port = st20p ? st20p->base.num_inf : ctx->para.num_ports;
+  memcpy(config.rx_port.ip_addr[MTL_SESSION_PORT_P],
          st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_P)
                : ctx->rx_ip_addr[MTL_PORT_P],
          MTL_IP_ADDR_LEN);
   memcpy(
-      ops.port.mcast_sip_addr[MTL_SESSION_PORT_P],
+      config.rx_port.mcast_sip_addr[MTL_SESSION_PORT_P],
       st20p ? st20p->base.mcast_src_ip[MTL_PORT_P] : ctx->rx_mcast_sip_addr[MTL_PORT_P],
       MTL_IP_ADDR_LEN);
   snprintf(
-      ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
+      config.rx_port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st20p ? st20p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] = st20p ? st20p->base.udp_port : (10000 + s->idx);
-  if (ops.port.num_port > 1) {
-    memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
+  config.rx_port.udp_port[MTL_SESSION_PORT_P] =
+      st20p ? st20p->base.udp_port : (10000 + s->idx);
+  if (config.rx_port.num_port > 1) {
+    memcpy(config.rx_port.ip_addr[MTL_SESSION_PORT_R],
            st20p ? st_json_ip(ctx, &st20p->base, MTL_SESSION_PORT_R)
                  : ctx->rx_ip_addr[MTL_PORT_R],
            MTL_IP_ADDR_LEN);
     memcpy(
-        ops.port.mcast_sip_addr[MTL_SESSION_PORT_R],
+        config.rx_port.mcast_sip_addr[MTL_SESSION_PORT_R],
         st20p ? st20p->base.mcast_src_ip[MTL_PORT_R] : ctx->rx_mcast_sip_addr[MTL_PORT_R],
         MTL_IP_ADDR_LEN);
     snprintf(
-        ops.port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
+        config.rx_port.port[MTL_SESSION_PORT_R], MTL_PORT_MAX_LEN, "%s",
         st20p ? st20p->base.inf[MTL_SESSION_PORT_R]->name : ctx->para.port[MTL_PORT_R]);
-    ops.port.udp_port[MTL_SESSION_PORT_R] =
+    config.rx_port.udp_port[MTL_SESSION_PORT_R] =
         st20p ? st20p->base.udp_port : (10000 + s->idx);
   }
 
@@ -264,37 +266,39 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
     }
   }
 
-  ops.width = st20p ? st20p->info.width : 1920;
-  ops.height = st20p ? st20p->info.height : 1080;
-  ops.fps = st20p ? st20p->info.fps : ST_FPS_P59_94;
-  ops.interlaced = st20p ? st20p->info.interlaced : false;
-  ops.output_fmt = st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
-  ops.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
-  ops.port.payload_type = st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
-  ops.device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
-  ops.flags |= ST20P_RX_FLAG_BLOCK_GET;
-  ops.rx_burst_size = ctx->rx_burst_size;
-  ops.framebuff_cnt = s->framebuff_cnt;
+  config.width = st20p ? st20p->info.width : 1920;
+  config.height = st20p ? st20p->info.height : 1080;
+  config.fps = st20p ? st20p->info.fps : ST_FPS_P59_94;
+  config.interlaced = st20p ? st20p->info.interlaced : false;
+  config.frame_fmt = st20p ? st20p->info.format : ST_FRAME_FMT_YUV422RFC4175PG2BE10;
+  config.transport_fmt = st20p ? st20p->info.transport_format : ST20_FMT_YUV_422_10BIT;
+  config.rx_port.payload_type =
+      st20p ? st20p->base.payload_type : ST_APP_PAYLOAD_TYPE_VIDEO;
+  config.plugin_device = st20p ? st20p->info.device : ST_PLUGIN_DEVICE_AUTO;
+  config.base.flags |= MTL_SESSION_FLAG_BLOCK_GET;
+  config.rx_burst_size = ctx->rx_burst_size;
+  config.base.num_buffers = s->framebuff_cnt;
   /* always try to enable DMA offload */
-  ops.flags |= ST20P_RX_FLAG_DMA_OFFLOAD;
-  if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
-  if (ctx->enable_timing_parser) ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
-  if (ctx->rx_video_multi_thread) ops.flags |= ST20P_RX_FLAG_USE_MULTI_THREADS;
-  if (ctx->enable_hdr_split) ops.flags |= ST20P_RX_FLAG_HDR_SPLIT;
+  config.base.flags |= MTL_SESSION_FLAG_DMA_OFFLOAD;
+  if (st20p && st20p->enable_rtcp) config.base.flags |= MTL_SESSION_FLAG_ENABLE_RTCP;
+  if (ctx->enable_timing_parser) config.enable_timing_parser = true;
+  if (ctx->rx_video_multi_thread)
+    config.base.flags |= MTL_SESSION_FLAG_USE_MULTI_THREADS;
+  if (ctx->enable_hdr_split) config.base.flags |= MTL_SESSION_FLAG_HDR_SPLIT;
   if (ctx->force_rx_video_numa >= 0) {
-    ops.flags |= ST20P_RX_FLAG_FORCE_NUMA;
-    ops.socket_id = ctx->force_rx_video_numa;
+    config.base.flags |= MTL_SESSION_FLAG_FORCE_NUMA;
+    config.base.socket_id = ctx->force_rx_video_numa;
   }
 
-  s->width = ops.width;
-  s->height = ops.height;
-  if (ops.interlaced) {
+  s->width = config.width;
+  s->height = config.height;
+  if (config.interlaced) {
     s->height >>= 1;
   }
-  s->num_port = ops.port.num_port;
+  s->num_port = config.rx_port.num_port;
 
   s->pcapng_max_pkts = ctx->pcapng_max_pkts;
-  s->expect_fps = st_frame_rate(ops.fps);
+  s->expect_fps = st_frame_rate(config.fps);
 
   if ((st20p && st20p->display) || ctx->rx_display) {
     struct st_display* d = st_app_zmalloc(sizeof(struct st_display));
@@ -309,15 +313,15 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
 
   s->measure_latency = st20p ? st20p->measure_latency : true;
 
-  handle = st20p_rx_create(ctx->st, &ops);
-  if (!handle) {
-    err("%s(%d), st20_rx_create fail\n", __func__, idx);
+  ret = mtl_video_session_create(ctx->st, &config, &session);
+  if (ret < 0) {
+    err("%s(%d), mtl_video_session_create fail %d\n", __func__, idx, ret);
     app_rx_st20p_uinit(s);
     return -EIO;
   }
-  s->handle = handle;
+  s->session = session;
 
-  s->st20p_frame_size = st20p_rx_frame_size(handle);
+  s->st20p_frame_size = mtl_session_get_frame_size(session);
 
   ret = app_rx_st20p_init_frame_thread(s);
   if (ret < 0) {
@@ -373,7 +377,7 @@ static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
 
 static int app_rx_st20p_pcap(struct st_app_rx_st20p_session* s) {
   if (s->pcapng_max_pkts)
-    st20p_rx_pcapng_dump(s->handle, s->pcapng_max_pkts, false, NULL);
+    mtl_session_pcap_dump(s->session, s->pcapng_max_pkts, false, NULL);
   return 0;
 }
 

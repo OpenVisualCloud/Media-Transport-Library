@@ -74,6 +74,17 @@ typedef struct mtl_session_vtable {
   int (*stats_get)(struct mtl_session_impl* s, mtl_session_stats_t* stats);
   int (*stats_reset)(struct mtl_session_impl* s);
 
+  /* Frame size query */
+  size_t (*get_frame_size)(struct mtl_session_impl* s);
+
+  /* IO stats (per-port detailed stats) */
+  int (*io_stats_get)(struct mtl_session_impl* s, void* stats, size_t stats_size);
+  int (*io_stats_reset)(struct mtl_session_impl* s);
+
+  /* Pcap dump (RX only) */
+  int (*pcap_dump)(struct mtl_session_impl* s, uint32_t max_pkts, bool sync,
+                   struct st_pcap_dump_meta* meta);
+
   /* Online updates */
   int (*update_destination)(struct mtl_session_impl* s,
                             const struct st_tx_dest_info* dst);
@@ -205,8 +216,10 @@ struct mtl_session_impl {
    */
   union {
     struct {
-      bool compressed;       /**< ST22 mode */
-      mtl_video_mode_t mode; /**< FRAME or SLICE */
+      bool compressed;             /**< ST22 mode */
+      mtl_video_mode_t mode;       /**< FRAME or SLICE */
+      enum st_frame_fmt frame_fmt; /**< App pixel format (may differ from transport) */
+      bool derive;                 /**< true if frame_fmt == transport_fmt (no conversion) */
     } video;
     struct {
       uint32_t channels;
