@@ -43,6 +43,7 @@ void mtl_session_free(struct mtl_session_impl* s) {
   if (!s) return;
 
   mtl_session_events_uinit(s);
+  mtl_session_user_buf_uinit(s);
   mtl_session_buffers_uinit(s);
 
   s->magic = 0; /* Invalidate handle */

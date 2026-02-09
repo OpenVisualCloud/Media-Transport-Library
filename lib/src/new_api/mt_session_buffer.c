@@ -183,3 +183,141 @@ void mtl_session_put_frame_trans(struct st_frame_trans* ft) {
     rte_atomic32_dec(&ft->refcnt);
   }
 }
+
+/*************************************************************************
+ * User-Owned Buffer Management
+ *************************************************************************/
+
+#define MTL_USER_BUF_RING_SIZE 32 /* Must be power of 2 */
+
+int mtl_session_user_buf_init(struct mtl_session_impl* s, uint16_t frame_cnt) {
+  char ring_name[RTE_RING_NAMESIZE];
+
+  snprintf(ring_name, sizeof(ring_name), "mtl_ub_%p", s);
+
+  s->user_buf_ring =
+      rte_ring_create(ring_name, MTL_USER_BUF_RING_SIZE, s->socket_id, 0);
+  if (!s->user_buf_ring) {
+    err("%s(%s), failed to create user buffer ring\n", __func__, s->name);
+    return -ENOMEM;
+  }
+
+  s->user_buf_ctx =
+      mt_rte_zmalloc_socket(sizeof(void*) * frame_cnt, s->socket_id);
+  if (!s->user_buf_ctx) {
+    err("%s(%s), failed to alloc user_buf_ctx array\n", __func__, s->name);
+    rte_ring_free(s->user_buf_ring);
+    s->user_buf_ring = NULL;
+    return -ENOMEM;
+  }
+  s->user_buf_ctx_cnt = frame_cnt;
+
+  dbg("%s(%s), initialized user buffer ring, frame_cnt %u\n", __func__, s->name,
+      frame_cnt);
+  return 0;
+}
+
+void mtl_session_user_buf_uinit(struct mtl_session_impl* s) {
+  /* Drain and free any remaining entries in the ring */
+  if (s->user_buf_ring) {
+    void* obj = NULL;
+    while (rte_ring_dequeue(s->user_buf_ring, &obj) == 0 && obj) {
+      mt_rte_free(obj);
+      obj = NULL;
+    }
+    rte_ring_free(s->user_buf_ring);
+    s->user_buf_ring = NULL;
+  }
+
+  if (s->user_buf_ctx) {
+    mt_rte_free(s->user_buf_ctx);
+    s->user_buf_ctx = NULL;
+  }
+  s->user_buf_ctx_cnt = 0;
+
+  /* Free DMA registrations */
+  for (uint8_t i = 0; i < s->dma_registration_cnt; i++) {
+    if (s->dma_registrations[i]) {
+      mt_rte_free(s->dma_registrations[i]);
+      s->dma_registrations[i] = NULL;
+    }
+  }
+  s->dma_registration_cnt = 0;
+}
+
+int mtl_session_user_buf_enqueue(struct mtl_session_impl* s, void* data,
+                                 mtl_iova_t iova, size_t size, void* user_ctx) {
+  if (!s->user_buf_ring) return -EINVAL;
+
+  struct mtl_user_buffer_entry* entry =
+      mt_rte_zmalloc_socket(sizeof(*entry), s->socket_id);
+  if (!entry) {
+    err("%s(%s), failed to alloc user buffer entry\n", __func__, s->name);
+    return -ENOMEM;
+  }
+
+  entry->data = data;
+  entry->iova = iova;
+  entry->size = size;
+  entry->user_ctx = user_ctx;
+
+  if (rte_ring_enqueue(s->user_buf_ring, entry) != 0) {
+    mt_rte_free(entry);
+    dbg("%s(%s), user buffer ring full\n", __func__, s->name);
+    return -ENOSPC;
+  }
+
+  return 0;
+}
+
+int mtl_session_user_buf_dequeue(struct mtl_session_impl* s,
+                                 struct mtl_user_buffer_entry* entry) {
+  if (!s->user_buf_ring) return -EINVAL;
+
+  void* obj = NULL;
+  if (rte_ring_dequeue(s->user_buf_ring, &obj) != 0 || !obj) {
+    return -EAGAIN;
+  }
+
+  struct mtl_user_buffer_entry* queued = (struct mtl_user_buffer_entry*)obj;
+  *entry = *queued;
+  mt_rte_free(queued);
+  return 0;
+}
+
+mtl_iova_t mtl_session_lookup_iova(struct mtl_session_impl* s, void* addr,
+                                   size_t size) {
+  /* Search registered DMA memory regions */
+  for (uint8_t i = 0; i < s->dma_registration_cnt; i++) {
+    struct mtl_dma_mem_impl* reg = s->dma_registrations[i];
+    if (!reg) continue;
+
+    uintptr_t region_start = (uintptr_t)reg->addr;
+    uintptr_t region_end = region_start + reg->size;
+    uintptr_t buf_start = (uintptr_t)addr;
+    uintptr_t buf_end = buf_start + size;
+
+    if (buf_start >= region_start && buf_end <= region_end) {
+      /* Buffer is within this registered region */
+      size_t offset = buf_start - region_start;
+      return reg->iova + offset;
+    }
+  }
+
+  /* Fallback: try direct IOVA lookup via DPDK */
+  mtl_iova_t iova = rte_mem_virt2iova(addr);
+  if (iova != RTE_BAD_IOVA && iova != 0) {
+    return iova;
+  }
+
+  /* Try hugepage lookup if parent available */
+  if (s->parent) {
+    iova = mtl_hp_virt2iova(s->parent, addr);
+    if (iova != MTL_BAD_IOVA && iova != 0) {
+      return iova;
+    }
+  }
+
+  err("%s(%s), failed to find IOVA for addr %p\n", __func__, s->name, addr);
+  return MTL_BAD_IOVA;
+}
