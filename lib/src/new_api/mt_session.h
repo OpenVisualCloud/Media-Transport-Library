@@ -139,6 +139,35 @@ struct mtl_buffer_impl {
 };
 
 /*************************************************************************
+ * User-Owned Buffer Entry (for buffer_post ring)
+ *
+ * When app calls mtl_session_buffer_post(), we queue this entry.
+ * TX: picked up by get_next_frame → st20_tx_set_ext_frame()
+ * RX: picked up by query_ext_frame callback
+ *************************************************************************/
+
+struct mtl_user_buffer_entry {
+  void* data;       /**< User buffer virtual address */
+  mtl_iova_t iova;  /**< DMA-mapped IOVA of user buffer */
+  size_t size;      /**< Buffer size */
+  void* user_ctx;   /**< User context returned in completion event */
+};
+
+/*************************************************************************
+ * DMA Memory Registration Handle
+ *
+ * Wraps user memory that has been DMA-mapped for zero-copy I/O.
+ *************************************************************************/
+
+struct mtl_dma_mem_impl {
+  struct mtl_main_impl* parent; /**< MTL instance */
+  void* addr;                   /**< User-provided virtual address */
+  size_t size;                  /**< Size of the registered region */
+  mtl_iova_t iova;              /**< DMA-mapped IOVA base address */
+  bool hp_mapped;               /**< true if mapped via hugepage allocator */
+};
+
+/*************************************************************************
  * Internal Session Implementation
  *
  * Contains pointer to ACTUAL low-level session impl from st_header.h.
@@ -218,6 +247,28 @@ struct mtl_session_impl {
   /* Event queue */
   struct rte_ring* event_ring; /**< Pending events */
   int event_fd;                /**< For epoll integration */
+
+  /*
+   * User-owned buffer management (MTL_BUFFER_USER_OWNED mode).
+   *
+   * TX: app posts buffers via buffer_post() → queued in user_buf_ring.
+   *     get_next_frame picks them up, calls st20_tx_set_ext_frame().
+   *     notify_frame_done fires → MTL_EVENT_BUFFER_DONE with user_ctx.
+   *
+   * RX: app posts buffers via buffer_post() → queued in user_buf_ring.
+   *     query_ext_frame callback dequeues and provides to library.
+   *     notify_frame_ready → MTL_EVENT_BUFFER_READY with user_ctx.
+   *
+   * Thread safety: rte_ring is lock-free SPSC/MPSC/MPMC.
+   * user_buf_ctx array is indexed by frame_idx (1:1 mapping, no lock).
+   */
+  struct rte_ring* user_buf_ring;   /**< Pending user buffers to post */
+  void** user_buf_ctx;              /**< Per-frame user_ctx, indexed by frame_idx */
+  uint16_t user_buf_ctx_cnt;        /**< Size of user_buf_ctx array */
+
+  /* DMA memory registrations (for user-owned buffers) */
+  struct mtl_dma_mem_impl* dma_registrations[8]; /**< Up to 8 registered regions */
+  uint8_t dma_registration_cnt;
 
   /*
    * Statistics — aggregated view of inner session stats.
@@ -347,6 +398,27 @@ void mtl_session_events_uinit(struct mtl_session_impl* s);
 
 /** Post event to session */
 int mtl_session_event_post(struct mtl_session_impl* s, const mtl_event_t* event);
+
+/*************************************************************************
+ * User-Owned Buffer Helpers
+ *************************************************************************/
+
+/** Initialize user-owned buffer ring and per-frame context array */
+int mtl_session_user_buf_init(struct mtl_session_impl* s, uint16_t frame_cnt);
+
+/** Cleanup user-owned buffer resources */
+void mtl_session_user_buf_uinit(struct mtl_session_impl* s);
+
+/** Enqueue a user buffer entry into the pending ring */
+int mtl_session_user_buf_enqueue(struct mtl_session_impl* s, void* data,
+                                 mtl_iova_t iova, size_t size, void* user_ctx);
+
+/** Dequeue a user buffer entry from the pending ring */
+int mtl_session_user_buf_dequeue(struct mtl_session_impl* s,
+                                 struct mtl_user_buffer_entry* entry);
+
+/** Look up IOVA for a user virtual address from registered DMA regions */
+mtl_iova_t mtl_session_lookup_iova(struct mtl_session_impl* s, void* addr, size_t size);
 
 /**
  * Populate mtl_buffer public fields from st_frame_trans.

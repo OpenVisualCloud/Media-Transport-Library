@@ -79,6 +79,9 @@ static inline struct video_tx_ctx* tx_ctx_from_session(struct mtl_session_impl* 
 /**
  * get_next_frame callback - library asks which frame to transmit next.
  * Scans for a frame in READY state and transitions it to TRANSMITTING.
+ *
+ * For user-owned mode: also checks the user_buf_ring for posted buffers
+ * and sets ext_frame on a free frame slot before marking it READY.
  */
 static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
                                    struct st20_tx_frame_meta* meta) {
@@ -88,6 +91,74 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
   (void)meta;
 
   if (!tx_impl || !tx_impl->st20_frames) return -EIO;
+  if (!ctx->frame_state) return -EAGAIN; /* init not yet complete */
+
+  /* User-owned mode: check for posted buffers and bind to free frame slots */
+  if (s->ownership == MTL_BUFFER_USER_OWNED) {
+    struct mtl_user_buffer_entry entry;
+    while (mtl_session_user_buf_dequeue(s, &entry) == 0) {
+      /* Find a free frame slot to bind this user buffer */
+      bool bound = false;
+      for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
+        enum tx_frame_state expected = TX_FRAME_FREE;
+        if (__atomic_compare_exchange_n(&ctx->frame_state[i], &expected,
+                                        TX_FRAME_APP_OWNED, false,
+                                        __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+          int ret;
+
+          if (ctx->convert.derive) {
+            /* Formats match — true zero-copy via ext_frame.
+             * st20_tx sends the user buffer directly; no conversion. */
+            struct st20_ext_frame ext = {0};
+            ext.buf_addr = entry.data;
+            ext.buf_iova = entry.iova;
+            ext.buf_len = entry.size;
+            ext.opaque = entry.user_ctx;
+
+            ret = st20_tx_set_ext_frame(ctx->handle, i, &ext);
+            if (ret < 0) {
+              err("%s(%s), st20_tx_set_ext_frame failed for slot %u: %d\n",
+                  __func__, s->name, i, ret);
+              __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
+              continue;
+            }
+          } else {
+            /* Format conversion needed: convert user data (app format) into
+             * the library's own framebuffer (transport format).
+             * st20_tx will transmit the correctly-formatted framebuffer. */
+            ret = video_convert_frame(
+                &ctx->convert, entry.data, entry.iova, entry.size,
+                tx_impl->st20_frames[i].addr, tx_impl->st20_frames[i].iova,
+                ctx->convert.transport_frame_size, true /* TX: app→transport */);
+            if (ret < 0) {
+              err("%s(%s), format conversion failed for slot %u: %d\n",
+                  __func__, s->name, i, ret);
+              __atomic_store_n(&ctx->frame_state[i], TX_FRAME_FREE, __ATOMIC_RELEASE);
+              continue;
+            }
+          }
+
+          /* Save user context for completion event */
+          if (s->user_buf_ctx && i < s->user_buf_ctx_cnt) {
+            s->user_buf_ctx[i] = entry.user_ctx;
+          }
+
+          /* Mark ready for transmission */
+          __atomic_store_n(&ctx->frame_state[i], TX_FRAME_READY, __ATOMIC_RELEASE);
+          bound = true;
+          break;
+        }
+      }
+      if (!bound) {
+        dbg("%s(%s), no free frame slot for user buffer, requeueing\n",
+            __func__, s->name);
+        /* Re-enqueue - no slot free yet */
+        mtl_session_user_buf_enqueue(s, entry.data, entry.iova, entry.size,
+                                     entry.user_ctx);
+        break;
+      }
+    }
+  }
 
   for (uint16_t i = 0; i < tx_impl->st20_frames_cnt; i++) {
     enum tx_frame_state expected = TX_FRAME_READY;
@@ -106,6 +177,7 @@ static int video_tx_get_next_frame(void* priv, uint16_t* next_frame_idx,
 /**
  * notify_frame_done callback - transmission complete, release frame.
  * Transitions frame from TRANSMITTING → FREE.
+ * For user-owned mode: includes user_ctx in the completion event.
  */
 static int video_tx_notify_frame_done(void* priv, uint16_t frame_idx,
                                       struct st20_tx_frame_meta* meta) {
@@ -114,6 +186,14 @@ static int video_tx_notify_frame_done(void* priv, uint16_t frame_idx,
   struct st_tx_video_session_impl* tx_impl = s->inner.video_tx;
 
   if (frame_idx >= tx_impl->st20_frames_cnt) return -EINVAL;
+
+  /* Retrieve user context before clearing frame state */
+  void* user_ctx = NULL;
+  if (s->ownership == MTL_BUFFER_USER_OWNED && s->user_buf_ctx &&
+      frame_idx < s->user_buf_ctx_cnt) {
+    user_ctx = s->user_buf_ctx[frame_idx];
+    s->user_buf_ctx[frame_idx] = NULL;
+  }
 
   __atomic_store_n(&ctx->frame_state[frame_idx], TX_FRAME_FREE, __ATOMIC_RELEASE);
 
@@ -126,6 +206,7 @@ static int video_tx_notify_frame_done(void* priv, uint16_t frame_idx,
   mtl_event_t event = {0};
   event.type = MTL_EVENT_BUFFER_DONE;
   event.timestamp = meta ? meta->epoch : 0;
+  event.ctx = user_ctx; /* User context for user-owned mode */
   mtl_session_event_post(s, &event);
 
   return 0;
@@ -303,6 +384,9 @@ static void video_tx_destroy(struct mtl_session_impl* s) {
 
   s->inner.video_tx = NULL;
 
+  /* Clean up user-owned buffer resources */
+  mtl_session_user_buf_uinit(s);
+
   if (ctx) {
     if (ctx->frame_state) {
       mt_rte_free(ctx->frame_state);
@@ -353,6 +437,104 @@ static int video_tx_buffer_put(struct mtl_session_impl* s, mtl_buffer_t* buf) {
   __atomic_store_n(&ctx->frame_state[b->idx], TX_FRAME_READY, __ATOMIC_RELEASE);
 
   return 0;
+}
+
+/*************************************************************************
+ * User-Owned Buffer Operations (TX)
+ *************************************************************************/
+
+/**
+ * Post a user-owned buffer for transmission (zero-copy mode).
+ *
+ * Looks up IOVA from registered DMA regions, then enqueues the buffer.
+ * The get_next_frame callback will bind it to a frame slot and transmit.
+ * Completion is signaled via MTL_EVENT_BUFFER_DONE with user_ctx.
+ */
+static int video_tx_buffer_post(struct mtl_session_impl* s, void* data,
+                                size_t size, void* user_ctx) {
+  if (s->ownership != MTL_BUFFER_USER_OWNED) {
+    err("%s(%s), buffer_post only valid in USER_OWNED mode\n", __func__, s->name);
+    return -EINVAL;
+  }
+
+  /* Look up IOVA for the user buffer */
+  mtl_iova_t iova = mtl_session_lookup_iova(s, data, size);
+  if (iova == MTL_BAD_IOVA) {
+    err("%s(%s), failed to get IOVA for buffer %p (not registered?)\n",
+        __func__, s->name, data);
+    return -EINVAL;
+  }
+
+  return mtl_session_user_buf_enqueue(s, data, iova, size, user_ctx);
+}
+
+/**
+ * Register a memory region for DMA access (user-owned mode).
+ * After registration, buffers from this region can be passed to buffer_post().
+ */
+static int video_tx_mem_register(struct mtl_session_impl* s, void* addr,
+                                 size_t size, mtl_dma_mem_t** handle) {
+  if (s->dma_registration_cnt >= 8) {
+    err("%s(%s), too many DMA registrations (max 8)\n", __func__, s->name);
+    return -ENOSPC;
+  }
+
+  struct mtl_dma_mem_impl* reg =
+      mt_rte_zmalloc_socket(sizeof(*reg), s->socket_id);
+  if (!reg) return -ENOMEM;
+
+  reg->parent = s->parent;
+  reg->addr = addr;
+  reg->size = size;
+
+  /* Try to get IOVA mapping */
+  reg->iova = rte_mem_virt2iova(addr);
+  if (reg->iova == RTE_BAD_IOVA || reg->iova == 0) {
+    /* Try hugepage mapping */
+    reg->iova = mtl_hp_virt2iova(s->parent, addr);
+    if (reg->iova == MTL_BAD_IOVA || reg->iova == 0) {
+      /* Memory might be from a custom allocator - try to use it anyway.
+       * The IOVA lookup will try rte_mem_virt2iova per-buffer later. */
+      warn("%s(%s), could not get IOVA for region %p, will try per-buffer lookup\n",
+           __func__, s->name, addr);
+      reg->iova = 0;
+      reg->hp_mapped = false;
+    } else {
+      reg->hp_mapped = true;
+    }
+  }
+
+  s->dma_registrations[s->dma_registration_cnt++] = reg;
+
+  info("%s(%s), registered DMA region %p, size %zu, iova 0x%" PRIx64 "\n",
+       __func__, s->name, addr, size, reg->iova);
+
+  *handle = (mtl_dma_mem_t*)reg;
+  return 0;
+}
+
+/**
+ * Unregister a previously registered DMA memory region.
+ */
+static int video_tx_mem_unregister(struct mtl_session_impl* s,
+                                   mtl_dma_mem_t* handle) {
+  struct mtl_dma_mem_impl* reg = (struct mtl_dma_mem_impl*)handle;
+
+  for (uint8_t i = 0; i < s->dma_registration_cnt; i++) {
+    if (s->dma_registrations[i] == reg) {
+      info("%s(%s), unregistered DMA region %p\n", __func__, s->name, reg->addr);
+      mt_rte_free(reg);
+      /* Shift remaining entries */
+      for (uint8_t j = i; j < s->dma_registration_cnt - 1; j++) {
+        s->dma_registrations[j] = s->dma_registrations[j + 1];
+      }
+      s->dma_registrations[--s->dma_registration_cnt] = NULL;
+      return 0;
+    }
+  }
+
+  err("%s(%s), DMA handle not found\n", __func__, s->name);
+  return -EINVAL;
 }
 
 static int video_tx_stats_get(struct mtl_session_impl* s,
@@ -433,10 +615,10 @@ const mtl_session_vtable_t mtl_video_tx_vtable = {
     .destroy = video_tx_destroy,
     .buffer_get = video_tx_buffer_get,
     .buffer_put = video_tx_buffer_put,
-    .buffer_post = NULL,
+    .buffer_post = video_tx_buffer_post,
     .buffer_flush = NULL,
-    .mem_register = NULL,
-    .mem_unregister = NULL,
+    .mem_register = video_tx_mem_register,
+    .mem_unregister = video_tx_mem_unregister,
     .event_poll = video_session_event_poll,   /* shared implementation */
     .get_event_fd = NULL,
     .stats_get = video_tx_stats_get,
@@ -499,8 +681,11 @@ static void tx_apply_session_flags(struct st20_tx_ops* ops,
     ops->flags |= ST20_TX_FLAG_ENABLE_VSYNC;
   }
 
-  /* Buffer ownership flags */
-  if (config->base.ownership == MTL_BUFFER_USER_OWNED)
+  /* Buffer ownership flags:
+   * Only use ext_frame when formats match (derive) — true zero-copy.
+   * When conversion is needed (!derive), we must convert app→transport into
+   * the library's own framebuffers, so ext_frame cannot be used. */
+  if (config->base.ownership == MTL_BUFFER_USER_OWNED && ctx->convert.derive)
     ops->flags |= ST20_TX_FLAG_EXT_FRAME;
 
   /* Individual flag mappings */
@@ -634,11 +819,31 @@ int mtl_video_tx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
 
   tx_apply_session_flags(&ops, config, ctx);
 
+  /* Allocate per-frame state tracking BEFORE st20_tx_create, because the
+   * scheduler may call video_tx_get_next_frame as soon as the handle exists. */
+  uint16_t fb_cnt = ops.framebuff_cnt;
+  ret = tx_alloc_frame_state(ctx, fb_cnt, s->socket_id);
+  if (ret < 0) {
+    video_convert_bufs_free(&ctx->convert);
+    mt_rte_free(ctx);
+    return ret;
+  }
+
+  /* Initialize user-owned buffer management before create too */
+  if (s->ownership == MTL_BUFFER_USER_OWNED) {
+    ret = mtl_session_user_buf_init(s, fb_cnt);
+    if (ret < 0) {
+      err("%s(%s), user_buf_init failed: %d\n", __func__, s->name, ret);
+      tx_cleanup_on_failure(ctx);
+      return ret;
+    }
+  }
+
   /* Create the low-level TX session */
   st20_tx_handle handle = st20_tx_create(impl, &ops);
   if (!handle) {
     err("%s(%s), st20_tx_create failed\n", __func__, s->name);
-    mt_rte_free(ctx);
+    tx_cleanup_on_failure(ctx);
     return -EIO;
   }
 
@@ -650,15 +855,6 @@ int mtl_video_tx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
       (struct st_tx_video_session_handle_impl*)handle;
   s->inner.video_tx = handle_impl->impl;
   s->idx = s->inner.video_tx->idx;
-
-  /* Allocate per-frame state tracking */
-  uint16_t fb_cnt = s->inner.video_tx->st20_frames_cnt;
-  ret = tx_alloc_frame_state(ctx, fb_cnt, s->socket_id);
-  if (ret < 0) {
-    s->inner.video_tx = NULL;
-    tx_cleanup_on_failure(ctx);
-    return ret;
-  }
 
   /* Allocate conversion buffers if needed (shared helper) */
   if (!ctx->convert.derive) {

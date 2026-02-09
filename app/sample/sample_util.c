@@ -549,9 +549,9 @@ int sample_parse_args(struct st_sample_context* ctx, int argc, char** argv, bool
   ctx->width = 1920;
   ctx->height = 1080;
   ctx->fps = ST_FPS_P59_94;
-  ctx->fmt = ST20_FMT_YUV_422_10BIT;
-  ctx->input_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
-  ctx->output_fmt = ST_FRAME_FMT_YUV422PLANAR10LE;
+  ctx->fmt = ST20_FMT_YUV_444_10BIT;
+  ctx->input_fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
+  ctx->output_fmt = ST_FRAME_FMT_YUV444PLANAR10LE;
   ctx->packing = ST20_PACKING_BPM;
   ctx->udp_port = 20000;
   ctx->payload_type = 112;

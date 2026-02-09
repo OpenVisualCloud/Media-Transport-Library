@@ -84,9 +84,11 @@ static int rx_enqueue_frame(struct video_rx_ctx* ctx, void* frame) {
  * Post a buffer-ready event with optional timestamp from RX metadata.
  */
 static void rx_post_buffer_ready_event(struct mtl_session_impl* s,
-                                       struct st20_rx_frame_meta* meta) {
+                                       struct st20_rx_frame_meta* meta,
+                                       void* user_ctx) {
   mtl_event_t event = {0};
   event.type = MTL_EVENT_BUFFER_READY;
+  event.ctx = user_ctx;
   if (meta) {
     event.timestamp = meta->tfmt == ST10_TIMESTAMP_FMT_TAI ? meta->timestamp : 0;
   }
@@ -96,6 +98,9 @@ static void rx_post_buffer_ready_event(struct mtl_session_impl* s,
 /**
  * notify_frame_ready callback - library delivered a received frame.
  * Thread context: library datapath thread. Must be non-blocking.
+ *
+ * For user-owned mode: saves the user_ctx (from ext_frame opaque) per frame_idx,
+ * so that buffer_get or event_poll can return it to the app.
  */
 static int video_rx_notify_frame_ready(void* priv, void* frame,
                                        struct st20_rx_frame_meta* meta) {
@@ -104,8 +109,64 @@ static int video_rx_notify_frame_ready(void* priv, void* frame,
 
   rx_save_frame_metadata(s->inner.video_rx, frame, meta);
 
+  /*
+   * User-owned mode via buffer_post (no explicit query_ext_frame):
+   * The library receives into its own internal framebuffers.
+   * Here we convert/copy into the user's buffer, return the library frame,
+   * and post an event carrying the user context.
+   */
+  if (s->ownership == MTL_BUFFER_USER_OWNED && !ctx->user_query_ext_frame) {
+    struct mtl_user_buffer_entry entry;
+    if (mtl_session_user_buf_dequeue(s, &entry) != 0) {
+      dbg("%s(%s), no user buffer for received frame, dropping\n", __func__, s->name);
+      st20_rx_put_framebuff(ctx->handle, frame);
+      __atomic_add_fetch(&s->stats.buffers_dropped, 1, __ATOMIC_RELAXED);
+      return 0;
+    }
+
+    /* Convert transport → app format, or copy if derive */
+    struct video_convert_ctx* cvt = &ctx->convert;
+    if (cvt->derive) {
+      size_t copy_len = cvt->transport_frame_size;
+      if (copy_len > entry.size) copy_len = entry.size;
+      mtl_memcpy(entry.data, frame, copy_len);
+    } else {
+      int ret = video_convert_frame(cvt, frame, 0, cvt->transport_frame_size,
+                                    entry.data, entry.iova, cvt->app_frame_size,
+                                    false /* RX */);
+      if (ret < 0) {
+        err("%s(%s), conversion failed: %d\n", __func__, s->name, ret);
+        mtl_session_user_buf_enqueue(s, entry.data, entry.iova, entry.size,
+                                     entry.user_ctx);
+        st20_rx_put_framebuff(ctx->handle, frame);
+        return 0;
+      }
+    }
+
+    /* Return library frame immediately */
+    st20_rx_put_framebuff(ctx->handle, frame);
+
+    /* Post event with user context */
+    rx_post_buffer_ready_event(s, meta, entry.user_ctx);
+    __atomic_add_fetch(&s->stats.buffers_processed, 1, __ATOMIC_RELAXED);
+    return 0;
+  }
+
+  /* User-owned mode with explicit query_ext_frame: save opaque user_ctx per frame */
+  if (s->ownership == MTL_BUFFER_USER_OWNED && s->user_buf_ctx) {
+    struct st_rx_video_session_impl* rx_impl = s->inner.video_rx;
+    for (uint16_t i = 0; i < rx_impl->st20_frames_cnt; i++) {
+      if (rx_impl->st20_frames[i].addr == frame) {
+        if (i < s->user_buf_ctx_cnt) {
+          s->user_buf_ctx[i] = rx_impl->st20_frames[i].user_meta;
+        }
+        break;
+      }
+    }
+  }
+
   if (rx_enqueue_frame(ctx, frame) == 0) {
-    rx_post_buffer_ready_event(s, meta);
+    rx_post_buffer_ready_event(s, meta, NULL);
   }
 
   return 0;
@@ -136,27 +197,47 @@ static int video_rx_notify_detected(void* priv, const struct st20_detect_meta* m
 
 /**
  * Wrapper for query_ext_frame: translates st20_ext_frame to st_ext_frame.
+ *
+ * In user-owned mode without an explicit query_ext_frame callback from the app,
+ * this implementation dequeues from the user_buf_ring (populated by buffer_post).
  */
 static int video_rx_query_ext_frame_wrapper(void* priv,
                                             struct st20_ext_frame* st20_ext,
                                             struct st20_rx_frame_meta* meta) {
   struct video_rx_ctx* ctx = priv;
+  struct mtl_session_impl* s = ctx->session;
 
-  if (!ctx->user_query_ext_frame) return -ENOTSUP;
+  /* If app provided its own query_ext_frame callback, use it */
+  if (ctx->user_query_ext_frame) {
+    struct st_ext_frame ext = {0};
+    mtl_buffer_t buf = {0};
+    buf.video.width = meta->width;
+    buf.video.height = meta->height;
+    buf.size = meta->frame_total_size;
 
-  struct st_ext_frame ext = {0};
-  mtl_buffer_t buf = {0};
-  buf.video.width = meta->width;
-  buf.video.height = meta->height;
-  buf.size = meta->frame_total_size;
+    int ret = ctx->user_query_ext_frame(ctx->user_priv, &ext, &buf);
+    if (ret < 0) return ret;
 
-  int ret = ctx->user_query_ext_frame(ctx->user_priv, &ext, &buf);
-  if (ret < 0) return ret;
+    st20_ext->buf_addr = ext.addr[0];
+    st20_ext->buf_iova = ext.iova[0];
+    st20_ext->buf_len = ext.size;
+    st20_ext->opaque = ext.opaque;
+    return 0;
+  }
 
-  st20_ext->buf_addr = ext.addr[0];
-  st20_ext->buf_iova = ext.iova[0];
-  st20_ext->buf_len = ext.size;
-  st20_ext->opaque = ext.opaque;
+  /* User-owned mode via buffer_post(): dequeue from ring */
+  struct mtl_user_buffer_entry entry;
+  int ret = mtl_session_user_buf_dequeue(s, &entry);
+  if (ret < 0) {
+    dbg("%s(%s), no user buffer available for ext_frame\n", __func__, s->name);
+    return -EAGAIN;
+  }
+
+  st20_ext->buf_addr = entry.data;
+  st20_ext->buf_iova = entry.iova;
+  st20_ext->buf_len = entry.size;
+  st20_ext->opaque = entry.user_ctx;
+
   return 0;
 }
 
@@ -309,6 +390,15 @@ static int rx_try_dequeue_frame(struct mtl_session_impl* s, mtl_buffer_t** buf) 
   rx_fill_buffer_video_fields(pub, meta, ctx);
   rx_fill_user_metadata(pub, ft);
 
+  /* For user-owned mode: attach user_ctx to buffer */
+  if (s->ownership == MTL_BUFFER_USER_OWNED && s->user_buf_ctx &&
+      frame_idx < s->user_buf_ctx_cnt) {
+    pub->user_data = s->user_buf_ctx[frame_idx];
+    b->user_ctx = s->user_buf_ctx[frame_idx];
+    b->user_owned = true;
+    s->user_buf_ctx[frame_idx] = NULL;
+  }
+
   /* Update stats (lock-free, relaxed ordering for counters) */
   __atomic_add_fetch(&s->stats.buffers_processed, 1, __ATOMIC_RELAXED);
   __atomic_add_fetch(&s->stats.bytes_processed, pub->data_size, __ATOMIC_RELAXED);
@@ -354,6 +444,9 @@ static void video_rx_destroy(struct mtl_session_impl* s) {
 
   s->inner.video_rx = NULL;
 
+  /* Clean up user-owned buffer resources */
+  mtl_session_user_buf_uinit(s);
+
   if (ctx) {
     if (ctx->ready_ring) {
       rte_ring_free(ctx->ready_ring);
@@ -395,8 +488,104 @@ static int video_rx_buffer_put(struct mtl_session_impl* s, mtl_buffer_t* buf) {
   int ret = st20_rx_put_framebuff(ctx->handle, b->frame_trans->addr);
 
   b->frame_trans = NULL;
+  b->user_ctx = NULL;
+  b->user_owned = false;
 
   return ret;
+}
+
+/*************************************************************************
+ * User-Owned Buffer Operations (RX)
+ *************************************************************************/
+
+/**
+ * Post a user-owned buffer for receiving (zero-copy mode).
+ *
+ * Looks up IOVA from registered DMA regions, then enqueues the buffer.
+ * The query_ext_frame callback will dequeue it when the library needs a buffer.
+ * Received data is signaled via MTL_EVENT_BUFFER_READY with user_ctx.
+ */
+static int video_rx_buffer_post(struct mtl_session_impl* s, void* data,
+                                size_t size, void* user_ctx) {
+  if (s->ownership != MTL_BUFFER_USER_OWNED) {
+    err("%s(%s), buffer_post only valid in USER_OWNED mode\n", __func__, s->name);
+    return -EINVAL;
+  }
+
+  /* Look up IOVA for the user buffer */
+  mtl_iova_t iova = mtl_session_lookup_iova(s, data, size);
+  if (iova == MTL_BAD_IOVA) {
+    err("%s(%s), failed to get IOVA for buffer %p (not registered?)\n",
+        __func__, s->name, data);
+    return -EINVAL;
+  }
+
+  return mtl_session_user_buf_enqueue(s, data, iova, size, user_ctx);
+}
+
+/**
+ * Register a memory region for DMA access (user-owned mode).
+ * After registration, buffers from this region can be passed to buffer_post().
+ */
+static int video_rx_mem_register(struct mtl_session_impl* s, void* addr,
+                                 size_t size, mtl_dma_mem_t** handle) {
+  if (s->dma_registration_cnt >= 8) {
+    err("%s(%s), too many DMA registrations (max 8)\n", __func__, s->name);
+    return -ENOSPC;
+  }
+
+  struct mtl_dma_mem_impl* reg =
+      mt_rte_zmalloc_socket(sizeof(*reg), s->socket_id);
+  if (!reg) return -ENOMEM;
+
+  reg->parent = s->parent;
+  reg->addr = addr;
+  reg->size = size;
+
+  /* Try to get IOVA mapping */
+  reg->iova = rte_mem_virt2iova(addr);
+  if (reg->iova == RTE_BAD_IOVA || reg->iova == 0) {
+    reg->iova = mtl_hp_virt2iova(s->parent, addr);
+    if (reg->iova == MTL_BAD_IOVA || reg->iova == 0) {
+      warn("%s(%s), could not get IOVA for region %p, will try per-buffer lookup\n",
+           __func__, s->name, addr);
+      reg->iova = 0;
+      reg->hp_mapped = false;
+    } else {
+      reg->hp_mapped = true;
+    }
+  }
+
+  s->dma_registrations[s->dma_registration_cnt++] = reg;
+
+  info("%s(%s), registered DMA region %p, size %zu, iova 0x%" PRIx64 "\n",
+       __func__, s->name, addr, size, reg->iova);
+
+  *handle = (mtl_dma_mem_t*)reg;
+  return 0;
+}
+
+/**
+ * Unregister a previously registered DMA memory region.
+ */
+static int video_rx_mem_unregister(struct mtl_session_impl* s,
+                                   mtl_dma_mem_t* handle) {
+  struct mtl_dma_mem_impl* reg = (struct mtl_dma_mem_impl*)handle;
+
+  for (uint8_t i = 0; i < s->dma_registration_cnt; i++) {
+    if (s->dma_registrations[i] == reg) {
+      info("%s(%s), unregistered DMA region %p\n", __func__, s->name, reg->addr);
+      mt_rte_free(reg);
+      for (uint8_t j = i; j < s->dma_registration_cnt - 1; j++) {
+        s->dma_registrations[j] = s->dma_registrations[j + 1];
+      }
+      s->dma_registrations[--s->dma_registration_cnt] = NULL;
+      return 0;
+    }
+  }
+
+  err("%s(%s), DMA handle not found\n", __func__, s->name);
+  return -EINVAL;
 }
 
 static int video_rx_stats_get(struct mtl_session_impl* s,
@@ -483,10 +672,10 @@ const mtl_session_vtable_t mtl_video_rx_vtable = {
     .destroy = video_rx_destroy,
     .buffer_get = video_rx_buffer_get,
     .buffer_put = video_rx_buffer_put,
-    .buffer_post = NULL,
+    .buffer_post = video_rx_buffer_post,
     .buffer_flush = NULL,
-    .mem_register = NULL,
-    .mem_unregister = NULL,
+    .mem_register = video_rx_mem_register,
+    .mem_unregister = video_rx_mem_unregister,
     .event_poll = video_session_event_poll,   /* shared implementation */
     .get_event_fd = NULL,
     .stats_get = video_rx_stats_get,
@@ -570,11 +759,15 @@ static void rx_apply_session_flags(struct st20_rx_ops* ops,
     ops->notify_event = video_session_notify_event;
   }
 
-  /* User-owned ext_frame mode */
-  if (config->base.ownership == MTL_BUFFER_USER_OWNED && config->base.query_ext_frame) {
+  /* User-owned ext_frame mode: only when app provides an explicit callback.
+   * The default buffer_post() path uses library's internal framebuffers and
+   * converts/copies into user buffers in notify_frame_ready. */
+  if (config->base.ownership == MTL_BUFFER_USER_OWNED &&
+      config->base.query_ext_frame) {
+    ops->query_ext_frame = video_rx_query_ext_frame_wrapper;
+    ops->flags |= ST20_RX_FLAG_RECEIVE_INCOMPLETE_FRAME;
     ctx->user_query_ext_frame = config->base.query_ext_frame;
     ctx->user_priv = config->base.priv;
-    ops->query_ext_frame = video_rx_query_ext_frame_wrapper;
   }
 
   /* Individual flag mappings */
@@ -699,11 +892,23 @@ int mtl_video_rx_session_init(struct mtl_session_impl* s, struct mtl_main_impl* 
     }
   }
 
-  info("%s(%d), transport fmt %s, output fmt %s, frame_size %zu, fb_cnt %u, derive %d\n",
+  /* Initialize user-owned buffer management if needed */
+  if (s->ownership == MTL_BUFFER_USER_OWNED) {
+    ret = mtl_session_user_buf_init(s, s->inner.video_rx->st20_frames_cnt);
+    if (ret < 0) {
+      err("%s(%s), user_buf_init failed: %d\n", __func__, s->name, ret);
+      s->inner.video_rx = NULL;
+      rx_cleanup_on_failure(ctx);
+      return ret;
+    }
+  }
+
+  info("%s(%d), transport fmt %s, output fmt %s, frame_size %zu, fb_cnt %u, derive %d%s\n",
        __func__, s->idx, st20_fmt_name(config->transport_fmt),
        st_frame_fmt_name(config->frame_fmt),
        ctx->convert.transport_frame_size, ops.framebuff_cnt,
-       ctx->convert.derive);
+       ctx->convert.derive,
+       s->ownership == MTL_BUFFER_USER_OWNED ? ", user-owned" : "");
 
   return 0;
 }
