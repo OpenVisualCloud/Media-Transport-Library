@@ -15,8 +15,8 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-#include "mt_log.h"
-#include "mt_mem.h"
+#include "../mt_log.h"
+#include "../mt_mem.h"
 
 #define MTL_EVENT_RING_SIZE 64 /* Must be power of 2 */
 
@@ -30,7 +30,7 @@ int mtl_session_events_init(struct mtl_session_impl* s) {
   snprintf(ring_name, sizeof(ring_name), "mtl_ev_%p", s);
 
   s->event_ring =
-      rte_ring_create(ring_name, MTL_EVENT_RING_SIZE, s->socket_id, RING_F_SC_DEQ);
+      rte_ring_create(ring_name, MTL_EVENT_RING_SIZE, s->socket_id, 0);
   if (!s->event_ring) {
     err("%s(%s), failed to create event ring\n", __func__, s->name);
     return -ENOMEM;

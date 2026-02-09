@@ -24,12 +24,11 @@
 #include "mtl_session_api.h"
 
 /* Internal MTL headers */
-#include "mt_main.h"
-#include "st2110/st_header.h"
+#include "../mt_main.h"
+#include "../st2110/st_header.h"
 
 #include <rte_atomic.h>
 #include <rte_ring.h>
-#include <rte_spinlock.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -159,12 +158,23 @@ struct mtl_session_impl {
   int idx;                      /**< Session index (for logging) */
   int socket_id;                /**< NUMA socket */
 
-  /* State */
+  /*
+   * Session state — accessed with C11 __atomic builtins.
+   * No lock needed; state transitions pair with the stopped flag.
+   */
   mtl_session_state_t state;
-  rte_spinlock_t state_lock;
 
-  /* Set by stop(), checked by buffer_get/event_poll to return -EAGAIN */
-  volatile bool stopped;
+  /**
+   * Atomic stopped flag — the primary cross-thread signal.
+   * Set by stop(), checked by buffer_get/event_poll to return -EAGAIN.
+   *
+   * Memory ordering rationale:
+   *   store (__ATOMIC_RELEASE): all prior stores (state, data) are visible
+   *                             before stopped is observed by other threads.
+   *   load  (__ATOMIC_ACQUIRE): subsequent reads in the checking thread see
+   *                             all stores that happened before the set.
+   */
+  int stopped;
 
   /* Configuration (copied from create) */
   char name[ST_MAX_NAME_LEN];
@@ -194,6 +204,13 @@ struct mtl_session_impl {
    * Frame buffer management.
    * For library-owned mode, we manage mtl_buffer_impl wrappers.
    * The actual frame memory is in inner->st20_frames (st_frame_trans array).
+   *
+   * Thread safety: completely lock-free.
+   * - TX: atomic CAS on per-frame state (enum tx_frame_state) provides
+   *   mutual exclusion — only the CAS winner owns a given frame.
+   * - RX: multi-consumer rte_ring ensures safe concurrent dequeue.
+   * Buffer wrapper assignment is race-free because each frame_idx maps
+   * 1:1 to a unique buffer_impl slot (buffer_count >= frame_count).
    */
   uint32_t buffer_count;
   struct mtl_buffer_impl* buffers; /**< Buffer wrapper pool */
@@ -202,9 +219,14 @@ struct mtl_session_impl {
   struct rte_ring* event_ring; /**< Pending events */
   int event_fd;                /**< For epoll integration */
 
-  /* Statistics - aggregated view of inner session stats */
+  /*
+   * Statistics — aggregated view of inner session stats.
+   * Thread safety: individual counter fields are accessed with __atomic builtins.
+   * Increments use __ATOMIC_RELAXED (no ordering needed for counters).
+   * Reads/resets also use __ATOMIC_RELAXED (approximate snapshot is fine).
+   * No lock needed — each field is independently atomic.
+   */
   mtl_session_stats_t stats;
-  rte_spinlock_t stats_lock;
 
   /* Callbacks (optional, for low-latency notification) */
   int (*notify_buffer_ready)(void* priv);
@@ -353,27 +375,31 @@ void mtl_session_put_frame_trans(struct st_frame_trans* ft);
  *************************************************************************/
 
 /**
- * Check if session is stopped.
+ * Check if session is stopped (thread-safe, acquire semantics).
  * Call this at the start of any blocking operation.
  */
 static inline bool mtl_session_check_stopped(struct mtl_session_impl* s) {
-  return s->stopped;
+  return __atomic_load_n(&s->stopped, __ATOMIC_ACQUIRE) != 0;
 }
 
 /**
- * Set stopped flag. Called by mtl_session_stop().
+ * Set stopped flag (thread-safe). Called by mtl_session_stop().
+ * Uses release semantics so all prior stores are visible.
  */
 static inline void mtl_session_set_stopped(struct mtl_session_impl* s) {
-  s->stopped = true;
-  s->state = MTL_SESSION_STATE_STOPPED;
+  /* Store state first (relaxed), then stopped with release.
+   * The release on stopped ensures that the state store is visible
+   * to any thread that observes stopped == 1 via acquire load. */
+  __atomic_store_n(&s->state, MTL_SESSION_STATE_STOPPED, __ATOMIC_RELAXED);
+  __atomic_store_n(&s->stopped, 1, __ATOMIC_RELEASE);
 }
 
 /**
- * Clear stopped flag. Called by mtl_session_start().
+ * Clear stopped flag (thread-safe). Called by mtl_session_start().
  */
 static inline void mtl_session_clear_stopped(struct mtl_session_impl* s) {
-  s->stopped = false;
-  s->state = MTL_SESSION_STATE_STARTED;
+  __atomic_store_n(&s->state, MTL_SESSION_STATE_STARTED, __ATOMIC_RELAXED);
+  __atomic_store_n(&s->stopped, 0, __ATOMIC_RELEASE);
 }
 
 /*************************************************************************

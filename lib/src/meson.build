@@ -20,9 +20,6 @@ sources = files(
   'mt_instance.c',
   'mt_log.c',
   'mt_pcap.c',
-  'mt_session.c',
-  'mt_session_buffer.c',
-  'mt_session_event.c',
 )
 
 if is_windows
@@ -36,4 +33,5 @@ subdir('datapath')
 subdir('dev')
 subdir('st2110')
 subdir('deprecated/udp')
+subdir('new_api')
 

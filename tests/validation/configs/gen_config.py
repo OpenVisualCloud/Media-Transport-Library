@@ -55,7 +55,7 @@ def gen_topology_config(
 
     network_interfaces = [
         {
-            "pci_device": pci_dev,
+            "pci_address": pci_dev,
             "interface_index": idx,
         }
         for idx, pci_dev in enumerate(pci_devices)
