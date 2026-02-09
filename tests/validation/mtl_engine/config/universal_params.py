@@ -11,6 +11,13 @@ UNIVERSAL_PARAMS = {
     "nic_port_list": None,  # List of network interfaces/ports
     "tx_nic_port": None,  # Override NIC port for TX direction
     "rx_nic_port": None,  # Override NIC port for RX direction
+    "rx_queues_cnt": None,  # Number of RX queues per interface (overrides auto-calculation)
+    "tx_queues_cnt": None,  # Number of TX queues per interface (overrides auto-calculation)
+    # Redundant mode parameters (ST2022-7 dual-port)
+    "redundant": False,  # Enable redundant (dual-port) mode
+    "nic_port_r": None,  # Redundant NIC port name (2nd E810 port VF)
+    "source_ip_r": None,  # Source IP for redundant port
+    "destination_ip_r": None,  # Destination IP for redundant port
     # Video parameters
     "width": 1920,  # Video width in pixels
     "height": 1080,  # Video height in pixels

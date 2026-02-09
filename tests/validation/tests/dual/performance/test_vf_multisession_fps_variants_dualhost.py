@@ -25,6 +25,7 @@ Host Role Assignment:
 - Can be overridden via test_config["host_roles"]["tx"] and test_config["host_roles"]["rx"]
 """
 
+import json
 import logging
 import time
 
@@ -35,11 +36,15 @@ from mtl_engine.execute import log_fail, run
 from mtl_engine.performance_monitoring import (
     FPS_TOLERANCE_PCT,
     FPS_WARMUP_SECONDS,
+    _display_throughput_summary,
     get_companion_log_summary,
+    monitor_dev_rate,
     monitor_rx_fps,
     monitor_rx_frames_simple,
+    monitor_rx_throughput,
     monitor_tx_fps,
     monitor_tx_frames,
+    monitor_tx_throughput,
 )
 from mtl_engine.rxtxapp import RxTxApp
 
@@ -47,38 +52,45 @@ logger = logging.getLogger(__name__)
 
 
 # Media file configurations for different FPS values
-# Using the same 1920x1080 10bit YUV422 file for all FPS to ensure file exists on both hosts
+# Using RFC4175 format files to avoid TX-side pixel format conversion bottleneck
+# Files in /mnt/media or copied to media_path
 MEDIA_CONFIGS = {
     25: {
-        "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_P422_180frames.yuv",
+        # RFC4175 format - no TX conversion needed
+        "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_180frames_yuv422p10be_To_yuv422rfc4175be10.yuv",
         "file_format": "YUV_422_10bit",
         "format": "YUV_422_10bit",
+        "pixel_format": "YUV422RFC4175PG2BE10",  # Native RFC4175 format - no conversion
         "width": 1920,
         "height": 1080,
         "fps": 25,
     },
     30: {
-        "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_P422_180frames.yuv",
+        # RFC4175 format - using 60fps file at 30fps
+        "filename": "CSGObuymenu_1080p_60fps_120frames_yuv422rfc4175be10.yuv",
         "file_format": "YUV_422_10bit",
         "format": "YUV_422_10bit",
+        "pixel_format": "YUV422RFC4175PG2BE10",
         "width": 1920,
         "height": 1080,
         "fps": 30,
     },
     50: {
-        # Using same 1080p file as higher resolution files not available
-        "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_P422_180frames.yuv",
+        # RFC4175 format - 60fps file works for 50fps
+        "filename": "CSGObuymenu_1080p_60fps_120frames_yuv422rfc4175be10.yuv",
         "file_format": "YUV_422_10bit",
         "format": "YUV_422_10bit",
+        "pixel_format": "YUV422RFC4175PG2BE10",
         "width": 1920,
         "height": 1080,
         "fps": 50,
     },
     59: {
-        # Using same 1080p file as the specific 60fps file not available
-        "filename": "HDR_BBC_v4_008_Penguin1_1920x1080_10bit_25Hz_P422_180frames.yuv",
+        # RFC4175 format - native 60fps file, no conversion needed
+        "filename": "CSGObuymenu_1080p_60fps_120frames_yuv422rfc4175be10.yuv",
         "file_format": "YUV_422_10bit",
         "format": "YUV_422_10bit",
+        "pixel_format": "YUV422RFC4175PG2BE10",
         "width": 1920,
         "height": 1080,
         "fps": 59,
@@ -89,6 +101,30 @@ MEDIA_CONFIGS = {
 # This forces all sessions to run on a single core
 # For multi-core tests, this should be None (not set)
 SCH_SESSION_QUOTA_SINGLE_CORE = 60
+
+
+def get_host_media_path(host, default_media: str, test_config: dict = None) -> str:
+    """
+    Get the media path for a specific host from test_config.
+
+    Args:
+        host: Host object
+        default_media: Default media path to use as fallback
+        test_config: Optional test configuration dict containing host_media_paths
+
+    Returns:
+        Media path for the host
+    """
+    # Try to get from test_config's host_media_paths
+    if test_config and "host_media_paths" in test_config:
+        host_path = test_config["host_media_paths"].get(host.name)
+        if host_path:
+            logger.debug(f"Using media path from test_config for {host.name}: {host_path}")
+            return host_path
+
+    # Fall back to default media path
+    logger.debug(f"Using default media path for {host.name}: {default_media}")
+    return default_media
 
 
 def get_tx_rx_hosts(hosts: dict, test_type: str, test_config: dict = None):
@@ -188,6 +224,99 @@ def get_host_build_path(host, default_build: str, test_config: dict = None) -> s
     return default_build
 
 
+def display_test_config_summary(
+    direction: str,
+    test_label: str,
+    measured_host,
+    companion_host,
+    measured_vf: str,
+    companion_vf: str,
+    num_sessions: int,
+    fps: float,
+    media_config: dict,
+    use_dsa: bool,
+    dsa_device: str = None,
+    dsa_info: dict = None,
+    measured_vf_r: str = None,
+    companion_vf_r: str = None,
+    redundant: bool = False,
+    multi_core: bool = False,
+) -> None:
+    """
+    Display a formatted configuration summary box before FPS results.
+
+    Args:
+        direction: "TX" or "RX" (which side is being measured)
+        test_label: Short test variant label (e.g., "Single-Core", "Multi-Core", "REDUNDANT")
+        measured_host: Host object for the measured side
+        companion_host: Host object for the companion side
+        measured_vf: VF PCI address used on measured host
+        companion_vf: VF PCI address used on companion host
+        num_sessions: Number of concurrent sessions
+        fps: Target frame rate
+        media_config: Media configuration dict
+        use_dsa: Whether DSA is enabled
+        dsa_device: DSA PCI address if enabled
+        dsa_info: Optional DSA info dict from get_dsa_info()
+        measured_vf_r: Redundant VF on measured host (if redundant mode)
+        companion_vf_r: Redundant VF on companion host (if redundant mode)
+        redundant: Whether running in redundant mode
+        multi_core: Whether running in multi-core mode
+    """
+    companion_dir = "RX" if direction == "TX" else "TX"
+    mode = "REDUNDANT " if redundant else ""
+    core_mode = "Multi-Core" if multi_core else "Single-Core"
+    dsa_status = f"✓ ENABLED ({dsa_device})" if use_dsa else "✗ DISABLED"
+
+    # Build NUMA info from dsa_info if available
+    nic_numa = dsa_info.get("nic_numa", "?") if dsa_info else "?"
+    dsa_numa = dsa_info.get("dsa_numa", "?") if dsa_info else "N/A"
+    numa_match = dsa_info.get("numa_match", "N/A") if dsa_info else "N/A"
+
+    logger.info(
+        f"\n"
+        f"╔══════════════════════════════════════════════════════════════════════════════╗\n"
+        f"║  TEST CONFIGURATION SUMMARY                                                ║\n"
+        f"╠══════════════════════════════════════════════════════════════════════════════╣\n"
+        f"║  Test:          {mode}{direction} {core_mode:<58} ║\n"
+        f"║  Sessions:      {num_sessions:<58} ║\n"
+        f"║  Target FPS:    {fps:<58} ║\n"
+        f"║  Media:         {media_config['filename'][:58]:<58} ║\n"
+        f"║  Format:        {media_config['format']:<58} ║\n"
+        f"║  Resolution:    {media_config['width']}x{media_config['height']:<50} ║\n"
+        f"╠══════════════════════════════════════════════════════════════════════════════╣\n"
+        f"║  MEASURED HOST                                                             ║\n"
+        f"║  Host:          {measured_host.name:<58} ║\n"
+        f"║  Role:          {direction:<58} ║\n"
+        f"║  NIC (primary): {measured_vf:<58} ║\n"
+        + (
+            f"║  NIC (redund.): {measured_vf_r:<58} ║\n"
+            if redundant and measured_vf_r
+            else ""
+        )
+        + f"║  NIC NUMA:      {nic_numa:<58} ║\n"
+        f"╠══════════════════════════════════════════════════════════════════════════════╣\n"
+        f"║  COMPANION HOST                                                            ║\n"
+        f"║  Host:          {companion_host.name:<58} ║\n"
+        f"║  Role:          {companion_dir:<58} ║\n"
+        f"║  NIC (primary): {companion_vf:<58} ║\n"
+        + (
+            f"║  NIC (redund.): {companion_vf_r:<58} ║\n"
+            if redundant and companion_vf_r
+            else ""
+        )
+        + f"╠══════════════════════════════════════════════════════════════════════════════╣\n"
+        f"║  DSA:           {dsa_status:<58} ║\n"
+        + (
+            f"║  DSA NUMA:      {dsa_numa:<58} ║\n"
+            f"║  NUMA Match:    {numa_match:<58} ║\n"
+            if use_dsa
+            else ""
+        )
+        + f"╚══════════════════════════════════════════════════════════════════════════════╝"
+    )
+
+
 def display_session_results(
     direction: str,
     dsa_label: str,
@@ -197,9 +326,13 @@ def display_session_results(
     tx_frame_counts: dict,
     rx_frame_counts: dict,
     dsa_info: dict = None,
+    throughput_details: dict = None,
+    dev_rate: dict = None,
+    companion_throughput_details: dict = None,
+    companion_dev_rate: dict = None,
 ) -> None:
     """
-    Display FPS and frame count results for all sessions.
+    Display FPS, frame count, and throughput results for all sessions.
 
     Args:
         direction: "TX" or "RX" (which side is being tested)
@@ -213,6 +346,10 @@ def display_session_results(
         tx_frame_counts: TX frame counts per session (dict: session_id -> count)
         rx_frame_counts: RX frame counts per session (dict: session_id -> count)
         dsa_info: Optional DSA configuration info dict from get_dsa_info()
+        throughput_details: Throughput data from measured app (from monitor_tx_throughput/monitor_rx_throughput)
+        dev_rate: Device rate data from measured app (from monitor_dev_rate)
+        companion_throughput_details: Throughput data from companion app
+        companion_dev_rate: Device rate data from companion app
     """
     successful_count = len(fps_details.get("successful_sessions", []))
     min_required = fps_details.get("min_required_fps", fps * FPS_TOLERANCE_PCT)
@@ -271,6 +408,13 @@ def display_session_results(
                 f"  Session {session_id}: FPS: requested={fps}, No data ✗ | "
                 f"Frames: TX={tx_frames}, RX={rx_frames}, Success={success_pct_display}"
             )
+
+    # Display throughput information (informational only, no pass/fail impact)
+    _display_throughput_summary(
+        direction, num_sessions, throughput_details, dev_rate,
+        companion_throughput_details, companion_dev_rate,
+    )
+
     logger.info("=" * 80)
 
 
@@ -280,8 +424,8 @@ def display_session_results(
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize(
     "num_sessions",
-    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32],
-    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"],
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess"],
 )
 def test_dualhost_vf_tx_fps_variants_single_core(
     hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
@@ -315,7 +459,9 @@ def test_dualhost_vf_tx_fps_variants_single_core(
         pytest.skip(f"Test requires at least 1 VF on RX host ({rx_host.name})")
 
     media_config = MEDIA_CONFIGS[fps]
-    media_file_path = f"{media}/{media_config['filename']}"
+    # Get TX host's media path (may be different from default, e.g., ramdisk)
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
 
     # Check if both hosts point to the same machine (loopback mode)
     same_host = tx_host.connection.ip == rx_host.connection.ip
@@ -361,6 +507,7 @@ def test_dualhost_vf_tx_fps_variants_single_core(
         direction="rx",
         test_mode="unicast",
         transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
         width=media_config["width"],
         height=media_config["height"],
         framerate=f"p{fps}",
@@ -368,13 +515,18 @@ def test_dualhost_vf_tx_fps_variants_single_core(
         nic_port=rx_vf,
         source_ip="192.168.4.150",
         destination_ip="192.168.4.206",
-        port=20000,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
+        measure_latency=True,
         replicas=num_sessions,
         sch_session_quota=SCH_SESSION_QUOTA_SINGLE_CORE,
+        rx_queues_cnt=64,
         test_time=test_time + 10,
     )
 
-    companion_log = f"{build_rx_host}/tests/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_rx_companion.log"
+    companion_log = f"{build_rx_host}/tests/validation/logs/performance/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_rx_companion.log"
     logger.info(f"Starting companion RX on {rx_host.name}, logs: {companion_log}")
     logger.info(f"Companion RX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
 
@@ -382,7 +534,7 @@ def test_dualhost_vf_tx_fps_variants_single_core(
     rx_app.prepare_execution(build=build_rx_host, host=rx_host)
 
     rx_process = rx_host.connection.start_process(
-        f"{rx_app.command} > {companion_log} 2>&1", cwd=build_rx_host, shell=True
+        f"mkdir -p $(dirname {companion_log}) && {rx_app.command} > {companion_log} 2>&1", cwd=build_rx_host, shell=True
     )
     time.sleep(10)
 
@@ -395,6 +547,7 @@ def test_dualhost_vf_tx_fps_variants_single_core(
             "direction": "tx",
             "test_mode": "unicast",
             "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
             "width": media_config["width"],
             "height": media_config["height"],
             "framerate": f"p{fps}",
@@ -402,9 +555,13 @@ def test_dualhost_vf_tx_fps_variants_single_core(
             "nic_port": tx_vf,
             "source_ip": "192.168.4.150",
             "destination_ip": "192.168.4.206",
-            "port": 20000,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
             "replicas": num_sessions,
             "sch_session_quota": SCH_SESSION_QUOTA_SINGLE_CORE,
+            "rx_queues_cnt": 64,
             "test_time": test_time,
             "tsc": True,  # Force TSC pacing (workaround for hosts without Kahawai ice driver)
         }
@@ -454,18 +611,47 @@ def test_dualhost_vf_tx_fps_variants_single_core(
         time.sleep(5)
 
         # Get RX frame counts from companion RX log on rx_host (measure from beginning)
+        companion_lines = []
         try:
             companion_result = rx_host.connection.execute_command(f"cat {companion_log}", shell=True)
-            rx_frame_counts = monitor_rx_frames_simple(
-                companion_result.stdout.splitlines() if companion_result.stdout else [], num_sessions
-            )
+            companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
+            rx_frame_counts = monitor_rx_frames_simple(companion_lines, num_sessions)
         except Exception as e:
             logger.warning(f"Could not read companion log from {rx_host.name} for frame counts: {e}")
             rx_frame_counts = {}
 
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_tx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_rx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
         # Display session results with DSA info if enabled
         dsa_info = get_dsa_info(tx_host, role="TX") if use_dsa else None
-        display_session_results("TX", dsa_label, num_sessions, fps, fps_details, tx_frame_counts, rx_frame_counts, dsa_info=dsa_info)
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(tx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(tx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="TX", test_label="Single-Core",
+            measured_host=tx_host, companion_host=rx_host,
+            measured_vf=tx_vf, companion_vf=rx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+        )
+
+        display_session_results(
+            "TX", dsa_label, num_sessions, fps, fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
 
         if not success:
             failure_msg = f"Only {successful_count}/{num_sessions} sessions reached target {fps} fps (min {fps_details['min_required_fps']:.1f} fps){dsa_label}"
@@ -490,8 +676,8 @@ def test_dualhost_vf_tx_fps_variants_single_core(
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize(
     "num_sessions",
-    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32],
-    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"],
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48, 64],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess", "64sess"],
 )
 def test_dualhost_vf_rx_fps_variants_single_core(
     hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
@@ -525,7 +711,9 @@ def test_dualhost_vf_rx_fps_variants_single_core(
         pytest.skip(f"Test requires at least 1 VF on TX host ({tx_host.name})")
 
     media_config = MEDIA_CONFIGS[fps]
-    media_file_path = f"{media}/{media_config['filename']}"
+    # Get TX host's media path (may be different from default, e.g., ramdisk)
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
 
     rx_vf = rx_host.vfs[0]  # RX VF on measured host
     tx_vf = tx_host.vfs[0]  # TX VF on companion host
@@ -560,6 +748,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(
         direction="tx",
         test_mode="unicast",
         transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
         width=media_config["width"],
         height=media_config["height"],
         framerate=f"p{fps}",
@@ -567,14 +756,18 @@ def test_dualhost_vf_rx_fps_variants_single_core(
         nic_port=tx_vf,
         source_ip="192.168.4.150",
         destination_ip="192.168.4.206",
-        port=20000,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
         replicas=num_sessions,
         sch_session_quota=SCH_SESSION_QUOTA_SINGLE_CORE,
+        rx_queues_cnt=64,
         test_time=test_time + 10,
         pacing_way="tsc",  # Force TSC pacing - TM crashes on VFs with DPDK 25
     )
 
-    companion_log = f"{build_tx_host}/tests/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_tx_companion.log"
+    companion_log = f"{build_tx_host}/tests/validation/logs/performance/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_tx_companion.log"
     logger.info(f"Starting companion TX on {tx_host.name}, logs: {companion_log}")
     logger.info(f"Companion TX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
 
@@ -595,7 +788,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(
         logger.warning(f"Could not get RX VF MAC, relying on ARP: {e}")
 
     tx_process = tx_host.connection.start_process(
-        f"{tx_app.command} > {companion_log} 2>&1", cwd=build_tx_host, shell=True
+        f"mkdir -p $(dirname {companion_log}) && {tx_app.command} > {companion_log} 2>&1", cwd=build_tx_host, shell=True
     )
     time.sleep(10)
 
@@ -608,6 +801,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(
             "direction": "rx",
             "test_mode": "unicast",
             "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
             "width": media_config["width"],
             "height": media_config["height"],
             "framerate": f"p{fps}",
@@ -615,9 +809,14 @@ def test_dualhost_vf_rx_fps_variants_single_core(
             "nic_port": rx_vf,
             "source_ip": "192.168.4.150",
             "destination_ip": "192.168.4.206",
-            "port": 20000,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
+            "measure_latency": True,
             "replicas": num_sessions,
             "sch_session_quota": SCH_SESSION_QUOTA_SINGLE_CORE,
+            "rx_queues_cnt": 64,
             "test_time": test_time,
         }
 
@@ -672,6 +871,7 @@ def test_dualhost_vf_rx_fps_variants_single_core(
 
         # Get TX frame counts from companion TX log on tx_host (measure from beginning)
         tx_frame_counts = {}
+        companion_lines = []
         try:
             companion_result = tx_host.connection.execute_command(f"cat {companion_log}", shell=True)
             companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
@@ -681,9 +881,38 @@ def test_dualhost_vf_rx_fps_variants_single_core(
         except Exception as e:
             logger.warning(f"Could not read companion log from {tx_host.name} for frame counts: {e}")
 
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_rx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_tx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
         # Display session results with DSA info if enabled
         dsa_info = get_dsa_info(rx_host, role="RX") if use_dsa else None
-        display_session_results("RX", dsa_label, num_sessions, fps, rx_fps_details, tx_frame_counts, rx_frame_counts, dsa_info=dsa_info)
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(rx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(rx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="RX", test_label="Single-Core",
+            measured_host=rx_host, companion_host=tx_host,
+            measured_vf=rx_vf, companion_vf=tx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+        )
+
+        display_session_results(
+            "RX", dsa_label, num_sessions, fps, rx_fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
 
         # Test passes/fails based on RX FPS achievement
         if not rx_fps_success:
@@ -709,8 +938,8 @@ def test_dualhost_vf_rx_fps_variants_single_core(
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize(
     "num_sessions",
-    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32],
-    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"],
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess"],
 )
 def test_dualhost_vf_tx_fps_variants_multi_core(
     hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
@@ -745,7 +974,9 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
         pytest.skip(f"Test requires at least 1 VF on RX host ({rx_host.name})")
 
     media_config = MEDIA_CONFIGS[fps]
-    media_file_path = f"{media}/{media_config['filename']}"
+    # Get TX host's media path (may be different from default, e.g., ramdisk)
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
 
     tx_vf = tx_host.vfs[0]  # TX VF on measured host
     rx_vf = rx_host.vfs[0]  # RX VF on companion host
@@ -780,6 +1011,7 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
         direction="rx",
         test_mode="unicast",
         transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
         width=media_config["width"],
         height=media_config["height"],
         framerate=f"p{fps}",
@@ -787,13 +1019,18 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
         nic_port=rx_vf,
         source_ip="192.168.4.150",
         destination_ip="192.168.4.206",
-        port=20000,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
+        measure_latency=True,
         replicas=num_sessions,
+        rx_queues_cnt=64,
         test_time=test_time + 10,
     )
 
     companion_log = (
-        f"{build_rx_host}/tests/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_rx_companion.log"
+        f"{build_rx_host}/tests/validation/logs/performance/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_rx_companion.log"
     )
     logger.info(f"Starting companion RX on {rx_host.name}, logs: {companion_log}")
     logger.info(f"Companion RX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
@@ -802,7 +1039,7 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
     rx_app.prepare_execution(build=build_rx_host, host=rx_host)
 
     rx_process = rx_host.connection.start_process(
-        f"{rx_app.command} > {companion_log} 2>&1", cwd=build_rx_host, shell=True
+        f"mkdir -p $(dirname {companion_log}) && {rx_app.command} > {companion_log} 2>&1", cwd=build_rx_host, shell=True
     )
     time.sleep(10)
 
@@ -815,6 +1052,7 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
             "direction": "tx",
             "test_mode": "unicast",
             "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
             "width": media_config["width"],
             "height": media_config["height"],
             "framerate": f"p{fps}",
@@ -822,8 +1060,12 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
             "nic_port": tx_vf,
             "source_ip": "192.168.4.150",
             "destination_ip": "192.168.4.206",
-            "port": 20000,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
             "replicas": num_sessions,
+            "rx_queues_cnt": 64,
             "test_time": test_time,
         }
 
@@ -874,18 +1116,48 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
         time.sleep(5)
 
         # Get RX frame counts from companion RX log on rx_host (measure from beginning)
+        companion_lines = []
         try:
             companion_result = rx_host.connection.execute_command(f"cat {companion_log}", shell=True)
-            rx_frame_counts = monitor_rx_frames_simple(
-                companion_result.stdout.splitlines() if companion_result.stdout else [], num_sessions
-            )
+            companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
+            rx_frame_counts = monitor_rx_frames_simple(companion_lines, num_sessions)
         except Exception as e:
             logger.warning(f"Could not read companion log from {rx_host.name} for frame counts: {e}")
             rx_frame_counts = {}
 
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_tx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_rx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
         # Display session results with DSA info if enabled
         dsa_info = get_dsa_info(tx_host, role="TX") if use_dsa else None
-        display_session_results("TX", dsa_label, num_sessions, fps, fps_details, tx_frame_counts, rx_frame_counts, dsa_info=dsa_info)
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(tx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(tx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="TX", test_label="Multi-Core",
+            measured_host=tx_host, companion_host=rx_host,
+            measured_vf=tx_vf, companion_vf=rx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+            multi_core=True,
+        )
+
+        display_session_results(
+            "TX", dsa_label, num_sessions, fps, fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
 
         if not success:
             failure_msg = f"Only {successful_count}/{num_sessions} sessions reached target {fps} fps (min {fps_details['min_required_fps']:.1f} fps) (Multi-Core){dsa_label}"
@@ -913,8 +1185,8 @@ def test_dualhost_vf_tx_fps_variants_multi_core(
 @pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
 @pytest.mark.parametrize(
     "num_sessions",
-    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32],
-    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess"],
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48, 64],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess", "64sess"],
 )
 def test_dualhost_vf_rx_fps_variants_multi_core(
     hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
@@ -949,7 +1221,9 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
         pytest.skip(f"Test requires at least 1 VF on TX host ({tx_host.name})")
 
     media_config = MEDIA_CONFIGS[fps]
-    media_file_path = f"{media}/{media_config['filename']}"
+    # Get TX host's media path (may be different from default, e.g., ramdisk)
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
 
     rx_vf = rx_host.vfs[0]  # RX VF on measured host
     tx_vf = tx_host.vfs[0]  # TX VF on companion host
@@ -984,6 +1258,7 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
         direction="tx",
         test_mode="unicast",
         transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
         width=media_config["width"],
         height=media_config["height"],
         framerate=f"p{fps}",
@@ -991,13 +1266,17 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
         nic_port=tx_vf,
         source_ip="192.168.4.150",
         destination_ip="192.168.4.206",
-        port=20000,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
         replicas=num_sessions,
+        rx_queues_cnt=64,
         test_time=test_time + 10,
     )
 
     companion_log = (
-        f"{build_tx_host}/tests/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_tx_companion.log"
+        f"{build_tx_host}/tests/validation/logs/performance/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_multicore_tx_companion.log"
     )
     logger.info(f"Starting companion TX on {tx_host.name}, logs: {companion_log}")
     logger.info(f"Companion TX will run for {test_time + 10} seconds (test_time={test_time} + 10s buffer)")
@@ -1006,7 +1285,7 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
     tx_app.prepare_execution(build=build_tx_host, host=tx_host)
 
     tx_process = tx_host.connection.start_process(
-        f"{tx_app.command} > {companion_log} 2>&1", cwd=build_tx_host, shell=True
+        f"mkdir -p $(dirname {companion_log}) && {tx_app.command} > {companion_log} 2>&1", cwd=build_tx_host, shell=True
     )
     time.sleep(10)
 
@@ -1019,6 +1298,7 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
             "direction": "rx",
             "test_mode": "unicast",
             "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
             "width": media_config["width"],
             "height": media_config["height"],
             "framerate": f"p{fps}",
@@ -1026,8 +1306,13 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
             "nic_port": rx_vf,
             "source_ip": "192.168.4.150",
             "destination_ip": "192.168.4.206",
-            "port": 20000,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
+            "measure_latency": True,
             "replicas": num_sessions,
+            "rx_queues_cnt": 64,
             "test_time": test_time,
         }
 
@@ -1084,6 +1369,7 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
 
         # Get TX frame counts from companion TX log on tx_host (measure from beginning)
         tx_frame_counts = {}
+        companion_lines = []
         try:
             companion_result = tx_host.connection.execute_command(f"cat {companion_log}", shell=True)
             companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
@@ -1093,9 +1379,39 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
         except Exception as e:
             logger.warning(f"Could not read companion log from {tx_host.name} for frame counts: {e}")
 
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_rx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_tx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
         # Display session results with DSA info if enabled
         dsa_info = get_dsa_info(rx_host, role="RX") if use_dsa else None
-        display_session_results("RX", dsa_label, num_sessions, fps, rx_fps_details, tx_frame_counts, rx_frame_counts, dsa_info=dsa_info)
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(rx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(rx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="RX", test_label="Multi-Core",
+            measured_host=rx_host, companion_host=tx_host,
+            measured_vf=rx_vf, companion_vf=tx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+            multi_core=True,
+        )
+
+        display_session_results(
+            "RX", dsa_label, num_sessions, fps, rx_fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
 
         # Test passes/fails based on RX FPS achievement
         if not rx_fps_success:
@@ -1107,6 +1423,886 @@ def test_dualhost_vf_rx_fps_variants_multi_core(
             TEST_PASS,
             f"Dual-host RX FPS variant test (Multi-Core){dsa_label} passed: {num_sessions} sessions @ {fps} fps",
         )
+
+    finally:
+        try:
+            tx_process.stop()
+            if tx_process.running:
+                time.sleep(2)
+                tx_process.kill()
+        except Exception as e:
+            logger.warning(f"Error stopping companion TX on {tx_host.name}: {e}")
+
+
+# ============================================================================
+# Redundant Mode (ST2022-7) Tests
+# Uses both E810 ports per host for dual-path redundancy
+# Primary path:   localhost port 0 <-> host_183 port 1 (192.168.4.x subnet)
+# Redundant path: localhost port 1 <-> host_183 port 0 (192.168.5.x subnet)
+# ============================================================================
+
+# Redundant mode IP addressing
+REDUNDANT_IP_PRIMARY_TX = "192.168.4.150"
+REDUNDANT_IP_PRIMARY_RX = "192.168.4.206"
+REDUNDANT_IP_SECONDARY_TX = "192.168.5.150"
+REDUNDANT_IP_SECONDARY_RX = "192.168.5.206"
+
+
+@pytest.mark.nightly
+@pytest.mark.performance
+@pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
+@pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
+@pytest.mark.parametrize(
+    "num_sessions",
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess"],
+)
+def test_dualhost_vf_tx_fps_variants_single_core_redundant(
+    hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
+) -> None:
+    """
+    Test TX multi-session performance in REDUNDANT mode (single-core pinning).
+
+    Uses both E810 ports per host for ST2022-7 dual-path redundancy.
+    Each session transmits on both ports simultaneously.
+    """
+    if len(hosts) < 2:
+        pytest.skip("Test requires at least 2 hosts for dual-host testing")
+
+    tx_host, rx_host = get_tx_rx_hosts(hosts, "tx_test", test_config)
+
+    if not hasattr(tx_host, "vfs") or len(tx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 0 ({tx_host.name})")
+    if not hasattr(tx_host, "vfs_r") or len(tx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 1 for redundant ({tx_host.name})")
+    if not hasattr(rx_host, "vfs") or len(rx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 0 ({rx_host.name})")
+    if not hasattr(rx_host, "vfs_r") or len(rx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 1 for redundant ({rx_host.name})")
+
+    media_config = MEDIA_CONFIGS[fps]
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
+
+    tx_vf = tx_host.vfs[0]     # Primary TX VF (port 0)
+    tx_vf_r = tx_host.vfs_r[0] # Redundant TX VF (port 1)
+    rx_vf = rx_host.vfs[0]     # Primary RX VF
+    rx_vf_r = rx_host.vfs_r[0] # Redundant RX VF
+
+    # Configure DSA if enabled
+    if use_dsa:
+        dsa_config = get_host_dsa_config(tx_host)
+        dsa_device = setup_host_dsa(tx_host, tx_vf, dsa_config, role="TX")
+        if dsa_device is None:
+            pytest.skip(f"DSA device not available on measured host ({tx_host.name})")
+    else:
+        dsa_device = None
+    dsa_suffix = "_dsa" if use_dsa else ""
+    dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
+
+    logger.info("=" * 80)
+    logger.info(f"Dual-Host VF TX REDUNDANT{dsa_label}: {num_sessions} sessions @ {fps} fps")
+    logger.info(f"{tx_host.name} TX: primary={tx_vf}, redundant={tx_vf_r}")
+    logger.info(f"{rx_host.name} RX: primary={rx_vf}, redundant={rx_vf_r}")
+    logger.info(f"Media: {media_config['filename']}")
+    logger.info("=" * 80)
+
+    build_tx_host = get_host_build_path(tx_host, build, test_config)
+    build_rx_host = get_host_build_path(rx_host, build, test_config)
+
+    # Start companion RX in redundant mode
+    rx_app = RxTxApp(app_path=f"{build_rx_host}/tests/tools/RxTxApp/build")
+    rx_app.create_command(
+        session_type="st20p",
+        direction="rx",
+        test_mode="unicast",
+        transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
+        width=media_config["width"],
+        height=media_config["height"],
+        framerate=f"p{fps}",
+        output_file="/dev/null",
+        nic_port=rx_vf,
+        nic_port_r=rx_vf_r,
+        redundant=True,
+        source_ip=REDUNDANT_IP_PRIMARY_TX,
+        destination_ip=REDUNDANT_IP_PRIMARY_RX,
+        source_ip_r=REDUNDANT_IP_SECONDARY_TX,
+        destination_ip_r=REDUNDANT_IP_SECONDARY_RX,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
+        measure_latency=True,
+        replicas=num_sessions,
+        sch_session_quota=SCH_SESSION_QUOTA_SINGLE_CORE,
+        rx_queues_cnt=64,
+        test_time=test_time + 10,
+    )
+
+    companion_log = f"{build_rx_host}/tests/validation/logs/performance/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_redundant_rx_companion.log"
+    logger.info(f"Starting companion RX (redundant) on {rx_host.name}")
+    rx_app.prepare_execution(build=build_rx_host, host=rx_host)
+    rx_process = rx_host.connection.start_process(
+        f"mkdir -p $(dirname {companion_log}) && {rx_app.command} > {companion_log} 2>&1", cwd=build_rx_host, shell=True
+    )
+    time.sleep(10)
+
+    try:
+        # Configure TX in redundant mode
+        tx_app = RxTxApp(app_path=f"{build_tx_host}/tests/tools/RxTxApp/build")
+        tx_kwargs = {
+            "session_type": "st20p",
+            "direction": "tx",
+            "test_mode": "unicast",
+            "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
+            "width": media_config["width"],
+            "height": media_config["height"],
+            "framerate": f"p{fps}",
+            "input_file": media_file_path,
+            "nic_port": tx_vf,
+            "nic_port_r": tx_vf_r,
+            "redundant": True,
+            "source_ip": REDUNDANT_IP_PRIMARY_TX,
+            "destination_ip": REDUNDANT_IP_PRIMARY_RX,
+            "source_ip_r": REDUNDANT_IP_SECONDARY_TX,
+            "destination_ip_r": REDUNDANT_IP_SECONDARY_RX,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
+            "replicas": num_sessions,
+            "sch_session_quota": SCH_SESSION_QUOTA_SINGLE_CORE,
+            "rx_queues_cnt": 64,
+            "test_time": test_time,
+            "tsc": True,
+        }
+        if use_dsa:
+            tx_kwargs["dma_dev"] = dsa_device
+
+        tx_app.create_command(**tx_kwargs)
+        tx_app.prepare_execution(build=build_tx_host, host=tx_host)
+
+        logger.info(f"Running TX (redundant) on {tx_host.name}{dsa_label}")
+        result = run(tx_app.command, cwd=build_tx_host, timeout=test_time + 60, testcmd=True, host=tx_host)
+
+        # Log TX output
+        logger.info("=" * 80)
+        logger.info(f"TX Process Output ({tx_host.name}) - REDUNDANT")
+        logger.info("=" * 80)
+        if result.stdout_text:
+            for line in result.stdout_text.splitlines():
+                if any(keyword in line.lower() for keyword in ["fps", "session", "error", "fail", "warn", "mismatch", "redundant"]):
+                    logger.info(f"TX: {line}")
+        logger.info("=" * 80)
+
+        # Retrieve companion RX logs
+        logger.info("=" * 80)
+        logger.info(f"Companion RX Process Logs ({rx_host.name}) - REDUNDANT")
+        logger.info("=" * 80)
+        get_companion_log_summary(rx_host, companion_log, max_lines=50)
+        logger.info("=" * 80)
+
+        if result.return_code != 0:
+            log_fail(f"TX process (Redundant){dsa_label} on {tx_host.name} failed with exit code {result.return_code}")
+            pytest.fail(f"TX process (Redundant){dsa_label} on {tx_host.name} failed with exit code {result.return_code}")
+
+        success, successful_count, fps_details = monitor_tx_fps(result.stdout_text.splitlines(), fps, num_sessions)
+        tx_frame_counts = monitor_tx_frames(result.stdout_text.splitlines(), num_sessions)
+
+        time.sleep(5)
+        companion_lines = []
+        try:
+            companion_result = rx_host.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
+            rx_frame_counts = monitor_rx_frames_simple(companion_lines, num_sessions)
+        except Exception as e:
+            logger.warning(f"Could not read companion log: {e}")
+            rx_frame_counts = {}
+
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_tx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_rx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
+        dsa_info = get_dsa_info(tx_host, role="TX") if use_dsa else None
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(tx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(tx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="TX", test_label="REDUNDANT Single-Core",
+            measured_host=tx_host, companion_host=rx_host,
+            measured_vf=tx_vf, companion_vf=rx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+            measured_vf_r=tx_vf_r, companion_vf_r=rx_vf_r, redundant=True,
+        )
+
+        display_session_results(
+            "TX", f" REDUNDANT{dsa_label}", num_sessions, fps, fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
+
+        if not success:
+            failure_msg = f"Only {successful_count}/{num_sessions} sessions reached target {fps} fps (Redundant){dsa_label}"
+            log_fail(failure_msg)
+            pytest.fail(failure_msg)
+
+        logger.log(TEST_PASS, f"Dual-host TX REDUNDANT test{dsa_label} passed: {num_sessions} sessions @ {fps} fps")
+
+    finally:
+        try:
+            rx_process.stop()
+            if rx_process.running:
+                time.sleep(2)
+                rx_process.kill()
+        except Exception as e:
+            logger.warning(f"Error stopping companion RX on {rx_host.name}: {e}")
+
+
+@pytest.mark.nightly
+@pytest.mark.performance
+@pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
+@pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
+@pytest.mark.parametrize(
+    "num_sessions",
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48, 64],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess", "64sess"],
+)
+def test_dualhost_vf_rx_fps_variants_single_core_redundant(
+    hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
+) -> None:
+    """
+    Test RX multi-session performance in REDUNDANT mode (single-core pinning).
+
+    Uses both E810 ports per host for ST2022-7 dual-path redundancy.
+    """
+    if len(hosts) < 2:
+        pytest.skip("Test requires at least 2 hosts for dual-host testing")
+
+    tx_host, rx_host = get_tx_rx_hosts(hosts, "rx_test", test_config)
+
+    if not hasattr(rx_host, "vfs") or len(rx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 0 ({rx_host.name})")
+    if not hasattr(rx_host, "vfs_r") or len(rx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 1 for redundant ({rx_host.name})")
+    if not hasattr(tx_host, "vfs") or len(tx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 0 ({tx_host.name})")
+    if not hasattr(tx_host, "vfs_r") or len(tx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 1 for redundant ({tx_host.name})")
+
+    media_config = MEDIA_CONFIGS[fps]
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
+
+    rx_vf = rx_host.vfs[0]
+    rx_vf_r = rx_host.vfs_r[0]
+    tx_vf = tx_host.vfs[0]
+    tx_vf_r = tx_host.vfs_r[0]
+
+    if use_dsa:
+        dsa_config = get_host_dsa_config(rx_host)
+        dsa_device = setup_host_dsa(rx_host, rx_vf, dsa_config, role="RX")
+        if dsa_device is None:
+            pytest.skip(f"DSA device not available on measured host ({rx_host.name})")
+    else:
+        dsa_device = None
+    dsa_suffix = "_dsa" if use_dsa else ""
+    dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
+
+    logger.info("=" * 80)
+    logger.info(f"Dual-Host VF RX REDUNDANT{dsa_label}: {num_sessions} sessions @ {fps} fps")
+    logger.info(f"{rx_host.name} RX: primary={rx_vf}, redundant={rx_vf_r}")
+    logger.info(f"{tx_host.name} TX: primary={tx_vf}, redundant={tx_vf_r}")
+    logger.info("=" * 80)
+
+    build_rx_host = get_host_build_path(rx_host, build, test_config)
+    build_tx_host = get_host_build_path(tx_host, build, test_config)
+
+    # Start companion TX in redundant mode
+    tx_app = RxTxApp(app_path=f"{build_tx_host}/tests/tools/RxTxApp/build")
+    tx_app.create_command(
+        session_type="st20p",
+        direction="tx",
+        test_mode="unicast",
+        transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
+        width=media_config["width"],
+        height=media_config["height"],
+        framerate=f"p{fps}",
+        input_file=media_file_path,
+        nic_port=tx_vf,
+        nic_port_r=tx_vf_r,
+        redundant=True,
+        source_ip=REDUNDANT_IP_PRIMARY_TX,
+        destination_ip=REDUNDANT_IP_PRIMARY_RX,
+        source_ip_r=REDUNDANT_IP_SECONDARY_TX,
+        destination_ip_r=REDUNDANT_IP_SECONDARY_RX,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
+        replicas=num_sessions,
+        rx_queues_cnt=64,
+        test_time=test_time + 10,
+        pacing_way="tsc",
+    )
+
+    companion_log = f"{build_tx_host}/tests/validation/logs/performance/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_redundant_tx_companion.log"
+    logger.info(f"Starting companion TX (redundant) on {tx_host.name}")
+    tx_app.prepare_execution(build=build_tx_host, host=tx_host)
+    tx_process = tx_host.connection.start_process(
+        f"mkdir -p $(dirname {companion_log}) && {tx_app.command} > {companion_log} 2>&1", cwd=build_tx_host, shell=True
+    )
+    time.sleep(10)
+
+    try:
+        # Configure RX in redundant mode
+        rx_app = RxTxApp(app_path=f"{build_rx_host}/tests/tools/RxTxApp/build")
+        rx_kwargs = {
+            "session_type": "st20p",
+            "direction": "rx",
+            "test_mode": "unicast",
+            "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
+            "width": media_config["width"],
+            "height": media_config["height"],
+            "framerate": f"p{fps}",
+            "output_file": "/dev/null",
+            "nic_port": rx_vf,
+            "nic_port_r": rx_vf_r,
+            "redundant": True,
+            "source_ip": REDUNDANT_IP_PRIMARY_TX,
+            "destination_ip": REDUNDANT_IP_PRIMARY_RX,
+            "source_ip_r": REDUNDANT_IP_SECONDARY_TX,
+            "destination_ip_r": REDUNDANT_IP_SECONDARY_RX,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
+            "measure_latency": True,
+            "replicas": num_sessions,
+            "sch_session_quota": SCH_SESSION_QUOTA_SINGLE_CORE,
+            "rx_queues_cnt": 64,
+            "test_time": test_time,
+        }
+        if use_dsa:
+            rx_kwargs["dma_dev"] = dsa_device
+
+        rx_app.create_command(**rx_kwargs)
+        rx_app.prepare_execution(build=build_rx_host, host=rx_host)
+
+        logger.info(f"Running RX (redundant) on {rx_host.name}{dsa_label}")
+        result = run(rx_app.command, cwd=build_rx_host, timeout=test_time + 60, testcmd=True, host=rx_host)
+
+        # Log RX output
+        logger.info("=" * 80)
+        logger.info(f"RX Process Output ({rx_host.name}) - REDUNDANT")
+        logger.info("=" * 80)
+        if result.stdout_text:
+            for line in result.stdout_text.splitlines():
+                if any(keyword in line.lower() for keyword in ["frame", "session", "error", "fail", "warn", "redundant"]):
+                    logger.info(f"RX: {line}")
+        logger.info("=" * 80)
+
+        # Retrieve companion TX logs
+        logger.info("=" * 80)
+        logger.info(f"Companion TX Process Logs ({tx_host.name}) - REDUNDANT")
+        logger.info("=" * 80)
+        get_companion_log_summary(tx_host, companion_log, max_lines=50)
+        logger.info("=" * 80)
+
+        if result.return_code != 0:
+            log_fail(f"RX process (Redundant){dsa_label} on {rx_host.name} failed with exit code {result.return_code}")
+            pytest.fail(f"RX process (Redundant){dsa_label} on {rx_host.name} failed with exit code {result.return_code}")
+
+        rx_fps_success, rx_fps_successful_count, rx_fps_details = monitor_rx_fps(
+            result.stdout_text.splitlines(), fps, num_sessions
+        )
+        rx_frame_counts = monitor_rx_frames_simple(result.stdout_text.splitlines(), num_sessions)
+
+        time.sleep(5)
+        tx_frame_counts = {}
+        companion_lines = []
+        try:
+            companion_result = tx_host.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
+            tx_frame_counts = monitor_tx_frames(companion_lines, num_sessions)
+        except Exception as e:
+            logger.warning(f"Could not read companion log: {e}")
+
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_rx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_tx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
+        dsa_info = get_dsa_info(rx_host, role="RX") if use_dsa else None
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(rx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(rx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="RX", test_label="REDUNDANT Single-Core",
+            measured_host=rx_host, companion_host=tx_host,
+            measured_vf=rx_vf, companion_vf=tx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+            measured_vf_r=rx_vf_r, companion_vf_r=tx_vf_r, redundant=True,
+        )
+
+        display_session_results(
+            "RX", f" REDUNDANT{dsa_label}", num_sessions, fps, rx_fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
+
+        if not rx_fps_success:
+            failure_msg = f"Only {rx_fps_successful_count}/{num_sessions} sessions reached target {fps} fps (Redundant){dsa_label}"
+            log_fail(failure_msg)
+            pytest.fail(failure_msg)
+
+        logger.log(TEST_PASS, f"Dual-host RX REDUNDANT test{dsa_label} passed: {num_sessions} sessions @ {fps} fps")
+
+    finally:
+        try:
+            tx_process.stop()
+            if tx_process.running:
+                time.sleep(2)
+                tx_process.kill()
+        except Exception as e:
+            logger.warning(f"Error stopping companion TX on {tx_host.name}: {e}")
+
+
+@pytest.mark.nightly
+@pytest.mark.performance
+@pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
+@pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
+@pytest.mark.parametrize(
+    "num_sessions",
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess"],
+)
+def test_dualhost_vf_tx_fps_variants_multi_core_redundant(
+    hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
+) -> None:
+    """
+    Test TX multi-session performance in REDUNDANT mode (multi-core distribution).
+
+    Uses both E810 ports per host for ST2022-7 dual-path redundancy.
+    Sessions distributed across multiple cores.
+    """
+    if len(hosts) < 2:
+        pytest.skip("Test requires at least 2 hosts for dual-host testing")
+
+    tx_host, rx_host = get_tx_rx_hosts(hosts, "tx_test", test_config)
+
+    if not hasattr(tx_host, "vfs") or len(tx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 0 ({tx_host.name})")
+    if not hasattr(tx_host, "vfs_r") or len(tx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 1 for redundant ({tx_host.name})")
+    if not hasattr(rx_host, "vfs") or len(rx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 0 ({rx_host.name})")
+    if not hasattr(rx_host, "vfs_r") or len(rx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 1 for redundant ({rx_host.name})")
+
+    media_config = MEDIA_CONFIGS[fps]
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
+
+    tx_vf = tx_host.vfs[0]
+    tx_vf_r = tx_host.vfs_r[0]
+    rx_vf = rx_host.vfs[0]
+    rx_vf_r = rx_host.vfs_r[0]
+
+    if use_dsa:
+        dsa_config = get_host_dsa_config(tx_host)
+        dsa_device = setup_host_dsa(tx_host, tx_vf, dsa_config, role="TX")
+        if dsa_device is None:
+            pytest.skip(f"DSA device not available on measured host ({tx_host.name})")
+    else:
+        dsa_device = None
+    dsa_suffix = "_dsa" if use_dsa else ""
+    dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
+
+    logger.info("=" * 80)
+    logger.info(f"Dual-Host VF TX REDUNDANT (Multi-Core){dsa_label}: {num_sessions} sessions @ {fps} fps")
+    logger.info(f"{tx_host.name} TX: primary={tx_vf}, redundant={tx_vf_r}")
+    logger.info(f"{rx_host.name} RX: primary={rx_vf}, redundant={rx_vf_r}")
+    logger.info("=" * 80)
+
+    build_tx_host = get_host_build_path(tx_host, build, test_config)
+    build_rx_host = get_host_build_path(rx_host, build, test_config)
+
+    # Start companion RX in redundant mode
+    rx_app = RxTxApp(app_path=f"{build_rx_host}/tests/tools/RxTxApp/build")
+    rx_app.create_command(
+        session_type="st20p",
+        direction="rx",
+        test_mode="unicast",
+        transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
+        width=media_config["width"],
+        height=media_config["height"],
+        framerate=f"p{fps}",
+        output_file="/dev/null",
+        nic_port=rx_vf,
+        nic_port_r=rx_vf_r,
+        redundant=True,
+        source_ip=REDUNDANT_IP_PRIMARY_TX,
+        destination_ip=REDUNDANT_IP_PRIMARY_RX,
+        source_ip_r=REDUNDANT_IP_SECONDARY_TX,
+        destination_ip_r=REDUNDANT_IP_SECONDARY_RX,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
+        measure_latency=True,
+        replicas=num_sessions,
+        rx_queues_cnt=64,
+        test_time=test_time + 10,
+    )
+
+    companion_log = f"{build_rx_host}/tests/validation/logs/performance/dualhost_vf_tx_fps{fps}_{num_sessions}s{dsa_suffix}_redundant_multicore_rx_companion.log"
+    logger.info(f"Starting companion RX (redundant) on {rx_host.name}")
+    rx_app.prepare_execution(build=build_rx_host, host=rx_host)
+    rx_process = rx_host.connection.start_process(
+        f"mkdir -p $(dirname {companion_log}) && {rx_app.command} > {companion_log} 2>&1", cwd=build_rx_host, shell=True
+    )
+    time.sleep(10)
+
+    try:
+        # Configure TX in redundant mode (no sch_session_quota for multi-core)
+        tx_app = RxTxApp(app_path=f"{build_tx_host}/tests/tools/RxTxApp/build")
+        tx_kwargs = {
+            "session_type": "st20p",
+            "direction": "tx",
+            "test_mode": "unicast",
+            "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
+            "width": media_config["width"],
+            "height": media_config["height"],
+            "framerate": f"p{fps}",
+            "input_file": media_file_path,
+            "nic_port": tx_vf,
+            "nic_port_r": tx_vf_r,
+            "redundant": True,
+            "source_ip": REDUNDANT_IP_PRIMARY_TX,
+            "destination_ip": REDUNDANT_IP_PRIMARY_RX,
+            "source_ip_r": REDUNDANT_IP_SECONDARY_TX,
+            "destination_ip_r": REDUNDANT_IP_SECONDARY_RX,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
+            "replicas": num_sessions,
+            "rx_queues_cnt": 64,
+            "test_time": test_time,
+        }
+        if use_dsa:
+            tx_kwargs["dma_dev"] = dsa_device
+
+        tx_app.create_command(**tx_kwargs)
+        tx_app.prepare_execution(build=build_tx_host, host=tx_host)
+
+        logger.info(f"Running TX (redundant, Multi-Core) on {tx_host.name}{dsa_label}")
+        result = run(tx_app.command, cwd=build_tx_host, timeout=test_time + 60, testcmd=True, host=tx_host)
+
+        # Log TX output
+        logger.info("=" * 80)
+        logger.info(f"TX Process Output ({tx_host.name}) - REDUNDANT Multi-Core")
+        logger.info("=" * 80)
+        if result.stdout_text:
+            for line in result.stdout_text.splitlines():
+                if any(keyword in line.lower() for keyword in ["fps", "session", "error", "fail", "warn", "redundant"]):
+                    logger.info(f"TX: {line}")
+        logger.info("=" * 80)
+
+        get_companion_log_summary(rx_host, companion_log, max_lines=50)
+
+        if result.return_code != 0:
+            pytest.fail(f"TX process (Redundant Multi-Core){dsa_label} failed with exit code {result.return_code}")
+
+        success, successful_count, fps_details = monitor_tx_fps(result.stdout_text.splitlines(), fps, num_sessions)
+        tx_frame_counts = monitor_tx_frames(result.stdout_text.splitlines(), num_sessions)
+
+        time.sleep(5)
+        companion_lines = []
+        try:
+            companion_result = rx_host.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
+            rx_frame_counts = monitor_rx_frames_simple(companion_lines, num_sessions)
+        except Exception as e:
+            logger.warning(f"Could not read companion log: {e}")
+            rx_frame_counts = {}
+
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_tx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_rx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
+        dsa_info = get_dsa_info(tx_host, role="TX") if use_dsa else None
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(tx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(tx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="TX", test_label="REDUNDANT Multi-Core",
+            measured_host=tx_host, companion_host=rx_host,
+            measured_vf=tx_vf, companion_vf=rx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+            measured_vf_r=tx_vf_r, companion_vf_r=rx_vf_r, redundant=True, multi_core=True,
+        )
+
+        display_session_results(
+            "TX", f" REDUNDANT Multi-Core{dsa_label}", num_sessions, fps, fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
+
+        if not success:
+            pytest.fail(f"Only {successful_count}/{num_sessions} sessions reached target {fps} fps (Redundant Multi-Core){dsa_label}")
+
+        logger.log(TEST_PASS, f"Dual-host TX REDUNDANT Multi-Core{dsa_label} passed: {num_sessions} sessions @ {fps} fps")
+
+    finally:
+        try:
+            rx_process.stop()
+            if rx_process.running:
+                time.sleep(2)
+                rx_process.kill()
+        except Exception as e:
+            logger.warning(f"Error stopping companion RX on {rx_host.name}: {e}")
+
+
+@pytest.mark.nightly
+@pytest.mark.performance
+@pytest.mark.parametrize("use_dsa", [False, True], ids=["no-dsa", "dsa"])
+@pytest.mark.parametrize("fps", [25, 30, 50, 59], ids=["25fps", "30fps", "50fps", "59fps"])
+@pytest.mark.parametrize(
+    "num_sessions",
+    [1, 2, 4, 8, 14, 15, 16, 17, 20, 24, 32, 33, 34, 36, 42, 48, 64],
+    ids=["1sess", "2sess", "4sess", "8sess", "14sess", "15sess", "16sess", "17sess", "20sess", "24sess", "32sess", "33sess", "34sess", "36sess", "42sess", "48sess", "64sess"],
+)
+def test_dualhost_vf_rx_fps_variants_multi_core_redundant(
+    hosts, build, media, test_time, nic_port_list, fps, num_sessions, use_dsa, test_config
+) -> None:
+    """
+    Test RX multi-session performance in REDUNDANT mode (multi-core distribution).
+
+    Uses both E810 ports per host for ST2022-7 dual-path redundancy.
+    Sessions distributed across multiple cores.
+    """
+    if len(hosts) < 2:
+        pytest.skip("Test requires at least 2 hosts for dual-host testing")
+
+    tx_host, rx_host = get_tx_rx_hosts(hosts, "rx_test", test_config)
+
+    if not hasattr(rx_host, "vfs") or len(rx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 0 ({rx_host.name})")
+    if not hasattr(rx_host, "vfs_r") or len(rx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on RX host port 1 for redundant ({rx_host.name})")
+    if not hasattr(tx_host, "vfs") or len(tx_host.vfs) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 0 ({tx_host.name})")
+    if not hasattr(tx_host, "vfs_r") or len(tx_host.vfs_r) < 1:
+        pytest.skip(f"Test requires at least 1 VF on TX host port 1 for redundant ({tx_host.name})")
+
+    media_config = MEDIA_CONFIGS[fps]
+    tx_media_path = get_host_media_path(tx_host, media, test_config)
+    media_file_path = f"{tx_media_path}/{media_config['filename']}"
+
+    rx_vf = rx_host.vfs[0]
+    rx_vf_r = rx_host.vfs_r[0]
+    tx_vf = tx_host.vfs[0]
+    tx_vf_r = tx_host.vfs_r[0]
+
+    if use_dsa:
+        dsa_config = get_host_dsa_config(rx_host)
+        dsa_device = setup_host_dsa(rx_host, rx_vf, dsa_config, role="RX")
+        if dsa_device is None:
+            pytest.skip(f"DSA device not available on measured host ({rx_host.name})")
+    else:
+        dsa_device = None
+    dsa_suffix = "_dsa" if use_dsa else ""
+    dsa_label = f" with DSA ({dsa_device})" if use_dsa else ""
+
+    logger.info("=" * 80)
+    logger.info(f"Dual-Host VF RX REDUNDANT (Multi-Core){dsa_label}: {num_sessions} sessions @ {fps} fps")
+    logger.info(f"{rx_host.name} RX: primary={rx_vf}, redundant={rx_vf_r}")
+    logger.info(f"{tx_host.name} TX: primary={tx_vf}, redundant={tx_vf_r}")
+    logger.info("=" * 80)
+
+    build_rx_host = get_host_build_path(rx_host, build, test_config)
+    build_tx_host = get_host_build_path(tx_host, build, test_config)
+
+    # Start companion TX in redundant mode
+    tx_app = RxTxApp(app_path=f"{build_tx_host}/tests/tools/RxTxApp/build")
+    tx_app.create_command(
+        session_type="st20p",
+        direction="tx",
+        test_mode="unicast",
+        transport_format=media_config["format"],
+        pixel_format=media_config["pixel_format"],
+        width=media_config["width"],
+        height=media_config["height"],
+        framerate=f"p{fps}",
+        input_file=media_file_path,
+        nic_port=tx_vf,
+        nic_port_r=tx_vf_r,
+        redundant=True,
+        source_ip=REDUNDANT_IP_PRIMARY_TX,
+        destination_ip=REDUNDANT_IP_PRIMARY_RX,
+        source_ip_r=REDUNDANT_IP_SECONDARY_TX,
+        destination_ip_r=REDUNDANT_IP_SECONDARY_RX,
+        port=5004,
+        payload_type=96,
+        pacing="narrow",
+        packing="GPM",
+        replicas=num_sessions,
+        rx_queues_cnt=64,
+        test_time=test_time + 10,
+    )
+
+    companion_log = f"{build_tx_host}/tests/validation/logs/performance/dualhost_vf_rx_fps{fps}_{num_sessions}s{dsa_suffix}_redundant_multicore_tx_companion.log"
+    logger.info(f"Starting companion TX (redundant) on {tx_host.name}")
+    tx_app.prepare_execution(build=build_tx_host, host=tx_host)
+    tx_process = tx_host.connection.start_process(
+        f"mkdir -p $(dirname {companion_log}) && {tx_app.command} > {companion_log} 2>&1", cwd=build_tx_host, shell=True
+    )
+    time.sleep(10)
+
+    try:
+        # Configure RX in redundant mode (no sch_session_quota for multi-core)
+        rx_app = RxTxApp(app_path=f"{build_rx_host}/tests/tools/RxTxApp/build")
+        rx_kwargs = {
+            "session_type": "st20p",
+            "direction": "rx",
+            "test_mode": "unicast",
+            "transport_format": media_config["format"],
+            "pixel_format": media_config["pixel_format"],
+            "width": media_config["width"],
+            "height": media_config["height"],
+            "framerate": f"p{fps}",
+            "output_file": "/dev/null",
+            "nic_port": rx_vf,
+            "nic_port_r": rx_vf_r,
+            "redundant": True,
+            "source_ip": REDUNDANT_IP_PRIMARY_TX,
+            "destination_ip": REDUNDANT_IP_PRIMARY_RX,
+            "source_ip_r": REDUNDANT_IP_SECONDARY_TX,
+            "destination_ip_r": REDUNDANT_IP_SECONDARY_RX,
+            "port": 5004,
+            "payload_type": 96,
+            "pacing": "narrow",
+            "packing": "GPM",
+            "measure_latency": True,
+            "replicas": num_sessions,
+            "rx_queues_cnt": 64,
+            "test_time": test_time,
+        }
+        if use_dsa:
+            rx_kwargs["dma_dev"] = dsa_device
+
+        rx_app.create_command(**rx_kwargs)
+        rx_app.prepare_execution(build=build_rx_host, host=rx_host)
+
+        logger.info(f"Running RX (redundant, Multi-Core) on {rx_host.name}{dsa_label}")
+        result = run(rx_app.command, cwd=build_rx_host, timeout=test_time + 60, testcmd=True, host=rx_host)
+
+        # Log RX output
+        logger.info("=" * 80)
+        logger.info(f"RX Process Output ({rx_host.name}) - REDUNDANT Multi-Core")
+        logger.info("=" * 80)
+        if result.stdout_text:
+            for line in result.stdout_text.splitlines():
+                if any(keyword in line.lower() for keyword in ["frame", "session", "error", "fail", "warn", "redundant"]):
+                    logger.info(f"RX: {line}")
+        logger.info("=" * 80)
+
+        get_companion_log_summary(tx_host, companion_log, max_lines=50)
+
+        if result.return_code != 0:
+            pytest.fail(f"RX process (Redundant Multi-Core){dsa_label} failed with exit code {result.return_code}")
+
+        rx_fps_success, rx_fps_successful_count, rx_fps_details = monitor_rx_fps(
+            result.stdout_text.splitlines(), fps, num_sessions
+        )
+        rx_frame_counts = monitor_rx_frames_simple(result.stdout_text.splitlines(), num_sessions)
+
+        time.sleep(5)
+        tx_frame_counts = {}
+        companion_lines = []
+        try:
+            companion_result = tx_host.connection.execute_command(f"cat {companion_log}", shell=True)
+            companion_lines = companion_result.stdout.splitlines() if companion_result.stdout else []
+            tx_frame_counts = monitor_tx_frames(companion_lines, num_sessions)
+        except Exception as e:
+            logger.warning(f"Could not read companion log: {e}")
+
+        # Monitor throughput (informational only, no pass/fail impact)
+        measured_lines = result.stdout_text.splitlines()
+        measured_throughput = monitor_rx_throughput(measured_lines, num_sessions)
+        measured_dev_rate = monitor_dev_rate(measured_lines)
+        companion_throughput = monitor_tx_throughput(companion_lines, num_sessions)
+        companion_dev_rate_data = monitor_dev_rate(companion_lines)
+
+        dsa_info = get_dsa_info(rx_host, role="RX") if use_dsa else None
+
+        # Print command and config before summary
+        logger.info("=" * 80)
+        logger.info("MEASURED APP COMMAND:")
+        logger.info(rx_app.command)
+        logger.info("-" * 80)
+        logger.info("MEASURED APP CONFIG:")
+        logger.info(json.dumps(rx_app.config, indent=2))
+        logger.info("=" * 80)
+
+        display_test_config_summary(
+            direction="RX", test_label="REDUNDANT Multi-Core",
+            measured_host=rx_host, companion_host=tx_host,
+            measured_vf=rx_vf, companion_vf=tx_vf,
+            num_sessions=num_sessions, fps=fps, media_config=media_config,
+            use_dsa=use_dsa, dsa_device=dsa_device, dsa_info=dsa_info,
+            measured_vf_r=rx_vf_r, companion_vf_r=tx_vf_r, redundant=True, multi_core=True,
+        )
+
+        display_session_results(
+            "RX", f" REDUNDANT Multi-Core{dsa_label}", num_sessions, fps, rx_fps_details, tx_frame_counts, rx_frame_counts,
+            dsa_info=dsa_info, throughput_details=measured_throughput, dev_rate=measured_dev_rate,
+            companion_throughput_details=companion_throughput, companion_dev_rate=companion_dev_rate_data,
+        )
+
+        if not rx_fps_success:
+            pytest.fail(f"Only {rx_fps_successful_count}/{num_sessions} sessions reached target {fps} fps (Redundant Multi-Core){dsa_label}")
+
+        logger.log(TEST_PASS, f"Dual-host RX REDUNDANT Multi-Core{dsa_label} passed: {num_sessions} sessions @ {fps} fps")
 
     finally:
         try:

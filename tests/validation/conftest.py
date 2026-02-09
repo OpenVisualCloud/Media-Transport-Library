@@ -16,11 +16,16 @@ from common.mtl_manager.mtlManager import MtlManager
 from common.nicctl import InterfaceSetup, Nicctl
 from compliance.compliance_client import PcapComplianceClient
 from create_pcap_file.netsniff import NetsniffRecorder, calculate_packets_per_frame
+from common.collect_platform_info import collect_and_save_platform_info
 from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
+<<<<<<< HEAD
 from mtl_engine.const import FRAMES_CAPTURE, LOG_FOLDER, RXTXAPP_PATH, TESTCMD_LVL
+=======
+from mtl_engine.const import FRAMES_CAPTURE, LOG_FOLDER, PERF_LOG_FOLDER, TESTCMD_LVL
+>>>>>>> d955d70c (Temp changes 2 with working 32 sessions Rx single core and 20 sessions rx redundant single core)
 from mtl_engine.csv_report import (
     csv_add_test,
     csv_write_report,
@@ -367,11 +372,24 @@ def nic_port_list(hosts: dict, mtl_path, test_config) -> None:
         # Use per-host MTL path if configured, otherwise fall back to default
         host_path = host_mtl_paths.get(host.name, mtl_path)
         nicctl = Nicctl(host_path, host)
+        # Primary port (interface_index 0) - always required
         if int(host.network_interfaces[0].virtualization.get_current_vfs()) == 0:
             vfs = nicctl.create_vfs(host.network_interfaces[0].pci_address.lspci)
         vfs = nicctl.vfio_list(host.network_interfaces[0].pci_address.lspci)
         # Store VFs on the host object for later use
         host.vfs = vfs
+
+        # Redundant port (interface_index 1) - optional, for redundant mode
+        host.vfs_r = []  # Initialize empty redundant VF list
+        if len(host.network_interfaces) > 1:
+            try:
+                if int(host.network_interfaces[1].virtualization.get_current_vfs()) == 0:
+                    nicctl.create_vfs(host.network_interfaces[1].pci_address.lspci)
+                vfs_r = nicctl.vfio_list(host.network_interfaces[1].pci_address.lspci)
+                host.vfs_r = vfs_r
+                logger.info(f"Host {host.name}: redundant port VFs: {vfs_r}")
+            except Exception as e:
+                logger.warning(f"Host {host.name}: could not setup redundant port VFs: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -561,25 +579,67 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def log_session():
+def log_session(request):
     add_logging_level("TESTCMD", TESTCMD_LVL)
+
+    # Use performance log folder when running performance tests
+    items = request.session.items
+    is_perf = all("performance" in item.nodeid for item in items) if items else False
+    log_folder = PERF_LOG_FOLDER if is_perf else LOG_FOLDER
 
     today = datetime.datetime.today()
     folder = today.strftime("%Y-%m-%dT%H:%M:%S")
-    path = os.path.join(LOG_FOLDER, folder)
-    path_symlink = os.path.join(LOG_FOLDER, "latest")
+    path = os.path.join(log_folder, folder)
+    path_symlink = os.path.join(log_folder, "latest")
     try:
         os.remove(path_symlink)
     except FileNotFoundError:
         pass
     os.makedirs(path, exist_ok=True)
     os.symlink(folder, path_symlink)
+
+    # Export the active log folder so log_case and readproc can use it
+    os.environ["MTL_LOG_FOLDER"] = log_folder
+
     yield
     if os.path.exists("pytest.log"):
-        shutil.copy("pytest.log", f"{LOG_FOLDER}/latest/pytest.log")
+        shutil.copy("pytest.log", f"{log_folder}/latest/pytest.log")
     else:
         logging.warning("pytest.log not found, skipping copy")
-    csv_write_report(f"{LOG_FOLDER}/latest/report.csv")
+    csv_write_report(f"{log_folder}/latest/report.csv")
+
+    # Cleanup env var
+    os.environ.pop("MTL_LOG_FOLDER", None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def collect_platform_config(hosts, log_session):
+    """Collect SW/HW platform info from the measured host at session start.
+
+    Runs SSH commands on the first host (measured host) to gather OS, kernel,
+    CPU, memory, NIC, driver versions, etc. and saves the result as
+    ``platform_config.json`` in the log folder. The performance report
+    generator picks this file up automatically.
+    """
+    log_folder = os.environ.get("MTL_LOG_FOLDER")
+    if not log_folder:
+        return
+
+    latest_path = os.path.join(log_folder, "latest")
+    if not os.path.isdir(latest_path):
+        return
+
+    # Use the first host in the topology as the measured host
+    host_list = list(hosts.values())
+    if not host_list:
+        return
+
+    measured_host = host_list[0]
+    collect_and_save_platform_info(measured_host, latest_path)
+
+    # Also save a copy at the top level of the log folder so the report
+    # generator can find it when scanning the whole directory.
+    collect_and_save_platform_info(measured_host, log_folder)
 
 
 @pytest.fixture(scope="function")
@@ -685,10 +745,11 @@ def pcap_capture(
 
 @pytest.fixture(scope="function", autouse=True)
 def log_case(request, caplog: pytest.LogCaptureFixture):
+    log_folder = os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER)
     case_id = request.node.nodeid
     case_folder = os.path.dirname(case_id)
-    os.makedirs(os.path.join(LOG_FOLDER, "latest", case_folder), exist_ok=True)
-    logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.log")
+    os.makedirs(os.path.join(log_folder, "latest", case_folder), exist_ok=True)
+    logfile = os.path.join(log_folder, "latest", f"{case_id}.log")
     fh = logging.FileHandler(logfile)
     formatter = request.session.config.pluginmanager.get_plugin(
         "logging-plugin"
