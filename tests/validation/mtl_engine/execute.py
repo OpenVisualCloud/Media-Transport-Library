@@ -91,7 +91,8 @@ def killproc(proc: subprocess.Popen, sigint: bool = False):
 def readproc(process: subprocess.Popen):
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
-    logfile = os.path.join(LOG_FOLDER, "latest", f"{case_id}.pid{process.pid}.log")
+    log_folder = os.environ.get("MTL_LOG_FOLDER", LOG_FOLDER)
+    logfile = os.path.join(log_folder, "latest", f"{case_id}.pid{process.pid}.log")
 
     output = []
     with open(logfile, "w") as file:
