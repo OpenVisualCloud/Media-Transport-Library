@@ -932,23 +932,23 @@ def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
 
     # Capture actual formats seen in create logs (if present)
     tx_fmt_pattern = re.compile(
-        r"st20p_tx_create\(\d+\), transport fmt ST20_FMT_([^,]+), input fmt: ([^, ]+)"
+        r"mtl_video_tx_session_init\(\d+\), transport fmt ST20_FMT_([^,]+), input fmt: ([^, ]+)"
     )
     rx_fmt_pattern = re.compile(
-        r"st20p_rx_create\(\d+\), transport fmt ST20_FMT_([^,]+), output fmt ([^, ]+)"
+        r"mtl_video_rx_session_init\(\d+\), transport fmt ST20_FMT_([^,]+), output fmt ([^, ]+)"
     )
 
     # Optional extraction for dimensions / interlaced / packing / pacing if present in logs
     tx_meta_pattern = re.compile(
-        r"st20p_tx_create\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
+        r"mtl_video_tx_session_init\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
     )
     rx_meta_pattern = re.compile(
-        r"st20p_rx_create\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
+        r"mtl_video_rx_session_init\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
     )
-    tx_pack_pattern = re.compile(r"st20p_tx_create\(\d+\).*packing ([A-Z]+)")
-    rx_pack_pattern = re.compile(r"st20p_rx_create\(\d+\).*packing ([A-Z]+)")
-    tx_pace_pattern = re.compile(r"st20p_tx_create\(\d+\).*pacing ([A-Za-z]+)")
-    rx_pace_pattern = re.compile(r"st20p_rx_create\(\d+\).*pacing ([A-Za-z]+)")
+    tx_pack_pattern = re.compile(r"mtl_video_tx_session_init\(\d+\).*packing ([A-Z]+)")
+    rx_pack_pattern = re.compile(r"mtl_video_rx_session_init\(\d+\).*packing ([A-Z]+)")
+    tx_pace_pattern = re.compile(r"mtl_video_tx_session_init\(\d+\).*pacing ([A-Za-z]+)")
+    rx_pace_pattern = re.compile(r"mtl_video_rx_session_init\(\d+\).*pacing ([A-Za-z]+)")
 
     actual_tx_transport = None
     actual_tx_input = None
@@ -1416,7 +1416,7 @@ def check_tx_converter_output(
 
     for line in output:
         if (
-            f"st20p_tx_create({ok_cnt}), transport fmt ST20_FMT_{transport_format.upper()}, input fmt: {input_format}"
+            f"mtl_video_tx_session_init({ok_cnt}), transport fmt ST20_FMT_{transport_format.upper()}, input fmt: {input_format}"
             in line
         ):
             ok_cnt += 1
@@ -1464,7 +1464,7 @@ def check_rx_converter_output(
 
     for line in output:
         if (
-            f"st20p_rx_create({ok_cnt}), transport fmt ST20_FMT_{transport_format.upper()}, output fmt {output_format}"
+            f"mtl_video_rx_session_init({ok_cnt}), transport fmt ST20_FMT_{transport_format.upper()}, output fmt {output_format}"
             in line
         ):
             ok_cnt += 1

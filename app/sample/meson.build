@@ -50,6 +50,12 @@ dma_sample_sources = files('dma/dma_sample.c', 'sample_util.c')
 redundant_rx_st20_combined_sample_sources = files('experimental/rx_st20_redundant_combined_sample.c',
     'sample_util.c')
 
+# new unified API
+new_api_tx_video_lib_owned_sources = files('new_api/tx_video_lib_owned_sample.c', 'sample_util.c')
+new_api_rx_video_lib_owned_sources = files('new_api/rx_video_lib_owned_sample.c', 'sample_util.c')
+new_api_tx_video_user_owned_sources = files('new_api/tx_video_user_owned_sample.c', 'sample_util.c')
+new_api_rx_video_user_owned_sources = files('new_api/rx_video_user_owned_sample.c', 'sample_util.c')
+
 # gpu direct
 gpu_direct_tx_sample_sources = files('gpu_direct/tx_st20_pipeline_gpu_direct.c', 'sample_util.c')
 gpu_direct_rx_sample_sources = files('gpu_direct/rx_st20_pipeline_gpu_direct.c', 'sample_util.c')
