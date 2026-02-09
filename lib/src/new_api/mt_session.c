@@ -14,8 +14,8 @@
 
 #include <errno.h>
 
-#include "mt_log.h"
-#include "mt_mem.h"
+#include "../mt_log.h"
+#include "../mt_mem.h"
 
 /*************************************************************************
  * Session Allocation / Deallocation
@@ -32,11 +32,9 @@ struct mtl_session_impl* mtl_session_alloc(struct mtl_main_impl* impl, int socke
 
   s->parent = impl;
   s->socket_id = socket_id;
-  s->state = MTL_SESSION_STATE_CREATED;
-  s->stopped = false;
+  __atomic_store_n(&s->state, MTL_SESSION_STATE_CREATED, __ATOMIC_RELAXED);
+  __atomic_store_n(&s->stopped, 0, __ATOMIC_RELAXED);
   s->event_fd = -1;
-  rte_spinlock_init(&s->state_lock);
-  rte_spinlock_init(&s->stats_lock);
 
   return s;
 }
@@ -164,16 +162,11 @@ int mtl_session_start(mtl_session_t* session) {
     return -EINVAL;
   }
 
-  rte_spinlock_lock(&s->state_lock);
-
-  if (s->state == MTL_SESSION_STATE_STARTED) {
-    rte_spinlock_unlock(&s->state_lock);
+  if (__atomic_load_n(&s->state, __ATOMIC_ACQUIRE) == MTL_SESSION_STATE_STARTED) {
     return 0; /* Already started */
   }
 
   mtl_session_clear_stopped(s);
-
-  rte_spinlock_unlock(&s->state_lock);
 
   int ret = 0;
   if (s->vt && s->vt->start) {
@@ -408,10 +401,17 @@ int mtl_session_stats_get(mtl_session_t* session, mtl_session_stats_t* stats) {
     return s->vt->stats_get(s, stats);
   }
 
-  /* Default: return cached stats */
-  rte_spinlock_lock(&s->stats_lock);
-  *stats = s->stats;
-  rte_spinlock_unlock(&s->stats_lock);
+  /* Default: return cached stats (atomic reads, relaxed ordering) */
+  stats->buffers_processed =
+      __atomic_load_n(&s->stats.buffers_processed, __ATOMIC_RELAXED);
+  stats->bytes_processed =
+      __atomic_load_n(&s->stats.bytes_processed, __ATOMIC_RELAXED);
+  stats->buffers_dropped =
+      __atomic_load_n(&s->stats.buffers_dropped, __ATOMIC_RELAXED);
+  stats->epochs_missed =
+      __atomic_load_n(&s->stats.epochs_missed, __ATOMIC_RELAXED);
+  stats->buffers_free = 0;
+  stats->buffers_in_use = 0;
   return 0;
 }
 
@@ -426,9 +426,10 @@ int mtl_session_stats_reset(mtl_session_t* session) {
     return s->vt->stats_reset(s);
   }
 
-  rte_spinlock_lock(&s->stats_lock);
-  memset(&s->stats, 0, sizeof(s->stats));
-  rte_spinlock_unlock(&s->stats_lock);
+  __atomic_store_n(&s->stats.buffers_processed, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&s->stats.bytes_processed, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&s->stats.buffers_dropped, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&s->stats.epochs_missed, 0, __ATOMIC_RELAXED);
   return 0;
 }
 

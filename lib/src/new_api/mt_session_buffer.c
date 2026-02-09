@@ -13,8 +13,8 @@
 
 #include <errno.h>
 
-#include "mt_log.h"
-#include "mt_mem.h"
+#include "../mt_log.h"
+#include "../mt_mem.h"
 
 /*************************************************************************
  * Buffer Pool Management
