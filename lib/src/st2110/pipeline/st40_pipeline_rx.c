@@ -183,16 +183,31 @@ static int rx_st40p_rtp_ready(void* priv) {
     }
   }
 
+  /* per-port sequence tracking */
   if (ctx->last_seq_valid[s_port]) {
     uint16_t expected = (uint16_t)(ctx->last_seq[s_port] + 1);
     if (expected != seq_number) {
-      frame_info->seq_discont = true;
+      frame_info->port_seq_discont[s_port] = true;
       if (mt_seq16_greater(seq_number, expected))
-        frame_info->seq_lost += (uint16_t)(seq_number - expected);
+        frame_info->port_seq_lost[s_port] += (uint16_t)(seq_number - expected);
     }
   }
   ctx->last_seq[s_port] = seq_number;
   ctx->last_seq_valid[s_port] = true;
+
+  /* session-level sequence tracking (merged across all ports) */
+  if (ctx->session_last_seq_valid) {
+    uint16_t expected = (uint16_t)(ctx->session_last_seq + 1);
+    if (expected != seq_number && mt_seq16_greater(seq_number, ctx->session_last_seq)) {
+      frame_info->seq_discont = true;
+      frame_info->seq_lost += (uint16_t)(seq_number - expected);
+    }
+  }
+  if (!ctx->session_last_seq_valid ||
+      mt_seq16_greater(seq_number, ctx->session_last_seq)) {
+    ctx->session_last_seq = seq_number;
+    ctx->session_last_seq_valid = true;
+  }
 
   frame_info->pkts_total++;
   frame_info->pkts_recv[s_port]++;
