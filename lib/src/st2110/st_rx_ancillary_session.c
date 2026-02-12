@@ -278,7 +278,7 @@ static int rx_ancillary_dedup_pkt_handler(void* impl, void* session,
 static int rx_ancillary_session_tasklet(struct st_rx_ancillary_session_impl* s) {
   return st_rx_dedup_tasklet(s->rxq, s->ops.num_port, ST_RX_ANCILLARY_BURST_SIZE,
                              s->priv[MTL_SESSION_PORT_P].impl, s,
-                             rx_ancillary_dedup_pkt_handler);
+                             rx_ancillary_dedup_pkt_handler, NULL);
 }
 
 static int rx_ancillary_sessions_tasklet_handler(void* priv) {

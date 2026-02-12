@@ -150,18 +150,20 @@ static int rx_st40p_rtp_ready(void* priv) {
   uint32_t anc_count = 0;
   uint32_t payload_offset = 0;
   bool notify_frame = false;
-  struct st40p_rx_frame* done_frames[2] = {0};
-  struct st40_frame_info* done_infos[2] = {0};
+  struct st40p_rx_frame* done_frames[ST40P_RX_STAGE_MAX + 2] = {0};
+  struct st40_frame_info* done_infos[ST40P_RX_STAGE_MAX + 2] = {0};
   int done_count = 0;
   int ret = 0;
   struct st40p_stage_pkt cur = {0};
   struct st40p_stage_pkt popped = {0};
-  struct rte_mbuf* processed_pkts[ST40P_RX_STAGE_MAX] = {0};
+  struct rte_mbuf* processed_pkts[ST40P_RX_STAGE_MAX + 1] = {0};
   int processed_cnt = 0;
   bool have_pkt = true;
   bool consume_cur = false;
   bool cur_staged = false;
   struct rte_mbuf* dangling_pkt = NULL;
+  struct st40p_stage_pkt deferred_cur = {0};
+  bool has_deferred_cur = false;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
@@ -217,6 +219,8 @@ static int rx_st40p_rtp_ready(void* priv) {
       rx_st40p_complete_inflight(ctx, done_frames, done_infos, &done_count,
                                  &notify_frame);
       if (!ctx->inflight_frame && rx_st40p_stage_pop(ctx, &popped)) {
+        deferred_cur = cur;
+        has_deferred_cur = true;
         cur = popped;
         continue;
       }
@@ -443,6 +447,13 @@ static int rx_st40p_rtp_ready(void* priv) {
 
     have_pkt = false;
   }
+  /* Re-stage the deferred packet (saved when window-expiry popped over it) */
+  if (has_deferred_cur) {
+    if (!rx_st40p_stage_push(ctx, &deferred_cur)) {
+      st40_rx_put_mbuf(ctx->transport, deferred_cur.mbuf);
+    }
+  }
+
   mt_pthread_mutex_unlock(&ctx->lock);
 
   for (int i = 0; i < processed_cnt; i++)

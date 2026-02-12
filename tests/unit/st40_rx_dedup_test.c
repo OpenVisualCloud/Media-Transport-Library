@@ -11,7 +11,7 @@
  * falls between P's advance and R's gap-fill.
  *
  * Build — via meson (from the project root):
- *   meson setup build -Denable_unit_tests=true && ninja -C build
+ *   meson setup build && ninja -C build
  *
  * Run:
  *   ./build/tests/unit/st40_rx_dedup_test    (exit 0 = pass, non-zero = fail)

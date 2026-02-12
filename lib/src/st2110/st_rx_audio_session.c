@@ -627,8 +627,15 @@ static int rx_audio_session_tasklet(struct st_rx_audio_session_impl* s) {
 
   /* Use shared merge-sort burst for ST 2022-7 dedup */
   struct mtl_main_impl* impl = s->priv[MTL_SESSION_PORT_P].impl;
-  return st_rx_dedup_tasklet(s->rxq, num_port, ST_RX_AUDIO_BURST_SIZE, impl, s,
-                             rx_audio_dedup_pkt_handler);
+  uint16_t burst_counts[MTL_SESSION_PORT_MAX] = {0};
+  int ret = st_rx_dedup_tasklet(s->rxq, num_port, ST_RX_AUDIO_BURST_SIZE, impl, s,
+                                rx_audio_dedup_pkt_handler, burst_counts);
+  if (s->enable_timing_parser && s->tp) {
+    for (int sp = 0; sp < num_port; sp++) {
+      if (burst_counts[sp] > 1) s->tp->stat_bursted_cnt[sp]++;
+    }
+  }
+  return ret;
 }
 
 static int rx_audio_sessions_tasklet_handler(void* priv) {

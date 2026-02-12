@@ -229,7 +229,8 @@ struct st40p_rx_ops {
   void* priv;
   /** Optional. see ST40P_RX_FLAG_* for possible flags */
   uint32_t flags;
-  /** Optional. Max wait for next timestamp before forcing frame advance (ns, default 20ms) */
+  /** Optional. Max wait for next timestamp before forcing frame advance (ns, default
+   * 10ms) */
   uint64_t reorder_window_ns;
   /**
    * Optional. Callback when frame available.

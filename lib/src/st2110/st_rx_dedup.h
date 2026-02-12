@@ -303,11 +303,14 @@ typedef int (*st_rx_dedup_pkt_handler)(void* impl, void* session, struct rte_mbu
  * @param impl       Opaque impl pointer forwarded to handler.
  * @param session    Opaque session pointer forwarded to handler.
  * @param handler    Per-packet callback.
+ * @param burst_counts  Optional (may be NULL). Filled with per-port burst sizes
+ *                      so callers can track burst statistics.
  * @return MTL_TASKLET_ALL_DONE or MTL_TASKLET_HAS_PENDING.
  */
 static inline int st_rx_dedup_tasklet(struct mt_rxq_entry* rxq[MTL_SESSION_PORT_MAX],
                                       int num_port, uint16_t burst_size, void* impl,
-                                      void* session, st_rx_dedup_pkt_handler handler) {
+                                      void* session, st_rx_dedup_pkt_handler handler,
+                                      uint16_t burst_counts[MTL_SESSION_PORT_MAX]) {
   struct rte_mbuf* mbuf_p[burst_size];
   struct rte_mbuf* mbuf_r[burst_size];
   uint16_t rv_p = 0, rv_r = 0;
@@ -316,6 +319,7 @@ static inline int st_rx_dedup_tasklet(struct mt_rxq_entry* rxq[MTL_SESSION_PORT_
   if (num_port <= 1) {
     if (rxq[MTL_SESSION_PORT_P])
       rv_p = mt_rxq_burst(rxq[MTL_SESSION_PORT_P], &mbuf_p[0], burst_size);
+    if (burst_counts) burst_counts[MTL_SESSION_PORT_P] = rv_p;
     if (rv_p) {
       for (uint16_t i = 0; i < rv_p; i++)
         handler(impl, session, mbuf_p[i], MTL_SESSION_PORT_P);
@@ -330,6 +334,11 @@ static inline int st_rx_dedup_tasklet(struct mt_rxq_entry* rxq[MTL_SESSION_PORT_
     rv_p = mt_rxq_burst(rxq[MTL_SESSION_PORT_P], &mbuf_p[0], burst_size);
   if (rxq[MTL_SESSION_PORT_R])
     rv_r = mt_rxq_burst(rxq[MTL_SESSION_PORT_R], &mbuf_r[0], burst_size);
+
+  if (burst_counts) {
+    burst_counts[MTL_SESSION_PORT_P] = rv_p;
+    burst_counts[MTL_SESSION_PORT_R] = rv_r;
+  }
 
   if (!rv_p && !rv_r) return MTL_TASKLET_ALL_DONE;
 

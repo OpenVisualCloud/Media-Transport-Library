@@ -179,7 +179,7 @@ static int rx_fastmetadata_session_tasklet(struct st_rx_fastmetadata_session_imp
   /* Use shared merge-sort burst for ST 2022-7 dedup */
   struct mtl_main_impl* impl = s->priv[MTL_SESSION_PORT_P].impl;
   return st_rx_dedup_tasklet(s->rxq, num_port, ST_RX_FASTMETADATA_BURST_SIZE, impl, s,
-                             rx_fastmetadata_dedup_pkt_handler);
+                             rx_fastmetadata_dedup_pkt_handler, NULL);
 }
 
 static int rx_fastmetadata_sessions_tasklet_handler(void* priv) {
