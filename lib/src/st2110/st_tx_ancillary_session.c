@@ -1169,8 +1169,7 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
 
   s->st40_pkt_idx++;
   double pkt_time = pacing->frame_time / RTE_MAX(1, s->st40_total_pkts);
-  if (tx_ancillary_test_frame_active(s) && s->test.pattern == ST40_TX_TEST_PACED &&
-      s->test.paced_gap_ns)
+  if (tx_ancillary_test_frame_active(s) && s->test.paced_gap_ns)
     pkt_time = s->test.paced_gap_ns;
   pacing->tsc_time_cursor += pkt_time;
   /* keep one RTP timestamp across a multi-packet frame; re-sync after the last pkt */
