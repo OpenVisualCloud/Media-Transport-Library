@@ -157,66 +157,33 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
-  if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
-  if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
+  /* ST 2022-7 shared dedup */
+  int64_t prev_tmstamp = s->dedup.tmstamp; /* save before dedup updates it */
+  struct st_rx_dedup_result dr = st_rx_dedup_check(&s->dedup, seq_id, tmstamp, s_port);
 
-  /* not a big deal as long as stream is continous */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
+  if (dr.port_seq_discontinuity) {
     dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
-        seq_id, s->latest_seq_id[s_port]);
+        seq_id, s->dedup.latest_seq_id[s_port]);
     s->port_user_stats.common.port[s_port].out_of_order_packets++;
     s->stat_pkts_out_of_order_per_port[s_port]++;
   }
-  s->latest_seq_id[s_port] = seq_id;
 
-  /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
-  get multiple packets with the same timestamp)) */
-  if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
-      !mt_seq16_greater(seq_id, s->session_seq_id)) {
-    if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
-      ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u last %d\n", __func__, s->idx, s_port,
-                    seq_id, s->session_seq_id);
-      dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
-          seq_id, s->session_seq_id);
-    } else {
-      ST40_FUZZ_LOG("%s(%d,%d), redundant ts %u last %ld\n", __func__, s->idx, s_port,
-                    tmstamp, s->tmstamp);
-      dbg("%s(%d,%d), redundant tmstamp now %u session last %ld\n", __func__, s->idx,
-          s_port, tmstamp, s->tmstamp);
-    }
-
-    s->redundant_error_cnt[s_port]++;
+  if (dr.drop) {
+    ST40_FUZZ_LOG("%s(%d,%d), redundant seq %u\n", __func__, s->idx, s_port, seq_id);
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-
-    for (int i = 0; i < s->ops.num_port; i++) {
-      if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        return -EIO;
-      }
-    }
-    warn(
-        "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
-        "%d), timestamp %u (old timestamp %ld)\n",
-        __func__, s->idx, seq_id, s->session_seq_id, tmstamp, s->tmstamp);
+    return -EIO;
   }
-  s->redundant_error_cnt[s_port] = 0;
 
-  /* hole in seq id packets going into the session check if the seq_id of the session is
-   * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
+  if (dr.session_seq_discontinuity) {
     if (s->interlace_auto && s->interlace_detected) {
       s->interlace_detected = false;
-      dbg("%s(%d,%d), reset interlace detect after seq discont %u->%u\n", __func__,
-          s->idx, s_port, s->session_seq_id, seq_id);
+      dbg("%s(%d,%d), reset interlace detect after seq discont\n", __func__, s->idx,
+          s_port);
     }
-    dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
-        seq_id, s->session_seq_id);
+    dbg("%s(%d,%d), session seq_id %u out of order\n", __func__, s->idx, s_port, seq_id);
     s->stat_pkts_out_of_order++;
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
-
-  /* update seq id */
-  s->session_seq_id = seq_id;
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
@@ -231,10 +198,9 @@ static int rx_ancillary_session_handle_pkt(struct mtl_main_impl* impl,
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
-  if (tmstamp != s->tmstamp) {
+  if (tmstamp != (uint32_t)prev_tmstamp) {
     rte_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
-    s->tmstamp = tmstamp;
   }
   ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
   s->port_user_stats.common.port[s_port].packets++;
@@ -259,8 +225,7 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
                                        bool init_stat_time_now) {
   if (!s) return;
 
-  s->session_seq_id = -1;
-  s->tmstamp = -1;
+  st_rx_dedup_reset(&s->dedup);
   s->stat_pkts_dropped = 0;
   s->stat_pkts_redundant = 0;
   s->stat_pkts_out_of_order = 0;
@@ -282,11 +247,6 @@ static void rx_ancillary_session_reset(struct st_rx_ancillary_session_impl* s,
   /* Reset interlace detection state */
   s->interlace_detected = !s->interlace_auto;
   s->interlace_interlaced = s->ops.interlaced;
-
-  for (int i = 0; i < MTL_SESSION_PORT_MAX; i++) {
-    s->latest_seq_id[i] = -1;
-    s->redundant_error_cnt[i] = 0;
-  }
 }
 
 #ifdef MTL_ENABLE_FUZZING_ST40
@@ -302,43 +262,23 @@ void st_rx_ancillary_session_fuzz_reset(struct st_rx_ancillary_session_impl* s) 
 }
 #endif
 
-static int rx_ancillary_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
-                                            uint16_t nb) {
-  struct st_rx_session_priv* s_priv = priv;
-  struct st_rx_ancillary_session_impl* s = s_priv->session;
-  struct mtl_main_impl* impl = s_priv->impl;
-  enum mtl_session_port s_port = s_priv->s_port;
-
-  if (!s->attached) {
-    dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
-    return -EIO;
-  }
-
-  for (uint16_t i = 0; i < nb; i++)
-    rx_ancillary_session_handle_pkt(impl, s, mbuf[i], s_port);
-
-  return 0;
+/* st_rx_dedup_pkt_handler wrapper for rx_ancillary_session_handle_pkt */
+static int rx_ancillary_dedup_pkt_handler(void* impl, void* session,
+                                          struct rte_mbuf* mbuf,
+                                          enum mtl_session_port s_port) {
+  return rx_ancillary_session_handle_pkt((struct mtl_main_impl*)impl,
+                                         (struct st_rx_ancillary_session_impl*)session,
+                                         mbuf, s_port);
 }
 
+/*
+ * ST 2022-7 compliant tasklet using shared merge-sort burst helper.
+ * When both ports have packets, merges them in RTP seq order before dedup.
+ */
 static int rx_ancillary_session_tasklet(struct st_rx_ancillary_session_impl* s) {
-  struct rte_mbuf* mbuf[ST_RX_ANCILLARY_BURST_SIZE];
-  uint16_t rv;
-  int num_port = s->ops.num_port;
-  bool done = true;
-
-  for (int s_port = 0; s_port < num_port; s_port++) {
-    if (!s->rxq[s_port]) continue;
-
-    rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_ANCILLARY_BURST_SIZE);
-    if (rv) {
-      rx_ancillary_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
-      rte_pktmbuf_free_bulk(&mbuf[0], rv);
-    }
-
-    if (rv) done = false;
-  }
-
-  return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
+  return st_rx_dedup_tasklet(s->rxq, s->ops.num_port, ST_RX_ANCILLARY_BURST_SIZE,
+                             s->priv[MTL_SESSION_PORT_P].impl, s,
+                             rx_ancillary_dedup_pkt_handler);
 }
 
 static int rx_ancillary_sessions_tasklet_handler(void* priv) {
@@ -519,6 +459,7 @@ static int rx_ancillary_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_ANC_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
+  st_rx_dedup_init(&s->dedup, ST_RX_DEDUP_MODE_TIMESTAMP_AND_SEQ, num_port, idx);
   s->interlace_auto = ops->flags & ST40_RX_FLAG_AUTO_DETECT_INTERLACED;
   s->interlace_detected = !s->interlace_auto;
   s->interlace_interlaced = ops->interlaced;
@@ -657,11 +598,7 @@ static int rx_ancillary_session_update_src(struct mtl_main_impl* impl,
     s->st40_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
   /* reset seq id */
-
-  s->session_seq_id = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
-  s->tmstamp = -1;
+  st_rx_dedup_reset(&s->dedup);
   if (s->interlace_auto) {
     s->interlace_detected = false;
     s->interlace_interlaced = s->ops.interlaced;

@@ -77,6 +77,8 @@ if enable_fuzzing_opt
   subdir('tests/fuzz')
 endif
 
+subdir('tests/unit')
+
 pkg = import('pkgconfig')
 pkg.generate(
   name : meson.project_name(),

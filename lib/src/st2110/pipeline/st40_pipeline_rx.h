@@ -20,6 +20,19 @@ enum st40p_rx_frame_status {
   ST40P_RX_FRAME_STATUS_MAX,
 };
 
+#define ST40P_RX_STAGE_MAX 64
+
+struct st40p_stage_pkt {
+  struct rte_mbuf* mbuf;
+  void* usrptr;
+  uint16_t len;
+  int s_port;
+  enum mtl_port phy_port;
+  uint64_t receive_timestamp;
+  uint32_t rtp_timestamp;
+  uint16_t seq_number;
+};
+
 struct st40p_rx_ctx {
   struct mtl_main_impl* impl;
   int idx;
@@ -40,12 +53,21 @@ struct st40p_rx_ctx {
   struct st40p_rx_frame* framebuffs;
   struct st40p_rx_frame* inflight_frame;
   uint32_t inflight_rtp_timestamp;
+  uint64_t inflight_first_rx_time;
   /* session-level continuity (post-dedup) */
   bool session_last_seq_valid;
   uint16_t session_last_seq;
   uint32_t session_last_ts;
   bool last_seq_valid[MTL_SESSION_PORT_MAX];
   uint16_t last_seq[MTL_SESSION_PORT_MAX];
+  /* small staging queue for out-of-order (older) packets */
+  struct st40p_stage_pkt stage_q[ST40P_RX_STAGE_MAX];
+  uint16_t stage_head;
+  uint16_t stage_tail;
+  uint16_t stage_count;
+  bool stage_ts_valid;
+  uint32_t stage_rtp_timestamp;
+  uint64_t reorder_window_ns;
   pthread_mutex_t lock;
   bool ready;
 

@@ -229,6 +229,8 @@ struct st40p_rx_ops {
   void* priv;
   /** Optional. see ST40P_RX_FLAG_* for possible flags */
   uint32_t flags;
+  /** Optional. Max wait for next timestamp before forcing frame advance (ns, default 20ms) */
+  uint64_t reorder_window_ns;
   /**
    * Optional. Callback when frame available.
    * And only non-block method can be used within this callback as it run from lcore

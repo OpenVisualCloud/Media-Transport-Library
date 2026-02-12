@@ -7,6 +7,9 @@
 #include "../../mt_log.h"
 #include "../../mt_stat.h"
 
+/* Default window for reordering packets in nanoseconds */
+#define ST40P_RX_REORDER_NS_DEFAULT (10 * NS_PER_MS)
+
 static const char* st40p_rx_frame_stat_name[ST40P_RX_FRAME_STATUS_MAX] = {
     "free",
     "receiving",
@@ -24,6 +27,75 @@ static uint16_t rx_st40p_next_idx(struct st40p_rx_ctx* ctx, uint16_t idx) {
   next_idx++;
   if (next_idx >= ctx->framebuff_cnt) next_idx = 0;
   return next_idx;
+}
+
+static inline bool rx_st40p_ts_gt(uint32_t a, uint32_t b) {
+  return mt_seq32_greater(a, b);
+}
+
+static void rx_st40p_stage_reset(struct st40p_rx_ctx* ctx) {
+  ctx->stage_head = ctx->stage_tail = ctx->stage_count = 0;
+  ctx->stage_ts_valid = false;
+  ctx->stage_rtp_timestamp = 0;
+}
+
+static void rx_st40p_stage_flush(struct st40p_rx_ctx* ctx) {
+  struct st40p_stage_pkt pkt;
+
+  while (ctx->stage_count) {
+    pkt = ctx->stage_q[ctx->stage_head];
+    ctx->stage_head = (ctx->stage_head + 1) % ST40P_RX_STAGE_MAX;
+    ctx->stage_count--;
+    st40_rx_put_mbuf(ctx->transport, pkt.mbuf);
+  }
+  rx_st40p_stage_reset(ctx);
+}
+
+static bool rx_st40p_stage_push(struct st40p_rx_ctx* ctx,
+                                const struct st40p_stage_pkt* pkt) {
+  if (ctx->stage_ts_valid && pkt->rtp_timestamp != ctx->stage_rtp_timestamp) {
+    rx_st40p_stage_flush(ctx);
+  }
+
+  if (!ctx->stage_ts_valid) {
+    ctx->stage_ts_valid = true;
+    ctx->stage_rtp_timestamp = pkt->rtp_timestamp;
+  }
+
+  if (ctx->stage_count >= ST40P_RX_STAGE_MAX) return false;
+
+  ctx->stage_q[ctx->stage_tail] = *pkt;
+  ctx->stage_tail = (ctx->stage_tail + 1) % ST40P_RX_STAGE_MAX;
+  ctx->stage_count++;
+  return true;
+}
+
+static bool rx_st40p_stage_pop(struct st40p_rx_ctx* ctx, struct st40p_stage_pkt* pkt) {
+  if (!ctx->stage_count) return false;
+
+  *pkt = ctx->stage_q[ctx->stage_head];
+  ctx->stage_head = (ctx->stage_head + 1) % ST40P_RX_STAGE_MAX;
+  ctx->stage_count--;
+  if (!ctx->stage_count) {
+    ctx->stage_ts_valid = false;
+  }
+  return true;
+}
+
+static void rx_st40p_complete_inflight(struct st40p_rx_ctx* ctx,
+                                       struct st40p_rx_frame* done_frames[],
+                                       struct st40_frame_info* done_infos[],
+                                       int* done_count, bool* notify_frame) {
+  if (!ctx->inflight_frame) return;
+
+  ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
+  ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
+  done_frames[*done_count] = ctx->inflight_frame;
+  done_infos[*done_count] = &ctx->inflight_frame->frame_info;
+  (*done_count)++;
+  ctx->inflight_frame = NULL;
+  ctx->inflight_first_rx_time = 0;
+  *notify_frame = true;
 }
 
 static void rx_st40p_block_wake(struct st40p_rx_ctx* ctx) {
@@ -70,29 +142,34 @@ static struct st40p_rx_frame* rx_st40p_next_available(
 
 static int rx_st40p_rtp_ready(void* priv) {
   struct st40p_rx_ctx* ctx = priv;
-  struct st40p_rx_frame* framebuff;
-  void* mbuf;
-  void* usrptr = NULL;
-  uint16_t len = 0;
-  struct st40_rfc8331_rtp_hdr* hdr;
+  struct st40p_rx_frame* framebuff = NULL;
   struct st40_frame_info* frame_info = NULL;
-  uint32_t anc_count;
-  uint8_t* payload;
-  struct st40_rfc8331_payload_hdr* payload_hdr;
+  struct st40_rfc8331_rtp_hdr* hdr = NULL;
+  struct st40_rfc8331_payload_hdr* payload_hdr = NULL;
+  uint8_t* payload = NULL;
+  uint32_t anc_count = 0;
   uint32_t payload_offset = 0;
   bool notify_frame = false;
   struct st40p_rx_frame* done_frames[2] = {0};
   struct st40_frame_info* done_infos[2] = {0};
   int done_count = 0;
   int ret = 0;
+  struct st40p_stage_pkt cur = {0};
+  struct st40p_stage_pkt popped = {0};
+  struct rte_mbuf* processed_pkts[ST40P_RX_STAGE_MAX] = {0};
+  int processed_cnt = 0;
+  bool have_pkt = true;
+  bool consume_cur = false;
+  bool cur_staged = false;
+  struct rte_mbuf* dangling_pkt = NULL;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
   /* get mbuf from transport */
-  mbuf = st40_rx_get_mbuf(ctx->transport, &usrptr, &len);
-  if (!mbuf) return -EBUSY;
+  cur.mbuf = st40_rx_get_mbuf(ctx->transport, &cur.usrptr, &cur.len);
+  if (!cur.mbuf) return -EBUSY;
 
-  struct rte_mbuf* pkt = mbuf;
+  struct rte_mbuf* pkt = cur.mbuf;
   uint16_t pkt_port_id = pkt->port;
   int s_port = -1;
   enum mtl_port phy_port = MTL_PORT_MAX;
@@ -105,220 +182,278 @@ static int rx_st40p_rtp_ready(void* priv) {
   }
   if (s_port < 0 || phy_port >= MTL_PORT_MAX) {
     warn("%s(%d), drop pkt: unmapped port_id %u\n", __func__, ctx->idx, pkt_port_id);
-    st40_rx_put_mbuf(ctx->transport, mbuf);
+    st40_rx_put_mbuf(ctx->transport, cur.mbuf);
     return -EIO;
   }
-  uint64_t receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, phy_port);
+  cur.phy_port = phy_port;
+  cur.receive_timestamp = mt_mbuf_time_stamp(ctx->impl, pkt, phy_port);
 
   uint32_t hdr_bytes = sizeof(struct st40_rfc8331_rtp_hdr);
-  if (len < hdr_bytes) {
-    warn("%s(%d), RTP packet too small (%u < %u)\n", __func__, ctx->idx, len, hdr_bytes);
-    st40_rx_put_mbuf(ctx->transport, mbuf);
+  if (cur.len < hdr_bytes) {
+    warn("%s(%d), RTP packet too small (%u < %u)\n", __func__, ctx->idx, cur.len,
+         hdr_bytes);
+    st40_rx_put_mbuf(ctx->transport, cur.mbuf);
     return -EIO;
   }
 
-  hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
+  hdr = (struct st40_rfc8331_rtp_hdr*)cur.usrptr;
   anc_count = hdr->first_hdr_chunk.anc_count;
-  uint32_t rtp_timestamp = ntohl(hdr->base.tmstamp);
-  uint16_t seq_number = ntohs(hdr->base.seq_number);
+  cur.rtp_timestamp = ntohl(hdr->base.tmstamp);
+  cur.seq_number = ntohs(hdr->base.seq_number);
+  cur.s_port = s_port;
 
   mt_pthread_mutex_lock(&ctx->lock);
 
-  /* complete previous frame if timestamp advanced */
-  if (ctx->inflight_frame && ctx->inflight_rtp_timestamp != rtp_timestamp) {
-    ctx->inflight_frame->stat = ST40P_RX_FRAME_READY;
-    ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, ctx->inflight_frame->idx);
-    notify_frame = true;
-    done_frames[done_count] = ctx->inflight_frame;
-    done_infos[done_count] = &ctx->inflight_frame->frame_info;
-    done_count++;
-    ctx->inflight_frame = NULL;
-  }
+  while (have_pkt) {
+    consume_cur = false;
+    cur_staged = false;
+    hdr = (struct st40_rfc8331_rtp_hdr*)cur.usrptr;
+    anc_count = hdr->first_hdr_chunk.anc_count;
+    payload_offset = 0;
 
-  if (!ctx->inflight_frame) {
-    framebuff =
-        rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
-
-    if (!framebuff) {
-      ctx->stat_busy++;
-      ret = -EBUSY;
-      goto out;
-    }
-
-    framebuff->stat = ST40P_RX_FRAME_RECEIVING;
-    frame_info = &framebuff->frame_info;
-    frame_info->meta_num = 0;
-    frame_info->udw_buffer_fill = 0;
-    frame_info->pkts_total = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
-    frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
-    frame_info->seq_discont = false;
-    frame_info->seq_lost = 0;
-    frame_info->rtp_marker = false;
-    frame_info->receive_timestamp = receive_timestamp;
-    frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
-    frame_info->rtp_timestamp = rtp_timestamp;
-    frame_info->timestamp = rtp_timestamp;
-    frame_info->epoch = 0;
-    uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
-    frame_info->interlaced = (f_bits & 0x2) ? true : false;
-    frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
-    ctx->inflight_frame = framebuff;
-    ctx->inflight_rtp_timestamp = rtp_timestamp;
-  } else {
-    framebuff = ctx->inflight_frame;
-    frame_info = &framebuff->frame_info;
-    if (!frame_info->receive_timestamp ||
-        (frame_info->receive_timestamp > receive_timestamp))
-      frame_info->receive_timestamp = receive_timestamp;
-
-    /* Update field metadata if a later packet carries interlace info */
-    uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
-    bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
-    bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
-    if ((frame_info->interlaced != pkt_interlaced) ||
-        (frame_info->second_field != pkt_second_field)) {
-      frame_info->interlaced = pkt_interlaced;
-      frame_info->second_field = pkt_second_field;
-    }
-  }
-
-  /* per-port sequence tracking */
-  if (ctx->last_seq_valid[s_port]) {
-    uint16_t expected = (uint16_t)(ctx->last_seq[s_port] + 1);
-    if (expected != seq_number) {
-      frame_info->port_seq_discont[s_port] = true;
-      if (mt_seq16_greater(seq_number, expected))
-        frame_info->port_seq_lost[s_port] += (uint16_t)(seq_number - expected);
-    }
-  }
-  ctx->last_seq[s_port] = seq_number;
-  ctx->last_seq_valid[s_port] = true;
-
-  /* session-level sequence tracking (merged across all ports) */
-  if (ctx->session_last_seq_valid) {
-    uint16_t expected = (uint16_t)(ctx->session_last_seq + 1);
-    if (expected != seq_number && mt_seq16_greater(seq_number, ctx->session_last_seq)) {
-      frame_info->seq_discont = true;
-      frame_info->seq_lost += (uint16_t)(seq_number - expected);
-    }
-  }
-  if (!ctx->session_last_seq_valid ||
-      mt_seq16_greater(seq_number, ctx->session_last_seq)) {
-    ctx->session_last_seq = seq_number;
-    ctx->session_last_seq_valid = true;
-  }
-
-  frame_info->pkts_total++;
-  frame_info->pkts_recv[s_port]++;
-
-  /* parse RTP packet and copy metadata */
-  payload = (uint8_t*)(hdr + 1);
-  uint32_t payload_room = (len > sizeof(*hdr)) ? (len - sizeof(*hdr)) : 0;
-
-  for (uint32_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
-    if (frame_info->meta_num >= ST40_MAX_META) {
-      warn("%s(%d), meta slots exhausted after %u packets\n", __func__, ctx->idx,
-           frame_info->meta_num);
-      break;
-    }
-
-    if (payload_offset + sizeof(struct st40_rfc8331_payload_hdr) > payload_room) {
-      warn("%s(%d), payload offset exceeds RTP payload (offset=%u, room=%u)\n", __func__,
-           ctx->idx, payload_offset, payload_room);
-      break;
-    }
-
-    payload_hdr = (struct st40_rfc8331_payload_hdr*)(payload + payload_offset);
-
-    struct st40_rfc8331_payload_hdr hdr_local = {0};
-    hdr_local.swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
-    hdr_local.swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
-
-    uint16_t udw_words = hdr_local.second_hdr_chunk.data_count & 0xFF;
-    struct st40_meta* meta_entry = &frame_info->meta[frame_info->meta_num];
-    meta_entry->c = hdr_local.first_hdr_chunk.c;
-    meta_entry->line_number = hdr_local.first_hdr_chunk.line_number;
-    meta_entry->hori_offset = hdr_local.first_hdr_chunk.horizontal_offset;
-    meta_entry->s = hdr_local.first_hdr_chunk.s;
-    meta_entry->stream_num = hdr_local.first_hdr_chunk.stream_num;
-    meta_entry->did = hdr_local.second_hdr_chunk.did & 0xFF;
-    meta_entry->sdid = hdr_local.second_hdr_chunk.sdid & 0xFF;
-    meta_entry->udw_size = udw_words;
-    meta_entry->udw_offset = frame_info->udw_buffer_fill;
-
-    uint32_t total_bits = (3 + udw_words + 1) * 10;
-    /* Match TX padding: floor to bytes then pad to the next 4-byte multiple */
-    uint32_t total_size = total_bits / 8;
-    uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
-    uint32_t anc_packet_bytes =
-        sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
-    if (payload_offset + anc_packet_bytes > payload_room) {
-      warn("%s(%d), ANC packet bytes exceed payload (offset=%u, size=%u, room=%u)\n",
-           __func__, ctx->idx, payload_offset, anc_packet_bytes, payload_room);
-      break;
-    }
-
-    /* If this is an empty ANC frame (udw_words == 0), still preserve and count it */
-    bool meta_valid = true;
-    if (udw_words == 0) {
-      /* Accept and preserve empty ANC frame as valid */
-      meta_valid = true;
-    } else {
-      /* Parse and validate UDW as before */
-      uint8_t* udw_src = (uint8_t*)&payload_hdr->second_hdr_chunk;
-      uint32_t original_fill = frame_info->udw_buffer_fill;
-      for (uint16_t udw_idx = 0; udw_idx < udw_words; udw_idx++) {
-        uint16_t udw = st40_get_udw(udw_idx + 3, udw_src);
-        if (!st40_check_parity_bits(udw)) {
-          warn("%s(%d), UDW parity failure packet %u word %u\n", __func__, ctx->idx,
-               anc_idx, udw_idx);
-          meta_valid = false;
-          break;
-        }
-        if (frame_info->udw_buffer_fill >= frame_info->udw_buffer_size) {
-          warn("%s(%d), UDW buffer overflow for packet %u\n", __func__, ctx->idx,
-               anc_idx);
-          meta_valid = false;
-          break;
-        }
-        frame_info->udw_buff_addr[frame_info->udw_buffer_fill++] = (uint8_t)(udw & 0xFF);
+    if (ctx->inflight_frame && ctx->stage_ts_valid && ctx->reorder_window_ns &&
+        rx_st40p_ts_gt(ctx->stage_rtp_timestamp, ctx->inflight_rtp_timestamp) &&
+        (cur.receive_timestamp - ctx->inflight_first_rx_time) >= ctx->reorder_window_ns) {
+      rx_st40p_complete_inflight(ctx, done_frames, done_infos, &done_count,
+                                 &notify_frame);
+      if (!ctx->inflight_frame && rx_st40p_stage_pop(ctx, &popped)) {
+        cur = popped;
+        continue;
       }
-      if (meta_valid) {
-        uint16_t checksum_udw = st40_get_udw(udw_words + 3, udw_src);
-        uint16_t checksum_calc = st40_calc_checksum(3 + udw_words, udw_src);
-        if (checksum_udw != checksum_calc) {
-          warn("%s(%d), checksum mismatch packet %u (0x%03x != 0x%03x)\n", __func__,
-               ctx->idx, anc_idx, checksum_udw, checksum_calc);
-          meta_valid = false;
-        }
-      }
-      if (!meta_valid) {
-        frame_info->udw_buffer_fill = original_fill;
+    }
+
+    /* Newer timestamp: stage until marker or window expiry */
+    if (ctx->inflight_frame &&
+        rx_st40p_ts_gt(cur.rtp_timestamp, ctx->inflight_rtp_timestamp)) {
+      if (!ctx->inflight_first_rx_time)
+        ctx->inflight_first_rx_time = cur.receive_timestamp;
+
+      if (!rx_st40p_stage_push(ctx, &cur)) {
+        ctx->stat_busy++;
+        ret = -EBUSY;
+        dangling_pkt = cur.mbuf;
         break;
       }
+
+      cur_staged = true;
+
+      if (ctx->reorder_window_ns &&
+          (cur.receive_timestamp - ctx->inflight_first_rx_time) >=
+              ctx->reorder_window_ns) {
+        rx_st40p_complete_inflight(ctx, done_frames, done_infos, &done_count,
+                                   &notify_frame);
+      }
+
+      if (!ctx->inflight_frame && rx_st40p_stage_pop(ctx, &popped)) {
+        cur = popped;
+        continue;
+      }
+
+      have_pkt = false;
+      continue;
     }
 
-    frame_info->meta_num++;
-    payload_offset += anc_packet_bytes;
-  }
+    /* Start or reuse inflight frame */
+    if (!ctx->inflight_frame) {
+      framebuff =
+          rx_st40p_next_available(ctx, ctx->framebuff_producer_idx, ST40P_RX_FRAME_FREE);
 
-  if (hdr->base.marker) {
-    frame_info->rtp_marker = true;
-    framebuff->stat = ST40P_RX_FRAME_READY;
-    ctx->framebuff_producer_idx = rx_st40p_next_idx(ctx, framebuff->idx);
-    ctx->inflight_frame = NULL;
-    notify_frame = true;
-    done_frames[done_count] = framebuff;
-    done_infos[done_count] = frame_info;
-    done_count++;
-  }
+      if (!framebuff) {
+        ctx->stat_busy++;
+        ret = -EBUSY;
+        dangling_pkt = cur.mbuf;
+        break;
+      }
 
-out:
+      framebuff->stat = ST40P_RX_FRAME_RECEIVING;
+      frame_info = &framebuff->frame_info;
+      frame_info->meta_num = 0;
+      frame_info->udw_buffer_fill = 0;
+      frame_info->pkts_total = 0;
+      frame_info->pkts_recv[MTL_SESSION_PORT_P] = 0;
+      frame_info->pkts_recv[MTL_SESSION_PORT_R] = 0;
+      frame_info->seq_discont = false;
+      frame_info->seq_lost = 0;
+      frame_info->rtp_marker = false;
+      frame_info->receive_timestamp = cur.receive_timestamp;
+      frame_info->tfmt = ST10_TIMESTAMP_FMT_MEDIA_CLK;
+      frame_info->rtp_timestamp = cur.rtp_timestamp;
+      frame_info->timestamp = cur.rtp_timestamp;
+      frame_info->epoch = 0;
+      uint8_t f_bits = hdr->first_hdr_chunk.f & 0x3;
+      frame_info->interlaced = (f_bits & 0x2) ? true : false;
+      frame_info->second_field = frame_info->interlaced && (f_bits & 0x1);
+      ctx->inflight_frame = framebuff;
+      ctx->inflight_rtp_timestamp = cur.rtp_timestamp;
+      ctx->inflight_first_rx_time = cur.receive_timestamp;
+    } else {
+      framebuff = ctx->inflight_frame;
+      frame_info = &framebuff->frame_info;
+      if (!frame_info->receive_timestamp ||
+          (frame_info->receive_timestamp > cur.receive_timestamp))
+        frame_info->receive_timestamp = cur.receive_timestamp;
+
+      /* Update field metadata if a later packet carries interlace info */
+      uint8_t pkt_field = hdr->first_hdr_chunk.f & 0x3;
+      bool pkt_interlaced = (pkt_field & 0x2) ? true : false;
+      bool pkt_second_field = pkt_interlaced && (pkt_field & 0x1);
+      if ((frame_info->interlaced != pkt_interlaced) ||
+          (frame_info->second_field != pkt_second_field)) {
+        frame_info->interlaced = pkt_interlaced;
+        frame_info->second_field = pkt_second_field;
+      }
+    }
+
+    /* per-port sequence tracking */
+    if (ctx->last_seq_valid[cur.s_port]) {
+      uint16_t expected = (uint16_t)(ctx->last_seq[cur.s_port] + 1);
+      if (expected != cur.seq_number) {
+        frame_info->port_seq_discont[cur.s_port] = true;
+        if (mt_seq16_greater(cur.seq_number, expected))
+          frame_info->port_seq_lost[cur.s_port] += (uint16_t)(cur.seq_number - expected);
+      }
+    }
+    ctx->last_seq[cur.s_port] = cur.seq_number;
+    ctx->last_seq_valid[cur.s_port] = true;
+
+    /* session-level sequence tracking (merged across all ports) */
+    if (ctx->session_last_seq_valid) {
+      uint16_t expected = (uint16_t)(ctx->session_last_seq + 1);
+      if (expected != cur.seq_number &&
+          mt_seq16_greater(cur.seq_number, ctx->session_last_seq)) {
+        frame_info->seq_discont = true;
+        frame_info->seq_lost += (uint16_t)(cur.seq_number - expected);
+      }
+    }
+    if (!ctx->session_last_seq_valid ||
+        mt_seq16_greater(cur.seq_number, ctx->session_last_seq)) {
+      ctx->session_last_seq = cur.seq_number;
+      ctx->session_last_seq_valid = true;
+    }
+
+    frame_info->pkts_total++;
+    frame_info->pkts_recv[cur.s_port]++;
+
+    /* parse RTP packet and copy metadata */
+    payload = (uint8_t*)(hdr + 1);
+    uint32_t payload_room = (cur.len > sizeof(*hdr)) ? (cur.len - sizeof(*hdr)) : 0;
+
+    for (uint32_t anc_idx = 0; anc_idx < anc_count; anc_idx++) {
+      if (frame_info->meta_num >= ST40_MAX_META) {
+        warn("%s(%d), meta slots exhausted after %u packets\n", __func__, ctx->idx,
+             frame_info->meta_num);
+        break;
+      }
+
+      if (payload_offset + sizeof(struct st40_rfc8331_payload_hdr) > payload_room) {
+        warn("%s(%d), payload offset exceeds RTP payload (offset=%u, room=%u)\n",
+             __func__, ctx->idx, payload_offset, payload_room);
+        break;
+      }
+
+      payload_hdr = (struct st40_rfc8331_payload_hdr*)(payload + payload_offset);
+
+      struct st40_rfc8331_payload_hdr hdr_local = {0};
+      hdr_local.swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
+      hdr_local.swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
+
+      uint16_t udw_words = hdr_local.second_hdr_chunk.data_count & 0xFF;
+      struct st40_meta* meta_entry = &frame_info->meta[frame_info->meta_num];
+      meta_entry->c = hdr_local.first_hdr_chunk.c;
+      meta_entry->line_number = hdr_local.first_hdr_chunk.line_number;
+      meta_entry->hori_offset = hdr_local.first_hdr_chunk.horizontal_offset;
+      meta_entry->s = hdr_local.first_hdr_chunk.s;
+      meta_entry->stream_num = hdr_local.first_hdr_chunk.stream_num;
+      meta_entry->did = hdr_local.second_hdr_chunk.did & 0xFF;
+      meta_entry->sdid = hdr_local.second_hdr_chunk.sdid & 0xFF;
+      meta_entry->udw_size = udw_words;
+      meta_entry->udw_offset = frame_info->udw_buffer_fill;
+
+      uint32_t total_bits = (3 + udw_words + 1) * 10;
+      /* Match TX padding: floor to bytes then pad to the next 4-byte multiple */
+      uint32_t total_size = total_bits / 8;
+      uint32_t total_size_aligned = (total_size + 3) & ~0x3U;
+      uint32_t anc_packet_bytes =
+          sizeof(struct st40_rfc8331_payload_hdr) - 4 + total_size_aligned;
+      if (payload_offset + anc_packet_bytes > payload_room) {
+        warn("%s(%d), ANC packet bytes exceed payload (offset=%u, size=%u, room=%u)\n",
+             __func__, ctx->idx, payload_offset, anc_packet_bytes, payload_room);
+        break;
+      }
+
+      /* If this is an empty ANC frame (udw_words == 0), still preserve and count it */
+      bool meta_valid = true;
+      if (udw_words == 0) {
+        /* Accept and preserve empty ANC frame as valid */
+        meta_valid = true;
+      } else {
+        /* Parse and validate UDW as before */
+        uint8_t* udw_src = (uint8_t*)&payload_hdr->second_hdr_chunk;
+        uint32_t original_fill = frame_info->udw_buffer_fill;
+        for (uint16_t udw_idx = 0; udw_idx < udw_words; udw_idx++) {
+          uint16_t udw = st40_get_udw(udw_idx + 3, udw_src);
+          if (!st40_check_parity_bits(udw)) {
+            warn("%s(%d), UDW parity failure packet %u word %u\n", __func__, ctx->idx,
+                 anc_idx, udw_idx);
+            meta_valid = false;
+            break;
+          }
+          if (frame_info->udw_buffer_fill >= frame_info->udw_buffer_size) {
+            warn("%s(%d), UDW buffer overflow for packet %u\n", __func__, ctx->idx,
+                 anc_idx);
+            meta_valid = false;
+            break;
+          }
+          frame_info->udw_buff_addr[frame_info->udw_buffer_fill++] =
+              (uint8_t)(udw & 0xFF);
+        }
+        if (meta_valid) {
+          uint16_t checksum_udw = st40_get_udw(udw_words + 3, udw_src);
+          uint16_t checksum_calc = st40_calc_checksum(3 + udw_words, udw_src);
+          if (checksum_udw != checksum_calc) {
+            warn("%s(%d), checksum mismatch packet %u (0x%03x != 0x%03x)\n", __func__,
+                 ctx->idx, anc_idx, checksum_udw, checksum_calc);
+            meta_valid = false;
+          }
+        }
+        if (!meta_valid) {
+          frame_info->udw_buffer_fill = original_fill;
+          break;
+        }
+      }
+
+      frame_info->meta_num++;
+      payload_offset += anc_packet_bytes;
+    }
+
+    if (hdr->base.marker) {
+      frame_info->rtp_marker = true;
+      rx_st40p_complete_inflight(ctx, done_frames, done_infos, &done_count,
+                                 &notify_frame);
+    }
+
+    processed_pkts[processed_cnt++] = cur.mbuf;
+    consume_cur = true;
+
+    if (!ctx->inflight_frame && rx_st40p_stage_pop(ctx, &popped)) {
+      cur = popped;
+      have_pkt = true;
+      continue;
+    }
+
+    have_pkt = false;
+  }
   mt_pthread_mutex_unlock(&ctx->lock);
 
-  /* return mbuf to transport */
-  st40_rx_put_mbuf(ctx->transport, mbuf);
+  for (int i = 0; i < processed_cnt; i++)
+    st40_rx_put_mbuf(ctx->transport, processed_pkts[i]);
+
+  if (dangling_pkt && !cur_staged && !consume_cur)
+    st40_rx_put_mbuf(ctx->transport, dangling_pkt);
+
+  if (!consume_cur && !processed_cnt) {
+    /* staged but not yet consumed; keep mbuf in stage queue */
+  }
 
   if (notify_frame) {
     for (int n = 0; n < done_count; n++) {
@@ -376,6 +511,8 @@ static int rx_st40p_create_transport(struct mtl_main_impl* impl, struct st40p_rx
   if (ops->flags & ST40P_RX_FLAG_DATA_PATH_ONLY)
     ops_rx.flags |= ST40_RX_FLAG_DATA_PATH_ONLY;
   if (ops->flags & ST40P_RX_FLAG_ENABLE_RTCP) ops_rx.flags |= ST40_RX_FLAG_ENABLE_RTCP;
+  if (ops->flags & ST40P_RX_FLAG_AUTO_DETECT_INTERLACED)
+    ops_rx.flags |= ST40_RX_FLAG_AUTO_DETECT_INTERLACED;
 
   ctx->transport = st40_rx_create(impl, &ops_rx);
   if (!ctx->transport) {
@@ -659,6 +796,8 @@ int st40p_rx_free(st40p_rx_handle handle) {
     mt_stat_unregister(impl, rx_st40p_stat, ctx);
   }
 
+  rx_st40p_stage_flush(ctx);
+
   if (ctx->transport) {
     st40_rx_free(ctx->transport);
     ctx->transport = NULL;
@@ -730,6 +869,10 @@ st40p_rx_handle st40p_rx_create(mtl_handle mt, struct st40p_rx_ops* ops) {
   ctx->block_timeout_ns = NS_PER_S;
   ctx->block_wake_pending = false;
   if (ops->flags & ST40P_RX_FLAG_BLOCK_GET) ctx->block_get = true;
+
+  ctx->reorder_window_ns =
+      ops->reorder_window_ns ? ops->reorder_window_ns : ST40P_RX_REORDER_NS_DEFAULT;
+  rx_st40p_stage_reset(ctx);
 
   /* copy ops */
   if (ops->name) {

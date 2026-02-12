@@ -200,6 +200,57 @@ def _assert_redundant_frame_info(entries: list[dict[str, int]]) -> None:
     )
 
 
+def _assert_dedup_session_integrity(entries: list[dict[str, int]]) -> None:
+    """Validate merge-sort dedup correctness on a redundant stream.
+
+    The shared st_rx_dedup + merge-sort burst helper must:
+    1. Preserve monotonic RTP timestamp delivery across frames.
+    2. Produce zero sequence loss — even when one port has gaps the redundant
+       port must fill them, so seq_lost == 0 for every frame.
+    3. Demonstrate effective dedup when both ports contribute to a frame
+       (pkts_total < pkts_recv_p + pkts_recv_r).
+    """
+    assert entries, "dedup integrity: no parsable frame-info entries"
+
+    # 1. Timestamps must be monotonically non-decreasing.
+    timestamps = [e["ts"] for e in entries if e.get("pkts_total", 0) > 0]
+    out_of_order = [
+        (i, timestamps[i - 1], timestamps[i])
+        for i in range(1, len(timestamps))
+        if timestamps[i] < timestamps[i - 1]
+    ]
+    assert not out_of_order, (
+        "dedup integrity: timestamps not monotonic; "
+        f"out-of-order indices (idx, prev_ts, cur_ts)={out_of_order[:5]}"
+    )
+
+    # 2. No sequence loss — redundant port must cover single-port gaps.
+    loss_entries = [
+        e for e in entries if e.get("pkts_total", 0) > 0 and e.get("seq_lost", 0) > 0
+    ]
+    assert not loss_entries, (
+        "dedup integrity: seq_lost > 0 on redundant stream; "
+        f"offending entries={loss_entries[:5]}"
+    )
+
+    # 3. At least one frame shows effective dedup (both ports contributed
+    #    and pkts_total < sum, meaning a duplicate was correctly dropped).
+    deduped_frames = [
+        e
+        for e in entries
+        if e.get("pkts_recv_p", 0) > 0
+        and e.get("pkts_recv_r", 0) > 0
+        and e["pkts_total"] < (e["pkts_recv_p"] + e["pkts_recv_r"])
+    ]
+    log_info(
+        f"dedup integrity: {len(deduped_frames)}/{len(entries)} frames "
+        "show active dedup (pkts_total < sum of per-port counts)"
+    )
+    # Note: on loopback the same NIC may deliver identical bursts with
+    # little jitter, so deduped_frames can be empty.  We log rather than
+    # assert so the metric is visible without failing on loopback setups.
+
+
 def _parse_frame_info_timestamps(frame_info_text: str) -> list[int]:
     """Extract timestamps from frame-info log lines."""
     ts_values = []
@@ -456,6 +507,7 @@ def test_st40p_redundant_progressive(
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_dedup_session_integrity(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -580,6 +632,7 @@ def test_st40p_redundant_progressive_gap(
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_dedup_session_integrity(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -702,6 +755,7 @@ def test_st40p_redundant_progressive_split(
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_dedup_session_integrity(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -825,6 +879,7 @@ def test_st40p_redundant_progressive_split_gap(
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_dedup_session_integrity(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -951,6 +1006,7 @@ def test_st40i_redundant_split(
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_dedup_session_integrity(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)
@@ -1078,6 +1134,7 @@ def test_st40i_redundant_split_gap(
             assert info_dump.return_code == 0
             entries = _parse_frame_info_entries(info_dump.stdout_text or "")
             _assert_redundant_frame_info(entries)
+            _assert_dedup_session_integrity(entries)
     finally:
         media_create.remove_file(input_file_path, host=host)
         media_create.remove_file(output_file_path, host=host)

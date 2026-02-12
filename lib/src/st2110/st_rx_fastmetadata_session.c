@@ -114,55 +114,22 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
     }
   }
 
-  if (unlikely(s->latest_seq_id[s_port] == -1)) s->latest_seq_id[s_port] = seq_id - 1;
-  if (unlikely(s->session_seq_id == -1)) s->session_seq_id = seq_id - 1;
-  if (unlikely(s->tmstamp == -1)) s->tmstamp = tmstamp - 1;
-
-  /* not a big deal as long as stream is continous */
-  if (seq_id != (uint16_t)(s->latest_seq_id[s_port] + 1)) {
-    dbg("%s(%d,%d), non-continuous seq now %u last %d\n", __func__, s->idx, s_port,
-        seq_id, s->latest_seq_id[s_port]);
+  /* ST 2022-7 shared dedup check */
+  int64_t prev_tmstamp = s->dedup.tmstamp; /* save before dedup updates it */
+  struct st_rx_dedup_result dedup_r =
+      st_rx_dedup_check(&s->dedup, seq_id, tmstamp, s_port);
+  if (dedup_r.port_seq_discontinuity) {
     s->port_user_stats.common.port[s_port].out_of_order_packets++;
     s->stat_pkts_out_of_order_per_port[s_port]++;
   }
-  s->latest_seq_id[s_port] = seq_id;
-
-  /* in ancillary we assume packet is redundant when the seq_id is old (it's possible to
-  get multiple packets with the same timestamp)) */
-  if ((mt_seq32_greater(s->tmstamp, tmstamp)) ||
-      !mt_seq16_greater(seq_id, s->session_seq_id)) {
-    if (!mt_seq16_greater(seq_id, s->session_seq_id)) {
-      dbg("%s(%d,%d), redundant seq now %u session last %d\n", __func__, s->idx, s_port,
-          seq_id, s->session_seq_id);
-    } else {
-      dbg("%s(%d,%d), redundant tmstamp now %u session last %ld\n", __func__, s->idx,
-          s_port, tmstamp, s->tmstamp);
-    }
-
+  if (dedup_r.drop) {
     ST_SESSION_STAT_INC(s, port_user_stats, stat_pkts_redundant);
-    for (int i = 0; i < s->ops.num_port; i++) {
-      if (s->redundant_error_cnt[i] < ST_SESSION_REDUNDANT_ERROR_THRESHOLD) {
-        return -EIO;
-      }
-    }
-    warn(
-        "%s(%d), redundant error threshold reached, accept packet seq %u (old seq_id "
-        "%d), timestamp %u (old timestamp %ld)\n",
-        __func__, s->idx, seq_id, s->session_seq_id, tmstamp, s->tmstamp);
+    return -EIO;
   }
-  s->redundant_error_cnt[s_port] = 0;
-
-  /* hole in seq id packets going into the session check if the seq_id of the session is
-   * consistent */
-  if (seq_id != (uint16_t)(s->session_seq_id + 1)) {
-    dbg("%s(%d,%d), session seq_id %u out of order %d\n", __func__, s->idx, s_port,
-        seq_id, s->session_seq_id);
+  if (dedup_r.session_seq_discontinuity) {
     s->stat_pkts_out_of_order++;
     ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_out_of_order);
   }
-
-  /* update seq id */
-  s->session_seq_id = seq_id;
 
   /* enqueue to packet ring to let app to handle */
   int ret = rte_ring_sp_enqueue(s->packet_ring, (void*)mbuf);
@@ -175,10 +142,9 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   }
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
-  if (tmstamp != s->tmstamp) {
+  if (tmstamp != (uint32_t)prev_tmstamp) {
     rte_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
-    s->tmstamp = tmstamp;
   }
 
   ST_SESSION_STAT_INC(s, port_user_stats.common, stat_pkts_received);
@@ -198,43 +164,22 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   return 0;
 }
 
-static int rx_fastmetadata_session_handle_mbuf(void* priv, struct rte_mbuf** mbuf,
-                                               uint16_t nb) {
-  struct st_rx_session_priv* s_priv = priv;
-  struct st_rx_fastmetadata_session_impl* s = s_priv->session;
-  struct mtl_main_impl* impl = s_priv->impl;
-  enum mtl_session_port s_port = s_priv->s_port;
-
-  if (!s->attached) {
-    dbg("%s(%d,%d), session not ready\n", __func__, s->idx, s_port);
-    return -EIO;
-  }
-
-  for (uint16_t i = 0; i < nb; i++)
-    rx_fastmetadata_session_handle_pkt(impl, s, mbuf[i], s_port);
-
-  return 0;
+/* Per-packet callback for the shared merge-sort tasklet */
+static int rx_fastmetadata_dedup_pkt_handler(void* impl_ptr, void* session_ptr,
+                                             struct rte_mbuf* mbuf,
+                                             enum mtl_session_port s_port) {
+  struct st_rx_fastmetadata_session_impl* s = session_ptr;
+  struct mtl_main_impl* impl = impl_ptr;
+  return rx_fastmetadata_session_handle_pkt(impl, s, mbuf, s_port);
 }
 
 static int rx_fastmetadata_session_tasklet(struct st_rx_fastmetadata_session_impl* s) {
-  struct rte_mbuf* mbuf[ST_RX_FASTMETADATA_BURST_SIZE];
-  uint16_t rv;
   int num_port = s->ops.num_port;
-  bool done = true;
 
-  for (int s_port = 0; s_port < num_port; s_port++) {
-    if (!s->rxq[s_port]) continue;
-
-    rv = mt_rxq_burst(s->rxq[s_port], &mbuf[0], ST_RX_FASTMETADATA_BURST_SIZE);
-    if (rv) {
-      rx_fastmetadata_session_handle_mbuf(&s->priv[s_port], &mbuf[0], rv);
-      rte_pktmbuf_free_bulk(&mbuf[0], rv);
-    }
-
-    if (rv) done = false;
-  }
-
-  return done ? MTL_TASKLET_ALL_DONE : MTL_TASKLET_HAS_PENDING;
+  /* Use shared merge-sort burst for ST 2022-7 dedup */
+  struct mtl_main_impl* impl = s->priv[MTL_SESSION_PORT_P].impl;
+  return st_rx_dedup_tasklet(s->rxq, num_port, ST_RX_FASTMETADATA_BURST_SIZE, impl, s,
+                             rx_fastmetadata_dedup_pkt_handler);
 }
 
 static int rx_fastmetadata_sessions_tasklet_handler(void* priv) {
@@ -415,14 +360,11 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
     snprintf(s->ops_name, sizeof(s->ops_name), "RX_FMD_M%dS%d", mgr->idx, idx);
   }
   s->ops = *ops;
+  st_rx_dedup_init(&s->dedup, ST_RX_DEDUP_MODE_TIMESTAMP_AND_SEQ, num_port, idx);
   for (int i = 0; i < num_port; i++) {
     s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
 
-  s->session_seq_id = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
-  s->tmstamp = -1;
   s->stat_pkts_received = 0;
   s->stat_last_time = mt_get_monotonic_time();
   rte_atomic32_set(&s->stat_frames_received, 0);
@@ -553,11 +495,7 @@ static int rx_fastmetadata_session_update_src(struct mtl_main_impl* impl,
     s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (30000 + idx * 2);
   }
   /* reset seq id */
-
-  s->session_seq_id = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_P] = -1;
-  s->latest_seq_id[MTL_SESSION_PORT_R] = -1;
-  s->tmstamp = -1;
+  st_rx_dedup_reset(&s->dedup);
 
   ret = rx_fastmetadata_session_init_hw(impl, s);
   if (ret < 0) {
