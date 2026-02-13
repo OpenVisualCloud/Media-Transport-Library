@@ -870,7 +870,6 @@ static GstFlowReturn gst_mtl_st40p_tx_parse_8331_anc_words(
     bytes_left_to_process -= udw_byte_size;
     /* Get checksum and promptly ignore it */
     udw = st40_get_udw((data_count + 3), payload_cursor);
-    printf("Checksum UDW: 0x%04x\n", udw);
 
     if (sink->use_pts_for_pacing) {
       frame_info->timestamp = GST_BUFFER_PTS(buf) + sink->pts_for_pacing_offset;
