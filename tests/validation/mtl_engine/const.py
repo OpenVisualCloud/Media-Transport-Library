@@ -4,4 +4,5 @@
 LOG_FOLDER = "logs"
 TESTCMD_LVL = 24  # Custom logging level for test commands
 FRAMES_CAPTURE = 4  # Number of frames to capture for compliance tests
+FFMPEG_PATH = "./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg"
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
