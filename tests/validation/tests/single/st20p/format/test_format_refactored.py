@@ -4,7 +4,6 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
-from mtl_engine.rxtxapp import RxTxApp
 
 
 @pytest.mark.smoke
@@ -24,6 +23,7 @@ def test_422p10le_refactored(
     prepare_ramdisk,
     pcap_capture,
     media_file,
+    rxtxapp,
 ):
     """Send files in YUV422PLANAR10LE format converting to transport format YUV_422_10bit"""
     media_file_info, media_file_path = media_file
@@ -32,9 +32,7 @@ def test_422p10le_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
-
-    app.create_command(
+    rxtxapp.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -47,7 +45,7 @@ def test_422p10le_refactored(
         test_time=test_time,
     )
 
-    app.execute_test(
+    rxtxapp.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
@@ -96,6 +94,7 @@ def test_convert_on_rx_refactored(
     test_config,
     format,
     media_file,
+    rxtxapp,
 ):
     """Send file in YUV_422_10bit pixel formats with supported conversion on RX side"""
     media_file_info, media_file_path = media_file
@@ -104,9 +103,7 @@ def test_convert_on_rx_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
-
-    app.create_command(
+    rxtxapp.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -120,7 +117,7 @@ def test_convert_on_rx_refactored(
         test_time=test_time,
     )
 
-    app.execute_test(
+    rxtxapp.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
@@ -169,6 +166,7 @@ def test_tx_rx_conversion_refactored(
     test_config,
     format,
     media_file,
+    rxtxapp,
 ):
     """Send file in different pixel formats with supported two-way conversion on TX and RX"""
     media_file_info, media_file_path = media_file
@@ -178,9 +176,7 @@ def test_tx_rx_conversion_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
-
-    app.create_command(
+    rxtxapp.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -194,7 +190,7 @@ def test_tx_rx_conversion_refactored(
         test_time=test_time,
     )
 
-    app.execute_test(
+    rxtxapp.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
@@ -220,6 +216,7 @@ def test_formats_refactored(
     prepare_ramdisk,
     pcap_capture,
     media_file,
+    rxtxapp,
 ):
     """Send file in different supported pixel formats without conversion during transport"""
     media_file_info, media_file_path = media_file
@@ -229,9 +226,7 @@ def test_formats_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
-
-    app.create_command(
+    rxtxapp.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         test_mode="multicast",
@@ -245,7 +240,7 @@ def test_formats_refactored(
         test_time=test_time,
     )
 
-    app.execute_test(
+    rxtxapp.execute_test(
         build=mtl_path,
         test_time=test_time,
         host=host,
