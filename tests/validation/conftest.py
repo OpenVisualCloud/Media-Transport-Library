@@ -19,7 +19,7 @@ from mfd_common_libs.custom_logger import add_logging_level
 from mfd_common_libs.log_levels import TEST_FAIL, TEST_INFO, TEST_PASS
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
-from mtl_engine.const import FRAMES_CAPTURE, LOG_FOLDER, TESTCMD_LVL
+from mtl_engine.const import FRAMES_CAPTURE, LOG_FOLDER, RXTXAPP_PATH, TESTCMD_LVL
 from mtl_engine.csv_report import (
     csv_add_test,
     csv_write_report,
@@ -28,6 +28,7 @@ from mtl_engine.csv_report import (
 )
 from mtl_engine.execute import log_fail
 from mtl_engine.ramdisk import Ramdisk
+from mtl_engine.rxtxapp import RxTxApp
 from mtl_engine.stash import (
     clear_issue,
     clear_result_log,
@@ -658,3 +659,8 @@ def log_case(request, caplog: pytest.LogCaptureFixture):
 def init_ip_address_pools(test_config: dict[Any, Any]) -> None:
     session_id = int(test_config["session_id"])
     ip_pools.init(session_id=session_id)
+
+
+@pytest.fixture(scope="session")
+def rxtxapp() -> RxTxApp:
+    return RxTxApp(os.path.dirname(RXTXAPP_PATH))
