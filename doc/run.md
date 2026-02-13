@@ -298,6 +298,51 @@ MTL: 2024-04-16 15:39:18, * *    E N D    S T A T E   * *
 
 This project also provides many loop tests (1 port as tx, 1 port as rx) config files. Please refer to [loop config](../tests/tools/RxTxApp/script/).
 
+### 5.2.1. ST40P Pipeline Sessions in RxTxApp
+
+RxTxApp supports ST2110-40 ancillary pipeline sessions via the `"st40p"` JSON key (in addition to the legacy `"ancillary"` key). This uses the `st40p_tx_create` / `st40p_rx_create` pipeline APIs internally and supports:
+
+- **ST 2022-7 redundancy**: Provide 2 interfaces and 2 destination IPs for primary + redundant paths.
+- **Test mutation modes**: Set `"test_mode": "seq-gap"` (or `"no-marker"`, `"bad-parity"`, `"paced"`) with optional `"test_pkt_count"` and `"test_frame_count"` to inject RTP anomalies for negative-path testing.
+- **Inter-path delay**: Set `"redundant_delay_ns"` on TX to simulate network path asymmetry between primary and redundant ports.
+- **RX reorder window**: Set `"reorder_window_ns"` on RX to control the dejitter buffer wait time (default 10 ms).
+
+Example TX session group with redundancy and gap injection:
+```json
+{
+    "dip": ["239.40.1.1", "239.40.2.1"],
+    "interface": [0, 1],
+    "st40p": [{
+        "replicas": 1,
+        "start_port": 40000,
+        "payload_type": 113,
+        "ancillary_fps": "p29",
+        "ancillary_url": "./test.txt",
+        "test_mode": "seq-gap",
+        "test_pkt_count": 200,
+        "test_frame_count": 65535,
+        "redundant_delay_ns": 7000000
+    }]
+}
+```
+
+Example RX session group with custom reorder window:
+```json
+{
+    "ip": ["239.40.1.1", "239.40.2.1"],
+    "interface": [2, 3],
+    "st40p": [{
+        "replicas": 1,
+        "start_port": 40000,
+        "payload_type": 113,
+        "ancillary_fps": "p29",
+        "reorder_window_ns": 15000000
+    }]
+}
+```
+
+See [configuration_guide.md](configuration_guide.md) for the full list of `"st40p"` fields.
+
 If it failed to run the sample, please help to collect the system setup status by `status_report.sh` and share the log for further analysis.
 
 ```bash

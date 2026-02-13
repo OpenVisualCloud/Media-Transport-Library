@@ -169,6 +169,42 @@ Items in each element of the "ancillary" array
 
 ​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps which should be aligned to video
 
+#### st40p (array of st40p pipeline sessions)
+
+Alternative to the "ancillary" key above, using the pipeline API (`st40p_tx_create` / `st40p_rx_create`). The `"st40p"` key supports the same base fields plus additional test and pacing controls.
+
+Items in each element of the "st40p" array:
+
+​ **replicas (int):** `1~max_num` the number of session copies
+
+​ **start_port (int):** `0~65535` start udp port for copies of sessions
+
+​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps
+
+​ **ancillary_url (string):** ancillary source file path (empty string for synthetic data)
+
+​ **interlaced (bool):** `true, false` enable interlaced field cadence (optional, default false)
+
+​ **user_pacing (bool):** `true, false` use application-provided timestamps for pacing (optional)
+
+​ **exact_user_pacing (bool):** `true, false` strict user pacing (implies user_pacing, optional)
+
+​ **user_timestamp (bool):** `true, false` use application-provided RTP timestamps (optional)
+
+​ **enable_rtcp (bool):** `true, false` enable RTCP retransmission (optional)
+
+​ **test_mode (string):** `"seq-gap", "no-marker", "bad-parity", "paced"` TX test mutation pattern (optional, TX only)
+
+​ **test_pkt_count (int):** packet count for the test pattern schedule (optional, TX only)
+
+​ **test_frame_count (int):** number of frames to apply the test pattern (optional, TX only; 65535 for continuous)
+
+​ **redundant_delay_ns (int):** extra delay in nanoseconds before sending on the redundant port R (optional, TX only). Simulates path asymmetry for ST 2022-7 dejitter validation.
+
+​ **reorder_window_ns (int):** max wait in nanoseconds for out-of-order packets before forcing frame advance (optional, RX only; default 10 ms = 10000000)
+
 #### fast metadata (array of fast metadata sessions)
 
 Items in each element of the "fastmetadata" array
@@ -253,6 +289,26 @@ Items in each element of the "ancillary" array
 ​ **start_port (int):** `0~65535` start udp port for copies of sessions
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+#### st40p (array of st40p pipeline sessions) for RX
+
+Items in each element of the "st40p" array (pipeline RX counterpart to "ancillary"):
+
+​ **replicas (int):** `1~max_num` the number of session copies
+
+​ **start_port (int):** `0~65535` start udp port for copies of sessions
+
+​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
+
+​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps
+
+​ **ancillary_url (string):** (optional) reference file for RX output
+
+​ **interlaced (bool):** `true, false` enable interlaced field cadence (optional)
+
+​ **enable_rtcp (bool):** `true, false` enable RTCP retransmission (optional)
+
+​ **reorder_window_ns (int):** max wait in nanoseconds for out-of-order packets before forcing frame advance (optional; default 10 ms). Increase this when testing with `redundant_delay_ns` on TX to accommodate path asymmetry.
 
 #### fast metadata (array of fast metadata sessions) for RX
 

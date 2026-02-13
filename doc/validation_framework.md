@@ -126,6 +126,7 @@ The `tests/` directory contains test implementations organized by scenario type:
     - Pacing sanity via RTP sender helpers and ramdisk-backed media fixtures (configure `ramdisk.media` in `configs/test_config.yaml`)
     - Redundant ST40p/ST40i GStreamer ANC cases with per-port seq-gap scheduling (real payloads, lifted packet caps) and frame-info checks for seq discontinuity/loss logging
     - Interlace auto-detect on RX (`rx-auto-detect-interlaced` / `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED`) with warnings if neither interlaced nor auto-detect is set; frame-info now includes `second_field` (bool) and `interlaced` for detected cadence, and detection resets on `seq_discont` before re-learning from subsequent F bits
+    - **RxTxApp-based ST 2022-7 redundancy tests** (`tests/single/ancillary/st40p_redundant/`): 4-VF single-host loopback using the `"st40p"` JSON key for pipeline TX+RX. Covers baseline multicast, RTP seq-gap injection (`test_mode=seq-gap`), inter-path latency simulation (`redundant_delay_ns` + `reorder_window_ns`), synthetic source, interlaced scan mode, and unicast topologies. No GStreamer dependency.
   - Backend-specific tests (DMA, kernel socket, etc.)
   - Integration tests (FFmpeg, GStreamer)
   

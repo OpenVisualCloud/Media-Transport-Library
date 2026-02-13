@@ -254,6 +254,20 @@ typedef struct st_json_ancillary_session {
   bool enable_rtcp;
 } st_json_ancillary_session_t;
 
+typedef struct st_json_st40p_session {
+  st_json_session_base_t base;
+  st_json_ancillary_info_t info;
+  bool user_pacing;
+  bool exact_user_pacing;
+  bool user_timestamp;
+  bool enable_rtcp;
+  int test_mode;        /* maps to enum st40_tx_test_pattern (0=none,1=no-marker,2=seq-gap,...) */
+  int test_pkt_count;   /* ANC packets per test frame (0 = mode default) */
+  int test_frame_count; /* number of frames to mutate (0 = library default, e.g. 8 for redundant) */
+  uint32_t redundant_delay_ns; /* extra delay (ns) before sending on port R */
+  uint64_t reorder_window_ns;  /* RX reorder window (ns), 0 = lib default 10 ms */
+} st_json_st40p_session_t;
+
 typedef struct st_json_fastmetadata_session {
   st_json_session_base_t base;
   st_json_fastmetadata_info_t info;
@@ -311,6 +325,8 @@ typedef struct st_json_context {
   int tx_st20p_session_cnt;
   st_json_st30p_session_t* tx_st30p_sessions;
   int tx_st30p_session_cnt;
+  st_json_st40p_session_t* tx_st40p_sessions;
+  int tx_st40p_session_cnt;
 
   st_json_video_session_t* rx_video_sessions;
   int rx_video_session_cnt;
@@ -328,6 +344,8 @@ typedef struct st_json_context {
   int rx_st20r_session_cnt;
   st_json_st30p_session_t* rx_st30p_sessions;
   int rx_st30p_session_cnt;
+  st_json_st40p_session_t* rx_st40p_sessions;
+  int rx_st40p_session_cnt;
 } st_json_context_t;
 
 int st_app_parse_json(st_json_context_t* ctx, const char* filename);

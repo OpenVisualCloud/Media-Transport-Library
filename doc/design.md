@@ -348,6 +348,7 @@ st40p_rx_put_frame
 
 - **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
 - **RX pipeline (`st40p_rx_*`)** assembles ancillary packets into user buffers and can optionally dump metadata/UDW buffers directly to files for debugging through `st40p_rx_set_dump`. Each RX callback receives both the metadata blocks and the captured payload, mirroring the TX layout to simplify round-trip validation.
+- **ST 2022-7 inter-path delay:** For redundancy testing, `st40_tx_test_config.redundant_delay_ns` inserts a configurable TSC busy-wait between primary (P) and redundant (R) port sends. This simulates real-world network path asymmetry so the RX dejitter/reorder buffer can be validated under realistic conditions. Pair this with `st40p_rx_ops.reorder_window_ns` (default 10 ms) on the RX side — the window must exceed the injected delay plus scheduling jitter. Typical test values: 5 ms delay with a 10 ms window.
 
 Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and
 `rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true`
@@ -375,6 +376,8 @@ split-mode path, and the RX side can record the resulting frame-info via `frame-
 inspection.
 
 Reference implementations live in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. They reuse the shared `sample_util` CLI so you can swap between ST20/22/30/40 pipelines with identical arguments while testing pacing, redundancy, and USDT probes.
+
+The RxTxApp test tool also supports full ST40P pipeline sessions via the `"st40p"` JSON key (see [configuration_guide.md](configuration_guide.md#st40p-array-of-st40p-pipeline-sessions)). This enables pytest-driven ST 2022-7 redundancy tests with gap injection (`test_mode`, `test_pkt_count`, `test_frame_count`), inter-path delay simulation (`redundant_delay_ns`), and configurable RX dejitter windows (`reorder_window_ns`).
 
 The ST40 pipeline samples now expose CLI toggles for the common ANC variants:
 - `--interlaced` drives field-based cadence end-to-end (TX uses interlaced pacing; RX expects fields and delivers them individually).

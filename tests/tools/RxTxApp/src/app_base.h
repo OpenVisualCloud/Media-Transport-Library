@@ -14,6 +14,7 @@
 #include <mtl/st30_api.h>
 #include <mtl/st30_pipeline_api.h>
 #include <mtl/st40_api.h>
+#include <mtl/st40_pipeline_api.h>
 #include <mtl/st41_api.h>
 #include <mtl/st_pipeline_api.h>
 #include <pcap.h>
@@ -634,6 +635,55 @@ struct st_app_rx_st30p_session {
   bool st30p_app_thread_stop;
 };
 
+struct st_app_tx_st40p_session {
+  struct st_app_context* ctx;
+
+  int idx;
+  st40p_tx_handle handle;
+  mtl_handle st;
+  int framebuff_cnt;
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
+  /* for now used only with user pacing to keep track of the frame timestamps */
+  uint64_t frame_num;
+  uint64_t local_tai_base_time;
+  struct st_user_time* user_time;
+
+  char st40p_source_url[ST_APP_URL_MAX_LEN];
+  uint8_t* st40p_source_begin;
+  uint8_t* st40p_source_end;
+  uint8_t* st40p_frame_cursor;
+  int st40p_source_fd;
+  bool st40p_frames_copied;
+
+  double expect_fps;
+
+  pthread_t st40p_app_thread;
+  bool st40p_app_thread_stop;
+};
+
+struct st_app_rx_st40p_session {
+  int idx;
+  st40p_rx_handle handle;
+  mtl_handle st;
+  int framebuff_cnt;
+
+  uint8_t num_port;
+  uint64_t last_stat_time_ns;
+  char st40p_destination_url[ST_APP_URL_MAX_LEN];
+  FILE* st40p_destination_file;
+
+  /* stat */
+  int stat_frame_received;
+  uint64_t stat_last_time;
+  int stat_frame_total_received;
+  uint64_t stat_frame_first_rx_time;
+  double expect_fps;
+
+  pthread_t st40p_app_thread;
+  bool st40p_app_thread_stop;
+};
+
 struct st_app_var_params {
   /* force sleep time(us) for sch tasklet sleep */
   uint64_t sch_force_sleep_us;
@@ -725,6 +775,10 @@ struct st_app_context {
   struct st_app_tx_st30p_session* tx_st30p_sessions;
   int tx_st30p_session_cnt;
 
+  char tx_st40p_url[ST_APP_URL_MAX_LEN]; /* send st40p content url */
+  struct st_app_tx_st40p_session* tx_st40p_sessions;
+  int tx_st40p_session_cnt;
+
   uint8_t rx_ip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN];        /* rx IP */
   uint8_t rx_mcast_sip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* rx multicast source IP */
 
@@ -756,6 +810,9 @@ struct st_app_context {
 
   struct st_app_rx_st30p_session* rx_st30p_sessions;
   int rx_st30p_session_cnt;
+
+  struct st_app_rx_st40p_session* rx_st40p_sessions;
+  int rx_st40p_session_cnt;
 
   struct st_app_rx_video_session* rx_st20r_sessions;
   int rx_st20r_session_cnt;

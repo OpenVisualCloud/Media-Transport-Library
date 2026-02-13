@@ -23,6 +23,7 @@ config_empty = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
             "fastmetadata": [],
         },
     ],
@@ -36,6 +37,7 @@ config_empty = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
             "fastmetadata": [],
         },
     ],
@@ -58,6 +60,7 @@ config_empty_rx = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
     ],
 }
@@ -83,6 +86,7 @@ config_empty_rx_rgb24_multiple = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
         {
             "ip": [""],
@@ -93,6 +97,7 @@ config_empty_rx_rgb24_multiple = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
     ],
 }
@@ -114,6 +119,7 @@ config_empty_tx = {
             "st30p": [],
             "audio": [],
             "ancillary": [],
+            "st40p": [],
         },
     ],
 }
@@ -288,6 +294,43 @@ config_rx_ancillary_session = {
     "replicas": 1,
     "payload_type": 113,
     "start_port": 40000,
+}
+
+# st40p
+
+config_tx_st40p_session = {
+    "replicas": 1,
+    "start_port": 40000,
+    "payload_type": 113,
+    "ancillary_fps": "p59",
+    "interlaced": False,
+    "ancillary_url": "",
+    "user_pacing": False,
+    "exact_user_pacing": False,
+    "user_timestamp": False,
+    "enable_rtcp": False,
+    "test_mode": "none",
+    "test_pkt_count": 0,
+    "test_frame_count": 0,
+    "redundant_delay_ns": 0,
+}
+
+config_rx_st40p_session = {
+    "replicas": 1,
+    "start_port": 40000,
+    "payload_type": 113,
+    "ancillary_fps": "p59",
+    "interlaced": False,
+    "ancillary_url": "",
+    "user_pacing": False,
+    "exact_user_pacing": False,
+    "user_timestamp": False,
+    "enable_rtcp": False,
+    "test_mode": "none",
+    "test_pkt_count": 0,
+    "test_frame_count": 0,
+    "redundant_delay_ns": 0,
+    "reorder_window_ns": 0,
 }
 
 # st41

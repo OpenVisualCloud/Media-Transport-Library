@@ -92,7 +92,11 @@ struct st40_tx_test_config {
   enum st40_tx_test_pattern pattern; /**< Mutation pattern to apply. */
   uint16_t frame_count;              /**< How many frames to mutate (0 -> apply once). */
   uint16_t paced_pkt_count;          /**< Desired packet count for any test pattern. */
-  uint32_t paced_gap_ns;             /**< Desired inter-packet spacing for any test pattern. */
+  uint32_t paced_gap_ns;             /**< Desired inter-packet spacing for any test
+                                          pattern. */
+  uint32_t redundant_delay_ns;       /**< Extra delay (ns) before sending on port R.
+                                          Simulates path asymmetry between P and R for
+                                          ST 2022-7 dejitter/reorder validation. */
 };
 
 /**

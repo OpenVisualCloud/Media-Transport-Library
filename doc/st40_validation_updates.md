@@ -13,6 +13,9 @@ This note captures all recent ST40/ST40p feature changes and the accompanying va
 - **Auto-detect reset on discontinuity:** A sequence gap (`seq_discont>0`) clears the interlace detection state; RX re-learns cadence from subsequent F bits and continues logging `second_field`/`interlaced` per field.
 - **Warnings when cadence is unknown:** Pipeline RX and the GStreamer RX plugin emit a warning if neither `rx-interlaced` nor auto-detect is set, to avoid silent progressive defaults.
 - **Integration safety nets:** New noctx integration tests for ST40 interlaced flows, and expanded GStreamer validation tests across single-host and dual-host (VF/VF) paths.
+- **RxTxApp ST40P pipeline support:** Full `st40p` TX and RX pipeline sessions are now supported in RxTxApp via Json config (key `"st40p"` alongside the existing `"ancillary"` key). This enables CI-friendly pytest-driven redundant ancillary tests without the GStreamer harness. The JSON accepts `"test_mode"`, `"test_pkt_count"`, `"test_frame_count"`, `"redundant_delay_ns"` (TX) and `"reorder_window_ns"` (RX).
+- **ST 2022-7 inter-path delay injection:** TX can introduce a configurable busy-wait delay (`redundant_delay_ns`) between primary and redundant port sends, simulating network path asymmetry for dedup/dejitter validation. Paired with the RX-configurable `reorder_window_ns` (default 10 ms) to control the maximum wait before forcing frame advance.
+- **RxTxApp pytest redundancy test suite:** New test module `tests/validation/tests/single/ancillary/st40p_redundant/test_st40p_redundant.py` with 7 test functions covering baseline, seq-gap injection, gap+latency, synthetic source, interlaced scan mode, and unicast topologies.
 
 ## Data path (split ANC per RTP)
 
@@ -72,7 +75,12 @@ flowchart LR
 - **C API:**
   - `st40_api.h` / `st40_pipeline_api.h` expose split-mode flags (`ST40_TX_FLAG_SPLIT_ANC_BY_PKT` / `ST40P_TX_FLAG_SPLIT_ANC_BY_PKT`) and the extended frame-info fields (`rtp_marker`, `seq_discont`, `seq_lost`).
   - `st40_tx_ops` / `st40p_tx_ops` accept `st40_tx_test_config` so C API users can inject the same mutation patterns (no-marker, seq-gap, bad-parity, paced) used by the GStreamer tests.
+  - `st40_tx_test_config.redundant_delay_ns`: TSC busy-wait delay (ns) inserted between primary and redundant port sends. Simulates path asymmetry for ST 2022-7 dejitter testing.
+  - `st40p_rx_ops.reorder_window_ns`: Configurable maximum wait (ns) for out-of-order packets before the RX pipeline forces frame advance. Default: 10 ms (`ST40P_RX_REORDER_NS_DEFAULT`).
   - Pipeline RX accumulates packets per field and reports discontinuities.
+- **RxTxApp JSON config (`"st40p"` key):**
+  - TX fields: `"ancillary_fps"`, `"ancillary_url"`, `"interlaced"`, `"user_pacing"`, `"exact_user_pacing"`, `"user_timestamp"`, `"enable_rtcp"`, `"test_mode"` (`"seq-gap"`, `"no-marker"`, `"bad-parity"`, `"paced"`), `"test_pkt_count"`, `"test_frame_count"`, `"redundant_delay_ns"`.
+  - RX fields: `"ancillary_fps"`, `"ancillary_url"`, `"interlaced"`, `"enable_rtcp"`, `"reorder_window_ns"`.
 
 ## Test coverage (what now runs)
 
@@ -113,6 +121,27 @@ Across all single-host tests, frame-info is dumped and summarized in pytest logs
 
 These integration tests exercise the C pipeline APIs directly (outside the GStreamer harness) to prove split-mode, parity, marker, and sequence reporting work end-to-end without additional context setup.
 
+### Validation (RxTxApp, single host VF→VF, ST 2022-7 redundancy)
+
+- [tests/validation/tests/single/ancillary/st40p_redundant/test_st40p_redundant.py](tests/validation/tests/single/ancillary/st40p_redundant/test_st40p_redundant.py)
+  - `test_st40p_redundant_progressive[text_p29/p50/p59]` — baseline redundant ANC loopback (4 VFs, multicast, no gaps). Verifies RX dedup receives frames at expected fps.
+  - `test_st40p_redundant_progressive_gap[text_p29/p50/p59]` — enables `test_mode=seq-gap` with `test_pkt_count=200` and `test_frame_count=65535`. TX injects RTP sequence discontinuities throughout the session; RX dedup recovers from the gapped path using the redundant stream.
+  - `test_st40p_redundant_progressive_gap_latency[text_p29/p50/p59]` — combines seq-gap injection with a 7 ms inter-path delay (`redundant_delay_ns=7000000`) and a 15 ms RX reorder window (`reorder_window_ns=15000000`). Stresses the ST 2022-7 dejitter buffer: port R traffic arrives ~7 ms after port P, forcing the reorder window to hold frames open while waiting for late redundant packets.
+  - `test_st40p_redundant_progressive_synthetic[text_p59]` — synthetic TX source (empty URL, built-in pattern). Exercises dedup without file I/O.
+  - `test_st40p_redundant_scan_mode[text_p59][progressive/interlaced]` — parametrised progressive vs interlaced cadence.
+  - `test_st40p_redundant_unicast[text_p59]` — unicast instead of multicast.
+
+All tests use 4 VFs (2 TX, 2 RX) in a single-host loopback and validate via
+RxTxApp stdout parsing (`app_rx_st40p_result … OK` and fps checks).
+
+Run the suite:
+```bash
+sudo ./venv/bin/python3 -m pytest \
+  --topology_config=configs/topology_config.yaml \
+  --test_config=configs/test_config.yaml \
+  tests/validation/tests/single/ancillary/st40p_redundant/ -v
+```
+
 ## How to exercise quickly
 
 1. Enable split mode: add `tx_split_anc_by_pkt=true` on TX and set `frame-info-path=/tmp/foo` on RX.
@@ -124,6 +153,7 @@ These integration tests exercise the C pipeline APIs directly (outside the GStre
    - Paced burst: `tx-test-mode=paced tx-test-pkt-count=3 tx-test-pacing-ns=200000`
 4. If cadence is unknown on RX, set `rx-auto-detect-interlaced=true` (GStreamer) or `ST40P_RX_FLAG_AUTO_DETECT_INTERLACED` (C API); leave `rx-interlaced=false` so detection can flip it. Expect a warning if you omit both.
 5. Inspect log: look for `FrameInfo` lines followed by `FrameInfoSummary` to confirm packet counts and seq accounting.
+6. For RxTxApp-based redundancy tests, set `"test_mode": "seq-gap"` and optionally `"redundant_delay_ns"` / `"reorder_window_ns"` in the JSON config; inspect stdout for `TX_ANC_MGR` burst counts and `RX_st40p … frame get try N succ M` ratios.
 
 ## Signals to watch
 
@@ -136,6 +166,8 @@ These integration tests exercise the C pipeline APIs directly (outside the GStre
 - For split-mode validation, set RX `frame_info_path` (for logging) and a power-of-two `rx_rtp_ring_size`; the plugin rejects non power-of-two values.
 - Frame-info summaries rely on the regular expression in the harness; unexpected formats will fall back to raw dump only.
 - Interlaced mismatch between TX/RX fails the test early unless RX uses auto-detect; a warning is emitted when neither interlaced nor auto-detect is set.
+- `redundant_delay_ns` uses a TSC busy-wait loop on the TX lcore; large values (>10 ms) will stall the TX scheduler tasklet and may affect pacing for co-scheduled sessions.
+- `reorder_window_ns` must exceed `redundant_delay_ns` plus expected scheduling jitter; if the window is too small, late redundant packets are discarded and dedup effectiveness decreases.
 
 ## Quick architecture view (tests + logging)
 
@@ -159,6 +191,9 @@ flowchart TD
 - Pipeline impl: [lib/src/st2110/pipeline/st40_pipeline_tx.c](lib/src/st2110/pipeline/st40_pipeline_tx.c), [lib/src/st2110/pipeline/st40_pipeline_rx.c](lib/src/st2110/pipeline/st40_pipeline_rx.c)
 - Tests:
   - [tests/validation/tests/single/gstreamer/anc_format/test_anc_format.py](tests/validation/tests/single/gstreamer/anc_format/test_anc_format.py)
+  - [tests/validation/tests/single/ancillary/st40p_redundant/test_st40p_redundant.py](tests/validation/tests/single/ancillary/st40p_redundant/test_st40p_redundant.py) (RxTxApp, ST 2022-7)
   - [tests/validation/tests/dual/gstreamer/anc_format/test_anc_format_dual.py](tests/validation/tests/dual/gstreamer/anc_format/test_anc_format_dual.py)
   - [tests/integration_tests/noctx/testcases/st40i_tests.cpp](tests/integration_tests/noctx/testcases/st40i_tests.cpp)
   - [tests/integration_tests/noctx/testcases/st40p_auto_detect_tests.cpp](tests/integration_tests/noctx/testcases/st40p_auto_detect_tests.cpp)
+- RxTxApp JSON parsing: [tests/tools/RxTxApp/src/parse_json.c](tests/tools/RxTxApp/src/parse_json.c) (`st_json_parse_st40p`)
+- RxTxApp TX/RX apps: [tests/tools/RxTxApp/src/tx_st40p_app.c](tests/tools/RxTxApp/src/tx_st40p_app.c), [tests/tools/RxTxApp/src/rx_st40p_app.c](tests/tools/RxTxApp/src/rx_st40p_app.c)

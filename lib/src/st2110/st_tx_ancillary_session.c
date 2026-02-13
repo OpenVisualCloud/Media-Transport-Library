@@ -1184,6 +1184,11 @@ static int tx_ancillary_session_tasklet_frame(struct mtl_main_impl* impl,
     s->stat_build_ret_code = -STI_FRAME_PKT_ENQUEUE_FAIL;
   }
   if (send_r) {
+    /* Simulate path asymmetry: delay redundant port for dejitter validation */
+    if (s->test.redundant_delay_ns) {
+      uint64_t delay_end = mt_get_tsc(impl) + s->test.redundant_delay_ns;
+      mt_tsc_delay_to(impl, delay_end);
+    }
     ret = tx_ancillary_session_send_pkt(mgr, s, MTL_SESSION_PORT_R, pkt_r);
     if (ret != 0) {
       s->inflight[MTL_SESSION_PORT_R] = pkt_r;

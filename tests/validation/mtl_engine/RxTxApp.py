@@ -40,6 +40,120 @@ def create_empty_config() -> dict:
     return copy.deepcopy(rxtxapp_config.config_empty)
 
 
+def create_empty_redundant_config() -> dict:
+    """Create a config for single-host redundant (ST 2022-7) loopback tests.
+
+    Uses 4 interfaces: [0],[1] for TX primary/redundant, [2],[3] for RX primary/redundant.
+    TX sessions reference interfaces [0,1]; RX sessions reference interfaces [2,3].
+    dip/ip arrays carry two multicast addresses (one per path).
+    """
+    base = copy.deepcopy(rxtxapp_config.config_empty)
+    # Expand from 2 to 4 interfaces
+    base["interfaces"] = [{"name": "", "ip": ""} for _ in range(4)]
+    # TX session uses both TX interfaces
+    base["tx_sessions"][0]["interface"] = [0, 1]
+    base["tx_sessions"][0]["dip"] = ["", ""]
+    # RX session uses both RX interfaces
+    base["rx_sessions"][0]["interface"] = [2, 3]
+    base["rx_sessions"][0]["ip"] = ["", ""]
+    return base
+
+
+def add_redundant_interfaces(
+    config: dict,
+    nic_port_list: list,
+    test_mode: str,
+) -> dict:
+    """Assign 4 VFs and IPs for single-host redundant loopback.
+
+    nic_port_list must have 4 entries: [tx0, tx1, rx0, rx1].
+    Only multicast mode is supported for redundant tests.
+    """
+    if len(nic_port_list) < 4:
+        raise ValueError("Redundant tests require 4 interfaces")
+
+    for i in range(4):
+        config["interfaces"][i]["name"] = nic_port_list[i]
+
+    config["interfaces"][0]["ip"] = ip_pools.tx[0]
+    config["interfaces"][1]["ip"] = ip_pools.tx[1]
+    config["interfaces"][2]["ip"] = ip_pools.rx[0]
+    config["interfaces"][3]["ip"] = ip_pools.rx[1]
+
+    if test_mode == "multicast":
+        config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+        config["tx_sessions"][0]["dip"][1] = ip_pools.rx_multicast[1]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+        config["rx_sessions"][0]["ip"][1] = ip_pools.rx_multicast[1]
+    elif test_mode == "unicast":
+        config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+        config["tx_sessions"][0]["dip"][1] = ip_pools.rx[1]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
+        config["rx_sessions"][0]["ip"][1] = ip_pools.tx[1]
+    else:
+        log_fail(f"wrong test_mode {test_mode}")
+
+    return config
+
+
+def add_st40p_redundant_sessions(
+    config: dict,
+    nic_port_list: list,
+    test_mode: str,
+    ancillary_fps: str,
+    ancillary_url: str = "",
+    interlaced: bool = False,
+    user_pacing: bool = False,
+    exact_user_pacing: bool = False,
+    user_timestamp: bool = False,
+    enable_rtcp: bool = False,
+    tx_test_mode: str = "none",
+    tx_test_pkt_count: int = 0,
+    tx_test_frame_count: int = 0,
+    redundant_delay_ns: int = 0,
+    reorder_window_ns: int = 0,
+) -> dict:
+    """Add st40p TX+RX sessions on a 4-interface redundant config.
+
+    Args:
+        config: Base config from ``create_empty_redundant_config()``.
+        nic_port_list: 4 VF PCI addresses [TX_P, TX_R, RX_P, RX_R].
+        test_mode: ``"multicast"`` or ``"unicast"``.
+        ancillary_fps: Frame rate tag (``"p29"``, ``"p50"``, ``"p59"``).
+        ancillary_url: Source file for TX (empty string for synthetic data).
+        interlaced: Enable interlaced field cadence.
+        tx_test_mode: TX mutation pattern (``"none"``, ``"seq-gap"``, etc.).
+        tx_test_pkt_count: Packets per test-mode schedule cycle.
+        tx_test_frame_count: Frames to apply the test pattern (65535 = continuous).
+        redundant_delay_ns: Extra ns delay before port-R send (TX only).
+        reorder_window_ns: RX reorder window in ns (0 = library default 10 ms).
+    """
+    config = add_redundant_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st40p_session)
+    config["tx_sessions"][0]["st40p"].append(tx_session)
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st40p_session)
+    config["rx_sessions"][0]["st40p"].append(rx_session)
+
+    for side in ("tx_sessions", "rx_sessions"):
+        config[side][0]["st40p"][0]["ancillary_fps"] = ancillary_fps
+        config[side][0]["st40p"][0]["interlaced"] = interlaced
+        config[side][0]["st40p"][0]["user_pacing"] = user_pacing
+        config[side][0]["st40p"][0]["exact_user_pacing"] = exact_user_pacing
+        config[side][0]["st40p"][0]["user_timestamp"] = user_timestamp
+        config[side][0]["st40p"][0]["enable_rtcp"] = enable_rtcp
+
+    config["tx_sessions"][0]["st40p"][0]["ancillary_url"] = ancillary_url
+    config["tx_sessions"][0]["st40p"][0]["test_mode"] = tx_test_mode
+    config["tx_sessions"][0]["st40p"][0]["test_pkt_count"] = tx_test_pkt_count
+    config["tx_sessions"][0]["st40p"][0]["test_frame_count"] = tx_test_frame_count
+    config["tx_sessions"][0]["st40p"][0]["redundant_delay_ns"] = redundant_delay_ns
+    config["rx_sessions"][0]["st40p"][0]["reorder_window_ns"] = reorder_window_ns
+
+    return config
+
+
 def create_empty_performance_config() -> dict:
     return copy.deepcopy(rxtxapp_config.config_performance_empty)
 
@@ -433,6 +547,54 @@ def add_ancillary_sessions(
     return config
 
 
+def add_st40p_sessions(
+    config: dict,
+    nic_port_list: list,
+    test_mode: str,
+    ancillary_fps: str,
+    ancillary_url: str = "",
+    interlaced: bool = False,
+    user_pacing: bool = False,
+    exact_user_pacing: bool = False,
+    user_timestamp: bool = False,
+    enable_rtcp: bool = False,
+    tx_test_mode: str = "none",
+    tx_test_pkt_count: int = 0,
+    tx_test_frame_count: int = 0,
+    redundant_delay_ns: int = 0,
+    reorder_window_ns: int = 0,
+) -> dict:
+    """Add st40p TX+RX sessions on a non-redundant (2-interface) config.
+
+    Same parameters as ``add_st40p_redundant_sessions`` but uses only
+    2 interfaces (1 TX, 1 RX) via ``add_interfaces()``.
+    """
+    config = add_interfaces(
+        config=config, nic_port_list=nic_port_list, test_mode=test_mode
+    )
+    tx_session = copy.deepcopy(rxtxapp_config.config_tx_st40p_session)
+    config["tx_sessions"][0]["st40p"].append(tx_session)
+    rx_session = copy.deepcopy(rxtxapp_config.config_rx_st40p_session)
+    config["rx_sessions"][0]["st40p"].append(rx_session)
+
+    for side in ("tx_sessions", "rx_sessions"):
+        config[side][0]["st40p"][0]["ancillary_fps"] = ancillary_fps
+        config[side][0]["st40p"][0]["interlaced"] = interlaced
+        config[side][0]["st40p"][0]["user_pacing"] = user_pacing
+        config[side][0]["st40p"][0]["exact_user_pacing"] = exact_user_pacing
+        config[side][0]["st40p"][0]["user_timestamp"] = user_timestamp
+        config[side][0]["st40p"][0]["enable_rtcp"] = enable_rtcp
+
+    config["tx_sessions"][0]["st40p"][0]["ancillary_url"] = ancillary_url
+    config["tx_sessions"][0]["st40p"][0]["test_mode"] = tx_test_mode
+    config["tx_sessions"][0]["st40p"][0]["test_pkt_count"] = tx_test_pkt_count
+    config["tx_sessions"][0]["st40p"][0]["test_frame_count"] = tx_test_frame_count
+    config["tx_sessions"][0]["st40p"][0]["redundant_delay_ns"] = redundant_delay_ns
+    config["rx_sessions"][0]["st40p"][0]["reorder_window_ns"] = reorder_window_ns
+
+    return config
+
+
 def add_st41_sessions(
     config: dict,
     no_chain: bool,
@@ -690,6 +852,16 @@ def execute_test(
             config=config,
             output=output,
             session_type="st30p",
+            fail_on_error=fail_on_error,
+            host=host,
+            build=build,
+        )
+
+    if len(config["tx_sessions"][0]["st40p"]) > 0:
+        passed = passed and check_rx_output(
+            config=config,
+            output=output,
+            session_type="st40p",
             fail_on_error=fail_on_error,
             host=host,
             build=build,
@@ -1328,6 +1500,8 @@ def check_rx_output(
         pattern = re.compile(r"app_rx_st22p_result")
     elif session_type == "st30p":
         pattern = re.compile(r"app_rx_st30p_result")
+    elif session_type == "st40p":
+        pattern = re.compile(r"app_rx_st40p_result")
     elif session_type == "video":
         pattern = re.compile(r"app_rx_video_result")
     elif session_type == "audio":
