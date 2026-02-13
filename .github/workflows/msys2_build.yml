@@ -71,14 +71,6 @@ jobs:
              SDL2_ttf:p
              dlfcn:p
 
-      - name: Setup Python3 action
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Setup Python3 pip install action
-        shell: cmd
-        run: python3 -m pip install meson==1.7.2 ninja
 
       - name: Install npcap-sdk
         run: |
@@ -120,7 +112,7 @@ jobs:
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
         with:
           path: dpdk
-          key: dpdk-${{ matrix.dpdk }}-${{ matrix.sys }}-${{ steps.hash-patches.outputs.hash }}
+          key: dpdk-${{ matrix.dpdk }}-${{ matrix.sys }}-meson-1.10.1-${{ steps.hash-patches.outputs.hash }}
 
       - name: Checkout DPDK code
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
