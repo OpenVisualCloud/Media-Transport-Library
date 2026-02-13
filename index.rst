@@ -31,7 +31,7 @@ Contents
    doc/build.md
    Build Guide on Windows <doc/build_WIN.md>
    doc/run.md
-   doc/e810.md
+   doc/e800_series_drivers.md
    doc/run_WIN.md
    doc/vm.md
    doc/vm_WIN.md
