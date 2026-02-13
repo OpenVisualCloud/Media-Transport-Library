@@ -74,7 +74,7 @@ jobs:
 
       - name: Install npcap-sdk
         run: |
-          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+          wget https://github.com/nmap/npcap/releases/download/v1.12/npcap-sdk-1.12.zip
           unzip -d npcap-sdk npcap-sdk-1.12.zip
           cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
