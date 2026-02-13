@@ -1,0 +1,23 @@
+name: Cleanup Processes
+description: Kill any running DPDK or MTL related processes
+runs:
+  using: composite
+  steps:
+    - name: Cleanup processes
+      shell: bash
+      run: |
+        echo "Killing any running DPDK or MTL related processes..."
+        sudo killall -SIGKILL gtest.sh || true
+        sudo killall -SIGKILL KahawaiTest || true
+        sudo killall -SIGKILL KahawaiUfdTest || true
+        sudo killall -SIGKILL KahawaiUplTest || true
+        sudo killall -SIGKILL ffmpeg || true
+        sudo killall -SIGKILL RxTxApp || true
+        echo "Clenaup of the supporting processes..."
+        sudo killall -SIGINT pipenv || true
+        sudo killall -SIGINT pytest || true
+        sudo killall -SIGINT MtlManager || true
+        sudo killall -SIGINT phc2sys || true
+        sudo killall -SIGINT ptp4l || true
+        sudo killall -SIGINT netsniff-ng || true
+        sleep 2

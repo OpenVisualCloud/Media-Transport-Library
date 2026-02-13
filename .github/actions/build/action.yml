@@ -1,7 +1,9 @@
 name: Build
+description: Build MTL and its ecosystem components
 runs:
   using: composite
   steps:
+    - uses: ./.github/actions/cleanup
     - name: Setup environment and build
       shell: bash
       env:

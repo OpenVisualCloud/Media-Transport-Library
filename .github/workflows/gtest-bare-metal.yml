@@ -92,4 +92,5 @@ jobs:
         if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         env:
           NIGHTLY: 0
+          EXIT_ON_FAILURE: 1
         run: sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
