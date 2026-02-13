@@ -25,7 +25,7 @@ from mtl_engine.media_files import gstreamer_formats
 @pytest.mark.parametrize("file", gstreamer_formats.keys())
 def test_video_format(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     file,
     test_time,
@@ -55,7 +55,7 @@ def test_video_format(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         width=video_file["width"],
@@ -67,7 +67,7 @@ def test_video_format(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[1],
         output_path=output_file_path,
         width=video_file["width"],
@@ -80,7 +80,7 @@ def test_video_format(
 
     try:
         GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,

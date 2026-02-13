@@ -34,7 +34,7 @@ from mtl_engine.media_files import yuv_files_422p10le
 @pytest.mark.parametrize("codec", ["JPEG-XS", "H264_CBR"])
 def test_fps(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     fps,
@@ -67,7 +67,7 @@ def test_fps(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

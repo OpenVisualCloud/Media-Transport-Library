@@ -228,13 +228,11 @@ def media(test_config: dict) -> str:
 
 
 @pytest.fixture(scope="session")
-def build(mtl_path):
-    return mtl_path
-
-
-@pytest.fixture(scope="session")
 def mtl_path(test_config: dict) -> str:
-    return test_config.get("mtl_path", "/opt/intel/mcm/_build/mtl/")
+    mtl_path = test_config.get("mtl_path")
+    if not mtl_path:
+        raise RuntimeError("mtl_path not specified in test config")
+    return mtl_path
 
 
 @pytest.fixture(scope="session", autouse=True)

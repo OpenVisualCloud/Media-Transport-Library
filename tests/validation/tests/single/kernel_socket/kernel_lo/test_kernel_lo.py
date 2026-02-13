@@ -42,7 +42,7 @@ from mtl_engine.media_files import (
 @pytest.mark.parametrize("replicas", [1, 3])
 def test_kernello_mixed_format(
     hosts,
-    build,
+    mtl_path,
     test_time,
     test_mode,
     replicas,
@@ -119,7 +119,7 @@ def test_kernello_mixed_format(
     )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
         interface_setup=setup_interfaces,

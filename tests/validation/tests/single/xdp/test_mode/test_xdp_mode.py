@@ -12,7 +12,7 @@ from mtl_engine.media_files import anc_files, audio_files, yuv_files
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_xdp_mode(
     hosts,
-    build,
+    mtl_path,
     media,
     test_time,
     test_mode,
@@ -69,7 +69,7 @@ def test_xdp_mode(
     )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

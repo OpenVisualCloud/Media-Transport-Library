@@ -33,7 +33,7 @@ k_bit_mapping = {
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_type_mode(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_mode,
@@ -72,7 +72,7 @@ def test_type_mode(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

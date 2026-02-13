@@ -17,7 +17,7 @@ from mtl_engine.rxtxapp import RxTxApp
 @pytest.mark.nightly
 def test_quality_refactored(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -51,7 +51,7 @@ def test_quality_refactored(
         test_time=test_time,
     )
     result = app.execute_test(
-        build=build, test_time=test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
     )
     # Enforce result to avoid silent pass when validation fails
     assert (

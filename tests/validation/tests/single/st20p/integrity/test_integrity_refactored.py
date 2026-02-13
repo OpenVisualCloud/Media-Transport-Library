@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 )
 def test_integrity_refactored(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_config,
     test_time,
@@ -55,7 +55,7 @@ def test_integrity_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
+    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
 
     app.create_command(
         session_type="st20p",
@@ -77,7 +77,7 @@ def test_integrity_refactored(
 
     actual_test_time = max(test_time, 8)
     app.execute_test(
-        build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
     )
 
     frame_size = calculate_yuv_frame_size(

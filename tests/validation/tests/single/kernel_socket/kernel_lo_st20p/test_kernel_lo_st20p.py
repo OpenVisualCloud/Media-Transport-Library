@@ -36,7 +36,7 @@ from mtl_engine.media_files import yuv_files_422p10le
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st20p_video_format(
     hosts,
-    build,
+    mtl_path,
     test_time,
     test_mode,
     replicas,
@@ -78,7 +78,7 @@ def test_kernello_st20p_video_format(
     )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

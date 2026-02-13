@@ -26,7 +26,7 @@ from mtl_engine.media_files import audio_files
 )
 def test_multicast(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -59,7 +59,7 @@ def test_multicast(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

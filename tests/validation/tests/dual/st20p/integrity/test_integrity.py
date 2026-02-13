@@ -25,7 +25,9 @@ logger = logging.getLogger(__name__)
         (yuv_files_422p10le["Penguin_1080p"], "p25"),
     ],
 )
-def test_integrity_dual(hosts, build, media, nic_port_list, test_time, st20p_file, fps):
+def test_integrity_dual(
+    hosts, mtl_path, media, nic_port_list, test_time, st20p_file, fps
+):
     st20p_file_url = os.path.join(media, st20p_file["filename"])
 
     # Get TX and RX hosts
@@ -59,7 +61,7 @@ def test_integrity_dual(hosts, build, media, nic_port_list, test_time, st20p_fil
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,
