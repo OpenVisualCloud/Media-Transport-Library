@@ -76,9 +76,7 @@ def _check_dedup_activity(output: list[str]) -> dict:
 
     # The library logs lines such as:
     #   "RX_ANC_SESSION(0,0): dedup primary <N> redundant <M> drop <D>"
-    dedup_re = re.compile(
-        r"dedup\s+primary\s+(\d+)\s+redundant\s+(\d+)\s+drop\s+(\d+)"
-    )
+    dedup_re = re.compile(r"dedup\s+primary\s+(\d+)\s+redundant\s+(\d+)\s+drop\s+(\d+)")
     for line in output:
         m = dedup_re.search(line)
         if m:
@@ -335,8 +333,8 @@ def test_st40p_redundant_progressive_gap_latency(
         tx_test_mode="seq-gap",
         tx_test_pkt_count=200,
         tx_test_frame_count=65535,
-        redundant_delay_ns=7_000_000,   # 7 ms
-        reorder_window_ns=15_000_000,   # 15 ms
+        redundant_delay_ns=7_000_000,  # 7 ms
+        reorder_window_ns=15_000_000,  # 15 ms
     )
 
     logger.info(

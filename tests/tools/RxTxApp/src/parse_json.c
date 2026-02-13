@@ -1266,8 +1266,7 @@ static int st_json_parse_st40p(int idx, json_object* obj, st_json_st40p_session_
   }
 
   /* parse fps – accept upstream "fps" or legacy "ancillary_fps" */
-  const char* fps_str =
-      json_object_get_string(st_json_object_object_get(obj, "fps"));
+  const char* fps_str = json_object_get_string(st_json_object_object_get(obj, "fps"));
   if (!fps_str)
     fps_str = json_object_get_string(st_json_object_object_get(obj, "ancillary_fps"));
   s->info.anc_fps = st_json_parse_anc_fps(fps_str);
@@ -1280,8 +1279,7 @@ static int st_json_parse_st40p(int idx, json_object* obj, st_json_st40p_session_
 
   /* parse anc url – accept upstream "st40p_url" or legacy "ancillary_url" */
   ret = parse_url(obj, "st40p_url", s->info.anc_url);
-  if (ret < 0)
-    ret = parse_url(obj, "ancillary_url", s->info.anc_url);
+  if (ret < 0) ret = parse_url(obj, "ancillary_url", s->info.anc_url);
   if (ret < 0) {
     if (rx) {
       info("%s, no destination file for st40p rx\n", __func__);
@@ -1291,15 +1289,13 @@ static int st_json_parse_st40p(int idx, json_object* obj, st_json_st40p_session_
   }
 
   /* parse pacing/timestamp options */
-  s->user_pacing =
-      json_object_get_boolean(st_json_object_object_get(obj, "user_pacing"));
+  s->user_pacing = json_object_get_boolean(st_json_object_object_get(obj, "user_pacing"));
   s->exact_user_pacing =
       json_object_get_boolean(st_json_object_object_get(obj, "exact_user_pacing"));
   if (s->exact_user_pacing) s->user_pacing = true;
   s->user_timestamp =
       json_object_get_boolean(st_json_object_object_get(obj, "user_timestamp"));
-  s->enable_rtcp =
-      json_object_get_boolean(st_json_object_object_get(obj, "enable_rtcp"));
+  s->enable_rtcp = json_object_get_boolean(st_json_object_object_get(obj, "enable_rtcp"));
 
   /* parse test mode (TX only – ignored for RX) */
   json_object* test_mode_obj = st_json_object_object_get(obj, "test_mode");

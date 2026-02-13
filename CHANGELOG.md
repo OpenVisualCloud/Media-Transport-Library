@@ -1,6 +1,6 @@
 # Changelog
 
-## Changelog for 26.06
+## Changelog for 26.09
 
 * st40: add ST40P pipeline sessions (TX + RX) to RxTxApp via JSON `"st40p"` key
 * st40: add ST 2022-7 redundancy support for ST40P with configurable path delay

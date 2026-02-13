@@ -261,9 +261,11 @@ typedef struct st_json_st40p_session {
   bool exact_user_pacing;
   bool user_timestamp;
   bool enable_rtcp;
-  int test_mode;        /* maps to enum st40_tx_test_pattern (0=none,1=no-marker,2=seq-gap,...) */
+  int test_mode; /* maps to enum st40_tx_test_pattern (0=none,1=no-marker,2=seq-gap,...)
+                  */
   int test_pkt_count;   /* ANC packets per test frame (0 = mode default) */
-  int test_frame_count; /* number of frames to mutate (0 = library default, e.g. 8 for redundant) */
+  int test_frame_count; /* number of frames to mutate (0 = library default, e.g. 8 for
+                           redundant) */
   uint32_t redundant_delay_ns; /* extra delay (ns) before sending on port R */
   uint64_t reorder_window_ns;  /* RX reorder window (ns), 0 = lib default 10 ms */
 } st_json_st40p_session_t;

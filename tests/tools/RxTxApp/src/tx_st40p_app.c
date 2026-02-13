@@ -29,8 +29,7 @@ static void app_tx_st40p_build_frame(struct st_app_tx_st40p_session* s,
     }
   } else {
     /* synthetic: fill with incrementing pattern */
-    for (size_t i = 0; i < copy_sz; i++)
-      udw[i] = (uint8_t)((s->frame_num + i) & 0xFF);
+    for (size_t i = 0; i < copy_sz; i++) udw[i] = (uint8_t)((s->frame_num + i) & 0xFF);
   }
 
   /* Fill one ancillary meta entry (closed-caption-like) */
@@ -69,7 +68,7 @@ static void* app_tx_st40p_frame_thread(void* arg) {
       bool restart_base_time = !s->local_tai_base_time;
 
       frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
-                                           restart_base_time);
+                                          restart_base_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
       s->local_tai_base_time = s->user_time->base_tai_time;
     }
@@ -200,8 +199,7 @@ static int app_tx_st40p_uinit(struct st_app_tx_st40p_session* s) {
   return 0;
 }
 
-static int app_tx_st40p_init(struct st_app_context* ctx,
-                             st_json_st40p_session_t* st40p,
+static int app_tx_st40p_init(struct st_app_context* ctx, st_json_st40p_session_t* st40p,
                              struct st_app_tx_st40p_session* s) {
   int idx = s->idx, ret;
   struct st40p_tx_ops ops;
@@ -223,8 +221,7 @@ static int app_tx_st40p_init(struct st_app_context* ctx,
   snprintf(
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st40p ? st40p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] =
-      st40p ? st40p->base.udp_port : (10100 + s->idx);
+  ops.port.udp_port[MTL_SESSION_PORT_P] = st40p ? st40p->base.udp_port : (10100 + s->idx);
   if (ctx->has_tx_dst_mac[MTL_PORT_P]) {
     memcpy(&ops.tx_dst_mac[MTL_SESSION_PORT_P][0], ctx->tx_dst_mac[MTL_PORT_P],
            MTL_MAC_ADDR_LEN);
@@ -255,17 +252,21 @@ static int app_tx_st40p_init(struct st_app_context* ctx,
 
   s->expect_fps = st_frame_rate(ops.fps);
 
-  if (st40p && st40p->user_pacing) {
-    ops.flags |= ST40P_TX_FLAG_USER_PACING;
+  if (st40p && (st40p->user_timestamp || st40p->user_pacing)) {
+    if (st40p->user_pacing) {
+      ops.flags |= ST40P_TX_FLAG_USER_PACING;
+    }
+    if (st40p->user_timestamp) {
+      ops.flags |= ST40P_TX_FLAG_USER_TIMESTAMP;
+    }
+    /* use global user time */
     s->user_time = &ctx->user_time;
     s->frame_num = 0;
     s->local_tai_base_time = 0;
   }
   if (st40p && st40p->exact_user_pacing) {
+    /* should be active only with user_pacing */
     ops.flags |= ST40P_TX_FLAG_EXACT_USER_PACING;
-  }
-  if (st40p && st40p->user_timestamp) {
-    ops.flags |= ST40P_TX_FLAG_USER_TIMESTAMP;
   }
   if (st40p && st40p->enable_rtcp) {
     ops.flags |= ST40P_TX_FLAG_ENABLE_RTCP;
@@ -274,7 +275,8 @@ static int app_tx_st40p_init(struct st_app_context* ctx,
   /* Wire test-mode mutation (mirrors GStreamer tx-test-mode property) */
   if (st40p && st40p->test_mode != ST40_TX_TEST_NONE) {
     ops.test.pattern = (enum st40_tx_test_pattern)st40p->test_mode;
-    ops.test.frame_count = st40p->test_frame_count; /* 0 → lib default (8 for redundant) */
+    ops.test.frame_count =
+        st40p->test_frame_count; /* 0 → lib default (8 for redundant) */
     ops.test.paced_pkt_count = st40p->test_pkt_count;
     /* Enable split-ANC-by-pkt when any test pattern is active (same as GStreamer) */
     ops.flags |= ST40P_TX_FLAG_SPLIT_ANC_BY_PKT;

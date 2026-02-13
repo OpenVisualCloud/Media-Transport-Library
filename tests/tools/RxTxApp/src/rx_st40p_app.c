@@ -117,8 +117,7 @@ static int app_rx_st40p_init(struct st_app_context* ctx,
   snprintf(
       ops.port.port[MTL_SESSION_PORT_P], MTL_PORT_MAX_LEN, "%s",
       st40p ? st40p->base.inf[MTL_SESSION_PORT_P]->name : ctx->para.port[MTL_PORT_P]);
-  ops.port.udp_port[MTL_SESSION_PORT_P] =
-      st40p ? st40p->base.udp_port : (10100 + s->idx);
+  ops.port.udp_port[MTL_SESSION_PORT_P] = st40p ? st40p->base.udp_port : (10100 + s->idx);
   if (ops.port.num_port > 1) {
     memcpy(ops.port.ip_addr[MTL_SESSION_PORT_R],
            st40p ? st_json_ip(ctx, &st40p->base, MTL_SESSION_PORT_R)
@@ -163,7 +162,8 @@ static int app_rx_st40p_init(struct st_app_context* ctx,
     ops.flags |= ST40P_RX_FLAG_ENABLE_RTCP;
   }
 
-  s->expect_fps = st40p ? st_frame_rate(st40p->info.anc_fps) : st_frame_rate(ST_FPS_P59_94);
+  s->expect_fps =
+      st40p ? st_frame_rate(st40p->info.anc_fps) : st_frame_rate(ST_FPS_P59_94);
   s->num_port = ops.port.num_port;
 
   handle = st40p_rx_create(ctx->st, &ops);
