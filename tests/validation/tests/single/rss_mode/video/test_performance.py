@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_video_performance(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     rss_mode,
@@ -66,7 +66,7 @@ def test_rss_mode_video_performance(
         )
         passed = rxtxapp.execute_test(
             config=config,
-            build=build,
+            build=mtl_path,
             test_time=test_time,
             fail_on_error=False,
             host=host,
@@ -102,7 +102,7 @@ def test_rss_mode_video_performance(
         )
         passed = rxtxapp.execute_test(
             config=config,
-            build=build,
+            build=mtl_path,
             test_time=test_time,
             fail_on_error=False,
             host=host,

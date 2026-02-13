@@ -15,7 +15,7 @@ from mtl_engine.rxtxapp import RxTxApp
 )
 def test_unicast_refactored(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -44,4 +44,6 @@ def test_unicast_refactored(
         codec_threads=2,
         test_time=test_time,
     )
-    app.execute_test(build=build, test_time=test_time, host=host, netsniff=pcap_capture)
+    app.execute_test(
+        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+    )

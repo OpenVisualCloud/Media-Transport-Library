@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize("audio_format", ["PCM8", "PCM24"])
 def test_integrity_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     test_time,
@@ -57,7 +57,7 @@ def test_integrity_dual(
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,

@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize("rss_mode", ["l3_l4", "l3", "none"])
 def test_rss_mode_audio(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -64,7 +64,7 @@ def test_rss_mode_audio(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
@@ -73,7 +73,7 @@ def test_rss_mode_audio(
         logger.info("Running audio integrity check...")
         integrity = FileAudioIntegrityRunner(
             host=host,
-            test_repo_path=build,
+            test_repo_path=mtl_path,
             src_url=media_file_path,
             out_name=out_file_url.name,
             sample_size=get_sample_size(media_file_info["format"]),

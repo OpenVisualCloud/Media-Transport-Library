@@ -32,7 +32,7 @@ k_bit_mapping = {
 @pytest.mark.parametrize("k_bit", ["k0", "k1"])
 def test_k_bit(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     k_bit,
@@ -70,7 +70,7 @@ def test_k_bit(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

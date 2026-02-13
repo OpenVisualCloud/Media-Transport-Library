@@ -15,7 +15,7 @@ TMP_OUTPUT_FILE = "/tmp/output_anc_dual.txt"
 @pytest.mark.dual
 def test_st40p_dual_host_basic(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_config,
@@ -54,7 +54,7 @@ def test_st40p_dual_host_basic(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_interfaces[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -66,7 +66,7 @@ def test_st40p_dual_host_basic(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_interfaces[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -79,7 +79,7 @@ def test_st40p_dual_host_basic(
 
     try:
         assert GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,
@@ -102,7 +102,7 @@ def test_st40p_dual_host_basic(
 @pytest.mark.parametrize("framebuff", [3])
 def test_st40p_fps_size_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     file_size_kb,
@@ -133,7 +133,7 @@ def test_st40p_fps_size_dual(
 
     # Setup TX pipeline using existing function
     tx_config = GstreamerApp.setup_gstreamer_st40p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_host.vfs[0],
         input_path=input_file_path,
         tx_payload_type=113,
@@ -146,7 +146,7 @@ def test_st40p_fps_size_dual(
 
     # Setup RX pipeline using existing function
     rx_config = GstreamerApp.setup_gstreamer_st40p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_host.vfs[0],
         output_path=output_file_path,
         rx_payload_type=113,
@@ -157,7 +157,7 @@ def test_st40p_fps_size_dual(
 
     try:
         result = GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,

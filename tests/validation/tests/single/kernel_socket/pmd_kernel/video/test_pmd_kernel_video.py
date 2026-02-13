@@ -56,7 +56,7 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files
 @pytest.mark.parametrize("replicas", [1, 2])
 def test_pmd_kernel_video_format(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_mode,
@@ -116,7 +116,7 @@ def test_pmd_kernel_video_format(
     )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time * 2,
         host=host,
         interface_setup=setup_interfaces,

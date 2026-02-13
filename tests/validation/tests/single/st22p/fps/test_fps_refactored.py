@@ -32,7 +32,7 @@ from mtl_engine.rxtxapp import RxTxApp
 @pytest.mark.parametrize("codec", ["JPEG-XS", "H264_CBR"])
 def test_fps_refactored(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -65,4 +65,6 @@ def test_fps_refactored(
         codec_threads=16,
         test_time=test_time,
     )
-    app.execute_test(build=build, test_time=test_time, host=host, netsniff=pcap_capture)
+    app.execute_test(
+        build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
+    )

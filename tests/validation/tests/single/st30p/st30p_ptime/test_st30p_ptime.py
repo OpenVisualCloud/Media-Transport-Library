@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize("audio_ptime", ["1", "0.12", "0.25", "0.33", "4"])
 def test_st30p_ptime(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     audio_ptime,
@@ -61,7 +61,7 @@ def test_st30p_ptime(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
@@ -70,7 +70,7 @@ def test_st30p_ptime(
         logger.info("Running audio integrity check...")
         integrity = FileAudioIntegrityRunner(
             host=host,
-            test_repo_path=build,
+            test_repo_path=mtl_path,
             src_url=media_file_path,
             out_name=out_file_url.name,
             sample_size=get_sample_size(media_file_info["format"]),

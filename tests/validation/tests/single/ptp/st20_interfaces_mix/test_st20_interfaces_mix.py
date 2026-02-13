@@ -56,7 +56,7 @@ def _is_supported_runner() -> bool:
 )
 def test_st20_interfaces_mix(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     interface_profile,
@@ -104,7 +104,7 @@ def test_st20_interfaces_mix(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         ptp=True,
         rx_max_file_size=5 * 1024 * 1024 * 1024,  # 5 GB limit for rx file size
@@ -118,14 +118,14 @@ def test_st20_interfaces_mix(
         resolution = f"{media_file_info['width']}x{media_file_info['height']}"
         video_integrity = FileVideoIntegrityRunner(
             host=host,
-            test_repo_path=build,
+            test_repo_path=mtl_path,
             src_url=media_file_path,
             out_name=os.path.basename(video_out_url),
             resolution=resolution,
             file_format=media_file_info["file_format"],
             out_path=os.path.dirname(video_out_url),
             integrity_path=os.path.join(
-                build, "tests", "validation", "common", "integrity"
+                mtl_path, "tests", "validation", "common", "integrity"
             ),
         )
         if not video_integrity.run():

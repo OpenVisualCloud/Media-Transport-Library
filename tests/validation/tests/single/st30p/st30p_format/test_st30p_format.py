@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 )
 def test_st30p_format(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -60,7 +60,7 @@ def test_st30p_format(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
@@ -68,7 +68,7 @@ def test_st30p_format(
         logger.info("Running audio integrity check...")
         integrity = FileAudioIntegrityRunner(
             host=host,
-            test_repo_path=build,
+            test_repo_path=mtl_path,
             src_url=media_file_path,
             out_name=out_file_url.name,
             sample_size=get_sample_size(media_file_info["format"]),

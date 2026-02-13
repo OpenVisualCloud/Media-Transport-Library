@@ -24,7 +24,7 @@ from mtl_engine.media_files import anc_files
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_type_mode(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -51,7 +51,7 @@ def test_type_mode(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
