@@ -3,7 +3,6 @@
 import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import yuv_files_interlace
-from mtl_engine.rxtxapp import RxTxApp
 
 
 @pytest.mark.nightly
@@ -23,6 +22,7 @@ def test_interlace_refactored(
     prepare_ramdisk,
     pcap_capture,
     media_file,
+    rxtxapp,
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
@@ -30,9 +30,7 @@ def test_interlace_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(app_path="./tests/tools/RxTxApp/build")
-
-    app.create_command(
+    rxtxapp.create_command(
         session_type="st22p",
         test_mode="multicast",
         nic_port_list=interfaces_list,
@@ -47,6 +45,6 @@ def test_interlace_refactored(
         interlaced=True,
         test_time=test_time,
     )
-    app.execute_test(
+    rxtxapp.execute_test(
         build=mtl_path, test_time=test_time, host=host, netsniff=pcap_capture
     )

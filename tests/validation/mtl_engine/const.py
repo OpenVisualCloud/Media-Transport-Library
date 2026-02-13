@@ -4,3 +4,4 @@
 LOG_FOLDER = "logs"
 TESTCMD_LVL = 24  # Custom logging level for test commands
 FRAMES_CAPTURE = 4  # Number of frames to capture for compliance tests
+RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"

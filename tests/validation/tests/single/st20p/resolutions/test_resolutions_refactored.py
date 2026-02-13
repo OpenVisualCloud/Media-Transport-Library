@@ -5,7 +5,6 @@ import pytest
 from common.nicctl import InterfaceSetup
 from mtl_engine import ip_pools
 from mtl_engine.media_files import yuv_files_422rfc10
-from mtl_engine.rxtxapp import RxTxApp
 
 
 @pytest.mark.nightly
@@ -24,6 +23,7 @@ def test_resolutions_refactored(
     prepare_ramdisk,
     media_file,
     pcap_capture,
+    rxtxapp,
 ):
     """Test different video resolutions"""
     media_file_info, media_file_path = media_file
@@ -31,8 +31,6 @@ def test_resolutions_refactored(
     interfaces_list = setup_interfaces.get_interfaces_list_single(
         test_config.get("interface_type", "VF")
     )
-
-    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
 
     config_params = {
         "session_type": "st20p",
@@ -62,7 +60,7 @@ def test_resolutions_refactored(
             {"pacing": "narrow", "packing": "GPM", "tx_no_chain": False}
         )
 
-    app.create_command(**config_params)
+    rxtxapp.create_command(**config_params)
 
     actual_test_time = test_time
     if height >= 2160:
@@ -72,6 +70,6 @@ def test_resolutions_refactored(
     else:
         actual_test_time = max(test_time, 8)
 
-    app.execute_test(
+    rxtxapp.execute_test(
         build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
     )
