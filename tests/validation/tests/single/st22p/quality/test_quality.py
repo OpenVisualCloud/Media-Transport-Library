@@ -18,7 +18,7 @@ from mtl_engine.media_files import yuv_files_422p10le
 @pytest.mark.parametrize("quality", ["quality", "speed"])
 def test_quality(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     quality,
@@ -50,7 +50,7 @@ def test_quality(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

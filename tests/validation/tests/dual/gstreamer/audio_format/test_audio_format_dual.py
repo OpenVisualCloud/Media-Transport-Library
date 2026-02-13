@@ -14,7 +14,7 @@ from mtl_engine import GstreamerApp
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
 def test_audio_format_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     audio_format,
@@ -53,7 +53,7 @@ def test_audio_format_dual(
 
     # Setup TX pipeline using existing function
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_host.vfs[0],
         input_path=input_file_path,
         tx_payload_type=111,
@@ -65,7 +65,7 @@ def test_audio_format_dual(
 
     # Setup RX pipeline using existing function
     rx_config = GstreamerApp.setup_gstreamer_st30_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_host.vfs[0],
         output_path=output_file_path,
         rx_payload_type=111,
@@ -77,7 +77,7 @@ def test_audio_format_dual(
 
     try:
         result = GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,

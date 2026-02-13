@@ -71,7 +71,7 @@ from mtl_engine.media_files import (
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_pmd_kernel_mixed_format(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     test_time,
@@ -161,7 +161,7 @@ def test_pmd_kernel_mixed_format(
     )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
         interface_setup=setup_interfaces,

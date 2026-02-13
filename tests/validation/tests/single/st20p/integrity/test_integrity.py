@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 )
 def test_integrity(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -93,7 +93,7 @@ def test_integrity(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

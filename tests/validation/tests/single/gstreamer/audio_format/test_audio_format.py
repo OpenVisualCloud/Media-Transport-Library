@@ -22,7 +22,7 @@ from mtl_engine import GstreamerApp
 @pytest.mark.parametrize("audio_rate", [44100, 48000, 96000])
 def test_audio_format(
     hosts,
-    build,
+    mtl_path,
     media,
     setup_interfaces: InterfaceSetup,
     audio_format,
@@ -73,7 +73,7 @@ def test_audio_format(
 
     # Input path unused; pipeline generates audio internally
     tx_config = GstreamerApp.setup_gstreamer_st30_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         tx_payload_type=111,
@@ -84,7 +84,7 @@ def test_audio_format(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st30_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[1],
         output_path=output_file_path,
         rx_payload_type=111,
@@ -99,7 +99,7 @@ def test_audio_format(
 
     try:
         GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,

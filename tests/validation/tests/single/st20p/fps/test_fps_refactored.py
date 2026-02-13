@@ -33,7 +33,7 @@ from mtl_engine.rxtxapp import RxTxApp
 )
 def test_fps_refactored(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -49,7 +49,7 @@ def test_fps_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
+    app = RxTxApp(f"{mtl_path}/tests/tools/RxTxApp/build")
 
     config_params = {
         "session_type": "st20p",
@@ -80,5 +80,5 @@ def test_fps_refactored(
         actual_test_time = max(test_time, 10)
 
     app.execute_test(
-        build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture
+        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
     )

@@ -5,7 +5,6 @@ import yaml
 
 def gen_test_config(
     session_id: int,
-    build: str,
     mtl_path: str,
     pci_device: str,
     ebu_ip: str,
@@ -23,7 +22,6 @@ def gen_test_config(
 
     test_config = {
         "session_id": session_id,
-        "build": build,
         "mtl_path": mtl_path,
         "media_path": "/mnt/media",
         "ramdisk": {
@@ -102,12 +100,6 @@ def main() -> None:
         help="specify session ID (0 - 255)",
     )
     parser.add_argument(
-        "--build",
-        type=str,
-        required=True,
-        help="specify path to MTL directory",
-    )
-    parser.add_argument(
         "--mtl_path",
         type=str,
         required=True,
@@ -169,7 +161,6 @@ def main() -> None:
     try:
         test_config_yaml = gen_test_config(
             session_id=args.session_id,
-            build=args.build,
             mtl_path=args.mtl_path,
             pci_device=args.pci_device,
             ebu_ip=args.ebu_ip,

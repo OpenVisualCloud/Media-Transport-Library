@@ -27,7 +27,7 @@ from tests.xfail import SDBQ1971_conversion_v210_720p_error
 )
 def test_video_resolutions(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     request,
     test_time,
@@ -72,7 +72,7 @@ def test_video_resolutions(
     )
 
     tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[0],
         input_path=input_file_path,
         width=video_file["width"],
@@ -84,7 +84,7 @@ def test_video_resolutions(
     )
 
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list[1],
         output_path=host.connection.path(media_dir, "output_video.yuv"),
         width=video_file["width"],
@@ -96,7 +96,7 @@ def test_video_resolutions(
     )
     try:
         GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,

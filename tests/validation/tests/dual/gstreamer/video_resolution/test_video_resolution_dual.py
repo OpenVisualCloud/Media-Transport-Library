@@ -14,7 +14,7 @@ from tests.xfail import SDBQ1971_conversion_v210_720p_error
 @pytest.mark.parametrize("file", yuv_files.keys())
 def test_video_resolutions_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     file,
@@ -63,7 +63,7 @@ def test_video_resolutions_dual(
 
     # Setup TX pipeline using existing function
     tx_config = GstreamerApp.setup_gstreamer_st20p_tx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=tx_host.vfs[0],
         input_path=input_file_path,
         width=video_file["width"],
@@ -76,7 +76,7 @@ def test_video_resolutions_dual(
 
     # Setup RX pipeline using existing function
     rx_config = GstreamerApp.setup_gstreamer_st20p_rx_pipeline(
-        build=build,
+        build=mtl_path,
         nic_port_list=rx_host.vfs[0],
         output_path=output_file_path,
         width=video_file["width"],
@@ -89,7 +89,7 @@ def test_video_resolutions_dual(
 
     try:
         result = GstreamerApp.execute_test(
-            build=build,
+            build=mtl_path,
             tx_command=tx_config,
             rx_command=rx_config,
             input_file=input_file_path,

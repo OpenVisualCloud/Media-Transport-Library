@@ -14,7 +14,7 @@ from mtl_engine.media_files import anc_files
 @pytest.mark.parametrize("anc_keys", anc_files.keys())
 def test_format_dual(
     hosts,
-    build,
+    mtl_path,
     media,
     nic_port_list,
     test_time,
@@ -47,7 +47,7 @@ def test_format_dual(
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,

@@ -13,7 +13,7 @@ from mtl_engine.media_files import yuv_files, yuv_files_422rfc10
 @pytest.mark.parametrize("replicas", [1, 2])
 def test_xdp_standard(
     hosts,
-    build,
+    mtl_path,
     media,
     test_time,
     test_mode,
@@ -62,7 +62,7 @@ def test_xdp_standard(
         )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

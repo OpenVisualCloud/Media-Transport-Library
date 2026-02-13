@@ -68,7 +68,6 @@ jobs:
         run: |
           python3 gen_config.py \
             --session_id ${{ env.SESSION_ID }} \
-            --build ${{ secrets.RUNNER_BUILD }} \
             --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
             --pci_device ${{ env.PCI_DEVICE }} \
             --ip_address 127.0.0.1 \

@@ -38,7 +38,7 @@ from mtl_engine.media_files import parse_fps_to_pformat, yuv_files_422rfc10
 @pytest.mark.parametrize("replicas", [1, 4])
 def test_kernello_st22p_video_format(
     hosts,
-    build,
+    mtl_path,
     test_time,
     test_mode,
     replicas,
@@ -82,7 +82,7 @@ def test_kernello_st22p_video_format(
     )
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

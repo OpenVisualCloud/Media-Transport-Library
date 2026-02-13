@@ -10,7 +10,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
 @pytest.mark.dual
 @pytest.mark.parametrize("pacing", ["narrow", "wide", "linear"])
 @pytest.mark.parametrize("file", ["Crosswalk_720p", "ParkJoy_1080p", "Pedestrian_4K"])
-def test_pacing_dual(hosts, build, media, nic_port_list, test_time, file, pacing):
+def test_pacing_dual(hosts, mtl_path, media, nic_port_list, test_time, file, pacing):
     st20p_file = yuv_files_422rfc10[file]
 
     # Get TX and RX hosts
@@ -39,7 +39,7 @@ def test_pacing_dual(hosts, build, media, nic_port_list, test_time, file, pacing
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,

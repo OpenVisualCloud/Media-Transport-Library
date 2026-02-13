@@ -32,7 +32,7 @@ k_bit_mapping = {
 @pytest.mark.parametrize("dit", ["dit0", "dit1"])
 def test_dit(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     dit,
@@ -70,7 +70,7 @@ def test_dit(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

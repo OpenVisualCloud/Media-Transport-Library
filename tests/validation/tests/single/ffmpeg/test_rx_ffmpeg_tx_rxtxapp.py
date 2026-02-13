@@ -36,7 +36,7 @@ from mtl_engine.media_files import yuv_files
 def test_rx_ffmpeg_tx_rxtxapp(
     hosts,
     test_time,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     video_format,
     multiple_sessions,
@@ -88,7 +88,7 @@ def test_rx_ffmpeg_tx_rxtxapp(
 
     ffmpeg_app.execute_test(
         test_time=test_time * test_time_multipler,
-        build=build,
+        build=mtl_path,
         host=host,
         nic_port_list=interfaces_list,
         type_="frame",
