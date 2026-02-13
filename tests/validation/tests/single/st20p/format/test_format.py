@@ -17,7 +17,7 @@ from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
 )
 def test_422p10le(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     test_config,
@@ -65,7 +65,7 @@ def test_422p10le(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
         netsniff=pcap_capture,
@@ -107,7 +107,7 @@ convert1_formats = dict(
 @pytest.mark.parametrize("format", convert1_formats.keys())
 def test_convert_on_rx(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     format,
@@ -153,7 +153,7 @@ def test_convert_on_rx(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
@@ -192,7 +192,7 @@ convert2_formats = dict(
 @pytest.mark.parametrize("format", convert2_formats.keys())
 def test_tx_rx_conversion(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_config,
     test_time,
@@ -238,7 +238,7 @@ def test_tx_rx_conversion(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )
@@ -255,7 +255,7 @@ def test_tx_rx_conversion(
 @pytest.mark.parametrize("format", pixel_formats.keys())
 def test_formats(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     format,
@@ -303,7 +303,7 @@ def test_formats(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

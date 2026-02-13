@@ -10,11 +10,11 @@ from typing import List, Optional, Tuple
 
 from mfd_connect import SSHConnection
 from mtl_engine import ip_pools
+from mtl_engine.const import RXTXAPP_PATH
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
-RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
 
 PTP_SYNC_TIME = 50  # seconds to wait for PTP synchronization

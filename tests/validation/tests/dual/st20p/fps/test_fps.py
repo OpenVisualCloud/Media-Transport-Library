@@ -13,7 +13,7 @@ from mtl_engine.media_files import yuv_files_422rfc10
     ["p23", "p24", "p25", "p29", "p30", "p50", "p59", "p60", "p100", "p119", "p120"],
 )
 @pytest.mark.parametrize("file", ["ParkJoy_1080p"])
-def test_fps_dual(hosts, build, media, nic_port_list, test_time, file, fps):
+def test_fps_dual(hosts, mtl_path, media, nic_port_list, test_time, file, fps):
     st20p_file = yuv_files_422rfc10[file]
 
     # Get TX and RX hosts
@@ -41,7 +41,7 @@ def test_fps_dual(hosts, build, media, nic_port_list, test_time, file, fps):
 
     rxtxapp.execute_dual_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         tx_host=tx_host,
         rx_host=rx_host,

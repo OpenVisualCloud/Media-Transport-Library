@@ -32,7 +32,7 @@ k_bit_mapping = {
 @pytest.mark.parametrize("type_mode", ["rtp", "frame"])
 def test_no_chain(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     type_mode,
@@ -70,7 +70,7 @@ def test_no_chain(
 
     rxtxapp.execute_test(
         config=config,
-        build=build,
+        build=mtl_path,
         test_time=test_time,
         host=host,
     )

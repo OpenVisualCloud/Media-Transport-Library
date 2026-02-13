@@ -12,11 +12,11 @@ import time
 from mfd_connect import SSHConnection
 from mfd_connect.exceptions import ConnectionCalledProcessError
 from mtl_engine import ip_pools
+from mtl_engine.const import FFMPEG_PATH, RXTXAPP_PATH
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
-RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
 
 # Global variable to store timestamp for consistent logging
@@ -248,7 +248,7 @@ def execute_test(
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, host, build)
         rx_cmd = (
-            f"ffmpeg -p_port {nic_port_list[0]} "
+            f"{FFMPEG_PATH} -p_port {nic_port_list[0]} "
             f"-p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
@@ -258,7 +258,7 @@ def execute_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo "
+                f"{FFMPEG_PATH} -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
@@ -273,7 +273,7 @@ def execute_test(
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_pools.rx[0]} "
+            f"{FFMPEG_PATH} -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
@@ -287,7 +287,7 @@ def execute_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo "
+                f"{FFMPEG_PATH} -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
                 f"-p_sip {ip_pools.tx[0]} "
@@ -405,7 +405,7 @@ def execute_test_rgb24(
         return False
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
-        f"ffmpeg -stream_loop -1 -framerate {fps} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10be "
+        f"{FFMPEG_PATH} -stream_loop -1 -framerate {fps} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10be "
         f"-i {video_url} -filter:v format=rgb24 -p_port {nic_port_list[1]} "
         f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -519,14 +519,14 @@ def execute_test_rgb24_multiple(
         return False
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
-        f"ffmpeg -stream_loop -1 -framerate {fps_1} -video_size {video_size_1} -f rawvideo -pix_fmt yuv422p10be "
+        f"{FFMPEG_PATH} -stream_loop -1 -framerate {fps_1} -video_size {video_size_1} -f rawvideo -pix_fmt yuv422p10be "
         f"-i {video_url_list[0]} -filter:v format=rgb24 -p_port {nic_port_list[2]} "
         f"-p_sip {ip_pools.tx[0]} "
         f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
-        f"ffmpeg -stream_loop -1 -framerate {fps_2} -video_size {video_size_2} -f rawvideo -pix_fmt yuv422p10be "
+        f"{FFMPEG_PATH} -stream_loop -1 -framerate {fps_2} -video_size {video_size_2} -f rawvideo -pix_fmt yuv422p10be "
         f"-i {video_url_list[1]} -filter:v format=rgb24 -p_port {nic_port_list[3]} "
         f"-p_sip {ip_pools.tx[1]} "
         f"-p_tx_ip {ip_pools.rx_multicast[1]} "
@@ -980,14 +980,14 @@ def execute_dual_test(
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_pools.rx[0]} "
+            f"{FFMPEG_PATH} -p_port {rx_nic_port_list[0]} -p_sip {ip_pools.rx[0]} "
             f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 -payload_type 112 "
             f"-fps {fps} -pix_fmt yuv422p10le -video_size {video_size} "
             f"-f mtl_st20p -i k {ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"{FFMPEG_PATH} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -1000,7 +1000,7 @@ def execute_dual_test(
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_pools.rx[0]} "
+            f"{FFMPEG_PATH} -p_sip {ip_pools.rx[0]} "
             f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port 20000 -payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
@@ -1012,7 +1012,7 @@ def execute_dual_test(
         )
         if tx_is_ffmpeg:
             tx_cmd = (
-                f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
+                f"{FFMPEG_PATH} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
                 f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -1156,7 +1156,7 @@ def execute_dual_test_rgb24(
 
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
+        f"{FFMPEG_PATH} -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
         f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
@@ -1280,14 +1280,14 @@ def execute_dual_test_rgb24_multiple(
 
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
+        f"{FFMPEG_PATH} -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {tx_nic_port_list[0]} "
         f"-p_sip {ip_pools.tx[0]} "
         f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
+        f"{FFMPEG_PATH} -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {tx_nic_port_list[1]} "
         f"-p_sip {ip_pools.tx[1]} "
         f"-p_tx_ip {ip_pools.rx_multicast[1]} "

@@ -12,7 +12,6 @@ from mtl_engine.const import LOG_FOLDER
 from mtl_engine.execute import log_fail
 from mtl_engine.integrity import calculate_yuv_frame_size, check_st20p_integrity
 from mtl_engine.media_files import yuv_files_422p10le, yuv_files_422rfc10
-from mtl_engine.rxtxapp import RxTxApp
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +35,14 @@ logger = logging.getLogger(__name__)
 )
 def test_integrity_refactored(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_config,
     test_time,
     prepare_ramdisk,
     media_file,
     pcap_capture,
+    rxtxapp,
 ):
     """Test video integrity by comparing input and output files"""
     media_file_info, media_file_path = media_file
@@ -55,9 +55,7 @@ def test_integrity_refactored(
         test_config.get("interface_type", "VF")
     )
 
-    app = RxTxApp(f"{build}/tests/tools/RxTxApp/build")
-
-    app.create_command(
+    rxtxapp.create_command(
         session_type="st20p",
         nic_port_list=interfaces_list,
         source_ip=ip_pools.tx[0],
@@ -76,8 +74,8 @@ def test_integrity_refactored(
     )
 
     actual_test_time = max(test_time, 8)
-    app.execute_test(
-        build=build, test_time=actual_test_time, host=host, netsniff=pcap_capture
+    rxtxapp.execute_test(
+        build=mtl_path, test_time=actual_test_time, host=host, netsniff=pcap_capture
     )
 
     frame_size = calculate_yuv_frame_size(

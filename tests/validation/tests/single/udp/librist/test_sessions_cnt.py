@@ -23,7 +23,7 @@ from mtl_engine import udp_app
 )
 def test_udp_sessions_cnt(
     hosts,
-    build,
+    mtl_path,
     setup_interfaces: InterfaceSetup,
     test_time,
     sleep_us,
@@ -38,7 +38,7 @@ def test_udp_sessions_cnt(
     )
 
     udp_app.execute_test_librist(
-        build=build,
+        build=mtl_path,
         nic_port_list=interfaces_list,
         test_time=test_time,
         sleep_us=sleep_us,
