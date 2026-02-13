@@ -181,9 +181,9 @@ Items in each element of the "st40p" array:
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
 
-​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps
+​ **fps (string):** `"p59", "p50", "p29"` ancillary fps. Legacy alias: **ancillary_fps** is also accepted.
 
-​ **ancillary_url (string):** ancillary source file path (empty string for synthetic data)
+​ **st40p_url (string):** ancillary source file path (empty string for synthetic data). Legacy alias: **ancillary_url** is also accepted.
 
 ​ **interlaced (bool):** `true, false` enable interlaced field cadence (optional, default false)
 
@@ -300,9 +300,9 @@ Items in each element of the "st40p" array (pipeline RX counterpart to "ancillar
 
 ​ **payload_type (int):** `0~127` 7 bits payload type define in RFC3550
 
-​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps
+​ **fps (string):** `"p59", "p50", "p29"` ancillary fps. Legacy alias: **ancillary_fps** is also accepted.
 
-​ **ancillary_url (string):** (optional) reference file for RX output
+​ **st40p_url (string):** (optional) reference file for RX output. Legacy alias: **ancillary_url** is also accepted.
 
 ​ **interlaced (bool):** `true, false` enable interlaced field cadence (optional)
 

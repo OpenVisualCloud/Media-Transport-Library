@@ -69,6 +69,17 @@ sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml
 pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml "tests/single/st20p/fps/test_fps.py::test_fps[|fps = p60|-ParkJoy_1080p]"
 ```
 
+## Run ST40P Redundancy Tests
+
+The ST40P redundancy test suite validates ST 2022-7 dual-path ancillary data transport using RxTxApp (no GStreamer dependency):
+
+```bash
+cd tests/validation
+sudo ./venv/bin/python3 -m pytest --topology_config=configs/topology_config.yaml --test_config=configs/test_config.yaml tests/single/ancillary/st40p_redundant/test_st40p_redundant.py -v
+```
+
+These tests require 4 VFs (2 TX + 2 RX) on a single NIC for loopback. See [validation_framework.md](validation_framework.md#st2110-40-ancillary-data) for full details.
+
 ## Optional: Create VFs for Advanced Testing
 
 If you need VFs for NIC testing:

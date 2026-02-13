@@ -1265,9 +1265,11 @@ static int st_json_parse_st40p(int idx, json_object* obj, st_json_st40p_session_
     s->base.payload_type = ST_APP_PAYLOAD_TYPE_ANCILLARY;
   }
 
-  /* parse fps */
+  /* parse fps – accept upstream "fps" or legacy "ancillary_fps" */
   const char* fps_str =
-      json_object_get_string(st_json_object_object_get(obj, "ancillary_fps"));
+      json_object_get_string(st_json_object_object_get(obj, "fps"));
+  if (!fps_str)
+    fps_str = json_object_get_string(st_json_object_object_get(obj, "ancillary_fps"));
   s->info.anc_fps = st_json_parse_anc_fps(fps_str);
 
   /* parse interlaced */
@@ -1276,8 +1278,10 @@ static int st_json_parse_st40p(int idx, json_object* obj, st_json_st40p_session_
     s->info.interlaced = json_object_get_boolean(interlaced_obj);
   }
 
-  /* parse anc url */
-  ret = parse_url(obj, "ancillary_url", s->info.anc_url);
+  /* parse anc url – accept upstream "st40p_url" or legacy "ancillary_url" */
+  ret = parse_url(obj, "st40p_url", s->info.anc_url);
+  if (ret < 0)
+    ret = parse_url(obj, "ancillary_url", s->info.anc_url);
   if (ret < 0) {
     if (rx) {
       info("%s, no destination file for st40p rx\n", __func__);

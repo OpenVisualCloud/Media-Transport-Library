@@ -1,5 +1,11 @@
 # Changelog
 
+## Changelog for 26.06
+
+* st40: add ST40P pipeline sessions (TX + RX) to RxTxApp via JSON `"st40p"` key
+* st40: add ST 2022-7 redundancy support for ST40P with configurable path delay
+* st40: add Python validation tests for redundant ST40P (`test_st40p_redundant.py`)
+
 ## Changelog for 26.01
 
 * DPDK: add support for DPDK 25.03, 25.07, and 25.11

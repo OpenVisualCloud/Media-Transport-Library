@@ -45,6 +45,15 @@
                     "payload_type": 113,
                     "start_port": 40000
                 }
+            ],
+            "st40p": [
+                {
+                    "replicas": 1,
+                    "start_port": 40000,
+                    "payload_type": 113,
+                    "fps": "p59",
+                    "st40p_url": ""
+                }
             ]
         },
         {
@@ -68,7 +77,7 @@
                     "display": false,
                     "measure_latency": true
                 }
-            ],
+            ]
         }
     ]
 }

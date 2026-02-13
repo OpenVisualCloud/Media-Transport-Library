@@ -51,9 +51,11 @@ static void* app_rx_st40p_frame_thread(void* arg) {
 static int app_rx_st40p_init_frame_thread(struct st_app_rx_st40p_session* s) {
   int ret, idx = s->idx;
 
+  s->st40p_app_thread_stop = false;
   ret = pthread_create(&s->st40p_app_thread, NULL, app_rx_st40p_frame_thread, s);
   if (ret < 0) {
     err("%s(%d), st40p_app_thread create fail %d\n", __func__, ret, idx);
+    s->st40p_app_thread_stop = true;
     return -EIO;
   }
 
@@ -68,7 +70,7 @@ static int app_rx_st40p_uinit(struct st_app_rx_st40p_session* s) {
   int ret, idx = s->idx;
 
   s->st40p_app_thread_stop = true;
-  if (s->st40p_app_thread_stop) {
+  if (s->st40p_app_thread) {
     /* wake up the thread */
     info("%s(%d), wait app thread stop\n", __func__, idx);
     if (s->handle) st40p_rx_wake_block(s->handle);

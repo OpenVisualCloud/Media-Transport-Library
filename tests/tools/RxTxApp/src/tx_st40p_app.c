@@ -13,7 +13,7 @@ static void app_tx_st40p_build_frame(struct st_app_tx_st40p_session* s,
                                      struct st40_frame_info* frame) {
   uint8_t* udw = frame->udw_buff_addr;
   size_t avail = frame->udw_buffer_size;
-  size_t copy_sz = ST40P_APP_MAX_UDW_SIZE;
+  size_t copy_sz = s->udw_payload_limit ? s->udw_payload_limit : ST40P_APP_MAX_UDW_SIZE;
 
   if (copy_sz > avail) copy_sz = avail;
 
@@ -75,9 +75,12 @@ static void* app_tx_st40p_frame_thread(void* arg) {
     }
 
     s->frame_num++;
+    s->fb_send++;
     st40p_tx_put_frame(handle, frame);
+    s->fb_send_done++;
   }
-  info("%s(%d), stop\n", __func__, idx);
+  info("%s(%d), stop, fb_send %d fb_send_done %d\n", __func__, idx, s->fb_send,
+       s->fb_send_done);
 
   return NULL;
 }
@@ -93,19 +96,20 @@ static int app_tx_st40p_open_source(struct st_app_tx_st40p_session* s) {
 
   fd = st_open(s->st40p_source_url, O_RDONLY);
   if (fd < 0) {
-    err("%s, open fail '%s'\n", __func__, s->st40p_source_url);
-    return -EIO;
+    warn("%s, open fail '%s', fallback to synthetic\n", __func__, s->st40p_source_url);
+    return 0;
   }
 
   if (fstat(fd, &i) < 0) {
-    err("%s, fstat %s fail\n", __func__, s->st40p_source_url);
+    warn("%s, fstat %s fail, fallback to synthetic\n", __func__, s->st40p_source_url);
     close(fd);
-    return -EIO;
+    return 0;
   }
   if (i.st_size == 0) {
-    err("%s, %s file size is zero\n", __func__, s->st40p_source_url);
+    warn("%s, %s file size is zero, fallback to synthetic\n", __func__,
+         s->st40p_source_url);
     close(fd);
-    return -EIO;
+    return 0;
   }
 
   uint8_t* m = mmap(NULL, i.st_size, PROT_READ, MAP_SHARED, fd, 0);
@@ -115,7 +119,7 @@ static int app_tx_st40p_open_source(struct st_app_tx_st40p_session* s) {
     return -EIO;
   }
 
-  s->st40p_source_begin = mtl_hp_malloc(s->st, i.st_size, MTL_PORT_P);
+  s->st40p_source_begin = mtl_hp_zmalloc(s->st, i.st_size, MTL_PORT_P);
   if (!s->st40p_source_begin) {
     warn("%s, source malloc on hugepage fail\n", __func__);
     s->st40p_source_begin = m;
@@ -137,12 +141,13 @@ static int app_tx_st40p_start_source(struct st_app_tx_st40p_session* s) {
   int ret = -EINVAL;
   int idx = s->idx;
 
+  s->st40p_app_thread_stop = false;
   ret = pthread_create(&s->st40p_app_thread, NULL, app_tx_st40p_frame_thread, s);
   if (ret < 0) {
     err("%s(%d), thread create fail ret %d\n", __func__, idx, ret);
+    s->st40p_app_thread_stop = true;
     return ret;
   }
-  s->st40p_app_thread_stop = false;
 
   char thread_name[32];
   snprintf(thread_name, sizeof(thread_name), "tx_st40p_%d", idx);
@@ -297,6 +302,9 @@ static int app_tx_st40p_init(struct st_app_context* ctx,
     return -EIO;
   }
   s->handle = handle;
+
+  s->udw_payload_limit = st40p_tx_max_udw_buff_size(handle);
+  info("%s(%d), max udw payload %zu\n", __func__, idx, s->udw_payload_limit);
 
   ret = app_tx_st40p_open_source(s);
   if (ret < 0) {

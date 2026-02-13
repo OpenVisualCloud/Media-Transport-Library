@@ -657,6 +657,11 @@ struct st_app_tx_st40p_session {
   bool st40p_frames_copied;
 
   double expect_fps;
+  size_t udw_payload_limit; /* from st40p_tx_max_udw_buff_size() */
+
+  /* stat */
+  int fb_send;
+  int fb_send_done;
 
   pthread_t st40p_app_thread;
   bool st40p_app_thread_stop;
