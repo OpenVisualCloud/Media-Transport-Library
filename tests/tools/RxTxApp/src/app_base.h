@@ -237,6 +237,12 @@ struct st_app_tx_anc_session {
   pthread_mutex_t st40_wake_mutex;
   uint32_t st40_rtp_tmstamp;
   uint32_t st40_seq_id;
+
+  void* ctx; /* st_app_context for user_time */
+  struct st_user_time* user_time;
+  uint64_t frame_num;
+  uint64_t local_tai_base_time;
+  double expect_fps;
 };
 
 struct st_app_tx_fmd_session {

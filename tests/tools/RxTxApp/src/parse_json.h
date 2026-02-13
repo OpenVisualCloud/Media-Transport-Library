@@ -251,6 +251,7 @@ typedef struct st_json_ancillary_session {
 
   bool user_pacing;
   bool exact_user_pacing;
+  bool user_timestamp;
   bool enable_rtcp;
 } st_json_ancillary_session_t;
 

@@ -10,13 +10,22 @@ static int app_tx_anc_next_frame(void* priv, uint16_t* next_frame_idx,
   int ret;
   uint16_t consumer_idx = s->framebuff_consumer_idx;
   struct st_tx_frame* framebuff = &s->framebuffs[consumer_idx];
-  MTL_MAY_UNUSED(meta);
 
   st_pthread_mutex_lock(&s->st40_wake_mutex);
   if (ST_TX_FRAME_READY == framebuff->stat) {
     dbg("%s(%d), next frame idx %u, epoch %" PRIu64 ", tai %" PRIu64 "\n", __func__,
         s->idx, consumer_idx, meta->epoch,
         st10_get_tai(meta->tfmt, meta->timestamp, ST10_VIDEO_SAMPLING_RATE_90K));
+    /* populate user timestamp if enabled */
+    if (s->user_time) {
+      double frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
+      bool restart_base_time = !s->local_tai_base_time;
+      meta->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
+                                         restart_base_time);
+      meta->tfmt = ST10_TIMESTAMP_FMT_TAI;
+      s->local_tai_base_time = s->user_time->base_tai_time;
+      s->frame_num++;
+    }
     ret = 0;
     framebuff->stat = ST_TX_FRAME_IN_TRANSMITTING;
     *next_frame_idx = consumer_idx;
@@ -479,7 +488,16 @@ static int app_tx_anc_init(struct st_app_context* ctx, st_json_ancillary_session
     else
       ops.rtp_ring_size = 16;
   }
-  if (anc && anc->user_pacing) ops.flags |= ST40_TX_FLAG_USER_PACING;
+  if (anc && (anc->user_timestamp || anc->user_pacing)) {
+    if (anc->user_pacing) ops.flags |= ST40_TX_FLAG_USER_PACING;
+    if (anc->user_timestamp) ops.flags |= ST40_TX_FLAG_USER_TIMESTAMP;
+    /* use global user time */
+    s->ctx = ctx;
+    s->user_time = &ctx->user_time;
+    s->frame_num = 0;
+    s->local_tai_base_time = 0;
+    s->expect_fps = st_frame_rate(ops.fps);
+  }
   if (anc && anc->exact_user_pacing) ops.flags |= ST40_TX_FLAG_EXACT_USER_PACING;
   if (anc && anc->enable_rtcp) ops.flags |= ST40_TX_FLAG_ENABLE_RTCP;
   if (ctx->tx_anc_dedicate_queue) ops.flags |= ST40_TX_FLAG_DEDICATE_QUEUE;

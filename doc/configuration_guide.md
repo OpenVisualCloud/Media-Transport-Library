@@ -153,7 +153,9 @@ Items in each element of the "audio" array
 
 ​ **audio_url (string):** audio source
 
-#### ancillary (array of ancillary sessions)
+#### ancillary (array of ancillary sessions) — **deprecated**
+
+> **Note:** The `"ancillary"` key uses the legacy `st40_tx_create` / `st40_rx_create` API and is **deprecated**. New configurations should use `"st40p"` (pipeline API) instead, which offers additional features such as redundancy (ST 2022-7), test-mode injection, and configurable reorder windows.
 
 Items in each element of the "ancillary" array
 
@@ -168,6 +170,14 @@ Items in each element of the "ancillary" array
 ​ **ancillary_url (string):** ancillary source
 
 ​ **ancillary_fps (string):** `"p59", "p50", "p29"` ancillary fps which should be aligned to video
+
+​ **user_pacing (bool):** `true, false` use application-provided timestamps for pacing (optional)
+
+​ **exact_user_pacing (bool):** `true, false` strict user pacing (implies user_pacing, optional)
+
+​ **user_timestamp (bool):** `true, false` assign custom RTP timestamps from the application instead of epoch-aligned values (optional).
+
+​ **enable_rtcp (bool):** `true, false` enable RTCP retransmission (optional)
 
 #### st40p (array of st40p pipeline sessions)
 

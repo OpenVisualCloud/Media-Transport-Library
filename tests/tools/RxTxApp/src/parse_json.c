@@ -1190,6 +1190,9 @@ static int st_json_parse_tx_anc(int idx, json_object* anc_obj,
 
   if (anc->exact_user_pacing) anc->user_pacing = true;
 
+  anc->user_timestamp =
+      json_object_get_boolean(st_json_object_object_get(anc_obj, "user_timestamp"));
+
   /* parse enable rtcp */
   anc->enable_rtcp =
       json_object_get_boolean(st_json_object_object_get(anc_obj, "enable_rtcp"));
