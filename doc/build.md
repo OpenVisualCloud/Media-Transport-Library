@@ -175,6 +175,36 @@ cd $mtl_source_code
 ./build.sh
 ```
 
+### 3.1. Build flow for Intel I226-V (igc)
+
+Intel I226-V can be used with MTL, but the setup is different from Intel E810-focused
+environments:
+
+* Use the in-tree Linux `igc` driver for normal host networking and PTP validation.
+* Use DPDK `igc` PMD if you plan to run MTL with DPDK backend.
+* Do **not** use `script/build_ice_driver.sh` (that script is only for E810 `ice`).
+
+For I226-V, you can use the dedicated helper script below, which builds DPDK and then
+builds MTL without any E810-specific driver steps:
+
+```bash
+cd $mtl_source_code
+./script/build_i226v.sh
+```
+
+Optional examples:
+
+```bash
+# Build with debug symbols
+./script/build_i226v.sh --buildtype debug
+
+# Re-clone DPDK source before building
+./script/build_i226v.sh --force-dpdk-reclone
+
+# Build MTL only (assume DPDK already installed)
+./script/build_i226v.sh --skip-dpdk
+```
+
 ## 4. FAQ
 
 ### 4.1. PKG_CONFIG_PATH issue
