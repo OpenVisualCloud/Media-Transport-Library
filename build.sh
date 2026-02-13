@@ -8,7 +8,7 @@ set -e
 user=$(whoami)
 
 function usage() {
-	echo "Usage: $0 [debug/debugoptimized/plain/release]"
+	echo "Usage: $0 [debug|debugonly|debugoptimized|plain|release] [enable_fuzzing]"
 	exit 0
 }
 
@@ -16,10 +16,12 @@ buildtype=release
 enable_asan=false
 enable_tap=false
 enable_usdt=true
+enable_fuzzing=false
 
 : "${MTL_BUILD_ENABLE_ASAN:=false}"
 : "${MTL_BUILD_ENABLE_TAP:=false}"
 : "${MTL_BUILD_DISABLE_USDT:=false}"
+: "${MTL_BUILD_ENABLE_FUZZING:=false}"
 
 if [ "$MTL_BUILD_ENABLE_ASAN" == "true" ]; then
 	enable_asan=true
@@ -37,7 +39,12 @@ if [ "$MTL_BUILD_DISABLE_USDT" == "true" ]; then
 	echo "Disable USDT"
 fi
 
-if [ -n "$1" ]; then
+if [ "$MTL_BUILD_ENABLE_FUZZING" == "true" ]; then
+	enable_fuzzing=true
+	echo "Enable fuzzers"
+fi
+
+while [ $# -gt 0 ]; do
 	case $1 in
 	"debug")
 		buildtype=debug
@@ -55,11 +62,16 @@ if [ -n "$1" ]; then
 	"release")
 		buildtype=release
 		;;
+	"enable_fuzzing" | "--enable-fuzzing")
+		enable_fuzzing=true
+		echo "Enable fuzzers"
+		;;
 	*)
 		usage
 		;;
 	esac
-fi
+	shift
+done
 
 WORKSPACE=$PWD
 LIB_BUILD_DIR=${WORKSPACE}/build
@@ -68,11 +80,10 @@ TEST_BUILD_DIR=${WORKSPACE}/build/tests
 PLUGINS_BUILD_DIR=${WORKSPACE}/build/plugins
 LD_PRELOAD_BUILD_DIR=${WORKSPACE}/build/ld_preload
 MANAGER_BUILD_DIR=${WORKSPACE}/build/manager
-RDMA_BUILD_DIR=${WORKSPACE}/build/rdma
 RXTXAPP_BUILD_DIR=${WORKSPACE}/tests/tools/RxTxApp/build
 
 # build lib
-meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt"
+meson setup "${LIB_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan" -Denable_tap="$enable_tap" -Denable_usdt="$enable_usdt" -Denable_fuzzing="$enable_fuzzing"
 pushd "${LIB_BUILD_DIR}"
 ninja
 if [ "$user" == "root" ] || [ "$OS" == "Windows_NT" ]; then
@@ -81,21 +92,6 @@ else
 	sudo ninja install
 fi
 popd
-
-# build rdma lib
-if [ "$OS" != "Windows_NT" ]; then
-	pushd rdma/
-	meson setup "${RDMA_BUILD_DIR}" -Dbuildtype="$buildtype" -Denable_asan="$enable_asan"
-	popd
-	pushd "${RDMA_BUILD_DIR}"
-	ninja
-	if [ "$user" == "root" ]; then
-		ninja install
-	else
-		sudo ninja install
-	fi
-	popd
-fi
 
 # build app
 pushd app/

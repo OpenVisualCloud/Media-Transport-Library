@@ -63,6 +63,9 @@ if get_option('buildtype') != 'debug'
 endif
 app_c_args += ['-Wall']
 app_c_args += ['-Wunused-parameter']
+app_c_args += ['-I' + join_paths(meson.current_source_dir(), '..', 'include')]
+app_c_args += ['-I' + join_paths(meson.current_build_dir(), '..')]
+app_c_args += ['-I' + join_paths(meson.project_build_root(), 'include')]
 
 if is_windows
   app_c_args += ['-DWINDOWSENV']
@@ -250,7 +253,19 @@ executable('TxSt30PipelineSample', pipeline_tx_st30_sample_sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
 )
+executable('TxSt40PipelineSample', pipeline_tx_st40_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
 executable('RxSt30PipelineSample', pipeline_rx_st30_sample_sources,
+  c_args : app_c_args,
+  link_args: app_ld_args,
+  # asan should be always the first dep
+  dependencies: [asan_dep, mtl, libpthread, ws2_32_dep, mman_dep]
+)
+executable('RxSt40PipelineSample', pipeline_rx_st40_sample_sources,
   c_args : app_c_args,
   link_args: app_ld_args,
   # asan should be always the first dep
@@ -498,55 +513,15 @@ executable('V4l2toIPApp', v4l2_to_ip_sources,
 )
 endif
 
-mtl_rdma = dependency('mtl_rdma', required: false)
-if mtl_rdma.found()
-executable('RdmaTxSample', rdma_tx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaRxSample', rdma_rx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaVideoTxSample', rdma_video_tx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaVideoRxSample', rdma_video_rx_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
-)
-executable('RdmaVideoTxMultiSample', rdma_video_tx_multi_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma]
-)
-executable('RdmaVideoRxMultiSample', rdma_video_rx_multi_sample_sources,
-  c_args : app_c_args,
-  link_args: app_ld_args,
-  # asan should be always the first dep
-  dependencies: [asan_dep, libpthread, mtl_rdma, libsdl2]
-)
-endif
-
 if gpu_direct.found()
   executable('GpuDirectVideoTxMultiSample', gpu_direct_tx_sample_sources,
     c_args : app_c_args,
     link_args: app_ld_args,
-    dependencies: [libpthread, mtl, gpu_direct]
+    dependencies: [asan_dep, libpthread, mtl, gpu_direct]
   )
   executable('GpuDirectVideoRxMultiSample', gpu_direct_rx_sample_sources,
     c_args : app_c_args,
     link_args: app_ld_args,
-    dependencies: [libpthread, mtl, gpu_direct, libsdl2]
+    dependencies: [asan_dep, libpthread, mtl, gpu_direct, libsdl2]
   )
 endif

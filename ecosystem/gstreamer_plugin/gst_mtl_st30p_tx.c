@@ -182,12 +182,13 @@ static void gst_mtl_st30p_tx_class_init(Gst_Mtl_St30p_TxClass* klass) {
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_TX_USE_PTS_FOR_PACING,
-      g_param_spec_boolean(
-          "use-pts-for-pacing", "Use PTS for packet pacing",
-          "This property modifies the default behavior where MTL handles packet pacing. "
-          "Instead, it uses the buffer's PTS (Presentation Timestamp) to determine the "
-          "precise time for sending packets.",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+      g_param_spec_boolean("use-pts-for-pacing", "Use PTS for packet pacing",
+                           "This property modifies the default behavior where "
+                           "MTL handles packet pacing. "
+                           "Instead, it uses the buffer's PTS (Presentation "
+                           "Timestamp) to determine the "
+                           "precise time for sending packets.",
+                           FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_TX_PTS_PACING_OFFSET,
@@ -455,6 +456,11 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
 
   switch (GST_EVENT_TYPE(event)) {
     case GST_EVENT_CAPS:
+      if (sink->session_capabilites_set) {
+        GST_WARNING("Capabilities already set, ignoring");
+        return gst_pad_event_default(pad, parent, event);
+      }
+
       gst_event_parse_caps(event, &caps);
       if (sink->async_session_create) {
         thread_data = malloc(sizeof(GstMtlSt30pTxThreadData));
@@ -470,6 +476,7 @@ static gboolean gst_mtl_st30p_tx_sink_event(GstPad* pad, GstObject* parent,
         }
       }
 
+      sink->session_capabilites_set = TRUE;
       ret = gst_pad_event_default(pad, parent, event);
       break;
     case GST_EVENT_EOS:

@@ -25,7 +25,6 @@ env:
   ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: 1
   ECOSYSTEM_BUILD_AND_INSTALL_RIST_PLUGIN: 1
-  ECOSYSTEM_BUILD_AND_INSTALL_MSDK_PLUGIN: 0 # not supported yet
   ECOSYSTEM_BUILD_AND_INSTALL_OBS_PLUGIN: 1
   TOOLS_BUILD_AND_INSTALL_MTL_MONITORS: 0
   TOOLS_BUILD_AND_INSTALL_MTL_READCAP: 1
@@ -35,7 +34,7 @@ permissions:
   contents: read
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       pull-requests: read
     outputs:
@@ -50,11 +49,11 @@ jobs:
         id: filter
         with:
           filters: .github/path_filters.yml
-  
+
   ubuntu-build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
-    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Harden Runner
@@ -65,9 +64,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Build Release
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         run: sudo -E .github/scripts/setup_environment.sh
 
       - name: 'upload release build artifacts'
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: mtl-release-bin
@@ -75,8 +76,8 @@ jobs:
 
   ubuntu-ebpf-xdp-build:
     needs: changes
-    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' && needs.changes.outputs.ubuntu_build == 'true' }}
-    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - name: Harden Runner
@@ -87,6 +88,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: ebpf-xdp build
+        if: ${{ needs.changes.outputs.ubuntu_build == 'true' }}
         run: sudo -E .github/scripts/setup_environment.sh
         env:
           SETUP_BUILD_AND_INSTALL_EBPF_XDP: 1

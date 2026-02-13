@@ -61,11 +61,13 @@ struct _Gst_Mtl_St30p_Tx {
   guint frame_size;
 
   gboolean session_ready;
+  gboolean session_capabilites_set;
   pthread_mutex_t session_mutex;
   pthread_t session_thread;
 
   /*
-   * Handles incomplete frame buffers when their size does not match the expected size.
+   * Handles incomplete frame buffers when their size does not match the
+   * expected size.
    */
   struct st30_frame* cur_frame;
   guint cur_frame_available_size;

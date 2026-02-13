@@ -24,4 +24,6 @@ int st_app_tx_st20p_sessions_uinit(struct st_app_context* ctx);
 
 int st_app_tx_st20p_io_stat(struct st_app_context* ctx);
 
+bool st_app_tx_st20p_sessions_all_complete(struct st_app_context* ctx);
+
 #endif

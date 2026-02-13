@@ -105,14 +105,16 @@ In MTL GStreamer plugins there are general arguments that apply to every plugin.
 | udp-port-red  | uint   | Receiving MTL node UDP port for redundant transmission.                                           | 0 to G_MAXUINT           |
 | tx-queues     | uint   | Number of TX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
 | rx-queues     | uint   | Number of RX queues to initialize in DPDK backend.                                                | 0 to G_MAXUINT           |
+| enable-dma-offload | boolean | Request DMA offload for sessions that support it.                                                | TRUE/FALSE               |
+| dma-dev       | string | DPDK port bound for DMA engines, exported as described in `doc/dma.md`. Required when `enable-dma-offload=true`. | N/A                      |
 | payload-type  | uint   | SMPTE ST 2110 payload type.                                                                       | 0 to G_MAXUINT           |
 | port          | string | Session DPDK device port. If not specified it will be taken from the dev-port argument.           | N/A                      |
 | port-red      | string | Redundant session DPDK device port if left open taken from dev-port-red argument if specified.    | N/A                      |
 
-These are also general parameters accepted by plugins, but the functionality they provide to the user is not yet supported in plugins.
-| Property Name | Type   | Description                                                                                       | Range                    |
-|---------------|--------|---------------------------------------------------------------------------------------------------|--------------------------|
-| dma-dev       | string | **RESERVED FOR FUTURE USE** port for the MTL direct memory functionality.                         | N/A                      |
+When `enable-dma-offload` is set to `true`, every plugin that supports DMA will request
+`ST20P_RX_FLAG_DMA_OFFLOAD` during session creation (currently `mtl_st20p_rx`). Make sure
+the `dma-dev` port is bound and exported as described in `doc/dma.md` before enabling the
+flag.
 
 
 > **Warning:**
@@ -204,6 +206,7 @@ To be fixed in the future.
 [More information about GStreamer capabilities (GstCaps)](https://gstreamer.freedesktop.org/documentation/gstreamer/gstcaps.html)
 
 **Arguments**
+
 | Property Name        | Type     | Description                                           | Range                   | Default Value |
 |----------------------|----------|-------------------------------------------------------|-------------------------|---------------|
 | retry                | uint     | Number of times the MTL will try to get a frame.      | 0 to G_MAXUINT          | 10            |
@@ -257,6 +260,7 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 `11988/100`, `120`
 
 **Arguments**
+
 | Property Name       | Type     | Description                                         | Range                      | Default Value |
 |---------------------|----------|-----------------------------------------------------|----------------------------|---------------|
 | retry               | uint     | Number of times the MTL will try to get a frame.    | 0 to G_MAXUINT             | 10            |
@@ -266,6 +270,9 @@ The `mtl_st20p_rx` plugin supports the following pad capabilities:
 | rx-height           | uint     | Height of the video.                                | 0 to G_MAXUINT             | 1080          |
 | rx-interlaced       | boolean  | Whether the video is interlaced.                    | TRUE/FALSE                 | FALSE         |
 | rx-pixel-format     | string   | Pixel format of the video.                          | `v210`, `YUV444PLANAR10LE` | `v210`        |
+
+> **Tip:** Enable DMA offload for this plugin by passing the general property
+> `enable-dma-offload=true` alongside a configured `dma-dev`.
 
 #### 3.2.2. Preparing output path
 
@@ -308,6 +315,7 @@ The `mtl_st30p_tx` plugin supports the following pad capabilities:
 - **Channels Range**: 1 to 8
 
 **Arguments**
+
 | Property Name        | Type    | Description                                           | Range                   | Default Value |
 |----------------------|---------|-------------------------------------------------------|-------------------------|---------------|
 | tx-samplerate        | uint    | Sample rate of the audio.                             | [Supported Audio Sampling Rates](#232-supported-audio-sampling-rates) | 0 |
@@ -345,6 +353,7 @@ The `mtl_st30p_rx` plugin supports the following pad capabilities:
 - **Sample Rate Range**: 44100, 48000, 96000
 
 **Arguments**
+
 | Property Name       | Type    | Description                                           | Range                    | Default Value |
 |---------------------|---------|-------------------------------------------------------|--------------------------|---------------|
 | rx-framebuff-num    | uint    | Number of framebuffers to be used for transmission.   | 0 to G_MAXUINT           | 3             |
@@ -395,19 +404,45 @@ The `mtl_st40p_tx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
+
 | Property Name         | Type     | Description                                                        | Range            | Default Value |
 |-----------------------|----------|--------------------------------------------------------------------|------------------|---------------|
 | tx-framebuff-cnt      | uint     | Number of framebuffers to be used for transmission.                | 0 to G_MAXUINT   | 3             |
 | tx-fps                | uint     | Framerate of the video to which the ancillary data is synchronized.| [Supported vid eo fps fractions](#231-supported-video-fps-fractions) | 25/1 |
+| tx-interlaced         | boolean  | Treat input as interlaced ANC; set `rx-interlaced=true` on RX to match. | TRUE/FALSE   | FALSE         |
 | tx-did                | uint     | Data ID for the ancillary data.                                    | 0 to 255         | 0             |
 | tx-sdid               | uint     | Secondary Data ID for the ancillary data.                          | 0 to 255         | 0             |
+| tx-split-anc-by-pkt   | boolean  | Emit at most one ANC block per RTP packet; marker on final packet of field. | TRUE/FALSE | FALSE         |
 | use-pts-for-pacing    | gboolean | [User controlled timestamping offset](#233-pts-controlled-pacing)  | TRUE/FALSE       | FALSE         |
 | pts-pacing-offset     | uint     | [User controlled timestamping offset](#233-pts-controlled-pacing)  | 0 to G_MAXUINT   | 0             |
-| parse-8331-meta       | gboolean | Treat the input as rfc8331 payload data                            | TRUE/FALSE       | FALSE         |
+| input-format          | enum     | Encoding of incoming ANC buffers (`raw-udw`, `rfc8331-packed`, `rfc8331`) | enum            | `raw-udw`     |
+| parse-8331-meta       | gboolean | **Deprecated.** Shortcut for `input-format=rfc8331-packed`.         | TRUE/FALSE       | FALSE         |
 | max-combined-udw-size | uint     | Maximum combined size of all user data words to send in one buffer | 0 to (20 * 255)  | 20 * 255      |
+| tx-test-mode          | enum     | Test-only mutations: `no-marker`, `seq-gap`, `bad-parity`, `paced` (see below). | enum      | none          |
+| tx-test-pkt-count     | uint     | Number of packets to emit for `tx-test-mode` patterns (e.g., paced burst). | 0 to G_MAXUINT | 0            |
+| tx-test-pacing-ns     | uint     | Inter-packet spacing in nanoseconds for `tx-test-mode=paced`.      | 0 to G_MAXUINT   | 0             |
 
-> **Note:**  
-> If `parse-8331-meta` is not enabled, only one ANC packet per frame is supported. It is recommended to limit the `max-combined-udw-size` if you are only using this option, since by default `max-combined-udw-size` is set to its maximum value.
+> **Note:**
+> - `raw-udw` streams carry a single ANC packet per frame without per-packet metadata; the element uses `tx-did`/`tx-sdid` for the outgoing headers, so keeping `max-combined-udw-size` small avoids oversized frames.
+> - `rfc8331-packed` expects the 10-bit RFC8331 payload (including headers) generated by external tools. This is the mode formerly controlled by `parse-8331-meta`.
+> - `rfc8331` accepts the simplified 8-bit representation produced by `mtl_st40p_rx output-format=rfc8331`, enabling metadata round-trips without re-packing parity bits.
+> - The `parse-8331-meta` flag remains available for backward compatibility but will be removed in a future release. Update existing pipelines to use `input-format=rfc8331-packed` (or `rfc8331`) to avoid breakage when the legacy boolean disappears.
+
+##### Interlaced ancillary streams
+
+The `p` suffix means pipeline API, not progressive-only. For interlaced ANC, set `tx-interlaced=true` and match the receiver with `rx-interlaced=true`. Example:
+
+```bash
+export VFIO_PORT_T="pci_address_of_the_device"
+export VFIO_PORT_R="pci_address_of_the_device"
+
+# TX: interlaced ANC paced to 29.97i video
+gst-launch-1.0 filesrc location=$INPUT ! \
+    mtl_st40p_tx tx-interlaced=true tx-fps=5994/200 tx-did=67 tx-sdid=2 udp-port=40000 payload-type=113 dev-ip="192.168.96.3" ip="239.168.75.30" dev-port=$VFIO_PORT_T --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+
+# RX: interlaced ANC capture
+gst-launch-1.0 -v mtl_st40p_rx rx-interlaced=true udp-port=40000 payload-type=113 dev-ip="192.168.96.2" ip="239.168.75.30" dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+```
 
 #### 5.1.2. Example GStreamer Pipeline for Transmission
 
@@ -424,6 +459,21 @@ gst-launch-1.0 filesrc location=$INPUT ! mtl_st40p_tx tx-queues=4 udp-port=40000
 
 This command sets up the transmission pipeline with the specified parameters and sends the ancillary data using the `mtl_st40p_tx` plugin.
 
+#### 5.1.3. ST40P test-mode knobs
+
+Test-only RTP/ANC mutation options for validation (not for production):
+
+| Property              | Description                                                                                       |
+|-----------------------|---------------------------------------------------------------------------------------------------|
+| `tx-test-mode=no-marker` | Clear the RTP marker bit so RX never reports a ready frame.                                      |
+| `tx-test-mode=seq-gap`   | Insert a deliberate RTP sequence hole to validate `seq_discont/seq_lost` accounting.            |
+| `tx-test-mode=bad-parity`| Corrupt ANC parity so RX drops metadata instead of surfacing payload.                           |
+| `tx-test-mode=paced`     | Emit a bounded packet burst (set `tx-test-pkt-count`) with optional inter-packet spacing (`tx-test-pacing-ns`) to check pacing and accumulation of multi-packet ANC fields. |
+
+Notes:
+- These knobs can be combined with `tx-split-anc-by-pkt=true` to stress the split-mode path.
+- Pair with RX `frame-info-path` to log packet counts, markers, and sequence discontinuities when validating.
+
 ### 5.2. Running the SMPTE ST 2110-40 Receiver Plugin `mtl_st40p_rx`
 
 #### 5.2.1. Supported Parameters and Pad Capabilities
@@ -433,10 +483,25 @@ The `mtl_st40p_rx` plugin supports all pad capabilities (the data is not checked
 - **Capabilities**: Any (GST_STATIC_CAPS_ANY)
 
 **Arguments**
-| Property Name       | Type   | Description                                           | Range                       | Default Value |
-|---------------------|--------|-------------------------------------------------------|-----------------------------|---------------|
-| buffer-size         | uint   | Size of the buffer used for receiving data            | 0 to G_MAXUINT (power of 2) | 1024          |
-| timeout             | uint   | Timeout in seconds for getting mbuf                   | 0 to G_MAXUINT              | 10            |
+
+| Property Name       | Type    | Description                                                 | Range                       | Default Value |
+|---------------------|---------|-------------------------------------------------------------|-----------------------------|---------------|
+| rx-framebuff-cnt    | uint    | Number of frame buffers allocated in the pipeline           | 0 to G_MAXUINT              | 3             |
+| max-udw-size        | uint    | Maximum user-data word buffer size in bytes per frame       | 1024 to 1,048,576           | 131,072       |
+| rtp-ring-size       | uint    | Size of the internal RTP ring (must be power of two)        | 64 to 16,384                | 1,024         |
+| timeout             | uint    | Timeout in seconds for blocking frame retrieval             | 0 to 300                    | 60            |
+| frame-info-path     | string  | Optional path to append frame info and sequence stats per frame | N/A                      | NULL          |
+| rx-interlaced       | boolean | Whether the incoming ancillary stream is interlaced         | TRUE/FALSE                  | FALSE         |
+| output-format       | enum    | Serialization format for received ancillary data            | `raw-udw` / `rfc8331`       | `raw-udw`     |
+
+When `output-format` is set to `rfc8331`, each ancillary packet is serialized with an 8-byte
+header (C, line number, horizontal offset, S, stream number, DID, SDID, data count) followed by
+its user data words so that downstream elements receive complete RFC8331 payloads. Selecting
+`raw-udw` delivers only the user-data words exactly as received on the wire.
+
+> **Note:** `rtp-ring-size` values are validated at runtime. If the supplied number is not a power of
+> two the element fails to initialize, matching the behavior enforced inside
+> `gst_mtl_st40p_rx_start()`.
 
 #### 5.2.2. Example GStreamer Pipeline for Reception
 
@@ -452,6 +517,6 @@ export VFIO_PORT_R="pci_address_of_the_device"
 export OUTPUT="path_to_the_file_we_want_to_save"
 
 # Run the receiver pipeline
-gst-launch-1.0 -v mtl_st40_rx rx-queues=4 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" timeout=61 dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
+gst-launch-1.0 -v mtl_st40p_rx rx-queues=4 rx-framebuff-cnt=3 timeout=61 output-format=rfc8331 udp-port=40000 payload-type=113 dev-ip="$IP_PORT_R" ip="$IP_PORT_T" dev-port=$VFIO_PORT_R ! filesink location=$OUTPUT --gst-plugin-path $GSTREAMER_PLUGINS_PATH
 ```
 

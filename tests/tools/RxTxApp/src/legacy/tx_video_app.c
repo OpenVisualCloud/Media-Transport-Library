@@ -791,8 +791,6 @@ static int app_tx_video_init(struct st_app_context* ctx, st_json_video_session_t
   ops.rtp_timestamp_delta_us = ctx->tx_ts_delta_us;
   if (s->enable_vsync) ops.flags |= ST20_TX_FLAG_ENABLE_VSYNC;
   if (ctx->tx_static_pad) ops.flags |= ST20_TX_FLAG_ENABLE_STATIC_PAD_P;
-  if (ctx->tx_ts_first_pkt) ops.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
-  if (ctx->tx_ts_epoch) ops.flags |= ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20_TX_FLAG_DISABLE_BULK;
   if (ctx->force_tx_video_numa >= 0) {
     ops.flags |= ST20_TX_FLAG_FORCE_NUMA;

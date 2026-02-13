@@ -1,0 +1,35 @@
+From 2bd9155855d55ae6fa0c0592718e8bd291997d29 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Mon, 1 Dec 2025 07:43:12 +0000
+Subject: [PATCH] e830: Fix ice_ptp_adj_clock
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/ice/base/ice_ptp_hw.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/net/intel/ice/base/ice_ptp_hw.c b/drivers/net/intel/ice/base/ice_ptp_hw.c
+index 7d16965674..98270a97a4 100644
+--- a/drivers/net/intel/ice/base/ice_ptp_hw.c
++++ b/drivers/net/intel/ice/base/ice_ptp_hw.c
+@@ -6083,7 +6083,7 @@ int ice_ptp_write_incval_locked(struct ice_hw *hw, u64 incval,
+  */
+ int ice_ptp_adj_clock(struct ice_hw *hw, s32 adj, bool lock_sbq)
+ {
+-	int err;
++	int err = 0;
+ 	u8 tmr_idx;
+ 
+ 	tmr_idx = hw->func_caps.ts_func_info.tmr_index_owned;
+@@ -6102,7 +6102,7 @@ int ice_ptp_adj_clock(struct ice_hw *hw, s32 adj, bool lock_sbq)
+ 		break;
+ 	case ICE_PHY_E830:
+ 		/* E830 sync PHYs automatically after setting GLTSYN_SHADJ */
+-		return 0;
++		break;
+ 	case ICE_PHY_E810:
+ 		err = ice_ptp_prep_phy_adj_e810(hw, adj, lock_sbq);
+ 		break;
+-- 
+2.34.1
+

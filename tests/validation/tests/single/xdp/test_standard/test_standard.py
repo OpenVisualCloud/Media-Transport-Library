@@ -20,20 +20,12 @@ def test_xdp_standard(
     video_format,
     replicas,
     standard_mode,
-    test_config,
     prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
 
     st22p_file = yuv_files_422rfc10["Crosswalk_1080p"]
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_xdp_standard_{standard_mode}_{test_mode}_{video_format}_replicas{replicas}"
-    )
 
     config = rxtxapp.create_empty_config()
     if standard_mode == "st20p":
@@ -73,5 +65,4 @@ def test_xdp_standard(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )

@@ -28,6 +28,7 @@ static uint16_t rx_st20p_next_idx(struct st20p_rx_ctx* ctx, uint16_t idx) {
 static void rx_st20p_block_wake(struct st20p_rx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  ctx->block_wake_pending = true;
   mt_pthread_cond_signal(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
@@ -217,6 +218,8 @@ static int rx_st20p_frame_ready(void* priv, void* frame,
   framebuff->src.timestamp = framebuff->dst.timestamp = meta->timestamp;
   framebuff->src.rtp_timestamp = framebuff->dst.rtp_timestamp = meta->rtp_timestamp;
   framebuff->src.status = framebuff->dst.status = meta->status;
+  framebuff->src.receive_timestamp = framebuff->dst.receive_timestamp =
+      meta->timestamp_first_pkt;
 
   framebuff->src.pkts_total = framebuff->dst.pkts_total = meta->pkts_total;
   for (enum mtl_session_port s_port = 0; s_port < MTL_SESSION_PORT_MAX; s_port++) {
@@ -757,14 +760,23 @@ static int rx_st20p_get_converter(struct mtl_main_impl* impl, struct st20p_rx_ct
 static int rx_st20p_stat(void* priv) {
   struct st20p_rx_ctx* ctx = priv;
   struct st20p_rx_frame* framebuff = ctx->framebuffs;
+  uint16_t producer_idx;
+  uint16_t consumer_idx;
+  enum st20p_rx_frame_status producer_stat;
+  enum st20p_rx_frame_status consumer_stat;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  uint16_t producer_idx = ctx->framebuff_producer_idx;
-  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  mt_pthread_mutex_lock(&ctx->lock);
+  producer_idx = ctx->framebuff_producer_idx;
+  consumer_idx = ctx->framebuff_consumer_idx;
+  producer_stat = framebuff[producer_idx].stat;
+  consumer_stat = framebuff[consumer_idx].stat;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
   notice("RX_st20p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
-         rx_st20p_stat_name(framebuff[producer_idx].stat), consumer_idx,
-         rx_st20p_stat_name(framebuff[consumer_idx].stat));
+         rx_st20p_stat_name(producer_stat), consumer_idx,
+         rx_st20p_stat_name(consumer_stat));
 
   notice("RX_st20p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
@@ -810,8 +822,12 @@ static int st20p_rx_get_block_wait(struct st20p_rx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                               ctx->block_timeout_ns);
+  while (!ctx->block_wake_pending) {
+    int ret = mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                           ctx->block_timeout_ns);
+    if (ret) break;
+  }
+  ctx->block_wake_pending = false;
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   dbg("%s(%d), end\n", __func__, ctx->idx);
   return 0;
@@ -997,6 +1013,7 @@ st20p_rx_handle st20p_rx_create(mtl_handle mt, struct st20p_rx_ops* ops) {
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
+  ctx->block_wake_pending = false;
   if (ops->flags & ST20P_RX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */

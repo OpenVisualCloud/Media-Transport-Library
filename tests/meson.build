@@ -24,7 +24,7 @@ endif
 libopenssl = dependency('openssl', required : true)
 
 # add source file
-subdir('unittest')
+subdir('integration_tests')
 
 test_c_args = []
 test_cpp_args = []
@@ -42,6 +42,7 @@ if get_option('buildtype') != 'debug'
   test_c_args += ['-Werror']
   test_cpp_args += ['-Werror']
 endif
+
 test_c_args += ['-Wall']
 test_cpp_args += ['-Wall']
 
@@ -70,6 +71,7 @@ executable('KahawaiTest', sources,
   c_args : test_c_args,
   cpp_args : test_cpp_args,
   link_args: test_ld_args,
+  include_directories: [test_inc],
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep]
 )

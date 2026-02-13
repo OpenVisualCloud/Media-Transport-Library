@@ -11,7 +11,6 @@
 #include "../mt_stat.h"
 #include "../mt_util.h"
 #include "mt_af_xdp.h"
-#include "mt_rdma_ud.h"
 
 static const struct mt_dev_driver_info dev_drvs[] = {
     {
@@ -105,17 +104,7 @@ static const struct mt_dev_driver_info dev_drvs[] = {
         .flow_type = MT_FLOW_ALL,
         .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
                  MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED,
-    },
-    {
-        .name = "rdma",
-        .port_type = MT_PORT_RDMA_UD,
-        .drv_type = MT_DRV_IRDMA,
-        .flow_type = MT_FLOW_ALL,
-        .flags = MT_DRV_F_NOT_DPDK_PMD | MT_DRV_F_NO_CNI | MT_DRV_F_USE_KERNEL_CTL |
-                 MT_DRV_F_RX_POOL_COMMON | MT_DRV_F_MCAST_IN_DP | MT_DRV_F_KERNEL_BASED |
-                 MT_DRV_F_NO_SYS_TX_QUEUE,
-    },
-};
+    }};
 
 static int parse_driver_info(const char* driver, struct mt_dev_driver_info* drv_info) {
   for (int i = 0; i < MTL_ARRAY_SIZE(dev_drvs); i++) {
@@ -354,12 +343,6 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
       snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "native_af_xdp_%d", i);
       snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
       continue;
-    } else if (pmd == MTL_PMD_RDMA_UD) {
-      const char* if_name = mt_rdma_ud_port2if(p->port[i]);
-      if (!if_name) return -EINVAL;
-      snprintf(kport_info->dpdk_port[i], MTL_PORT_MAX_LEN, "rdma_%d", i);
-      snprintf(kport_info->kernel_if[i], MTL_PORT_MAX_LEN, "%s", if_name);
-      continue;
     } else if (pmd == MTL_PMD_DPDK_AF_XDP) {
       argv[argc] = "--vdev";
       has_afxdp = true;
@@ -437,6 +420,11 @@ static int dev_eal_init(struct mtl_init_params* p, struct mt_kport_info* kport_i
     argv[argc] = lcores;
     argc++;
   }
+
+#if RTE_VERSION >= RTE_VERSION_NUM(25, 11, 0, 0)
+  argv[argc] = "--remap-lcore-ids"; /* --remap-lcore-ids */
+  argc++;
+#endif
 
   if (!pci_ports) {
     argv[argc] = "--no-pci";
@@ -819,7 +807,7 @@ static int dev_detect_link(struct mt_interface* inf) {
 
   memset(&eth_link, 0, sizeof(eth_link));
 
-  for (int i = 0; i < 100; i++) {
+  for (int i = 0; i < 300; i++) {
     err = rte_eth_link_get_nowait(port_id, &eth_link);
     if (err < 0) {
       err("%s, failed to get link status for port %d, ret %d\n", __func__, port_id, err);
@@ -831,7 +819,7 @@ static int dev_detect_link(struct mt_interface* inf) {
       mt_eth_link_dump(port_id);
       return 0;
     }
-    mt_sleep_ms(100); /* only happen on CVL PF */
+    mt_sleep_ms(100); /* only happen on CVL PF and CNV PF */
   }
 
   mt_eth_link_dump(port_id);
@@ -1287,7 +1275,7 @@ static int dev_if_init_rx_queues(struct mtl_main_impl* impl, struct mt_interface
       struct rte_mempool* mbuf_pool = NULL;
 
       if (inf->drv_info.flags & MT_DRV_F_RX_POOL_COMMON) {
-        /* no priv for af_xdp/af_packet/rdma_ud  */
+        /* no priv for af_xdp/af_packet */
         mbuf_pool = mt_mempool_create(impl, inf->port, pool_name, mbuf_elements,
                                       MT_MBUF_CACHE_SIZE, 0, 2048);
       } else {
@@ -1345,12 +1333,14 @@ static int dev_if_uinit_tx_queues(struct mt_interface* inf) {
 
   if (!inf->tx_queues) return 0;
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   for (uint16_t q = 0; q < inf->nb_tx_q; q++) {
     tx_queue = &inf->tx_queues[q];
     if (tx_queue->active) {
       warn("%s(%d), tx_queue %d still active\n", __func__, port, q);
     }
   }
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
 
   mt_rte_free(inf->tx_queues);
   inf->tx_queues = NULL;
@@ -1721,17 +1711,22 @@ int mt_dev_put_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue) {
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   tx_queue = &inf->tx_queues[queue_id];
   if (!tx_queue->active) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
   if (queue != tx_queue) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d ctx mismatch\n", __func__, port, queue_id);
     return -EIO;
   }
 
   tx_queue->active = false;
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+
   info("%s(%d), q %d\n", __func__, port, queue_id);
   return 0;
 }
@@ -1747,17 +1742,22 @@ int mt_dev_tx_queue_fatal_error(struct mtl_main_impl* impl, struct mt_tx_queue* 
     return -EIO;
   }
 
+  mt_pthread_mutex_lock(&inf->tx_queues_mutex);
   tx_queue = &inf->tx_queues[queue_id];
   if (!tx_queue->active) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d is not allocated\n", __func__, port, queue_id);
     return -EIO;
   }
   if (queue != tx_queue) {
+    mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
     err("%s(%d), queue %d ctx mismatch\n", __func__, port, queue_id);
     return -EIO;
   }
 
   tx_queue->fatal_error = true;
+  mt_pthread_mutex_unlock(&inf->tx_queues_mutex);
+
   err("%s(%d), q %d masked as fatal error\n", __func__, port, queue_id);
   return 0;
 }
@@ -2048,10 +2048,6 @@ int mt_dev_if_uinit(struct mtl_main_impl* impl) {
       mt_dev_xdp_uinit(inf);
     }
 
-    if (mt_pmd_is_rdma_ud(impl, i)) {
-      mt_dev_rdma_uinit(inf);
-    }
-
     if (inf->pad) {
       rte_pktmbuf_free(inf->pad);
       inf->pad = NULL;
@@ -2100,8 +2096,7 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     inf->port = i;
 
     /* parse port id */
-    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i) ||
-        mt_pmd_is_rdma_ud(impl, i)) {
+    if (mt_pmd_is_kernel_socket(impl, i) || mt_pmd_is_native_af_xdp(impl, i)) {
       port = impl->kport_info.kernel_if[i];
       port_id = i;
     } else {
@@ -2130,8 +2125,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = parse_driver_info("kernel_socket", &inf->drv_info);
     else if (mt_pmd_is_native_af_xdp(impl, i))
       ret = parse_driver_info("native_af_xdp", &inf->drv_info);
-    else if (mt_pmd_is_rdma_ud(impl, i))
-      ret = parse_driver_info("rdma", &inf->drv_info);
     else
       ret = parse_driver_info(dev_info->driver_name, &inf->drv_info);
     if (ret < 0) {
@@ -2254,9 +2247,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
     if (dev_info->tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM)
       inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 #endif
-
-    /* Disable checksum calculation for RDMA UD backend */
-    if (mt_pmd_is_rdma_ud(impl, i)) inf->feature |= MT_IF_FEATURE_TX_OFFLOAD_IPV4_CKSUM;
 
 #if RTE_VERSION >= RTE_VERSION_NUM(23, 3, 0, 0)
     /* Detect LaunchTime capability */
@@ -2388,15 +2378,6 @@ int mt_dev_if_init(struct mtl_main_impl* impl) {
       ret = mt_dev_xdp_init(inf);
       if (ret < 0) {
         err("%s(%d), native xdp dev init fail %d\n", __func__, i, ret);
-        mt_dev_if_uinit(impl);
-        return -ENOMEM;
-      }
-    }
-
-    if (mt_pmd_is_rdma_ud(impl, i)) {
-      ret = mt_dev_rdma_init(inf);
-      if (ret < 0) {
-        err("%s(%d), rdma dev init fail %d\n", __func__, i, ret);
         mt_dev_if_uinit(impl);
         return -ENOMEM;
       }

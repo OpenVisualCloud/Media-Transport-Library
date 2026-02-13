@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine import udp_app
 
 
@@ -23,7 +24,7 @@ from mtl_engine import udp_app
 def test_udp_sessions_cnt(
     hosts,
     build,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     sleep_us,
     sleep_step,
@@ -32,16 +33,16 @@ def test_udp_sessions_cnt(
     prepare_ramdisk,
 ):
     host = list(hosts.values())[0]
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_librist_udp_sessions_cnt_{sessions_cnt}"
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     udp_app.execute_test_librist(
         build=build,
-        nic_port_list=nic_port_list,
+        nic_port_list=interfaces_list,
         test_time=test_time,
         sleep_us=sleep_us,
         sleep_step=sleep_step,
         sessions_cnt=sessions_cnt,
-        capture_cfg=capture_cfg,
         host=host,
     )

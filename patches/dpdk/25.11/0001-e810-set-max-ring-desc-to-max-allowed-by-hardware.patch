@@ -1,0 +1,26 @@
+From c4e622441564203a6e8b8586dcab520286d04236 Mon Sep 17 00:00:00 2001
+From: "Kasiewicz, Marek" <marek.kasiewicz@intel.com>
+Date: Mon, 31 Mar 2025 11:42:58 +0000
+Subject: [PATCH 1/6] e810: set max ring desc to max allowed by hardware
+
+Signed-off-by: Kasiewicz, Marek <marek.kasiewicz@intel.com>
+---
+ drivers/net/intel/iavf/iavf_rxtx.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/intel/iavf/iavf_rxtx.h b/drivers/net/intel/iavf/iavf_rxtx.h
+index 1641bfe59a..9502321be0 100644
+--- a/drivers/net/intel/iavf/iavf_rxtx.h
++++ b/drivers/net/intel/iavf/iavf_rxtx.h
+@@ -16,7 +16,7 @@
+ /* In QLEN must be whole number of 32 descriptors. */
+ #define IAVF_ALIGN_RING_DESC      32
+ #define IAVF_MIN_RING_DESC        64
+-#define IAVF_MAX_RING_DESC        4096
++#define IAVF_MAX_RING_DESC        (8192 - 32)
+ #define IAVF_DMA_MEM_ALIGN        4096
+ /* Base address of the HW descriptor ring should be 128B aligned. */
+ #define IAVF_RING_BASE_ALIGN      128
+-- 
+2.34.1
+

@@ -96,6 +96,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_mtl_st40_rx_debug);
 enum {
   PROP_ST40_RX_BUFFER_SIZE = PROP_GENERAL_MAX,
   PROP_ST40_RX_TIMEOUT_MBUF_GET,
+  PROP_ST40_RX_INCLUDE_METADATA_IN_BUFFER,
   PROP_MAX
 };
 
@@ -107,8 +108,6 @@ static GstStaticPadTemplate gst_mtl_st40_rx_src_pad_template =
 G_DEFINE_TYPE_WITH_CODE(Gst_Mtl_St40_Rx, gst_mtl_st40_rx, GST_TYPE_BASE_SRC,
                         GST_DEBUG_CATEGORY_INIT(gst_mtl_st40_rx_debug, "mtl_st40_rx", 0,
                                                 "MTL St2110 st40 transmission src"));
-
-#define IS_POWER_OF_2(x) (((x) & ((x)-1)) == 0)
 
 GST_ELEMENT_REGISTER_DEFINE(mtl_st40_rx, "mtl_st40_rx", GST_RANK_NONE,
                             GST_TYPE_MTL_ST40_RX);
@@ -131,6 +130,8 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
                                                  void* usrptr);
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
                                                   SessionPortArgs* portArgs);
+static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
+    struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size);
 
 static gint gst_mtl_st40_rx_mbuff_available(void* priv) {
   Gst_Mtl_St40_Rx* src = (Gst_Mtl_St40_Rx*)priv;
@@ -179,6 +180,12 @@ static void gst_mtl_st40_rx_class_init(Gst_Mtl_St40_RxClass* klass) {
       g_param_spec_uint("timeout", "Timeout for Mbuf",
                         "Timeout in seconds for getting mbuf", 0, G_MAXUINT, 10,
                         G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_ST40_RX_INCLUDE_METADATA_IN_BUFFER,
+      g_param_spec_boolean("include-metadata-in-buffer", "Include Metadata in Buffer",
+                           "Whether to include metadata in the output buffer", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 static guint gst_mtl_st40_rx_parse_port_arguments(struct st40_rx_ops* ops_rx,
@@ -319,6 +326,9 @@ static void gst_mtl_st40_rx_set_property(GObject* object, guint prop_id,
     case PROP_ST40_RX_TIMEOUT_MBUF_GET:
       self->timeout_mbuf_get_seconds = g_value_get_uint(value);
       break;
+    case PROP_ST40_RX_INCLUDE_METADATA_IN_BUFFER:
+      self->include_metadata_in_buffer = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -341,6 +351,9 @@ static void gst_mtl_st40_rx_get_property(GObject* object, guint prop_id, GValue*
       break;
     case PROP_ST40_RX_TIMEOUT_MBUF_GET:
       g_value_set_uint(value, src->timeout_mbuf_get_seconds);
+      break;
+    case PROP_ST40_RX_INCLUDE_METADATA_IN_BUFFER:
+      g_value_set_boolean(value, src->include_metadata_in_buffer);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
@@ -372,42 +385,120 @@ static void* gst_mtl_st40_rx_get_mbuf_with_timeout(Gst_Mtl_St40_Rx* src,
   return mbuf;
 }
 
+static struct st40_rfc8331_payload_hdr* gst_mtl_st40_rx_shift_payload_hdr(
+    struct st40_rfc8331_payload_hdr* payload_hdr, int udw_size) {
+  gint package_size;
+  gint payload_len;
+
+  package_size = ((WORD_10_BIT_ALIGN + udw_size) * USER_DATA_WORD_BIT_SIZE) / BYTE_SIZE;
+  payload_len = sizeof(struct st40_rfc8331_payload_hdr) -
+                (package_size % WORD_10_BIT_ALIGN) + package_size;
+
+  return (struct st40_rfc8331_payload_hdr*)((uint8_t*)payload_hdr + payload_len);
+}
+
+static GstFlowReturn gst_mtl_st40_rx_check_parity(
+    const struct st40_rfc8331_payload_hdr* payload_hdr) {
+  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.did)) {
+    GST_ERROR("Parity check failed for DID");
+    return GST_FLOW_ERROR;
+  }
+  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.sdid)) {
+    GST_ERROR("Parity check failed for SDID");
+    return GST_FLOW_ERROR;
+  }
+  if (!st40_check_parity_bits(payload_hdr->second_hdr_chunk.data_count)) {
+    GST_ERROR("Parity check failed for Data Count");
+    return GST_FLOW_ERROR;
+  }
+  return GST_FLOW_OK;
+}
+
 static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer** buffer,
                                                  void* usrptr) {
   struct st40_rfc8331_rtp_hdr* hdr;
-  struct st40_rfc8331_payload_hdr *payload_hdr, payload_hdr_swapped;
+  struct st40_rfc8331_payload_hdr* payload_hdr;
   GstMapInfo dest_info;
-  guint16 data, fill_size;
+  guint16 data;
   gint udw_size;
+  guint buffer_size = 0, meta_offset, anc_count;
 
   hdr = (struct st40_rfc8331_rtp_hdr*)usrptr;
+  anc_count = hdr->first_hdr_chunk.anc_count;
 
-  payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
-
-  hdr->swapped_first_hdr_chunk = ntohl(hdr->swapped_first_hdr_chunk);
-
-  payload_hdr_swapped.swapped_second_hdr_chunk =
-      ntohl(payload_hdr->swapped_second_hdr_chunk);
-  udw_size = payload_hdr_swapped.second_hdr_chunk.data_count & 0xff;
-
-  if (udw_size == 0) {
-    GST_ERROR("Ancillary data size is 0");
+  if (anc_count > ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT) {
+    GST_ERROR("Ancillary data count: %d must not be bigger then %d", anc_count,
+              ST40_RFC8331_PAYLOAD_MAX_ANCILLARY_COUNT);
     return GST_FLOW_ERROR;
-  } else if (src->udw_size == 0) {
-    src->udw_size = udw_size;
-    src->anc_data = (char*)malloc(udw_size);
-  } else if (src->udw_size != udw_size) {
-    GST_INFO("Size of received ancillary data has changed");
-    if (src->anc_data) {
-      free(src->anc_data);
-      src->anc_data = NULL;
-    }
-
-    src->udw_size = udw_size;
-    src->anc_data = (char*)malloc(udw_size);
   }
 
-  *buffer = gst_buffer_new_allocate(NULL, src->udw_size, NULL);
+  if (anc_count == 0) {
+    *buffer = gst_buffer_new_allocate(NULL, 0, NULL);
+    if (!*buffer) {
+      GST_ERROR("Failed to allocate empty buffer");
+      return GST_FLOW_ERROR;
+    }
+    return GST_FLOW_OK;
+  }
+
+  /* local is fine anc_count will not be bigger than 20 and less than 0 */
+  guint8* anc_data[anc_count];
+  guint8 anc_data_count[anc_count];
+
+  payload_hdr = (struct st40_rfc8331_payload_hdr*)(&hdr[1]);
+  for (int i = 0; i < anc_count; i++) {
+    payload_hdr->swapped_first_hdr_chunk = ntohl(payload_hdr->swapped_first_hdr_chunk);
+    payload_hdr->swapped_second_hdr_chunk = ntohl(payload_hdr->swapped_second_hdr_chunk);
+    if (gst_mtl_st40_rx_check_parity(payload_hdr) != GST_FLOW_OK) {
+      for (int j = 0; j < i; j++) free(anc_data[j]);
+      return GST_FLOW_ERROR;
+    }
+
+    udw_size = payload_hdr->second_hdr_chunk.data_count & 0xff;
+    anc_data_count[i] = udw_size;
+    meta_offset = 0;
+    buffer_size += udw_size;
+
+    if (src->include_metadata_in_buffer) {
+      buffer_size += ST40_BYTE_SIZE_OF_PAYLOAD_METADATA;
+      anc_data[i] = malloc(udw_size + ST40_BYTE_SIZE_OF_PAYLOAD_METADATA);
+    } else {
+      anc_data[i] = malloc(udw_size);
+    }
+
+    if (!anc_data[i]) {
+      GST_ERROR("Failed to allocate memory for ancillary data");
+      for (int j = 0; j < i; j++) free(anc_data[j]);
+      return GST_FLOW_ERROR;
+    }
+
+    if (src->include_metadata_in_buffer) {
+      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.c;
+      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.line_number;
+      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.horizontal_offset;
+      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.s;
+      anc_data[i][meta_offset++] = payload_hdr->first_hdr_chunk.stream_num;
+      anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.did & 0xff;
+      anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.sdid & 0xff;
+      anc_data[i][meta_offset++] = payload_hdr->second_hdr_chunk.data_count & 0xff;
+    }
+
+    payload_hdr->swapped_second_hdr_chunk = htonl(payload_hdr->swapped_second_hdr_chunk);
+
+    for (int d = 0; d < udw_size; d++) {
+      data = st40_get_udw(d + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
+      if (!st40_check_parity_bits(data)) {
+        GST_ERROR("Ancillary data parity bits check failed, data=0x%03x", data & 0x3FF);
+        for (int j = 0; j <= i; j++) free(anc_data[j]);
+        return GST_FLOW_ERROR;
+      }
+      anc_data[i][d + meta_offset] = data & 0xff;
+    }
+
+    payload_hdr = gst_mtl_st40_rx_shift_payload_hdr(payload_hdr, udw_size);
+  }
+
+  *buffer = gst_buffer_new_allocate(NULL, buffer_size, NULL);
   if (!*buffer) {
     GST_ERROR("Failed to allocate space for the buffer");
     return GST_FLOW_ERROR;
@@ -415,24 +506,23 @@ static GstFlowReturn gst_mtl_st40_rx_fill_buffer(Gst_Mtl_St40_Rx* src, GstBuffer
 
   if (!gst_buffer_map(*buffer, &dest_info, GST_MAP_WRITE)) {
     GST_ERROR("Failed to map the buffer");
+    for (int i = 0; i < anc_count; i++) free(anc_data[i]);
     return GST_FLOW_ERROR;
   }
 
-  for (int i = 0; i < udw_size; i++) {
-    data = st40_get_udw(i + 3, (uint8_t*)&payload_hdr->second_hdr_chunk);
-    if (!st40_check_parity_bits(data)) {
-      GST_ERROR("Ancillary data parity bits check failed");
-      return GST_FLOW_ERROR;
-    }
-    src->anc_data[i] = data & 0xff;
+  guint fill_size = 0;
+  for (int i = 0; i < anc_count; i++) {
+    fill_size +=
+        gst_buffer_fill(*buffer, fill_size, anc_data[i], anc_data_count[i] + meta_offset);
+    free(anc_data[i]);
   }
 
-  fill_size = gst_buffer_fill(*buffer, 0, src->anc_data, udw_size);
   gst_buffer_unmap(*buffer, &dest_info);
 
-  if (fill_size != src->udw_size) {
-    GST_ERROR("Failed to fill buffer");
-    return GST_FLOW_ERROR;
+  if (fill_size != buffer_size) {
+    GST_ERROR("Failed to fill buffer (buffer size = %d, fill size = %d)", buffer_size,
+              fill_size);
+    ;
   }
 
   return GST_FLOW_OK;
@@ -477,8 +567,6 @@ static GstFlowReturn gst_mtl_st40_rx_create(GstBaseSrc* basesrc, guint64 offset,
 
 static void gst_mtl_st40_rx_finalize(GObject* object) {
   Gst_Mtl_St40_Rx* src = GST_MTL_ST40_RX(object);
-
-  if (src->anc_data) free(src->anc_data);
 
   if (src->rx_handle) {
     if (st40_rx_free(src->rx_handle)) {

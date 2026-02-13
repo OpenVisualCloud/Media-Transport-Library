@@ -5,6 +5,7 @@
 #include "mt_main.h"
 
 #include "datapath/mt_queue.h"
+#include "deprecated/udp/udp_rxq.h"
 #include "dev/mt_dev.h"
 #include "mt_admin.h"
 #include "mt_arp.h"
@@ -22,7 +23,6 @@
 #include "mt_stat.h"
 #include "mt_util.h"
 #include "st2110/pipeline/st_plugin.h"
-#include "udp/udp_rxq.h"
 
 enum mtl_port mt_port_by_id(struct mtl_main_impl* impl, uint16_t port_id) {
   int num_ports = mt_num_ports(impl);
@@ -422,8 +422,7 @@ mtl_handle mtl_init(struct mtl_init_params* p) {
 
   for (int i = 0; i < num_ports; i++) {
     pmd = p->pmd[i];
-    if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP ||
-        pmd == MTL_PMD_RDMA_UD) {
+    if (pmd == MTL_PMD_KERNEL_SOCKET || pmd == MTL_PMD_NATIVE_AF_XDP) {
       socket[i] = mt_socket_get_numa(kport_info.kernel_if[i]);
     } else if (pmd != MTL_PMD_DPDK_USER) {
       socket[i] = mt_dev_get_socket_id(kport_info.dpdk_port[i]);
@@ -629,7 +628,14 @@ err_exit:
 
 int mtl_uninit(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
-  struct mtl_init_params* p = mt_get_user_params(impl);
+  struct mtl_init_params* p;
+
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return -EINVAL;
+  }
+
+  p = mt_get_user_params(impl);
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -661,6 +667,11 @@ int mtl_uninit(mtl_handle mt) {
 int mtl_start(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return -EINVAL;
+  }
+
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EIO;
@@ -671,6 +682,11 @@ int mtl_start(mtl_handle mt) {
 
 int mtl_stop(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
+
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return -EINVAL;
+  }
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1202,6 +1218,11 @@ uint16_t mtl_udma_completed(mtl_udma_handle handle, const uint16_t nb_cpls) {
 enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
 
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return MTL_RSS_MODE_MAX;
+  }
+
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return MTL_RSS_MODE_MAX;
@@ -1212,6 +1233,11 @@ enum mtl_rss_mode mtl_rss_mode_get(mtl_handle mt) {
 
 enum mtl_iova_mode mtl_iova_mode_get(mtl_handle mt) {
   struct mtl_main_impl* impl = mt;
+
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return MTL_IOVA_MODE_MAX;
+  }
 
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
@@ -1233,10 +1259,16 @@ int mtl_port_ip_info(mtl_handle mt, enum mtl_port port, uint8_t ip[MTL_IP_ADDR_L
                      uint8_t netmask[MTL_IP_ADDR_LEN], uint8_t gateway[MTL_IP_ADDR_LEN]) {
   struct mtl_main_impl* impl = mt;
 
+  if (!impl) {
+    err("%s, null handle\n", __func__);
+    return -EINVAL;
+  }
+
   if (impl->type != MT_HANDLE_MAIN) {
     err("%s, invalid type %d\n", __func__, impl->type);
     return -EINVAL;
   }
+
   if (port >= mt_num_ports(impl)) {
     err("%s, invalid port %d\n", __func__, port);
     return -EINVAL;

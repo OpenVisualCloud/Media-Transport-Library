@@ -1,0 +1,84 @@
+name: nightly-gtest
+on:
+  # allow manually trigger
+  workflow_dispatch:
+  schedule:
+  - cron: '0 20 * * *' # Every day at 8 PM UTC
+permissions:
+  contents: read
+jobs:
+  run-gtest:
+    concurrency:
+      group: gtest-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
+      cancel-in-progress: true
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
+    timeout-minutes: 300
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: '${{ github.ref }}'
+      - uses: ./.github/actions/build
+      - name: 'preparation: Kill MtlManager and pytest routines'
+        run: |
+          sudo pkill -9 -f "gtest.sh" || true
+          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
+          sudo killall -SIGINT pipenv || true
+          sudo killall -SIGINT pytest || true
+          sudo killall -SIGINT MtlManager || true
+      - name: 'preparation: Start MtlManager at background'
+        run: |
+          sudo MtlManager &
+      - name: run gtest bare metal
+        if: always()
+        timeout-minutes: 300
+        env:
+          NIGHTLY: 1
+          EXIT_ON_FAILURE: 0
+          LOG_FILE: "${{ github.workspace }}/gtest.log"
+          TEST_CASE_TIMEOUT: 1800
+        run: |
+          sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"
+      - name: 'cleanup: Kill test processes'
+        if: always()
+        run: |
+          sudo pkill -9 -f "gtest.sh" || true
+          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
+          sudo killall -SIGINT MtlManager || true
+      - name: 'collect: System status report'
+        if: always()
+        run: |
+          ./script/status_report.sh
+          # Rename to include NIC info
+          for dir in mtl_system_status_*; do
+            if [ -d "$dir" ]; then
+              mv "$dir" "system-info-${{ matrix.nic }}"
+              break
+            fi
+          done
+      - name: "upload report gtest"
+        if: always()
+        id: upload-report-gtest
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-gtest-report-${{ matrix.nic }}
+          path: |
+            gtest.log
+      
+      - name: "upload system info"
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: system-info-${{ matrix.nic }}
+          path: system-info-${{ matrix.nic }}/

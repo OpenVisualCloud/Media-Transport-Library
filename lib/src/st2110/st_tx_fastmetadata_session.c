@@ -188,6 +188,7 @@ static int tx_fastmetadata_session_init_hdr(struct mtl_main_impl* impl,
   uint32_t ssrc = ops->ssrc ? ops->ssrc : s->idx + 0x323450;
   rtp->base.ssrc = htonl(ssrc);
   s->st41_seq_id = 0;
+  s->st41_rtp_time = -1;
 
   info("%s(%d,%d), ip %u.%u.%u.%u port %u:%u\n", __func__, idx, s_port, dip[0], dip[1],
        dip[2], dip[3], s->st41_src_port[s_port], s->st41_dst_port[s_port]);
@@ -270,7 +271,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
 
   if (required_tai) {
     uint64_t ptp_epochs = ptp_time / frame_time;
-    epochs = required_tai / frame_time;
+    epochs = (required_tai + frame_time / 2) / frame_time;
     dbg("%s(%d), required tai %" PRIu64 " ptp_epochs %" PRIu64 " epochs %" PRIu64 "\n",
         __func__, s->idx, required_tai, ptp_epochs, epochs);
     if (epochs < ptp_epochs) {
@@ -291,11 +292,9 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   if (interlaced) {
-    if (second_field) { /* align to odd epoch */
-      if (!(epochs & 0x1)) epochs++;
+    if (second_field) {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_second_field);
-    } else { /* align to even epoch */
-      if (epochs & 0x1) epochs++;
+    } else {
       ST_SESSION_STAT_INC(s, port_user_stats, stat_interlace_first_field);
     }
   }
@@ -314,7 +313,7 @@ static int tx_fastmetadata_session_sync_pacing(struct mtl_main_impl* impl,
   }
 
   pacing->cur_epochs = epochs;
-  pacing->cur_epoch_time = tx_fastmetadata_pacing_time(pacing, epochs);
+  pacing->ptp_time_cursor = tx_fastmetadata_pacing_time(pacing, epochs);
   pacing->pacing_time_stamp = tx_fastmetadata_pacing_time_stamp(pacing, epochs);
   pacing->rtp_time_stamp = pacing->pacing_time_stamp;
   pacing->tsc_time_cursor = (double)mt_get_tsc(impl) + to_epoch;
@@ -770,7 +769,7 @@ static int tx_fastmetadata_session_tasklet_frame(
       pacing->rtp_time_stamp = (uint32_t)frame->tf_meta.timestamp;
     }
     frame->tf_meta.tfmt = ST10_TIMESTAMP_FMT_TAI;
-    frame->tf_meta.timestamp = pacing->cur_epoch_time;
+    frame->tf_meta.timestamp = pacing->ptp_time_cursor;
     frame->tf_meta.rtp_timestamp = pacing->rtp_time_stamp;
     /* init to next field */
     if (ops->interlaced) {
@@ -1387,21 +1386,6 @@ static int tx_fastmetadata_session_init_queue(struct mtl_main_impl* impl,
     flow.dst_port = s->ops.udp_port[i];
     flow.gso_sz = ST_PKT_MAX_ETHER_BYTES;
 
-#ifdef MTL_HAS_RDMA_BACKEND
-    int num_mrs = 1; /* always no tx chain for rdma_ud fmd */
-    void* mrs_bufs[num_mrs];
-    size_t mrs_sizes[num_mrs];
-    if (mt_pmd_is_rdma_ud(impl, port)) {
-      /* register mempool memory to rdma */
-      struct rte_mempool* pool = s->mbuf_mempool_hdr[i];
-      mrs_bufs[0] = mt_mempool_mem_addr(pool);
-      mrs_sizes[0] = mt_mempool_mem_size(pool);
-      flow.num_mrs = num_mrs;
-      flow.mrs_bufs = mrs_bufs;
-      flow.mrs_sizes = mrs_sizes;
-    }
-#endif
-
     s->queue[i] = mt_txq_get(impl, port, &flow);
     if (!s->queue[i]) {
       tx_fastmetadata_session_uinit_queue(impl, s);
@@ -1428,17 +1412,10 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   int ret;
   int idx = s->idx, num_port = ops->num_port;
   char* ports[MTL_SESSION_PORT_MAX];
-  bool rdma_ud = false;
 
   for (int i = 0; i < num_port; i++) ports[i] = ops->port[i];
   ret = mt_build_port_map(impl, ports, s->port_maps, num_port);
   if (ret < 0) return ret;
-
-  /* use dedicated queue for rdma_ud */
-  for (int i = 0; i < num_port; i++) {
-    enum mtl_port port = mt_port_logic2phy(s->port_maps, i);
-    if (mt_pmd_is_rdma_ud(impl, port)) rdma_ud = true;
-  }
 
   s->mgr = mgr;
   if (ops->name) {
@@ -1451,7 +1428,6 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   /* if disable shared queue */
   s->shared_queue = true;
   if (ops->flags & ST41_TX_FLAG_DEDICATE_QUEUE) s->shared_queue = false;
-  if (rdma_ud) s->shared_queue = false;
 
   for (int i = 0; i < num_port; i++) {
     s->st41_dst_port[i] = (ops->udp_port[i]) ? (ops->udp_port[i]) : (10200 + idx * 2);
@@ -1475,7 +1451,6 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   s->tx_mono_pool = mt_user_tx_mono_pool(impl);
   /* manually disable chain or any port can't support chain */
   s->tx_no_chain = mt_user_tx_no_chain(impl) || !tx_fastmetadata_session_has_chain_buf(s);
-  if (rdma_ud) s->tx_no_chain = true;
   s->max_pkt_len = ST_PKT_MAX_ETHER_BYTES - sizeof(struct st41_fmd_hdr);
 
   s->st41_frames_cnt = ops->framebuff_cnt;
@@ -1497,6 +1472,7 @@ static int tx_fastmetadata_session_attach(struct mtl_main_impl* impl,
     return ret;
   }
 
+  s->calculate_time_cursor = true;
   ret = tx_fastmetadata_session_init_pacing(s);
   if (ret < 0) {
     err("%s(%d), init pacing fail %d\n", __func__, idx, ret);

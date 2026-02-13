@@ -91,7 +91,7 @@ extern "C" {
 /**
  * Max allowed number of dma devs
  */
-#define MTL_DMA_DEV_MAX (8)
+#define MTL_DMA_DEV_MAX (32)
 
 /**
  * Max length of a pcap dump filename
@@ -165,6 +165,26 @@ enum mtl_port {
   MTL_PORT_7,     /**< port index: 7 */
 };
 
+struct mtl_debug_port_packet_loss {
+  /**
+   * Debug option for test purposes only.
+   * Enable packet loss simulation on redundant TX streams for debug use only.
+   * Requires MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS to be set.
+   *
+   * The fields below let a caller target specific streams or distribute loss by
+   * percentage. Without these overrides, the flag alone drops an equal share of
+   * packets across redundant streams (currently limited to two).
+   *
+   * Example for two streams if tx_stream_loss_divider is set to 3 and
+   * tx_stream_loss_id is set to 0 on stream 1 and 2 on stream 2:
+   *  stream id 1 |PACKET-1--|DROP------|DROP------|...
+   *  stream id 2 |DROP------|PACKET-2--|DROP------|...
+   *  stream id 3 |DROP------|DROP------|PACKET-3--|...
+   */
+  uint16_t tx_stream_loss_id;
+  uint16_t tx_stream_loss_divider;
+};
+
 #define MTL_PORT_MAX (MTL_PORT_7 + 1)
 
 /**
@@ -220,8 +240,6 @@ enum mtl_pmd_type {
   /** Below PMDs are only for experimental usage, not for production usage. */
   /** experimental, Run MTL directly on kernel socket APIs */
   MTL_PMD_KERNEL_SOCKET = 17,
-  /** experimental, Run MTL directly on RDMA UD with ST2110 packing method */
-  MTL_PMD_RDMA_UD = 18,
   /** experimental, DPDK PMD with address family(kernel) high performance packet
      processing */
   MTL_PMD_DPDK_AF_XDP = 19,
@@ -466,6 +484,11 @@ enum mtl_init_flag {
   MTL_FLAG_RX_UDP_PORT_ONLY = (MTL_BIT64(46)),
   /** not bind current process to NIC numa socket */
   MTL_FLAG_NOT_BIND_PROCESS_NUMA = (MTL_BIT64(47)),
+
+  /** Debug option to enable dropping some percentage of packets for
+   *  testing redundant video streams only works for video, needs the
+   * per port mtl_debug_port_packet_loss to be populated */
+  MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS = (MTL_BIT64(63))
 };
 
 /** MTL port init flag */
@@ -505,11 +528,14 @@ struct mtl_init_params {
    *
    * Below PMDs are only for experimental usage, not for production usage.
    * MTL_PMD_KERNEL_SOCKET, use kernel + ifname, ex: kernel:enp175s0f0.
-   * MTL_PMD_RDMA_UD with ST2110 packing, use rdma_ud + ifname, ex: rdma_ud:enp175s0f0.
    * MTL_PMD_DPDK_AF_XDP, use dpdk_af_xdp + ifname, ex: dpdk_af_xdp:enp175s0f0.
    * MTL_PMD_DPDK_AF_PACKET, use dpdk_af_packet + ifname, ex: dpdk_af_packet:enp175s0f0.
    */
   char port[MTL_PORT_MAX][MTL_PORT_MAX_LEN];
+
+  /** Debug option for test purposes only. See struct mtl_debug_port_packet_loss */
+  struct mtl_debug_port_packet_loss port_packet_loss[MTL_PORT_MAX];
+
   /** Mandatory. The element number in the port array, 1 to MTL_PORT_MAX_LEN */
   uint8_t num_ports;
   /**

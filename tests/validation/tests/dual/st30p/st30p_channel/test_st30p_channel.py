@@ -5,9 +5,9 @@ import os
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
 from mtl_engine.media_files import audio_files
-from tests.xfail import SDBQ1001_audio_channel_check
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize(
     "audio_channel", ["M", "DM", "ST", "LtRt", "51", "71", "222", "SGRP"]
 )
@@ -22,7 +22,8 @@ def test_st30p_channel_dual(
     audio_channel,
     request,
 ):
-    SDBQ1001_audio_channel_check(audio_channel, audio_format, request)
+    if audio_format in ["PCM16", "PCM24"] and audio_channel == "222":
+        pytest.skip("Unsupported parameter combination")
 
     audio_file = audio_files[audio_format]
     host_list = list(hosts.values())

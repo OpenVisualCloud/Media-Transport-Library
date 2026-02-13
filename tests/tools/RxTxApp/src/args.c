@@ -59,7 +59,7 @@ enum st_args_cmd {
   ST_ARG_PAD_INTERVAL,
   ST_ARG_PAD_STATIC,
   ST_ARG_SHAPING,
-  ST_ARG_TIMESTAMP_FIRST_PKT,
+  ST_ARG_EXACT_USER_PACING,
   ST_ARG_TIMESTAMP_EPOCH,
   ST_ARG_TIMESTAMP_DELTA_US,
   ST_ARG_NO_BULK,
@@ -152,7 +152,9 @@ enum st_args_cmd {
   ST_ARG_RSS_SCH_NB,
   ST_ARG_ALLOW_ACROSS_NUMA_CORE,
   ST_ARG_NO_MULTICAST,
-  ST_ARG_TX_USER_PACING_OFFSET,
+  ST_ARG_TX_USER_CLOCK_OFFSET,
+  ST_ARG_AUTO_STOP,
+  ST_ARG_RX_MAX_FILE_SIZE,
   ST_ARG_MAX,
 };
 
@@ -212,7 +214,7 @@ static struct option st_app_args_options[] = {
     {"pad_interval", required_argument, 0, ST_ARG_PAD_INTERVAL},
     {"static_pad", no_argument, 0, ST_ARG_PAD_STATIC},
     {"shaping", required_argument, 0, ST_ARG_SHAPING},
-    {"ts_first_pkt", no_argument, 0, ST_ARG_TIMESTAMP_FIRST_PKT},
+    {"exact_pacing", no_argument, 0, ST_ARG_EXACT_USER_PACING},
     {"ts_delta_us", required_argument, 0, ST_ARG_TIMESTAMP_DELTA_US},
     {"no_bulk", no_argument, 0, ST_ARG_NO_BULK},
     {"tx_display", no_argument, 0, ST_ARG_TX_DISPLAY},
@@ -301,7 +303,10 @@ static struct option st_app_args_options[] = {
     {"rss_sch_nb", required_argument, 0, ST_ARG_RSS_SCH_NB},
     {"allow_across_numa_core", no_argument, 0, ST_ARG_ALLOW_ACROSS_NUMA_CORE},
     {"no_multicast", no_argument, 0, ST_ARG_NO_MULTICAST},
-    {"tx_user_pacing_offset", required_argument, 0, ST_ARG_TX_USER_PACING_OFFSET},
+    {"tx_user_time_offset", required_argument, 0, ST_ARG_TX_USER_CLOCK_OFFSET},
+    {"timestamp_epoch", no_argument, 0, ST_ARG_TIMESTAMP_EPOCH},
+    {"auto_stop", no_argument, 0, ST_ARG_AUTO_STOP},
+    {"rx_max_file_size", required_argument, 0, ST_ARG_RX_MAX_FILE_SIZE},
 
     {0, 0, 0, 0}};
 
@@ -605,8 +610,8 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_PAD_STATIC:
         ctx->tx_static_pad = true;
         break;
-      case ST_ARG_TIMESTAMP_FIRST_PKT:
-        ctx->tx_ts_first_pkt = true;
+      case ST_ARG_EXACT_USER_PACING:
+        ctx->tx_exact_user_pacing = true;
         break;
       case ST_ARG_TIMESTAMP_EPOCH:
         ctx->tx_ts_epoch = true;
@@ -929,8 +934,14 @@ int st_app_parse_args(struct st_app_context* ctx, struct mtl_init_params* p, int
       case ST_ARG_NO_MULTICAST:
         p->flags |= MTL_FLAG_NO_MULTICAST;
         break;
-      case ST_ARG_TX_USER_PACING_OFFSET:
-        ctx->user_pacing.user_pacing_offset = atoi(optarg);
+      case ST_ARG_TX_USER_CLOCK_OFFSET:
+        ctx->user_time.user_time_offset = atoi(optarg);
+        break;
+      case ST_ARG_AUTO_STOP:
+        ctx->auto_stop = true;
+        break;
+      case ST_ARG_RX_MAX_FILE_SIZE:
+        ctx->rx_max_file_size = strtoul(optarg, NULL, 0);
         break;
       case '?':
         break;

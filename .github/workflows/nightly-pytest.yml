@@ -1,0 +1,184 @@
+name: nightly-pytest
+on:
+  # allow manually trigger
+  workflow_dispatch:
+  schedule:
+  - cron: '0 20 * * *' # Every day at 8 PM UTC
+permissions:
+  contents: read
+jobs:
+  run-pytest:
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+        dir:
+          - dma
+          - ffmpeg
+          - gstreamer
+          - kernel_socket
+          - performance
+          - ptp
+          - rss_mode
+          - rx_timing
+          - st20p
+          - st22p
+          - st30p
+          - st41
+          - udp
+          - virtio_user
+          - xdp
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
+    timeout-minutes: 720
+    steps:
+      - name: 'preparation: Harden Runner'
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: '${{ github.ref }}'
+      - uses: ./.github/actions/build
+      - name: 'installation: Install pipenv environment'
+        working-directory: tests/validation
+        id: pipenv-install
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+      - name: Create session ID
+        run: |
+          runner_name=${{ runner.name }}
+          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+      - name: Set PCI device env variable
+        run: |
+          if [ "${{ matrix.nic }}" = "e810" ]; then
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e830" ]; then
+            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
+          fi
+      - name: Generate test framework config files
+        working-directory: tests/validation/configs
+        run: |
+          python3 gen_config.py \
+            --session_id ${{ env.SESSION_ID }} \
+            --build ${{ secrets.RUNNER_BUILD }} \
+            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
+            --pci_device ${{ env.PCI_DEVICE }} \
+            --ip_address 127.0.0.1 \
+            --username ${{ secrets.RUNNER_USERNAME }} \
+            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
+      - name: 'preparation: Kill MtlManager and pytest routines'
+        run: |
+          sudo killall -SIGINT pipenv || true
+          sudo killall -SIGINT pytest || true
+          sudo killall -SIGINT MtlManager || true
+          sudo killall -SIGINT phc2sys || true
+          sudo killall -SIGINT ptp4l || true
+          sudo killall -SIGINT netsniff-ng || true
+      - name: Export workflow tag for PCAP naming
+        shell: bash
+        run: |
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
+      - name: 'preparation: Start MtlManager at background'
+        run: |
+          sudo MtlManager &
+      - name: 'execution: Run nightly-bare-metal tests in virtual environment'
+        working-directory: ./tests/validation
+        run: |
+          .venv/bin/python3 -m pytest \
+            --test_config=./configs/test_config.yaml \
+            --topology_config=./configs/topology_config.yaml \
+            -m nightly \
+            --template=html/index.html \
+            --report=report.html \
+            "./tests/single/${{ matrix.dir }}"
+      - name: 'collect: System status report'
+        if: always()
+        run: |
+          ./script/status_report.sh
+          # Rename to include NIC info
+          for dir in mtl_system_status_*; do
+            if [ -d "$dir" ]; then
+              mv "$dir" "system-info-${{ matrix.nic }}-${{ matrix.dir }}"
+              break
+            fi
+          done
+      - name: "upload report python"
+        if: always()
+        id: upload-report
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-test-report-${{ matrix.nic }}-${{ matrix.dir }}
+          path: ./tests/validation/report.html
+
+      - name: "upload system info"
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: system-info-${{ matrix.nic }}-${{ matrix.dir }}
+          path: ./system-info-${{ matrix.nic }}-${{ matrix.dir }}
+
+  aggregate-python-reports:
+    needs: run-pytest
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 'preparation: Checkout MTL'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download python report artifacts
+        uses: actions/download-artifact@f093f21ca4cfa7c75ccbbc2be54da76a0c7e1f05 # v4.4.3
+        with:
+          pattern: nightly-test-report-*
+          path: python-reports  # Downloads all artifacts into this directory
+          merge-multiple: false  # Each artifact in separate subdirectory
+      - name: Flatten report directory structure
+        run: |
+          cd python-reports
+          for dir in ./nightly-test-report-*; do
+            if [ -d "$dir" ] && [ -f "$dir/report.html" ]; then
+              mv "$dir/report.html" "${dir}.html"
+              rm -rf "$dir"
+            fi
+          done
+          ls -lh ./*.html
+      - name: Install report dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pandas beautifulsoup4 openpyxl
+      - name: Combine python reports
+        id: combine
+        run: |
+          set -euo pipefail
+          OUTPUT_PATH=$(python3 .github/scripts/combine_reports.py \
+            --directory python-reports \
+            --timestamp \
+            --quiet \
+            --print-path)
+          if [ -z "${OUTPUT_PATH}" ]; then
+            echo "combine_reports.py did not emit an output path" >&2
+            exit 1
+          fi
+          if [ ! -f "${OUTPUT_PATH}" ]; then
+            echo "Combined report not found at ${OUTPUT_PATH}" >&2
+            echo "Available files:"
+            ls -la python-reports
+            exit 1
+          fi
+          echo "Combined report path: ${OUTPUT_PATH}"
+          printf 'report_path=%s\n' "$OUTPUT_PATH" >> "$GITHUB_OUTPUT"
+      - name: Upload combined python report
+        if: always()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: nightly-pytest-combined-report
+          path: ${{ steps.combine.outputs.report_path }}

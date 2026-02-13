@@ -1,5 +1,23 @@
 # Changelog
 
+## Changelog for 26.01
+
+* DPDK: add support for DPDK 25.03, 25.07, and 25.11
+* st40: promote ST40 pipeline API out of experimental tree with full RX/TX support
+* st40: add split-packet and interlaced mode for ancillary data
+* st40: add RX timestamp to st40_frame_info
+* st30: add RX timestamp to st30_frame
+* st20/st30/st40: add TX_FLAG_EXACT_USER_PACING for precise user-controlled pacing
+* st20p: add ST20P_TX_FLAG_DROP_OLD_FRAME to fix buffer overflow in case of epoch drops
+* st20: Change ST2022-7 stream class from D to A; update packet detection and slot allocation
+* GStreamer: add ST40 RX plugin, DMA offload, zero-copy for ST20, PTP/redundant support
+* FFmpeg: add redundant mode support
+* Add unified stats retrieval API
+* ice: add support for driver version 1.16.3, and 2.2.8
+* Add support for e830 NIC
+* Remove RDMA and Intel Media SDK support
+* General bugfixes and stability improvements
+
 ## Changelog for 25.02
 
 * Add plugins for GStreamer audio video and ancillary data

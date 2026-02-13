@@ -45,14 +45,16 @@ extern "C" {
 #define ST20_TX_FLAG_EXT_FRAME (MTL_BIT32(2))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * User control the frame pacing by pass a timestamp in st20_tx_frame_meta,
- * lib will wait until timestamp is reached for each frame.
+ * User control the frame transmission time by passing a timestamp in
+ * st20_tx_frame_meta.timestamp, lib will wait until timestamp is reached for each frame.
+ * The time of sending is aligned with virtual receiver read schedule.
  */
 #define ST20_TX_FLAG_USER_PACING (MTL_BIT32(3))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * If enabled, lib will assign the rtp timestamp to the value in
- * st20_tx_frame_meta(ST10_TIMESTAMP_FMT_MEDIA_CLK is used)
+ * If enabled, lib will assign the rtp timestamp to the value of
+ * t20_tx_frame_meta.timestamp (if needed the value will be converted to
+ * ST10_TIMESTAMP_FMT_MEDIA_CLK)
  */
 #define ST20_TX_FLAG_USER_TIMESTAMP (MTL_BIT32(4))
 /**
@@ -74,13 +76,15 @@ extern "C" {
 #define ST20_TX_FLAG_ENABLE_RTCP (MTL_BIT32(7))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * Set this flag to set rtp timestamp at the time of the first packet egresses from the
- * sender.
+ * It changes how ST20_TX_FLAG_USER_PACING works. if enabled, it does not align the
+ * transmission time to the virtual receiver read schedule. The first
+ * packet of the frame will be sent exactly at the time specified by the user.
  */
-#define ST20_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT (MTL_BIT32(8))
+#define ST20_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(8))
 /**
  * Flag bit in flags of struct st20_tx_ops.
- * Set this flag to set rtp timestamp at the time of the epoch.
+ * If enabled the RTP timestamp will be set exactly to epoch + N *
+ * frame_time, omitting TR_offset.
  */
 #define ST20_TX_FLAG_RTP_TIMESTAMP_EPOCH (MTL_BIT32(9))
 /**
@@ -476,6 +480,8 @@ struct st20_rx_tp_meta {
   enum st_rx_tp_compliant compliant;
   /** the failed cause if compliant is not ST_RX_TP_COMPLIANT_NARROW */
   char failed_cause[64];
+  /** TAI timestamp measured right after first packet of the frame was received */
+  uint64_t receive_timestamp;
 
   /* packets count in current report meta */
   uint32_t pkts_cnt;
@@ -1166,6 +1172,13 @@ struct st20_tx_ops {
                            struct st20_tx_frame_meta* meta);
 
   /**
+   * Optional. Callback triggered when a frame epoch is omitted/skipped in the lib.
+   * This occurs when the transmission timing falls behind schedule and an epoch
+   * must be skipped to maintain synchronization. (or in the user pacing mode
+   * when the user time is behind the lib sending time).
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
+  /**
    * Optional. The event callback when there is some event(vsync or others) happened for
    * this session. Only non-block method can be used in this callback as it run from lcore
    * routine. Args point to the meta data of each event. Ex, cast to struct
@@ -1314,6 +1327,14 @@ struct st22_tx_ops {
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st22_tx_frame_meta* meta);
+
+  /**
+   * Optional. Callback triggered when a frame epoch is omitted/skipped in the lib.
+   * This occurs when the transmission timing falls behind schedule and an epoch
+   * must be skipped to maintain synchronization. (or in the user pacing mode
+   * when the user time is behind the lib sending time).
+   */
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /**
    * Optional. The event callback when there is some event(vsync or others) happened for
@@ -1871,6 +1892,24 @@ int st20_tx_put_mbuf(st20_tx_handle handle, void* mbuf, uint16_t len);
  *   - <0: Error code.
  */
 int st20_tx_get_sch_idx(st20_tx_handle handle);
+
+/**
+ * Retrieve pacing parameters for a tx st2110-20 session.
+ *
+ * @param handle
+ *   The handle to the tx st2110-20(video) session.
+ * @param tr_offset_ns
+ *   Optional output for the tr offset value in nanoseconds.
+ * @param trs_ns
+ *   Optional output for the packet spacing (TRS) value in nanoseconds.
+ * @param vrx_pkts
+ *   Optional output for the VRX packet count.
+ *
+ * @return
+ *    0 on success, negative value otherwise.
+ */
+int st20_tx_get_pacing_params(st20_tx_handle handle, double* tr_offset_ns, double* trs_ns,
+                              uint32_t* vrx_pkts);
 
 /**
  * Retrieve the general statistics(I/O) for one tx st2110-20(video) session.

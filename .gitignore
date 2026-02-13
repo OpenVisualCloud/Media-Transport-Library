@@ -53,6 +53,8 @@ dkms.conf
 
 # Ours
 .*
+!.github/
+!.github/**
 *.log
 *.log_*
 logs_*
@@ -70,7 +72,6 @@ tests/validation/logs
 html/
 test.*
 build/
-core*
 out*
 assets/
 *.pkg
@@ -85,14 +86,14 @@ mtl_system_status_*
 *.pcm
 *.wav
 script/ice-*
-script/dpdk
+script/dpdk-*
+script/*.zip*
 script/xdp-tools
 
 #Generated documentation
 doc/_build
 
 # Gpu direct files
-ecosystem/msdk/_install
 gpu_direct/tests/fff.h
 gpu_direct/subprojects/*
 !gpu_direct/subprojects/gtest.wrap
@@ -100,11 +101,12 @@ _temp*
 gpu_offline_install
 
 # Ecosystem
-script/FFmpeg
+FFmpeg-release-*
 script/dpdk_*
 ecosystem/librist/librsit
-ecosystem/msdk/MediaSDK
 tools/readpcap/readpcap_*
 swig
-openh264
+openh264*
 level-zero-*
+
+venv*

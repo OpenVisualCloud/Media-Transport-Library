@@ -5,6 +5,7 @@ import logging
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.execute import log_result_note
 from mtl_engine.media_files import yuv_files
 
@@ -27,8 +28,7 @@ logger = logging.getLogger(__name__)
 def test_rss_mode_video_performance(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     rss_mode,
     test_config,
@@ -37,18 +37,14 @@ def test_rss_mode_video_performance(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_rss_mode_video_performance_{media_file_info['filename']}_{rss_mode}"
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
     )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="unicast",
         width=media_file_info["width"],
         height=media_file_info["height"],
@@ -74,7 +70,6 @@ def test_rss_mode_video_performance(
             test_time=test_time,
             fail_on_error=False,
             host=host,
-            capture_cfg=capture_cfg,
         )
 
         if passed:
@@ -111,7 +106,6 @@ def test_rss_mode_video_performance(
             test_time=test_time,
             fail_on_error=False,
             host=host,
-            capture_cfg=capture_cfg,
         )
 
         if passed:

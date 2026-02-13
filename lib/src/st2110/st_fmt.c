@@ -906,16 +906,35 @@ bool st_frame_fmt_equal_transport(enum st_frame_fmt fmt, enum st20_fmt tfmt) {
   return (fmt == to_fmt) ? true : false;
 }
 
+static uint64_t st_muldiv_u64_round_closest(uint64_t value, uint64_t multiplier,
+                                            uint64_t divisor) {
+  /* keep conversions reproducible without relying on floating point */
+  __uint128_t product = (__uint128_t)value * multiplier;
+  __uint128_t quotient = product / divisor;
+  __uint128_t remainder = product - quotient * divisor;
+  __uint128_t half = divisor / 2;
+
+  if (remainder > half) quotient++; /* ties round down to keep jitter bounded */
+
+  return (uint64_t)quotient;
+}
+
 uint32_t st10_tai_to_media_clk(uint64_t tai_ns, uint32_t sampling_rate) {
-  double ts = (double)tai_ns * sampling_rate / NS_PER_S;
-  uint64_t tmstamp64 = ts;
-  uint32_t tmstamp32 = tmstamp64;
-  return tmstamp32;
+  if (!sampling_rate) {
+    err("%s, invalid sampling rate\n", __func__);
+    return 0;
+  }
+
+  return (uint32_t)st_muldiv_u64_round_closest(tai_ns, sampling_rate, NS_PER_S);
 }
 
 uint64_t st10_media_clk_to_ns(uint32_t media_ts, uint32_t sampling_rate) {
-  double ts = (double)media_ts * NS_PER_S / sampling_rate;
-  return ts;
+  if (!sampling_rate) {
+    err("%s, invalid sampling rate\n", __func__);
+    return 0;
+  }
+
+  return st_muldiv_u64_round_closest(media_ts, NS_PER_S, sampling_rate);
 }
 
 int st_draw_logo(struct st_frame* frame, struct st_frame* logo, uint32_t x, uint32_t y) {

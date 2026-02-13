@@ -28,13 +28,10 @@
 | Libgcc_s_seh-1.dll(Windows)     | [GCC Repository](https://gcc.gnu.org/git/?p=gcc.git)                         | Part of GNU glibc /LGPLv2.1                   |
 | Libgcc_s_seh-1.dll (Windows)    | [GCC Repository](https://gcc.gnu.org/git/?p=gcc.git)                         | Part of GNU glibc / LGPLv2.1                  |
 | FFMPEG                          | [FFmpeg](https://git.ffmpeg.org/ffmpeg.git)                                  | GNU Lesser General Public License version 2.1 |
-| MediaSDK                        | [Intel Media SDK](https://github.com/Intel-Media-SDK/MediaSDK)               | MIT License                                   |
 | LibRIST                         | [LibRIST](https://code.videolan.org/rist/librist)                            | BSD-2-Clause                                  |
 | Libbpf                          | [Libbpf](https://github.com/libbpf/libbpf)                                   | LGPL-2.1 OR BSD-2-Clause                      |
 | Libxdp                          | [Libxdp](https://github.com/xdp-project/xdp-tools/tree/master)               | LGPL-2.1 OR BSD-2-Clause                      |
 | Gstreamer                       | [GStreamer](https://github.com/GStreamer/gstreamer)                          | LGPL v2.1                                     |
-| libibverbs                      | [libibverbs](https://github.com/linux-rdma/rdma-core/blob/master/libibverbs) | GPLv2                                         |
-| librdmacm                       | [librdmacm](https://github.com/linux-rdma/rdma-core/tree/master/librdmacm)   | GPLv2                                         |
 | level-zero                      | [Level Zero](https://github.com/oneapi-src/level-zero)                       | MIT                                           |
 | level-zero-dev                  | [Level Zero Dev](https://github.com/oneapi-src/level-zero)                   | MIT                                           |
 | xpu-smi                         | [XPU SMI](https://github.com/intel/xpumanager)                               | MIT                                           |

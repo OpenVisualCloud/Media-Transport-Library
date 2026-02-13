@@ -22,18 +22,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
-env:
-  # Customize the env if
-  BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.03'
-  # Bellow ENV variables are required to be defined on runner side:
-  TEST_PF_PORT_P: '0000:49:00.0'
-  TEST_PF_PORT_R: '0000:49:00.1'
-  TEST_PORT_P: '0000:49:01.1'
-  TEST_PORT_R: '0000:49:11.1'
-  # TEST_DMA_PORT_P: '0000:6a:01.0'
-  # TEST_DMA_PORT_R: '0000:6f:01.0'
-
 permissions:
   contents: read
 
@@ -43,7 +31,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
-      changed: ${{ steps.filter.outputs.linux_gtest == 'true' }}
+      changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -52,27 +40,32 @@ jobs:
         with:
           filters: .github/path_filters.yml
 
-  gtest-build-mtl:
+  run-gtest-tests:
     needs: gtest-check-for-changes
-    if: github.repository == 'OpenVisualCloud/Media-Transport-Library' && (needs.gtest-check-for-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: [Linux, self-hosted, DPDK]
-    timeout-minutes: 60
-
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
     steps:
       - name: Harden Runner
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
 
-      - name: Make sure valid ownership is applied on runner directory tree
-        run: sudo chown -R iaac:iaac /home/actions-runner/_work
-        
       - name: Checkout MTL
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: '${{ inputs.branch-to-checkout || github.sha || github.ref }}'
 
       - name: Install the build dependency
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         run: |
           sudo apt-get update -y && \
           sudo apt-get install -y \
@@ -86,92 +79,17 @@ jobs:
           sudo apt-get autoremove -y
 
       - name: Build
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
         run: |
-          sudo ./build.sh
+          sudo su && ./build.sh
           sudo ldconfig
 
-      - name: Check if Kahawai driver version is loaded
+      - name: Check and build ice driver if needed
         run: |
-          sudo dmesg | grep "Intel(R) Ethernet Connection .* version Kahawai.*"
+          if ! sudo modinfo ice | grep -Ei '^version:[[:space:]]*Kahawai_'; then ./script/build_ice_driver.sh; fi
 
-  gtest-perform-tests:
-    needs: [gtest-check-for-changes, gtest-build-mtl]
-    if: github.repository == 'OpenVisualCloud/Media-Transport-Library' && (needs.gtest-check-for-changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
-    runs-on: [Linux, self-hosted, DPDK]
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
-
-      - name: Kill previous gtest routine
-        run: |
-          sudo killall -SIGINT KahawaiTest || true
-          sudo killall -SIGINT KahawaiUfdTest || true
-          sudo killall -SIGINT KahawaiUplTest || true
-          sudo killall -SIGINT MtlManager || true
-
-      - name: Binding network adapter
-        run: |
-          sudo nicctl create_tvf "${TEST_PF_PORT_P}" && \
-          sudo nicctl create_tvf "${TEST_PF_PORT_R}"
-
-      - name: Start MtlManager at background
-        run: |
-          sudo MtlManager &
-
-      - name: Start digest_1080p_timeout_interval test
-        run: |
-          sudo ./build/tests/KahawaiTest --auto_start_stop --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --dma_dev "${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=*digest_1080p_timeout_interval*
-
-      - name: Run ufd test case
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}"
-
-      - name: Run shared ufd test case
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --queue_mode shared
-
-      - name: Run shared ufd test case with lcore
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --queue_mode shared --udp_lcore
-
-      - name: Run ufd test case with rss
-        run: |
-          sudo ./build/tests/KahawaiUfdTest --p_port "${TEST_PORT_P}" --r_port "${TEST_PORT_R}" --rss_mode l3_l4
-
-      - name: Run udp ld preload test case
-        run: |
-          sudo MUFD_CFG=.github/workflows/upl_gtest.json LD_PRELOAD=/usr/local/lib/x86_64-linux-gnu/libmtl_udp_preload.so ./build/tests/KahawaiUplTest --p_sip 192.168.2.80 --r_sip 192.168.2.81
-
-      - name: Run st2110-1x test cases
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --gtest_filter=*st1*:*St1*"
-
-      - name: Run st2110-20 test cases
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --gtest_filter=*st20*:*St20*:*st21*:*St21*"
-
-      - name: Run st2110-22 test cases
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --gtest_filter=*st22*:*St22*"
-
-      - name: Run st2110-3x test cases
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --gtest_filter=*st3*:*St3*"
-
-      - name: Run st2110-4x test cases
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --gtest_filter=*st4*:*St4*"
-
-      - name: Run st2110 st20p test case in simulation ENA environment [pacing_way=auto]
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way auto --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*"
-
-      - name: Run st2110 st20p test case in simulation ENA environment [pacing_way=tsc]
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port \"${TEST_PORT_P}\" --r_port \"${TEST_PORT_R}\" --dma_dev \"${TEST_DMA_PORT_P},${TEST_DMA_PORT_R}\" --rss_mode l3_l4 --pacing_way tsc --iova_mode pa --multi_src_port --gtest_filter=Main.*:St20p*:-*ext*"
-
-      - name: Run st2110 st20p test case with kernel loopback
-        run: "sudo ./build/tests/KahawaiTest --auto_start_stop --p_port kernel:lo --r_port kernel:lo --gtest_filter=St20p*"
-
-      - name: Kill gtest routines that could have been left
-        if: always()
-        run: |
-          sudo killall -SIGINT KahawaiTest || true
-          sudo killall -SIGINT KahawaiUfdTest || true
-          sudo killall -SIGINT KahawaiUplTest || true
-          sudo killall -SIGINT MtlManager || true
+      - name: run gtest bare metal
+        if: ${{ needs.gtest-check-for-changes.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' }}
+        env:
+          NIGHTLY: 0
+        run: sudo -E "${{ github.workspace }}/.github/scripts/gtest.sh"

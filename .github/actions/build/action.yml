@@ -1,0 +1,15 @@
+name: Build
+runs:
+  using: composite
+  steps:
+    - name: Setup environment and build
+      shell: bash
+      env:
+        SETUP_BUILD_AND_INSTALL_DPDK: '0'
+        SETUP_BUILD_AND_INSTALL_ICE_DRIVER: '0'
+        SETUP_BUILD_AND_INSTALL_EBPF_XDP: '0'
+        SETUP_BUILD_AND_INSTALL_GPU_DIRECT: '0'
+        MTL_BUILD_AND_INSTALL: '1'
+        ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: '1'
+        ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: '1'
+      run: bash .github/scripts/setup_environment.sh

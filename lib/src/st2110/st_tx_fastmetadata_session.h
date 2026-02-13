@@ -7,7 +7,7 @@
 
 #include "st_main.h"
 
-#define ST_TX_FASTMETADATA_PREFIX "TC_"
+#define ST_TX_FASTMETADATA_PREFIX "TF_"
 
 int st_tx_fastmetadata_sessions_sch_uinit(struct mtl_sch_impl* sch);
 

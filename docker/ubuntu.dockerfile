@@ -10,7 +10,6 @@ FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:149d67e29f765f4db62aa5
 LABEL maintainer="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 
 ARG NPROC=20
-ARG DPDK_VER=25.03
 ARG PREFIX_PATH=/opt/intel
 ARG MTL_REPO=${PREFIX_PATH}/mtl
 ENV XDP_REPO=${PREFIX_PATH}/xdp
@@ -49,8 +48,9 @@ RUN git clone https://github.com/DPDK/dpdk.git "${DPDK_REPO}" && \
 
 # Build DPDK with Media-Transport-Library patches
 WORKDIR "${DPDK_REPO}"
-RUN git checkout v$DPDK_VER && \
-    git switch -c v$DPDK_VER && \
+RUN source "${MTL_REPO}/versions.env" && \
+    git checkout "v${DPDK_VER}" && \
+    git switch -c "v${DPDK_VER}" && \
     git config --global user.email "you@example.com" && \
     git config --global user.name "Your Name" && \
     git am "${MTL_REPO}/patches/dpdk/${DPDK_VER}/"*.patch && \
@@ -86,7 +86,7 @@ FROM "${IMAGE_CACHE_REGISTRY}/library/ubuntu:22.04@sha256:149d67e29f765f4db62aa5
 LABEL org.opencontainers.image.authors="andrzej.wilczynski@intel.com,dawid.wesierski@intel.com,marek.kasiewicz@intel.com"
 LABEL org.opencontainers.image.url="https://github.com/OpenVisualCloud/Media-Transport-Library"
 LABEL org.opencontainers.image.title="Intel® Media Transport Library"
-LABEL org.opencontainers.image.description="Intel® Media Transport Library (MTL), a real-time media transport(DPDK, AF_XDP, RDMA) stack for both raw and compressed video based on COTS hardware"
+LABEL org.opencontainers.image.description="Intel® Media Transport Library (MTL), a real-time media transport(DPDK, AF_XDP) stack for both raw and compressed video based on COTS hardware"
 LABEL org.opencontainers.image.documentation="https://openvisualcloud.github.io/Media-Transport-Library/README.html"
 LABEL org.opencontainers.image.version="1.26.0"
 LABEL org.opencontainers.image.vendor="Intel® Corporation"

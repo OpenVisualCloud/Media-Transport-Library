@@ -7,6 +7,7 @@ import pytest
 from mtl_engine.media_files import yuv_files_interlace
 
 
+@pytest.mark.dual
 @pytest.mark.parametrize("file", yuv_files_interlace.keys())
 def test_interlace_dual(hosts, build, media, nic_port_list, test_time, file):
     st20p_file = yuv_files_interlace[file]

@@ -84,10 +84,34 @@
 #define MTL_RX_DEV_ARGS                                                                    \
   {"p_port",           "mtl p port",  OFFSET(devArgs.port[MTL_PORT_P]),                    \
    AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                                       \
+      {"r_port",           "mtl r port",  OFFSET(devArgs.port[MTL_PORT_R]),                \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                                   \
       {"p_sip",       "mtl local ip", OFFSET(devArgs.sip[MTL_PORT_P]), AV_OPT_TYPE_STRING, \
        {.str = NULL}, .flags = DEC},                                                       \
+      {"r_sip",                                                                            \
+       "mtl local r ip",                                                                   \
+       OFFSET(devArgs.sip[MTL_PORT_R]),                                                    \
+       AV_OPT_TYPE_STRING,                                                                 \
+       {.str = NULL},                                                                      \
+       .flags = DEC},                                                                      \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                                   \
+      {"r_rx_queues",                                                                      \
+       "mtl r_port device amount of rx queues",                                            \
+       OFFSET(devArgs.rx_queues_cnt[MTL_PORT_R]),                                          \
+       AV_OPT_TYPE_INT,                                                                    \
+       {.i64 = 16},                                                                        \
+       -1,                                                                                 \
+       INT_MAX,                                                                            \
+       DEC},                                                                               \
+      {"r_tx_queues",                                                                      \
+       "mtl r_port device amount of tx queues",                                            \
+       OFFSET(devArgs.tx_queues_cnt[MTL_PORT_R]),                                          \
+       AV_OPT_TYPE_INT,                                                                    \
+       {.i64 = 16},                                                                        \
+       -1,                                                                                 \
+       INT_MAX,                                                                            \
+       DEC},                                                                               \
       {"rx_queues",                                                                        \
        "mtl device amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_P]),                                          \
@@ -105,6 +129,8 @@
 #define MTL_RX_PORT_ARGS                                                            \
   {"p_rx_ip",          "p rx ip",     OFFSET(portArgs.sip[MTL_SESSION_PORT_P]),     \
    AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                                \
+      {"r_rx_ip",          "r rx ip",     OFFSET(portArgs.sip[MTL_SESSION_PORT_R]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = DEC},                            \
       {"udp_port",                                                                  \
        "UDP port",                                                                  \
        OFFSET(portArgs.udp_port),                                                   \
@@ -121,10 +147,34 @@
 #define MTL_TX_DEV_ARGS                                                                    \
   {"p_port",           "mtl p port",  OFFSET(devArgs.port[MTL_PORT_P]),                    \
    AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                       \
+      {"r_port",           "mtl r port",  OFFSET(devArgs.port[MTL_PORT_R]),                \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
       {"p_sip",       "mtl local ip", OFFSET(devArgs.sip[MTL_PORT_P]), AV_OPT_TYPE_STRING, \
        {.str = NULL}, .flags = ENC},                                                       \
+      {"r_sip",                                                                            \
+       "mtl local r ip",                                                                   \
+       OFFSET(devArgs.sip[MTL_PORT_R]),                                                    \
+       AV_OPT_TYPE_STRING,                                                                 \
+       {.str = NULL},                                                                      \
+       .flags = ENC},                                                                      \
       {"dma_dev",          "mtl dma dev", OFFSET(devArgs.dma_dev),                         \
        AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                   \
+      {"r_rx_queues",                                                                      \
+       "mtl r_port device amount of rx queues",                                            \
+       OFFSET(devArgs.rx_queues_cnt[MTL_PORT_R]),                                          \
+       AV_OPT_TYPE_INT,                                                                    \
+       {.i64 = 16},                                                                        \
+       -1,                                                                                 \
+       INT_MAX,                                                                            \
+       ENC},                                                                               \
+      {"r_tx_queues",                                                                      \
+       "mtl r_port device amount of tx queues",                                            \
+       OFFSET(devArgs.tx_queues_cnt[MTL_PORT_R]),                                          \
+       AV_OPT_TYPE_INT,                                                                    \
+       {.i64 = 16},                                                                        \
+       -1,                                                                                 \
+       INT_MAX,                                                                            \
+       ENC},                                                                               \
       {"rx_queues",                                                                        \
        "mtl device amount of rx queues",                                                   \
        OFFSET(devArgs.rx_queues_cnt[MTL_PORT_P]),                                          \
@@ -142,6 +192,8 @@
 #define MTL_TX_PORT_ARGS                                                            \
   {"p_tx_ip",          "p tx ip",     OFFSET(portArgs.dip[MTL_SESSION_PORT_P]),     \
    AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                                \
+      {"r_tx_ip",          "r tx ip",     OFFSET(portArgs.dip[MTL_SESSION_PORT_R]), \
+       AV_OPT_TYPE_STRING, {.str = NULL}, .flags = ENC},                            \
       {"udp_port",                                                                  \
        "UDP port",                                                                  \
        OFFSET(portArgs.udp_port),                                                   \

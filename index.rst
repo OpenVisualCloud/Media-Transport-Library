@@ -45,7 +45,6 @@ Contents
    doc/gpu.md
    gpu_direct/README.md
    doc/plugin.md
-   doc/rdma.md
    doc/rtcp.md
    doc/sdm_appliance.md
    doc/shm_lcore.md
@@ -77,7 +76,6 @@ Ecosystem
    Ffmpeg Plugin <ecosystem/ffmpeg_plugin/README.md>
    plugins/st22_avcodec/README.md
    Librist Support <ecosystem/librist/README.md>
-   MSDK Sample Encode <ecosystem/msdk/README.md>
    OBS Studio <ecosystem/obs_mtl/README.md>
 
 Doxygen
@@ -117,4 +115,4 @@ Experimental features
    doc/experimental/af_packet.md
    doc/experimental/af_xdp.md
    doc/experimental/header_split.md
-   doc/experimental/rdma_ud.md
+

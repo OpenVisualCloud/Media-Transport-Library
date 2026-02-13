@@ -7,6 +7,7 @@
 #include <math.h>
 #include <rte_alarm.h>
 #include <rte_arp.h>
+#include <rte_cpuflags.h>
 #include <rte_errno.h>
 #include <rte_ethdev.h>
 #include <rte_thash.h>
@@ -128,8 +129,7 @@ enum mt_port_type {
   MT_PORT_DPDK_AF_XDP,
   MT_PORT_DPDK_AF_PKT,
   MT_PORT_KERNEL_SOCKET,
-  MT_PORT_NATIVE_AF_XDP,
-  MT_PORT_RDMA_UD,
+  MT_PORT_NATIVE_AF_XDP
 };
 
 enum mt_rl_type {
@@ -157,9 +157,7 @@ enum mt_driver_type {
   /* kernel based socket */
   MT_DRV_KERNEL_SOCKET,
   /* native af xdp */
-  MT_DRV_NATIVE_AF_XDP,
-  /* rdma ud */
-  MT_DRV_IRDMA,
+  MT_DRV_NATIVE_AF_XDP
 };
 
 enum mt_flow_type {
@@ -769,7 +767,6 @@ struct mt_interface {
   struct rte_ether_addr k_mac_addr;
 
   void* xdp;
-  void* rdma;
 };
 
 struct mt_user_info {
@@ -965,7 +962,7 @@ struct mt_rsq_impl {
 /* if launch time enabled */
 #define MT_TXQ_FLOW_F_LAUNCH_TIME (MTL_BIT32(1))
 /* force to use socket, only for MT_DRV_F_KERNEL_BASED */
-#define MT_TXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(1))
+#define MT_TXQ_FLOW_F_FORCE_SOCKET (MTL_BIT32(2))
 
 /* request of tx queue flow */
 struct mt_txq_flow {
@@ -977,11 +974,6 @@ struct mt_txq_flow {
   uint32_t flags;
   /* only for kernel socket */
   uint16_t gso_sz;
-
-  /* only for rdma ud */
-  void** mrs_bufs;
-  size_t* mrs_sizes;
-  int num_mrs;
 };
 
 struct mt_tsq_impl; /* forward delcare */
@@ -1157,22 +1149,6 @@ struct mt_rx_xdp_entry {
   bool skip_udp_port_check;
   bool skip_all_check;
   int mcast_fd;
-};
-
-struct mt_tx_rdma_entry {
-  struct mtl_main_impl* parent;
-  enum mtl_port port;
-  struct mt_txq_flow flow;
-  uint16_t queue_id;
-  struct mt_rdma_tx_queue* txq;
-};
-
-struct mt_rx_rdma_entry {
-  struct mtl_main_impl* parent;
-  enum mtl_port port;
-  struct mt_rxq_flow flow;
-  uint16_t queue_id;
-  struct mt_rdma_rx_queue* rxq;
 };
 
 struct mt_flow_impl {
@@ -1412,13 +1388,6 @@ static inline bool mt_pmd_is_kernel_socket(struct mtl_main_impl* impl,
 static inline bool mt_pmd_is_native_af_xdp(struct mtl_main_impl* impl,
                                            enum mtl_port port) {
   if (MTL_PMD_NATIVE_AF_XDP == mt_get_user_params(impl)->pmd[port])
-    return true;
-  else
-    return false;
-}
-
-static inline bool mt_pmd_is_rdma_ud(struct mtl_main_impl* impl, enum mtl_port port) {
-  if (MTL_PMD_RDMA_UD == mt_get_user_params(impl)->pmd[port])
     return true;
   else
     return false;
@@ -1726,6 +1695,15 @@ static inline bool mt_if_has_hdr_split(struct mtl_main_impl* impl, enum mtl_port
   else
     return false;
 }
+
+#ifdef MTL_SIMULATE_PACKET_DROPS
+static inline bool mt_if_has_packet_loss_simulation(struct mtl_main_impl* impl) {
+  if (mt_get_user_params(impl)->flags & MTL_FLAG_REDUNDANT_SIMULATE_PACKET_LOSS)
+    return true;
+  else
+    return false;
+}
+#endif /* MTL_SIMULATE_PACKET_DROPS */
 
 static inline struct rte_mempool* mt_if_hdr_split_pool(struct mt_interface* inf,
                                                        uint16_t q) {

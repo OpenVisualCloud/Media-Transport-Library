@@ -135,10 +135,10 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
   gstelement_class = GST_ELEMENT_CLASS(klass);
   gstbasesrc_class = GST_BASE_SRC_CLASS(klass);
 
-  gst_element_class_set_metadata(
-      gstelement_class, "MtlRxSt30Src", "Src/Audio",
-      "MTL transmission plugin for SMPTE ST 2110-30 standard (uncompressed audio)",
-      "Dawid Wesierski <dawid.wesierski@intel.com>");
+  gst_element_class_set_metadata(gstelement_class, "MtlRxSt30Src", "Src/Audio",
+                                 "MTL transmission plugin for SMPTE ST 2110-30 "
+                                 "standard (uncompressed audio)",
+                                 "Dawid Wesierski <dawid.wesierski@intel.com>");
 
   gst_element_class_add_static_pad_template(gstelement_class,
                                             &gst_mtl_st30p_rx_src_pad_template);
@@ -157,7 +157,8 @@ static void gst_mtl_st30p_rx_class_init(Gst_Mtl_St30p_RxClass* klass) {
       gobject_class, PROP_ST30P_RX_FRAMEBUFF_NUM,
       g_param_spec_uint("rx-framebuff-num", "Number of framebuffers",
                         "Number of framebuffers to be used for transmission.", 0,
-                        G_MAXUINT, 3, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+                        G_MAXUINT, GST_MTL_DEFAULT_FRAMEBUFF_CNT,
+                        G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property(
       gobject_class, PROP_ST30P_RX_CHANNEL,
@@ -237,7 +238,7 @@ static gboolean gst_mtl_st30p_rx_start(GstBaseSrc* basesrc) {
   if (src->framebuffer_num) {
     ops_rx->framebuff_cnt = src->framebuffer_num;
   } else {
-    ops_rx->framebuff_cnt = 3;
+    ops_rx->framebuff_cnt = GST_MTL_DEFAULT_FRAMEBUFF_CNT;
   }
 
   gst_mtl_common_copy_general_to_session_args(&(src->generalArgs), &(src->portArgs));

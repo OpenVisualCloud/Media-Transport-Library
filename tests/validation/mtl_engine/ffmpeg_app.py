@@ -6,10 +6,12 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 
 from mfd_connect import SSHConnection
-from mtl_engine.RxTxApp import prepare_tcpdump
+from mfd_connect.exceptions import ConnectionCalledProcessError
+from mtl_engine import ip_pools
 
 from . import rxtxapp_config
 from .execute import log_fail, run
@@ -17,34 +19,42 @@ from .execute import log_fail, run
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
 logger = logging.getLogger(__name__)
 
-ip_dict = dict(
-    rx_interfaces="192.168.96.2",
-    tx_interfaces="192.168.96.3",
-    rx_sessions="239.168.85.20",
-    tx_sessions="239.168.85.20",
-)
-
-ip_dict_rgb24_multiple = dict(
-    p_sip_1="192.168.96.2",
-    p_sip_2="192.168.96.3",
-    p_tx_ip_1="239.168.108.202",
-    p_tx_ip_2="239.168.108.203",
-)
-
 # Global variable to store timestamp for consistent logging
 _log_timestamp = None
 
 
 def capture_stdout(proc, proc_name: str):
-    """Capture and log stdout from a process"""
-    if hasattr(proc, "stdout_text"):
-        output = proc.stdout_text
-        if output and output.strip():
-            logger.info(f"{proc_name} Output:\n{output}")
-        return output
-    else:
-        logger.debug(f"No stdout available for {proc_name}")
+    """Capture and log stdout from a process with timeout protection."""
+    if proc is None:
+        logger.debug(f"No process provided for {proc_name}")
         return ""
+
+    output = ""
+
+    def _get_output():
+        nonlocal output
+        try:
+            output = proc.stdout_text
+        except AttributeError:
+            logger.debug(f"No stdout_text attribute for {proc_name}")
+            output = ""
+        except Exception as e:
+            logger.warning(f"Error capturing stdout from {proc_name}: {e}")
+            output = ""
+
+    # Run in thread with timeout to avoid blocking
+    capture_thread = threading.Thread(target=_get_output, daemon=True)
+    capture_thread.start()
+    capture_thread.join(timeout=5)
+
+    if capture_thread.is_alive():
+        logger.warning(f"Timeout capturing stdout from {proc_name}")
+        return ""
+
+    if output and output.strip():
+        logger.info(f"{proc_name} Output:\n{output}")
+
+    return output
 
 
 def get_case_id() -> str:
@@ -63,14 +73,161 @@ def init_test_logging():
 
 
 def sanitize_filename(name: str) -> str:
-    # Replace unsafe characters with underscores
+    """Sanitize filename by replacing unsafe characters."""
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+
+
+def get_process_pid(proc, proc_name: str, host) -> int:
+    """Extract actual process PID using pgrep (not shell PID)."""
+    if not host:
+        return getattr(proc, "pid", None)
+
+    search_term = "ffmpeg" if "ffmpeg" in proc_name.lower() else "RxTxApp"
+    try:
+        result = host.connection.execute_command(f"pgrep -n {search_term}")
+        if result.return_code == 0 and result.stdout.strip():
+            return int(result.stdout.strip())
+    except (ValueError, AttributeError, ConnectionCalledProcessError):
+        pass
+    return getattr(proc, "pid", None)
+
+
+def stop_process(proc, proc_name: str = "process", timeout: int = 5, host=None):
+    """Stop process with hard timeout to prevent hanging.
+
+    Uses threading to ensure we never hang forever. Forcefully kills if needed.
+
+    Args:
+        proc: Process object
+        proc_name: Name for logging
+        timeout: Maximum seconds before force kill
+        host: Host connection object
+    """
+    if not proc:
+        logger.debug(f"{proc_name}: No process to stop")
+        return
+
+    proc_pid = get_process_pid(proc, proc_name, host)
+    logger.debug(f"{proc_name}: Stopping (PID: {proc_pid})")
+
+    def _do_stop():
+        # Step 1: Try graceful stop (max 2 seconds)
+        try:
+            if hasattr(proc, "running") and proc.running:
+                logger.debug(f"{proc_name}: Attempting graceful stop")
+                proc.stop(wait=2)
+                if not proc.running:
+                    logger.debug(f"{proc_name}: Stopped gracefully")
+                    return
+        except Exception as e:
+            logger.debug(f"{proc_name}: Graceful stop failed: {e}")
+
+        # Step 2: SIGTERM by PID
+        if proc_pid and host:
+            try:
+                logger.debug(f"{proc_name}: Sending SIGTERM to PID {proc_pid}")
+                host.connection.execute_command(
+                    f"kill -15 {proc_pid} || true", shell=True
+                )
+                time.sleep(1)
+            except Exception:
+                pass
+
+        # Step 3: Force SIGKILL
+        try:
+            if hasattr(proc, "kill"):
+                proc.kill()
+        except Exception:
+            pass
+
+        if proc_pid and host:
+            try:
+                logger.warning(f"{proc_name}: Force killing PID {proc_pid}")
+                host.connection.execute_command(
+                    f"kill -9 {proc_pid} || true", shell=True
+                )
+            except Exception:
+                pass
+
+    # Run with hard timeout
+    stop_thread = threading.Thread(target=_do_stop, daemon=True)
+    stop_thread.start()
+    stop_thread.join(timeout=timeout)
+
+    if stop_thread.is_alive():
+        logger.error(f"{proc_name}: Stop timeout after {timeout}s, forcing SIGKILL")
+        if proc_pid and host:
+            try:
+                host.connection.execute_command(
+                    f"kill -9 {proc_pid} 2>/dev/null || true"
+                )
+            except Exception:
+                pass
+
+    logger.debug(f"{proc_name}: Stop completed")
+
+
+def _kill_orphaned_processes_impl(host, process_pattern="ffmpeg", exclude_pids=None):
+    """Kill orphaned processes matching pattern."""
+    if not host:
+        return
+
+    exclude_pids = exclude_pids or []
+    exclude_pids_set = {str(pid).strip() for pid in exclude_pids if pid}
+
+    logger.debug(f"Checking for orphaned {process_pattern} processes...")
+    try:
+        # Find all processes matching the pattern
+        result = host.connection.execute_command(f"pgrep -x '{process_pattern}'")
+        if result.return_code == 0 and result.stdout.strip():
+            all_pids = [
+                pid.strip() for pid in result.stdout.strip().split("\n") if pid.strip()
+            ]
+            orphaned_pids = [pid for pid in all_pids if pid not in exclude_pids_set]
+
+            if orphaned_pids:
+                logger.warning(
+                    f"Killing {len(orphaned_pids)} orphaned {process_pattern} process(es): {orphaned_pids}"
+                )
+                for pid in orphaned_pids:
+                    try:
+                        host.connection.execute_command(
+                            f"kill -9 {pid} || true", shell=True
+                        )
+                    except Exception:
+                        pass
+            else:
+                logger.debug(f"No orphaned {process_pattern} processes found")
+    except Exception as e:
+        logger.debug(f"Error in orphan cleanup: {e}")
+
+
+def kill_orphaned_processes(host, process_pattern="ffmpeg", exclude_pids=None):
+    """Kill orphaned processes with timeout protection (max 3 seconds)."""
+    if not host:
+        return
+
+    def _cleanup():
+        try:
+            _kill_orphaned_processes_impl(host, process_pattern, exclude_pids)
+        except Exception as e:
+            logger.debug(f"Exception during orphan cleanup: {e}")
+
+    cleanup_thread = threading.Thread(target=_cleanup, daemon=True)
+    cleanup_thread.start()
+    cleanup_thread.join(timeout=3)
+
+    if cleanup_thread.is_alive():
+        logger.warning(
+            f"Orphan cleanup for {process_pattern} timeout after 3s, continuing"
+        )
 
 
 def execute_test(
     test_time: int,
     build: str,
     host,
+    nic_port_list,
     type_: str,
     video_format: str,
     pg_format: str,
@@ -78,15 +235,10 @@ def execute_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
-    capture_cfg=None,
 ):
-    # Initialize logging for this test
-    init_test_logging()
-
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "ffmpeg_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
 
-    nic_port_list = host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
     match output_format:
         case "yuv":
@@ -97,10 +249,11 @@ def execute_test(
         output_files = create_empty_output_files(output_format, 1, host, build)
         rx_cmd = (
             f"ffmpeg -p_port {nic_port_list[0]} "
-            f"-p_sip {ip_dict['rx_interfaces']} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 "
+            f"-p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i k "
+            f"-init_retry 20 "
             f"{ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
         if tx_is_ffmpeg:
@@ -108,8 +261,8 @@ def execute_test(
                 f"ffmpeg -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
-                f"-p_sip {ip_dict['tx_interfaces']} "
-                f"-p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 "
+                f"-p_sip {ip_pools.tx[0]} "
+                f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -120,13 +273,13 @@ def execute_test(
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_dict['rx_interfaces']} "
+            f"ffmpeg -p_sip {ip_pools.rx[0]} "
             f"-p_port {nic_port_list[0]} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
             f"-p_port {nic_port_list[0]} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20002 "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20002 "
             f"-payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
@@ -137,8 +290,8 @@ def execute_test(
                 f"ffmpeg -video_size {video_size} -f rawvideo "
                 f"-pix_fmt yuv422p10le -i {video_url} "
                 f"-filter:v fps={fps} -p_port {nic_port_list[1]} "
-                f"-p_sip {ip_dict['tx_interfaces']} "
-                f"-p_tx_ip {ip_dict['tx_sessions']} -udp_port 20000 "
+                f"-p_sip {ip_pools.tx[0]} "
+                f"-p_tx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 "
                 f"-payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -149,7 +302,7 @@ def execute_test(
 
     rx_proc = None
     tx_proc = None
-    tcpdump = prepare_tcpdump(capture_cfg, host)
+    timeout = test_time + 90
 
     try:
         # Start RX pipeline first
@@ -157,82 +310,59 @@ def execute_test(
         rx_proc = run(
             rx_cmd,
             cwd=build,
-            timeout=test_time + 60,
+            timeout=timeout,
             testcmd=True,
             host=host,
             background=True,
         )
-        time.sleep(2)
+        time.sleep(5)  # Give RX time to initialize DPDK
 
         # Start TX pipeline
         logger.info("Starting TX pipeline...")
         tx_proc = run(
             tx_cmd,
             cwd=build,
-            timeout=test_time + 60,
+            timeout=timeout,
             testcmd=True,
             host=host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        # Let the test run for the specified duration
-        logger.info(f"Running test for {test_time} seconds...")
-        time.sleep(test_time)
+        # Wait for test duration with proper timeout handling
+        logger.info(f"Running test for {test_time} seconds with timeout {timeout}...")
+        if tx_is_ffmpeg:
+            # FFmpeg TX will complete after test_time, give it a 10s buffer
+            tx_proc.wait(timeout=test_time + 10)
+            logger.info("TX process completed")
+        else:
+            # RxTxApp runs indefinitely, just wait for test duration
+            time.sleep(test_time)
+            logger.info(f"Test duration {test_time}s completed")
 
-        logger.info("Terminating processes...")
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        # Wait a bit for termination
-        time.sleep(2)
-        # Get output after processes have been terminated
-        capture_stdout(rx_proc, "RX")
-        capture_stdout(tx_proc, "TX")
     except Exception as e:
-        log_fail(f"Error during test execution: {e}")
-        # Terminate processes immediately on error
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
+        logger.error(f"Error during test execution: {e}")
         raise
     finally:
-        # Ensure processes are terminated
+        logger.info("Stopping processes...")
+
+        # Stop TX first
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+            stop_process(tx_proc, "TX", timeout=5, host=host)
+
+        # Stop RX second
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
-        if tcpdump:
-            tcpdump.stop()
+            stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Wait for processes to fully terminate
+        time.sleep(1)
+
+        # Clean up any remaining orphaned processes
+        kill_orphaned_processes(host, "ffmpeg")
+        kill_orphaned_processes(host, "RxTxApp")
+
+        # Capture output after processes stopped
+        capture_stdout(rx_proc, "RX")
+        capture_stdout(tx_proc, "TX")
     passed = False
     match output_format:
         case "yuv":
@@ -256,15 +386,14 @@ def execute_test_rgb24(
     test_time: int,
     build: str,
     host,
+    nic_port_list,
     type_: str,
     video_format: str,
     pg_format: str,
     video_url: str,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
-    nic_port_list = host.vfs
     video_size, fps = decode_video_format_16_9(video_format)
     logger.info(f"Creating RX config for RGB24 test with video_format: {video_format}")
     try:
@@ -276,15 +405,14 @@ def execute_test_rgb24(
         return False
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
-        f"-i {video_url} -filter:v fps={fps} -p_port {nic_port_list[1]} "
-        f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+        f"ffmpeg -stream_loop -1 -framerate {fps} -video_size {video_size} -f rawvideo -pix_fmt yuv422p10be "
+        f"-i {video_url} -filter:v format=rgb24 -p_port {nic_port_list[1]} "
+        f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
     rx_proc = None
     tx_proc = None
-    tcpdump = prepare_tcpdump(capture_cfg, host)
 
     try:
         # Start RX pipeline first
@@ -298,6 +426,7 @@ def execute_test_rgb24(
             background=True,
         )
         time.sleep(5)
+
         # Start TX pipeline
         logger.info("Starting TX pipeline...")
         tx_proc = run(
@@ -308,59 +437,35 @@ def execute_test_rgb24(
             host=host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        logger.info(
-            f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
-        )
-        rx_proc.wait()
-        logger.info("RX process completed")
+        logger.info(f"Running test for {test_time} seconds...")
+        time.sleep(test_time)
+        logger.info(f"Test duration {test_time}s completed")
 
-        # Terminate TX process after RX completes
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-            logger.info("TX process killed")
-        rx_output = capture_stdout(rx_proc, "RX")
-        capture_stdout(tx_proc, "TX")
     except Exception as e:
         log_fail(f"Error during test execution: {e}")
-        # Terminate processes immediately on error
-        if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
-        if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # Process might already be terminated - ignore kill errors
-                pass
         raise
     finally:
-        # Final cleanup - ensure processes are terminated
+        logger.info("Stopping processes...")
+
+        # Stop TX (ffmpeg) first - this should stop gracefully
         if tx_proc:
-            try:
-                tx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
+            stop_process(tx_proc, "TX", timeout=5, host=host)
+
+        # Stop RX (RxTxApp) second
         if rx_proc:
-            try:
-                rx_proc.kill()
-            except Exception:
-                # SSH process might already be terminated or unreachable - ignore
-                pass
-        if tcpdump:
-            tcpdump.stop()
+            stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Wait a moment for processes to fully terminate
+        time.sleep(1)
+
+        # Clean up any remaining orphaned processes
+        kill_orphaned_processes(host, "ffmpeg")
+        kill_orphaned_processes(host, "RxTxApp")
+
+        # Capture output after processes stopped
+        rx_output = capture_stdout(rx_proc, "RX")
+        capture_stdout(tx_proc, "TX")
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
         return False
@@ -377,15 +482,33 @@ def execute_test_rgb24_multiple(
     pg_format: str,
     video_url_list: list,
     host,
-    capture_cfg=None,
 ):
-    # Initialize logging for this test
-    init_test_logging()
+    """Execute RGB24 multiple streams test with comprehensive timeout protection."""
+
+    # Maximum allowed runtime: test_time + setup/teardown buffer
+    max_runtime = test_time + 120  # test time + 2 minute buffer
+    start_time = time.time()
+
+    def check_timeout():
+        """Check if we've exceeded max runtime."""
+        elapsed = time.time() - start_time
+        if elapsed > max_runtime:
+            logger.error(
+                f"Test exceeded maximum runtime of {max_runtime}s (elapsed: {elapsed:.1f}s)"
+            )
+            return True
+        return False
+
     video_size_1, fps_1 = decode_video_format_16_9(video_format_list[0])
     video_size_2, fps_2 = decode_video_format_16_9(video_format_list[1])
     logger.info(
         f"Creating RX config for RGB24 multiple test with video_formats: {video_format_list}"
     )
+
+    if check_timeout():
+        log_fail("Test timeout during initialization")
+        return False
+
     try:
         rx_config_file = generate_rxtxapp_rx_config_multiple(
             nic_port_list[:2], video_format_list, host, build, True
@@ -396,24 +519,27 @@ def execute_test_rgb24_multiple(
         return False
     rx_cmd = f"{RXTXAPP_PATH} --config_file {rx_config_file} --test_time {test_time}"
     tx_1_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
-        f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {nic_port_list[2]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_1']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_1']} "
+        f"ffmpeg -stream_loop -1 -framerate {fps_1} -video_size {video_size_1} -f rawvideo -pix_fmt yuv422p10be "
+        f"-i {video_url_list[0]} -filter:v format=rgb24 -p_port {nic_port_list[2]} "
+        f"-p_sip {ip_pools.tx[0]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
-        f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
-        f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {nic_port_list[3]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_2']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_2']} "
+        f"ffmpeg -stream_loop -1 -framerate {fps_2} -video_size {video_size_2} -f rawvideo -pix_fmt yuv422p10be "
+        f"-i {video_url_list[1]} -filter:v format=rgb24 -p_port {nic_port_list[3]} "
+        f"-p_sip {ip_pools.tx[1]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[1]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
     rx_proc = None
     tx_1_proc = None
     tx_2_proc = None
-    tcpdump = prepare_tcpdump(capture_cfg, host)
+
+    if check_timeout():
+        log_fail("Test timeout before starting processes")
+        return False
 
     try:
         rx_proc = run(
@@ -425,6 +551,10 @@ def execute_test_rgb24_multiple(
             background=True,
         )
         time.sleep(5)
+
+        if check_timeout():
+            raise TimeoutError("Test timeout after starting RX")
+
         # Start TX pipelines
         logger.info("Starting TX pipelines...")
         tx_1_proc = run(
@@ -435,6 +565,10 @@ def execute_test_rgb24_multiple(
             host=host,
             background=True,
         )
+
+        if check_timeout():
+            raise TimeoutError("Test timeout after starting TX1")
+
         tx_2_proc = run(
             tx_2_cmd,
             cwd=build,
@@ -443,49 +577,44 @@ def execute_test_rgb24_multiple(
             host=host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
-        logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
-        rx_proc.wait()
-        logger.info("RX process completed")
+        if check_timeout():
+            raise TimeoutError("Test timeout after starting TX2")
 
-        # Terminate TX processes after RX completes
-        logger.info("Terminating TX processes...")
-        for proc in [tx_1_proc, tx_2_proc]:
-            if proc:
-                try:
-                    proc.kill()
-                    logger.info("TX process killed")
-                except Exception:
-                    logger.info("Could not terminate TX process")
+        logger.info(f"Running test for {test_time} seconds...")
+        time.sleep(test_time)
+        logger.info(f"Test duration {test_time}s completed")
+
+    except TimeoutError as e:
+        logger.error(f"Timeout occurred: {e}")
+        log_fail(str(e))
+    except Exception as e:
+        log_fail(f"Error during test execution: {e}")
+        raise
+    finally:
+        logger.info("Stopping processes...")
+
+        # Stop TX processes (ffmpeg) first
+        if tx_1_proc:
+            stop_process(tx_1_proc, "TX1", timeout=5, host=host)
+        if tx_2_proc:
+            stop_process(tx_2_proc, "TX2", timeout=5, host=host)
+
+        # Stop RX (RxTxApp) last
+        if rx_proc:
+            stop_process(rx_proc, "RX", timeout=5, host=host)
+
+        # Wait for processes to fully terminate
+        time.sleep(1)
+
+        # Clean up any remaining orphaned processes
+        kill_orphaned_processes(host, "ffmpeg")
+        kill_orphaned_processes(host, "RxTxApp")
+
+        # Capture output after processes stopped
         rx_output = capture_stdout(rx_proc, "RX")
         capture_stdout(tx_1_proc, "TX1")
         capture_stdout(tx_2_proc, "TX2")
-    except Exception as e:
-        log_fail(f"Error during test execution: {e}")
-        # Terminate processes immediately on error
-        for proc in [tx_1_proc, tx_2_proc, rx_proc]:
-            if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
-        raise
-    finally:
-        # Final cleanup - ensure processes are terminated
-        for proc in [tx_1_proc, tx_2_proc, rx_proc]:
-            if proc:
-                try:
-                    proc.kill()
-                except Exception:
-                    # Process might already be terminated - ignore kill errors
-                    pass
-        if tcpdump:
-            tcpdump.stop()
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False
@@ -630,8 +759,8 @@ def generate_rxtxapp_rx_config(
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_rx)
         config["interfaces"][0]["name"] = nic_port
-        config["interfaces"][0]["ip"] = ip_dict["rx_interfaces"]
-        config["rx_sessions"][0]["ip"][0] = ip_dict["rx_sessions"]
+        config["interfaces"][0]["ip"] = ip_pools.rx[0]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
 
         width, height, fps = decode_video_format_to_st20p(video_format)
 
@@ -688,12 +817,12 @@ def generate_rxtxapp_rx_config_multiple(
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_rx_rgb24_multiple)
         config["interfaces"][0]["name"] = nic_port_list[0]
-        config["interfaces"][0]["ip"] = ip_dict_rgb24_multiple["p_sip_1"]
-        config["rx_sessions"][0]["ip"][0] = ip_dict_rgb24_multiple["p_tx_ip_1"]
+        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
 
         config["interfaces"][1]["name"] = nic_port_list[1]
-        config["interfaces"][1]["ip"] = ip_dict_rgb24_multiple["p_sip_2"]
-        config["rx_sessions"][1]["ip"][0] = ip_dict_rgb24_multiple["p_tx_ip_2"]
+        config["interfaces"][1]["ip"] = ip_pools.tx[1]
+        config["rx_sessions"][1]["ip"][0] = ip_pools.rx_multicast[1]
 
         width_1, height_1, fps_1 = decode_video_format_to_st20p(video_format_list[0])
         width_2, height_2, fps_2 = decode_video_format_to_st20p(video_format_list[1])
@@ -752,8 +881,8 @@ def generate_rxtxapp_tx_config(
     try:
         config = copy.deepcopy(rxtxapp_config.config_empty_tx)
         config["interfaces"][0]["name"] = nic_port
-        config["interfaces"][0]["ip"] = ip_dict["tx_interfaces"]
-        config["tx_sessions"][0]["dip"][0] = ip_dict["tx_sessions"]
+        config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
 
         width, height, fps = decode_video_format_to_st20p(video_format)
 
@@ -833,7 +962,6 @@ def execute_dual_test(
     output_format: str,
     multiple_sessions: bool = False,
     tx_is_ffmpeg: bool = True,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -852,8 +980,8 @@ def execute_dual_test(
     if not multiple_sessions:
         output_files = create_empty_output_files(output_format, 1, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_dict['rx_interfaces']} "
-            f"-p_rx_ip {ip_dict['rx_sessions']} -udp_port 20000 -payload_type 112 "
+            f"ffmpeg -p_port {rx_nic_port_list[0]} -p_sip {ip_pools.rx[0]} "
+            f"-p_rx_ip {ip_pools.rx_multicast[0]} -udp_port 20000 -payload_type 112 "
             f"-fps {fps} -pix_fmt yuv422p10le -video_size {video_size} "
             f"-f mtl_st20p -i k {ffmpeg_rx_f_flag} {output_files[0]} -y"
         )
@@ -861,7 +989,7 @@ def execute_dual_test(
             tx_cmd = (
                 f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
-                f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+                f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -872,11 +1000,11 @@ def execute_dual_test(
     else:  # multiple sessions
         output_files = create_empty_output_files(output_format, 2, rx_host, build)
         rx_cmd = (
-            f"ffmpeg -p_sip {ip_dict['rx_interfaces']} "
-            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_dict['rx_sessions']} "
+            f"ffmpeg -p_sip {ip_pools.rx[0]} "
+            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port 20000 -payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 1 "
-            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_dict['rx_sessions']} "
+            f"-p_port {rx_nic_port_list[0]} -p_rx_ip {ip_pools.rx_multicast[0]} "
             f"-udp_port 20002 -payload_type 112 -fps {fps} -pix_fmt yuv422p10le "
             f"-video_size {video_size} -f mtl_st20p -i 2 "
             f"-map 0:0 {ffmpeg_rx_f_flag} {output_files[0]} -y "
@@ -886,7 +1014,7 @@ def execute_dual_test(
             tx_cmd = (
                 f"ffmpeg -video_size {video_size} -f rawvideo -pix_fmt yuv422p10le "
                 f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
-                f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+                f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
                 f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
             )
         else:  # tx is rxtxapp
@@ -900,8 +1028,6 @@ def execute_dual_test(
 
     rx_proc = None
     tx_proc = None
-    # Use RX host for tcpdump capture
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -926,10 +1052,6 @@ def execute_dual_test(
             host=tx_host,
             background=True,
         )
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         # Let the test run for the specified duration
         logger.info(f"Running test for {test_time} seconds...")
@@ -983,8 +1105,6 @@ def execute_dual_test(
             except Exception:
                 # Process might already be terminated - ignore kill errors
                 pass
-        if tcpdump:
-            tcpdump.stop()
     passed = False
     match output_format:
         case "yuv":
@@ -1013,7 +1133,6 @@ def execute_dual_test_rgb24(
     video_format: str,
     pg_format: str,
     video_url: str,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -1039,7 +1158,7 @@ def execute_dual_test_rgb24(
     tx_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url} -filter:v fps={fps} -p_port {tx_nic_port_list[0]} "
-        f"-p_sip {ip_dict['tx_interfaces']} -p_tx_ip {ip_dict['tx_sessions']} "
+        f"-p_sip {ip_pools.tx[0]} -p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
@@ -1048,8 +1167,6 @@ def execute_dual_test_rgb24(
 
     rx_proc = None
     tx_proc = None
-    # Use RX host for tcpdump capture
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -1074,12 +1191,6 @@ def execute_dual_test_rgb24(
             host=tx_host,
             background=True,
         )
-
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
-
         logger.info(
             f"Waiting for RX process to complete (test_time: {test_time} seconds)..."
         )
@@ -1128,8 +1239,6 @@ def execute_dual_test_rgb24(
             except Exception:
                 # Process might already be terminated - ignore kill errors
                 pass
-        if tcpdump:
-            tcpdump.stop()
 
     if not check_output_rgb24(rx_output, 1):
         log_fail("rx video sessions failed")
@@ -1147,7 +1256,6 @@ def execute_dual_test_rgb24_multiple(
     video_format_list: list,
     pg_format: str,
     video_url_list: list,
-    capture_cfg=None,
 ):
     # Initialize logging for this test
     init_test_logging()
@@ -1174,15 +1282,15 @@ def execute_dual_test_rgb24_multiple(
     tx_1_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_1} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[0]} -filter:v fps={fps_1} -p_port {tx_nic_port_list[0]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_1']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_1']} "
+        f"-p_sip {ip_pools.tx[0]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[0]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
     tx_2_cmd = (
         f"ffmpeg -stream_loop -1 -video_size {video_size_2} -f rawvideo -pix_fmt rgb24 "
         f"-i {video_url_list[1]} -filter:v fps={fps_2} -p_port {tx_nic_port_list[1]} "
-        f"-p_sip {ip_dict_rgb24_multiple['p_sip_2']} "
-        f"-p_tx_ip {ip_dict_rgb24_multiple['p_tx_ip_2']} "
+        f"-p_sip {ip_pools.tx[1]} "
+        f"-p_tx_ip {ip_pools.rx_multicast[1]} "
         f"-udp_port 20000 -payload_type 112 -f mtl_st20p -"
     )
 
@@ -1192,8 +1300,6 @@ def execute_dual_test_rgb24_multiple(
     rx_proc = None
     tx_1_proc = None
     tx_2_proc = None
-    # Use RX host for tcpdump capture
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
 
     try:
         # Start RX pipeline first on RX host
@@ -1226,11 +1332,6 @@ def execute_dual_test_rgb24_multiple(
             host=tx_host,
             background=True,
         )
-
-        # Start tcpdump after pipelines are running
-        if tcpdump:
-            logger.info("Starting tcpdump capture...")
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
 
         logger.info(f"Waiting for RX process (test_time: {test_time} seconds)...")
         rx_proc.wait()
@@ -1269,9 +1370,6 @@ def execute_dual_test_rgb24_multiple(
                 except Exception:
                     # Process might already be terminated - ignore kill errors
                     pass
-        if tcpdump:
-            tcpdump.stop()
-
     if not check_output_rgb24(rx_output, 2):
         log_fail("rx video session failed")
         return False

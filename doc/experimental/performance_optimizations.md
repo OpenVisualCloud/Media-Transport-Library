@@ -46,13 +46,6 @@ Possible Linux kernel level optimizations to network stack that can improve perf
 - `net.ipv4.neigh.default.gc_thresh2=12288`: Sets the threshold for garbage collection of ARP entries, improving network performance.
 - `net.ipv4.neigh.default.gc_thresh3=16384`: Sets the threshold for garbage collection of ARP entries, improving network performance.
 
-### iRDMA
-
-From IRDMA point of view two important settings:
-
-- `net.ipv4.conf.all.arp_ignore=2`: Configures the system to ignore ARP requests on all interfaces unless the target IP address is local to the receiving interface. This setting is useful in environments where multiple interfaces are configured with the same IP address, such as in certain RDMA configurations.
-- `net.ipv4.conf.all.accept_local=1`: Allows the system to accept packets with a local source address on all interfaces. This is useful for RDMA setups where packets may be routed internally and need to be accepted regardless of the interface they arrive on.
-
 ### External software
 
 Other useful tools, may require additional packages to be installed and available on execution machine:

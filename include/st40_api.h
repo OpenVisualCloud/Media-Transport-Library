@@ -59,6 +59,41 @@ typedef struct st_rx_ancillary_session_handle_impl* st40_rx_handle;
  * If use dedicated queue for TX.
  */
 #define ST40_TX_FLAG_DEDICATE_QUEUE (MTL_BIT32(6))
+/**
+ * Flag bit in flags of struct st40_tx_ops.
+ * Works together with ST40_TX_FLAG_USER_PACING and makes the sender transmit at the
+ * exact timestamp provided by the user instead of aligning to the internal epoch.
+ */
+#define ST40_TX_FLAG_EXACT_USER_PACING (MTL_BIT32(7))
+/**
+ * Flag bit in flags of struct st40_tx_ops.
+ * Force each RTP packet to carry exactly one ANC packet and allow splitting large
+ * ancillary payloads across multiple RTP packets in a frame.
+ */
+#define ST40_TX_FLAG_SPLIT_ANC_BY_PKT (MTL_BIT32(8))
+
+/**
+ * Test-only mutation pattern for st40 TX. These modes intentionally craft malformed or
+ * edge-case RTP/ANC packets for validation. Defaults to NONE for production use.
+ */
+enum st40_tx_test_pattern {
+  ST40_TX_TEST_NONE = 0,
+  ST40_TX_TEST_NO_MARKER,
+  ST40_TX_TEST_SEQ_GAP,
+  ST40_TX_TEST_BAD_PARITY,
+  ST40_TX_TEST_PACED,
+};
+
+/**
+ * Optional test-only mutation controls for st40 TX. All fields default to zero/none and
+ * are ignored in normal operation.
+ */
+struct st40_tx_test_config {
+  enum st40_tx_test_pattern pattern; /**< Mutation pattern to apply. */
+  uint16_t frame_count;              /**< How many frames to mutate (0 -> apply once). */
+  uint16_t paced_pkt_count;          /**< Desired packet count when pattern=PACED. */
+  uint32_t paced_gap_ns;             /**< Desired inter-packet spacing when PACED. */
+};
 
 /**
  * Flag bit in flags of struct st30_rx_ops, for non MTL_PMD_DPDK_USER.
@@ -314,6 +349,9 @@ struct st40_tx_ops {
   /** Optional. see ST40_TX_FLAG_* for possible flags */
   uint32_t flags;
 
+  /** Optional. test-only mutation config; ignored when pattern is NONE. */
+  struct st40_tx_test_config test;
+
   /**
    * Mandatory for ST40_TYPE_FRAME_LEVEL.
    * the frame buffer count requested for one st40 tx session,
@@ -336,6 +374,8 @@ struct st40_tx_ops {
    */
   int (*notify_frame_done)(void* priv, uint16_t frame_idx,
                            struct st40_tx_frame_meta* meta);
+
+  int (*notify_frame_late)(void* priv, uint64_t epoch_skipped);
 
   /** Optional. UDP source port number, leave as 0 to use same port as dst */
   uint16_t udp_src_port[MTL_SESSION_PORT_MAX];

@@ -1,6 +1,36 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
 
+from typing import Union
+
+
+def parse_fps_to_pformat(fps_field: Union[str, int]) -> str:
+    """Convert FPS value to MTL pXX format.
+
+    Args:
+        fps_field: FPS as string ('60', '5994/100') or integer (60)
+
+    Returns:
+        FPS in pXX format ('p60', 'p59')
+
+    Raises:
+        ValueError: If fps_field cannot be parsed
+        ZeroDivisionError: If fractional FPS has zero denominator
+    """
+    if isinstance(fps_field, int):
+        return f"p{fps_field}"
+
+    if "/" in fps_field:
+        # Handle fractional fps (e.g. '5994/100' -> 'p59')
+        numerator, denominator = fps_field.split("/", 1)
+        fps_val = round(int(numerator) / int(denominator))
+    else:
+        # Handle integer fps string (e.g. '60' -> 'p60')
+        fps_val = int(fps_field)
+
+    return f"p{fps_val}"
+
+
 yuv_files = dict(
     i720p23={
         "filename": "HDR_BBC_v4_008_Penguin1_1280x720_10bit_25Hz_P422_180frames.yuv",
@@ -187,7 +217,7 @@ yuv_files = dict(
         "fps": "25",
     },
     i2160p29={
-        "filename": "Plalaedit_Pedestrian_10bit_3840x2160_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
         "format": "YUV_422_10bit",
         "width": 3840,
@@ -195,7 +225,7 @@ yuv_files = dict(
         "fps": "2997/100",
     },
     i2160p30={
-        "filename": "Plalaedit_Pedestrian_10bit_3840x2160_30Hz_P420_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
+        "filename": "Netflix_Crosswalk_3840x2160_10bit_60Hz_P422_To_yuv422p10be_To_yuv422YCBCR10be.yuv",
         "file_format": "YUV422RFC4175PG2BE10",
         "format": "YUV_422_10bit",
         "width": 3840,
@@ -519,15 +549,15 @@ yuv_files_422rfc10 = dict(
 
 audio_files = dict(
     PCM24={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM24",
     },
     PCM16={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM16",
     },
     PCM8={
-        "filename": "test.wav",
+        "filename": "voice_48k_24ch_1min_24pcm.raw",
         "format": "PCM8",
     },
 )
@@ -558,15 +588,17 @@ st41_files = dict(
 
 gstreamer_formats = dict(
     v210={
+        "filename": "gstreamer_v210_1920x1080_60hz.yuv",
         "format": "v210",
         "width": 1920,
         "height": 1080,
-        "fps": "25",
+        "fps": "60",
     },
     I422_10LE={
+        "filename": "gstreamer_I422_10LE_1920x1080_60hz.yuv",
         "format": "I422_10LE",
         "width": 1920,
         "height": 1080,
-        "fps": "25",
+        "fps": "60",
     },
 )

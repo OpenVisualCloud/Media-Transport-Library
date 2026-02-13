@@ -287,6 +287,12 @@ void gst_mtl_common_init_general_arguments(GObjectClass* gobject_class) {
       g_param_spec_boolean("enable-ptp", "Enable onboard PTP",
                            "Enable onboard PTP client", FALSE,
                            G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property(
+      gobject_class, PROP_GENERAL_ENABLE_DMA_OFFLOAD,
+      g_param_spec_boolean("enable-dma-offload", "Enable DMA offload",
+                           "Request DMA offload for compatible sessions.", FALSE,
+                           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
 void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
@@ -350,6 +356,9 @@ void gst_mtl_common_set_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_ENABLE_ONBOARD_PTP:
       general_args->enable_onboard_ptp = g_value_get_boolean(value);
       break;
+    case PROP_GENERAL_ENABLE_DMA_OFFLOAD:
+      general_args->enable_dma_offload = g_value_get_boolean(value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -379,6 +388,12 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_DEV_ARGS_DMA_DEV:
       g_value_set_string(value, general_args->dma_dev);
       break;
+    case PROP_GENERAL_SESSION_PORT:
+      g_value_set_string(value, portArgs->port[MTL_PORT_P]);
+      break;
+    case PROP_GENERAL_SESSION_PORT_R:
+      g_value_set_string(value, portArgs->port[MTL_PORT_R]);
+      break;
     case PROP_GENERAL_PORT_IP:
       g_value_set_string(value, portArgs->session_ip_string[MTL_PORT_P]);
       break;
@@ -400,6 +415,12 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
     case PROP_GENERAL_PORT_TX_QUEUES:
       g_value_set_uint(value, general_args->tx_queues_cnt[MTL_PORT_P]);
       break;
+    case PROP_GENERAL_ENABLE_ONBOARD_PTP:
+      g_value_set_boolean(value, general_args->enable_onboard_ptp);
+      break;
+    case PROP_GENERAL_ENABLE_DMA_OFFLOAD:
+      g_value_set_boolean(value, general_args->enable_dma_offload);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
@@ -407,15 +428,16 @@ void gst_mtl_common_get_general_arguments(GObject* object, guint prop_id,
 }
 
 /**
- * Copies general initialization port values to session-specific port arguments if not
- * specified. If the primary port is not specified, the redundant port argument will be
- * copied from the general initialization ports regardless of its specification. If the
- * UDP port for the redundant port is not specified, it will be incremented by one over
- * the primary port.
+ * Copies general initialization port values to session-specific port arguments
+ * if not specified. If the primary port is not specified, the redundant port
+ * argument will be copied from the general initialization ports regardless of
+ * its specification. If the UDP port for the redundant port is not specified,
+ * it will be incremented by one over the primary port.
  *
- * @param general_args Pointer to the structure containing general initialization
- * parameters.
- * @param port_args Pointer to the structure containing session-specific port arguments.
+ * @param general_args Pointer to the structure containing general
+ * initialization parameters.
+ * @param port_args Pointer to the structure containing session-specific port
+ * arguments.
  */
 void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args,
                                                  SessionPortArgs* port_args) {
@@ -437,8 +459,9 @@ void gst_mtl_common_copy_general_to_session_args(GeneralArgs* general_args,
 }
 
 /**
- * Parses the transmission port arguments and initializes the tranmission port structure.
- * Validates and sets the destination IP address, port number, UDP port, and payload type.
+ * Parses the transmission port arguments and initializes the tranmission port
+ * structure. Validates and sets the destination IP address, port number, UDP
+ * port, and payload type.
  *
  * @param port Pointer to the transmission port structure to be initialized.
  * @param port_args Pointer to the structure containing the port arguments.
@@ -485,8 +508,9 @@ guint gst_mtl_common_parse_tx_port_arguments(struct st_tx_port* port,
 }
 
 /**
- * Parses the transmission port arguments and initializes the receive port structure.
- * Validates and sets the destination IP address, port number, UDP port, and payload type.
+ * Parses the transmission port arguments and initializes the receive port
+ * structure. Validates and sets the destination IP address, port number, UDP
+ * port, and payload type.
  *
  * @param port Pointer to the transmission port structure to be initialized.
  * @param port_args Pointer to the structure containing the port arguments.
@@ -584,11 +608,24 @@ gboolean gst_mtl_common_parse_general_arguments(struct mtl_init_params* mtl_init
 
     mtl_init_params->num_ports++;
 
-    if (general_args->dma_dev && strlen(general_args->dma_dev)) {
-      strncpy(mtl_init_params->dma_dev_port[0], general_args->dma_dev, MTL_PORT_MAX_LEN);
+    mtl_port_idx++;
+  }
+
+  if (general_args->dma_dev && strlen(general_args->dma_dev)) {
+    gchar** dma_tokens = g_strsplit(general_args->dma_dev, ",", MTL_DMA_DEV_MAX + 1);
+    gint idx = 0;
+
+    while (dma_tokens && dma_tokens[idx] && idx < MTL_DMA_DEV_MAX) {
+      gchar* token = g_strstrip(dma_tokens[idx]);
+      if (token && strlen(token)) {
+        strncpy(mtl_init_params->dma_dev_port[mtl_init_params->num_dma_dev_port], token,
+                MTL_PORT_MAX_LEN);
+        mtl_init_params->num_dma_dev_port++;
+      }
+      idx++;
     }
 
-    mtl_port_idx++;
+    if (dma_tokens) g_strfreev(dma_tokens);
   }
 
   return ret;

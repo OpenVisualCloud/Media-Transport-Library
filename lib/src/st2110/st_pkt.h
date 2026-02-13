@@ -5,6 +5,9 @@
 #ifndef _ST_LIB_PKT_HEAD_H_
 #define _ST_LIB_PKT_HEAD_H_
 
+#include "st40_api.h"
+#include "st41_api.h"
+
 #define MTL_LITTLE_ENDIAN /* x86 use little endian */
 
 #define ST_RVRTP_VERSION_2 (2)

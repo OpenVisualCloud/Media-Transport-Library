@@ -454,6 +454,13 @@ int mt_srss_init(struct mtl_main_impl* impl) {
       mt_srss_uinit(impl);
       return -ENOMEM;
     }
+
+    /* making sure schs_cnt is not zero to prevent divide-by-zero */
+    if (!srss->schs_cnt) {
+      err("%s(%d), schs_cnt is zero\n", __func__, port);
+      mt_srss_uinit(impl);
+      return -EINVAL;
+    }
     mt_sch_mask_t sch_mask = MT_SCH_MASK_ALL;
     uint16_t q_idx = 0;
     uint16_t q_per_sch = srss->nb_rx_q / srss->schs_cnt;

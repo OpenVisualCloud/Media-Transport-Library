@@ -106,7 +106,7 @@ on:
 
 env:
   BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.03'
+  DPDK_VERSION: '25.11'
   DPDK_REBUILD: 'false'
 
 permissions:
@@ -114,7 +114,7 @@ permissions:
 
 jobs:
   validation-build-mtl:
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [self-hosted, linux, x64, dpdk]
     timeout-minutes: 60
     outputs:
       pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
@@ -194,7 +194,7 @@ jobs:
   # Timeout of this job is set to 12h [60m/h*12h=720m]
   validation-run-tests:
     needs: [validation-build-mtl]
-    runs-on: [Linux, self-hosted, DPDK]
+    runs-on: [self-hosted, linux, x64, dpdk]
     timeout-minutes: 720
     env:
       PYTEST_ALIAS: 'sudo --preserve-env python3 -m pipenv run pytest'

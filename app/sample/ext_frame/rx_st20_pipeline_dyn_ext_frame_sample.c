@@ -49,12 +49,13 @@ static int rx_st20p_query_ext_frame(void* priv, struct st_ext_frame* ext_frame,
   ext_frame->size = s->ext_frames[i].buf_len;
 
   uint8_t* addr = ext_frame->addr[0];
-  uint8_t planes = st_frame_fmt_planes(meta->fmt);
+  enum st_frame_fmt frame_fmt = st_frame_fmt_from_transport(meta->fmt);
+  uint8_t planes = st_frame_fmt_planes(frame_fmt);
   for (int plane = 0; plane < planes; plane++) {
     if (plane > 0)
       ext_frame->iova[plane] =
           ext_frame->iova[plane - 1] + ext_frame->linesize[plane - 1] * meta->height;
-    ext_frame->linesize[plane] = st_frame_least_linesize(meta->fmt, meta->width, plane);
+    ext_frame->linesize[plane] = st_frame_least_linesize(frame_fmt, meta->width, plane);
     ext_frame->addr[plane] = addr;
     addr += ext_frame->linesize[plane] * meta->height;
   }

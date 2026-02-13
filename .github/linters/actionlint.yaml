@@ -1,4 +1,6 @@
 self-hosted-runner:
   labels:
-    - DPDK
-    - XDP
+    - dpdk
+    - e810
+    - e810-dell
+    - e830

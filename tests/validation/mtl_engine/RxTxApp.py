@@ -5,41 +5,19 @@ import json
 import logging
 import os
 import re
-import subprocess
-import sys
 import time
+from typing import List, Optional, Tuple
 
-from create_pcap_file.tcpdump import TcpDumpRecorder
 from mfd_connect import SSHConnection
+from mtl_engine import ip_pools
 
 from . import rxtxapp_config
 from .execute import log_fail, run
 
 RXTXAPP_PATH = "./tests/tools/RxTxApp/build/RxTxApp"
-json_filename = os.path.join(sys.path[0], "ip_addresses.json")
 logger = logging.getLogger(__name__)
 
-
-unicast_ip_dict = dict(
-    tx_interfaces="192.168.17.101",
-    rx_interfaces="192.168.17.102",
-    tx_sessions="192.168.17.102",
-    rx_sessions="192.168.17.101",
-)
-
-multicast_ip_dict = dict(
-    tx_interfaces="192.168.17.101",
-    rx_interfaces="192.168.17.102",
-    tx_sessions="239.168.48.9",
-    rx_sessions="239.168.48.9",
-)
-
-kernel_ip_dict = dict(
-    tx_interfaces="192.168.17.101",
-    rx_interfaces="192.168.17.102",
-    tx_sessions="127.0.0.1",
-    rx_sessions="127.0.0.1",
-)
+PTP_SYNC_TIME = 50  # seconds to wait for PTP synchronization
 
 
 def capture_stdout(proc, proc_name: str):
@@ -56,29 +34,6 @@ def capture_stdout(proc, proc_name: str):
     except Exception as e:
         logger.warning(f"Failed to capture stdout for {proc_name}: {e}")
         return ""
-
-
-def read_ip_addresses_from_json(filename: str):
-    global unicast_ip_dict, multicast_ip_dict, kernel_ip_dict
-    try:
-        with open(filename, "r") as ips:
-            ip_addresses = json.load(ips)
-            try:
-                unicast_ip_dict = ip_addresses["unicast_ip_dict"]
-                multicast_ip_dict = ip_addresses["multicast_ip_dict"]
-                kernel_ip_dict = ip_addresses["kernel_ip_dict"]
-            except Exception:
-                logger.warning(
-                    f"File {filename} does not contain proper input, check "
-                    "ip_addresses.json.example for a schema. It might have "
-                    "been loaded partially. Where not specified, "
-                    "default was set."
-                )
-    except Exception:
-        logger.warning(
-            f"File {filename} could not be loaded properly! "
-            "Default values are set for all IPs."
-        )
 
 
 def create_empty_config() -> dict:
@@ -98,39 +53,54 @@ def add_interfaces(config: dict, nic_port_list: list, test_mode: str) -> dict:
     config["interfaces"][0]["name"] = nic_port_list[0]
     config["interfaces"][1]["name"] = nic_port_list[1]
 
-    if test_mode == "unicast":
-        config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
-        config["interfaces"][1]["ip"] = unicast_ip_dict["rx_interfaces"]
-        config["tx_sessions"][0]["dip"][0] = unicast_ip_dict["tx_sessions"]
-        config["rx_sessions"][0]["ip"][0] = unicast_ip_dict["rx_sessions"]
-    elif test_mode == "multicast":
-        config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
-        config["interfaces"][1]["ip"] = multicast_ip_dict["rx_interfaces"]
-        config["tx_sessions"][0]["dip"][0] = multicast_ip_dict["tx_sessions"]
-        config["rx_sessions"][0]["ip"][0] = multicast_ip_dict["rx_sessions"]
+    is_kernel = [
+        nic_port_list[0].startswith("kernel:"),
+        nic_port_list[1].startswith("kernel:"),
+    ]
+
+    # Check if using loopback interface (kernel:lo)
+    is_loopback = [
+        nic_port_list[0] == "kernel:lo",
+        nic_port_list[1] == "kernel:lo",
+    ]
+
+    if test_mode in ("unicast", "multicast"):
+        # Assign IPs to interfaces - use _os_ip for kernel interfaces, ip for others
+        config["interfaces"][0]["_os_ip" if is_kernel[0] else "ip"] = ip_pools.tx[0]
+        config["interfaces"][1]["_os_ip" if is_kernel[1] else "ip"] = ip_pools.rx[0]
+
+        # Set session IPs based on mode
+        if test_mode == "unicast":
+            config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
+        else:  # multicast
+            config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+            config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+
     elif test_mode == "kernel":
-        config["tx_sessions"][0]["dip"][0] = kernel_ip_dict["tx_sessions"]
-        config["rx_sessions"][0]["ip"][0] = kernel_ip_dict["rx_sessions"]
+        # For loopback interface (kernel:lo), use 127.0.0.x addresses
+        # For other kernel interfaces, use IP pools
+        if is_loopback[0] and is_loopback[1]:
+            # Both interfaces are loopback - use same IP for socket binding
+            # TX sends from 127.0.0.1 to 127.0.0.1, RX binds to 127.0.0.1
+            config["interfaces"][0]["_os_ip"] = "127.0.0.1"
+            config["interfaces"][1]["_os_ip"] = "127.0.0.1"
+            config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+            config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
+        else:
+            # Regular kernel interfaces - use IP pools
+            for idx in (0, 1):
+                if is_kernel[idx]:
+                    config["interfaces"][idx]["_os_ip"] = (
+                        ip_pools.tx[0] if idx == 0 else ip_pools.rx[0]
+                    )
+
+            config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
     return config
-
-
-def prepare_tcpdump(capture_cfg, host=None):
-    """
-    Prepare and (optionally) start TcpDumpRecorder if capture_cfg is enabled.
-    Returns the TcpDumpRecorder instance or None.
-    """
-    if capture_cfg and capture_cfg.get("enable"):
-        tcpdump = TcpDumpRecorder(
-            host=host,
-            test_name=capture_cfg.get("test_name", "capture"),
-            pcap_dir=capture_cfg.get("pcap_dir", "/tmp"),
-            interface=capture_cfg.get("interface"),
-        )
-        return tcpdump
-    return None
 
 
 def add_perf_video_session_tx(
@@ -519,13 +489,12 @@ def execute_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
+    auto_stop: bool = False,
+    rx_max_file_size: int = 0,
     host=None,
-    capture_cfg=None,
+    netsniff=None,
+    interface_setup=None,
 ) -> bool:
-    # Only initialize logging if it hasn't been initialized already
-    global _log_timestamp
-    if _log_timestamp is None:
-        init_test_logging()
 
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -534,8 +503,12 @@ def execute_test(
 
     logger.info(f"Starting RxTxApp test: {get_case_id()}")
 
-    remote_host = host
-    remote_conn = remote_host.connection
+    remote_conn = host.connection
+
+    # Configure kernel socket interfaces before creating config file
+    # This must happen before MTL initialization
+    configure_kernel_interfaces(config, remote_conn, interface_setup)
+
     config_file = f"{build}/tests/config.json"
     f = remote_conn.path(config_file)
     if isinstance(remote_conn, SSHConnection):
@@ -567,7 +540,7 @@ def execute_test(
                 test_time = test_time * 2
             test_time = test_time * config["tx_sessions"][0]["st20p"][0]["replicas"]
 
-    command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
+    command = f"sudo {RXTXAPP_PATH} --config_file {config_path}"
 
     if virtio_user:
         command += " --virtio_user"
@@ -577,11 +550,17 @@ def execute_test(
 
     if ptp:
         command += " --ptp"
+        test_time += PTP_SYNC_TIME  # Add extra time for PTP sync
+
+    if auto_stop:
+        command += " --auto_stop"
+
+    if rx_max_file_size > 0:
+        command += f" --rx_max_file_size {rx_max_file_size}"
+
+    command += f" --test_time {test_time}"
 
     logger.info(f"RxTxApp Command: {command}")
-
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
-    tcpdump = prepare_tcpdump(capture_cfg, host)
 
     # For 4TX and 8k streams more timeout is needed
     timeout = test_time + 90
@@ -594,23 +573,24 @@ def execute_test(
 
     # Use run() for both local and remote
     cp = run(
-        command,
-        cwd=build,
-        timeout=timeout,
-        testcmd=True,
-        host=remote_host,
+        command, cwd=build, timeout=timeout, testcmd=True, host=host, background=True
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
-    try:
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            logger.info(f"Started tcpdump capture on host {host.name}")
-    finally:
-        cp.wait()
+    if netsniff:
+        if ptp:
+            logger.info(
+                f"Waiting {PTP_SYNC_TIME} seconds for PTP sync before netsniff-ng capture"
+            )
+            time.sleep(PTP_SYNC_TIME)
+        netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
+        netsniff.capture(capture_time=test_time)
+        logger.info(f"Finished netsniff-ng capture on host {host.name}")
+    cp.wait(timeout=timeout)
 
     # Capture stdout output for logging
-    capture_stdout(cp, "RxTxApp")
+    logger.info(cp.stdout_text)
+
+    output = cp.stdout_text.splitlines()
 
     # Check if process was killed or terminated unexpectedly
     bad_rc = {124: "timeout", 137: "SIGKILL", 143: "SIGTERM"}
@@ -624,8 +604,6 @@ def execute_test(
                 return False
         log_fail(f"RxTxApp returned non-zero exit code: {cp.return_code}")
         return False
-
-    output = cp.stdout_text.splitlines()
 
     passed = True
     for session, check_output in zip(
@@ -716,11 +694,28 @@ def execute_test(
             host=host,
             build=build,
         )
+    # Emit consolidated summary at end of log
+    summary_lines, mismatch_found = _build_summary_block(
+        config=config,
+        output=output,
+        command=command,
+        test_time=test_time,
+        timeout=timeout,
+        passed=passed,
+    )
+    for line in summary_lines:
+        logger.info(line)
+
+    if mismatch_found:
+        log_fail("Config/runtime mismatch detected; see summary for details")
+
     if passed:
         logger.info(f"RxTxApp test completed with result: {passed}")
     else:
-        log_fail(f"RxTxApp test failed with result: {passed}")
-    logger.info(f"RxTxApp test completed with result: {passed}")
+        if fail_on_error:
+            log_fail(f"RxTxApp test failed with result: {passed}")
+        else:
+            logger.info(f"RxTxApp test failed with result: {passed}")
     return passed
 
 
@@ -729,13 +724,9 @@ def execute_perf_test(
     build: str,
     test_time: int,
     fail_on_error: bool = True,
-    capture_cfg=None,
+    netsniff=None,
     host=None,
 ) -> bool:
-    # Only initialize logging if it hasn't been initialized already
-    global _log_timestamp
-    if _log_timestamp is None:
-        init_test_logging()
 
     case_id = os.environ.get("PYTEST_CURRENT_TEST", "rxtxapp_test")
     case_id = case_id[: case_id.rfind("(") - 1] if "(" in case_id else case_id
@@ -756,10 +747,6 @@ def execute_perf_test(
     command = f"sudo {RXTXAPP_PATH} --config_file {config_path} --test_time {test_time}"
 
     logger.info(f"Performance RxTxApp Command: {command}")
-
-    # Prepare tcpdump recorder if capture is enabled in the test configuration.
-    tcpdump = prepare_tcpdump(capture_cfg, host)
-    background = tcpdump is not None
 
     # For 4TX and 8k streams more timeout is needed
     # Also scale timeout with replica count for performance tests
@@ -793,31 +780,25 @@ def execute_perf_test(
     )
 
     cp = run(
-        command,
-        cwd=build,
-        timeout=timeout,
-        testcmd=True,
-        host=host,
-        background=background,
+        command, cwd=build, timeout=timeout, testcmd=True, host=host, background=True
     )
 
-    # Start tcpdump capture (blocking, so it captures during traffic)
-    try:
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-            logger.info("Started performance test tcpdump capture")
-    finally:
-        cp.wait()
+    if netsniff:
+        netsniff.update_filter(dst_ip=config["tx_sessions"][0]["dip"][0])
+        netsniff.capture()
+        logger.info(f"Finished netsniff-ng capture on host {netsniff.host.name}")
+
+    cp.wait(timeout=timeout)
 
     # Capture stdout output for logging
-    capture_stdout(cp, "RxTxApp Performance")
+    logger.info(cp.stdout_text)
 
     # Enhanced logging for process completion
-    logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
+    logger.info(f"Performance RxTxApp  ended with signal {cp.return_code}")
 
     # Check if process was killed or terminated unexpectedly
     if cp.return_code < 0:
-        logger.info(f"Performance RxTxApp was killed with signal {-cp.return_code}")
+        logger.info(f"Performance RxTxApp was killed with signal {cp.return_code}")
         return False
     elif cp.return_code == 124:  # timeout return code
         logger.info("Performance RxTxApp timed out")
@@ -862,6 +843,21 @@ def execute_perf_test(
         host=host,
         build=build,
     )
+
+    # Emit consolidated summary for performance runs as well
+    summary_lines, mismatch_found = _build_summary_block(
+        config=config,
+        output=output,
+        command=command,
+        test_time=test_time,
+        timeout=timeout,
+        passed=result,
+    )
+    for line in summary_lines:
+        logger.info(line)
+
+    if mismatch_found:
+        log_fail("Config/runtime mismatch detected; see summary for details")
 
     logger.info(f"Performance RxTxApp test completed with result: {result}")
 
@@ -910,6 +906,274 @@ def change_replicas(
                 config["rx_sessions"][i][session_type][j]["replicas"] = replicas
 
     return config
+
+
+def _count_ok_markers(output: List[str], pattern: re.Pattern[str]) -> int:
+    """Count lines that match a pattern and contain the OK tag."""
+    return sum(1 for line in output if pattern.search(line) and "OK" in line)
+
+
+def _summarize_st20p(config: dict, output: List[str]) -> Tuple[List[str], bool]:
+    """Build summary lines for st20p sessions and flag mismatches vs runtime logs."""
+    lines: List[str] = []
+
+    tx = config["tx_sessions"][0]["st20p"][0]
+    rx = config["rx_sessions"][0]["st20p"][0]
+
+    replicas_tx = tx.get("replicas", 1)
+    replicas_rx = rx.get("replicas", 1)
+
+    rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st20p_result"))
+    tx_conv_ok = 0
+    rx_conv_ok = 0
+
+    tx_conv_pattern = f"transport fmt ST20_FMT_{tx['transport_format'].upper()}, input fmt: {tx['input_format']}"
+    rx_conv_pattern = f"transport fmt ST20_FMT_{rx['transport_format'].upper()}, output fmt {rx['output_format']}"
+
+    # Capture actual formats seen in create logs (if present)
+    tx_fmt_pattern = re.compile(
+        r"st20p_tx_create\(\d+\), transport fmt ST20_FMT_([^,]+), input fmt: ([^, ]+)"
+    )
+    rx_fmt_pattern = re.compile(
+        r"st20p_rx_create\(\d+\), transport fmt ST20_FMT_([^,]+), output fmt ([^, ]+)"
+    )
+
+    # Optional extraction for dimensions / interlaced / packing / pacing if present in logs
+    tx_meta_pattern = re.compile(
+        r"st20p_tx_create\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
+    )
+    rx_meta_pattern = re.compile(
+        r"st20p_rx_create\(\d+\).*width (\d+), height (\d+).*interlaced (\d)"
+    )
+    tx_pack_pattern = re.compile(r"st20p_tx_create\(\d+\).*packing ([A-Z]+)")
+    rx_pack_pattern = re.compile(r"st20p_rx_create\(\d+\).*packing ([A-Z]+)")
+    tx_pace_pattern = re.compile(r"st20p_tx_create\(\d+\).*pacing ([A-Za-z]+)")
+    rx_pace_pattern = re.compile(r"st20p_rx_create\(\d+\).*pacing ([A-Za-z]+)")
+
+    actual_tx_transport = None
+    actual_tx_input = None
+    actual_rx_transport = None
+    actual_rx_output = None
+    actual_tx_width = None
+    actual_tx_height = None
+    actual_tx_interlaced = None
+    actual_rx_width = None
+    actual_rx_height = None
+    actual_rx_interlaced = None
+    actual_tx_packing = None
+    actual_rx_packing = None
+    actual_tx_pacing = None
+    actual_rx_pacing = None
+
+    for line in output:
+        if tx_conv_pattern in line:
+            tx_conv_ok += 1
+        if rx_conv_pattern in line:
+            rx_conv_ok += 1
+
+        if actual_tx_transport is None:
+            m = tx_fmt_pattern.search(line)
+            if m:
+                actual_tx_transport = m.group(1)
+                actual_tx_input = m.group(2)
+
+        if actual_rx_transport is None:
+            m = rx_fmt_pattern.search(line)
+            if m:
+                actual_rx_transport = m.group(1)
+                actual_rx_output = m.group(2)
+
+        if actual_tx_width is None:
+            m = tx_meta_pattern.search(line)
+            if m:
+                actual_tx_width = int(m.group(1))
+                actual_tx_height = int(m.group(2))
+                actual_tx_interlaced = m.group(3) == "1"
+
+        if actual_rx_width is None:
+            m = rx_meta_pattern.search(line)
+            if m:
+                actual_rx_width = int(m.group(1))
+                actual_rx_height = int(m.group(2))
+                actual_rx_interlaced = m.group(3) == "1"
+
+        if actual_tx_packing is None:
+            m = tx_pack_pattern.search(line)
+            if m:
+                actual_tx_packing = m.group(1)
+
+        if actual_rx_packing is None:
+            m = rx_pack_pattern.search(line)
+            if m:
+                actual_rx_packing = m.group(1)
+
+        if actual_tx_pacing is None:
+            m = tx_pace_pattern.search(line)
+            if m:
+                actual_tx_pacing = m.group(1)
+
+        if actual_rx_pacing is None:
+            m = rx_pace_pattern.search(line)
+            if m:
+                actual_rx_pacing = m.group(1)
+
+    # FPS details per session
+    fps_lines: List[str] = []
+    expected_fps = _parse_expected_fps(rx.get("fps", ""))
+    fps_results = _extract_rx_st20p_results(output)
+    tolerance = expected_fps * 0.05 if expected_fps else None
+    mismatches: List[str] = []
+    for idx, status, measured_fps in fps_results:
+        if expected_fps and tolerance is not None:
+            delta = abs(measured_fps - expected_fps)
+            fps_lines.append(
+                (
+                    f"idx={idx}:{status} fps={measured_fps:.2f} "
+                    f"(expected~{expected_fps}, delta={delta:.2f}, tol={tolerance:.2f})"
+                )
+            )
+            if delta > tolerance:
+                mismatches.append(
+                    (
+                        f"fps session {idx} delta {delta:.2f} > tol {tolerance:.2f} "
+                        f"(expected {expected_fps}, got {measured_fps:.2f})"
+                    )
+                )
+        else:
+            fps_lines.append(f"idx={idx}:{status} fps={measured_fps:.2f}")
+
+    lines.append(
+        "st20p config: "
+        f"w={tx['width']} h={tx['height']} fps={tx['fps']} interlaced={tx['interlaced']} "
+        f"input={tx['input_format']} transport={tx['transport_format']} output={rx['output_format']} "
+        f"packing={tx.get('packing', '')} pacing={tx.get('pacing', '')} "
+        f"replicas_tx={replicas_tx} replicas_rx={replicas_rx} "
+        f"rtcp={tx.get('enable_rtcp', False)} latency={rx.get('measure_latency', False)}"
+    )
+
+    lines.append(
+        "st20p results: "
+        f"rx_ok={rx_ok}/{replicas_rx}; tx_conv_ok={tx_conv_ok}/{replicas_tx}; "
+        f"rx_conv_ok={rx_conv_ok}/{replicas_rx}"
+    )
+
+    if fps_lines:
+        lines.append("st20p fps: " + "; ".join(fps_lines))
+
+    # Compare actual vs expected formats when present
+    if actual_tx_transport and actual_tx_transport != tx["transport_format"].upper():
+        mismatches.append(
+            f"tx transport mismatch: expected {tx['transport_format'].upper()}, got {actual_tx_transport}"
+        )
+    if actual_tx_input and actual_tx_input != tx["input_format"]:
+        mismatches.append(
+            f"tx input fmt mismatch: expected {tx['input_format']}, got {actual_tx_input}"
+        )
+    if actual_rx_transport and actual_rx_transport != rx["transport_format"].upper():
+        mismatches.append(
+            f"rx transport mismatch: expected {rx['transport_format'].upper()}, got {actual_rx_transport}"
+        )
+    if actual_rx_output and actual_rx_output != rx["output_format"]:
+        mismatches.append(
+            f"rx output fmt mismatch: expected {rx['output_format']}, got {actual_rx_output}"
+        )
+
+    # Dimensions / interlaced / packing / pacing comparisons (only if observed in logs)
+    if actual_tx_width is not None and actual_tx_width != tx["width"]:
+        mismatches.append(
+            f"tx width mismatch: expected {tx['width']}, got {actual_tx_width}"
+        )
+    if actual_tx_height is not None and actual_tx_height != tx["height"]:
+        mismatches.append(
+            f"tx height mismatch: expected {tx['height']}, got {actual_tx_height}"
+        )
+    if actual_tx_interlaced is not None and actual_tx_interlaced != tx["interlaced"]:
+        mismatches.append(
+            f"tx interlaced mismatch: expected {tx['interlaced']}, got {actual_tx_interlaced}"
+        )
+    if actual_tx_packing and actual_tx_packing != tx.get("packing", ""):
+        mismatches.append(
+            f"tx packing mismatch: expected {tx.get('packing', '')}, got {actual_tx_packing}"
+        )
+    if actual_tx_pacing and actual_tx_pacing != tx.get("pacing", ""):
+        mismatches.append(
+            f"tx pacing mismatch: expected {tx.get('pacing', '')}, got {actual_tx_pacing}"
+        )
+
+    if actual_rx_width is not None and actual_rx_width != rx["width"]:
+        mismatches.append(
+            f"rx width mismatch: expected {rx['width']}, got {actual_rx_width}"
+        )
+    if actual_rx_height is not None and actual_rx_height != rx["height"]:
+        mismatches.append(
+            f"rx height mismatch: expected {rx['height']}, got {actual_rx_height}"
+        )
+    if actual_rx_interlaced is not None and actual_rx_interlaced != rx["interlaced"]:
+        mismatches.append(
+            f"rx interlaced mismatch: expected {rx['interlaced']}, got {actual_rx_interlaced}"
+        )
+    if actual_rx_packing and actual_rx_packing != rx.get("packing", ""):
+        mismatches.append(
+            f"rx packing mismatch: expected {rx.get('packing', '')}, got {actual_rx_packing}"
+        )
+    if actual_rx_pacing and actual_rx_pacing != rx.get("pacing", ""):
+        mismatches.append(
+            f"rx pacing mismatch: expected {rx.get('pacing', '')}, got {actual_rx_pacing}"
+        )
+
+    missing_rx = replicas_rx - rx_ok
+    missing_fps = replicas_rx - len(fps_results)
+    if missing_rx > 0:
+        mismatches.append(f"missing {missing_rx} RX OK marker(s)")
+    if missing_fps > 0:
+        mismatches.append(f"missing {missing_fps} fps result line(s)")
+    if tx_conv_ok < replicas_tx:
+        mismatches.append(
+            f"missing TX converter lines: {tx_conv_ok}/{replicas_tx} found"
+        )
+    if rx_conv_ok < replicas_rx:
+        mismatches.append(
+            f"missing RX converter lines: {rx_conv_ok}/{replicas_rx} found"
+        )
+
+    lines.append(
+        "st20p mismatches: " + ("; ".join(mismatches) if mismatches else "none")
+    )
+
+    return lines, bool(mismatches)
+
+
+def _parse_expected_fps(fps: str) -> Optional[float]:
+    """Extract numeric FPS from strings like ``p59`` or ``i50``."""
+    match = re.match(r"[pi](\d+(?:\.\d+)?)", fps)
+    if not match:
+        logger.info(f"Unable to parse fps value from '{fps}'")
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        logger.info(f"FPS value is not numeric: '{fps}'")
+        return None
+
+
+def _extract_rx_st20p_results(output: List[str]) -> List[Tuple[int, str, float]]:
+    """Parse st20p RX result lines for session index, status, and measured fps."""
+    pattern = re.compile(
+        r"app_rx_st20p_result\((\d+)\),\s+(OK|FAILED),\s+fps\s+([\d.]+)"
+    )
+    results: list[tuple[int, str, float]] = []
+    for line in output:
+        match = pattern.search(line)
+        if not match:
+            continue
+        try:
+            idx = int(match.group(1))
+            status = match.group(2)
+            fps = float(match.group(3))
+            results.append((idx, status, fps))
+        except (ValueError, IndexError):
+            logger.debug(f"Failed to parse st20p result line: {line}")
+    return results
 
 
 def check_tx_output(
@@ -961,10 +1225,11 @@ def check_tx_output(
         logger.info(f"TX {session_type} check PASSED: all {replicas} sessions OK")
         return True
 
+    reason = f"tx {session_type} session failed: {ok_cnt}/{replicas} OK markers found"
     if fail_on_error:
-        log_fail(f"tx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"tx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
@@ -1079,14 +1344,58 @@ def check_rx_output(
 
     logger.info(f"RX {session_type} check: {ok_cnt}/{replicas} OK results found")
 
-    if ok_cnt == replicas:
+    failure_reasons: List[str] = []
+
+    if session_type == "st20p":
+        # Parse detailed st20p result lines to capture per-session status and fps
+        results = _extract_rx_st20p_results(output)
+        if not results:
+            failure_reasons.append("no app_rx_st20p_result lines captured in log")
+        else:
+            expected_fps = _parse_expected_fps(
+                config["rx_sessions"][0][session_type][0]["fps"]
+            )
+            for idx, status, measured_fps in results:
+                if status != "OK":
+                    failure_reasons.append(
+                        f"session {idx} reported {status} at {measured_fps:.2f} fps"
+                    )
+                if expected_fps:
+                    delta = abs(measured_fps - expected_fps)
+                    tolerance = expected_fps * 0.05
+                    if delta > tolerance:
+                        failure_reasons.append(
+                            f"session {idx} fps mismatch: expected ~{expected_fps}, got {measured_fps:.2f}"
+                        )
+
+            missing = replicas - len(results)
+            if missing > 0:
+                failure_reasons.append(
+                    f"missing {missing} st20p result line(s) (replicas={replicas})"
+                )
+
+    if ok_cnt == replicas and not failure_reasons:
         logger.info(f"RX {session_type} check PASSED: all {replicas} sessions OK")
         return True
 
+    if not failure_reasons:
+        # Try to surface failure lines to aid debugging
+        failure_lines = [
+            line
+            for line in output
+            if pattern.search(line) and any(tag in line for tag in ("FAIL", "ERR"))
+        ]
+        if failure_lines:
+            failure_reasons.append(f"failure lines: {'; '.join(failure_lines[:3])}")
+
+    reason = f"rx {session_type} session failed: {ok_cnt}/{replicas} OK. " + (
+        "; ".join(failure_reasons) if failure_reasons else ""
+    )
+
     if fail_on_error:
-        log_fail(f"rx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"rx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
@@ -1125,10 +1434,15 @@ def check_tx_converter_output(
         logger.info(f"TX {session_type} converter check PASSED")
         return True
 
+    reason = (
+        f"tx {session_type} converter missing expected line: "
+        f"transport={transport_format}, input={input_format}; "
+        f"found {ok_cnt}/{replicas}"
+    )
     if fail_on_error:
-        log_fail(f"tx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"tx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
@@ -1168,64 +1482,160 @@ def check_rx_converter_output(
         logger.info(f"RX {session_type} converter check PASSED")
         return True
 
+    reason = (
+        f"rx {session_type} converter missing expected line: "
+        f"transport={transport_format}, output={output_format}; "
+        f"found {ok_cnt}/{replicas}"
+    )
     if fail_on_error:
-        log_fail(f"rx {session_type} session failed")
+        log_fail(reason)
     else:
-        logger.info(f"rx {session_type} session failed")
+        logger.info(reason)
 
     return False
 
 
-def check_and_set_ip(interface_name: str, ip_adress="192.168.17.102/24"):
+def check_and_set_ip(interface_name: str, ip_address: str, connection):
+    """Configure IP address on a kernel network interface."""
+    result = connection.execute_command(f"ip addr show {interface_name}", shell=True)
+
+    ip_without_mask = ip_address.split("/")[0]
+    if ip_without_mask in result.stdout:
+        logger.debug(f"IP {ip_address} already configured on {interface_name}")
+        return
+
+    connection.execute_command(
+        f"sudo ip addr add {ip_address} dev {interface_name}", shell=True
+    )
+    connection.execute_command(f"sudo ip link set {interface_name} up", shell=True)
+    logger.info(f"Configured IP {ip_address} on {interface_name}")
+
+
+def configure_kernel_interfaces(config: dict, connection, interface_setup=None):
+    """Configure OS-level IP addresses for kernel socket interfaces."""
+    for interface in config.get("interfaces", []):
+        if "_os_ip" not in interface:
+            continue
+
+        if not interface["name"].startswith("kernel:"):
+            continue
+
+        if_name = interface["name"].replace("kernel:", "")
+        ip_addr = interface["_os_ip"]
+
+        # Add default /24 netmask if not specified
+        if "/" not in ip_addr:
+            ip_addr = f"{ip_addr}/24"
+
+        check_and_set_ip(if_name, ip_addr, connection)
+
+        # Register for cleanup if interface_setup provided
+        if interface_setup is not None:
+            interface_setup.register_ip_cleanup(connection, if_name, ip_addr)
+
+
+def _build_summary_block(
+    *,
+    config: dict,
+    output: List[str],
+    command: str,
+    test_time: int,
+    timeout: int,
+    passed: bool,
+) -> Tuple[List[str], bool]:
+    """Create a human-friendly test summary to append at the end of logs."""
+    lines: List[str] = []
+    mismatch_found = False
+
+    # Heading
+    outcome = "PASS" if passed else "FAIL"
+    lines.append(
+        f"Summary: result={outcome}; test_time={test_time}s; timeout={timeout}s; command={command}"
+    )
+
+    # Core config snapshot (interfaces and IPs)
     try:
-        result = subprocess.run(
-            ["ip", "addr", "show", interface_name], stdout=subprocess.PIPE, text=True
+        tx_intf = config["interfaces"][0]["name"]
+        rx_intf = (
+            config["interfaces"][1]["name"] if len(config["interfaces"]) > 1 else ""
         )
-        if ip_adress.split("/")[0] not in result.stdout:
-            subprocess.run(
-                ["sudo", "ip", "addr", "add", ip_adress, "dev", interface_name]
-            )
-            subprocess.run(["sudo", "ip", "link", "set", interface_name, "up"])
+        tx_ip = config["interfaces"][0].get("ip", "")
+        rx_ip = (
+            config["interfaces"][1].get("ip", "")
+            if len(config["interfaces"]) > 1
+            else ""
+        )
+        lines.append(f"Interfaces: tx={tx_intf}({tx_ip}) rx={rx_intf}({rx_ip})")
     except Exception:
-        print(f"An error occured while trying to bind ip address to {interface_name}")
+        lines.append("Interfaces: unavailable")
 
+    # Session summaries
+    if config["tx_sessions"][0].get("st20p"):
+        st20p_lines, st20p_mismatch = _summarize_st20p(config, output)
+        lines.extend(st20p_lines)
+        mismatch_found = mismatch_found or st20p_mismatch
 
-def check_and_bind_interface(interface_address: list, interface_mode="vf"):
-    try:
-        ifconfig_output = subprocess.check_output(["ifconfig"], universal_newlines=True)
+    if config["tx_sessions"][0].get("ancillary"):
+        anc = config["tx_sessions"][0]["ancillary"][0]
+        replicas = anc.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_anc_result"))
+        lines.append(
+            "ancillary: "
+            f"format={anc.get('ancillary_format', '')} fps={anc.get('ancillary_fps', '')} "
+            f"replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
 
-        if "ens6f1" not in ifconfig_output and interface_mode == "pmd":
-            subprocess.run(
-                [
-                    "sudo",
-                    "/home/labrat/mtl/Media-Transport-Library/script/nicctl.sh",
-                    "bind_pmd",
-                    interface_address[0],
-                ]
-            )
-            subprocess.run(
-                [
-                    "sudo",
-                    "/home/labrat/mtl/Media-Transport-Library/script/nicctl.sh",
-                    "disable_vf",
-                    interface_address[1],
-                ]
-            )
+    if config["tx_sessions"][0].get("audio"):
+        audio = config["tx_sessions"][0]["audio"][0]
+        replicas = audio.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_audio_result"))
+        lines.append(
+            "audio: "
+            f"fmt={audio.get('audio_format', '')} ch={audio.get('audio_channel', '')} "
+            f"fs={audio.get('audio_sampling', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
 
-        if "ens6f0" in ifconfig_output and interface_mode == "vf":
-            subprocess.run(
-                [
-                    "sudo",
-                    "/home/labrat/mtl/Media-Transport-Library/script/nicctl.sh",
-                    "create_vf",
-                    interface_address[0],
-                ]
-            )
+    if config["tx_sessions"][0].get("st30p"):
+        st30p = config["tx_sessions"][0]["st30p"][0]
+        replicas = st30p.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st30p_result"))
+        lines.append(
+            "st30p: "
+            f"fmt={st30p.get('audio_format', '')} ch={st30p.get('audio_channel', '')} "
+            f"fs={st30p.get('audio_sampling', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
 
-    except subprocess.CalledProcessError as e:
-        print(f"An error occured while running ifconfig: {e}")
-    except Exception as e:
-        print(f"An unexpected error occured while setting interface: {e}")
+    if config["tx_sessions"][0].get("fastmetadata"):
+        fmd = config["tx_sessions"][0]["fastmetadata"][0]
+        replicas = fmd.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_fastmetadata_result"))
+        lines.append(
+            "fastmetadata: "
+            f"type={fmd.get('type', '')} fps={fmd.get('fastmetadata_fps', '')} "
+            f"replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("st22p"):
+        st22p = config["tx_sessions"][0]["st22p"][0]
+        replicas = st22p.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_st22p_result"))
+        lines.append(
+            "st22p: "
+            f"w={st22p.get('width')} h={st22p.get('height')} fps={st22p.get('fps')} "
+            f"codec={st22p.get('codec', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    if config["tx_sessions"][0].get("video"):
+        video = config["tx_sessions"][0]["video"][0]
+        replicas = video.get("replicas", 1)
+        rx_ok = _count_ok_markers(output, re.compile(r"app_rx_video_result"))
+        lines.append(
+            "video: "
+            f"fmt={video.get('video_format', '')} pg={video.get('pg_format', '')} "
+            f"pacing={video.get('pacing', '')} replicas={replicas} rx_ok={rx_ok}/{replicas}"
+        )
+
+    return lines, mismatch_found
 
 
 def get_case_id() -> str:
@@ -1248,9 +1658,6 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
 
-read_ip_addresses_from_json(json_filename)
-
-
 def create_empty_dual_config() -> dict:
     return {
         "tx_config": copy.deepcopy(rxtxapp_config.config_empty_tx),
@@ -1265,29 +1672,54 @@ def add_dual_interfaces(
     rx_nic_port_list: list,
     test_mode: str,
 ) -> tuple:
-    # Configure TX host interface only
     tx_config["interfaces"][0]["name"] = tx_nic_port_list[0]
-
-    # Configure RX host interface only
     rx_config["interfaces"][0]["name"] = rx_nic_port_list[0]
 
-    if test_mode == "unicast":
-        tx_config["interfaces"][0]["ip"] = unicast_ip_dict["tx_interfaces"]
-        rx_config["interfaces"][0]["ip"] = unicast_ip_dict["rx_interfaces"]
-        tx_config["tx_sessions"][0]["dip"][0] = unicast_ip_dict[
-            "rx_interfaces"
-        ]  # TX sends to RX IP
-        rx_config["rx_sessions"][0]["ip"][0] = unicast_ip_dict[
-            "tx_interfaces"
-        ]  # RX listens for TX IP
-    elif test_mode == "multicast":
-        tx_config["interfaces"][0]["ip"] = multicast_ip_dict["tx_interfaces"]
-        rx_config["interfaces"][0]["ip"] = multicast_ip_dict["rx_interfaces"]
-        tx_config["tx_sessions"][0]["dip"][0] = multicast_ip_dict["tx_sessions"]
-        rx_config["rx_sessions"][0]["ip"][0] = multicast_ip_dict["rx_sessions"]
+    is_kernel_tx = tx_nic_port_list[0].startswith("kernel:")
+    is_kernel_rx = rx_nic_port_list[0].startswith("kernel:")
+
+    # Check if using loopback interface (kernel:lo)
+    is_loopback_tx = tx_nic_port_list[0] == "kernel:lo"
+    is_loopback_rx = rx_nic_port_list[0] == "kernel:lo"
+
+    if test_mode in ("unicast", "multicast"):
+        # Assign IPs to both configs
+        tx_config["interfaces"][0]["ip"] = ip_pools.tx[0]
+        rx_config["interfaces"][0]["ip"] = ip_pools.rx[0]
+
+        # Set session IPs based on mode
+        if test_mode == "unicast":
+            tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            rx_config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
+        else:  # multicast
+            tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx_multicast[0]
+            rx_config["rx_sessions"][0]["ip"][0] = ip_pools.rx_multicast[0]
+
+        # Handle kernel interfaces - move IP to _os_ip marker for OS configuration
+        if is_kernel_tx:
+            tx_config["interfaces"][0]["_os_ip"] = tx_config["interfaces"][0]["ip"]
+            del tx_config["interfaces"][0]["ip"]
+        if is_kernel_rx:
+            rx_config["interfaces"][0]["_os_ip"] = rx_config["interfaces"][0]["ip"]
+            del rx_config["interfaces"][0]["ip"]
+
     elif test_mode == "kernel":
-        tx_config["tx_sessions"][0]["dip"][0] = kernel_ip_dict["tx_sessions"]
-        rx_config["rx_sessions"][0]["ip"][0] = kernel_ip_dict["rx_sessions"]
+        # For loopback interface (kernel:lo), use 127.0.0.x addresses
+        # For other kernel interfaces, use IP pools
+        if is_loopback_tx and is_loopback_rx:
+            # Both interfaces are loopback - use same IP for socket binding
+            # TX sends from 127.0.0.1 to 127.0.0.1, RX binds to 127.0.0.1
+            tx_config["interfaces"][0]["_os_ip"] = "127.0.0.1"
+            rx_config["interfaces"][0]["_os_ip"] = "127.0.0.1"
+            tx_config["tx_sessions"][0]["dip"][0] = "127.0.0.1"
+            rx_config["rx_sessions"][0]["ip"][0] = "127.0.0.1"
+        else:
+            # Regular kernel interfaces - use IP pools
+            tx_config["interfaces"][0]["_os_ip"] = ip_pools.tx[0]
+            rx_config["interfaces"][0]["_os_ip"] = ip_pools.rx[0]
+
+            tx_config["tx_sessions"][0]["dip"][0] = ip_pools.rx[0]
+            rx_config["rx_sessions"][0]["ip"][0] = ip_pools.tx[0]
     else:
         log_fail(f"wrong test_mode {test_mode}")
 
@@ -1452,7 +1884,7 @@ def execute_dual_test(
     virtio_user: bool = False,
     rx_timing_parser: bool = False,
     ptp: bool = False,
-    capture_cfg=None,
+    interface_setup=None,
 ) -> bool:
     case_id = os.environ["PYTEST_CURRENT_TEST"]
     case_id = case_id[: case_id.rfind("(") - 1]
@@ -1465,6 +1897,11 @@ def execute_dual_test(
 
     # Log test start
     logger.info(f"Starting dual RxTxApp test: {get_case_id()}")
+
+    # Configure kernel socket interfaces before creating config files
+    # This must happen before MTL initialization
+    configure_kernel_interfaces(tx_config, tx_host.connection, interface_setup)
+    configure_kernel_interfaces(rx_config, rx_host.connection, interface_setup)
 
     # Prepare TX config
     tx_config_file = f"{build}/tests/tx_config.json"
@@ -1525,12 +1962,6 @@ def execute_dual_test(
         host=tx_host,
     )
 
-    # Start tcpdump capture if enabled
-    tcpdump = prepare_tcpdump(capture_cfg, rx_host)
-    if tcpdump:
-        tcpdump.capture(capture_time=capture_cfg.get("capture_time", 0.5))
-        logger.info("Started dual test tcpdump capture")
-
     # Wait for both processes
     tx_cp.wait()
     rx_cp.wait()
@@ -1538,10 +1969,6 @@ def execute_dual_test(
     # Capture stdout output for logging
     capture_stdout(tx_cp, "TX RxTxApp")
     capture_stdout(rx_cp, "RX RxTxApp")
-
-    # Stop tcpdump if it was started
-    if tcpdump:
-        tcpdump.stop()
 
     # Get output from both hosts
     tx_output = tx_cp.stdout_text.splitlines()

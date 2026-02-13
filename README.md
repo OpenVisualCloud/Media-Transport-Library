@@ -2,12 +2,16 @@
 
 > [!TIP]
 > [Full Documentation](https://openvisualcloud.github.io/Media-Transport-Library/README.html) for [Media Transport Library](https://openvisualcloud.github.io/Media-Transport-Library/README.html).
+
 [![Base build](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/base_build.yml)
 [![Test](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/ubuntu_build_with_gtest.yml)
 [![OpenSSF
 Scorecard](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library/badge)](https://api.securityscorecards.dev/projects/github.com/OpenVisualCloud/Media-Transport-Library)
 [![Dependency Review](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/OpenVisualCloud/Media-Transport-Library/actions/workflows/dependency-review.yml)
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/30596/badge.svg)](https://scan.coverity.com/projects/media-transport-library)
+
+> [!IMPORTANT]  
+> All Source code and features on the main branch are for the purpose of testing or evaluation and not production ready. Evaluated code is tagged with the corresponding release version.
 
 ## 1. Overview
 
@@ -74,7 +78,7 @@ An important point to note is that narrow pacing of TX is only supported for the
 
 ## 2. Build
 
-Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application.
+Please refer to [Build Guide](doc/build.md) for instructions on how to build DPDK, the library, and the sample application. Guidance for the fuzz targets lives in [doc/fuzzing.md](doc/fuzzing.md).
 
 For Windows, please refer to the [Windows Build Guide](doc/build_WIN.md) for instructions on how to build.
 

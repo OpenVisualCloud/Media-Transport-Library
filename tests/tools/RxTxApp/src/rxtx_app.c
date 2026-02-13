@@ -475,8 +475,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (ctx->json_ctx->user_pacing_offset) {
-    ctx->user_pacing.user_pacing_offset = ctx->json_ctx->user_pacing_offset;
+  if (ctx->json_ctx->user_time_offset) {
+    ctx->user_time.user_time_offset = ctx->json_ctx->user_time_offset;
   }
 
   ret = st_app_tx_video_sessions_init(ctx);
@@ -617,6 +617,15 @@ int main(int argc, char** argv) {
     if (ctx->pcapng_max_pkts && (run_time_s == 10)) { /* trigger pcap dump if */
       st_app_pcap(ctx);
     }
+    /* check for auto_stop condition */
+    if (ctx->auto_stop) {
+      bool tx_complete = st_app_tx_st20p_sessions_all_complete(ctx);
+      bool rx_timeout = st_app_rx_st20p_sessions_all_timeout(ctx);
+      if (tx_complete && rx_timeout) {
+        info("%s, auto_stop triggered: tx complete and rx timeout\n", __func__);
+        break;
+      }
+    }
   }
 
   if (!ctx->runtime_session) {
@@ -637,29 +646,30 @@ int main(int argc, char** argv) {
  * If user_pacing is NULL, disabled, or an error occurs, returns 0.
  * Otherwise, returns the calculated time.
  */
-uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing* user_pacing,
-                                 uint64_t frame_time, bool restart_base_time) {
+uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t frame_num,
+                          double frame_time, bool restart_base_time) {
   uint64_t tai_time, offset;
 
-  if (!user_pacing) return 0;
+  if (!user_time) return 0;
 
   if (restart_base_time) {
-    pthread_mutex_lock(&user_pacing->base_tai_time_mutex);
+    pthread_mutex_lock(&user_time->base_tai_time_mutex);
 
-    user_pacing->base_tai_time = app_ptp_from_tai_time(ctx);
-    info("%s, restart base tai time %lu\n", __func__, user_pacing->base_tai_time);
+    user_time->base_tai_time = app_ptp_from_tai_time(ctx);
+    /* align to N*frame_time, "epochs" */
+    user_time->base_tai_time +=
+        (uint64_t)(frame_time - fmod((double)user_time->base_tai_time, frame_time));
 
-    if (user_pacing->base_tai_time == 0) {
+    info("%s, restart base tai time %lu\n", __func__, user_time->base_tai_time);
+    if (user_time->base_tai_time == 0) {
       err("%s, get tai time fail\n", __func__);
-      pthread_mutex_unlock(&user_pacing->base_tai_time_mutex);
+      pthread_mutex_unlock(&user_time->base_tai_time_mutex);
       return 0;
     }
-
-    pthread_mutex_unlock(&user_pacing->base_tai_time_mutex);
+    pthread_mutex_unlock(&user_time->base_tai_time_mutex);
   }
-
-  offset = user_pacing->user_pacing_offset;
-  tai_time = user_pacing->base_tai_time + offset + frame_time;
+  offset = user_time->user_time_offset;
+  tai_time = user_time->base_tai_time + offset + (uint64_t)(frame_time * frame_num);
 
   return tai_time;
 }

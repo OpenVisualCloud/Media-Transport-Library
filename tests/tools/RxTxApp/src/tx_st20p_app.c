@@ -53,6 +53,11 @@ static void app_tx_st20p_build_frame(struct st_app_tx_st20p_session* s,
   if (s->st20p_frame_cursor + frame_size > s->st20p_source_end) {
     s->st20p_frame_cursor = s->st20p_source_begin;
     s->st20p_frames_copied = true;
+    /* mark file as complete for auto_stop feature */
+    if (s->ctx->auto_stop && !s->tx_file_complete) {
+      info("%s(%d), tx file complete\n", __func__, s->idx);
+      s->tx_file_complete = true;
+    }
   }
 
   app_tx_st20p_display_frame(s, frame);
@@ -64,9 +69,18 @@ static void* app_tx_st20p_frame_thread(void* arg) {
   int idx = s->idx;
   struct st_frame* frame;
   uint8_t shas[SHA256_DIGEST_LENGTH];
+  double frame_time;
+
+  frame_time = s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
 
   info("%s(%d), start\n", __func__, idx);
   while (!s->st20p_app_thread_stop) {
+    /* for auto_stop: stop sending after file is complete */
+    if (s->ctx->auto_stop && s->tx_file_complete) {
+      info("%s(%d), auto_stop: file complete, stopping tx\n", __func__, idx);
+      break;
+    }
+
     frame = st20p_tx_get_frame(handle);
     if (!frame) { /* no ready frame */
       warn("%s(%d), get frame time out\n", __func__, s->idx);
@@ -79,14 +93,13 @@ static void* app_tx_st20p_frame_thread(void* arg) {
       frame->user_meta_size = sizeof(shas);
     }
 
-    if (s->user_pacing) {
+    if (s->user_time) {
       bool restart_base_time = !s->local_tai_base_time;
-
-      frame->timestamp = st_app_user_pacing_time(s->ctx, s->user_pacing, s->frame_time,
-                                                 restart_base_time);
+      frame->timestamp = st_app_user_time(s->ctx, s->user_time, s->frame_num, frame_time,
+                                          restart_base_time);
       frame->tfmt = ST10_TIMESTAMP_FMT_TAI;
-      s->frame_time += s->expect_fps ? (NS_PER_S / s->expect_fps) : 0;
-      s->local_tai_base_time = s->user_pacing->base_tai_time;
+      s->frame_num++;
+      s->local_tai_base_time = s->user_time->base_tai_time;
     }
 
     st20p_tx_put_frame(handle, frame);
@@ -300,16 +313,25 @@ static int app_tx_st20p_init(struct st_app_context* ctx, st_json_st20p_session_t
   if (ctx->tx_static_pad) ops.flags |= ST20P_TX_FLAG_ENABLE_STATIC_PAD_P;
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_TX_FLAG_ENABLE_RTCP;
 
-  if (st20p && st20p->user_pacing) {
-    ops.flags |= ST20P_TX_FLAG_USER_PACING;
-
-    /* use global user pacing */
-    s->user_pacing = &ctx->user_pacing;
-    s->frame_time = 0;
+  if (st20p && (st20p->user_timestamp || st20p->user_pacing)) {
+    if (st20p->user_pacing) {
+      ops.flags |= ST20P_TX_FLAG_USER_PACING;
+    }
+    if (st20p->user_timestamp) {
+      ops.flags |= ST20P_TX_FLAG_USER_TIMESTAMP;
+    }
+    /* use global user time */
+    s->user_time = &ctx->user_time;
+    s->frame_num = 0;
     s->local_tai_base_time = 0;
   }
 
-  if (ctx->tx_ts_first_pkt) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_FIRST_PKT;
+  if (st20p && st20p->exact_user_pacing) {
+    /* should be active only with user_pacing */
+    ops.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
+  }
+
+  if (ctx->tx_exact_user_pacing) ops.flags |= ST20P_TX_FLAG_EXACT_USER_PACING;
   if (ctx->tx_ts_epoch) ops.flags |= ST20P_TX_FLAG_RTP_TIMESTAMP_EPOCH;
   if (ctx->tx_no_bulk) ops.flags |= ST20P_TX_FLAG_DISABLE_BULK;
   if (ctx->force_tx_video_numa >= 0) {
@@ -422,4 +444,15 @@ int st_app_tx_st20p_io_stat(struct st_app_context* ctx) {
   }
 
   return ret;
+}
+
+bool st_app_tx_st20p_sessions_all_complete(struct st_app_context* ctx) {
+  struct st_app_tx_st20p_session* s;
+  if (!ctx->tx_st20p_sessions || ctx->tx_st20p_session_cnt == 0) return true;
+
+  for (int i = 0; i < ctx->tx_st20p_session_cnt; i++) {
+    s = &ctx->tx_st20p_sessions[i];
+    if (!s->tx_file_complete) return false;
+  }
+  return true;
 }

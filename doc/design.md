@@ -18,7 +18,7 @@ The drawbacks is it can lead to 100% CPU usage because the cores are always acti
 
 With this PMD design, it is expected that a CPU thread will always be utilized to 100%, even with only one stream active. In our configuration, one core can handle up to a maximum of 16 1080p transmission sessions, although the actual density may vary depending on the hardware configuration.
 
-By the way, we provide an option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
+We provide an option `MTL_FLAG_TASKLET_SLEEP` that enables the sleep option for the PMD thread. However, take note that enabling this option may impact latency, as the CPU may enter a sleep state when there are no packets on the network. If you are utilizing the RxTxApp, it can be enable by `--tasklet_sleep` arguments.
 Additionally, the `MTL_FLAG_TASKLET_THREAD` option is provided to disable pinning to a single CPU core, for cases where a pinned core is not feasible.
 
 ![Tasklet](png/tasklet.png)
@@ -33,7 +33,7 @@ One primary advantage of using tasklets is that all tasklets associated with a s
 
 A single scheduler (pinned polling thread) can have numerous tasklets registered. To manage the distribution of tasklets across schedulers, a 'quota' system has been implemented in each scheduler, indicating the total data traffic each core can handle.
 Sessions will submit a request to the scheduler manager for a scheduler to manage their jobs. Upon receiving a request, the scheduler manager will assess whether the recent scheduler has enough quota to service this new request.
-If not, a new scheduler will be created and allocated to the session for the upcoming tasklet registration. For further details, please refer to the source code in [sch code](../lib/src/mt_sch.c).
+If not, a new scheduler will be created and allocated to the session for the upcoming tasklet registration. For further details, please refer to the scheduler source code in [here](../lib/src/mt_sch.c).
 
 The performance of the setup can vary, so the data traffic quota for each scheduler is customizable by the application through the `data_quota_mbs_per_sch` parameter.
 
@@ -48,11 +48,11 @@ MTL supports multi-process deployment through the use of SR-IOV. Each process op
 Each instance sends a request to the Manager service, which in return assigns a free core to the instance. The Manager service is also responsible for detecting when an instance disconnects and will subsequently release the associated resources. For more details, please consult the [Manager guide](../manager/README.md)
 
 If the background Manager service is not practical for your setup, there is a fallback method: managing the logical core (lcore) via shared memory. In this approach, all MTL instances loop through a shared memory structure to locate an unused core.
-The instructions for this deprecated method can still be accessed in the [shm_lcore Guide](shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
+The instructions for this deprecated method can still be accessed in the [lcore Guide](shm_lcore.md). However, we strongly advise against this method and recommend using the Manager service instead, as it has the capability to detect when any instance has been unexpectedly closed.
 
 ### 2.5. The tasklet API for application
 
-Applications can also leverage the efficient tasklet framework. An important note is that the callback tasklet function cannot use any blocking methods, as the thread resource is shared among many tasklets. For more information, please refer to the [mtl_sch_api](../include/mtl_sch_api.h). Example usage is provided below:
+Applications can also leverage the efficient tasklet framework. An important note is that the callback tasklet function cannot use any blocking methods, as the thread resource is shared among many tasklets. For more information, please refer to the [MTL scheduler API](../include/mtl_sch_api.h). Example usage is provided below:
 
 ```c
     mtl_sch_create
@@ -82,7 +82,7 @@ The standard inital flow is like below:
   ...
 ```
 
-MTL also supports session creation after the MTL instance has started; therefore, the following workflow operates correctly as well.
+MTL also supports session creation after the MTL instance has been started; therefore, the following workflow operates correctly as well.
 ```c
   /* init mtl instance */
   mtl_init
@@ -147,7 +147,6 @@ The library incorporates a virtual data path backend layer, designed to abstract
 * DPDK Poll-Mode Drivers (PMDs): These drivers fully bypass the kernel's networking stack, utilizing the 'DPDK poll mode' driver.
 * Native Linux Kernel Network Socket Stack: This option supports the full range of kernel ecosystems. Related code can be found from [mt_dp_socket.c](../lib/src/datapath/mt_dp_socket.c)
 * AF_XDP with eBPF filter: AF_XDP represents a significant advancement in the Linux networking stack, striking a balance between raw performance and integration with the kernel's networking ecosystem. Please refer to [XDP Guide](xdp.md) for detail.
-* Native Windows Kernel Network Socket Stack: in plan, not implemented.
 
 MTL selects the backend NIC based on input from the application. Users should specify both of the following parameters in `struct mtl_init_params`, the port name should follow the format described below, and the pmd type can be fetched using `mtl_pmd_by_port_name`.
 
@@ -163,7 +162,7 @@ MTL selects the backend NIC based on input from the application. Users should sp
 
 ### 4.2. Queue Manager
 
-The library incorporates a queue manager layer, designed to abstract various queue implementation. Code please refer to [mt_queue.c](../lib/src/datapath/mt_queue.c) for detail.
+The library incorporates a queue manager layer, designed to abstract various queue implementation. Please refer to [code](../lib/src/datapath/mt_queue.c) for details.
 
 #### 4.2.1. TX
 
@@ -172,7 +171,7 @@ For transmitting (TX) data, there are two queue modes available:
 Dedicated Mode: In this mode, each session exclusively occupies one TX queue resource.
 
 Shared Mode: In contrast, shared mode allows multiple sessions to utilize the same TX queue. To ensure there is no conflict in the packet output path, a spin lock is employed. While this mode enables more efficient use of resources by sharing them, there can be a performance trade-off due to the overhead of acquiring and releasing the lock.
-The TX queue shared mode is enabled by `MTL_FLAG_SHARED_TX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
+The TX queue shared mode is enabled by `MTL_FLAG_SHARED_TX_QUEUE` flag. Please refer to [code](../lib/src/datapath/mt_shared_queue.c) for details.
 
 #### 4.2.2. RX
 
@@ -181,10 +180,10 @@ For RX data, there are three queue modes available:
 Dedicated Mode: each session is assigned a unique RX queue. Flow Director is utilized to filter and steer the incoming packets to the correct RX queue based on criteria such as IP address, port, protocol, or a combination of these.
 
 Shared Mode: allows multiple sessions to utilize the same RX queue. Each session will configure its own set of Flow Director rules to identify its specific traffic. However, all these rules will direct the corresponding packets to the same shared RX queue. Software will dispatch the packet to each session during the process of received packet for each queue.
-The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Code please refer to [mt_shared_queue.c](../lib/src/datapath/mt_shared_queue.c) for detail.
+The RX queue shared mode is enabled by `MTL_FLAG_SHARED_RX_QUEUE` flag. Please refer to [code](../lib/src/datapath/mt_shared_queue.c) for details.
 
 RSS mode: Not all NICs support Flow Director. For those that don't, we employs Receive Side Scaling (RSS) to enable the efficient distribution of network receive processing across multiple queues. This is based on a hash calculated from fields in packet headers, such as source and destination IP addresses, and port numbers.
-Code please refer to [mt_shared_rss.c](../lib/src/datapath/mt_shared_rss.c) for detail.
+Please refer to [code](../lib/src/datapath/mt_shared_rss.c) for details.
 
 #### 4.2.3. Queues resource allocated
 
@@ -200,7 +199,7 @@ After receiving a frame from an application, MTL constructs a network packet fro
 #### 4.3.1. Zero Copy Packet Build
 
 Most modern Network Interface Cards (NICs) support a multi-buffer descriptor feature, enabling the programming of the NIC to dispatch a packet to the network from multiple data segments. The MTL utilizes this capability to achieve zero-copy transmission when a DPDK Poll Mode Driver (PMD) is utilized, thereby delivering unparalleled performance.
-In one typical setup, capable of sending approximately 50 Gbps(equivalent to 16 streams of 1080p YUV422 at 10-bit color depth and 59.94 fps) only requires a single core.
+In one typical setup, capable of sending approximately 50 Gbps (equivalent to 16 streams of 1080p YUV422 at 10-bit color depth and 59.94 fps) requires only a single core.
 
 During the packet construction process, only the RTP header is regenerated to represent the packet position within a frame. The video data is carried in the second segment of an mbuf, which directly points to the original frame.
 
@@ -236,31 +235,31 @@ The process of copying data between packets and frames consumes a significant am
 
 ## 5. Control path
 
-For the DPDK Poll Mode Driver backend, given its nature of fully bypassing the kernel, it is necessary to implement specific control protocols within MTL."
+For the DPDK Poll Mode Driver backend, given its nature of fully bypassing the kernel, it is necessary to implement specific control protocols within MTL.
 
 ### 5.1. ARP
 
-Address Resolution Protocol is a communication protocol used for discovering the link layer address, such as a MAC address, associated with a given internet layer address, typically an IPv4 address. This mapping is critical for local area network communication. The code can be found from [mt_arp.c](../lib/src/mt_arp.c)
+Address Resolution Protocol is a communication protocol used for discovering the link layer address, such as a MAC address, associated with a given internet layer address, typically an IPv4 address. This mapping is critical for local area network communication. The code can be found in [mt_arp.c](../lib/src/mt_arp.c)
 
 ### 5.2. IGMP
 
-The internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found from [mt_mcast.c](../lib/src/mt_mcast.c)
+The internet Group Management Protocol is a communication protocol used by hosts and adjacent routers on IPv4 networks to establish multicast group memberships. IGMP is used for managing the membership of internet Protocol multicast groups and is an integral part of the IP multicast specification. MTL support the IGMPv3 version. The code can be found in [mt_mcast.c](../lib/src/mt_mcast.c)
 
 ### 5.3. DHCP
 
 Dynamic Host Configuration Protocol is a network management protocol used on IP networks whereby a DHCP server dynamically assigns an IP address and other network configuration parameters to each device on a network, so they can communicate with other IP networks.
 DHCP allows devices known as clients to get an IP address automatically, reducing the need for a network administrator or a user to manually assign IP addresses to all networked devices.
 
-The DHCP option is not default on, enable it by set `net_proto` in `struct mtl_init_params` to `MTL_PROTO_DHCP`.
+The DHCP option is disabled by default, enable it by setting `net_proto` in `struct mtl_init_params` to `MTL_PROTO_DHCP`.
 
-The code implementation can be found from [mt_dhcp.c](../lib/src/mt_dhcp.c).
+The code implementation can be found in [mt_dhcp.c](../lib/src/mt_dhcp.c).
 
 ### 5.4. PTP
 
 Precision Time Protocol, also known as IEEE 1588, is designed for accurate clock synchronization between devices on a network. PTP is capable of clock accuracy in the sub-microsecond range, making it ideal for systems where precise timekeeping is vital. PTP uses a master-slave architecture for time synchronization.
 Typically, a PTP grandmaster is deployed within the network, and clients synchronize with it using tools like ptp4l.
 
-MTL support two type of PTP client settings, the built-in PTP client implementation inside MTL or using a external PTP time source.
+MTL supports two type of PTP client settings, the built-in PTP client implementation inside MTL or using an external PTP time source.
 
 #### 5.4.1. Built-in PTP
 
@@ -289,7 +288,7 @@ While PTP grandmasters disseminate the offset in their announce messages, this o
 
 ## 6. ST2110 API
 
-The API between MTL and application are 3 different types:
+There are 3 different types of API between MTL and application:
 
 ### 6.1. Frame mode
 
@@ -300,24 +299,24 @@ It is crucial for the application to manage the lifecycle of the frame buffers, 
 
 For reception, the MTL RX session will process packets received from the network. Once a complete frame is assembled, the application will be alerted via the `notify_frame_ready` callback. However, it is important to note that the application must return the frame to MTL using the `st**_rx_put_framebuff` function after video frame processing is complete.
 
-Sample application code can be find at [tx_video_sample.c](../app/sample/legacy/tx_video_sample.c) and [rx_video_sample.c](../app/sample/legacy/rx_video_sample.c)
+Sample application code can be find in [tx_video_sample.c](../app/sample/legacy/tx_video_sample.c) and [rx_video_sample.c](../app/sample/legacy/rx_video_sample.c)
 
 #### 6.1.1. Slice mode
 
 Slice mode is an enhancement of frame mode that provides applications with more granular control at the slice level, enabling the achievement of ultra-low latency. In transmission, MTL slices use `query_frame_lines_ready` to determine the number of lines available for transmission to the network.
 For reception, the application specifies the slice size using the `slice_lines` field in the `struct st20_rx_ops`. MTL will then inform the application via the `notify_slice_ready` callback when all packets of any slice have been received and are ready for the application to process.
 
-Sample application code can be find at [tx_slice_video_sample.c](../app/sample/low_level/tx_slice_video_sample.c) and [rx_slice_video_sample.c](../app/sample/low_level/rx_slice_video_sample.c)
+Sample application code can be find in [tx_slice_video_sample.c](../app/sample/low_level/tx_slice_video_sample.c) and [rx_slice_video_sample.c](../app/sample/low_level/rx_slice_video_sample.c)
 
 ### 6.2. RTP passthrough mode
 
 MTL manages the processing from RTP to L2 packet and vice versa, but it is the responsibility of the application to encapsulate/decapsulate RTP with various upper-layer protocols. This approach is commonly employed to implement support for ST2022-6, given that MTL natively supports only ST2110.
 
-Sample application code can be find at [tx_rtp_video_sample.c](../app/sample/low_level/tx_rtp_video_sample.c) and [rx_rtp_video_sample.c](../app/sample/low_level/rx_rtp_video_sample.c)
+Sample application code can be find in [tx_rtp_video_sample.c](../app/sample/low_level/tx_rtp_video_sample.c) and [rx_rtp_video_sample.c](../app/sample/low_level/rx_rtp_video_sample.c)
 
 ### 6.3. Pipeline mode
 
-An enhancement over frame mode, this feature provides more user-friendly get/put APIs with built-in frame cycle management and inherent SIMD color format converter. Given that the ST2110 format operates in network big-endian mode, and typically the CPU/GPU uses little endian, such functionality is essential for seamless integration. The implementation can be found from [pipeline code](../lib/src/st2110/pipeline/).
+An enhancement over frame mode, this feature provides more user-friendly get/put APIs with built-in frame cycle management and inherent SIMD color format converter. Given that the ST2110 format operates in network big-endian mode, and typically the CPU/GPU uses little endian, such functionality is essential for seamless integration. The implementation can be found in [pipeline API code](../lib/src/st2110/pipeline/).
 
 The Get/Put API is straightforward to use; consider the following example:
 
@@ -331,17 +330,63 @@ The Get/Put API is straightforward to use; consider the following example:
   st20p_tx_free
 ```
 
-Sample application code can be find at [tx_st20_pipeline_sample.c](../app/sample/tx_st20_pipeline_sample.c) and [rx_st20_pipeline_sample.c](../app/sample/rx_st20_pipeline_sample.c)
+Sample application code can be find in [tx_st20_pipeline_sample.c](../app/sample/tx_st20_pipeline_sample.c) and [rx_st20_pipeline_sample.c](../app/sample/rx_st20_pipeline_sample.c)
 
 By default, the `st20p_tx_get_frame` and `st20p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST20P_TX_FLAG_BLOCK_GET` or `ST20P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st20p_tx_wake_block`/`st20p_rx_wake_block` to wake up the waiting directly.
+
+#### 6.3.1. Ancillary (ST40) pipeline
+
+The same pipeline abstraction is now available for ancillary-only flows through `st40_pipeline_api.h`. It keeps the zero-copy RFC 8331 payload path but hides scheduler registration, frame queues, and pacing details behind the familiar get/put contract so applications only need to implement:
+
+```c
+st40p_tx_get_frame
+st40p_tx_put_frame
+st40p_rx_get_frame
+st40p_rx_put_frame
+```
+
+- **TX pipeline (`st40p_tx_*`)** wraps the lower-level `st40_tx_*` APIs while honoring redundancy, user timestamps, and user-managed frame buffers (for example when `ST40P_TX_FLAG_EXT_FRAME` is enabled). The helper also exposes the maximum user data word (UDW) size via `st40p_tx_max_udw_buff_size()` so that producers can pack metadata deterministically.
+- **RX pipeline (`st40p_rx_*`)** assembles ancillary packets into user buffers and can optionally dump metadata/UDW buffers directly to files for debugging through `st40p_rx_set_dump`. Each RX callback receives both the metadata blocks and the captured payload, mirroring the TX layout to simplify round-trip validation.
+
+Split-mode ancillary (packet-split) is supported via `tx_split_anc_by_pkt` on TX and
+`rx_rtp_ring_size` plus `frame_info_path` on RX. Enable `tx_split_anc_by_pkt=true`
+when you need to emit at most one ANC packet per RTP packet; the sender fragments a
+field accordingly. In this context a field is the interlaced half-frame (or a full
+progressive frame when not interlaced). The RTP marker bit (`rtp_marker`) is set on
+the final packet of that field to signal completion. The receiver records each packet
+under a field and can deliver as packets arrive or after the marker boundary. Frame-info
+captures the per-field packet count (`pkts_total`) and sequence integrity (`seq_discont/seq_lost`)
+so RX can detect discontinuities and the application can see how many packets were
+accumulated. Use a power-of-two ring size to satisfy plugin validation and keep pacing
+predictable.
+
+For validation and debugging, the GStreamer harness surfaces the frame-info file
+directly in the test logs. Setting `log_frame_info=True` in the ST40P tests dumps
+each `frame-info-path` line and a parsed `FrameInfoSummary` (frames, marker hits,
+seq_discont/seq_lost totals, and packets-per-frame histogram) so sequence gaps or
+packet-count anomalies are immediately visible in CI output without opening the
+artifact.
+
+The GStreamer ST40P plugin also exposes test-only RTP/ANC mutation knobs to exercise error handling; see
+[ecosystem/gstreamer_plugin/README.md](ecosystem/gstreamer_plugin/README.md#st40p-test-mode-knobs)
+for the full list and usage. The knobs can be combined with `split-anc-by-pkt=true` to stress the
+split-mode path, and the RX side can record the resulting frame-info via `frame-info-path` for
+inspection.
+
+Reference implementations live in `app/sample/tx_st40_pipeline_sample.c` and `app/sample/rx_st40_pipeline_sample.c`. They reuse the shared `sample_util` CLI so you can swap between ST20/22/30/40 pipelines with identical arguments while testing pacing, redundancy, and USDT probes.
+
+The ST40 pipeline samples now expose CLI toggles for the common ANC variants:
+- `--interlaced` drives field-based cadence end-to-end (TX uses interlaced pacing; RX expects fields and delivers them individually).
+- `--split_anc_by_pkt` enables one-ANC-per-RTP emission and RX accumulation with packet-level accounting (`pkts_total`, `seq_discont/seq_lost`).
+Combine them to validate interlaced split-mode behavior without code changes; the flags propagate directly into the `st40p_tx_ops`/`st40p_rx_ops` settings used by the samples.
 
 ### 6.4. ST22 support
 
 The support for ST 2110-22 JPEG XS can be categorized into two modes: ST 2110-22 raw codestream mode and ST 2110-22 pipeline mode. The pipeline mode leverages an MTL plugin to handle the decoding/encoding between the raw video buffer and the codestream.
 We recommend using the pipeline mode, as it allows the application to concentrate on video content processing without needing to manage codec-specific differences. In contrast, the ST 2110-22 codestream mode requires the application to handle the codec operations directly.
 
-#### 6.4.1. ST22 pipeline
+#### 6.4.1. ST22 pipeline mode
 
 Thanks to the plugin, the application can implement ST22 support using the following simplified example:
 
@@ -355,18 +400,18 @@ Thanks to the plugin, the application can implement ST22 support using the follo
   st22p_tx_free
 ```
 
-The plugin guide can be find at [Plugin Guide](plugin.md), the pipeline detail implementation can be find from [st22_pipeline_tx.c](../lib/src/st2110/pipeline/st22_pipeline_tx.c) and [st22_pipeline_rx.c](../lib/src/st2110/pipeline/st22_pipeline_rx.c).
+The plugin guide can be found [here](plugin.md), the pipeline detail implementation can be find in [st22_pipeline_tx.c](../lib/src/st2110/pipeline/st22_pipeline_tx.c) and [st22_pipeline_rx.c](../lib/src/st2110/pipeline/st22_pipeline_rx.c).
 
-Sample application code can be find at [tx_st22_pipeline_sample.c](../app/sample/tx_st22_pipeline_sample.c) and [rx_st22_pipeline_sample.c](../app/sample/rx_st22_pipeline_sample.c)
+Sample application code can be found in [tx_st22_pipeline_sample.c](../app/sample/tx_st22_pipeline_sample.c) and [rx_st22_pipeline_sample.c](../app/sample/rx_st22_pipeline_sample.c)
 
 By default, the `st22p_tx_get_frame` and `st22p_rx_get_frame` functions operate in non-blocking mode, which means the function call will immediately return `NULL` if no frame is available.
 To switch to blocking mode, where the call will wait until a frame is ready for application use or one second timeout occurs, you must enable the `ST22P_TX_FLAG_BLOCK_GET` or `ST22P_RX_FLAG_BLOCK_GET` flag respectively during the session creation stage, and application can use `st22p_tx_wake_block`/`st22p_rx_wake_block` to wake up the waiting directly.
 
 #### 6.4.2. ST22 codestream mode
 
-The API is similar to the frame mode of ST 2110-20, with the codestream utilizing the same frame concept. It is the application's responsibility to manage both the codec and the codestream frame buffer lifecycle. We recommend to use ST22 pipeline if possible.
+The API is similar to the frame mode of ST 2110-20, with the codestream utilizing the same frame concept. It is the application's responsibility to manage both the codec and the codestream frame buffer lifecycle. We recommend to use ST22 pipeline mode if possible.
 
-Sample application code can be find at [tx_st22_video_sample.c](../app/sample/legacy/tx_st22_video_sample.c) and [rx_st22_video_sample.c](../app/sample/legacy/rx_st22_video_sample.c)
+Sample application code can be find in [tx_st22_video_sample.c](../app/sample/legacy/tx_st22_video_sample.c) and [rx_st22_video_sample.c](../app/sample/legacy/rx_st22_video_sample.c)
 
 ### 6.5. 2022-7 redundant support
 
@@ -417,7 +462,7 @@ For more details, please refer to [RTCP doc](rtcp.md).
 
 ### 6.9. External frame
 
-By default, the frame buffer is allocated by MTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves—especially applications that utilize GPU-based memory for additional video frame processing. MTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
+By default, the frame buffer is allocated by MTL using huge page memory, however, some advanced use cases may require managing the frame buffers themselves — especially applications that utilize GPU-based memory for additional video frame processing. MTL offers an external frame mode, allowing applications to supply frame information at runtime for increased flexibility.
 MTL TX and RX will interact with the NIC using these user-defined frames directly. It is the application's responsibility to manage the frame lifecycle because MTL only recognizes the frame address.
 Additionally, it's important to note that if a DPDK-based PMD backend is utilized, the external frame must provide an IOVA address, which can be conveniently obtained using the `mtl_dma_map` API, thanks to IOMMU/VFIO support.
 
@@ -432,7 +477,8 @@ Consequently, the application will receive notifications through `notify_event` 
 
 By default, applications simply push frames into MTL TX sessions, where the MTL TX session automatically assigns timestamps and epochs based on timing.
 
-The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP timestamp for each frame. MTL retrieves the timestamp from st**_tx_frame_meta and delays the frame transmission until the PTP reaches this timestamp. As a result, applications must calculate the timestamp with precision.
+The ST**_TX_FLAG_USER_TIMESTAMP flag allows applications to assign the RTP timestamp for each frame. MTL retrieves the timestamp from st**_tx_frame_meta and calculates RTP timestamp straight from this value.
+Transmission time in unchanged.
 
 The ST**_TX_FLAG_USER_TIMESTAMP flag is provided to enable applications to use their own timestamp values for each frame. Consequently, the RTP timestamp for all packets that belong to that frame will be assigned the customized value.
 
@@ -464,31 +510,29 @@ To offer significant flexibility in switch/forward scenarios, it is advantageous
 
 The MTL provides comprehensive documentation that includes reference code, demonstrating the seamless integration with popular media frameworks. Currently, MTL supports the following plugins and SDKs:
 
-FFMPEG plugin: Enhance your FFMPEG-based applications by incorporating MTL to accelerate media processing. Detail please refer to [ffmpeg_plugin_guide](../ecosystem/ffmpeg_plugin/).
+FFMPEG plugin: Enhance your FFMPEG-based applications by incorporating MTL to accelerate media processing. For details please refer to [ffmpeg_plugin_guide](../ecosystem/ffmpeg_plugin/).
 
-OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software) using the MTL plugin for optimized performance. Please refer to [obs_plugin_guide](../ecosystem/obs_mtl/).
-
-Intel® Media SDK: Leverage MTL's robust capabilities within Intel® Media SDK projects to unlock advanced media functionalities on Intel platforms. Detail please refer to [Intel®_Media_SDK_guide](../ecosystem/msdk/).
+OBS plugin: Streamline live streaming workflow in OBS (Open Broadcaster Software) using the MTL plugin for optimized performance. For details please refer to [obs_plugin_guide](../ecosystem/obs_mtl/).
 
 ### 6.15. Sample code
 
-In addition to the built-in RxTxApp, MTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, detail can be found at [fwd](../app/sample/fwd/).
+In addition to the built-in RxTxApp, MTL also provides numerous sample codes that demonstrate how to construct simple test programs using its APIs. For more details, please refer to [sample](../app/sample/). We also provide some very useful forward application demo, details can be found [here](../app/sample/fwd/).
 
 ### 6.16. RX Timing Parser
 
 To verify the compliance of incoming ST2110-20 RX streams with the ST2110 standard, MTL provides several utilities for analysis.
-To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, MTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing. And please set `MTL_FLAG_ENABLE_HW_TIMESTAMP` flag to enable HW offload timestamp for all RX packets.
+To support this functionality, if the Network Interface Card (NIC) supports the hardware time synchronization feature, MTL will read the RX timestamp directly from the NIC's hardware to obtain accurate timing. Please set `MTL_FLAG_ENABLE_HW_TIMESTAMP` flag to enable HW offload timestamp for all RX packets.
 
 The fallback method is to read the time when MTL processes the packet. However, it's important to note that this fallback method cannot guarantee timing accuracy, potentially rendering the parsed results unreliable.
 
 The simplest method is to enable the built-in status report. An application can activate the feature by setting the flag `ST20_RX_FLAG_TIMING_PARSER_STAT` or `ST20P_RX_FLAG_TIMING_PARSER_STAT`. Subsequently, MTL will engage the Timing Parser module and include the results in the status log.
 
-For applications requiring access to the timing parser results for each frame, the flag `ST20_RX_FLAG_TIMING_PARSER_META` or `ST20P_RX_FLAG_TIMING_PARSER_META` can be enabled. This allows an application to retrieve detailed parsing results via the `struct st20_rx_tp_meta` found within the RX meta structure for each frame. Reference sample code is available at [rx_st20p_timing_parser_sample.c](../app/sample/rx_st20p_timing_parser_sample.c).
+For applications requiring access to the timing parser results for each frame, the flag `ST20_RX_FLAG_TIMING_PARSER_META` or `ST20P_RX_FLAG_TIMING_PARSER_META` can be enabled. This allows an application to retrieve detailed parsing results via the `struct st20_rx_tp_meta` found within the RX meta structure for each frame. Reference sample code is available in [rx_st20p_timing_parser_sample.c](../app/sample/rx_st20p_timing_parser_sample.c).
 
-It also features a sample timing parser UI constructed using the MTL Python bindings, which can be found at [rx_timing_parser.py](../python/example/rx_timing_parser.py).
+It also features a sample timing parser UI constructed using the MTL Python bindings, which can be found in [rx_timing_parser.py](../python/example/rx_timing_parser.py).
 
 To increase the reliability of parsed results, it is recommended to use the `isocpus` kernel boot parameter to isolate a subset of dedicated CPUs specifically for time-sensitive parsing tasks. Isolating CPUs can help ensure that these tasks are not preempted by other processes, thus maintaining a high level of reliability.
-After isolating the CPUs, you can manually assign these dedicated cores to an MTL instance. For detailed instructions on this manual assignment process, please refer to the section: `#### 2.7 Manual Assigned lcores`
+After isolating the CPUs, you can manually assign these dedicated cores to an MTL instance. For detailed instructions on this manual assignment process, please refer to the section `#### 2.7 Manual Assigned lcores` in this documentation.
 
 ### 6.17. ST40(ancillary) Interlaced support
 
@@ -539,8 +583,8 @@ static void log_user_printer(enum mtl_log_level level, const char* format, ...) 
 }
 ```
 
-And in a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ERR` usually, in this cast USDT probes can be used to fetching the logging, detail see [usdt](usdt.md) doc, `#### 2.1.1 log_msg USDT` part.
+In a production system, the `enum mtl_log_level` is set to the `MTL_LOG_LEVEL_ERR` usually, in this cast USDT probes can be used to fetching the logging, for details see [usdt](usdt.md) doc, `#### 2.1.1 log_msg USDT` part.
 
 ### 7.2. USDT
 
-MTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, detail see [usdt](usdt.md) doc.
+MTL offer eBPF based User Statically-Defined Tracing (USDT) support to monitor status or issues tracking in a production system, for details see [usdt](usdt.md) doc.

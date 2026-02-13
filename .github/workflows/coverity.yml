@@ -27,7 +27,7 @@ jobs:
 
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
-          ref: maint-25.02
+          ref: main
       
 
     - name: 'Install dependencies'
@@ -38,9 +38,14 @@ jobs:
             libnuma-dev libjson-c-dev libpcap-dev libgtest-dev libsdl2-dev \
             libsdl2-ttf-dev libssl-dev ca-certificates m4 clang llvm zlib1g-dev \
             libelf-dev libcap-ng-dev libcap2-bin gcc-multilib systemtap-sdt-dev ninja-build \
-            nasm dpdk-dev librdmacm-dev && \
+            nasm wget unzip && \
         sudo apt-get clean && \
         sudo rm -rf /var/lib/apt/lists/*
+
+    - name: 'Build and install DPDK'
+      run: |
+        cd script
+        ./build_dpdk.sh
 
     - name: 'Run coverity'
       uses: vapier/coverity-scan-action@2068473c7bdf8c2fb984a6a40ae76ee7facd7a85 # v1.8.0

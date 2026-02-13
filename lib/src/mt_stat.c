@@ -177,7 +177,7 @@ int mt_stat_uinit(struct mtl_main_impl* impl) {
   while ((item = MT_TAILQ_FIRST(&mgr->head))) {
     warn("%s, %p(%s) not unregister\n", __func__, item->cb_priv, item->name);
     MT_TAILQ_REMOVE(&mgr->head, item, next);
-    mt_free(item);
+    mt_rte_free(item);
   }
 
   ret = rte_eal_alarm_cancel(stat_alarm_handler, (void*)-1);

@@ -1,6 +1,10 @@
 # UDP Introduction
 
-Starting from version 23.04, the Media Transport Library provides an efficient user-space UDP stack that is POSIX-compatible, enabling users to adopt it without any changes to their code logic. The stack features an LD preload layer that intercepts UDP socket API calls and replaces them with our implementation, allowing for deployment without code changes or the need for rebuilding.
+> **Deprecation notice:** The user-space UDP stack described in this document is scheduled for removal in a future Media Transport Library release. New deployments should avoid relying on it, and existing deployments should begin planning a migration back to the standard kernel UDP path or to vendor-supported alternatives. Maintenance updates from now on focus on security fixes only.
+
+Starting from version 23.04, the Media Transport Library provides an efficient user-space UDP stack that is POSIX-compatible, enabling users to adopt it without any changes to their code logic.
+The stack features an LD preload layer that intercepts UDP socket API calls and replaces them with our implementation, allowing for deployment without code changes or the need for rebuilding.
+Although the implementation remains available for legacy users, it no longer receives feature enhancements and will be fully deprecated once the removal timeline is announced.
 
 In the Media Transport Library, data plane traffic is handled directly within the socket API under the current thread context, resulting in extremely high performance and low latency. Other user-space UDP stacks typically use a client-service architecture, which introduces cross-core message costs that can negatively impact performance and add extra latency.
 

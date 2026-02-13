@@ -97,11 +97,22 @@ static inline bool st_is_valid_payload_type(int payload_type) {
 
 void mt_eth_macaddr_dump(enum mtl_port port, char* tag, struct rte_ether_addr* mac_addr);
 
-static inline bool st_rx_seq_drop(uint16_t new_id, uint16_t old_id, uint16_t delta) {
-  if ((new_id <= old_id) && ((old_id - new_id) < delta))
-    return true;
-  else
-    return false;
+/**
+ * Compare sequence numbers with wrap-around support.
+ * For uint16_t: 0 > 65000 returns true (wrap-around case)
+ */
+static inline bool mt_seq16_greater(uint16_t a, uint16_t b) {
+  uint16_t diff = (uint16_t)(a - b);
+  return (diff & 0x8000u) == 0 && diff != 0;
+}
+
+/**
+ * Compare sequence numbers with wrap-around support.
+ * For uint32_t: 0 > 4200000000 returns true (wrap-around case)
+ */
+static inline bool mt_seq32_greater(uint32_t a, uint32_t b) {
+  uint32_t diff = (uint32_t)(a - b);
+  return (diff & 0x80000000u) == 0 && diff != 0;
 }
 
 struct rte_mbuf* mt_build_pad(struct mtl_main_impl* impl, struct rte_mempool* mempool,
@@ -282,7 +293,6 @@ const char* mt_dpdk_afxdp_port2if(const char* port);
 const char* mt_dpdk_afpkt_port2if(const char* port);
 const char* mt_kernel_port2if(const char* port);
 const char* mt_native_afxdp_port2if(const char* port);
-const char* mt_rdma_ud_port2if(const char* port);
 
 int mt_user_info_init(struct mt_user_info* info);
 

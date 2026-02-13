@@ -28,6 +28,7 @@ static uint16_t rx_st30p_next_idx(struct st30p_rx_ctx* ctx, uint16_t idx) {
 static void rx_st30p_block_wake(struct st30p_rx_ctx* ctx) {
   /* notify block */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
+  ctx->block_wake_pending = true;
   mt_pthread_cond_signal(&ctx->block_wake_cond);
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
 }
@@ -88,6 +89,7 @@ static int rx_st30p_frame_ready(void* priv, void* addr, struct st30_rx_frame_met
   frame->data_size = meta->frame_recv_size;
   frame->tfmt = meta->tfmt;
   frame->timestamp = meta->timestamp;
+  frame->receive_timestamp = meta->timestamp_first_pkt;
   frame->rtp_timestamp = meta->rtp_timestamp;
   framebuff->stat = ST30P_RX_FRAME_READY;
   /* point to next */
@@ -185,6 +187,7 @@ static int rx_st30p_init_fbs(struct st30p_rx_ctx* ctx, struct st30p_rx_ops* ops)
     frame->ptime = ops->ptime;
     /* same to framebuffer size */
     frame->buffer_size = frame->data_size = ops->framebuff_size;
+    frame->receive_timestamp = 0;
     dbg("%s(%d), init fb %u\n", __func__, idx, i);
   }
 
@@ -194,14 +197,23 @@ static int rx_st30p_init_fbs(struct st30p_rx_ctx* ctx, struct st30p_rx_ops* ops)
 static int rx_st30p_stat(void* priv) {
   struct st30p_rx_ctx* ctx = priv;
   struct st30p_rx_frame* framebuff = ctx->framebuffs;
+  uint16_t producer_idx;
+  uint16_t consumer_idx;
+  enum st30p_rx_frame_status producer_stat;
+  enum st30p_rx_frame_status consumer_stat;
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  uint16_t producer_idx = ctx->framebuff_producer_idx;
-  uint16_t consumer_idx = ctx->framebuff_consumer_idx;
+  mt_pthread_mutex_lock(&ctx->lock);
+  producer_idx = ctx->framebuff_producer_idx;
+  consumer_idx = ctx->framebuff_consumer_idx;
+  producer_stat = framebuff[producer_idx].stat;
+  consumer_stat = framebuff[consumer_idx].stat;
+  mt_pthread_mutex_unlock(&ctx->lock);
+
   notice("RX_st30p(%d,%s), p(%d:%s) c(%d:%s)\n", ctx->idx, ctx->ops_name, producer_idx,
-         rx_st30p_stat_name(framebuff[producer_idx].stat), consumer_idx,
-         rx_st30p_stat_name(framebuff[consumer_idx].stat));
+         rx_st30p_stat_name(producer_stat), consumer_idx,
+         rx_st30p_stat_name(consumer_stat));
 
   notice("RX_st30p(%d), frame get try %d succ %d, put %d\n", ctx->idx,
          ctx->stat_get_frame_try, ctx->stat_get_frame_succ, ctx->stat_put_frame);
@@ -221,8 +233,12 @@ static int rx_st30p_get_block_wait(struct st30p_rx_ctx* ctx) {
   dbg("%s(%d), start\n", __func__, ctx->idx);
   /* wait on the block cond */
   mt_pthread_mutex_lock(&ctx->block_wake_mutex);
-  mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
-                               ctx->block_timeout_ns);
+  while (!ctx->block_wake_pending) {
+    int ret = mt_pthread_cond_timedwait_ns(&ctx->block_wake_cond, &ctx->block_wake_mutex,
+                                           ctx->block_timeout_ns);
+    if (ret) break;
+  }
+  ctx->block_wake_pending = false;
   mt_pthread_mutex_unlock(&ctx->block_wake_mutex);
   dbg("%s(%d), end\n", __func__, ctx->idx);
   return 0;
@@ -355,7 +371,14 @@ int st30p_rx_put_frame(st30p_rx_handle handle, struct st30_frame* frame) {
 
 int st30p_rx_free(st30p_rx_handle handle) {
   struct st30p_rx_ctx* ctx = handle;
-  struct mtl_main_impl* impl = ctx->impl;
+  struct mtl_main_impl* impl;
+
+  if (!handle) {
+    err("%s, NULL handle\n", __func__);
+    return -EINVAL;
+  }
+
+  impl = ctx->impl;
 
   if (ctx->type != MT_ST30_HANDLE_PIPELINE_RX) {
     err("%s(%d), invalid type %d\n", __func__, ctx->idx, ctx->type);
@@ -430,6 +453,7 @@ st30p_rx_handle st30p_rx_create(mtl_handle mt, struct st30p_rx_ops* ops) {
   mt_pthread_mutex_init(&ctx->block_wake_mutex, NULL);
   mt_pthread_cond_wait_init(&ctx->block_wake_cond);
   ctx->block_timeout_ns = NS_PER_S;
+  ctx->block_wake_pending = false;
   if (ops->flags & ST30P_RX_FLAG_BLOCK_GET) ctx->block_get = true;
 
   /* copy ops */

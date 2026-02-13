@@ -52,6 +52,7 @@ struct st20p_rx_ctx {
   pthread_cond_t block_wake_cond;
   pthread_mutex_t block_wake_mutex;
   uint64_t block_timeout_ns;
+  bool block_wake_pending;
 
   struct st20_convert_session_impl* convert_impl;
   struct st_frame_converter* internal_converter;
@@ -64,9 +65,9 @@ struct st20p_rx_ctx {
   rte_atomic32_t stat_convert_fail;
   rte_atomic32_t stat_busy;
   /* get frame stat */
-  int stat_get_frame_try;
-  int stat_get_frame_succ;
-  int stat_put_frame;
+  uint32_t stat_get_frame_try;
+  uint32_t stat_get_frame_succ;
+  uint32_t stat_put_frame;
 };
 
 #endif

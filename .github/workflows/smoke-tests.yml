@@ -9,183 +9,123 @@ on:
     branches:
       - main
       - 'maint-**'
-env:
-  BUILD_TYPE: 'Release'
-  DPDK_VERSION: '25.03'
-  DPDK_REBUILD: 'false'
 permissions:
   contents: read
 jobs:
-  validation-build-mtl:
-    runs-on: [Linux, self-hosted, DPDK]
-    timeout-minutes: 60
+  smoke-check-for-changes:
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
     outputs:
-      pipenv-activate: ${{ steps.pipenv-install.outputs.VIRTUAL_ENV }}
-      runner-id: ${{ steps.get-runner-id.outputs.runner_id }}
+      changed: ${{ steps.filter.outputs.linux_tests == 'true' }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v2
+        id: filter
+        with:
+          filters: .github/path_filters.yml
+
+  run-smoke-tests:
+    needs: smoke-check-for-changes
+    if: ${{ github.repository == 'OpenVisualCloud/Media-Transport-Library' }}
+    concurrency:
+      group: smoke-${{ github.workflow }}-${{ github.ref }}-${{ matrix.nic }}
+      cancel-in-progress: true
+    strategy:
+      matrix:
+        nic:
+          - e810
+          - e810-dell
+          - e830
+      fail-fast: false
+    runs-on: ${{ matrix.nic }}
+    timeout-minutes: 90
     steps:
       - name: 'preparation: Harden Runner'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
         with:
           egress-policy: audit
-      - name: 'preparation: Get Runner ID'
-        id: get-runner-id
-        run: |
-          # Extract runner number from RUNNER_NAME (e.g., "cicd-1" -> "1")
-          RUNNER_NUMBER=$(echo "$RUNNER_NAME" | grep -o '[0-9]\+$' || echo "1")
-          # Format as runner-X
-          RUNNER_ID="runner-${RUNNER_NUMBER}"
-          echo "runner_id=$RUNNER_ID" >> "$GITHUB_OUTPUT"
-          echo "Using runner ID: $RUNNER_ID (from runner name: $RUNNER_NAME)"
-      - name: 'preparation: Restore valid repository owner and print env'
-        if: always()
-        run: |
-          sudo chown -R "${USER}" "$(pwd)" || true
-          env | grep TEST_ || true
       - name: 'preparation: Checkout MTL'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: '${{ github.ref }}'
-      - name: 'preparation: Checkout DPDK'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        if: env.DPDK_REBUILD == 'true'
-        with:
-          repository: 'DPDK/dpdk'
-          ref: 'v${{  env.DPDK_VERSION  }}'
-          path: 'dpdk'
-      - name: 'preparation: Checkout openh264'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'cisco/openh264'
-          ref: 'openh264v2.4.0'
-          path: 'openh264'
-      - name: 'preparation: Checkout FFmpeg'
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: 'FFmpeg/FFmpeg'
-          ref: 'release/7.0'
-          path: 'ffmpeg'
-      - name: 'configuration: Install the build dependency'
-        run: |
-          sudo apt update
-          sudo apt-get remove -y pipenv || true
-          sudo apt-get install -y \
-              git gcc meson tar zip \
-              pkg-config \
-              python3 \
-              python3-pyelftools \
-              python3-virtualenv \
-              python3-pip \
-              libnuma-dev \
-              libjson-c-dev \
-              libpcap-dev \
-              libgtest-dev \
-              libsdl2-dev \
-              libsdl2-ttf-dev \
-              libssl-dev \
-              systemtap-sdt-dev \
-              libbpf-dev \
-              libelf1 \
-              gstreamer1.0-plugins-base \
-              gstreamer1.0-plugins-good \
-              gstreamer1.0-tools \
-              gstreamer1.0-libav \
-              libgstreamer1.0-dev \
-              libgstreamer-plugins-base1.0-dev
-      - name: 'configuration: Apply dpdk patches'
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          patch -d "dpdk" -p1 -i <(cat patches/dpdk/${{  env.DPDK_VERSION  }}/*.patch)
-      - name: 'installation: Build dpdk'
-        working-directory: dpdk
-        if: env.DPDK_REBUILD == 'true'
-        run: |
-          meson build
-          ninja -C build
-          sudo ninja -C build install
-      - name: 'installation: Build mtl'
-        run: |
-          ./build.sh
-          sudo ldconfig
-      - name: 'installation: Build openh264'
-        working-directory: openh264
-        run: |
-          make -j "$(nproc)"
-          sudo make install
-          sudo ldconfig
-      - name: 'installation: Build FFmpeg'
-        working-directory: ffmpeg
-        run: |
-          git am ../ecosystem/ffmpeg_plugin/7.0/*.patch
-          cp ../ecosystem/ffmpeg_plugin/mtl_*.c -rf libavdevice/
-          cp ../ecosystem/ffmpeg_plugin/mtl_*.h -rf libavdevice/
-          ./configure --enable-shared --disable-static --enable-nonfree --enable-pic --enable-gpl --enable-libopenh264 --enable-encoder=libopenh264 --enable-mtl
-          make -j "$(nproc)"
-          sudo make install
-          sudo ldconfig
-      - name: 'installation: Build GStreamer'
-        working-directory: ecosystem/gstreamer_plugin
-        run: |
-          ./build.sh
+      - uses: ./.github/actions/build
       - name: 'installation: Install pipenv environment'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         working-directory: tests/validation
         id: pipenv-install
         run: |
-          python3 -m venv venv
-          source venv/bin/activate
+          python3 -m venv .venv
+          source .venv/bin/activate
           pip install -r requirements.txt
-          echo "VIRTUAL_ENV=$PWD/venv/bin/activate" >> "$GITHUB_ENV"
-  validation-run-tests:
-    needs: [validation-build-mtl]
-    runs-on: [self-hosted, "${{ needs.validation-build-mtl.outputs.runner-id }}"]
-    timeout-minutes: 720
-    env:
-      PYTEST_RETRIES: '3'
-    steps:
-      - name: Replace secrets in example config files
+      - name: Create session ID
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
-          sed -i "s+MTL_PATH_PLACEHOLDER+${{ github.workspace }}+" tests/validation/configs/test_config.yaml
-          sed -i "s/IP_ADDRESS_PLACEHOLDER/${{ secrets.BARE_METAL_IP_ADDRESS }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/SSH_PORT_PLACEHOLDER/${{ secrets.BARE_METAL_SSH_PORT }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s/USERNAME_PLACEHOLDER/${{ secrets.BARE_METAL_USERNAME }}/" tests/validation/configs/topology_config.yaml
-          sed -i "s+KEY_PATH_PLACEHOLDER+${{ secrets.BARE_METAL_SSH_KEY_PATH }}+" tests/validation/configs/topology_config.yaml
-      - name: 'preparation: Harden Runner'
-        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
-        with:
-          egress-policy: audit
-      - name: 'preparation: Evaluate choosen validation-test-port-p and validation-test-port-r'
+          runner_name=${{ runner.name }}
+          echo "SESSION_ID=${runner_name##*-}" >> "$GITHUB_ENV"
+      - name: Set PCI device env variable
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
-          eval "export TEST_PORT_P=TEST_VF_PORT_P_0"
-          eval "export TEST_PORT_R=TEST_VF_PORT_P_1"
-          echo "TEST_PORT_P=${TEST_PORT_P}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_R=${TEST_PORT_R}" >> "$GITHUB_ENV"
-          echo "TEST_PORT_P=${TEST_PORT_P}"
-          echo "TEST_PORT_R=${TEST_PORT_R}"
+          if [ "${{ matrix.nic }}" = "e810" ]; then
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e810-dell" ]; then
+            echo "PCI_DEVICE=8086:1592,8086:1592" >> "$GITHUB_ENV"
+          elif [ "${{ matrix.nic }}" = "e830" ]; then
+            echo "PCI_DEVICE=8086:12d2,8086:12d2" >> "$GITHUB_ENV"
+          fi
+      - name: Generate test framework config files
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        working-directory: tests/validation/configs
+        run: |
+          python3 gen_config.py \
+            --session_id ${{ env.SESSION_ID }} \
+            --build ${{ secrets.RUNNER_BUILD }} \
+            --mtl_path ${{ secrets.RUNNER_MTL_PATH }} \
+            --pci_device ${{ env.PCI_DEVICE }} \
+            --ip_address 127.0.0.1 \
+            --username ${{ secrets.RUNNER_USERNAME }} \
+            --key_path ${{ secrets.RUNNER_KEY_PATH }} \
+            --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
+            --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
+            --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
       - name: 'preparation: Kill MtlManager and pytest routines'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
+          sudo pkill -9 -f "gtest.sh" || true
+          sudo killall -SIGKILL KahawaiTest KahawaiUfdTest KahawaiUplTest || true
           sudo killall -SIGINT pipenv || true
           sudo killall -SIGINT pytest || true
           sudo killall -SIGINT MtlManager || true
-      - name: 'preparation: Create VFs'
+          sudo killall -SIGINT phc2sys || true
+          sudo killall -SIGINT ptp4l || true
+          sudo killall -SIGINT netsniff-ng || true
+      - name: Export workflow tag for PCAP naming
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        shell: bash
         run: |
-          sudo rmmod irdma || true
-          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_P}" || true
-          sudo ./script/nicctl.sh create_vf "${TEST_PF_PORT_R}" || true
+          echo "MTL_GITHUB_WORKFLOW=${{ github.workflow }}:${{ matrix.nic }}" >> "$GITHUB_ENV"
       - name: 'preparation: Start MtlManager at background'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           sudo MtlManager &
       - name: 'execution: Run validation-bare-metal tests in virtual environment'
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
+        timeout-minutes: 60
         run: |
-          sudo tests/validation/venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
+          tests/validation/.venv/bin/python3 -m pytest --topology_config=tests/validation/configs/topology_config.yaml --test_config=tests/validation/configs/test_config.yaml -m smoke  --template=html/index.html --report=report.html
       - name: "upload report"
-        if: always()
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         id: upload-report
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
-          name: smoke-tests-report
+          name: smoke-test-report-${{ matrix.nic }}
           path: |
             report.html
       - name: "Add report to summary"
-        if: always()
+        if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         run: |
           {
             echo "## Smoke Tests Report"

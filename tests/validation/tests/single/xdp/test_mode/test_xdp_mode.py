@@ -18,20 +18,12 @@ def test_xdp_mode(
     test_mode,
     video_format,
     replicas,
-    test_config,
     prepare_ramdisk,
 ):
     video_file = yuv_files[video_format]
     audio_file = audio_files["PCM24"]
     ancillary_file = anc_files["text_p50"]
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_xdp_mode_{test_mode}_{video_format}_replicas{replicas}"
-    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st20p_sessions(
@@ -80,5 +72,4 @@ def test_xdp_mode(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )

@@ -35,17 +35,6 @@ else
   set_variable('mtl_has_xdp_backend', false)
 endif
 
-# rdma check
-libibvers_dep = dependency('libibverbs', required: false)
-librdmacm_dep = dependency('librdmacm', required: false)
-if libibvers_dep.found() and librdmacm_dep.found()
-  add_global_arguments('-DMTL_HAS_RDMA_BACKEND', language : 'c')
-  set_variable('mtl_has_rdma_backend', true)
-else
-  message('libibvers and librdmacm not found, no rdma backend')
-  set_variable('mtl_has_rdma_backend', false)
-endif
-
 # usdt check
 mtl_has_usdt = false
 
@@ -92,6 +81,10 @@ endif
 
 mtl_c_args = []
 mtl_link_c_args = []
+
+if not is_windows
+  mtl_link_c_args += ['-Wl,-z,now', '-Wl,-z,relro']
+endif
 
 # enable warning as error for non debug build
 if get_option('buildtype') != 'debug'
@@ -155,7 +148,6 @@ mtl_lib += shared_library(meson.project_name(), sources,
   link_args : mtl_link_c_args,
   # asan should be always the first dep
   dependencies: [asan_dep, dpdk_dep, libm_dep, libnuma_dep, libpthread_dep, gpu_direct_dep, libdl_dep,
-                 jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep, libibvers_dep, librdmacm_dep,
-                 usdt_provider_header_dep,],
+                 jsonc_dep, ws2_32_dep, libxdp_dep, libbpf_dep, usdt_provider_header_dep,],
   install: true
 )

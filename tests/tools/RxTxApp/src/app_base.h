@@ -50,7 +50,7 @@
 
 #define ST_APP_DEFAULT_FB_CNT (3)
 
-#define ST_APP_USER_PACING_DEFAULT_OFFSET (10 * NS_PER_MS) /* 10ms */
+#define ST_APP_USER_CLOCK_DEFAULT_OFFSET (10 * NS_PER_MS) /* 10ms */
 
 #define ST_APP_EXPECT_NEAR(val, expect, delta) \
   ((val > (expect - delta)) && (val < (expect + delta)))
@@ -99,10 +99,10 @@ struct st_display {
   pthread_mutex_t display_frame_mutex;
 };
 
-struct st_user_pacing {
+struct st_user_time {
   uint64_t base_tai_time;
   pthread_mutex_t base_tai_time_mutex;
-  uint64_t user_pacing_offset;
+  uint64_t user_time_offset;
 };
 
 struct st_app_frameinfo {
@@ -521,9 +521,9 @@ struct st_app_tx_st20p_session {
   uint64_t last_stat_time_ns;
   bool sha_check;
   /* for now used only with user pacing to keep track of the frame timestamps */
-  uint64_t frame_time;
+  uint64_t frame_num;
   uint64_t local_tai_base_time;
-  struct st_user_pacing* user_pacing;
+  struct st_user_time* user_time;
 
   char st20p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st20p_source_begin;
@@ -537,9 +537,11 @@ struct st_app_tx_st20p_session {
 
   pthread_t st20p_app_thread;
   bool st20p_app_thread_stop;
+  bool tx_file_complete; /* for auto_stop: true when whole file has been sent */
 };
 
 struct st_app_rx_st20p_session {
+  struct st_app_context* ctx;
   int idx;
   st20p_rx_handle handle;
   mtl_handle st;
@@ -556,6 +558,7 @@ struct st_app_rx_st20p_session {
   uint64_t stat_last_time;
   int stat_frame_total_received;
   uint64_t stat_frame_first_rx_time;
+  uint64_t stat_frame_last_rx_time; /* for auto_stop: time of last frame received */
   double expect_fps;
 
   pthread_t st20p_app_thread;
@@ -568,6 +571,15 @@ struct st_app_rx_st20p_session {
 
   bool measure_latency;
   uint64_t stat_latency_us_sum;
+
+  /* for auto_stop feature */
+  bool rx_started;             /* true after first frame received */
+  int rx_timeout_cnt;          /* consecutive timeout count */
+  bool rx_timeout_after_start; /* true when timeout detected after rx_started */
+
+  /* for rx_max_file_size feature */
+  uint64_t rx_file_bytes_written;  /* total bytes written to file */
+  bool rx_file_size_limit_reached; /* true when file size limit reached */
 };
 
 struct st_app_tx_st30p_session {
@@ -581,10 +593,10 @@ struct st_app_tx_st30p_session {
   uint8_t num_port;
   uint64_t last_stat_time_ns;
   /* for now used only with user pacing to keep track of the frame timestamps */
-  uint64_t frame_time;
+  uint64_t frame_num;
   uint64_t packet_time;
   uint64_t local_tai_base_time;
-  struct st_user_pacing* user_pacing;
+  struct st_user_time* user_time;
 
   char st30p_source_url[ST_APP_URL_MAX_LEN];
   uint8_t* st30p_source_begin;
@@ -634,6 +646,8 @@ struct st_app_context {
   mtl_handle st;
   int test_time_s;
   bool stop;
+  bool auto_stop;            /* auto stop after tx file complete and rx timeout */
+  uint64_t rx_max_file_size; /* max file size in bytes for rx, 0 means no limit */
   uint8_t tx_dip_addr[MTL_PORT_MAX][MTL_IP_ADDR_LEN]; /* tx destination IP */
   bool has_tx_dst_mac[MTL_PORT_MAX];
   uint8_t tx_dst_mac[MTL_PORT_MAX][MTL_MAC_ADDR_LEN];
@@ -670,7 +684,7 @@ struct st_app_context {
   uint16_t tx_start_vrx;
   uint16_t tx_pad_interval;
   bool tx_static_pad;
-  bool tx_ts_first_pkt;
+  bool tx_exact_user_pacing;
   bool tx_ts_epoch;
   int32_t tx_ts_delta_us;
   enum st21_pacing tx_pacing_type;
@@ -757,7 +771,7 @@ struct st_app_context {
   char ttf_file[ST_APP_URL_MAX_LEN];
   int utc_offset;
 
-  struct st_user_pacing user_pacing;
+  struct st_user_time user_time;
 };
 
 static inline void* st_app_malloc(size_t sz) {
@@ -801,7 +815,7 @@ int st_set_mtl_log_file(struct st_app_context* ctx, const char* file);
 
 void st_sha_dump(const char* tag, const unsigned char* sha);
 
-uint64_t st_app_user_pacing_time(void* ctx, struct st_user_pacing* user_pacing,
-                                 uint64_t frame_time, bool restart_base_time);
+uint64_t st_app_user_time(void* ctx, struct st_user_time* user_time, uint64_t frame_num,
+                          double frame_time, bool restart_base_time);
 
 #endif

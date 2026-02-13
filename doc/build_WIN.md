@@ -1,5 +1,7 @@
 # Media Transport Library compilation and build Guide on Windows OS (MSYS2)
 
+**Note:** Support for Windows has been discontinued. If you want to run MTL on Windows, it may be possible, but no guaranties.
+
 ## 1. Introduction
 
 This document contains instructions for installing and configuring the Media Transport Library for Windows Operation System in MSYS2 environment.
@@ -50,6 +52,8 @@ make && make install
 
 ## 5. Build DPDK
 
+**Note:** DPDK 23.11 was the last version to which DPDK patches were ported.
+
 * Clone the MTL repository if not:
 
 ```bash
@@ -60,7 +64,7 @@ export mtl_source_code=${PWD}/Media-Transport-Library
 * Convert symlink patch files to real file:
 
 ```bash
-cd $mtl_source_code/patches/dpdk/25.03
+cd $mtl_source_code/patches/dpdk/23.11
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
 cd windows
 ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]]; then cp "$(cat "{}")" "{}"; fi'
@@ -72,13 +76,13 @@ ls *.patch | xargs -I{} bash -c 'if [[ $(sed -n '1p' "{}") =~ ^../.*\.patch$ ]];
 cd $mtl_source_code
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v25.03
-git switch -c v25.03
+git checkout v23.11
+git switch -c v23.11
 
 git config user.name "Your Name"        # config if not
 git config user.email "you@example.com" # config if not
-git am $mtl_source_code/patches/dpdk/25.03/*.patch
-git am $mtl_source_code/patches/dpdk/25.03/windows/*.patch
+git am $mtl_source_code/patches/dpdk/23.11/*.patch
+git am $mtl_source_code/patches/dpdk/23.11/windows/*.patch
 ```
 
 * Build and install DPDK:

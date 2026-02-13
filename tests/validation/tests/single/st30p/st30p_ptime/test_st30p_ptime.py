@@ -1,11 +1,16 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2024-2025 Intel Corporation
-import os
+import logging
 
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
-from mtl_engine.execute import LOG_FOLDER
+from common.integrity.integrity_runner import FileAudioIntegrityRunner
+from common.nicctl import InterfaceSetup
+from mtl_engine.execute import log_fail
+from mtl_engine.integrity import get_sample_size
 from mtl_engine.media_files import audio_files
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.mark.nightly
@@ -27,8 +32,7 @@ from mtl_engine.media_files import audio_files
 def test_st30p_ptime(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     audio_ptime,
     test_config,
@@ -37,30 +41,22 @@ def test_st30p_ptime(
 ):
     media_file_info, media_file_path = media_file
     host = list(hosts.values())[0]
-
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = (
-        f"test_st30p_ptime_{media_file_info['format']}"  # Set a unique pcap file name
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
     )
-
-    # Ensure the output directory exists.
-    log_dir = os.path.join(os.getcwd(), LOG_FOLDER, "latest")
-    os.makedirs(log_dir, exist_ok=True)
-    out_file_url = os.path.join(log_dir, "out.wav")
+    out_file_url = host.connection.path(media_file_path).parent / "out.pcm"
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st30p_sessions(
         config=config,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="unicast",
         audio_format=media_file_info["format"],
         audio_channel=["U02"],
         audio_sampling="48kHz",
         audio_ptime=audio_ptime,
         filename=media_file_path,
-        out_url=out_file_url,
+        out_url=str(out_file_url),
     )
 
     rxtxapp.execute_test(
@@ -68,5 +64,18 @@ def test_st30p_ptime(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )
+
+    if test_config.get("integrity_check", True):
+        logger.info("Running audio integrity check...")
+        integrity = FileAudioIntegrityRunner(
+            host=host,
+            test_repo_path=build,
+            src_url=media_file_path,
+            out_name=out_file_url.name,
+            sample_size=get_sample_size(media_file_info["format"]),
+            out_path=str(out_file_url.parent),
+        )
+        result = integrity.run()
+        if not result:
+            log_fail("Audio integrity check failed")

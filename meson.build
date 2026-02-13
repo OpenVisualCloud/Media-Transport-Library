@@ -14,8 +14,22 @@ if get_option('buildtype') == 'debug'
   add_global_arguments('-DDEBUG=DEBUG', language : 'c')
 endif
 
+if get_option('buildtype') != 'release'
+  add_global_arguments('-DMTL_SIMULATE_PACKET_DROPS=1', language : 'c')
+  add_global_arguments('-DMTL_SIMULATE_PACKET_DROPS=1', language : 'cpp')
+endif
+
 # enable BSD_SOURCE
 add_global_arguments('-D_DEFAULT_SOURCE', language : 'c')
+
+enable_fuzzing_opt = get_option('enable_fuzzing')
+
+if enable_fuzzing_opt
+  add_global_arguments('-DMTL_ENABLE_FUZZING_ST40', language : 'c')
+  add_global_arguments('-DMTL_ENABLE_FUZZING_ST30', language : 'c')
+  add_global_arguments('-DMTL_ENABLE_FUZZING_ST20', language : 'c')
+  add_global_arguments('-DMTL_ENABLE_FUZZING_ST22', language : 'c')
+endif
 
 # get external variables
 add_global_arguments('-D__MTL_GIT__="'+ run_command('git', 'describe', '--abbrev=8', '--dirty', '--always', check: false).stdout().strip() + '"', language : 'c')
@@ -53,6 +67,15 @@ subdir('include')
 
 # build library
 subdir('lib')
+
+mtl_internal_dep = declare_dependency(
+  link_with : mtl_lib,
+  include_directories : mtl_include_dir,
+)
+
+if enable_fuzzing_opt
+  subdir('tests/fuzz')
+endif
 
 pkg = import('pkgconfig')
 pkg.generate(

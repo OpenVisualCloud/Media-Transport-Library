@@ -1,0 +1,28 @@
+From 65ee1358c09bd98cd08a16598b1822f820037558 Mon Sep 17 00:00:00 2001
+From: Frank Du <frank.du@intel.com>
+Date: Tue, 21 Feb 2023 09:26:05 +0800
+Subject: [PATCH 3/6] ice: set ICE_SCHED_DFLT_BURST_SIZE to 2048
+
+For st2110 rl burst optimization
+
+Signed-off-by: Frank Du <frank.du@intel.com>
+---
+ drivers/net/intel/ice/base/ice_type.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/intel/ice/base/ice_type.h b/drivers/net/intel/ice/base/ice_type.h
+index ae3b944d6e..02e98ae988 100644
+--- a/drivers/net/intel/ice/base/ice_type.h
++++ b/drivers/net/intel/ice/base/ice_type.h
+@@ -1087,7 +1087,7 @@ enum ice_rl_type {
+ #define ICE_SCHED_NO_SHARED_RL_PROF_ID	0xFFFF
+ #define ICE_SCHED_DFLT_BW_WT		4
+ #define ICE_SCHED_INVAL_PROF_ID		0xFFFF
+-#define ICE_SCHED_DFLT_BURST_SIZE	(15 * 1024)	/* in bytes (15k) */
++#define ICE_SCHED_DFLT_BURST_SIZE	(2 * 1024)	/* in bytes (2k) */
+ 
+ /* Access Macros for Tx Sched RL Profile data */
+ #define ICE_TXSCHED_GET_RL_PROF_ID(p) LE16_TO_CPU((p)->info.profile_id)
+-- 
+2.34.1
+

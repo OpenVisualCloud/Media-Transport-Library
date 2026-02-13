@@ -183,14 +183,18 @@ int mcast_membership_general_query(struct mtl_main_impl* impl, enum mtl_port por
 static int mcast_membership_report_on_query(struct mtl_main_impl* impl,
                                             enum mtl_port port) {
   struct mt_mcast_impl* mcast = get_mcast(impl, port);
-  uint16_t group_num = mcast->group_num;
+  uint16_t group_num;
   struct rte_mbuf* pkt;
   struct rte_ipv4_hdr* ip_hdr;
   struct mcast_mb_report_v3* mb_report;
   size_t hdr_offset = 0;
   size_t mb_report_len = sizeof(struct mcast_mb_report_v3);
 
+  mt_pthread_mutex_lock(&mcast->group_mutex);
+  group_num = mcast->group_num;
+
   if (group_num <= 0) {
+    mt_pthread_mutex_unlock(&mcast->group_mutex);
     dbg("%s(%d), no group to join\n", __func__, port);
     return 0;
   }
@@ -199,6 +203,7 @@ static int mcast_membership_report_on_query(struct mtl_main_impl* impl,
 
   pkt = rte_pktmbuf_alloc(mt_sys_tx_mempool(impl, port));
   if (!pkt) {
+    mt_pthread_mutex_unlock(&mcast->group_mutex);
     err("%s(%d), report packet alloc failed\n", __func__, port);
     return -ENOMEM;
   }
@@ -222,6 +227,8 @@ static int mcast_membership_report_on_query(struct mtl_main_impl* impl,
     group_record_addr += record_len;
     mb_report_len += record_len;
   }
+
+  mt_pthread_mutex_unlock(&mcast->group_mutex);
 
   uint16_t checksum = mcast_msg_checksum(MEMBERSHIP_REPORT_V3, mb_report, mb_report_len);
   if (checksum <= 0) {

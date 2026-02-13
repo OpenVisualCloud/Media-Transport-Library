@@ -9,10 +9,21 @@ static void app_rx_st20p_consume_frame(struct st_app_rx_st20p_session* s,
   struct st_display* d = s->display;
   int idx = s->idx;
 
-  if (s->st20p_destination_file) {
-    if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
-      err("%s(%d), failed to write frame to file %s\n", __func__, idx,
-          s->st20p_destination_url);
+  if (s->st20p_destination_file && !s->rx_file_size_limit_reached) {
+    /* check if writing this frame would exceed the file size limit */
+    uint64_t max_size = s->ctx->rx_max_file_size;
+    if (max_size > 0 && (s->rx_file_bytes_written + s->st20p_frame_size) > max_size) {
+      info("%s(%d), rx_max_file_size limit reached: %" PRIu64
+           " bytes written, limit %" PRIu64 "\n",
+           __func__, idx, s->rx_file_bytes_written, max_size);
+      s->rx_file_size_limit_reached = true;
+    } else {
+      if (!fwrite(frame->addr[0], 1, s->st20p_frame_size, s->st20p_destination_file)) {
+        err("%s(%d), failed to write frame to file %s\n", __func__, idx,
+            s->st20p_destination_url);
+      } else {
+        s->rx_file_bytes_written += s->st20p_frame_size;
+      }
     }
   }
 
@@ -62,7 +73,24 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     frame = st20p_rx_get_frame(s->handle);
     if (!frame) { /* no ready frame */
       warn("%s(%d), get frame time out\n", __func__, s->idx);
+      /* track consecutive timeouts for auto_stop */
+      if (s->ctx && s->ctx->auto_stop && s->rx_started) {
+        s->rx_timeout_cnt++;
+        if (s->rx_timeout_cnt >= 3) { /* 3 consecutive timeouts */
+          info("%s(%d), auto_stop: rx timeout after receiving started\n", __func__, idx);
+          s->rx_timeout_after_start = true;
+          break;
+        }
+      }
       continue;
+    }
+
+    /* reset timeout counter on successful frame receive */
+    s->rx_timeout_cnt = 0;
+    /* mark as started for auto_stop */
+    if (!s->rx_started) {
+      s->rx_started = true;
+      info("%s(%d), rx started\n", __func__, idx);
     }
 
     s->stat_frame_received++;
@@ -99,6 +127,7 @@ static void* app_rx_st20p_frame_thread(void* arg) {
     s->stat_frame_total_received++;
     if (!s->stat_frame_first_rx_time)
       s->stat_frame_first_rx_time = st_app_get_monotonic_time();
+    s->stat_frame_last_rx_time = st_app_get_monotonic_time();
     st20p_rx_put_frame(s->handle, frame);
   }
   info("%s(%d), stop\n", __func__, s->idx);
@@ -187,6 +216,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   st20p_rx_handle handle;
   memset(&ops, 0, sizeof(ops));
 
+  s->ctx = ctx;
   s->last_stat_time_ns = st_app_get_monotonic_time();
   s->sha_check = ctx->video_sha_check;
 
@@ -250,6 +280,7 @@ static int app_rx_st20p_init(struct st_app_context* ctx,
   if (st20p && st20p->enable_rtcp) ops.flags |= ST20P_RX_FLAG_ENABLE_RTCP;
   if (ctx->enable_timing_parser) ops.flags |= ST20P_RX_FLAG_TIMING_PARSER_STAT;
   if (ctx->rx_video_multi_thread) ops.flags |= ST20P_RX_FLAG_USE_MULTI_THREADS;
+  if (ctx->enable_hdr_split) ops.flags |= ST20P_RX_FLAG_HDR_SPLIT;
   if (ctx->force_rx_video_numa >= 0) {
     ops.flags |= ST20P_RX_FLAG_FORCE_NUMA;
     ops.socket_id = ctx->force_rx_video_numa;
@@ -322,8 +353,13 @@ static int app_rx_st20p_stat(struct st_app_rx_st20p_session* s) {
 
 static int app_rx_st20p_result(struct st_app_rx_st20p_session* s) {
   int idx = s->idx;
-  uint64_t cur_time_ns = st_app_get_monotonic_time();
-  double time_sec = (double)(cur_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
+  uint64_t end_time_ns;
+  /* for auto_stop: use last frame time to avoid counting timeout period in fps */
+  if (s->rx_timeout_after_start && s->stat_frame_last_rx_time)
+    end_time_ns = s->stat_frame_last_rx_time;
+  else
+    end_time_ns = st_app_get_monotonic_time();
+  double time_sec = (double)(end_time_ns - s->stat_frame_first_rx_time) / NS_PER_S;
   double framerate = s->stat_frame_total_received / time_sec;
 
   if (!s->stat_frame_total_received) return -EINVAL;
@@ -433,4 +469,15 @@ int st_app_rx_st20p_io_stat(struct st_app_context* ctx) {
   }
 
   return ret;
+}
+
+bool st_app_rx_st20p_sessions_all_timeout(struct st_app_context* ctx) {
+  struct st_app_rx_st20p_session* s;
+  if (!ctx->rx_st20p_sessions || ctx->rx_st20p_session_cnt == 0) return true;
+
+  for (int i = 0; i < ctx->rx_st20p_session_cnt; i++) {
+    s = &ctx->rx_st20p_sessions[i];
+    if (!s->rx_timeout_after_start) return false;
+  }
+  return true;
 }

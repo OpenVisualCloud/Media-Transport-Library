@@ -8,6 +8,12 @@
 #include "st_main.h"
 
 #define ST_RX_VIDEO_DMA_MIN_SIZE (1024)
+/* Number of slots for out of order packet recovery for RTCP retransmission
+   cannot be bigger than ST_VIDEO_RX_REC_NUM_OFO*/
+#define ST_RX_VIDEO_RTCP_SLOT_NUM 2
+
+/* Number of slots for redundant support */
+#define ST_RX_VIDEO_REDUNDANT_SLOT_NUM 2
 
 #define ST_RV_TP_TSC_SYNC_MS (100) /* sync tsc with ptp period(ms) */
 #define ST_RV_TP_TSC_SYNC_NS (ST_RV_TP_TSC_SYNC_MS * 1000 * 1000)
@@ -91,5 +97,12 @@ static inline bool rx_video_session_can_migrate(struct st_rx_video_session_impl*
 int st_rx_video_session_migrate(struct mtl_main_impl* impl,
                                 struct st_rx_video_sessions_mgr* mgr,
                                 struct st_rx_video_session_impl* s, int idx);
+
+#if defined(MTL_ENABLE_FUZZING_ST20) || defined(MTL_ENABLE_FUZZING_ST22)
+int st_rx_video_session_fuzz_handle_pkt(struct st_rx_video_session_impl* s,
+                                        struct rte_mbuf* mbuf,
+                                        enum mtl_session_port s_port);
+void st_rx_video_session_fuzz_reset(struct st_rx_video_session_impl* s);
+#endif
 
 #endif

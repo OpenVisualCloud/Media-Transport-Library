@@ -12,13 +12,17 @@ def csv_add_test(
     issue: str,
     result_note: str | None = None,
 ):
-    report[test_case] = {
+    res_dict = {
         "Test case": test_case,
         "Commands": commands,
         "Result": result,
         "Issue": issue,
         "Result note": result_note,
     }
+    if test_case in report:
+        report[test_case].update(res_dict)
+    else:
+        report[test_case] = res_dict
 
 
 def csv_write_report(filename: str):
@@ -29,6 +33,7 @@ def csv_write_report(filename: str):
             "Commands",
             "Status",
             "Result",
+            "Compliance",
             "Issue",
             "Result note",
         ]
@@ -44,3 +49,10 @@ def csv_write_report(filename: str):
 def update_compliance_result(test_case: str, result: str):
     if test_case in report:
         report[test_case]["Compliance"] = result
+    else:
+        report[test_case] = {"Compliance": result}
+
+
+def get_compliance_result(test_case: str) -> str:
+    if test_case in report and "Compliance" in report[test_case]:
+        return report[test_case]["Compliance"]

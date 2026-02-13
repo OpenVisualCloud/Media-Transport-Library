@@ -2,6 +2,7 @@
 # Copyright(c) 2024-2025 Intel Corporation
 import mtl_engine.RxTxApp as rxtxapp
 import pytest
+from common.nicctl import InterfaceSetup
 from mtl_engine.media_files import st41_files
 
 payload_type_mapping = {
@@ -32,8 +33,7 @@ k_bit_mapping = {
 def test_payload_type(
     hosts,
     build,
-    media,
-    nic_port_list,
+    setup_interfaces: InterfaceSetup,
     test_time,
     payload_type,
     type_mode,
@@ -49,18 +49,16 @@ def test_payload_type(
     dit = dit_mapping["dit0"]
     k_bit = k_bit_mapping["k0"]
 
-    # Get capture configuration from test_config.yaml
-    # This controls whether tcpdump capture is enabled, where to store the pcap, etc.
-    capture_cfg = dict(test_config.get("capture_cfg", {}))
-    capture_cfg["test_name"] = f"test_payload_type_{payload_type}_{type_mode}"
-
     host = list(hosts.values())[0]
+    interfaces_list = setup_interfaces.get_interfaces_list_single(
+        test_config.get("interface_type", "VF")
+    )
 
     config = rxtxapp.create_empty_config()
     config = rxtxapp.add_st41_sessions(
         config=config,
         no_chain=False,
-        nic_port_list=host.vfs,
+        nic_port_list=interfaces_list,
         test_mode="unicast",
         payload_type=payload_type_mapping[payload_type],
         type_=type_mode,
@@ -75,5 +73,4 @@ def test_payload_type(
         build=build,
         test_time=test_time,
         host=host,
-        capture_cfg=capture_cfg,
     )

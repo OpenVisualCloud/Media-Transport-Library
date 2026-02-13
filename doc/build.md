@@ -128,13 +128,13 @@ export mtl_source_code=${PWD}/Media-Transport-Library
 
 ## 2. DPDK build and install
 
-### 2.1. Get DPDK 25.03 source code
+### 2.1. Get DPDK 25.11 source code
 
 ```bash
 git clone https://github.com/DPDK/dpdk.git
 cd dpdk
-git checkout v25.03
-git switch -c v25.03
+git checkout v25.11
+git switch -c v25.11
 cd ..
 ```
 
@@ -144,7 +144,7 @@ Note: $mtl_source_code should be pointed to top source code tree of Media Transp
 
 ```bash
 cd dpdk
-git am $mtl_source_code/patches/dpdk/25.03/*.patch
+git am $mtl_source_code/patches/dpdk/25.11/*.patch
 ```
 
 ### 2.3. Build and install DPDK library

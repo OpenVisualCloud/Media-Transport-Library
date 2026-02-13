@@ -7,7 +7,6 @@ import os
 import re
 
 from mtl_engine import udp_app_config
-from mtl_engine.RxTxApp import prepare_tcpdump
 
 from .const import LOG_FOLDER
 from .execute import call, log_fail, wait
@@ -28,7 +27,6 @@ def execute_test_sample(
     test_time: int,
     nic_port_list: list,
     sessions_cnt: int,
-    capture_cfg=None,
     host=None,
 ) -> None:
     clinet_config = create_config(
@@ -62,21 +60,12 @@ def execute_test_sample(
     client_command = f"./build/app/UfdClientSample --p_tx_ip {sample_ip_dict['server']} --sessions_cnt {sessions_cnt}"
     server_command = f"./build/app/UfdServerSample --sessions_cnt {sessions_cnt}"
 
-    tcpdump = prepare_tcpdump(capture_cfg, host)
-
     client_proc = call(client_command, build, test_time, sigint=True, env=client_env)
     server_proc = call(server_command, build, test_time, sigint=True, env=server_env)
 
-    try:
-        # Start tcpdump capture after traffic is flowing
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
-        # Wait for both processes to finish
-        wait(client_proc)
-        wait(server_proc)
-    finally:
-        if tcpdump:
-            tcpdump.stop()
+    # Wait for both processes to finish
+    wait(client_proc)
+    wait(server_proc)
 
     if not check_received_packets(client_proc.output) or not check_received_packets(
         server_proc.output
@@ -91,7 +80,6 @@ def execute_test_librist(
     sleep_us: int,
     sleep_step: int,
     sessions_cnt: int,
-    capture_cfg=None,
     host=None,
 ) -> None:
     send_config = create_config(
@@ -131,21 +119,11 @@ def execute_test_librist(
         + f" --bind_ip={librist_ip_dict['receive']} --sessions_cnt={sessions_cnt}"
     )
 
-    tcpdump = prepare_tcpdump(capture_cfg, host)
-
     send_proc = call(send_command, build, test_time, sigint=True, env=send_env)
     receive_proc = call(receive_command, build, test_time, sigint=True, env=receive_env)
 
-    try:
-        # Start tcpdump capture after traffic is flowing
-        if tcpdump:
-            tcpdump.capture(capture_time=capture_cfg.get("capture_time", test_time))
-        # Wait for both processes to finish
-        wait(send_proc)
-        wait(receive_proc)
-    finally:
-        if tcpdump:
-            tcpdump.stop()
+    wait(send_proc)
+    wait(receive_proc)
 
     if not check_connected_receivers(
         send_proc.output, sessions_cnt

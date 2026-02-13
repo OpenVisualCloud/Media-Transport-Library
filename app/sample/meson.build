@@ -8,6 +8,8 @@ pipeline_tx_st22_sample_sources = files('tx_st22_pipeline_sample.c', 'sample_uti
 pipeline_rx_st22_sample_sources = files('rx_st22_pipeline_sample.c', 'sample_util.c')
 pipeline_tx_st30_sample_sources = files('tx_st30_pipeline_sample.c', 'sample_util.c')
 pipeline_rx_st30_sample_sources = files('rx_st30_pipeline_sample.c', 'sample_util.c')
+pipeline_tx_st40_sample_sources = files('tx_st40_pipeline_sample.c', 'sample_util.c')
+pipeline_rx_st40_sample_sources = files('rx_st40_pipeline_sample.c', 'sample_util.c')
 
 # fwd
 rx_st20p_tx_st20p_fwd_sources = files('fwd/rx_st20p_tx_st20p_fwd.c', 'sample_util.c')
@@ -47,14 +49,6 @@ dma_sample_sources = files('dma/dma_sample.c', 'sample_util.c')
 # experimental
 redundant_rx_st20_combined_sample_sources = files('experimental/rx_st20_redundant_combined_sample.c',
     'sample_util.c')
-
-# rdma
-rdma_tx_sample_sources = files('rdma/rdma_tx.c')
-rdma_rx_sample_sources = files('rdma/rdma_rx.c')
-rdma_video_tx_sample_sources = files('rdma/rdma_video_tx.c')
-rdma_video_rx_sample_sources = files('rdma/rdma_video_rx.c')
-rdma_video_tx_multi_sample_sources = files('rdma/rdma_video_tx_multi.c')
-rdma_video_rx_multi_sample_sources = files('rdma/rdma_video_rx_multi.c')
 
 # gpu direct
 gpu_direct_tx_sample_sources = files('gpu_direct/tx_st20_pipeline_gpu_direct.c', 'sample_util.c')
