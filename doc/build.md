@@ -198,11 +198,36 @@ Optional examples:
 # Build with debug symbols
 ./script/build_i226v.sh --buildtype debug
 
+# Use an existing DPDK checkout location
+./script/build_i226v.sh --dpdk-src-dir /opt/src/dpdk-25.11
+
 # Re-clone DPDK source before building
 ./script/build_i226v.sh --force-dpdk-reclone
 
 # Build MTL only (assume DPDK already installed)
 ./script/build_i226v.sh --skip-dpdk
+```
+
+### 3.2. I226-V (`igc` PMD) notes from DPDK driver guidance
+
+No extra MTL compile-time flag is required specifically for I226-V. The key updates are in
+runtime setup and validation:
+
+* Ensure your DPDK build includes the `igc` PMD and that `libdpdk` is installed correctly.
+* Use `vfio-pci` binding for DPDK datapath runs (kernel `igc` is still fine for non-DPDK paths).
+* Confirm IOMMU and hugepages are enabled before running MTL with DPDK backend.
+
+Typical post-build checks for I226-V:
+
+```bash
+# verify NIC and active kernel driver
+lspci -nn | grep -i -E "ethernet|intel"
+
+# check DPDK sees the device and driver bindings
+sudo dpdk-devbind.py -s
+
+# verify PMD is present in your DPDK test binary
+dpdk-testpmd --help
 ```
 
 ## 4. FAQ

@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 DPDK_VER="25.11"
+DPDK_SRC_DIR=""
 BUILDTYPE="release"
 FORCE_DPDK_RECLONE=false
 SKIP_DPDK=false
@@ -17,26 +18,45 @@ usage() {
 	cat <<USAGE
 Usage: $(basename "$0") [OPTIONS]
 
-Build Media Transport Library for Intel I226-V oriented deployments.
-The script builds DPDK (with MTL patches) and then builds MTL via ./build.sh.
+Build Media Transport Library for Intel I226-V deployments.
+This builds DPDK (with MTL patches, if present) and then runs ./build.sh.
 
 Options:
-  --dpdk-ver <version>        DPDK version to use (default: ${DPDK_VER})
+  --dpdk-ver <version>        DPDK version tag to use (default: ${DPDK_VER})
+  --dpdk-src-dir <path>       Existing/new DPDK source dir (default: ../dpdk-<version>)
   --buildtype <type>          build.sh type: debug|debugonly|debugoptimized|plain|release
                               (default: ${BUILDTYPE})
-  --force-dpdk-reclone        Remove local DPDK source folder and clone again
-  --skip-dpdk                 Skip DPDK clone/build/install and only run ./build.sh
+  --force-dpdk-reclone        Remove DPDK source directory and clone again
+  --skip-dpdk                 Skip DPDK build/install and only run ./build.sh
   -h, --help                  Show this help
 USAGE
+}
+
+run_as_root() {
+	if [[ "${EUID}" -eq 0 ]]; then
+		"$@"
+	elif command -v sudo >/dev/null 2>&1; then
+		sudo "$@"
+	else
+		echo "Need root privileges to run: $*" >&2
+		exit 1
+	fi
 }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--dpdk-ver)
+		[[ $# -ge 2 ]] || { echo "--dpdk-ver requires a value" >&2; exit 1; }
 		DPDK_VER="$2"
 		shift 2
 		;;
+	--dpdk-src-dir)
+		[[ $# -ge 2 ]] || { echo "--dpdk-src-dir requires a value" >&2; exit 1; }
+		DPDK_SRC_DIR="$2"
+		shift 2
+		;;
 	--buildtype)
+		[[ $# -ge 2 ]] || { echo "--buildtype requires a value" >&2; exit 1; }
 		BUILDTYPE="$2"
 		shift 2
 		;;
@@ -60,15 +80,30 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if [[ "${SKIP_DPDK}" == "false" ]]; then
-	DPDK_SRC_DIR="${REPO_DIR}/../dpdk-${DPDK_VER}"
+case "${BUILDTYPE}" in
+	debug | debugonly | debugoptimized | plain | release) ;;
+	*)
+		echo "Invalid --buildtype '${BUILDTYPE}'" >&2
+		exit 1
+		;;
+esac
 
+if [[ -z "${DPDK_SRC_DIR}" ]]; then
+	DPDK_SRC_DIR="${REPO_DIR}/../dpdk-${DPDK_VER}"
+fi
+
+if [[ "${SKIP_DPDK}" == "false" ]]; then
 	if [[ "${FORCE_DPDK_RECLONE}" == "true" ]]; then
 		rm -rf "${DPDK_SRC_DIR}"
 	fi
 
 	if [[ ! -d "${DPDK_SRC_DIR}" ]]; then
 		git -C "$(dirname "${DPDK_SRC_DIR}")" clone https://github.com/DPDK/dpdk.git "$(basename "${DPDK_SRC_DIR}")"
+	fi
+
+	if [[ ! -d "${DPDK_SRC_DIR}/.git" ]]; then
+		echo "DPDK source directory is not a git repository: ${DPDK_SRC_DIR}" >&2
+		exit 1
 	fi
 
 	pushd "${DPDK_SRC_DIR}" >/dev/null
@@ -82,7 +117,7 @@ if [[ "${SKIP_DPDK}" == "false" ]]; then
 
 	meson setup build --wipe
 	ninja -C build
-	sudo ninja install -C build
+	run_as_root ninja install -C build
 	popd >/dev/null
 fi
 
