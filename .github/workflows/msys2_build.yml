@@ -76,8 +76,8 @@ jobs:
         run: |
           wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
           unzip -d npcap-sdk npcap-sdk-1.12.zip
-          cp npcap-sdk/Include/* ${MSYSTEM_PREFIX}/include/
-          cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
+          cp -r npcap-sdk/Include/* ${MSYSTEM_PREFIX}/include/
+          cp -r npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
       - name: Checkout MTL code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
