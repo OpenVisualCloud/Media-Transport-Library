@@ -74,12 +74,8 @@ jobs:
 
       - name: Install npcap-sdk
         run: |
-          NPCAP_ZIP="npcap-sdk-1.12.zip"
-          # Try multiple sources with retries
-          wget --retry=3 --timeout=30 -O "$NPCAP_ZIP" https://nmap.org/npcap/dist/$NPCAP_ZIP || \
-          wget --retry=3 --timeout=30 -O "$NPCAP_ZIP" https://fossies.org/windows/misc/$NPCAP_ZIP || \
-          (echo "Failed to download npcap-sdk from all sources" && exit 1)
-          unzip -d npcap-sdk "$NPCAP_ZIP"
+          wget https://nmap.org/npcap/dist/npcap-sdk-1.12.zip
+          unzip -d npcap-sdk npcap-sdk-1.12.zip
           cp npcap-sdk/Lib/x64/* ${MSYSTEM_PREFIX}/lib/
 
       - name: Checkout MTL code
