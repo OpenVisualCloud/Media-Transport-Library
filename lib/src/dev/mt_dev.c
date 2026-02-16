@@ -1676,6 +1676,7 @@ uint16_t mt_dpdk_tx_burst_busy(struct mtl_main_impl* impl, struct mt_tx_queue* q
 int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue,
                            struct rte_mbuf* pad) {
   enum mtl_port port = queue->port;
+  uint16_t port_id = queue->port_id;
   uint16_t queue_id = queue->queue_id;
 
   /* use double to make sure all the fifo are burst out to clean all mbufs in the pool */
@@ -1688,6 +1689,28 @@ int mt_dpdk_flush_tx_queue(struct mtl_main_impl* impl, struct mt_tx_queue* queue
     rte_mbuf_refcnt_update(pad, 1);
     mt_dpdk_tx_burst_busy(impl, queue, &pads[0], 1, 1);
   }
+
+  /*
+   * After flushing with pad packets, actively reclaim all completed TX descriptors.
+   * The pad burst above pushes old mbufs through the NIC TX ring, but the PMD may
+   * not have processed all completions yet. rte_eth_tx_done_cleanup ensures all
+   * DMA-completed mbufs are returned to their mempool before we proceed to free it.
+   * Without this, mbufs can remain "in-use" from the mempool's perspective, causing
+   * mt_mempool_free to fail and leading to stale descriptor references on session
+   * re-creation.
+   */
+  int max_cleanup_attempts = 10;
+  for (int i = 0; i < max_cleanup_attempts; i++) {
+    int ret = rte_eth_tx_done_cleanup(port_id, queue_id, 0);
+    if (ret < 0) {
+      /* driver does not support done_cleanup, the pad flush is our best effort */
+      dbg("%s(%d), queue %u done_cleanup not supported(%d)\n", __func__, port, queue_id,
+          ret);
+      break;
+    }
+    if (ret == 0) break; /* no more mbufs to reclaim */
+  }
+
   dbg("%s, end\n", __func__);
   return 0;
 }

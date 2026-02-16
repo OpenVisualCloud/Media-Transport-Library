@@ -2622,18 +2622,56 @@ static int tvs_tasklet_handler(void* priv) {
 
 static int tv_uinit_hw(struct st_tx_video_session_impl* s) {
   int num_port = s->ops.num_port;
+  int idx = s->idx;
 
+  /* Phase 1: drain all software rings first */
   for (int i = 0; i < num_port; i++) {
     if (s->ring[i]) {
       mt_ring_dequeue_clean(s->ring[i]);
       rte_ring_free(s->ring[i]);
       s->ring[i] = NULL;
     }
+  }
 
+  /* Phase 2: flush all NIC TX queues with pad packets */
+  for (int i = 0; i < num_port; i++) {
     if (s->queue[i]) {
       struct rte_mbuf* pad = s->pad[i][ST20_PKT_TYPE_NORMAL];
-      /* flush all the pkts in the tx ring desc */
       if (pad) mt_txq_flush(s->queue[i], pad);
+    }
+  }
+
+  /*
+   * Phase 3: verify chain mbufs are reclaimed before releasing queues.
+   * Chain mbufs hold extbuf references to frame buffer memory (frame_info->addr)
+   * via frame_info->sh_info. When frames are freed in tv_uinit_sw -> tv_free_frames,
+   * the sh_info and frame buffer memory are freed. If any chain mbufs remain in the
+   * NIC TX ring at that point, their later completion triggers rte_pktmbuf_free_extbuf
+   * which accesses the freed sh_info — a use-after-free causing data corruption on
+   * session restart.
+   * Keep queues alive here to allow done_cleanup calls for descriptor reclamation.
+   */
+  if (!s->tx_no_chain && s->mbuf_mempool_chain) {
+    int max_wait_ms = 100;
+    unsigned int in_use = 0;
+    for (int r = 0; r < max_wait_ms; r++) {
+      in_use = rte_mempool_in_use_count(s->mbuf_mempool_chain);
+      if (in_use == 0) break;
+      for (int i = 0; i < num_port; i++) {
+        if (s->queue[i]) mt_txq_done_cleanup(s->queue[i]);
+      }
+      /* first iteration is a quick retry, subsequent ones wait 1ms for DMA */
+      if (r > 0) mt_delay_us(1000);
+    }
+    if (in_use > 0) {
+      warn("%s(%d), chain mempool still has %u mbufs after %dms flush\n", __func__, idx,
+           in_use, max_wait_ms);
+    }
+  }
+
+  /* Phase 4: release queues and free pad mbufs */
+  for (int i = 0; i < num_port; i++) {
+    if (s->queue[i]) {
       mt_txq_put(s->queue[i]);
       s->queue[i] = NULL;
     }
@@ -3967,8 +4005,32 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
   for (uint8_t i = 0; i < s->ops.num_port; i++) {
     if (s->ring[i]) mt_ring_dequeue_clean(s->ring[i]);
   }
-  /* clean the queue done mbuf */
-  mt_txq_done_cleanup(s->queue[s_port]);
+
+  /*
+   * Attempt to flush the old queue and reclaim chain mbufs before releasing it.
+   * Chain mbufs hold extbuf references to frame buffer memory via sh_info.
+   * If old chain mbufs persist after the queue is released, they will race with
+   * the sh_info reset below — old mbufs decrementing the reset refcnt causes
+   * underflow, and subsequent new chain mbufs will see a corrupted refcnt.
+   * This leads to premature free_cb calls that invalidate active frame data.
+   */
+  struct rte_mbuf* pad = s->pad[s_port][ST20_PKT_TYPE_NORMAL];
+  if (pad) mt_txq_flush(s->queue[s_port], pad);
+
+  if (!s->tx_no_chain && s->mbuf_mempool_chain) {
+    int max_wait_ms = 20;
+    unsigned int in_use = 0;
+    for (int r = 0; r < max_wait_ms; r++) {
+      in_use = rte_mempool_in_use_count(s->mbuf_mempool_chain);
+      if (in_use == 0) break;
+      mt_txq_done_cleanup(s->queue[s_port]);
+      if (r > 0) mt_delay_us(1000);
+    }
+    if (in_use > 0) {
+      warn("%s(%d,%d), chain mempool has %u mbufs after flush, sh_info race possible\n",
+           __func__, s_port, idx, in_use);
+    }
+  }
 
   mt_txq_fatal_error(s->queue[s_port]);
   mt_txq_put(s->queue[s_port]);

@@ -540,8 +540,8 @@ struct rte_mempool* mt_mempool_create_by_ops(struct mtl_main_impl* impl, const c
 int mt_mempool_free(struct rte_mempool* mp) {
   unsigned int in_use_count = rte_mempool_in_use_count(mp);
   if (in_use_count) {
-    /* failed to free the mempool, caused by the mbuf is still in nix tx queues? */
-    warn("%s, still has %d mbuf in mempool %s\n", __func__, in_use_count, mp->name);
+    /* mempool still has mbufs that have not been returned, likely still in NIC TX ring */
+    err("%s, still has %u mbuf in mempool %s\n", __func__, in_use_count, mp->name);
     return 0;
   }
 
