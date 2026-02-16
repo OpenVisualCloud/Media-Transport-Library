@@ -135,7 +135,6 @@ jobs:
 
       - name: Configure
         if: ${{ steps.cache-dpdk.outputs.cache-hit != 'true' }}
-        shell: bash
         run: |
           cd dpdk
           meson setup build
