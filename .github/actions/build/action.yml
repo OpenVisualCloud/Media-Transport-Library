@@ -1,11 +1,12 @@
 name: Build
-description: Build MTL and its ecosystem components
+description: Build Media Transport Library and ecosystem components
 runs:
   using: composite
   steps:
     - uses: ./.github/actions/cleanup
-    - name: Setup environment and build
+    - name: Build
       shell: bash
+      run: ./.github/scripts/setup_environment.sh
       env:
         SETUP_BUILD_AND_INSTALL_DPDK: '0'
         SETUP_BUILD_AND_INSTALL_ICE_DRIVER: '0'
@@ -14,4 +15,12 @@ runs:
         MTL_BUILD_AND_INSTALL: '1'
         ECOSYSTEM_BUILD_AND_INSTALL_FFMPEG_PLUGIN: '1'
         ECOSYSTEM_BUILD_AND_INSTALL_GSTREAMER_PLUGIN: '1'
-      run: bash .github/scripts/setup_environment.sh
+    - name: Upload build artifacts
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v6
+      with:
+        name: build-${{ github.sha }}
+        path: |
+          ./build/lib/libmtl.so
+          ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
+          ./tests/tools/RxTxApp/build/RxTxApp

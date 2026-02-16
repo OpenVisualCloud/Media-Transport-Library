@@ -20,7 +20,17 @@ on:
         type: string
         default: tests
 jobs:
+  build-artifacts:
+    runs-on: dpdk
+    steps:
+      - name: Harden-Runner
+        uses: step-security/harden-runner@6c439dc8bdf85cadbbce9ed30d1c7b959517bc49 # v2.12.2
+        with:
+          egress-policy: audit
+      - name: Build artifacts
+        uses: ./.github/actions/build
   run-pytest:
+    needs: build-artifacts
     runs-on: "${{ inputs.nic }}"
     timeout-minutes: 720
     steps:
@@ -34,7 +44,14 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: "${{ github.ref }}"
-      - uses: ./.github/actions/build
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: build-${{ github.sha }}
+      - name: Make artifacts executable
+        run: |
+          chmod +x ./ecosystem/ffmpeg_plugin/FFmpeg-release-7.0/ffmpeg
+          chmod +x ./tests/tools/RxTxApp/build/RxTxApp
       - name: Install pytest dependencies
         working-directory: ./tests/validation
         run: |
@@ -84,6 +101,8 @@ jobs:
             --template=html/index.html \
             --report=./report.html \
             "./${{ inputs.dir }}"
+        env:
+          LD_LIBRARY_PATH: ./../../build/lib/libmtl.so
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
