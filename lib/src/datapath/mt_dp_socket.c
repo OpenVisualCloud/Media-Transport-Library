@@ -182,12 +182,12 @@ static void* tx_socket_thread_loop(void* arg) {
   int ret;
 
   info("%s(%d,%d), start\n", __func__, port, t->fd);
-  while (rte_atomic32_read(&t->stop_thread) == 0) {
+  while (mt_atomic32_read_acquire(&t->stop_thread) == 0) {
     ret = rte_ring_mc_dequeue(entry->ring, (void**)&m);
     if (ret < 0) continue;
     do {
       ret = tx_socket_send_mbuf(t, m);
-    } while ((ret < 0) && (rte_atomic32_read(&t->stop_thread) == 0));
+    } while ((ret < 0) && (mt_atomic32_read_acquire(&t->stop_thread) == 0));
     rte_pktmbuf_free(m);
   }
   info("%s(%d,%d), stop\n", __func__, port, t->fd);
@@ -275,7 +275,7 @@ static int tx_socket_init_threads(struct mt_tx_socket_entry* entry) {
   for (int i = 0; i < entry->threads; i++) {
     struct mt_tx_socket_thread* t = &entry->threads_data[i];
 
-    rte_atomic32_set(&t->stop_thread, 0);
+    mt_atomic32_set(&t->stop_thread, 0);
     ret = pthread_create(&t->tid, NULL, tx_socket_thread_loop, t);
     if (ret < 0) {
       err("%s(%d), thread create fail %d for thread %d\n", __func__, idx, ret, i);
@@ -381,7 +381,7 @@ int mt_tx_socket_put(struct mt_tx_socket_entry* entry) {
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
     struct mt_tx_socket_thread* t = &entry->threads_data[i];
 
-    rte_atomic32_set(&t->stop_thread, 1);
+    mt_atomic32_set_release(&t->stop_thread, 1);
     if (t->tid) {
       pthread_join(t->tid, NULL);
       t->tid = 0;
@@ -548,10 +548,10 @@ static void* rx_socket_thread_loop(void* arg) {
   int ret;
 
   info("%s(%d,%d), start thread %d\n", __func__, port, fd, idx);
-  while (rte_atomic32_read(&t->stop_thread) == 0) {
+  while (mt_atomic32_read_acquire(&t->stop_thread) == 0) {
     m = rx_socket_recv_mbuf(t);
     if (!m) continue;
-    while (rte_atomic32_read(&t->stop_thread) == 0) {
+    while (mt_atomic32_read_acquire(&t->stop_thread) == 0) {
       ret = rte_ring_mp_enqueue(entry->ring, m);
       if (ret >= 0) break; /* succ */
     }
@@ -584,7 +584,7 @@ static int rx_socket_init_threads(struct mt_rx_socket_entry* entry) {
   for (int i = 0; i < entry->threads; i++) {
     struct mt_rx_socket_thread* t = &entry->threads_data[i];
 
-    rte_atomic32_set(&t->stop_thread, 0);
+    mt_atomic32_set(&t->stop_thread, 0);
     ret = pthread_create(&t->tid, NULL, rx_socket_thread_loop, t);
     if (ret < 0) {
       err("%s(%d,%d), thread create fail %d for thread %d\n", __func__, port, fd, ret, i);
@@ -719,7 +719,7 @@ int mt_rx_socket_put(struct mt_rx_socket_entry* entry) {
   for (int i = 0; i < MT_DP_SOCKET_THREADS_MAX; i++) {
     t = &entry->threads_data[i];
 
-    rte_atomic32_set(&t->stop_thread, 1);
+    mt_atomic32_set_release(&t->stop_thread, 1);
     if (t->tid) {
       pthread_join(t->tid, NULL);
       t->tid = 0;

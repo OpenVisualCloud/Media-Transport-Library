@@ -364,13 +364,13 @@ static void* admin_thread(void* arg) {
   struct mt_admin* admin = mt_get_admin(impl);
 
   info("%s, start\n", __func__);
-  while (rte_atomic32_read(&admin->admin_stop) == 0) {
+  while (mt_atomic32_read_acquire(&admin->admin_stop) == 0) {
     mt_pthread_mutex_lock(&admin->admin_wake_mutex);
-    if (!rte_atomic32_read(&admin->admin_stop))
+    if (!mt_atomic32_read_acquire(&admin->admin_stop))
       mt_pthread_cond_wait(&admin->admin_wake_cond, &admin->admin_wake_mutex);
     mt_pthread_mutex_unlock(&admin->admin_wake_mutex);
 
-    if (!rte_atomic32_read(&admin->admin_stop)) admin_func(impl);
+    if (!mt_atomic32_read_acquire(&admin->admin_stop)) admin_func(impl);
   }
   info("%s, stop\n", __func__);
 
@@ -383,7 +383,7 @@ int mt_admin_init(struct mtl_main_impl* impl) {
   admin->period_us = 6 * US_PER_S; /* 6s */
   mt_pthread_mutex_init(&admin->admin_wake_mutex, NULL);
   mt_pthread_cond_init(&admin->admin_wake_cond, NULL);
-  rte_atomic32_set(&admin->admin_stop, 0);
+  mt_atomic32_set(&admin->admin_stop, 0);
 
   int ret = pthread_create(&admin->admin_tid, NULL, admin_thread, impl);
   if (ret < 0) return ret;
@@ -398,7 +398,7 @@ int mt_admin_uinit(struct mtl_main_impl* impl) {
   struct mt_admin* admin = mt_get_admin(impl);
 
   if (admin->admin_tid) {
-    rte_atomic32_set(&admin->admin_stop, 1);
+    mt_atomic32_set_release(&admin->admin_stop, 1);
     admin_wakeup_thread(admin);
     pthread_join(admin->admin_tid, NULL);
     admin->admin_tid = 0;

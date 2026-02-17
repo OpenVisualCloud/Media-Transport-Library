@@ -18,6 +18,7 @@
 #include <sys/queue.h>
 #include <unistd.h>
 
+#include "mt_atomic.h"
 #include "mt_mem.h"
 #include "mt_platform.h"
 #include "mt_quirk.h"
@@ -385,7 +386,7 @@ struct mt_cni_impl {
   struct mtl_main_impl* parent;
 
   pthread_t tid; /* thread id for rx */
-  rte_atomic32_t stop_thread;
+  mt_atomic32_t stop_thread;
   bool lcore_tasklet;
   struct mt_sch_tasklet_impl* tasklet;
   int thread_sleep_ms;
@@ -394,11 +395,11 @@ struct mt_cni_impl {
 
 #ifdef MTL_HAS_TAP
   pthread_t tap_bkg_tid; /* bkg thread id for tap */
-  rte_atomic32_t stop_tap;
+  mt_atomic32_t stop_tap;
   struct mt_txq_entry* tap_tx_q[MTL_PORT_MAX]; /* tap tx queue */
   struct mt_rxq_entry* tap_rx_q[MTL_PORT_MAX]; /* tap rx queue */
   int tap_rx_cnt[MTL_PORT_MAX];
-  rte_atomic32_t tap_if_up[MTL_PORT_MAX];
+  mt_atomic32_t tap_if_up[MTL_PORT_MAX];
   void* tap_context;
 #endif
 };
@@ -406,7 +407,7 @@ struct mt_cni_impl {
 struct mt_arp_entry {
   uint32_t ip;
   struct rte_ether_addr ea;
-  rte_atomic32_t mac_ready;
+  mt_atomic32_t mac_ready;
 };
 
 struct mt_arp_impl {
@@ -514,11 +515,11 @@ struct mtl_sch_impl {
 
   struct mtl_main_impl* parent;
   int idx; /* index for current sch */
-  rte_atomic32_t started;
-  rte_atomic32_t request_stop;
-  rte_atomic32_t stopped;
-  rte_atomic32_t active; /* if this sch is active */
-  rte_atomic32_t ref_cnt;
+  mt_atomic32_t started;
+  mt_atomic32_t request_stop;
+  mt_atomic32_t stopped;
+  mt_atomic32_t active; /* if this sch is active */
+  mt_atomic32_t ref_cnt;
   enum mt_sch_type type;
 
   /* one tx video sessions mgr/transmitter for one sch */
@@ -603,7 +604,7 @@ enum mt_lcore_type {
 struct mt_sch_mgr {
   struct mtl_sch_impl sch[MT_MAX_SCH_NUM];
   /* active sch cnt */
-  rte_atomic32_t sch_cnt;
+  mt_atomic32_t sch_cnt;
   pthread_mutex_t mgr_mutex; /* protect sch mgr */
 
   struct mt_lcore_mgr lcore_mgr;
@@ -703,7 +704,7 @@ struct mt_interface {
   uint32_t mcast_nb;                      /* number of address */
   uint32_t status;                        /* MT_IF_STAT_* */
   /* The port is temporarily off, e.g. during rte_tm_hierarchy_commit */
-  rte_atomic32_t resetting;
+  mt_atomic32_t resetting;
 
   /* default tx mbuf_pool */
   struct rte_mempool* tx_mbuf_pool;
@@ -833,7 +834,7 @@ struct mt_dma_mgr {
   struct mt_dma_dev devs[MTL_DMA_DEV_MAX];
   pthread_mutex_t mutex; /* protect devs */
   uint8_t num_dma_dev;
-  rte_atomic32_t num_dma_dev_active;
+  mt_atomic32_t num_dma_dev_active;
 };
 
 struct mtl_dma_mem {
@@ -850,7 +851,7 @@ struct mt_admin {
   pthread_t admin_tid;
   pthread_cond_t admin_wake_cond;
   pthread_mutex_t admin_wake_mutex;
-  rte_atomic32_t admin_stop;
+  mt_atomic32_t admin_stop;
 };
 
 struct mt_kport_info {
@@ -904,7 +905,7 @@ struct mt_stat_mgr {
   pthread_t stat_tid;
   pthread_cond_t stat_wake_cond;
   pthread_mutex_t stat_wake_mutex;
-  rte_atomic32_t stat_stop;
+  mt_atomic32_t stat_stop;
 };
 
 enum mt_queue_mode {
@@ -940,7 +941,7 @@ struct mt_rsq_queue {
   /* List of rsq entry */
   struct mt_rsq_entrys_list head;
   rte_spinlock_t mutex;
-  rte_atomic32_t entry_cnt;
+  mt_atomic32_t entry_cnt;
   int entry_idx;
   struct mt_rsq_entry* cni_entry;
   /* stat */
@@ -1000,7 +1001,7 @@ struct mt_tsq_queue {
   struct mt_tsq_entrys_list head;
   pthread_mutex_t mutex;
   rte_spinlock_t tx_mutex;
-  rte_atomic32_t entry_cnt;
+  mt_atomic32_t entry_cnt;
   bool fatal_error;
   /* stat */
   int stat_pkts_send;
@@ -1062,7 +1063,7 @@ struct mt_srss_impl {
   int schs_cnt;
 
   pthread_t tid;
-  rte_atomic32_t stop_thread;
+  mt_atomic32_t stop_thread;
 
   struct mt_srss_entry* cni_entry;
   int entry_idx;
@@ -1078,7 +1079,7 @@ struct mt_tx_socket_thread {
   int idx;
   int fd;
   pthread_t tid;
-  rte_atomic32_t stop_thread;
+  mt_atomic32_t stop_thread;
 
 #ifndef WINDOWSENV
   struct sockaddr_in send_addr;
@@ -1109,7 +1110,7 @@ struct mt_rx_socket_thread {
   int idx;
   struct rte_mbuf* mbuf;
   pthread_t tid;
-  rte_atomic32_t stop_thread;
+  mt_atomic32_t stop_thread;
 
   int stat_rx_try;
   int stat_rx_pkt;
@@ -1189,10 +1190,10 @@ struct mtl_main_impl {
   struct mt_stat_mgr stat_mgr;
 
   /* dev context */
-  rte_atomic32_t instance_started;  /* if mt instance is started */
-  rte_atomic32_t instance_in_reset; /* if mt instance is in reset */
+  mt_atomic32_t instance_started;  /* if mt instance is started */
+  mt_atomic32_t instance_in_reset; /* if mt instance is in reset */
   /* if mt instance is aborted, in case for ctrl-c from app */
-  rte_atomic32_t instance_aborted;
+  mt_atomic32_t instance_aborted;
   struct mtl_sch_impl* main_sch; /* system sch */
 
   /* admin context */
@@ -1227,18 +1228,18 @@ struct mtl_main_impl {
   void* mudp_rxq_mgr[MTL_PORT_MAX];
 
   /* cnt for open sessions */
-  rte_atomic32_t st20_tx_sessions_cnt;
-  rte_atomic32_t st22_tx_sessions_cnt;
-  rte_atomic32_t st30_tx_sessions_cnt;
-  rte_atomic32_t st40_tx_sessions_cnt;
-  rte_atomic32_t st41_tx_sessions_cnt;
-  rte_atomic32_t st20_rx_sessions_cnt;
-  rte_atomic32_t st22_rx_sessions_cnt;
-  rte_atomic32_t st30_rx_sessions_cnt;
-  rte_atomic32_t st40_rx_sessions_cnt;
-  rte_atomic32_t st41_rx_sessions_cnt;
+  mt_atomic32_t st20_tx_sessions_cnt;
+  mt_atomic32_t st22_tx_sessions_cnt;
+  mt_atomic32_t st30_tx_sessions_cnt;
+  mt_atomic32_t st40_tx_sessions_cnt;
+  mt_atomic32_t st41_tx_sessions_cnt;
+  mt_atomic32_t st20_rx_sessions_cnt;
+  mt_atomic32_t st22_rx_sessions_cnt;
+  mt_atomic32_t st30_rx_sessions_cnt;
+  mt_atomic32_t st40_rx_sessions_cnt;
+  mt_atomic32_t st41_rx_sessions_cnt;
   /* active lcore cnt */
-  rte_atomic32_t lcore_cnt;
+  mt_atomic32_t lcore_cnt;
 
   /* rx timestamp register */
   int dynfield_offset;
@@ -1736,21 +1737,21 @@ static inline int mt_socket_id(struct mtl_main_impl* impl, enum mtl_port port) {
 }
 
 static inline bool mt_started(struct mtl_main_impl* impl) {
-  if (rte_atomic32_read(&impl->instance_started))
+  if (mt_atomic32_read_acquire(&impl->instance_started))
     return true;
   else
     return false;
 }
 
 static inline bool mt_in_reset(struct mtl_main_impl* impl) {
-  if (rte_atomic32_read(&impl->instance_in_reset))
+  if (mt_atomic32_read_acquire(&impl->instance_in_reset))
     return true;
   else
     return false;
 }
 
 static inline bool mt_aborted(struct mtl_main_impl* impl) {
-  if (rte_atomic32_read(&impl->instance_aborted))
+  if (mt_atomic32_read_acquire(&impl->instance_aborted))
     return true;
   else
     return false;

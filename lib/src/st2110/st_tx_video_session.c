@@ -117,7 +117,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
     return;
   }
 
-  int refcnt = rte_atomic32_read(&frame_info->refcnt);
+  int refcnt = mt_atomic32_read_acquire(&frame_info->refcnt);
   if (refcnt != 1) {
     warn("%s(%d), frame %d err refcnt %d addr %p\n", __func__, s_idx, frame_idx, refcnt,
          addr);
@@ -125,7 +125,7 @@ static void tv_frame_free_cb(void* addr, void* opaque) {
   }
 
   tv_notify_frame_done(s, frame_idx);
-  rte_atomic32_dec(&frame_info->refcnt);
+  mt_atomic32_dec_release(&frame_info->refcnt);
   /* clear ext frame info */
   if (frame_info->flags & ST_FT_FLAG_EXT) {
     frame_info->addr = NULL;
@@ -218,7 +218,7 @@ static int tv_alloc_frames(struct mtl_main_impl* impl,
 
   for (int i = 0; i < s->st20_frames_cnt; i++) {
     frame_info = &s->st20_frames[i];
-    rte_atomic32_set(&frame_info->refcnt, 0);
+    mt_atomic32_set(&frame_info->refcnt, 0);
     frame_info->idx = i;
   }
 
@@ -1333,7 +1333,7 @@ static int tv_build_rtp(struct mtl_main_impl* impl, struct st_tx_video_session_i
   if (rtp->tmstamp != s->st20_rtp_time) {
     /* start of a new frame */
     s->st20_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    mt_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st20_rtp_time = rtp->tmstamp;
@@ -1406,7 +1406,7 @@ static int tv_build_rtp_chain(struct mtl_main_impl* impl,
   if (rtp->tmstamp != s->st20_rtp_time) {
     /* start of a new frame */
     s->st20_pkt_idx = 0;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    mt_atomic32_inc(&s->stat_frame_cnt);
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (s->ops.num_port > 1) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
     s->st20_rtp_time = rtp->tmstamp;
@@ -1862,7 +1862,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
       }
       /* check frame refcnt */
       struct st_frame_trans* frame = &s->st20_frames[next_frame_idx];
-      int refcnt = rte_atomic32_read(&frame->refcnt);
+      int refcnt = mt_atomic32_read_acquire(&frame->refcnt);
       if (refcnt) {
         err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx,
             refcnt);
@@ -1887,7 +1887,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
 
       s->stat_user_busy_first = true;
       /* all check fine */
-      rte_atomic32_inc(&frame->refcnt);
+      mt_atomic32_inc(&frame->refcnt);
       s->st20_frame_idx = next_frame_idx;
       s->st20_frame_lines_ready = 0;
       dbg("%s(%d), next_frame_idx %d start\n", __func__, idx, next_frame_idx);
@@ -2053,7 +2053,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     s->st20_pkt_idx = 0;
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    mt_atomic32_inc(&s->stat_frame_cnt);
     if (s->tx_no_chain) {
       /* trigger extbuf free cb since mbuf attach not used */
       struct st_frame_trans* frame_info = &s->st20_frames[s->st20_frame_idx];
@@ -2063,7 +2063,7 @@ static int tv_tasklet_frame(struct mtl_main_impl* impl,
     uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
-      rte_atomic32_inc(&s->cbs_build_timeout);
+      mt_atomic32_inc(&s->cbs_build_timeout);
       dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
@@ -2368,7 +2368,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       }
       /* check frame refcnt */
       struct st_frame_trans* frame = &s->st20_frames[next_frame_idx];
-      int refcnt = rte_atomic32_read(&frame->refcnt);
+      int refcnt = mt_atomic32_read_acquire(&frame->refcnt);
       if (refcnt) {
         err("%s(%d), frame %u refcnt not zero %d\n", __func__, idx, next_frame_idx,
             refcnt);
@@ -2388,7 +2388,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
       s->stat_user_busy_first = true;
       /* all check fine */
       frame->tx_st22_meta = meta;
-      rte_atomic32_inc(&frame->refcnt);
+      mt_atomic32_inc(&frame->refcnt);
       size_t frame_size = codestream_size + s->st22_box_hdr_length;
       st22_info->st22_total_pkts = frame_size / s->st20_pkt_len;
       if (frame_size % s->st20_pkt_len) st22_info->st22_total_pkts++;
@@ -2561,7 +2561,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     s->st20_pkt_idx = 0;
     s->port_user_stats.common.port[MTL_SESSION_PORT_P].frames++;
     if (send_r) s->port_user_stats.common.port[MTL_SESSION_PORT_R].frames++;
-    rte_atomic32_inc(&s->stat_frame_cnt);
+    mt_atomic32_inc(&s->stat_frame_cnt);
     st22_info->frame_idx++;
     if (s->tx_no_chain) {
       /* trigger extbuf free cb since mbuf attach not used */
@@ -2572,7 +2572,7 @@ static int tv_tasklet_st22(struct mtl_main_impl* impl,
     uint64_t frame_end_time = mt_get_tsc(impl);
     if (frame_end_time > pacing->tsc_time_cursor) {
       ST_SESSION_STAT_INC(s, port_user_stats.common, stat_exceed_frame_time);
-      rte_atomic32_inc(&s->cbs_build_timeout);
+      mt_atomic32_inc(&s->cbs_build_timeout);
       dbg("%s(%d), frame %d build time out %ldus\n", __func__, idx, s->st20_frame_idx,
           (frame_end_time - pacing->tsc_time_cursor) / NS_PER_US);
     }
@@ -3345,7 +3345,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
   s->stat_user_busy_first = true;
   s->stat_epoch_troffset_mismatch = 0;
   s->stat_trans_troffset_mismatch = 0;
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  mt_atomic32_set(&s->stat_frame_cnt, 0);
   s->stat_last_time = mt_get_monotonic_time();
   mt_stat_u64_init(&s->stat_time);
 
@@ -3373,7 +3373,7 @@ static int tv_attach(struct mtl_main_impl* impl, struct st_tx_video_sessions_mgr
 
 void tx_video_session_clear_cpu_busy(struct st_tx_video_session_impl* s) {
   s->cpu_busy_score = 0;
-  rte_atomic32_set(&s->cbs_build_timeout, 0);
+  mt_atomic32_set(&s->cbs_build_timeout, 0);
 }
 
 void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
@@ -3384,8 +3384,8 @@ void tx_video_session_cal_cpu_busy(struct mtl_sch_impl* sch,
   s->cpu_busy_score = (double)avg_ns_per_loop / s->bulk / s->pacing.trs * 100.0;
 
   /* build timeout check */
-  cbs_build_timeout = rte_atomic32_read(&s->cbs_build_timeout);
-  rte_atomic32_set(&s->cbs_build_timeout, 0);
+  cbs_build_timeout = mt_atomic32_read(&s->cbs_build_timeout);
+  mt_atomic32_set(&s->cbs_build_timeout, 0);
   if (cbs_build_timeout > 10) {
     s->cpu_busy_score = 100.0; /* mark as busy */
     notice("%s(%d), mask as busy as build time out %d\n", __func__, s->idx,
@@ -3400,10 +3400,10 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
   int m_idx = mgr->idx, idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  int frame_cnt = rte_atomic32_read(&s->stat_frame_cnt);
+  int frame_cnt = mt_atomic32_read(&s->stat_frame_cnt);
   double framerate = frame_cnt / time_sec;
 
-  rte_atomic32_set(&s->stat_frame_cnt, 0);
+  mt_atomic32_set(&s->stat_frame_cnt, 0);
 
   notice("TX_VIDEO_SESSION(%d,%d:%s): fps %f frames %d pkts %d:%d inflight %d:%d\n",
          m_idx, idx, s->ops_name, framerate, frame_cnt,
@@ -3520,7 +3520,7 @@ static void tv_stat(struct st_tx_video_sessions_mgr* mgr,
     uint16_t framebuff_cnt = s->ops.framebuff_cnt;
     for (int i = 0; i < s->st20_frames_cnt; i++) {
       frame_info = &s->st20_frames[i];
-      if (rte_atomic32_read(&frame_info->refcnt)) frames_in_trans++;
+      if (mt_atomic32_read(&frame_info->refcnt)) frames_in_trans++;
     }
     if ((frames_in_trans > 2) || (frames_in_trans >= framebuff_cnt)) {
       notice("TX_VIDEO_SESSION(%d,%d): %d frames are in trans, total %u\n", m_idx, idx,
@@ -3996,11 +3996,11 @@ int st20_tx_queue_fatal_error(struct mtl_main_impl* impl,
     struct st_frame_trans* frame;
     for (uint16_t i = 0; i < s->st20_frames_cnt; i++) {
       frame = &s->st20_frames[i];
-      int refcnt = rte_atomic32_read(&frame->refcnt);
+      int refcnt = mt_atomic32_read(&frame->refcnt);
       if (refcnt) {
         info("%s(%d,%d), stop frame %u\n", __func__, s_port, idx, i);
         tv_notify_frame_done(s, i);
-        rte_atomic32_dec(&frame->refcnt);
+        mt_atomic32_dec_release(&frame->refcnt);
         rte_mbuf_ext_refcnt_set(&frame->sh_info, 0);
       }
     }
@@ -4185,7 +4185,7 @@ st20_tx_handle st20_tx_create(mtl_handle mt, struct st20_tx_ops* ops) {
 
   s->st20_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st20_tx_sessions_cnt);
+  mt_atomic32_inc(&impl->st20_tx_sessions_cnt);
   notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
@@ -4241,7 +4241,7 @@ int st20_tx_set_ext_frame(st20_tx_handle handle, uint16_t idx,
     return -EINVAL;
   }
   struct st_frame_trans* frame = &s->st20_frames[idx];
-  int refcnt = rte_atomic32_read(&frame->refcnt);
+  int refcnt = mt_atomic32_read(&frame->refcnt);
   if (refcnt) {
     err("%s(%d), frame %d are not free, refcnt %d\n", __func__, s_idx, idx, refcnt);
     return -EINVAL;
@@ -4493,7 +4493,7 @@ int st20_tx_free(st20_tx_handle handle) {
   tv_mgr_update(&sch->tx_video_mgr);
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st20_tx_sessions_cnt);
+  mt_atomic32_dec(&impl->st20_tx_sessions_cnt);
   notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
@@ -4672,7 +4672,7 @@ st22_tx_handle st22_tx_create(mtl_handle mt, struct st22_tx_ops* ops) {
   s_impl->quota_mbs = quota_mbs;
   s->st22_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st22_tx_sessions_cnt);
+  mt_atomic32_inc(&impl->st22_tx_sessions_cnt);
   notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
@@ -4711,7 +4711,7 @@ int st22_tx_free(st22_tx_handle handle) {
   tv_mgr_update(&sch->tx_video_mgr);
   mt_pthread_mutex_unlock(&sch->tx_video_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st22_tx_sessions_cnt);
+  mt_atomic32_dec(&impl->st22_tx_sessions_cnt);
   notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }

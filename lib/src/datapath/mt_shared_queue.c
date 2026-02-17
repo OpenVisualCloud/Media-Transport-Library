@@ -46,7 +46,7 @@ static int rsq_stat_dump(void* priv) {
     if (!rsq_try_lock(s)) continue;
     if (s->stat_pkts_recv) {
       notice("%s(%d,%u), entries %d, pkt recv %d deliver %d\n", __func__, port, q,
-             rte_atomic32_read(&s->entry_cnt), s->stat_pkts_recv, s->stat_pkts_deliver);
+             mt_atomic32_read(&s->entry_cnt), s->stat_pkts_recv, s->stat_pkts_deliver);
       s->stat_pkts_recv = 0;
       s->stat_pkts_deliver = 0;
 
@@ -135,7 +135,7 @@ static int rsq_init(struct mtl_main_impl* impl, struct mt_rsq_impl* rsq) {
     rsq_queue = &rsq->rsq_queues[q];
     rsq_queue->queue_id = q;
     rsq_queue->port_id = mt_port_id(impl, port);
-    rte_atomic32_set(&rsq_queue->entry_cnt, 0);
+    mt_atomic32_set(&rsq_queue->entry_cnt, 0);
     rte_spinlock_init(&rsq_queue->mutex);
     MT_TAILQ_INIT(&rsq_queue->head);
   }
@@ -243,7 +243,7 @@ struct mt_rsq_entry* mt_rsq_get(struct mtl_main_impl* impl, enum mtl_port port,
 
   rsq_lock(rsq_queue);
   MT_TAILQ_INSERT_HEAD(&rsq_queue->head, entry, next);
-  rte_atomic32_inc(&rsq_queue->entry_cnt);
+  mt_atomic32_inc(&rsq_queue->entry_cnt);
   rsq_queue->entry_idx++;
   if (flow->flags & MT_RXQ_FLOW_F_SYS_QUEUE) rsq_queue->cni_entry = entry;
   rsq_unlock(rsq_queue);
@@ -260,7 +260,7 @@ int mt_rsq_put(struct mt_rsq_entry* entry) {
 
   rsq_lock(rsq_queue);
   MT_TAILQ_REMOVE(&rsq_queue->head, entry, next);
-  rte_atomic32_dec(&rsq_queue->entry_cnt);
+  mt_atomic32_dec(&rsq_queue->entry_cnt);
   rsq_unlock(rsq_queue);
 
   rsq_entry_free(entry);
@@ -414,7 +414,7 @@ static int tsq_stat_dump(void* priv) {
     if (!tsq_try_lock(s)) continue;
     if (s->stat_pkts_send) {
       notice("%s(%d,%u), entries %d, pkt send %d\n", __func__, tsq->port, q,
-             rte_atomic32_read(&s->entry_cnt), s->stat_pkts_send);
+             mt_atomic32_read(&s->entry_cnt), s->stat_pkts_send);
       s->stat_pkts_send = 0;
     }
     tsq_unlock(s);
@@ -477,7 +477,7 @@ static int tsq_init(struct mtl_main_impl* impl, struct mt_tsq_impl* tsq) {
     tsq_queue = &tsq->tsq_queues[q];
     tsq_queue->queue_id = q;
     tsq_queue->port_id = mt_port_id(impl, port);
-    rte_atomic32_set(&tsq_queue->entry_cnt, 0);
+    mt_atomic32_set(&tsq_queue->entry_cnt, 0);
     mt_pthread_mutex_init(&tsq_queue->mutex, NULL);
     MT_TAILQ_INIT(&tsq_queue->head);
   }
@@ -586,7 +586,7 @@ struct mt_tsq_entry* mt_tsq_get(struct mtl_main_impl* impl, enum mtl_port port,
   }
 
   MT_TAILQ_INSERT_HEAD(&tsq_queue->head, entry, next);
-  rte_atomic32_inc(&tsq_queue->entry_cnt);
+  mt_atomic32_inc(&tsq_queue->entry_cnt);
   tsq_unlock(tsq_queue);
 
   entry->tx_pool = tsq_queue->tx_pool;
@@ -603,7 +603,7 @@ int mt_tsq_put(struct mt_tsq_entry* entry) {
 
   tsq_lock(tsq_queue);
   MT_TAILQ_REMOVE(&tsq_queue->head, entry, next);
-  rte_atomic32_dec(&tsq_queue->entry_cnt);
+  mt_atomic32_dec(&tsq_queue->entry_cnt);
   tsq_unlock(tsq_queue);
 
   tsq_entry_free(entry);

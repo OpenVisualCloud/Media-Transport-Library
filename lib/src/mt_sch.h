@@ -16,14 +16,14 @@ static inline struct mtl_sch_impl* mt_sch_instance(struct mtl_main_impl* impl, i
 }
 
 static inline bool mt_sch_is_active(struct mtl_sch_impl* sch) {
-  if (rte_atomic32_read(&sch->active))
+  if (mt_atomic32_read(&sch->active))
     return true;
   else
     return false;
 }
 
 static inline bool mt_sch_started(struct mtl_sch_impl* sch) {
-  if (rte_atomic32_read(&sch->started))
+  if (mt_atomic32_read_acquire(&sch->started))
     return true;
   else
     return false;

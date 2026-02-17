@@ -14,7 +14,7 @@ static int st_ancillary_trs_tasklet_start(void* priv) {
   int idx = trs->idx;
   struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
 
-  rte_atomic32_set(&mgr->transmitter_started, 1);
+  mt_atomic32_set_release(&mgr->transmitter_started, 1);
 
   info("%s(%d), succ\n", __func__, idx);
   return 0;
@@ -26,7 +26,7 @@ static int st_ancillary_trs_tasklet_stop(void* priv) {
   struct st_tx_ancillary_sessions_mgr* mgr = trs->mgr;
   int idx = trs->idx, port;
 
-  rte_atomic32_set(&mgr->transmitter_started, 0);
+  mt_atomic32_set_release(&mgr->transmitter_started, 0);
 
   for (port = 0; port < mt_num_ports(impl); port++) {
     /* flush all the pkts in the tx ring desc */
@@ -118,7 +118,7 @@ int st_ancillary_transmitter_init(struct mtl_main_impl* impl, struct mtl_sch_imp
   trs->idx = idx;
   trs->mgr = mgr;
 
-  rte_atomic32_set(&mgr->transmitter_started, 0);
+  mt_atomic32_set_release(&mgr->transmitter_started, 0);
 
   memset(&ops, 0x0, sizeof(ops));
   ops.priv = trs;

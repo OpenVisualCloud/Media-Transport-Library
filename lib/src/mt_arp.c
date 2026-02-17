@@ -26,7 +26,7 @@ static void arp_reset(struct mt_arp_impl* arp) {
   for (int i = 0; i < MT_ARP_ENTRY_MAX; i++) {
     entry = &arp->entries[i];
 
-    rte_atomic32_set(&entry->mac_ready, 0);
+    mt_atomic32_set(&entry->mac_ready, 0);
     entry->ip = 0;
     memset(&entry->ea, 0, sizeof(entry->ea));
   }
@@ -125,7 +125,7 @@ static int arp_receive_reply(struct mtl_main_impl* impl, struct rte_arp_hdr* rep
 
   /* save to arp table */
   memcpy(entry->ea.addr_bytes, reply->arp_data.arp_sha.addr_bytes, RTE_ETHER_ADDR_LEN);
-  rte_atomic32_set(&entry->mac_ready, 1);
+  mt_atomic32_set_release(&entry->mac_ready, 1);
   mt_pthread_mutex_unlock(&arp_impl->mutex);
 
   return 0;
@@ -178,7 +178,7 @@ static int arp_get_result(struct mt_arp_impl* arp_impl, struct mt_arp_entry* ent
   if (timeout_ms) max_retry = (timeout_ms / sleep_interval_ms) + 1;
 
   /* wait the arp result */
-  while (!rte_atomic32_read(&entry->mac_ready)) {
+  while (!mt_atomic32_read_acquire(&entry->mac_ready)) {
     if (mt_aborted(arp_impl->parent)) {
       err("%s(%d), cache fail as user aborted\n", __func__, port);
       return -EIO;
@@ -214,7 +214,7 @@ static void arp_timer_cb(void* param) {
   for (int i = 0; i < MT_ARP_ENTRY_MAX; i++) {
     entry = &arp_impl->entries[i];
 
-    if (entry->ip && !rte_atomic32_read(&entry->mac_ready)) {
+    if (entry->ip && !mt_atomic32_read_acquire(&entry->mac_ready)) {
       /* has request but not get arp reply */
       arp_send_req(impl, port, entry->ip);
       pending++;
@@ -292,7 +292,7 @@ static int mt_arp_cni_get_mac(struct mtl_main_impl* impl, struct rte_ether_addr*
   }
   entry = &arp_impl->entries[i];
   entry->ip = ip;
-  rte_atomic32_set(&entry->mac_ready, 0);
+  mt_atomic32_set(&entry->mac_ready, 0);
   mt_pthread_mutex_unlock(&arp_impl->mutex);
 
   uint8_t addr[MTL_IP_ADDR_LEN];

@@ -320,7 +320,7 @@ static int tx_st22p_encode_put_frame(void* priv, struct st22_encode_frame_meta* 
     framebuff->stat = ST22P_TX_FRAME_FREE;
     mt_pthread_mutex_unlock(&ctx->lock);
     tx_st22p_notify_frame_available(ctx);
-    rte_atomic32_inc(&ctx->stat_encode_fail);
+    mt_atomic32_inc(&ctx->stat_encode_fail);
   } else {
     framebuff->stat = ST22P_TX_FRAME_ENCODED;
     mt_pthread_mutex_unlock(&ctx->lock);
@@ -338,8 +338,8 @@ static int tx_st22p_encode_dump(void* priv) {
 
   if (!ctx->ready) return -EBUSY; /* not ready */
 
-  int encode_fail = rte_atomic32_read(&ctx->stat_encode_fail);
-  rte_atomic32_set(&ctx->stat_encode_fail, 0);
+  int encode_fail = mt_atomic32_read(&ctx->stat_encode_fail);
+  mt_atomic32_set(&ctx->stat_encode_fail, 0);
   if (encode_fail) {
     notice("TX_ST22P(%s), encode fail %d\n", ctx->ops_name, encode_fail);
   }
@@ -890,7 +890,7 @@ st22p_tx_handle st22p_tx_create(mtl_handle mt, struct st22p_tx_ops* ops) {
   ctx->impl = impl;
   ctx->type = MT_ST22_HANDLE_PIPELINE_TX;
   ctx->src_size = src_size;
-  rte_atomic32_set(&ctx->stat_encode_fail, 0);
+  mt_atomic32_set(&ctx->stat_encode_fail, 0);
   mt_pthread_mutex_init(&ctx->lock, NULL);
 
   mt_pthread_mutex_init(&ctx->encode_block_wake_mutex, NULL);

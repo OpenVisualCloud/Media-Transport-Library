@@ -176,7 +176,7 @@ static int rx_fastmetadata_session_handle_pkt(struct mtl_main_impl* impl,
   rte_mbuf_refcnt_update(mbuf, 1); /* free when app put */
 
   if (tmstamp != s->tmstamp) {
-    rte_atomic32_inc(&s->stat_frames_received);
+    mt_atomic32_inc(&s->stat_frames_received);
     s->port_user_stats.common.port[s_port].frames++;
     s->tmstamp = tmstamp;
   }
@@ -425,7 +425,7 @@ static int rx_fastmetadata_session_attach(struct mtl_main_impl* impl,
   s->tmstamp = -1;
   s->stat_pkts_received = 0;
   s->stat_last_time = mt_get_monotonic_time();
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
   mt_stat_u64_init(&s->stat_time);
 
   ret = rx_fastmetadata_session_init_hw(impl, s);
@@ -459,10 +459,10 @@ static void rx_fastmetadata_session_stat(struct st_rx_fastmetadata_session_impl*
   int idx = s->idx;
   uint64_t cur_time_ns = mt_get_monotonic_time();
   double time_sec = (double)(cur_time_ns - s->stat_last_time) / NS_PER_S;
-  int frames_received = rte_atomic32_read(&s->stat_frames_received);
+  int frames_received = mt_atomic32_read(&s->stat_frames_received);
   double framerate = frames_received / time_sec;
 
-  rte_atomic32_set(&s->stat_frames_received, 0);
+  mt_atomic32_set(&s->stat_frames_received, 0);
 
   if (s->stat_pkts_redundant) {
     notice("RX_FMD_SESSION(%d:%s): fps %f frames %d pkts %d (redundant %d)\n", idx,
@@ -878,7 +878,7 @@ st41_rx_handle st41_rx_create(mtl_handle mt, struct st41_rx_ops* ops) {
   s_impl->impl = s;
   s->st41_handle = s_impl;
 
-  rte_atomic32_inc(&impl->st41_rx_sessions_cnt);
+  mt_atomic32_inc(&impl->st41_rx_sessions_cnt);
   notice("%s(%d,%d), succ on %p\n", __func__, sch->idx, s->idx, s);
   return s_impl;
 }
@@ -947,7 +947,7 @@ int st41_rx_free(st41_rx_handle handle) {
   rx_fastmetadata_sessions_mgr_update(&sch->rx_fmd_mgr);
   mt_pthread_mutex_unlock(&sch->rx_fmd_mgr_mutex);
 
-  rte_atomic32_dec(&impl->st41_rx_sessions_cnt);
+  mt_atomic32_dec(&impl->st41_rx_sessions_cnt);
   notice("%s(%d,%d), succ\n", __func__, sch_idx, idx);
   return 0;
 }
