@@ -756,7 +756,9 @@ int mtl_abort(mtl_handle mt) {
 }
 
 void* mtl_memcpy(void* dest, const void* src, size_t n) {
-  return rte_memcpy(dest, src, n);
+  /* use plain memcpy instead of rte_memcpy, see rv_frame_memcpy comment:
+   * rte_memcpy has performance issues when writing to frame buffers. */
+  return memcpy(dest, src, n);
 }
 
 void* mtl_hp_malloc(mtl_handle mt, size_t size, enum mtl_port port) {
