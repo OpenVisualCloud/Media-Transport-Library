@@ -37,6 +37,7 @@ static int rx_st40p_open_dump(struct rx_st40p_sample_ctx* s, const char* file) {
 
 static void rx_st40p_dump_frame(struct rx_st40p_sample_ctx* s,
                                 const struct st40_frame_info* frame_info) {
+#ifndef WINDOWSENV
   if (s->dump_fd < 0) return;
 
   dprintf(s->dump_fd, "frame %d meta_num %u udw_bytes %u\n", s->idx, frame_info->meta_num,
@@ -58,6 +59,9 @@ static void rx_st40p_dump_frame(struct rx_st40p_sample_ctx* s,
     dprintf(s->dump_fd, "\n");
   }
   dprintf(s->dump_fd, "\n");
+#else
+  return;
+#endif
 }
 
 static void rx_st40p_consume_frame(struct rx_st40p_sample_ctx* s,

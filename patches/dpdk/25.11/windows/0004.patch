@@ -1,0 +1,19 @@
+diff --git a/lib/eal/windows/getopt.c b/lib/eal/windows/getopt.c
+index 50ff71b930..da07fd44de 100644
+--- a/lib/eal/windows/getopt.c
++++ b/lib/eal/windows/getopt.c
+@@ -458,6 +458,7 @@ getopt_long(int nargc, char *const nargv[], const char *options,
+  * getopt_long_only --
+  *	Parse argc/argv argument vector.
+  */
++#ifndef __MINGW32__
+ int
+ getopt_long_only(int nargc, char *const nargv[], const char *options,
+ 	const struct option *long_options, int *idx)
+@@ -466,5 +467,6 @@ getopt_long_only(int nargc, char *const nargv[], const char *options,
+ 	return (getopt_internal(nargc, nargv, options, long_options, idx,
+ 	    FLAG_PERMUTE|FLAG_LONGONLY));
+ }
++#endif
+ 
+ #endif /* NEED_USUAL_GETOPT */

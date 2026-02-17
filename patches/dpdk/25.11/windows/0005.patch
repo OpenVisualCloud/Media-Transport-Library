@@ -1,0 +1,18 @@
+diff --git a/drivers/net/intel/ice/ice_ethdev.h b/drivers/net/intel/ice/ice_ethdev.h
+index 72ed65f13b..460bc48559 100644
+--- a/drivers/net/intel/ice/ice_ethdev.h
++++ b/drivers/net/intel/ice/ice_ethdev.h
+@@ -48,8 +48,13 @@
+ #define ICE_MAX_PKT_TYPE  1024
+ 
+ /* DDP package search path */
++#ifndef RTE_EXEC_ENV_WINDOWS
+ #define ICE_PKG_FILE_DEFAULT "/lib/firmware/intel/ice/ddp/ice.pkg"
+ #define ICE_PKG_FILE_UPDATES "/lib/firmware/updates/intel/ice/ddp/ice.pkg"
++#else
++#define ICE_PKG_FILE_DEFAULT "./ice.pkg"
++#define ICE_PKG_FILE_UPDATES "c:\\dpdk\\lib\\ice.pkg"
++#endif
+ #define ICE_PKG_FILE_SEARCH_PATH_DEFAULT "/lib/firmware/intel/ice/ddp/"
+ #define ICE_PKG_FILE_SEARCH_PATH_UPDATES "/lib/firmware/updates/intel/ice/ddp/"
+ #define ICE_PKG_FILE_CUSTOMIZED_PATH "/sys/module/firmware_class/parameters/path"

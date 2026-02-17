@@ -66,6 +66,7 @@ if get_option('enable_asan') == true
   asan_dep = cpp_c.find_library('asan', required : true)
 endif
 
+if not is_windows
 # build test executable
 executable('KahawaiTest', sources,
   c_args : test_c_args,
@@ -75,6 +76,7 @@ executable('KahawaiTest', sources,
   # asan should be always the first dep
   dependencies: [asan_dep, mtl, gtest, libnuma, libopenssl, libpthread, ws2_32_dep]
 )
+endif
 
 if not is_windows
 # build ufd test executable
