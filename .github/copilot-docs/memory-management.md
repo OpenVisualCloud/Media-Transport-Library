@@ -50,7 +50,15 @@ For TX, MTL avoids copying frame data into packet buffers. Instead:
 
 The NIC scatter-gathers both pieces. The frame data never moves — only pointers. This is WHY frames must be in hugepage memory and why refcnt tracking exists.
 
-**The cross-page problem**: `attach_extbuf` works with a single contiguous memory region. If a packet's payload spans two non-contiguous pages (possible with `MTL_FLAG_IOVA_MAP_BY_ATOMIC_SIZE`), the code falls back to `rte_memcpy` into a regular mbuf. This fallback is in `tv_build_rtp()` — look for the `ST_FT_FLAG_CHAIN_EXTBUF` check.
+**The cross-page problem**: `attach_extbuf` works with a single contiguous memory region. If a packet's payload spans two non-contiguous pages (possible with `MTL_FLAG_IOVA_MAP_BY_ATOMIC_SIZE`), the code falls back to `mtl_memcpy` into a regular mbuf. This fallback is in `tv_build_rtp()` — look for the `ST_FT_FLAG_CHAIN_EXTBUF` check.
+
+## Memcpy Policy
+
+`mtl_memcpy()` is the project-standard copy function for all hot-path memory copies. It wraps plain `memcpy()` — DPDK's `rte_memcpy` was found to be **slower** for large frame-sized copies on modern CPUs (glibc's `memcpy` uses optimized AVX/SSE paths that outperform DPDK's hand-rolled version for large buffers).
+
+- **Hot path (frame data, packet payload)**: Use `mtl_memcpy()`
+- **Control plane (small structs, config)**: Plain `memcpy()` is fine
+- **Never use `rte_memcpy` directly** — it has no performance advantage and couples to DPDK internals
 
 ## Mempools: Why So Many?
 

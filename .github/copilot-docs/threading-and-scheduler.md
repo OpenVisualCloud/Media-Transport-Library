@@ -54,12 +54,12 @@ Packets the kernel needs (unrecognized protocols) are forwarded to a TAP/virtio_
 
 ## Session Migration
 
-When `MTL_FLAG_TX_VIDEO_MIGRATE` is set, the admin thread monitors scheduler CPU load. If a scheduler exceeds 95% busy, it moves the last session to a less-loaded scheduler. This requires:
+When `MTL_FLAG_TX_VIDEO_MIGRATE` is set, the admin thread monitors scheduler CPU load. If a scheduler exceeds 95% busy, it migrates the **busiest session** (highest `cpu_busy_score`) to the least-loaded scheduler. This requires:
 1. Locking BOTH source and destination manager mutexes (ordering: target first, then source)
 2. Moving the session pointer atomically (NULL old slot, set new slot)
 3. Releasing quota from the old scheduler
 
-**Why "last session"**: It's the easiest to move because no reordering is needed in the manager array.
+**Why busiest-first**: Moving the heaviest hitter gives the overloaded scheduler the most relief per migration. The session is selected by iterating all sessions on the busy scheduler and picking the one with the highest `cpu_busy_score` (from `tx_video_session_get_cpu_busy()` / `rx_video_session_get_cpu_busy()`).
 
 ## Thread Inventory (for reference)
 

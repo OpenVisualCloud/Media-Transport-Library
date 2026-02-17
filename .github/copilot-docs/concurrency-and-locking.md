@@ -44,10 +44,32 @@ When multiple locks must be held simultaneously, MTL follows these ordering rule
 
 ## Atomic Operations
 
-MTL uses `rte_atomic32_t` for lightweight counters where locking is overkill:
-- **Frame refcnt** (`st_frame_trans.refcnt`): Tracks in-flight DMA references. Atomic inc/dec because both tasklet and NIC completion paths touch it.
-- **Session count** (`st_tx_video_sessions_cnt` etc.): Tracks total active sessions for quick checks without locking the manager.
-- **Stats counters** (`stat_*` fields): Incremented in hot path without locking. Read periodically by stats thread — stale reads are acceptable.
+MTL uses `mt_atomic32_t` (defined in `lib/src/mt_atomic.h`) for lightweight counters where locking is overkill. This is a project-owned wrapper over C11 `__atomic_*` GCC/Clang builtins, replacing the deprecated DPDK `rte_atomic32_t` API.
+
+### Memory Ordering Policy
+
+The API provides **default (RELAXED)** and **ordered** variants. Choosing the right one depends on what the atomic protects:
+
+| API | Ordering | When to use |
+|-----|----------|-------------|
+| `mt_atomic32_read` | RELAXED | Stats, counts under external lock, diagnostics |
+| `mt_atomic32_read_acquire` | ACQUIRE | Polling stop flags, checking refcnt before frame reuse, reading `instance_started` |
+| `mt_atomic32_set` | RELAXED | Init-time zero, stat resets, values under external lock |
+| `mt_atomic32_set_release` | RELEASE | Signaling stop flags, publishing data (mac_ready), setting `instance_started` |
+| `mt_atomic32_inc` | RELAXED | Stats counters (hot path!), session counts under mutex, refcount inc under spinlock |
+| `mt_atomic32_dec` | RELAXED | Session counts under mutex, shared queue entry counts under spinlock |
+| `mt_atomic32_dec_release` | RELEASE | Frame refcnt release — ensures all frame data writes are visible before counter drop |
+| `mt_atomic32_dec_and_test` | ACQ_REL | Destroy-on-zero pattern (scheduler refcnt) |
+
+**Design rationale**: The default is RELAXED because the majority of atomics are either stats counters in the hot path or values protected by an external lock. Only three patterns need ordering:
+
+1. **Reference counting** (frame refcnt): `dec_release` + `read_acquire` form an acquire/release pair. The release on dec ensures frame data writes are visible; the acquire on read ensures the reusing thread sees them.
+2. **Flag signaling** (stop threads, lifecycle, publish): `set_release` + `read_acquire` form a publish/consume pair. The release ensures prior setup/teardown is visible when the reader sees the flag change.
+3. **Destroy-on-zero** (scheduler refcnt): `dec_and_test` with ACQ_REL — the release orders prior accesses, and if zero the implicit acquire orders subsequent cleanup.
+
+**Gotcha**: `inc` is always RELAXED because every inc site either (a) runs in a hot-path stats counter with no ordering dependency, or (b) operates under an external lock that provides the necessary ordering. If you add a new use of `mt_atomic32_inc` that is NOT under a lock and DOES gate access to shared data, you need a new `inc_acquire` variant.
+
+**Why not `rte_atomic32_t`?** DPDK deprecated it in 21.11 and plans to remove it. MTL's own `mt_atomic32_t` decouples from DPDK's deprecation cycle and uses portable C11 builtins.
 
 ## The Shared Queue Contention Design
 

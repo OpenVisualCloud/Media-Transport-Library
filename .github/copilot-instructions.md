@@ -100,6 +100,7 @@ These files contain extended documentation on specific subsystems. Consult them 
 - `lib/src/mt_main.c` — `mtl_init()`/`mtl_uninit()` implementation
 - `lib/src/mt_sch.c` / `mt_sch.h` — Scheduler/tasklet system
 - `lib/src/mt_mem.h` — Memory allocation wrappers
+- `lib/src/mt_atomic.h` — C11 atomic wrappers (`mt_atomic32_t`), replacing deprecated DPDK `rte_atomic32_t`
 - `lib/src/mt_ptp.c` — PTP IEEE 1588 implementation
 - `lib/src/mt_cni.c` — Control Network Interface (ARP, PTP, DHCP packet processing)
 - `lib/src/mt_rtcp.c` / `mt_rtcp.h` — RTCP NACK-based retransmission
@@ -187,9 +188,9 @@ These files contain extended documentation on specific subsystems. Consult them 
 - Pipeline uses `pthread_mutex_t` because ops run in app thread, not tasklet
 
 ### Frames (`st_frame_trans` in `st_header.h`)
-- `refcnt` via `rte_atomic32_t`: 0 = free
-- Acquire: find frame with `refcnt==0`, then `rte_atomic32_inc()`
-- Release: `rte_atomic32_dec()`
+- `refcnt` via `mt_atomic32_t`: 0 = free
+- Acquire: find frame with `refcnt==0` via `mt_atomic32_read_acquire()`, then `mt_atomic32_inc()`
+- Release: `mt_atomic32_dec_release()` — RELEASE ensures frame data writes are visible before refcnt drops
 - Flags: `ST_FT_FLAG_EXT` (external), `ST_FT_FLAG_RTE_MALLOC`, `ST_FT_FLAG_GPU_MALLOC`
 - Zero-copy TX: header mbuf + `rte_pktmbuf_attach_extbuf()` + `rte_pktmbuf_chain()`
 - Frame free callback: `sh_info.free_cb` fires when all NIC DMA references are released
@@ -308,7 +309,7 @@ typedef struct mtl_main_impl* mtl_handle;
 - `int idx` — session index for logging
 - `int socket_id` — NUMA socket
 - `struct mtl_main_impl* impl` — parent context
-- `rte_atomic32_t refcnt` — reference count
+- `mt_atomic32_t refcnt` — reference count (C11 atomics, see `mt_atomic.h`)
 - `stat_*` prefix for statistics fields
 
 ## Wire Format Structs
