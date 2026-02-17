@@ -90,7 +90,6 @@ jobs:
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - uses: ./.github/actions/cleanup
       - name: Export workflow tag for PCAP naming
         if: ${{ needs.smoke-check-for-changes.outputs.changed == 'true' }}
         shell: bash

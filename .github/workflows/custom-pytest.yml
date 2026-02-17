@@ -67,14 +67,6 @@ jobs:
             --ebu_ip ${{ secrets.RUNNER_EBU_LIST_IP }} \
             --ebu_user ${{ secrets.RUNNER_EBU_LIST_USER }} \
             --ebu_password ${{ secrets.RUNNER_EBU_LIST_PASSWORD }}
-      - name: Kill active MtlManager and pytest processes
-        run: |
-          sudo killall -SIGINT pipenv || true
-          sudo killall -SIGINT pytest || true
-          sudo killall -SIGINT MtlManager || true
-          sudo killall -SIGINT phc2sys || true
-          sudo killall -SIGINT ptp4l || true
-          sudo killall -SIGINT netsniff-ng || true
       - name: Export workflow tag for PCAP naming
         shell: bash
         run: |

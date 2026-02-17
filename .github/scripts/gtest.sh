@@ -263,7 +263,6 @@ kill_test_processes() {
 declare -a error_messages=(
 	"Not a directory"
 	"mt_user_params_check, same name for port 1 and 0"
-	"get socket fail -19 for pmd 0"
 	"EAL: Cannot use IOVA as"
 	"from LD_PRELOAD cannot be preloaded"
 	"Error: ufd_parse_json, open json file ufd.json fail"
