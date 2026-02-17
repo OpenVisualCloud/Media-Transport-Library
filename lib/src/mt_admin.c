@@ -143,6 +143,7 @@ static int tx_video_migrate_to(struct st_tx_video_session_impl* s,
 static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_tx_video_session_impl* busy_s = NULL;
   struct mtl_sch_impl* from_sch = NULL;
+  double max_busy_score = 0;
   int ret;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
@@ -150,23 +151,24 @@ static int admin_tx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
     if (!mt_sch_started(sch)) continue;
     if (!mt_sch_has_busy(sch)) continue;
 
-    /* check if any busy session in this cpu */
-    struct st_tx_video_session_impl* busy_s_in_sch = NULL;
+    /* find the busiest session across all schedulers */
     struct st_tx_video_sessions_mgr* tx_mgr = &sch->tx_video_mgr;
     for (int j = 0; j < tx_mgr->max_idx; j++) {
       struct st_tx_video_session_impl* tx_s = tx_video_session_get(tx_mgr, j);
       if (!tx_s) continue;
       if (tx_video_session_is_cpu_busy(tx_s)) {
-        busy_s_in_sch = tx_s; /* last one as the busy one */
+        float score = tx_video_session_get_cpu_busy(tx_s);
+        if (score > max_busy_score) {
+          max_busy_score = score;
+          busy_s = tx_s;
+          from_sch = sch;
+        }
       }
       tx_video_session_put(tx_mgr, j);
     }
 
-    if (busy_s_in_sch) {
-      mt_sch_set_cpu_busy(sch, true);
-      busy_s = busy_s_in_sch; /* last one as the busy one */
-      from_sch = sch;
-    }
+    /* mark any scheduler with busy sessions to prevent new session assignment */
+    mt_sch_set_cpu_busy(sch, true);
   }
 
   if (!busy_s) return 0; /* no busy session */
@@ -260,6 +262,7 @@ static int rx_video_migrate_to(struct mtl_main_impl* impl,
 static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
   struct st_rx_video_session_impl* busy_s = NULL;
   struct mtl_sch_impl* from_sch = NULL;
+  double max_busy_score = 0;
   int ret;
 
   for (int sch_idx = 0; sch_idx < MT_MAX_SCH_NUM; sch_idx++) {
@@ -267,23 +270,24 @@ static int admin_rx_video_migrate(struct mtl_main_impl* impl, bool* migrated) {
     if (!mt_sch_started(sch)) continue;
     if (!mt_sch_has_busy(sch)) continue;
 
-    /* check if any busy session in this cpu */
-    struct st_rx_video_session_impl* busy_s_in_sch = NULL;
+    /* find the busiest session across all schedulers */
     struct st_rx_video_sessions_mgr* rx_mgr = &sch->rx_video_mgr;
     for (int j = 0; j < rx_mgr->max_idx; j++) {
       struct st_rx_video_session_impl* rx_s = rx_video_session_get(rx_mgr, j);
       if (!rx_s) continue;
       if (rx_video_session_can_migrate(rx_s) && rx_video_session_is_cpu_busy(rx_s)) {
-        busy_s_in_sch = rx_s; /* last one as the busy one */
+        float score = rx_video_session_get_cpu_busy(rx_s);
+        if (score > max_busy_score) {
+          max_busy_score = score;
+          busy_s = rx_s;
+          from_sch = sch;
+        }
       }
       rx_video_session_put(rx_mgr, j);
     }
 
-    if (busy_s_in_sch) {
-      mt_sch_set_cpu_busy(sch, true);
-      busy_s = busy_s_in_sch; /* last one as the busy one */
-      from_sch = sch;
-    }
+    /* mark any scheduler with busy sessions to prevent new session assignment */
+    mt_sch_set_cpu_busy(sch, true);
   }
 
   if (!busy_s) return 0; /* no busy session */
